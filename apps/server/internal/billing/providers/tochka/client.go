@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/calaba/calaba/server/internal/billing/provider"
 )
@@ -72,6 +74,9 @@ func redact(s string) string {
 // answer into out. Errors:
 //   - transport errors, timeouts, 5xx, 429 and undecodable 2xx bodies: provider.ErrUnknownOutcome
 //     (the request may have happened);
+//   - of those, a transport error before any connection was obtained also wraps
+//     provider.ErrNotSent: the bank certainly did not get it (audit M6). A 429 does not: the
+//     bank does not document that its rate limit refuses before processing;
 //   - 404, or 424 whose message says the object is not found: provider.ErrNotFound;
 //   - 424 «… существует» on a create: errDuplicate (with *APIError);
 //   - other 4xx (and 424): *APIError, a definite refusal.
@@ -93,8 +98,28 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// connected: a connection to the bank (or to a proxy's tunnel to it) was handed to this
+	// request, so some of it may have been written. net/http calls GotConn on the caller's
+	// goroutine before it writes anything, for HTTP/1 and HTTP/2 alike, and Do returns after it;
+	// WroteRequest is not usable here: HTTP/2 reports it from the stream's writer goroutine, which
+	// can still be running when a deadline makes Do return although the whole body is on the
+	// wire. Only an error with no connection ever obtained (DNS, dial, TLS handshake, proxy
+	// CONNECT) is «not sent»; any other transport error, timeout or GOAWAY/RST stays unknown.
+	var connected atomic.Bool
+	mark := func() { connected.Store(true) }
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		GotConn:              func(httptrace.GotConnInfo) { mark() },
+		WroteHeaderField:     func(string, []string) { mark() },
+		WroteHeaders:         mark,
+		WroteRequest:         func(httptrace.WroteRequestInfo) { mark() },
+		GotFirstResponseByte: mark,
+	}))
 	resp, err := p.hc.Do(req)
 	if err != nil {
+		sent := provider.ErrUnknownOutcome
+		if !connected.Load() {
+			sent = fmt.Errorf("%w: %w", provider.ErrUnknownOutcome, provider.ErrNotSent)
+		}
 		var cause error
 		switch {
 		case errors.Is(err, context.Canceled):
@@ -103,9 +128,9 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 			cause = context.DeadlineExceeded
 		}
 		if cause != nil {
-			return fmt.Errorf("tochka %s: %w: %w", op, provider.ErrUnknownOutcome, cause)
+			return fmt.Errorf("tochka %s: %w: %w", op, sent, cause)
 		}
-		return fmt.Errorf("tochka %s: %w: %s", op, provider.ErrUnknownOutcome, redact(err.Error()))
+		return fmt.Errorf("tochka %s: %w: %s", op, sent, redact(err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
@@ -132,6 +157,8 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 	low := strings.ToLower(msg)
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
+		// Not «not sent»: the bank documents no 429 for its methods (Charge Subscription lists
+		// 400/403/404/424/500), so whether a 429 comes before or after processing is unknown.
 		return fmt.Errorf("%w: %w: %w", provider.ErrUnknownOutcome, provider.ErrRateLimited, ae)
 	case resp.StatusCode >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", provider.ErrUnknownOutcome, ae)
