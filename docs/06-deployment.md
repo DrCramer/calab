@@ -202,7 +202,7 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 **Что нужно от владельца** (в корневой `.env` репо — не коммитится; имена ключей — как у владельца):
 | Ключ | Что |
 |---|---|
-| `S3_ENDPOINT`, `S3_REGION` (по умолчанию `ru-central1`), `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yandex Object Storage: бакет и ключ сервисного аккаунта **с правом записи в этот бакет** (сейчас — AccessDenied, выясняет лид); бакет — **публичное чтение** объектов |
+| `S3_ENDPOINT`, `S3_REGION` (по умолчанию `ru-central1`), `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | бакет релизов и ключ **с правом записи в него**. С 12.10.2026 прод — VK Cloud: `S3_ENDPOINT=https://hb.vkcloud-storage.ru`, `S3_REGION=ru-msk`, `S3_BUCKET=calaba`. В VK нет публичности бакета, поэтому `release.yml` ставит каждому объекту `--acl public-read` (в Yandex это тоже работает) |
 | `S3_PUBLIC_URL` | публичный базовый URL бакета — для Caddy на стенде (`infra/docker/.env`), в GitHub не нужен |
 | `APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD` | Developer ID Application (.p12, base64) — Apple Developer Program |
 | `APPLE_API_KEY_BASE64`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | ключ App Store Connect API (.p8, base64) для нотаризации |

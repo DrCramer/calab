@@ -401,9 +401,12 @@ jobs:
             echo "::notice::S3_* secrets not configured — S3 publishing skipped (stand fallback runs instead)"
             echo "published=0" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          export AWS_DEFAULT_REGION="${S3_REGION:-ru-central1}"   # Yandex Object Storage
+          export AWS_DEFAULT_REGION="${S3_REGION:-ru-central1}"   # ru-central1 Yandex, ru-msk VK Cloud
           aws configure set default.s3.addressing_style path
-          s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@"; }
+          # --acl public-read on every object: releases.calab.* proxies the bucket anonymously. Yandex made the whole
+          # bucket public; VK Cloud Object Storage (hb.vkcloud-storage.ru) has no working bucket policy — per-object
+          # ACL is the only way there. Harmless on Yandex.
+          s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@" --acl public-read; }
           cd dist-release
           ver=$(sed -n 's/^version: //p' ./*-linux.yml | head -1); [[ -n "$ver" ]]
           feeds=(*.yml)   # latest-mac.yml latest-linux.yml latest.yml — or rc-*.yml / rc.yml for prereleases
