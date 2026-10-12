@@ -18,7 +18,8 @@ name: images
 # cluster. Rollback: re-run an older successful run of this workflow.
 #
 # Repository secrets (masked in the public logs): YC_REGISTRY (registry path ending in /calab),
-# YC_CI_SA_ID (service account id).
+# YC_CI_SA_ID (service account id); optional HARBOR_USER / HARBOR_PASSWORD — Harbor robot with push to the
+# calab project of cr.shds.io (VK Cloud): each pushed image is also copied there with the same digest.
 
 on:
   workflow_run:
@@ -55,6 +56,8 @@ jobs:
     env:
       REGISTRY: ${{ secrets.YC_REGISTRY }}
       SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,6 +94,19 @@ jobs:
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          # Copy of the same image to the VK Cloud registry (Harbor cr.shds.io/calab) — the production cluster
+          # moves off Yandex. Byte-for-byte by digest (skopeo, while still logged in to cr.yandex), then the
+          # digest is checked: the cluster rolls out digests from the deployment payload. cr.shds.io resolves
+          # to a private address publicly; the VK ingress publishes only the calab and gpu projects.
+          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
+            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
+              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
+            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
+            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
+          else
+            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
+          fi
           docker logout cr.yandex
         env:
           IMAGE: api
@@ -111,6 +127,8 @@ jobs:
     env:
       REGISTRY: ${{ secrets.YC_REGISTRY }}
       SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -174,6 +192,19 @@ jobs:
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          # Copy of the same image to the VK Cloud registry (Harbor cr.shds.io/calab) — the production cluster
+          # moves off Yandex. Byte-for-byte by digest (skopeo, while still logged in to cr.yandex), then the
+          # digest is checked: the cluster rolls out digests from the deployment payload. cr.shds.io resolves
+          # to a private address publicly; the VK ingress publishes only the calab and gpu projects.
+          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
+            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
+              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
+            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
+            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
+          else
+            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
+          fi
           docker logout cr.yandex
         env:
           IMAGE: web
