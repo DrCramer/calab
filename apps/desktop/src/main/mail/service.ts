@@ -6,6 +6,7 @@
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  MAIL_RAW_MAX,
   DEFAULT_MAIL_SETTINGS,
   MAIL_CERT_FINGERPRINT_RE,
   type MailAccount,
@@ -132,6 +133,8 @@ function draftOf(v: unknown): MailDraft {
     attachments,
   };
   if (isStr(v['id'], 60)) d.id = v['id'];
+  // The composer's HTML (quote included); the text/html part as is (the renderer sanitized it).
+  if (isStr(v['html'], 10_000_000) && v['html'].trim()) d.html = v['html'];
   const ref = v['ref'];
   if (isObj(ref)) {
     if (!isStr(ref['messageId'], 100) || !['reply', 'replyAll', 'forward'].includes(String(ref['kind']))) throw invalid('bad ref');
@@ -464,7 +467,7 @@ export class MailEngine {
       const r = this.resolveFolder(acc, ref);
       if (!r || r.virtual) continue;
       if (r.row !== undefined) acc.sync.touchFolder(r.row);
-      rows.push(...acc.store.listThreads(r.scope, { limit, ...(before ? { before } : {}), ...(q['unreadOnly'] === true ? { unreadOnly: true } : {}), ...(r.rowFolder ? { rowFolder: r.rowFolder } : {}) }));
+      rows.push(...acc.store.listThreads(r.scope, { limit, ...(before ? { before } : {}), ...(q['unreadOnly'] === true ? { unreadOnly: true } : {}), ...(q['flaggedOnly'] === true ? { flaggedOnly: true } : {}), ...(r.rowFolder ? { rowFolder: r.rowFolder } : {}) }));
     }
     return this.page(rows, limit);
   }
@@ -519,6 +522,19 @@ export class MailEngine {
     };
   }
 
+  /** The raw source for «Отправить в чат» (≤ MAIL_RAW_MAX; the header's RFC822 size is checked first). */
+  async raw(id: unknown): Promise<Uint8Array> {
+    if (!parseMessageId(id)) throw notFound('message');
+    const mid = id as string;
+    const acc = this.account(mid);
+    const h = acc.store.header(mid);
+    if (!h) throw notFound('message');
+    if (h.size > MAIL_RAW_MAX) throw invalid('message too large');
+    const src = await acc.sync.fetchRaw(mid);
+    if (src.byteLength > MAIL_RAW_MAX) throw invalid('message too large');
+    return new Uint8Array(src.buffer, src.byteOffset, src.byteLength);
+  }
+
   private selection(sel: unknown): Map<Account, string[]> {
     const out = new Map<Account, string[]>();
     const add = (acc: Account, ids: string[]): void => {
@@ -560,7 +576,7 @@ export class MailEngine {
           inReplyTo = orig.messageIdHeader;
           references = [...orig.references, orig.messageIdHeader].filter(Boolean).slice(-30);
         }
-        if (d.ref.quote) quote = { kind: d.ref.kind, from: orig.from, to: orig.to, date: orig.date, subject: orig.subject, text: orig.text ?? '' };
+        if (d.ref.quote && d.html === undefined) quote = { kind: d.ref.kind, from: orig.from, to: orig.to, date: orig.date, subject: orig.subject, text: orig.text ?? '' };
       }
     }
     const files: Array<{ name: string; mime: string; data: Uint8Array }> = [];
@@ -576,7 +592,7 @@ export class MailEngine {
       from: { name: acc.cfg.name, address: acc.cfg.email },
       draft: d,
       messageIdHdr,
-      bodies: buildBodies(d.text, quote),
+      bodies: d.html !== undefined ? { text: d.text, html: d.html } : buildBodies(d.text, quote),
       inReplyTo,
       references,
       attachments: files,
@@ -640,6 +656,7 @@ export class MailEngine {
       'folders.list': (accountId) => this.account(accountId).sync.folders(),
       'messages.list': (q) => this.list(q),
       'messages.get': (id) => this.get(id),
+      'messages.raw': (id) => this.raw(id),
       'messages.thread': (threadId): MailHeader[] => {
         if (!parseSeqId(threadId, 't')) throw notFound('thread');
         return this.account(threadId).store.thread(threadId as string);
