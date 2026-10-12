@@ -50,8 +50,9 @@ describe('discovery network deadlines (ADR-0088 §4, §7)', () => {
       expect(Date.now() - t0).toBeLessThan(1500);
     }
     // The hung TLS handshake's socket is destroyed too (it used to leak until the OS timeout).
-    expect(await waitFor(() => open() === 0)).toBe(true);
-  });
+    // The server sees the close later than the client destroys the socket (seconds on loaded CI runners).
+    expect(await waitFor(() => open() === 0, 10_000)).toBe(true);
+  }, 20_000);
 
   it.skipIf(!existsSync(join(CERTS, 'key.pem')))('STARTTLS completed: the probe closes TLS before TCP and the process survives', async () => {
     // 3.1.0 destroyed the TCP socket first, under the live TLS socket: SIGSEGV of the whole engine
