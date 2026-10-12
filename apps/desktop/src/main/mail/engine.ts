@@ -13,7 +13,17 @@ import { realDiscoverNet } from './net';
 import { MailEngine } from './service';
 import { smtpSend, verifySmtp } from './send';
 
-const port = process.parentPort;
+/**
+ * The channel to main: Electron's `parentPort` in a utilityProcess, or Node's IPC when main forks the
+ * engine as a plain Node child (`CALABA_MAIL_ENGINE=node`, ELECTRON_RUN_AS_NODE) — same messages.
+ */
+type Port = { postMessage(m: unknown): void; on(ev: 'message', cb: (e: { data: unknown }) => void): void };
+const port: Port = process.parentPort
+  ? (process.parentPort as unknown as Port)
+  : {
+      postMessage: (m) => process.send?.(m),
+      on: (_ev, cb) => process.on('message', (m) => cb({ data: m })),
+    };
 
 function send(msg: MailFromEngine): void {
   port.postMessage(msg);

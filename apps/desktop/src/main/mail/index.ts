@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { fork as childFork } from 'node:child_process';
 import { join } from 'node:path';
 import { app, BrowserWindow, safeStorage, utilityProcess } from 'electron';
 import { IPC } from '../../shared/ipc';
@@ -20,7 +21,36 @@ function dataDir(): string {
   return join(app.getPath('userData'), 'mail');
 }
 
+/**
+ * The engine as a plain Node child process (Electron binary with ELECTRON_RUN_AS_NODE) instead of a
+ * utilityProcess — `CALABA_MAIL_ENGINE=node` (default in this experiment build).
+ */
+function forkNode(): EngineChild {
+  const cp = childFork(ENGINE, [], {
+    execPath: process.execPath,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    stdio: ['ignore', 'inherit', 'pipe', 'ipc'],
+    serialization: 'advanced',
+  });
+  if (!app.isPackaged) cp.stderr?.on('data', (d: Buffer) => process.stderr.write(d));
+  else cp.stderr?.on('data', engineLines());
+  log.info('mail: engine as a Node child', { pid: cp.pid });
+  return {
+    postMessage: (m) => {
+      cp.send(m);
+    },
+    on: ((ev: 'message' | 'exit', cb: (x: never) => void) => {
+      if (ev === 'message') cp.on('message', cb as (m: unknown) => void);
+      else cp.on('exit', (code) => (cb as (c: number) => void)(code ?? 1));
+      return cp;
+    }) as EngineChild['on'],
+    kill: () => cp.kill(),
+    stderr: cp.stderr,
+  };
+}
+
 function fork(): EngineChild {
+  if ((process.env['CALABA_MAIL_ENGINE'] ?? 'node') === 'node') return forkNode();
   if (!app.isReady()) throw new Error('utilityProcess before app ready');
   // stderr piped: the router keeps its last lines and logs them when the engine exits (§2).
   const child = utilityProcess.fork(ENGINE, [], { serviceName: 'Calab Mail', stdio: ['ignore', 'inherit', 'pipe'] });
