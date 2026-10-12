@@ -28,7 +28,7 @@ export function imapOptions(l: ImapLogin, tls: MailTls = {}): ImapFlowOptions {
     servername: l.server.host,
     auth: { user: l.login, pass: l.password },
     tls: mailTlsOptions(l.server, tls),
-    logger: false,
+    logger: process.env['CALABA_MAIL_DEBUG'] === '1' ? { debug: () => undefined, info: (o: unknown) => process.stderr.write('[imap] ' + JSON.stringify(o).slice(0, 300) + '\n'), warn: (o: unknown) => process.stderr.write('[imap:warn] ' + JSON.stringify(o).slice(0, 300) + '\n'), error: (o: unknown) => process.stderr.write('[imap:err] ' + JSON.stringify(o).slice(0, 300) + '\n') } : false,
     clientInfo: { name: 'Calab', vendor: 'Calab' },
     qresync: false,
     connectionTimeout: 15_000,

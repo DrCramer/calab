@@ -293,6 +293,7 @@ export class AccountSync {
 
   private at(op: string, path = ''): void {
     this.step = { op, path };
+    if (process.env['CALABA_MAIL_DEBUG'] === '1') process.stderr.write(`[sync] ${op} ${path}\n`);
   }
 
   /** The failure with its detail (codes, server response, step), for the engine log. */

@@ -24,9 +24,44 @@ function fork(): EngineChild {
   if (!app.isReady()) throw new Error('utilityProcess before app ready');
   // stderr piped: the router keeps its last lines and logs them when the engine exits (§2).
   const child = utilityProcess.fork(ENGINE, [], { serviceName: 'Calab Mail', stdio: ['ignore', 'inherit', 'pipe'] });
-  // Dev: the engine's warnings still reach the terminal.
+  // Dev: the engine's warnings still reach the terminal. Packaged: every engine line goes to
+  // main.log (3.1.3 — a live engine was invisible there, only its exit was logged). The engine never
+  // writes secrets to stderr (engine.ts `log`). Capped so a chatty engine cannot flood the log.
   if (!app.isPackaged) child.stderr?.on('data', (d: Buffer) => process.stderr.write(d));
+  else child.stderr?.on('data', engineLines());
   return child;
+}
+
+/** At most this many engine lines per minute reach main.log (CALABA_MAIL_DEBUG=1 raises it). */
+const ENGINE_LOG_PER_MIN = process.env['CALABA_MAIL_DEBUG'] === '1' ? 5000 : 200;
+
+/** Splits the engine's stderr into lines for electron-log, rate-capped per minute. */
+function engineLines(): (d: Buffer) => void {
+  let rest = '';
+  let windowStart = Date.now();
+  let count = 0;
+  let dropped = 0;
+  return (d) => {
+    rest += d.toString('utf8');
+    const parts = rest.split('\n');
+    rest = parts.pop() ?? '';
+    for (const raw of parts) {
+      const line = raw.trimEnd();
+      if (!line) continue;
+      const now = Date.now();
+      if (now - windowStart >= 60_000) {
+        if (dropped) log.warn('mail engine: lines dropped', { count: dropped });
+        windowStart = now;
+        count = 0;
+        dropped = 0;
+      }
+      if (++count > ENGINE_LOG_PER_MIN) {
+        dropped++;
+        continue;
+      }
+      log.info(`mail engine: ${line.slice(0, 1000)}`);
+    }
+  };
 }
 
 function broadcast(event: MailEvent): void {
