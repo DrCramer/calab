@@ -1,9 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type Room, type Task, type TaskActivity } from '@calaba/protocol';
+import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type Room, type Task } from '@calaba/protocol';
 import {
   Archive,
-  Cog,
   Bell,
   BellOff,
   ChevronRight,
@@ -24,11 +22,11 @@ import { ProfileTarget } from '../../components/ProfileTarget';
 import { Bar } from '../../components/Bar';
 import { PhoneBack } from '../../components/PhoneHeader';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, CloseButton, IconButton, Modal, Segmented, Spinner, Tip, cx } from '../../components/ui';
+import { Button, CloseButton, IconButton, Modal, Spinner, Tip, cx } from '../../components/ui';
+import { Choice as ChoiceSwitch } from '../../components/Choice';
 import { t } from '../../i18n';
-import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
-import { filterFeed, startsRun, type ActivityTab } from '../../lib/boards/activity';
+import type { ActivityTab } from '../../lib/boards/activity';
 import { approvalsWouldReset, blockedStatusIds, decidedApprovers } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
@@ -41,7 +39,6 @@ import {
   copyTaskLink,
   createTask,
   duplicateTask,
-  loadActivity,
   loadTask,
   moveTaskToBoard,
   setAssignees,
@@ -52,8 +49,6 @@ import {
   useTaskDetails,
 } from '../../services/boards';
 import { boardsApi } from '../../services/boardsApi';
-import { ensureRules } from '../../services/automations';
-import { ruleNameOf, useAutomations } from '../../stores/automations';
 import { taskMilestonesOf, useBoards, workspaceBoards } from '../../stores/boards';
 import { milestoneState } from '../../lib/boards/milestones';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -74,6 +69,7 @@ import { WatchersSection } from './Watchers';
 import { GitSection } from './GitLinks';
 import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
+import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
@@ -906,71 +902,52 @@ function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: bool
   );
 }
 
-// ------------------------------------------------------------------ activity
+// ------------------------------------------------------------------ comments | history
 
-type FeedRow = { kind: 'msg'; at: number; key: string; index: number } | { kind: 'act'; at: number; key: string; a: TaskActivity };
-
-/** Comments (the task room) and the journal in one timeline, oldest first (Linear). */
+/**
+ * The lower section (ADR-0091 §1): «Комментарии» (the task room as a chat: oldest first, grouped,
+ * the composer below) and «История» (the journal timeline, newest first). The tab is remembered;
+ * sending a comment or jumping to one (a search hit) switches to «Комментарии».
+ */
 function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; toEnd: () => void; commentsOff: boolean }): ReactNode {
-  const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
-  const live = useBoards((s) => s.activity[task.id]);
-  const gone = useBoards((s) => s.activityGone[task.id]); // merged / cancelled rows (ADR-0081)
-  const [loaded, setLoaded] = useState<TaskActivity[]>([]);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const perms = useTaskPerms(task);
-  const roomPerms = useMemo(() => taskRoomPermissions(perms, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   useEffect(() => {
     void openRoom(room.id);
     subscribeRooms([room.id]);
-    let alive = true;
-    void loadActivity(task.id).then((list) => alive && setLoaded(list));
-    return () => {
-      alive = false;
-    };
-  }, [room.id, task.id]);
-  const [cache] = useState(() => new Map<string, RowMeta>());
-  const metas = useMemo(() => buildMetas(state.items, '', me, cache), [state.items, me, cache]);
-  const rows = useMemo((): FeedRow[] => {
-    const acts = new Map<string, TaskActivity>();
-    for (const a of [...loaded, ...(live ?? [])]) if (!gone?.includes(a.id)) acts.set(a.id, a);
-    const firstMsg = state.items[0]?.msg.createdAt ? timestampMs(state.items[0].msg.createdAt) : Infinity;
-    const out: FeedRow[] = state.items.map((c, i) => ({ kind: 'msg' as const, at: c.msg.createdAt ? timestampMs(c.msg.createdAt) : Number.MAX_SAFE_INTEGER, key: c.key, index: i }));
-    for (const a of acts.values()) {
-      const at = a.createdAt ? timestampMs(a.createdAt) : 0;
-      // Older history not loaded yet: journal rows before it wait for «Показать ранние».
-      if (state.hasMoreBefore && at < firstMsg) continue;
-      out.push({ kind: 'act', at, key: a.id, a });
-    }
-    return out.sort((x, y) => x.at - y.at || (x.key < y.key ? -1 : 1));
-  }, [state.items, state.hasMoreBefore, loaded, live, gone]);
-  // Read: the newest comment is on screen (the panel is open) and the window has the focus.
-  const last = state.items.at(-1);
+  }, [room.id]);
+  // Read: the newest comment is in the panel (it is open) and the window has the focus.
+  const lastSent = useMessages((s) => {
+    const last = s.rooms[room.id]?.items.at(-1);
+    return last?.status === 'sent' ? last.msg.id : '';
+  });
   useEffect(() => {
-    if (!last || last.status !== 'sent') return;
+    if (!lastSent) return;
     const mark = (): void => {
-      if (document.hasFocus()) markRead(room.id, last.msg.id);
+      if (document.hasFocus()) markRead(room.id, lastSent);
     };
     mark();
     window.addEventListener('focus', mark);
     return () => window.removeEventListener('focus', mark);
-  }, [last, room.id]);
-  // A new comment of mine scrolls the panel to it.
-  const count = state.items.length;
+  }, [lastSent, room.id]);
+  // A new comment of mine: «Комментарии» and the panel scrolled to it.
+  const mine = useMessages((s) => {
+    const last = s.rooms[room.id]?.items.at(-1);
+    return last && last.msg.authorId === me && last.status !== 'sent' ? last.key : '';
+  });
   useEffect(() => {
-    if (last?.msg.authorId === me && last.status !== 'sent') toEnd();
-  }, [count, last, me, toEnd]);
+    if (!mine) return;
+    if (useBoardsUi.getState().activityTab !== 'comments') useBoardsUi.getState().setActivityTab('comments');
+    requestAnimationFrame(toEnd);
+  }, [mine, toEnd]);
   const tab = useBoardsUi((s) => s.activityTab);
-  const shown = useMemo(() => filterFeed(rows, tab), [rows, tab]);
   // A jump to a comment (a search hit, ADR-0062 §4): page up to it, scroll it into view, flash it.
   const jump = useChatView((s) => (s.jump?.roomId === room.id ? s.jump : null));
-  const highlight = useChatView((s) => s.highlight);
   const section = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!jump) return;
     useChatView.getState().clearJump();
     const target = jump.messageId;
-    // The comment must be visible in the feed: «Все» or «Комментарии», not «Изменения».
-    if (useBoardsUi.getState().activityTab === 'changes') useBoardsUi.getState().setActivityTab('all');
+    if (useBoardsUi.getState().activityTab !== 'comments') useBoardsUi.getState().setActivityTab('comments');
     void revealOlder(room.id, target).then((ok) => {
       if (!ok) {
         toast.info(t('chat.messageGone'));
@@ -989,251 +966,58 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
       );
     });
   }, [jump, room.id]);
-  const tabs: Array<{ value: ActivityTab; label: string }> = [
-    { value: 'all', label: t('boards.feed.all') },
-    { value: 'changes', label: t('boards.feed.changes') },
-    { value: 'comments', label: t('boards.feed.comments') },
-  ];
+  const tabs = useMemo((): Array<{ value: ActivityTab; label: string }> => [
+    { value: 'comments', label: t('boards.hist.comments') },
+    { value: 'history', label: t('boards.hist.history') },
+  ], []);
   return (
-    <section ref={section} className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity">
-      <div className="flex flex-wrap items-center gap-2 px-5 pb-2">
-        <h3 className="mr-auto text-control font-semibold">{t('boards.activity')}</h3>
-        <Segmented value={tab} options={tabs} onChange={useBoardsUi.getState().setActivityTab} label={t('boards.feed.label')} />
+    <section ref={section} className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity" data-tab={tab}>
+      <div className="flex items-center px-5 pb-2">
+        <ChoiceSwitch value={tab} options={tabs} onChange={useBoardsUi.getState().setActivityTab} label={t('boards.hist.label')} phone="segmented" testId="activity-tabs" />
       </div>
-      {state.hasMoreBefore ? (
-        <button type="button" onClick={() => void loadOlder(room.id)} className="mx-5 mb-2 h-7 self-start rounded-full px-2.5 text-caption text-accent-text hover:bg-hover" data-testid="activity-older">
-          {state.loading ? <Spinner className="size-3.5" /> : t('boards.olderComments')}
-        </button>
-      ) : null}
-      <div className="flex flex-col" data-testid="activity-feed" data-tab={tab}>
-        {shown.map((r, i) => {
-          // A comment group and a run of journal lines are set apart (docs/08: 8 px above / below).
-          const gap = startsRun(shown, i) ? 'mt-2' : '';
-          if (r.kind === 'act') return <ActivityRow key={r.key} a={r.a} task={task} className={gap} />;
-          const c = state.items[r.index];
-          const meta = metas[r.index];
-          if (!c || !meta) return null;
-          return (
-            <div key={r.key} className={gap}>
-              {c.msg.kind === MessageKind.SYSTEM ? (
-                <SystemRow c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={highlight === c.key} />
-              ) : (
-                <MessageRow c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={highlight === c.key} />
-              )}
-            </div>
-          );
-        })}
-        {shown.length === 0 && tab !== 'all' ? (
-          <p className="px-5 py-3 text-caption text-muted" data-testid="activity-empty">
-            {tab === 'comments' ? t('boards.feed.noComments') : t('boards.feed.noChanges')}
-          </p>
-        ) : null}
-      </div>
+      {tab === 'comments' ? (
+        <TaskComments task={task} roomId={room.id} commentsOff={commentsOff} />
+      ) : (
+        <TaskHistory key={task.id} taskId={task.id} workspaceId={task.workspaceId} boardId={task.boardId} />
+      )}
     </section>
   );
 }
 
-function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; className?: string }): ReactNode {
-  const name = useMemberName(task.workspaceId, a.actorId);
-  const board = useBoards((s) => s.boards[task.boardId]);
-  const text = activityText(a, board, task.workspaceId);
-  const at = a.createdAt ? toDate(a.createdAt) : null;
-  // A change made by an automation rule (ADR-0060): no actor, «⚙ Автоматизация: имя правила».
-  const rule = !a.actorId && !!a.ruleId;
-  return (
-    <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind} data-rule={rule || undefined}>
-      {rule ? <RuleActor boardId={task.boardId} ruleId={a.ruleId} /> : (
-        <ProfileTarget userId={a.actorId} name={name} workspaceId={task.workspaceId} tabbable className="shrink-0 rounded-full">
-          <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />
-        </ProfileTarget>
-      )}
-      <span className="min-w-0 flex-1">
-        {rule ? null : (
-          <ProfileTarget userId={a.actorId} name={name} workspaceId={task.workspaceId} tabbable className="rounded-[var(--radius-control)] text-left font-medium text-fg hover:underline">
-            {name}
-          </ProfileTarget>
-        )}{' '}
-        {text}
-      </span>
-      {at ? <span className="shrink-0 tabular-nums text-faint" title={fmt.full(at)}>{fmt.time(at)}</span> : null}
-    </div>
-  );
-}
-
-/**
- * The actor of a rule's change: a cog and «Автоматизация: <имя правила>». The name comes from the
- * board's rules (loaded on demand — readable by every viewer, BOARD_RULE_UPDATE keeps it); a
- * deleted or unknown rule — «Автоматизация».
- */
-function RuleActor({ boardId, ruleId }: { boardId: string; ruleId: string }): ReactNode {
-  const name = useAutomations((s) => ruleNameOf(s, ruleId));
-  useEffect(() => {
-    if (!name) void ensureRules(boardId);
-  }, [boardId, name]);
+/** «Комментарии»: the task room's messages with the chat's own rows (reactions, replies, edits). */
+function TaskComments({ task, roomId, commentsOff }: { task: Task; roomId: string; commentsOff: boolean }): ReactNode {
+  const state = useMessages((s) => s.rooms[roomId] ?? EMPTY_ROOM_MESSAGES);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const perms = useTaskPerms(task);
+  const roomPerms = useMemo(() => taskRoomPermissions(perms, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
+  const [cache] = useState(() => new Map<string, RowMeta>());
+  const metas = useMemo(() => buildMetas(state.items, '', me, cache), [state.items, me, cache]);
+  const highlight = useChatView((s) => s.highlight);
   return (
     <>
-      <span className="grid size-4 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg" aria-hidden>
-        <Cog className="size-3" />
-      </span>
-      <span className="-mr-1 shrink-0 font-medium text-fg" data-testid="activity-rule">
-        {name ? t('rules.actorNamed', { name }) : t('rules.actor')}
-      </span>
+      {state.hasMoreBefore ? (
+        <button type="button" onClick={() => void loadOlder(roomId)} className="mx-5 mb-2 h-7 self-start rounded-full px-2.5 text-caption text-accent-text hover:bg-hover" data-testid="activity-older">
+          {state.loading ? <Spinner className="size-3.5" /> : t('boards.olderComments')}
+        </button>
+      ) : null}
+      <div className="flex flex-col" data-testid="activity-feed">
+        {state.items.map((c, i) => {
+          const meta = metas[i];
+          if (!meta) return null;
+          return c.msg.kind === MessageKind.SYSTEM ? (
+            <SystemRow key={c.key} c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={highlight === c.key} />
+          ) : (
+            <MessageRow key={c.key} c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={roomId} perms={roomPerms} highlighted={highlight === c.key} />
+          );
+        })}
+        {state.items.length === 0 && !state.loading ? (
+          <p className="px-5 py-3 text-caption text-muted" data-testid="activity-empty">
+            {t('boards.hist.noComments')}
+          </p>
+        ) : null}
+      </div>
     </>
   );
-}
-
-type Json = Record<string, unknown> | undefined;
-
-/** One journal row as text: «статус: Todo → В работе» (before / after JSON of boards.proto). */
-export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>, board: { statuses: Array<{ id: string; name: string }>; milestones: Array<{ id: string; name: string }> } | undefined, workspaceId: string): string {
-  const b = a.before as Json;
-  const f = a.after as Json;
-  const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '');
-  const status = (id: unknown): string => board?.statuses.find((s) => s.id === id)?.name ?? '—';
-  switch (a.kind) {
-    case 'created':
-      return t('boards.act.created');
-    case 'status':
-      return t('boards.act.status', { from: status(b?.['status_id']), to: status(f?.['status_id']) });
-    case 'priority':
-      return t('boards.act.priority', { from: t(PRIORITY_LABEL[Number(b?.['priority'] ?? 0)] ?? 'boards.prio.none'), to: t(PRIORITY_LABEL[Number(f?.['priority'] ?? 0)] ?? 'boards.prio.none') });
-    case 'assignees': {
-      const list = Array.isArray(f?.['assignees']) ? (f['assignees'] as Array<Record<string, unknown>>) : [];
-      return list.length ? t('boards.act.assignees', { names: list.map((x) => `${memberName(workspaceId, str(x['user_id']))}${x['is_lead'] ? ' ★' : ''}`).join(', ') }) : t('boards.act.unassigned');
-    }
-    case 'labels':
-      return t('boards.act.labels');
-    case 'dates':
-      return f?.['due_on'] ? t('boards.act.due', { date: str(f['due_on']) }) : t('boards.act.dates');
-    case 'estimate':
-      return t('boards.act.estimate', { n: str(f?.['estimate']) || '—' });
-    case 'parent':
-      return t('boards.act.parent');
-    case 'milestone':
-      return t('boards.act.milestone', { name: board?.milestones.find((m) => m.id === f?.['milestone_id'])?.name ?? '—' });
-    case 'relation':
-      return t('boards.act.relation');
-    case 'title':
-      return t('boards.act.title', { title: str(f?.['title']) });
-    case 'description':
-      return t('boards.act.description');
-    case 'archived':
-      return t('boards.act.archived');
-    case 'restored':
-      return t('boards.act.restored');
-    case 'moved_board':
-      return t('boards.act.moved');
-    case 'approvers': {
-      const ids = Array.isArray(f?.['user_ids']) ? (f['user_ids'] as unknown[]).map(str) : [];
-      if (!ids.length) return t('boards.act.noApprovers');
-      const names = ids.map((u) => memberName(workspaceId, u)).join(', ');
-      const required = Number(f?.['required'] ?? 0);
-      return required > 0 && required < ids.length ? t('boards.act.approversQuorum', { names, n: required, m: ids.length }) : t('boards.act.approvers', { names });
-    }
-    case 'watchers': {
-      const was = Array.isArray(b?.['user_ids']) ? (b['user_ids'] as unknown[]).map(str) : [];
-      const now = Array.isArray(f?.['user_ids']) ? (f['user_ids'] as unknown[]).map(str) : [];
-      const added = now.filter((u) => !was.includes(u));
-      const removed = was.filter((u) => !now.includes(u));
-      const names = (ids: string[]): string => ids.map((u) => memberName(workspaceId, u)).join(', ');
-      if (added.length) return t('boards.act.watchersAdded', { names: names(added) });
-      if (removed.length) return t('boards.act.watchersRemoved', { names: names(removed) });
-      return t('boards.act.changed');
-    }
-    case 'approval': {
-      const state = str(f?.['state']);
-      if (state === 'approved') return t('boards.act.approved');
-      if (state === 'rejected') return t('boards.act.rejected', { comment: str(f?.['comment']) });
-      return t('boards.act.withdrawn');
-    }
-    case 'approvals_reset':
-      return t('boards.act.approvalsReset');
-    case 'checklist':
-      return checklistActivity(f);
-    case 'milestones':
-      return milestoneActivity(f);
-    case 'git':
-      return gitActivity(f);
-    default:
-      return t('boards.act.changed');
-  }
-}
-
-/** A «git» journal row (ADR-0060 §4): after {event, kind, repo, ref, state…}. */
-function gitActivity(f: Json): string {
-  const s = (k: string): string => (typeof f?.[k] === 'string' ? (f[k]) : '');
-  const kind = s('kind');
-  const ref = kind === 'pr' ? `${s('repo')}#${s('ref')}` : kind === 'commit' ? `${s('repo')}@${s('ref').slice(0, 7)}` : s('ref');
-  if (kind === 'pr' && s('state') === 'merged') return t('boards.act.gitMerged', { ref });
-  if (kind === 'pr' && s('state') === 'closed') return t('boards.act.gitClosed', { ref });
-  return t('boards.act.git', { what: t(kind === 'pr' ? 'boards.act.gitPr' : kind === 'commit' ? 'boards.act.gitCommit' : 'boards.act.gitBranch'), ref });
-}
-
-/**
- * A «milestones» journal row (ADR-0063): after {action, milestone_id, name, due_on} on the task;
- * on a subtask {action: linked | unlinked, task_milestone_id, parent_id} (the name from the parent).
- */
-function milestoneActivity(f: Json): string {
-  const s = (k: string): string => (typeof f?.[k] === 'string' ? (f[k]) : '');
-  const name = s('name');
-  switch (f?.['action']) {
-    case 'created':
-      return t('boards.act.msCreated', { name });
-    case 'renamed':
-      return t('boards.act.msRenamed', { name });
-    case 'dated':
-      return s('due_on') ? t('boards.act.msDated', { name, date: s('due_on') }) : t('boards.act.msUndated', { name });
-    case 'moved':
-      return t('boards.act.msMoved');
-    case 'completed':
-      return t('boards.act.msCompleted', { name });
-    case 'reopened':
-      return t('boards.act.msReopened', { name });
-    case 'deleted':
-      return t('boards.act.msDeleted', { name });
-    case 'auto_completed':
-      return t('boards.act.msAutoCompleted', { name });
-    case 'auto_reopened':
-      return t('boards.act.msAutoReopened', { name });
-    case 'linked': {
-      const m = taskMilestonesOf(useBoards.getState(), s('parent_id')).find((x) => x.id === s('task_milestone_id'));
-      return t('boards.act.msLinked', { name: m?.name ?? '—' });
-    }
-    case 'unlinked':
-      return t('boards.act.msUnlinked');
-    default:
-      return t('boards.act.changed');
-  }
-}
-
-/** A «checklist» journal row (ADR-0058 §2): after {checklist_id, title, item_id?, text?, action}. */
-function checklistActivity(f: Json): string {
-  const title = typeof f?.['title'] === 'string' ? f['title'] : '';
-  const text = typeof f?.['text'] === 'string' ? f['text'] : '';
-  switch (f?.['action']) {
-    case 'created':
-      return t('boards.act.clCreated', { title });
-    case 'renamed':
-      return t('boards.act.clRenamed', { title });
-    case 'deleted':
-      return t('boards.act.clDeleted', { title });
-    case 'item_added':
-      return t('boards.act.clItemAdded', { text, title });
-    case 'item_edited':
-      return t('boards.act.clItemEdited', { text });
-    case 'item_done':
-      return t('boards.act.clItemDone', { text });
-    case 'item_undone':
-      return t('boards.act.clItemUndone', { text });
-    case 'item_removed':
-      return t('boards.act.clItemRemoved', { text });
-    case 'item_moved':
-      return t('boards.act.clItemMoved', { text, title });
-    case 'converted':
-      return t('boards.act.clConverted', { text });
-    default:
-      return t('boards.act.clChanged', { title });
-  }
 }
 
 /** The chat composer of the task room (attachments, stickers, voice, replies, mentions). */

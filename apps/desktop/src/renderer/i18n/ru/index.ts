@@ -19,6 +19,7 @@ import { ruCalendar } from './calendar';
 import { ruMailbox } from './mailbox';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
+import { ruHistory } from './history';
 import { ruMilestones } from './milestones';
 import { ruTaskNotify } from './taskNotify';
 import { ruAutomations } from './automations';
@@ -76,6 +77,7 @@ export const ru = {
   ...ruMailbox,
   ...ruBoards,
   ...ruBoards2,
+  ...ruHistory,
   ...ruMilestones,
   ...ruTaskNotify,
   ...ruAutomations,

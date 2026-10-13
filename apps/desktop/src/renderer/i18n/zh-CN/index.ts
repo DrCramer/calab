@@ -20,6 +20,7 @@ import { zhCalendar } from './calendar';
 import { zhMailbox } from './mailbox';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
+import { zhHistory } from './history';
 import { zhMilestones } from './milestones';
 import { zhTaskNotify } from './taskNotify';
 import { zhAutomations } from './automations';
@@ -77,6 +78,7 @@ export const zhCN: Dict = {
   ...zhMailbox,
   ...zhBoards,
   ...zhBoards2,
+  ...zhHistory,
   ...zhMilestones,
   ...zhTaskNotify,
   ...zhAutomations,

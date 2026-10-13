@@ -27,7 +27,6 @@ import {
   type TaskPriority,
   type TaskRelationKind,
   type UpdateTaskRequestSchema,
-  type TaskActivity,
   type TaskResponse,
   type TaskNotice,
   type TaskUpdate,
@@ -61,6 +60,7 @@ import { useUi } from '../stores/ui';
 import { memberName } from '../stores/workspaces';
 import { create } from 'zustand';
 import { boardsApi, type TaskScope } from './boardsApi';
+import { historyPage, type HistoryPage } from '../lib/boards/history';
 
 /**
  * Task boards (ADR-0042): READY / gateway events 75–81 into stores/boards.ts, loading a board's
@@ -896,14 +896,18 @@ export async function setTaskAttachments(taskId: string, ids: string[]): Promise
   }
 }
 
-/** The journal of the task (the panel's activity rows): the newest page, oldest first. */
-export async function loadActivity(taskId: string): Promise<TaskActivity[]> {
+/**
+ * The task history, a page of 100 before `before` (newest first). `only=journal`; a server that
+ * does not know it sends comments too — they are dropped here, the cursor still moves past them.
+ * null on failure.
+ */
+export async function loadHistory(taskId: string, before = ''): Promise<HistoryPage | null> {
   try {
-    const r = await boardsApi.tasks.activity(taskId, { limit: 100 });
-    return r.items.flatMap((i) => (i.item.case === 'activity' ? [i.item.value] : [])).reverse();
+    const r = await boardsApi.tasks.activity(taskId, { limit: 100, only: 'journal', ...(before ? { before } : {}) });
+    return historyPage(r.items, r.hasMore);
   } catch (e) {
-    log.warn('task activity failed', e);
-    return [];
+    log.warn('task history failed', e);
+    return null;
   }
 }
 

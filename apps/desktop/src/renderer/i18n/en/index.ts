@@ -20,6 +20,7 @@ import { enCalendar } from './calendar';
 import { enMailbox } from './mailbox';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
+import { enHistory } from './history';
 import { enMilestones } from './milestones';
 import { enTaskNotify } from './taskNotify';
 import { enAutomations } from './automations';
@@ -77,6 +78,7 @@ export const en: Dict = {
   ...enMailbox,
   ...enBoards,
   ...enBoards2,
+  ...enHistory,
   ...enMilestones,
   ...enTaskNotify,
   ...enAutomations,

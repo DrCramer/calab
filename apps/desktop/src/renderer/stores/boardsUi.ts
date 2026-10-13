@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { isActivityTab, type ActivityTab } from '../lib/boards/activity';
+import { migrateActivityTab, type ActivityTab } from '../lib/boards/activity';
 import { EMPTY_FILTER, type FilterState } from '../lib/boards/filter';
 import type { TimelineGroup, Zoom } from '../lib/boards/timeline';
 import { isCompletion, migrateCompletion, type Completion } from '../lib/boards/completion';
@@ -79,7 +79,7 @@ interface BoardsUiState {
   /** Collapsed board categories (ADR-0058 §1: local to the client), persisted. */
   collapsedCats: Readonly<Record<string, true>>;
   toggleCategory: (categoryId: string) => void;
-  /** The task panel's «Активность» tab (Все / Изменения / Комментарии), remembered. */
+  /** The task panel's «Комментарии | История» tab (ADR-0091), remembered. */
   activityTab: ActivityTab;
   setActivityTab: (v: ActivityTab) => void;
   /** The task panel's «Наблюдатели» section expanded (collapsed by default), remembered. */
@@ -135,7 +135,7 @@ export const useBoardsUi = create<BoardsUiState>()(
           else collapsedCats[id] = true;
           return { collapsedCats };
         }),
-      activityTab: 'all',
+      activityTab: 'comments',
       setActivityTab: (activityTab) => set({ activityTab }),
       watchersOpen: false,
       setWatchersOpen: (watchersOpen) => set({ watchersOpen }),
@@ -176,7 +176,7 @@ export const useBoardsUi = create<BoardsUiState>()(
           ...p,
           prefs: migratePrefs(p.prefs),
           myCompletion: isCompletion(p.myCompletion) ? p.myCompletion : cur.myCompletion,
-          activityTab: isActivityTab(p.activityTab) ? p.activityTab : cur.activityTab,
+          activityTab: migrateActivityTab(p.activityTab),
           collapsedCats: cats,
           watchersOpen: p.watchersOpen === true,
         };

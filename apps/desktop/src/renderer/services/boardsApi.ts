@@ -191,8 +191,9 @@ export const boardsApi = {
     /** Clears Task.unread (the boards badge). */
     markRead: (taskId: string) => callEmpty('PUT', `/api/tasks/${taskId}/read`),
     /** The feed: comments and journal rows, newest first; `before` = the oldest id seen. */
-    activity: (taskId: string, p: { before?: string; limit?: number } = {}, signal?: AbortSignal) =>
-      call('GET', `/api/tasks/${taskId}/activity${qs({ before: p.before, limit: p.limit })}`, TaskActivityPageSchema, undefined, signal),
+    /** only (ADR-0091 §3): `journal` — journal entries only, `comments` — messages only; a server without it sends both. */
+    activity: (taskId: string, p: { before?: string; limit?: number; only?: 'journal' | 'comments' } = {}, signal?: AbortSignal) =>
+      call('GET', `/api/tasks/${taskId}/activity${qs({ before: p.before, limit: p.limit, only: p.only })}`, TaskActivityPageSchema, undefined, signal),
     /** ⌘K: live tasks of every board the caller sees, by key and words. */
     search: (workspaceId: string, q: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q })}`, SearchTasksResponseSchema, undefined, signal),
