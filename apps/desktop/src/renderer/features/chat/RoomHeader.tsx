@@ -2,7 +2,7 @@ import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Messag
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Bell, BellOff, BellRing, Ellipsis, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Ellipsis, Hash, Lock, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
@@ -14,7 +14,7 @@ import { setPinned } from '../../services/chat';
 import { setRoomNotifications } from '../../services/mentions';
 import { useMobile } from '../../lib/mobile';
 import { Bar, BAR_GROUP } from '../../components/Bar';
-import { NavButton } from '../../components/PhoneHeader';
+import { HeaderIcon, NavButton } from '../../components/PhoneHeader';
 import { effectiveNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
@@ -157,8 +157,16 @@ function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers 
   const searchLabel = t('chat.searchInRoom', { room: roomLabel(room) });
   return (
     <>
-      <Bar className="sticky top-0 z-[var(--z-sticky)] min-w-0 overflow-hidden" data-testid="room-header">
+      <Bar className="sticky top-0 z-[var(--z-sticky)] min-w-0 gap-2.5 overflow-hidden" data-testid="room-header">
         <NavButton />
+        <span className="relative shrink-0">
+          <HeaderIcon icon={room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash} />
+          {room.isPrivate ? (
+            <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-[14px] place-items-center rounded-full border-2 border-[var(--color-bg)] bg-[var(--color-fill-hover)]">
+              <Lock className="size-2 text-fg" aria-hidden />
+            </span>
+          ) : null}
+        </span>
         <h1 data-header-name className="min-w-0 flex-1 truncate text-list font-semibold" title={room.name}>
           {room.name}
         </h1>
@@ -369,7 +377,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
     <Bar className="drag sticky top-0 z-[var(--z-sticky)] gap-2 pl-4 pr-2" data-testid="dm-header">
       {mobile ? <NavButton /> : null}
       <ProfileTarget userId={peerId} name={name} tabbable className={cx('no-drag flex shrink-0 rounded-full', mobile && 'size-9 items-center justify-center bar-hit')}>
-        <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence ring="var(--color-bg)" />
+        <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={mobile ? 32 : 28} presence ring="var(--color-bg)" />
       </ProfileTarget>
       <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', roleTextClass(shared?.role), mobile && 'max-w-none shrink')} title={name}>
         {name}

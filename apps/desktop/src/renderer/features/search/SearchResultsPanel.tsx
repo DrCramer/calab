@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, Input, Select, Spinner, cx } from '../../components/ui';
 import { Bar } from '../../components/Bar';
-import { PhoneBack } from '../../components/PhoneHeader';
+import { HeaderIcon, PhoneBack } from '../../components/PhoneHeader';
 import { getLocale, t } from '../../i18n';
 import { log } from '../../lib/log';
 import { NO_FILTERS, panelRequest, paramsKey, type PanelFilters, type Period, type RoomKindOf } from '../../lib/search/query';
@@ -220,8 +220,9 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
       }
     >
       {page ? (
-        <Bar>
+        <Bar className="mobile:gap-2.5">
           <PhoneBack />
+          <HeaderIcon icon={Search} />
           <h2 className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('search.panel.title')}</h2>
           {anyFilter ? resetButton : null}
         </Bar>

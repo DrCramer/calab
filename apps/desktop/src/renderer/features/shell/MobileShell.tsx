@@ -1,10 +1,11 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
+import { CircleUserRound, MessageCircle, SquareKanban, Users } from 'lucide-react';
 import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
 import { Bar } from '../../components/Bar';
-import { PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
+import { HeaderIcon, PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
 import { CountBadge, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
@@ -188,7 +189,7 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
-      <RootTitle title={t('shell.modeBoards')} search>
+      <RootTitle title={t('shell.modeBoards')} icon={<HeaderIcon icon={SquareKanban} />} search>
         {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
       </RootTitle>
       <BoardsList workspaceId={ws} />
@@ -202,7 +203,7 @@ function DmsRoot(): ReactNode {
   const guest = useSession((s) => !!s.me?.user?.isGuest);
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
-      <RootTitle title={t('dm.home')} search>
+      <RootTitle title={t('dm.home')} icon={<HeaderIcon icon={MessageCircle} />} search>
         {guest ? null : <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />}
       </RootTitle>
       <div className="flex min-h-0 flex-1">
@@ -229,16 +230,17 @@ function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
 function ProfileRoot(): ReactNode {
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="profile-page">
-      <RootTitle title={t('mobile.profile')} />
+      <RootTitle title={t('mobile.profile')} icon={<HeaderIcon icon={CircleUserRound} />} />
       <PhoneProfile />
     </section>
   );
 }
 
 /** The title of a tab root without its own header (iOS large-title look, one line). */
-export function RootTitle({ title, search = false, children }: { title: string; search?: boolean; children?: ReactNode }): ReactNode {
+export function RootTitle({ title, icon, search = false, children }: { title: string; icon?: ReactNode; search?: boolean; children?: ReactNode }): ReactNode {
   return (
-    <Bar>
+    <Bar className={icon ? 'mobile:gap-2.5' : undefined}>
+      {icon}
       <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{title}</h1>
       {search ? <PhoneSearchButton /> : null}
       {children}
@@ -295,7 +297,7 @@ function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: str
   const roomName = useRooms((s) => s.byId[roomId]?.name ?? '');
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="members-page">
-      <PhoneHeader title={t('shell.members')} subtitle={roomName} />
+      <PhoneHeader title={t('shell.members')} subtitle={roomName} icon={<HeaderIcon icon={Users} />} />
       <MembersPanel workspaceId={workspaceId} drawer />
     </section>
   );

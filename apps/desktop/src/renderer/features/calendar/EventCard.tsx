@@ -2,8 +2,8 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
 import { Bar, BAR_GROUP } from '../../components/Bar';
-import { PhoneBack } from '../../components/PhoneHeader';
-import { Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
+import { HeaderIcon, PhoneBack } from '../../components/PhoneHeader';
+import { CalendarDays, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
@@ -132,8 +132,9 @@ export function EventCard({
   return (
     <div {...drop.props} className={cx('relative flex min-h-0 flex-1 flex-col', drop.over && 'outline outline-2 -outline-offset-2 outline-accent')} data-testid="event-card">
       {variant === 'page' ? (
-        <Bar>
+        <Bar className="mobile:gap-2.5">
           <PhoneBack />
+          <HeaderIcon icon={CalendarDays} />
           <span className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('cal.card')}</span>
           <div className={BAR_GROUP}>{tools}</div>
         </Bar>

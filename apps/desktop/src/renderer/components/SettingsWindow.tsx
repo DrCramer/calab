@@ -1,7 +1,7 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { LucideIcon } from 'lucide-react';
-import { ChevronLeft, ChevronRight, Lock, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock, Search, Settings } from 'lucide-react';
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../i18n';
 import { MOBILE_QUERY } from '../lib/phone';
@@ -9,7 +9,7 @@ import { useMediaQuery } from '../lib/useMediaQuery';
 import { getSettingsQuery, setSettingsQuery } from '../lib/settingsQuery';
 import { openSettingsSection } from '../lib/phoneNav';
 import { useUi } from '../stores/ui';
-import { PhoneHeader } from './PhoneHeader';
+import { HeaderIcon, PhoneHeader } from './PhoneHeader';
 import { highlight, hintExcerpt, labelMatches, queryWords, searchSettings, type SettingsEntry } from './settingsSearch';
 import { CloseButton, IconButton, cx } from './ui';
 
@@ -368,16 +368,8 @@ export function SettingsWindow({
     return (
       <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="settings-page" data-phone-view={showList ? 'list' : 'section'}>
         <PhoneHeader
-          title={
-            showList ? (
-              <span className="flex min-w-0 items-center gap-2">
-                {titleIcon}
-                <span className="min-w-0 truncate">{title}</span>
-              </span>
-            ) : (
-              current?.label
-            )
-          }
+          title={showList ? title : current?.label}
+          icon={showList ? titleIcon ? <HeaderIcon>{titleIcon}</HeaderIcon> : <HeaderIcon icon={Settings} /> : current ? <HeaderIcon icon={current.icon} /> : undefined}
         />
         <Tabs.Root value={tab} orientation="vertical" className="flex min-h-0 flex-1 flex-col">
           {showList ? (
