@@ -27,7 +27,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { confirmDeleteDm } from './dmActions';
 import { BotBadge } from '../people/MemberBits';
-import { SWIPE_ACTION_PX, useRowSwipe } from './rowSwipe';
+import { SWIPE_ACTION_PX, useRowSwipe } from '../../lib/rowSwipe';
 
 /**
  * «Личные» column (ADR-0020, Discord Home): «Найти или начать беседу» on top, then the DMs by
