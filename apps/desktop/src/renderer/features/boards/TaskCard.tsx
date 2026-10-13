@@ -300,7 +300,8 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
   const priority = useFeatureOn(task.boardId, BoardFeature.PRIORITY);
   const scoped = useBoardScoped(task.boardId);
   const me = myUserId();
-  const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf(id)}</span>;
+  // Key hints are for a keyboard: not on a phone (the long-press menu there).
+  const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf(id)}</span>;
   const item = cx(menuItem, 'group');
   const sub = cx(menuItem, 'group data-[state=open]:not-data-[highlighted]:bg-hover');
   return (
@@ -318,8 +319,8 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={sub}>
                   <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} /> {t('boards.f.status')}
-                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('status')}</span>
-                  <ChevronRight className="size-4" aria-hidden />
+                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('status')}</span>
+                  <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                 </ContextMenu.SubTrigger>
                 <ContextMenu.Portal>
                   <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>
@@ -338,8 +339,8 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                 <ContextMenu.Sub>
                   <ContextMenu.SubTrigger className={sub}>
                     <PriorityIcon priority={task.priority} /> {t('boards.f.priority')}
-                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('priority')}</span>
-                    <ChevronRight className="size-4" aria-hidden />
+                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('priority')}</span>
+                    <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
                     <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>

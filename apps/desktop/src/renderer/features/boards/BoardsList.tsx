@@ -7,6 +7,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
 import { Button, CountBadge, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { useLongPress } from '../../lib/longPress';
+import { useMobile } from '../../lib/mobile';
 import { mayCreateBoards } from '../../lib/permissions';
 import { boardLayout, layoutTokens } from '../../lib/boards/categories';
 import { categoryDropAt, roomDropAt, type Layout, type RoomTarget, type Section, type Slot } from '../../lib/roomOrder';
@@ -116,6 +118,8 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       else if (p.kind === 'cat') void moveBoardCategory(workspaceId, p.id, to.index);
     };
     const up = (): void => end(true);
+    // A scroll took the touch, or a long press opened a menu (lib/phoneMenus): no drag.
+    const cancel = (): void => end(false);
     const key = (e: KeyboardEvent): void => {
       if (e.key === 'Escape' && press.current?.started) {
         e.stopPropagation();
@@ -124,10 +128,12 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
     window.addEventListener('keydown', key, true);
     return () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
       window.removeEventListener('keydown', key, true);
     };
   }, [measure, workspaceId]);
@@ -402,6 +408,9 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const manage = hasBit(perms, MANAGE_BOARD);
   const [forms, setForms] = useState(false);
   const formsOn = useFeatureOn(id, BoardFeature.FORMS);
+  // Phone: a long press on the row opens its «…» menu (the same one, docs/08 «Свайпы и долгое нажатие»).
+  const [menu, setMenu] = useState(false);
+  const longPress = useLongPress(useMobile(), () => setMenu(true));
   const archive = async (): Promise<void> => {
     if (await confirmAction(t('boards.archiveBoardTitle', { name }), t('boards.archiveBoardText'), t('boards.archiveBoard'))) void removeBoard(id, false);
   };
@@ -410,7 +419,11 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
       {forms ? <BoardForms boardId={id} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
       <div
         data-board-row={id}
-        onPointerDown={(e) => onPointerDown(e, id)}
+        {...longPress}
+        onPointerDown={(e) => {
+          if (!(e.target as HTMLElement).closest('[data-row-menu]')) longPress.onPointerDown?.(e);
+          onPointerDown(e, id);
+        }}
         className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
@@ -439,7 +452,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
             </span>
           ) : null}
         </button>
-        <Dropdown.Root modal={false}>
+        <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
           <Dropdown.Trigger asChild>
             <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
               <Ellipsis className="size-4" aria-hidden />

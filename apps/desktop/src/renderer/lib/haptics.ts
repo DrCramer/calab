@@ -110,10 +110,22 @@ function iosSwitch(): boolean {
     switchLabel = label;
   }
   if (!switchLabel) return false;
+  const input = switchLabel.firstElementChild;
   const before = document.activeElement;
-  switchLabel.click();
-  // A label click may focus its control: give the focus back (an open menu closes on focus loss).
-  if (document.activeElement === switchLabel.firstElementChild && before instanceof HTMLElement) before.focus({ preventScroll: true });
+  // A label click focuses its control (WebKit): the focus moves are hidden from the app, and the
+  // focus is given back — an open menu (Radix dismisses a layer on a focus outside it) stays open.
+  const hideFocus = (e: FocusEvent): void => {
+    if (e.target === input || e.relatedTarget === input) e.stopImmediatePropagation();
+  };
+  window.addEventListener('focusin', hideFocus, true);
+  window.addEventListener('focusout', hideFocus, true);
+  try {
+    switchLabel.click();
+    if (document.activeElement === input && before instanceof HTMLElement) before.focus({ preventScroll: true });
+  } finally {
+    window.removeEventListener('focusin', hideFocus, true);
+    window.removeEventListener('focusout', hideFocus, true);
+  }
   return true;
 }
 

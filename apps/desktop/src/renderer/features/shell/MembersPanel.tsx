@@ -404,7 +404,8 @@ const MemberRow = memo(function MemberRow({
             aria-label={t('people.openProfile', { name })}
             data-member-row={userId}
             // A member dragged onto a meeting (the dialog's attendees, the card — ADR-0038, owner 29.09).
-            draggable={!u.isBot && !isGuest(m)}
+            // Not on a phone: there a long press opens the member menu (a native drag would take it).
+            draggable={!phone && !u.isBot && !isGuest(m)}
             onDragStart={(e) => {
               e.dataTransfer.setData(DRAG_USER, userId);
               e.dataTransfer.effectAllowed = 'copy';

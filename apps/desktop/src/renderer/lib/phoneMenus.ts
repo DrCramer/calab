@@ -15,7 +15,11 @@ import { MOBILE_QUERY } from './phone';
  *  - a sub-menu opens only by a tap: a hovering mouse (Chrome's device emulation, a trackpad on a
  *    tablet) never opens it or moves the highlight;
  *  - a card that opens while a finger is still held down (a long press: Radix ContextMenu's 700 ms
- *    on touch, Android's contextmenu) calls `onLongPressOpen` once — the haptic «impact».
+ *    on touch, Android's contextmenu) calls `onLongPressOpen` once — the haptic «impact» — and
+ *    ends that press for the app: a `pointercancel` on the window. The finger's own pointer-up lands
+ *    on the scrim and is swallowed (lib/mobile installSheetGuard), so press trackers on the window
+ *    (kanban and board-list drags, the calendar's tap / drag) would otherwise stay armed and take
+ *    the next tap in the menu for a drag or a tap on what is under it.
  * Events only (portals added / removed, a card's `data-state`): nothing runs while no menu is open.
  * Logic: lib/menuStack.ts (unit-tested). Returns the uninstall function.
  */
@@ -99,7 +103,7 @@ let poseObserver: MutationObserver | null = null;
 /** A press shorter than this that opens a card is a tap (a «…» button), not a long press. */
 const LONG_PRESS_MIN_MS = 400;
 /** The touch press in progress (its start), if any. */
-let touchPress: { at: number } | null = null;
+let touchPress: { at: number; id: number } | null = null;
 let openCount = 0;
 let onLongPressOpen: (() => void) | undefined;
 /** «Назад» in the app's language (given by main.tsx: this module stays free of the i18n / platform chain). */
@@ -109,8 +113,10 @@ function relayout(): void {
   const mobile = isMobileNow();
   const cards = mobile ? openCards() : [];
   if (cards.length > openCount && touchPress && performance.now() - touchPress.at >= LONG_PRESS_MIN_MS) {
+    const { id } = touchPress;
     touchPress = null;
     onLongPressOpen?.();
+    window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch', isPrimary: true }));
   }
   openCount = cards.length;
   const poses = stackPoses(cards.map(({ card }): StackCard => ({ sub: isSubMenu(card) })));
@@ -179,7 +185,7 @@ export function installPhoneMenus(opts: { backLabel: () => string; onLongPressOp
   };
   const HOVER = ['pointermove', 'pointerover', 'pointerout'] as const;
   const onTouchDown = (e: PointerEvent): void => {
-    touchPress = e.pointerType === 'touch' && e.isPrimary ? { at: e.timeStamp } : null;
+    touchPress = e.pointerType === 'touch' && e.isPrimary ? { at: e.timeStamp, id: e.pointerId } : null;
   };
   const onTouchEnd = (): void => {
     touchPress = null;

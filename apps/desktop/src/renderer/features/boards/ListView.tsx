@@ -271,7 +271,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         data-key={task.key}
         onClick={(e) => onClick(id, e)}
         className={cx(
-          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control mobile:h-auto mobile:min-h-14 mobile:flex-wrap mobile:content-center mobile:gap-y-0 mobile:py-2',
+          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control mobile:h-auto mobile:select-none mobile:min-h-14 mobile:flex-wrap mobile:content-center mobile:gap-y-0 mobile:py-2',
           selected ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)]' : focused ? 'bg-active' : 'hover:bg-[color-mix(in_srgb,var(--color-fill)_50%,transparent)]',
         )}
       >
