@@ -252,6 +252,8 @@ export const esShell: DictShape<typeof enShell> = {
   'mobile.off': 'Desactivado',
   'mobile.inVoice': 'En voz · {n}',
   'mobile.joinVoice': 'Unirse',
+  'mobile.voicePeople': 'En voz: {names}',
+  'mobile.leaveVoice': 'Salir',
   'mobile.notifyOn': 'Activar notificaciones',
   'mobile.notifyOff': 'Desactivar notificaciones',
   'mobile.voiceStrip': 'Llamada de voz',

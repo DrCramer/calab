@@ -252,6 +252,8 @@ export const zhShell: DictShape<typeof enShell> = {
   'mobile.off': '已关闭',
   'mobile.inVoice': '语音中 · {n}',
   'mobile.joinVoice': '加入',
+  'mobile.voicePeople': '语音中：{names}',
+  'mobile.leaveVoice': '离开',
   'mobile.notifyOn': '开启通知',
   'mobile.notifyOff': '关闭通知',
   'mobile.voiceStrip': '语音通话',

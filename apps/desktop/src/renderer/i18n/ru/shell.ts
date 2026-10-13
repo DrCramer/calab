@@ -251,6 +251,8 @@ export const ruShell = {
   'mobile.off': 'Выключен',
   'mobile.inVoice': 'В голосе · {n}',
   'mobile.joinVoice': 'Присоединиться',
+  'mobile.voicePeople': 'В голосе: {names}',
+  'mobile.leaveVoice': 'Выйти',
   'mobile.notifyOn': 'Включить уведомления',
   'mobile.notifyOff': 'Выключить уведомления',
   'mobile.voiceStrip': 'Голосовой звонок',

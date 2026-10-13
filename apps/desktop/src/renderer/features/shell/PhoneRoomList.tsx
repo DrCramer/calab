@@ -1,8 +1,6 @@
 import { NotificationLevel, WorkspaceRole, type Role, type Room } from '@calaba/protocol';
 import { Bell, BellOff, CheckCheck, ChevronDown, Hash, Lock, Plus, Timer, Volume2 } from 'lucide-react';
-import { memo, useMemo, useState, type ReactNode } from 'react';
-import { useShallow } from 'zustand/react/shallow';
-import { Avatar } from '../../components/Avatar';
+import { memo, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { Button, CountBadge, Empty, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -21,6 +19,7 @@ import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { KnockBadge } from '../guests/KnockBadge';
 import { CallTimer, CategoryDialog, PeoplePill, RoomMenu, WorkspaceHeader } from './Sidebar';
+import { SpeakingStack, VoicePeoplePopover, useRoomPeople } from './VoicePeopleCard';
 
 /**
  * «Команда» on a phone (ADR-0073 §3): the workspace header (name and menu, «+»; the boards are the «Доски» tab) and
@@ -123,24 +122,6 @@ function Section({ id, title, keep, children }: { id: string; title: string; kee
   );
 }
 
-/** Voice participants of a room (server states + me while I connect to it), by join time. */
-export function useRoomPeople(workspaceId: string, roomId: string): string[] {
-  const server = useWorkspaces(
-    useShallow((s) => {
-      const voice = roomId ? s.byId[workspaceId]?.voice : undefined;
-      if (!voice) return NONE;
-      return Object.values(voice)
-        .filter((v) => v.roomId === roomId)
-        .sort((a, b) => Number(a.joinedAt?.seconds ?? 0n) - Number(b.joinedAt?.seconds ?? 0n) || a.userId.localeCompare(b.userId))
-        .map((v) => v.userId);
-    }),
-  );
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const joining = useVoice((s) => (s.joining?.roomId ?? (s.phase === 'connecting' ? s.roomId : null)) === roomId);
-  return useMemo(() => (joining && me && !server.includes(me) ? [...server, me] : server), [server, joining, me]);
-}
-const NONE: string[] = [];
-
 /**
  * One room (ADR-0073 §3): 44 px icon · name (bold when unread) and the last message's time ·
  * «Автор: текст» (or the topic until the previews arrive) with the unread / @ badge. A voice
@@ -177,6 +158,13 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
   // A left swipe reveals «Прочитано» · «Тихо / Звук» (docs/08 «Свайпы и долгое нажатие»).
   const swipe = useRowSwipe(true, 2);
   const shifted = swipe.offset !== 0;
+  // A tap on the avatar stack opens «В голосе» (docs/08 «Кто в голосе»); the rest of the row opens the room.
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const onTap = (e: MouseEvent<HTMLButtonElement>): void => {
+    if (shifted) swipe.close();
+    else if (live && onStack(e)) setPeopleOpen(true);
+    else openRoom(workspaceId, room.id);
+  };
   return (
     <li className="relative flex" {...swipe.handlers}>
       {shifted ? <RoomSwipeActions roomId={room.id} width={Math.min(-swipe.offset, swipe.width)} close={swipe.close} /> : null}
@@ -190,7 +178,7 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
       >
         <button
           type="button"
-          onClick={() => (shifted ? swipe.close() : openRoom(workspaceId, room.id))}
+          onClick={onTap}
           aria-label={label}
           data-testid="phone-room-row"
           data-room={room.id}
@@ -208,7 +196,11 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
             </span>
             <span className="flex h-5 min-w-0 items-center gap-2">
               {live ? <VoiceLine workspaceId={workspaceId} people={people} /> : <PreviewLine workspaceId={workspaceId} room={room} me={me} unread={unread} />}
-              {live ? <AvatarStack workspaceId={workspaceId} people={people} /> : null}
+              {live ? (
+                <span className="flex shrink-0" data-voice-stack>
+                  <SpeakingStack workspaceId={workspaceId} people={people} />
+                </span>
+              ) : null}
               {live ? <PeoplePill n={people.length} max={room.userLimit} /> : null}
               <KnockBadge roomId={room.id} />
               <Counter mentions={mentions} unread={unread} />
@@ -216,9 +208,24 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
           </span>
         </button>
       </RoomMenu>
+      {live ? (
+        <VoicePeoplePopover workspaceId={workspaceId} room={room} perms={perms} open={peopleOpen} onOpenChange={setPeopleOpen}>
+          <span aria-hidden className="pointer-events-none absolute right-3 top-1/2 size-px" />
+        </VoicePeoplePopover>
+      ) : null}
     </li>
   );
 });
+
+/** The stack's touch zone in a room row: its box grown to 44 px tall and 8 px on each side (a pointer tap; a keyboard click opens the room). */
+function onStack(e: MouseEvent<HTMLElement>): boolean {
+  if (e.detail === 0) return false;
+  const stack = e.currentTarget.querySelector('[data-voice-stack]');
+  if (!stack) return false;
+  const r = stack.getBoundingClientRect();
+  const cy = r.top + r.height / 2;
+  return e.clientX >= r.left - 8 && e.clientX <= r.right + 8 && Math.abs(e.clientY - cy) <= 22;
+}
 
 /**
  * The actions under a swiped room row: «Прочитано» (the menu's «Отметить прочитанным») and
@@ -313,28 +320,6 @@ function VoiceLine({ workspaceId, people }: { workspaceId: string; people: strin
     <span className="fade-end flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap text-caption font-medium leading-5 text-[var(--color-green-text)]" data-testid="room-voice-line">
       <Volume2 className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0">{names}</span>
-    </span>
-  );
-}
-
-/** Up to three avatars of the call, overlapping. */
-export function AvatarStack({ workspaceId, people, size = 20 }: { workspaceId: string; people: string[]; size?: number }): ReactNode {
-  const shown = people.slice(0, 3);
-  return (
-    <span className="flex shrink-0 items-center" aria-hidden>
-      {shown.map((id, i) => (
-        <StackAvatar key={id} workspaceId={workspaceId} userId={id} size={size} first={i === 0} />
-      ))}
-    </span>
-  );
-}
-
-function StackAvatar({ workspaceId, userId, size, first }: { workspaceId: string; userId: string; size: number; first: boolean }): ReactNode {
-  const fileId = useWorkspaces((s) => s.users[userId]?.avatarFileId ?? '');
-  const name = useWorkspaces(() => memberName(workspaceId, userId));
-  return (
-    <span className={cx('flex rounded-full ring-2 ring-[var(--color-sidebar,var(--color-bg))]', !first && '-ml-1.5')}>
-      <Avatar userId={userId} name={name} fileId={fileId || undefined} size={size} />
     </span>
   );
 }

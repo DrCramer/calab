@@ -252,6 +252,8 @@ export const enShell: DictShape<typeof ruShell> = {
   'mobile.off': 'Off',
   'mobile.inVoice': 'In voice · {n}',
   'mobile.joinVoice': 'Join',
+  'mobile.voicePeople': 'In voice: {names}',
+  'mobile.leaveVoice': 'Leave',
   'mobile.notifyOn': 'Turn on notifications',
   'mobile.notifyOff': 'Turn off notifications',
   'mobile.voiceStrip': 'Voice call',

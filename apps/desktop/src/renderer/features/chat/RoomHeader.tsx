@@ -30,9 +30,10 @@ import { useCall } from '../../stores/call';
 import { memberName, useMemberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
 import { CallTimer, RoomMenu } from '../shell/Sidebar';
-import { AvatarStack, useRoomPeople } from '../shell/PhoneRoomList';
+import { HeaderVoicePeople, SpeakingStack, VoicePeoplePopover, useRoomPeople, useVoiceJoin, type VoiceJoin } from '../shell/VoicePeopleCard';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
+import { firstNames } from '../shell/voicePeople';
 import { menuBox, menuItem } from '../shell/menu';
 import { RoleMark, roleTextClass, useSharedRole } from '../people/MemberBits';
 import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './NotifyMenu';
@@ -134,7 +135,9 @@ function WideRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }
  * The room header on a phone (ADR-0073 §1, §4): «←» · the name on all the free width · two icons ·
  * «…» (the room menu, with «Поиск в комнате» on top when search is not an icon). The icons: a
  * voice room nobody is in yet — the handset (join); otherwise search; and the members. People in
- * this room's voice while I am not: the banner under the header (PhoneVoiceBanner).
+ * this room's voice while I am not: the banner under the header (PhoneVoiceBanner). People in the
+ * voice (me among them or not): their avatar stack instead of the icon disc, a tap — the «В голосе»
+ * card (shell/VoicePeopleCard.tsx).
  */
 function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }: RoomHeaderProps): ReactNode {
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
@@ -159,14 +162,19 @@ function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers 
     <>
       <Bar className="sticky top-0 z-[var(--z-sticky)] min-w-0 gap-2.5 overflow-hidden" data-testid="room-header">
         <NavButton />
-        <span className="relative shrink-0">
-          <HeaderIcon icon={room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash} />
-          {room.isPrivate ? (
-            <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-[14px] place-items-center rounded-full border-2 border-[var(--color-bg)] bg-[var(--color-fill-hover)]">
-              <Lock className="size-2 text-fg" aria-hidden />
-            </span>
-          ) : null}
-        </span>
+        {/* Who is in the voice (docs/08 «Кто в голосе»): their stack instead of the icon disc; a tap — the «В голосе» card. */}
+        {people.length > 0 ? (
+          <HeaderVoicePeople workspaceId={workspaceId} room={room} perms={perms} people={people} />
+        ) : (
+          <span className="relative shrink-0">
+            <HeaderIcon icon={room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash} />
+            {room.isPrivate ? (
+              <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-[14px] place-items-center rounded-full border-2 border-[var(--color-bg)] bg-[var(--color-fill-hover)]">
+                <Lock className="size-2 text-fg" aria-hidden />
+              </span>
+            ) : null}
+          </span>
+        )}
         <h1 data-header-name className="min-w-0 flex-1 truncate text-list font-semibold" title={room.name}>
           {room.name}
         </h1>
@@ -207,15 +215,9 @@ function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers 
           </RoomMenu>
         </div>
       </Bar>
-      {preview && people.length > 0 ? <PhoneVoiceBanner workspaceId={workspaceId} roomId={room.id} people={people} join={join} /> : null}
+      {preview && people.length > 0 ? <PhoneVoiceBanner workspaceId={workspaceId} room={room} perms={perms} people={people} join={join} /> : null}
     </>
   );
-}
-
-interface VoiceJoin {
-  run: () => void;
-  disabled: boolean;
-  label: string;
 }
 
 /** I am the workspace owner (the only one who may enter a full voice room). */
@@ -223,34 +225,25 @@ function useIsWorkspaceOwner(workspaceId: string): boolean {
   return useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
 }
 
-/** «Войти в голос» of a room I read without being in its voice: the room row's rules (joinOutcome). */
-function useVoiceJoin(workspaceId: string, room: Room, perms: PermissionBits, people: number): VoiceJoin {
-  const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
-  const owner = useIsWorkspaceOwner(workspaceId);
-  return {
-    disabled: suspended,
-    label: suspended ? t('suspended.voice') : t('voicePreview.join'),
-    run: () => {
-      const next = joinOutcome({ inRoom: false, canConnect: can(perms, 'CONNECT'), owner, people, limit: room.userLimit });
-      if (next === 'full') toast.info(t('shell.roomFull'));
-      else if (next === 'join') void voice.join(room.id, workspaceId);
-    },
-  };
-}
-
 /**
  * People are talking in this room and I am not with them (ADR-0073 §4): their avatars, «В голосе ·
  * 2 · 25:00» and «Присоединиться» (44 px), under the room header. In the call it goes away (the
  * call strip is at the bottom).
  */
-function PhoneVoiceBanner({ workspaceId, roomId, people, join }: { workspaceId: string; roomId: string; people: string[]; join: VoiceJoin }): ReactNode {
+function PhoneVoiceBanner({ workspaceId, room, perms, people, join }: { workspaceId: string; room: Room; perms: PermissionBits; people: string[]; join: VoiceJoin }): ReactNode {
+  const names = useWorkspaces(() => firstNames(people.map((id) => memberName(workspaceId, id))));
   return (
-    <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-[color-mix(in_srgb,var(--color-ok)_10%,var(--color-bg))] pl-4 pr-2" data-testid="room-voice-banner">
-      <AvatarStack workspaceId={workspaceId} people={people} size={28} />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-caption font-semibold leading-4 text-[var(--color-green-text)]">{t('mobile.inVoice', { n: people.length })}</span>
-        <CallTimer roomId={roomId} className="text-caption leading-4 text-muted" />
-      </span>
+    <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-[color-mix(in_srgb,var(--color-ok)_10%,var(--color-bg))] pl-2 pr-2" data-testid="room-voice-banner">
+      {/* The avatars and the text are one target: the «В голосе» card (docs/08 «Кто в голосе»). */}
+      <VoicePeoplePopover workspaceId={workspaceId} room={room} perms={perms}>
+        <button type="button" aria-label={t('mobile.voicePeople', { names })} className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-[var(--radius-row)] px-2 text-left active:bg-hover" data-testid="room-voice-banner-people">
+          <SpeakingStack workspaceId={workspaceId} people={people} size={28} ring="ring-[color-mix(in_srgb,var(--color-ok)_10%,var(--color-bg))]" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-caption font-semibold leading-4 text-[var(--color-green-text)]">{t('mobile.inVoice', { n: people.length })}</span>
+            <CallTimer roomId={room.id} className="text-caption leading-4 text-muted" />
+          </span>
+        </button>
+      </VoicePeoplePopover>
       <Button size="lg" onClick={join.run} disabled={join.disabled} className="rounded-full mobile:px-4" data-testid="room-voice-join">
         <Phone className="size-4" aria-hidden />
         {t('mobile.joinVoice')}
