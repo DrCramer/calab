@@ -3853,7 +3853,7 @@ test('boards-settings-color', async ({ open, win, mock, shot }) => {
   await win.getByTestId('statuses-editor').locator('[data-settings-row]').first().getByRole('button', { name: /^Цвет/ }).click();
   const grid = win.getByTestId('status-color-picker');
   await expect(grid.getByRole('radio')).toHaveCount(12);
-  await expect(grid.getByRole('radio', { name: 'Серый' })).toBeFocused();
+  await expect(grid.getByRole('radio', { name: 'Серый', exact: true })).toBeFocused();
   await checkpoint(shot, 'boards-settings-color');
 });
 

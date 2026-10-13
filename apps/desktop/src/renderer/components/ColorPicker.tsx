@@ -72,7 +72,7 @@ export function GridPicker<T extends string | number>({
           }}
           className="mat-popover anim-in z-[var(--z-modal-popover)] rounded-[var(--radius-card)] p-3"
         >
-          <div ref={grid} role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, ${cell}px)` }}>
+          <div ref={grid} role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className="grid justify-center gap-2" style={{ gridTemplateColumns: `repeat(${cols}, ${cell}px)` }}>
             {items.map((it) => {
               const chosen = it === value;
               return (

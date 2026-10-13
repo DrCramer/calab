@@ -402,11 +402,13 @@ function StatusesTab({ board }: { board: Board }): ReactNode {
     <Card title={t('boards.set.statuses')} footer={t('boards.set.statusesHint')}>
       <div className="flex flex-col" data-testid="statuses-editor">
         {list.map((s, i) => (
-          <div key={s.id} className="flex h-11 items-center gap-2 border-b border-[var(--color-card-line)] px-3 last:border-b-0" data-settings-row>
+          // A phone has no room for one line: the name takes the first, the type and actions the second.
+          <div key={s.id} className="flex h-11 items-center gap-2 border-b border-[var(--color-card-line)] px-3 last:border-b-0 mobile:h-auto mobile:flex-wrap mobile:gap-y-1 mobile:py-1.5" data-settings-row>
             <ColorDot color={s.color} onPick={(color) => void updateStatus(board.id, s.id, { color })} testId={i === 0 ? 'status-color-picker' : undefined} />
             <StatusIconPicker status={s} onPick={(icon) => void updateStatus(board.id, s.id, { icon })} testId={i === 0 ? 'status-icon-picker' : undefined} />
-            <CommitInput className="w-44" label={t('boards.set.name')} value={s.name} maxLength={32} onCommit={(v) => (v ? updateStatus(board.id, s.id, { name: v }).then(() => undefined) : undefined)} />
-            <Select className="w-36" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
+            <CommitInput className="w-44 mobile:w-auto mobile:min-w-0 mobile:flex-1" label={t('boards.set.name')} value={s.name} maxLength={32} onCommit={(v) => (v ? updateStatus(board.id, s.id, { name: v }).then(() => undefined) : undefined)} />
+            <span className="hidden mobile:block mobile:basis-full" aria-hidden />
+            <Select className="w-36 mobile:w-28" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
               {STATUS_TYPES.map((ty) => (
                 <option key={ty} value={ty}>
                   {t(STATUS_TYPE_LABEL[ty] ?? 'boards.type.unstarted')}
