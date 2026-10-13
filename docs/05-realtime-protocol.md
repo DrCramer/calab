@@ -309,7 +309,7 @@ PATCH · DELETE /api/checklist-items/{id}             {text?, done?, position?, 
 POST   /api/checklist-items/{id}/convert             → 201 ConvertChecklistItemResponse {task, checklist, счётчики}: подзадача с текстом пункта, пункт удалён (фича SUBTASKS; задача сама не подзадача)
 PUT    /api/tasks/{id}/watchers {user_id}            наблюдатель (ADR-0076): редактор задачи; DELETE …/watchers?user_id= — редактор или сам
 PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read — снять «непрочитано»
-GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
+GET    /api/tasks/{id}/activity?before&limit&only    лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7); only=journal — только журнал (с comment*), only=comments — только сообщения (ADR-0091)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
 GET    /api/me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1&cursor
 GET    /api/workspaces/{id}/tasks/search?q&limit     ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062)

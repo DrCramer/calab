@@ -445,6 +445,8 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
   задача уже с новым ключом), `task.moved_out` (доска-источник), `task.comment.created`, `task.comment.updated`,
   `task.comment.deleted`, `ping`. Изменения одной транзакции — одно событие, список `changes` — записи журнала задачи
   (`field` = `kind` журнала: `status`, `assignees`, `checklist`, `milestones`, `git` …; `before` / `after` — их данные).
+  Записи журнала о комментариях (`comment`, `comment_edit`, `comment_delete`, ADR-0091) в `changes` не попадают — о них
+  говорят события `task.comment.*`.
   Изменения, сделанные **правилом автоматизации** (ADR-0060), приходят отдельным событием той же транзакции с
   `"actor": null` и `"rule": {"id", "name"}`; у изменений людей и ботов `rule` — `null`. Git-события (связи задачи с
   ветками и PR) — `task.updated` с `changes[field=git]` и `"actor": null`. Версия вебхука остаётся `1`: поля только
