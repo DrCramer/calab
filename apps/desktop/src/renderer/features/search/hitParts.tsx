@@ -1,6 +1,7 @@
 import { RoomType, type SearchHit } from '@calaba/protocol';
 import { AudioLines, CalendarDays, FileText, Hash, Image, MessageSquareText, NotebookText, Paperclip, SquareCheckBig } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { RoomIcon } from '../../components/RoomIcon';
 import { t, type MessageKey } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
@@ -48,6 +49,10 @@ export function HitIcon({ section, hit, className }: { section: SectionName; hit
   const p = { className, strokeWidth: 1.75, 'aria-hidden': true } as const;
   if (hit.ref.case === 'file') return /^image\//.test(hit.ref.value.mime) ? <Image {...p} /> : <FileText {...p} />;
   if (hit.ref.case === 'message' && useRooms.getState().byId[hit.ref.value.roomId]?.type === RoomType.DM) return <MessageSquareText {...p} />;
+  // A message of a workspace room: the room's picture or glyph (ADR-0092).
+  if (hit.ref.case === 'message' && section === 'messages' && useRooms.getState().byId[hit.ref.value.roomId]) {
+    return <RoomIcon roomId={hit.ref.value.roomId} size={16} className="mt-0.5 self-start" />;
+  }
   switch (section) {
     case 'messages':
       return <Hash {...p} />;

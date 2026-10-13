@@ -33,11 +33,12 @@ import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
 import { ProfileTarget } from '../../components/ProfileTarget';
-import { automationCardOf, birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { automationCardOf, birthdayCardOf, recordingCardOf, roomIconCardOf, systemPreview } from '../../lib/recording';
 import { AutomationCardView } from '../boards/AutomationCard';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
 import { AchievementCardView } from './AchievementCard';
+import { RoomIconLine } from './RoomIconLine';
 import { achievementCardOf } from '../../lib/achievements';
 import { CallLogRow } from '../call/CallBits';
 import { callCardOf } from '../../lib/callModel';
@@ -152,8 +153,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   const call = callCardOf(c.msg);
   // A board automation's message (ADR-0060): a room (notify_room) or the task's comments.
   const auto = automationCardOf(c.msg);
+  // The room picture changed (ADR-0092): a centred service line with the new picture.
+  const icon = roomIconCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -178,6 +181,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       ) : auto ? (
         <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <AutomationCardView card={auto} workspaceId={workspaceId} roomId={c.msg.roomId} />
+        </div>
+      ) : icon ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <RoomIconLine card={icon} authorId={c.msg.authorId} workspaceId={workspaceId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />

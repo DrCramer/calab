@@ -11,14 +11,16 @@ import {
   type Role,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
+import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
+import { AvatarButtons } from '../../components/AvatarPicker';
+import { RoomIcon } from '../../components/RoomIcon';
 import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
-import { api } from '../../lib/api/endpoints';
+import { api, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { isAdminRole, mayAllowRecording, mayInviteGuestsIn, mayManageRoom, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
@@ -167,11 +169,10 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
     ...(guests ? [{ id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} /> }] : []),
   ];
   if (sections.length === 0) return null;
-  const Glyph = room.expiresAt ? Timer : voice ? Volume2 : Hash;
   return (
     <SettingsWindow
       title={room.name}
-      titleIcon={<Glyph className="size-4 shrink-0 text-muted" aria-hidden />}
+      titleIcon={<RoomIcon roomId={room.id} size={16} />}
       sections={sections}
       initial={tab}
       fallback={sections[0]?.id ?? 'general'}
@@ -195,9 +196,29 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
     },
   });
   if (!room) return null;
+  const textOrVoice = room.type === RoomType.TEXT || room.type === RoomType.VOICE;
   return (
     <>
       <Card title={t('card.basics')}>
+        {/* The room's picture (ADR-0092): shown instead of the type glyph everywhere; a change posts a line in the chat. */}
+        {textOrVoice ? (
+          <Row label={t('room.picture')} hint={t('room.pictureHint')}>
+            <div className="flex items-center gap-3" data-testid="room-picture">
+              <RoomIcon roomId={roomId} size={44} ring="var(--color-card)" />
+              <AvatarButtons
+                hasAvatar={!!room.iconFileId}
+                uploadLabel={t('room.pictureUpload')}
+                size="sm"
+                testId="room-picture"
+                onUpload={async (file) => {
+                  const meta = await uploadFile(uploadPath(room.workspaceId, ''), file, file.name, () => undefined).promise;
+                  await patchRoom(roomId, { iconFileId: meta.id });
+                }}
+                onRemove={() => patchRoom(roomId, { iconFileId: '' })}
+              />
+            </div>
+          </Row>
+        ) : null}
         <Row label={t('room.name')}>
           <CommitInput label={t('room.name')} value={room.name} maxLength={100} onCommit={(v) => (v ? patchRoom(roomId, { name: v }) : undefined)} />
         </Row>

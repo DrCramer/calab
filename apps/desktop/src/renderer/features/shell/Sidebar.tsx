@@ -52,6 +52,7 @@ import {
 import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
+import { RoomIcon } from '../../components/RoomIcon';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { CreateButton, InlineAdd } from '../../components/CreateButton';
@@ -1253,11 +1254,7 @@ const TextRoomRow = memo(function TextRoomRow({
             {/* A quiet «#» (owner, 07.10): same size, weight and colour as the voice rooms' speaker; a
                 private room shows the lock in that slot. */}
             <span className="grid w-[18px] shrink-0 place-items-center">
-              {room.isPrivate ? (
-                <Lock className="size-4 text-faint" strokeWidth={1.75} aria-label={t('room.private')} role="img" />
-              ) : (
-                <Hash className="size-4 text-faint" strokeWidth={1.75} aria-hidden />
-              )}
+              <RoomIcon roomId={room.id} size={16} />
             </span>
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
@@ -1397,20 +1394,16 @@ function VoiceRoomRow({
                 )}
               >
                 <span className="relative grid w-[18px] shrink-0 place-items-center">
+                  {/* Private (Discord): a small lock badge on the speaker icon (RoomIcon), not a separate
+                      icon competing with the card actions for space on the right. A temporary room
+                      without a picture keeps its own timer (the attention colour near the end). */}
                   {connecting ? (
                     <Loader2 className="size-4 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
-                  ) : temp ? (
+                  ) : temp && !room.iconFileId ? (
                     <TempIcon expires={expires} inRoom={inRoom} />
                   ) : (
-                    <Volume2 className={cx('size-4', inRoom ? 'text-ok' : 'text-faint')} strokeWidth={1.75} aria-hidden />
+                    <RoomIcon roomId={room.id} size={16} live={inRoom} />
                   )}
-                  {/* Private (Discord): a small lock badge on the speaker icon, not a separate icon
-                      competing with the card actions for space on the right. */}
-                  {!connecting && room.isPrivate ? (
-                    <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-2.5 place-items-center rounded-full bg-[var(--color-fill-hover)]">
-                      <Lock className="size-1.5 text-fg" aria-hidden />
-                    </span>
-                  ) : null}
                 </span>
                 <span className={cx('min-w-0 truncate', !temp && !room.restricted && 'flex-1')} title={room.name}>
                   {room.name}
@@ -1892,10 +1885,9 @@ function DragChip({ data }: { data: DragData }): ReactNode {
     );
   }
   if (data.type === 'room') {
-    const Icon = data.voice ? Volume2 : data.isPrivate ? Lock : Hash;
     return (
       <div className="mat-popover flex h-[34px] w-max max-w-[240px] items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-3 text-list text-fg">
-        <Icon className="size-[18px] shrink-0 text-muted" aria-hidden />
+        <RoomIcon roomId={data.roomId} size={20} />
         <span className="truncate">{data.name}</span>
       </div>
     );

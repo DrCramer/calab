@@ -1,6 +1,7 @@
 import { NotificationLevel, WorkspaceRole, type Role, type Room } from '@calaba/protocol';
-import { Bell, BellOff, CheckCheck, ChevronDown, Hash, Lock, Plus, Timer, Volume2 } from 'lucide-react';
+import { Bell, BellOff, CheckCheck, ChevronDown, Plus, Volume2 } from 'lucide-react';
 import { memo, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { RoomIcon } from '../../components/RoomIcon';
 import { Button, CountBadge, Empty, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -188,7 +189,7 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
             swipe.dragging ? 'transition-colors' : 'transition-[margin,background-color]',
           )}
         >
-          <RoomIcon room={room} live={live || inRoom} />
+          <RoomIcon roomId={room.id} size={44} live={live || inRoom} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5 border-b border-line py-2.5 [li:last-child_&]:border-b-0">
             <span className="flex h-5 min-w-0 items-center gap-2">
               <span className={cx('min-w-0 flex-1 truncate text-list leading-5', unread ? 'font-semibold text-fg' : 'text-fg')}>{room.name}</span>
@@ -268,20 +269,6 @@ function RoomSwipeActions({ roomId, width, close }: { roomId: string; width: num
         <span className="line-clamp-2">{t(quiet ? 'room.swipeUnmute' : 'room.swipeMute')}</span>
       </button>
     </div>
-  );
-}
-
-function RoomIcon({ room, live }: { room: Room; live: boolean }): ReactNode {
-  const Icon = room.expiresAt ? Timer : isVoice(room) ? Volume2 : Hash;
-  return (
-    <span className={cx('relative grid size-11 shrink-0 place-items-center rounded-full', live ? 'bg-[color-mix(in_srgb,var(--color-ok)_18%,transparent)] text-ok' : 'bg-[var(--color-fill)] text-muted')}>
-      <Icon className="size-[22px]" aria-hidden />
-      {room.isPrivate ? (
-        <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-[18px] place-items-center rounded-full border-2 border-[var(--color-sidebar,var(--color-bg))] bg-[var(--color-fill-hover)]">
-          <Lock className="size-2.5 text-fg" aria-hidden />
-        </span>
-      ) : null}
-    </span>
   );
 }
 

@@ -1,8 +1,9 @@
 import { WorkspaceRole, type User } from '@calaba/protocol';
-import { Check, Hash, Lock, NotebookText, Volume2, X } from 'lucide-react';
+import { Check, Lock, NotebookText, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PickerPanel } from '../../components/picker/Picker';
 import { Button, CLOSE_HIT, Modal, cx } from '../../components/ui';
+import { RoomIcon } from '../../components/RoomIcon';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
@@ -201,11 +202,10 @@ export function ForwardDialog({
 }
 
 function RoomRow({ item, active, trailing }: { item: RoomPickItem; active: boolean; trailing: ReactNode }): ReactNode {
-  const Icon = item.notes ? NotebookText : item.voice ? Volume2 : Hash;
   return (
     <>
       <span className={cx('grid size-6 shrink-0 place-items-center leading-none', active ? '' : 'text-muted')} aria-hidden>
-        {item.emoji ? <span className="text-[16px]">{item.emoji}</span> : <Icon className="size-4" />}
+        {item.emoji ? <span className="text-[16px]">{item.emoji}</span> : item.notes ? <NotebookText className="size-4" /> : <RoomIcon roomId={item.roomId} size={16} />}
       </span>
       <span className="min-w-0 flex-1 truncate font-medium" title={item.name}>
         {item.name}

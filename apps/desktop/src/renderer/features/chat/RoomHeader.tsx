@@ -2,10 +2,11 @@ import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Messag
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Bell, BellOff, BellRing, Ellipsis, Hash, Lock, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Ellipsis, Phone, Pin, PinOff, Search, SlidersHorizontal, Users, Video } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
+import { RoomIcon } from '../../components/RoomIcon';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
@@ -14,7 +15,7 @@ import { setPinned } from '../../services/chat';
 import { setRoomNotifications } from '../../services/mentions';
 import { useMobile } from '../../lib/mobile';
 import { Bar, BAR_GROUP } from '../../components/Bar';
-import { HeaderIcon, NavButton } from '../../components/PhoneHeader';
+import { NavButton } from '../../components/PhoneHeader';
 import { effectiveNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
@@ -72,8 +73,6 @@ function WideRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
   const setSearch = useChatView((s) => s.setSearch);
   const voiceRoom = room.type === RoomType.VOICE;
-  // A temporary room (ADR-0044): its own `Timer` icon, as in the room list.
-  const Icon = room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash;
   // Phone layout (ADR-0021): this header is the top bar — ☰ (rooms drawer) first, the name takes
   // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
   // the drawer's room menu), 40 px touch targets.
@@ -90,7 +89,8 @@ function WideRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }
       className={cx('drag sticky top-0 z-[var(--z-sticky)] min-w-0 gap-2 overflow-hidden pl-4 pr-2', fit.tight && !mobile && 'gap-1 pl-3 pr-1')}
     >
       {mobile ? <NavButton /> : null}
-      <Icon className="size-5 shrink-0 text-faint" aria-hidden />
+      {/* The room's picture or its glyph (ADR-0092; a temporary room: its `Timer`, ADR-0044). */}
+      <RoomIcon roomId={room.id} size={20} ring="var(--color-bg)" />
       <h1 data-header-name className={cx('min-w-0 max-w-[40%] truncate text-list font-semibold', mobile && 'max-w-none flex-1')} title={room.name}>
         {room.name}
       </h1>
@@ -166,14 +166,7 @@ function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers 
         {people.length > 0 ? (
           <HeaderVoicePeople workspaceId={workspaceId} room={room} perms={perms} people={people} />
         ) : (
-          <span className="relative shrink-0">
-            <HeaderIcon icon={room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash} />
-            {room.isPrivate ? (
-              <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-[14px] place-items-center rounded-full border-2 border-[var(--color-bg)] bg-[var(--color-fill-hover)]">
-                <Lock className="size-2 text-fg" aria-hidden />
-              </span>
-            ) : null}
-          </span>
+          <RoomIcon roomId={room.id} size={32} ring="var(--color-bg)" />
         )}
         <h1 data-header-name className="min-w-0 flex-1 truncate text-list font-semibold" title={room.name}>
           {room.name}

@@ -586,6 +586,11 @@ export interface MockServer {
   setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void;
   /** docs/09 #82: a badge of the workspace library with a generated square picture → BADGE_CREATE; its id. */
   addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string;
+  /**
+   * ADR-0092: the room's picture (a generated square; null = none) set by `byUserId` → ROOM_UPDATE
+   * and the system line «… изменил(а) картинку комнаты» (MESSAGE_CREATE), as PATCH icon_file_id.
+   */
+  setRoomPicture(roomId: string, colors: { bg: [number, number, number]; fg: [number, number, number] } | null, byUserId: string): void;
   /** docs/09 #82: the member's badge ('' = none) → WORKSPACE_MEMBER_UPDATE. */
   setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
   /** ADR-0035 addendum: a camera background of the workspace with a generated 16:9 picture (a diagonal gradient) → BACKGROUND_CREATE; its id. */
@@ -765,6 +770,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
     addBadge: (w, name, colors) => impl.addBadge(w, name, colors),
+    setRoomPicture: (r, colors, by) => impl.setRoomPicture(r, colors, by),
     setMemberBadge: (w, u, id) => impl.setMemberBadge(w, u, id),
     addBackground: (w, name, colors) => impl.addBackground(w, name, colors),
     addSound: (w, name, emoji) => impl.addSound(w, name, emoji),
@@ -1622,6 +1628,7 @@ class MockImpl {
             content: Array.from(last.content).slice(0, 200).join(''),
             attachmentCount: last.attachments.length,
             stickerEmoji: last.sticker?.emoji ?? '',
+            ...(last.kind === MessageKind.SYSTEM && last.system ? { system: last.system } : {}),
             ...(last.createdAt ? { createdAt: last.createdAt } : {}),
           })]];
         }),
@@ -2066,6 +2073,36 @@ class MockImpl {
     const png = encodePng(64, 64, (x, y) => ((x - 0.5) ** 2 + (y - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
     u.user.avatarFileId = this.storeFile('', botUserId, { name: 'avatar.png', mime: 'image/png', bytes: png });
     this.emitUserUpdate(u);
+  }
+
+  setRoomPicture(roomId: string, colors: { bg: [number, number, number]; fg: [number, number, number] } | null, byUserId: string): void {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    // A 64×64 «logo»: a filled square with a centred disc (what the client uploads after its crop).
+    const png = colors ? encodePng(64, 64, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg)) : null;
+    const fileId = png ? this.storeFile(room.workspaceId, byUserId, { name: 'room.png', mime: 'image/png', bytes: png }) : '';
+    this.applyRoomPicture(room, fileId, byUserId);
+  }
+
+  /** ADR-0092: a changed picture → ROOM_UPDATE and the system line from `byUserId` (no notification). */
+  private applyRoomPicture(room: Room, fileId: string, byUserId: string): void {
+    if (room.iconFileId === fileId) return;
+    const before = create(RoomSchema, room);
+    room.iconFileId = fileId;
+    this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
+    const list = this.state.messages.get(room.id) ?? [];
+    const msg = create(MessageSchema, {
+      id: nextId(this.state, 'message'),
+      roomId: room.id,
+      authorId: byUserId,
+      content: '',
+      kind: MessageKind.SYSTEM,
+      system: { payload: { case: 'roomIcon', value: { fileId } } },
+      createdAt: tick(this.state),
+    });
+    list.push(msg);
+    this.state.messages.set(room.id, list);
+    this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
   }
 
   addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string {
@@ -3971,7 +4008,18 @@ class MockImpl {
         room.restricted = b.restricted;
       }
       if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
+      // ADR-0092: an image the caller uploaded to this workspace ("" = none); text and voice rooms.
+      let picture: string | undefined;
+      if (b.iconFileId !== undefined) {
+        if (room.type !== RoomType.TEXT && room.type !== RoomType.VOICE) throw invalid('iconFileId', 'only text and voice rooms have a picture');
+        const f = b.iconFileId ? s().files.get(b.iconFileId)?.meta : undefined;
+        if (b.iconFileId && b.iconFileId !== room.iconFileId && (!f || f.workspaceId !== room.workspaceId || f.uploaderId !== me || !f.mime.startsWith('image/'))) {
+          throw invalid('iconFileId', 'an image you uploaded to this workspace is required');
+        }
+        picture = b.iconFileId;
+      }
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
+      if (picture !== undefined) this.applyRoomPicture(room, picture, me);
       if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
     });
