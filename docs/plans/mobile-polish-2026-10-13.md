@@ -61,3 +61,8 @@ i18n — во всех четырёх локалях (`i18n/ru|en|es|zh-CN`, т�
 
 - **H1 — сервер** (Opus, ветка `boards/history-journal`): журнал полный по ADR-0091 §3 — виды `comment`/`comment_edit`/`comment_delete`, `description.text`, снимки имён в `attachments`/`labels`/`milestone`/`parent`/`relation`, ключ слияния `message_id`, `?only=journal|comments`, бэкфилл-миграция `uuidv7_at`, вебхуки/правила/уведомления без дублей; интеграционные тесты; proto-комментарии + `make gen`. Второе ревью (протокол).
 - **H2 — клиент** (Opus, ветка `boards/history-ui`): вкладки «Комментарии | История», таймлайн по §2, `lib/boards/history.ts` + `lib/textDiff.ts` (чистые, с тестами), `features/boards/TaskHistory.tsx`, i18n ×4, мок (`e2e-support/mock-boards.ts`) со всеми видами, визуальные `boards-task-history` (dark 960, light) и `m-boards-task-history`.
+
+## Добавлено 13.10 (ночь) — тоже в 3.3.0
+
+- **R1 — Картинка комнаты** (Opus, ADR-0092, после T5; ветка `rooms/picture`): протокол + миграция + сервер (`PATCH /rooms/{id} icon_file_id`, системная строка `room_icon`), клиент (`components/RoomIcon.tsx` везде, `AvatarPicker` в настройках комнаты, системная строка с миниатюрой), визуальные: `room-settings-picture`, строки комнат десктоп/телефон. Второе ревью (протокол).
+- **S1 — Иконки статусов и пикер цвета** (Opus, ADR-0093; ветка `boards/status-icons`): протокол + миграция + сервер, `StatusIcon` с токенами, пикер иконки и общий `ColorPicker`; визуальные `boards-settings` (статусы/лейблы с открытым пикером), `boards-kanban`. Второе ревью (протокол).
