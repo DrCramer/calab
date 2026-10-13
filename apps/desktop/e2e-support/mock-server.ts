@@ -7182,7 +7182,7 @@ class MockImpl {
       noContent(c.res);
     });
     this.boardRoute('GET', '/api/tasks/:id/activity', (c, me) => {
-      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50);
+      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50, q(c, 'only'));
       sendMsg(c.res, 200, TaskActivityPageSchema, {
         items: r.items.map((x) => (x.message ? { item: { case: 'message' as const, value: this.msgOut(x.message, me) } } : { item: { case: 'activity' as const, value: x.activity as TaskActivity } })),
         hasMore: r.hasMore,

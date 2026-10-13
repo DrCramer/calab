@@ -125,18 +125,24 @@ const HistoryRow = memo(function HistoryRow({ a, workspaceId, boardId }: { a: Ta
   const detail = hasDetail(e.detail) ? e.detail : null;
   const toggle = (): void => setOpen((v) => !v);
   return (
-    <li className="relative flex flex-col" data-testid="history-row" data-kind={a.kind} data-rule={rule || undefined} data-open={open || undefined}>
+    <li className="relative flex flex-col" data-history-row data-testid="history-row" data-kind={a.kind} data-rule={rule || undefined} data-open={open || undefined}>
       <div className="flex items-start gap-2 py-1 pl-[34px] pr-3">
         <span className="absolute left-[20px] top-[11px] size-[7px] rounded-full bg-[var(--color-label-tertiary)] ring-2 ring-[var(--color-bg)]" aria-hidden />
         {rule ? (
-          <RuleActor boardId={boardId} ruleId={a.ruleId} />
+          <span className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg" aria-hidden>
+            <Cog className="size-3.5" />
+          </span>
         ) : (
           <ProfileTarget userId={a.actorId} name={name} workspaceId={workspaceId} tabbable className="mt-px shrink-0 rounded-full">
             <MemberAvatar workspaceId={workspaceId} userId={a.actorId} size={20} />
           </ProfileTarget>
         )}
         <p className={cx('min-w-0 flex-1 break-words text-caption leading-[22px] text-muted', detail && 'cursor-pointer')} onClick={detail ? toggle : undefined}>
-          {rule ? null : (
+          {rule ? (
+            <>
+              <RuleName boardId={boardId} ruleId={a.ruleId} />{' '}
+            </>
+          ) : (
             <>
               <ProfileTarget userId={a.actorId} name={name} workspaceId={workspaceId} className="rounded-[var(--radius-control)] text-left font-medium text-fg hover:underline">
                 {name}
@@ -207,8 +213,8 @@ function Detail({ d, workspaceId }: { d: HistoryDetail; workspaceId: string }): 
   );
 }
 
-const DEL = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-red)_18%,transparent)] text-danger-text line-through decoration-1';
-const ADD = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-green)_18%,transparent)] text-[var(--color-green-text)]';
+const DEL = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-red)_10%,transparent)] px-px text-danger-text line-through decoration-1';
+const ADD = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-green)_10%,transparent)] px-px text-[var(--color-green-text)]';
 
 /** A word diff (deleted struck through in red, added in green) or, too long, «Было / Стало». */
 function DiffView({ before, after, diffable }: { before: string; after: string; diffable: boolean }): ReactNode {
@@ -290,24 +296,19 @@ function TaskRefCard({ r, removed }: { r: TaskRef; removed: boolean }): ReactNod
 }
 
 /**
- * The actor of a rule's change: a cog and «Автоматизация: <имя правила>». The name comes from the
- * board's rules (loaded on demand — readable by every viewer, BOARD_RULE_UPDATE keeps it); a
- * deleted or unknown rule — «Автоматизация».
+ * The actor of a rule's change: «Автоматизация: <имя правила>» inline (a cog stands in the
+ * avatar's place). The name comes from the board's rules (loaded on demand — readable by every
+ * viewer, BOARD_RULE_UPDATE keeps it); a deleted or unknown rule — «Автоматизация».
  */
-function RuleActor({ boardId, ruleId }: { boardId: string; ruleId: string }): ReactNode {
+function RuleName({ boardId, ruleId }: { boardId: string; ruleId: string }): ReactNode {
   const name = useAutomations((s) => ruleNameOf(s, ruleId));
   useEffect(() => {
     if (!name) void ensureRules(boardId);
   }, [boardId, name]);
   return (
-    <>
-      <span className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg" aria-hidden>
-        <Cog className="size-3.5" />
-      </span>
-      <span className="-mr-1 shrink-0 pt-px text-caption font-medium leading-[22px] text-fg" data-testid="activity-rule">
-        {name ? t('rules.actorNamed', { name }) : t('rules.actor')}
-      </span>
-    </>
+    <span className="font-medium text-fg" data-testid="activity-rule">
+      {name ? t('rules.actorNamed', { name }) : t('rules.actor')}
+    </span>
   );
 }
 

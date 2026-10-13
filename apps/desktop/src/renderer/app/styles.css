@@ -1399,14 +1399,14 @@ svg.lucide {
       [role='menuitemradio'],
       [role='menuitemcheckbox'],
       [role='option']
-    ):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit, .sr-only) {
+    ):not([data-inline-target], [data-message-id] [data-profile-user], [data-history-row] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit, .sr-only) {
     min-height: var(--control-h-phone);
   }
   /* a checkbox / radio row: the whole label is the target */
   :root.web :where(label:has(> input[type='checkbox'], > input[type='radio'])) {
     min-height: var(--control-h-phone);
   }
-  :root.web :where(button):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit) {
+  :root.web :where(button):not([data-inline-target], [data-message-id] [data-profile-user], [data-history-row] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit) {
     min-width: var(--control-h-phone);
   }
   /* Header bars: whatever a bar holds is one visual height (--bar-ctl-h-phone) with a 44 px target

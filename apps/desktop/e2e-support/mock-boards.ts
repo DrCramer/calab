@@ -1512,11 +1512,12 @@ export class BoardsMock {
     this.emitTask(t, 'taskUpdate');
   }
 
-  /** GET /tasks/{id}/activity: comments and journal rows, newest first. */
-  feed(id: string, userId: string, before: string, limit: number): { items: Array<{ message?: Message; activity?: TaskActivity }>; hasMore: boolean } {
+  /** GET /tasks/{id}/activity: comments and journal rows, newest first (`only`: one of them). */
+  feed(id: string, userId: string, before: string, limit: number, only = ''): { items: Array<{ message?: Message; activity?: TaskActivity }>; hasMore: boolean } {
     const { t } = this.taskFor(id, userId);
-    const msgs = (this.host.state.messages.get(t.task.roomId) ?? []).map((m) => ({ at: m.createdAt ? timestampMs(m.createdAt) : 0, id: m.id, message: m }));
-    const acts = this.activity.filter((a) => a.taskId === id).map((a) => ({ at: a.createdAt ? timestampMs(a.createdAt) : 0, id: a.id, activity: a }));
+    // ADR-0091 §3: only=journal / only=comments.
+    const msgs = only === 'journal' ? [] : (this.host.state.messages.get(t.task.roomId) ?? []).map((m) => ({ at: m.createdAt ? timestampMs(m.createdAt) : 0, id: m.id, message: m }));
+    const acts = only === 'comments' ? [] : this.activity.filter((a) => a.taskId === id).map((a) => ({ at: a.createdAt ? timestampMs(a.createdAt) : 0, id: a.id, activity: a }));
     const all = [...msgs, ...acts].sort((a, b) => b.at - a.at || b.id.localeCompare(a.id));
     const start = before ? all.findIndex((x) => x.id === before) + 1 : 0;
     const n = Math.max(1, Math.min(100, limit || 50));
@@ -1644,10 +1645,55 @@ export class BoardsMock {
       this.updateChecklistItem(first, boris, { done: true });
       const promo = this.createCategory(ws, anna, { name: 'Продвижение' });
       this.setOrder(ws, anna, { boards: [{ boardId: mk.board.id, categoryId: promo.id, position: 0 }], categories: [] });
+      // ADR-0091 (last, so the ids above stay): CAL-3's history over two days — every kind of
+      // the timeline, with the snapshots of ADR-0091 §3.
+      this.seedHistory(t3, host, { bug: lb('Баг'), feature: lb('Фича') });
     } finally {
       host.fanout = quiet;
       host.tick = clock;
     }
+  }
+
+  /**
+   * CAL-3's history (ADR-0091, «История» in the panel): comments (one by a bot, one edited, one
+   * deleted by Анна), description / title diffs, labels, files, dates, priority, estimate,
+   * assignees, watchers, an approval and an automation rule — on 14 and 15 January (the visual
+   * clock is 15 January 13:30 MSK). The newest is the description edit.
+   */
+  private seedHistory(t3: TaskRec, host: { tick: BoardsHost['tick'] }, labels: { bug: string; feature: string }): void {
+    const { anna, boris, vera, grigory } = IDS.users;
+    const st = (name: string): string => this.boards.get(t3.task.boardId)?.board.statuses.find((x) => x.name === name)?.id ?? '';
+    const at = (iso: string): void => {
+      host.tick = () => timestampFromMs(Date.parse(iso));
+    };
+    const log = (iso: string, actor: string, kind: string, before: JsonObject, after: JsonObject): TaskActivity => {
+      at(iso);
+      return this.journal(t3, actor, kind, before, after);
+    };
+    const file = (n: number, name: string, size: number, mime: string): JsonObject => ({ file_id: `00000000-0000-7000-8000-0000000f${String(n).padStart(4, '0')}`, name, size, mime });
+    const msg = (n: number): string => `00000000-0000-7000-8000-0000000e${String(n).padStart(4, '0')}`;
+    const lbl = (id: string, name: string, color: number): JsonObject => ({ id, name, color });
+    // 14 January.
+    log('2026-01-14T09:10:00Z', boris, 'comment', {}, { message_id: msg(1), text: 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~5 секунд после входа.', attachments: [] });
+    log('2026-01-14T09:25:00Z', anna, 'comment', {}, { message_id: msg(2), text: 'Проверю на Mac со встроенными динамиками сегодня.', attachments: [] });
+    log('2026-01-14T10:05:00Z', boris, 'labels', { label_ids: [labels.bug, labels.feature], labels: [lbl(labels.bug, 'Баг', 0xff453a), lbl(labels.feature, 'Фича', 0xbf5af2)] }, { label_ids: [labels.bug], labels: [lbl(labels.bug, 'Баг', 0xff453a)] });
+    log('2026-01-14T10:40:00Z', anna, 'watchers', { user_ids: [] }, { user_ids: [vera, grigory] });
+    log('2026-01-14T11:15:00Z', anna, 'attachments', { file_ids: [], files: [] }, { file_ids: [file(1, 'echo-log.txt', 18_432, 'text/plain').file_id as string], files: [file(1, 'echo-log.txt', 18_432, 'text/plain')] });
+    log('2026-01-14T12:30:00Z', grigory, 'comment', {}, { message_id: msg(3), text: 'Это не баг, а настройки драйвера Realtek.', attachments: [] });
+    log('2026-01-14T13:00:00Z', anna, 'comment_delete', { message_id: msg(3), author_id: grigory, text: 'Это не баг, а настройки драйвера Realtek.', attachments: [] }, {});
+    log('2026-01-14T14:20:00Z', vera, 'comment', {}, { message_id: msg(4), text: 'Запись эха с колонок — во вложении.', attachments: [file(2, 'запись-эха.m4a', 482_000, 'audio/mp4')] });
+    const rule = log('2026-01-14T15:00:00Z', '', 'status', { status_id: st('Todo') }, { status_id: st('В работе') });
+    rule.ruleId = '00000000-0000-7000-8000-0000000a0001';
+    log('2026-01-14T16:45:00Z', IDS.bots.deploy, 'comment', {}, { message_id: msg(5), text: 'Сборка 3.2.1 с фиксом эхоподавления выложена на стенд.', attachments: [] });
+    // 15 January (today on the visual clock).
+    log('2026-01-15T06:10:00Z', boris, 'comment_edit', { message_id: msg(1), text: 'Воспроизвёл: Windows 11, колонки Logitech, эхо через ~5 секунд.', attachments: [] }, { message_id: msg(1), text: 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~5 секунд после входа.', attachments: [file(3, 'screenshot.png', 120_000, 'image/png')] });
+    log('2026-01-15T06:30:00Z', anna, 'dates', { start_on: '2026-01-12', due_on: '2026-01-20' }, { start_on: '2026-01-12', due_on: '2026-01-14' });
+    log('2026-01-15T07:00:00Z', anna, 'priority', { priority: TaskPriority.HIGH }, { priority: TaskPriority.URGENT });
+    log('2026-01-15T07:20:00Z', boris, 'estimate', { estimate: 2 }, { estimate: 3 });
+    log('2026-01-15T07:45:00Z', anna, 'assignees', { assignees: [{ user_id: boris, is_lead: true, note: 'Аудиопайплайн' }] }, { assignees: [{ user_id: boris, is_lead: true, note: 'Аудиопайплайн' }, { user_id: anna, is_lead: false, note: 'Проверка на Mac' }] });
+    log('2026-01-15T08:10:00Z', grigory, 'approval', { user_id: grigory, state: 'pending', comment: '' }, { user_id: grigory, state: 'approved', comment: 'Логи чистые, можно выкатывать.' });
+    log('2026-01-15T09:00:00Z', anna, 'title', { title: 'Эхо при колонках' }, { title: t3.task.title });
+    log('2026-01-15T09:40:00Z', anna, 'description', { length: 49, text: 'Повторяется на Windows с колонками Logitech.\nШаги — в комментариях.' }, { length: t3.task.description.length, text: t3.task.description });
   }
 
   /** The seeded CAL-3 (comments fixture): its task and room ids. */
