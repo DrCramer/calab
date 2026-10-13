@@ -223,15 +223,16 @@ GROUP BY t.board_id;
 SELECT * FROM board_statuses WHERE board_id = ANY(sqlc.arg('board_ids')::uuid[]) ORDER BY board_id, position, id;
 
 -- name: CreateBoardStatus :one
-INSERT INTO board_statuses (board_id, name, type, color, position, is_default)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO board_statuses (board_id, name, type, color, position, is_default, icon)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: UpdateBoardStatus :one
 UPDATE board_statuses SET
     name  = coalesce(sqlc.narg('name'), name),
     type  = coalesce(sqlc.narg('type'), type),
-    color = coalesce(sqlc.narg('color'), color)
+    color = coalesce(sqlc.narg('color'), color),
+    icon  = coalesce(sqlc.narg('icon'), icon)
 WHERE id = sqlc.arg('id') AND board_id = sqlc.arg('board_id')
 RETURNING *;
 

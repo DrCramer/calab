@@ -1617,13 +1617,20 @@ func (x *TaskMilestoneProgress) GetTotal() uint32 {
 }
 
 type BoardStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // 1..32 characters
-	Type          BoardStatusType        `protobuf:"varint,3,opt,name=type,proto3,enum=calaba.v1.BoardStatusType" json:"type,omitempty"`
-	Color         uint32                 `protobuf:"varint,4,opt,name=color,proto3" json:"color,omitempty"`
-	Position      int32                  `protobuf:"varint,5,opt,name=position,proto3" json:"position,omitempty"`                    // column order, ascending
-	IsDefault     bool                   `protobuf:"varint,6,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"` // exactly one per board: new tasks without status_id get it
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // 1..32 characters
+	Type      BoardStatusType        `protobuf:"varint,3,opt,name=type,proto3,enum=calaba.v1.BoardStatusType" json:"type,omitempty"`
+	Color     uint32                 `protobuf:"varint,4,opt,name=color,proto3" json:"color,omitempty"`
+	Position  int32                  `protobuf:"varint,5,opt,name=position,proto3" json:"position,omitempty"`                    // column order, ascending
+	IsDefault bool                   `protobuf:"varint,6,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"` // exactly one per board: new tasks without status_id get it
+	// Icon token (ADR-0093); "" = the icon of the type (backlog dashed, unstarted circle,
+	// started half, completed check, cancelled x). Tokens: dashed, circle, quarter, half,
+	// three-quarters, check, x, eye, shield-check, hourglass, pause, flag, star, bolt, rocket,
+	// bug, inbox, archive, lock. The list lives in packages/protocol STATUS_ICONS and Go
+	// boards.StatusIcons (shared vector proto/testdata/status_icons.json). Display only:
+	// the type keeps the semantics (finished / started) for filters and rules.
+	Icon          string `protobuf:"bytes,7,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1698,6 +1705,13 @@ func (x *BoardStatus) GetIsDefault() bool {
 		return x.IsDefault
 	}
 	return false
+}
+
+func (x *BoardStatus) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
 }
 
 type BoardLabel struct {
@@ -3829,6 +3843,7 @@ type CreateBoardStatusRequest struct {
 	Color         uint32                 `protobuf:"varint,3,opt,name=color,proto3" json:"color,omitempty"`
 	Position      *int32                 `protobuf:"varint,4,opt,name=position,proto3,oneof" json:"position,omitempty"` // unset = last
 	IsDefault     bool                   `protobuf:"varint,5,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	Icon          *string                `protobuf:"bytes,6,opt,name=icon,proto3,oneof" json:"icon,omitempty"` // BoardStatus.icon token; unset or "" = by type; unknown = 422 icon
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3898,6 +3913,13 @@ func (x *CreateBoardStatusRequest) GetIsDefault() bool {
 	return false
 }
 
+func (x *CreateBoardStatusRequest) GetIcon() string {
+	if x != nil && x.Icon != nil {
+		return *x.Icon
+	}
+	return ""
+}
+
 // PATCH /api/boards/{id}/statuses/{sid} → BoardResponse. DELETE …/{sid}?move_to=<sid> moves its
 // tasks (archived ones too) to move_to; the default status cannot be deleted (make another the
 // default first).
@@ -3908,6 +3930,7 @@ type UpdateBoardStatusRequest struct {
 	Color         *uint32                `protobuf:"varint,3,opt,name=color,proto3,oneof" json:"color,omitempty"`
 	Position      *int32                 `protobuf:"varint,4,opt,name=position,proto3,oneof" json:"position,omitempty"`                    // new index; others shift
 	IsDefault     *bool                  `protobuf:"varint,5,opt,name=is_default,json=isDefault,proto3,oneof" json:"is_default,omitempty"` // only true: the previous default loses it
+	Icon          *string                `protobuf:"bytes,6,opt,name=icon,proto3,oneof" json:"icon,omitempty"`                             // BoardStatus.icon token; "" resets to the type icon; unknown = 422 icon
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3975,6 +3998,13 @@ func (x *UpdateBoardStatusRequest) GetIsDefault() bool {
 		return *x.IsDefault
 	}
 	return false
+}
+
+func (x *UpdateBoardStatusRequest) GetIcon() string {
+	if x != nil && x.Icon != nil {
+		return *x.Icon
+	}
+	return ""
 }
 
 // POST /api/boards/{id}/labels (MANAGE_BOARD, ≤ 50) → BoardResponse. CREATE_TASKS may create a
@@ -8528,7 +8558,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"A\n" +
 	"\x15TaskMilestoneProgress\x12\x12\n" +
 	"\x04done\x18\x01 \x01(\rR\x04done\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\rR\x05total\"\xb2\x01\n" +
+	"\x05total\x18\x02 \x01(\rR\x05total\"\xc6\x01\n" +
 	"\vBoardStatus\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12.\n" +
@@ -8536,7 +8566,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x05color\x18\x04 \x01(\rR\x05color\x12\x1a\n" +
 	"\bposition\x18\x05 \x01(\x05R\bposition\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x06 \x01(\bR\tisDefault\"b\n" +
+	"is_default\x18\x06 \x01(\bR\tisDefault\x12\x12\n" +
+	"\x04icon\x18\a \x01(\tR\x04icon\"b\n" +
 	"\n" +
 	"BoardLabel\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -8776,27 +8807,31 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x18BoardPermissionsResponse\x12?\n" +
 	"\toverrides\x18\x01 \x03(\v2!.calaba.v1.RoomPermissionOverrideR\toverrides\x12&\n" +
 	"\x05board\x18\x02 \x01(\v2\x10.calaba.v1.BoardR\x05board\x12*\n" +
-	"\x11task_scoped_count\x18\x03 \x01(\rR\x0ftaskScopedCount\"\xc1\x01\n" +
+	"\x11task_scoped_count\x18\x03 \x01(\rR\x0ftaskScopedCount\"\xe3\x01\n" +
 	"\x18CreateBoardStatusRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x1a.calaba.v1.BoardStatusTypeR\x04type\x12\x14\n" +
 	"\x05color\x18\x03 \x01(\rR\x05color\x12\x1f\n" +
 	"\bposition\x18\x04 \x01(\x05H\x00R\bposition\x88\x01\x01\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x05 \x01(\bR\tisDefaultB\v\n" +
-	"\t_position\"\x80\x02\n" +
+	"is_default\x18\x05 \x01(\bR\tisDefault\x12\x17\n" +
+	"\x04icon\x18\x06 \x01(\tH\x01R\x04icon\x88\x01\x01B\v\n" +
+	"\t_positionB\a\n" +
+	"\x05_icon\"\xa2\x02\n" +
 	"\x18UpdateBoardStatusRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x123\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x1a.calaba.v1.BoardStatusTypeH\x01R\x04type\x88\x01\x01\x12\x19\n" +
 	"\x05color\x18\x03 \x01(\rH\x02R\x05color\x88\x01\x01\x12\x1f\n" +
 	"\bposition\x18\x04 \x01(\x05H\x03R\bposition\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"is_default\x18\x05 \x01(\bH\x04R\tisDefault\x88\x01\x01B\a\n" +
+	"is_default\x18\x05 \x01(\bH\x04R\tisDefault\x88\x01\x01\x12\x17\n" +
+	"\x04icon\x18\x06 \x01(\tH\x05R\x04icon\x88\x01\x01B\a\n" +
 	"\x05_nameB\a\n" +
 	"\x05_typeB\b\n" +
 	"\x06_colorB\v\n" +
 	"\t_positionB\r\n" +
-	"\v_is_default\"q\n" +
+	"\v_is_defaultB\a\n" +
+	"\x05_icon\"q\n" +
 	"\x17CreateBoardLabelRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05color\x18\x02 \x01(\rR\x05color\x12\x1f\n" +

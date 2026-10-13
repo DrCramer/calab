@@ -164,6 +164,13 @@ message BoardStatus {
   uint32 color = 4;
   int32 position = 5; // column order, ascending
   bool is_default = 6; // exactly one per board: new tasks without status_id get it
+  // Icon token (ADR-0093); "" = the icon of the type (backlog dashed, unstarted circle,
+  // started half, completed check, cancelled x). Tokens: dashed, circle, quarter, half,
+  // three-quarters, check, x, eye, shield-check, hourglass, pause, flag, star, bolt, rocket,
+  // bug, inbox, archive, lock. The list lives in packages/protocol STATUS_ICONS and Go
+  // boards.StatusIcons (shared vector proto/testdata/status_icons.json). Display only:
+  // the type keeps the semantics (finished / started) for filters and rules.
+  string icon = 7;
 }
 
 message BoardLabel {
@@ -575,6 +582,7 @@ message CreateBoardStatusRequest {
   uint32 color = 3;
   optional int32 position = 4; // unset = last
   bool is_default = 5;
+  optional string icon = 6; // BoardStatus.icon token; unset or "" = by type; unknown = 422 icon
 }
 
 // PATCH /api/boards/{id}/statuses/{sid} → BoardResponse. DELETE …/{sid}?move_to=<sid> moves its
@@ -586,6 +594,7 @@ message UpdateBoardStatusRequest {
   optional uint32 color = 3;
   optional int32 position = 4; // new index; others shift
   optional bool is_default = 5; // only true: the previous default loses it
+  optional string icon = 6; // BoardStatus.icon token; "" resets to the type icon; unknown = 422 icon
 }
 
 // POST /api/boards/{id}/labels (MANAGE_BOARD, ≤ 50) → BoardResponse. CREATE_TASKS may create a

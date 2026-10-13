@@ -53,7 +53,8 @@ func OverrideTargets(rows []sqlc.BoardPermission) []perm.OverrideTarget {
 }
 
 func status(s sqlc.BoardStatus) *v1.BoardStatus {
-	return &v1.BoardStatus{Id: s.ID.String(), Name: s.Name, Type: StatusTypeFromDB(s.Type), Color: color(s.Color), Position: s.Position, IsDefault: s.IsDefault}
+	return &v1.BoardStatus{Id: s.ID.String(), Name: s.Name, Type: StatusTypeFromDB(s.Type), Color: color(s.Color), Position: s.Position, IsDefault: s.IsDefault,
+		Icon: s.Icon}
 }
 
 func label(l sqlc.BoardLabel) *v1.BoardLabel {

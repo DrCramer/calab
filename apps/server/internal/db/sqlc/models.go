@@ -500,6 +500,7 @@ type BoardStatus struct {
 	Color     int32
 	Position  int32
 	IsDefault bool
+	Icon      string
 }
 
 type BoardView struct {

@@ -510,9 +510,9 @@ func (q *Queries) CreateBoardMilestone(ctx context.Context, arg CreateBoardMiles
 }
 
 const createBoardStatus = `-- name: CreateBoardStatus :one
-INSERT INTO board_statuses (board_id, name, type, color, position, is_default)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, board_id, name, type, color, position, is_default
+INSERT INTO board_statuses (board_id, name, type, color, position, is_default, icon)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, board_id, name, type, color, position, is_default, icon
 `
 
 type CreateBoardStatusParams struct {
@@ -522,6 +522,7 @@ type CreateBoardStatusParams struct {
 	Color     int32
 	Position  int32
 	IsDefault bool
+	Icon      string
 }
 
 func (q *Queries) CreateBoardStatus(ctx context.Context, arg CreateBoardStatusParams) (BoardStatus, error) {
@@ -532,6 +533,7 @@ func (q *Queries) CreateBoardStatus(ctx context.Context, arg CreateBoardStatusPa
 		arg.Color,
 		arg.Position,
 		arg.IsDefault,
+		arg.Icon,
 	)
 	var i BoardStatus
 	err := row.Scan(
@@ -542,6 +544,7 @@ func (q *Queries) CreateBoardStatus(ctx context.Context, arg CreateBoardStatusPa
 		&i.Color,
 		&i.Position,
 		&i.IsDefault,
+		&i.Icon,
 	)
 	return i, err
 }
@@ -1877,7 +1880,7 @@ func (q *Queries) ListBoardOverrides(ctx context.Context, boardID uuid.UUID) ([]
 
 const listBoardStatuses = `-- name: ListBoardStatuses :many
 
-SELECT id, board_id, name, type, color, position, is_default FROM board_statuses WHERE board_id = ANY($1::uuid[]) ORDER BY board_id, position, id
+SELECT id, board_id, name, type, color, position, is_default, icon FROM board_statuses WHERE board_id = ANY($1::uuid[]) ORDER BY board_id, position, id
 `
 
 // ---- statuses, labels, milestones ----
@@ -1898,6 +1901,7 @@ func (q *Queries) ListBoardStatuses(ctx context.Context, boardIds []uuid.UUID) (
 			&i.Color,
 			&i.Position,
 			&i.IsDefault,
+			&i.Icon,
 		); err != nil {
 			return nil, err
 		}
@@ -3358,15 +3362,17 @@ const updateBoardStatus = `-- name: UpdateBoardStatus :one
 UPDATE board_statuses SET
     name  = coalesce($1, name),
     type  = coalesce($2, type),
-    color = coalesce($3, color)
-WHERE id = $4 AND board_id = $5
-RETURNING id, board_id, name, type, color, position, is_default
+    color = coalesce($3, color),
+    icon  = coalesce($4, icon)
+WHERE id = $5 AND board_id = $6
+RETURNING id, board_id, name, type, color, position, is_default, icon
 `
 
 type UpdateBoardStatusParams struct {
 	Name    *string
 	Type    *string
 	Color   *int32
+	Icon    *string
 	ID      uuid.UUID
 	BoardID uuid.UUID
 }
@@ -3376,6 +3382,7 @@ func (q *Queries) UpdateBoardStatus(ctx context.Context, arg UpdateBoardStatusPa
 		arg.Name,
 		arg.Type,
 		arg.Color,
+		arg.Icon,
 		arg.ID,
 		arg.BoardID,
 	)
@@ -3388,6 +3395,7 @@ func (q *Queries) UpdateBoardStatus(ctx context.Context, arg UpdateBoardStatusPa
 		&i.Color,
 		&i.Position,
 		&i.IsDefault,
+		&i.Icon,
 	)
 	return i, err
 }

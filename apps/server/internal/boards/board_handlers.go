@@ -797,6 +797,9 @@ func (s *Service) createStatus(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if !ValidStatusIcon(req.GetIcon()) {
+		return httpx.Validation("icon", "unknown status icon")
+	}
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
 			return err
@@ -814,7 +817,7 @@ func (s *Service) createStatus(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		st, err := q.CreateBoardStatus(r.Context(), sqlc.CreateBoardStatusParams{BoardID: id, Name: name, Type: typ, Color: c,
-			Position: int32(len(ss)), IsDefault: req.GetIsDefault() || len(ss) == 0}) //nolint:gosec // ≤ 20
+			Position: int32(len(ss)), IsDefault: req.GetIsDefault() || len(ss) == 0, Icon: req.GetIcon()}) //nolint:gosec // ≤ 20
 		if err != nil || req.Position == nil {
 			return err
 		}
@@ -892,6 +895,12 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		p.Color = &c
+	}
+	if req.Icon != nil {
+		if !ValidStatusIcon(req.GetIcon()) {
+			return httpx.Validation("icon", "unknown status icon")
+		}
+		p.Icon = req.Icon
 	}
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
