@@ -1,4 +1,5 @@
 import { useRef, useState, type TouchEvent } from 'react';
+import { haptics } from '../../lib/haptics';
 
 /** Width of the action revealed behind a DM row on a phone (docs/09 #51). */
 export const SWIPE_ACTION_PX = 88;
@@ -11,6 +12,8 @@ export interface SwipeGesture {
   /** The row's offset when the gesture started (0 closed, −SWIPE_ACTION_PX open). */
   base: number;
   claimed: boolean;
+  /** Where the row would settle if released now (swipeSettle); undefined = where it started. */
+  side?: number;
 }
 
 /**
@@ -31,6 +34,17 @@ export function swipeMove(g: SwipeGesture, x: number, y: number): number | null 
 
 /** Where a released row settles: open past half the action's width, else closed. */
 export const swipeSettle = (offset: number): number => (offset < -SWIPE_ACTION_PX / 2 ? -SWIPE_ACTION_PX : 0);
+
+/**
+ * The drag crossed the settle point (half the action's width) since the last call, either way:
+ * the haptic «impact» fires once per crossing, not on every move.
+ */
+export function swipeCrossed(g: SwipeGesture, offset: number): boolean {
+  const side = swipeSettle(offset);
+  const crossed = side !== (g.side ?? swipeSettle(g.base));
+  g.side = side;
+  return crossed;
+}
 
 /**
  * Phone (ADR-0021, docs/09 #51): swiping a DM row left reveals its action, swiping right or
@@ -67,6 +81,7 @@ export function useRowSwipe(enabled: boolean): {
         }
         if (next === null) return;
         e.stopPropagation();
+        if (swipeCrossed(g, next)) haptics.impact();
         setDragging(true);
         setOffset(next);
       },

@@ -44,3 +44,16 @@ describe('prefs.autoMuteSec', () => {
     expect(usePrefs.getState().autoMuteSec).toBe(0);
   });
 });
+
+describe('prefs.haptics', () => {
+  beforeEach(() => mem.clear());
+  it('is on by default and kept when stored data predates it', async () => {
+    expect(usePrefs.getState().haptics).toBe(true);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'light' }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().haptics).toBe(true);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { haptics: false }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().haptics).toBe(false);
+  });
+});

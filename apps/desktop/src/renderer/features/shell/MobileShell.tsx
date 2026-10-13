@@ -9,6 +9,7 @@ import { HeaderIcon, PhoneHeader, PhoneSearchButton } from '../../components/Pho
 import { CountBadge, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
+import { haptics } from '../../lib/haptics';
 import { isStandalone } from '../../lib/mobile';
 import { installPhoneNav, openTab, phoneBack } from '../../services/phoneNav';
 import { useArchiveView } from '../../stores/archiveView';
@@ -333,7 +334,10 @@ const TabButton = memo(function TabButton({ tab, active, label, icon, badge }: {
   return (
     <button
       type="button"
-      onClick={() => openTab(tab)}
+      onClick={() => {
+        if (!active) haptics.tap();
+        openTab(tab);
+      }}
       aria-current={active ? 'page' : undefined}
       data-testid={`phone-tab-${tab}`}
       className={cx('relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-micro font-medium', active ? 'text-fg' : 'text-muted')}

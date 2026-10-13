@@ -13,7 +13,9 @@ import { MOBILE_QUERY } from './phone';
  *  - a tap on a card under the top one returns to it (the levels above close), and is not an item
  *    tap (the scrim itself is the bottom card's wrapper, so a tap on it never reaches the app);
  *  - a sub-menu opens only by a tap: a hovering mouse (Chrome's device emulation, a trackpad on a
- *    tablet) never opens it or moves the highlight.
+ *    tablet) never opens it or moves the highlight;
+ *  - a card that opens while a finger is still held down (a long press: Radix ContextMenu's 700 ms
+ *    on touch, Android's contextmenu) calls `onLongPressOpen` once — the haptic «impact».
  * Events only (portals added / removed, a card's `data-state`): nothing runs while no menu is open.
  * Logic: lib/menuStack.ts (unit-tested). Returns the uninstall function.
  */
@@ -94,12 +96,23 @@ function ensureHeader(card: HTMLElement): void {
 }
 
 let poseObserver: MutationObserver | null = null;
+/** A press shorter than this that opens a card is a tap (a «…» button), not a long press. */
+const LONG_PRESS_MIN_MS = 400;
+/** The touch press in progress (its start), if any. */
+let touchPress: { at: number } | null = null;
+let openCount = 0;
+let onLongPressOpen: (() => void) | undefined;
 /** «Назад» in the app's language (given by main.tsx: this module stays free of the i18n / platform chain). */
 let backLabel = (): string => 'Back';
 
 function relayout(): void {
   const mobile = isMobileNow();
   const cards = mobile ? openCards() : [];
+  if (cards.length > openCount && touchPress && performance.now() - touchPress.at >= LONG_PRESS_MIN_MS) {
+    touchPress = null;
+    onLongPressOpen?.();
+  }
+  openCount = cards.length;
   const poses = stackPoses(cards.map(({ card }): StackCard => ({ sub: isSubMenu(card) })));
   const live = new Set<Element>();
   cards.forEach(({ wrap, card }, i) => {
@@ -127,8 +140,9 @@ function relayout(): void {
   }
 }
 
-export function installPhoneMenus(opts: { backLabel: () => string }): () => void {
+export function installPhoneMenus(opts: { backLabel: () => string; onLongPressOpen?: () => void }): () => void {
   backLabel = opts.backLabel;
+  onLongPressOpen = opts.onLongPressOpen;
   let scheduled = false;
   const schedule = (): void => {
     if (scheduled) return;
@@ -164,6 +178,15 @@ export function installPhoneMenus(opts: { backLabel: () => string }): () => void
     e.stopPropagation();
   };
   const HOVER = ['pointermove', 'pointerover', 'pointerout'] as const;
+  const onTouchDown = (e: PointerEvent): void => {
+    touchPress = e.pointerType === 'touch' && e.isPrimary ? { at: e.timeStamp } : null;
+  };
+  const onTouchEnd = (): void => {
+    touchPress = null;
+  };
+  window.addEventListener('pointerdown', onTouchDown, true);
+  window.addEventListener('pointerup', onTouchEnd, true);
+  window.addEventListener('pointercancel', onTouchEnd, true);
   window.addEventListener('pointerdown', onDown, true);
   for (const type of HOVER) window.addEventListener(type, hover, true);
   const mq = window.matchMedia(MOBILE_QUERY);
@@ -173,6 +196,9 @@ export function installPhoneMenus(opts: { backLabel: () => string }): () => void
     poseObserver?.disconnect();
     poseObserver = null;
     window.removeEventListener('pointerdown', onDown, true);
+    window.removeEventListener('pointerdown', onTouchDown, true);
+    window.removeEventListener('pointerup', onTouchEnd, true);
+    window.removeEventListener('pointercancel', onTouchEnd, true);
     for (const type of HOVER) window.removeEventListener(type, hover, true);
     mq.removeEventListener('change', schedule);
   };

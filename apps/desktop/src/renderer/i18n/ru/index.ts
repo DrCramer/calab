@@ -479,6 +479,8 @@ export const ru = {
   'settings.general': 'Основное',
   'settings.logout': 'Выйти',
   'settings.theme': 'Тема',
+  'settings.haptics': 'Виброотклик',
+  'settings.hapticsHint': 'Лёгкая вибрация при касаниях, переключателях, свайпах и долгом нажатии',
   'theme.dark': 'Тёмная',
   'theme.light': 'Светлая',
   'theme.system': 'Как в системе',

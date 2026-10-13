@@ -1213,6 +1213,35 @@ svg.lucide {
       touch-action: manipulation;
     }
   }
+  /* Press feedback on touch screens (docs/08 «Отклик на касание»): a control answers the finger at
+     once, not at the click. iOS applies :active only with a touchstart listener on the document
+     (lib/mobile.ts installTouchActive). A control without a background of its own (rows, menu items,
+     icon buttons) gets the hover fill; one painting its own background (`bg-*` utility: filled
+     buttons, switches, the selected segment) dims instead — its own colour must not be replaced.
+     In the base layer: a control's own `active:` utility wins. `data-no-press` opts out (the PTT
+     button draws its held state itself). */
+  @media (hover: none) {
+    @layer base {
+      :root.web
+        :is(button, a[href], summary, [role='button'], [role='tab'], [role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'], [role='option']):active:not(
+          :disabled,
+          [aria-disabled='true'],
+          [data-no-press]
+        ) {
+        background-color: var(--color-hover);
+      }
+      :root.web :is(button, [role='button'], [role='switch'], [role='radio']):is([class^='bg-'], [class*=' bg-']):active:not(:disabled, [aria-disabled='true'], [data-no-press]) {
+        opacity: 0.7;
+      }
+    }
+  }
+  /* Message text is selectable on the desktop, but on a phone a long press on a bubble opens its
+     menu («Копировать текст» is there): no iOS selection loupe / callout to fight Radix's long press. */
+  :root.web [data-message-id] :is(.selectable, .selectable *):not(input, textarea, [contenteditable]) {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
   /* iOS zooms into any field with text under 16 px: every field is 16 px on phones. */
   :root.web input:not([type='checkbox'], [type='radio'], [type='range']),
   :root.web textarea,

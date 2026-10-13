@@ -21,6 +21,7 @@ import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { CHECK_IDS, runConnectionCheck, voiceProbeLine, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
+import { useMobile } from '../../lib/mobile';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { outputLabel } from '../../lib/media/outputKind';
 import { musicianWarning, useMusicianAllowed } from '../../services/musician';
@@ -914,7 +915,21 @@ function ThemeCard(): ReactNode {
           ]}
         />
       </Row>
+      <HapticsRow />
     </Card>
+  );
+}
+
+/** «Виброотклик» (lib/haptics.ts): phone only — the desktop has nothing to vibrate. */
+function HapticsRow(): ReactNode {
+  const mobile = useMobile();
+  const on = usePrefs((s) => s.haptics);
+  const set = usePrefs((s) => s.setPrefs);
+  if (!mobile) return null;
+  return (
+    <Row label={t('settings.haptics')} hint={t('settings.hapticsHint')}>
+      <Toggle label={t('settings.haptics')} checked={on} onChange={(v) => set({ haptics: v })} />
+    </Row>
   );
 }
 

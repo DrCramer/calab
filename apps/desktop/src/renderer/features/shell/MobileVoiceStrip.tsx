@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Poin
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { haptic } from '../../lib/mobile';
+import { haptics } from '../../lib/haptics';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
@@ -110,7 +110,10 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
           type="button"
           aria-label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
           aria-pressed={muted}
-          onClick={() => voice.toggleMute()}
+          onClick={() => {
+            haptics.toggle(muted);
+            voice.toggleMute();
+          }}
           className={cx(round, muted ? off : idle)}
         >
           {muted ? <MicOff className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
@@ -119,7 +122,10 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
           type="button"
           aria-label={deafened ? t('voice.undeafen') : t('voice.deafen')}
           aria-pressed={deafened}
-          onClick={() => voice.toggleDeafen()}
+          onClick={() => {
+            haptics.toggle(deafened);
+            voice.toggleDeafen();
+          }}
           className={cx(round, deafened ? off : idle)}
         >
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
@@ -263,7 +269,7 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
     heldRef.current = down;
     setHeld(down);
     voice.pttHold(down);
-    haptic(down ? 12 : 6);
+    haptics.toggle(down);
   }, []);
   useEffect(() => {
     const release = (): void => press(false);
@@ -302,6 +308,7 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
       aria-pressed={held}
       aria-disabled={disabled || undefined}
       data-testid="ptt-hold"
+      data-no-press
       onPointerDown={onDown}
       onPointerUp={onUp}
       onPointerCancel={onUp}

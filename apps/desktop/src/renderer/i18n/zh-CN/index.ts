@@ -484,6 +484,8 @@ export const zhCN: Dict = {
   'settings.general': '常规',
   'settings.logout': '退出登录',
   'settings.theme': '主题',
+  'settings.haptics': '触感反馈',
+  'settings.hapticsHint': '轻触、开关、滑动和长按时轻微振动',
   'theme.dark': '深色',
   'theme.light': '浅色',
   'theme.system': '跟随系统',

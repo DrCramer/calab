@@ -485,6 +485,8 @@ export const es: Dict = {
   'settings.general': 'General',
   'settings.logout': 'Cerrar sesión',
   'settings.theme': 'Tema',
+  'settings.haptics': 'Respuesta háptica',
+  'settings.hapticsHint': 'Una vibración ligera al tocar, cambiar interruptores, deslizar y mantener pulsado',
   'theme.dark': 'Oscuro',
   'theme.light': 'Claro',
   'theme.system': 'Sistema',

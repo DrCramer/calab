@@ -7,6 +7,7 @@ import { cloneElement, createContext, forwardRef, useContext, isValidElement, us
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
+import { haptics } from '../lib/haptics';
 import { autoFocusAllowed } from '../lib/phone';
 import { mirrorTip } from '../services/webAppTip';
 import { useWebApps } from '../stores/webApps';
@@ -421,7 +422,11 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
     <SwitchP.Root
       checked={checked}
       disabled={disabled}
-      onCheckedChange={onChange}
+      onCheckedChange={(v) => {
+        onChange(v);
+        // After the change: turning «Виброотклик» on is felt, turning it off is not.
+        haptics.toggle(v);
+      }}
       aria-label={label}
       className="tap-hit relative h-[22px] w-[38px] shrink-0 rounded-full bg-[var(--color-fill-hover)] transition-colors duration-[var(--motion-fast)] data-[state=checked]:bg-accent disabled:opacity-40"
     >
@@ -479,7 +484,10 @@ export function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={value === o.value}
-          onClick={() => onChange(o.value)}
+          onClick={() => {
+            if (value !== o.value) haptics.select();
+            onChange(o.value);
+          }}
           className={cx(
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
             // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it

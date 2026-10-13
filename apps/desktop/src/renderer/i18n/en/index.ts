@@ -485,6 +485,8 @@ export const en: Dict = {
   'settings.general': 'General',
   'settings.logout': 'Sign out',
   'settings.theme': 'Theme',
+  'settings.haptics': 'Haptic feedback',
+  'settings.hapticsHint': 'A light vibration on taps, switches, swipes and long presses',
   'theme.dark': 'Dark',
   'theme.light': 'Light',
   'theme.system': 'System',

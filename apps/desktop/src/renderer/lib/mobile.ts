@@ -193,13 +193,16 @@ export function installSheetGuard(): () => void {
 /** A tap's pointer-up and click follow its press within this (a long-press opens a menu at 700 ms). */
 const GESTURE_MS = 1500;
 
-/** Short haptic tick where the browser has one (Android Chrome; iOS Safari has no Vibration API). */
-export function haptic(ms = 10): void {
-  try {
-    if (typeof navigator.vibrate === 'function') navigator.vibrate(ms);
-  } catch {
-    // Some browsers throw without a user activation: haptics are best effort.
-  }
+/**
+ * iOS WebKit applies `:active` on a tap only when some `touchstart` listener exists (otherwise the
+ * press shows no state until — or at all — the click): one empty passive listener on the document
+ * turns the press styles of app/styles.css («Отклик на касание», docs/08) on everywhere. Passive:
+ * it never delays scrolling. Returns the uninstall function.
+ */
+export function installTouchActive(): () => void {
+  const noop = (): void => undefined;
+  document.addEventListener('touchstart', noop, { passive: true });
+  return () => document.removeEventListener('touchstart', noop);
 }
 
 /**

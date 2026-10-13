@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SWIPE_ACTION_PX, swipeMove, swipeSettle, type SwipeGesture } from './rowSwipe';
+import { SWIPE_ACTION_PX, swipeCrossed, swipeMove, swipeSettle, type SwipeGesture } from './rowSwipe';
 
 const start = (base = 0): SwipeGesture => ({ x: 200, y: 100, base, claimed: false });
 
@@ -19,5 +19,25 @@ describe('DM row swipe (docs/09 #51)', () => {
     expect(swipeMove(start(), 260, 100)).toBeNull(); // the drawer may use it
     const open = start(-SWIPE_ACTION_PX);
     expect(swipeMove(open, 300, 100)).toBe(0);
+  });
+});
+
+describe('DM row swipe: the settle threshold (haptic)', () => {
+  it('reports each crossing of half the action width once, in both directions', () => {
+    const g = start();
+    const half = SWIPE_ACTION_PX / 2;
+    expect(swipeCrossed(g, -10)).toBe(false);
+    expect(swipeCrossed(g, -half + 1)).toBe(false);
+    expect(swipeCrossed(g, -half - 1)).toBe(true); // past half: would open
+    expect(swipeCrossed(g, -half - 10)).toBe(false); // still past: no repeat
+    expect(swipeCrossed(g, -SWIPE_ACTION_PX)).toBe(false);
+    expect(swipeCrossed(g, -half + 5)).toBe(true); // back: would close
+    expect(swipeCrossed(g, 0)).toBe(false);
+  });
+
+  it('an open row crosses when dragged shut past half', () => {
+    const g = start(-SWIPE_ACTION_PX);
+    expect(swipeCrossed(g, -SWIPE_ACTION_PX + 10)).toBe(false);
+    expect(swipeCrossed(g, -SWIPE_ACTION_PX / 2 + 1)).toBe(true);
   });
 });

@@ -132,6 +132,8 @@ export interface Prefs {
    * preselect of the next visit while both markets are open. A hint only — the server decides.
    */
   billingMarket: Record<string, 'global' | 'ru'>;
+  /** «Виброотклик» (phone only, lib/haptics.ts): ticks on taps, toggles, swipe thresholds, long-press menus. */
+  haptics: boolean;
 }
 
 const DEFAULTS: Prefs = {
@@ -189,6 +191,7 @@ const DEFAULTS: Prefs = {
   soundboardUsage: {},
   updateNag: null,
   billingMarket: {},
+  haptics: true,
 };
 
 interface PrefsState extends Prefs {
