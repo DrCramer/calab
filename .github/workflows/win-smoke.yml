@@ -168,10 +168,20 @@ jobs:
           taskkill //F //IM Calab.exe || true
           sleep 3
           # As a user starts it (shortcut): no inherited stdio handles; the account exists, so the
-          # engine is forked at startup.
+          # engine is forked at startup. Fatal when nothing survived: exactly this launch killed
+          # 3.1.1 and 3.2.0 (no stdout handle for the forked engine), and a logged count alone
+          # let it pass win-smoke as green.
           CALABA_USER_DATA="$ud" pwsh -NoProfile -Command 'Start-Process -FilePath $env:CALAB_EXE'
           sleep 45
-          echo "mail: shortcut-style launch alive processes=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe)" >> "$out/summary.txt"
+          alive=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe || true)
+          # The `|| true` is only in the capture: `grep -c` exits 1 on zero matches and `set -e`
+          # would abort before the count and the FAIL line reach summary.txt. The check itself is
+          # fatal, no `|| true` after it.
+          echo "mail: shortcut-style launch alive processes=$alive" >> "$out/summary.txt"
+          if [ "$alive" -eq 0 ]; then
+            echo "FAIL: Calab died after a shortcut-style launch (no stdio handles)" | tee -a "$out/summary.txt"
+            exit 1
+          fi
           tasklist //V //FI 'IMAGENAME eq Calab.exe' > "$out/mail-processes-shortcut.txt" || true
           taskkill //F //IM Calab.exe || true
           sleep 3

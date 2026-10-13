@@ -22,13 +22,22 @@ function dataDir(): string {
 
 function fork(): EngineChild {
   if (!app.isReady()) throw new Error('utilityProcess before app ready');
-  // stderr piped: the router keeps its last lines and logs them when the engine exits (§2).
-  const child = utilityProcess.fork(ENGINE, [], { serviceName: 'Calab Mail', stdio: ['ignore', 'inherit', 'pipe'] });
+  // stdout and stderr piped. stdout must NOT be 'inherit': a Windows GUI launch (Start menu /
+  // shortcut) has no console, and Chromium's child launcher CHECK-fails on the missing stdout
+  // handle (base/process/launch_win.cc) and kills main right after the fork (0x80000003) —
+  // 3.1.1..3.2.0 crashed exactly there whenever a mail account existed. stderr is piped too: the
+  // router keeps its last lines and logs them when the engine exits (§2).
+  const child = utilityProcess.fork(ENGINE, [], { serviceName: 'Calab Mail', stdio: ['ignore', 'pipe', 'pipe'] });
   // Dev: the engine's warnings still reach the terminal. Packaged: every engine line goes to
   // main.log (3.1.3 — a live engine was invisible there, only its exit was logged). The engine never
   // writes secrets to stderr (engine.ts `log`). Capped so a chatty engine cannot flood the log.
-  if (!app.isPackaged) child.stderr?.on('data', (d: Buffer) => process.stderr.write(d));
-  else child.stderr?.on('data', engineLines());
+  if (!app.isPackaged) {
+    child.stdout?.on('data', (d: Buffer) => process.stdout.write(d));
+    child.stderr?.on('data', (d: Buffer) => process.stderr.write(d));
+  } else {
+    child.stdout?.on('data', engineLines());
+    child.stderr?.on('data', engineLines());
+  }
   return child;
 }
 
