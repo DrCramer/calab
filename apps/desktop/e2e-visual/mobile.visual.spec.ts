@@ -1337,6 +1337,24 @@ test('m-settings', async ({ page }) => {
 
 // Owner 07.10: no workspace rail — the header's «Команда Calab ⌄» opens the switcher (the desktop's
 // list: workspaces with a badge / «в голосе» / check, «Создать» / «Найти», the workspace's items).
+// ADR-0092: rooms with a picture — the picture in the 44 px disc of the list row (a private room
+// keeps its lock badge) and in the 32 px disc of the room header; the service line in the feed.
+test('m-room-picture', async ({ page }) => {
+  mock.setRoomPicture(IDS.rooms.general, { bg: [233, 120, 40], fg: [255, 255, 255] }, IDS.users.boris);
+  mock.setRoomPicture(IDS.rooms.longPrivate, { bg: [52, 120, 246], fg: [255, 255, 255] }, IDS.users.anna);
+  await signedIn(page);
+  const list = page.getByTestId('phone-room-list');
+  await expect(list.locator('[data-room-icon="picture"] img')).toHaveCount(2);
+  const general = list.getByTestId('phone-room-row').filter({ has: page.locator('text=/^общий/') }).first();
+  await expect(general.getByTestId('room-preview')).toContainText('изменил(а) картинку комнаты');
+  await checkpoint(page, 'm-room-picture');
+  await openRoom(page, /^общий/);
+  await expect(page.getByTestId('room-header').locator('[data-room-icon="picture"] img')).toBeVisible();
+  await feedToBottom(page);
+  await expect(page.getByTestId('room-icon-line')).toContainText('Борис Петров изменил(а) картинку комнаты');
+  await checkpoint(page, 'm-room-picture-chat', { main: true });
+});
+
 test('m-ws-switcher', async ({ page }) => {
   await signedIn(page);
   await page.getByTestId('phone-ws-switcher').tap();

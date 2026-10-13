@@ -112,6 +112,9 @@ const KEY = new Set([
   'update-bar',
   'room-settings-1',
   'room-settings-restricted',
+  'room-settings-picture',
+  'chat-room-icon-system',
+  'sidebar-room-picture',
   'i18n-en-main-chat',
   'settings-plan',
   'settings-gptunnel',
@@ -1419,6 +1422,24 @@ test('workspace-menu', async ({ open, win, mock, shot }) => {
 });
 
 /** «+» in the room column header (owner, 28.09): «Создать комнату» / «Создать категорию». */
+// ADR-0092: pictures loaded with the app (READY snapshot) — a text room, an unread text room,
+// a private one (lock badge), an empty voice room and the voice room with people (green ring).
+test('sidebar-room-picture', async ({ open, win, mock, shot }) => {
+  await open();
+  const by = IDS.users.anna;
+  mock.setRoomPicture(IDS.rooms.general, { bg: [233, 120, 40], fg: [255, 255, 255] }, by);
+  mock.setRoomPicture(IDS.rooms.dev, { bg: [52, 120, 246], fg: [255, 255, 255] }, by);
+  mock.setRoomPicture(IDS.rooms.longPrivate, { bg: [140, 70, 200], fg: [255, 255, 255] }, by);
+  mock.setRoomPicture(IDS.rooms.call, { bg: [30, 160, 90], fg: [255, 255, 255] }, by);
+  mock.setRoomPicture(IDS.rooms.meeting, { bg: [200, 50, 70], fg: [255, 255, 255] }, by);
+  // A reload: the pictures come in the READY snapshot, not in live events.
+  await win.reload();
+  await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });
+  await mainWindow(win, mock);
+  await expect(win.locator('aside [data-room-icon="picture"] img')).toHaveCount(5);
+  await checkpoint(shot, 'sidebar-room-picture');
+});
+
 test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -1853,6 +1874,18 @@ test('room-settings-restricted', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'room-settings-restricted');
 });
 
+// ADR-0092: «Основное» of the room settings with a picture — the 44 px preview, «Загрузить картинку» and «Убрать».
+test('room-settings-picture', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setRoomPicture(IDS.rooms.general, { bg: [52, 120, 246], fg: [255, 255, 255] }, IDS.users.anna);
+  await openSettingsTab(win, () => win.getByRole('button', { name: 'Настройки комнаты' }).click(), 1);
+  const row = win.getByTestId('room-picture');
+  await expect(row.locator('[data-room-icon="picture"] img')).toBeVisible();
+  await expect(win.getByTestId('room-picture-remove')).toBeVisible();
+  await checkpoint(shot, 'room-settings-picture');
+});
+
 test('confirm-delete-room', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -2245,6 +2278,19 @@ test('main-members-birthday', async ({ open, win, mock, shot }) => {
 
 // docs/09 #76: Борис's birthday is today (the page clock: 15 January) — the server's card in
 // «общий» and 🎂 after his name in the members column; «15 января · 36 лет» in his profile card.
+// ADR-0092: Борис changes the picture of «общий» — the service line with the 40 px picture in the
+// feed, the picture in the room list and in the header instead of «#».
+test('chat-room-icon-system', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setRoomPicture(IDS.rooms.general, { bg: [233, 120, 40], fg: [255, 255, 255] }, IDS.users.boris);
+  const line = win.getByTestId('room-icon-line');
+  await expect(line).toContainText('Борис Петров изменил(а) картинку комнаты');
+  await expect(line.locator('img')).toBeVisible();
+  await expect(win.locator('aside [data-room-icon="picture"] img').first()).toBeVisible();
+  await checkpoint(shot, 'chat-room-icon-system');
+});
+
 test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
