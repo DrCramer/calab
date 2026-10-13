@@ -61,7 +61,7 @@ export function listItems(tasks: Task[], b: Board, prefs: BoardPrefs, workspaceI
         push(
           s.id,
           <>
-            <StatusIcon type={s.type} color={s.color} /> {s.name}
+            <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
           </>,
           tasks.filter((x) => x.statusId === s.id),
         );
@@ -299,7 +299,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
-            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
+            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
           </button>
         </StatusMenu>
         <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>

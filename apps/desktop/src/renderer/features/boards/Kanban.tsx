@@ -21,7 +21,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { columnsOf, hasBit, visibleColumn, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { TaskCard } from './TaskCard';
 import { useMatchCtx } from './useBoardView';
-import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss } from './visuals';
+import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /** Above this many cards a column is virtualized (ADR-0042 §5). */
 export const VIRTUAL_MIN = 200;
@@ -322,7 +322,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
                     const s = statuses.find((x) => x.id === drag.id);
                     return s ? (
                       <>
-                        <StatusIcon type={s.type} color={s.color} /> {s.name}
+                        <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
                       </>
                     ) : null;
                   })()}
@@ -451,7 +451,7 @@ function ColumnHeader({
   };
   return (
     <div className={cx('flex h-10 shrink-0 items-center gap-2 pl-3 pr-1.5', manage && 'cursor-grab active:cursor-grabbing')} onPointerDown={(e) => onPointerDown(e, status.id)} data-testid="column-header">
-      <StatusIcon type={status.type} color={status.color} />
+      <StatusIcon type={status.type} color={status.color} icon={status.icon} />
       {editing ? (
         <InlineName
           value={status.name}
@@ -493,15 +493,15 @@ function ColumnHeader({
                     <Palette className="size-4" aria-hidden /> <span className="flex-1">{t('boards.color')}</span> <ChevronRight className="size-4" aria-hidden />
                   </Dropdown.SubTrigger>
                   <Dropdown.Portal>
-                    <Dropdown.SubContent className={cx(menuBox, 'w-auto min-w-0 p-2')} sideOffset={4} collisionPadding={16}>
-                      <div className="grid grid-cols-6 gap-1.5">
+                    <Dropdown.SubContent className={cx(menuBox, 'w-auto min-w-0 p-3')} sideOffset={4} collisionPadding={16}>
+                      <div className="grid grid-cols-6 gap-2">
                         {PALETTE.map((c) => (
                           <Dropdown.Item
                             key={c}
                             onSelect={() => void updateStatus(boardId, status.id, { color: c })}
-                            className={cx('size-6 cursor-default rounded-full outline-none ring-offset-2 ring-offset-[var(--color-popover)] data-[highlighted]:ring-2 data-[highlighted]:ring-accent', c === status.color && 'ring-2 ring-fg')}
+                            className={cx('size-7 cursor-default rounded-full outline-none ring-offset-2 ring-offset-[var(--color-popover)] data-[highlighted]:ring-2 data-[highlighted]:ring-accent', c === status.color && 'ring-2 ring-fg')}
                             style={{ background: colorCss(c) }}
-                            aria-label={colorCss(c)}
+                            aria-label={colorName(c)}
                           />
                         ))}
                       </div>
@@ -685,7 +685,7 @@ function HiddenColumn({ boardId, status, filter, ctx }: { boardId: string; statu
       className="flex h-10 items-center gap-2 rounded-[var(--radius-card)] border border-line bg-elev px-3 text-left text-control hover:border-[var(--color-fill-hover)]"
       title={t('boards.showColumn')}
     >
-      <StatusIcon type={status.type} color={status.color} />
+      <StatusIcon type={status.type} color={status.color} icon={status.icon} />
       <span className="min-w-0 flex-1 truncate">{status.name}</span>
       <span className="text-caption tabular-nums text-muted">{n}</span>
       <Eye className="size-3.5 text-faint" aria-hidden />

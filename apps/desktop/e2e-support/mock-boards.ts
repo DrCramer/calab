@@ -62,6 +62,7 @@ import {
   type TaskAssigneeInput,
   type TaskCondition,
   type TaskFilter,
+  STATUS_ICONS,
 } from '@calaba/protocol';
 import type { JsonObject } from '@bufbuild/protobuf';
 import { IDS, ts, type MemberRec, type MockState } from './fixtures';
@@ -790,14 +791,16 @@ export class BoardsMock {
     list.sort((a, b) => a.position - b.position);
   }
 
-  createStatus(id: string, userId: string, req: { name: string; type: BoardStatusType; color: number; position?: number | undefined; isDefault: boolean }): Board {
+  createStatus(id: string, userId: string, req: { name: string; type: BoardStatusType; color: number; position?: number | undefined; isDefault: boolean; icon?: string | undefined }): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
     const b = rec.board;
     const name = req.name.trim();
     if (!name || chars(name) > 32) throw invalid('name', 'name must be 1..32 characters');
     if (b.statuses.length >= 20) throw conflict('at most 20 statuses', '', 'STATUS_LIMIT');
-    const s = create(BoardStatusSchema, { id: this.id('status'), name, type: req.type || BoardStatusType.UNSTARTED, color: req.color, position: b.statuses.length });
+    const icon = req.icon ?? '';
+    if (icon && !(STATUS_ICONS as readonly string[]).includes(icon)) throw invalid('icon', 'unknown status icon');
+    const s = create(BoardStatusSchema, { id: this.id('status'), name, type: req.type || BoardStatusType.UNSTARTED, color: req.color, position: b.statuses.length, icon });
     b.statuses.push(s);
     if (req.position !== undefined) this.reorder(b.statuses, s.id, req.position);
     if (req.isDefault) for (const x of b.statuses) x.isDefault = x.id === s.id;
@@ -805,7 +808,12 @@ export class BoardsMock {
     return this.boardOut(rec, userId, { personal: true });
   }
 
-  updateStatus(id: string, userId: string, sid: string, req: { name?: string | undefined; type?: BoardStatusType | undefined; color?: number | undefined; position?: number | undefined; isDefault?: boolean | undefined }): Board {
+  updateStatus(
+    id: string,
+    userId: string,
+    sid: string,
+    req: { name?: string | undefined; type?: BoardStatusType | undefined; color?: number | undefined; position?: number | undefined; isDefault?: boolean | undefined; icon?: string | undefined },
+  ): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
     const s = rec.board.statuses.find((x) => x.id === sid);
@@ -817,6 +825,10 @@ export class BoardsMock {
     }
     if (req.type !== undefined) s.type = req.type;
     if (req.color !== undefined) s.color = req.color;
+    if (req.icon !== undefined) {
+      if (req.icon && !(STATUS_ICONS as readonly string[]).includes(req.icon)) throw invalid('icon', 'unknown status icon');
+      s.icon = req.icon;
+    }
     if (req.position !== undefined) this.reorder(rec.board.statuses, sid, req.position);
     if (req.isDefault) for (const x of rec.board.statuses) x.isDefault = x.id === sid;
     this.emitBoard(rec, 'boardUpdate');

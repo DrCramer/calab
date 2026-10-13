@@ -173,7 +173,7 @@ export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuSh
           .sort((a, b) => a.position - b.position)
           .map((s): Choice => {
             const off = !!blocked?.has(s.id);
-            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
+            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
           }),
       },
     ],

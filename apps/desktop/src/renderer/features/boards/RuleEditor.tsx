@@ -207,7 +207,7 @@ function StatusPick({ board, value, onPick, any = false, testId }: { board: Boar
   const groups = useMemo(() => {
     const items: Choice[] = [...board.statuses]
       .sort((a, b) => a.position - b.position)
-      .map((s) => ({ id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} />, checked: s.id === value }));
+      .map((s) => ({ id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />, checked: s.id === value }));
     return [{ id: 's', label: '', items: any ? [{ id: '__any', search: [t('rules.anyStatus')], label: t('rules.anyStatus'), checked: !value }, ...items] : items }];
   }, [board.statuses, value, any]);
   const cur = board.statuses.find((s) => s.id === value);
@@ -216,7 +216,7 @@ function StatusPick({ board, value, onPick, any = false, testId }: { board: Boar
       <button type="button" className={chipBtn} data-testid={testId}>
         {cur ? (
           <>
-            <StatusIcon type={cur.type} color={cur.color} /> <span className="truncate">{cur.name}</span>
+            <StatusIcon type={cur.type} color={cur.color} icon={cur.icon} /> <span className="truncate">{cur.name}</span>
           </>
         ) : (
           <span className="text-muted">{any ? t('rules.anyStatus') : t('rules.choose')}</span>

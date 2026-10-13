@@ -898,6 +898,21 @@ test('m-boards-kanban', async ({ page }) => {
   await expect(page.getByTestId('task-panel')).toHaveCount(0);
 });
 
+// The status colour picker on a phone (ADR-0093): the shared menu runtime centres it as a card.
+test('m-boards-settings-color', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('board-more').tap();
+  await page.getByTestId('board-settings').tap();
+  await page.getByRole('tab', { name: 'Статусы' }).tap();
+  await page.getByTestId('statuses-editor').locator('[data-settings-row]').first().getByRole('button', { name: /^Цвет/ }).tap();
+  await expect(page.getByTestId('status-color-picker').getByRole('radio')).toHaveCount(12);
+  await checkpoint(page, 'm-boards-settings-color');
+});
+
 // The composer's «Стикеры» panel as a centred card (ADR-0030, owner 07.10): the pack strip, my pack, «Эмоции»
 // to add; animated stickers stand on their first frame (they play only on hover).
 test('m-sticker-picker', async ({ page }) => {

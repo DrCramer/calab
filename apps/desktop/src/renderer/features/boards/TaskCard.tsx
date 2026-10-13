@@ -58,6 +58,7 @@ export const TaskCard = memo(function TaskCard({
   const scoped = useBoardScoped(boardId);
   const statusType = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.type : undefined));
   const statusColor = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.color ?? 0) : 0));
+  const statusIcon = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.icon ?? '') : ''));
   const blocked = useBlockedStatuses(task, boardId);
   const focused = useBoardsUi((s) => s.focused === id);
   const selected = useBoardsUi((s) => !!s.selected[id]);
@@ -179,7 +180,7 @@ export const TaskCard = memo(function TaskCard({
       <div className="flex min-w-0 items-start gap-2">
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...menuOpen('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.status')} className="mt-[3px] shrink-0 rounded-full disabled:cursor-default" data-testid="card-status">
-            <StatusIcon type={statusType ?? 0} color={statusColor} />
+            <StatusIcon type={statusType ?? 0} color={statusColor} icon={statusIcon} />
           </button>
         </StatusMenu>
         <span className={cx('line-clamp-2 min-w-0 flex-1 break-words text-control font-medium', done ? 'text-muted' : 'text-fg')} data-testid="card-title">
@@ -318,7 +319,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={sub}>
-                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} /> {t('boards.f.status')}
+                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} icon={statuses?.find((s) => s.id === task.statusId)?.icon} /> {t('boards.f.status')}
                   <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('status')}</span>
                   <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                 </ContextMenu.SubTrigger>
@@ -328,7 +329,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                       .sort((a, b) => a.position - b.position)
                       .map((s) => (
                         <ContextMenu.Item key={s.id} className={item} disabled={blocked?.has(s.id)} onSelect={() => s.id !== task.statusId && void updateTask(task.id, { statusId: s.id })}>
-                          <StatusIcon type={s.type} color={s.color} /> {s.name}
+                          <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
                           {blocked?.has(s.id) ? <span className="ml-auto pl-3 text-caption text-muted">{t('boards.gate.hint')}</span> : null}
                         </ContextMenu.Item>
                       ))}

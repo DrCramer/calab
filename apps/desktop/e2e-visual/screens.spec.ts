@@ -167,6 +167,9 @@ const KEY = new Set([
   'boards-list',
   'boards-filter',
   'boards-settings',
+  // Status colour and icon pickers (ADR-0093).
+  'boards-settings-color',
+  'boards-settings-icon',
   // Timeline and task cards in chat (ADR-0042 §5, 1.1.0).
   'boards-timeline',
   'chat-task-card',
@@ -3837,6 +3840,40 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');
+});
+
+/** Board settings → «Статусы», the colour picker of the first status open (ADR-0093): a 6-wide grid over the rows. */
+test('boards-settings-color', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Статусы' }).click();
+  await win.getByTestId('statuses-editor').locator('[data-settings-row]').first().getByRole('button', { name: /^Цвет/ }).click();
+  const grid = win.getByTestId('status-color-picker');
+  await expect(grid.getByRole('radio')).toHaveCount(12);
+  await expect(grid.getByRole('radio', { name: 'Серый' })).toBeFocused();
+  await checkpoint(shot, 'boards-settings-color');
+});
+
+/** Board settings → «Статусы»: «Три четверти» picked for Backlog, the icon grid reopened (ADR-0093). */
+test('boards-settings-icon', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Статусы' }).click();
+  const row = win.getByTestId('statuses-editor').locator('[data-settings-row]').first();
+  await row.getByRole('button', { name: /^Иконка/ }).click();
+  const grid = win.getByTestId('status-icon-picker');
+  await expect(grid.getByRole('radio')).toHaveCount(19);
+  await grid.getByRole('radio', { name: 'Три четверти' }).click();
+  await expect(row.locator('[data-status-icon="three-quarters"]')).toBeVisible();
+  await row.getByRole('button', { name: /^Иконка/ }).click();
+  await expect(grid.getByRole('radio', { name: 'Три четверти' })).toHaveAttribute('aria-checked', 'true');
+  await checkpoint(shot, 'boards-settings-icon');
 });
 
 /** Board settings, the features tab (owner 07.10): every optional feature has a switch, 16 in all. */

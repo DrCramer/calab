@@ -52,7 +52,7 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
     const c = (value: string, label: string, icon?: ReactNode, op?: TaskOp): ValueChoice => ({ id: `${op ?? ''}:${value}`, value, label, search: [label], ...(icon ? { icon } : {}), checked: op !== undefined ? cond?.op === op : on(value), ...(op !== undefined ? { op } : {}) });
     switch (def.kind) {
       case 'status':
-        return [...(board?.statuses ?? [])].sort((a, b) => a.position - b.position).map((s) => c(s.id, s.name, <StatusIcon type={s.type} color={s.color} />));
+        return [...(board?.statuses ?? [])].sort((a, b) => a.position - b.position).map((s) => c(s.id, s.name, <StatusIcon type={s.type} color={s.color} icon={s.icon} />));
       case 'statusType':
         return STATUS_TYPES.map((ty) => c(STATUS_TYPE_TOKEN[ty] ?? '', t(STATUS_TYPE_LABEL[ty] ?? 'boards.type.unstarted'), <StatusIcon type={ty} color={0x8e8e93} />));
       case 'user': {

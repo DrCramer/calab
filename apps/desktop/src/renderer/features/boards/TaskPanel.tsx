@@ -482,7 +482,7 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
       <Prop label={t('boards.f.status')}>
         <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(task.id, { statusId: s })} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
-            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} /> <span className="truncate">{status?.name ?? ''}</span>
+            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} /> <span className="truncate">{status?.name ?? ''}</span>
           </button>
         </StatusMenu>
       </Prop>
@@ -766,7 +766,7 @@ function TaskLine({ id }: { id: string }): ReactNode {
   if (!x) return null;
   return (
     <button type="button" onClick={() => useBoardsUi.getState().openTask(id)} className="flex h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-control hover:bg-hover" data-testid="task-line">
-      <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
+      <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
       <span className="shrink-0 text-caption tabular-nums text-muted">{x.key}</span>
       <span className={cx('min-w-0 flex-1 truncate', doneType(status?.type) && 'text-muted line-through')}>{x.title}</span>
       {x.assignees[0] ? <MemberAvatar workspaceId={x.workspaceId} userId={x.assignees[0].userId} size={18} /> : null}

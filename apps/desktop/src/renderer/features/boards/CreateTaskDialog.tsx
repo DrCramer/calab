@@ -269,7 +269,7 @@ function Dialog({
           ) : null}
           <StatusMenu boardId={boardId} value={status} onPick={setStatus}>
             <button type="button" className={chip}>
-              <StatusIcon type={st?.type ?? 0} color={st?.color ?? 0} /> {st?.name ?? ''}
+              <StatusIcon type={st?.type ?? 0} color={st?.color ?? 0} icon={st?.icon} /> {st?.name ?? ''}
             </button>
           </StatusMenu>
           {on(BoardFeature.PRIORITY) ? (

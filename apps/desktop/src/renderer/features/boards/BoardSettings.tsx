@@ -13,9 +13,13 @@ import {
   type BoardStatus,
   type BoardWebhook,
   type Role,
+  STATUS_ICONS,
+  resolveStatusIcon,
+  type StatusIconToken,
 } from '@calaba/protocol';
-import { Archive, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ColorPicker, GridPicker } from '../../components/ColorPicker';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
@@ -68,7 +72,7 @@ import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
 import { RulesTab } from './Rules';
 import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, sortedStatuses } from './model';
-import { Dot, PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss } from './visuals';
+import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /**
  * Board settings (ADR-0042 §5): «Основное» (name, key — locked after the first task, emoji,
@@ -349,31 +353,45 @@ function WebhookStatus({ hook, board }: { hook: BoardWebhook; board: Board }): R
   );
 }
 
-function ColorDot({ color, onPick }: { color: number; onPick: (c: number) => void }): ReactNode {
-  const [open, setOpen] = useState(false);
+function ColorDot({ color, onPick, testId }: { color: number; onPick: (c: number) => void; testId?: string }): ReactNode {
+  return <ColorPicker value={color} palette={PALETTE} onPick={onPick} label={t('boards.color')} colorName={colorName} colorCss={colorCss} testId={testId} />;
+}
+
+/** The icon of a status (ADR-0093): a grid of the tokens, six in a row, and «По типу» (''). */
+function StatusIconPicker({ status, onPick, testId }: { status: BoardStatus; onPick: (icon: string) => void; testId?: string }): ReactNode {
+  const own = (STATUS_ICONS as readonly string[]).includes(status.icon) ? (status.icon as StatusIconToken) : undefined;
+  const name = (tok: StatusIconToken): string => t(`boards.icon.${tok}`);
   return (
-    <span className="relative">
-      <button type="button" aria-label={t('boards.color')} onClick={() => setOpen(!open)} className="grid size-6 place-items-center rounded-full hover:bg-hover">
-        <Dot color={color} size={12} />
-      </button>
-      {open ? (
-        <div className="mat-popover absolute left-0 top-7 z-[var(--z-modal-popover)] grid grid-cols-6 gap-1.5 rounded-[var(--radius-card)] p-2">
-          {PALETTE.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-label={colorCss(c)}
-              onClick={() => {
-                setOpen(false);
-                onPick(c);
-              }}
-              className={cx('size-6 rounded-full', c === color && 'ring-2 ring-fg ring-offset-2 ring-offset-[var(--color-popover)]')}
-              style={{ background: colorCss(c) }}
-            />
-          ))}
-        </div>
-      ) : null}
-    </span>
+    <GridPicker<StatusIconToken>
+      items={STATUS_ICONS}
+      value={own}
+      cell={32}
+      label={t('boards.icon')}
+      itemLabel={name}
+      renderItem={(tok) => <StatusIcon type={status.type} color={status.color} icon={tok} size={16} />}
+      onPick={(tok) => tok !== status.icon && onPick(tok)}
+      testId={testId}
+      trigger={
+        <button type="button" aria-label={`${t('boards.icon')}: ${name(resolveStatusIcon(status.icon, status.type))}`} className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-hover data-[state=open]:bg-active">
+          <StatusIcon type={status.type} color={status.color} icon={status.icon} />
+        </button>
+      }
+      footer={(close) => (
+        <button
+          type="button"
+          aria-pressed={!status.icon}
+          onClick={() => {
+            close();
+            if (status.icon) onPick('');
+          }}
+          className={cx('mt-2 flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-body outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent', !status.icon ? 'text-fg' : 'text-muted')}
+        >
+          <StatusIcon type={status.type} color={status.color} />
+          <span className="flex-1 text-start">{t('boards.icon.byType')}</span>
+          {!status.icon ? <Check className="size-4" aria-hidden /> : null}
+        </button>
+      )}
+    />
   );
 }
 
@@ -385,8 +403,8 @@ function StatusesTab({ board }: { board: Board }): ReactNode {
       <div className="flex flex-col" data-testid="statuses-editor">
         {list.map((s, i) => (
           <div key={s.id} className="flex h-11 items-center gap-2 border-b border-[var(--color-card-line)] px-3 last:border-b-0" data-settings-row>
-            <ColorDot color={s.color} onPick={(color) => void updateStatus(board.id, s.id, { color })} />
-            <StatusIcon type={s.type} color={s.color} />
+            <ColorDot color={s.color} onPick={(color) => void updateStatus(board.id, s.id, { color })} testId={i === 0 ? 'status-color-picker' : undefined} />
+            <StatusIconPicker status={s} onPick={(icon) => void updateStatus(board.id, s.id, { icon })} testId={i === 0 ? 'status-icon-picker' : undefined} />
             <CommitInput className="w-44" label={t('boards.set.name')} value={s.name} maxLength={32} onCommit={(v) => (v ? updateStatus(board.id, s.id, { name: v }).then(() => undefined) : undefined)} />
             <Select className="w-36" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
               {STATUS_TYPES.map((ty) => (
