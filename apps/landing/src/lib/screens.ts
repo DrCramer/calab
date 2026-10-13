@@ -16,7 +16,6 @@ export const SCREENS = {
   sipsettings: { width: 940, height: 660 },
   siplog: { width: 940, height: 660 },
   webapps: { width: 1440, height: 870 },
-  boards2: { width: 890, height: 640 },
   checklists: { width: 480, height: 870 },
   boardfeatures: { width: 940, height: 660 },
   boardhook: { width: 940, height: 660 },
@@ -26,6 +25,17 @@ export const SCREENS = {
   stickerchat: { width: 1110, height: 870 },
   stickerpicker: { width: 1110, height: 870 },
   voicelist: { width: 340, height: 440 },
+  // Landing 3.3 (e2e-marketing/landing-v5.spec.ts, landing-mail.spec.ts)
+  mail: { width: 1440, height: 758 },
+  taskhistory: { width: 1110, height: 870 },
+  notify: { width: 920, height: 640 },
+  notifyrelay: { width: 920, height: 640 },
+  gallery: { width: 1440, height: 870 },
+  search: { width: 660, height: 650 },
+  'phone-rooms': { width: 390, height: 844 },
+  'phone-chat': { width: 390, height: 844 },
+  'phone-voice': { width: 390, height: 844 },
+  'phone-board': { width: 390, height: 844 },
 } as const;
 
 export type ScreenName = keyof typeof SCREENS;

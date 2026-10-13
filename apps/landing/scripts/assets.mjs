@@ -54,9 +54,6 @@ export const CROPS = {
   // a workspace web app (the test dashboard) open in the window, the call island kept
   webapps: { left: 0, top: 30, width: 1440, height: 870 },
   // Calab 2.0 (e2e-marketing/landing-v2.spec.ts)
-  // boards: three kanban columns with checklist progress «3/7» on the cards (the capture's window is
-  // 1220 px wide; the boards list on the left is cut off)
-  boards2: { left: 330, top: 30, width: 890, height: 640 },
   // the task panel with two named checklists
   checklists: { left: 960, top: 30, width: 480, height: 870 },
   // board settings windows: «Фичи», «Вебхук» (Business)
@@ -72,6 +69,23 @@ export const CROPS = {
   stickerpicker: { left: 330, top: 30, width: 1110, height: 870 },
   // the room list: people in a voice room and «Войти»
   voicelist: { left: 0, top: 30, width: 340, height: 440 },
+  // Landing 3.3 (e2e-marketing/landing-v5.spec.ts, landing-mail.spec.ts)
+  // the desktop mail client (Electron, its window is 1440×758 CSS px on the capture machine)
+  mail: { left: 0, top: 0, width: 1440, height: 758 },
+  // the board with the opened task on «История»
+  taskhistory: { left: 330, top: 30, width: 1110, height: 870 },
+  // settings → Уведомления: the task triggers / their end with «Передавать боту»
+  notify: { left: 260, top: 130, width: 920, height: 640 },
+  notifyrelay: { left: 260, top: 130, width: 920, height: 640 },
+  // a video meeting in «Галерея»
+  gallery: { left: 0, top: 30, width: 1440, height: 870 },
+  // ⌘K with the unified search sections
+  search: { left: 390, top: 115, width: 660, height: 650 },
+  // the phone (iPhone 14 viewport, 390×844): rooms, chat, «В голосе», a board
+  'phone-rooms': { left: 0, top: 0, width: 390, height: 844 },
+  'phone-chat': { left: 0, top: 0, width: 390, height: 844 },
+  'phone-voice': { left: 0, top: 0, width: 390, height: 844 },
+  'phone-board': { left: 0, top: 0, width: 390, height: 844 },
 };
 
 // `--only=sipdial,siproom` regenerates just those images (raw captures of the other scenes are not needed,
