@@ -52,3 +52,12 @@ npx playwright test --config playwright.mobile.config.ts --project webkit-iphone
 берёт случайный порт — WebKit-прогоны разных агентов могут идти параллельно. Плюс
 `pnpm -s typecheck`, `pnpm -s lint`, `pnpm -F @calaba/desktop test` (целевые файлы). Новые строки
 i18n — во всех четырёх локалях (`i18n/ru|en|es|zh-CN`, тест `i18n.keys.test.ts`).
+
+## Добавлено 13.10 (вечер)
+
+- **T7 — Кто в голосе, с телефона** (Opus, после T5): стопка аватаров (≤ 3 + счётчик) в шапке голосовой комнаты, пока идёт звонок (и когда я в нём); тап по стопке и по аватарам плашки «В голосе» — карточка по центру «В голосе · n · таймер» со строками участников (кольцо речи, микрофон/наушники/камера/стрим), внизу «Присоединиться»/«Выйти», тап по человеку — его меню. Промежуточных экранов нет: чат открывается сразу (ADR-0073 §4). Файлы: `chat/RoomHeader.tsx` (телефонная ветка), `shell/PhoneRoomList.tsx` (`AvatarStack`, `useRoomPeople`), новый `shell/VoicePeopleCard.tsx`, `MobileVoiceStrip.tsx` (не обязательно).
+
+## Эпик «История задачи» — ADR-0091 (в 3.3.0 вместе с телефоном)
+
+- **H1 — сервер** (Opus, ветка `boards/history-journal`): журнал полный по ADR-0091 §3 — виды `comment`/`comment_edit`/`comment_delete`, `description.text`, снимки имён в `attachments`/`labels`/`milestone`/`parent`/`relation`, ключ слияния `message_id`, `?only=journal|comments`, бэкфилл-миграция `uuidv7_at`, вебхуки/правила/уведомления без дублей; интеграционные тесты; proto-комментарии + `make gen`. Второе ревью (протокол).
+- **H2 — клиент** (Opus, ветка `boards/history-ui`): вкладки «Комментарии | История», таймлайн по §2, `lib/boards/history.ts` + `lib/textDiff.ts` (чистые, с тестами), `features/boards/TaskHistory.tsx`, i18n ×4, мок (`e2e-support/mock-boards.ts`) со всеми видами, визуальные `boards-task-history` (dark 960, light) и `m-boards-task-history`.
