@@ -1427,11 +1427,11 @@ test('workspace-menu', async ({ open, win, mock, shot }) => {
 test('sidebar-room-picture', async ({ open, win, mock, shot }) => {
   await open();
   const by = IDS.users.anna;
-  mock.setRoomPicture(IDS.rooms.general, { bg: [233, 120, 40], fg: [255, 255, 255] }, by);
-  mock.setRoomPicture(IDS.rooms.dev, { bg: [52, 120, 246], fg: [255, 255, 255] }, by);
-  mock.setRoomPicture(IDS.rooms.longPrivate, { bg: [140, 70, 200], fg: [255, 255, 255] }, by);
-  mock.setRoomPicture(IDS.rooms.call, { bg: [30, 160, 90], fg: [255, 255, 255] }, by);
-  mock.setRoomPicture(IDS.rooms.meeting, { bg: [200, 50, 70], fg: [255, 255, 255] }, by);
+  mock.setRoomPicture(IDS.rooms.general, { photo: [[255, 170, 110], [70, 60, 170]] }, by);
+  mock.setRoomPicture(IDS.rooms.dev, { photo: [[120, 200, 255], [30, 70, 160]] }, by);
+  mock.setRoomPicture(IDS.rooms.longPrivate, { photo: [[255, 120, 160], [90, 40, 120]] }, by);
+  mock.setRoomPicture(IDS.rooms.call, { photo: [[150, 230, 170], [20, 110, 90]] }, by);
+  mock.setRoomPicture(IDS.rooms.meeting, { photo: [[255, 210, 120], [180, 60, 50]] }, by);
   // A reload: the pictures come in the READY snapshot, not in live events.
   await win.reload();
   await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });

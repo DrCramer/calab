@@ -465,7 +465,7 @@ import {
   type EmailView,
   type Occurrence,
 } from './mock-calendar';
-import { cardPicture, encodePng, pngSize } from './png';
+import { avatarPicture, cardPicture, encodePng, pngSize } from './png';
 import { freeWindows, intersectIntervals, workIntervals } from '../src/renderer/lib/calendar/freebusy';
 import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
@@ -537,6 +537,9 @@ export interface AddEventArgs {
   attendees?: { userId?: string; email?: string; required?: boolean; status?: AttendeeStatus }[];
 }
 
+/** A generated room picture (ADR-0092): a logo (a disc on a square) or a photo-like gradient landscape. */
+export type RoomPictureColors = { bg: [number, number, number]; fg: [number, number, number] } | { photo: [[number, number, number], [number, number, number]] };
+
 export interface MockServer {
   url: string;
   port: number;
@@ -590,7 +593,7 @@ export interface MockServer {
    * ADR-0092: the room's picture (a generated square; null = none) set by `byUserId` → ROOM_UPDATE
    * and the system line «… изменил(а) картинку комнаты» (MESSAGE_CREATE), as PATCH icon_file_id.
    */
-  setRoomPicture(roomId: string, colors: { bg: [number, number, number]; fg: [number, number, number] } | null, byUserId: string): void;
+  setRoomPicture(roomId: string, colors: RoomPictureColors | null, byUserId: string): void;
   /** docs/09 #82: the member's badge ('' = none) → WORKSPACE_MEMBER_UPDATE. */
   setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
   /** ADR-0035 addendum: a camera background of the workspace with a generated 16:9 picture (a diagonal gradient) → BACKGROUND_CREATE; its id. */
@@ -2075,11 +2078,16 @@ class MockImpl {
     this.emitUserUpdate(u);
   }
 
-  setRoomPicture(roomId: string, colors: { bg: [number, number, number]; fg: [number, number, number] } | null, byUserId: string): void {
+  setRoomPicture(roomId: string, colors: RoomPictureColors | null, byUserId: string): void {
     const room = this.state.rooms.get(roomId);
     if (!room) throw new Error(`no room ${roomId}`);
     // A 64×64 «logo»: a filled square with a centred disc (what the client uploads after its crop).
-    const png = colors ? encodePng(64, 64, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg)) : null;
+    // `photo`: a photo-like picture (a dusk landscape, avatarPicture); else a logo — a disc on a square.
+    const png = !colors
+      ? null
+      : 'photo' in colors
+        ? encodePng(128, 128, avatarPicture(colors.photo[0], colors.photo[1]))
+        : encodePng(64, 64, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
     const fileId = png ? this.storeFile(room.workspaceId, byUserId, { name: 'room.png', mime: 'image/png', bytes: png }) : '';
     this.applyRoomPicture(room, fileId, byUserId);
   }

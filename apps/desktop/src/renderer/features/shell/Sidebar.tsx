@@ -1254,7 +1254,7 @@ const TextRoomRow = memo(function TextRoomRow({
             {/* A quiet «#» (owner, 07.10): same size, weight and colour as the voice rooms' speaker; a
                 private room shows the lock in that slot. */}
             <span className="grid w-[18px] shrink-0 place-items-center">
-              <RoomIcon roomId={room.id} size={16} />
+              <RoomIcon roomId={room.id} size={16} pictureSize={20} />
             </span>
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
@@ -1402,7 +1402,7 @@ function VoiceRoomRow({
                   ) : temp && !room.iconFileId ? (
                     <TempIcon expires={expires} inRoom={inRoom} />
                   ) : (
-                    <RoomIcon roomId={room.id} size={16} live={inRoom} />
+                    <RoomIcon roomId={room.id} size={16} pictureSize={20} live={inRoom} />
                   )}
                 </span>
                 <span className={cx('min-w-0 truncate', !temp && !room.restricted && 'flex-1')} title={room.name}>

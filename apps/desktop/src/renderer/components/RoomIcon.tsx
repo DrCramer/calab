@@ -34,6 +34,9 @@ const BADGE: Record<RoomIconSize, { box: string; lock: string }> = {
  * - A private room: a small lock badge in the corner; on a bare text glyph (16/20 without a picture)
  *   the lock replaces the `#` instead (the desktop room list, owner 07.10).
  * - `ring` — the surface colour the badge's cutout ring takes (default: the sidebar).
+ * - `pictureSize` — a picture bigger than the glyph (the desktop room list: 20 px over a 16 px glyph,
+ *   owner 13.10 «a 16 px picture reads as a dot»): it overflows the glyph's box evenly, so the row's
+ *   layout (height, the name's start) does not move.
  */
 export const RoomIcon = memo(function RoomIcon({
   roomId,
@@ -41,6 +44,7 @@ export const RoomIcon = memo(function RoomIcon({
   size,
   live = false,
   ring,
+  pictureSize,
   className,
 }: {
   roomId: string;
@@ -48,6 +52,7 @@ export const RoomIcon = memo(function RoomIcon({
   size: RoomIconSize;
   live?: boolean;
   ring?: string;
+  pictureSize?: number;
   className?: string;
 }): ReactNode {
   const iconFileId = useRooms((s) => roomIconFile(s, roomId, room));
@@ -59,6 +64,8 @@ export const RoomIcon = memo(function RoomIcon({
   const Icon = lockInstead ? Lock : GLYPH[glyph];
   const badge = isPrivate && !lockInstead;
   const glyphPx = size === 44 ? 22 : size === 32 ? 18 : size;
+  const pic = pictureSize ?? size;
+  const off = (size - pic) / 2;
   return (
     <span
       className={cx('relative inline-grid shrink-0 place-items-center', className)}
@@ -71,7 +78,8 @@ export const RoomIcon = memo(function RoomIcon({
           path={thumbnailPath(iconFileId)}
           alt=""
           draggable={false}
-          className={cx('size-full rounded-full bg-[var(--color-fill)] object-cover', live && 'outline outline-2 outline-offset-1 outline-[var(--color-ok)]')}
+          className={cx('absolute max-w-none rounded-full bg-[var(--color-fill)] object-cover', live && 'outline outline-2 outline-offset-1 outline-[var(--color-ok)]')}
+          style={{ width: pic, height: pic, left: off, top: off }}
         />
       ) : disc ? (
         <span
