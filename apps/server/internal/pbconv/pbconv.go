@@ -575,6 +575,7 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		ExpiresAt:           tsp(r.ExpiresAt),
 		CreatedBy:           idp(r.CreatedBy),
 		ArchivedAt:          tsp(r.ArchivedAt),
+		IconFileId:          idp(r.IconFileID),
 	}
 }
 
@@ -604,6 +605,16 @@ func Categories(cs []sqlc.RoomCategory) []*v1.RoomCategory {
 }
 
 // ---- files / messages ----
+
+// SystemPayload decodes a stored system message card (messages.payload); nil for none.
+func SystemPayload(raw []byte) *v1.SystemMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := &v1.SystemMessage{}
+	_ = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, out)
+	return out
+}
 
 // IsImage reports whether a stored mime type gets a thumbnail and inline display.
 func IsImage(mime string) bool {

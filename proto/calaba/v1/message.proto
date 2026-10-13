@@ -77,7 +77,15 @@ message SystemMessage {
     CallCard call = 3;           // a DM call log line (ADR-0034)
     AchievementCard achievement = 4; // ADR-0061
     AutomationCard automation = 5; // a message of a board automation rule (ADR-0060)
+    RoomIconCard room_icon = 6;    // the room's picture was changed (ADR-0092)
   }
+}
+
+// "<author> changed the room picture": posted by the server into the room when PATCH
+// /api/rooms/{id} changes icon_file_id; the author is who changed it. No notification or sound.
+// The file stays readable to those who see the room while the message lives.
+message RoomIconCard {
+  string file_id = 1; // the new picture; empty = the picture was removed
 }
 
 // «Автоматизация»: a board automation rule posted into a text room or into the task's comments

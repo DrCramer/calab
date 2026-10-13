@@ -371,10 +371,11 @@ const lastMessages = `-- name: LastMessages :many
 SELECT r.id::uuid AS room_id, lm.id, lm.created_at, lm.author_id,
        left(lm.content, 200)::text AS preview,
        (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = lm.id)::integer AS attachments,
-       coalesce((SELECT st.emoji FROM stickers st WHERE st.id = lm.sticker_id), '')::text AS sticker_emoji
+       coalesce((SELECT st.emoji FROM stickers st WHERE st.id = lm.sticker_id), '')::text AS sticker_emoji,
+       (CASE WHEN lm.kind = 'system' THEN lm.payload END)::jsonb AS system_payload
 FROM unnest($1::uuid[]) AS r(id)
 CROSS JOIN LATERAL (
-    SELECT m.id, m.created_at, m.author_id, m.content, m.sticker_id FROM messages m
+    SELECT m.id, m.created_at, m.author_id, m.content, m.sticker_id, m.kind, m.payload FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
     ORDER BY m.id DESC
     LIMIT 1
@@ -382,19 +383,21 @@ CROSS JOIN LATERAL (
 `
 
 type LastMessagesRow struct {
-	RoomID       uuid.UUID
-	ID           uuid.UUID
-	CreatedAt    time.Time
-	AuthorID     uuid.UUID
-	Preview      string
-	Attachments  int32
-	StickerEmoji string
+	RoomID        uuid.UUID
+	ID            uuid.UUID
+	CreatedAt     time.Time
+	AuthorID      uuid.UUID
+	Preview       string
+	Attachments   int32
+	StickerEmoji  string
+	SystemPayload []byte
 }
 
 // Newest live message per room with its list preview (ADR-0073 §5; the same fields and
 // 200-character cut as ListDMs): one backwards index probe per room (LATERAL … LIMIT 1),
 // independent of history size, plus a primary-key probe for the attachment count and the
-// sticker. Rooms without live messages have no row.
+// sticker. Rooms without live messages have no row. system_payload: a system message's card
+// (DmLastMessage.system, ADR-0092), NULL for a user's message.
 func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]LastMessagesRow, error) {
 	rows, err := q.db.Query(ctx, lastMessages, roomIds)
 	if err != nil {
@@ -412,6 +415,7 @@ func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]Last
 			&i.Preview,
 			&i.Attachments,
 			&i.StickerEmoji,
+			&i.SystemPayload,
 		); err != nil {
 			return nil, err
 		}

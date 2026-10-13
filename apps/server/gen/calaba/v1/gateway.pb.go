@@ -3901,8 +3901,11 @@ type DmLastMessage struct {
 	AttachmentCount uint32                 `protobuf:"varint,4,opt,name=attachment_count,json=attachmentCount,proto3" json:"attachment_count,omitempty"`
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	StickerEmoji    string                 `protobuf:"bytes,6,opt,name=sticker_emoji,json=stickerEmoji,proto3" json:"sticker_emoji,omitempty"` // set for a sticker message (ADR-0030): its emoji
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Set for a system message (Message.system) in the room list previews (rooms only, not DMs or
+	// notes): clients preview its one line, e.g. «changed the room picture» (ADR-0092).
+	System        *SystemMessage `protobuf:"bytes,7,opt,name=system,proto3" json:"system,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DmLastMessage) Reset() {
@@ -3975,6 +3978,13 @@ func (x *DmLastMessage) GetStickerEmoji() string {
 		return x.StickerEmoji
 	}
 	return ""
+}
+
+func (x *DmLastMessage) GetSystem() *SystemMessage {
+	if x != nil {
+		return x.System
+	}
+	return nil
 }
 
 type CategoryCreate struct {
@@ -7368,7 +7378,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"NotesShelf\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12\x14\n" +
 	"\x05emoji\x18\x02 \x01(\tR\x05emoji\x12;\n" +
-	"\flast_message\x18\x03 \x01(\v2\x18.calaba.v1.DmLastMessageR\vlastMessage\"\xe1\x01\n" +
+	"\flast_message\x18\x03 \x01(\v2\x18.calaba.v1.DmLastMessageR\vlastMessage\"\x93\x02\n" +
 	"\rDmLastMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tauthor_id\x18\x02 \x01(\tR\bauthorId\x12\x18\n" +
@@ -7376,7 +7386,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x10attachment_count\x18\x04 \x01(\rR\x0fattachmentCount\x129\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12#\n" +
-	"\rsticker_emoji\x18\x06 \x01(\tR\fstickerEmoji\"E\n" +
+	"\rsticker_emoji\x18\x06 \x01(\tR\fstickerEmoji\x120\n" +
+	"\x06system\x18\a \x01(\v2\x18.calaba.v1.SystemMessageR\x06system\"E\n" +
 	"\x0eCategoryCreate\x123\n" +
 	"\bcategory\x18\x01 \x01(\v2\x17.calaba.v1.RoomCategoryR\bcategory\"E\n" +
 	"\x0eCategoryUpdate\x123\n" +
@@ -7780,11 +7791,12 @@ var file_calaba_v1_gateway_proto_goTypes = []any{
 	(*Call)(nil),                          // 141: calaba.v1.Call
 	(*WorkspaceIdentityAccess)(nil),       // 142: calaba.v1.WorkspaceIdentityAccess
 	(*User)(nil),                          // 143: calaba.v1.User
-	(*StickerPack)(nil),                   // 144: calaba.v1.StickerPack
-	(*WorkspaceBan)(nil),                  // 145: calaba.v1.WorkspaceBan
-	(*RoomPermissionOverride)(nil),        // 146: calaba.v1.RoomPermissionOverride
-	(*Message)(nil),                       // 147: calaba.v1.Message
-	(ScreenSharePreset)(0),                // 148: calaba.v1.ScreenSharePreset
+	(*SystemMessage)(nil),                 // 144: calaba.v1.SystemMessage
+	(*StickerPack)(nil),                   // 145: calaba.v1.StickerPack
+	(*WorkspaceBan)(nil),                  // 146: calaba.v1.WorkspaceBan
+	(*RoomPermissionOverride)(nil),        // 147: calaba.v1.RoomPermissionOverride
+	(*Message)(nil),                       // 148: calaba.v1.Message
+	(ScreenSharePreset)(0),                // 149: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	0,   // 0: calaba.v1.GatewayFrame.op:type_name -> calaba.v1.GatewayOpcode
@@ -7946,57 +7958,58 @@ var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	125, // 156: calaba.v1.NotesShelf.room:type_name -> calaba.v1.Room
 	29,  // 157: calaba.v1.NotesShelf.last_message:type_name -> calaba.v1.DmLastMessage
 	91,  // 158: calaba.v1.DmLastMessage.created_at:type_name -> google.protobuf.Timestamp
-	127, // 159: calaba.v1.CategoryCreate.category:type_name -> calaba.v1.RoomCategory
-	127, // 160: calaba.v1.CategoryUpdate.category:type_name -> calaba.v1.RoomCategory
-	3,   // 161: calaba.v1.VoiceDisconnected.reason:type_name -> calaba.v1.VoiceDisconnectReason
-	22,  // 162: calaba.v1.WorkspaceCreate.snapshot:type_name -> calaba.v1.WorkspaceSnapshot
-	123, // 163: calaba.v1.WorkspaceUpdate.workspace:type_name -> calaba.v1.Workspace
-	126, // 164: calaba.v1.WorkspaceMemberAdd.member:type_name -> calaba.v1.WorkspaceMember
-	126, // 165: calaba.v1.WorkspaceMemberUpdate.member:type_name -> calaba.v1.WorkspaceMember
-	128, // 166: calaba.v1.RoleCreate.role:type_name -> calaba.v1.Role
-	128, // 167: calaba.v1.RoleUpdate.role:type_name -> calaba.v1.Role
-	144, // 168: calaba.v1.StickerPackCreate.pack:type_name -> calaba.v1.StickerPack
-	144, // 169: calaba.v1.StickerPackUpdate.pack:type_name -> calaba.v1.StickerPack
-	129, // 170: calaba.v1.BadgeCreate.badge:type_name -> calaba.v1.Badge
-	129, // 171: calaba.v1.BadgeUpdate.badge:type_name -> calaba.v1.Badge
-	130, // 172: calaba.v1.BackgroundCreate.background:type_name -> calaba.v1.WorkspaceBackground
-	130, // 173: calaba.v1.BackgroundUpdate.background:type_name -> calaba.v1.WorkspaceBackground
-	136, // 174: calaba.v1.WorkspaceAppUpsert.app:type_name -> calaba.v1.WorkspaceApp
-	131, // 175: calaba.v1.SoundCreate.sound:type_name -> calaba.v1.Sound
-	131, // 176: calaba.v1.SoundUpdate.sound:type_name -> calaba.v1.Sound
-	91,  // 177: calaba.v1.SoundPlay.at:type_name -> google.protobuf.Timestamp
-	145, // 178: calaba.v1.WorkspaceBanAdd.ban:type_name -> calaba.v1.WorkspaceBan
-	125, // 179: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
-	125, // 180: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
-	146, // 181: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
-	147, // 182: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
-	147, // 183: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
-	91,  // 184: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
-	20,  // 185: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
-	19,  // 186: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
-	148, // 187: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
-	4,   // 188: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
-	4,   // 189: calaba.v1.VoiceCameraStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
-	21,  // 190: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
-	27,  // 191: calaba.v1.DmCreate.dm:type_name -> calaba.v1.DmSummary
-	28,  // 192: calaba.v1.NotesCreate.shelf:type_name -> calaba.v1.NotesShelf
-	28,  // 193: calaba.v1.NotesUpdate.shelf:type_name -> calaba.v1.NotesShelf
-	91,  // 194: calaba.v1.DmStateUpdate.archived_at:type_name -> google.protobuf.Timestamp
-	141, // 195: calaba.v1.CallRing.call:type_name -> calaba.v1.Call
-	143, // 196: calaba.v1.CallRing.caller:type_name -> calaba.v1.User
-	141, // 197: calaba.v1.CallStateUpdate.call:type_name -> calaba.v1.Call
-	139, // 198: calaba.v1.RoomNotificationUpdate.settings:type_name -> calaba.v1.RoomNotificationSettings
-	140, // 199: calaba.v1.WorkspaceNotificationUpdate.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
-	138, // 200: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
-	143, // 201: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
-	20,  // 202: calaba.v1.UserUpdate.presence:type_name -> calaba.v1.Presence
-	142, // 203: calaba.v1.WorkspaceIdentityAccessUpdate.access:type_name -> calaba.v1.WorkspaceIdentityAccess
-	29,  // 204: calaba.v1.WorkspaceSnapshot.RoomLastMessagesEntry.value:type_name -> calaba.v1.DmLastMessage
-	205, // [205:205] is the sub-list for method output_type
-	205, // [205:205] is the sub-list for method input_type
-	205, // [205:205] is the sub-list for extension type_name
-	205, // [205:205] is the sub-list for extension extendee
-	0,   // [0:205] is the sub-list for field type_name
+	144, // 159: calaba.v1.DmLastMessage.system:type_name -> calaba.v1.SystemMessage
+	127, // 160: calaba.v1.CategoryCreate.category:type_name -> calaba.v1.RoomCategory
+	127, // 161: calaba.v1.CategoryUpdate.category:type_name -> calaba.v1.RoomCategory
+	3,   // 162: calaba.v1.VoiceDisconnected.reason:type_name -> calaba.v1.VoiceDisconnectReason
+	22,  // 163: calaba.v1.WorkspaceCreate.snapshot:type_name -> calaba.v1.WorkspaceSnapshot
+	123, // 164: calaba.v1.WorkspaceUpdate.workspace:type_name -> calaba.v1.Workspace
+	126, // 165: calaba.v1.WorkspaceMemberAdd.member:type_name -> calaba.v1.WorkspaceMember
+	126, // 166: calaba.v1.WorkspaceMemberUpdate.member:type_name -> calaba.v1.WorkspaceMember
+	128, // 167: calaba.v1.RoleCreate.role:type_name -> calaba.v1.Role
+	128, // 168: calaba.v1.RoleUpdate.role:type_name -> calaba.v1.Role
+	145, // 169: calaba.v1.StickerPackCreate.pack:type_name -> calaba.v1.StickerPack
+	145, // 170: calaba.v1.StickerPackUpdate.pack:type_name -> calaba.v1.StickerPack
+	129, // 171: calaba.v1.BadgeCreate.badge:type_name -> calaba.v1.Badge
+	129, // 172: calaba.v1.BadgeUpdate.badge:type_name -> calaba.v1.Badge
+	130, // 173: calaba.v1.BackgroundCreate.background:type_name -> calaba.v1.WorkspaceBackground
+	130, // 174: calaba.v1.BackgroundUpdate.background:type_name -> calaba.v1.WorkspaceBackground
+	136, // 175: calaba.v1.WorkspaceAppUpsert.app:type_name -> calaba.v1.WorkspaceApp
+	131, // 176: calaba.v1.SoundCreate.sound:type_name -> calaba.v1.Sound
+	131, // 177: calaba.v1.SoundUpdate.sound:type_name -> calaba.v1.Sound
+	91,  // 178: calaba.v1.SoundPlay.at:type_name -> google.protobuf.Timestamp
+	146, // 179: calaba.v1.WorkspaceBanAdd.ban:type_name -> calaba.v1.WorkspaceBan
+	125, // 180: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
+	125, // 181: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
+	147, // 182: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
+	148, // 183: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
+	148, // 184: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
+	91,  // 185: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
+	20,  // 186: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
+	19,  // 187: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
+	149, // 188: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
+	4,   // 189: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	4,   // 190: calaba.v1.VoiceCameraStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	21,  // 191: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
+	27,  // 192: calaba.v1.DmCreate.dm:type_name -> calaba.v1.DmSummary
+	28,  // 193: calaba.v1.NotesCreate.shelf:type_name -> calaba.v1.NotesShelf
+	28,  // 194: calaba.v1.NotesUpdate.shelf:type_name -> calaba.v1.NotesShelf
+	91,  // 195: calaba.v1.DmStateUpdate.archived_at:type_name -> google.protobuf.Timestamp
+	141, // 196: calaba.v1.CallRing.call:type_name -> calaba.v1.Call
+	143, // 197: calaba.v1.CallRing.caller:type_name -> calaba.v1.User
+	141, // 198: calaba.v1.CallStateUpdate.call:type_name -> calaba.v1.Call
+	139, // 199: calaba.v1.RoomNotificationUpdate.settings:type_name -> calaba.v1.RoomNotificationSettings
+	140, // 200: calaba.v1.WorkspaceNotificationUpdate.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
+	138, // 201: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
+	143, // 202: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
+	20,  // 203: calaba.v1.UserUpdate.presence:type_name -> calaba.v1.Presence
+	142, // 204: calaba.v1.WorkspaceIdentityAccessUpdate.access:type_name -> calaba.v1.WorkspaceIdentityAccess
+	29,  // 205: calaba.v1.WorkspaceSnapshot.RoomLastMessagesEntry.value:type_name -> calaba.v1.DmLastMessage
+	206, // [206:206] is the sub-list for method output_type
+	206, // [206:206] is the sub-list for method input_type
+	206, // [206:206] is the sub-list for extension type_name
+	206, // [206:206] is the sub-list for extension extendee
+	0,   // [0:206] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_gateway_proto_init() }

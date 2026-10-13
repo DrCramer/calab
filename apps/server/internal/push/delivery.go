@@ -40,6 +40,9 @@ func eventJob(event *v1.DispatchEvent) (sqlc.PushDelivery, bool) {
 		if card := message.GetSystem().GetCall(); card != nil && card.Outcome != v1.CallOutcome_CALL_OUTCOME_MISSED {
 			return job, false
 		}
+		if message.GetSystem().GetRoomIcon() != nil { // a room picture change is silent (ADR-0092)
+			return job, false
+		}
 		job.Kind = messageKind
 		job.ReferenceID, _ = uuid.Parse(message.Id)
 		room, _ := uuid.Parse(message.RoomId)

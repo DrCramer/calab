@@ -410,6 +410,7 @@ func New(d Deps) *App {
 	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
 	roomHandlers.PublicURL = d.Config.PublicAppURL
 	roomHandlers.EmailGate = authSvc.EmailGate()
+	roomHandlers.System = messages.NewSystem(d.DB, pub) // the room picture's system message (ADR-0092)
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)

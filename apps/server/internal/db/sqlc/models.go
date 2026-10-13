@@ -1158,6 +1158,7 @@ type Room struct {
 	GuestApproval    bool
 	ExpiresAt        *time.Time
 	CreatedBy        *uuid.UUID
+	IconFileID       *uuid.UUID
 }
 
 type RoomAdmission struct {

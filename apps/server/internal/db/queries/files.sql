@@ -25,13 +25,20 @@ SELECT f.*, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.i
 FROM files f WHERE f.id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: FileRooms :many
--- Rooms where the file is attached to a live message, and the room of a task whose description
--- shows it (ADR-0042).
+-- Rooms where the file is attached to a live message, the room of a task whose description
+-- shows it (ADR-0042), and a room whose picture it is or whose live system message room_icon
+-- shows it (ADR-0092; messages_room_icon_file_idx).
 SELECT DISTINCT m.room_id FROM message_attachments ma
 JOIN messages m ON m.id = ma.message_id AND m.deleted_at IS NULL
 WHERE ma.file_id = $1
 UNION
-SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1;
+SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1
+UNION
+SELECT r.id FROM rooms r WHERE r.icon_file_id = $1
+UNION
+SELECT ri.room_id FROM messages ri
+WHERE ri.kind = 'system' AND ri.payload ? 'roomIcon' AND ri.payload -> 'roomIcon' ->> 'fileId' = $1::text
+  AND ri.deleted_at IS NULL;
 
 -- name: IsWorkspaceIcon :one
 SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS (SELECT 1 FROM boards b WHERE b.icon_file_id = $1))::boolean;
@@ -39,7 +46,7 @@ SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS 
 -- name: ListOrphanFiles :many
 -- Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
 -- (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
--- (ADR-0061), older than the cutoff.
+-- (ADR-0061), room picture or its system message (ADR-0092), older than the cutoff.
 SELECT * FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -53,6 +60,9 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM boards bi WHERE bi.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_apps wa WHERE wa.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM rooms ri WHERE ri.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
+                    AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text)
 ORDER BY f.created_at
 LIMIT 500;
 

@@ -37,7 +37,8 @@ UPDATE rooms SET
     max_stream_preset  = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_stream_preset')::text ELSE max_stream_preset END,
     max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END,
     camera_limit       = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('camera_limit')::integer ELSE camera_limit END,
-    category_id        = CASE WHEN sqlc.arg('set_category')::boolean THEN sqlc.narg('category_id')::uuid ELSE category_id END
+    category_id        = CASE WHEN sqlc.arg('set_category')::boolean THEN sqlc.narg('category_id')::uuid ELSE category_id END,
+    icon_file_id       = CASE WHEN sqlc.arg('set_icon')::boolean THEN sqlc.narg('icon_file_id')::uuid ELSE icon_file_id END
 WHERE id = sqlc.arg('id') AND archived_at IS NULL
 RETURNING *;
 

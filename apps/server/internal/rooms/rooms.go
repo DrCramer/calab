@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -19,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/iconfile"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -39,6 +41,15 @@ type Handlers struct {
 	// EmailGate: whether a guest link of a temporary room needs a confirmed address
 	// (ADR-0023, EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
 	EmailGate auth.EmailGate
+	// System publishes the system message room_icon a picture change writes (ADR-0092); nil =
+	// the message is still written, only not published (tests).
+	System SystemCreated
+}
+
+// SystemCreated publishes MESSAGE_CREATE for a system message inserted in a transaction
+// (messages.System; an interface because messages imports rooms).
+type SystemCreated interface {
+	Created(ctx context.Context, workspaceID uuid.UUID, m sqlc.Message) error
 }
 
 // NewHandlers creates the room handlers.
@@ -82,7 +93,7 @@ func lastMessage(l sqlc.LastMessagesRow) *v1.DmLastMessage {
 	return &v1.DmLastMessage{
 		Id: l.ID.String(), AuthorId: l.AuthorID.String(), Content: l.Preview,
 		AttachmentCount: uint32(max(l.Attachments, 0)), CreatedAt: timestamppb.New(l.CreatedAt), //nolint:gosec // 0..20
-		StickerEmoji: l.StickerEmoji,
+		StickerEmoji: l.StickerEmoji, System: pbconv.SystemPayload(l.SystemPayload),
 	}
 }
 
@@ -569,10 +580,19 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
+	p.SetIcon = req.IconFileId != nil
+	me := auth.MustFromContext(r.Context()).UserID
 	var pb *v1.Room
 	var publishMeetings func(context.Context)
+	var iconMsg *sqlc.Message  // the system message room_icon of a picture change (ADR-0092)
 	restrictedChanged := false // who sees the room changed (restricted or is_private)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		var iconChanged bool
+		if p.SetIcon {
+			if iconChanged, err = roomIcon(r.Context(), q, roomID, acc.WorkspaceID, me, req.GetIconFileId(), &p); err != nil {
+				return err
+			}
+		}
 		if p.Restricted != nil || tp.any() {
 			cur, err := q.GetRoomForUpdate(r.Context(), roomID)
 			if db.IsNotFound(err) {
@@ -614,8 +634,16 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if db.IsNotFound(err) {
 			return httpx.NotFound("room")
 		}
+		if db.IsForeignKeyViolation(err) && p.SetIcon {
+			return httpx.Validation("iconFileId", "file not found")
+		}
 		if err != nil {
 			return err
+		}
+		if iconChanged {
+			if iconMsg, err = insertIconMessage(r.Context(), q, roomID, me, p.IconFileID); err != nil {
+				return err
+			}
 		}
 		if room.Type != "voice" && room.UserLimit > 0 {
 			return httpx.Validation("userLimit", "user limit applies to voice rooms only")
@@ -644,8 +672,57 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if publishMeetings != nil {
 		publishMeetings(r.Context())
 	}
+	if iconMsg != nil && h.System != nil {
+		if err := h.System.Created(r.Context(), acc.WorkspaceID, *iconMsg); err != nil {
+			return err
+		}
+	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateRoomResponse{Room: pb})
 	return nil
+}
+
+// roomIcon checks a new picture of the room (ADR-0092; text and voice rooms only) under the
+// room's row lock, sets it into p and reports whether it differs from the current one.
+func roomIcon(ctx context.Context, q *sqlc.Queries, roomID, wsID, me uuid.UUID, raw string, p *sqlc.UpdateRoomParams) (bool, error) {
+	cur, err := q.GetRoomForUpdate(ctx, roomID)
+	if db.IsNotFound(err) {
+		return false, httpx.NotFound("room")
+	}
+	if err != nil {
+		return false, err
+	}
+	if cur.Type != "text" && cur.Type != "voice" {
+		return false, httpx.Validation("iconFileId", "only text and voice rooms have a picture")
+	}
+	if p.IconFileID, err = iconfile.Own(ctx, q, wsID, me, cur.IconFileID, raw); err != nil {
+		return false, err
+	}
+	old, next := "", ""
+	if cur.IconFileID != nil {
+		old = cur.IconFileID.String()
+	}
+	if p.IconFileID != nil {
+		next = p.IconFileID.String()
+	}
+	return old != next, nil
+}
+
+// insertIconMessage writes the system message room_icon (ADR-0092) from the caller: no
+// mentions, no notification (push skips it); the caller publishes it after the commit.
+func insertIconMessage(ctx context.Context, q *sqlc.Queries, roomID, me uuid.UUID, icon *uuid.UUID) (*sqlc.Message, error) {
+	card := &v1.RoomIconCard{}
+	if icon != nil {
+		card.FileId = icon.String()
+	}
+	raw, err := protojson.Marshal(&v1.SystemMessage{Payload: &v1.SystemMessage_RoomIcon{RoomIcon: card}})
+	if err != nil {
+		return nil, err
+	}
+	m, err := q.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: roomID, AuthorID: me, Payload: raw})
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // ReasonOwnerOnly (ApiError.reason, 403): only the workspace owner may do this (ADR-0029).

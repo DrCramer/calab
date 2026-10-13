@@ -525,6 +525,9 @@ message DmLastMessage {
   uint32 attachment_count = 4;
   google.protobuf.Timestamp created_at = 5;
   string sticker_emoji = 6; // set for a sticker message (ADR-0030): its emoji
+  // Set for a system message (Message.system) in the room list previews (rooms only, not DMs or
+  // notes): clients preview its one line, e.g. «changed the room picture» (ADR-0092).
+  SystemMessage system = 7;
 }
 
 message CategoryCreate {
