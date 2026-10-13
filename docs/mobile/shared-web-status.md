@@ -4,7 +4,7 @@
 
 The mobile host uses the existing Calab mark at 1024 × 1024, with an opaque
 full-bleed background and no pre-rounded corners. It is derived from the shared
-`apps/desktop/build/icons/src/icon_other.svg`; the glyph and gradient are unchanged.
+`apps/desktop/build/icons/src/icon_other.svg`; the glyph is unchanged; the gradient is blue (#3660FC → #404498) since 2026-10-13.
 The icon is packaged into a new iOS build and reaches TestFlight through that build.
 
 ## Native mobile commercial UI (2026-10-08; iOS-only since 2026-10-10, ADR-0087 §10)
