@@ -185,7 +185,7 @@ A recording card has `kind: "MESSAGE_KIND_SYSTEM"` and `system.recording.recordi
 in the transcript URL. An achievement card (ADR-0061) is `MESSAGE_KIND_SYSTEM` too: `system.achievement
 {achievementId, grantId, note, grantedBy}`, authored by the recipient. A message of a board automation rule (ADR-0060) is a system message too:
 `system.automation {boardId, taskId, ruleId, ruleName, text}` (`text` is plain text: no mentions or markup, it pings nobody); `authorId` is the rule's creator — show it as
-"Automation: ruleName". A command replying to a card has `replyToId` pointing to the card's **message** id.
+"Automation: ruleName". A room picture change (ADR-0092) is `system.roomIcon {fileId}` (empty = removed), authored by whoever changed it; the picture itself is the room's `iconFileId` (`Room`, `ROOM_UPDATE`). A command replying to a card has `replyToId` pointing to the card's **message** id.
 
 The lookup returns `404 NOT_FOUND` for inaccessible rooms, a missing/deleted message, a message
 from another room, or a message at/before the caller's cleared DM history marker. A DM's other

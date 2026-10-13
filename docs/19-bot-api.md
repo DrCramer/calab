@@ -183,7 +183,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 нужен для URL транскрипта. Открытка ачивки (ADR-0061) — тоже `MESSAGE_KIND_SYSTEM`: `system.achievement
 {achievementId, grantId, note, grantedBy}`, автор — получатель. Сообщение правила автоматизации доски (ADR-0060) — тоже системное:
 `system.automation {boardId, taskId, ruleId, ruleName, text}` (`text` — простой текст: без упоминаний и разметки, никого не пингует); `authorId` — создатель правила, показывайте его как
-«Автоматизация: ruleName». В команде, отправленной ответом на карточку, `replyToId` содержит id
+«Автоматизация: ruleName». Смена картинки комнаты (ADR-0092) — `system.roomIcon {fileId}` (пусто — картинку
+убрали), автор — кто сменил; сама картинка — `iconFileId` комнаты (`Room`, `ROOM_UPDATE`). В команде, отправленной ответом на карточку, `replyToId` содержит id
 **сообщения** с карточкой, а не id записи.
 
 `404 NOT_FOUND`: комната недоступна, сообщение отсутствует/удалено, относится к другой комнате
