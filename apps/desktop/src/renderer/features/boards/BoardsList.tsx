@@ -194,7 +194,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           <button
             type="button"
             onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })}
-            className="mt-1 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed border-line px-2 py-2 text-left text-caption text-muted hover:bg-hover hover:text-fg"
+            className="mt-1 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed mobile:mx-3 mobile:w-[calc(100%-1.5rem)] border-line px-2 py-2 text-left text-caption text-muted hover:bg-hover hover:text-fg"
             data-testid="boards-empty"
           >
             <Plus className="size-4 shrink-0" aria-hidden />
@@ -242,7 +242,7 @@ const CategoryHeader = memo(function CategoryHeader({
     if (await confirmAction(t('boards.cat.deleteTitle', { name }), t('boards.cat.deleteText'), t('common.delete'))) void deleteBoardCategory(id);
   };
   const header = (
-    <div data-bcat-header={id} onPointerDown={(e) => onPointerDown(e, id)} className={cx('group/bcat flex h-7 items-center pr-1 pt-1', dragging && 'opacity-40')} data-testid="board-category">
+    <div data-bcat-header={id} onPointerDown={(e) => onPointerDown(e, id)} className={cx('group/bcat flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-2', dragging && 'opacity-40')} data-testid="board-category">
       {editing ? (
         <CategoryNameInput name={name} onDone={(v) => {
           setEditing(false);
@@ -256,7 +256,7 @@ const CategoryHeader = memo(function CategoryHeader({
           aria-expanded={!collapsed}
           aria-label={collapsed ? t('shell.categoryExpand', { name }) : t('shell.categoryCollapse', { name })}
           title={name}
-          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-8 mobile:gap-1 mobile:pl-3', GROUP_LABEL)}
+          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-11 mobile:gap-1 mobile:pl-3', GROUP_LABEL)}
           data-testid="board-category-toggle"
         >
           {/* Phone: the chevron first, as before; desktop (owner, 07.10): after the name, on hover. */}
@@ -378,10 +378,12 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
       type="button"
       onClick={() => openBoard(workspaceId, MY_TASKS)}
       aria-current={active ? 'page' : undefined}
-      className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-[52px] mobile:gap-3 mobile:rounded-none mobile:px-3 mobile:text-body', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
+      className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-14 mobile:gap-3 mobile:rounded-none mobile:px-3 mobile:text-list', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
       data-testid="my-tasks"
     >
-      <Inbox className="size-[18px] shrink-0 mobile:size-6" aria-hidden />
+      <span className="grid shrink-0 place-items-center mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)]">
+        <Inbox className="size-[18px] shrink-0 mobile:size-5" aria-hidden />
+      </span>
       <span className="min-w-0 flex-1 truncate">{t('boards.myTasks')}</span>
       {unread > 0 ? <CountBadge count={unread} tone="accent" /> : null}
     </button>
@@ -409,12 +411,12 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
       <div
         data-board-row={id}
         onPointerDown={(e) => onPointerDown(e, id)}
-        className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
+        className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
-        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-body', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
-          <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:w-7 mobile:text-[22px]" aria-hidden>
-            {emoji || <SquareKanban className="size-[18px] mobile:size-6" />}
+        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+          <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
+            {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>
           {scoped ? (
             <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">

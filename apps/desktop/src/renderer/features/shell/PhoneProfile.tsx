@@ -77,7 +77,7 @@ export function PhoneProfile(): ReactNode {
                 type="button"
                 onPointerDown={preload}
                 onClick={() => open({ kind: 'settings', tab: e.id })}
-                className="flex h-12 w-full min-w-0 items-center gap-3 px-4 text-left text-list active:bg-[var(--color-fill-hover)]"
+                className="flex h-[52px] w-full min-w-0 items-center gap-3 px-4 text-left text-list active:bg-[var(--color-fill-hover)]"
                 data-testid={`phone-profile-${e.id}`}
               >
                 <e.icon className="size-5 shrink-0 text-muted" aria-hidden />
@@ -88,7 +88,7 @@ export function PhoneProfile(): ReactNode {
           ))}
         {superadmin ? (
           <li className="border-b border-line last:border-b-0">
-            <button type="button" onClick={() => open({ kind: 'admin' })} className="flex h-12 w-full min-w-0 items-center gap-3 px-4 text-left text-list active:bg-[var(--color-fill-hover)]">
+            <button type="button" onClick={() => open({ kind: 'admin' })} className="flex h-[52px] w-full min-w-0 items-center gap-3 px-4 text-left text-list active:bg-[var(--color-fill-hover)]">
               <ShieldCheck className="size-5 shrink-0 text-muted" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{t('admin.title')}</span>
               <ChevronRight className="size-4 shrink-0 text-faint" aria-hidden />
@@ -100,7 +100,7 @@ export function PhoneProfile(): ReactNode {
       <button
         type="button"
         onClick={() => void logout()}
-        className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-panel)] bg-[var(--color-fill)] text-list font-medium text-danger-text active:bg-[var(--color-fill-hover)]"
+        className="mt-6 flex h-[52px] w-full items-center justify-center gap-2 rounded-[var(--radius-panel)] bg-[var(--color-fill)] text-list font-medium text-danger-text active:bg-[var(--color-fill-hover)]"
         data-testid="phone-profile-logout"
       >
         <LogOut className="size-5" aria-hidden />

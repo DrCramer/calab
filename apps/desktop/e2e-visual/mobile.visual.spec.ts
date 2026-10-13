@@ -996,6 +996,11 @@ test('m-dm-list', async ({ page }) => {
   const nav = page.getByTestId('phone-dms');
   const list = nav.getByTestId('dm-list');
   await expect(list.getByRole('button', { name: /Борис Петров/ })).toContainText('Закрепил, чтобы не потерялся');
+  // Owner 13.10: the chat-list geometry of a room row — 68 px rows, 44 px avatar.
+  for (const row of await list.getByTestId('dm-row').all()) {
+    const box = await row.boundingBox();
+    expect(box && Math.round(box.height), 'a 68 px DM row').toBe(68);
+  }
   // docs/09 #51: a left swipe on Григорий's row reveals «В архив»; tapping it archives the DM
   // («Архив — 1» at the bottom, collapsed). The list stays (the row keeps the gesture).
   await swipeLeft(list.getByRole('button', { name: /Григорий/ }));
@@ -1042,6 +1047,10 @@ test('m-notes', async ({ page }) => {
   const shelves = nav.getByTestId('notes-shelf');
   await expect(shelves).toHaveCount(2);
   await expect(shelves.first()).toContainText('Тёмная тема для лендинга');
+  for (const row of await shelves.all()) {
+    const box = await row.boundingBox();
+    expect(box && Math.round(box.height), 'a 68 px note row').toBe(68);
+  }
   await checkpoint(page, 'm-notes');
 });
 

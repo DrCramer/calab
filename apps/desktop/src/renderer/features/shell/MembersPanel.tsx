@@ -18,6 +18,7 @@ import { MutedByMe } from '../../components/SpeakerIdentity';
 import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
+import { useMobile } from '../../lib/mobile';
 import { customStatusLine, groupMembers, memberActivity, memberSecondLine, nameOf } from '../people/members';
 import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
@@ -68,11 +69,11 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
 
   const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
-      <section aria-labelledby={`members-${key}`} className="mt-4 flex flex-col first:mt-0">
-        <h3 id={`members-${key}`} className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
+      <section aria-labelledby={`members-${key}`} className="mt-4 flex flex-col first:mt-0 mobile:mt-0">
+        <h3 id={`members-${key}`} className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint mobile:flex mobile:h-11 mobile:items-center mobile:px-1 mobile:pb-0">
           {title} — {list.length}
         </h3>
-        <ul className="flex flex-col gap-px">
+        <ul className="flex flex-col gap-px mobile:gap-0">
           {list.map((m) => (
             <li key={m.user?.id}>
               <MemberRow
@@ -93,7 +94,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       className={
         drawer
           ? // phone layout (ADR-0021): fills the right drawer (MobileShell)
-            'min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(var(--safe-bottom,0px)+16px)] pt-4'
+            'min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(var(--safe-bottom,0px)+16px)] pt-1'
           : floating
           ? 'mat-popover dense anim-in absolute bottom-[calc(var(--composer-height,64px)+8px)] right-3 top-[60px] z-[var(--z-popover)] w-60 overflow-y-auto rounded-[var(--radius-panel)] px-2 py-3'
           : 'mat-sidebar w-60 shrink-0 overflow-y-auto border-l border-line px-2 pb-4 pt-4'
@@ -291,7 +292,7 @@ function CardHint({ workspaceId, userId, day, month }: { workspaceId: string; us
 
 const NONE: never[] = [];
 
-/** One 42 px row; memoised so presence changes re-render only that row. */
+/** One 42 px row (the phone's «Участники»: 56 px, avatar 40, name 15 / status 13 — owner 13.10); memoised so presence changes re-render only that row. */
 const MemberRow = memo(function MemberRow({
   workspaceId,
   member: m,
@@ -307,6 +308,7 @@ const MemberRow = memo(function MemberRow({
 }): ReactNode {
   // Memo row: re-render on a language switch too (ADR-0022).
   useLocale();
+  const phone = useMobile();
   const u = m.user;
   const userId = u?.id ?? '';
   const onOpenChange = useCallback((o: boolean) => onOpenProfile(u?.id ?? null, o), [onOpenProfile, u?.id]);
@@ -409,7 +411,8 @@ const MemberRow = memo(function MemberRow({
             }}
             title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
-              'relative flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              'relative flex w-full items-center gap-3 rounded-[var(--radius-row)] text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              phone ? 'h-14 px-1 active:bg-hover' : 'h-[42px] px-2',
               open && 'bg-active',
             )}
           >
@@ -417,12 +420,12 @@ const MemberRow = memo(function MemberRow({
             {v?.roomId ? <JustJoinedDot joinedAt={joinedAtMs(v.joinedAt)} className="absolute left-0 top-1/2 -translate-y-1/2" /> : null}
             {/* Offline: grey, faded avatar + secondary text — never opacity on text (≥ 4.5:1). */}
             <span className={cx('flex shrink-0', offline && 'opacity-60 grayscale')}>
-              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence connecting={connectingRing} />
+              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={phone ? 40 : 32} presence connecting={connectingRing} />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">
                 <span
-                  className={cx('truncate text-body font-medium leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role', look))}
+                  className={cx('truncate font-medium', phone ? 'text-list leading-5' : 'text-body leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role', look))}
                   style={roleTextStyle(m.role, offline ? 'muted' : 'role', look)}
                 >
                   {name}
@@ -435,7 +438,7 @@ const MemberRow = memo(function MemberRow({
                 <MutedByMe userId={userId} className="size-3.5" />
               </span>
               {second ? (
-                <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={secondTitle}>
+                <span className={cx('flex min-w-0 items-center gap-1 text-caption text-muted', phone ? 'leading-5' : 'leading-4')} title={secondTitle}>
                   {second}
                 </span>
               ) : null}
