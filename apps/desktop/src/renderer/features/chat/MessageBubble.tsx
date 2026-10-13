@@ -47,6 +47,7 @@ import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
 import { isVoice } from '../../lib/voiceNote';
 import { useMobile } from '../../lib/mobile';
+import { ReplySwipeIcon, useReplySwipe } from './replySwipe';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
 import { BotBadge } from '../people/MemberBits';
@@ -95,6 +96,10 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);
+  // Phone: a left swipe replies (Telegram iOS) — whoever may reply from the menu.
+  const mobile = useMobile();
+  const reply = useCallback(() => useUi.getState().setReply(roomId, m.id), [roomId, m.id]);
+  const { ref: swipeRef, icon: swipeIcon, active: swiping, handlers: swipeHandlers } = useReplySwipe(mobile && c.status === 'sent' && can(perms, 'SEND_MESSAGES'), reply);
   return (
     // overflow-x-clip: nothing in a row widens the feed (no horizontal scroll, docs/09 #74); clip,
     // not hidden, so the action bar over a bubble's top edge still shows above the row.
@@ -102,8 +107,12 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
       {meta.day ? <DatePill date={toDate(m.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       <div
+        ref={swipeRef}
+        {...swipeHandlers}
         className={cx(
-          'flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          'relative flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          // the browser never pans the feed sideways: a horizontal move is the reply swipe's
+          mobile && 'touch-pan-y',
           // Telegram tints the message whose menu is open (Radix marks the trigger data-state=open).
           'has-[>[data-state=open]]:bg-[var(--color-bubble-highlight)] has-[>[data-state=open]]:shadow-[0_0_0_4px_var(--color-bubble-highlight)]',
           own ? 'justify-end' : 'justify-start',
@@ -122,6 +131,7 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
           </div>
         ) : null}
         <Bubble c={c} meta={meta} own={own} name={name} workspaceId={workspaceId} roomId={roomId} perms={perms} />
+        {swiping ? <ReplySwipeIcon icon={swipeIcon} /> : null}
       </div>
       {c.status === 'failed' ? <FailedLine c={c} workspaceId={workspaceId} roomId={roomId} /> : null}
     </div>

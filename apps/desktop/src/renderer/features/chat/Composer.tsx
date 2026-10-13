@@ -636,7 +636,7 @@ function snippet(workspaceId: string, content: string, empty = ''): ReactNode {
 /** Reply / edit strip above the field (accent bar, title, snippet, ×). */
 function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: string; text: ReactNode; onClose: () => void }): ReactNode {
   return (
-    <div className="mb-2 flex items-center gap-3 pl-2">
+    <div className="mb-2 flex items-center gap-3 pl-2" data-testid="composer-context">
       <span className="text-accent-text">{icon}</span>
       <div className="min-w-0 flex-1 border-l-2 border-accent pl-2">
         <div className="truncate text-body font-semibold text-accent-text">{title}</div>
