@@ -269,6 +269,9 @@ export const en: Dict = {
   'room.tabPerms': 'Permissions',
   'room.mediaText': '“Workspace default” uses the workspace setting.',
   'room.markRead': 'Mark as read',
+  'room.swipeRead': 'Read',
+  'room.swipeMute': 'Mute',
+  'room.swipeUnmute': 'Unmute',
   'room.delete': 'Delete room',
   'room.deleteConfirm': 'Messages and files in “{name}” will be deleted. This can’t be undone.',
 

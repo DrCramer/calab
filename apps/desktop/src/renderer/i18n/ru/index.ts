@@ -267,6 +267,9 @@ export const ru = {
   'room.tabPerms': 'Права',
   'room.mediaText': '«Как в пространстве» — действует настройка пространства.',
   'room.markRead': 'Отметить прочитанным',
+  'room.swipeRead': 'Прочитано',
+  'room.swipeMute': 'Тихо',
+  'room.swipeUnmute': 'Звук',
   'room.delete': 'Удалить комнату',
   'room.deleteConfirm': 'Сообщения и файлы комнаты «{name}» будут удалены. Это действие нельзя отменить.',
 

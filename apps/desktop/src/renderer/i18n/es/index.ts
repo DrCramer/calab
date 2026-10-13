@@ -269,6 +269,9 @@ export const es: Dict = {
   'room.tabPerms': 'Permisos',
   'room.mediaText': '«Predeterminado del espacio» usa el ajuste del espacio.',
   'room.markRead': 'Marcar como leído',
+  'room.swipeRead': 'Leído',
+  'room.swipeMute': 'Silenciar',
+  'room.swipeUnmute': 'Con sonido',
   'room.delete': 'Eliminar sala',
   'room.deleteConfirm': 'Los mensajes y archivos de «{name}» se eliminarán. Esto no se puede deshacer.',
 

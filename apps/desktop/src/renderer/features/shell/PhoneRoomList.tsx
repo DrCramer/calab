@@ -1,5 +1,5 @@
-import { WorkspaceRole, type Role, type Room } from '@calaba/protocol';
-import { ChevronDown, Hash, Lock, Plus, Timer, Volume2 } from 'lucide-react';
+import { NotificationLevel, WorkspaceRole, type Role, type Room } from '@calaba/protocol';
+import { Bell, BellOff, CheckCheck, ChevronDown, Hash, Lock, Plus, Timer, Volume2 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
@@ -7,9 +7,12 @@ import { Button, CountBadge, Empty, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
 import { mayArrangeRooms, mayInviteMembers, mayManageRoomWith, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { useRowSwipe } from '../../lib/rowSwipe';
 import { sortTempRooms } from '../../lib/tempRooms';
+import { markRead } from '../../services/chat';
+import { setRoomNotifications } from '../../services/mentions';
 import { useRoomPreview } from '../../stores/roomPreviews';
-import { groupRooms, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms } from '../../stores/rooms';
+import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -171,8 +174,12 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
   const label = [room.name, mentions > 0 ? plural('shell.unreadMentions', mentions) : unread ? t('ws.unread') : '', live ? t('shell.peopleIn', { n: people.length }) : '']
     .filter(Boolean)
     .join(', ');
+  // A left swipe reveals «Прочитано» · «Тихо / Звук» (docs/08 «Свайпы и долгое нажатие»).
+  const swipe = useRowSwipe(true, 2);
+  const shifted = swipe.offset !== 0;
   return (
-    <li>
+    <li className="relative flex" {...swipe.handlers}>
+      {shifted ? <RoomSwipeActions roomId={room.id} width={Math.min(-swipe.offset, swipe.width)} close={swipe.close} /> : null}
       <RoomMenu
         room={room}
         canManage={mayManageRoomWith(perms, role, me, room)}
@@ -183,11 +190,15 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
       >
         <button
           type="button"
-          onClick={() => openRoom(workspaceId, room.id)}
+          onClick={() => (shifted ? swipe.close() : openRoom(workspaceId, room.id))}
           aria-label={label}
           data-testid="phone-room-row"
           data-room={room.id}
-          className="flex h-[68px] w-full min-w-0 select-none items-center gap-3 px-3 text-left transition-colors duration-[var(--motion-fast)] active:bg-hover"
+          style={shifted ? { marginRight: -swipe.offset } : undefined}
+          className={cx(
+            'flex h-[68px] min-w-0 flex-1 select-none items-center gap-3 px-3 text-left duration-[var(--motion-fast)] active:bg-hover',
+            swipe.dragging ? 'transition-colors' : 'transition-[margin,background-color]',
+          )}
         >
           <RoomIcon room={room} live={live || inRoom} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5 border-b border-line py-2.5 [li:last-child_&]:border-b-0">
@@ -208,6 +219,50 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
     </li>
   );
 });
+
+/**
+ * The actions under a swiped room row: «Прочитано» (the menu's «Отметить прочитанным») and
+ * «Тихо» / «Звук» — the room's notifications «Ничего» ↔ «Как в пространстве» (the menu's
+ * «Уведомления ›»). Mounted only while the row is open; a tap closes the row.
+ */
+function RoomSwipeActions({ roomId, width, close }: { roomId: string; width: number; close: () => void }): ReactNode {
+  const unread = useRooms((s) => isUnread(roomId, s));
+  const quiet = useRooms((s) => {
+    const n = roomNotify(s.notify[roomId]);
+    return n.mutedUntil !== null || n.level === NotificationLevel.NONE;
+  });
+  const action = 'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 overflow-hidden px-1 text-center text-micro font-medium';
+  return (
+    <div className="absolute inset-y-0 right-0 flex overflow-hidden" style={{ width }} data-testid="room-swipe-action">
+      <button
+        type="button"
+        disabled={!unread}
+        onClick={() => {
+          close();
+          const last = useRooms.getState().lastMessage[roomId];
+          if (last) markRead(roomId, last);
+        }}
+        className={cx(action, 'bg-accent-strong text-accent-fg disabled:opacity-60')}
+        data-testid="room-swipe-read"
+      >
+        <CheckCheck className="size-4 shrink-0" aria-hidden />
+        <span className="line-clamp-2">{t('room.swipeRead')}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          close();
+          void setRoomNotifications(roomId, quiet ? NotificationLevel.INHERIT : NotificationLevel.NONE, null);
+        }}
+        className={cx(action, 'bg-attention text-attention-fg')}
+        data-testid="room-swipe-mute"
+      >
+        {quiet ? <Bell className="size-4 shrink-0" aria-hidden /> : <BellOff className="size-4 shrink-0" aria-hidden />}
+        <span className="line-clamp-2">{t(quiet ? 'room.swipeUnmute' : 'room.swipeMute')}</span>
+      </button>
+    </div>
+  );
+}
 
 function RoomIcon({ room, live }: { room: Room; live: boolean }): ReactNode {
   const Icon = room.expiresAt ? Timer : isVoice(room) ? Volume2 : Hash;

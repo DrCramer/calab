@@ -269,6 +269,9 @@ export const zhCN: Dict = {
   'room.tabPerms': '权限',
   'room.mediaText': '"跟随工作区"表示使用工作区的设置。',
   'room.markRead': '标为已读',
+  'room.swipeRead': '已读',
+  'room.swipeMute': '静音',
+  'room.swipeUnmute': '取消静音',
   'room.delete': '删除房间',
   'room.deleteConfirm': '"{name}"中的消息和文件将被删除，此操作无法撤销。',
 
