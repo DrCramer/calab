@@ -622,6 +622,14 @@ test('m-home', async ({ page }) => {
   await expect(actions.getByTestId('room-swipe-mute')).toHaveText('Звук');
   await actions.getByTestId('room-swipe-mute').tap();
   await expect(actions).toHaveCount(0);
+  // A tap on a voice row's avatar stack opens «В голосе» (the rest of the row opens the room).
+  await list.locator('[data-voice-stack]').first().tap();
+  const card = page.getByTestId('voice-people-card');
+  await expect(card.getByTestId('voice-people-row')).toHaveCount(2);
+  await expect(page.getByTestId('phone-room-list')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
 });
 
 // ADR-0073 §4: people in the room's voice, I am not — the banner under the header with «Присоединиться».
@@ -636,6 +644,32 @@ test('m-room-voice-banner', async ({ page }) => {
   expect(box && Math.round(box.height), '44 px «Присоединиться»').toBeGreaterThanOrEqual(44);
   await expect(page.getByTestId('room-header-join')).toHaveCount(0);
   await checkpoint(page, 'm-room-voice-banner', { main: true });
+  // «Кто в голосе» (docs/08): the header's stack replaces the icon disc; a tap opens the «В голосе»
+  // card — the people (56 px rows) and «Присоединиться». The banner's avatars open the same card.
+  const stack = page.getByTestId('room-voice-people');
+  await expect(stack).toHaveAttribute('aria-label', 'В голосе: Борис, Вера');
+  await stack.tap();
+  const card = page.getByTestId('voice-people-card');
+  await expect(card).toBeVisible();
+  await expectCentredCard(page, card);
+  await expect(card.getByTestId('voice-people-title')).toContainText('В голосе · 2');
+  const rows = card.getByTestId('voice-people-row');
+  await expect(rows).toHaveCount(2);
+  for (const row of await rows.all()) expect(Math.round((await row.boundingBox())?.height ?? 0), 'a 56 px person row').toBe(56);
+  await expect(card.getByTestId('voice-people-join')).toBeVisible();
+  await checkpoint(page, 'm-voice-people');
+  // A tap on a person: their member menu, a level over the card; back closes one level at a time.
+  await rows.first().tap();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(card).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  await banner.getByTestId('room-voice-banner-people').tap();
+  await expect(card).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
   // Back (the browser's, as Android back) returns to the list.
   await page.goBack();
   await expect(page.getByTestId('phone-room-list')).toBeVisible();
@@ -1081,6 +1115,21 @@ test('m-voice', async ({ page }) => {
   await checkpoint(page, 'm-home-voice');
   await strip.getByRole('button', { name: /Созвон/ }).tap();
   await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
+  // In the call (docs/08 «Кто в голосе»): Борис joins; the header's stack (me first) opens the card
+  // with «Вы» at my row and «Выйти».
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: true, joinedAtMs: NOW.getTime() - 60_000 });
+  const stack = page.getByTestId('room-voice-people');
+  await expect(stack).toHaveAttribute('aria-label', /^В голосе: .+, Борис$/);
+  await stack.tap();
+  const card = page.getByTestId('voice-people-card');
+  await expect(card.getByTestId('voice-people-row')).toHaveCount(2);
+  await expect(card.getByTestId('voice-people-row').first()).toContainText('Вы');
+  await expect(card.getByTestId('voice-people-leave')).toBeVisible();
+  await expectCentredCard(page, card);
+  await checkpoint(page, 'm-voice-people-in-call');
+  await card.getByTestId('voice-people-leave').tap();
+  await expect(strip).toHaveCount(0);
+  await expect(card).toHaveCount(0);
 });
 
 // Soundboard (ADR-0036): the strip's «Звуки» opens the island's panel as a centred card (voice
