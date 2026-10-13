@@ -1,6 +1,6 @@
 # Calab — full description
 
-> Calab is a voice-first team messenger you can run on your own server: always-open voice rooms, video and screen sharing, Telegram-style chat, a calendar with meetings, task boards, notes, phone calls over SIP, workspace web apps, and bots with an API and SDK. Desktop apps for macOS, Windows and Linux, plus a web app that also works on phones.
+> Calab is a voice-first team messenger you can run on your own server: always-open voice rooms, video meetings and screen sharing, Telegram-style chat, a calendar with meetings, task boards, notes, unified search, an email client in the desktop app, flexible notifications (including relaying task notifications to your own bot), phone calls over SIP, workspace web apps, and bots with an API and SDK. Desktop apps for macOS, Windows and Linux, plus a web app that also works on phones; iPhone and Android apps are coming soon.
 
 This file is the detailed version of https://calab.io/llms.txt. It describes only what exists in the product today; things that are planned are listed separately at the end and are marked as not available. Site: https://calab.io (languages: /en/, /ru/, /es/, /zh/). Source: https://github.com/itrcz/calab. Contact: it@gptunnel.ai. A Russian summary is at the very end.
 
@@ -20,6 +20,7 @@ Calab is a team messenger where voice comes first. You join a room and hear your
 - Echo cancellation (AEC3) and optional RNNoise noise suppression, both running in the client with no external services. Opus with DTX. A musician mode turns all processing off for live instruments and singing (Team and above). Remote audio is played through a plain audio element, which is what keeps echo cancellation working.
 - Screen sharing in AV1 or hardware H.264 with simulcast: each viewer receives the quality their connection allows. Viewers can point and draw on top of the stream. Any window can be shared. Screen-share sound is sent unprocessed, and the other participants' voices stay out of the stream (macOS 14.2+, Windows 11).
 - Camera with background blur or a picture (built-in and workspace backgrounds).
+- Video meetings: the call view has a Gallery (everyone in equal tiles, paged, up to 25 on a large screen; whoever starts talking moves to the first page by themselves) and a Speaker view; you can hide yourself and people without video.
 - One-on-one calls in direct messages, with ringing, camera and screen sharing.
 - Soundboard: sounds (built-in plus workspace sounds uploaded by admins) played to everyone in the room; each client plays the clip locally, so the voice track is never degraded.
 - Moderation: server-side mute, disconnect, move a participant to another room by drag and drop; statuses.
@@ -46,7 +47,9 @@ Each room sets its own audio quality level (Opus, mono):
 ## Chat
 
 - Every room has its own chat. Replies, reactions, forwarding to several chats at once, stickers (workspace sticker packs, static and animated WebP), voice messages, files with previews and a built-in player for music and video, pins, read ticks.
-- Mentions, per-room notifications, an inbox of unread mentions, workspace search with morphology, a Cmd/Ctrl+K quick switcher.
+- Mentions (also by @username), per-room notifications, an inbox of unread mentions, a Cmd/Ctrl+K quick switcher.
+- Unified search (Cmd/Ctrl+K and an "All results" panel): messages, task comments, tasks, calendar events, files, notes shelves and meeting transcripts in one query, with highlights, prefix matching and typo tolerance, in one workspace or in all of them together with direct messages; a task is found by its key.
+- A built-in Calab sticker pack on every plan.
 - Direct messages with an archive.
 - A task link unfolds into a card in the chat; a task can be created from any message.
 
@@ -60,12 +63,28 @@ Each room sets its own audio quality level (Opus, mono):
 ## Task boards and approvals
 
 - Kanban, list and timeline (Gantt with milestones and a "today" line), in the spirit of Linear and with its keyboard shortcuts.
-- Statuses, priorities, labels, milestones, due dates; several assignees with a lead, subtasks and relations; task keys like `FNG-12`.
-- Comments work like chat (reactions, stickers, voice messages) and are mixed with the change history; the activity feed has tabs All / Changes / Comments.
+- Statuses (with icons), priorities, labels, milestones, due dates; several assignees with a lead, watchers, subtasks, relations and checklists (Team and above); task keys like `FNG-12`.
+- The task panel has two tabs: Comments (they work like chat: reactions, stickers, voice messages) and History, a timeline of every change by day — who changed the status, dates, priority, assignees, labels, files, approvals, and which automation rule did it.
+- Automations: "When → If → Then" rules (change the status, assign, post to a room and more); Team and above.
+- Git links: branches, pull requests and commits mentioning a task key in GitHub, GitLab or Gitea appear in the task.
+- Forms: share a public link or give chosen colleagues access; answers become tasks in the chosen column (Team: up to 5 per board, Business: up to 20).
+- My tasks (with an Unread tab), CSV export, and a signed board webhook (Business and Enterprise).
 - Filters, saved views, bulk actions, drag and drop of cards between columns.
 - Approvals: assign approvers and the number of approvals needed (all, or N of M). An approver approves, or rejects with a comment (a veto); a decision can be withdrawn. Until a task is approved it cannot move further along the board, and editing the title or description restarts approval.
 - Access to a board is by roles and people, like rooms; boards can be private or closed even to administrators (see Roles).
 - Board limits by plan: Free 3, Team 30, Business 50, Enterprise unlimited.
+
+## Email (desktop app)
+
+The desktop app (macOS, Windows, Linux) has an Apple Mail–style email client in a Mail section of the left rail. Connect Gmail, iCloud, Yandex, Mail.ru or any IMAP/SMTP mailbox: the settings are discovered from the address (known providers, DNS, MX, autoconfig, probing). Most services need an app password; Microsoft/Outlook accounts are not supported yet. Read threads, reply, forward, flag, search, select several letters, empty the trash; send a letter to a team chat together with its .eml file; new-mail notifications while Calab runs. Mail runs on the user's computer: passwords, letters and metadata never reach the Calab server, and there are no plan limits. There is no email in the web app or on phones.
+
+## Notifications
+
+- Desktop: system notifications for mentions or for all messages, sounds (join, leave, new message), meeting reminders (optionally even in Do not disturb), new mail.
+- Levels per workspace and per room: All messages, Mentions only or Nothing; mute a room for 1 hour, 8 hours, until morning or forever; a Do not disturb status.
+- Task notifications: assigned, unassigned, mentioned, added as a watcher, an automation rule, due tomorrow/today, overdue, approval requested, approved or rejected, comments, status, due date, priority, milestone, moved to another board, title and description, files, archived. Each kind can be switched off on its own; approvals always arrive.
+- Relay to a bot: a user can pick bots of their workspaces that receive the same task notifications they get (for example, a bot that forwards them to Telegram).
+- Phones: push notifications with the sender, avatar and text (the text can be hidden) and incoming calls on the lock screen are part of the iPhone and Android apps, which are coming soon (see Planned).
 
 ## Notes
 
@@ -156,6 +175,13 @@ Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/l
 | Simultaneous cameras per room | 3 | 10 | 25 | unlimited |
 | Musician mode | no (locked) | yes | yes | yes |
 | CalDAV | no | yes | yes | yes |
+| Checklists in tasks | no | yes | yes | yes |
+| Board automations | no | yes | yes | yes |
+| Board forms | no | up to 5 per board | up to 20 per board | unlimited |
+| Board webhook | no | no | yes | yes |
+| Phone calls (SIP) | no | no | yes | yes |
+| SSO / Active Directory / Sign in with Calab | no | no | yes | yes |
+| Email (desktop app) | yes | yes | yes | yes |
 | On-prem (your own server) | no | no | no | yes |
 | Support | none | yes | priority | yes |
 
@@ -180,6 +206,7 @@ Also: Free is limited to the "Normal" audio level and to 720p / 15 fps for scree
 
 These are on the roadmap. Do not present them as existing features.
 
+- iPhone and Android apps: native apps with push notifications and calls on the lock screen are coming soon; until then the web app works in a phone's browser.
 - Voice AI assistant: a voice AI assistant in rooms. It is already in testing and is not generally available.
 - IVR: a voice menu and internal extension numbers for phone calls (SIP).
 - Wiki: a team knowledge base.
@@ -191,7 +218,7 @@ it@gptunnel.ai for licensing, plans, support and security reports. Calab is deve
 
 ## Кратко по-русски
 
-Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Приложения для macOS, Windows, Linux и веб-версия. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера, Wiki, Диск. Сайт: https://calab.io/ru/, контакт: it@gptunnel.ai.
+Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера, Wiki, Диск. Сайт: https://calab.io/ru/, контакт: it@gptunnel.ai.
 
 ## Workspace identity (Identity 2.0)
 

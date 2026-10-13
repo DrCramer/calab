@@ -5,7 +5,7 @@ const zh: Dict = {
   meta: {
     title: 'Calab — 团队语音、聊天、会议与任务，部署在你自己的服务器上',
     description:
-      '语音房间、像 Telegram 一样的聊天、带会议的日历、任务看板、笔记和访客链接，全部部署在你自己的服务器上。会议录音附带摘要，支持机器人和 API，可穿透 VPN。支持 macOS、Windows、Linux 和浏览器。',
+      '语音房间与视频会议、像 Telegram 一样的聊天、日历、任务看板、桌面应用内的邮件、全局搜索和灵活的通知——可用云端，也可部署在你自己的服务器上。会议录制附摘要，提供机器人和 API，可在 VPN 后使用。支持 macOS、Windows、Linux 和浏览器；iPhone 和 Android 即将推出。',
     ogAlt: 'Calab 应用窗口：规划会中共享的幻灯片和参会者的摄像头',
   },
   header: {
@@ -64,6 +64,7 @@ const zh: Dict = {
         'RNNoise 降噪和 AEC3 回声消除——不戴耳机也清晰',
         '按键说话和语音激活，后台也可用',
         '以 AV1 或硬件 H.264 共享屏幕，可在画面上指示和绘图',
+        '“画廊”视图视频会议：一屏最多 25 个画面，开口说话的人自动出现在第一页；也可切换“发言人”视图',
         '摄像头支持背景虚化或替换图片',
         '会议录音，转写和摘要直接发到聊天',
       ],
@@ -73,7 +74,7 @@ const zh: Dict = {
       eyebrow: '聊天',
       title: '像 Telegram 一样好用的聊天',
       text: '每个房间都有自己的聊天：回复、表情回应、转发、贴纸、语音消息、带预览的文件、置顶和搜索。已读标记一如既往。',
-      points: ['一次转发到多个聊天', '工作区贴纸包', '语音消息、音乐和视频内置播放器', '提及、按房间设置通知、工作区搜索'],
+      points: ['一次转发到多个聊天', '内置贴纸和工作区贴纸包', '语音消息、音乐和视频内置播放器', '按 @用户名 提及，按房间设置通知：全部、仅提及或不通知'],
       alt: '“综合”房间：带表情回应的设计稿、对它的回复、一张贴纸和在线成员',
     },
     calendar: {
@@ -92,11 +93,34 @@ const zh: Dict = {
       eyebrow: '任务看板',
       title: '任务就在对话旁边',
       text: '看板、列表和时间线，Linear 风格——无需再用另一个服务。可以从任意消息创建任务，任务链接在聊天中展开为卡片。',
-      points: ['状态、优先级、标签、里程碑和截止日期', '多名负责人、子任务和关联', '像聊天一样的评论：表情回应、贴纸、语音消息', '筛选、保存的视图和快捷键'],
+      points: ['带图标的状态、优先级、标签、里程碑和截止日期', '多名负责人、关注者、子任务、关联和清单', '审批：未获所需批准，任务无法推进', '“评论 | 历史”标签：像聊天一样讨论，并查看所有改动的时间线', '“当 → 如果 → 则”自动化（Team 及以上），关联 GitHub、GitLab、Gitea', '表单：通过公开链接提交的回答自动变成任务（Team 及以上）', '筛选、保存的视图、“我的任务”、导出 CSV 和看板 webhook（Business）'],
       free: 'Free 有 3 个看板，Team 30 个，Business 50 个，Enterprise 不限。',
       alt: '“产品”看板视图：各状态列中的任务卡片，带标签、截止日期和负责人',
       timelineAlt: '看板时间线：按日期排列的任务条、“今天”线和“1.1 版本”里程碑',
       taskAlt: '任务面板：子任务、“阻塞”关联、历史记录和像聊天一样的评论',
+      historyTitle: '任务历史',
+      historyAlt: '看板和“历史”标签下打开的任务：谁在何时修改了截止日期、优先级和负责人，审批记录，以及自动化规则修改的状态',
+    },
+    mail: {
+      eyebrow: '邮件',
+      title: '邮件与团队在同一个窗口',
+      text: '桌面应用内置类似 Apple Mail 的邮件客户端：连接邮箱后即可阅读、回复和转发，无需切换到其他程序。邮件直接在你的电脑上运行——邮件和密码都不会经过 Calab 服务器。',
+      points: [
+        'Gmail、iCloud、Yandex、Mail.ru 及任意 IMAP/SMTP 邮箱——根据地址自动识别设置',
+        '左侧栏的“邮件”分区显示未读数，所有邮箱汇总在“全部收件箱”',
+        '邮件会话、附件、标记、搜索、多选',
+        '可将邮件连同 .eml 文件发送到团队聊天',
+        'Calab 运行时提醒新邮件',
+      ],
+      note: '仅限 macOS、Windows 和 Linux 桌面应用。暂不支持 Microsoft/Outlook 账户。',
+      alt: '“邮件”分区：“全部收件箱”中同事和合作伙伴的邮件，以及打开的带两个附件的合同邮件',
+    },
+    search: {
+      eyebrow: '搜索',
+      title: '一次搜索，找到一切',
+      text: '⌘K 同时搜索消息、任务和评论、会议、文件、笔记以及录制会议的转写。匹配内容高亮显示，支持按词首匹配和容错。',
+      points: ['当前空间或全部空间，包括私信', '“全部结果”按分区显示，可筛选和排序', '可按 APP-12 这样的键找到任务'],
+      alt: '⌘K 搜索窗口：找到的笔记、房间、消息、任务和任务评论',
     },
     notes: {
       eyebrow: '笔记',
@@ -224,7 +248,7 @@ const zh: Dict = {
     cards: {
       voice: { title: '语音，安静的房间', text: 'RNNoise 降噪按需运行，停顿时休眠。' },
       video: { title: '窗口隐藏时的视频', text: '隐藏的窗口不再解码视频。' },
-      menu: { title: '菜单打开时的视频', text: '去掉了毛玻璃和模糊：材质均为纯色。' },
+      menu: { title: '菜单打开时的视频', text: '去掉了 CSS 模糊：材质均为纯色（macOS 的毛玻璃由系统绘制）。' },
       rec: { title: '录制指示灯', text: '闪三下后定格，而不是闪烁数小时。' },
       bundle: { title: 'macOS 安装包', text: '移除了多余的 Chromium 语言包：−16.3 MB。' },
     },
@@ -246,7 +270,7 @@ const zh: Dict = {
   downloads: {
     eyebrow: '下载',
     title: '全平台应用',
-    lead: '基于 Electron 的客户端：全局快捷键、后台按键说话、共享任意窗口。',
+    lead: '桌面应用：全局快捷键、后台按键说话、共享任意窗口，以及邮件。',
     primary: {
       mac: '下载 macOS 版',
       win: '下载 Windows 版',
@@ -272,7 +296,7 @@ const zh: Dict = {
         note: '运行前请为 AppImage 添加可执行权限：{code}。',
       },
     },
-    web: '或者在 Chrome、Edge、Safari 或 Firefox 中打开{link}。',
+    web: '或者在 Chrome、Edge、Safari 或 Firefox 中打开{link}，手机上也可以。iPhone 和 Android 应用即将推出。',
     webLink: '网页版',
     whatsNew: '更新内容：',
     changelog: '更新日志',
@@ -332,6 +356,9 @@ const zh: Dict = {
         caldav: "CalDAV",
         musician: "音乐人模式",
         checklists: "任务清单",
+        automations: "看板自动化",
+        forms: "看板表单",
+        mail: "邮件（桌面应用）",
         approvals: "任务审批",
         webapps: "内嵌网页应用",
         sip: "电话（SIP）",
@@ -357,6 +384,9 @@ const zh: Dict = {
         caldav: ["—", "✓", "✓", "✓"],
         musician: ["—", "✓", "✓", "✓"],
         checklists: ["—", "✓", "✓", "✓"],
+        automations: ["—", "✓", "✓", "✓"],
+        forms: ["—", "每个看板最多 5 个", "每个看板最多 20 个", "∞"],
+        mail: ["✓", "✓", "✓", "✓"],
         approvals: ["✓", "✓", "✓", "✓"],
         webapps: ["✓", "✓", "✓", "✓"],
         sip: ["—", "—", "✓", "✓"],
@@ -404,6 +434,14 @@ const zh: Dict = {
       enterprise: {
         q: "Team、Business 和 Enterprise 有何区别？",
         a: "Team 和 Business 是有限额的云端套餐。Team：每房间 15 人、100 名成员、300 GB、CalDAV 和音乐人模式。Business：每房间 50 人、500 名成员、1 TB、SSO / AD、SIP、看板 Webhook 和优先支持。Enterprise 是部署在你自己服务器上的 Calab，无限制并支持 white-label，采用 BSL 1.1 或商业许可。",
+      },
+      mail: {
+        q: "Calab 有邮件功能吗？",
+        a: "有，在桌面应用中（macOS、Windows、Linux）：连接 Gmail、iCloud、Yandex、Mail.ru 或通过 IMAP 连接工作邮箱——多数服务需要应用专用密码。邮件在你的电脑上运行，不会存储在 Calab 服务器上。浏览器和手机上没有邮件功能；暂不支持 Microsoft/Outlook。",
+      },
+      mobile: {
+        q: "有手机应用吗？",
+        a: "手机浏览器中的网页版已经可用：房间、聊天、语音、看板和日历。iPhone 和 Android 应用即将推出，支持锁屏来电和推送通知。",
       },
       buy: {
         q: "如何购买？",

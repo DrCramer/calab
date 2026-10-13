@@ -4,7 +4,7 @@ const en: Dict = {
   meta: {
     title: 'Calab — voice, chat, meetings and tasks for your team, on your own server',
     description:
-      'Voice rooms, Telegram-style chat, a calendar with meetings, task boards, notes and guest links — on your own server. Meeting recordings with summaries, bots and an API, works behind VPNs. macOS, Windows, Linux and the browser.',
+      'Voice rooms and video meetings, Telegram-style chat, a calendar, task boards, email in the desktop app, search across everything and flexible notifications — in the cloud or on your own server. Meeting recordings with summaries, bots and an API, works behind VPNs. macOS, Windows, Linux and the browser; iPhone and Android coming soon.',
     ogAlt: 'Calab — the app window during a planning meeting: a shared slide and participants’ cameras',
   },
   header: {
@@ -63,6 +63,7 @@ const en: Dict = {
         'RNNoise noise suppression and AEC3 echo cancellation — clean even without headphones',
         'Push-to-talk and voice activation, even in the background',
         'Screen sharing in AV1 or hardware H.264, with a pointer and drawing on top',
+        'Video meetings in Gallery view: up to 25 tiles on screen, whoever starts talking moves to the first page; a Speaker view too',
         'Camera with background blur or a picture',
         'Meeting recordings with a transcript and summary right in the chat',
       ],
@@ -72,7 +73,7 @@ const en: Dict = {
       eyebrow: 'Chat',
       title: 'Chat like Telegram',
       text: 'Every room has its own chat: replies, reactions, forwarding, stickers, voice messages, files with previews, pins and search. Read ticks, just as you’re used to.',
-      points: ['Forward to several chats at once', 'Workspace sticker packs', 'Voice messages, music and video with a built-in player', 'Mentions, per-room notifications, workspace search'],
+      points: ['Forward to several chats at once', 'Built-in stickers and workspace sticker packs', 'Voice messages, music and video with a built-in player', 'Mentions by @username, per-room notifications: all, mentions or nothing'],
       alt: 'The “general” room: a mockup with reactions, a reply to it, a sticker and the members online',
     },
     calendar: {
@@ -91,11 +92,34 @@ const en: Dict = {
       eyebrow: 'Task boards',
       title: 'Tasks next to the conversation',
       text: 'Board, list and timeline in the spirit of Linear — without another service. Create a task from any message; a link to it unfolds into a card in the chat.',
-      points: ['Statuses, priorities, labels, milestones and due dates', 'Several assignees, subtasks and relations', 'Comments like chat: reactions, stickers, voice messages', 'Filters, saved views and keyboard shortcuts'],
+      points: ['Statuses with icons, priorities, labels, milestones and due dates', 'Several assignees, watchers, subtasks, relations and checklists', 'Approvals: a task can’t move on without the needed sign-offs', '“Comments | History” tabs: a chat-like discussion and a timeline of every change', '“When → If → Then” automations (Team and above) and links to GitHub, GitLab, Gitea', 'Forms: answers by a public link become tasks (Team and above)', 'Filters, saved views, My tasks, CSV export and a board webhook (Business)'],
       free: 'Free has 3 boards, Team 30, Business 50 and Enterprise has no limit.',
       alt: 'The “Product” board with task columns: status columns with task cards, labels, due dates and assignees',
       timelineAlt: 'The board timeline: task bars by date, the “today” line and the “Release 1.1” milestone',
       taskAlt: 'The task panel: subtasks, a “blocks” relation, history and chat-like comments',
+      historyTitle: 'Task history',
+      historyAlt: 'A board and an open task on the History tab: who changed the due date, priority and assignees and when, an approval, a status changed by an automation rule',
+    },
+    mail: {
+      eyebrow: 'Email',
+      title: 'Email in the same window as your team',
+      text: 'The desktop app has an Apple Mail–style email client: connect a mailbox to read, reply and forward without switching to another program. Mail runs right on your computer — letters and passwords never pass through the Calab server.',
+      points: [
+        'Gmail, iCloud, Yandex, Mail.ru and any IMAP/SMTP mailbox — settings are detected from the address',
+        'A Mail section on the left rail with an unread counter, every mailbox in All inboxes',
+        'Threads, attachments, flags, search, selecting several letters',
+        'Send a letter to a team chat together with its .eml file',
+        'New-mail notifications while Calab is running',
+      ],
+      note: 'Desktop app only (macOS, Windows, Linux). Microsoft/Outlook accounts are not supported yet.',
+      alt: 'The Mail section: All inboxes with letters from colleagues and partners, an open “rollout agreement” letter with two attachments',
+    },
+    search: {
+      eyebrow: 'Search',
+      title: 'Find anything with one query',
+      text: '⌘K searches messages, tasks and comments, meetings, files, notes and transcripts of recorded meetings at once. Matches are highlighted, words are found by their beginning and with typos.',
+      points: ['This workspace or all of them, direct messages included', '“All results” by section, with filters and sorting', 'A task is found by its key, like APP-12'],
+      alt: 'The ⌘K search window: a note, a room, messages, tasks and a task comment found for the query',
     },
     notes: {
       eyebrow: 'Notes',
@@ -223,7 +247,7 @@ const en: Dict = {
     cards: {
       voice: { title: 'Voice, quiet room', text: 'RNNoise noise suppression runs on demand and sleeps in pauses.' },
       video: { title: 'Video, window hidden', text: 'A hidden window no longer decodes video.' },
-      menu: { title: 'Video under an open menu', text: 'Glass and blur are gone: materials are solid.' },
+      menu: { title: 'Video under an open menu', text: 'CSS blur is gone: materials are solid (the macOS glass is drawn by the system).' },
       rec: { title: 'Recording indicator', text: 'It pulses three times and settles instead of blinking for hours.' },
       bundle: { title: 'macOS installer', text: 'Unused Chromium languages removed: −16.3 MB.' },
     },
@@ -245,7 +269,7 @@ const en: Dict = {
   downloads: {
     eyebrow: 'Download',
     title: 'Apps for every platform',
-    lead: 'An Electron client with global hotkeys, push-to-talk in the background and sharing of any window.',
+    lead: 'The desktop app: global hotkeys, push-to-talk in the background, sharing of any window and email.',
     primary: {
       mac: 'Download for macOS',
       win: 'Download for Windows',
@@ -271,7 +295,7 @@ const en: Dict = {
         note: 'Make the AppImage executable before running it: {code}.',
       },
     },
-    web: 'Or open the {link} in Chrome, Edge, Safari or Firefox.',
+    web: 'Or open the {link} in Chrome, Edge, Safari or Firefox, on your phone too. iPhone and Android apps are coming soon.',
     webLink: 'web app',
     whatsNew: 'What’s new:',
     changelog: 'Changelog',
@@ -331,6 +355,9 @@ const en: Dict = {
         caldav: "CalDAV",
         musician: "Musician mode",
         checklists: "Task checklists",
+        automations: "Board automations",
+        forms: "Board forms",
+        mail: "Email (desktop app)",
         approvals: "Task approvals",
         webapps: "Embedded web apps",
         sip: "Telephony (SIP)",
@@ -356,6 +383,9 @@ const en: Dict = {
         caldav: ["—", "✓", "✓", "✓"],
         musician: ["—", "✓", "✓", "✓"],
         checklists: ["—", "✓", "✓", "✓"],
+        automations: ["—", "✓", "✓", "✓"],
+        forms: ["—", "up to 5 per board", "up to 20 per board", "∞"],
+        mail: ["✓", "✓", "✓", "✓"],
         approvals: ["✓", "✓", "✓", "✓"],
         webapps: ["✓", "✓", "✓", "✓"],
         sip: ["—", "—", "✓", "✓"],
@@ -403,6 +433,14 @@ const en: Dict = {
       enterprise: {
         q: "How do Team, Business and Enterprise differ?",
         a: "Team and Business are cloud plans with limits. Team: 15 people per room, 100 members, 300 GB, CalDAV and musician mode. Business: 50 per room, 500 members, 1 TB, SSO / AD, SIP, board webhook and priority support. Enterprise is Calab on your own server with no limits and white-label, under BSL 1.1 or a commercial licence.",
+      },
+      mail: {
+        q: "Does Calab have email?",
+        a: "Yes, in the desktop app (macOS, Windows, Linux): connect Gmail, iCloud, Yandex, Mail.ru or a work mailbox over IMAP — most services need an app password. Mail runs on your computer; letters are not stored on the Calab server. There is no email in the browser or on the phone; Microsoft/Outlook is not supported yet.",
+      },
+      mobile: {
+        q: "Is there a phone app?",
+        a: "The web app already works in a phone’s browser: rooms, chat, voice, boards and calendar. iPhone and Android apps are coming soon, with calls on the lock screen and push notifications.",
       },
       buy: {
         q: "How do I buy?",

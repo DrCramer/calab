@@ -19,6 +19,8 @@ import {
   Guitar,
   Headphones,
   Phone,
+  Mail,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -232,8 +234,40 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             {shot('timeline', locale, t.boards.timelineAlt, '(min-width: 1232px) 780px, (min-width: 768px) 66vw, calc(100vw - 32px)')}
             {shot('task', locale, t.boards.taskAlt, '(min-width: 1232px) 360px, (min-width: 768px) 30vw, calc(100vw - 32px)')}
           </div>
+          <div className="mt-6">{figure('taskhistory', locale, t.boards.historyAlt, t.boards.historyTitle, '(min-width: 1232px) 1152px, calc(100vw - 32px)')}</div>
         </Container>
       </section>
+
+      <Split
+        id="mail"
+        text={
+          <>
+            <Intro id="mail-title" icon={Mail} {...t.mail} />
+            <Points items={t.mail.points} className="mt-7" />
+            <p className="mt-5 text-[14px] leading-5 text-fg-2">{t.mail.note}</p>
+          </>
+        }
+        shot={shot('mail', locale, t.mail.alt)}
+      />
+
+      <Split
+        id="search"
+        alt
+        flip
+        text={
+          <>
+            <Intro id="search-title" icon={Search} {...t.search} />
+            <Points items={t.search.points} className="mt-7" />
+          </>
+        }
+        shot={
+          <div className="mx-auto max-w-[560px]">
+            <Frame>
+              <Screen name="search" locale={locale} alt={t.search.alt} sizes="(min-width: 1024px) 560px, calc(100vw - 32px)" />
+            </Frame>
+          </div>
+        }
+      />
 
       <Split
         id="notes"

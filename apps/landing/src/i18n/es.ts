@@ -4,7 +4,7 @@ const es: Dict = {
   meta: {
     title: 'Calab — voz, chat, reuniones y tareas para tu equipo, en tu propio servidor',
     description:
-      'Salas de voz, chat como Telegram, calendario con reuniones, tableros de tareas, notas y enlaces para invitados, en tu propio servidor. Grabaciones de reuniones con resumen, bots y API, funciona detrás de VPN. macOS, Windows, Linux y navegador.',
+      'Salas de voz y videollamadas, chat como Telegram, calendario, tableros de tareas, correo en la app de escritorio, búsqueda en todo y notificaciones flexibles, en la nube o en tu servidor. Grabaciones con resumen, bots y API, funciona tras VPN. macOS, Windows, Linux y navegador; iPhone y Android, pronto.',
     ogAlt: 'Calab — la ventana de la aplicación en una reunión de planificación: una diapositiva compartida y las cámaras de los participantes',
   },
   header: {
@@ -63,6 +63,7 @@ const es: Dict = {
         'Supresión de ruido RNNoise y cancelación de eco AEC3: se oye limpio incluso sin auriculares',
         'Pulsar para hablar y activación por voz, también en segundo plano',
         'Pantalla compartida en AV1 o H.264 por hardware, con puntero y dibujo encima',
+        'Videollamadas en vista «Galería»: hasta 25 mosaicos en pantalla, quien habla pasa solo a la primera página; también vista «Orador»',
         'Cámara con fondo desenfocado o una imagen',
         'Grabación de reuniones con transcripción y resumen en el chat',
       ],
@@ -72,7 +73,7 @@ const es: Dict = {
       eyebrow: 'Chat',
       title: 'Un chat como Telegram',
       text: 'Cada sala tiene su propio chat: respuestas, reacciones, reenvíos, stickers, mensajes de voz, archivos con vista previa, mensajes fijados y búsqueda. Marcas de lectura, como estás acostumbrado.',
-      points: ['Reenvía a varios chats a la vez', 'Paquetes de stickers del espacio', 'Mensajes de voz, música y vídeo con reproductor integrado', 'Menciones, notificaciones por sala, búsqueda en el espacio'],
+      points: ['Reenvía a varios chats a la vez', 'Stickers integrados y paquetes del espacio', 'Mensajes de voz, música y vídeo con reproductor integrado', 'Menciones por @usuario, notificaciones por sala: todo, menciones o nada'],
       alt: 'La sala «general»: una maqueta con reacciones, una respuesta, un sticker y los miembros conectados',
     },
     calendar: {
@@ -91,11 +92,34 @@ const es: Dict = {
       eyebrow: 'Tableros de tareas',
       title: 'Las tareas junto a la conversación',
       text: 'Tablero, lista y cronograma al estilo de Linear, sin otro servicio. Crea una tarea desde cualquier mensaje; su enlace se despliega como tarjeta en el chat.',
-      points: ['Estados, prioridades, etiquetas, hitos y fechas límite', 'Varios responsables, subtareas y relaciones', 'Comentarios como en el chat: reacciones, stickers, mensajes de voz', 'Filtros, vistas guardadas y atajos de teclado'],
+      points: ['Estados con iconos, prioridades, etiquetas, hitos y fechas límite', 'Varios responsables, observadores, subtareas, relaciones y listas de comprobación', 'Aprobaciones: la tarea no avanza sin los vistos buenos necesarios', 'Pestañas «Comentarios | Historial»: conversación como en el chat y la línea de tiempo de cada cambio', 'Automatizaciones «Cuando → Si → Entonces» (Team o superior) y enlace con GitHub, GitLab, Gitea', 'Formularios: las respuestas por un enlace público se convierten en tareas (Team o superior)', 'Filtros, vistas guardadas, «Mis tareas», exportación CSV y webhook del tablero (Business)'],
       free: 'Free tiene 3 tableros, Team 30, Business 50 y Enterprise no tiene límite.',
       alt: 'El tablero «Producto» con columnas: columnas de estado con tarjetas, etiquetas, fechas y responsables',
       timelineAlt: 'El cronograma del tablero: barras de tareas por fecha, la línea de «hoy» y el hito «Versión 1.1»',
       taskAlt: 'El panel de la tarea: subtareas, una relación «bloquea», historial y comentarios como en el chat',
+      historyTitle: 'Historial de la tarea',
+      historyAlt: 'Un tablero y una tarea abierta en la pestaña «Historial»: quién cambió la fecha límite, la prioridad y los responsables y cuándo, una aprobación y un estado cambiado por una regla de automatización',
+    },
+    mail: {
+      eyebrow: 'Correo',
+      title: 'El correo, en la misma ventana que tu equipo',
+      text: 'La app de escritorio incluye un cliente de correo al estilo de Apple Mail: conecta un buzón para leer, responder y reenviar sin cambiar de programa. El correo funciona en tu ordenador: ni los correos ni la contraseña pasan por el servidor de Calab.',
+      points: [
+        'Gmail, iCloud, Yandex, Mail.ru y cualquier buzón IMAP/SMTP: la configuración se detecta por la dirección',
+        'Sección «Correo» en la barra lateral con contador de no leídos, todos los buzones en «Todas las bandejas»',
+        'Hilos, adjuntos, marcas, búsqueda y selección de varios correos',
+        'Envía un correo al chat del equipo junto con su archivo .eml',
+        'Avisos de correo nuevo mientras Calab está abierto',
+      ],
+      note: 'Solo en la app para macOS, Windows y Linux. Las cuentas de Microsoft/Outlook aún no son compatibles.',
+      alt: 'La sección Correo: «Todas las bandejas» con correos de colegas y socios, un correo abierto sobre el contrato con dos adjuntos',
+    },
+    search: {
+      eyebrow: 'Búsqueda',
+      title: 'Encuentra todo con una sola consulta',
+      text: '⌘K busca a la vez en mensajes, tareas y comentarios, reuniones, archivos, notas y transcripciones de reuniones grabadas. Las coincidencias se resaltan; las palabras se encuentran por su comienzo y con erratas.',
+      points: ['Este espacio o todos, incluidos los mensajes directos', '«Todos los resultados» por secciones, con filtros y orden', 'Una tarea se encuentra por su clave, como APP-12'],
+      alt: 'La ventana de búsqueda ⌘K: una nota, una sala, mensajes, tareas y un comentario encontrados',
     },
     notes: {
       eyebrow: 'Notas',
@@ -223,7 +247,7 @@ const es: Dict = {
     cards: {
       voice: { title: 'Voz, sala en silencio', text: 'La supresión de ruido RNNoise funciona bajo demanda y se duerme en las pausas.' },
       video: { title: 'Vídeo con la ventana oculta', text: 'Una ventana oculta ya no decodifica vídeo.' },
-      menu: { title: 'Vídeo bajo un menú abierto', text: 'Sin cristal ni desenfoque: los materiales son sólidos.' },
+      menu: { title: 'Vídeo bajo un menú abierto', text: 'Sin desenfoque CSS: los materiales son sólidos (el cristal de macOS lo dibuja el sistema).' },
       rec: { title: 'Indicador de grabación', text: 'Late tres veces y se queda fijo, en vez de parpadear durante horas.' },
       bundle: { title: 'Instalador de macOS', text: 'Quitamos los idiomas de Chromium que sobran: −16,3 MB.' },
     },
@@ -245,7 +269,7 @@ const es: Dict = {
   downloads: {
     eyebrow: 'Descargar',
     title: 'Aplicación para todas las plataformas',
-    lead: 'Cliente en Electron: atajos globales, pulsar para hablar en segundo plano y compartir cualquier ventana.',
+    lead: 'App de escritorio: atajos globales, pulsar para hablar en segundo plano, compartir cualquier ventana y correo.',
     primary: {
       mac: 'Descargar para macOS',
       win: 'Descargar para Windows',
@@ -271,7 +295,7 @@ const es: Dict = {
         note: 'Antes de ejecutar el AppImage, hazlo ejecutable: {code}.',
       },
     },
-    web: 'O abre la {link} en Chrome, Edge, Safari o Firefox.',
+    web: 'O abre la {link} en Chrome, Edge, Safari o Firefox, también en el móvil. Las apps para iPhone y Android llegan pronto.',
     webLink: 'versión web',
     whatsNew: 'Novedades:',
     changelog: 'Registro de cambios',
@@ -331,6 +355,9 @@ const es: Dict = {
         caldav: "CalDAV",
         musician: "Modo músico",
         checklists: "Listas de verificación en tareas",
+        automations: "Automatizaciones de tableros",
+        forms: "Formularios de tableros",
+        mail: "Correo (app de escritorio)",
         approvals: "Aprobación de tareas",
         webapps: "Aplicaciones web integradas",
         sip: "Telefonía (SIP)",
@@ -356,6 +383,9 @@ const es: Dict = {
         caldav: ["—", "✓", "✓", "✓"],
         musician: ["—", "✓", "✓", "✓"],
         checklists: ["—", "✓", "✓", "✓"],
+        automations: ["—", "✓", "✓", "✓"],
+        forms: ["—", "hasta 5 por tablero", "hasta 20 por tablero", "∞"],
+        mail: ["✓", "✓", "✓", "✓"],
         approvals: ["✓", "✓", "✓", "✓"],
         webapps: ["✓", "✓", "✓", "✓"],
         sip: ["—", "—", "✓", "✓"],
@@ -403,6 +433,14 @@ const es: Dict = {
       enterprise: {
         q: "¿En qué se diferencian Team, Business y Enterprise?",
         a: "Team y Business son planes en la nube con límites. Team: 15 personas por sala, 100 miembros, 300 GB, CalDAV y modo músico. Business: 50 por sala, 500 miembros, 1 TB, SSO / AD, SIP, webhook del tablero y soporte prioritario. Enterprise es Calab en tu servidor, sin límites y con white-label, con licencia BSL 1.1 o comercial.",
+      },
+      mail: {
+        q: "¿Calab tiene correo?",
+        a: "Sí, en la app de escritorio (macOS, Windows, Linux): conecta Gmail, iCloud, Yandex, Mail.ru o un buzón del trabajo por IMAP; la mayoría de servicios piden una contraseña de aplicación. El correo funciona en tu ordenador; los mensajes no se guardan en el servidor de Calab. No hay correo en el navegador ni en el móvil; Microsoft/Outlook aún no es compatible.",
+      },
+      mobile: {
+        q: "¿Hay app para el móvil?",
+        a: "La versión web ya funciona en el navegador del móvil: salas, chat, voz, tableros y calendario. Las apps para iPhone y Android llegan pronto, con llamadas en la pantalla de bloqueo y notificaciones push.",
       },
       buy: {
         q: "¿Cómo compro?",

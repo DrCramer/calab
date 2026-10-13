@@ -84,7 +84,10 @@ in the browser, the version comes from `latest/VERSION`, never versioned file na
 Follows `docs/08-design.md`: system font stack, one accent (`#0A84FF`/`#007AFF`, white-on-accent fills use
 `#0071e3`), 4 px grid, solid materials only (no `backdrop-filter`, the sticky header too), light/dark
 via `prefers-color-scheme` only, motion only under `prefers-reduced-motion: no-preference`, no infinite animations.
-Tokens live in `src/app/globals.css`. Landing v3 (docs/09 #139): hero with the whole app window, then sections in
+Tokens live in `src/app/globals.css`. Landing 3.3 (docs/10 «Лендинг 3.3»): the home page is hero → «Что есть в Calab» (`feature-catalog.tsx`,
+`i18n/catalog.ts`: every big feature as a screenshot + 1–2 sentences, two columns, one on phones) → «Уведомления»
+(`notifications.tsx`) → «Скоро: iPhone и Android» (`mobile-soon.tsx`) → scenarios → access → pricing → download → FAQ;
+the detailed sections stay on `/<locale>/features/` (now with «Почта» and «Поиск»). Landing v3 (docs/09 #139): hero with the whole app window, then sections in
 the order voice/video → sound quality → phone calls (SIP) → chat → calendar → boards → notes → guests → web apps → bots → self-hosted →
 performance (measured numbers only, docs/14-energy.md / docs/18) → pricing (Free · Team · Business · Enterprise = your own server) → download → FAQ.
 Landing v4 added the SIP, sound, web-apps and performance blocks and the four-plan table; plan limits live in `src/i18n/*.ts`
@@ -116,6 +119,10 @@ Every scene is captured per language with that language's team (docs/09 #139).
    `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `-g "landing kanban"` one scene. Raw PNGs land in
    `apps/landing/shots/<scene>-<locale>@2x.png` (git-ignored). Scenes: `voice` (hero: stream + cameras), `chat`,
    `call`, `calendar`, `findtime`, `kanban`, `timeline`, `task`, `notes`, `guest`.
+   Landing 3.3 scenes are in `e2e-marketing/landing-v5.spec.ts` (`taskhistory`, `notify`, `notifyrelay`, `gallery`,
+   `search`, and the phone: `phone-rooms`, `phone-chat`, `phone-voice`, `phone-board` — WebKit at 390×844, scale 2; data in
+   `copy3.ts`) and `e2e-marketing/landing-mail.spec.ts` (`mail`: the built Electron app, `pnpm build:app`, with the renderer's
+   mail mock bundled by esbuild over `mail-fixtures.ts` answering `mail:request` in main — no IMAP server, no app source).
    Landing v4 scenes (`sipdial`, `siproom`, `sipsettings`, `siplog`, `webapps`) are in `e2e-marketing/landing-v4.spec.ts`
    (`... playwright test --config playwright.marketing.config.ts landing-v4`): the mock's SIP account and calls
    (`setSip`, `placeSipCall`), the rail apps via `mock.dispatch(workspaceAppUpsert)` and a local dashboard page as the "site".
