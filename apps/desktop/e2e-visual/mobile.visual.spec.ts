@@ -361,6 +361,26 @@ test('m-chat', async ({ page }) => {
   await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
 });
 
+// docs/08 «Свайпы и долгое нажатие» (Telegram iOS): a message swiped left shows «Ответить» past
+// 48 px; the release puts the reply into the composer (as the menu's «Ответить»), no menu opens.
+test('m-chat-swipe-reply', async ({ page }) => {
+  await signedInRoom(page);
+  await feedToBottom(page);
+  const bubble = page.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал.' });
+  await touchSwipe(bubble, { dx: -60, from: 'center', release: false });
+  await expect(page.getByTestId('reply-swipe-icon')).toHaveAttribute('data-armed', '');
+  await checkpoint(page, 'm-chat-swipe-reply');
+  await touchRelease(page);
+  await expect(page.getByTestId('reply-swipe-icon')).toHaveCount(0);
+  await expect(page.getByTestId('composer-context')).toContainText('Готово, выдал.');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await checkpoint(page, 'm-chat-swipe-replied', { main: true, snapshot: false });
+  // A short swipe (under the trigger) springs back without a reply.
+  await page.getByTestId('composer-context').getByRole('button', { name: 'Отмена' }).tap();
+  await touchSwipe(bubble, { dx: -30, from: 'center' });
+  await expect(page.getByTestId('composer-context')).toHaveCount(0);
+});
+
 /**
  * docs/09 #125: the server (GET /api/version at READY) is newer than the loaded bundle — the accent
  * bar under the top with «Обновить страницу» (the web has no updater).
@@ -585,6 +605,22 @@ test('m-home', async ({ page }) => {
     await expect(list.getByRole('button', { name: /^Развернуть / }).first()).toBeVisible();
     await list.getByRole('button', { name: /^Развернуть / }).first().tap();
   }
+  // A left swipe on a room row reveals «Прочитано» · «Тихо» (docs/08 «Свайпы и долгое нажатие»);
+  // «Тихо» mutes the room and closes the row, the next swipe offers «Звук».
+  const general = list.getByTestId('phone-room-row').filter({ has: page.locator('text=/^общий/') }).first();
+  await swipeLeft(general);
+  const actions = list.getByTestId('room-swipe-action');
+  await expect(actions).toBeVisible();
+  const box = await actions.boundingBox();
+  expect(box && Math.round(box.width), 'two 88 px actions').toBe(176);
+  expect(box && Math.round(box.height), 'the row’s full height').toBe(68);
+  await checkpoint(page, 'm-home-swipe');
+  await actions.getByTestId('room-swipe-mute').tap();
+  await expect(actions).toHaveCount(0);
+  await swipeLeft(general);
+  await expect(actions.getByTestId('room-swipe-mute')).toHaveText('Звук');
+  await actions.getByTestId('room-swipe-mute').tap();
+  await expect(actions).toHaveCount(0);
 });
 
 // ADR-0073 §4: people in the room's voice, I am not — the banner under the header with «Присоединиться».
@@ -611,6 +647,9 @@ test('m-members-page', async ({ page }) => {
   const members = page.getByTestId('members-page');
   await expect(members.getByRole('complementary', { name: 'Участники' })).toBeVisible();
   await checkpoint(page, 'm-members-page');
+  // A long press on a member: the member menu as the centred card (the profile does not open).
+  await longPress(members.locator('[data-member-row]').first());
+  await expectMenuCard(page, 'm-members-menu', true);
   await page.getByTestId('phone-back').tap();
   await expect(page.getByTestId('composer')).toBeVisible();
 });
@@ -687,6 +726,30 @@ test('m-calendar-day', async ({ page }) => {
   await checkpoint(page, 'm-calendar-event-card', { snapshot: false });
   await page.getByRole('button', { name: 'Назад' }).tap();
   await expect(page.getByTestId('day-view')).toBeVisible();
+  // A long press on a meeting: its menu, not its card (the press under the menu is dropped).
+  await longPress(page.getByTestId('event-block').filter({ hasText: 'Планёрка' }));
+  await expectMenuCard(page, 'm-calendar-event-menu');
+  await expect(page.getByTestId('event-panel')).toHaveCount(0);
+});
+
+// docs/08 «Свайпы и долгое нажатие»: a sideways swipe over the hours flips the day (left → next).
+test('m-calendar-swipe', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await signedIn(page);
+  await tab(page, 'calendar');
+  const title = page.getByTestId('day-view').getByRole('heading', { level: 1 });
+  await expect(title).not.toBeEmpty();
+  const today = (await title.textContent()) ?? '';
+  const scroller = page.getByTestId('day-scroller');
+  await touchSwipe(scroller, { dx: -120, from: 'center' });
+  await expect(title).not.toHaveText(today);
+  await checkpoint(page, 'm-calendar-swipe', { snapshot: false });
+  await touchSwipe(scroller, { dx: 120, from: 'center' });
+  await expect(title).toHaveText(today);
+  // Too short: the day stays.
+  await touchSwipe(scroller, { dx: -40, from: 'center' });
+  await expect(title).toHaveText(today);
 });
 
 // «Подобрать время» on a phone (ADR-0041 §3): the chips, the duration, «в рабочие часы» and the
@@ -751,10 +814,18 @@ test('m-boards-list', async ({ page }) => {
   // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
   await tab(page, 'boards');
   const nav = page.getByTestId('phone-boards');
+  // A long press on a board opens its «…» menu.
+  await longPress(nav.getByTestId('board-row').filter({ hasText: 'Разработка' }));
+  await expectMenuCard(page, 'm-board-row-menu');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
   await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
   await expect(page.getByTestId('list-view')).toBeVisible();
   await checkpoint(page, 'm-boards-list');
+  // A long press on a task row: the task menu as the centred card; the task does not open.
+  await longPress(page.getByTestId('list-row').filter({ hasText: 'CAL-3' }));
+  await expect(page.getByTestId('task-context-menu')).toBeVisible();
+  await expectMenuCard(page, 'm-task-menu', true);
+  await expect(page.getByTestId('task-panel')).toHaveCount(0);
 });
 
 // Owner 07.10: the create dialog has the start date (when the board's dates are on).
@@ -800,6 +871,11 @@ test('m-boards-kanban', async ({ page }) => {
   await expect(kanban.getByTestId('kanban-column').first()).toBeVisible();
   await expect(kanban).toHaveCSS('scroll-snap-type', /x mandatory/);
   await checkpoint(page, 'm-boards-kanban');
+  // A long press on a card: the task menu; no drag starts, the task does not open.
+  await longPress(kanban.getByTestId('task-card').first());
+  await expect(page.getByTestId('task-context-menu')).toBeVisible();
+  await expectMenuCard(page, 'm-task-card-menu');
+  await expect(page.getByTestId('task-panel')).toHaveCount(0);
 });
 
 // The composer's «Стикеры» panel as a centred card (ADR-0030, owner 07.10): the pack strip, my pack, «Эмоции»
@@ -1052,15 +1128,20 @@ test('m-notes', async ({ page }) => {
     expect(box && Math.round(box.height), 'a 68 px note row').toBe(68);
   }
   await checkpoint(page, 'm-notes');
+  // A long press on a shelf: the shelf menu (the «…» items).
+  await longPress(shelves.first());
+  await expect(page.getByTestId('notes-rename')).toBeVisible();
+  await expectMenuCard(page, 'm-notes-menu');
 });
 
 /**
- * A finger swipe to the left over the element. Synthetic events: desktop WebKit has neither a
- * touch input API for Playwright nor a Touch constructor, so plain events carry `touches` (what
- * React's touch handlers read).
+ * A finger swipe over the element: `dx` px sideways in 15 px steps (one frame each), from 20 px
+ * inside its right edge or from its centre. Synthetic events: desktop WebKit has neither a touch
+ * input API for Playwright nor a Touch constructor, so plain events carry `touches` (what React's
+ * touch handlers read). `release: false` holds the finger (touchRelease lifts it).
  */
-async function swipeLeft(target: Locator): Promise<void> {
-  await target.evaluate(async (el) => {
+async function touchSwipe(target: Locator, opts: { dx: number; from?: 'right' | 'center'; release?: boolean }): Promise<void> {
+  await target.evaluate(async (el, o) => {
     const r = el.getBoundingClientRect();
     const y = r.top + r.height / 2;
     const fire = (type: string, x: number): void => {
@@ -1069,14 +1150,57 @@ async function swipeLeft(target: Locator): Promise<void> {
       Object.defineProperties(ev, { touches: { value: type === 'touchend' ? [] : [t] }, changedTouches: { value: [t] }, targetTouches: { value: type === 'touchend' ? [] : [t] } });
       el.dispatchEvent(ev);
     };
-    const x0 = r.right - 20;
+    const x0 = o.from === 'center' ? r.left + r.width / 2 : r.right - 20;
     fire('touchstart', x0);
-    for (let dx = 15; dx <= 120; dx += 15) {
-      fire('touchmove', x0 - dx);
+    const step = Math.sign(o.dx) * 15;
+    for (let d = step; Math.abs(d) < Math.abs(o.dx); d += step) {
+      fire('touchmove', x0 + d);
       await new Promise((ok) => requestAnimationFrame(ok));
     }
-    fire('touchend', x0 - 120);
+    fire('touchmove', x0 + o.dx);
+    await new Promise((ok) => requestAnimationFrame(ok));
+    if (o.release === false) (window as unknown as { liftTouch?: () => void }).liftTouch = () => fire('touchend', x0 + o.dx);
+    else fire('touchend', x0 + o.dx);
+  }, opts);
+}
+
+/** Lifts the finger of a `touchSwipe(…, { release: false })`. */
+async function touchRelease(page: Page): Promise<void> {
+  await page.evaluate(() => (window as unknown as { liftTouch?: () => void }).liftTouch?.());
+}
+
+/** A finger swipe to the left over the element (from near its right edge, 120 px). */
+async function swipeLeft(target: Locator): Promise<void> {
+  await touchSwipe(target, { dx: -120 });
+}
+
+/**
+ * A finger held still on the element for 800 ms (synthetic touch pointer events: Radix
+ * ContextMenu's own 700 ms long press, lib/longPress, lib/phoneMenus's long-press haptic and the
+ * press reset all run as on a phone).
+ */
+async function longPress(target: Locator): Promise<void> {
+  await target.evaluate(async (el) => {
+    const r = el.getBoundingClientRect();
+    const init = { bubbles: true, cancelable: true, composed: true, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    el.dispatchEvent(new PointerEvent('pointerdown', init));
+    await new Promise((ok) => setTimeout(ok, 800));
+    el.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
   });
+}
+
+/**
+ * A long-press menu is open as the centred card; Esc closes it. Not a tap on the scrim: in WebKit
+ * here the menu goes on the press and the tap's pointer-up / click land on the row under it (a
+ * list row would open — m-menu taps the scrim over an empty feed).
+ */
+async function expectMenuCard(page: Page, name: string, snapshot = false): Promise<void> {
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await expectCentredCard(page, menu);
+  await checkpoint(page, name, { snapshot });
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
 }
 
 test('m-dm-chat', async ({ page }) => {
