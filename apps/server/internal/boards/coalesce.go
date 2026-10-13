@@ -73,7 +73,12 @@ func journalOf(js []journalEntry, taskID uuid.UUID) []journalEntry {
 func (j journalEntry) event(ws uuid.UUID) *v1.DispatchEvent {
 	ev := &v1.TaskActivityAppend{WorkspaceId: ws.String(), TaskId: j.task.String(), BoardId: j.board.String()}
 	if j.row != nil {
-		ev.Activity = activity(*j.row)
+		a := *j.row
+		// One encoding for every viewer of the task: without the snapshot of another task, which
+		// some of them may not see (ADR-0059); the client names it from its own copy, and the
+		// feed (GET …/activity) by what the caller sees.
+		a.Before, a.After = withoutTaskRef(a.Kind, a.Before), withoutTaskRef(a.Kind, a.After)
+		ev.Activity = activity(a)
 	}
 	if j.replaced != uuid.Nil {
 		ev.ReplacedId = j.replaced.String()

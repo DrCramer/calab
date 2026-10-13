@@ -35,6 +35,25 @@ func TestTaskScopedAccessBoundaries(t *testing.T) {
 	if r := getTask(t, bob, mine.GetId()); len(r.GetRelated()) != 0 || r.GetParent() != nil {
 		t.Fatalf("related tasks of a scoped viewer: %v", r.GetRelated())
 	}
+	// Nor named by the journal's snapshot (ADR-0091 §3): bob's feed has the relation by id only,
+	// a full viewer's has its key and title.
+	relEntry := func(u musty) *v1.TaskActivity {
+		var p v1.TaskActivityPage
+		u.must(200, "GET", "/api/tasks/"+mine.GetId()+"/activity?only=journal", nil, &p)
+		for _, it := range p.GetItems() {
+			if a := it.GetActivity(); a.GetKind() == "relation" {
+				return a
+			}
+		}
+		t.Fatal("no relation entry")
+		return nil
+	}
+	if f := relEntry(bob).GetAfter().GetFields(); f["related_id"].GetStringValue() != other.GetId() || f["title"] != nil || f["key"] != nil {
+		t.Fatalf("a scoped viewer's relation entry names the task: %v", f)
+	}
+	if f := relEntry(o).GetAfter().GetFields(); f["title"].GetStringValue() != "чужая" || f["key"].GetStringValue() != other.GetKey() {
+		t.Fatalf("a full viewer's relation entry: %v", f)
+	}
 	bob.must(422, "PUT", "/api/tasks/"+mine.GetId()+"/relations", &v1.SetTaskRelationRequest{
 		Kind: v1.TaskRelationKind_TASK_RELATION_KIND_RELATES, RelatedId: third.GetId()}, nil)
 	bob.must(422, "DELETE", "/api/tasks/"+mine.GetId()+"/relations?kind=relates&related_id="+url.QueryEscape(other.GetId()), nil, nil)

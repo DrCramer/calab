@@ -176,6 +176,17 @@ func TestTaskHistory(t *testing.T) {
 		rs[0].GetAfter().GetFields()["title"].GetStringValue() != "Блокер" {
 		t.Fatalf("relation: %v", rs)
 	}
+	// The live entry goes to every viewer at once: the other task by id only (ADR-0059).
+	gw.wait("TASK_ACTIVITY relation", func(e *v1.DispatchEvent) bool {
+		a := e.GetTaskActivity().GetActivity()
+		if a.GetKind() != "relation" {
+			return false
+		}
+		if f := a.GetAfter().GetFields(); f["title"] != nil || f["key"] != nil || f["related_id"].GetStringValue() != other.GetId() {
+			t.Fatalf("live relation entry names the task: %v", a)
+		}
+		return true
+	})
 
 	// Webhooks: task.comment.* as before, no task.updated for comment entries.
 	evs := recv.wait("comment deleted", func(evs []*v1.BoardWebhookEvent) bool {

@@ -1214,7 +1214,8 @@ export const TaskSchema: GenMessage<Task> = /*@__PURE__*/
  * {"file_ids", "files": [{"file_id", "name", "size", "mime"}]}; "labels" — {"label_ids",
  * "labels": [{"id", "name", "color"}]}; "milestone" — {"milestone_id", "name"}; "parent" —
  * {"parent_id", "key", "title"}; "relation" — {"kind", "related_id", "key", "title"} (entries
- * written before carry only the ids).
+ * written before carry only the ids; key and title only for a task the reader sees, ADR-0059 —
+ * the live TASK_ACTIVITY and the webhook changes have the id alone).
  * Comments (ADR-0091): "comment" — a comment was posted (actor = its author): after
  * {"message_id", "text", "attachments": [{"file_id", "name", "size", "mime"}], "reply_to_id"?,
  * "forwarded"}; "comment_edit" — before / after {"message_id", "text", "attachments"} (edits of

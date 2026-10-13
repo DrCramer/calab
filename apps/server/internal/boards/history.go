@@ -2,6 +2,7 @@ package boards
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 
@@ -140,4 +141,100 @@ func attachmentsEntry(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) (ma
 		return nil, err
 	}
 	return map[string]any{"file_ids": idsJSON(ids), "files": files}, nil
+}
+
+// taskRefKinds: the journal kinds that name another task, with the key of its id in before /
+// after; their snapshots carry its "key" and "title" (ADR-0091 §3).
+var taskRefKinds = map[string]string{"relation": "related_id", "parent": "parent_id"}
+
+// withoutTaskRef drops the key and title of the named task from one side of an entry of kind
+// (as written before ADR-0091: the id alone). Used where the reader is not one user — the live
+// TASK_ACTIVITY (one encoding for every viewer of the task) and the board webhook — since the
+// named task may be on a board they do not see (ADR-0059).
+func withoutTaskRef(kind string, raw []byte) []byte {
+	if _, ok := taskRefKinds[kind]; !ok || len(raw) == 0 {
+		return raw
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return raw
+	}
+	_, k := m["key"]
+	_, t := m["title"]
+	if !k && !t {
+		return raw
+	}
+	delete(m, "key")
+	delete(m, "title")
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// refSide is one side (before or after) of a journal entry, rewritten in place.
+type refSide struct {
+	kind string
+	raw  *[]byte
+}
+
+// hideUnseenRefs drops the key and title of every task named by the entries' sides that the
+// caller does not see (ADR-0059: a relation may cross boards, a task-scoped member sees only
+// his tasks — the snapshot must not tell what GET /tasks/{id} hides). A task that is gone is not
+// seen either.
+func (s *Service) hideUnseenRefs(ctx context.Context, me uuid.UUID, sides []refSide) error {
+	type hit struct {
+		side refSide
+		m    map[string]any
+		id   uuid.UUID
+	}
+	var hits []hit
+	var ids []uuid.UUID
+	for _, sd := range sides {
+		idKey, ok := taskRefKinds[sd.kind]
+		if !ok || len(*sd.raw) == 0 {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal(*sd.raw, &m) != nil {
+			continue
+		}
+		_, k := m["key"]
+		_, t := m["title"]
+		if !k && !t {
+			continue
+		}
+		id, _ := uuid.Parse(str(m, idKey)) // unparsable: uuid.Nil, never seen
+		hits = append(hits, hit{sd, m, id})
+		ids = append(ids, id)
+	}
+	if len(hits) == 0 {
+		return nil
+	}
+	rows, err := queryTasks(ctx, s.db.Pool, "WHERE t.id = ANY($1)", ids)
+	if err != nil {
+		return err
+	}
+	vis, err := visibleTasks(ctx, s.db.Q, rows, me)
+	if err != nil {
+		return err
+	}
+	seen := make(map[uuid.UUID]bool, len(vis))
+	for _, v := range vis {
+		seen[v.ID] = true
+	}
+	for _, h := range hits {
+		if seen[h.id] {
+			continue
+		}
+		delete(h.m, "key")
+		delete(h.m, "title")
+		b, err := json.Marshal(h.m)
+		if err != nil {
+			return err
+		}
+		*h.side.raw = b
+	}
+	return nil
 }

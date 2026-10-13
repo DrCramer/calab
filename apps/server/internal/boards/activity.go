@@ -71,6 +71,13 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	sides := make([]refSide, 0, 2*len(as))
+	for i := range as {
+		sides = append(sides, refSide{as[i].Kind, &as[i].Before}, refSide{as[i].Kind, &as[i].After})
+	}
+	if err := s.hideUnseenRefs(r.Context(), uid(r), sides); err != nil {
+		return err
+	}
 	msgs, err := messages.Details(r.Context(), s.db.Q, ms, uid(r))
 	if err != nil {
 		return err
@@ -133,7 +140,7 @@ func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	if qs.Get("format") == "csv" {
 		return s.exportCSV(w, r, p)
 	}
-	rows, err := s.db.Q.ListBoardActivity(r.Context(), p)
+	rows, err := s.boardActivityPage(r, p)
 	if err != nil {
 		return err
 	}
@@ -149,8 +156,22 @@ func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// boardActivityPage: a page of the board journal, the tasks the caller does not see unnamed in
+// it (a relation to another board, ADR-0091 §3 snapshots).
+func (s *Service) boardActivityPage(r *http.Request, p sqlc.ListBoardActivityParams) ([]sqlc.ListBoardActivityRow, error) {
+	rows, err := s.db.Q.ListBoardActivity(r.Context(), p)
+	if err != nil {
+		return nil, err
+	}
+	sides := make([]refSide, 0, 2*len(rows))
+	for i := range rows {
+		sides = append(sides, refSide{rows[i].Kind, &rows[i].Before}, refSide{rows[i].Kind, &rows[i].After})
+	}
+	return rows, s.hideUnseenRefs(r.Context(), uid(r), sides)
+}
+
 func (s *Service) exportCSV(w http.ResponseWriter, r *http.Request, p sqlc.ListBoardActivityParams) error {
-	first, err := s.db.Q.ListBoardActivity(r.Context(), p)
+	first, err := s.boardActivityPage(r, p)
 	if err != nil {
 		return err
 	}
@@ -170,7 +191,7 @@ func (s *Service) exportCSV(w http.ResponseWriter, r *http.Request, p sqlc.ListB
 		}
 		last := rows[len(rows)-1].ID
 		p.AfterID = &last
-		if rows, err = s.db.Q.ListBoardActivity(r.Context(), p); err != nil {
+		if rows, err = s.boardActivityPage(r, p); err != nil {
 			break // headers are out: the file ends early
 		}
 	}

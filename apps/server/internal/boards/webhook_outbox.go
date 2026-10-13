@@ -202,7 +202,10 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 		ev.TaskUrl = strings.TrimRight(s.PublicURL, "/") + "/t/" + pbs[0].GetKey()
 	}
 	for _, a := range as {
-		ev.Changes = append(ev.Changes, &v1.BoardWebhookEvent_Change{Field: a.Kind, Before: jsonStruct(a.Before), After: jsonStruct(a.After)})
+		// The other task of a relation / parent by id only: it may be on a board the webhook's
+		// board does not show (ADR-0059).
+		ev.Changes = append(ev.Changes, &v1.BoardWebhookEvent_Change{Field: a.Kind,
+			Before: jsonStruct(withoutTaskRef(a.Kind, a.Before)), After: jsonStruct(withoutTaskRef(a.Kind, a.After))})
 	}
 	ev.Comment = comment
 	return s.insertWebhook(ctx, q, board, seq, typ, ev)
