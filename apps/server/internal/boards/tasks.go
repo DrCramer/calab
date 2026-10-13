@@ -40,8 +40,6 @@ type change struct {
 	moved  bool
 	// rule: the entries are made by this automation rule (ADR-0060): actor_id NULL, rule_id set.
 	rule *ruleRef
-	// extra: rule triggers that are not journal entries (a comment was posted).
-	extra []ruleEvent
 	// auto: what automation rules did in the transaction, published after the commit (taskTx).
 	auto *autoEffects
 }
@@ -80,7 +78,7 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 	// A repeated change of the field by the same user merges into his recent entry (ADR-0081):
 	// the journal keeps the first before and the last after; c.acts — rules, webhooks,
 	// notifications — still gets this change as it is.
-	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, kind)
+	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, kind, after)
 	if err != nil {
 		return err
 	}
@@ -119,23 +117,22 @@ func (s *Service) publish(ctx context.Context, taskID uuid.UUID, c *change, crea
 			s.publishTaskEvent(ctx, id, false)
 		}
 	}
-	for _, j := range c.journal {
+	s.publishJournal(ctx, c.journal)
+	s.sendNotices(ctx, taskID, c.notices)
+}
+
+// publishJournal sends TASK_ACTIVITY of the stored journal entries.
+func (s *Service) publishJournal(ctx context.Context, js []journalEntry) {
+	for _, j := range js {
 		if wsID, err := s.workspaceOf(ctx, j.board); err == nil {
 			s.ev.Workspace(ctx, wsID, j.event(wsID))
 		}
 	}
-	s.sendNotices(ctx, taskID, c.notices)
 }
 
 func (s *Service) workspaceOf(ctx context.Context, boardID uuid.UUID) (uuid.UUID, error) {
 	b, err := s.db.Q.GetBoard(ctx, boardID)
 	return b.WorkspaceID, err
-}
-
-// publishTask is publish without journal entries (moves of a deleted status, sweeper).
-func (s *Service) publishTask(ctx context.Context, taskID uuid.UUID, notices []notice) {
-	s.publishTaskEvent(ctx, taskID, false)
-	s.sendNotices(ctx, taskID, notices)
 }
 
 func (s *Service) publishTaskEvent(ctx context.Context, taskID uuid.UUID, created bool) {
@@ -1473,7 +1470,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 						return err
 					}
 				}
-				if err := c.record(r.Context(), q, t, me, "labels", map[string]any{"label_ids": idsJSON(was)}, map[string]any{"label_ids": idsJSON(labels)}); err != nil {
+				if err := c.record(r.Context(), q, t, me, "labels", labelsEntry(it, was), labelsEntry(it, labels)); err != nil {
 					return err
 				}
 			}
@@ -1482,7 +1479,15 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			if err := attach(r.Context(), q, t, attIDs, me); err != nil {
 				return err
 			}
-			if err := c.record(r.Context(), q, t, me, "attachments", map[string]any{"file_ids": idsJSON(attWas)}, map[string]any{"file_ids": idsJSON(attIDs)}); err != nil {
+			before, err := attachmentsEntry(r.Context(), q, attWas)
+			if err != nil {
+				return err
+			}
+			after, err := attachmentsEntry(r.Context(), q, attIDs)
+			if err != nil {
+				return err
+			}
+			if err := c.record(r.Context(), q, t, me, "attachments", before, after); err != nil {
 				return err
 			}
 		}
@@ -1634,15 +1639,36 @@ func (s *Service) recordFields(ctx context.Context, q *sqlc.Queries, old, t task
 		}
 		return int(*e)
 	}
+	// Snapshots of the parent (key, title) and the milestone (name), ADR-0091 §3.
+	parentBefore, parentAfter := map[string]any{"parent_id": idAny(old.ParentID)}, map[string]any{"parent_id": idAny(t.ParentID)}
+	if !eqID(old.ParentID, t.ParentID) {
+		refs, err := taskRefs(ctx, q, old.ParentID, t.ParentID)
+		if err != nil {
+			return err
+		}
+		withRef(parentBefore, refs, old.ParentID)
+		withRef(parentAfter, refs, t.ParentID)
+	}
+	msBefore, msAfter := map[string]any{"milestone_id": idAny(old.MilestoneID)}, map[string]any{"milestone_id": idAny(t.MilestoneID)}
+	if !eqID(old.MilestoneID, t.MilestoneID) {
+		names, err := milestoneNames(ctx, q, t.BoardID)
+		if err != nil {
+			return err
+		}
+		withMilestone(msBefore, names, old.MilestoneID)
+		withMilestone(msAfter, names, t.MilestoneID)
+	}
 	entries := []entry{
 		{"title", map[string]any{"title": old.Title}, map[string]any{"title": t.Title}, old.Title != t.Title},
-		{"description", map[string]any{"length": utf8.RuneCountInString(old.Description)}, map[string]any{"length": utf8.RuneCountInString(t.Description)}, old.Description != t.Description},
+		// The text itself too (ADR-0091 §3): the history shows what changed.
+		{"description", map[string]any{"length": utf8.RuneCountInString(old.Description), "text": old.Description},
+			map[string]any{"length": utf8.RuneCountInString(t.Description), "text": t.Description}, old.Description != t.Description},
 		{"priority", map[string]any{"priority": int(old.Priority)}, map[string]any{"priority": int(t.Priority)}, old.Priority != t.Priority},
 		{"estimate", map[string]any{"estimate": est(old.Estimate)}, map[string]any{"estimate": est(t.Estimate)}, est(old.Estimate) != est(t.Estimate)},
 		{"dates", map[string]any{"start_on": dateAny(old.StartOn), "due_on": dateAny(old.DueOn)}, map[string]any{"start_on": dateAny(t.StartOn), "due_on": dateAny(t.DueOn)},
 			dateAny(old.StartOn) != dateAny(t.StartOn) || dateAny(old.DueOn) != dateAny(t.DueOn)},
-		{"parent", map[string]any{"parent_id": idAny(old.ParentID)}, map[string]any{"parent_id": idAny(t.ParentID)}, !eqID(old.ParentID, t.ParentID)},
-		{"milestone", map[string]any{"milestone_id": idAny(old.MilestoneID)}, map[string]any{"milestone_id": idAny(t.MilestoneID)}, !eqID(old.MilestoneID, t.MilestoneID)},
+		{"parent", parentBefore, parentAfter, !eqID(old.ParentID, t.ParentID)},
+		{"milestone", msBefore, msAfter, !eqID(old.MilestoneID, t.MilestoneID)},
 		{"status", map[string]any{"status_id": old.StatusID.String(), "status_type": from.Type, "position": old.Position},
 			map[string]any{"status_id": t.StatusID.String(), "status_type": to.Type, "position": t.Position}, old.StatusID != t.StatusID},
 	}
@@ -2000,7 +2026,8 @@ func (s *Service) relation(w http.ResponseWriter, r *http.Request, other uuid.UU
 			return err
 		}
 		c.tasks = append(c.tasks, other)
-		rel := map[string]any{"related_id": other.String(), "kind": kind}
+		// The related task's key and title (ADR-0091 §3): the history names it after it is gone.
+		rel := map[string]any{"related_id": other.String(), "kind": kind, "key": TaskKey(o.BoardKey, o.Number), "title": o.Title}
 		if add {
 			return c.record(r.Context(), q, t, me, "relation", nil, rel)
 		}

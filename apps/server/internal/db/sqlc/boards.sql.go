@@ -986,6 +986,43 @@ func (q *Queries) FilesAttachable(ctx context.Context, arg FilesAttachableParams
 	return items, nil
 }
 
+const filesByID = `-- name: FilesByID :many
+SELECT id, name, size, mime FROM files WHERE id = ANY($1::uuid[])
+`
+
+type FilesByIDRow struct {
+	ID   uuid.UUID
+	Name string
+	Size int64
+	Mime string
+}
+
+// Names of files, for the snapshots of journal entries (ADR-0091).
+func (q *Queries) FilesByID(ctx context.Context, ids []uuid.UUID) ([]FilesByIDRow, error) {
+	rows, err := q.db.Query(ctx, filesByID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FilesByIDRow{}
+	for rows.Next() {
+		var i FilesByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Size,
+			&i.Mime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBoard = `-- name: GetBoard :one
 SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE id = $1
 `
@@ -1645,6 +1682,7 @@ const lastTaskActivityOfKind = `-- name: LastTaskActivityOfKind :one
 SELECT id, board_id, actor_id, rule_id, before,
     (created_at > now() - make_interval(secs => $1::float8))::boolean AS recent
 FROM task_activity WHERE task_id = $2 AND kind = $3
+  AND ($4::text IS NULL OR after->>'message_id' = $4::text)
 ORDER BY id DESC LIMIT 1
 `
 
@@ -1652,6 +1690,7 @@ type LastTaskActivityOfKindParams struct {
 	WindowSecs float64
 	TaskID     uuid.UUID
 	Kind       string
+	MessageID  *string
 }
 
 type LastTaskActivityOfKindRow struct {
@@ -1665,8 +1704,14 @@ type LastTaskActivityOfKindRow struct {
 
 // The newest journal entry of a kind of the task and whether it is younger than the window: the
 // candidate a repeated change of the same field by the same user is merged into (ADR-0081).
+// message_id: a kind with a merge key (comment_edit, ADR-0091) — only entries of that comment.
 func (q *Queries) LastTaskActivityOfKind(ctx context.Context, arg LastTaskActivityOfKindParams) (LastTaskActivityOfKindRow, error) {
-	row := q.db.QueryRow(ctx, lastTaskActivityOfKind, arg.WindowSecs, arg.TaskID, arg.Kind)
+	row := q.db.QueryRow(ctx, lastTaskActivityOfKind,
+		arg.WindowSecs,
+		arg.TaskID,
+		arg.Kind,
+		arg.MessageID,
+	)
 	var i LastTaskActivityOfKindRow
 	err := row.Scan(
 		&i.ID,
@@ -2056,17 +2101,25 @@ func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksPara
 const listTaskActivity = `-- name: ListTaskActivity :many
 SELECT id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id FROM task_activity WHERE task_id = $1
   AND ($2::uuid IS NULL OR id < $2::uuid)
-ORDER BY id DESC LIMIT $3
+  AND ($3::text IS NULL OR kind <> $3::text)
+ORDER BY id DESC LIMIT $4
 `
 
 type ListTaskActivityParams struct {
-	TaskID uuid.UUID
-	Before *uuid.UUID
-	Lim    int32
+	TaskID   uuid.UUID
+	Before   *uuid.UUID
+	SkipKind *string
+	Lim      int32
 }
 
+// skip_kind: leave out one kind (the mixed feed has the comments as messages, ADR-0091).
 func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityParams) ([]TaskActivity, error) {
-	rows, err := q.db.Query(ctx, listTaskActivity, arg.TaskID, arg.Before, arg.Lim)
+	rows, err := q.db.Query(ctx, listTaskActivity,
+		arg.TaskID,
+		arg.Before,
+		arg.SkipKind,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -3132,6 +3185,44 @@ func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCo
 			&i.ChecklistTotal,
 			&i.ChecklistDone,
 			&i.GitLinks,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const taskRefs = `-- name: TaskRefs :many
+SELECT t.id, t.number, t.title, b.key AS board_key FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE t.id = ANY($1::uuid[])
+`
+
+type TaskRefsRow struct {
+	ID       uuid.UUID
+	Number   int32
+	Title    string
+	BoardKey string
+}
+
+// Key parts and titles of tasks, for the snapshots of journal entries (ADR-0091).
+func (q *Queries) TaskRefs(ctx context.Context, ids []uuid.UUID) ([]TaskRefsRow, error) {
+	rows, err := q.db.Query(ctx, taskRefs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskRefsRow{}
+	for rows.Next() {
+		var i TaskRefsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Number,
+			&i.Title,
+			&i.BoardKey,
 		); err != nil {
 			return nil, err
 		}

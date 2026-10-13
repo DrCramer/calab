@@ -404,6 +404,16 @@ message Task {
 // the RuleGitEvent name without its prefix, "kind": "branch" | "pr" | "commit", "provider",
 // "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push};
 // before {"state", "title"} of a pull request that changed.
+// Snapshots (ADR-0091): "description" — {"length", "text"} before and after; "attachments" —
+// {"file_ids", "files": [{"file_id", "name", "size", "mime"}]}; "labels" — {"label_ids",
+// "labels": [{"id", "name", "color"}]}; "milestone" — {"milestone_id", "name"}; "parent" —
+// {"parent_id", "key", "title"}; "relation" — {"kind", "related_id", "key", "title"} (entries
+// written before carry only the ids).
+// Comments (ADR-0091): "comment" — a comment was posted (actor = its author): after
+// {"message_id", "text", "attachments": [{"file_id", "name", "size", "mime"}], "reply_to_id"?,
+// "forwarded"}; "comment_edit" — before / after {"message_id", "text", "attachments"} (edits of
+// one comment by one person within 5 minutes merge, ADR-0081); "comment_delete" — before
+// {"message_id", "author_id", "text", "attachments"}, after empty (actor = who deleted it).
 // Automations (ADR-0060): a change made by a rule has actor_id empty and rule_id set; the client
 // shows «Автоматизация: <rule name>» (names from the board's rules / BOARD_RULE_UPDATE).
 message TaskActivity {
@@ -764,8 +774,11 @@ message SetTaskSubscriptionRequest {
   bool muted = 1;
 }
 
-// GET /api/tasks/{id}/activity?before=<id>&limit= (≤ 100, default 50): comments and journal
-// entries, newest first; before = the id of the oldest item seen (message or activity id).
+// GET /api/tasks/{id}/activity?before=<id>&limit=&only= (≤ 100, default 50): comments and
+// journal entries, newest first; before = the id of the oldest item seen (message or activity
+// id). only=journal: only journal entries, the "comment*" kinds included (ADR-0091, the
+// «История» tab); only=comments: only messages (the «Комментарии» tab); without it both, the
+// journal without its "comment" entries (each comment is there as its message).
 message TaskActivityPage {
   repeated TaskActivityItem items = 1;
   bool has_more = 2;

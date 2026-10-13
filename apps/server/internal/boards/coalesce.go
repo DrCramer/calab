@@ -41,7 +41,14 @@ var coalescable = map[string][]valueKey{
 	"approvers":   {{key: "user_ids", asSet: true}, {key: "required"}, {key: "approval_state"}},
 	"watchers":    {{key: "user_ids", asSet: true}},
 	"attachments": {{key: "file_ids"}}, // the order is the gallery's order: a reorder is a change
+	// Edits of one comment (ADR-0091): merged per comment (mergeKeys), empty when the text and
+	// the files are back to where they were.
+	kindCommentEdit: {{key: "text"}, {key: "attachments"}},
 }
+
+// mergeKeys: kinds whose entries merge only with an entry of the same value of this key of after
+// (ADR-0091: the edits of one comment, not of any comment of the task).
+var mergeKeys = map[string]string{kindCommentEdit: "message_id"}
 
 // journalEntry is what the transaction did to the stored journal, for TASK_ACTIVITY: row was
 // inserted (nil: nothing, the merged entry was removed); replaced: the entry it supersedes.
@@ -75,15 +82,22 @@ func (j journalEntry) event(ws uuid.UUID) *v1.DispatchEvent {
 }
 
 // mergeTarget finds and removes the entry a change of kind by actor merges into: the newest
-// entry of that kind of the task, by the same actor (not a rule), within CoalesceWindow, on the
-// task's current board. The task row is locked by the caller's write; the delete re-checks that
+// entry of that kind of the task (with a merge key: of the same value of it in after), by the
+// same actor (not a rule), within CoalesceWindow, on the task's current board. The task row is locked by the caller's write; the delete re-checks that
 // no concurrent writer merged it first. Returns the removed entry's id and its before.
-func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, rule *uuid.UUID, kind string) (uuid.UUID, []byte, bool, error) {
+func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, rule *uuid.UUID, kind string, after map[string]any) (uuid.UUID, []byte, bool, error) {
 	if _, ok := coalescable[kind]; !ok || actor == nil || rule != nil {
 		return uuid.Nil, nil, false, nil
 	}
-	prev, err := q.LastTaskActivityOfKind(ctx, sqlc.LastTaskActivityOfKindParams{
-		WindowSecs: CoalesceWindow.Seconds(), TaskID: t.ID, Kind: kind})
+	p := sqlc.LastTaskActivityOfKindParams{WindowSecs: CoalesceWindow.Seconds(), TaskID: t.ID, Kind: kind}
+	if k, ok := mergeKeys[kind]; ok {
+		v, _ := after[k].(string)
+		if v == "" {
+			return uuid.Nil, nil, false, nil
+		}
+		p.MessageID = &v
+	}
+	prev, err := q.LastTaskActivityOfKind(ctx, p)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, nil, false, nil
 	}

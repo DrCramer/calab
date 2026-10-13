@@ -278,23 +278,34 @@ func (s *Service) relayNotice(ctx context.Context, t taskRow, user uuid.UUID, ta
 }
 
 // TaskHook runs after a comment is posted (or forwarded) into a task room (messages.Handlers
-// .TaskHook): the author subscribes; when the author may edit the task the @mentioned members
-// become watchers (ADR-0076 §5); the mentioned who see the task are subscribed and notified,
-// the other subscribers get a COMMENT notice by their levels, and the board gets TASK_UPDATE
-// (comment_count).
+// .TaskHook): the journal gets a "comment" entry (ADR-0091; the rule trigger comment_created,
+// ADR-0060, fires on it); the author subscribes; when the author may edit the task the
+// @mentioned members become watchers (ADR-0076 §5); the mentioned who see the task are
+// subscribed and notified, the other subscribers get a COMMENT notice by their levels, and the
+// board gets TASK_UPDATE (comment_count) and TASK_ACTIVITY.
 func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message) {
 	// The comment is committed: finish even if the client goes away.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	var c change
+	var files []sqlc.ListAttachmentsRow
 	err := s.taskTx(ctx, &c, func(q *sqlc.Queries, tx pgx.Tx) error {
+		c.acts, c.journal, c.notices = nil, nil, nil // a retried closure starts clean
 		t, ok, err := taskByID(ctx, tx, acc.TaskID, false)
 		if err != nil || !ok {
 			return err
 		}
-		// The rule trigger comment_created (ADR-0060): not a journal entry.
-		author := msg.AuthorID
-		c.extra = []ruleEvent{{task: t.ID, board: t.BoardID, kind: kindComment, actor: &author}}
+		if files, err = q.ListAttachments(ctx, []uuid.UUID{msg.ID}); err != nil {
+			return err
+		}
+		after := commentSnap(msg, attachmentsSnap(files))
+		if msg.ReplyToID != nil {
+			after["reply_to_id"] = msg.ReplyToID.String()
+		}
+		after["forwarded"] = msg.ForwardedFrom != nil
+		if err := c.record(ctx, q, t, msg.AuthorID, kindComment, nil, after); err != nil {
+			return err
+		}
 		if err := q.Subscribe(ctx, sqlc.SubscribeParams{TaskID: t.ID, UserIds: []uuid.UUID{msg.AuthorID}}); err != nil {
 			return err
 		}
@@ -318,6 +329,6 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 		slog.WarnContext(ctx, "boards: task comment hook", "task", acc.TaskID, "err", err)
 		return
 	}
-	s.publishTask(ctx, acc.TaskID, c.notices)
-	s.TaskCommentHook(ctx, acc, "created", msg, msg.AuthorID)
+	s.publish(ctx, acc.TaskID, &c, false)
+	s.commentCreated(ctx, acc, msg, files)
 }

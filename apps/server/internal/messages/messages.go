@@ -47,9 +47,21 @@ type Handlers struct {
 	// TaskHook runs after a message is posted (or forwarded) into a task's comment room
 	// (ADR-0042): subscriptions, notifications, TASK_UPDATE; nil = none.
 	TaskHook func(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message)
-	// TaskCommentHook runs after a comment of a task room is edited or deleted (kind "updated" /
-	// "deleted"; actor = who did it): the board webhook (ADR-0058 §4); nil = none.
-	TaskCommentHook func(ctx context.Context, acc perm.RoomAccess, kind string, msg sqlc.Message, actor uuid.UUID)
+	// TaskCommentHook runs after a comment of a task room is edited or deleted: the journal of
+	// the task (ADR-0091) and the board webhook (ADR-0058 §4); nil = none.
+	TaskCommentHook func(ctx context.Context, acc perm.RoomAccess, ch TaskCommentChange)
+}
+
+// TaskCommentChange is an edit or a deletion of a task comment, for TaskCommentHook.
+type TaskCommentChange struct {
+	Kind string // "updated" | "deleted"
+	// Msg: the comment after the edit, or as it was when deleted.
+	Msg sqlc.Message
+	// Before: the text before the edit ("updated").
+	Before string
+	// Files: the attachments of a deleted comment, read before the deletion detached them.
+	Files []sqlc.ListAttachmentsRow
+	Actor uuid.UUID // who edited or deleted it
 }
 
 // NewHandlers creates the message handlers.
@@ -670,7 +682,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		MessageUpdate: &v1.MessageUpdate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: forEvent(out[0])},
 	}})
 	if acc.Task && h.TaskCommentHook != nil {
-		h.TaskCommentHook(r.Context(), acc, "updated", edited, uid(r))
+		h.TaskCommentHook(r.Context(), acc, TaskCommentChange{Kind: "updated", Msg: edited, Before: m.Content, Actor: uid(r)})
 	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateMessageResponse{Message: out[0]})
 	return nil
@@ -684,6 +696,7 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	if m.AuthorID != uid(r) && !acc.Bits.Has(perm.ManageMessages) {
 		return httpx.Forbidden("MANAGE_MESSAGES required to delete others' messages")
 	}
+	var files []sqlc.ListAttachmentsRow // a task comment's, for its journal entry (ADR-0091)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		n, err := q.SoftDeleteMessage(r.Context(), m.ID)
 		if err != nil {
@@ -691,6 +704,11 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		}
 		if n == 0 {
 			return httpx.NotFound("message")
+		}
+		if acc.Task && h.TaskCommentHook != nil {
+			if files, err = q.ListAttachments(r.Context(), []uuid.UUID{m.ID}); err != nil {
+				return err
+			}
 		}
 		if err := clearMentions(r.Context(), q, m.ID); err != nil {
 			return err
@@ -705,7 +723,7 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		MessageDelete: &v1.MessageDelete{WorkspaceId: rooms.WorkspaceIDString(acc), RoomId: m.RoomID.String(), MessageId: m.ID.String()},
 	}})
 	if acc.Task && h.TaskCommentHook != nil {
-		h.TaskCommentHook(r.Context(), acc, "deleted", m, uid(r))
+		h.TaskCommentHook(r.Context(), acc, TaskCommentChange{Kind: "deleted", Msg: m, Files: files, Actor: uid(r)})
 	}
 	httpx.NoContent(w)
 	return nil

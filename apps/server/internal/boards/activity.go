@@ -24,12 +24,18 @@ const (
 	exportMaxRows = 1_000_000
 )
 
-// taskActivity: GET /api/tasks/{id}/activity?before=&limit= — comments and journal entries
-// newest first (both ids are uuidv7: their order is the time order).
+// taskActivity: GET /api/tasks/{id}/activity?before=&limit=&only= — comments and journal
+// entries newest first (both ids are uuidv7: their order is the time order). only=journal: the
+// journal alone (with its comment entries, ADR-0091); only=comments: the comments alone; none:
+// both, the journal without its "comment" entries (the comment is in the feed as its message).
 func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 	t, _, err := s.loadTask(r, s.db.Pool, false)
 	if err != nil {
 		return err
+	}
+	only := r.URL.Query().Get("only")
+	if only != "" && only != "journal" && only != "comments" {
+		return httpx.BadRequest("only must be journal or comments")
 	}
 	limit := feedDefault
 	if l := r.URL.Query().Get("limit"); l != "" {
@@ -48,13 +54,22 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 		before = &id
 	}
 	lim := int32(limit + 1) //nolint:gosec // ≤ 101
-	ms, err := s.db.Q.ListTaskRoomMessages(r.Context(), sqlc.ListTaskRoomMessagesParams{RoomID: t.RoomID, Before: before, Lim: lim})
-	if err != nil {
-		return err
+	var ms []sqlc.Message
+	if only != "journal" {
+		if ms, err = s.db.Q.ListTaskRoomMessages(r.Context(), sqlc.ListTaskRoomMessagesParams{RoomID: t.RoomID, Before: before, Lim: lim}); err != nil {
+			return err
+		}
 	}
-	as, err := s.db.Q.ListTaskActivity(r.Context(), sqlc.ListTaskActivityParams{TaskID: t.ID, Before: before, Lim: lim})
-	if err != nil {
-		return err
+	var as []sqlc.TaskActivity
+	if only != "comments" {
+		p := sqlc.ListTaskActivityParams{TaskID: t.ID, Before: before, Lim: lim}
+		if only == "" {
+			skip := kindComment
+			p.SkipKind = &skip
+		}
+		if as, err = s.db.Q.ListTaskActivity(r.Context(), p); err != nil {
+			return err
+		}
 	}
 	msgs, err := messages.Details(r.Context(), s.db.Q, ms, uid(r))
 	if err != nil {

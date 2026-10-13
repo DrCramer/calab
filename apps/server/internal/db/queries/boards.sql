@@ -562,9 +562,11 @@ RETURNING *;
 -- name: LastTaskActivityOfKind :one
 -- The newest journal entry of a kind of the task and whether it is younger than the window: the
 -- candidate a repeated change of the same field by the same user is merged into (ADR-0081).
+-- message_id: a kind with a merge key (comment_edit, ADR-0091) — only entries of that comment.
 SELECT id, board_id, actor_id, rule_id, before,
     (created_at > now() - make_interval(secs => sqlc.arg('window_secs')::float8))::boolean AS recent
 FROM task_activity WHERE task_id = sqlc.arg('task_id') AND kind = sqlc.arg('kind')
+  AND (sqlc.narg('message_id')::text IS NULL OR after->>'message_id' = sqlc.narg('message_id')::text)
 ORDER BY id DESC LIMIT 1;
 
 -- name: DeleteTaskActivity :one
@@ -572,9 +574,20 @@ ORDER BY id DESC LIMIT 1;
 DELETE FROM task_activity WHERE id = sqlc.arg('id') RETURNING id;
 
 -- name: ListTaskActivity :many
+-- skip_kind: leave out one kind (the mixed feed has the comments as messages, ADR-0091).
 SELECT * FROM task_activity WHERE task_id = sqlc.arg('task_id')
   AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
+  AND (sqlc.narg('skip_kind')::text IS NULL OR kind <> sqlc.narg('skip_kind')::text)
 ORDER BY id DESC LIMIT sqlc.arg('lim');
+
+-- name: TaskRefs :many
+-- Key parts and titles of tasks, for the snapshots of journal entries (ADR-0091).
+SELECT t.id, t.number, t.title, b.key AS board_key FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE t.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: FilesByID :many
+-- Names of files, for the snapshots of journal entries (ADR-0091).
+SELECT id, name, size, mime FROM files WHERE id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: ListTaskRoomMessages :many
 SELECT * FROM messages WHERE room_id = sqlc.arg('room_id') AND deleted_at IS NULL

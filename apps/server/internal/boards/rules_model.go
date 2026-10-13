@@ -39,10 +39,6 @@ const (
 	RuleLoop = "RULE_LOOP"
 )
 
-// kindComment is the synthetic trigger of a posted comment (comments are messages, not journal
-// entries).
-const kindComment = "comment"
-
 // ruleRef names the rule that makes a change (change.rule).
 type ruleRef struct {
 	id   uuid.UUID
