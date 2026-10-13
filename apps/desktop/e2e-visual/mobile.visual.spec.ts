@@ -195,6 +195,7 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
         ['[data-inline-target]', 'a link inside a sentence of body text (e.g. the organizer mailto in «Организатор: …»), marked in code'],
         ['[data-message-id] a[href]', 'links in message text and link-preview titles: inline in running text; the row itself is the tap / long-press target'],
         ['[data-message-id] button[data-profile-user], [data-message-id] [data-inline-target]', 'author avatar / name and reaction chips in a feed message: dense by design (Telegram-like), the message row is the target; chips keep >= 8 px gaps'],
+        ['[data-history-row] button[data-profile-user]', 'actor avatar / name in a task history row (ADR-0091): dense like the feed; the row and its 44 px details chevron are the targets'],
         ['input[type="file"], input[type="range"], input[aria-hidden="true"]', 'native input hidden behind a custom control, or a slider whose thumb row is the target'],
         ['.sr-only', 'visually hidden helpers'],
       ];
@@ -852,6 +853,25 @@ test('m-boards-task', async ({ page }) => {
   const panel = page.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await checkpoint(page, 'm-boards-task');
+});
+
+// «История» on the phone's task screen (ADR-0091): two tabs as segments, a detail opened.
+test('m-boards-task-history', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  mock.seedBots();
+  await signedIn(page);
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  const section = page.getByTestId('task-panel').getByTestId('task-activity');
+  await section.getByRole('radio', { name: 'История' }).tap();
+  const rows = section.getByTestId('history-row');
+  await expect(rows.first()).toHaveAttribute('data-kind', 'description');
+  await rows.first().getByTestId('history-toggle').tap();
+  await expect(section.getByTestId('history-diff')).toBeVisible();
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(page, 'm-boards-task-history');
 });
 
 // The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).

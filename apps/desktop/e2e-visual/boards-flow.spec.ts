@@ -90,7 +90,11 @@ test('boards: kanban → create → drag → assignees → comment → filter �
   const react = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/reactions/'));
   await comment.getByRole('button', { name: /Реакция 👍/ }).click();
   expect((await react).ok()).toBe(true);
-  await expect(panel.getByTestId('activity-row').first()).toBeVisible();
+  // «История» (ADR-0091): the assignee changes, newest first; back to «Комментарии».
+  await panel.getByTestId('task-activity').getByRole('radio', { name: 'История' }).click();
+  await expect(panel.getByTestId('history-row').first()).toHaveAttribute('data-kind', 'assignees');
+  await panel.getByTestId('task-activity').getByRole('radio', { name: 'Комментарии' }).click();
+  await expect(comment).toBeVisible();
   await panel.getByRole('button', { name: 'Закрыть' }).click();
   await expect(panel).toBeHidden();
 

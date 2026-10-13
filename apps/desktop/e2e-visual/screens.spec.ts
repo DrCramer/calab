@@ -161,6 +161,9 @@ const KEY = new Set([
   // Task boards (ADR-0042 §5).
   'boards-kanban',
   'boards-task',
+  // «Комментарии | История» of the task panel (ADR-0091).
+  'boards-task-comments',
+  'boards-task-history',
   'boards-list',
   'boards-filter',
   'boards-settings',
@@ -3756,6 +3759,43 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await expect(panel.locator('[data-message-id]')).toHaveCount(2);
   await checkpoint(shot, 'boards-task');
+});
+
+/** CAL-3's panel at its lower section: the «Комментарии» tab (the default) with the composer. */
+test('boards-task-comments', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  const section = panel.getByTestId('task-activity');
+  await expect(section).toHaveAttribute('data-tab', 'comments');
+  await expect(panel.locator('[data-message-id]')).toHaveCount(2);
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(shot, 'boards-task-comments');
+});
+
+/**
+ * «История» (ADR-0091 §2): newest first, «Сегодня» / «Вчера», a bot and a rule among the actors;
+ * the newest row (the description edit) opened — its word diff.
+ */
+test('boards-task-history', async ({ open, win, mock, shot }) => {
+  mock.seedBots();
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  const section = panel.getByTestId('task-activity');
+  await section.getByRole('radio', { name: 'История' }).click();
+  await expect(section).toHaveAttribute('data-tab', 'history');
+  const rows = section.getByTestId('history-row');
+  await expect(rows.first()).toHaveAttribute('data-kind', 'description');
+  await expect(section.getByTestId('history-day')).toHaveCount(2);
+  await rows.first().getByTestId('history-toggle').click();
+  await expect(section.getByTestId('history-diff')).toBeVisible();
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(shot, 'boards-task-history');
 });
 
 /** The list grouped by status, two rows selected: the bulk actions bar. */
