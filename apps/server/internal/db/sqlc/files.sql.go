@@ -233,14 +233,15 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM rooms ri WHERE ri.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
-                    AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text)
+                    AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text AND mi.deleted_at IS NULL)
 ORDER BY f.created_at
 LIMIT 500
 `
 
 // Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
 // (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
-// (ADR-0061), room picture or its system message (ADR-0092), older than the cutoff.
+// (ADR-0061), room picture or its live system message (ADR-0092; deleted messages are never
+// purged, so a deleted one must not keep the file), older than the cutoff.
 func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]File, error) {
 	rows, err := q.db.Query(ctx, listOrphanFiles, createdAt)
 	if err != nil {

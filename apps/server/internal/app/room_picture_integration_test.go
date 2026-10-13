@@ -156,3 +156,79 @@ func TestRoomPicture(t *testing.T) {
 		t.Fatalf("picture of a deleted file: %v", gr.GetRoom())
 	}
 }
+
+// TestRoomPictureAudience (ADR-0092, second review): the picture is readable exactly by those
+// who see its room — not by members kept out of a closed room, not by a guest outside its
+// temporary room — an old picture stops being readable once its system message is deleted
+// (and becomes an orphan), and a file of another workspace never becomes a picture.
+func TestRoomPictureAudience(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	carol := register(t, invite(t, o, wid))
+	files := "/api/workspaces/" + wid + "/files"
+	canRead := func(u *user, id string) bool {
+		t.Helper()
+		res, _ := get(t, u, "/api/files/"+id, nil)
+		return res.StatusCode == 200
+	}
+
+	// A closed room seen by bob only: carol cannot read its picture.
+	secret := restrictedRoom(t, o, wid, v1.RoomType_ROOM_TYPE_TEXT, "secret", bob.id)
+	_, pic, _ := upload(t, o, files, "secret.png", pngBytes(24, 24))
+	_, pic2, _ := upload(t, o, files, "secret2.png", pngBytes(20, 20))
+	icon, icon2 := pic.GetId(), pic2.GetId()
+	o.must(200, "PATCH", "/api/rooms/"+secret, &v1.UpdateRoomRequest{IconFileId: &icon}, nil)
+	if !canRead(bob, icon) || canRead(carol, icon) {
+		t.Fatalf("closed room picture: bob %v, carol %v", canRead(bob, icon), canRead(carol, icon))
+	}
+
+	// Replaced, then its system message deleted: the old picture is unreadable to the room
+	// (the uploader keeps it) and becomes an orphan; the current one stays readable.
+	o.must(200, "PATCH", "/api/rooms/"+secret, &v1.UpdateRoomRequest{IconFileId: &icon2}, nil)
+	if !canRead(bob, icon) {
+		t.Fatal("old picture with a live system message is unreadable")
+	}
+	for _, m := range roomIconMessages(t, o, secret) {
+		if m.GetSystem().GetRoomIcon().GetFileId() == icon {
+			o.must(204, "DELETE", "/api/messages/"+m.GetId(), nil, nil)
+		}
+	}
+	if canRead(bob, icon) || !canRead(o, icon) || !canRead(bob, icon2) || canRead(carol, icon2) {
+		t.Fatalf("after delete: bob old %v, owner old %v, bob new %v, carol new %v",
+			canRead(bob, icon), canRead(o, icon), canRead(bob, icon2), canRead(carol, icon2))
+	}
+	orphans, err := testDB.Q.ListOrphanFiles(context.Background(), time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphan := map[string]bool{}
+	for _, f := range orphans {
+		orphan[f.ID.String()] = true
+	}
+	if !orphan[icon] || orphan[icon2] {
+		t.Fatalf("orphans: old picture %v (want true), current %v (want false)", orphan[icon], orphan[icon2])
+	}
+
+	// A guest of a temporary room reads its picture, not that of a room it does not see.
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "open"}, &cr)
+	_, openPic, _ := upload(t, o, files, "open.png", pngBytes(18, 18))
+	openIcon := openPic.GetId()
+	o.must(200, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IconFileId: &openIcon}, nil)
+	tr := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "client", TtlSeconds: 3600})
+	_, tempPic, _ := upload(t, o, files, "temp.png", pngBytes(22, 22))
+	tempIcon := tempPic.GetId()
+	o.must(200, "PATCH", "/api/rooms/"+tr.GetRoom().GetId(), &v1.UpdateRoomRequest{IconFileId: &tempIcon}, nil)
+	guest, _ := anonGuest(t, tr.GetInviteCode(), "Guest")
+	if !canRead(guest, tempIcon) || canRead(guest, openIcon) || canRead(guest, icon2) {
+		t.Fatalf("guest: temp %v, open %v, closed %v", canRead(guest, tempIcon), canRead(guest, openIcon), canRead(guest, icon2))
+	}
+
+	// A file of another workspace of the same uploader: 422.
+	other := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	_, foreign, _ := upload(t, o, "/api/workspaces/"+other.GetId()+"/files", "foreign.png", pngBytes(16, 16))
+	fid := foreign.GetId()
+	if st := o.do("PATCH", "/api/rooms/"+secret, &v1.UpdateRoomRequest{IconFileId: &fid}, nil); st != 422 {
+		t.Fatalf("foreign workspace file: %d, want 422", st)
+	}
+}
