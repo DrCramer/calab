@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Bar } from '../../components/Bar';
 import { PHONE_TITLE, PhoneBack } from '../../components/PhoneHeader';
 import { Avatar } from '../../components/Avatar';
-import { Button, IconButton, Input, Modal, Segmented, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, IconButton, Input, Modal, Spinner, Toggle, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { sharedLabel } from '../../lib/calendar/external';
 import { freeWindows, mergeIntervals, subtractIntervals, workIntervals, type Interval } from '../../lib/calendar/freebusy';
@@ -24,6 +24,7 @@ import { newEvent } from './actions';
 import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, PX_PER_MIN } from './gridParts';
 import { useToday } from './MiniCalendar';
 import { PeopleBar } from './PeopleBar';
+import { Choice } from '../../components/Choice';
 
 /*
  * «Подобрать время» (ADR-0041 §3, Apple Calendar «Доступность»): chips of people, the duration
@@ -285,7 +286,7 @@ function FindControls({ ctl, wrap, lead, trail }: { ctl: FindCtl; wrap: boolean;
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {lead}
         <div className="flex items-center gap-2">
-          <Segmented
+          <Choice
             label={t('fb.duration')}
             value={value}
             options={[...DURATIONS.map((m) => ({ value: String(m), label: t('fb.min', { n: m }) })), { value: 'custom', label: t('fb.custom') }]}

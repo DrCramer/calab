@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { BoardFeature, type BoardMilestone, type TaskMilestone } from '@calaba/protocol';
 import { Button, Segmented, cx } from '../../components/ui';
+import { Choice } from '../../components/Choice';
 import { t, useLocale } from '../../i18n';
 import { useMobile } from '../../lib/mobile';
 import { milestoneHint, milestoneState } from '../../lib/boards/milestones';
@@ -313,8 +314,8 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
   };
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid="timeline">
-      <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 scrollbar-none">
-        <Segmented value={zoom} options={ZOOMS.map((z) => ({ value: z, label: t(`boards.tl.${z}`) }))} onChange={(z) => useBoardsUi.getState().setPrefs(boardId, { zoom: z })} label={t('boards.tl.zoom')} />
+      <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 scrollbar-none mobile:overflow-visible">
+        <Choice phone="picker" value={zoom} options={ZOOMS.map((z) => ({ value: z, label: t(`boards.tl.${z}`) }))} onChange={(z) => useBoardsUi.getState().setPrefs(boardId, { zoom: z })} label={t('boards.tl.zoom')} />
         {mobile ? null : (
           <Segmented
             value={group}

@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from 'react';
-import { Segmented } from '../../components/ui';
+import { Choice } from '../../components/Choice';
 import { t } from '../../i18n';
 import { COMPLETIONS, type Completion } from '../../lib/boards/completion';
 
@@ -9,7 +9,7 @@ const LABEL = { open: 'boards.completion.open', done: 'boards.completion.done', 
 export const CompletionSwitch = memo(function CompletionSwitch({ value, onChange }: { value: Completion; onChange: (v: Completion) => void }): ReactNode {
   return (
     <div className="shrink-0" data-testid="completion-switch" data-value={value}>
-      <Segmented value={value} options={COMPLETIONS.map((c) => ({ value: c, label: t(LABEL[c]) }))} onChange={onChange} label={t('boards.completion.label')} />
+      <Choice phone="picker" value={value} options={COMPLETIONS.map((c) => ({ value: c, label: t(LABEL[c]) }))} onChange={onChange} label={t('boards.completion.label')} />
     </div>
   );
 });

@@ -50,6 +50,7 @@ import { LibraryTab, SEGMENT_LABEL } from './LibraryTab';
 import { LIBRARY_TAB, librarySegments, resolveSettingsTab } from './library';
 import { BotsTab } from './BotsTab';
 import { UpcomingBirthdays } from './UpcomingBirthdays';
+import { Choice } from '../../components/Choice';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -439,7 +440,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <label className="flex min-w-48 flex-1 items-center">
           <Input aria-label={t('common.search')} placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} icon={<Search className="size-3.5" />} />
         </label>
-        <Segmented label={t('ws.filter.label')} value={filter} onChange={setFilter} options={ROLE_FILTERS.map((f) => ({ value: f.value, label: t(f.key) }))} />
+        <Choice label={t('ws.filter.label')} value={filter} onChange={setFilter} options={ROLE_FILTERS.map((f) => ({ value: f.value, label: t(f.key) }))} />
         {manageBirthdays ? (
           <Button variant="secondary" onClick={() => setView('birthdays')} data-testid="open-birthdays-table">
             <Cake className="size-4" aria-hidden /> {t('birthday.tableTitle')}

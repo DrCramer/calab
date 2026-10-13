@@ -720,6 +720,30 @@ test('m-calendar-public', async ({ page }) => {
   await checkpoint(page, 'm-calendar-public');
 });
 
+// «Мои задачи» on a phone (T4): the tabs and the completion filter are two pill buttons that open
+// a centred option card, not scrolling segments.
+test('m-my-tasks', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await tab(page, 'boards');
+  await page.getByTestId('my-tasks').tap();
+  const bar = page.getByTestId('my-tasks-tabs');
+  await expect(bar).toBeVisible();
+  await expect(bar.getByTestId('my-tasks-scope')).toBeVisible();
+  await expect(bar.getByRole('radio')).toHaveCount(0);
+  await checkpoint(page, 'm-my-tasks');
+  await bar.getByTestId('my-tasks-scope').tap();
+  await expect(page.getByRole('menuitemradio')).toHaveCount(5);
+  await checkpoint(page, 'm-my-tasks-picker');
+  await page.getByTestId('my-tasks-scope-assigned').tap();
+  await expect(page.getByRole('menuitemradio')).toHaveCount(0);
+  await expect(bar.getByTestId('my-tasks-scope')).toContainText('Назначены');
+  await checkpoint(page, 'm-my-tasks-assigned');
+  await bar.getByTestId('completion-switch').getByRole('button').tap();
+  await expect(page.getByRole('menuitemradio')).toHaveCount(3);
+  await page.keyboard.press('Escape');
+});
+
 // Task boards on a phone (ADR-0042 §5): the «Доски» tab, the list by default, the task full screen.
 test('m-boards-list', async ({ page }) => {
   mock.setClock(NOW.getTime());

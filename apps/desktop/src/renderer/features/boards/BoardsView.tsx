@@ -2,7 +2,8 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { CheckCheck, Inbox, Plus, SquareKanban } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, Segmented, Spinner, cx } from '../../components/ui';
+import { Button, Spinner, cx } from '../../components/ui';
+import { Choice } from '../../components/Choice';
 import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
 import { ensureBoardTasks, ensureUnreadTasks, loadBoard, loadMyTasks, myTasksKey, unreadReason, useTaskDetails } from '../../services/boards';
@@ -159,8 +160,8 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
           </Dropdown.Root>
         ) : null}
       </Bar>
-      <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 [scrollbar-width:none]" data-testid="my-tasks-tabs">
-        <Segmented value={tab} options={tabs} onChange={onTab} label={t('boards.myTasks')} />
+      <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 [scrollbar-width:none] mobile:overflow-visible" data-testid="my-tasks-tabs">
+        <Choice phone="picker" testId="my-tasks-scope" value={tab} options={tabs} onChange={onTab} label={t('boards.myTasks')} />
         {tab === 'unread' ? null : (
           <>
             <span className="flex-1" />

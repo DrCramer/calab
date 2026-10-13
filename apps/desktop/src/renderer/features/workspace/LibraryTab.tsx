@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react';
-import { Segmented } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { useLibraryUi } from '../../stores/libraryUi';
 import { AchievementsTab } from './AchievementsTab';
@@ -8,6 +7,7 @@ import { BadgesTab } from './BadgesTab';
 import { pickSegment, type LibrarySegment } from './library';
 import { SoundsTab } from './SoundsTab';
 import { StickersTab } from './StickersTab';
+import { Choice } from '../../components/Choice';
 
 export const SEGMENT_LABEL: Record<LibrarySegment, MessageKey> = {
   achievements: 'ach.cat.tab',
@@ -36,7 +36,7 @@ export function LibraryTab({ workspaceId, segments, requested }: { workspaceId: 
     <>
       {segments.length > 1 ? (
         <div className="-mx-1 overflow-x-auto px-1" data-testid="library-switch">
-          <Segmented<LibrarySegment> label={t('ws.tabLibrary')} value={current} onChange={choose} options={segments.map((s) => ({ value: s, label: t(SEGMENT_LABEL[s]) }))} />
+          <Choice<LibrarySegment> label={t('ws.tabLibrary')} value={current} onChange={choose} options={segments.map((s) => ({ value: s, label: t(SEGMENT_LABEL[s]) }))} />
         </div>
       ) : null}
       {current === 'achievements' ? (

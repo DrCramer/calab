@@ -14,7 +14,7 @@ import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crown, GripVerti
 import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Badge, Button, Card, Empty, IconButton, Input, Row, Segmented, Toggle, cx } from '../../components/ui';
+import { Badge, Button, Card, Empty, IconButton, Input, Row, Toggle, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
@@ -69,6 +69,7 @@ import { memberItems, type PeoplePickItem } from '../people/memberPickItems';
 import { PERM_HINT, PERM_LABEL } from './RoomDialogs';
 import { toggleMemberRole } from '../people/actions';
 import { nameOf } from '../people/members';
+import { Choice } from '../../components/Choice';
 
 /*
  * Workspace settings → «Роли» (ADR-0026, ADR-0048 §3, docs/08 «Роли»): the list (colour, member
@@ -759,7 +760,7 @@ function RoleDraft({ workspaceId, onCancel, onCreated }: { workspaceId: string; 
       </Card>
       <Card title={t('roles.tpl.label')} footer={t('roles.tpl.hint')}>
         <div className="flex flex-col gap-2 px-3 py-2.5" data-testid="role-template">
-          <Segmented label={t('roles.tpl.label')} value={tpl} onChange={apply} options={ROLE_TEMPLATES.map((x) => ({ value: x.id, label: t(TEMPLATE_LABEL[x.id]) }))} />
+          <Choice label={t('roles.tpl.label')} value={tpl} onChange={apply} options={ROLE_TEMPLATES.map((x) => ({ value: x.id, label: t(TEMPLATE_LABEL[x.id]) }))} />
           {tpl === 'observer' ? <p className="text-caption text-muted">{t('roles.tpl.observerNote')}</p> : null}
           {clipped ? <p className="text-caption text-muted" data-testid="role-template-clipped">{t('roles.tpl.clipped')}</p> : null}
         </div>
