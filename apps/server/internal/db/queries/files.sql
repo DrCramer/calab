@@ -51,7 +51,8 @@ SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS 
 -- (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
 -- (ADR-0061), room picture or its live system message (ADR-0092; deleted messages are never
 -- purged, so a deleted one must not keep the file), not a file of the Disk (ADR-0094; trashed
--- ones included: the trash counts in the quota until deleted forever), older than the cutoff.
+-- ones included: the trash counts in the quota until deleted forever), not a picture or cover of
+-- a wiki page (ADR-0096; trashed pages included), older than the cutoff.
 SELECT * FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -69,6 +70,8 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
                     AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text AND mi.deleted_at IS NULL)
   AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500;
 
@@ -91,8 +94,9 @@ SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
       + (SELECT coalesce(sum(size), 0) FROM files WHERE workspace_id IS NULL))::bigint;
 
 -- name: UnattachedBytesByUploader :one
--- Bytes a user uploaded to a workspace that are not attached to any message yet (stickers
--- and files of the Disk, ADR-0094, are not uploads waiting for a message).
+-- Bytes a user uploaded to a workspace that are not attached to any message yet (stickers,
+-- files of the Disk, ADR-0094, and of wiki pages, ADR-0096, are not uploads waiting for a
+-- message).
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -102,4 +106,6 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
-  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id);
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id);

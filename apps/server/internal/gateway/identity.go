@@ -282,6 +282,8 @@ var eventScope = map[protoreflect.Name]bool{
 	"task_notice": false,
 	// Disk (ADR-0094 §7): workspace channel; routed to the item's viewers (DISK_VIEW).
 	"disk_item_upsert": true, "disk_item_remove": true,
+	// Wiki (ADR-0096 §8): workspace channel; routed to the page's viewers (WIKI_VIEW) by routeWiki.
+	"wiki_page_upsert": true, "wiki_page_remove": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

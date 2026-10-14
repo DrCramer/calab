@@ -23,7 +23,7 @@ const (
 )
 
 // The kind of a section and of its hits. In the query string a type is written in lower case
-// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts.
+// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki.
 type SearchType int32
 
 const (
@@ -35,6 +35,7 @@ const (
 	SearchType_SEARCH_TYPE_FILES         SearchType = 5 // attachments of visible live messages, by file name
 	SearchType_SEARCH_TYPE_NOTES         SearchType = 6 // the caller's own notes shelves (scope=all or types=notes)
 	SearchType_SEARCH_TYPE_TRANSCRIPTS   SearchType = 7 // transcripts of visible recordings with a ready result, newest first
+	SearchType_SEARCH_TYPE_WIKI          SearchType = 8 // live wiki pages the caller sees (WIKI_VIEW), by title and text
 )
 
 // Enum value maps for SearchType.
@@ -48,6 +49,7 @@ var (
 		5: "SEARCH_TYPE_FILES",
 		6: "SEARCH_TYPE_NOTES",
 		7: "SEARCH_TYPE_TRANSCRIPTS",
+		8: "SEARCH_TYPE_WIKI",
 	}
 	SearchType_value = map[string]int32{
 		"SEARCH_TYPE_UNSPECIFIED":   0,
@@ -58,6 +60,7 @@ var (
 		"SEARCH_TYPE_FILES":         5,
 		"SEARCH_TYPE_NOTES":         6,
 		"SEARCH_TYPE_TRANSCRIPTS":   7,
+		"SEARCH_TYPE_WIKI":          8,
 	}
 )
 
@@ -403,6 +406,7 @@ type SearchHit struct {
 	//	*SearchHit_File
 	//	*SearchHit_Note
 	//	*SearchHit_Transcript
+	//	*SearchHit_Wiki
 	Ref           isSearchHit_Ref `protobuf_oneof:"ref"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -543,6 +547,15 @@ func (x *SearchHit) GetTranscript() *SearchTranscriptRef {
 	return nil
 }
 
+func (x *SearchHit) GetWiki() *SearchWikiRef {
+	if x != nil {
+		if x, ok := x.Ref.(*SearchHit_Wiki); ok {
+			return x.Wiki
+		}
+	}
+	return nil
+}
+
 type isSearchHit_Ref interface {
 	isSearchHit_Ref()
 }
@@ -575,6 +588,10 @@ type SearchHit_Transcript struct {
 	Transcript *SearchTranscriptRef `protobuf:"bytes,16,opt,name=transcript,proto3,oneof"`
 }
 
+type SearchHit_Wiki struct {
+	Wiki *SearchWikiRef `protobuf:"bytes,17,opt,name=wiki,proto3,oneof"`
+}
+
 func (*SearchHit_Message) isSearchHit_Ref() {}
 
 func (*SearchHit_TaskComment) isSearchHit_Ref() {}
@@ -588,6 +605,8 @@ func (*SearchHit_File) isSearchHit_Ref() {}
 func (*SearchHit_Note) isSearchHit_Ref() {}
 
 func (*SearchHit_Transcript) isSearchHit_Ref() {}
+
+func (*SearchHit_Wiki) isSearchHit_Ref() {}
 
 // A message of a room, a DM or (note) a notes shelf: jump to it in the room's history.
 type SearchMessageRef struct {
@@ -1024,6 +1043,60 @@ func (x *SearchTranscriptRef) GetMessageId() string {
 	return ""
 }
 
+// A wiki page (ADR-0096 §7): open it; the snippet is of its text (or title), title is the
+// page's title.
+type SearchWikiRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PageId        string                 `protobuf:"bytes,1,opt,name=page_id,json=pageId,proto3" json:"page_id,omitempty"`
+	Icon          string                 `protobuf:"bytes,2,opt,name=icon,proto3" json:"icon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchWikiRef) Reset() {
+	*x = SearchWikiRef{}
+	mi := &file_calaba_v1_search_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchWikiRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchWikiRef) ProtoMessage() {}
+
+func (x *SearchWikiRef) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_search_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchWikiRef.ProtoReflect.Descriptor instead.
+func (*SearchWikiRef) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_search_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SearchWikiRef) GetPageId() string {
+	if x != nil {
+		return x.PageId
+	}
+	return ""
+}
+
+func (x *SearchWikiRef) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
 var File_calaba_v1_search_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_search_proto_rawDesc = "" +
@@ -1045,7 +1118,7 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\x0etotal_estimate\x18\x03 \x01(\rR\rtotalEstimate\x12\x1f\n" +
 	"\vnext_cursor\x18\x04 \x01(\tR\n" +
 	"nextCursor\x12\x1b\n" +
-	"\ttimed_out\x18\x05 \x01(\bR\btimedOut\"\xb5\x04\n" +
+	"\ttimed_out\x18\x05 \x01(\bR\btimedOut\"\xe5\x04\n" +
 	"\tSearchHit\x12\x18\n" +
 	"\asnippet\x18\x01 \x01(\tR\asnippet\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12!\n" +
@@ -1061,7 +1134,8 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\x04note\x18\x0f \x01(\v2\x1b.calaba.v1.SearchMessageRefH\x00R\x04note\x12@\n" +
 	"\n" +
 	"transcript\x18\x10 \x01(\v2\x1e.calaba.v1.SearchTranscriptRefH\x00R\n" +
-	"transcriptB\x05\n" +
+	"transcript\x12.\n" +
+	"\x04wiki\x18\x11 \x01(\v2\x18.calaba.v1.SearchWikiRefH\x00R\x04wikiB\x05\n" +
 	"\x03ref\"J\n" +
 	"\x10SearchMessageRef\x12\x1d\n" +
 	"\n" +
@@ -1100,7 +1174,10 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\toffset_ms\x18\x03 \x01(\x03R\boffsetMs\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x04 \x01(\tR\tmessageId*\xdc\x01\n" +
+	"message_id\x18\x04 \x01(\tR\tmessageId\"<\n" +
+	"\rSearchWikiRef\x12\x17\n" +
+	"\apage_id\x18\x01 \x01(\tR\x06pageId\x12\x12\n" +
+	"\x04icon\x18\x02 \x01(\tR\x04icon*\xf2\x01\n" +
 	"\n" +
 	"SearchType\x12\x1b\n" +
 	"\x17SEARCH_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -1110,7 +1187,8 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\x12SEARCH_TYPE_EVENTS\x10\x04\x12\x15\n" +
 	"\x11SEARCH_TYPE_FILES\x10\x05\x12\x15\n" +
 	"\x11SEARCH_TYPE_NOTES\x10\x06\x12\x1b\n" +
-	"\x17SEARCH_TYPE_TRANSCRIPTS\x10\a*Y\n" +
+	"\x17SEARCH_TYPE_TRANSCRIPTS\x10\a\x12\x14\n" +
+	"\x10SEARCH_TYPE_WIKI\x10\b*Y\n" +
 	"\n" +
 	"SearchSort\x12\x1b\n" +
 	"\x17SEARCH_SORT_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -1132,7 +1210,7 @@ func file_calaba_v1_search_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_search_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_search_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_calaba_v1_search_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_calaba_v1_search_proto_goTypes = []any{
 	(SearchType)(0),               // 0: calaba.v1.SearchType
 	(SearchSort)(0),               // 1: calaba.v1.SearchSort
@@ -1146,8 +1224,9 @@ var file_calaba_v1_search_proto_goTypes = []any{
 	(*SearchEventRef)(nil),        // 9: calaba.v1.SearchEventRef
 	(*SearchFileRef)(nil),         // 10: calaba.v1.SearchFileRef
 	(*SearchTranscriptRef)(nil),   // 11: calaba.v1.SearchTranscriptRef
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
-	(BoardStatusType)(0),          // 13: calaba.v1.BoardStatusType
+	(*SearchWikiRef)(nil),         // 12: calaba.v1.SearchWikiRef
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(BoardStatusType)(0),          // 14: calaba.v1.BoardStatusType
 }
 var file_calaba_v1_search_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.SearchRequest.types:type_name -> calaba.v1.SearchType
@@ -1156,7 +1235,7 @@ var file_calaba_v1_search_proto_depIdxs = []int32{
 	4,  // 3: calaba.v1.SearchResponse.sections:type_name -> calaba.v1.SearchSection
 	0,  // 4: calaba.v1.SearchSection.type:type_name -> calaba.v1.SearchType
 	5,  // 5: calaba.v1.SearchSection.items:type_name -> calaba.v1.SearchHit
-	12, // 6: calaba.v1.SearchHit.at:type_name -> google.protobuf.Timestamp
+	13, // 6: calaba.v1.SearchHit.at:type_name -> google.protobuf.Timestamp
 	6,  // 7: calaba.v1.SearchHit.message:type_name -> calaba.v1.SearchMessageRef
 	7,  // 8: calaba.v1.SearchHit.task_comment:type_name -> calaba.v1.SearchTaskCommentRef
 	8,  // 9: calaba.v1.SearchHit.task:type_name -> calaba.v1.SearchTaskRef
@@ -1164,14 +1243,15 @@ var file_calaba_v1_search_proto_depIdxs = []int32{
 	10, // 11: calaba.v1.SearchHit.file:type_name -> calaba.v1.SearchFileRef
 	6,  // 12: calaba.v1.SearchHit.note:type_name -> calaba.v1.SearchMessageRef
 	11, // 13: calaba.v1.SearchHit.transcript:type_name -> calaba.v1.SearchTranscriptRef
-	13, // 14: calaba.v1.SearchTaskRef.status_type:type_name -> calaba.v1.BoardStatusType
-	12, // 15: calaba.v1.SearchEventRef.occurrence_start:type_name -> google.protobuf.Timestamp
-	12, // 16: calaba.v1.SearchEventRef.occurrence_end:type_name -> google.protobuf.Timestamp
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	12, // 14: calaba.v1.SearchHit.wiki:type_name -> calaba.v1.SearchWikiRef
+	14, // 15: calaba.v1.SearchTaskRef.status_type:type_name -> calaba.v1.BoardStatusType
+	13, // 16: calaba.v1.SearchEventRef.occurrence_start:type_name -> google.protobuf.Timestamp
+	13, // 17: calaba.v1.SearchEventRef.occurrence_end:type_name -> google.protobuf.Timestamp
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_search_proto_init() }
@@ -1188,6 +1268,7 @@ func file_calaba_v1_search_proto_init() {
 		(*SearchHit_File)(nil),
 		(*SearchHit_Note)(nil),
 		(*SearchHit_Transcript)(nil),
+		(*SearchHit_Wiki)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1195,7 +1276,7 @@ func file_calaba_v1_search_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_search_proto_rawDesc), len(file_calaba_v1_search_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
