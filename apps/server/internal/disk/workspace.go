@@ -39,7 +39,8 @@ func (s *Service) usage(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.DiskUsage{
 		UsedBytes: uint64(max(row.StorageUsedBytes, 0)), DiskBytes: uint64(max(row.DiskBytes, 0)),
-		TrashBytes: uint64(max(row.TrashBytes, 0)), OtherBytes: uint64(max(row.StorageUsedBytes-row.DiskBytes, 0)),
+		TrashBytes: uint64(max(row.TrashBytes, 0)), ChatBytes: uint64(max(row.ChatBytes, 0)), BoardsBytes: uint64(max(row.BoardsBytes, 0)), WikiBytes: uint64(max(row.WikiBytes, 0)),
+		OtherBytes: uint64(max(row.StorageUsedBytes-row.DiskBytes-row.ChatBytes-row.BoardsBytes-row.WikiBytes, 0)),
 		AddonBytes: uint64(max(row.AddonMb, 0)) << 20,
 	}
 	quota := row.StorageQuotaBytes

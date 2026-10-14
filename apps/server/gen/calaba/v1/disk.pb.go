@@ -478,7 +478,10 @@ type DiskUsage struct {
 	UsedBytes     uint64                 `protobuf:"varint,4,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
 	DiskBytes     uint64                 `protobuf:"varint,5,opt,name=disk_bytes,json=diskBytes,proto3" json:"disk_bytes,omitempty"`
 	TrashBytes    uint64                 `protobuf:"varint,6,opt,name=trash_bytes,json=trashBytes,proto3" json:"trash_bytes,omitempty"`
-	OtherBytes    uint64                 `protobuf:"varint,7,opt,name=other_bytes,json=otherBytes,proto3" json:"other_bytes,omitempty"`
+	OtherBytes    uint64                 `protobuf:"varint,7,opt,name=other_bytes,json=otherBytes,proto3" json:"other_bytes,omitempty"`    // everything else: used - disk - chat - boards - wiki, never below 0
+	ChatBytes     uint64                 `protobuf:"varint,8,opt,name=chat_bytes,json=chatBytes,proto3" json:"chat_bytes,omitempty"`       // message attachments not in the Disk
+	BoardsBytes   uint64                 `protobuf:"varint,9,opt,name=boards_bytes,json=boardsBytes,proto3" json:"boards_bytes,omitempty"` // task attachments not in the Disk or chats
+	WikiBytes     uint64                 `protobuf:"varint,10,opt,name=wiki_bytes,json=wikiBytes,proto3" json:"wiki_bytes,omitempty"`      // wiki page files and covers not counted above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -558,6 +561,27 @@ func (x *DiskUsage) GetTrashBytes() uint64 {
 func (x *DiskUsage) GetOtherBytes() uint64 {
 	if x != nil {
 		return x.OtherBytes
+	}
+	return 0
+}
+
+func (x *DiskUsage) GetChatBytes() uint64 {
+	if x != nil {
+		return x.ChatBytes
+	}
+	return 0
+}
+
+func (x *DiskUsage) GetBoardsBytes() uint64 {
+	if x != nil {
+		return x.BoardsBytes
+	}
+	return 0
+}
+
+func (x *DiskUsage) GetWikiBytes() uint64 {
+	if x != nil {
+		return x.WikiBytes
 	}
 	return 0
 }
@@ -1637,7 +1661,7 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"targetType\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12\x14\n" +
 	"\x05allow\x18\x03 \x01(\x04R\x05allow\x12\x12\n" +
-	"\x04deny\x18\x04 \x01(\x04R\x04deny\"\xec\x01\n" +
+	"\x04deny\x18\x04 \x01(\x04R\x04deny\"\xcd\x02\n" +
 	"\tDiskUsage\x12\x1f\n" +
 	"\vquota_bytes\x18\x01 \x01(\x04R\n" +
 	"quotaBytes\x12\x1d\n" +
@@ -1652,7 +1676,13 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\vtrash_bytes\x18\x06 \x01(\x04R\n" +
 	"trashBytes\x12\x1f\n" +
 	"\vother_bytes\x18\a \x01(\x04R\n" +
-	"otherBytes\"\xde\x02\n" +
+	"otherBytes\x12\x1d\n" +
+	"\n" +
+	"chat_bytes\x18\b \x01(\x04R\tchatBytes\x12!\n" +
+	"\fboards_bytes\x18\t \x01(\x04R\vboardsBytes\x12\x1d\n" +
+	"\n" +
+	"wiki_bytes\x18\n" +
+	" \x01(\x04R\twikiBytes\"\xde\x02\n" +
 	"\fDiskActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x17\n" +
