@@ -127,7 +127,7 @@ bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
 
-Docs: https://github.com/itrcz/calab/blob/main/docs/19-bot-api.en.md (English), https://github.com/itrcz/calab/blob/main/docs/19-bot-api.md (Russian). Landing page: https://calab.io/en/bots/. SDK: https://github.com/itrcz/calab/tree/main/packages/bot-sdk. Examples: https://github.com/itrcz/calab/tree/main/examples/bots.
+Docs: https://calab.io/en/docs/ (English), https://calab.io/ru/docs/ (Russian); the full English text is at the end of this file. Landing page: https://calab.io/en/bots/. SDK: https://github.com/itrcz/calab/tree/main/packages/bot-sdk. Examples: https://github.com/itrcz/calab/tree/main/examples/bots.
 
 ## Roles and permissions
 
@@ -225,3 +225,5 @@ Calab — голосовой (voice-first) мессенджер для кома�
 Business and Enterprise include employee sign-in via OpenID Connect (SSO), LDAPS synchronization of linked members’ status and direct Active Directory groups, and OAuth 2.0 / OpenID Connect for signing into your applications with Calab. Register OAuth clients in workspace settings; users consent to sharing a minimal profile. These clients do not grant access to the chat API.
 
 Open SSO settings in your workspace to connect an OpenID Connect provider and an LDAPS directory, or OAuth clients to register an application with redirect URIs. Active Business or activated Enterprise access is required. Accounts are linked explicitly, never automatically by matching email. Directory sync does not create users or process nested groups.
+
+{{DOCS}}
