@@ -143,7 +143,9 @@ type access struct {
 func (a access) manage() bool { return a.bits.Has(perm.DiskManage) }
 
 // mayChange: the item's owner or DISK_MANAGE (ADR-0094 §2: DISK_WRITE changes one's own items).
-func (a access) mayChange() bool { return a.manage() || (a.c.owns(a.item) && a.bits.Has(perm.DiskWrite)) }
+func (a access) mayChange() bool {
+	return a.manage() || (a.c.owns(a.item) && a.bits.Has(perm.DiskWrite))
+}
 
 func (a access) nodes() []perm.DiskNode { return a.chain.Nodes(a.item.ID) }
 
@@ -286,5 +288,3 @@ func optUUID(raw string, what string) (*uuid.UUID, error) {
 	}
 	return &id, nil
 }
-
-func uidPtr(id uuid.UUID) *uuid.UUID { return &id }

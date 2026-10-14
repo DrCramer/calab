@@ -11,7 +11,7 @@ import (
 	"github.com/calaba/calaba/server/internal/diskacl"
 )
 
-// SweepInterval: how often TrashSweep runs (ADR-0094 §4).
+// SweepInterval is how often TrashSweep runs (ADR-0094 §4).
 const SweepInterval = time.Hour
 
 // sweepBatch: trash roots deleted per transaction.

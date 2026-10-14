@@ -193,7 +193,11 @@ func TestIdentityRouteInventoryAndCrossWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixtures := map[string]string{"achievement": achievement.ID.String(), "rule": rule.ID.String(), "board_category": boardCategory.ID.String(), "checklist": checklist.ID.String(), "checklist_item": item.ID.String(), "workspace": f.b.Id, "room": f.roomB, "message": msg.Id, "board": b.Id, "task": task.Id, "file": file.Id, "category": category.ID.String(), "pack": pack.ID.String(), "sticker": sticker.ID.String(), "event": event.ID.String(), "app": webapp.ID.String()}
+	diskItem, err := testDB.Q.CreateDiskItem(context.Background(), sqlc.CreateDiskItemParams{WorkspaceID: uuid.MustParse(f.b.Id), Kind: "folder", Name: "Denied folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtures := map[string]string{"disk_item": diskItem.ID.String(), "achievement": achievement.ID.String(), "rule": rule.ID.String(), "board_category": boardCategory.ID.String(), "checklist": checklist.ID.String(), "checklist_item": item.ID.String(), "workspace": f.b.Id, "room": f.roomB, "message": msg.Id, "board": b.Id, "task": task.Id, "file": file.Id, "category": category.ID.String(), "pack": pack.ID.String(), "sticker": sticker.ID.String(), "event": event.ID.String(), "app": webapp.ID.String()}
 	counts := map[string]int{}
 	for _, pattern := range testApp.Routes {
 		if !app.IdentityRouteCovered(pattern) {
@@ -208,7 +212,7 @@ func TestIdentityRouteInventoryAndCrossWorkspace(t *testing.T) {
 		method, path := parts[0], parts[1]
 		switch class {
 		case "global", "admin":
-		case "workspace", "room", "message", "board", "task", "file", "category", "pack", "sticker", "event", "app", "board_category", "checklist", "checklist_item", "rule", "achievement":
+		case "workspace", "room", "message", "board", "task", "file", "category", "pack", "sticker", "event", "app", "board_category", "checklist", "checklist_item", "rule", "achievement", "disk_item":
 			path = strings.ReplaceAll(path, "{id}", fixtures[class])
 			path = strings.ReplaceAll(path, "{appId}", fixtures[class])
 		default:

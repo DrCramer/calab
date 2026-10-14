@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -103,7 +104,9 @@ func (s *Service) setSettings(w http.ResponseWriter, r *http.Request) error {
 		d := int32(req.GetTrashDays()) //nolint:gosec // ≤ MaxTrashDays
 		days = &d
 	}
-	if err := s.db.Q.SetDiskTrashDays(ctx, sqlc.SetDiskTrashDaysParams{ID: ws, Days: days}); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(q *sqlc.Queries) error {
+		return q.SetDiskTrashDays(ctx, sqlc.SetDiskTrashDaysParams{ID: ws, Days: days})
+	}); err != nil {
 		return err
 	}
 	httpx.Write(w, http.StatusOK, &v1.DiskSettings{TrashDays: req.GetTrashDays()})

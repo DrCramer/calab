@@ -828,7 +828,7 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 	var done []deleted
 	for _, it := range roots {
 		bits := ch.Bits(c.m, c.bot, &it.ID)
-		if !bits.Has(perm.DiskView) || !(bits.Has(perm.DiskManage) || c.owns(it)) {
+		if !bits.Has(perm.DiskView) || (!bits.Has(perm.DiskManage) && !c.owns(it)) {
 			continue
 		}
 		var d deleted

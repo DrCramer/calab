@@ -14,8 +14,8 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// CoalesceWindow: a rename of an item by the same person within this time of their previous
-// rename of it merges into that entry (ADR-0081, ADR-0094 §5).
+// CoalesceWindow is how recent a person's rename of an item must be for their next rename of it
+// to merge into that entry (ADR-0081, ADR-0094 §5).
 const CoalesceWindow = 5 * time.Minute
 
 // snap is one side of a journal entry.

@@ -87,7 +87,9 @@ func (s *Service) publicContent(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if rg := r.Header.Get("Range"); r.Method == http.MethodGet && (rg == "" || strings.HasPrefix(rg, "bytes=0-")) {
-		if err := s.db.Q.CountDiskLinkDownload(r.Context(), row.DiskLink.ID); err != nil {
+		if err := db.GuardExec(r.Context(), s.db, func(q *sqlc.Queries) error {
+			return q.CountDiskLinkDownload(r.Context(), row.DiskLink.ID)
+		}); err != nil {
 			return err
 		}
 	}
