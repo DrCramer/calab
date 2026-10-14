@@ -48,6 +48,18 @@ func (sc *scope) workspaceIDs() []uuid.UUID {
 	return out
 }
 
+// refused reports an answer that closes a workspace (or the personal rooms) to the caller — not
+// a member, or an API refusal such as the access policy (an *httpx.Error below 500) — as opposed
+// to a failed dependency (a database error), which fails the search instead of silently dropping
+// the workspace from scope=all. (httpx.AsError never returns nil: it cannot tell them apart.)
+func refused(err error) bool {
+	if errors.Is(err, perm.ErrNotMember) {
+		return true
+	}
+	var e *httpx.Error
+	return errors.As(err, &e) && e.Status < 500
+}
+
 // buildScope resolves the caller's view. scope=<ws>: the caller must be a member (else 404).
 // scope=all: every workspace where the access policy lets the caller read (others are skipped,
 // as in /api/me/tasks), plus DMs and notes when the global policy allows.
@@ -74,10 +86,10 @@ func (s *Service) buildScope(ctx context.Context, req *request, user uuid.UUID, 
 				}
 				return nil, err
 			}
-			if errors.Is(err, perm.ErrNotMember) || httpx.AsError(err) != nil {
+			if refused(err) {
 				continue // left meanwhile, or blocked by the workspace's access policy
 			}
-			return nil, err
+			return nil, err // a dependency failed: the search fails, nothing is skipped silently
 		}
 		ws, err := s.db.Q.GetWorkspace(ctx, id)
 		if err != nil {
@@ -108,7 +120,7 @@ func (s *Service) buildScope(ctx context.Context, req *request, user uuid.UUID, 
 		return sc, nil
 	}
 	if err := perm.CheckAccess(ctx, uuid.Nil, user); err != nil {
-		if httpx.AsError(err) != nil {
+		if refused(err) {
 			return sc, nil // personal rooms are closed to this session by the global policy
 		}
 		return nil, err
