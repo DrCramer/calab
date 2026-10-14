@@ -78,9 +78,16 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'profile'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'profile'): Promise<void> {
   await toRoot(page);
-  await page.getByTestId(`phone-tab-${name}`).tap();
+  const pinned = page.getByTestId(`phone-tab-${name}`);
+  if ((await pinned.count()) > 0) {
+    await pinned.tap();
+    return;
+  }
+  // Not pinned (ADR-0095): through the «Ещё» card.
+  await page.getByTestId('phone-tab-more').tap();
+  await page.getByTestId(`more-row-${name}`).tap();
 }
 
 /** The «Профиль» tab: my avatar at the right end of the tab bar (ADR-0073 §1, owner 07.10). */
@@ -729,6 +736,64 @@ test('m-profile', async ({ page }) => {
   await page.getByTestId('phone-tab-dms').tap();
   await expect(page.getByTestId('phone-dms')).toBeVisible();
   await expect(page.getByTestId('phone-profile-button')).toHaveCount(0);
+});
+
+// ADR-0095: three pinned tabs + «Ещё». The card lists every section (52 px rows, 44 px pins); a pin
+// changes the bar and keeps the card open (the oldest pin is replaced, a toast says which); a section
+// picked from the card shows on a plate in the fourth slot. The search button stays at one x.
+test('m-more', async ({ page }) => {
+  await signedIn(page);
+  const bar = page.getByTestId('phone-tabbar');
+  await expect(bar.getByRole('button')).toHaveCount(4);
+  await expect(page.getByTestId('phone-tab-more')).toHaveText('Ещё');
+  const searchX: number[] = [];
+  const searchAt = async (): Promise<number> => Math.round((await page.getByTestId('phone-search').boundingBox())?.x ?? -1);
+  searchX.push(await searchAt());
+  await page.getByTestId('phone-tab-more').tap();
+  const card = page.getByTestId('phone-more-card');
+  await expect(card).toBeVisible();
+  await expectCentredCard(page, card);
+  for (const tab of ['chats', 'dms', 'boards', 'calendar', 'disk', 'profile']) {
+    const row = card.getByTestId(`more-row-${tab}`);
+    await expect(row).toBeVisible();
+    expect(Math.round((await row.boundingBox())?.height ?? 0), `a 52 px row: ${tab}`).toBe(52);
+    const pin = card.getByTestId(`more-pin-${tab}`);
+    const b = await pin.boundingBox();
+    expect(Math.round(b?.width ?? 0), `a 44 px pin: ${tab}`).toBeGreaterThanOrEqual(44);
+    expect(Math.round(b?.height ?? 0), `a 44 px pin: ${tab}`).toBeGreaterThanOrEqual(44);
+  }
+  await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-pressed', 'true');
+  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-pressed', 'false');
+  await checkpoint(page, 'm-more-card');
+  // Pinning «Диск»: «Команда» (the oldest) leaves the bar, the card stays open, the toast names it.
+  await card.getByTestId('more-pin-disk').tap();
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-pressed', 'true');
+  await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByText('Закреплено вместо «Команда»')).toBeVisible();
+  // A section from the card: its root, its plate in the fourth slot.
+  await card.getByTestId('more-row-profile').tap();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByTestId('phone-profile')).toBeVisible();
+  const more = page.getByTestId('phone-tab-more');
+  await expect(more).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('phone-tab-more-plate')).toContainText('Профиль');
+  expect(Math.round((await page.getByTestId('phone-tab-more-plate').boundingBox())?.height ?? 0), 'a 36 px plate').toBe(36);
+  await checkpoint(page, 'm-more-active');
+  // A pinned tab brings «⋯ Ещё» back; the plate's tap reopens the card.
+  await page.getByTestId('phone-tab-dms').tap();
+  await expect(page.getByTestId('phone-tab-more')).toHaveText('Ещё');
+  searchX.push(await searchAt());
+  // The magnifier sits at one x on every root with one (chats, DMs, boards, calendar, disk).
+  for (const name of ['boards', 'disk', 'calendar'] as const) {
+    await tab(page, name);
+    await expect(page.getByTestId('phone-search')).toBeVisible();
+    searchX.push(await searchAt());
+  }
+  expect(new Set(searchX).size, `the search button x per section: ${searchX.join(', ')}`).toBe(1);
+  await expect(page.getByTestId('phone-tab-more-plate')).toContainText('Календарь');
+  await page.getByTestId('phone-tab-more').tap();
+  await expect(page.getByTestId('phone-more-card')).toBeVisible();
 });
 
 // ADR-0073 §1 (owner 06.10): the «Доски» tab — the boards of the open workspace; a board is pushed
