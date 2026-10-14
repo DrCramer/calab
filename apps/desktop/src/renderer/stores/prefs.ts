@@ -17,6 +17,7 @@ import { NO_BACKGROUND, SEG_FPS, normalizeSegFps, type CameraBackground, type Se
 import { DEFAULT_CAMERA_EFFECTS, type CameraEffects } from '../lib/media/background/effects';
 import type { LocalePref } from '../i18n/types';
 import { DEFAULT_PINNED, normalizePinned, type PhoneTab } from '../lib/phoneNav';
+import { isDiskSort, isDiskView, type DiskSort, type DiskView } from '../lib/disk';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
@@ -137,6 +138,9 @@ export interface Prefs {
   haptics: boolean;
   /** The three tabs on the phone's bar, the rest behind «Ещё» (ADR-0095); oldest first. */
   phonePinnedTabs: PhoneTab[];
+  /** «Диск» (ADR-0094 §8): «Плитки | Список» and the sort, per device. */
+  diskView: DiskView;
+  diskSort: DiskSort;
 }
 
 const DEFAULTS: Prefs = {
@@ -196,6 +200,8 @@ const DEFAULTS: Prefs = {
   billingMarket: {},
   haptics: true,
   phonePinnedTabs: [...DEFAULT_PINNED],
+  diskView: 'tiles',
+  diskSort: 'name',
 };
 
 interface PrefsState extends Prefs {
@@ -218,7 +224,15 @@ export const usePrefs = create<PrefsState>()(
     // Whatever the stored value, the rate and the auto-mute period are one of the options.
     merge: (persisted, current) => {
       const p = (persisted ?? {}) as Partial<Prefs>;
-      return { ...current, ...p, cameraBgFps: normalizeSegFps(p.cameraBgFps), autoMuteSec: normalizeAutoMute(p.autoMuteSec), phonePinnedTabs: normalizePinned(p.phonePinnedTabs) };
+      return {
+        ...current,
+        ...p,
+        cameraBgFps: normalizeSegFps(p.cameraBgFps),
+        autoMuteSec: normalizeAutoMute(p.autoMuteSec),
+        phonePinnedTabs: normalizePinned(p.phonePinnedTabs),
+        diskView: isDiskView(p.diskView) ? p.diskView : current.diskView,
+        diskSort: isDiskSort(p.diskSort) ? p.diskSort : current.diskSort,
+      };
     },
     // Musician mode is never stored on (ADR-0052: it lasts until I leave voice).
     partialize: ({ setPrefs: _s, ...rest }) => ({ ...rest, musicianMode: false }),

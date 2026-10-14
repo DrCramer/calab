@@ -18,6 +18,7 @@ import { enPicker } from './picker';
 import { enRoles } from './roles';
 import { enCalendar } from './calendar';
 import { enMailbox } from './mailbox';
+import { enDisk } from './disk';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
 import { enHistory } from './history';
@@ -76,6 +77,7 @@ export const en: Dict = {
   ...enRoles,
   ...enCalendar,
   ...enMailbox,
+  ...enDisk,
   ...enBoards,
   ...enBoards2,
   ...enHistory,

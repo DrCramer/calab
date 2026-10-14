@@ -18,6 +18,7 @@ import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
 import { zhMailbox } from './mailbox';
+import { zhDisk } from './disk';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
 import { zhHistory } from './history';
@@ -76,6 +77,7 @@ export const zhCN: Dict = {
   ...zhRoles,
   ...zhCalendar,
   ...zhMailbox,
+  ...zhDisk,
   ...zhBoards,
   ...zhBoards2,
   ...zhHistory,

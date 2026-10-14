@@ -199,7 +199,7 @@ import {
   type ScreenSharePreset,
   type WorkspaceRole,
 } from '@calaba/protocol';
-import type { MessageInitShape } from '@bufbuild/protobuf';
+import type { DescMessage, MessageInitShape, MessageShape } from '@bufbuild/protobuf';
 import { platform } from '../../platform';
 import { ApiError, apiUrl, body, call, callEmpty, qs, toApiError } from './client';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
@@ -738,8 +738,24 @@ export function uploadPath(workspaceId: string, roomId: string): string {
  * (`uploadPath()`: `POST /api/workspaces/{id}/files` or `/api/dms/{id}/files`).
  */
 export function uploadFile(path: string, file: Blob, name: string, onProgress: (fraction: number) => void): UploadHandle {
+  return uploadInto(path, UploadFileResponseSchema, (r) => r.file, file, name, onProgress);
+}
+
+/**
+ * The multipart upload with progress behind uploadFile, for any route whose answer is a message
+ * (`schema`) carrying the result (`pick`; undefined = a bad answer): the Disk's
+ * `POST …/disk/upload?parent=` answers DiskItemResponse (ADR-0094 §7).
+ */
+export function uploadInto<S extends DescMessage, R>(
+  path: string,
+  schema: S,
+  pick: (res: MessageShape<S>) => R | undefined,
+  file: Blob,
+  name: string,
+  onProgress: (fraction: number) => void,
+): { promise: Promise<R>; abort(): void } {
   const xhr = new XMLHttpRequest();
-  const promise = new Promise<FileMeta>((resolve, reject) => {
+  const promise = new Promise<R>((resolve, reject) => {
     xhr.open('POST', apiUrl(path));
     xhr.responseType = 'text';
     xhr.upload.onprogress = (e) => {
@@ -749,13 +765,13 @@ export function uploadFile(path: string, file: Blob, name: string, onProgress: (
       const res = new Response(xhr.responseText, { status: xhr.status });
       if (xhr.status >= 200 && xhr.status < 300) {
         // A throw inside onload would leave the promise (and the message) pending forever (review L6).
-        let file: FileMeta | undefined;
+        let out: R | undefined;
         try {
-          file = fromJson(UploadFileResponseSchema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }).file;
+          out = pick(fromJson(schema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }));
         } catch {
-          file = undefined;
+          out = undefined;
         }
-        if (file) resolve(file);
+        if (out !== undefined) resolve(out);
         else reject(new ApiError('ERROR_CODE_INTERNAL', 'bad upload response', xhr.status));
       } else {
         toApiError(res).then(reject, () => reject(new ApiError('ERROR_CODE_INTERNAL', `HTTP ${xhr.status}`, xhr.status)));
