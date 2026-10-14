@@ -9,6 +9,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/wikiacl"
 )
 
@@ -47,6 +48,7 @@ func (s *Service) TrashSweep(ctx context.Context) (int, error) {
 
 func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time) (int, bool, error) {
 	var done []deleted
+	now := s.Now()
 	more := false
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		ok, err := q.TryAdvisoryXactLock(ctx, "calaba.wiki.sweep."+ws.String())
@@ -86,7 +88,14 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 			if !cur.TrashedRoot || cur.TrashedAt == nil || !cur.TrashedAt.Before(cutoff) {
 				continue
 			}
-			d, err := s.deleteTree(ctx, q, cur, ch.Nodes(p.ID), nil)
+			// The sweeper deletes what the root's deleter saw: a private page swept in from
+			// someone else's page is detached as a trash root of its own, with its own retention
+			// from now (addendum 2026-10-14 of ADR-0096 §2).
+			v, err := s.sweepViewer(ctx, q, cur, ch.Nodes(p.ID))
+			if err != nil {
+				return err
+			}
+			d, err := s.deleteTree(ctx, q, cur, ch.Nodes(p.ID), nil, v, nil, &now)
 			if err != nil {
 				return err
 			}
@@ -99,6 +108,22 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 	}
 	s.finish(ctx, done)
 	return len(done), more, nil
+}
+
+// sweepViewer is what the deleter of trash root p (chain: its chain) sees; when they are no
+// longer a member, everything below it but restricted pages.
+func (s *Service) sweepViewer(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageHead, chain []perm.TreeNode) (viewer, error) {
+	if p.TrashedBy != nil {
+		m, ok, err := perm.LoadMember(ctx, q, p.WorkspaceID, *p.TrashedBy)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return sees(m), nil
+		}
+	}
+	depth := len(chain)
+	return func(c []perm.TreeNode) bool { return len(c) < depth || !perm.RestrictedIn(c[depth:]) }, nil
 }
 
 // RunTrashSweep runs TrashSweep every interval until ctx is done.
