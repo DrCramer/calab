@@ -99,12 +99,14 @@ WITH boards_gone AS (
     DELETE FROM board_permissions WHERE target_type = 'role' AND target_id = $1::text
 ), disk_gone AS (
     DELETE FROM disk_permissions WHERE target_type = 'role' AND target_id = $1::text
+), wiki_gone AS (
+    DELETE FROM wiki_permissions WHERE target_type = 'role' AND target_id = $1::text
 )
 DELETE FROM room_permissions WHERE target_type = 'role' AND target_id = $1::text
 RETURNING room_id
 `
 
-// The deleted role's room, board and disk overrides; returns the affected rooms.
+// The deleted role's room, board, disk and wiki overrides; returns the affected rooms.
 func (q *Queries) DeleteRoleOverrides(ctx context.Context, roleID string) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, deleteRoleOverrides, roleID)
 	if err != nil {
