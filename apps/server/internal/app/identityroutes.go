@@ -332,6 +332,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/rooms/{id}/invites":                                        scopeRoom,
 	"POST /api/rooms/{id}/join":                                           scopeRoom,
 	"POST /api/rooms/{id}/make-permanent":                                 scopeRoom,
+	"POST /api/rooms/{id}/take-over":                                      scopeRoom,
 	"POST /api/rooms/{id}/messages":                                       scopeRoom,
 	"POST /api/rooms/{id}/messages/{mid}/forward":                         scopeRoom,
 	"POST /api/rooms/{id}/recording/start":                                scopeRoom,

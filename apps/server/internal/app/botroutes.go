@@ -228,6 +228,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/rooms/temp":                 botAllow, // ADR-0044: CREATE_TEMP_ROOMS; members-only link, no meeting
 	"POST /api/rooms/{id}/restore":                         botAllow, // ADR-0044 addendum: the creator's own archived room
 	"POST /api/rooms/{id}/make-permanent":                  botDeny,
+	"POST /api/rooms/{id}/take-over":                       botDeny, // the workspace owner only (ADR-0078 addendum)
 	"GET /api/rooms/{id}":                                  botAllow,
 	"PATCH /api/rooms/{id}":                                botAllow,
 	"DELETE /api/rooms/{id}":                               botAllow,

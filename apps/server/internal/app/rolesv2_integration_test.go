@@ -245,9 +245,10 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	}
 }
 
-// TestRolesV2ClosedRoom: the ADR-0048 rule for closed rooms — VIEW_ROOM of the roles no longer
-// lets anyone in (a private room whose member deny was dropped stays closed), workspace
-// MANAGE_ROOM / MANAGE_WORKSPACE / MANAGE_RECORDINGS give nothing, an override does.
+// TestRolesV2ClosedRoom: the ADR-0048 rule for closed rooms, every private room since the
+// ADR-0078 addendum 2026-10-14 — VIEW_ROOM of the roles lets nobody in (a private room whose
+// member deny was dropped stays closed), workspace MANAGE_ROOM / MANAGE_WORKSPACE /
+// MANAGE_RECORDINGS give nothing, an override does; the owner (its creator) sees it as a member.
 func TestRolesV2ClosedRoom(t *testing.T) {
 	o := owner(t)
 	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
@@ -261,11 +262,6 @@ func TestRolesV2ClosedRoom(t *testing.T) {
 	rid := textRoom(t, o, wid, "closed", true)
 	// Only the insider's personal allow; the member role's deny of the private room removed.
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{userOv(insider.id, perm.ViewRoom, 0)}}, nil)
-	for _, x := range []*user{mem, boss} {
-		if _, st := roomPerms(t, x, rid); st != 200 {
-			t.Fatalf("private room without the member deny: %d", st)
-		}
-	}
 	on := true
 	o.must(200, "PATCH", "/api/rooms/"+rid, &v1.UpdateRoomRequest{Restricted: &on}, nil)
 	for name, x := range map[string]*user{"member": mem, "boss": boss} {
@@ -279,8 +275,8 @@ func TestRolesV2ClosedRoom(t *testing.T) {
 	if bits, st := roomPerms(t, insider, rid); st != 200 || perm.Bits(bits) != perm.RoleDefaults[perm.RoleMember] {
 		t.Errorf("insider: %d bits %d", st, bits)
 	}
-	if bits, st := roomPerms(t, o, rid); st != 200 || perm.Bits(bits) != perm.All {
-		t.Errorf("owner: %d bits %d", st, bits)
+	if bits, st := roomPerms(t, o, rid); st != 200 || perm.Bits(bits) != perm.RoleDefaults[perm.RoleMember]|perm.RoomOnly {
+		t.Errorf("owner (the creator, no bypass): %d bits %d", st, bits)
 	}
 
 	// The creator of a private temporary room closes it: keeps it (VIEW_ROOM by override) and
