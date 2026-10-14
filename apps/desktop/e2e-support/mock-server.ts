@@ -92,6 +92,7 @@ import {
   DiskPathResponseSchema,
   DiskPermissionEntrySchema,
   DiskPermissionsResponseSchema,
+  DiskSettingsSchema,
   DiskUsageSchema,
   EmptyDiskTrashResponseSchema,
   FileMetaSchema,
@@ -7407,8 +7408,8 @@ class MockImpl {
     const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
     const p0 = (c: Ctx): string => c.params[0] ?? '';
     this.diskRoute('GET', '/api/workspaces/:id/disk/items', (c, me) => {
-      const items = d().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true', sort: q(c, 'sort') });
-      sendMsg(c.res, 200, ListDiskItemsResponseSchema, { items });
+      const r = d().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true', sort: q(c, 'sort'), cursor: q(c, 'cursor'), limit: Number(q(c, 'limit')) || 0 });
+      sendMsg(c.res, 200, ListDiskItemsResponseSchema, r);
     });
     this.diskRoute('POST', '/api/workspaces/:id/disk/folders', (c, me) => {
       const b = parseBody(c, CreateDiskFolderRequestSchema);
@@ -7430,11 +7431,11 @@ class MockImpl {
     });
     this.diskRoute('GET', '/api/workspaces/:id/disk/usage', (c, me) => sendMsg(c.res, 200, DiskUsageSchema, d().usage(p0(c), me)));
     this.diskRoute('GET', '/api/workspaces/:id/disk/activity', (c, me) => sendMsg(c.res, 200, DiskActivityPageSchema, { activities: d().wsActivity(p0(c), me) }));
-    this.diskRoute('GET', '/api/workspaces/:id/disk/settings', (c, me) => send(c.res, 200, JSON.stringify({ trashDays: d().settings(p0(c), me) }), 'application/json'));
+    this.diskRoute('GET', '/api/workspaces/:id/disk/settings', (c, me) => sendMsg(c.res, 200, DiskSettingsSchema, { trashDays: d().settings(p0(c), me) }));
     this.diskRoute('PUT', '/api/workspaces/:id/disk/settings', (c, me) => {
-      const raw = c.raw.length ? (JSON.parse(c.raw.toString('utf8')) as { trashDays?: unknown }) : {};
-      d().setSettings(p0(c), me, Number(raw.trashDays ?? 0));
-      send(c.res, 200, JSON.stringify({ trashDays: d().settings(p0(c), me) }), 'application/json');
+      const b = parseBody(c, DiskSettingsSchema);
+      d().setSettings(p0(c), me, b.trashDays);
+      sendMsg(c.res, 200, DiskSettingsSchema, { trashDays: d().settings(p0(c), me) });
     });
     this.diskRoute('PATCH', '/api/disk/items/:id', (c, me) => {
       const b = parseBody(c, UpdateDiskItemRequestSchema);

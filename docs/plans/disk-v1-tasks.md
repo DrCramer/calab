@@ -17,3 +17,15 @@ ADR: [0094 Диск](../adr/0094-disk.md), [0095 Телефон: закрепл�
 Параллельно стартуют D1, M1, M2 (непересекающиеся пути; M1 и M2 оба трогают `DayView.tsx` — M1 только слоты шапки `DayHeader` phone-ветки, M2 — текст даты и пикер; конфликт решает лид при мерже). D4 стартует после D1 (контракт сгенерирован), до D2 — на мок-данных стора.
 
 Отложено (бэклог `docs/09`): версии файлов, ссылка на папку, пароль на ссылку, личный диск, покупка пакетов (после включения платежей — задача в `billing-v1-tasks`).
+
+### Проверка D6
+
+Клиент D4 сверен с реальным сервером D2 (локальный PG17 `calaba_d6`, Redis DB 13, без LiveKit). Расхождений в REST нет: поле multipart `file` и `?parent=`, `trashed=1`, `sort=name|updated|size`, `next_cursor` (клиент идёт по курсору в `readAll`), `PUT permissions` (клиент не читает тело), события без `access`. Исправлено: `GET/PUT …/disk/settings` читаются и пишутся схемой `DiskSettings` (было `Struct`), журнал берёт `parent_name` без запасных имён, мок отдаёт страницы (`limit`, `next_cursor`, `pageMax`) и `DiskSettings`.
+```
+cd apps/server && DATABASE_URL=postgres://mac@localhost:5432/calaba_d6 REDIS_URL=redis://localhost:6379/13 \
+  JWT_SECRET=dev-only-jwt-secret-dev-only-jwt-secret REGISTRATION_MODE=open LIVEKIT_URL=ws://localhost:7880 \
+  LIVEKIT_INTERNAL_URL=http://localhost:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret SMTP_HOST= \
+  STORAGE_PATH=/tmp/d6files HTTP_ADDR=127.0.0.1:3066 PUBLIC_APP_URL=http://127.0.0.1:3066 go run ./cmd/server
+tools/disk-walk.sh http://127.0.0.1:3066   # register, folder, upload, paging (limit=1), rename/move, trash/restore, link, usage, settings
+```
+Ответы сервера сохранены в `apps/desktop/src/renderer/services/__fixtures__/disk/` и читаются схемами клиента в `disk.wire.test.ts`.

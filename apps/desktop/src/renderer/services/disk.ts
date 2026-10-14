@@ -1,5 +1,5 @@
 import type { MessageInitShape } from '@bufbuild/protobuf';
-import { StructSchema, timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import {
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
@@ -8,6 +8,7 @@ import {
   DiskLinkResponseSchema,
   DiskPathResponseSchema,
   DiskPermissionsResponseSchema,
+  DiskSettingsSchema,
   DiskUsageSchema,
   EmptyDiskTrashResponseSchema,
   ListDiskItemsResponseSchema,
@@ -80,17 +81,9 @@ export const diskApi = {
   activity: (ws: string, cursor?: string, actor?: string): Promise<DiskActivityPage> => call('GET', `${W(ws)}/activity${qs({ cursor, actor })}`, DiskActivityPageSchema),
   itemActivity: (id: string, cursor?: string): Promise<DiskActivityPage> => call('GET', `${I(id)}/activity${qs({ cursor })}`, DiskActivityPageSchema),
   path: (id: string) => call('GET', `${I(id)}/path`, DiskPathResponseSchema),
-  /**
-   * GET / PUT …/disk/settings — `DiskSettings { trash_days }` (0 = never) comes with the server
-   * task D2; until its schema is generated here the body is read through google.protobuf.Struct
-   * (protojson `{"trashDays": 30}`), no hand-written contract type.
-   */
-  trashDays: async (ws: string): Promise<number> => {
-    const s = await call('GET', `${W(ws)}/settings`, StructSchema);
-    const v = s.fields['trashDays']?.kind;
-    return v?.case === 'numberValue' ? v.value : 0;
-  },
-  setTrashDays: (ws: string, days: number) => callEmpty('PUT', `${W(ws)}/settings`, { trashDays: days }),
+  /** GET / PUT …/disk/settings — `DiskSettings { trash_days }` (0 = never; PUT needs DISK_MANAGE). */
+  trashDays: async (ws: string): Promise<number> => (await call('GET', `${W(ws)}/settings`, DiskSettingsSchema)).trashDays,
+  setTrashDays: (ws: string, days: number) => callEmpty('PUT', `${W(ws)}/settings`, body(DiskSettingsSchema, { trashDays: days })),
 };
 
 // ---------------------------------------------------------------- loading

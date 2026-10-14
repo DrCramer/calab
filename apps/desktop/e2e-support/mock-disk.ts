@@ -6,7 +6,7 @@
  *
  * Simplifications against the server: no TrashSweep, no orphan cleanup (deleted files keep their
  * bytes), the public link page is not served, the journal has no 5-minute merging, listings are
- * one page (no cursor), the quota is not reserved (an upload over it answers 413 like files.go).
+ * paged like the server (`limit`, opaque `next_cursor`; the journal is one page), the quota is not reserved (an upload over it answers 413 like files.go).
  */
 import { create } from '@bufbuild/protobuf';
 import { timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
@@ -155,7 +155,19 @@ export class DiskMock {
     }
   }
 
-  list(wsId: string, uid: string, p: { parent: string; trashed: boolean; sort: string }): DiskItem[] {
+  /** Page size when the request has no `limit` (the server's PageMax = 200); tests lower it. */
+  pageMax = 200;
+
+  list(wsId: string, uid: string, p: { parent: string; trashed: boolean; sort: string; cursor?: string; limit?: number }): { items: DiskItem[]; nextCursor: string } {
+    const all = this.sorted(wsId, uid, p);
+    const lim = p.limit && p.limit >= 1 && p.limit <= 200 ? p.limit : this.pageMax;
+    const from = p.cursor ? Number(Buffer.from(p.cursor, 'base64url').toString('utf8')) : 0;
+    if (!Number.isInteger(from) || from < 0) throw invalid('cursor', 'invalid cursor');
+    const items = all.slice(from, from + lim);
+    return { items, nextCursor: from + lim < all.length ? Buffer.from(String(from + lim)).toString('base64url') : '' };
+  }
+
+  private sorted(wsId: string, uid: string, p: { parent: string; trashed: boolean; sort: string }): DiskItem[] {
     if (!this.d.member(wsId, uid)) throw notFound();
     if (p.parent && !p.trashed) this.visible(p.parent, uid);
     const ms = (t?: Timestamp): number => (t ? timestampMs(t) : 0);

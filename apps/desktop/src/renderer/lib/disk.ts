@@ -234,7 +234,7 @@ export type ActivityKey =
   | 'disk.act.delete'
   | 'disk.act.other';
 
-/** The first string among `keys` of a before / after snapshot (the server writes snake or camel case). */
+/** The first string among `keys` of a before / after snapshot (Struct keys as the server writes them: snake_case, e.g. `parent_name`). */
 function snap(o: JsonObject | undefined, ...keys: string[]): string {
   if (!o) return '';
   for (const k of keys) {
@@ -259,7 +259,7 @@ export function describeActivity(a: Pick<DiskActivity, 'kind' | 'before' | 'afte
     case DiskActivityKind.RENAME:
       return { key: 'disk.act.rename', params: { from: snap(a.before, 'name') || a.itemName, to: snap(a.after, 'name') || a.itemName } };
     case DiskActivityKind.MOVE: {
-      const to = snap(a.after, 'parent_name', 'parentName', 'folder', 'folder_name', 'folderName');
+      const to = snap(a.after, 'parent_name');
       return to ? { key: 'disk.act.move', params: { name, to } } : { key: 'disk.act.moveRoot', params: { name } };
     }
     case DiskActivityKind.SHARE:
