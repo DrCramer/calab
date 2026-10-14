@@ -1752,6 +1752,10 @@ test('m-wiki-toolbar', async ({ page }) => {
   const prose = screen.locator('.wiki-prose');
   await expect(prose).toContainText('Первая неделя');
   await expect(screen.getByTestId('wiki-phone-toolbar')).toHaveCount(0);
+  // Pages open for reading (3.4.1): the pencil in the header switches to editing.
+  await expect(prose).toHaveAttribute('contenteditable', 'false');
+  await screen.getByTestId('wiki-edit-toggle').tap();
+  await expect(prose).toHaveAttribute('contenteditable', 'true');
   await prose.getByText('Зачем этот раздел').tap();
   await page.evaluate((h) => (window as unknown as KeyboardStub).__keyboard(h), 300);
   const bar = screen.getByTestId('wiki-phone-toolbar');
