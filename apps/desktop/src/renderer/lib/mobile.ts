@@ -201,8 +201,18 @@ const GESTURE_MS = 1500;
  */
 export function installTouchActive(): () => void {
   const noop = (): void => undefined;
+  // No page zoom (owner, 14.10: «всегда оригинальный размер»): iOS Safari ignores
+  // `user-scalable=no`, so pinch (gesture*) is cancelled here; zoomable surfaces (Lightbox, stream
+  // zoom) handle pinch through pointer events, which this does not touch.
+  const noZoom = (e: Event): void => e.preventDefault();
   document.addEventListener('touchstart', noop, { passive: true });
-  return () => document.removeEventListener('touchstart', noop);
+  document.addEventListener('gesturestart', noZoom);
+  document.addEventListener('gesturechange', noZoom);
+  return () => {
+    document.removeEventListener('touchstart', noop);
+    document.removeEventListener('gesturestart', noZoom);
+    document.removeEventListener('gesturechange', noZoom);
+  };
 }
 
 /**
