@@ -7,7 +7,14 @@
  *   2 AWARENESS       both ways        u8 2 | y-protocols awareness update (ephemeral, never stored)
  *   3 COMPACT_REQUEST server → client  u8 3
  *   4 SNAPSHOT_POST   client → server  u8 4 | u64 through_seq | u32 meta_len | meta (UTF-8 JSON
- *                                      {plain_text, title, preview}) | state
+ *                                      {plain_text, title, preview, broadcast?}) | state
+ *
+ * A SNAPSHOT_POST is a silent compaction: the server stores it and sends nothing back. Only with
+ * `broadcast: true` — the state carries an edit no UPDATE carried (one transaction above the
+ * frame limit) — does the server relay the state as a SNAPSHOT to the page's other sockets (a
+ * stale broadcast post: relayed with through_seq 0, not stored, and the poster gets
+ * COMPACT_REQUEST). The server takes ≤ 2 posts at once, then one per 2 s per socket (over: 4008);
+ * the client spaces its posts by SNAPSHOT_GAP_MS.
  *
  * On connect the server always sends one SNAPSHOT first (through_seq 0 and an empty state for a
  * page without one), then every UPDATE after it; the client treats the SNAPSHOT as «synced».
@@ -40,12 +47,21 @@ export type Frame =
   | { type: typeof FRAME_UPDATE; seq: number; update: Uint8Array }
   | { type: typeof FRAME_AWARENESS; update: Uint8Array }
   | { type: typeof FRAME_COMPACT_REQUEST }
-  | { type: typeof FRAME_SNAPSHOT_POST; throughSeq: number; meta: SnapshotMeta; state: Uint8Array };
+  | {
+      type: typeof FRAME_SNAPSHOT_POST;
+      throughSeq: number;
+      meta: SnapshotMeta;
+      broadcast: boolean;
+      state: Uint8Array;
+    };
 
 function withSeq(type: number, seq: number, body: Uint8Array): Uint8Array {
   const out = new Uint8Array(9 + body.length);
   out[0] = type;
-  new DataView(out.buffer).setBigUint64(1, BigInt(Math.max(0, Math.floor(seq))));
+  new DataView(out.buffer).setBigUint64(
+    1,
+    BigInt(Math.max(0, Math.floor(seq))),
+  );
   out.set(body, 9);
   return out;
 }
@@ -54,7 +70,10 @@ export function encodeUpdate(update: Uint8Array, seq = 0): Uint8Array {
   return withSeq(FRAME_UPDATE, seq, update);
 }
 
-export function encodeSnapshot(throughSeq: number, state: Uint8Array): Uint8Array {
+export function encodeSnapshot(
+  throughSeq: number,
+  state: Uint8Array,
+): Uint8Array {
   return withSeq(FRAME_SNAPSHOT, throughSeq, state);
 }
 
@@ -69,8 +88,20 @@ export function encodeCompactRequest(): Uint8Array {
   return Uint8Array.of(FRAME_COMPACT_REQUEST);
 }
 
-export function encodeSnapshotPost(throughSeq: number, meta: SnapshotMeta, state: Uint8Array): Uint8Array {
-  const json = new TextEncoder().encode(JSON.stringify({ plain_text: meta.plain_text, title: meta.title, preview: meta.preview }));
+/** broadcast: the state carries an edit no UPDATE carried; the server relays it to the other sockets. */
+export function encodeSnapshotPost(
+  throughSeq: number,
+  meta: SnapshotMeta,
+  state: Uint8Array,
+  broadcast = false,
+): Uint8Array {
+  const body: Record<string, unknown> = {
+    plain_text: meta.plain_text,
+    title: meta.title,
+    preview: meta.preview,
+  };
+  if (broadcast) body["broadcast"] = true;
+  const json = new TextEncoder().encode(JSON.stringify(body));
   const out = new Uint8Array(13 + json.length + state.length);
   const dv = new DataView(out.buffer);
   out[0] = FRAME_SNAPSHOT_POST;
@@ -89,9 +120,13 @@ export function decodeFrame(data: Uint8Array): Frame | null {
   const seqAt = (): number => Number(dv.getBigUint64(1));
   switch (type) {
     case FRAME_SNAPSHOT:
-      return data.length < 9 ? null : { type, throughSeq: seqAt(), state: data.subarray(9) };
+      return data.length < 9
+        ? null
+        : { type, throughSeq: seqAt(), state: data.subarray(9) };
     case FRAME_UPDATE:
-      return data.length < 9 ? null : { type, seq: seqAt(), update: data.subarray(9) };
+      return data.length < 9
+        ? null
+        : { type, seq: seqAt(), update: data.subarray(9) };
     case FRAME_AWARENESS:
       return { type, update: data.subarray(1) };
     case FRAME_COMPACT_REQUEST:
@@ -101,14 +136,28 @@ export function decodeFrame(data: Uint8Array): Frame | null {
       const len = dv.getUint32(9);
       if (13 + len > data.length) return null;
       let meta: SnapshotMeta;
+      let broadcast: boolean;
       try {
-        const m = JSON.parse(new TextDecoder().decode(data.subarray(13, 13 + len))) as Record<string, unknown>;
-        const s = (v: unknown): string => (typeof v === 'string' ? v : '');
-        meta = { plain_text: s(m['plain_text']), title: s(m['title']), preview: s(m['preview']) };
+        const m = JSON.parse(
+          new TextDecoder().decode(data.subarray(13, 13 + len)),
+        ) as Record<string, unknown>;
+        const s = (v: unknown): string => (typeof v === "string" ? v : "");
+        meta = {
+          plain_text: s(m["plain_text"]),
+          title: s(m["title"]),
+          preview: s(m["preview"]),
+        };
+        broadcast = m["broadcast"] === true;
       } catch {
         return null;
       }
-      return { type, throughSeq: seqAt(), meta, state: data.subarray(13 + len) };
+      return {
+        type,
+        throughSeq: seqAt(),
+        meta,
+        broadcast,
+        state: data.subarray(13 + len),
+      };
     }
     default:
       return null;

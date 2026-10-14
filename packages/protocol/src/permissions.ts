@@ -406,7 +406,7 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     // ADR-0094: migration 00088 gave them to the existing member roles.
     DISK_BITS.VIEW |
     DISK_BITS.WRITE |
-    // ADR-0096: migration 00089.
+    // ADR-0096: migration 00090.
     WIKI_BITS.VIEW |
     WIKI_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.

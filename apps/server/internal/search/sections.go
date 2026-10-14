@@ -1,7 +1,9 @@
 package search
 
 import (
+	"bytes"
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,8 +15,11 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/calendar"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/recording"
 	"github.com/calaba/calaba/server/internal/searchq"
+	"github.com/calaba/calaba/server/internal/wikiacl"
 )
 
 // candidateCap bounds what a section considers: ranking happens among at most this many matches
@@ -577,14 +582,85 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 
 // ---- wiki ----
 
-// WikiVector must stay the expression of wiki_pages_search_idx (00090) over wiki_pages w; the
+// WikiVector must stay the expression of wiki_pages_search_idx (00091) over wiki_pages w; the
 // sqlc query SearchWikiPages (queries/wiki.sql) spells it out too.
 const WikiVector = "(to_tsvector('russian', w.title || ' ' || w.plain_text) || to_tsvector('simple', w.title || ' ' || w.plain_text))"
 
-// wiki is the section of wiki pages (ADR-0096 §7). Candidates come from sqlc SearchWikiPages;
-// the access filter (perm.ComputeWikiPageIn over the pages' chains) and the hits come with the
-// wiki service (task W2). Until then the section is always empty, so that a search over every
-// type keeps working.
-func (s *Service) wiki(context.Context, pgx.Tx, *request, *scope, *v1.SearchSection) error {
+// wiki is the section of wiki pages (ADR-0096 §7): the candidates come from sqlc
+// SearchWikiPages (full text over title and text, trigram / substring over the title, ranked by
+// relevance × freshness), the access filter is the page rule itself (perm.ComputeWikiPageIn over
+// the candidates' chains, wikiacl) and the snippets are ts_headline of the page's text. Newest
+// first (sort=new) orders by id (uuidv7: creation).
+func (s *Service) wiki(ctx context.Context, tx pgx.Tx, req *request, sc *scope, sec *v1.SearchSection) error {
+	if len(sc.wss) == 0 || sc.bot {
+		return nil // bots get no wiki bits
+	}
+	members := make(map[uuid.UUID]perm.Member, len(sc.wss))
+	for _, sp := range sc.wss {
+		members[sp.id] = sp.m
+	}
+	q := s.db.Q.WithTx(tx)
+	rows, err := q.SearchWikiPages(ctx, sqlc.SearchWikiPagesParams{Tsq: req.q.TS, Words: req.q.Text, Phrase: searchq.Like(req.q.Text),
+		Now: req.now, WorkspaceIds: sc.workspaceIDs(), Lim: candidateCap})
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	ids := make([]uuid.UUID, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	ch, err := wikiacl.Load(ctx, q, ids)
+	if err != nil {
+		return err
+	}
+	rel := req.relevance(sec.Type)
+	visible := rows[:0]
+	for _, r := range rows {
+		if ch.Has(r.ID) && ch.Bits(members[r.WorkspaceID], sc.bot, &r.ID).Has(perm.WikiView) {
+			visible = append(visible, r)
+		}
+	}
+	total(req, sec, int64(len(visible)))
+	if !rel {
+		slices.SortFunc(visible, func(a, b sqlc.SearchWikiPagesRow) int { return bytes.Compare(b.ID[:], a.ID[:]) })
+	}
+	if req.cur != nil {
+		cid := req.cur.id()
+		after := visible[:0]
+		for _, r := range visible {
+			if rel && (r.Score < req.cur.R || (r.Score == req.cur.R && bytes.Compare(r.ID[:], cid[:]) < 0)) ||
+				!rel && bytes.Compare(r.ID[:], cid[:]) < 0 {
+				after = append(after, r)
+			}
+		}
+		visible = after
+	}
+	if len(visible) > req.limit+1 {
+		visible = visible[:req.limit+1]
+	}
+	list := page(req, sec, visible, func(r sqlc.SearchWikiPagesRow) (float64, uuid.UUID) { return r.Score, r.ID })
+	if len(list) == 0 {
+		return nil
+	}
+	pageIDs := make([]uuid.UUID, len(list))
+	for i, r := range list {
+		pageIDs[i] = r.ID
+	}
+	heads, err := q.WikiSearchHeadlines(ctx, sqlc.WikiSearchHeadlinesParams{Tsq: req.q.TS, Options: searchq.HeadlineOptions, Ids: pageIDs})
+	if err != nil {
+		return err
+	}
+	snippets := make(map[uuid.UUID]string, len(heads))
+	for _, h := range heads {
+		snippets[h.ID] = h.Snippet
+	}
+	for _, r := range list {
+		icon := ""
+		if r.Icon != nil {
+			icon = *r.Icon
+		}
+		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: snippets[r.ID], Title: r.Title, WorkspaceId: r.WorkspaceID.String(), At: ts(r.UpdatedAt),
+			AuthorId: str(r.UpdatedBy), Ref: &v1.SearchHit_Wiki{Wiki: &v1.SearchWikiRef{PageId: r.ID.String(), Icon: icon}}})
+	}
 	return nil
 }
