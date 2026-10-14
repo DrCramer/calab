@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_PINNED,
   MAX_DEPTH,
+  PHONE_TABS,
   barTabs,
   normalizePinned,
   pinTab,
@@ -199,5 +201,22 @@ describe('disk screens (ADR-0094 §8)', () => {
     expect(n.stack).toHaveLength(3);
     n = pushScreen(n, { kind: 'disk', folderId: 'a' });
     expect(n.stack).toEqual([{ kind: 'disk', folderId: 'a' }]);
+  });
+});
+
+describe('wiki screens (ADR-0096 §7)', () => {
+  it('pages stack over the Wiki tab; the same page is returned to, the trash is its own screen', () => {
+    let n = pushOnTab(nav({ tab: 'chats' }), 'wiki', { kind: 'wiki', pageId: 'a' });
+    expect(n.tab).toBe('wiki');
+    n = pushScreen(n, { kind: 'wiki', pageId: 'b' });
+    n = pushScreen(n, { kind: 'wiki', pageId: '', trash: true });
+    expect(n.stack).toHaveLength(3);
+    n = pushScreen(n, { kind: 'wiki', pageId: 'a' });
+    expect(n.stack).toEqual([{ kind: 'wiki', pageId: 'a' }]);
+  });
+  it('the Wiki tab is behind «Ещё» by default and can be pinned', () => {
+    expect(PHONE_TABS).toContain('wiki');
+    expect(barTabs(DEFAULT_PINNED, PHONE_TABS).bar).toEqual(['chats', 'dms', 'boards']);
+    expect(pinTab(['chats', 'dms', 'boards'], 'wiki')).toEqual({ pinned: ['dms', 'boards', 'wiki'], unpinned: 'chats' });
   });
 });

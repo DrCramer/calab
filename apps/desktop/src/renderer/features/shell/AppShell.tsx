@@ -39,6 +39,8 @@ import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useDiskUi } from '../../stores/diskUi';
 import { DiskScreen } from '../disk/DiskScreen';
+import { useWikiUi } from '../../stores/wikiUi';
+import { WikiScreen } from '../wiki/WikiScreen';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
 import { WindowVibrancy } from './WindowVibrancy';
@@ -97,6 +99,8 @@ function ShellLayout(): ReactNode {
   const boards = useBoardsUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Диск» (ADR-0094 §8): one panel in place of the column and the centre; guests have none.
   const disk = useDiskUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Вики» (ADR-0096 §9): the same, exclusive with the Disk; guests have none.
+  const wiki = useWikiUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
   // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
@@ -188,6 +192,10 @@ function ShellLayout(): ReactNode {
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DiskScreen key={wsId} workspaceId={wsId} />
           </div>
+        ) : hasWs && wsId && wiki ? (
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <WikiScreen key={wsId} workspaceId={wsId} />
+          </div>
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
@@ -230,7 +238,7 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || (calDay !== null && !guestWs)} /> : null}
+        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>

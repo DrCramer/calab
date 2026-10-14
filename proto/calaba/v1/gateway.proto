@@ -21,6 +21,7 @@ import "calaba/v1/room.proto";
 import "calaba/v1/sound.proto";
 import "calaba/v1/sticker.proto";
 import "calaba/v1/user.proto";
+import "calaba/v1/wiki.proto";
 import "calaba/v1/workspace.proto";
 
 // Gateway opcodes (docs/05-realtime-protocol.md). DISPATCH is 8 (not 0 as in Discord):
@@ -292,6 +293,10 @@ message DispatchEvent {
     // item); the client refetches the open folder and the trash.
     DiskItemUpsert disk_item_upsert = 98;
     DiskItemRemove disk_item_remove = 99;
+    // Wiki (ADR-0096 §8): workspace channel, routed per recipient like the Disk (WIKI_VIEW on
+    // the page); the tree structure only, the content goes through the page's /sync socket.
+    WikiPageUpsert wiki_page_upsert = 100;
+    WikiPageRemove wiki_page_remove = 101;
   }
 }
 

@@ -122,11 +122,14 @@ import {
   type WorkspaceMember,
   type WorkspaceSnapshot,
 } from '@calaba/protocol';
+import { createDiskApi, type DiskApi } from './disk.js';
 import { Emitter } from './emitter.js';
 import { GatewayFatalError } from './errors.js';
 import { Gateway, gatewayUrl, type GatewayStatus, type SocketLike } from './gateway.js';
 import { Rest, type RestOptions } from './rest.js';
 import { DELIVERY_HEADER, SIGNATURE_HEADER, parseWebhookUpdate, verifyWebhookSignature } from './webhook.js';
+import { createWikiApi, type WikiApi } from './wiki.js';
+import type { SyncSocket, WikiSyncOptions } from './wikiSync.js';
 
 // ---- public types ----
 
@@ -155,6 +158,8 @@ export interface BotOptions {
   };
   /** Sleep between 429 retries (tests). */
   sleep?: RestOptions['sleep'];
+  /** The wiki sync socket (page content): socket factory (default `ws`), catch-up settle time, timeouts. */
+  wikiSync?: WikiSyncOptions;
 }
 
 /** A file to attach: bytes and a name (the server sniffs the type; `type` is a hint). */
@@ -276,9 +281,17 @@ export class Bot extends Emitter<BotEvents> {
       ...(options.sleep ? { sleep: options.sleep } : {}),
     });
     this.token = token;
+    this.disk = createDiskApi(this.rest);
+    this.wiki = createWikiApi(this.rest, token, (url) => new WebSocket(url) as unknown as SyncSocket, options.wikiSync);
   }
 
   private readonly token: string;
+
+  /** The Disk (ADR-0094): folders, uploads, downloads, sharing, links, the trash — by the bot's disk bits. */
+  readonly disk: DiskApi;
+
+  /** The Wiki (ADR-0096): pages over REST, their content as Markdown over the sync socket — by the bot's wiki bits. */
+  readonly wiki: WikiApi;
 
   /** The bot's account (after `start()` or `fetchMe()`). */
   get me(): User | undefined {

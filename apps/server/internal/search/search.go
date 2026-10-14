@@ -105,6 +105,8 @@ func (s *Service) sectionFn(t v1.SearchType) sectionFn {
 		return s.files
 	case v1.SearchType_SEARCH_TYPE_TRANSCRIPTS:
 		return s.transcripts
+	case v1.SearchType_SEARCH_TYPE_WIKI:
+		return s.wiki
 	}
 	return s.messages // messages, task comments, notes
 }

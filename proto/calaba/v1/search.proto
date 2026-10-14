@@ -10,7 +10,7 @@ import "calaba/v1/boards.proto";
 // recording card rule); nothing is found that the caller cannot open.
 
 // The kind of a section and of its hits. In the query string a type is written in lower case
-// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts.
+// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki.
 enum SearchType {
   SEARCH_TYPE_UNSPECIFIED = 0;
   SEARCH_TYPE_MESSAGES = 1;      // messages of rooms and (scope=all) the caller's DMs
@@ -20,6 +20,7 @@ enum SearchType {
   SEARCH_TYPE_FILES = 5;         // attachments of visible live messages, by file name
   SEARCH_TYPE_NOTES = 6;         // the caller's own notes shelves (scope=all or types=notes)
   SEARCH_TYPE_TRANSCRIPTS = 7;   // transcripts of visible recordings with a ready result, newest first
+  SEARCH_TYPE_WIKI = 8;          // live wiki pages the caller sees (WIKI_VIEW), by title and text
 }
 
 // Order inside a section feed (type=…). The summary (no type) always uses its defaults.
@@ -102,6 +103,7 @@ message SearchHit {
     SearchFileRef file = 14;
     SearchMessageRef note = 15;
     SearchTranscriptRef transcript = 16;
+    SearchWikiRef wiki = 17;
   }
 }
 
@@ -158,4 +160,11 @@ message SearchTranscriptRef {
   // GET /api/rooms/{room_id}/messages/{message_id} gives the summary, status and audio.
   // "" when the card message is gone.
   string message_id = 4;
+}
+
+// A wiki page (ADR-0096 §7): open it; the snippet is of its text (or title), title is the
+// page's title.
+message SearchWikiRef {
+  string page_id = 1;
+  string icon = 2;
 }
