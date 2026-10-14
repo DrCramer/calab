@@ -77,11 +77,12 @@ func TestWikiEventsPerRecipient(t *testing.T) {
 	if myBits[admin]&perm.WikiManage == 0 || myBits[bob]&perm.WikiManage != 0 || myBits[bob]&perm.WikiWrite == 0 || myBits[bob]&perm.WikiView == 0 {
 		t.Errorf("my_bits per recipient: admin %b, bob %b", myBits[admin], myBits[bob])
 	}
-	check("restricted: bob loses it, the guest gains it", deliver(upsert(closed, open)),
-		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "U", bot: "R"})
+	// The administrator is not let in either (addendum 2026-10-14): it loses the item like bob.
+	check("restricted: bob and the admin lose it, the guest gains it", deliver(upsert(closed, open)),
+		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "R", bot: "R"})
 	check("deleted forever", deliver(&v1.DispatchEvent{Event: &v1.DispatchEvent_WikiPageRemove{WikiPageRemove: &v1.WikiPageRemove{
 		WorkspaceId: wid.String(), PageId: page.GetId(), Access: wikiacl.Levels(closed)}}}),
-		map[uuid.UUID]string{alice: "R", guest: "R", admin: "R"})
+		map[uuid.UUID]string{alice: "R", guest: "R"})
 	if h.routeWiki(st, wid, uuid.New(), nil, &v1.DispatchEvent{Event: &v1.DispatchEvent_BoardDelete{}}) {
 		t.Fatal("a board event taken as a wiki event")
 	}

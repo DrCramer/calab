@@ -17,7 +17,8 @@ const (
 	// it; the structure of one's own pages. Member default.
 	WikiWrite Bits = 1 << 39
 	// WikiManage: the structure of any page, the trash retention, empty the whole trash, remove
-	// anyone's public link. Implies View and Write; sees restricted pages too.
+	// anyone's public link. Implies View and Write; not inside restricted pages
+	// (addendum 2026-10-14): there only what their overrides give (ComputeTree).
 	WikiManage Bits = 1 << 40
 
 	// Wiki are the three wiki bits.

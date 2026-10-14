@@ -84,6 +84,8 @@ func TestBotDisk(t *testing.T) {
 	if got.GetItem().GetMyBits()&uint64(perm.DiskWrite) != 0 {
 		t.Fatalf("bob writes a view-only share: %v", got.GetItem())
 	}
+	// Not even the workspace owner sees it (ADR-0094 §2, addendum 2026-10-14 «приватная папка»).
+	o.must(404, "GET", "/api/disk/items/"+file.GetId(), nil, nil)
 	var link v1.DiskLinkResponse
 	if c := b.do("POST", "/api/disk/items/"+file.GetId()+"/link", &v1.CreateDiskLinkRequest{}, &link); c >= 300 || link.GetLink().GetCode() == "" {
 		t.Fatalf("link: %d %v", c, &link)

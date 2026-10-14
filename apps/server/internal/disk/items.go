@@ -720,6 +720,12 @@ type deleted struct {
 // (files.DeleteBlobs): the orphan cleanup never sees these rows, so the bytes are released once.
 func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem, chain []perm.DiskNode, actor *uuid.UUID) (deleted, error) {
 	d := deleted{item: it, chain: chain}
+	// The journal of a restricted subtree stays out of the workspace journal once its chains are
+	// gone (addendum 2026-10-14 of ADR-0094 §2).
+	private := perm.RestrictedIn(chain)
+	if err := q.MarkDiskSubtreeActivityPrivate(ctx, sqlc.MarkDiskSubtreeActivityPrivateParams{ID: it.ID, Restricted: private}); err != nil {
+		return d, err
+	}
 	fs, err := q.DeleteDiskSubtreeFiles(ctx, it.ID)
 	if err != nil {
 		if db.IsForeignKeyViolation(err) {
@@ -740,7 +746,7 @@ func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, it sqlc.DiskI
 		return d, err
 	}
 	before := snap{"name": it.Name, "kind": it.Kind, "size": float64(d.bytes), "files": float64(len(fs))}
-	if err := s.journal(ctx, q, it, actor, "delete", before, nil); err != nil {
+	if err := s.journalEntry(ctx, q, it, actor, "delete", before, nil, private); err != nil {
 		return d, err
 	}
 	return d, nil

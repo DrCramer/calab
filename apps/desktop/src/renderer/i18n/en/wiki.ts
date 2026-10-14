@@ -91,7 +91,7 @@ export const enWiki: DictShape<typeof ruWiki> = {
   'wiki.share': 'Share',
   'wiki.shareTitle': 'Share “{name}”',
   'wiki.access': 'Access',
-  'wiki.restrictedHint': 'Workspace roles stop giving access: the owner, wiki admins and the listed ones remain',
+  'wiki.restrictedHint': 'Not even admins or the workspace owner see it: only the page’s owner and the people listed',
   'wiki.accessInherited': 'Access as on the page above',
   'wiki.accessFooter': 'Subpages get the same access. “Edit” changes the text and adds subpages. A guest gets access only by name.',
   'wiki.link.on': 'Access by link',

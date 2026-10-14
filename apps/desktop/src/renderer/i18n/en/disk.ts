@@ -68,7 +68,7 @@ export const enDisk: DictShape<typeof ruDisk> = {
   'disk.badge.link': 'Shared by link',
   'disk.accessTitle': 'Access to “{name}”',
   'disk.restricted': 'Selected people only',
-  'disk.restrictedHint': 'Workspace roles stop granting access: the owner, disk managers and the people listed keep it',
+  'disk.restrictedHint': 'Not even admins or the workspace owner see it: only the folder’s owner and the people listed',
   'disk.accessWho': 'Who has access',
   'disk.accessInherited': 'Same access as the folder above',
   'disk.accessAdd': 'Add a role or a person',
