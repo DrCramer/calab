@@ -10,6 +10,7 @@ import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
 import { leaveMail } from './mailUi';
 import { leaveDisk } from './diskUi';
+import { leaveWiki } from './wikiUi';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -177,6 +178,7 @@ export const useUi = create<UiState>()(
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
           leaveMail();
           leaveDisk();
+          leaveWiki();
           return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
@@ -201,6 +203,7 @@ export const useUi = create<UiState>()(
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
           leaveMail();
           leaveDisk();
+          leaveWiki();
           return {
           calDay: null,
           calEvent: null,
@@ -273,6 +276,7 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
   leaveMail();
   leaveDisk();
+  leaveWiki();
   const { ws, room } = r.to;
   return {
     calDay: null,

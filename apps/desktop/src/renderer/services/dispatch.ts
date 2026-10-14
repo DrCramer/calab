@@ -70,6 +70,8 @@ import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/servi
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
 import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
 import { useDisk } from '../stores/disk';
+import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
+import { useWiki } from '../stores/wiki';
 import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
@@ -315,6 +317,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'diskItemRemove':
       onDiskItemRemove(e.value);
       return;
+    // Wiki (ADR-0096 §8): the tree's structure follows; the content only through /sync.
+    case 'wikiPageUpsert':
+      onWikiPageUpsert(e.value);
+      return;
+    case 'wikiPageRemove':
+      onWikiPageRemove(e.value);
+      return;
     case 'billingUpdate':
       onBillingUpdate(e.value.workspaceId, e.value.revision);
       return;
@@ -330,6 +339,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       dropWorkspaceEvents(id);
       dropWorkspaceBoards(id);
       useDisk.getState().dropWorkspace(id);
+      useWiki.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();

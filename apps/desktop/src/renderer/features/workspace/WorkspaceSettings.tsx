@@ -5,10 +5,11 @@ import { localAuthority } from '../identity/model';
 import { IdentityAbout, IdentityNotConfigured } from '../identity/IdentityGate';
 import { PlanLock } from '../../components/PlanLock';
 import { DiskSettingsTab } from '../disk/DiskSettings';
-import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
+import { WikiSettingsTab } from '../wiki/WikiSettings';
+import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -103,6 +104,7 @@ export function WorkspaceSettingsDialog({
   const inviter = access.invites;
   const library = librarySegments(access);
   const diskManage = (diskPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & DISK_BITS.MANAGE) !== 0n;
+  const wikiManage = (wikiPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & WIKI_BITS.MANAGE) !== 0n;
   const requested = resolveSettingsTab(tab);
   const identityPanel = (feature: IdentityFeature, about: ReactNode, content: ReactNode): ReactNode =>
     identityStatus.isPending ? (
@@ -152,6 +154,8 @@ export function WorkspaceSettingsDialog({
     ...(access.bots ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
     // «Диск» (ADR-0094 §1): the trash retention — DISK_MANAGE (ADMINISTRATOR includes it).
     ...(diskManage ? [{ id: 'disk', label: t('disk.section'), icon: HardDrive, keywords: t('disk.settings.trash'), content: <DiskSettingsTab workspaceId={workspaceId} /> }] : []),
+    // «Вики» (ADR-0096 §1): the trash retention — WIKI_MANAGE (ADMINISTRATOR includes it).
+    ...(wikiManage ? [{ id: 'wiki', label: t('wiki.section'), icon: BookOpen, keywords: t('wiki.settings.trash'), content: <WikiSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
     // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).
