@@ -57,6 +57,11 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 			return err
 		}
 		more = len(roots) == sweepBatch
+		if len(roots) > 0 {
+			if err := q.LockDiskQuota(ctx, ws); err != nil {
+				return err
+			}
+		}
 		ids := make([]uuid.UUID, len(roots))
 		for i, it := range roots {
 			ids[i] = it.ID

@@ -578,7 +578,8 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 		if a.item.TrashedAt != nil {
 			return errTrashed
 		}
-		if _, err := q.GetDiskItemForUpdate(ctx, id); err != nil {
+		// Under the tree lock: an upload or a move into the subtree checked its folder is live.
+		if err := q.LockDiskTree(ctx, a.item.WorkspaceID); err != nil {
 			return err
 		}
 		rows, err := q.TrashDiskSubtree(ctx, sqlc.TrashDiskSubtreeParams{ID: id, TrashedAt: s.Now(), TrashedBy: &a.c.uid})
@@ -787,6 +788,9 @@ func (s *Service) deleteForever(w http.ResponseWriter, r *http.Request) error {
 		if a.item.TrashedAt == nil {
 			return httpx.Conflict("move the item to the trash first")
 		}
+		if err := q.LockDiskQuota(ctx, a.item.WorkspaceID); err != nil {
+			return err
+		}
 		if _, err := q.GetDiskItemForUpdate(ctx, id); err != nil {
 			return err
 		}
@@ -836,6 +840,9 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 			a, err := resolve(r, q, it.ID)
 			if err != nil || !a.item.TrashedRoot || !a.mayChange() {
 				return errSkip
+			}
+			if err := q.LockDiskQuota(ctx, ws); err != nil {
+				return err
 			}
 			if _, err := q.GetDiskItemForUpdate(ctx, it.ID); err != nil {
 				return errSkip

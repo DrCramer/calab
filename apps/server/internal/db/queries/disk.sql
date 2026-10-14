@@ -341,3 +341,9 @@ LIMIT sqlc.arg('lim');
 -- name: ListDiskFiles :many
 -- The files rows of a page of items.
 SELECT * FROM files WHERE id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: LockDiskQuota :exec
+-- Delete forever, step 0: the workspaces row the quota release will update, locked first — the
+-- order of an upload (ReserveQuota, then the item under LockDiskTree), so a deletion and an upload
+-- into the same folder never wait for each other crosswise.
+SELECT 1 FROM workspaces WHERE id = $1 FOR NO KEY UPDATE;

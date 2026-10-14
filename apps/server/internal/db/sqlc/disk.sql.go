@@ -1389,6 +1389,18 @@ func (q *Queries) ListWorkspaceDiskLinks(ctx context.Context, workspaceID uuid.U
 	return items, nil
 }
 
+const lockDiskQuota = `-- name: LockDiskQuota :exec
+SELECT 1 FROM workspaces WHERE id = $1 FOR NO KEY UPDATE
+`
+
+// Delete forever, step 0: the workspaces row the quota release will update, locked first — the
+// order of an upload (ReserveQuota, then the item under LockDiskTree), so a deletion and an upload
+// into the same folder never wait for each other crosswise.
+func (q *Queries) LockDiskQuota(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockDiskQuota, id)
+	return err
+}
+
 const lockDiskTree = `-- name: LockDiskTree :exec
 SELECT pg_advisory_xact_lock(hashtext('calaba.disk.' || $1::uuid::text))
 `
