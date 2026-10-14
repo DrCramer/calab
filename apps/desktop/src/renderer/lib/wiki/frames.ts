@@ -102,8 +102,9 @@ export function decodeFrame(data: Uint8Array): Frame | null {
       if (13 + len > data.length) return null;
       let meta: SnapshotMeta;
       try {
-        const m = JSON.parse(new TextDecoder().decode(data.subarray(13, 13 + len))) as Partial<SnapshotMeta>;
-        meta = { plain_text: String(m.plain_text ?? ''), title: String(m.title ?? ''), preview: String(m.preview ?? '') };
+        const m = JSON.parse(new TextDecoder().decode(data.subarray(13, 13 + len))) as Record<string, unknown>;
+        const s = (v: unknown): string => (typeof v === 'string' ? v : '');
+        meta = { plain_text: s(m['plain_text']), title: s(m['title']), preview: s(m['preview']) };
       } catch {
         return null;
       }

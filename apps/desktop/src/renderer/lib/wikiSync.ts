@@ -183,7 +183,7 @@ export class WikiSyncProvider {
             ws.close(4000, 'no token');
             return;
           }
-          (ws.send as (d: string) => void)(token);
+          (ws.send as unknown as (d: string) => void).call(ws, token);
         },
         () => ws === this.ws && ws.close(4000, 'no token'),
       );

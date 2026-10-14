@@ -23,6 +23,9 @@ export interface PmNode {
 
 // ---------------------------------------------------------------- JSON → Markdown
 
+/** A string attribute (numbers stringified); anything else → `d`. */
+export const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : d);
+
 export interface ToMarkdownOptions {
   /** URL written for an image (default: the API file path). */
   imageUrl?: (fileId: string) => string;
@@ -70,13 +73,13 @@ function openMark(m: PmMark): string {
 }
 
 function closeMark(m: PmMark): string {
-  if (m.type === 'link') return `](${String(m.attrs?.['href'] ?? '')})`;
+  if (m.type === 'link') return `](${str(m.attrs?.['href'], '')})`;
   return openMark(m);
 }
 
 function inlineMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>): string {
   let out = '';
-  let active: PmMark[] = [];
+  const active: PmMark[] = [];
   const closeTo = (keep: number): void => {
     while (active.length > keep) out += closeMark(active.pop() as PmMark);
   };
@@ -94,14 +97,14 @@ function inlineMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>): 
     }
     if (n.type === 'text') out += code ? codeSpan(n.text ?? '') : escapeText(n.text ?? '');
     else if (n.type === 'hardBreak') out += '\\\n';
-    else if (n.type === 'mention') out += o.mention(String(n.attrs?.['id'] ?? ''), String(n.attrs?.['label'] ?? ''));
+    else if (n.type === 'mention') out += o.mention(str(n.attrs?.['id'], ''), str(n.attrs?.['label'], ''));
   }
   closeTo(0);
   return out;
 }
 
 function plainInline(nodes: PmNode[] | undefined): string {
-  return (nodes ?? []).map((n) => (n.type === 'text' ? (n.text ?? '') : n.type === 'mention' ? `@${String(n.attrs?.['label'] ?? '')}` : '')).join('');
+  return (nodes ?? []).map((n) => (n.type === 'text' ? (n.text ?? '') : n.type === 'mention' ? `@${str(n.attrs?.['label'], '')}` : '')).join('');
 }
 
 function indent(text: string, prefix: string, first = prefix): string {
@@ -169,16 +172,16 @@ function blockMd(node: PmNode, o: Required<ToMarkdownOptions>): string {
       const code = plainInline(node.content);
       const longest = Math.max(2, ...(code.match(/`{3,}/g) ?? []).map((r) => r.length));
       const fence = '`'.repeat(longest + 1);
-      return `${fence}${String(node.attrs?.['language'] ?? '')}\n${code}\n${fence}`;
+      return `${fence}${str(node.attrs?.['language'], '')}\n${code}\n${fence}`;
     }
     case 'table':
       return tableMd(node, o);
     case 'image': {
-      const id = String(node.attrs?.['fileId'] ?? '');
-      return id ? `![${escapeText(String(node.attrs?.['alt'] ?? ''))}](${o.imageUrl(id)})` : '';
+      const id = str(node.attrs?.['fileId'], '');
+      return id ? `![${escapeText(str(node.attrs?.['alt'], ''))}](${o.imageUrl(id)})` : '';
     }
     case 'callout': {
-      const icon = String(node.attrs?.['icon'] ?? '💡');
+      const icon = str(node.attrs?.['icon'], '💡');
       return quote(`${icon} ${blocksMd(node.content, o)}`);
     }
     case 'toggle': {

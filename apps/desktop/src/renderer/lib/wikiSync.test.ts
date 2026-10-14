@@ -166,7 +166,7 @@ describe('WikiSyncProvider', () => {
     expect(ups.length).toBe(before + 1);
     const peer = new Y.Doc();
     Y.applyUpdate(peer, serverState(''));
-    for (const f of ups) if (f.type === FRAME_UPDATE) Y.applyUpdate(peer, f.update);
+    for (const f of ups) Y.applyUpdate(peer, f.update);
     expect(docPlainText(peer)).toBe('a\nb');
   });
 
@@ -261,7 +261,7 @@ describe('WikiSyncProvider', () => {
     expect(ups).toHaveLength(1);
     const server = new Y.Doc();
     Y.applyUpdate(server, serverState('base'));
-    for (const f of ups) if (f.type === FRAME_UPDATE) Y.applyUpdate(server, f.update);
+    for (const f of ups) Y.applyUpdate(server, f.update);
     expect(docPlainText(server)).toBe('base\noffline edit');
   });
 

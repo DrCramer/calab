@@ -16,7 +16,7 @@ function inline(el: Y.XmlElement): string {
     if (c instanceof Y.XmlText) {
       for (const d of c.toDelta() as Array<{ insert?: unknown }>) if (typeof d.insert === 'string') s += d.insert;
     } else if (c instanceof Y.XmlElement) {
-      if (c.nodeName === 'mention') s += `@${String(c.getAttribute('label') ?? '')}`;
+      if (c.nodeName === 'mention') s += `@${c.getAttribute('label') ?? ''}`;
       else if (c.nodeName === 'hardBreak') s += '\n';
     }
   }
@@ -50,6 +50,6 @@ export function previewOf(text: string): string {
 export function docMeta(doc: Y.Doc, field = WIKI_FIELD): SnapshotMeta {
   const plain = docPlainText(doc, field);
   // Only read (never create) the title type: a page whose header owns the title has none.
-  const title = doc.share.has(WIKI_TITLE_FIELD) ? doc.getText(WIKI_TITLE_FIELD).toString() : '';
+  const title = doc.share.has(WIKI_TITLE_FIELD) ? doc.getText(WIKI_TITLE_FIELD).toJSON() : '';
   return { plain_text: plain, title, preview: previewOf(plain) };
 }
