@@ -1622,12 +1622,12 @@ test('m-disk-root', async ({ page }) => {
   const root = page.getByTestId('phone-disk');
   await expect(root.getByTestId('disk-row')).toHaveCount(9);
   await expect(root.getByTestId('disk-row').first()).toContainText('Дизайн');
-  await checkpoint(page, 'm-disk-root', { main: true });
+  await checkpoint(page, 'm-disk-root');
   // Tiles: two columns.
   await root.getByTestId('phone-disk-more').tap();
   await page.getByTestId('phone-disk-view-tiles').tap();
   await expect(root.getByTestId('disk-tile')).toHaveCount(9);
-  await checkpoint(page, 'm-disk-tiles', { snapshot: false, main: true });
+  await checkpoint(page, 'm-disk-tiles', { snapshot: false });
   // «⋯» card: view, sort, trash, history, usage.
   await root.getByTestId('phone-disk-more').tap();
   await expect(page.getByTestId('phone-disk-more-menu')).toBeVisible();
@@ -1645,7 +1645,7 @@ test('m-disk-folder', async ({ page }) => {
   await expect(folder).toBeVisible();
   await expect(folder.getByTestId('phone-header')).toContainText('Проекты');
   await expect(folder.getByTestId('disk-row')).toHaveCount(1);
-  await checkpoint(page, 'm-disk-folder', { main: true });
+  await checkpoint(page, 'm-disk-folder');
   await page.getByTestId('phone-back').tap();
   await expect(page.getByTestId('phone-disk')).toBeVisible();
 });
@@ -1673,7 +1673,7 @@ test('m-disk-trash', async ({ page }) => {
   const trash = page.getByTestId('phone-disk-folder');
   await expect(trash.getByTestId('disk-row')).toHaveCount(2);
   await expect(trash.getByTestId('phone-header')).toContainText('Корзина');
-  await checkpoint(page, 'm-disk-trash', { main: true });
+  await checkpoint(page, 'm-disk-trash');
   await trash.getByTestId('phone-disk-more').tap();
   await expect(page.getByTestId('disk-empty-trash')).toBeVisible();
   await checkpoint(page, 'm-disk-trash-menu', { snapshot: false });

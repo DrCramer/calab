@@ -65,7 +65,8 @@ export function PhoneDisk({ workspaceId, folderId, trash, root }: { workspaceId:
       <IconButton tip={false} bar label={t('disk.search')} active={searching} onClick={() => setSearching((v) => !v)} data-testid="phone-disk-search">
         <Search className="size-5" aria-hidden />
       </IconButton>
-      {!trash && write ? <CreateMenu workspaceId={workspaceId} folderId={folderId} /> : null}
+      {/* No «+» in the trash / a read-only folder: its slot stays, so the magnifier keeps its place (docs/08). */}
+      {!trash && write ? <CreateMenu workspaceId={workspaceId} folderId={folderId} /> : <span aria-hidden className="size-9 shrink-0" />}
       <MoreMenu workspaceId={workspaceId} folderId={folderId} trash={trash} write={write} manage={manage} shareFolder={shareFolder} />
     </>
   );
@@ -340,7 +341,10 @@ const PhoneTile = memo(function PhoneTile({ id, onOpen }: { id: string; onOpen: 
           )}
         </button>
         {renaming ? <RenameField item={item} className="h-10 w-full" /> : null}
-        <ItemMenuButton id={id} name={item.name} className="tap-hit absolute right-2 top-2 bg-[var(--color-popover-solid)] text-fg shadow-[var(--shadow-card)]" />
+        {/* `.tap-hit` is position: relative (phone CSS): the absolute slot is its own element. */}
+        <span className="absolute right-2 top-2 grid">
+          <ItemMenuButton id={id} name={item.name} className="tap-hit bg-[var(--color-popover-solid)] text-fg shadow-[var(--shadow-card)]" />
+        </span>
       </div>
     </ItemContextMenu>
   );
