@@ -645,8 +645,8 @@ function AccessTab({ board }: { board: Board }): ReactNode {
         <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} />
         {restricted ? <TaskScopedCount boardId={board.id} /> : null}
       </Card>
-      <div className="flex gap-4" data-testid="board-access">
-        <div className="flex w-52 shrink-0 flex-col gap-0.5">
+      <div className="flex gap-4 mobile:flex-col" data-testid="board-access">
+        <div className="flex w-52 shrink-0 flex-col gap-0.5 mobile:w-full">
           {targets.map((x) => {
             const on = current?.key === x.key;
             const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;

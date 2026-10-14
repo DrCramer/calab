@@ -71,6 +71,54 @@ async function expectNoHorizontalScroll(page: Page, name: string): Promise<void>
   expect.soft(Math.max(r.doc, r.body, r.root), `horizontal scroll: ${name}`).toBeLessThanOrEqual(r.vw);
 }
 
+/**
+ * No control sits on top of text: for every visible control inside `root`, its box does not intersect the
+ * (visible, unclipped) text of anything but itself — a check or a switch must not cover its label.
+ */
+async function expectNoControlOverText(page: Page, root: string, name: string): Promise<void> {
+  const bad = await page.evaluate((sel) => {
+    const host = document.querySelector(sel);
+    if (!host) return ['root missing'];
+    const vis = (el: Element): boolean => {
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+    };
+    const ctls = [...host.querySelectorAll('button, input:not([type=hidden]), select, textarea, [role=switch], [role=checkbox], [role=radio], [role=menuitemradio], [role=menuitemcheckbox], [role=slider]')].filter(vis);
+    const texts: Array<{ s: string; l: number; r: number; t: number; b: number; n: Node }> = [];
+    const w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const p = n.parentElement;
+      if (!n.textContent?.trim() || !p || !vis(p) || p.closest('.sr-only, option')) continue;
+      const rg = document.createRange();
+      rg.selectNodeContents(n);
+      for (const q of rg.getClientRects()) {
+        let l = q.left, r = q.right, t = q.top, b = q.bottom;
+        for (let a: Element | null = p; a && a !== host.parentElement; a = a.parentElement) {
+          const st = getComputedStyle(a);
+          if (st.overflowX !== 'visible' || st.overflowY !== 'visible') {
+            const bb = a.getBoundingClientRect();
+            l = Math.max(l, bb.left); r = Math.min(r, bb.right); t = Math.max(t, bb.top); b = Math.min(b, bb.bottom);
+          }
+        }
+        if (r - l > 1 && b - t > 1) texts.push({ s: n.textContent.trim().slice(0, 30), l, r, t, b, n });
+      }
+    }
+    const out: string[] = [];
+    for (const c of ctls) {
+      const cr = c.getBoundingClientRect();
+      for (const x of texts) {
+        if (c.contains(x.n)) continue;
+        // a text field's own «@» adornment sits inside the field on purpose
+        if (c instanceof HTMLInputElement && x.s === '@') continue;
+        if (Math.min(cr.right, x.r) - Math.max(cr.left, x.l) > 1.5 && Math.min(cr.bottom, x.b) - Math.max(cr.top, x.t) > 3) out.push(`${c.getAttribute('aria-label') ?? c.getAttribute('role') ?? c.tagName} over «${x.s}»`);
+      }
+    }
+    return out;
+  }, root);
+  expect.soft(bad, `control over text: ${name}`).toEqual([]);
+}
+
 async function signIn(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
   // The fixtures are dated 2026-01-15 (voice timers, day labels): «now» is fixed there.
   await page.clock.setFixedTime(NOW);
@@ -171,11 +219,17 @@ test('phone: sign in → room list → message → voice → PTT hold', async ({
   await page.getByTestId('phone-back').tap();
   await page.getByTestId('phone-tab-dms').tap();
   await page.getByTestId('phone-profile-button').tap();
+  // The mic ▾ menu (mode radio rows with a check): the check must not sit on the label.
+  await page.getByTestId('phone-profile-mic').locator('..').getByRole('button').last().tap();
+  await expect(page.getByRole('menuitemradio').first()).toBeVisible();
+  await expectNoControlOverText(page, '[data-radix-popper-content-wrapper]', 'mic menu');
+  await page.keyboard.press('Escape');
   await page.getByTestId('phone-profile-voice').tap();
   const settings = page.getByTestId('settings-page');
   await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
   await expect(settings.getByRole('radio', { name: 'Push-to-talk' })).toHaveAttribute('aria-checked', 'true');
   await expectNoHorizontalScroll(page, 'settings');
+  await expectNoControlOverText(page, '[data-testid="settings-page"]', 'voice settings');
   await shot(page, 'mobile-settings');
   await page.getByTestId('phone-back').tap();
   await expect(settings).toHaveCount(0);

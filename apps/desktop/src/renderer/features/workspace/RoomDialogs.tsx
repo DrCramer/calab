@@ -627,8 +627,8 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   };
 
   return (
-    <div className="flex gap-4">
-      <div className="flex w-56 shrink-0 flex-col gap-0.5" data-testid="perm-targets">
+    <div className="flex gap-4 mobile:flex-col">
+      <div className="flex w-56 shrink-0 flex-col gap-0.5 mobile:w-full" data-testid="perm-targets">
         {fixedRoles.map((r) => (
           // Fixed rows (docs/04: ADMINISTRATOR ignores room overrides) — shown, never edited.
           <div key={r.id} className="flex shrink-0 flex-col justify-center px-2 py-1" data-testid="perm-fixed-role" title={t('picker.alwaysFull')}>

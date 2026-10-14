@@ -308,7 +308,7 @@ export function PhoneWikiPage({ workspaceId, pageId }: { workspaceId: string; pa
     <section className="mat-content relative flex min-h-0 flex-1 flex-col" aria-label={t('wiki.section')} data-testid="phone-wiki-page">
       <PageHeader workspaceId={workspaceId} pageId={pageId} canAdd={editable} />
       {known ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-testid="wiki-scroll">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain" data-testid="wiki-scroll">
           <PageBody workspaceId={workspaceId} pageId={pageId} editable={editable} setup={structure && !trashed} trashed={trashed} host={host} />
         </div>
       ) : gone ? (

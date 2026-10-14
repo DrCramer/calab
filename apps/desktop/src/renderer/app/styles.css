@@ -1447,6 +1447,10 @@ svg.lucide {
   :root.web [data-radix-popper-content-wrapper] [role='menuitemcheckbox'] {
     min-height: var(--control-h-phone);
     font-size: 15px;
+  }
+  /* Side padding 12 px — except rows with the check gutter (`pl-7` + an absolutely placed `ItemIndicator`):
+     this rule is unlayered and beats the utility, which put the check on top of the label (owner 14.10). */
+  :root.web [data-radix-popper-content-wrapper] :is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox']):not(.pl-7) {
     padding-inline: 12px;
   }
 }

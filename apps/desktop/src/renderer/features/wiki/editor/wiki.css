@@ -10,6 +10,30 @@
   padding-bottom: 0;
   caret-color: var(--color-accent);
 }
+.wiki-prose {
+  min-width: 0;
+  max-width: 100%;
+}
+/* Wide blocks (a resized table, a long code line, a wide image, an embed) scroll or shrink inside their own box,
+   never widen the page (owner 14.10: «вики в редакторе не помещается по ширине»). */
+.wiki-prose > *,
+.wiki-prose li,
+.wiki-prose blockquote {
+  max-width: 100%;
+  min-width: 0;
+}
+.wiki-prose img,
+.wiki-prose video,
+.wiki-prose iframe {
+  max-width: 100%;
+  height: auto;
+}
+.wiki-prose pre {
+  max-width: 100%;
+}
+.wiki-prose .tableWrapper {
+  max-width: 100%;
+}
 .wiki-prose > * + * {
   margin-top: var(--space-2);
 }
