@@ -732,7 +732,7 @@ test('m-profile', async ({ page }) => {
   // A tab root: the tab bar stays, no «←»; the avatar button is gone from «Личные».
   await expect(page.getByTestId('phone-tabbar')).toBeVisible();
   await expect(page.getByTestId('phone-back')).toHaveCount(0);
-  await expect(page.getByTestId('phone-tab-profile')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('phone-tab-more')).toHaveAttribute('aria-current', 'page'); // «Профиль» is behind «Ещё» (ADR-0095)
   await page.getByTestId('phone-tab-dms').tap();
   await expect(page.getByTestId('phone-dms')).toBeVisible();
   await expect(page.getByTestId('phone-profile-button')).toHaveCount(0);
@@ -745,7 +745,7 @@ test('m-more', async ({ page }) => {
   await signedIn(page);
   const bar = page.getByTestId('phone-tabbar');
   await expect(bar.getByRole('button')).toHaveCount(4);
-  await expect(page.getByTestId('phone-tab-more')).toHaveText('Ещё');
+  await expect(page.getByTestId('phone-tab-more')).toHaveAttribute('aria-label', 'Ещё');
   const searchX: number[] = [];
   const searchAt = async (): Promise<number> => Math.round((await page.getByTestId('phone-search').boundingBox())?.x ?? -1);
   searchX.push(await searchAt());
@@ -782,7 +782,7 @@ test('m-more', async ({ page }) => {
   await checkpoint(page, 'm-more-active');
   // A pinned tab brings «⋯ Ещё» back; the plate's tap reopens the card.
   await page.getByTestId('phone-tab-dms').tap();
-  await expect(page.getByTestId('phone-tab-more')).toHaveText('Ещё');
+  await expect(page.getByTestId('phone-tab-more')).toHaveAttribute('aria-label', 'Ещё');
   searchX.push(await searchAt());
   // The magnifier sits at one x on every root with one (chats, DMs, boards, calendar, disk).
   for (const name of ['boards', 'disk', 'calendar'] as const) {

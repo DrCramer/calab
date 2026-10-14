@@ -195,7 +195,7 @@ const MoreRow = memo(function MoreRow({ tab }: { tab: PhoneTab }): ReactNode {
   const active = useUi((s) => s.phone.tab === tab);
   const label = tabLabel(tab);
   return (
-    <div className="flex h-[52px] items-center" role="none">
+    <div className="flex h-[52px] items-center" role="group" aria-label={label}>
       <Dropdown.Item
         className="flex h-[52px] min-w-0 flex-1 cursor-default items-center gap-3 rounded-[var(--radius-control)] pl-2.5 pr-1 text-list outline-none data-[highlighted]:bg-hover"
         onSelect={() => {
