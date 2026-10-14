@@ -5,7 +5,7 @@
 -- wiki_pages           one tree per workspace (parent_id NULL = top level), siblings ordered by
 --                      position (0..; the API reindexes on a move). plain_text / preview /
 --                      doc_size / title come from the last snapshot the clients posted;
---                      plain_text is what search indexes (00090), capped at 256 KiB (a tsvector
+--                      plain_text is what search indexes (00091), capped at 256 KiB (a tsvector
 --                      holds ≤ 1 MiB). next_seq is the page's update counter: an append takes it
 --                      and bumps it in one statement (row lock per page, no global sequence).
 --                      Trash: trashed_at on the whole subtree (one timestamp), trashed_root on

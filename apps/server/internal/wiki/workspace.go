@@ -16,7 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/wikiacl"
 )
 
-// MaxTrashDays bounds wiki_trash_days (the CHECK of migration 00089).
+// MaxTrashDays bounds wiki_trash_days (the CHECK of migration 00090).
 const MaxTrashDays = 3650
 
 // settings: GET /api/workspaces/{id}/wiki/settings (members).

@@ -582,7 +582,7 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 
 // ---- wiki ----
 
-// WikiVector must stay the expression of wiki_pages_search_idx (00090) over wiki_pages w; the
+// WikiVector must stay the expression of wiki_pages_search_idx (00091) over wiki_pages w; the
 // sqlc query SearchWikiPages (queries/wiki.sql) spells it out too.
 const WikiVector = "(to_tsvector('russian', w.title || ' ' || w.plain_text) || to_tsvector('simple', w.title || ' ' || w.plain_text))"
 
