@@ -152,6 +152,18 @@
 
 В оболочке iOS (`platform/nativeShell`) клиент не показывает ни одного действия с деньгами, что бы ни было в битах (ADR-0087 §10).
 
+## Диск (ADR-0094)
+
+Биты `DISK_VIEW` (35) / `DISK_WRITE` (36) / `DISK_MANAGE` (37) — уровень пространства, вне `ALL_PERMISSIONS`; у `member` по умолчанию VIEW + WRITE, `ADMINISTRATOR` даёт все три; гостям и ботам роли их не дают (только личный allow на элементе). Права на элемент — `perm.ComputeDiskItem` по цепочке предков (`internal/diskacl`), нет `DISK_VIEW` — 404.
+
+| Действие | Бит | Сервер | Клиент |
+|---|---|---|---|
+| Раздел «Диск», список, скачивание, история папки | `DISK_VIEW` на элемент | `internal/disk`, `files.CanRead` | `DiskScreen`, `PhoneDisk` |
+| Создать папку, загрузить в папку | `DISK_WRITE` на папку | `internal/disk` (`UploadWith`) | `DiskBar`, `Dialogs` |
+| Переименовать, переместить, в корзину, доступ, ссылка | владелец элемента или `DISK_MANAGE` | `internal/disk` | `ItemMenu` по `DiskItem.my_bits` |
+| Срок корзины, очистка всей корзины, чужие ссылки, журнал диска | `DISK_MANAGE` | `internal/disk` | `DiskSettings` |
+| «Докупить место» (кнопки пока неактивны) | `BILLING_VIEW` | — | `PlanTab` |
+
 ## Телефония
 
 | Действие | Бит | Сервер | Клиент |
