@@ -34,6 +34,7 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
+	"github.com/calaba/calaba/server/internal/wsaudit"
 )
 
 const (
@@ -97,6 +98,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	handle("GET /api/workspaces/discover", h.discover)
 	handle("GET /api/workspaces/{id}", h.get)
 	handle("PATCH /api/workspaces/{id}", h.update)
+	handle("GET /api/workspaces/{id}/audit", h.audit)
 	handle("DELETE /api/workspaces/{id}", h.delete)
 	handle("POST /api/workspaces/{id}/join", h.joinOpen)
 	handle("PUT /api/workspaces/{id}/notifications", h.setNotifications)
@@ -535,7 +537,7 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, role, err := requireManage(r)
 	if err != nil {
 		return err
 	}
@@ -634,7 +636,33 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Validation("tempArchiveDays", "archive retention must be 1, 7, 30, 90 or 365 days")
 		}
 	}
-	ws, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
+	var ws sqlc.Workspace
+	if req.OwnerSeesPrivate != nil {
+		// «Владелец видит приватное» (addendum 2026-10-14): the workspace owner's own decision, not
+		// delegable by roles; every change goes to the workspace journal.
+		if role != perm.RoleOwner {
+			return httpx.Forbidden("only the workspace owner changes who sees private items").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
+		}
+		err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+			n, err := q.SetOwnerSeesPrivate(r.Context(), sqlc.SetOwnerSeesPrivateParams{ID: wsID, On: req.GetOwnerSeesPrivate()})
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				if err := wsaudit.Toggle(r.Context(), q, wsID, uid(r), req.GetOwnerSeesPrivate()); err != nil {
+					return err
+				}
+			}
+			ws, err = q.UpdateWorkspace(r.Context(), p)
+			return err
+		})
+	} else {
+		ws, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
+	}
+	if err == nil && req.OwnerSeesPrivate != nil {
+		// Who sees private rooms and boards changed for the owner: resolvers cached per request.
+		perm.FromContext(r.Context()).Invalidate()
+	}
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")
 	}
