@@ -767,6 +767,21 @@ test('m-calendar-day', async ({ page }) => {
   await expect(page.getByTestId('event-panel')).toHaveCount(0);
 });
 
+// The header's date opens a month card (weekday in the label, today / chosen day marked); a day pick navigates.
+test('m-calendar-datepicker', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await signedIn(page);
+  await tab(page, 'calendar');
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.getByTestId('day-date').tap();
+  await expect(page.getByTestId('day-date-card')).toBeVisible();
+  await checkpoint(page, 'm-calendar-datepicker');
+  await page.getByTestId('day-date-card').locator('[data-day="2026-01-20"]').tap();
+  await expect(page.getByTestId('day-date-card')).toHaveCount(0);
+  await expect(page.getByTestId('day-date')).toContainText('20');
+});
+
 // docs/08 «Свайпы и долгое нажатие»: a sideways swipe over the hours flips the day (left → next).
 test('m-calendar-swipe', async ({ page }) => {
   mock.setClock(NOW.getTime());

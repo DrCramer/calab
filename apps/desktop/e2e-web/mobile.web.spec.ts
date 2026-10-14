@@ -241,6 +241,25 @@ test('phone: dialogs and menus are bottom sheets', async ({ page }) => {
   await shot(page, 'mobile-sheet');
 });
 
+// Owner 14.10: a menu button opens on the tap's release, not on touch-down — a stray touch or a
+// scroll that began on it must not open it (lib/phoneMenus holdOpen / replayOpen).
+test('phone: a menu button opens on release, not on touch-down', async ({ page }) => {
+  await signIn(page);
+  const sel = '[data-testid="phone-ws-switcher"]';
+  const finger = await touchHold(page, sel);
+  await page.waitForTimeout(150);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await finger.move(200, 300);
+  await finger.cancel();
+  await page.waitForTimeout(150);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  const tap = await touchHold(page, sel);
+  await page.waitForTimeout(150);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await tap.up();
+  await expect(page.getByRole('menu')).toBeVisible();
+});
+
 test('phone: «Личные» — the DM list on its tab, the DM full screen (ADR-0020, ADR-0073)', async ({ page }) => {
   await signIn(page);
   await page.getByTestId('phone-tab-dms').tap();

@@ -1,6 +1,7 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Popover from '@radix-ui/react-popover';
 import { CalendarDays, CalendarPlus, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Link2, Pencil, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
@@ -34,6 +35,7 @@ import { useDayDrag } from './dragState';
 import { useToday } from './MiniCalendar';
 import { FindTimePane } from './FindTime';
 import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, PX_PER_MIN } from './gridParts';
+import { MonthPicker } from './MonthPicker';
 import { PeopleBar } from './PeopleBar';
 
 export { HOUR_PX };
@@ -211,22 +213,73 @@ function DropCursor(): ReactNode {
   return locked ? <div className="fixed inset-0 z-[var(--z-popover)] cursor-not-allowed" aria-hidden /> : null;
 }
 
+/** Phone: the header's date is a button; a tap opens a centred month card to jump to a day. */
+function DatePickCard({ day, today, title, onPick }: { day: string; today: string; title: string; onPick: (day: string) => void }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(monthOf(day));
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (o) setMonth(monthOf(day));
+        setOpen(o);
+      }}
+      modal={false}
+    >
+      <h1 className="flex">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={`${title}. ${t('cal.pickDate')}`}
+            aria-haspopup="dialog"
+            className="relative h-9 min-w-[64px] truncate rounded-[var(--radius-icon)] px-2 text-center text-list font-semibold first-letter:uppercase before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
+            data-testid="day-date"
+          >
+            <span aria-live="polite">{title}</span>
+          </button>
+        </Popover.Trigger>
+      </h1>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="center"
+          sideOffset={4}
+          collisionPadding={8}
+          aria-label={t('cal.pickDate')}
+          data-testid="day-date-card"
+          className="mat-popover anim-in z-[var(--z-modal-popover)] w-[300px] rounded-[var(--radius-card)] p-2 text-body"
+        >
+          <MonthPicker
+            month={month}
+            onMonth={setMonth}
+            value={day}
+            today={today}
+            onPick={(d) => {
+              haptics.select();
+              setOpen(false);
+              onPick(d);
+            }}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
   const [sheet, setSheet] = useState(false);
   if (mobile) {
-    // Phone: a compact «‹ 15 янв. ›» group, «+» as a plain header icon, the rest («Сегодня», «Люди»,
+    // Phone: a compact «‹ ср, 14 окт ›» group (the date opens a month card), «+» as a plain header icon, the rest («Сегодня», «Люди»,
     // «Подобрать время») behind «…» — the header keeps room for the shell's nav button.
-    const title = dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day));
+    const title = dateTimeFormat({ weekday: 'short', day: 'numeric', month: 'short' }).format(dayStart(day));
     return (
       <Bar>
         <NavButton />
         <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))}>
           <ChevronLeft className="size-[18px]" />
         </IconButton>
-        <h1 className="min-w-[64px] truncate text-center text-list font-semibold first-letter:uppercase" aria-live="polite">
-          {title}
-        </h1>
+        <DatePickCard day={day} today={today} title={title} onPick={open} />
         <IconButton label={t('cal.nextDay')} tip={false} onClick={() => open(addDays(day, 1))}>
           <ChevronRight className="size-[18px]" />
         </IconButton>

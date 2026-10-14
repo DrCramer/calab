@@ -8,6 +8,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'cal.mini': 'Mini calendar',
   'cal.prevMonth': 'Previous month',
   'cal.nextMonth': 'Next month',
+  'cal.pickDate': 'Choose a date',
   'cal.today': 'Today',
   'cal.hasEvents': 'has meetings',
   'cal.prevDay': 'Previous day',

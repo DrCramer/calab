@@ -8,6 +8,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'cal.mini': '迷你日历',
   'cal.prevMonth': '上个月',
   'cal.nextMonth': '下个月',
+  'cal.pickDate': '选择日期',
   'cal.today': '今天',
   'cal.hasEvents': '有会议',
   'cal.prevDay': '前一天',
