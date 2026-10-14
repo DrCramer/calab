@@ -72,7 +72,10 @@ message DiskUsage {
   uint64 used_bytes = 4;
   uint64 disk_bytes = 5;
   uint64 trash_bytes = 6;
-  uint64 other_bytes = 7;
+  uint64 other_bytes = 7; // everything else: used - disk - chat - boards - wiki, never below 0
+  uint64 chat_bytes = 8; // message attachments not in the Disk
+  uint64 boards_bytes = 9; // task attachments not in the Disk or chats
+  uint64 wiki_bytes = 10; // wiki page files and covers not counted above
 }
 
 enum DiskActivityKind {
