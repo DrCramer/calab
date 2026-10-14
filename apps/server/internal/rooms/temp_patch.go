@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -14,10 +16,9 @@ import (
 type tempChange struct {
 	expires   *time.Time // a new end
 	permanent bool       // make_permanent
-	private   *bool      // is_private
 }
 
-func (t tempChange) any() bool { return t.expires != nil || t.permanent || t.private != nil }
+func (t tempChange) any() bool { return t.expires != nil || t.permanent }
 
 // tempPatch validates the temporary-room fields of a PATCH: temporary rooms only; a new end in
 // (now, now + 7 days]; make_permanent needs the real MANAGE_ROOM (the creator's implicit right
@@ -30,8 +31,6 @@ func tempPatch(req *v1.UpdateRoomRequest, acc perm.RoomAccess, now time.Time) (t
 			return t, httpx.Validation("expiresAt", "temporary rooms only")
 		case req.GetMakePermanent():
 			return t, httpx.Validation("makePermanent", "temporary rooms only")
-		case req.IsPrivate != nil:
-			return t, httpx.Validation("isPrivate", "temporary rooms only (use PUT /api/rooms/{id}/permissions)")
 		}
 		return t, nil
 	}
@@ -57,7 +56,6 @@ func tempPatch(req *v1.UpdateRoomRequest, acc perm.RoomAccess, now time.Time) (t
 		}
 		t.permanent = true
 	}
-	t.private = req.IsPrivate
 	return t, nil
 }
 
@@ -87,19 +85,51 @@ func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc
 			}
 		}
 	}
-	if t.private != nil && *t.private != cur.IsPrivate {
-		if _, err := q.SetRoomPrivate(ctx, sqlc.SetRoomPrivateParams{ID: cur.ID, IsPrivate: *t.private}); err != nil {
-			return nil, err
-		}
-		if err := setPrivate(ctx, q, *cur.WorkspaceID, cur.ID, *t.private); err != nil {
-			return nil, err
-		}
-		// The creator keeps seeing their room (as at creation of a private one).
-		if *t.private && cur.CreatedBy != nil {
-			if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: cur.ID, UserID: cur.CreatedBy.String(), Allow: int64(perm.ViewRoom)}); err != nil {
-				return nil, err
-			}
+	return publish, nil
+}
+
+// privacyPatch reads the private / public switch of a PATCH (ADR-0078 addendum 2026-10-14):
+// is_private, with restricted as its alias (both given: they must agree).
+func privacyPatch(req *v1.UpdateRoomRequest) (*bool, error) {
+	switch {
+	case req.IsPrivate != nil && req.Restricted != nil && req.GetIsPrivate() != req.GetRestricted():
+		return nil, httpx.Validation("restricted", "restricted is an alias of isPrivate: they must agree")
+	case req.IsPrivate != nil:
+		return req.IsPrivate, nil
+	}
+	return req.Restricted, nil
+}
+
+// applyPrivate makes a locked live room private or public (ADR-0078 addendum 2026-10-14):
+// is_private and restricted together, the member role's VIEW_ROOM deny; a room made private
+// keeps the caller (a personal VIEW_ROOM, plus MANAGE_ROOM when they hold it in the room: the
+// creator of a temporary room manages it as its creator and must not get MANAGE_ROOM this way)
+// and its creator (VIEW_ROOM). Text and voice rooms only.
+func applyPrivate(ctx context.Context, q *sqlc.Queries, cur sqlc.Room, private bool, me uuid.UUID, acc perm.RoomAccess) error {
+	if cur.Type != "text" && cur.Type != "voice" {
+		return httpx.Validation("isPrivate", "only text and voice rooms can be private")
+	}
+	if cur.WorkspaceID == nil {
+		return httpx.NotFound("room")
+	}
+	if _, err := q.SetRoomPrivate(ctx, sqlc.SetRoomPrivateParams{ID: cur.ID, IsPrivate: private}); err != nil {
+		return err
+	}
+	if err := setPrivate(ctx, q, *cur.WorkspaceID, cur.ID, private); err != nil {
+		return err
+	}
+	if !private {
+		return nil
+	}
+	if !acc.Member.SeesPrivate() {
+		if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{
+			RoomID: cur.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.ManageRoom), //nolint:gosec // bit mask
+		}); err != nil {
+			return err
 		}
 	}
-	return publish, nil
+	if cur.CreatedBy != nil && *cur.CreatedBy != me {
+		return q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: cur.ID, UserID: cur.CreatedBy.String(), Allow: int64(perm.ViewRoom)})
+	}
+	return nil
 }

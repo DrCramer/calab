@@ -75,6 +75,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("POST /api/rooms/{id}/make-permanent", wrap(httpx.HandlerFunc(h.makePermanent)))
 	mux.Handle("GET /api/rooms/{id}", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/rooms/{id}", wrap(httpx.HandlerFunc(h.update)))
+	mux.Handle("POST /api/rooms/{id}/take-over", wrap(httpx.HandlerFunc(h.takeOver)))
 	mux.Handle("DELETE /api/rooms/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/permissions", wrap(httpx.HandlerFunc(h.setPermissions)))
 	mux.Handle("PUT /api/rooms/{id}/notifications", wrap(httpx.HandlerFunc(h.setNotifications)))
@@ -376,6 +377,13 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err := validLimit(req.GetUserLimit(), typ); err != nil {
 		return err
 	}
+	if !req.GetIsPrivate() && (len(req.GetMemberIds()) > 0 || len(req.GetRoleIds()) > 0) {
+		return httpx.Validation("memberIds", "only a private room has invited members or roles")
+	}
+	invited, err := invitees(r.Context(), h.db.Q, wsID, req.GetMemberIds(), req.GetRoleIds())
+	if err != nil {
+		return err
+	}
 
 	var (
 		room sqlc.Room
@@ -407,6 +415,15 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		if room.IsPrivate {
 			if err := setPrivate(r.Context(), q, wsID, room.ID, true); err != nil {
+				return err
+			}
+			// ADR-0078 addendum 2026-10-14: the creator keeps managing the room (MANAGE_ROOM is
+			// theirs to create it), the invited see it.
+			me := auth.MustFromContext(r.Context()).UserID
+			if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: room.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | perm.ManageRoom)}); err != nil {
+				return err
+			}
+			if err := invited.grant(r.Context(), q, room.ID); err != nil {
 				return err
 			}
 		}
@@ -538,17 +555,22 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		p.UserLimit = &v
 	}
 	if req.AllowRecording != nil {
-		// Recording consent is the workspace's call (ADR-0025): MANAGE_RECORDINGS (ADR-0048).
-		if !acc.Member.Workspace().Has(perm.ManageRecordings) || acc.Role == perm.RoleGuest {
+		// Recording consent is the workspace's call (ADR-0025): MANAGE_RECORDINGS (ADR-0048). In
+		// a private room ADMINISTRATOR does not reach in (ADR-0078 addendum): the roles' own bit.
+		ws := acc.Member.Workspace()
+		if acc.NoBypass() {
+			ws = acc.Member.Raw()
+		}
+		if !ws.Has(perm.ManageRecordings) || acc.Role == perm.RoleGuest {
 			return httpx.Forbidden("MANAGE_RECORDINGS required to change allow_recording")
 		}
 		p.AllowRecording = req.AllowRecording
 	}
-	if req.Restricted != nil {
-		// A closed room (ADR-0048, was owner-only in ADR-0029): MANAGE_ROOM in the room (h.manage;
-		// the creator of a temporary room too). In a closed room only the owner and those let in
-		// by an override have it, so the owner can always open it again.
-		p.Restricted = req.Restricted
+	// Private or public (ADR-0078 addendum 2026-10-14): is_private, restricted its alias; any
+	// text / voice room, MANAGE_ROOM in the room (h.manage; the creator of a temporary room too).
+	private, err := privacyPatch(&req)
+	if err != nil {
+		return err
 	}
 	if req.GuestApproval != nil && !acc.Bits.Has(perm.ManageRoom) && !acc.Bits.Has(perm.InviteGuests) {
 		// The creator of a temporary room (ADR-0044) decides how guests enter only with INVITE_GUESTS.
@@ -587,7 +609,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	var pb *v1.Room
 	var publishMeetings func(context.Context)
 	var iconMsg *sqlc.Message  // the system message room_icon of a picture change (ADR-0092)
-	restrictedChanged := false // who sees the room changed (restricted or is_private)
+	restrictedChanged := false // who sees the room changed (is_private)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		var iconChanged bool
 		if p.SetIcon {
@@ -595,7 +617,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		if p.Restricted != nil || tp.any() {
+		if private != nil || tp.any() {
 			cur, err := q.GetRoomForUpdate(r.Context(), roomID)
 			if db.IsNotFound(err) {
 				return httpx.NotFound("room")
@@ -603,31 +625,12 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			private := cur.IsPrivate
-			if tp.private != nil {
-				private = *tp.private
-			}
-			restricted := cur.Restricted
-			if p.Restricted != nil {
-				restricted = *p.Restricted
-			}
-			if p.Restricted != nil && *p.Restricted && !private {
-				return httpx.Validation("restricted", "only private rooms can be restricted")
-			}
-			if restricted && !private {
-				return httpx.Validation("isPrivate", "a restricted room stays private")
-			}
-			restrictedChanged = cur.Restricted != restricted || cur.IsPrivate != private
 			if publishMeetings, err = h.applyTempPatch(r.Context(), q, cur, tp); err != nil {
 				return err
 			}
-			if restricted && !cur.Restricted && acc.Role != perm.RoleOwner {
-				// Whoever closes the room keeps it (ADR-0048): a personal VIEW_ROOM, plus MANAGE_ROOM
-				// when they had it — the creator of a temporary room manages it as its creator, and
-				// closing must not hand them MANAGE_ROOM (make_permanent, wider overrides).
-				if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{
-					RoomID: roomID, UserID: auth.MustFromContext(r.Context()).UserID.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.ManageRoom), //nolint:gosec // bit mask
-				}); err != nil {
+			if private != nil && *private != (cur.IsPrivate || cur.Restricted) {
+				restrictedChanged = true
+				if err := applyPrivate(r.Context(), q, cur, *private, me, acc); err != nil {
 					return err
 				}
 			}

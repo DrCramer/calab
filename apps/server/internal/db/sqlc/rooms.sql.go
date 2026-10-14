@@ -153,14 +153,14 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 }
 
 const createRoom = `-- name: CreateRoom :one
-INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
+INSERT INTO rooms (workspace_id, type, name, topic, position, is_private, restricted,
                    audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit,
                    expires_at, created_by)
 VALUES ($1::uuid, $2, $3, $4,
         coalesce($5::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = $1::uuid AND archived_at IS NULL AND type <> 'task')),
-        $6, $7, $8,
+        $6, $6, $7, $8,
         $9, $10, $11, $12,
         $13, $14)
 RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id
@@ -184,6 +184,7 @@ type CreateRoomParams struct {
 }
 
 // expires_at set = a temporary room (ADR-0044); created_by: the creator (NULL: not recorded).
+// restricted mirrors is_private (ADR-0078 addendum 2026-10-14: one kind of private room).
 func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error) {
 	row := q.db.QueryRow(ctx, createRoom,
 		arg.WorkspaceID,
@@ -686,6 +687,26 @@ func (q *Queries) GetRoomForUpdate(ctx context.Context, id uuid.UUID) (Room, err
 	return i, err
 }
 
+const grantRoleOverride = `-- name: GrantRoleOverride :exec
+INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
+VALUES ($1, 'role', $2::text, $3, 0)
+ON CONFLICT (room_id, target_type, target_id) DO UPDATE
+    SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny)
+`
+
+type GrantRoleOverrideParams struct {
+	RoomID uuid.UUID
+	RoleID string
+	Allow  int64
+}
+
+// A role allow for a private room (roles invited at creation): added to an existing override,
+// never lifting its denies.
+func (q *Queries) GrantRoleOverride(ctx context.Context, arg GrantRoleOverrideParams) error {
+	_, err := q.db.Exec(ctx, grantRoleOverride, arg.RoomID, arg.RoleID, arg.Allow)
+	return err
+}
+
 const grantUserOverride = `-- name: GrantUserOverride :exec
 INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
 VALUES ($1, 'user', $2::text, $3, 0)
@@ -1147,6 +1168,51 @@ func (q *Queries) SetCategoryPosition(ctx context.Context, arg SetCategoryPositi
 	return i, err
 }
 
+const setRoomCreator = `-- name: SetRoomCreator :one
+UPDATE rooms SET created_by = $1
+WHERE id = $2 AND archived_at IS NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id
+`
+
+type SetRoomCreatorParams struct {
+	CreatedBy *uuid.UUID
+	ID        uuid.UUID
+}
+
+// «Сделать меня владельцем» (ADR-0078 addendum 2026-10-14): the workspace owner takes over a
+// former member's private room.
+func (q *Queries) SetRoomCreator(ctx context.Context, arg SetRoomCreatorParams) (Room, error) {
+	row := q.db.QueryRow(ctx, setRoomCreator, arg.CreatedBy, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.IconFileID,
+	)
+	return i, err
+}
+
 const setRoomExpiry = `-- name: SetRoomExpiry :one
 UPDATE rooms SET expires_at = $1
 WHERE id = $2 AND archived_at IS NULL AND expires_at IS NOT NULL
@@ -1242,7 +1308,7 @@ func (q *Queries) SetRoomPlacement(ctx context.Context, arg SetRoomPlacementPara
 }
 
 const setRoomPrivate = `-- name: SetRoomPrivate :one
-UPDATE rooms SET is_private = $1
+UPDATE rooms SET is_private = $1, restricted = $1
 WHERE id = $2 AND archived_at IS NULL
 RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id
 `
@@ -1252,6 +1318,7 @@ type SetRoomPrivateParams struct {
 	ID        uuid.UUID
 }
 
+// is_private and restricted together (ADR-0078 addendum 2026-10-14: one kind of private room).
 func (q *Queries) SetRoomPrivate(ctx context.Context, arg SetRoomPrivateParams) (Room, error) {
 	row := q.db.QueryRow(ctx, setRoomPrivate, arg.IsPrivate, arg.ID)
 	var i Room
