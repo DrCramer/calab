@@ -25,6 +25,7 @@ import { useWiki } from '../../stores/wiki';
 import { useWikiUi } from '../../stores/wikiUi';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { menuBox } from '../shell/menu';
+import { EditToggle, useEditMode } from './EditToggle';
 import { DROP, PageMenuEntries, focusTitle } from './PageMenu';
 import { WikiDocLazy } from './lazy';
 
@@ -90,6 +91,7 @@ function WikiBar({ workspaceId, pageId }: { workspaceId: string; pageId: string 
       ) : null}
       {pageId ? (
         <span className={BAR_GROUP}>
+          <EditToggle pageId={pageId} />
           {structure && !trashed ? (
             <Button variant="secondary" size="sm" onClick={() => useWikiUi.getState().openDialog({ kind: 'share', pageId, tab: 'access' })} data-testid="wiki-share">
               <Share2 className="size-3.5" aria-hidden />
@@ -178,6 +180,8 @@ function PageView({ workspaceId, pageId }: { workspaceId: string; pageId: string
   const write = useWiki((s) => canWrite(s.pages[pageId]?.myBits ?? 0n));
   const editable = write && !trashed;
   const setup = structure && !trashed;
+  const editing = useWikiUi((s) => s.editing === pageId);
+  useEditMode(pageId, true);
   const coverInput = useRef<HTMLInputElement>(null);
   return (
     <article className="flex min-h-full flex-col pb-24" data-testid="wiki-page">
@@ -235,7 +239,7 @@ function PageView({ workspaceId, pageId }: { workspaceId: string; pageId: string
           ) : (
             <div className="h-2" />
           )}
-          <TitleField pageId={pageId} editable={setup} />
+          <TitleField pageId={pageId} editable={setup && editing} />
         </div>
         <Suspense
           fallback={
@@ -244,7 +248,7 @@ function PageView({ workspaceId, pageId }: { workspaceId: string; pageId: string
             </div>
           }
         >
-          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} />
+          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} editing={editable && editing} />
         </Suspense>
         <Subpages workspaceId={workspaceId} pageId={pageId} canAdd={editable} />
       </div>

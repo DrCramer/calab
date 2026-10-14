@@ -24,6 +24,7 @@ import { useWikiUi } from '../../stores/wikiUi';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { menuBox, menuItem } from '../shell/menu';
+import { EditToggle, useEditMode } from './EditToggle';
 import { DROP, PageContextMenu, PageMenuEntries, RenameField, focusTitle } from './PageMenu';
 import { WikiDialogs } from './Dialogs';
 import { WikiDocLazy } from './lazy';
@@ -337,6 +338,7 @@ function PageHeader({ workspaceId, pageId, canAdd }: { workspaceId: string; page
       }
       {...(subtitle ? { subtitle } : {})}
     >
+      <EditToggle pageId={pageId} phone />
       {canAdd ? (
         <IconButton tip={false} bar label={t('wiki.addSubpage')} onClick={() => void createPage(workspaceId, pageId)} data-testid="phone-wiki-add-subpage">
           <Plus className="size-5" aria-hidden />
@@ -367,6 +369,8 @@ function PageMenu({ pageId }: { pageId: string }): ReactNode {
 function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { workspaceId: string; pageId: string; editable: boolean; setup: boolean; trashed: boolean; host: HTMLElement | null }): ReactNode {
   const coverId = useWiki((s) => s.pages[pageId]?.cover?.id ?? '');
   const icon = useWiki((s) => s.pages[pageId]?.icon ?? '');
+  const editing = useWikiUi((s) => s.editing === pageId);
+  useEditMode(pageId, false);
   const coverInput = useRef<HTMLInputElement>(null);
   return (
     <article className="flex min-h-full flex-col pb-[calc(var(--safe-bottom,0px)+24px)]">
@@ -418,7 +422,7 @@ function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { wor
               )}
             </div>
           ) : null}
-          <TitleField pageId={pageId} editable={setup} className="!text-[26px] leading-8" />
+          <TitleField pageId={pageId} editable={setup && editing} className="!text-[26px] leading-8" />
         </div>
         <Suspense
           fallback={
@@ -427,7 +431,7 @@ function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { wor
             </div>
           }
         >
-          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} phone toolbarHost={host} />
+          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} editing={editable && editing} phone toolbarHost={host} />
         </Suspense>
         <PhoneSubpages workspaceId={workspaceId} pageId={pageId} canAdd={editable} />
       </div>

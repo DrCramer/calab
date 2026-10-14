@@ -39,6 +39,9 @@ interface WikiUiState {
   /** The tree's title filter; cleared when the section closes. */
   query: string;
   setQuery: (q: string) => void;
+  /** The page open for editing (lib/wiki/mode.ts); every other page is in read mode. Not persisted. */
+  editing: string | null;
+  setEditing: (id: string | null) => void;
   /** The page whose tree / list row is being renamed in place (not persisted). */
   renaming: string | null;
   setRenaming: (id: string | null) => void;
@@ -84,6 +87,8 @@ export const useWikiUi = create<WikiUiState>()(
       setTreeWidth: (w) => set((s) => (s.treeWidth === clampTree(w) ? s : { treeWidth: clampTree(w) })),
       query: '',
       setQuery: (query) => set({ query }),
+      editing: null,
+      setEditing: (editing) => set((s) => (s.editing === editing ? s : { editing })),
       renaming: null,
       setRenaming: (renaming) => set((s) => (s.renaming === renaming ? s : { renaming })),
       dialog: null,

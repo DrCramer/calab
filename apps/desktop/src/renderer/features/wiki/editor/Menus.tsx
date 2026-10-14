@@ -24,6 +24,7 @@ import {
   Image,
   Italic,
   Lightbulb,
+  ExternalLink,
   Link,
   List,
   ListCollapse,
@@ -443,6 +444,11 @@ function LinkField({ editor, href, onDone }: { editor: Editor; href: string; onD
       <BarButton label={t('wiki.link.apply')} onClick={apply}>
         <Check className="size-4" strokeWidth={1.75} aria-hidden />
       </BarButton>
+      {href && isAllowedHref(href) ? (
+        <BarButton label={t('wiki.link.open')} onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}>
+          <ExternalLink className="size-4" strokeWidth={1.75} aria-hidden />
+        </BarButton>
+      ) : null}
       {href ? (
         <BarButton
           label={t('wiki.link.remove')}

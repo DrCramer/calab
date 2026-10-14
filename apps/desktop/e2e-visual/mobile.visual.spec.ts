@@ -741,14 +741,16 @@ test('m-profile', async ({ page }) => {
   await expect(page.getByTestId('phone-profile-button')).toHaveCount(0);
 });
 
-// ADR-0095: three pinned tabs + «Ещё». The card lists every section (52 px rows, 44 px pins); a pin
-// changes the bar and keeps the card open (the oldest pin is replaced, a toast says which); a section
-// picked from the card shows on a plate in the fourth slot. The search button stays at one x.
+// ADR-0095 + addendum 14.10: four pinned tabs + «Ещё», five equal cells. The card lists every section
+// (52 px rows, 44 px pins, a drag handle); a pin only pins (no reorder; with four pinned the others are
+// disabled with a hint); a section picked from the card shows in the fifth cell like any tab.
 test('m-more', async ({ page }) => {
   await signedIn(page);
   const bar = page.getByTestId('phone-tabbar');
-  await expect(bar.getByRole('button')).toHaveCount(4);
+  await expect(bar.getByRole('button')).toHaveCount(5);
   await expect(page.getByTestId('phone-tab-more')).toHaveAttribute('aria-label', 'Ещё');
+  const widths = await bar.getByRole('button').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+  expect(new Set(widths).size, `equal cells: ${widths.join(', ')}`).toBe(1);
   const searchX: number[] = [];
   const searchAt = async (): Promise<number> => Math.round((await page.getByTestId('phone-search').boundingBox())?.x ?? -1);
   searchX.push(await searchAt());
@@ -756,7 +758,7 @@ test('m-more', async ({ page }) => {
   const card = page.getByTestId('phone-more-card');
   await expect(card).toBeVisible();
   await expectCentredCard(page, card);
-  for (const tab of ['chats', 'dms', 'boards', 'calendar', 'disk', 'profile']) {
+  for (const tab of ['chats', 'dms', 'calendar', 'boards', 'disk', 'profile']) {
     const row = card.getByTestId(`more-row-${tab}`);
     await expect(row).toBeVisible();
     expect(Math.round((await row.boundingBox())?.height ?? 0), `a 52 px row: ${tab}`).toBe(52);
@@ -767,17 +769,19 @@ test('m-more', async ({ page }) => {
   }
   await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-checked', 'true');
   await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-checked', 'false');
+  await expect(card.getByTestId('more-pin-hint')).toBeVisible();
   await checkpoint(page, 'm-more-card');
-  // Pinning «Диск»: «Команда» (the oldest) leaves the bar, the card stays open, the toast names it.
-  await card.getByTestId('more-pin-disk').tap();
-  await expect(card).toBeVisible();
-  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-checked', 'true');
+  // Four pinned: «Диск» cannot be pinned until one is unpinned; unpinning does not reorder the others.
+  await card.getByTestId('more-pin-chats').tap();
   await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-checked', 'false');
-  await expect(page.getByText('Закреплено вместо «Команда»')).toBeVisible();
-  // A section from the card: its root, its plate in the fourth slot. Nothing jumps: the pinned tabs keep their x.
+  await card.getByTestId('more-pin-disk').tap();
+  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-checked', 'true');
+  await card.getByTestId('more-pin-disk').tap();
+  await card.getByTestId('more-pin-chats').tap();
+  // A section from the card: its root, shown like a tab in the fifth cell. The pinned tabs keep their x.
   const pinnedX = async (): Promise<number[]> => {
     const xs: number[] = [];
-    for (const id of ['dms', 'boards', 'disk']) xs.push(Math.round((await page.getByTestId(`phone-tab-${id}`).boundingBox())?.x ?? -1));
+    for (const id of ['chats', 'dms', 'calendar', 'boards']) xs.push(Math.round((await page.getByTestId(`phone-tab-${id}`).boundingBox())?.x ?? -1));
     return xs;
   };
   const xsBefore = await pinnedX();
@@ -786,11 +790,10 @@ test('m-more', async ({ page }) => {
   await expect(page.getByTestId('phone-profile')).toBeVisible();
   const more = page.getByTestId('phone-tab-more');
   await expect(more).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByTestId('phone-tab-more-plate')).toContainText('Профиль');
-  expect(Math.round((await page.getByTestId('phone-tab-more-plate').boundingBox())?.height ?? 0), 'a 36 px plate').toBe(36);
-  expect(await pinnedX(), 'the pinned tabs keep their x under the plate').toEqual(xsBefore);
+  await expect(more).toContainText('Профиль');
+  expect(await pinnedX(), 'the pinned tabs keep their x').toEqual(xsBefore);
   await checkpoint(page, 'm-more-active');
-  // A pinned tab brings «⋯ Ещё» back; the plate's tap reopens the card.
+  // A pinned tab brings «⋯ Ещё» back.
   await page.getByTestId('phone-tab-dms').tap();
   await expect(page.getByTestId('phone-tab-more')).toHaveAttribute('aria-label', 'Ещё');
   searchX.push(await searchAt());
@@ -801,7 +804,6 @@ test('m-more', async ({ page }) => {
     searchX.push(await searchAt());
   }
   expect(new Set(searchX).size, `the search button x per section: ${searchX.join(', ')}`).toBe(1);
-  await expect(page.getByTestId('phone-tab-more-plate')).toContainText('Календарь');
   await page.getByTestId('phone-tab-more').tap();
   await expect(page.getByTestId('phone-more-card')).toBeVisible();
 });
@@ -1736,7 +1738,7 @@ test('m-wiki-page', async ({ page }) => {
   await screen.getByTestId('phone-wiki-page-more').tap();
   await expect(page.getByTestId('phone-wiki-page-menu')).toBeVisible();
   await checkpoint(page, 'm-wiki-page-menu', { snapshot: false });
-  await page.getByTestId('wiki-open-access').tap();
+  await page.getByTestId('wiki-menu-access').tap();
   await expect(page.getByRole('dialog')).toBeVisible();
   await checkpoint(page, 'm-wiki-share', { snapshot: false });
 });
