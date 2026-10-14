@@ -75,6 +75,7 @@ var blocked = map[string]scope{
 	"POST /api/workspaces/{id}/join":          scopeWorkspace,
 	// a temporary room comes with a room link (ADR-0044)
 	"POST /api/workspaces/{id}/rooms/temp": scopeWorkspace,
+	"POST /api/rooms/{id}/restore":         scopeRoom, // ADR-0044 addendum: an archived room comes back with a link
 	"POST /api/invites/{code}/join":        scopeInvite,
 	// bots (ADR-0031): a bot joining the workspace is an invitation too
 	"POST /api/workspaces/{id}/bots":     scopeWorkspace,

@@ -322,6 +322,23 @@ message CreateTempRoomRequest {
   repeated string member_ids = 6;
 }
 
+// POST /api/rooms/{id}/restore (ADR-0044 addendum): an archived temporary room becomes live
+// again with a new end, now + its original lifetime (expires_at - created_at, clamped to
+// 15 min .. 7 days; 1 day when that is not usable). MANAGE_ROOM in the room or its creator;
+// the live caps of CreateTempRoomRequest apply (409 TEMP_ROOM_LIMIT). A fresh members-only
+// link is made. Everyone who sees the room gets ROOM_CREATE. Not archived: 409.
+message RestoreTempRoomResponse {
+  Room room = 1;
+}
+
+// POST /api/rooms/{id}/make-permanent (ADR-0044 addendum): a temporary room, archived or
+// live, becomes a regular room (no end, no category, after the last room; history, members
+// and settings stay). Needs MANAGE_ROOM at workspace level (the right to create regular
+// rooms) and sight of the room; 403 otherwise. Archived: ROOM_CREATE, live: ROOM_UPDATE.
+message MakeRoomPermanentResponse {
+  Room room = 1;
+}
+
 message TempRoomResponse {
   Room room = 1;
   // The room link for sharing: <PUBLIC_APP_URL>/r/<invite_code>. Its bits: VIEW_ROOM,

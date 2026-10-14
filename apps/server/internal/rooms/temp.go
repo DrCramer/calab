@@ -314,12 +314,14 @@ func (h *Handlers) archiveTemp(ctx context.Context, roomID uuid.UUID, onlyExpire
 }
 
 // listArchived: GET /api/workspaces/{id}/rooms?archived=1 — the archive of temporary rooms
-// (MANAGE_ROOM at workspace level; rooms the caller sees only).
+// (rooms the caller sees and may manage: MANAGE_ROOM there, or being the creator; ADR-0044
+// addendum 14.10 — the creator sees their own archive). Guests get none.
 func (h *Handlers) listArchived(w http.ResponseWriter, r *http.Request, wsID uuid.UUID, m perm.Member) error {
-	if !m.Workspace().Has(perm.ManageRoom) {
-		return httpx.Forbidden("MANAGE_ROOM required")
+	if m.Role == perm.RoleGuest {
+		return httpx.Forbidden("guests have no archive")
 	}
 	ctx := r.Context()
+	me := auth.MustFromContext(ctx).UserID
 	rows, err := h.db.Q.ListArchivedTempRooms(ctx, wsID)
 	if err != nil {
 		return err
@@ -344,7 +346,9 @@ func (h *Handlers) listArchived(w http.ResponseWriter, r *http.Request, wsID uui
 	out := &v1.ListRoomsResponse{Rooms: make([]*v1.Room, 0, len(rows))}
 	for _, row := range rows {
 		ovs := byRoom[row.Room.ID]
-		if !perm.ComputeIn(m, perm.FlagsOf(row.Room), pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
+		bits := perm.ComputeIn(m, perm.FlagsOf(row.Room), pbconv.OverrideTargets(ovs))
+		creator := row.Room.CreatedBy != nil && *row.Room.CreatedBy == me
+		if !bits.Has(perm.ViewRoom) || (!bits.Has(perm.ManageRoom) && !creator) {
 			continue
 		}
 		pb := pbconv.Room(row.Room, defaults, ovs)
@@ -358,8 +362,8 @@ func (h *Handlers) listArchived(w http.ResponseWriter, r *http.Request, wsID uui
 // ---- sweeper ----
 
 // RunTempRooms archives expired temporary rooms every TempSweep and purges the archive past
-// retention hourly, until ctx is done. With Redis only one instance does each per period.
-func (h *Handlers) RunTempRooms(ctx context.Context, r rueidis.Client, retention time.Duration) {
+// each workspace's retention hourly, until ctx is done. With Redis only one instance does each per period.
+func (h *Handlers) RunTempRooms(ctx context.Context, r rueidis.Client) {
 	t := time.NewTicker(TempSweep)
 	defer t.Stop()
 	lock := func(name string, ttl time.Duration) bool {
@@ -374,7 +378,7 @@ func (h *Handlers) RunTempRooms(ctx context.Context, r rueidis.Client, retention
 			}
 		}
 		if lock("rooms:temp-purge", tempPurgeEvery-time.Minute) {
-			if n, err := h.PurgeTempRooms(ctx, time.Now().Add(-retention)); err != nil && ctx.Err() == nil {
+			if n, err := h.PurgeTempRooms(ctx); err != nil && ctx.Err() == nil {
 				slog.WarnContext(ctx, "temporary rooms: retention", "err", err)
 			} else if n > 0 {
 				slog.InfoContext(ctx, "archived temporary rooms deleted", "count", n)
@@ -410,11 +414,11 @@ func (h *Handlers) SweepTempRooms(ctx context.Context) (int, error) {
 	return n, errors.Join(errs...)
 }
 
-// PurgeTempRooms deletes archived temporary rooms archived before `before` with their history
+// PurgeTempRooms deletes archived temporary rooms past their workspace's temp_archive_days with their history
 // (messages, reactions, pins by cascade; uploads become orphans for the file cleanup) and
 // returns how many. Nobody sees them any more: no event.
-func (h *Handlers) PurgeTempRooms(ctx context.Context, before time.Time) (int, error) {
-	ids, err := h.db.Q.PurgeableTempRooms(ctx, sqlc.PurgeableTempRoomsParams{Before: &before, Lim: tempBatch})
+func (h *Handlers) PurgeTempRooms(ctx context.Context) (int, error) {
+	ids, err := h.db.Q.PurgeableTempRooms(ctx, tempBatch)
 	if err != nil {
 		return 0, err
 	}

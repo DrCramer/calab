@@ -2039,6 +2039,103 @@ func (x *CreateTempRoomRequest) GetMemberIds() []string {
 	return nil
 }
 
+// POST /api/rooms/{id}/restore (ADR-0044 addendum): an archived temporary room becomes live
+// again with a new end, now + its original lifetime (expires_at - created_at, clamped to
+// 15 min .. 7 days; 1 day when that is not usable). MANAGE_ROOM in the room or its creator;
+// the live caps of CreateTempRoomRequest apply (409 TEMP_ROOM_LIMIT). A fresh members-only
+// link is made. Everyone who sees the room gets ROOM_CREATE. Not archived: 409.
+type RestoreTempRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Room          *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreTempRoomResponse) Reset() {
+	*x = RestoreTempRoomResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreTempRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreTempRoomResponse) ProtoMessage() {}
+
+func (x *RestoreTempRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreTempRoomResponse.ProtoReflect.Descriptor instead.
+func (*RestoreTempRoomResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RestoreTempRoomResponse) GetRoom() *Room {
+	if x != nil {
+		return x.Room
+	}
+	return nil
+}
+
+// POST /api/rooms/{id}/make-permanent (ADR-0044 addendum): a temporary room, archived or
+// live, becomes a regular room (no end, no category, after the last room; history, members
+// and settings stay). Needs MANAGE_ROOM at workspace level (the right to create regular
+// rooms) and sight of the room; 403 otherwise. Archived: ROOM_CREATE, live: ROOM_UPDATE.
+type MakeRoomPermanentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Room          *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MakeRoomPermanentResponse) Reset() {
+	*x = MakeRoomPermanentResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MakeRoomPermanentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MakeRoomPermanentResponse) ProtoMessage() {}
+
+func (x *MakeRoomPermanentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MakeRoomPermanentResponse.ProtoReflect.Descriptor instead.
+func (*MakeRoomPermanentResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *MakeRoomPermanentResponse) GetRoom() *Room {
+	if x != nil {
+		return x.Room
+	}
+	return nil
+}
+
 type TempRoomResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Room  *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
@@ -2055,7 +2152,7 @@ type TempRoomResponse struct {
 
 func (x *TempRoomResponse) Reset() {
 	*x = TempRoomResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	mi := &file_calaba_v1_room_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2067,7 +2164,7 @@ func (x *TempRoomResponse) String() string {
 func (*TempRoomResponse) ProtoMessage() {}
 
 func (x *TempRoomResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	mi := &file_calaba_v1_room_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2080,7 +2177,7 @@ func (x *TempRoomResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TempRoomResponse.ProtoReflect.Descriptor instead.
 func (*TempRoomResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TempRoomResponse) GetRoom() *Room {
@@ -2122,7 +2219,7 @@ type SetRoomOrderRequest_RoomPosition struct {
 
 func (x *SetRoomOrderRequest_RoomPosition) Reset() {
 	*x = SetRoomOrderRequest_RoomPosition{}
-	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	mi := &file_calaba_v1_room_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2134,7 +2231,7 @@ func (x *SetRoomOrderRequest_RoomPosition) String() string {
 func (*SetRoomOrderRequest_RoomPosition) ProtoMessage() {}
 
 func (x *SetRoomOrderRequest_RoomPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	mi := &file_calaba_v1_room_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2181,7 +2278,7 @@ type SetRoomOrderRequest_CategoryPosition struct {
 
 func (x *SetRoomOrderRequest_CategoryPosition) Reset() {
 	*x = SetRoomOrderRequest_CategoryPosition{}
-	mi := &file_calaba_v1_room_proto_msgTypes[29]
+	mi := &file_calaba_v1_room_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2193,7 +2290,7 @@ func (x *SetRoomOrderRequest_CategoryPosition) String() string {
 func (*SetRoomOrderRequest_CategoryPosition) ProtoMessage() {}
 
 func (x *SetRoomOrderRequest_CategoryPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[29]
+	mi := &file_calaba_v1_room_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2421,7 +2518,11 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\aprivate\x18\x05 \x01(\bR\aprivate\x12\x1d\n" +
 	"\n" +
 	"member_ids\x18\x06 \x03(\tR\tmemberIdsB\t\n" +
-	"\a_guests\"\xa7\x01\n" +
+	"\a_guests\">\n" +
+	"\x17RestoreTempRoomResponse\x12#\n" +
+	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"@\n" +
+	"\x19MakeRoomPermanentResponse\x12#\n" +
+	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\xa7\x01\n" +
 	"\x10TempRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12\x1d\n" +
 	"\n" +
@@ -2462,7 +2563,7 @@ func file_calaba_v1_room_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_room_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_calaba_v1_room_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_calaba_v1_room_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_calaba_v1_room_proto_goTypes = []any{
 	(RoomType)(0),                                       // 0: calaba.v1.RoomType
 	(PermissionTargetType)(0),                           // 1: calaba.v1.PermissionTargetType
@@ -2494,43 +2595,45 @@ var file_calaba_v1_room_proto_goTypes = []any{
 	(*SetRoomPermissionsRequest)(nil),                   // 27: calaba.v1.SetRoomPermissionsRequest
 	(*SetRoomPermissionsResponse)(nil),                  // 28: calaba.v1.SetRoomPermissionsResponse
 	(*CreateTempRoomRequest)(nil),                       // 29: calaba.v1.CreateTempRoomRequest
-	(*TempRoomResponse)(nil),                            // 30: calaba.v1.TempRoomResponse
-	(*SetRoomOrderRequest_RoomPosition)(nil),            // 31: calaba.v1.SetRoomOrderRequest.RoomPosition
-	(*SetRoomOrderRequest_CategoryPosition)(nil),        // 32: calaba.v1.SetRoomOrderRequest.CategoryPosition
-	(ScreenSharePreset)(0),                              // 33: calaba.v1.ScreenSharePreset
-	(*RoomMediaSettings)(nil),                           // 34: calaba.v1.RoomMediaSettings
-	(*timestamppb.Timestamp)(nil),                       // 35: google.protobuf.Timestamp
-	(*CalendarEvent)(nil),                               // 36: calaba.v1.CalendarEvent
+	(*RestoreTempRoomResponse)(nil),                     // 30: calaba.v1.RestoreTempRoomResponse
+	(*MakeRoomPermanentResponse)(nil),                   // 31: calaba.v1.MakeRoomPermanentResponse
+	(*TempRoomResponse)(nil),                            // 32: calaba.v1.TempRoomResponse
+	(*SetRoomOrderRequest_RoomPosition)(nil),            // 33: calaba.v1.SetRoomOrderRequest.RoomPosition
+	(*SetRoomOrderRequest_CategoryPosition)(nil),        // 34: calaba.v1.SetRoomOrderRequest.CategoryPosition
+	(ScreenSharePreset)(0),                              // 35: calaba.v1.ScreenSharePreset
+	(*RoomMediaSettings)(nil),                           // 36: calaba.v1.RoomMediaSettings
+	(*timestamppb.Timestamp)(nil),                       // 37: google.protobuf.Timestamp
+	(*CalendarEvent)(nil),                               // 38: calaba.v1.CalendarEvent
 }
 var file_calaba_v1_room_proto_depIdxs = []int32{
 	1,  // 0: calaba.v1.RoomPermissionOverride.target_type:type_name -> calaba.v1.PermissionTargetType
-	33, // 1: calaba.v1.RoomMediaOverride.max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	35, // 1: calaba.v1.RoomMediaOverride.max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	0,  // 2: calaba.v1.Room.type:type_name -> calaba.v1.RoomType
-	34, // 3: calaba.v1.Room.media:type_name -> calaba.v1.RoomMediaSettings
+	36, // 3: calaba.v1.Room.media:type_name -> calaba.v1.RoomMediaSettings
 	4,  // 4: calaba.v1.Room.media_override:type_name -> calaba.v1.RoomMediaOverride
 	3,  // 5: calaba.v1.Room.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
-	35, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
-	35, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
-	35, // 8: calaba.v1.Room.voice_started_at:type_name -> google.protobuf.Timestamp
-	35, // 9: calaba.v1.Room.expires_at:type_name -> google.protobuf.Timestamp
-	35, // 10: calaba.v1.Room.archived_at:type_name -> google.protobuf.Timestamp
+	37, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
+	37, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
+	37, // 8: calaba.v1.Room.voice_started_at:type_name -> google.protobuf.Timestamp
+	37, // 9: calaba.v1.Room.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 10: calaba.v1.Room.archived_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: calaba.v1.RoomNotificationSettings.level:type_name -> calaba.v1.NotificationLevel
-	35, // 12: calaba.v1.RoomNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 12: calaba.v1.RoomNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
 	2,  // 13: calaba.v1.UpdateRoomNotificationSettingsRequest.level:type_name -> calaba.v1.NotificationLevel
-	35, // 14: calaba.v1.UpdateRoomNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 14: calaba.v1.UpdateRoomNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
 	6,  // 15: calaba.v1.UpdateRoomNotificationSettingsResponse.settings:type_name -> calaba.v1.RoomNotificationSettings
 	2,  // 16: calaba.v1.WorkspaceNotificationSettings.level:type_name -> calaba.v1.NotificationLevel
-	35, // 17: calaba.v1.WorkspaceNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 17: calaba.v1.WorkspaceNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
 	2,  // 18: calaba.v1.WorkspaceNotificationSettings.task_level:type_name -> calaba.v1.NotificationLevel
 	2,  // 19: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.level:type_name -> calaba.v1.NotificationLevel
-	35, // 20: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 20: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
 	2,  // 21: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.task_level:type_name -> calaba.v1.NotificationLevel
 	9,  // 22: calaba.v1.UpdateWorkspaceNotificationSettingsResponse.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
 	12, // 23: calaba.v1.CreateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
 	12, // 24: calaba.v1.ListCategoriesResponse.categories:type_name -> calaba.v1.RoomCategory
 	12, // 25: calaba.v1.UpdateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
-	31, // 26: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
-	32, // 27: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
+	33, // 26: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
+	34, // 27: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
 	5,  // 28: calaba.v1.SetRoomOrderResponse.rooms:type_name -> calaba.v1.Room
 	12, // 29: calaba.v1.SetRoomOrderResponse.categories:type_name -> calaba.v1.RoomCategory
 	0,  // 30: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
@@ -2539,17 +2642,19 @@ var file_calaba_v1_room_proto_depIdxs = []int32{
 	5,  // 33: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
 	5,  // 34: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
 	4,  // 35: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	35, // 36: calaba.v1.UpdateRoomRequest.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 36: calaba.v1.UpdateRoomRequest.expires_at:type_name -> google.protobuf.Timestamp
 	5,  // 37: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
 	3,  // 38: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
 	5,  // 39: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
-	5,  // 40: calaba.v1.TempRoomResponse.room:type_name -> calaba.v1.Room
-	36, // 41: calaba.v1.TempRoomResponse.event:type_name -> calaba.v1.CalendarEvent
-	42, // [42:42] is the sub-list for method output_type
-	42, // [42:42] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	5,  // 40: calaba.v1.RestoreTempRoomResponse.room:type_name -> calaba.v1.Room
+	5,  // 41: calaba.v1.MakeRoomPermanentResponse.room:type_name -> calaba.v1.Room
+	5,  // 42: calaba.v1.TempRoomResponse.room:type_name -> calaba.v1.Room
+	38, // 43: calaba.v1.TempRoomResponse.event:type_name -> calaba.v1.CalendarEvent
+	44, // [44:44] is the sub-list for method output_type
+	44, // [44:44] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_room_proto_init() }
@@ -2572,7 +2677,7 @@ func file_calaba_v1_room_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_room_proto_rawDesc), len(file_calaba_v1_room_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

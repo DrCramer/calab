@@ -71,6 +71,8 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("POST /api/workspaces/{id}/rooms", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("GET /api/workspaces/{id}/rooms", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("POST /api/workspaces/{id}/rooms/temp", wrap(httpx.HandlerFunc(h.createTemp)))
+	mux.Handle("POST /api/rooms/{id}/restore", wrap(httpx.HandlerFunc(h.restoreTemp)))
+	mux.Handle("POST /api/rooms/{id}/make-permanent", wrap(httpx.HandlerFunc(h.makePermanent)))
 	mux.Handle("GET /api/rooms/{id}", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/rooms/{id}", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/rooms/{id}", wrap(httpx.HandlerFunc(h.delete)))

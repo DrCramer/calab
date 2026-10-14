@@ -212,9 +212,12 @@ type Workspace struct {
 	SipEnabled     bool                     `protobuf:"varint,15,opt,name=sip_enabled,json=sipEnabled,proto3" json:"sip_enabled,omitempty"`
 	// Balance billing (ADR-0080): state without amounts, for every member; unset = no billing
 	// account. The owner reads the money through GET /api/workspaces/{id}/billing.
-	Billing       *WorkspaceBillingStatus `protobuf:"bytes,17,opt,name=billing,proto3" json:"billing,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Billing *WorkspaceBillingStatus `protobuf:"bytes,17,opt,name=billing,proto3" json:"billing,omitempty"`
+	// How many days a closed temporary room stays in the archive before it is deleted with its
+	// history (ADR-0044 addendum): 1 | 7 | 30 | 90 | 365; new workspaces start with 30.
+	TempArchiveDays uint32 `protobuf:"varint,18,opt,name=temp_archive_days,json=tempArchiveDays,proto3" json:"temp_archive_days,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Workspace) Reset() {
@@ -364,6 +367,13 @@ func (x *Workspace) GetBilling() *WorkspaceBillingStatus {
 		return x.Billing
 	}
 	return nil
+}
+
+func (x *Workspace) GetTempArchiveDays() uint32 {
+	if x != nil {
+		return x.TempArchiveDays
+	}
+	return 0
 }
 
 type WorkspaceSuspension struct {
@@ -1114,6 +1124,7 @@ type UpdateWorkspaceRequest struct {
 	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
 	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"`  // 0..25 (0 = cameras off)
 	TimeFormat              *TimeFormat            `protobuf:"varint,10,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat,oneof" json:"time_format,omitempty"` // AUTO|H24|H12 (UNSPECIFIED is 422)
+	TempArchiveDays         *uint32                `protobuf:"varint,11,opt,name=temp_archive_days,json=tempArchiveDays,proto3,oneof" json:"temp_archive_days,omitempty"`          // 1|7|30|90|365 (MANAGE_WORKSPACE; else 422)
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -1216,6 +1227,13 @@ func (x *UpdateWorkspaceRequest) GetTimeFormat() TimeFormat {
 		return *x.TimeFormat
 	}
 	return TimeFormat_TIME_FORMAT_UNSPECIFIED
+}
+
+func (x *UpdateWorkspaceRequest) GetTempArchiveDays() uint32 {
+	if x != nil && x.TempArchiveDays != nil {
+		return *x.TempArchiveDays
+	}
+	return 0
 }
 
 type UpdateWorkspaceResponse struct {
@@ -4194,7 +4212,7 @@ var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x17calaba/v1/billing.proto\x1a\x18calaba/v1/identity.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\x9f\x06\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x17calaba/v1/billing.proto\x1a\x18calaba/v1/identity.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xcb\x06\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -4221,7 +4239,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x0fidentity_access\x18\x10 \x01(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\x12\x1f\n" +
 	"\vsip_enabled\x18\x0f \x01(\bR\n" +
 	"sipEnabled\x12;\n" +
-	"\abilling\x18\x11 \x01(\v2!.calaba.v1.WorkspaceBillingStatusR\abilling\"Y\n" +
+	"\abilling\x18\x11 \x01(\v2!.calaba.v1.WorkspaceBillingStatusR\abilling\x12*\n" +
+	"\x11temp_archive_days\x18\x12 \x01(\rR\x0ftempArchiveDays\"Y\n" +
 	"\x13WorkspaceSuspension\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x01\n" +
@@ -4282,7 +4301,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"workspaces\"x\n" +
 	"\x14GetWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xfc\x05\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xc3\x06\n" +
 	"\x16UpdateWorkspaceRequest\x12\x17\n" +
 	"\x04slug\x18\x01 \x01(\tH\x00R\x04slug\x88\x01\x01\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12C\n" +
@@ -4298,7 +4317,9 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x14default_camera_limit\x18\t \x01(\rH\bR\x12defaultCameraLimit\x88\x01\x01\x12;\n" +
 	"\vtime_format\x18\n" +
 	" \x01(\x0e2\x15.calaba.v1.TimeFormatH\tR\n" +
-	"timeFormat\x88\x01\x01B\a\n" +
+	"timeFormat\x88\x01\x01\x12/\n" +
+	"\x11temp_archive_days\x18\v \x01(\rH\n" +
+	"R\x0ftempArchiveDays\x88\x01\x01B\a\n" +
 	"\x05_slugB\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_visibilityB\x0f\n" +
@@ -4308,7 +4329,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x14_default_max_streamsB\x16\n" +
 	"\x14_allow_self_nicknameB\x17\n" +
 	"\x15_default_camera_limitB\x0e\n" +
-	"\f_time_format\"M\n" +
+	"\f_time_formatB\x14\n" +
+	"\x12_temp_archive_days\"M\n" +
 	"\x17UpdateWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\xcc\x01\n" +
 	"\x15JoinWorkspaceResponse\x122\n" +

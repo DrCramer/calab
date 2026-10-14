@@ -51,6 +51,8 @@ var planInactiveRoutes = map[string]string{
 	// new rooms, boards, tasks, bots, stickers, sounds
 	"POST /api/workspaces/{id}/rooms":         plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/rooms/temp":    plans.RestrictedCreate,
+	"POST /api/rooms/{id}/restore":            plans.RestrictedCreate,
+	"POST /api/rooms/{id}/make-permanent":     plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/boards":        plans.RestrictedCreate,
 	"POST /api/boards/{id}/tasks":             plans.RestrictedCreate,
 	"POST /api/checklist-items/{id}/convert":  plans.RestrictedCreate, // a subtask is a new task
