@@ -3,6 +3,7 @@ import { dayKey } from '../../lib/calendar/time';
 import { MOBILE_QUERY } from '../../lib/phone';
 import { sectionFor, type Section, type WsSection } from '../../lib/sections';
 import { useBoardsUi } from '../../stores/boardsUi';
+import { leaveDisk, useDiskUi } from '../../stores/diskUi';
 import { HOME } from '../../stores/dms';
 import { useFreeBusy } from '../../stores/freebusy';
 import { leaveMail, useMailUi } from '../../stores/mailUi';
@@ -11,7 +12,7 @@ import { useUi } from '../../stores/ui';
 import { useWebApps } from '../../stores/webApps';
 import { useWorkspaces } from '../../stores/workspaces';
 
-export type Mode = 'voice' | 'calendar' | 'boards';
+export type Mode = 'voice' | 'calendar' | 'boards' | 'disk';
 
 /**
  * Switches the workspace mode: «Голос» — the room (calendar and boards off); «Календарь» — today's
@@ -23,6 +24,15 @@ export type Mode = 'voice' | 'calendar' | 'boards';
 export function showMode(mode: Mode): void {
   const ui = useUi.getState();
   const boards = useBoardsUi.getState();
+  if (mode === 'disk') {
+    // «Диск» (ADR-0094 §8): the boards and the day view off, the disk covers the column and the centre.
+    if (ui.calDay !== null) ui.closeCalendar();
+    ui.toggleMiniCal(false);
+    if (boards.active) boards.setActive(false);
+    useDiskUi.getState().setActive(true);
+    return;
+  }
+  leaveDisk();
   if (mode === 'calendar') {
     if (ui.calDay !== null) return;
     ui.setCalMonth(null);
@@ -40,7 +50,7 @@ export function showMode(mode: Mode): void {
 const onPhone = (): boolean => typeof window !== 'undefined' && document.documentElement.classList.contains('web') && window.matchMedia(MOBILE_QUERY).matches;
 
 // Disk (ADR-0094) has no centre mode yet: the desktop screen is task D4.
-const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards', disk: 'voice' };
+const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards', disk: 'disk' };
 
 const isGuest = (wsId: string): boolean => useWorkspaces.getState().byId[wsId]?.role === WorkspaceRole.GUEST;
 

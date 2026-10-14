@@ -21,10 +21,12 @@ export type WsSection = Exclude<Section, 'dms' | 'mail'>;
  * centre does), else the rooms. `app`: a web app of the workspace fills the screen — no section is
  * selected (its icon carries the mark).
  */
-export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean }): Section | null {
+export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean; disk?: boolean }): Section | null {
   if (s.mail) return 'mail';
   if (s.home) return 'dms';
   if (s.app) return null;
+  // «Диск» (ADR-0094 §8) is exclusive with the boards and the day view (stores/diskUi.ts).
+  if (s.disk) return 'disk';
   return s.boards ? 'boards' : s.calendar ? 'calendar' : 'chats';
 }
 
@@ -33,7 +35,7 @@ export function rememberSection(map: Readonly<Record<string, WsSection>>, wsId: 
   return map[wsId] === section ? map : { ...map, [wsId]: section };
 }
 
-/** The section a workspace opens on: the remembered one; guests have rooms only (no calendar, no boards). */
+/** The section a workspace opens on: the remembered one; guests have rooms only (no calendar, no boards, no disk). */
 export function sectionFor(map: Readonly<Record<string, WsSection>>, wsId: string, guest: boolean): WsSection {
   const s = map[wsId] ?? 'chats';
   return guest ? 'chats' : s;
