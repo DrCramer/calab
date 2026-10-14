@@ -460,7 +460,7 @@ UPDATE workspace_members wm SET achievement_count = (
     SELECT count(*) FROM member_achievements a
     WHERE a.workspace_id = wm.workspace_id AND a.user_id = wm.user_id AND a.revoked_at IS NULL)
 WHERE wm.workspace_id = $1 AND wm.user_id = $2
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
 `
 
 type RecountMemberAchievementsParams struct {
@@ -480,6 +480,7 @@ func (q *Queries) RecountMemberAchievements(ctx context.Context, arg RecountMemb
 		&i.JoinedAt,
 		&i.BadgeID,
 		&i.AchievementCount,
+		&i.LastActiveAt,
 	)
 	return i, err
 }

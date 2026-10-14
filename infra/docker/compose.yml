@@ -192,6 +192,7 @@ services:
       - IDENTITY_ENTERPRISE_WORKSPACE_IDS=${IDENTITY_ENTERPRISE_WORKSPACE_IDS:-}
       - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-24h}      # access JWT; revocation is instant regardless (docs/04 «Auth»)
       - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-8760h}  # session (sliding): 1 year without use ends it
+      - GUEST_INACTIVITY=${GUEST_INACTIVITY:-48h}  # guests leave after this long without activity (ADR-0098)
       # the rtc. host clients get; after a domain move keep the old one while older desktop builds are in use
       # (their CSP allows only the old family — docs/06 «Домены»)
       - LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}

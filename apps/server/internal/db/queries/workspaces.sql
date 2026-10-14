@@ -45,6 +45,10 @@ RETURNING *;
 DELETE FROM workspaces WHERE id = $1;
 
 -- name: AddMember :one
+-- Joining again clears the former-member row (ADR-0097): back to an ordinary member.
+WITH back AS (
+    DELETE FROM workspace_former_members f WHERE f.workspace_id = $1 AND f.user_id = $2
+)
 INSERT INTO workspace_members (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id, user_id) DO NOTHING
@@ -73,7 +77,9 @@ ORDER BY m.joined_at;
 -- name: UpdateMember :one
 UPDATE workspace_members SET
     role     = coalesce(sqlc.narg('role'), role),
-    nickname = coalesce(sqlc.narg('nickname'), nickname)
+    nickname = coalesce(sqlc.narg('nickname'), nickname),
+    -- A member made a guest starts the guest inactivity clock now (ADR-0098).
+    last_active_at = CASE WHEN sqlc.narg('role')::text = 'guest' AND role <> 'guest' THEN now() ELSE last_active_at END
 WHERE workspace_id = sqlc.arg('workspace_id') AND user_id = sqlc.arg('user_id')
 RETURNING *;
 
