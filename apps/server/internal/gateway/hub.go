@@ -924,6 +924,15 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		}
 		sessions = filtered
 	}
+	if ev.GetContactShared() != nil { // a person's contact: bot sessions only (ADR-0100)
+		filtered := make([]*Session, 0, len(sessions))
+		for _, s := range sessions {
+			if s.bot {
+				filtered = append(filtered, s)
+			}
+		}
+		sessions = filtered
+	}
 	if typing := ev.GetTypingStart(); typing != nil {
 		filtered := make([]*Session, 0, len(sessions))
 		for _, s := range sessions {

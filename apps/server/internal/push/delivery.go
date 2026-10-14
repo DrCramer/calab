@@ -40,7 +40,7 @@ func eventJob(event *v1.DispatchEvent) (sqlc.PushDelivery, bool) {
 		if card := message.GetSystem().GetCall(); card != nil && card.Outcome != v1.CallOutcome_CALL_OUTCOME_MISSED {
 			return job, false
 		}
-		if message.GetSystem().GetRoomIcon() != nil { // a room picture change is silent (ADR-0092)
+		if message.GetSystem().GetRoomIcon() != nil || message.GetSystem().GetContactShared() != nil { // a room picture change is silent (ADR-0092), so is a contact share (ADR-0100)
 			return job, false
 		}
 		job.Kind = messageKind

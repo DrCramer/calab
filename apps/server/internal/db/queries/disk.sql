@@ -382,3 +382,41 @@ SELECT 1 FROM workspaces WHERE id = $1 FOR NO KEY UPDATE;
 UPDATE disk_items SET owner_id = sqlc.arg('owner_id'), updated_at = now()
 WHERE id = sqlc.arg('id')
 RETURNING *;
+
+-- name: ListDiskSubtree :many
+-- The items below an item (not the item itself), parents before children, trashed or not: a
+-- trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
+-- of ADR-0094 §2). Bounded at 64 levels.
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM disk_items c WHERE c.parent_id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM disk_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT sqlc.embed(di), down.depth::int AS depth
+FROM down JOIN disk_items di ON di.id = down.id
+ORDER BY down.depth, di.id;
+
+-- name: DetachDiskItem :one
+-- Detaches an item (with its subtree) to the root of the Disk under a free name, with the flag
+-- that keeps its access (perm.Detached); in the trash it becomes a trash root of its own.
+UPDATE disk_items SET
+    parent_id    = NULL,
+    name         = sqlc.arg('name'),
+    restricted   = sqlc.arg('restricted'),
+    trashed_root = trashed_at IS NOT NULL,
+    updated_at   = now()
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: RetimeDiskTrash :exec
+-- The sweeper detached a trash item from someone else's expired trash root: it and what was
+-- trashed with it get a trash time of their own (now), so the retention counts from here.
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM disk_items r WHERE r.id = sqlc.arg('id')::uuid AND r.trashed_at IS NOT NULL
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM disk_items c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+UPDATE disk_items d SET trashed_at = sqlc.arg('trashed_at')::timestamptz FROM sub WHERE d.id = sub.id;

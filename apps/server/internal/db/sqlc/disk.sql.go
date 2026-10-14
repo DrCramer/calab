@@ -166,6 +166,46 @@ func (q *Queries) DeleteDiskSubtreeFiles(ctx context.Context, id uuid.UUID) ([]F
 	return items, nil
 }
 
+const detachDiskItem = `-- name: DetachDiskItem :one
+UPDATE disk_items SET
+    parent_id    = NULL,
+    name         = $1,
+    restricted   = $2,
+    trashed_root = trashed_at IS NOT NULL,
+    updated_at   = now()
+WHERE id = $3
+RETURNING id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root
+`
+
+type DetachDiskItemParams struct {
+	Name       string
+	Restricted bool
+	ID         uuid.UUID
+}
+
+// Detaches an item (with its subtree) to the root of the Disk under a free name, with the flag
+// that keeps its access (perm.Detached); in the trash it becomes a trash root of its own.
+func (q *Queries) DetachDiskItem(ctx context.Context, arg DetachDiskItemParams) (DiskItem, error) {
+	row := q.db.QueryRow(ctx, detachDiskItem, arg.Name, arg.Restricted, arg.ID)
+	var i DiskItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ParentID,
+		&i.Kind,
+		&i.Name,
+		&i.FileID,
+		&i.OwnerID,
+		&i.Restricted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TrashedAt,
+		&i.TrashedBy,
+		&i.TrashedRoot,
+	)
+	return i, err
+}
+
 const diskItemPath = `-- name: DiskItemPath :many
 WITH RECURSIVE up (id, parent_id, depth) AS (
     SELECT d.id, d.parent_id, 0 FROM disk_items d WHERE d.id = $1::uuid
@@ -1052,6 +1092,60 @@ func (q *Queries) ListDiskPermissionsForItems(ctx context.Context, ids []uuid.UU
 	return items, nil
 }
 
+const listDiskSubtree = `-- name: ListDiskSubtree :many
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM disk_items c WHERE c.parent_id = $1::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM disk_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, down.depth::int AS depth
+FROM down JOIN disk_items di ON di.id = down.id
+ORDER BY down.depth, di.id
+`
+
+type ListDiskSubtreeRow struct {
+	DiskItem DiskItem
+	Depth    int32
+}
+
+// The items below an item (not the item itself), parents before children, trashed or not: a
+// trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
+// of ADR-0094 §2). Bounded at 64 levels.
+func (q *Queries) ListDiskSubtree(ctx context.Context, id uuid.UUID) ([]ListDiskSubtreeRow, error) {
+	rows, err := q.db.Query(ctx, listDiskSubtree, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDiskSubtreeRow{}
+	for rows.Next() {
+		var i ListDiskSubtreeRow
+		if err := rows.Scan(
+			&i.DiskItem.ID,
+			&i.DiskItem.WorkspaceID,
+			&i.DiskItem.ParentID,
+			&i.DiskItem.Kind,
+			&i.DiskItem.Name,
+			&i.DiskItem.FileID,
+			&i.DiskItem.OwnerID,
+			&i.DiskItem.Restricted,
+			&i.DiskItem.CreatedAt,
+			&i.DiskItem.UpdatedAt,
+			&i.DiskItem.TrashedAt,
+			&i.DiskItem.TrashedBy,
+			&i.DiskItem.TrashedRoot,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDiskSweepWorkspaces = `-- name: ListDiskSweepWorkspaces :many
 SELECT w.id, w.disk_trash_days::int AS days FROM workspaces w
 WHERE w.disk_trash_days IS NOT NULL AND EXISTS (
@@ -1526,6 +1620,30 @@ func (q *Queries) RestoreDiskSubtree(ctx context.Context, arg RestoreDiskSubtree
 		return nil, err
 	}
 	return items, nil
+}
+
+const retimeDiskTrash = `-- name: RetimeDiskTrash :exec
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM disk_items r WHERE r.id = $2::uuid AND r.trashed_at IS NOT NULL
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM disk_items c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+UPDATE disk_items d SET trashed_at = $1::timestamptz FROM sub WHERE d.id = sub.id
+`
+
+type RetimeDiskTrashParams struct {
+	TrashedAt time.Time
+	ID        uuid.UUID
+}
+
+// The sweeper detached a trash item from someone else's expired trash root: it and what was
+// trashed with it get a trash time of their own (now), so the retention counts from here.
+func (q *Queries) RetimeDiskTrash(ctx context.Context, arg RetimeDiskTrashParams) error {
+	_, err := q.db.Exec(ctx, retimeDiskTrash, arg.TrashedAt, arg.ID)
+	return err
 }
 
 const revokeDiskLink = `-- name: RevokeDiskLink :execrows
