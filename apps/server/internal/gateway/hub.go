@@ -429,7 +429,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			defer h.syncGuestMembers(st, wid, guestBefore, subject)
 		}
 	}
-	if h.routeBoards(st, wid, id, sessions, ev) || h.routeDisk(st, wid, id, sessions, ev) {
+	if h.routeBoards(st, wid, id, sessions, ev) || h.routeDisk(st, wid, id, sessions, ev) || h.routeWiki(st, wid, id, sessions, ev) {
 		return
 	}
 	switch e := ev.GetEvent().(type) {

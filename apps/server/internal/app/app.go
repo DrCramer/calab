@@ -59,6 +59,7 @@ import (
 	"github.com/calaba/calaba/server/internal/unfurl"
 	"github.com/calaba/calaba/server/internal/users"
 	"github.com/calaba/calaba/server/internal/voice"
+	"github.com/calaba/calaba/server/internal/wiki"
 	"github.com/calaba/calaba/server/internal/workspaces"
 )
 
@@ -146,6 +147,8 @@ type App struct {
 	Rooms *rooms.Handlers
 	// Disk: the workspace Disk (ADR-0094) with the hourly trash sweeper.
 	Disk *disk.Service
+	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
+	Wiki *wiki.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP        *sip.Service
 	billing    *billingRuntime
@@ -169,6 +172,7 @@ func (a *App) Run(ctx context.Context) {
 	}
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Disk.RunTrashSweep(ctx, disk.SweepInterval)
+	go a.Wiki.RunTrashSweep(ctx, wiki.SweepInterval)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
 	go a.Guests.RunAdmissions(ctx, guests.AdmissionSweep)
@@ -448,6 +452,13 @@ func New(d Deps) *App {
 	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)        // public link page + thumbnail: 60 per minute per IP
 	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30) // public downloads (each Range request): 30 per minute per IP
 	diskSvc.Routes(mux, private)
+	wikiSvc := wiki.New(d.DB, pub, filesSvc, planSvc)
+	wikiSvc.PublicURL = d.Config.PublicAppURL
+	wikiSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:wiki-link:", 60, 60)     // public page + state: 60 per minute per IP
+	wikiSvc.LinkFileLimit = redisx.NewRateLimiter(d.Redis, "rl:wiki-link-f:", 120, 120) // public pictures: 120 per minute per IP
+	allowed := d.Config.AllowedOrigins()
+	wikiSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, wiki.SyncConfig{})
+	wikiSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
 		redisx.NewRateLimiter(d.Redis, "rl:sticker-upload:", 10, 1)).Routes(mux, private) // 10 batches at once, 60 per hour
 	sounds.NewHandlers(d.DB, pub, filesSvc, voice.Store{C: d.Redis}).Routes(mux, private)
@@ -541,7 +552,7 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour, dueTZ: boards.DueZone(d.Config.TasksDueTZ)}
 }
 

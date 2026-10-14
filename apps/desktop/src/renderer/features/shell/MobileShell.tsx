@@ -36,6 +36,7 @@ import { EventPanel } from '../calendar/EventCard';
 import { BoardsList } from '../boards/BoardsList';
 import { BoardsView } from '../boards/BoardsView';
 import { PhoneDisk } from '../disk/PhoneDisk';
+import { PhoneWiki, PhoneWikiPage, PhoneWikiTrash } from '../wiki/PhoneWiki';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
@@ -139,6 +140,8 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <CalendarRoot welcome={welcome} />;
     case 'disk':
       return <DiskRoot welcome={welcome} />;
+    case 'wiki':
+      return <WikiRoot welcome={welcome} />;
     case 'profile':
       return <ProfileRoot />;
   }
@@ -236,6 +239,14 @@ function DiskRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return <PhoneDisk workspaceId={ws} folderId="" trash={false} root />;
 }
 
+/** «Вики» (ADR-0096 §7): the top-level pages of the open workspace; a page and the trash are pushed screens (guests have no tab). */
+function WikiRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneWiki workspaceId={ws} />;
+}
+
 /** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
 function ProfileRoot(): ReactNode {
   return (
@@ -291,6 +302,8 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <SettingsScreen section={screen.section} />;
     case 'disk':
       return <ActiveWorkspace>{(ws) => <PhoneDisk key={`${screen.folderId}|${screen.trash ? 't' : ''}`} workspaceId={ws} folderId={screen.folderId} trash={!!screen.trash} root={false} />}</ActiveWorkspace>;
+    case 'wiki':
+      return <ActiveWorkspace>{(ws) => (screen.trash ? <PhoneWikiTrash workspaceId={ws} /> : <PhoneWikiPage key={screen.pageId} workspaceId={ws} pageId={screen.pageId} />)}</ActiveWorkspace>;
   }
 }
 

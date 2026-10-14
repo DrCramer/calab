@@ -21,7 +21,7 @@ func (s *wsState) diskSees(uid uuid.UUID, chain []perm.DiskNode) bool {
 	if !ok || len(chain) == 0 {
 		return false
 	}
-	return perm.ComputeDiskItemIn(m, s.bots[uid], chain).Has(perm.DiskView)
+	return perm.ComputeDiskItemIn(m, chain).Has(perm.DiskView)
 }
 
 // diskRemove is DISK_ITEM_REMOVE as clients get it.

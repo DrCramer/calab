@@ -159,6 +159,12 @@ export async function callEmpty(method: Method, path: string, body?: JsonValue):
   await send(method, path, body);
 }
 
+/** GET of a binary body (application/octet-stream: a wiki version's Yjs state, ADR-0096 §5). */
+export async function callBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
+  const res = await send('GET', path, undefined, signal);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 /** Serialises a request message (unset optional fields are omitted → "leave unchanged"). */
 export function body<Req extends DescMessage>(schema: Req, init: MessageInitShape<Req>): JsonValue {
   return toJson(schema, create(schema, init));

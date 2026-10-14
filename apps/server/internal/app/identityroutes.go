@@ -53,6 +53,8 @@ const (
 	scopeBilling
 	// scopeDiskItem: /api/disk/items/{id} (ADR-0094), the item's workspace.
 	scopeDiskItem
+	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
+	scopeWikiPage
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -463,6 +465,33 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/disk/{code}":                scopePublic,
 	"GET /api/public/disk/{code}/content":        scopePublic,
 	"GET /api/public/disk/{code}/thumbnail":      scopePublic,
+	// Wiki (ADR-0096 §8). The sync socket authenticates in-band (the token frame, like the
+	// gateway) and applies the workspace policy itself (wiki.Authenticator); the public link
+	// routes are anonymous like the Disk's, with auth.CheckPublicCapability in the handler.
+	"GET /api/workspaces/{id}/wiki/pages":        scopeWorkspace,
+	"POST /api/workspaces/{id}/wiki/pages":       scopeWorkspace,
+	"POST /api/workspaces/{id}/wiki/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/wiki/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/wiki/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/wiki/settings":     scopeWorkspace,
+	"GET /api/wiki/pages/{id}":                   scopeWikiPage,
+	"PATCH /api/wiki/pages/{id}":                 scopeWikiPage,
+	"DELETE /api/wiki/pages/{id}":                scopeWikiPage,
+	"POST /api/wiki/pages/{id}/trash":            scopeWikiPage,
+	"POST /api/wiki/pages/{id}/restore":          scopeWikiPage,
+	"GET /api/wiki/pages/{id}/path":              scopeWikiPage,
+	"GET /api/wiki/pages/{id}/activity":          scopeWikiPage,
+	"GET /api/wiki/pages/{id}/permissions":       scopeWikiPage,
+	"PUT /api/wiki/pages/{id}/permissions":       scopeWikiPage,
+	"POST /api/wiki/pages/{id}/link":             scopeWikiPage,
+	"DELETE /api/wiki/pages/{id}/link":           scopeWikiPage,
+	"GET /api/wiki/pages/{id}/versions":          scopeWikiPage,
+	"GET /api/wiki/pages/{id}/versions/{vid}":    scopeWikiPage,
+	"POST /api/wiki/pages/{id}/files":            scopeWikiPage,
+	"GET /api/wiki/pages/{id}/sync":              scopePublic,
+	"GET /api/public/wiki/{code}":                scopePublic,
+	"GET /api/public/wiki/{code}/state":          scopePublic,
+	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
@@ -713,6 +742,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeDiskItem:
 		row, err := q.GetDiskItem(ctx, id)
 		return row.WorkspaceID, err
+	case scopeWikiPage:
+		row, err := q.GetWikiPage(ctx, id)
+		return row.WorkspaceID, err
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -837,6 +869,8 @@ func IdentityRouteClass(pattern string) string {
 		return "achievement"
 	case scopeDiskItem:
 		return "disk_item"
+	case scopeWikiPage:
+		return "wiki_page"
 	default:
 		return "specialized"
 	}

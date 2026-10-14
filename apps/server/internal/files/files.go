@@ -43,6 +43,7 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/wikiacl"
 )
 
 // MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted). Clients
@@ -743,11 +744,31 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 				if err != nil {
 					return false, err
 				}
-				if ch.Bits(m, id.IsBot, &item.ID).Has(perm.DiskView) {
+				if ch.Bits(m, &item.ID).Has(perm.DiskView) {
 					return true, nil
 				}
 			} else if err := candidate(err); err != nil {
 				return false, err
+			}
+		} else if !db.IsNotFound(err) {
+			return false, err
+		}
+		// A picture or attachment of a wiki page (ADR-0096 §1), in the trash too: WIKI_VIEW on
+		// its page.
+		if pf, err := s.db.Q.GetWikiPageFile(ctx, f.ID); err == nil {
+			ch, err := wikiacl.Load(ctx, s.db.Q, []uuid.UUID{pf.PageID})
+			if err != nil {
+				return false, err
+			}
+			if ch.Has(pf.PageID) {
+				m, err := res.Member(ctx, ch.Page(pf.PageID).WorkspaceID, uid)
+				if err == nil {
+					if ch.Bits(m, &pf.PageID).Has(perm.WikiView) {
+						return true, nil
+					}
+				} else if err := candidate(err); err != nil {
+					return false, err
+				}
 			}
 		} else if !db.IsNotFound(err) {
 			return false, err

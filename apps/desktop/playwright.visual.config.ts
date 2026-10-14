@@ -54,6 +54,9 @@ export default defineConfig<VisualOptions>({
     // «Диск» (ADR-0094 §8, a new interface): dark 960×600; «Доступ» also light (disk.visual.spec.ts).
     { name: 'disk-dark-960', testMatch: /disk\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'disk-light-960', testMatch: /disk\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
+    // «Вики» (ADR-0096 §9, a new interface): dark 960×600; the page also light (wiki.visual.spec.ts).
+    { name: 'wiki-dark-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    { name: 'wiki-light-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // Text selection in the feed (issue #13): behaviour only, no screenshots.
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.

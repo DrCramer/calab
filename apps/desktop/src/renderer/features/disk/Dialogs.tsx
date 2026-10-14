@@ -1,24 +1,20 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { DISK_BITS, PermissionTargetType, WorkspaceRole, type DiskActivity, type DiskItem, type DiskPermissionEntry } from '@calaba/protocol';
-import { ChevronRight, Copy, Folder, Plus, X } from 'lucide-react';
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { DISK_BITS, type DiskActivity, type DiskItem } from '@calaba/protocol';
+import { ChevronRight, Copy, Folder } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import type { PickerGroup } from '../../components/picker/pickerModel';
-import { Button, IconButton, Input, Modal, Select, Spinner, Switch, cx } from '../../components/ui';
+import { Button, Input, Modal, Select, Spinner, Switch, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { activityDays, canMoveInto, describeActivity, folderKey, isFolder, ROOT, visibleIds } from '../../lib/disk';
 import { fmt } from '../../lib/format';
-import { isFullRole } from '../../lib/roles';
 import { collator, diskApi, loadListing, loadPath, moveItems, refreshDisk } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { useDiskUi, type DiskDialog } from '../../stores/diskUi';
 import { toast } from '../../stores/toasts';
-import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { useMemberName } from '../../stores/workspaces';
 import { VideoAttachment } from '../chat/MediaPlayer';
 import { MemberAvatar } from '../boards/menus';
-import { RoleMark, roleName } from '../people/MemberBits';
-import { MemberPicker } from '../people/MemberPicker';
-import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
+import { entryOf, TreeAccessEditor, useTreeAccess } from '../people/TreeAccess';
 import { openBuyStorage, UsageMeter } from './UsageMeter';
 
 /**
@@ -56,85 +52,27 @@ function DialogBody({ dialog, workspaceId, onClose }: { dialog: DiskDialog; work
 
 // ---------------------------------------------------------------- «Доступ»
 
-type Level = 'view' | 'edit' | 'deny';
-interface Draft {
-  targetType: PermissionTargetType;
-  targetId: string;
-  level: Level;
-}
-
-const V = DISK_BITS.VIEW;
-const VW = DISK_BITS.VIEW | DISK_BITS.WRITE;
-
-/** An override as one of the dialog's levels: «Правка» = VIEW | WRITE, «Просмотр» = VIEW (WRITE denied), «Нет доступа» = both denied. */
-export function levelOf(e: Pick<DiskPermissionEntry, 'allow' | 'deny'>): Level {
-  if ((e.allow & DISK_BITS.WRITE) !== 0n) return 'edit';
-  if ((e.allow & V) !== 0n) return 'view';
-  if ((e.deny & V) !== 0n) return 'deny';
-  return 'view';
-}
-export function entryOf(d: Draft): { targetType: PermissionTargetType; targetId: string; allow: bigint; deny: bigint } {
-  const bits = d.level === 'edit' ? { allow: VW, deny: 0n } : d.level === 'view' ? { allow: V, deny: DISK_BITS.WRITE } : { allow: 0n, deny: VW };
-  return { targetType: d.targetType, targetId: d.targetId, ...bits };
-}
-const keyOf = (d: Pick<Draft, 'targetType' | 'targetId'>): string => `${d.targetType}:${d.targetId}`;
+const DISK_TREE = { VIEW: DISK_BITS.VIEW, WRITE: DISK_BITS.WRITE };
 
 /**
- * «Доступ» (ADR-0094 §2): «Только выбранные» (restricted: the roles stop giving access — the owner,
- * DISK_MANAGE and the listed ones remain), then the roles and people with «Просмотр / Правка /
- * Нет доступа», «Добавить роль или человека» (guests only by name). Saved at once with PUT (the
- * whole list), like the board's access.
+ * «Доступ» (ADR-0094 §2): the shared tree access editor (features/people/TreeAccess) in a sheet;
+ * saved at once with PUT (the whole list), like the board's access.
  */
 function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void }): ReactNode {
   const item = useDisk((s) => s.items[itemId]);
   const ws = item?.workspaceId ?? '';
-  const roles = useWorkspaces((s) => s.byId[ws]?.roles);
-  const members = useWorkspaces((s) => s.byId[ws]?.members);
-  const [drafts, setDrafts] = useState<Draft[] | null>(null);
-  const [restricted, setRestricted] = useState(false);
-  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let live = true;
-    diskApi.permissions(itemId).then(
-      (r) => {
-        if (!live) return;
-        setRestricted(r.restricted);
-        setDrafts(r.entries.map((e) => ({ targetType: e.targetType, targetId: e.targetId, level: levelOf(e) })));
-      },
-      (e: unknown) => {
-        if (!live) return;
-        toast.fail(e, t('disk.err.access'));
-        onClose();
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [itemId, onClose]);
-
-  const ownerId = item?.ownerId ?? '';
-  const groups = useMemo((): Array<PickerGroup<PeoplePickItem>> => {
-    const listed = new Set((drafts ?? []).map(keyOf));
-    const rs: RolePickItem[] = (roles ?? [])
-      .filter((r) => !isFullRole(r) && r.builtin !== WorkspaceRole.GUEST)
-      .map((r) => ({ kind: 'role', id: `role:${r.id}`, roleId: r.id, role: r.builtin, color: r.color, label: roleName(r), note: listed.has(`${PermissionTargetType.ROLE}:${r.id}`) ? t('picker.listed') : '', search: [roleName(r), r.name] }));
-    const people = memberItems(Object.values(members ?? {}), {
-      ...(roles ? { roles } : {}),
-      exclude: new Set(ownerId ? [ownerId] : []),
-      decorate: (m) => (listed.has(`${PermissionTargetType.USER}:${m.user?.id ?? ''}`) ? { note: t('picker.listed') } : undefined),
-    });
-    return [
-      { id: 'roles', label: t('picker.roles'), items: rs },
-      { id: 'members', label: t('picker.members'), items: people },
-    ];
-  }, [drafts, roles, members, ownerId]);
-
+  const load = useCallback(() => diskApi.permissions(itemId), [itemId]);
+  const access = useTreeAccess(load, DISK_TREE, (e) => {
+    toast.fail(e, t('disk.err.access'));
+    onClose();
+  });
   if (!item) return null;
+  const { drafts, restricted } = access;
   const save = (): void => {
     if (!drafts) return;
     setBusy(true);
-    diskApi.setPermissions(itemId, { entries: drafts.map(entryOf), restricted }).then(
+    diskApi.setPermissions(itemId, { entries: drafts.map((d) => entryOf(d, DISK_TREE)), restricted }).then(
       () => {
         useDisk.getState().upsert({ ...item, restricted, shared: drafts.length > 0 });
         refreshDisk(ws);
@@ -146,8 +84,6 @@ function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void
       },
     );
   };
-  const setLevel = (k: string, level: Level): void => setDrafts((ds) => (ds ?? []).map((d) => (keyOf(d) === k ? { ...d, level } : d)));
-  const remove = (k: string): void => setDrafts((ds) => (ds ?? []).filter((d) => keyOf(d) !== k));
   return (
     <Modal
       open
@@ -166,100 +102,18 @@ function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void
         </>
       }
     >
-      <div className="flex flex-col gap-4" data-testid="disk-access">
-        <Switch checked={restricted} onChange={setRestricted} label={t('disk.restricted')} hint={t('disk.restrictedHint')} disabled={!drafts} />
-        <section className="flex flex-col gap-1">
-          <h3 className="text-caption font-semibold text-muted">{t('disk.accessWho')}</h3>
-          <div className="flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]">
-            {item.ownerId ? <OwnerRow workspaceId={ws} userId={item.ownerId} /> : null}
-            {drafts === null ? (
-              <div className="grid h-12 place-items-center">
-                <Spinner />
-              </div>
-            ) : (
-              drafts.map((d) => <TargetRow key={keyOf(d)} workspaceId={ws} draft={d} onLevel={setLevel} onRemove={remove} />)
-            )}
-            {drafts && !drafts.length && !restricted ? <p className="px-3 py-2 text-caption text-muted">{t('disk.accessInherited')}</p> : null}
-          </div>
-          <MemberPicker
-            open={adding}
-            onOpenChange={setAdding}
-            groups={groups}
-            onSelect={(it) => {
-              setAdding(false);
-              const d: Draft =
-                it.kind === 'role' ? { targetType: PermissionTargetType.ROLE, targetId: it.roleId, level: 'view' } : { targetType: PermissionTargetType.USER, targetId: it.userId, level: 'view' };
-              setDrafts((ds) => (ds?.some((x) => keyOf(x) === keyOf(d)) ? ds : [...(ds ?? []), d]));
-            }}
-            placeholder={t('picker.searchPeople')}
-            label={t('disk.accessAdd')}
-            testId="disk-access-picker"
-          >
-            <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={!drafts} data-testid="disk-access-add">
-              <Plus className="size-3.5" aria-hidden /> {t('disk.accessAdd')}
-            </Button>
-          </MemberPicker>
-        </section>
-        <p className="text-caption text-faint">{t('disk.accessFooter')}</p>
-      </div>
+      <TreeAccessEditor
+        workspaceId={ws}
+        ownerId={item.ownerId}
+        access={access}
+        hint={t('disk.restrictedHint')}
+        inherited={t('disk.accessInherited')}
+        footer={t('disk.accessFooter')}
+        testId="disk-access"
+      />
     </Modal>
   );
 }
-
-function OwnerRow({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
-  const name = useMemberName(workspaceId, userId);
-  return (
-    <div className="flex h-11 items-center gap-2.5 border-b border-[var(--color-card-line)] px-3">
-      <MemberAvatar workspaceId={workspaceId} userId={userId} size={24} />
-      <span className="min-w-0 flex-1 truncate text-body">{name}</span>
-      <span className="text-caption text-muted">{t('disk.owner')}</span>
-    </div>
-  );
-}
-
-const TargetRow = memo(function TargetRow({
-  workspaceId,
-  draft,
-  onLevel,
-  onRemove,
-}: {
-  workspaceId: string;
-  draft: Draft;
-  onLevel: (k: string, l: Level) => void;
-  onRemove: (k: string) => void;
-}): ReactNode {
-  const role = useWorkspaces((s) => (draft.targetType === PermissionTargetType.ROLE ? s.byId[workspaceId]?.roles.find((r) => r.id === draft.targetId) : undefined));
-  const user = draft.targetType === PermissionTargetType.USER;
-  const guest = useWorkspaces((s) => user && s.byId[workspaceId]?.members[draft.targetId]?.role === WorkspaceRole.GUEST);
-  const name = user ? memberName(workspaceId, draft.targetId) : role ? `@${roleName(role)}` : draft.targetId;
-  const k = keyOf(draft);
-  return (
-    <div className="flex h-11 items-center gap-2.5 border-b border-[var(--color-card-line)] px-3 last:border-b-0" data-testid="disk-access-row">
-      {user ? (
-        <MemberAvatar workspaceId={workspaceId} userId={draft.targetId} size={24} />
-      ) : (
-        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-caption font-semibold text-muted" aria-hidden>
-          @
-        </span>
-      )}
-      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body">
-        <span className="truncate">{name}</span>
-        {role ? <RoleMark role={role.builtin} tone="muted" /> : null}
-        {guest ? <span className="shrink-0 text-caption text-muted">{t('disk.guest')}</span> : null}
-      </span>
-      <span className="w-36 shrink-0">
-        <Select value={draft.level} onChange={(e) => onLevel(k, e.target.value as Level)} aria-label={t('disk.level', { name })} data-testid="disk-access-level">
-          <option value="view">{t('disk.level.view')}</option>
-          <option value="edit">{t('disk.level.edit')}</option>
-          <option value="deny">{t('disk.level.deny')}</option>
-        </Select>
-      </span>
-      <IconButton size="sm" label={t('perm.removeTarget', { name })} onClick={() => onRemove(k)} data-testid="disk-access-remove">
-        <X className="size-3.5" aria-hidden />
-      </IconButton>
-    </div>
-  );
-});
 
 // ---------------------------------------------------------------- «Ссылка»
 

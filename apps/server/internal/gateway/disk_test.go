@@ -68,9 +68,9 @@ func TestDiskEventsPerRecipient(t *testing.T) {
 			}
 		}
 	}
-	check("open item", deliver(upsert(open, nil)), map[uuid.UUID]string{alice: "U", bob: "U", admin: "U"})
+	check("open item", deliver(upsert(open, nil)), map[uuid.UUID]string{alice: "U", bob: "U", admin: "U", bot: "U"}) // a bot is a member like bob (addendum 2026-10-14)
 	check("restricted: bob loses it, the guest gains it", deliver(upsert(closed, open)),
-		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "U"})
+		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "U", bot: "R"})
 	check("deleted forever", deliver(&v1.DispatchEvent{Event: &v1.DispatchEvent_DiskItemRemove{DiskItemRemove: &v1.DiskItemRemove{
 		WorkspaceId: wid.String(), ItemId: item.GetId(), Access: diskacl.Levels(closed)}}}),
 		map[uuid.UUID]string{alice: "R", guest: "R", admin: "R"})
