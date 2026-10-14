@@ -28,6 +28,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/directory"
+	"github.com/calaba/calaba/server/internal/disk"
 	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
@@ -143,6 +144,8 @@ type App struct {
 	Boards *boards.Service
 	// Rooms: room handlers with the temporary rooms sweeper (ADR-0044).
 	Rooms *rooms.Handlers
+	// Disk: the workspace Disk (ADR-0094) with the hourly trash sweeper.
+	Disk *disk.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP        *sip.Service
 	billing    *billingRuntime
@@ -165,6 +168,7 @@ func (a *App) Run(ctx context.Context) {
 		go a.runIdentityDirectory(ctx)
 	}
 	go a.Files.RunCleanup(ctx, time.Hour)
+	go a.Disk.RunTrashSweep(ctx, disk.SweepInterval)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
 	go a.Guests.RunAdmissions(ctx, guests.AdmissionSweep)
@@ -439,6 +443,11 @@ func New(d Deps) *App {
 	dmHandlers.Routes(mux, private)
 	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
+	diskSvc := disk.New(d.DB, pub, filesSvc, planSvc)
+	diskSvc.PublicURL = d.Config.PublicAppURL
+	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)        // public link page + thumbnail: 60 per minute per IP
+	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30) // public downloads (each Range request): 30 per minute per IP
+	diskSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
 		redisx.NewRateLimiter(d.Redis, "rl:sticker-upload:", 10, 1)).Routes(mux, private) // 10 batches at once, 60 per hour
 	sounds.NewHandlers(d.DB, pub, filesSvc, voice.Store{C: d.Redis}).Routes(mux, private)
@@ -531,7 +540,7 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour, dueTZ: boards.DueZone(d.Config.TasksDueTZ)}
 }
 

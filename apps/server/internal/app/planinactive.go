@@ -27,8 +27,9 @@ var planInactiveRoutes = map[string]string{
 	"PUT /api/messages/{id}/pin":                  plans.RestrictedSend,
 	"POST /api/messages/{id}/interactions":        plans.RestrictedSend,
 	// files
-	"POST /api/workspaces/{id}/files": plans.RestrictedUpload,
-	"POST /api/boards/{id}/files":     plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/files":       plans.RestrictedUpload,
+	"POST /api/boards/{id}/files":           plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/disk/upload": plans.RestrictedUpload, // ADR-0094
 	// pictures made of an upload: backgrounds, achievement images (an edit that replaces the
 	// picture is refused inside achievements), sticker replacement, bot avatars
 	"POST /api/workspaces/{id}/backgrounds":         plans.RestrictedUpload,
@@ -57,6 +58,7 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/workspaces/{id}/sticker-packs": plans.RestrictedCreate,
 	"POST /api/sticker-packs/{id}/stickers":   plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/sounds":        plans.RestrictedCreate,
+	"POST /api/workspaces/{id}/disk/folders":  plans.RestrictedCreate,
 	// integrations: apps, GPTunneL, bot tokens, board webhooks / Git / rules / forms, telephony
 	"POST /api/workspaces/{id}/apps":                  plans.RestrictedConnect,
 	"POST /api/workspaces/{id}/integrations/gptunnel": plans.RestrictedConnect,
