@@ -8,6 +8,7 @@ export const ruCalendar = {
   'cal.mini': 'Мини-календарь',
   'cal.prevMonth': 'Предыдущий месяц',
   'cal.nextMonth': 'Следующий месяц',
+  'cal.pickDate': 'Выбрать дату',
   'cal.today': 'Сегодня',
   'cal.hasEvents': 'есть встречи',
   'cal.prevDay': 'Предыдущий день',
