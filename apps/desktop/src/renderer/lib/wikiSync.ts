@@ -14,13 +14,22 @@
  *   y-protocols' own 3 s interval is replaced by a 15 s renew/expire tick that runs only while
  *   online and visible.
  * - Compaction: SNAPSHOT_POST on COMPACT_REQUEST, 3 s after our last edit, and on destroy when we
- *   edited since the last snapshot. Read-only providers never send updates, awareness or snapshots.
+ *   edited since the last snapshot — a silent compaction, the server sends nothing back. Only a post
+ *   carrying an edit no UPDATE carried (a transaction above the frame limit) sets `broadcast`, and
+ *   the server relays that one to the other sockets. Posts are spaced by SNAPSHOT_GAP_MS (the
+ *   server closes 4008 past 2 at once, then 1 per 2 s); a request inside the gap is deferred and
+ *   merged. Read-only providers never send updates, awareness or snapshots.
  * - Reconnect: exponential backoff 1 s → 30 s with jitter (the gateway's curve); 4004 refreshes
  *   the token first; 4003 / 4404 stop for good (status «offline»).
  */
-import * as Y from 'yjs';
-import { applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates, type Awareness } from 'y-protocols/awareness';
-import { backoffDelay, type SocketLike } from './gateway/client';
+import * as Y from "yjs";
+import {
+  applyAwarenessUpdate,
+  encodeAwarenessUpdate,
+  removeAwarenessStates,
+  type Awareness,
+} from "y-protocols/awareness";
+import { backoffDelay, type SocketLike } from "./gateway/client";
 import {
   decodeFrame,
   encodeAwareness,
@@ -34,14 +43,16 @@ import {
   MAX_STATE,
   UPDATE_HEADER,
   type SnapshotMeta,
-} from './wiki/frames';
-import { docMeta } from './wiki/plainText';
+} from "./wiki/frames";
+import { docMeta } from "./wiki/plainText";
 
-export type WikiSyncStatus = 'connecting' | 'online' | 'readonly' | 'offline';
+export type WikiSyncStatus = "connecting" | "online" | "readonly" | "offline";
 
 export const BATCH_MS = 200;
 export const AWARENESS_MIN_GAP_MS = 100; // ≤ 10/s
 export const IDLE_SNAPSHOT_MS = 3000;
+/** Minimum gap between two SNAPSHOT_POSTs (the server's budget: 2 at once, then 1 per 2 s). */
+export const SNAPSHOT_GAP_MS = 2000;
 export const AWARENESS_RENEW_MS = 15_000;
 export const AWARENESS_TIMEOUT_MS = 30_000;
 
@@ -57,11 +68,11 @@ export interface Visibility {
 }
 
 const documentVisibility: Visibility = {
-  hidden: () => typeof document !== 'undefined' && document.hidden,
+  hidden: () => typeof document !== "undefined" && document.hidden,
   subscribe: (cb) => {
-    if (typeof document === 'undefined') return () => undefined;
-    document.addEventListener('visibilitychange', cb);
-    return () => document.removeEventListener('visibilitychange', cb);
+    if (typeof document === "undefined") return () => undefined;
+    document.addEventListener("visibilitychange", cb);
+    return () => document.removeEventListener("visibilitychange", cb);
   },
 };
 
@@ -88,7 +99,9 @@ export interface WikiSyncDeps {
 
 /** An Awareness without y-protocols' 3 s interval (the provider renews it while visible). */
 export function quietAwareness(awareness: Awareness): Awareness {
-  const a = awareness as unknown as { _checkInterval?: ReturnType<typeof setInterval> };
+  const a = awareness as unknown as {
+    _checkInterval?: ReturnType<typeof setInterval>;
+  };
   if (a._checkInterval !== undefined) clearInterval(a._checkInterval);
   a._checkInterval = undefined;
   return awareness;
@@ -102,7 +115,7 @@ export class WikiSyncProvider {
   private readonly deps: WikiSyncDeps;
   private readonly vis: Visibility;
   private ws: SocketLike | null = null;
-  private statusValue: WikiSyncStatus = 'connecting';
+  private statusValue: WikiSyncStatus = "connecting";
   private readonly listeners = new Set<(s: WikiSyncStatus) => void>();
   private synced = false;
   private stopped = false;
@@ -117,6 +130,12 @@ export class WikiSyncProvider {
   private awTimer: Timer | null = null;
   private renewTimer: ReturnType<typeof setInterval> | null = null;
   private lastAwarenessAt = 0;
+  private postTimer: Timer | null = null;
+  private lastPostAt = Number.NEGATIVE_INFINITY;
+  /** The next snapshot post must be relayed to the other sockets (it carries an oversized edit). */
+  private postBroadcast = false;
+  /** postNow is flushing: a nested request joins the post being built. */
+  private posting = false;
   /** Edited since our last snapshot. */
   private dirty = false;
   /**
@@ -132,8 +151,8 @@ export class WikiSyncProvider {
     this.awareness = quietAwareness(awareness);
     this.deps = deps;
     this.vis = deps.visibility ?? documentVisibility;
-    doc.on('update', this.onDocUpdate);
-    awareness.on('update', this.onAwarenessUpdate);
+    doc.on("update", this.onDocUpdate);
+    awareness.on("update", this.onAwarenessUpdate);
     this.unsubVis = this.vis.subscribe(this.onVisibility);
     this.connect();
   }
@@ -165,7 +184,7 @@ export class WikiSyncProvider {
   private connect(): void {
     if (this.stopped) return;
     this.retryTimer = null;
-    this.setStatus('connecting');
+    this.setStatus("connecting");
     let ws: SocketLike;
     try {
       ws = this.deps.createSocket(this.deps.url());
@@ -173,23 +192,24 @@ export class WikiSyncProvider {
       this.scheduleReconnect();
       return;
     }
-    ws.binaryType = 'arraybuffer';
+    ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onopen = () => {
       void this.deps.getToken().then(
         (token) => {
           if (ws !== this.ws) return;
           if (!token) {
-            ws.close(4000, 'no token');
+            ws.close(4000, "no token");
             return;
           }
           (ws.send as unknown as (d: string) => void).call(ws, token);
         },
-        () => ws === this.ws && ws.close(4000, 'no token'),
+        () => ws === this.ws && ws.close(4000, "no token"),
       );
     };
     ws.onmessage = (ev) => {
-      if (ws === this.ws) this.onMessage(ev.data as ArrayBuffer | Uint8Array | string);
+      if (ws === this.ws)
+        this.onMessage(ev.data as ArrayBuffer | Uint8Array | string);
     };
     ws.onclose = (ev) => {
       if (ws === this.ws) this.onClose(ev.code);
@@ -201,19 +221,23 @@ export class WikiSyncProvider {
     this.ws = null;
     this.synced = false;
     this.clearSessionTimers();
-    // Pending local updates go up again with the replay after the next SNAPSHOT.
+    // Pending local updates go up again with the replay after the next SNAPSHOT (an oversized one
+    // as a broadcast snapshot again).
     this.pending = [];
+    this.postBroadcast = false;
     // Remote cursors are stale without a socket.
-    const others = [...this.awareness.getStates().keys()].filter((id) => id !== this.awareness.clientID);
+    const others = [...this.awareness.getStates().keys()].filter(
+      (id) => id !== this.awareness.clientID,
+    );
     if (others.length) removeAwarenessStates(this.awareness, others, this);
     if (this.stopped) return;
     if (code === CLOSE_FORBIDDEN || code === CLOSE_NOT_FOUND) {
       this.stopped = true;
-      this.setStatus('offline');
+      this.setStatus("offline");
       this.deps.onFatal?.(code);
       return;
     }
-    this.setStatus('offline');
+    this.setStatus("offline");
     if (code === CLOSE_AUTH && this.deps.refreshToken && !this.refreshed) {
       this.refreshed = true;
       void this.deps.refreshToken().then(
@@ -227,7 +251,10 @@ export class WikiSyncProvider {
 
   private scheduleReconnect(): void {
     if (this.stopped || this.retryTimer) return;
-    const delay = backoffDelay(this.attempt++, (this.deps.random ?? Math.random)());
+    const delay = backoffDelay(
+      this.attempt++,
+      (this.deps.random ?? Math.random)(),
+    );
     this.retryTimer = setTimeout(() => this.connect(), delay);
   }
 
@@ -254,8 +281,10 @@ export class WikiSyncProvider {
   // ---- inbound
 
   private onMessage(data: ArrayBuffer | Uint8Array | string): void {
-    if (typeof data === 'string') return;
-    const f = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+    if (typeof data === "string") return;
+    const f = decodeFrame(
+      data instanceof Uint8Array ? data : new Uint8Array(data),
+    );
     if (!f) return;
     switch (f.type) {
       case FRAME_SNAPSHOT:
@@ -287,10 +316,15 @@ export class WikiSyncProvider {
     this.synced = true;
     this.attempt = 0;
     this.refreshed = false;
-    this.setStatus(this.deps.readOnly ? 'readonly' : 'online');
+    this.setStatus(this.deps.readOnly ? "readonly" : "online");
     if (!first || this.deps.readOnly) return;
     // Replay what the server's snapshot lacks (offline edits, updates lost with the old socket).
-    const diff = this.replayNeeded ? Y.encodeStateAsUpdate(this.doc, Y.encodeStateVectorFromUpdate(snapshotState)) : null;
+    const diff = this.replayNeeded
+      ? Y.encodeStateAsUpdate(
+          this.doc,
+          Y.encodeStateVectorFromUpdate(snapshotState),
+        )
+      : null;
     this.replayNeeded = false;
     if (diff && !isEmptyUpdate(diff)) {
       this.dirty = true;
@@ -333,7 +367,8 @@ export class WikiSyncProvider {
     let oversize = false;
     const emit = (): void => {
       if (!group.length) return;
-      const merged = group.length === 1 ? (group[0] as Uint8Array) : Y.mergeUpdates(group);
+      const merged =
+        group.length === 1 ? (group[0] as Uint8Array) : Y.mergeUpdates(group);
       if (merged.length <= limit) this.send(encodeUpdate(merged));
       else for (const u of group) this.send(encodeUpdate(u)); // each one fits (checked below)
       group = [];
@@ -349,9 +384,9 @@ export class WikiSyncProvider {
       size += u.length;
     }
     emit();
-    // One transaction too big for a frame (a huge paste): the snapshot carries it; the server
-    // relays SNAPSHOT_POST to the other sockets of the page as a SNAPSHOT.
-    if (oversize) this.postSnapshot();
+    // One transaction too big for a frame (a huge paste): the snapshot carries it; with broadcast
+    // the server relays it to the other sockets of the page as a SNAPSHOT.
+    if (oversize) this.postSnapshot(true);
   }
 
   private armIdleSnapshot(): void {
@@ -362,35 +397,83 @@ export class WikiSyncProvider {
     }, IDLE_SNAPSHOT_MS);
   }
 
-  /** SNAPSHOT_POST with the whole doc (compaction). No-op when read-only or not synced. */
-  postSnapshot(): void {
-    if (this.deps.readOnly || !this.synced || !this.ws || this.ws.readyState !== OPEN) return;
-    this.flush();
+  /**
+   * SNAPSHOT_POST with the whole doc (compaction); broadcast: it carries an edit no UPDATE carried.
+   * Within SNAPSHOT_GAP_MS of the last post it is deferred (requests merge). No-op when read-only
+   * or not synced.
+   */
+  postSnapshot(broadcast = false): void {
+    if (
+      this.deps.readOnly ||
+      !this.synced ||
+      !this.ws ||
+      this.ws.readyState !== OPEN
+    )
+      return;
+    this.postBroadcast ||= broadcast;
+    if (this.posting) return; // the post being built carries it
+    const wait = this.lastPostAt + SNAPSHOT_GAP_MS - Date.now();
+    if (wait > 0) {
+      this.postTimer ??= setTimeout(this.postNow, wait);
+      return;
+    }
+    this.postNow();
+  }
+
+  /** Sends the snapshot now (destroy, or the deferred post). */
+  private postNow = (): void => {
+    if (this.postTimer) clearTimeout(this.postTimer);
+    this.postTimer = null;
+    if (
+      this.deps.readOnly ||
+      !this.synced ||
+      !this.ws ||
+      this.ws.readyState !== OPEN
+    )
+      return;
+    this.posting = true;
+    try {
+      this.flush();
+    } finally {
+      this.posting = false;
+    }
+    const broadcast = this.postBroadcast;
+    this.postBroadcast = false;
     const state = Y.encodeStateAsUpdate(this.doc);
     if (state.length > MAX_STATE) {
       this.deps.onTooLarge?.(state.length);
       return;
     }
     const meta = this.deps.meta?.() ?? docMeta(this.doc);
-    this.send(encodeSnapshotPost(this.lastSeq, meta, state));
+    this.send(encodeSnapshotPost(this.lastSeq, meta, state, broadcast));
+    this.lastPostAt = Date.now();
     this.dirty = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
-  }
+  };
 
   // ---- outbound: awareness
 
   private onAwarenessUpdate = (
-    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+    {
+      added,
+      updated,
+      removed,
+    }: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown,
   ): void => {
     if (origin === this || this.deps.readOnly) return;
     const me = this.awareness.clientID;
-    if (!added.includes(me) && !updated.includes(me) && !removed.includes(me)) return;
+    if (!added.includes(me) && !updated.includes(me) && !removed.includes(me))
+      return;
     if (!this.synced || this.vis.hidden()) return; // sent in full on sync / when visible again
     const gap = Date.now() - this.lastAwarenessAt;
     if (gap >= AWARENESS_MIN_GAP_MS) this.sendAwareness();
-    else this.awTimer ??= setTimeout(() => this.sendAwareness(), AWARENESS_MIN_GAP_MS - gap);
+    else
+      this.awTimer ??= setTimeout(
+        () => this.sendAwareness(),
+        AWARENESS_MIN_GAP_MS - gap,
+      );
   };
 
   private sendAwareness(): void {
@@ -398,7 +481,11 @@ export class WikiSyncProvider {
     this.awTimer = null;
     if (this.deps.readOnly) return;
     this.lastAwarenessAt = Date.now();
-    this.send(encodeAwareness(encodeAwarenessUpdate(this.awareness, [this.awareness.clientID])));
+    this.send(
+      encodeAwareness(
+        encodeAwarenessUpdate(this.awareness, [this.awareness.clientID]),
+      ),
+    );
   }
 
   private startRenew(): void {
@@ -419,7 +506,12 @@ export class WikiSyncProvider {
     const now = Date.now();
     const stale: number[] = [];
     a.meta.forEach((m, id) => {
-      if (id !== a.clientID && a.states.has(id) && now - m.lastUpdated >= AWARENESS_TIMEOUT_MS) stale.push(id);
+      if (
+        id !== a.clientID &&
+        a.states.has(id) &&
+        now - m.lastUpdated >= AWARENESS_TIMEOUT_MS
+      )
+        stale.push(id);
     });
     if (stale.length) removeAwarenessStates(a, stale, this);
   };
@@ -435,7 +527,8 @@ export class WikiSyncProvider {
     if (this.batchTimer) clearTimeout(this.batchTimer);
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.awTimer) clearTimeout(this.awTimer);
-    this.batchTimer = this.idleTimer = this.awTimer = null;
+    if (this.postTimer) clearTimeout(this.postTimer);
+    this.batchTimer = this.idleTimer = this.awTimer = this.postTimer = null;
     this.stopRenew();
   }
 
@@ -448,10 +541,11 @@ export class WikiSyncProvider {
     const ws = this.ws;
     if (ws && ws.readyState === OPEN && this.synced) {
       this.flush();
-      if (this.dirty) this.postSnapshot();
+      // Now, not deferred: the socket closes next (the server allows 2 posts at once).
+      if (this.dirty || this.postTimer || this.postBroadcast) this.postNow();
       if (!this.deps.readOnly) {
         const me = this.awareness.clientID;
-        this.awareness.off('update', this.onAwarenessUpdate);
+        this.awareness.off("update", this.onAwarenessUpdate);
         removeAwarenessStates(this.awareness, [me], this);
         ws.send(encodeAwareness(encodeAwarenessUpdate(this.awareness, [me])));
       }
@@ -460,13 +554,13 @@ export class WikiSyncProvider {
     this.clearSessionTimers();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
-    this.doc.off('update', this.onDocUpdate);
-    this.awareness.off('update', this.onAwarenessUpdate);
+    this.doc.off("update", this.onDocUpdate);
+    this.awareness.off("update", this.onAwarenessUpdate);
     this.unsubVis();
     this.ws = null;
     this.synced = false;
-    if (ws) ws.close(1000, 'closed');
-    this.setStatus('offline');
+    if (ws) ws.close(1000, "closed");
+    this.setStatus("offline");
     this.listeners.clear();
   }
 }
@@ -477,6 +571,10 @@ function isEmptyUpdate(u: Uint8Array): boolean {
 }
 
 /** The factory the app wires (connection details injected; tests pass a fake socket). */
-export function createWikiSync(doc: Y.Doc, awareness: Awareness, deps: WikiSyncDeps): WikiSyncProvider {
+export function createWikiSync(
+  doc: Y.Doc,
+  awareness: Awareness,
+  deps: WikiSyncDeps,
+): WikiSyncProvider {
   return new WikiSyncProvider(doc, awareness, deps);
 }

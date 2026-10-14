@@ -797,6 +797,15 @@ func TestWikiSyncLimits(t *testing.T) {
 		}
 	}
 	w.closed(closeRate)
+	// Snapshots: 2 at once, then one per 2 s.
+	sp := e.dial(e.alice, p.GetId())
+	sp.next(frameSnapshot)
+	for i := 0; i < 3; i++ {
+		if err := sp.ws.Write(context.Background(), websocket.MessageBinary, post(0, snapshotMeta{}, []byte{0, 0})); err != nil {
+			break
+		}
+	}
+	sp.closed(closeRate)
 	// An update over 64 KiB.
 	big := e.dial(e.alice, p.GetId())
 	big.next(frameSnapshot)
@@ -818,7 +827,7 @@ func TestWikiSyncLimits(t *testing.T) {
 // COMPACT_REQUEST past the threshold; SNAPSHOT_POST compacts, updates the text and writes a
 // version; a stale snapshot is ignored; the public state stream is snapshot + later updates.
 func TestWikiSyncCompaction(t *testing.T) {
-	e := newEnv(t, SyncConfig{CompactUpdates: 3, CompactCheckEvery: -1, VersionEvery: time.Millisecond})
+	e := newEnv(t, SyncConfig{CompactUpdates: 3, CompactCheckEvery: -1, VersionEvery: time.Millisecond, SnapshotEvery: time.Millisecond})
 	ctx := context.Background()
 	p := e.create(e.alice, "", "Notes")
 	a, b := e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
@@ -831,15 +840,12 @@ func TestWikiSyncCompaction(t *testing.T) {
 	}
 	a.next(frameCompact) // after the 4th (> 3)
 	b.quiet(a)           // only the writer that crossed it is asked
-	// The snapshot through 4: SNAPSHOT to a and b, updates ≤ 4 gone, text and title set.
+	// The snapshot through 4, a silent compaction (no frame to anyone): updates ≤ 4 gone, text
+	// and title set.
 	state := []byte("state-1")
 	a.send(post(4, snapshotMeta{PlainText: "Hello world", Title: "Notes 2", Preview: "Hello  world"}, state))
-	if f := a.next(frameSnapshot); frameSeq(f) != 4 || !bytes.Equal(f[9:], state) {
-		t.Fatalf("snapshot echo %x", f)
-	}
-	if f := b.next(frameSnapshot); frameSeq(f) != 4 || !bytes.Equal(f[9:], state) {
-		t.Fatalf("relayed snapshot %x", f)
-	}
+	b.quiet(a) // a's post was handled before its probe: nothing came to b
+	a.quiet(b) // … nor back to a
 	var n int
 	if err := e.d.Pool.QueryRow(ctx, `SELECT count(*) FROM wiki_page_updates WHERE page_id = $1`, p.GetId()).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("updates left %d %v", n, err)
@@ -869,15 +875,28 @@ func TestWikiSyncCompaction(t *testing.T) {
 	// Stale (through < stored) and ahead (through ≥ next_seq) snapshots are ignored.
 	a.send(post(2, snapshotMeta{PlainText: "old"}, []byte("old")))
 	a.send(post(99, snapshotMeta{PlainText: "ahead"}, []byte("ahead")))
-	a.quiet(b)
 	b.quiet(a)
+	a.quiet(b)
+	// A stale broadcast post (an oversized edit) is relayed with through 0, not stored, and the
+	// poster is asked for a fresh snapshot.
+	a.send(post(2, snapshotMeta{PlainText: "big", Broadcast: true}, []byte("big")))
+	if f := b.next(frameSnapshot); frameSeq(f) != 0 || string(f[9:]) != "big" {
+		t.Fatalf("relayed stale snapshot %x", f)
+	}
+	a.next(frameCompact)
+	if pg, _ := e.d.Q.GetWikiPageText(ctx, uuid.MustParse(p.GetId())); pg.PlainText != "Hello world" {
+		t.Fatalf("a stale snapshot was stored: %q", pg.PlainText)
+	}
 	// The same text again: no new version; another update and the public stream.
 	a.send(updateFrame(0, []byte("u5")))
 	a.next(frameUpdate)
 	b.next(frameUpdate)
-	a.send(post(5, snapshotMeta{PlainText: "Hello world"}, []byte("state-2")))
-	a.next(frameSnapshot)
-	b.next(frameSnapshot)
+	// A broadcast post: the others get the state as a SNAPSHOT, the poster nothing.
+	a.send(post(5, snapshotMeta{PlainText: "Hello world", Broadcast: true}, []byte("state-2")))
+	if f := b.next(frameSnapshot); frameSeq(f) != 5 || string(f[9:]) != "state-2" {
+		t.Fatalf("broadcast snapshot %x", f)
+	}
+	a.quiet(b)
 	e.must(200, e.bob, "GET", page(p.GetId())+"/versions", nil, &vs)
 	if len(vs.GetVersions()) != 1 {
 		t.Fatalf("a version without a change: %d", len(vs.GetVersions()))
@@ -953,8 +972,7 @@ func TestWikiSyncAcrossInstances(t *testing.T) {
 	a.next(frameSnapshot)
 	second := &env{t: t, srv: srv}
 	b := second.dial(e.bob, p.GetId())
-	b.next(frameSnapshot)
-	time.Sleep(200 * time.Millisecond) // the second instance's SUBSCRIBE is asynchronous
+	b.next(frameSnapshot) // sent only after the second instance's SUBSCRIBE was confirmed
 	a.send(updateFrame(0, []byte("x1")))
 	a.next(frameUpdate)
 	if f := b.next(frameUpdate); frameSeq(f) != 1 || string(f[9:]) != "x1" {

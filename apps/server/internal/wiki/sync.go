@@ -38,8 +38,11 @@ import (
 //	3 COMPACT_REQUEST server → client  3
 //	4 SNAPSHOT_POST   client → server  4 | u64 through_seq | u32 meta_len | meta JSON | state
 //
-// A stored SNAPSHOT_POST is answered with its state as a SNAPSHOT to every socket of the page,
-// the poster included (it may hold an edit no UPDATE carried: one too big for a frame).
+// The meta JSON of a SNAPSHOT_POST is {plain_text, title, preview, broadcast?}. A stored post is a
+// silent compaction (no frame back), unless broadcast is true: the post carries an edit no UPDATE
+// carried (one transaction too big for a frame), and its state then goes as a SNAPSHOT to every
+// other socket of the page. A stale broadcast post is still relayed (through_seq 0, not stored)
+// and the poster gets a COMPACT_REQUEST to persist it with a newer through_seq.
 //
 // The client's first message is a text frame with its access token (like the gateway's
 // IDENTIFY). The server then sends one SNAPSHOT (through_seq 0 and the empty Yjs update 0x00 0x00
@@ -85,11 +88,13 @@ var emptyState = []byte{0, 0}
 // SyncConfig tunes the sync socket; the zero value is production (tests shorten it).
 type SyncConfig struct {
 	AuthTimeout        time.Duration // the token frame must come within it (10 s)
+	SubscribeTimeout   time.Duration // the page's Redis subscription must be confirmed within it (5 s)
 	PingInterval       time.Duration // WebSocket ping (25 s)
 	IdleTimeout        time.Duration // no pong for this long closes 4009 (60 s)
 	RecheckInterval    time.Duration // access and session recheck (30 s)
 	UpdatesPerSecond   int           // inbound UPDATE frames per socket (20, over: close 4008)
 	AwarenessPerSecond int           // inbound AWARENESS per socket (10, over: dropped)
+	SnapshotEvery      time.Duration // inbound SNAPSHOT_POST per socket: 2 at once, then one per (2 s; over: close 4008)
 	MaxConnsPerUser    int           // sockets of one person on one page (10)
 	CompactUpdates     int           // COMPACT_REQUEST when more updates follow the snapshot (500)
 	CompactBytes       int64         // … or more bytes (1 MiB)
@@ -106,10 +111,12 @@ func (c SyncConfig) withDefaults() SyncConfig {
 		}
 	}
 	def(&c.AuthTimeout, 10*time.Second)
+	def(&c.SubscribeTimeout, 5*time.Second)
 	def(&c.PingInterval, 25*time.Second)
 	def(&c.IdleTimeout, 60*time.Second)
 	def(&c.RecheckInterval, 30*time.Second)
 	def(&c.CompactCooldown, 10*time.Second)
+	def(&c.SnapshotEvery, 2*time.Second)
 	def(&c.CompactCheckEvery, 2*time.Second)
 	def(&c.VersionEvery, 5*time.Minute)
 	def(&c.WriteTimeout, 10*time.Second)
@@ -223,6 +230,11 @@ type room struct {
 	conns     map[*syncConn]struct{}
 	stop      chan struct{}
 	lastCheck time.Time // the COMPACT_REQUEST threshold query (hub.mu)
+	// ready closes when the first SUBSCRIBE of wiki:<page> is confirmed: a socket reads its
+	// snapshot only after it, so that nothing published between that read and the subscription
+	// is lost (a frame after the read arrives through Redis; one before it is in the database).
+	ready      chan struct{}
+	subscribed bool // hub.mu
 }
 
 func newSyncHub(s *Service, rc rueidis.Client, a Authenticator, origin func(string, bool) bool, cfg SyncConfig) *syncHub {
@@ -240,7 +252,7 @@ func (h *syncHub) join(c *syncConn) *room {
 	defer h.mu.Unlock()
 	r := h.rooms[c.page]
 	if r == nil {
-		r = &room{id: c.page, conns: map[*syncConn]struct{}{}, stop: make(chan struct{})}
+		r = &room{id: c.page, conns: map[*syncConn]struct{}{}, stop: make(chan struct{}), ready: make(chan struct{})}
 		h.rooms[c.page] = r
 		go h.listen(r)
 	}
@@ -264,12 +276,18 @@ func (h *syncHub) leave(c *syncConn) {
 }
 
 // listen keeps the room subscribed to wiki:<page> until it is stopped. A subscription lost
-// (a reconnect, a concurrent UNSUBSCRIBE of a previous room of the page) is made again; frames
-// missed meanwhile are caught up from the database by each socket's sequence check.
+// (a reconnect, a concurrent UNSUBSCRIBE of a previous room of the page) is made again; once it
+// is confirmed, every socket of the room catches up from the database (frames published
+// meanwhile never reached it).
 func (h *syncHub) listen(r *room) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { <-r.stop; cancel() }()
 	ch := channel(r.id)
+	ctx = rueidis.WithOnSubscriptionHook(ctx, func(s rueidis.PubSubSubscription) {
+		if s.Kind == "subscribe" && s.Channel == ch {
+			h.onSubscribed(r)
+		}
+	})
 	for ctx.Err() == nil {
 		err := h.rc.Receive(ctx, h.rc.B().Subscribe().Channel(ch).Build(), func(m rueidis.PubSubMessage) {
 			h.onRelay(r, []byte(m.Message))
@@ -289,6 +307,28 @@ func (h *syncHub) listen(r *room) {
 	uctx, ucancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer ucancel()
 	_ = h.rc.Do(uctx, h.rc.B().Unsubscribe().Channel(ch).Build()).Error()
+}
+
+// onSubscribed: the first confirmation opens the room (ready); a later one (a re-subscription)
+// makes every socket of the room catch up from the database.
+func (h *syncHub) onSubscribed(r *room) {
+	h.mu.Lock()
+	first := !r.subscribed
+	r.subscribed = true
+	conns := make([]*syncConn, 0, len(r.conns))
+	if !first {
+		for c := range r.conns {
+			conns = append(conns, c)
+		}
+	}
+	h.mu.Unlock()
+	if first {
+		close(r.ready)
+		return
+	}
+	for _, c := range conns {
+		c.markStale()
+	}
 }
 
 // onRelay delivers a frame published by another instance to this instance's sockets of the page.
@@ -423,18 +463,6 @@ func formatMs(t time.Time) string { return strconv.FormatInt(t.UnixMilli(), 10) 
 
 // ---- one socket ----
 
-type outKind uint8
-
-const (
-	outFrame outKind = iota
-	outInit          // the first catch-up: SNAPSHOT + UPDATEs
-)
-
-type outItem struct {
-	kind  outKind
-	frame []byte
-}
-
 // syncConn is one client socket on one page.
 type syncConn struct {
 	h      *syncHub
@@ -446,8 +474,8 @@ type syncConn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	write   atomic.Bool // WIKI_WRITE and the policy allow writing
-	out     chan outItem
+	write   atomic.Bool   // WIKI_WRITE and the policy allow writing
+	out     chan []byte   // frames for the writer
 	stale   atomic.Bool   // an update or snapshot was dropped (queue full): catch up from the DB
 	kick    chan struct{} // wakes the writer after stale is set
 	recheck chan struct{} // an access recheck was asked for (ctlRecheck)
@@ -486,15 +514,20 @@ func (b *bucket) take() bool {
 // frame is just lost, a lost update or snapshot makes the writer catch up from the database.
 func (c *syncConn) enqueue(frame []byte) {
 	select {
-	case c.out <- outItem{kind: outFrame, frame: frame}:
+	case c.out <- frame:
 	default:
 		if t := frame[0]; t == frameUpdate || t == frameSnapshot {
-			c.stale.Store(true)
-			select {
-			case c.kick <- struct{}{}:
-			default:
-			}
+			c.markStale()
 		}
+	}
+}
+
+// markStale makes the writer catch up from the database.
+func (c *syncConn) markStale() {
+	c.stale.Store(true)
+	select {
+	case c.kick <- struct{}{}:
+	default:
 	}
 }
 
@@ -539,10 +572,10 @@ func (h *syncHub) serve(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(readLimitRO)
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	c := &syncConn{h: h, ws: ws, page: page, key: uuid.NewString(), ctx: ctx, cancel: cancel, lastSent: -1,
-		out: make(chan outItem, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
+		out: make(chan []byte, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
 		updates:   newBucket(float64(h.cfg.UpdatesPerSecond), float64(h.cfg.UpdatesPerSecond)),
 		awareness: newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
-		snapshots: newBucket(5, 1)} // snapshots: 5 at once, then one per second
+		snapshots: newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}
 	defer c.close(1000, "")
 
 	// In-band auth: the first message is a text frame with the access token.
@@ -590,9 +623,21 @@ func (h *syncHub) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer h.release(c)
-	h.join(c)
+	rm := h.join(c)
 	defer h.leave(c)
-	c.out <- outItem{kind: outInit}
+	// Subscribed first, then the snapshot read (catch-up), duplicates dropped by seq.
+	wait := time.NewTimer(h.cfg.SubscribeTimeout)
+	select {
+	case <-rm.ready:
+		wait.Stop()
+	case <-wait.C:
+		c.close(closeTryAgain, "try again")
+		return
+	case <-ctx.Done():
+		wait.Stop()
+		return
+	}
+	c.markStale() // the first catch-up: SNAPSHOT + UPDATEs (lastSent -1)
 	go c.writeLoop()
 	go c.pingLoop()
 	c.readLoop()
@@ -700,8 +745,8 @@ func (c *syncConn) writeLoop() {
 		select {
 		case <-c.ctx.Done():
 			return
-		case it := <-c.out:
-			if !c.handle(it) {
+		case f := <-c.out:
+			if !c.handle(f) {
 				return
 			}
 		case <-c.kick:
@@ -712,11 +757,7 @@ func (c *syncConn) writeLoop() {
 	}
 }
 
-func (c *syncConn) handle(it outItem) bool {
-	if it.kind == outInit {
-		return c.catchUp()
-	}
-	f := it.frame
+func (c *syncConn) handle(f []byte) bool {
 	switch f[0] {
 	case frameUpdate:
 		seq := frameSeq(f)
@@ -900,13 +941,19 @@ type snapshotMeta struct {
 	PlainText string `json:"plain_text"`
 	Title     string `json:"title"`
 	Preview   string `json:"preview"`
+	// Broadcast: the state holds an edit no UPDATE carried (a transaction too big for a frame):
+	// the other sockets of the page get it as a SNAPSHOT. Otherwise the post is a silent
+	// compaction.
+	Broadcast bool `json:"broadcast,omitempty"`
 }
 
 // onSnapshot stores a snapshot (ADR-0096 §4): in one transaction it checks through_seq against
 // the stored snapshot and the page's counter, saves it, drops the updates it contains, updates
 // the page's text, preview, size and (a non-empty title) title, and writes a version when due.
-// Every socket of the page, the sender included, then gets the state as a SNAPSHOT (it may hold
-// changes no update carried: a transaction too big for one frame). A stale snapshot is ignored.
+// Nothing is sent back. With meta.broadcast (changes no update carried: a transaction too big
+// for one frame) the other sockets of the page get the state as a SNAPSHOT; a stale one (through
+// below the stored snapshot, or past the counter) is not stored but still relayed, with through
+// 0 so that no socket's position moves, and the poster is asked for a fresh snapshot.
 func (c *syncConn) onSnapshot(b []byte) bool {
 	if !c.write.Load() {
 		c.close(closeForbidden, "read only")
@@ -1002,12 +1049,13 @@ func (c *syncConn) onSnapshot(b []byte) bool {
 		}
 		return false
 	}
-	if !stored {
-		return true
+	switch {
+	case stored && meta.Broadcast:
+		c.h.broadcast(c.ctx, c.page, c, snapshotFrame(through, state))
+	case !stored && meta.Broadcast:
+		c.h.broadcast(c.ctx, c.page, c, snapshotFrame(0, state))
+		c.enqueue([]byte{frameCompact})
 	}
-	f := snapshotFrame(through, state)
-	c.enqueue(f)
-	c.h.broadcast(c.ctx, c.page, c, f)
 	if renamed {
 		s.upserted(c.ctx, c.page, nil)
 	}
