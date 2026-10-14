@@ -34,6 +34,30 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 
 ## Funciones
 
+### Funciones de un vistazo
+
+| Área | En una línea |
+|---|---|
+| Voz y vídeo | Salas de voz con sonido limpio y push-to-talk, compartir pantalla, cámara, galería de la reunión, grabación con transcripción, soundboard, anotaciones sobre la pantalla compartida, modo músico |
+| Llamadas telefónicas (SIP) | Marca un número fijo o móvil desde una sala de voz con tu propio proveedor SIP |
+| Salas temporales e invitados | Una sala por una hora o un día con enlace para invitados; sin registro, y el invitado se elimina tras 48 horas sin actividad |
+| Chat | Respuestas, reacciones, stickers, mensajes de voz, reenvío, archivos con vista previa, fijados, confirmaciones de lectura, menciones |
+| Mensajes directos y notas | Chats y llamadas uno a uno con archivo; hasta 20 estantes de notas privadas |
+| Calendario | Reuniones con invitaciones por correo (`.ics`), búsqueda de hora para varias personas, sincronización CalDAV |
+| Tableros de tareas | Kanban, lista y línea de tiempo; tarea a pantalla completa, aprobaciones, listas de control, hitos, automatizaciones, formularios de entrada, webhooks de tablero, historial completo |
+| Correo | Cliente de correo IMAP/SMTP integrado en la aplicación de escritorio |
+| Wiki | Páginas del equipo con edición conjunta en tiempo real, enlaces entre páginas, versiones y páginas públicas |
+| Disco | Carpetas y archivos del espacio con acceso por carpeta, enlaces públicos, papelera e indicador de espacio |
+| Búsqueda | `⌘K` encuentra mensajes, tareas, comentarios, eventos, archivos, notas y transcripciones |
+| Notificaciones | Niveles por sala y disparadores de tareas por evento; los avisos de tareas se pueden reenviar a tu propio bot (p. ej. a Telegram) |
+| Bots y API de integración | Bots con token, SDK de TypeScript, gateway WebSocket, webhooks firmados, voz, botones; [documentación para desarrolladores](https://calab.io/en/docs/) |
+| Identidad y roles | SSO OIDC, sincronización del directorio LDAP/AD, «Iniciar sesión con Calab» (OAuth 2); roles por función, salas y tableros privados |
+| Miembros | Perfiles con `@alias`, logros y cumpleaños; los antiguos miembros se conservan en el historial |
+| Pagos y planes | Free, Team, Business y Enterprise en tu propio servidor, gratis para uso no comercial |
+| Teléfono | La versión web funciona hoy en el navegador del móvil; las apps para iPhone y Android están en camino |
+| Apps web en la barra | Fija Grafana, el CRM o cualquier sitio junto a Calab; la llamada sigue |
+| Servidor propio | Un solo `docker compose`, con PostgreSQL y LiveKit, certificados y copias de seguridad automáticos |
+
 ### 🎙 Voz y vídeo
 
 <img src="apps/landing/public/screens/es/call.webp" width="880" alt="Una llamada uno a uno en mensajes directos">
@@ -48,6 +72,7 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - **Botonera de sonidos**, moderación (silenciar desde el servidor, desconectar, mover arrastrando), estados.
 - **Llamadas telefónicas (SIP)** — conecta tu propio proveedor SIP y marca un número fijo o móvil desde una sala de voz; el interlocutor entra como participante y todos ven «Marcando → Llamando → En la llamada». Ajustes del proveedor, registro de llamadas y el permiso «Hacer llamadas», que por defecto no tiene nadie. Plan Business y Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Salas temporales** — una sala por una hora o un día con enlace de invitado listo y, si quieres, una reunión en el calendario: un sustituto de Zoom que desaparece solo ([ADR-0044](docs/adr/0044-temp-rooms.md)).
+- **Galería de videorreunión** — todos en mosaicos iguales por páginas (hasta 25 en pantalla grande), con interruptor Galería | Orador; los que hablan tienen prioridad.
 
 ### 💬 Chat
 
@@ -56,6 +81,8 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - Burbujas como en Telegram: respuestas, **reacciones**, reenvío a varios chats, stickers, mensajes de voz, archivos con vista previa, mensajes fijados, marcas de lectura.
 - **Menciones**, notificaciones por sala, búsqueda en el espacio con morfología, cambio rápido con `⌘K`.
 - **Mensajes directos** con archivo; la versión web se adapta al móvil y se instala en la pantalla de inicio.
+- **Búsqueda** — `⌘K` encuentra mensajes, tareas y sus comentarios, eventos del calendario, archivos, notas y transcripciones de reuniones, por inicio de palabra y con tolerancia a erratas.
+- **Notificaciones** — niveles por sala; en las tareas cada tipo de evento se desactiva por separado, y tus avisos de tareas se pueden reenviar a un bot que elijas (por ejemplo, a Telegram).
 
 ### 📅 Calendario y reuniones
 
@@ -88,9 +115,31 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - Filtros, vistas guardadas, acciones en bloque; **una tarea desde cualquier mensaje**; el enlace a una tarea se despliega como tarjeta en el chat.
 
 - **Aprobaciones** — asigna aprobadores y cuántas aprobaciones hacen falta (todas o N de M); una tarea no avanza en el tablero hasta que se aprueba ([ADR-0049](docs/adr/0049-task-approvals.md)).
-### 📝 Notas
+- **Tarea a pantalla completa** en escritorio, como en Linear: `Esc` vuelve al tablero, `↑`/`↓` pasan a las tareas vecinas.
+- **Listas de control** dentro de las tareas (Team y superior): progreso en la tarjeta y convertir un punto en subtarea.
+- **Hitos** dentro de una tarea grande con fechas y progreso; en la línea de tiempo aparecen como rombos ([ADR-0063](docs/adr/0063-task-milestones.md)).
+- **Automatizaciones** — reglas «Cuando → Si → Entonces» por tablero: cambiar estado, asignar, escribir en una sala y más (Team y superior, [ADR-0060](docs/adr/0060-board-automations.md)).
+- **Formularios de entrada** — enlace público o formulario privado que crea tareas, con campos, estado y prioridad por defecto (Team 5 por tablero, Business 20, [ADR-0064](docs/adr/0064-board-forms.md)).
+- **Webhooks de tablero** — eventos firmados para tus sistemas (Business); cada tablero activa y desactiva sus funciones por separado.
+- **Historial** — pestañas «Comentarios» e «Historial»: quién cambió qué y cuándo, con valores antes y después; las ediciones repetidas se fusionan. Observadores, acceso a su tarjeta en tableros cerrados, recordatorios a los aprobadores.
 
-<img src="apps/landing/public/screens/es/notes.webp" width="880" alt="Estantes de Notas">
+### ✉️ Correo
+
+Un cliente de correo en la aplicación de escritorio: conecta Gmail, Yandex, Mail.ru o iCloud (hace falta una contraseña de aplicación), lee y envía correo sin salir de Calab. Un mensaje se puede reenviar a un chat como texto con sus adjuntos. El correo funciona en local: las contraseñas quedan en el llavero del sistema y el servidor no interviene; no hay correo en la versión web ni en el móvil ([ADR-0088](docs/adr/0088-mail-client.md)).
+
+### 📚 Wiki
+
+<img src="apps/landing/public/screens/es/wiki.webp" width="880" alt="Wiki del equipo">
+
+Páginas y subpáginas como en Notion: editor con tablas, listas de tareas, código e imágenes, edición conjunta en tiempo real con cursores, historial de versiones con restauración, acceso por página y enlaces públicos de solo lectura. Las páginas se enlazan entre sí (`[[`) y el enlace a una página en el chat se despliega en una tarjeta; un solo menú para la fila del árbol y para «⋯» de la página: renombrar, subpágina, mover, acceso, enlace, versiones, exportar, papelera.
+
+### 🗂️ Disco
+
+<img src="apps/landing/public/screens/es/disk.webp" width="880" alt="Disco del equipo">
+
+Carpetas y archivos del espacio: subida arrastrando, mosaico o lista, acceso por carpeta (las privadas no las ven ni los administradores), enlaces públicos, papelera con limpieza automática e indicador de espacio claro. El indicador muestra qué ocupa el espacio: chats, tableros, wiki y el resto.
+
+### 📝 Notas
 
 Hasta 20 estantes privados con tus nombres y emoji, como «Mensajes guardados» de Telegram, pero varios. Arrastra mensajes y archivos a un estante, reenvíalos, fíjalos y búscalos.
 
@@ -98,11 +147,20 @@ Hasta 20 estantes privados con tus nombres y emoji, como «Mensajes guardados» 
 
 <img src="apps/landing/public/screens/es/guest.webp" width="360" alt="Un invitado esperando la aprobación del organizador">
 
-Un enlace de invitado lleva directo a una sala, sin registro. Con la aprobación activada (por sala o por enlace), el invitado espera en esta pantalla hasta que el organizador pulsa «Dejar entrar».
+Un enlace de invitado lleva directo a una sala, sin registro. Con la aprobación activada (por sala o por enlace), el invitado espera en esta pantalla hasta que el organizador pulsa «Dejar entrar». Los invitados que no entran en 48 horas se eliminan solos y aparecen agrupados aparte en la lista de miembros. Quienes se fueron quedan en el historial como miembros «antiguos»: sus mensajes y tareas se conservan, y los administradores los ven en una pestaña aparte.
+
+### 🎂 Personas
+
+- **Perfiles** con correo y teléfono (copiar con un toque), un `@alias` único para las menciones, estado y cumpleaños.
+- **Cumpleaños** — tarjeta festiva en el chat y aviso en el panel de miembros; **logros** que se otorgan «por algo», con tarjeta en el chat y una fila en el perfil ([ADR-0061](docs/adr/0061-achievements.md)).
 
 ### 🧩 Aplicaciones web
 
 Un administrador fija accesos a sitios (Grafana, la wiki, el CRM) bajo el icono del espacio en la barra izquierda. Un clic abre el sitio a pantalla completa dentro de Calab y la llamada continúa; los inicios de sesión se guardan por separado para cada aplicación, y la cámara y el micrófono solo con tu permiso ([ADR-0050](docs/adr/0050-workspace-apps.md)).
+
+### 📱 Teléfono
+
+La versión web se adapta al móvil y se instala en la pantalla de inicio: lista de salas como en Telegram, gestos (responder, marcar como leído), pestañas fijadas más «Más», quién está en una sala de voz de un vistazo. Las apps para iPhone y Android (llamadas en la pantalla bloqueada, push) llegan pronto ([ADR-0067](docs/adr/0067-phone-shared-web-host.md)).
 
 ### 🤖 Bots y SDK
 
@@ -118,6 +176,8 @@ await bot.start();
 
 SDK: [`packages/bot-sdk`](packages/bot-sdk); ejemplos: [`examples/bots`](examples/bots) (echo, eco de voz, TTS, Python); documentación: [docs/19-bot-api.en.md](docs/19-bot-api.en.md) (en inglés) · [ruso](docs/19-bot-api.md).
 
+Los bots también trabajan con Disco y Wiki (carpetas, archivos, páginas) y con los webhooks de tablero. Documentación para desarrolladores — bots como API de integración, OAuth 2 / OIDC, SSO: **[calab.io/en/docs/](https://calab.io/en/docs/)**.
+
 ### 🔒 Servidor propio y seguridad
 
 - **Funciona en cualquier red**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 automáticamente; una sola IP pública; probado detrás de VPN.
@@ -132,8 +192,7 @@ Planificado, aún no disponible:
 
 - **Asistente de voz con IA** — un asistente de voz con IA en las salas (en pruebas).
 - **IVR** — menú de voz y números internos para las llamadas telefónicas (SIP).
-- **Wiki** — base de conocimiento del equipo.
-- **Disco** — almacenamiento compartido de archivos del espacio.
+- **Solicitudes de contacto para integraciones** — próximamente; aún no disponible.
 
 ## Inicio rápido
 
@@ -186,6 +245,8 @@ Comprobaciones: `make test` (Go + TS), `make test-integration`, pruebas visuales
 | Precio | gratis | a consultar (**it@gptunnel.ai**) | a consultar (**it@gptunnel.ai**) | gratis para uso no comercial (BSL 1.1, «Powered by GPTunneL»); licencia comercial a consultar |
 
 Free, Team y Business son planes en la nube de un espacio ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise es Calab en tu propio servidor (on-prem), sin límites. Detalles: [calab.io/es/#pricing](https://calab.io/es/#pricing) y [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+**Pagos.** El espacio tiene un saldo del que se cobra por puesto y día; pago con tarjeta o SBP (Rusia). Los planes de pago se activan espacio por espacio; los roles tienen permisos de facturación separados «ver / recargar / gestionar», y con el plan inactivo el espacio sigue siendo legible ([ADR-0080](docs/adr/0080-seat-billing.md)).
 
 ## Licencia
 

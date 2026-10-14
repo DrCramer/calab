@@ -1,6 +1,8 @@
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import type { Room } from '@calaba/protocol';
 import { confirmAction } from '../components/Confirm';
+import { ApiError } from '../lib/api/client';
+import { errorText } from '../lib/api/errors';
 import { t } from '../i18n';
 import { api } from '../lib/api/endpoints';
 import { fmt } from '../lib/format';
@@ -11,6 +13,7 @@ import { roomInviteLink, roomLinkError } from '../features/people/roomLink';
 import { newEvent } from '../features/calendar/actions';
 import { useRooms } from '../stores/rooms';
 import { myUserId } from '../stores/session';
+import { useTempArchive } from '../stores/tempArchive';
 import { toast } from '../stores/toasts';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 
@@ -69,6 +72,45 @@ export async function deleteTempRoom(room: Room): Promise<void> {
     await api.rooms.remove(room.id);
   } catch (e) {
     toast.fail(e);
+  }
+}
+
+/** Archive «Вернуть» (ADR-0044 addendum 14.10): the room is live again for its old lifetime (ROOM_CREATE follows for everyone). */
+export async function restoreTempRoom(room: Room): Promise<boolean> {
+  try {
+    const r = await api.rooms.restoreTemp(room.id);
+    if (r.room) useRooms.getState().upsert(r.room);
+    useTempArchive.getState().drop(room.id);
+    toast.success(t('temp.restored', { name: room.name }));
+    return true;
+  } catch (e) {
+    toast.error(restoreError(e));
+    return false;
+  }
+}
+
+/** The limits of live temporary rooms by their reason, else the server's text. */
+function restoreError(e: unknown): string {
+  if (e instanceof ApiError && e.is('ERROR_CODE_TEMP_ROOM_LIMIT')) {
+    const limit = e.extra.limit ?? (e.reason === 'PER_USER' ? 5 : 20);
+    return e.reason === 'PER_USER' ? t('temp.errLimitUser', { limit }) : t('temp.errLimitWs', { limit });
+  }
+  return errorText(e);
+}
+
+/** Archive «Сделать постоянной»: after a confirmation the room becomes a regular one (history, members and settings stay). */
+export async function makeTempRoomPermanent(room: Room): Promise<boolean> {
+  const ok = await confirmAction(t('temp.permanentTitle', { name: room.name }), t('temp.permanentConfirm'), t('temp.permanent'), 'primary');
+  if (!ok) return false;
+  try {
+    const r = await api.rooms.makePermanent(room.id);
+    if (r.room) useRooms.getState().upsert(r.room);
+    useTempArchive.getState().drop(room.id);
+    toast.success(t('temp.madePermanent', { name: room.name }));
+    return true;
+  } catch (e) {
+    toast.fail(e);
+    return false;
   }
 }
 
