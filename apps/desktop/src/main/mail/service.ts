@@ -664,6 +664,7 @@ export class MailEngine {
       'messages.list': (q) => this.list(q),
       'messages.get': (id) => this.get(id),
       'messages.raw': (id) => this.raw(id),
+      'messages.attachment': async (mid, aid) => (await this.attachment(mid as string, aid as string)).data,
       'messages.thread': (threadId): MailHeader[] => {
         if (!parseSeqId(threadId, 't')) throw notFound('thread');
         return this.account(threadId).store.thread(threadId as string);
