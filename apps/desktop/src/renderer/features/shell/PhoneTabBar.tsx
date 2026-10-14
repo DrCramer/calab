@@ -135,7 +135,7 @@ const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available }: {
           aria-current={inBar ? undefined : 'page'}
           aria-label={inBar ? t('mobile.more') : `${tabLabel(tab)}, ${t('mobile.more')}`}
           data-testid="phone-tab-more"
-          className={cx(BUTTON, inBar ? 'text-muted' : 'flex-[1.7] px-2 text-fg')}
+          className={cx(BUTTON, inBar ? 'flex-[1.7] text-muted' : 'flex-[1.7] px-2 text-fg')}
           onClick={() => haptics.tap()}
         >
           {inBar ? (
