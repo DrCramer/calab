@@ -3853,7 +3853,7 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'boards-kanban');
 });
 
-/** The task panel over the board (960: floating): properties, two assignees, relations, comments. */
+/** The task full screen over the board: properties, two assignees, relations, comments. */
 test('boards-task', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);

@@ -62,6 +62,7 @@ export function Composer({
   files,
   setFiles,
   addFiles,
+  autoFocus = true,
 }: {
   workspaceId: string;
   room: Room;
@@ -69,6 +70,8 @@ export function Composer({
   files: OutgoingFile[];
   setFiles: (f: OutgoingFile[]) => void;
   addFiles: (f: File[]) => void;
+  /** Focus the field when the room opens (desktop); off where it is not the main thing (a full-screen task). */
+  autoFocus?: boolean;
 }): ReactNode {
   const [text, setText] = useState(() => loadDraft(useSession.getState().me?.user?.id ?? '', room.id).text);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -227,10 +230,12 @@ export function Composer({
   // (iOS would scroll to it and raise the keyboard, lib/mobile.ts). «Ответить» is the user's own
   // request to write: it focuses the field everywhere.
   useEffect(() => {
-    if (autoFocusAllowed()) ref.current?.focus();
+    if (autoFocus && autoFocusAllowed()) ref.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on a room change only
   }, [room.id]);
   useEffect(() => {
-    if (replyTo || autoFocusAllowed()) ref.current?.focus();
+    if (replyTo || (autoFocus && autoFocusAllowed())) ref.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on a reply change only
   }, [replyTo]);
   // Staging a file (drop, paste, the paperclip, the camera) always focuses the field, on phones
   // too — like «Ответить» above, it is the user's own request to keep writing (docs/09 #149).

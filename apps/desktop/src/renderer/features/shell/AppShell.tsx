@@ -202,7 +202,7 @@ function ShellLayout(): ReactNode {
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
               {boards ? (
-                <BoardsView workspaceId={wsId} wide={wide} />
+                <BoardsView workspaceId={wsId} />
               ) : calDay ? (
                 // Calendar (ADR-0038 §7): the day instead of the room, the selected meeting instead of the
                 // members (a column from 1200 px, floating below); no meeting selected — the members, so
