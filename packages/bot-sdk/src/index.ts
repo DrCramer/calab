@@ -1,7 +1,11 @@
 // Calab Bot SDK (ADR-0031, docs/19-bot-api.md).
-export { Bot } from './bot.js';
+export { Bot, keyboardFromButtons } from './bot.js';
 export type {
   BotEvents,
+  ButtonSpec,
+  CallbackButtonSpec,
+  ContactFieldName,
+  RequestContactButtonSpec,
   BotOptions,
   ChecklistResult,
   CommandEvent,
@@ -49,6 +53,7 @@ export type {
   Task,
   BotCallback,
   TaskNoticeRelay,
+  ContactShared,
   InlineKeyboard,
   InlineKeyboardRow,
   InlineButton,
@@ -78,4 +83,4 @@ export type {
   WikiPermissionEntry,
   WikiVersion,
 } from '@calaba/protocol';
-export { BoardFeature, DISK_BITS, DiskItemKind, EstimateScale, PermissionTargetType, RoomType, WIKI_BITS } from '@calaba/protocol';
+export { BoardFeature, ContactField, DISK_BITS, DiskItemKind, EstimateScale, InlineButtonKind, PermissionTargetType, RoomType, WIKI_BITS } from '@calaba/protocol';
