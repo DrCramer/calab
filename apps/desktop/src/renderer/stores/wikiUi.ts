@@ -39,6 +39,9 @@ interface WikiUiState {
   /** The tree's title filter; cleared when the section closes. */
   query: string;
   setQuery: (q: string) => void;
+  /** The page whose tree / list row is being renamed in place (not persisted). */
+  renaming: string | null;
+  setRenaming: (id: string | null) => void;
   dialog: WikiDialog | null;
   openDialog: (d: WikiDialog | null) => void;
   /** The open page's sync status ('online' while nothing is open). */
@@ -81,6 +84,8 @@ export const useWikiUi = create<WikiUiState>()(
       setTreeWidth: (w) => set((s) => (s.treeWidth === clampTree(w) ? s : { treeWidth: clampTree(w) })),
       query: '',
       setQuery: (query) => set({ query }),
+      renaming: null,
+      setRenaming: (renaming) => set((s) => (s.renaming === renaming ? s : { renaming })),
       dialog: null,
       openDialog: (dialog) => set({ dialog }),
       sync: 'online',

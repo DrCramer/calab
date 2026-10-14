@@ -213,21 +213,20 @@ function pin(tab: PhoneTab, bar: readonly PhoneTab[]): void {
 const MoreRow = memo(function MoreRow({ tab, pinned, pinDisabled, bar }: { tab: PhoneTab; pinned: boolean; pinDisabled: boolean; bar: readonly PhoneTab[] }): ReactNode {
   const active = useUi((s) => s.phone.tab === tab);
   const label = tabLabel(tab);
-  const drag = useDraggable({ id: tab });
-  const drop = useDroppable({ id: tab });
+  const { setNodeRef: setDragRef, setActivatorNodeRef, listeners, transform, isDragging } = useDraggable({ id: tab });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: tab });
   const setRef = useCallback(
     (el: HTMLElement | null) => {
-      drag.setNodeRef(el);
-      drop.setNodeRef(el);
+      setDragRef(el);
+      setDropRef(el);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the setters are stable
-    [drag.setNodeRef, drop.setNodeRef],
+    [setDragRef, setDropRef],
   );
   return (
     <div
       ref={setRef}
-      className={cx('relative flex h-[52px] items-center', drag.isDragging && 'z-10 rounded-[var(--radius-control)] bg-hover shadow-md', drop.isOver && !drag.isDragging && 'bg-hover/60')}
-      style={drag.transform ? { transform: `translate3d(0, ${Math.round(drag.transform.y)}px, 0)` } : undefined}
+      className={cx('relative flex h-[52px] items-center', isDragging && 'z-10 rounded-[var(--radius-control)] bg-hover shadow-md', isOver && !isDragging && 'bg-hover/60')}
+      style={transform ? { transform: `translate3d(0, ${Math.round(transform.y)}px, 0)` } : undefined}
       role="none"
       data-testid={`more-wrap-${tab}`}
     >
@@ -260,8 +259,8 @@ const MoreRow = memo(function MoreRow({ tab, pinned, pinDisabled, bar }: { tab: 
       </Dropdown.CheckboxItem>
       {/* The handle is the only draggable part (touch: 300 ms hold); not a menu item, hidden from the a11y tree. */}
       <span
-        ref={drag.setActivatorNodeRef}
-        {...drag.listeners}
+        ref={setActivatorNodeRef}
+        {...listeners}
         aria-hidden
         title={t('mobile.reorder', { name: label })}
         data-testid={`more-drag-${tab}`}
