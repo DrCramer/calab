@@ -12,6 +12,7 @@ import { Mention } from '@tiptap/extension-mention';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import type { Schema } from '@tiptap/pm/model';
 import { StarterKit } from '@tiptap/starter-kit';
+import { wikiPageHref, wikiPageIdOf } from './links';
 import { str } from './markdown';
 
 /** Only http(s) and mailto links (the doc is shared: no javascript:, file:, custom schemes). */
@@ -76,6 +77,41 @@ export const ImageNode = Node.create({
   renderHTML: ({ HTMLAttributes }) => ['img', mergeAttributes(HTMLAttributes, { class: 'wiki-image' })],
 });
 
+const PAGE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A link to another wiki page (owner 14.10): only the page id is stored — the title and icon are
+ * looked up live by whoever views it (a rename follows; a page the viewer may not see shows no
+ * title). Markdown: `[Title](https://<origin>/wiki/<id>)`, parsed back by the path (links.ts).
+ * HTML (copy between pages): `<a data-wiki-page="<id>" href="/wiki/<id>">`.
+ */
+export const WikiPageLinkNode = Node.create({
+  name: 'wikiPageLink',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return {
+      pageId: {
+        default: null,
+        parseHTML: (el) => {
+          const id = el.getAttribute('data-wiki-page') ?? wikiPageIdOf(el.getAttribute('href') ?? '') ?? '';
+          return PAGE_ID_RE.test(id) ? id.toLowerCase() : null;
+        },
+        renderHTML: (a) => ({ 'data-wiki-page': str(a['pageId']) }),
+      },
+    };
+  },
+  // Before the link mark's `a[href]`: our own anchors come back as the node.
+  parseHTML: () => [{ tag: 'a[data-wiki-page]', priority: 60 }],
+  renderHTML: ({ node, HTMLAttributes }) => {
+    const id = str(node.attrs['pageId']);
+    return ['a', mergeAttributes(HTMLAttributes, { href: wikiPageHref('', id), class: 'wiki-page-link' }), wikiPageHref('', id)];
+  },
+  renderText: ({ node }) => wikiPageHref('', str(node.attrs['pageId'])),
+});
+
 export const HIGHLIGHT_COLORS = ['yellow', 'green', 'blue', 'red', 'purple'] as const;
 export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
 
@@ -132,6 +168,7 @@ export function wikiDocExtensions(): AnyExtension[] {
     CalloutNode,
     ToggleNode,
     Mention,
+    WikiPageLinkNode,
   ];
 }
 

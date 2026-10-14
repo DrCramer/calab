@@ -25,6 +25,7 @@ import {
   Italic,
   Lightbulb,
   ExternalLink,
+  FileText,
   Link,
   List,
   ListCollapse,
@@ -52,6 +53,7 @@ import { BLOCKS, currentBlock, type BlockDef, type BlockId } from './blocks';
 import type { EditorEnv } from './env';
 import { isAllowedHref } from './extensions';
 import type { MenuState } from './menuStore';
+import type { PageCandidate } from './types';
 import { HIGHLIGHT_COLORS, type HighlightColor } from './nodes';
 
 export const BLOCK_ICONS: Record<BlockId, LucideIcon> = {
@@ -69,6 +71,7 @@ export const BLOCK_ICONS: Record<BlockId, LucideIcon> = {
   image: Image,
   callout: Lightbulb,
   toggle: ListCollapse,
+  pageLink: FileText,
 };
 
 const MENU_W = 280;
@@ -124,8 +127,30 @@ const MentionRow = memo(function MentionRow({ c, active, onPick, onHover, i }: {
   );
 });
 
+const PageRow = memo(function PageRow({ p, active, onPick, onHover, i }: { p: PageCandidate; active: boolean; i: number; onPick: (i: number) => void; onHover: (i: number) => void }): ReactNode {
+  return (
+    <li
+      role="option"
+      aria-selected={active}
+      ref={active ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onPick(i);
+      }}
+      onMouseMove={() => (active ? undefined : onHover(i))}
+      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-active text-accent-text' : 'text-fg')}
+      data-testid="wiki-page-pick"
+    >
+      <span className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-row)] bg-hover leading-none" aria-hidden>
+        {p.icon ? <span className="text-[15px]">{p.icon}</span> : <FileText className="size-4" strokeWidth={1.75} />}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{p.title || t('wiki.untitled')}</span>
+    </li>
+  );
+});
+
 /**
- * `/` blocks and `@` people. On the phone (ADR-0096 §7) the block menu is a card in the middle of
+ * `/` blocks, `@` people and `[[` pages. On the phone (ADR-0096 §7) the block menu is a card in the middle of
  * the screen above the keyboard, with a backdrop that closes it; the `@` list hangs from the caret.
  */
 export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?: boolean }): ReactNode {
@@ -142,7 +167,7 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
   if (!s?.rect) return null;
   const below = s.rect.bottom + 320 < window.innerHeight;
   const style = below ? { left: clampX(s.rect.left, MENU_W), top: s.rect.bottom + GAP } : { left: clampX(s.rect.left, MENU_W), bottom: window.innerHeight - s.rect.top + GAP };
-  const label = s.kind === 'slash' ? t('wiki.slash.title') : t('chat.mentionList');
+  const label = s.kind === 'slash' ? t('wiki.slash.title') : s.kind === 'page' ? t('wiki.pageLink.title') : t('chat.mentionList');
   if (s.kind === 'mention' && !s.items.length) return null;
   const rows = s.items.length ? (
     <ul
@@ -157,10 +182,12 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
     >
       {s.kind === 'slash'
         ? (s as MenuState<BlockDef>).items.map((b, i) => <SlashRow key={b.id} b={b} i={i} active={i === s.index} onPick={pick} onHover={hover} />)
-        : (s as MenuState<MentionCandidate>).items.map((c, i) => <MentionRow key={c.id} c={c} i={i} active={i === s.index} onPick={pick} onHover={hover} />)}
+        : s.kind === 'page'
+          ? (s as MenuState<PageCandidate>).items.map((p, i) => <PageRow key={p.id} p={p} i={i} active={i === s.index} onPick={pick} onHover={hover} />)
+          : (s as MenuState<MentionCandidate>).items.map((c, i) => <MentionRow key={c.id} c={c} i={i} active={i === s.index} onPick={pick} onHover={hover} />)}
     </ul>
   ) : (
-    <div className="px-3 pb-3 pt-1 text-body text-muted">{t('wiki.slash.empty')}</div>
+    <div className="px-3 pb-3 pt-1 text-body text-muted">{t(s.kind === 'page' ? 'wiki.pageLink.empty' : 'wiki.slash.empty')}</div>
   );
   if (phone && s.kind === 'slash') {
     return createPortal(

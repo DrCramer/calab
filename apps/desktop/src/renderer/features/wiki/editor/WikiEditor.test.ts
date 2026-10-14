@@ -10,7 +10,7 @@ import WikiEditor from './WikiEditor';
 vi.mock('../../../platform', () => ({ platform: { kind: 'web', apiBase: '', directMedia: false, mediaUrl: () => new Promise<string>(() => undefined), apiFetch: vi.fn() } }));
 import type { Editor } from '@tiptap/core';
 import { Slice } from '@tiptap/pm/model';
-import type { WikiEditorApi, WikiEditorProps } from './types';
+import type { PageSource, WikiEditorApi, WikiEditorProps } from './types';
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -192,6 +192,94 @@ describe('WikiEditor', () => {
     expect(content[0]).toMatchObject({ type: 'heading', attrs: { level: 1 } });
     expect(content.some((n) => n.type === 'taskList')).toBe(true);
     expect(paste(editor(), clipboard('# Title', [], '<h1>Title</h1>'))).toBe(false);
+  });
+
+  describe('page links (owner 14.10)', () => {
+    const P1 = '0190a0b0-0000-7000-80c1-000000000001';
+    const P2 = '0190a0b0-0000-7000-80c1-000000000002';
+    const GONE = '0190a0b0-0000-7000-80c1-00000000000f';
+    function source(): PageSource & { opened: string[]; titles: Record<string, string>; fire: () => void } {
+      const subs = new Set<() => void>();
+      const titles: Record<string, string> = { [P1]: 'Roadmap', [P2]: 'Release notes' };
+      const opened: string[] = [];
+      return {
+        opened,
+        titles,
+        fire: () => subs.forEach((f) => f()),
+        search: (q) =>
+          Object.entries(titles)
+            .filter(([, title]) => title.toLowerCase().includes(q.toLowerCase()))
+            .map(([id, title]) => ({ id, title, icon: '' })),
+        remote: () => Promise.resolve([]),
+        view: (id) => (titles[id] !== undefined ? { state: 'page', title: titles[id] ?? '', icon: '' } : { state: 'unavailable', title: '', icon: '' }),
+        subscribe: (cb) => {
+          subs.add(cb);
+          return () => subs.delete(cb);
+        },
+        ensure: () => undefined,
+        open: (id) => opened.push(id),
+        idOf: (href) => /^https:\/\/app\.test\/wiki\/([0-9a-f-]{36})$/.exec(href)?.[1] ?? null,
+        url: (id) => `https://app.test/wiki/${id}`,
+      };
+    }
+
+    it('[[ opens the page picker and inserts a live-titled page link', async () => {
+      const pages = source();
+      const { editor, el } = mount(seeded(''), true, { pageSource: pages });
+      await act(async () => {
+        editor().chain().focus('end').insertContent('see [[road').run();
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      const rows = [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((r) => r.textContent);
+      expect(rows).toEqual(['Roadmap']);
+      act(() => {
+        document.querySelector<HTMLElement>('[role="listbox"] [role="option"]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      });
+      expect(editor().getJSON().content[0]?.content).toEqual([
+        { type: 'text', text: 'see ' },
+        { type: 'wikiPageLink', attrs: { pageId: P1 } },
+        { type: 'text', text: ' ' },
+      ]);
+      const link = el.querySelector<HTMLAnchorElement>('a.wiki-page-link');
+      expect(link?.textContent).toBe('Roadmap');
+      // A rename follows live; edit mode: a plain click does not navigate.
+      act(() => {
+        pages.titles[P1] = 'Roadmap 2027';
+        pages.fire();
+      });
+      expect(link?.textContent).toBe('Roadmap 2027');
+      act(() => link?.click());
+      expect(pages.opened).toEqual([]);
+      act(() => {
+        link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+      });
+      expect(pages.opened).toEqual([P1]);
+    });
+
+    it('read mode: a click opens the page; an unavailable page shows no title and does not open', () => {
+      const pages = source();
+      const doc = seeded(`[a](https://app.test/wiki/${P2}) and [b](https://app.test/wiki/${GONE})`);
+      const { el } = mount(doc, false, { pageSource: pages });
+      const [ok, gone] = [...el.querySelectorAll<HTMLAnchorElement>('a.wiki-page-link')];
+      expect(ok?.textContent).toBe('Release notes');
+      expect(gone?.dataset['state']).toBe('unavailable');
+      expect(gone?.textContent).toBe('Недоступная страница');
+      act(() => ok?.click());
+      act(() => gone?.click());
+      expect(pages.opened).toEqual([P2]);
+    });
+
+    it('a pasted page address of this server becomes a page link', () => {
+      const pages = source();
+      const { editor } = mount(seeded(''), true, { pageSource: pages });
+      act(() => {
+        editor().commands.focus('end');
+      });
+      expect(paste(editor(), clipboard(`https://app.test/wiki/${P2}`))).toBe(true);
+      expect(JSON.stringify(editor().getJSON())).toContain(`"type":"wikiPageLink","attrs":{"pageId":"${P2}"}`);
+      // Another site's /wiki/ address is left to the link mark.
+      expect(paste(editor(), clipboard(`https://elsewhere.test/wiki/${P2}`))).toBe(false);
+    });
   });
 
   it('uploads a pasted image behind a local placeholder and stores only the file id', async () => {

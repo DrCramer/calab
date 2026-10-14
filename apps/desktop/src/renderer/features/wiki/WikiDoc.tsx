@@ -21,7 +21,9 @@ import { toMarkdown, type PmNode } from '../../lib/wiki/markdown';
 import { docMeta, docPlainText, WIKI_FIELD } from '../../lib/wiki/plainText';
 import { createWikiSync, type WikiSyncProvider } from '../../lib/wikiSync';
 import { platform } from '../../platform';
-import { loadPage, uploadImage } from '../../services/wiki';
+import { ownWikiPageId, wikiPageUrl } from '../../services/links';
+import { ensureWikiPage, loadPage, openWikiLink, searchPages, uploadImage } from '../../services/wiki';
+import { refView, useWikiRefs } from '../../stores/wikiRefs';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useWiki } from '../../stores/wiki';
@@ -30,7 +32,7 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberAvatar } from '../boards/menus';
 import WikiEditor from './editor/WikiEditor';
 import { PhoneToolbar } from './editor/PhoneToolbar';
-import type { MentionSource, WikiEditorApi } from './editor/types';
+import type { MentionSource, PageCandidate, PageSource, WikiEditorApi } from './editor/types';
 
 /** `wss://host/api/wiki/pages/{id}/sync` from the server URL (the gateway's way). */
 function syncUrl(pageId: string): string {
@@ -61,6 +63,54 @@ function mentionSource(workspaceId: string, me: string): MentionSource {
     label: (id) => (useWorkspaces.getState().byId[workspaceId]?.members[id] ? memberName(workspaceId, id) : undefined),
   };
 }
+
+const PICK_MAX = 10;
+
+/**
+ * Links to other pages (owner 14.10): the `[[` picker searches the loaded pages of the workspace
+ * (titles first matching at the start) and the server; a link's view reads the wiki store and the
+ * lookup state (stores/wikiRefs) at call time — each link subscribes on its own (light DOM).
+ */
+function pageSource(workspaceId: string, selfId: string): PageSource {
+  return {
+    search: (q) => {
+      const needle = q.trim().toLowerCase();
+      const hits: Array<PageCandidate & { rank: number }> = [];
+      for (const p of Object.values(useWiki.getState().pages)) {
+        if (p.workspaceId !== workspaceId || p.trashedAt || p.id === selfId) continue;
+        const title = p.title.toLowerCase();
+        const at = needle ? title.indexOf(needle) : 0;
+        if (at < 0) continue;
+        hits.push({ id: p.id, title: p.title, icon: p.icon, rank: at === 0 ? 0 : 1 });
+      }
+      hits.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
+      return hits.slice(0, PICK_MAX).map(({ id, title, icon }) => ({ id, title, icon }));
+    },
+    remote: async (q, signal) => (await searchPages(workspaceId, q, signal)).filter((p) => p.id !== selfId),
+    view: (id) => {
+      const p = useWiki.getState().pages[id];
+      return { state: refView(!!p, useWikiRefs.getState().state[id]), title: p?.title ?? '', icon: p?.icon ?? '' };
+    },
+    subscribe: (cb) => {
+      const a = useWiki.subscribe(cb);
+      const b = useWikiRefs.subscribe(cb);
+      return () => {
+        a();
+        b();
+      };
+    },
+    ensure: ensureWikiPage,
+    open: openWikiLink,
+    idOf: ownWikiPageId,
+    url: (id) => wikiPageUrl(id) ?? `/wiki/${id}`,
+  };
+}
+
+/** Export: page links as full addresses with the titles I can see (an unknown page: its address). */
+const exportLinks = {
+  pageUrl: (id: string) => wikiPageUrl(id) ?? `/wiki/${id}`,
+  pageTitle: (id: string) => useWiki.getState().pages[id]?.title || undefined,
+};
 
 export interface WikiDocProps {
   workspaceId: string;
@@ -130,7 +180,7 @@ export default function WikiDoc({ workspaceId, pageId, editable, editing, phone 
   useEffect(() => {
     setDocHandle({
       pageId,
-      markdown: (title) => (api.current ? toMarkdown(api.current.getJSON() as PmNode, { title }) : null),
+      markdown: (title) => (api.current ? toMarkdown(api.current.getJSON() as PmNode, { title, ...exportLinks }) : null),
       text: () => docPlainText(doc),
       restore: (state) => {
         const v = new Y.Doc();
@@ -152,13 +202,14 @@ export default function WikiDoc({ workspaceId, pageId, editable, editing, phone 
 
   const user = useMemo(() => ({ id: me, name: myName, color: avatarColor(me) }), [me, myName]);
   const mentions = useMemo(() => mentionSource(workspaceId, me), [workspaceId, me]);
+  const pages = useMemo(() => pageSource(workspaceId, pageId), [workspaceId, pageId]);
   const upload = useCallback((f: File) => uploadImage(pageId, f), [pageId]);
   const onError = useCallback((m: string) => toast.error(m), []);
 
   return (
     <>
       {phone ? <PeersReporter awareness={awareness} me={me} /> : <MetaLine workspaceId={workspaceId} pageId={pageId} awareness={awareness} me={me} />}
-      <WikiEditor doc={doc} awareness={awareness} editable={editable && editing} me={user} onUploadImage={upload} mentionSource={mentions} onError={onError} onReady={onReady} phone={phone} className={phone ? 'mt-2' : 'mt-4'} />
+      <WikiEditor doc={doc} awareness={awareness} editable={editable && editing} me={user} onUploadImage={upload} mentionSource={mentions} pageSource={pages} onError={onError} onReady={onReady} phone={phone} className={phone ? 'mt-2' : 'mt-4'} />
       {phone && editable && editing && toolbarHost && phoneApi ? createPortal(<PhoneToolbar editor={phoneApi.editor} onBlocks={() => phoneApi.openBlocks()} />, toolbarHost) : null}
     </>
   );

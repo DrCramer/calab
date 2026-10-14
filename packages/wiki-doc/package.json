@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./inline": "./src/inline.ts",
+    "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
     "./frames": "./src/frames.ts",
     "./plainText": "./src/plainText.ts",

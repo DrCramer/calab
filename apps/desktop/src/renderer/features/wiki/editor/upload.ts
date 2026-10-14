@@ -107,7 +107,7 @@ function markdownSlice(editor: Editor, text: string, env: EditorEnv): Slice | nu
   }
 }
 
-/** Paste / drop handling: image files upload, markdown text converts. */
+/** Paste / drop handling: image files upload, a page address becomes a page link, markdown text converts. */
 export function wikiPaste(env: EditorEnv) {
   return Extension.create({
     name: 'wikiPaste',
@@ -130,6 +130,19 @@ export function wikiPaste(env: EditorEnv) {
                 return true;
               }
               const text = data.getData('text/plain');
+              // A wiki page address of this server becomes a page link (owner 14.10).
+              const pageId = !editor.isActive('codeBlock') && /^\S+$/.test(text.trim()) ? (env.pages?.idOf(text.trim()) ?? null) : null;
+              if (pageId) {
+                editor
+                  .chain()
+                  .focus()
+                  .insertContent([
+                    { type: 'wikiPageLink', attrs: { pageId } },
+                    { type: 'text', text: ' ' },
+                  ])
+                  .run();
+                return true;
+              }
               const html = data.getData('text/html');
               const fromCodeEditor = data.types.includes('vscode-editor-data');
               if (!text || (html && !fromCodeEditor) || editor.isActive('codeBlock') || !looksLikeMarkdown(text)) return false;

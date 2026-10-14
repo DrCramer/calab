@@ -39,6 +39,8 @@ export type Dialog =
   | { kind: 'new-dm' }
   /** «Переслать…» (ADR-0033): pick people / rooms to copy the message `messageId` of `roomId` into. */
   | { kind: 'forward'; roomId: string; messageId: string }
+  /** «Отправить в чат…» of a wiki page (owner 14.10): the forward picker sends the page's address (+ a comment). */
+  | { kind: 'wiki-send'; pageId: string }
   /** «Пригласить в комнату»: pick members to invite by DM, or copy the room link (docs/09 #33). */
   | { kind: 'room-invite'; roomId: string }
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */

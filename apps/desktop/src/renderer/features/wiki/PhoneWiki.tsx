@@ -28,7 +28,8 @@ import { EditToggle, useEditMode } from './EditToggle';
 import { DROP, PageContextMenu, PageMenuEntries, RenameField, focusTitle } from './PageMenu';
 import { WikiDialogs } from './Dialogs';
 import { WikiDocLazy } from './lazy';
-import { TitleField } from './WikiPage';
+import { PageUnavailable, TitleField } from './WikiPage';
+import { useWikiRefs } from '../../stores/wikiRefs';
 
 /**
  * «Вики» on the phone (ADR-0096 §7, docs/08 «Вики: телефон»): the tab root lists the top-level
@@ -283,6 +284,8 @@ export function PhoneWikiPage({ workspaceId, pageId }: { workspaceId: string; pa
   useLocale();
   useWikiOnScreen();
   const known = useWiki((s) => !!s.pages[pageId]);
+  // A page link to a page deleted for good or not mine to see: «Страница недоступна».
+  const gone = useWikiRefs((s) => s.state[pageId] === 'gone');
   const seen = useRef(false);
   useEffect(() => {
     useWikiUi.getState().openPage(workspaceId, pageId);
@@ -307,6 +310,10 @@ export function PhoneWikiPage({ workspaceId, pageId }: { workspaceId: string; pa
       {known ? (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-testid="wiki-scroll">
           <PageBody workspaceId={workspaceId} pageId={pageId} editable={editable} setup={structure && !trashed} trashed={trashed} host={host} />
+        </div>
+      ) : gone ? (
+        <div className="min-h-0 flex-1">
+          <PageUnavailable />
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 place-items-center">

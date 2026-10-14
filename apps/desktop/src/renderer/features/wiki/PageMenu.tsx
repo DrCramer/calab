@@ -1,11 +1,12 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Download, FileText, FolderInput, History, Link2, Pencil, Plus, RotateCcw, Trash2, Users } from 'lucide-react';
+import { Download, FileText, FolderInput, History, Link, Link2, Pencil, Plus, RotateCcw, Send, Trash2, Users } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { canStructure, canWrite } from '../../lib/wiki/tree';
-import { createPage, deleteForever, exportMarkdown, openWikiPage, renamePage, restorePage, trashPage } from '../../services/wiki';
+import { copyPageLink, createPage, deleteForever, exportMarkdown, openWikiPage, renamePage, restorePage, trashPage } from '../../services/wiki';
+import { useUi } from '../../stores/ui';
 import { myUserId } from '../../stores/session';
 import { useWiki } from '../../stores/wiki';
 import { useWikiUi } from '../../stores/wikiUi';
@@ -14,7 +15,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 /**
  * The page's menu (ADR-0096, owner 14.10): ONE list of entries on a right click / long press of a
  * tree row, on the «⋯» of the page header and on the phone's rows. Open, Rename (inline in the row;
- * from the page header the title field), Add subpage, Move…, Access…, Link…, Version history,
+ * from the page header the title field), Add subpage, Move…, Access…, Link…, Copy link, Send to chat…, Version history,
  * Export to Markdown, To the trash; in the trash — Restore and Delete forever. Entries follow the
  * page's bits: rename / subpage need WRITE, the rest of the structure (move, access, link, trash,
  * restore) `canStructure` (= wikiStructureAllowed). The body mounts only while the menu is open.
@@ -74,6 +75,8 @@ export function PageMenuEntries({
       {structure && !trashed ? row(ic(FolderInput), t('wiki.move'), () => ui.openDialog({ kind: 'move', pageId }), 'wiki-menu-move') : null}
       {structure && !trashed ? row(ic(Users), t('wiki.access'), () => ui.openDialog({ kind: 'share', pageId, tab: 'access' }), 'wiki-menu-access') : null}
       {structure && !trashed ? row(ic(Link2), t('wiki.linkMenu'), () => ui.openDialog({ kind: 'share', pageId, tab: 'link' }), 'wiki-menu-link') : null}
+      {!trashed ? row(ic(Link), t('wiki.copyLink'), () => copyPageLink(pageId), 'wiki-menu-copy-link') : null}
+      {!trashed ? row(ic(Send), t('wiki.sendToChat'), () => useUi.getState().openDialog({ kind: 'wiki-send', pageId }), 'wiki-menu-send') : null}
       {row(ic(History), t('wiki.versions'), () => ui.openDialog({ kind: 'versions', pageId }), 'wiki-menu-versions')}
       {row(ic(Download), t('wiki.export'), () => exportMarkdown(pageId), 'wiki-menu-export')}
       {structure ? <Separator className={menuSeparator} /> : null}

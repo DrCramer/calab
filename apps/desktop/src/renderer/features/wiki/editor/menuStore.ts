@@ -1,10 +1,10 @@
 /**
- * The state of the editor's one suggestion popover (`/` blocks or `@` people): written by the
+ * The state of the editor's one suggestion popover (`/` blocks, `@` people or `[[` pages): written by the
  * Tiptap suggestion renderers, read by <SuggestionMenu> with useSyncExternalStore. Keeps the
  * popover out of the editor's React tree (no re-render of the editor while typing a query).
  */
 export interface MenuState<T = unknown> {
-  kind: 'slash' | 'mention';
+  kind: 'slash' | 'mention' | 'page';
   items: T[];
   index: number;
   /** Caret rectangle (viewport coordinates) the popover hangs from. */

@@ -28,6 +28,9 @@ interface WikiUiState {
   /** Workspace → the open page id ('' = none yet). */
   pageOf: Readonly<Record<string, string>>;
   openPage: (wsId: string, pageId: string) => void;
+  /** A page link (deep link, a link in a page, a chat card) that could not be opened: «Страница недоступна» in place of the page. Cleared by any open. */
+  unavailable: string | null;
+  setUnavailable: (id: string | null) => void;
   /** Workspace → the tree column shows the trash. */
   trashOf: Readonly<Record<string, true>>;
   openTrash: (wsId: string, on: boolean) => void;
@@ -59,13 +62,15 @@ export const useWikiUi = create<WikiUiState>()(
   persist(
     (set) => ({
       active: false,
-      setActive: (active) => set((s) => (s.active === active ? s : active ? { active } : { active, query: '', dialog: null })),
+      setActive: (active) => set((s) => (s.active === active ? s : active ? { active } : { active, query: '', dialog: null, unavailable: null })),
       pageOf: {},
       openPage: (wsId, pageId) =>
         set((s) => {
-          if (s.pageOf[wsId] === pageId && !s.trashOf[wsId]) return s;
-          return { pageOf: { ...s.pageOf, [wsId]: pageId }, dialog: null };
+          if (s.pageOf[wsId] === pageId && !s.trashOf[wsId]) return s.unavailable ? { unavailable: null } : s;
+          return { pageOf: { ...s.pageOf, [wsId]: pageId }, dialog: null, unavailable: null };
         }),
+      unavailable: null,
+      setUnavailable: (unavailable) => set((s) => (s.unavailable === unavailable ? s : { unavailable })),
       trashOf: {},
       openTrash: (wsId, on) =>
         set((s) => {

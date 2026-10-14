@@ -24,7 +24,7 @@ import {
   type WikiVersionsResponse,
 } from '@calaba/protocol';
 import { confirmAction } from '../components/Confirm';
-import { t } from '../i18n';
+import { plural, t } from '../i18n';
 import { ApiError, body, call, callBytes, callEmpty, qs } from '../lib/api/client';
 import { api, uploadInto } from '../lib/api/endpoints';
 import { docHandle } from '../lib/wiki/docHandle';
@@ -35,6 +35,17 @@ import { pageOf, useWikiUi } from '../stores/wikiUi';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { pushOnTab } from '../lib/phoneNav';
+import { showMode } from '../features/shell/sectionNav';
+import type { ForwardItem } from '../features/chat/forwardModel';
+import { log } from '../lib/log';
+import { contextWorkspaceNow } from '../stores/sections';
+import { useSession } from '../stores/session';
+import { useWikiRefs } from '../stores/wikiRefs';
+import { HOME } from '../stores/dms';
+import { useRooms } from '../stores/rooms';
+import { wikiPageUrl } from './links';
+import { MAX_CONTENT, sendMessage } from './chat';
+import { ensureDm } from './dms';
 
 /**
  * Wiki REST (ADR-0096 §8, proto/calaba/v1/wiki.proto) and the section's actions: the one module
@@ -148,6 +159,7 @@ export async function loadPage(ws: string, id: string): Promise<void> {
     }
   } catch (e) {
     if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+      useWikiRefs.getState().set(id, 'gone');
       useWiki.getState().remove(id);
       if (pageOf(useWikiUi.getState(), ws) === id) useWikiUi.getState().openPage(ws, '');
     }
@@ -238,6 +250,8 @@ export function onWikiPageRemove(e: WikiPageRemove): void {
   const ui = useWikiUi.getState();
   const open = pageOf(ui, e.workspaceId);
   if (open && (open === e.pageId || ancestorsOf(st.pages, open).includes(e.pageId))) ui.openPage(e.workspaceId, '');
+  // Page links to it (in documents, chat cards) turn «unavailable».
+  useWikiRefs.getState().set(e.pageId, 'gone');
   st.remove(e.pageId);
   if (!onScreen(e.workspaceId)) useWiki.getState().forgetLists(e.workspaceId);
 }
@@ -444,4 +458,148 @@ export async function searchPages(ws: string, q: string, signal?: AbortSignal): 
         });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- page links (owner 14.10)
+
+const resolving = new Map<string, Promise<WikiPage | null>>();
+
+/**
+ * A page referenced by id (a page link in a document, a chat card, a deep link): GET the page and
+ * its path (the card's crumbs), once per session per id; both go into `useWiki.pages` (never into a
+ * tree list). 404 / 403 → `gone`: nothing about the page is kept or shown. A network failure is
+ * tried again by the next caller.
+ */
+export function resolveWikiPage(id: string): Promise<WikiPage | null> {
+  const known = useWiki.getState().pages[id];
+  const st = useWikiRefs.getState().state[id];
+  if (st === 'gone') return Promise.resolve(null);
+  if (known && (st === 'ok' || !known.parentId || useWiki.getState().pages[known.parentId])) return Promise.resolve(known);
+  const running = resolving.get(id);
+  if (running) return running;
+  useWikiRefs.getState().set(id, 'loading');
+  const p = Promise.all([wikiApi.get(id), wikiApi.path(id).catch(() => null)])
+    .then(
+      ([r, path]) => {
+        const st = useWiki.getState();
+        if (path) st.put(path.pages.filter((x) => x.id !== id && !st.pages[x.id]));
+        if (!r.page) {
+          useWikiRefs.getState().set(id, 'gone');
+          return null;
+        }
+        useWiki.getState().put([r.page]);
+        useWikiRefs.getState().set(id, 'ok');
+        return r.page;
+      },
+      (e: unknown) => {
+        const gone = e instanceof ApiError && (e.status === 404 || e.status === 403);
+        useWikiRefs.getState().set(id, gone ? 'gone' : 'error');
+        return null;
+      },
+    )
+    .finally(() => resolving.delete(id));
+  resolving.set(id, p);
+  return p;
+}
+
+/** Resolves a referenced page unless it is already known (a mount of a link or a card). */
+export function ensureWikiPage(id: string): void {
+  if (id) void resolveWikiPage(id);
+}
+
+let pendingLink: string | null = null;
+let unwatch: (() => void) | null = null;
+
+/**
+ * Opens a page link (`/wiki/<id>`: a deep link, a link in a message or a page, a chat card): the
+ * wiki section of the page's workspace on that page. No access → the section with «Страница
+ * недоступна». Before the first READY the link waits (the workspaces are not known yet).
+ */
+export function openWikiLink(id: string): void {
+  // Web: the address bar had /wiki/<id>; the app does not route by URL (a reload would come back here).
+  if (import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' && location.pathname.startsWith('/wiki/')) {
+    try {
+      history.replaceState(null, '', '/');
+    } catch {
+      // not fatal
+    }
+  }
+  if (useSession.getState().ready) {
+    void goToPage(id);
+    return;
+  }
+  pendingLink = id;
+  unwatch ??= useSession.subscribe((s) => {
+    if (!s.ready || !pendingLink) return;
+    const next = pendingLink;
+    pendingLink = null;
+    unwatch?.();
+    unwatch = null;
+    void goToPage(next);
+  });
+}
+
+async function goToPage(id: string): Promise<void> {
+  const page = await resolveWikiPage(id);
+  const ws = page?.workspaceId || contextWorkspaceNow();
+  if (!ws || ws === HOME) {
+    toast.error(t('wiki.unavailable'));
+    return;
+  }
+  const ui = useUi.getState();
+  if (ui.activeWorkspaceId !== ws) ui.setWorkspace(ws);
+  if (ui.phone.on) {
+    // The phone: the page screen over the «Вики» tab (it shows «Страница недоступна» itself).
+    if (page) openWikiPage(ws, id);
+    else useUi.getState().setPhone((n) => pushOnTab(n, 'wiki', { kind: 'wiki', pageId: id }));
+    return;
+  }
+  showMode('wiki');
+  if (page) openWikiPage(ws, id);
+  else useWikiUi.getState().setUnavailable(id);
+}
+
+/** «Скопировать ссылку»: the page's address on this server. */
+export function copyPageLink(id: string): void {
+  const url = wikiPageUrl(id);
+  if (!url) {
+    toast.error(t('wiki.err.copyLink'));
+    return;
+  }
+  void navigator.clipboard.writeText(url).then(
+    () => toast.success(t('wiki.linkCopied')),
+    () => toast.error(t('wiki.err.copyLink')),
+  );
+}
+
+/**
+ * «Отправить в чат…»: one message per picked chat — the optional comment, then the page's address
+ * (the feed draws its card). Through the chat's own send path; the server checks the rights.
+ */
+export async function sendPageToChats(pageId: string, targets: readonly ForwardItem[], comment: string): Promise<void> {
+  const url = wikiPageUrl(pageId);
+  if (!url || !targets.length) return;
+  const note = comment.trim();
+  const content = (note ? `${note}\n${url}` : url).slice(0, MAX_CONTENT);
+  let last: { ws: string; room: string; name: string } | null = null;
+  let sent = 0;
+  let failed = 0;
+  for (const target of targets) {
+    try {
+      const roomId = target.kind === 'room' ? target.roomId : await ensureDm(target.userId);
+      const ws = useRooms.getState().byId[roomId]?.workspaceId ?? '';
+      await sendMessage(ws, roomId, content, [], undefined);
+      last = { ws, room: roomId, name: target.name };
+      sent++;
+    } catch (e) {
+      log.warn('wiki to chat: send', e);
+      failed++;
+    }
+  }
+  if (last) {
+    const to = last;
+    const label = sent > 1 ? plural('wiki.send.sentMany', sent) : t('wiki.send.sent', { name: to.name });
+    useToasts.getState().push('success', label, { label: t('wiki.send.open'), run: () => useUi.getState().openRoom(to.ws || HOME, to.room) });
+  }
+  if (failed) toast.error(t('wiki.send.failed'));
 }

@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { ChevronRight, CloudOff, Ellipsis, Eye, FileText, ImagePlus, Plus, Share2, Smile, Trash2, X } from 'lucide-react';
+import { ChevronRight, CloudOff, Ellipsis, Eye, FileText, FileX, ImagePlus, Plus, Share2, Smile, Trash2, X } from 'lucide-react';
 import { memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar, BAR_GROUP } from '../../components/Bar';
@@ -38,11 +38,15 @@ import { WikiDocLazy } from './lazy';
 export function WikiMain({ workspaceId, canCreate }: { workspaceId: string; canCreate: boolean }): ReactNode {
   const pageId = useWikiUi((s) => s.pageOf[workspaceId] ?? '');
   const known = useWiki((s) => !!s.pages[pageId]);
+  // A page link that could not be opened (deep link, a link in a page or a chat card).
+  const unavailable = useWikiUi((s) => s.unavailable !== null);
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <WikiBar workspaceId={workspaceId} pageId={known ? pageId : ''} />
+      <WikiBar workspaceId={workspaceId} pageId={known && !unavailable ? pageId : ''} />
       <div className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto" data-testid="wiki-scroll">
-        {pageId && known ? (
+        {unavailable ? (
+          <PageUnavailable />
+        ) : pageId && known ? (
           <PageView key={pageId} workspaceId={workspaceId} pageId={pageId} />
         ) : pageId ? (
           <div className="grid h-full place-items-center">
@@ -52,6 +56,18 @@ export function WikiMain({ workspaceId, canCreate }: { workspaceId: string; canC
           <NoPage workspaceId={workspaceId} canCreate={canCreate} />
         )}
       </div>
+    </div>
+  );
+}
+
+/** «Страница недоступна»: a page link to a page deleted for good or not mine to see (the server answers 404; nothing about it is shown). */
+export function PageUnavailable(): ReactNode {
+  useLocale();
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-body text-muted" role="status" data-testid="wiki-unavailable">
+      <FileX className="size-10" strokeWidth={1.25} aria-hidden />
+      <p className="text-fg">{t('wiki.unavailable')}</p>
+      <p>{t('wiki.unavailableText')}</p>
     </div>
   );
 }
