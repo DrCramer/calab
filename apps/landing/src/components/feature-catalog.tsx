@@ -15,12 +15,13 @@ const shots: Record<Exclude<CatalogKey, 'phone'>, ScreenName> = {
   search: 'search',
   mail: 'mail',
   notes: 'notes',
+  disk: 'disk',
   notify: 'notifyrelay',
   apps: 'webapps',
   sip: 'sipdial',
 };
 /** Wide cards span both columns with the text beside the picture. */
-const WIDE = new Set<CatalogKey>(['voice', 'boards', 'mail', 'phone']);
+const WIDE = new Set<CatalogKey>(['voice', 'boards', 'disk', 'mail', 'phone']);
 /** Where «Подробнее» leads: a section of /features/ or of this page (`#…`). */
 const links: Record<CatalogKey, string> = {
   voice: 'features/#voice',
@@ -31,15 +32,16 @@ const links: Record<CatalogKey, string> = {
   search: 'features/#search',
   mail: 'features/#mail',
   notes: 'features/#notes',
+  disk: 'features/#disk',
   phone: '#mobile',
   notify: '#notifications',
   apps: 'features/#webapps',
   sip: 'features/#sip',
 };
 /** Display order: the two-column cards come in pairs between the wide ones. */
-const ORDER: CatalogKey[] = ['voice', 'gallery', 'chat', 'boards', 'calendar', 'search', 'mail', 'notes', 'notify', 'phone', 'apps', 'sip'];
+const ORDER: CatalogKey[] = ['voice', 'gallery', 'chat', 'boards', 'calendar', 'search', 'disk', 'mail', 'notes', 'notify', 'phone', 'apps', 'sip'];
 /** Two-column cards show their shot in one 16:11 window (cover); the part that matters stays in view. */
-const FOCUS: Partial<Record<CatalogKey, string>> = { chat: 'object-bottom', notes: 'object-left-top', apps: 'object-left-top', sip: '!object-contain object-center' };
+const FOCUS: Partial<Record<CatalogKey, string>> = { chat: 'object-bottom', notes: 'object-left-top', apps: '!object-contain object-center', sip: '!object-contain object-center' };
 export const PHONE_SHOTS = ['phone-rooms', 'phone-chat', 'phone-board'] as const satisfies readonly ScreenName[];
 
 /** A phone screenshot in a rounded device edge (the capture is the 390×844 iPhone 14 viewport). */
@@ -53,7 +55,7 @@ export function PhoneShot({ name, locale, alt, sizes }: { name: ScreenName; loca
 
 /**
  * «Что есть в Calab» (landing 3.3): every big feature as a real screenshot and one or two sentences,
- * in two columns (one on phones); the four widest scenes span the row. Static, no scripts.
+ * in two columns (one on phones); the widest scenes span the row. Static, no scripts.
  */
 export function FeatureCatalog({ locale }: { locale: Locale }) {
   const t = getCatalog(locale);

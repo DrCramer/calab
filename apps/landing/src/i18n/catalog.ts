@@ -5,7 +5,7 @@ import type { Locale } from './locales';
  * screenshot and one or two sentences — plus the «Уведомления» section and the «скоро iOS / Android»
  * block. Screenshots: lib/screens.ts (the app and its team in the page's language).
  */
-export type CatalogKey = 'voice' | 'gallery' | 'chat' | 'boards' | 'calendar' | 'search' | 'mail' | 'notes' | 'phone' | 'notify' | 'apps' | 'sip';
+export type CatalogKey = 'voice' | 'gallery' | 'chat' | 'boards' | 'calendar' | 'search' | 'mail' | 'notes' | 'disk' | 'phone' | 'notify' | 'apps' | 'sip';
 export type CatalogCard = { key: CatalogKey; title: string; text: string; alt: string };
 type Channel = { title: string; points: string[] };
 
@@ -47,17 +47,18 @@ const catalogs: Record<Locale, Catalog> = {
     more: 'Подробнее',
     desktopOnly: 'Приложение для компьютера',
     cards: [
-      { key: 'voice', title: 'Голосовые комнаты и демонстрация экрана', text: 'Комнаты всегда открыты: зашли — и говорите. Экран в AV1 или H.264, указка и рисование поверх стрима, шумо- и эхоподавление.', alt: 'Голосовая комната во время планёрки: на сцене слайд, ниже камеры участников' },
-      { key: 'gallery', title: 'Видеовстречи с галереей', text: 'Все участники одинаковыми плитками, до 25 на экране. Тот, кто заговорил, сам оказывается на первой странице; есть режим «Спикер».', alt: 'Видеовстреча в режиме «Галерея»: три камеры и две плитки с аватарами' },
-      { key: 'chat', title: 'Чат, как в Telegram', text: 'Ответы, реакции, стикеры, голосовые, файлы с превью и пересылка в несколько чатов. Любое сообщение — в задачу одним действием.', alt: 'Чат комнаты: макет с реакциями, ответ и стикер' },
+      { key: 'voice', title: 'Голосовые комнаты и демонстрация экрана', text: 'Комнаты всегда открыты: зашли — и говорите. Экран в AV1 или H.264, указка и рисование поверх стрима, шумо- и эхоподавление.', alt: 'Голосовая комната во время звонка: на сцене демонстрация экрана, ниже камеры участников' },
+      { key: 'gallery', title: 'Видеовстречи с галереей', text: 'Все участники одинаковыми плитками, до 25 на экране. Тот, кто заговорил, сам оказывается на первой странице; есть режим «Спикер».', alt: 'Видеовстреча в режиме «Галерея»: три камеры и плитка с аватаром, говорящий подсвечен' },
+      { key: 'chat', title: 'Чат, как в Telegram', text: 'Ответы, реакции, стикеры, голосовые, файлы с превью и пересылка в несколько чатов. Любое сообщение — в задачу одним действием.', alt: 'Чат комнаты: короткие сообщения с реакциями, ответ с цитатой и галочки прочтения' },
       { key: 'boards', title: 'Доски задач с историей', text: 'Доска, список и таймлайн, согласования, наблюдатели и вехи. Вкладка «История» показывает, кто и что поменял в задаче — по дням.', alt: 'Доска задач и открытая задача на вкладке «История»: смена срока, приоритета, согласование, правило автоматизации' },
       { key: 'calendar', title: 'Календарь и подбор времени', text: 'Встречи со ссылкой на комнату и приглашением .ics, подбор общего окна по занятости коллег, синхронизация CalDAV.', alt: 'Подбор времени для четырёх человек: колонки занятости и выбранный слот' },
       { key: 'search', title: 'Поиск по всему', text: '⌘K находит сообщения, задачи, комментарии, встречи, файлы, заметки и расшифровки записей встреч — с подсветкой и опечатками.', alt: 'Окно поиска: по запросу «релиз» найдены заметки, комната, сообщения, задачи и комментарии' },
       { key: 'mail', title: 'Почта прямо в Calab', text: 'Подключите Gmail, Яндекс, Mail.ru, iCloud или рабочий ящик по IMAP — настройки подберутся сами. Читайте, отвечайте и отправляйте письмо в чат вместе с файлом.', alt: 'Раздел «Почта»: список писем «Все входящие» и открытое письмо с двумя вложениями' },
       { key: 'notes', title: 'Заметки и личные сообщения', text: 'До 20 личных полок для ссылок, идей и пересланных сообщений. Личные чаты и звонки один на один — там же.', alt: 'Заметки: полки и открытая полка с заметками и пересланным сообщением' },
+      { key: 'disk', title: 'Диск команды', text: 'Папки и файлы с превью, доступ по папкам, публичные ссылки и корзина. Индикатор показывает, сколько места осталось.', alt: '«Диск» плитками: папки (одна закрытая), файлы с превью и индикатор места' },
       { key: 'phone', title: 'С телефона', text: 'Веб-версия на телефоне уже работает: комнаты, чат, голос, доски и календарь. Приложения для iPhone и Android — скоро.', alt: 'Calab на телефоне' },
       { key: 'notify', title: 'Уведомления под контролем', text: 'Уровень для каждого пространства и комнаты, «Не беспокоить», триггеры задач по отдельности и пересылка своему боту — например, в Telegram.', alt: 'Настройки уведомлений о задачах: переключатели по событиям и «Передавать боту»' },
-      { key: 'apps', title: 'Веб-приложения и боты', text: 'Grafana, вики или CRM открываются прямо в окне Calab, звонок продолжается. Боты работают через тот же API: чат, задачи, календарь, голос.', alt: 'Дашборд Grafana открыт в окне Calab, внизу панель идущего звонка' },
+      { key: 'apps', title: 'Веб-приложения и боты', text: 'CRM, дашборд продаж или вики открываются прямо в окне Calab, звонок продолжается. Боты присылают в чат сводки с кнопками и работают через тот же API: чат, задачи, календарь, голос.', alt: 'Дашборд «Продажи» открыт в окне Calab, поверх — сводка бота с кнопками «Открыть отчёт» и «Напомнить»' },
       { key: 'sip', title: 'Звонки на телефонные номера', text: 'Подключите своего SIP-провайдера — и из голосовой комнаты можно набрать любой номер. Абонента слышат все в комнате.', alt: 'Голосовая комната с окном «Позвонить на номер»' },
     ],
     notify: {
@@ -93,17 +94,18 @@ const catalogs: Record<Locale, Catalog> = {
     more: 'Learn more',
     desktopOnly: 'Desktop app',
     cards: [
-      { key: 'voice', title: 'Voice rooms and screen sharing', text: 'Rooms are always open: step in and talk. Screen sharing in AV1 or H.264, a pointer and drawing on top, noise and echo suppression.', alt: 'A voice room during a planning meeting: a slide on the stage, participants’ cameras below' },
-      { key: 'gallery', title: 'Video meetings with a gallery', text: 'Everyone in equal tiles, up to 25 on screen. Whoever starts talking moves to the first page by themselves; there’s a Speaker view too.', alt: 'A video meeting in Gallery view: three cameras and two avatar tiles' },
-      { key: 'chat', title: 'Chat like Telegram', text: 'Replies, reactions, stickers, voice messages, files with previews and forwarding to several chats. Any message becomes a task in one step.', alt: 'A room chat: a mockup with reactions, a reply and a sticker' },
+      { key: 'voice', title: 'Voice rooms and screen sharing', text: 'Rooms are always open: step in and talk. Screen sharing in AV1 or H.264, a pointer and drawing on top, noise and echo suppression.', alt: 'A voice room in a call: a shared screen on the stage, participants’ cameras below' },
+      { key: 'gallery', title: 'Video meetings with a gallery', text: 'Everyone in equal tiles, up to 25 on screen. Whoever starts talking moves to the first page by themselves; there’s a Speaker view too.', alt: 'A video meeting in Gallery view: three cameras and an avatar tile, the speaker highlighted' },
+      { key: 'chat', title: 'Chat like Telegram', text: 'Replies, reactions, stickers, voice messages, files with previews and forwarding to several chats. Any message becomes a task in one step.', alt: 'A room chat: short messages with reactions, a quoted reply and read ticks' },
       { key: 'boards', title: 'Task boards with history', text: 'Board, list and timeline, approvals, watchers and milestones. The History tab shows who changed what in a task, day by day.', alt: 'A task board and an open task on the History tab: due date, priority, an approval and an automation rule' },
       { key: 'calendar', title: 'Calendar and find a time', text: 'Meetings with a room link and an .ics invitation, a shared free slot from colleagues’ busy times, CalDAV sync.', alt: 'Finding a time for four people: busy columns and the picked slot' },
       { key: 'search', title: 'Search everything', text: '⌘K finds messages, tasks, comments, meetings, files, notes and meeting transcripts, with highlights and typo tolerance.', alt: 'The search window: notes, a room, messages, tasks and comments found for “release”' },
       { key: 'mail', title: 'Email right inside Calab', text: 'Connect Gmail, iCloud, Yandex, Mail.ru or any IMAP work mailbox — the settings are found for you. Read, reply and send a letter to a chat with its file.', alt: 'The Mail section: the All inboxes list and an open letter with two attachments' },
       { key: 'notes', title: 'Notes and direct messages', text: 'Up to 20 private shelves for links, ideas and forwarded messages. Direct chats and one-to-one calls sit right there.', alt: 'Notes: the shelves and an open shelf with notes and a forwarded message' },
+      { key: 'disk', title: 'Team disk', text: 'Folders and files with previews, per-folder access, public links and a trash. A meter shows how much space is left.', alt: 'Disk as tiles: folders (one restricted), files with previews and the storage meter' },
       { key: 'phone', title: 'On your phone', text: 'The web app already works on phones: rooms, chat, voice, boards and calendar. iPhone and Android apps are coming soon.', alt: 'Calab on a phone' },
       { key: 'notify', title: 'Notifications under control', text: 'A level for every workspace and room, Do not disturb, task triggers one by one and relaying to your own bot — to Telegram, for example.', alt: 'Task notification settings: a switch per event and “Relay to a bot”' },
-      { key: 'apps', title: 'Web apps and bots', text: 'Grafana, a wiki or a CRM open right inside Calab while the call goes on. Bots use the same API: chat, tasks, calendar, voice.', alt: 'A Grafana dashboard open in the Calab window, the ongoing call panel below' },
+      { key: 'apps', title: 'Web apps and bots', text: 'A CRM, a sales dashboard or the wiki open right inside Calab while the call goes on. Bots post summaries with buttons to the chat and use the same API: chat, tasks, calendar, voice.', alt: 'The Sales dashboard open inside Calab, with a bot’s summary and its Open report and Remind me buttons on top' },
       { key: 'sip', title: 'Calls to phone numbers', text: 'Connect your own SIP provider and dial any number from a voice room. Everyone in the room hears the caller.', alt: 'A voice room with the “Call a number” popover' },
     ],
     notify: {
@@ -139,17 +141,18 @@ const catalogs: Record<Locale, Catalog> = {
     more: 'Más información',
     desktopOnly: 'App de escritorio',
     cards: [
-      { key: 'voice', title: 'Salas de voz y pantalla compartida', text: 'Las salas están siempre abiertas: entra y habla. Pantalla en AV1 o H.264, puntero y dibujo encima, supresión de ruido y eco.', alt: 'Una sala de voz en una reunión de planificación: una diapositiva en el escenario y las cámaras debajo' },
-      { key: 'gallery', title: 'Videollamadas con galería', text: 'Todos en mosaicos iguales, hasta 25 en pantalla. Quien empieza a hablar pasa solo a la primera página; también hay vista «Orador».', alt: 'Una videollamada en vista «Galería»: tres cámaras y dos mosaicos con avatar' },
-      { key: 'chat', title: 'Chat como Telegram', text: 'Respuestas, reacciones, stickers, mensajes de voz, archivos con vista previa y reenvío a varios chats. Cualquier mensaje se convierte en tarea en un paso.', alt: 'El chat de una sala: una maqueta con reacciones, una respuesta y un sticker' },
+      { key: 'voice', title: 'Salas de voz y pantalla compartida', text: 'Las salas están siempre abiertas: entra y habla. Pantalla en AV1 o H.264, puntero y dibujo encima, supresión de ruido y eco.', alt: 'Una sala de voz en una llamada: una pantalla compartida en el escenario y las cámaras de los participantes debajo' },
+      { key: 'gallery', title: 'Videollamadas con galería', text: 'Todos en mosaicos iguales, hasta 25 en pantalla. Quien empieza a hablar pasa solo a la primera página; también hay vista «Orador».', alt: 'Una videollamada en vista Galería: tres cámaras y un mosaico con avatar, quien habla aparece resaltado' },
+      { key: 'chat', title: 'Chat como Telegram', text: 'Respuestas, reacciones, stickers, mensajes de voz, archivos con vista previa y reenvío a varios chats. Cualquier mensaje se convierte en tarea en un paso.', alt: 'El chat de una sala: mensajes cortos con reacciones, una respuesta con cita y marcas de lectura' },
       { key: 'boards', title: 'Tableros de tareas con historial', text: 'Tablero, lista y cronograma, aprobaciones, observadores e hitos. La pestaña «Historial» muestra quién cambió qué en la tarea, día a día.', alt: 'Un tablero y una tarea abierta en la pestaña «Historial»: fecha límite, prioridad, una aprobación y una regla de automatización' },
       { key: 'calendar', title: 'Calendario y buscar hora', text: 'Reuniones con enlace a la sala e invitación .ics, un hueco común según la disponibilidad de tus colegas, sincronización CalDAV.', alt: 'Buscar hora para cuatro personas: columnas de ocupación y la franja elegida' },
       { key: 'search', title: 'Busca en todo', text: '⌘K encuentra mensajes, tareas, comentarios, reuniones, archivos, notas y transcripciones de reuniones, con resaltado y tolerancia a erratas.', alt: 'La ventana de búsqueda: notas, una sala, mensajes, tareas y comentarios para «versión»' },
       { key: 'mail', title: 'Correo dentro de Calab', text: 'Conecta Gmail, iCloud, Yandex, Mail.ru o cualquier buzón IMAP del trabajo: la configuración se detecta sola. Lee, responde y envía un correo al chat con su archivo.', alt: 'La sección Correo: la lista «Todas las bandejas» y un correo abierto con dos adjuntos' },
       { key: 'notes', title: 'Notas y mensajes directos', text: 'Hasta 20 estantes privados para enlaces, ideas y mensajes reenviados. Los chats directos y las llamadas uno a uno, ahí mismo.', alt: 'Notas: los estantes y un estante abierto con notas y un mensaje reenviado' },
+      { key: 'disk', title: 'Disco del equipo', text: 'Carpetas y archivos con vista previa, acceso por carpeta, enlaces públicos y papelera. Un indicador muestra cuánto espacio queda.', alt: 'Disco en mosaico: carpetas (una restringida), archivos con vista previa y el indicador de espacio' },
       { key: 'phone', title: 'Desde el móvil', text: 'La versión web ya funciona en el móvil: salas, chat, voz, tableros y calendario. Las apps para iPhone y Android llegan pronto.', alt: 'Calab en un móvil' },
       { key: 'notify', title: 'Notificaciones bajo control', text: 'Un nivel para cada espacio y sala, «No molestar», avisos de tareas uno a uno y reenvío a tu propio bot, por ejemplo a Telegram.', alt: 'Ajustes de notificaciones de tareas: un interruptor por evento y «Reenviar a un bot»' },
-      { key: 'apps', title: 'Aplicaciones web y bots', text: 'Grafana, una wiki o un CRM se abren dentro de Calab mientras sigue la llamada. Los bots usan la misma API: chat, tareas, calendario y voz.', alt: 'Un panel de Grafana abierto en la ventana de Calab, abajo la llamada en curso' },
+      { key: 'apps', title: 'Aplicaciones web y bots', text: 'Un CRM, un panel de ventas o la wiki se abren dentro de Calab mientras sigue la llamada. Los bots publican en el chat resúmenes con botones y usan la misma API: chat, tareas, calendario y voz.', alt: 'El panel «Ventas» abierto dentro de Calab y, encima, el resumen de un bot con los botones «Abrir informe» y «Recordar»' },
       { key: 'sip', title: 'Llamadas a números de teléfono', text: 'Conecta tu proveedor SIP y marca cualquier número desde una sala de voz. Todos en la sala oyen a la persona llamada.', alt: 'Una sala de voz con la ventana «Llamar a un número»' },
     ],
     notify: {
@@ -185,17 +188,18 @@ const catalogs: Record<Locale, Catalog> = {
     more: '了解更多',
     desktopOnly: '桌面应用',
     cards: [
-      { key: 'voice', title: '语音房间与屏幕共享', text: '房间始终开放：进来就能说。AV1 或 H.264 屏幕共享，可在画面上指示和绘画，并有降噪和回声消除。', alt: '规划会议中的语音房间：舞台上是幻灯片，下方是参会者摄像头' },
-      { key: 'gallery', title: '画廊式视频会议', text: '所有人以相同大小的画面显示，一屏最多 25 人。谁开口说话，谁就自动出现在第一页；也可切换“发言人”视图。', alt: '“画廊”视图的视频会议：三个摄像头画面和两个头像画面' },
-      { key: 'chat', title: '像 Telegram 一样的聊天', text: '回复、表情回应、贴纸、语音消息、带预览的文件，还能一次转发到多个聊天。任何消息一步变成任务。', alt: '房间聊天：带表情回应的设计稿、一条回复和一个贴纸' },
+      { key: 'voice', title: '语音房间与屏幕共享', text: '房间始终开放：进来就能说。AV1 或 H.264 屏幕共享，可在画面上指示和绘画，并有降噪和回声消除。', alt: '通话中的语音房间：舞台上是共享屏幕，下方是参会者的摄像头' },
+      { key: 'gallery', title: '画廊式视频会议', text: '所有人以相同大小的画面显示，一屏最多 25 人。谁开口说话，谁就自动出现在第一页；也可切换“发言人”视图。', alt: '画廊视图的视频会议：三个摄像头和一个头像格，正在发言的人被高亮' },
+      { key: 'chat', title: '像 Telegram 一样的聊天', text: '回复、表情回应、贴纸、语音消息、带预览的文件，还能一次转发到多个聊天。任何消息一步变成任务。', alt: '房间聊天：带表情回应的简短消息、引用回复和已读标记' },
       { key: 'boards', title: '带历史记录的任务看板', text: '看板、列表与时间线，审批、关注者和里程碑。“历史”标签按天显示谁改了任务的什么。', alt: '任务看板和“历史”标签下打开的任务：截止日期、优先级、审批和自动化规则' },
       { key: 'calendar', title: '日历与查找时间', text: '会议附房间链接和 .ics 邀请，根据同事的忙闲找到共同空档，支持 CalDAV 同步。', alt: '为四个人查找时间：忙闲列与选中的时段' },
       { key: 'search', title: '全局搜索', text: '⌘K 可搜索消息、任务、评论、会议、文件、笔记和会议转写，支持高亮和容错。', alt: '搜索窗口：按“发布”找到的笔记、房间、消息、任务和评论' },
       { key: 'mail', title: '在 Calab 里收发邮件', text: '连接 Gmail、iCloud、Yandex、Mail.ru 或任意 IMAP 工作邮箱，设置会自动识别。阅读、回复，还能把邮件连同附件发到聊天。', alt: '“邮件”分区：“全部收件箱”列表和带两个附件的已打开邮件' },
       { key: 'notes', title: '笔记与私信', text: '最多 20 个私人笔记架，存放链接、想法和转发的消息。私聊和一对一通话也在这里。', alt: '笔记：笔记架以及打开的一个笔记架，含笔记和转发的消息' },
+      { key: 'disk', title: '团队网盘', text: '带预览的文件夹和文件、按文件夹的权限、公开链接和回收站。用量条显示还剩多少空间。', alt: '平铺视图的网盘：文件夹（其中一个受限）、带预览的文件和空间用量条' },
       { key: 'phone', title: '在手机上', text: '手机网页版已经可用：房间、聊天、语音、看板和日历。iPhone 和 Android 应用即将推出。', alt: '手机上的 Calab' },
       { key: 'notify', title: '通知尽在掌控', text: '为每个空间和房间设置通知级别、“请勿打扰”、逐项开关任务通知，还能转发给你自己的机器人，例如 Telegram。', alt: '任务通知设置：按事件的开关和“转发给机器人”' },
-      { key: 'apps', title: '网页应用与机器人', text: 'Grafana、Wiki 或 CRM 直接在 Calab 窗口中打开，通话不中断。机器人使用同一套 API：聊天、任务、日历和语音。', alt: '在 Calab 窗口中打开的 Grafana 仪表盘，下方是进行中的通话面板' },
+      { key: 'apps', title: '网页应用与机器人', text: 'CRM、销售仪表盘或维基直接在 Calab 窗口中打开，通话不中断。机器人把带按钮的摘要发到聊天，并使用同一套 API：聊天、任务、日历和语音。', alt: '在 Calab 中打开的“销售”仪表盘，上方叠加机器人的摘要和“打开报告”“提醒我”按钮' },
       { key: 'sip', title: '拨打电话号码', text: '接入你自己的 SIP 服务商，就能从语音房间拨打任意号码。房间里的所有人都能听到对方。', alt: '带“拨打号码”弹窗的语音房间' },
     ],
     notify: {

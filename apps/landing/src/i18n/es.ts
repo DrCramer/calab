@@ -5,7 +5,7 @@ const es: Dict = {
     title: 'Calab — voz, chat, reuniones y tareas para tu equipo, en tu propio servidor',
     description:
       'Salas de voz y videollamadas, chat como Telegram, calendario, tableros de tareas, correo en la app de escritorio, búsqueda en todo y notificaciones flexibles, en la nube o en tu servidor. Grabaciones con resumen, bots y API, funciona tras VPN. macOS, Windows, Linux y navegador; iPhone y Android, pronto.',
-    ogAlt: 'Calab — la ventana de la aplicación en una reunión de planificación: una diapositiva compartida y las cámaras de los participantes',
+    ogAlt: 'Calab — la ventana de la aplicación en una llamada: una pantalla compartida y las cámaras de los participantes',
   },
   header: {
     skip: 'Ir al contenido',
@@ -31,7 +31,7 @@ const es: Dict = {
     download: 'Descargar',
     openWeb: 'Abrir en el navegador',
     trust: 'Código abierto (BSL 1.1) · macOS · Windows · Linux · web',
-    shotAlt: 'La ventana de Calab durante una reunión de planificación: la diapositiva «Versión 1.1» en el escenario, las cámaras de los participantes debajo y las salas del espacio a la izquierda',
+    shotAlt: 'La ventana de Calab en una llamada: un navegador compartido con un tablero de imágenes en el escenario, las cámaras de los participantes debajo y las salas del espacio a la izquierda',
   },
   why: {
     title: 'Por qué Calab',
@@ -74,7 +74,7 @@ const es: Dict = {
       title: 'Un chat como Telegram',
       text: 'Cada sala tiene su propio chat: respuestas, reacciones, reenvíos, stickers, mensajes de voz, archivos con vista previa, mensajes fijados y búsqueda. Marcas de lectura, como estás acostumbrado.',
       points: ['Reenvía a varios chats a la vez', 'Stickers integrados y paquetes del espacio', 'Mensajes de voz, música y vídeo con reproductor integrado', 'Menciones por @usuario, notificaciones por sala: todo, menciones o nada'],
-      alt: 'La sala «general»: una maqueta con reacciones, una respuesta, un sticker y los miembros conectados',
+      alt: 'La sala «general»: mensajes cortos de cuatro personas con reacciones, una respuesta que cita una maqueta, marcas de lectura y «está escribiendo» en la cabecera',
     },
     calendar: {
       eyebrow: 'Calendario y reuniones',
@@ -127,6 +127,13 @@ const es: Dict = {
       text: 'Hasta 20 estantes con tus nombres y emoji, como «Mensajes guardados» de Telegram, pero varios. Solo tú ves cada estante.',
       points: ['Arrastra un mensaje a un estante o reenvíalo', 'Suelta archivos desde Finder o el Explorador', 'Mensajes fijados y búsqueda, como en cualquier chat'],
       alt: 'Notas: los estantes «Ideas», «Enlaces» y «Para la versión» y un estante abierto con notas y un mensaje reenviado',
+    },
+    disk: {
+      eyebrow: 'Disco',
+      title: 'Los archivos del equipo, en un solo sitio',
+      text: 'Carpetas y archivos del espacio, con vista previa de imágenes y vídeos. El acceso se configura por carpeta, cualquier archivo se comparte con un enlace público y lo eliminado pasa primero a la papelera.',
+      points: ['Carpetas restringidas solo para las personas y los roles elegidos', 'Enlace público: descarga sin iniciar sesión, con fecha de caducidad', 'Papelera con restauración y vaciado automático', 'Un indicador muestra cuánto espacio queda en tu plan'],
+      alt: 'Disco en mosaico: las carpetas Contratos (con candado), Diseño y Proyectos, una hoja de cálculo, un vídeo con enlace público, imágenes con vista previa y un PDF; abajo, el indicador de espacio',
     },
     guests: {
       eyebrow: 'Invitados',
@@ -186,8 +193,8 @@ const es: Dict = {
     },
     webapps: {
       eyebrow: 'Aplicaciones web',
-      title: 'Tus servicios, en la misma ventana que la llamada',
-      text: 'Un administrador fija en la barra izquierda accesos a sitios: Grafana, la wiki, el CRM. Un clic abre el sitio dentro de Calab a ventana completa, y la llamada sigue.',
+      title: 'Tus herramientas y bots, dentro del mensajero',
+      text: 'Un administrador fija en la barra izquierda los servicios del equipo: un CRM, un panel de ventas, la wiki. Un clic en el acceso abre el servicio dentro de Calab, y la llamada sigue. Los bots traen lo importante al chat: un resumen del día con los botones «Abrir informe» y «Recordar».',
       points: [
         'Un acceso es una imagen, un nombre y una dirección; hasta 20 aplicaciones por espacio',
         'La llamada no se interrumpe: la isla con tu micrófono sigue abajo',
@@ -196,7 +203,7 @@ const es: Dict = {
         'Arrastra para ordenar; clic derecho: editar, abrir en el navegador, recargar, eliminar',
         'Las ven todos salvo los invitados; las añaden y cambian quienes tienen el permiso de integraciones',
       ],
-      alt: 'La ventana de Calab: tres accesos (Grafana, Wiki, CRM) bajo el espacio en la barra izquierda, un panel de Grafana abierto a ventana completa y el panel de la llamada en curso abajo',
+      alt: 'La ventana de Calab: tres accesos a aplicaciones en la barra izquierda y el panel «Ventas» abierto con indicadores, un gráfico semanal, el embudo y las mayores operaciones; encima, el mensaje de un bot «Ventas de ayer» con los botones «Abrir informe» y «Recordar a las 18:00»',
     },
     bots: {
       eyebrow: 'Bots y SDK',

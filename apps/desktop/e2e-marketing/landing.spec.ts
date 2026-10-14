@@ -4,9 +4,8 @@ import { chromium, expect, test, type Browser, type Page } from '@playwright/tes
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { startPublisher, type Publisher } from '../e2e-visual/publisher';
-import { render, slideHtml } from './art';
 import { APP_LOCALE, COPY, type Copy, type PersonKey, type Short } from './copy';
-import { cameraPhoto, dataUrl } from './photos';
+import { cameraPhoto, dataUrl, heroStream } from './photos';
 import { SCENE, drawArt, seedBoard, seedMeetings, seedNotes, seedScene } from './seed';
 
 /**
@@ -184,21 +183,25 @@ async function joinMeeting(ctx: Ctx): Promise<void> {
 }
 
 const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
-  // «общий»: a morning thread — a design mockup with reactions and a reply, a PDF, a voice note, a sticker, a mention.
+  // «общий»: a morning thread — the mockup, a reply quote, short lines of four people with reactions, «… печатает».
   async chat(ctx) {
     await openRoom(ctx, ctx.c.rooms.general);
     await setLocale(ctx.page, ctx.short);
     // Memoized feed rows keep the old language after a live switch: re-open the room.
     await aside(ctx.page).getByRole('button', { name: new RegExp(ctx.c.rooms.dev) }).first().click();
     await openRoom(ctx, ctx.c.rooms.general);
-    // A shorter window: the bottom-anchored feed brings the mockup, the reactions, the reply and the
-    // sticker right under the room header (assets.mjs crops the feed only, no members column).
+    // A narrower window: no members column; the bottom-anchored feed shows the thread's end under the
+    // room header (assets.mjs crops the header, the feed and the composer).
     await ctx.page.setViewportSize(CHAT_WINDOW);
+    await feedBottom(ctx.page);
+    // «Григорий печатает…» under the feed (the page clock is frozen, so it does not expire).
+    await fetch(`${ctx.mock.url}/__mock/typing`, { method: 'POST', body: JSON.stringify({ roomId: IDS.rooms.general, userId: IDS.users.grigory }) });
+    await ctx.page.waitForTimeout(600);
     await feedBottom(ctx.page);
     await shoot(ctx, 'chat');
   },
 
-  // «Переговорка»: Вера shares the release slide, Борис and Григорий on camera, my own camera, Дина listening.
+  // «Переговорка»: Вера shares her browser (the owner's node canvas, photos.ts heroStream), Борис and Григорий on camera, my own camera, Дина listening.
   async voice(ctx) {
     const { page, mock, c } = ctx;
     await openRoom(ctx, c.rooms.general);
@@ -213,7 +216,7 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
       ctx.pubs.push(await startPublisher({ userId: IDS.users[k], name: c.people[k].name, roomId: IDS.rooms.meeting, source: 'camera', image: cameraPhoto(k) }));
       inRoom(mock, k, { camera: true, muted: k === 'grigory' });
     }
-    ctx.pubs.push(await startPublisher({ userId: IDS.users.vera, name: c.people.vera.name, roomId: IDS.rooms.meeting, image: await render(ctx.browser, slideHtml(c), 1280, 720) }));
+    ctx.pubs.push(await startPublisher({ userId: IDS.users.vera, name: c.people.vera.name, roomId: IDS.rooms.meeting, image: heroStream() }));
     inRoom(mock, 'vera', { streaming: true });
     const stage = page.getByTestId('stream-stage').or(page.getByTestId('stream-pip'));
     const chip = page.getByRole('button', { name: c.people.vera.name, exact: true });
