@@ -414,6 +414,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId, e.value.former);
+      void queryClient.invalidateQueries({ queryKey: ['former-members', e.value.workspaceId] });
       return;
     case 'workspaceBanAdd':
     case 'workspaceBanRemove': {

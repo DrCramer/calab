@@ -26,6 +26,7 @@ export const enFormer: DictShape<typeof ruFormer> = {
   'former.by': 'by {who}',
   'former.reassign': 'Reassign',
   'former.filter': 'Assignee: former members',
+  'former.filterValue': 'Former members',
   'former.guestsGroup': 'Guests · {n}',
   'former.seen': 'seen {when}',
   'former.noActions': 'Your direct messages with them stay in Direct',

@@ -26,6 +26,7 @@ export const zhFormer: DictShape<typeof ruFormer> = {
   'former.by': '操作人：{who}',
   'former.reassign': '重新分配',
   'former.filter': '负责人：前成员',
+  'former.filterValue': '前成员',
   'former.guestsGroup': '访客 · {n}',
   'former.seen': '{when}在线',
   'former.noActions': '与其私信仍保留在“私信”中',

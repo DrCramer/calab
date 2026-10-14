@@ -26,6 +26,7 @@ export const esFormer: DictShape<typeof ruFormer> = {
   'former.by': 'por {who}',
   'former.reassign': 'Reasignar',
   'former.filter': 'Responsable: antiguos miembros',
+  'former.filterValue': 'Antiguos miembros',
   'former.guestsGroup': 'Invitados · {n}',
   'former.seen': 'visto {when}',
   'former.noActions': 'Tus mensajes directos con esta persona siguen en Directos',

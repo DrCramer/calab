@@ -23,6 +23,7 @@ export const ruFormer = {
   'former.by': 'кем: {who}',
   'former.reassign': 'Переназначить',
   'former.filter': 'Исполнитель: бывшие участники',
+  'former.filterValue': 'Бывшие участники',
   'former.guestsGroup': 'Гости · {n}',
   'former.seen': 'был(а) {when}',
   'former.noActions': 'Личная переписка с ним остаётся в «Личных»',
