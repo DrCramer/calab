@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
  * Phone layout of the web client (ADR-0021, stage A) on emulated phones (projects `iphone-14`,
@@ -405,4 +405,196 @@ test('phone: home-screen app (standalone) — no band under the composer', async
   } finally {
     await ctx.close();
   }
+});
+
+// ---------------------------------------------------------------- feed scrolling (owner 14.10)
+
+interface FeedSample {
+  top: number;
+  /** Distance from the bottom. */
+  d: number;
+  /** The first (topmost) visible message. */
+  first: string;
+  /** Screen y (relative to the feed's top) of the rows on screen, by id. */
+  ys: Record<string, number>;
+  mt: string;
+  pt: string;
+}
+
+/** A long «общий»: `n` messages from Борис / Вера of mixed heights, all read by Анна (it opens at the bottom). */
+async function seedLongFeed(request: APIRequestContext, n: number): Promise<void> {
+  const ids = (await (await request.get(`${BASE}/__mock/ids`)).json()) as { users: Record<string, string>; rooms: Record<string, string> };
+  const roomId = ids.rooms['general'] ?? '';
+  let last = '';
+  for (let i = 0; i < n; i++) {
+    const authorId = (i % 3 === 0 ? ids.users['vera'] : ids.users['boris']) ?? '';
+    const content =
+      i % 5 === 0
+        ? `#${i} Длинное сообщение: ${'мы обсуждали релиз, миграцию базы и новую ленту, '.repeat(1 + (i % 4))}конец.`
+        : i % 7 === 0
+          ? `#${i} Список:\n— первый пункт\n— второй пункт\n— третий пункт`
+          : `#${i} ok`;
+    const res = await request.post(`${BASE}/__mock/message`, { data: { roomId, authorId, content } });
+    last = ((await res.json()) as { id: string }).id;
+  }
+  await request.post(`${BASE}/__mock/read`, { data: { userId: ids.users['anna'], roomId, messageId: last } });
+}
+
+const FEED = '[data-testid="mobile-shell"] [data-virtuoso-scroller]';
+
+/**
+ * Scroll the feed by `dy` px (negative = up, to older messages) like a finger: a CDP touch scroll
+ * gesture on Chromium; WebKit has no touch input in Playwright — per-frame steps, as a touch
+ * scroll delivers them.
+ */
+async function feedScroll(page: Page, dy: number, browserName: string): Promise<void> {
+  const box = await page.locator(FEED).boundingBox();
+  if (!box) throw new Error('no feed');
+  if (browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.synthesizeScrollGesture', {
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+      yDistance: -dy,
+      gestureSourceType: 'touch',
+      speed: 600,
+      preventFling: true,
+    });
+    await cdp.detach();
+    return;
+  }
+  await page.evaluate(
+    async ([sel, d]) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (!el) return;
+      const steps = Math.max(1, Math.round(Math.abs(d) / 10));
+      for (let i = 0; i < steps; i++) {
+        el.scrollTop += d / steps;
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+    },
+    [FEED, dy] as const,
+  );
+}
+
+/** Starts sampling the feed every frame (scrollTop, distance to the bottom, first visible message). */
+async function startFeedProbe(page: Page): Promise<void> {
+  await page.evaluate((sel) => {
+    const w = window as unknown as { __feed: FeedSample[]; __feedStop: boolean };
+    w.__feed = [];
+    w.__feedStop = false;
+    const tick = (): void => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) {
+        const top = el.getBoundingClientRect().top;
+        const bottom = top + el.clientHeight;
+        let first = '';
+        const ys: Record<string, number> = {};
+        for (const r of el.querySelectorAll<HTMLElement>('[data-message-id]')) {
+          const b = r.getBoundingClientRect();
+          if (b.bottom <= top + 1 || b.top >= bottom) continue;
+          const id = r.dataset['messageId'] ?? '';
+          if (!first) first = id;
+          ys[id] = Math.round(b.top - top);
+        }
+        const list = el.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]');
+        w.__feed.push({ top: el.scrollTop, d: el.scrollHeight - el.clientHeight - el.scrollTop, first, ys, mt: list?.style.marginTop ?? '', pt: list?.style.paddingTop ?? '' });
+      }
+      if (!w.__feedStop) next();
+    };
+    // Sampled in the task after the frame: what was painted, after Virtuoso's ResizeObserver fixes.
+    const next = (): void => {
+      requestAnimationFrame(() => setTimeout(tick, 0));
+    };
+    next();
+  }, FEED);
+}
+
+/** Most a painted frame may move the feed in these tests: 10 px steps (WebKit), a 600 px/s touch gesture (Chromium; a slow frame takes several steps). A row mounted with a wrong size estimate moved the feed by 80–250 px. */
+const STEP_MAX = 100;
+
+/**
+ * Frames (indexes) where the content on screen moved other than with the finger: a row seen in two
+ * consecutive frames moved more than a scroll step, or (`up`: the finger only scrolls up) moved
+ * up, or moved one frame against the motion of the frames around it (a flash back and forth).
+ */
+function feedJumps(samples: FeedSample[], up: boolean): number[] {
+  const moves: Array<number | null> = samples.map((b, i) => {
+    const a = samples[i - 1];
+    if (!a) return null;
+    const id = Object.keys(b.ys).find((k) => k in a.ys);
+    return id ? (b.ys[id] ?? 0) - (a.ys[id] ?? 0) : null;
+  });
+  const out: number[] = [];
+  moves.forEach((m, i) => {
+    if (m === null) return;
+    const prev = moves[i - 1] ?? 0;
+    const next = moves[i + 1] ?? 0;
+    const flash = Math.abs(m) > 2 && Math.abs(prev) > 2 && Math.abs(next) > 2 && Math.sign(m) !== Math.sign(prev) && Math.sign(prev) === Math.sign(next);
+    if (Math.abs(m) > STEP_MAX || (up && m < -2) || flash) out.push(i);
+  });
+  return out;
+}
+
+async function stopFeedProbe(page: Page): Promise<FeedSample[]> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __feed: FeedSample[]; __feedStop: boolean };
+    w.__feedStop = true;
+    return w.__feed;
+  });
+}
+
+test('phone: feed scroll — no flicker going up, the position survives the members screen', async ({ page, request, browserName }) => {
+  test.setTimeout(180_000);
+  await seedLongFeed(request, 240);
+  await signIn(page);
+  await openGeneral(page);
+  const feed = page.locator(FEED);
+  await expect(page.getByText('#239 ok')).toBeVisible();
+  await page.waitForTimeout(500);
+
+  // Slowly up through several screens (history pages load on the way): the first visible message
+  // only ever moves to older ones — no frame jumps back (the «flicker»).
+  await startFeedProbe(page);
+  for (let i = 0; i < 12; i++) await feedScroll(page, -300, browserName);
+  const up = await stopFeedProbe(page);
+  const backJumps = up.filter((s, i) => i > 0 && !!s.first && !!up[i - 1]?.first && s.first > (up[i - 1]?.first ?? ''));
+  const jumps = feedJumps(up, true);
+  // Before the fix (iPhone UA → Virtuoso's iOS margin path) 10–15 such frames of 80–250 px per
+  // pass; a single frame may remain where a history page lands (docs/12).
+  expect(backJumps.length + jumps.length, 'frames where the feed jumps while scrolling up').toBeLessThanOrEqual(1);
+
+  const topRow = (): Promise<{ key: string; offset: number; d: number }> =>
+    feed.evaluate((el) => {
+      const top = el.getBoundingClientRect().top;
+      const d = el.scrollHeight - el.clientHeight - el.scrollTop;
+      for (const r of el.querySelectorAll<HTMLElement>('[data-message-id]')) {
+        const b = r.getBoundingClientRect();
+        if (b.bottom > top + 1) return { key: r.dataset['messageId'] ?? '', offset: Math.round(b.top - top), d };
+      }
+      return { key: '', offset: 0, d };
+    });
+  await page.waitForTimeout(300);
+  const before = await topRow();
+  expect(before.d, 'several screens above the bottom').toBeGreaterThan(1000);
+
+  // Members → back: the room comes back where the reader left it (the screen remounts, ADR-0073).
+  await page.getByRole('button', { name: 'Участники' }).tap();
+  await expect(page.getByTestId('members-page')).toBeVisible();
+  await page.getByTestId('phone-back').tap();
+  await expect(feed).toBeVisible();
+  await expect.poll(async () => (await topRow()).key, 'the same top row after «‹»').toBe(before.key);
+  const back = await topRow();
+  expect(Math.abs(back.offset - before.offset), 'the same offset of the top row').toBeLessThanOrEqual(2);
+
+  // A little more scrolling up and down: never thrown to the bottom, no jumps.
+  await startFeedProbe(page);
+  for (let i = 0; i < 6; i++) {
+    await feedScroll(page, i % 2 ? 120 : -300, browserName);
+    await page.waitForTimeout(200);
+  }
+  await page.waitForTimeout(600);
+  const after = await stopFeedProbe(page);
+  expect(Math.min(...after.map((x) => x.d)), 'not thrown to the bottom').toBeGreaterThan(500);
+  expect(feedJumps(after, false).length, 'no jumps after the return').toBeLessThanOrEqual(1);
 });

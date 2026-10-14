@@ -192,7 +192,7 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
           data-testid="voice-recording"
           role="status"
           aria-label={t('media.voiceRecording')}
-          className="fixed z-[var(--z-popover)] flex items-center gap-3 overflow-hidden rounded-[20px] border border-line bg-elev pl-3.5 pr-1.5 shadow-[var(--shadow-card)]"
+          className="fixed z-[var(--z-popover)] flex items-center gap-3 overflow-hidden rounded-[20px] mobile:rounded-[22px] border border-line bg-elev pl-3.5 pr-1.5 shadow-[var(--shadow-card)]"
           style={{ left: slotBox.left, top: slotBox.top, width: slotBox.width, height: slotBox.height }}
         >
           <span className="rec-dot size-2.5 shrink-0 rounded-full bg-danger" aria-hidden />
@@ -249,7 +249,7 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
   const strip = active ? (
     <>
       {/* The strip's place in the composer; the strip itself is drawn over it on the popover layer. */}
-      <div ref={slotRef} aria-hidden className="h-10 min-w-0 flex-1" data-testid="voice-slot" />
+      <div ref={slotRef} aria-hidden className="h-10 min-w-0 flex-1 mobile:h-11" data-testid="voice-slot" />
       {createPortal(overlay, document.body)}
     </>
   ) : null;

@@ -1,0 +1,112 @@
+diff --git a/dist/index.mjs b/dist/index.mjs
+index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c870f5686d7 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -332,8 +332,14 @@ function An(t, e, n, o, r, s, i, l, c) {
+       ), v !== null && t(v);
+     },
+     [t, e, r, s, i, o, l]
++  ), f = E.useCallback(
++    (v) => {
++      const m = ko(v.children, e, l ? "offsetWidth" : "offsetHeight", r);
++      m !== null && m.length > 0 && d(v);
++    },
++    [d, e, l, r]
+   );
+-  return $e(d, n, c);
++  return { ...$e(d, n, c), measure: f };
+ }
+ function ko(t, e, n, o) {
+   const r = t.length;
+@@ -2065,6 +2071,7 @@ function oo(t) {
+   let e = !1, n;
+   return (() => (e || (e = !0, n = t()), n));
+ }
++let dvDirect = !1, dvCommit = !1;
+ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.test(navigator.userAgent)), sr = Z(
+   ([
+     { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r },
+@@ -2093,10 +2100,10 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+       )
+     );
+     function g(x) {
+-      x > 0 ? (M(n, { behavior: "auto", top: -x }), M(t, 0)) : (M(t, 0), M(n, { behavior: "auto", top: -x }));
++      dvDirect = !0, x > 0 ? (M(n, { behavior: "auto", top: -x }), M(t, 0)) : (M(t, 0), M(n, { behavior: "auto", top: -x })), dvDirect = !1;
+     }
+     X(S(I, D(t, i)), ([x, C, B]) => {
+-      B && rr() ? M(t, C - x) : g(-x);
++      B && rr() ? (dvDirect = !0, M(t, C - x), dvDirect = !1) : g(-x);
+     }), X(
+       S(
+         at(gt(i, !1), t, R),
+@@ -2116,13 +2123,13 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+     function T() {
+       if (a === null)
+         return;
+-      const { offset: x } = a;
+-      a = null, M(n, { top: x }), requestAnimationFrame(() => {
+-        M(t, 0), M(R, !1);
++      const { offset: x, base: C } = a;
++      a = null, dvDirect = !0, M(t, x), dvDirect = !1, M(n, { top: x - C }), requestAnimationFrame(() => {
++        dvDirect = !0, M(t, 0), dvDirect = !1, M(R, !1);
+       });
+     }
+     return X(e, (x) => {
+-      a === null || !a.acknowledgeable || x === a.offset && T();
++      a === null || !a.acknowledgeable || x === a.offset + a.base && T();
+     }), X(
+       S(
+         f,
+@@ -2145,7 +2152,8 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+         })
+       ),
+       (x) => {
+-        a = { acknowledgeable: lt(t) !== x, offset: x }, M(t, x), requestAnimationFrame(T);
++        const C = lt(t);
++        a = { acknowledgeable: x !== 0, base: C, offset: x }, M(t, C + x), requestAnimationFrame(T);
+       }
+     ), { deviation: t };
+   },
+@@ -2473,7 +2481,7 @@ const ur = /* @__PURE__ */ Z(() => {
+   ([t, e]) => ({ ...t, ...e }),
+   st(ro, ur)
+ ), dr = ({ height: t }) => /* @__PURE__ */ G("div", { style: { height: t } }), fr = { overflowAnchor: "none", position: Qe(), zIndex: 1 }, lo = { overflowAnchor: "none" }, mr = { ...lo, display: "inline-block", height: "100%" }, Hn = /* @__PURE__ */ E.memo(function({ showTopList: e = !1 }) {
+-  const n = A("listState"), o = Tt("sizeRanges"), r = A("useWindowScroll"), s = A("customScrollParent"), i = Tt("windowScrollContainerState"), l = Tt("scrollContainerState"), c = s || r ? i : l, d = A("itemContent"), f = A("context"), v = A("groupContent"), m = A("trackItemSizes"), h = A("itemSize"), y = A("log"), R = Tt("gap"), I = A("horizontalDirection"), { callbackRef: g } = An(
++  const n = A("listState"), o = Tt("sizeRanges"), r = A("useWindowScroll"), s = A("customScrollParent"), i = Tt("windowScrollContainerState"), l = Tt("scrollContainerState"), c = s || r ? i : l, d = A("itemContent"), f = A("context"), v = A("groupContent"), m = A("trackItemSizes"), h = A("itemSize"), y = A("log"), R = Tt("gap"), I = A("horizontalDirection"), { callbackRef: g, ref: dvList, measure: dvMeasure } = An(
+     o,
+     h,
+     m,
+@@ -2483,13 +2491,21 @@ const ur = /* @__PURE__ */ Z(() => {
+     s,
+     I,
+     A("skipAnimationFrameInResizeObserver")
+-  ), [a, T] = E.useState(0);
++  ), [a, T] = E.useState(0), dvEl = E.useRef(null), dvRef = E.useCallback(($) => {
++    dvEl.current = $, g($);
++  }, [g]), dvAlign = A("alignToBottom");
+   rn("deviation", ($) => {
+-    a !== $ && T($);
++    const el = dvEl.current;
++    dvDirect && el && !e && (el.style[I ? "marginInlineStart" : "marginTop"] = $ === 0 ? dvAlign ? "auto" : "0px" : `${$}px`);
++    a !== $ && (dvDirect && !dvCommit ? go.flushSync(() => T($)) : T($));
+   });
+   const x = Tt("deviationCommitted");
+   be(() => {
+-    x(a);
++    const el = dvList.current;
++    el && m && el.offsetParent !== null && (dvCommit = !0, dvMeasure(el), dvCommit = !1);
++  });
++  be(() => {
++    dvCommit = !0, x(a), dvCommit = !1;
+   }, [a, x]);
+   const C = A("EmptyPlaceholder"), B = A("ScrollSeekPlaceholder") ?? dr, u = A("ListComponent"), p = A("ItemComponent"), b = A("GroupComponent"), z = A("computeItemKey"), F = A("isSeeking"), O = A("groupIndices").length > 0, V = A("alignToBottom"), U = A("initialItemFinalLocationReached"), q = e ? {} : {
+     boxSizing: "border-box",
+@@ -2512,7 +2528,7 @@ const ur = /* @__PURE__ */ Z(() => {
+     {
+       ...rt(u, f),
+       "data-testid": e ? "virtuoso-top-item-list" : "virtuoso-item-list",
+-      ref: g,
++      ref: dvRef,
+       style: q,
+       children: (e ? n.topItems : n.items).map(($) => {
+         const j = $.originalIndex, J = z(j + n.firstItemIndex, $.data, f);

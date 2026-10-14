@@ -373,7 +373,7 @@ function Bubble({
   ) : (
     // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
-      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 70 % lane, #9).
+      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 85 % lane, owner 14.10).
       className="relative max-w-full bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
       style={{ ...radius, ...(width ? { width } : {}) }}
       data-focus-shape
@@ -461,7 +461,7 @@ function Bubble({
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
           className={cx(
-            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)]',
+            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)] mobile:max-w-[85%]',
             own ? 'bubble-out' : 'bubble-in',
             c.status === 'pending' && 'opacity-80',
           )}
