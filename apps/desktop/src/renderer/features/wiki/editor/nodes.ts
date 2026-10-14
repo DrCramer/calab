@@ -3,10 +3,10 @@
  * with Prism and a language picker, live-labelled mentions, highlight colours by name.
  * Light DOM node views where React is not needed (one React root per node costs).
  */
-import { mergeAttributes, Node } from '@tiptap/core';
+import { mergeAttributes } from '@tiptap/core';
 import { str } from '../../../lib/wiki/markdown';
 import { CodeBlock } from '@tiptap/extension-code-block';
-import { Highlight } from '@tiptap/extension-highlight';
+import { CalloutNode, HighlightMark, ImageNode, ToggleNode } from '@calaba/wiki-doc/schema';
 import { Mention } from '@tiptap/extension-mention';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 import type { Node as PmNode } from '@tiptap/pm/model';
@@ -28,26 +28,10 @@ declare module '@tiptap/core' {
   }
 }
 
-const EMOJI_MAX = 16;
-export const DEFAULT_CALLOUT_ICON = '💡';
+export { DEFAULT_CALLOUT_ICON } from '@calaba/wiki-doc/schema';
 
-export const Callout = Node.create<{ env: EditorEnv | null }>({
-  name: 'callout',
-  group: 'block',
-  content: 'block+',
-  defining: true,
+export const Callout = CalloutNode.extend<{ env: EditorEnv | null }>({
   addOptions: () => ({ env: null }),
-  addAttributes() {
-    return {
-      icon: {
-        default: DEFAULT_CALLOUT_ICON,
-        parseHTML: (el) => (el.getAttribute('data-icon') ?? '').slice(0, EMOJI_MAX) || DEFAULT_CALLOUT_ICON,
-        renderHTML: (a) => ({ 'data-icon': str(a['icon'], '') }),
-      },
-    };
-  },
-  parseHTML: () => [{ tag: 'div[data-callout]' }],
-  renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes(HTMLAttributes, { 'data-callout': '', class: 'wiki-callout' }), 0],
   addCommands() {
     return {
       setCallout:
@@ -62,16 +46,10 @@ export const Callout = Node.create<{ env: EditorEnv | null }>({
 });
 
 /**
- * Toggle: the first paragraph is the summary, the rest folds. Folding is local (a click on this
- * screen), never in the doc: a co-author folding a block must not fold it for everyone.
+ * Toggle (schema: @calaba/wiki-doc): folding is local (a click on this screen), never in the
+ * doc: a co-author folding a block must not fold it for everyone.
  */
-export const Toggle = Node.create({
-  name: 'toggle',
-  group: 'block',
-  content: 'paragraph block*',
-  defining: true,
-  parseHTML: () => [{ tag: 'div[data-toggle]' }, { tag: 'details' }],
-  renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes(HTMLAttributes, { 'data-toggle': '', class: 'wiki-toggle' }), 0],
+export const Toggle = ToggleNode.extend({
   addCommands() {
     return {
       setToggle:
@@ -190,32 +168,9 @@ export const WikiCodeBlock = CodeBlock.extend({
   },
 });
 
-/** Image: an uploaded file of the page; never a URL or base64 in the doc. */
-export const WikiImage = Node.create<{ env: EditorEnv | null }>({
-  name: 'image',
-  group: 'block',
-  atom: true,
-  draggable: true,
-  selectable: true,
+/** Image (schema: @calaba/wiki-doc): an uploaded file of the page; the picker and the view. */
+export const WikiImage = ImageNode.extend<{ env: EditorEnv | null }>({
   addOptions: () => ({ env: null }),
-  addAttributes() {
-    const num = (name: string) => ({
-      default: null,
-      parseHTML: (el: HTMLElement) => {
-        const v = Number.parseInt(el.getAttribute(name) ?? '', 10);
-        return Number.isFinite(v) && v > 0 ? v : null;
-      },
-    });
-    return {
-      fileId: { default: null, parseHTML: (el) => el.getAttribute('data-file-id'), renderHTML: (a) => ({ 'data-file-id': str(a['fileId']) }) },
-      width: num('width'),
-      height: num('height'),
-      alt: { default: '', parseHTML: (el) => (el.getAttribute('alt') ?? '').slice(0, 300) },
-    };
-  },
-  // Only our own images (copied between wiki pages) parse; foreign <img> (URLs, data:) are dropped.
-  parseHTML: () => [{ tag: 'img[data-file-id]' }],
-  renderHTML: ({ HTMLAttributes }) => ['img', mergeAttributes(HTMLAttributes, { class: 'wiki-image' })],
   addCommands() {
     return {
       pickImage:
@@ -266,21 +221,7 @@ export function wikiMention(env: EditorEnv) {
   });
 }
 
-export const HIGHLIGHT_COLORS = ['yellow', 'green', 'blue', 'red', 'purple'] as const;
-export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
+export { HIGHLIGHT_COLORS, type HighlightColor } from '@calaba/wiki-doc/schema';
 
 /** Highlight colours are names (themed by CSS), never raw CSS from the doc. */
-export const WikiHighlight = Highlight.extend({
-  addAttributes() {
-    return {
-      color: {
-        default: 'yellow',
-        parseHTML: (el) => {
-          const c = el.getAttribute('data-color');
-          return (HIGHLIGHT_COLORS as readonly string[]).includes(c ?? '') ? c : 'yellow';
-        },
-        renderHTML: (a) => ({ 'data-color': str(a['color'], 'yellow') }),
-      },
-    };
-  },
-}).configure({ multicolor: true });
+export const WikiHighlight = HighlightMark;

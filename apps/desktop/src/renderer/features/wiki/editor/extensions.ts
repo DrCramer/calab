@@ -6,7 +6,7 @@ import { CollaborationCaret } from '@tiptap/extension-collaboration-caret';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
-import { StarterKit } from '@tiptap/starter-kit';
+import { isAllowedHref, wikiStarterKit } from '@calaba/wiki-doc/schema';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import { avatarColor } from '../../../components/Avatar';
@@ -18,8 +18,7 @@ import { slashCommands } from './suggestions';
 import { wikiPaste } from './upload';
 import type { WikiEditorUser } from './types';
 
-/** Only http(s) and mailto links (the doc is shared: no javascript:, file:, custom schemes). */
-export const isAllowedHref = (url: string): boolean => /^(https?:\/\/|mailto:)/i.test(url.trim());
+export { isAllowedHref };
 
 /** A collaborator's caret: a 2 px bar in their identity colour with the name above it. */
 function caret(user: Record<string, unknown>): HTMLElement {
@@ -69,21 +68,7 @@ const shortcuts = (env: EditorEnv) =>
 
 export function buildExtensions(o: { doc: Y.Doc; awareness: Awareness | null; me: WikiEditorUser; env: EditorEnv }): AnyExtension[] {
   const exts: AnyExtension[] = [
-    StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
-      codeBlock: false,
-      undoRedo: false, // Yjs undo (Collaboration) instead: only my own changes are undone
-      underline: false,
-      link: {
-        openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
-        defaultProtocol: 'https',
-        // Scheme-less («example.com») gets https:// (defaultProtocol); any other scheme is refused.
-        isAllowedUri: (url, ctx) => ctx.defaultValidate(url) && (isAllowedHref(url) || !/^[a-z][a-z0-9+.-]*:/i.test(url.trim())),
-        HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: '_blank', class: 'wiki-link' },
-      },
-    }),
+    wikiStarterKit(),
     WikiCodeBlock.configure({ defaultLanguage: null, enableTabIndentation: true }),
     TaskList,
     TaskItem.configure({ nested: true }),
