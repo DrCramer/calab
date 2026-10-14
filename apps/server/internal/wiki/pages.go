@@ -648,6 +648,12 @@ type deleted struct {
 // workspaces row (LockDiskQuota) and LockWikiTree.
 func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageHead, chain []perm.TreeNode, actor *uuid.UUID) (deleted, error) {
 	d := deleted{page: p, chain: chain}
+	// The journal of a restricted subtree stays out of the workspace journal once its chains are
+	// gone (addendum 2026-10-14 of ADR-0096 §2).
+	private := perm.RestrictedIn(chain)
+	if err := q.MarkWikiSubtreeActivityPrivate(ctx, sqlc.MarkWikiSubtreeActivityPrivateParams{ID: p.ID, Restricted: private}); err != nil {
+		return d, err
+	}
 	fs, err := q.DeleteWikiSubtreeFiles(ctx, p.ID)
 	if err != nil {
 		if db.IsForeignKeyViolation(err) {
@@ -668,7 +674,7 @@ func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPa
 		return d, err
 	}
 	before := snap{"title": p.Title, "size": float64(d.bytes), "files": float64(len(fs))}
-	if err := s.journal(ctx, q, p, actor, "delete", before, nil); err != nil {
+	if err := s.journalEntry(ctx, q, p, actor, "delete", before, nil, private); err != nil {
 		return d, err
 	}
 	return d, nil

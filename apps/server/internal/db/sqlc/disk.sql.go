@@ -520,10 +520,10 @@ func (q *Queries) GetDiskUsage(ctx context.Context, id uuid.UUID) (GetDiskUsageR
 }
 
 const insertDiskActivity = `-- name: InsertDiskActivity :one
-INSERT INTO disk_activity (workspace_id, item_id, item_name, actor_id, kind, before, after)
+INSERT INTO disk_activity (workspace_id, item_id, item_name, actor_id, kind, before, after, private)
 VALUES ($1, $2, $3, $4, $5,
-        $6, $7)
-RETURNING id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at
+        $6, $7, $8)
+RETURNING id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at, private
 `
 
 type InsertDiskActivityParams struct {
@@ -534,6 +534,7 @@ type InsertDiskActivityParams struct {
 	Kind        string
 	Before      []byte
 	After       []byte
+	Private     bool
 }
 
 func (q *Queries) InsertDiskActivity(ctx context.Context, arg InsertDiskActivityParams) (DiskActivity, error) {
@@ -545,6 +546,7 @@ func (q *Queries) InsertDiskActivity(ctx context.Context, arg InsertDiskActivity
 		arg.Kind,
 		arg.Before,
 		arg.After,
+		arg.Private,
 	)
 	var i DiskActivity
 	err := row.Scan(
@@ -557,6 +559,7 @@ func (q *Queries) InsertDiskActivity(ctx context.Context, arg InsertDiskActivity
 		&i.Before,
 		&i.After,
 		&i.CreatedAt,
+		&i.Private,
 	)
 	return i, err
 }
@@ -585,7 +588,7 @@ func (q *Queries) InsertDiskPermission(ctx context.Context, arg InsertDiskPermis
 }
 
 const lastDiskActivity = `-- name: LastDiskActivity :one
-SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at FROM disk_activity WHERE item_id = $1 ORDER BY id DESC LIMIT 1
+SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at, private FROM disk_activity WHERE item_id = $1 ORDER BY id DESC LIMIT 1
 `
 
 // The newest journal entry of an item (the rename coalescing of ADR-0081).
@@ -602,6 +605,7 @@ func (q *Queries) LastDiskActivity(ctx context.Context, itemID *uuid.UUID) (Disk
 		&i.Before,
 		&i.After,
 		&i.CreatedAt,
+		&i.Private,
 	)
 	return i, err
 }
@@ -869,7 +873,7 @@ func (q *Queries) ListDiskFolderByUpdated(ctx context.Context, arg ListDiskFolde
 }
 
 const listDiskItemActivity = `-- name: ListDiskItemActivity :many
-SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at FROM disk_activity
+SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at, private FROM disk_activity
 WHERE item_id = $1::uuid
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC
@@ -902,6 +906,7 @@ func (q *Queries) ListDiskItemActivity(ctx context.Context, arg ListDiskItemActi
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.Private,
 		); err != nil {
 			return nil, err
 		}
@@ -1307,7 +1312,7 @@ func (q *Queries) ListSharedDiskItems(ctx context.Context, ids []uuid.UUID) ([]u
 }
 
 const listWorkspaceDiskActivity = `-- name: ListWorkspaceDiskActivity :many
-SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at FROM disk_activity
+SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at, private FROM disk_activity
 WHERE workspace_id = $1::uuid
   AND ($2::uuid IS NULL OR actor_id = $2::uuid)
   AND ($3::uuid IS NULL OR id < $3::uuid)
@@ -1347,6 +1352,7 @@ func (q *Queries) ListWorkspaceDiskActivity(ctx context.Context, arg ListWorkspa
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.Private,
 		); err != nil {
 			return nil, err
 		}
@@ -1434,6 +1440,28 @@ SELECT pg_advisory_xact_lock(hashtext('calaba.disk.' || $1::uuid::text))
 // reserves its quota first), never before one.
 func (q *Queries) LockDiskTree(ctx context.Context, workspaceID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, lockDiskTree, workspaceID)
+	return err
+}
+
+const markDiskSubtreeActivityPrivate = `-- name: MarkDiskSubtreeActivityPrivate :exec
+WITH RECURSIVE sub (id, r) AS (
+    SELECT t.id, $1::bool FROM disk_items t WHERE t.id = $2::uuid
+    UNION ALL
+    SELECT c.id, sub.r OR c.restricted FROM disk_items c JOIN sub ON c.parent_id = sub.id
+)
+UPDATE disk_activity a SET private = true FROM sub WHERE a.item_id = sub.id AND sub.r AND NOT a.private
+`
+
+type MarkDiskSubtreeActivityPrivateParams struct {
+	Restricted bool
+	ID         uuid.UUID
+}
+
+// Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2): the journal entries of
+// every node of the subtree that lies under a restricted node (restricted: the root's chain has
+// one) become private — the workspace journal cannot check a chain that is gone.
+func (q *Queries) MarkDiskSubtreeActivityPrivate(ctx context.Context, arg MarkDiskSubtreeActivityPrivateParams) error {
+	_, err := q.db.Exec(ctx, markDiskSubtreeActivityPrivate, arg.Restricted, arg.ID)
 	return err
 }
 

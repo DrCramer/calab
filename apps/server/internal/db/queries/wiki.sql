@@ -325,10 +325,21 @@ ORDER BY l.created_at DESC;
 -- ---- journal ----
 
 -- name: InsertWikiActivity :one
-INSERT INTO wiki_activity (workspace_id, page_id, page_title, actor_id, kind, before, after)
+INSERT INTO wiki_activity (workspace_id, page_id, page_title, actor_id, kind, before, after, private)
 VALUES (sqlc.arg('workspace_id'), sqlc.narg('page_id'), sqlc.arg('page_title'), sqlc.narg('actor_id'), sqlc.arg('kind'),
-        sqlc.narg('before'), sqlc.narg('after'))
+        sqlc.narg('before'), sqlc.narg('after'), sqlc.arg('private'))
 RETURNING *;
+
+-- name: MarkWikiSubtreeActivityPrivate :exec
+-- Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2): the journal entries of
+-- every node of the subtree that lies under a restricted node (restricted: the root's chain has
+-- one) become private — the workspace journal cannot check a chain that is gone.
+WITH RECURSIVE sub (id, r) AS (
+    SELECT t.id, sqlc.arg('restricted')::bool FROM wiki_pages t WHERE t.id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, sub.r OR c.restricted FROM wiki_pages c JOIN sub ON c.parent_id = sub.id
+)
+UPDATE wiki_activity a SET private = true FROM sub WHERE a.page_id = sub.id AND sub.r AND NOT a.private;
 
 -- name: ListWikiPageActivity :many
 -- A page's history, the newest first; cursor: the last id (NULL = the first page).

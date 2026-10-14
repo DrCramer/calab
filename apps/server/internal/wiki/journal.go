@@ -33,6 +33,12 @@ func encode(m snap) ([]byte, error) {
 // ADR-0096 §5 (create, rename, move, share, link_on, link_off, trash, restore, delete, icon,
 // cover, version).
 func (s *Service) journal(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageHead, actor *uuid.UUID, kind string, before, after snap) error {
+	return s.journalEntry(ctx, q, p, actor, kind, before, after, false)
+}
+
+// journalEntry is journal with the private flag of a "delete" entry (the page's chain ran
+// through a restricted page: the workspace journal leaves it out, addendum 2026-10-14).
+func (s *Service) journalEntry(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageHead, actor *uuid.UUID, kind string, before, after snap, private bool) error {
 	b, err := encode(before)
 	if err != nil {
 		return err
@@ -61,7 +67,7 @@ func (s *Service) journal(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageH
 		page = &p.ID
 	}
 	_, err = q.InsertWikiActivity(ctx, sqlc.InsertWikiActivityParams{WorkspaceID: p.WorkspaceID, PageID: page, PageTitle: p.Title,
-		ActorID: actor, Kind: kind, Before: b, After: a})
+		ActorID: actor, Kind: kind, Before: b, After: a, Private: private})
 	return err
 }
 

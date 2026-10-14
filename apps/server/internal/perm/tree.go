@@ -137,6 +137,17 @@ func ComputeTreeIn(b TreeBits, m Member, chain []TreeNode) Bits {
 	return ComputeTree(b, TreeInput{Raw: m.Raw(), Guest: m.Role == RoleGuest, Chain: levels})
 }
 
+// RestrictedIn reports whether a stored chain runs through a restricted node (Restricted over
+// TreeNode): its journal entries are private once it is deleted forever.
+func RestrictedIn(chain []TreeNode) bool {
+	for i := range chain {
+		if chain[i].Restricted {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidTreeOverride reports whether an allow / deny pair may be stored as a node override of
 // the section: only its VIEW and WRITE (never MANAGE, other sections', billing or room bits),
 // not both ways.
