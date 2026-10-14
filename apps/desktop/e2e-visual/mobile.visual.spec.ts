@@ -762,14 +762,14 @@ test('m-more', async ({ page }) => {
     expect(Math.round(b?.width ?? 0), `a 44 px pin: ${tab}`).toBeGreaterThanOrEqual(44);
     expect(Math.round(b?.height ?? 0), `a 44 px pin: ${tab}`).toBeGreaterThanOrEqual(44);
   }
-  await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-pressed', 'true');
-  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-pressed', 'false');
+  await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-checked', 'true');
+  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-checked', 'false');
   await checkpoint(page, 'm-more-card');
   // Pinning «Диск»: «Команда» (the oldest) leaves the bar, the card stays open, the toast names it.
   await card.getByTestId('more-pin-disk').tap();
   await expect(card).toBeVisible();
-  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-pressed', 'true');
-  await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-pressed', 'false');
+  await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-checked', 'true');
+  await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByText('Закреплено вместо «Команда»')).toBeVisible();
   // A section from the card: its root, its plate in the fourth slot.
   await card.getByTestId('more-row-profile').tap();

@@ -139,7 +139,7 @@ const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available }: {
           aria-current={inBar ? undefined : 'page'}
           aria-label={inBar ? t('mobile.more') : `${tabLabel(tab)}, ${t('mobile.more')}`}
           data-testid="phone-tab-more"
-          className={cx(BUTTON, inBar ? 'text-muted' : 'text-fg')}
+          className={cx(BUTTON, inBar ? 'text-muted' : 'flex-[1.7] px-2 text-fg')}
           onClick={() => haptics.tap()}
         >
           {inBar ? (
@@ -153,11 +153,11 @@ const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available }: {
               <span className="max-w-full truncate px-1">{t('mobile.more')}</span>
             </>
           ) : (
-            <span data-testid="phone-tab-more-plate" className="relative flex h-9 max-w-full items-center gap-0.5 rounded-[10px] bg-hover pl-1.5 pr-1">
-              <TabIcon tab={tab} active cls="size-6" />
+            <span data-testid="phone-tab-more-plate" className="relative flex h-9 w-full min-w-0 items-center justify-center gap-1 rounded-[10px] bg-hover px-2">
+              <span className="flex size-7 shrink-0 items-center justify-center"><TabIcon tab={tab} active cls="size-[22px]" /></span>
               <span className="min-w-0 truncate">{tabLabel(tab)}</span>
               <ChevronDown className="size-3.5 shrink-0 text-muted" strokeWidth={2.25} aria-hidden />
-              <BadgeOf tabs={others} />
+              <BadgeOf tabs={others} plate />
             </span>
           )}
         </button>
@@ -195,7 +195,7 @@ const MoreRow = memo(function MoreRow({ tab }: { tab: PhoneTab }): ReactNode {
   const active = useUi((s) => s.phone.tab === tab);
   const label = tabLabel(tab);
   return (
-    <div className="flex h-[52px] items-center" role="group" aria-label={label}>
+    <div className="flex h-[52px] items-center" role="none">
       <Dropdown.Item
         className="flex h-[52px] min-w-0 flex-1 cursor-default items-center gap-3 rounded-[var(--radius-control)] pl-2.5 pr-1 text-list outline-none data-[highlighted]:bg-hover"
         onSelect={() => {
@@ -205,20 +205,23 @@ const MoreRow = memo(function MoreRow({ tab }: { tab: PhoneTab }): ReactNode {
         aria-current={active ? 'page' : undefined}
         data-testid={`more-row-${tab}`}
       >
-        <TabIcon tab={tab} active={active} cls="size-6" />
+        <span className="flex size-7 shrink-0 items-center justify-center"><TabIcon tab={tab} active={active} cls="size-6" /></span>
         <span className={cx('min-w-0 flex-1 truncate', active && 'font-semibold')}>{label}</span>
         <BadgeOf tabs={[tab]} inline />
       </Dropdown.Item>
-      <button
-        type="button"
-        aria-pressed={pinned}
+      {/* A menuitemcheckbox, not a bare button: a menu may hold menu items only (axe aria-required-children); onSelect keeps the card open. */}
+      <Dropdown.CheckboxItem
+        checked={pinned}
         aria-label={t('mobile.pin', { name: label })}
         data-testid={`more-pin-${tab}`}
-        onClick={() => pin(tab)}
-        className={cx('grid size-11 shrink-0 place-items-center rounded-full', pinned ? 'text-fg' : 'text-muted')}
+        onSelect={(e) => {
+          e.preventDefault();
+          pin(tab);
+        }}
+        className={cx('grid size-11 shrink-0 cursor-default place-items-center rounded-full outline-none data-[highlighted]:bg-hover', pinned ? 'text-fg' : 'text-muted')}
       >
         <Pin className={cx('size-5', pinned && 'fill-current')} strokeWidth={1.75} aria-hidden />
-      </button>
+      </Dropdown.CheckboxItem>
     </div>
   );
 });
@@ -256,7 +259,7 @@ function useBadge(tabs: readonly PhoneTab[]): Badge {
 }
 
 /** A tab's badge: a count on the icon corner (or inline in a card row), or a dot. A leaf with its own subscription. */
-function BadgeOf({ tabs, inline = false }: { tabs: readonly PhoneTab[]; inline?: boolean }): ReactNode {
+function BadgeOf({ tabs, inline = false, plate = false }: { tabs: readonly PhoneTab[]; inline?: boolean; plate?: boolean }): ReactNode {
   const b = useBadge(tabs);
   if (b === 0) return null;
   const count = Math.max(b, 0);
@@ -279,7 +282,7 @@ function BadgeOf({ tabs, inline = false }: { tabs: readonly PhoneTab[]; inline?:
     );
   }
   return count > 0 ? (
-    <CountBadge count={count} phone ring="var(--color-toolbar,var(--color-bg))" role="img" aria-label={label} className="absolute -top-2 left-full -ml-2.5" />
+    <CountBadge count={count} phone ring="var(--color-toolbar,var(--color-bg))" role="img" aria-label={label} className={plate ? 'absolute -top-2 right-0' : 'absolute -top-2 left-full -ml-2.5'} />
   ) : (
     <span role="img" aria-label={label} className="absolute -right-1 -top-0.5 size-2.5 rounded-full border-2 border-[var(--color-toolbar,var(--color-bg))] bg-fg" />
   );
