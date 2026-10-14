@@ -8,6 +8,7 @@ import { mayRemoveWatcher, watcherControls } from '../../lib/boards/watchers';
 import { setWatcher } from '../../services/boards';
 import { myUserId } from '../../stores/session';
 import { useMemberName } from '../../stores/workspaces';
+import { FormerChip } from '../people/MemberBits';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { MemberAvatar, WatcherMenu } from './menus';
@@ -102,6 +103,7 @@ const WatcherChip = memo(function WatcherChip({ workspaceId, taskId, userId, rem
       <ProfileTarget userId={userId} name={name} workspaceId={workspaceId} tabbable className="inline-flex min-w-0 items-center gap-1.5 rounded-full text-left">
         <MemberAvatar workspaceId={workspaceId} userId={userId} size={22} />
         <span className="min-w-0 truncate text-control">{name}</span>
+        <FormerChip workspaceId={workspaceId} userId={userId} />
       </ProfileTarget>
       {removable ? (
         <button

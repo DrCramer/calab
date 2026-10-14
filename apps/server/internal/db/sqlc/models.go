@@ -1815,6 +1815,19 @@ type WorkspaceExternalIdentity struct {
 	LinkedAt     time.Time
 }
 
+type WorkspaceFormerMember struct {
+	WorkspaceID  uuid.UUID
+	UserID       uuid.UUID
+	DisplayName  string
+	AvatarFileID *uuid.UUID
+	Nickname     string
+	Role         string
+	JoinedAt     *time.Time
+	LeftAt       time.Time
+	Reason       string
+	RemovedBy    *uuid.UUID
+}
+
 type WorkspaceIdentityAccess struct {
 	WorkspaceID uuid.UUID
 	UserID      uuid.UUID
@@ -1917,6 +1930,7 @@ type WorkspaceMember struct {
 	JoinedAt         time.Time
 	BadgeID          *uuid.UUID
 	AchievementCount int32
+	LastActiveAt     *time.Time
 }
 
 type WorkspaceNotificationSetting struct {

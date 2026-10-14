@@ -171,15 +171,6 @@ func (q *Queries) CreateRoomInvite(ctx context.Context, arg CreateRoomInvitePara
 	return i, err
 }
 
-const deleteUserMemberships = `-- name: DeleteUserMemberships :exec
-DELETE FROM workspace_members WHERE user_id = $1
-`
-
-func (q *Queries) DeleteUserMemberships(ctx context.Context, userID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteUserMemberships, userID)
-	return err
-}
-
 const deleteUserRoomOverrides = `-- name: DeleteUserRoomOverrides :exec
 DELETE FROM room_permissions WHERE target_type = 'user' AND target_id = $1::text
 `
@@ -399,7 +390,7 @@ func (q *Queries) LockExpiredGuest(ctx context.Context, id uuid.UUID) (uuid.UUID
 const promoteGuest = `-- name: PromoteGuest :one
 UPDATE workspace_members SET role = 'member'
 WHERE workspace_id = $1 AND user_id = $2 AND role = 'guest'
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
 `
 
 type PromoteGuestParams struct {
@@ -418,6 +409,7 @@ func (q *Queries) PromoteGuest(ctx context.Context, arg PromoteGuestParams) (Wor
 		&i.JoinedAt,
 		&i.BadgeID,
 		&i.AchievementCount,
+		&i.LastActiveAt,
 	)
 	return i, err
 }

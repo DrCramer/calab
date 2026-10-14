@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
+import { usePrefs } from '../../stores/prefs';
 import { type MessageKey, t, useLocale } from '../../i18n';
 import { greetingRoomId, useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
@@ -107,10 +108,62 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}
       {section('bots', t('bots.section'), groups.bots)}
-      {groups.online.length + groups.offline.length + groups.bots.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
+      <GuestsSection workspaceId={workspaceId} guests={groups.guests} online={groups.guestsOnline} profile={profile} onOpenProfile={openProfile} />
+      {groups.online.length + groups.offline.length + groups.bots.length + groups.guests.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
     </aside>
   );
 }
+
+/** More guests than this and the group starts collapsed (ADR-0098 §3). */
+const GUESTS_OPEN_MAX = 5;
+
+/**
+ * «Гости · N» (ADR-0098 §3): guests expire after 48 h without activity, but a crowd of them can
+ * still fill the column, so they are one collapsible group; collapsed by default above 5, the
+ * choice is kept per workspace in prefs. Rows are the usual MemberRow (presence is the second line:
+ * the member record carries no last-activity time).
+ */
+const GuestsSection = memo(function GuestsSection({
+  workspaceId,
+  guests,
+  online,
+  profile,
+  onOpenProfile,
+}: {
+  workspaceId: string;
+  guests: WorkspaceMember[];
+  online: ReadonlySet<string>;
+  profile: string | null;
+  onOpenProfile: (userId: string | null, open: boolean) => void;
+}): ReactNode {
+  const chosen = usePrefs((s) => s.guestsOpen[workspaceId]);
+  if (guests.length === 0) return null;
+  const open = chosen ?? guests.length <= GUESTS_OPEN_MAX;
+  return (
+    <section aria-labelledby="members-guests" className="mt-4 flex flex-col first:mt-0 mobile:mt-0" data-testid="members-guests">
+      <h3 id="members-guests" className="text-micro font-semibold uppercase tracking-wide text-faint">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => usePrefs.getState().setPrefs({ guestsOpen: { ...usePrefs.getState().guestsOpen, [workspaceId]: !open } })}
+          className="flex w-full items-center gap-1 rounded-[var(--radius-control)] px-2 pb-1 text-left uppercase hover:text-fg mobile:h-11 mobile:px-1 mobile:pb-0"
+        >
+          <ChevronRight className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', open && 'rotate-90')} aria-hidden />
+          {t('former.guestsGroup', { n: guests.length })}
+        </button>
+      </h3>
+      {open ? (
+        <ul className="flex flex-col gap-px mobile:gap-0">
+          {guests.map((m) => (
+            <li key={m.user?.id}>
+              <MemberRow workspaceId={workspaceId} member={m} offline={!online.has(m.user?.id ?? '')} open={profile === m.user?.id} onOpenProfile={onOpenProfile} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+});
 
 /**
  * Phone layout (ADR-0021): «Позвонить на номер» on top of the members drawer for the room of my

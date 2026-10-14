@@ -13,6 +13,7 @@ import { zhMail } from './mail';
 import { zhRecording } from './recording';
 import { zhAnnot } from './annot';
 import { zhPeople } from './people';
+import { zhFormer } from './former';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
@@ -70,6 +71,7 @@ export const zhCN: Dict = {
   ...zhBilling,
   ...zhTransitions,
   ...zhCustomPlan,
+  ...zhFormer,
   ...zhModeration,
   ...zhMail,
   ...zhRecording,

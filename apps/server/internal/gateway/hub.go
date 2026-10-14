@@ -21,6 +21,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -1273,6 +1274,28 @@ func (h *Hub) Statuses(ctx context.Context, users []uuid.UUID) (map[uuid.UUID]v1
 		out[u] = p.GetStatus()
 	}
 	return out, nil
+}
+
+// Present says whether the user has a live gateway session (any status, invisible
+// included) or is in a call right now: the guest inactivity sweep (ADR-0098) skips such users.
+func (h *Hub) Present(ctx context.Context, user uuid.UUID) (bool, error) {
+	return present(ctx, h.redis, user)
+}
+
+func present(ctx context.Context, c rueidis.Client, user uuid.UUID) (bool, error) {
+	// HVALS like presenceStore.get: fields past their HEXPIRE are never returned.
+	res := c.DoMulti(ctx,
+		c.B().Hvals().Key(presKey(user)).Build(),
+		c.B().Exists().Key(calls.OnCallKey(user)).Build())
+	vals, err := res[0].AsStrSlice()
+	if err != nil && !rueidis.IsRedisNil(err) {
+		return false, err
+	}
+	n, err := res[1].AsInt64()
+	if err != nil {
+		return false, err
+	}
+	return len(vals) > 0 || n > 0, nil
 }
 
 // StatusChanged announces a custom status change (PATCH /api/me/status) even if the

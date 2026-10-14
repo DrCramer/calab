@@ -9,7 +9,7 @@ import { WikiSettingsTab } from '../wiki/WikiSettings';
 import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -47,6 +47,8 @@ import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat'
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
+import { FormerTab } from './FormerTab';
+import { loadedOpenTasksOf } from '../../services/formerTasks';
 import { RolesTab } from './RolesTab';
 import { LibraryTab, SEGMENT_LABEL } from './LibraryTab';
 import { LIBRARY_TAB, librarySegments, resolveSettingsTab } from './library';
@@ -192,6 +194,8 @@ export function WorkspaceSettingsDialog({
       : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_MEMBERS, ADR-0048).
+    // «Бывшие» (ADR-0097 §3): the same right as «Забаненные».
+    ...(access.members ? [{ id: 'former', label: t('former.tab'), icon: UserMinus, content: <FormerTab workspaceId={workspaceId} /> }] : []),
     ...(access.members ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
@@ -432,7 +436,10 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
     }
   };
   const kick = async (userId: string, name: string): Promise<void> => {
-    if (!(await confirmAction(t('ws.kick'), t('ws.kickConfirm', { name }), t('ws.kick')))) return;
+    // ADR-0097 §4: what stays on the person's name (loaded boards only; omitted when none).
+    const open = loadedOpenTasksOf(workspaceId, userId);
+    const body = open > 0 ? `${t('ws.kickConfirm', { name })} ${t('former.openTasks', { n: open })}` : t('ws.kickConfirm', { name });
+    if (!(await confirmAction(t('ws.kick'), body, t('ws.kick')))) return;
     try {
       await api.workspaces.removeMember(workspaceId, userId);
       useWorkspaces.getState().removeMember(workspaceId, userId);
@@ -455,6 +462,11 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
           </Button>
         ) : null}
       </div>
+      {filter === 'guest' ? (
+        <p className="text-caption text-muted" data-testid="guest-expiry-hint">
+          {t('former.guestsHint')}
+        </p>
+      ) : null}
       {members.length === 0 ? (
         <Empty>{t('ws.filter.none')}</Empty>
       ) : (

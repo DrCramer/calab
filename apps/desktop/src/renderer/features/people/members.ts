@@ -42,6 +42,10 @@ export interface MemberGroups {
   offline: WorkspaceMember[];
   /** Bots (ADR-0031 §7): a section of their own, by name — never «в сети» / «не в сети». */
   bots: WorkspaceMember[];
+  /** Guests (ADR-0098 §3): a collapsible section of their own, online first; the list does not grow with a crowd of «ссылочных». */
+  guests: WorkspaceMember[];
+  /** Which of `guests` are online (the row's dimming). */
+  guestsOnline: ReadonlySet<string>;
 }
 
 /**
@@ -57,13 +61,15 @@ export function groupMembers(
   const all = members.filter((m) => m.user);
   const byName = (a: WorkspaceMember, b: WorkspaceMember): number => nameOf(a).localeCompare(nameOf(b), getLocale());
   const bots = all.filter((m) => m.user?.isBot).sort(byName);
-  const list = all.filter((m) => !m.user?.isBot);
-  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || byName(a, b));
+  const people = all.filter((m) => !m.user?.isBot);
   const on = (m: WorkspaceMember): boolean => {
     const id = m.user?.id ?? '';
     return isOnline(presences[id]?.status) || !!voice[id]?.roomId;
   };
-  return { online: list.filter(on), offline: list.filter((m) => !on(m)), bots };
+  const guests = people.filter((m) => m.role === WorkspaceRole.GUEST).sort((a, b) => Number(on(b)) - Number(on(a)) || byName(a, b));
+  const list = people.filter((m) => m.role !== WorkspaceRole.GUEST);
+  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || byName(a, b));
+  return { online: list.filter(on), offline: list.filter((m) => !on(m)), bots, guests, guestsOnline: new Set(guests.filter(on).map((m) => m.user?.id ?? '')) };
 }
 
 // ---------------------------------------------------------------- context menu

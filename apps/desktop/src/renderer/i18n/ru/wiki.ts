@@ -141,4 +141,13 @@ export const ruWiki = {
   'wiki.err.access': 'Не удалось изменить доступ',
   'wiki.err.link': 'Не удалось изменить ссылку',
   'wiki.err.settings': 'Не удалось сохранить настройку',
+  'wiki.public.outline': 'Содержание',
+  'wiki.public.footer': 'Открыто по ссылке · Calab',
+  'wiki.public.gone': 'Страница недоступна',
+  'wiki.public.goneText': 'Ссылка отозвана или истекла, либо страница удалена.',
+  'wiki.phone.editors': { one: 'ещё {n} редактирует', few: 'ещё {n} редактируют', many: 'ещё {n} редактируют', other: 'ещё {n} редактируют' },
+  'wiki.phone.updated': 'изменено {when}',
+  'wiki.phone.addBlock': 'Добавить блок',
+  'wiki.phone.toolbar': 'Панель форматирования',
+  'wiki.phone.loadFailed': 'Не удалось загрузить страницу',
 } as const;

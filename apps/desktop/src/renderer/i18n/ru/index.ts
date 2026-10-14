@@ -12,6 +12,7 @@ import { ruMail } from './mail';
 import { ruRecording } from './recording';
 import { ruAnnot } from './annot';
 import { ruPeople } from './people';
+import { ruFormer } from './former';
 import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
@@ -69,6 +70,7 @@ export const ru = {
   ...ruBilling,
   ...ruTransitions,
   ...ruCustomPlan,
+  ...ruFormer,
   ...ruModeration,
   ...ruMail,
   ...ruRecording,

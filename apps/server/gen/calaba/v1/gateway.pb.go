@@ -5673,9 +5673,13 @@ func (x *SoundPlay) GetAt() *timestamppb.Timestamp {
 }
 
 type WorkspaceMemberRemove struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	UserId      string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Set when a former member record was kept (ADR-0097): keep the profile, marked as former;
+	// a WORKSPACE_MEMBER_ADD of the user clears the mark. Unset for a bot leaving or a guest
+	// whose knock was declined: drop the profile as before.
+	Former        *FormerMemberInfo `protobuf:"bytes,3,opt,name=former,proto3" json:"former,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5722,6 +5726,13 @@ func (x *WorkspaceMemberRemove) GetUserId() string {
 		return x.UserId
 	}
 	return ""
+}
+
+func (x *WorkspaceMemberRemove) GetFormer() *FormerMemberInfo {
+	if x != nil {
+		return x.Former
+	}
+	return nil
 }
 
 type WorkspaceBanAdd struct {
@@ -7565,10 +7576,11 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x19\n" +
 	"\bsound_id\x18\x02 \x01(\tR\asoundId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\tR\x06userId\x12*\n" +
-	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"S\n" +
+	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\x88\x01\n" +
 	"\x15WorkspaceMemberRemove\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"<\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x123\n" +
+	"\x06former\x18\x03 \x01(\v2\x1b.calaba.v1.FormerMemberInfoR\x06former\"<\n" +
 	"\x0fWorkspaceBanAdd\x12)\n" +
 	"\x03ban\x18\x01 \x01(\v2\x17.calaba.v1.WorkspaceBanR\x03ban\"P\n" +
 	"\x12WorkspaceBanRemove\x12!\n" +
@@ -7869,10 +7881,11 @@ var file_calaba_v1_gateway_proto_goTypes = []any{
 	(*User)(nil),                          // 147: calaba.v1.User
 	(*SystemMessage)(nil),                 // 148: calaba.v1.SystemMessage
 	(*StickerPack)(nil),                   // 149: calaba.v1.StickerPack
-	(*WorkspaceBan)(nil),                  // 150: calaba.v1.WorkspaceBan
-	(*RoomPermissionOverride)(nil),        // 151: calaba.v1.RoomPermissionOverride
-	(*Message)(nil),                       // 152: calaba.v1.Message
-	(ScreenSharePreset)(0),                // 153: calaba.v1.ScreenSharePreset
+	(*FormerMemberInfo)(nil),              // 150: calaba.v1.FormerMemberInfo
+	(*WorkspaceBan)(nil),                  // 151: calaba.v1.WorkspaceBan
+	(*RoomPermissionOverride)(nil),        // 152: calaba.v1.RoomPermissionOverride
+	(*Message)(nil),                       // 153: calaba.v1.Message
+	(ScreenSharePreset)(0),                // 154: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	0,   // 0: calaba.v1.GatewayFrame.op:type_name -> calaba.v1.GatewayOpcode
@@ -8058,38 +8071,39 @@ var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	135, // 180: calaba.v1.SoundCreate.sound:type_name -> calaba.v1.Sound
 	135, // 181: calaba.v1.SoundUpdate.sound:type_name -> calaba.v1.Sound
 	91,  // 182: calaba.v1.SoundPlay.at:type_name -> google.protobuf.Timestamp
-	150, // 183: calaba.v1.WorkspaceBanAdd.ban:type_name -> calaba.v1.WorkspaceBan
-	129, // 184: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
-	129, // 185: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
-	151, // 186: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
-	152, // 187: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
-	152, // 188: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
-	91,  // 189: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
-	20,  // 190: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
-	19,  // 191: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
-	153, // 192: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
-	4,   // 193: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
-	4,   // 194: calaba.v1.VoiceCameraStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
-	21,  // 195: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
-	27,  // 196: calaba.v1.DmCreate.dm:type_name -> calaba.v1.DmSummary
-	28,  // 197: calaba.v1.NotesCreate.shelf:type_name -> calaba.v1.NotesShelf
-	28,  // 198: calaba.v1.NotesUpdate.shelf:type_name -> calaba.v1.NotesShelf
-	91,  // 199: calaba.v1.DmStateUpdate.archived_at:type_name -> google.protobuf.Timestamp
-	145, // 200: calaba.v1.CallRing.call:type_name -> calaba.v1.Call
-	147, // 201: calaba.v1.CallRing.caller:type_name -> calaba.v1.User
-	145, // 202: calaba.v1.CallStateUpdate.call:type_name -> calaba.v1.Call
-	143, // 203: calaba.v1.RoomNotificationUpdate.settings:type_name -> calaba.v1.RoomNotificationSettings
-	144, // 204: calaba.v1.WorkspaceNotificationUpdate.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
-	142, // 205: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
-	147, // 206: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
-	20,  // 207: calaba.v1.UserUpdate.presence:type_name -> calaba.v1.Presence
-	146, // 208: calaba.v1.WorkspaceIdentityAccessUpdate.access:type_name -> calaba.v1.WorkspaceIdentityAccess
-	29,  // 209: calaba.v1.WorkspaceSnapshot.RoomLastMessagesEntry.value:type_name -> calaba.v1.DmLastMessage
-	210, // [210:210] is the sub-list for method output_type
-	210, // [210:210] is the sub-list for method input_type
-	210, // [210:210] is the sub-list for extension type_name
-	210, // [210:210] is the sub-list for extension extendee
-	0,   // [0:210] is the sub-list for field type_name
+	150, // 183: calaba.v1.WorkspaceMemberRemove.former:type_name -> calaba.v1.FormerMemberInfo
+	151, // 184: calaba.v1.WorkspaceBanAdd.ban:type_name -> calaba.v1.WorkspaceBan
+	129, // 185: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
+	129, // 186: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
+	152, // 187: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
+	153, // 188: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
+	153, // 189: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
+	91,  // 190: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
+	20,  // 191: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
+	19,  // 192: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
+	154, // 193: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
+	4,   // 194: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	4,   // 195: calaba.v1.VoiceCameraStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	21,  // 196: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
+	27,  // 197: calaba.v1.DmCreate.dm:type_name -> calaba.v1.DmSummary
+	28,  // 198: calaba.v1.NotesCreate.shelf:type_name -> calaba.v1.NotesShelf
+	28,  // 199: calaba.v1.NotesUpdate.shelf:type_name -> calaba.v1.NotesShelf
+	91,  // 200: calaba.v1.DmStateUpdate.archived_at:type_name -> google.protobuf.Timestamp
+	145, // 201: calaba.v1.CallRing.call:type_name -> calaba.v1.Call
+	147, // 202: calaba.v1.CallRing.caller:type_name -> calaba.v1.User
+	145, // 203: calaba.v1.CallStateUpdate.call:type_name -> calaba.v1.Call
+	143, // 204: calaba.v1.RoomNotificationUpdate.settings:type_name -> calaba.v1.RoomNotificationSettings
+	144, // 205: calaba.v1.WorkspaceNotificationUpdate.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
+	142, // 206: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
+	147, // 207: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
+	20,  // 208: calaba.v1.UserUpdate.presence:type_name -> calaba.v1.Presence
+	146, // 209: calaba.v1.WorkspaceIdentityAccessUpdate.access:type_name -> calaba.v1.WorkspaceIdentityAccess
+	29,  // 210: calaba.v1.WorkspaceSnapshot.RoomLastMessagesEntry.value:type_name -> calaba.v1.DmLastMessage
+	211, // [211:211] is the sub-list for method output_type
+	211, // [211:211] is the sub-list for method input_type
+	211, // [211:211] is the sub-list for extension type_name
+	211, // [211:211] is the sub-list for extension extendee
+	0,   // [0:211] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_gateway_proto_init() }

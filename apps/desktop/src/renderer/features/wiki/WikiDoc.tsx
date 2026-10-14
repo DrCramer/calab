@@ -8,6 +8,7 @@
  */
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { avatarColor } from '../../components/Avatar';
@@ -28,6 +29,7 @@ import { useWikiUi } from '../../stores/wikiUi';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberAvatar } from '../boards/menus';
 import WikiEditor from './editor/WikiEditor';
+import { PhoneToolbar } from './editor/PhoneToolbar';
 import type { MentionSource, WikiEditorApi } from './editor/types';
 
 /** `wss://host/api/wiki/pages/{id}/sync` from the server URL (the gateway's way). */
@@ -65,9 +67,12 @@ export interface WikiDocProps {
   pageId: string;
   /** WIKI_WRITE on the page and not in the trash. */
   editable: boolean;
+  /** The phone's page (ADR-0096 §7): no carets of others, a counter instead of the avatars, the toolbar in `toolbarHost`. */
+  phone?: boolean;
+  toolbarHost?: HTMLElement | null;
 }
 
-export default function WikiDoc({ workspaceId, pageId, editable }: WikiDocProps): ReactNode {
+export default function WikiDoc({ workspaceId, pageId, editable, phone = false, toolbarHost = null }: WikiDocProps): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myName = useWorkspaces((s) => (me && s.byId[workspaceId]?.members[me] ? memberName(workspaceId, me) : '')) || ' ';
   const [{ doc, awareness }] = useState(() => {
@@ -112,9 +117,14 @@ export default function WikiDoc({ workspaceId, pageId, editable }: WikiDocProps)
 
   // The handle for the main chunk (export, restore).
   const api = useRef<WikiEditorApi | null>(null);
-  const onReady = useCallback((a: WikiEditorApi | null) => {
-    api.current = a;
-  }, []);
+  const [phoneApi, setPhoneApi] = useState<WikiEditorApi | null>(null);
+  const onReady = useCallback(
+    (a: WikiEditorApi | null) => {
+      api.current = a;
+      if (phone) setPhoneApi(a);
+    },
+    [phone],
+  );
   useEffect(() => {
     setDocHandle({
       pageId,
@@ -145,8 +155,9 @@ export default function WikiDoc({ workspaceId, pageId, editable }: WikiDocProps)
 
   return (
     <>
-      <MetaLine workspaceId={workspaceId} pageId={pageId} awareness={awareness} me={me} />
-      <WikiEditor doc={doc} awareness={awareness} editable={editable} me={user} onUploadImage={upload} mentionSource={mentions} onError={onError} onReady={onReady} className="mt-4" />
+      {phone ? <PeersReporter awareness={awareness} me={me} /> : <MetaLine workspaceId={workspaceId} pageId={pageId} awareness={awareness} me={me} />}
+      <WikiEditor doc={doc} awareness={awareness} editable={editable} me={user} onUploadImage={upload} mentionSource={mentions} onError={onError} onReady={onReady} phone={phone} className={phone ? 'mt-2' : 'mt-4'} />
+      {phone && editable && toolbarHost && phoneApi ? createPortal(<PhoneToolbar editor={phoneApi.editor} onBlocks={() => phoneApi.openBlocks()} />, toolbarHost) : null}
     </>
   );
 }
@@ -191,6 +202,16 @@ const MetaLine = memo(function MetaLine({ workspaceId, pageId, awareness, me }: 
     </div>
   );
 });
+
+/** Phone: writes the number of other people on the page to the store (the header shows «ещё N редактируют»); renders nothing. */
+function PeersReporter({ awareness, me }: { awareness: Awareness; me: string }): ReactNode {
+  const n = useCoauthors(awareness, me).length;
+  useEffect(() => {
+    useWikiUi.getState().setPeers(n);
+    return () => useWikiUi.getState().setPeers(0);
+  }, [n]);
+  return null;
+}
 
 /** The user ids of the other people on this page now (awareness), as a stable array per change. */
 function useCoauthors(awareness: Awareness, me: string): readonly string[] {

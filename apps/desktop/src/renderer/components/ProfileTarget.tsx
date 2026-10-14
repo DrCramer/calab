@@ -2,7 +2,7 @@ import type { MouseEvent, ReactNode } from 'react';
 import { openProfile } from '../features/people/actions';
 import { t } from '../i18n';
 import { useUi } from '../stores/ui';
-import { useWorkspaces } from '../stores/workspaces';
+import { formerKey, useWorkspaces } from '../stores/workspaces';
 import { cx } from './ui';
 
 /**
@@ -48,7 +48,7 @@ export function ProfileTarget({
   // the first shared one (a DM peer). A string: member churn re-renders nothing.
   const ws = useWorkspaces((s) => {
     if (!userId) return '';
-    for (const id of [workspaceId, active]) if (id && s.byId[id]?.members[userId]?.user) return id;
+    for (const id of [workspaceId, active]) if (id && (s.byId[id]?.members[userId]?.user || formerKey(id, userId) in s.former)) return id;
     for (const [id, e] of Object.entries(s.byId)) if (e.members[userId]?.user) return id;
     return '';
   });

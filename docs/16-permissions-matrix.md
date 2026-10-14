@@ -28,6 +28,8 @@
 |---|---|---|---|
 | Исключить / забанить / разбанить / список банов / встроенная роль | `MANAGE_MEMBERS` ws (ADR-0048; не гость) + иерархия: не владельца, админа — только владелец, цель ниже моей старшей роли | `requireMembers`, `workspaces.outranks`, шлюз `WORKSPACE_BAN_*` — держателям `MANAGE_MEMBERS` | `canRemoveMember` |
 | Гость → участник | `MANAGE_MEMBERS` ws | `promote` | `memberActions.promote` |
+| Список бывших участников `GET …/former-members` (ADR-0097) | `MANAGE_MEMBERS` ws (не гость); бот — так же | `workspaces.listFormerMembers` | вкладка «Бывшие» |
+| Профили по id `GET …/users?ids=` (ADR-0097) | участник (и бот); только те, кто есть или был в пространстве, чужие id молча пропускаются; гость — только видимых ему участников, бывших — нет; ≤ 100 id | `workspaces.listUsers` | резолв неизвестных авторов |
 | Назначить / снять роль | `MANAGE_MEMBERS` **или** `MANAGE_ROLES` ws (не гость); только роли ниже своей старшей и с битами, что есть у меня; `admin` — только владелец; не открывать закрытую комнату/доску, которую не вижу (`403 OWNER_ONLY`) | `setMemberRoles`, `restrictedGuard` | `canAssignRole`, `roleToggles` |
 | Бейджи (docs/09 #82): библиотека — создать / переименовать / сменить картинку / удалить | `MANAGE_MEMBERS` ws (ADR-0048); бот — так же, картинка — его загрузка (ADR-0051) | `workspaces.createBadge`, `updateBadge`, `deleteBadge` | `BadgesTab` |
 | Бейдж участника: назначить / снять | `MANAGE_NICKNAMES` ws + иерархия `workspaces.outranks` (себе — можно); цель — не бот; бот — так же (ADR-0051) | `workspaces.setMemberBadge` | `canSetMemberBadge` |

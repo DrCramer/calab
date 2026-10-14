@@ -262,6 +262,7 @@ export const esShell: DictShape<typeof enShell> = {
   'mobile.takePhoto': 'Cámara',
   'mobile.more': 'Más',
   'mobile.tabDisk': 'Disco',
+  'mobile.tabWiki': 'Wiki',
   'mobile.pin': 'Fijar «{name}»',
   'mobile.pinnedInstead': 'Fijado en lugar de «{name}»',
 } as const;

@@ -33,6 +33,7 @@ import { useWiki } from '../stores/wiki';
 import { pageOf, useWikiUi } from '../stores/wikiUi';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
+import { pushOnTab } from '../lib/phoneNav';
 
 /**
  * Wiki REST (ADR-0096 §8, proto/calaba/v1/wiki.proto) and the section's actions: the one module
@@ -169,6 +170,8 @@ export function openWikiPage(ws: string, id: string): void {
   ui.openTrash(ws, false);
   ui.openPage(ws, id);
   if (!useWiki.getState().pages[id]) void loadPage(ws, id);
+  // The phone pushes the page as a screen over the «Вики» tab (ADR-0096 §7).
+  if (useUi.getState().phone.on) useUi.getState().setPhone((n) => pushOnTab(n, 'wiki', { kind: 'wiki', pageId: id }));
 }
 
 // ---------------------------------------------------------------- gateway (WIKI_PAGE_*)

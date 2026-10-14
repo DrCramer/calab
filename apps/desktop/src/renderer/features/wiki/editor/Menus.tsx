@@ -123,7 +123,11 @@ const MentionRow = memo(function MentionRow({ c, active, onPick, onHover, i }: {
   );
 });
 
-export function SuggestionMenu({ env }: { env: EditorEnv }): ReactNode {
+/**
+ * `/` blocks and `@` people. On the phone (ADR-0096 §7) the block menu is a card in the middle of
+ * the screen above the keyboard, with a backdrop that closes it; the `@` list hangs from the caret.
+ */
+export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?: boolean }): ReactNode {
   const s = useSyncExternalStore(env.menu.subscribe, env.menu.get);
   const pick = useCallback((i: number) => {
     const st = env.menu.get();
@@ -139,20 +143,48 @@ export function SuggestionMenu({ env }: { env: EditorEnv }): ReactNode {
   const style = below ? { left: clampX(s.rect.left, MENU_W), top: s.rect.bottom + GAP } : { left: clampX(s.rect.left, MENU_W), bottom: window.innerHeight - s.rect.top + GAP };
   const label = s.kind === 'slash' ? t('wiki.slash.title') : t('chat.mentionList');
   if (s.kind === 'mention' && !s.items.length) return null;
+  const rows = s.items.length ? (
+    <ul
+      role="listbox"
+      aria-label={label}
+      className="max-h-[min(320px,40vh)] overflow-y-auto p-1 pt-0"
+      {...(phone ? { tabIndex: 0, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {})}
+    >
+      {s.kind === 'slash'
+        ? (s as MenuState<BlockDef>).items.map((b, i) => <SlashRow key={b.id} b={b} i={i} active={i === s.index} onPick={pick} onHover={hover} />)
+        : (s as MenuState<MentionCandidate>).items.map((c, i) => <MentionRow key={c.id} c={c} i={i} active={i === s.index} onPick={pick} onHover={hover} />)}
+    </ul>
+  ) : (
+    <div className="px-3 pb-3 pt-1 text-body text-muted">{t('wiki.slash.empty')}</div>
+  );
+  if (phone && s.kind === 'slash') {
+    return createPortal(
+      <div
+        className="fixed inset-x-0 top-0 bottom-[var(--kb-inset,0px)] z-[var(--z-popover)] grid place-items-center"
+        onPointerDown={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            env.menu.set(null);
+          }
+        }}
+        data-testid="wiki-block-menu-backdrop"
+      >
+        <div className="mat-popover anim-in w-[var(--phone-card-w,min(360px,calc(100vw-32px)))] overflow-hidden rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]" data-testid="wiki-block-menu">
+          <div className="px-3 pb-1 pt-2.5 text-micro font-semibold text-muted" aria-hidden>
+            {label}
+          </div>
+          {rows}
+        </div>
+      </div>,
+      document.body,
+    );
+  }
   return createPortal(
     <div className="mat-popover anim-in fixed z-[var(--z-popover)] w-[280px] overflow-hidden rounded-[var(--radius-card)]" style={style}>
       <div className="px-3 pb-1 pt-2 text-micro font-semibold text-muted" aria-hidden>
         {label}
       </div>
-      {s.items.length ? (
-        <ul role="listbox" aria-label={label} className="max-h-[min(320px,40vh)] overflow-y-auto p-1 pt-0">
-          {s.kind === 'slash'
-            ? (s as MenuState<BlockDef>).items.map((b, i) => <SlashRow key={b.id} b={b} i={i} active={i === s.index} onPick={pick} onHover={hover} />)
-            : (s as MenuState<MentionCandidate>).items.map((c, i) => <MentionRow key={c.id} c={c} i={i} active={i === s.index} onPick={pick} onHover={hover} />)}
-        </ul>
-      ) : (
-        <div className="px-3 pb-3 pt-1 text-body text-muted">{t('wiki.slash.empty')}</div>
-      )}
+      {rows}
     </div>,
     document.body,
   );

@@ -2,8 +2,9 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { RecordingStatus } from '@calaba/protocol';
-import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { ts } from '../e2e-support/fixtures';
+import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
@@ -78,7 +79,7 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'profile'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile'): Promise<void> {
   await toRoot(page);
   const pinned = page.getByTestId(`phone-tab-${name}`);
   if ((await pinned.count()) > 0) {
@@ -269,7 +270,7 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
 }
 
 /** Screenshot (baseline phone) + layout invariants + axe for the current screen. */
-async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[] } = {}): Promise<void> {
+async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[]; keyboard?: boolean } = {}): Promise<void> {
   await settle(page);
   const dir = process.env['CALABA_MOBILE_SHOTS'];
   if (dir) {
@@ -280,7 +281,9 @@ async function checkpoint(page: Page, name: string, opts: { main?: boolean; snap
   // Dialogs are centred cards on a phone too (owner 07.10); «outside the window» is checked here with
   // horizontal scrollers (the settings section pills) taken into account.
   const generic = (await layoutProblems(page)).filter((p) => p.kind !== 'offscreen').map((p) => `${p.kind}: ${p.detail}`);
-  expect.soft([...generic, ...(await mobileProblems(page, opts.main ?? false))], `layout invariants: ${name}`).toEqual([]);
+  // With the keyboard up the shell ends at the keyboard on purpose (m-keyboard checks that).
+  const problems = [...generic, ...(await mobileProblems(page, opts.main ?? false))].filter((p) => !(opts.keyboard && p.startsWith('shell ')));
+  expect.soft(problems, `layout invariants: ${name}`).toEqual([]);
   await expectAccessible(page, name);
 }
 
@@ -1466,6 +1469,21 @@ test('m-dialog', async ({ page }) => {
   await checkpoint(page, 'm-dialog');
 });
 
+// ADR-0097 §3: Settings → «Бывшие» on the phone — the same tab as on the desktop, rows wrap under the name.
+test('m-former-tab', async ({ page }) => {
+  await signedIn(page);
+  mock.state.formerMembers.set(IDS.workspaces.main, [
+    { userId: IDS.users.vera, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.REMOVED, leftAt: ts('2026-01-14T09:00:00Z'), removedBy: IDS.users.anna, openTasks: 2 },
+    { userId: IDS.users.dina, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.LEFT, leftAt: ts('2026-01-05T09:00:00Z'), openTasks: 0 },
+  ]);
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
+  const dialog = page.getByTestId('settings-page');
+  await dialog.getByRole('tab', { name: 'Бывшие' }).tap();
+  await expect(dialog.getByTestId('ws-former-row')).toHaveCount(2);
+  await checkpoint(page, 'm-former-tab');
+});
+
 // ADR-0031: workspace settings → «Боты» as pushed screens — the create form wraps, the bot rows
 // keep «…» in reach, the webhook error line truncates.
 test('m-settings-bots', async ({ page }) => {
@@ -1559,6 +1577,25 @@ test('m-room-invite', async ({ page }) => {
 
 type KeyboardStub = { __keyboard: (px: number | null) => void };
 
+/** The init script of the keyboard stand-in (see m-keyboard): `window.__keyboard(px | null)`. */
+const KEYBOARD_STUB = (): void => {
+  let covered: number | null = null;
+  const vv = new EventTarget();
+  const props: Record<string, () => number> = {
+    height: () => innerHeight - (covered ?? 0),
+    width: () => innerWidth,
+    offsetTop: () => 0,
+    offsetLeft: () => 0,
+    scale: () => 1,
+  };
+  for (const [k, get] of Object.entries(props)) Object.defineProperty(vv, k, { get });
+  Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv });
+  (window as unknown as KeyboardStub).__keyboard = (px) => {
+    covered = px;
+    vv.dispatchEvent(new Event('resize'));
+  };
+};
+
 /**
  * The on-screen keyboard (lib/mobile.ts installVisualViewport). WebKit here has no software
  * keyboard: visualViewport is replaced by a stand-in whose height the test shrinks, as iOS does
@@ -1566,23 +1603,7 @@ type KeyboardStub = { __keyboard: (px: number | null) => void };
  * does (the stale viewport that left an empty band at the bottom).
  */
 test('m-keyboard', async ({ page }) => {
-  await page.addInitScript(() => {
-    let covered: number | null = null;
-    const vv = new EventTarget();
-    const props: Record<string, () => number> = {
-      height: () => innerHeight - (covered ?? 0),
-      width: () => innerWidth,
-      offsetTop: () => 0,
-      offsetLeft: () => 0,
-      scale: () => 1,
-    };
-    for (const [k, get] of Object.entries(props)) Object.defineProperty(vv, k, { get });
-    Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv });
-    (window as unknown as KeyboardStub).__keyboard = (px) => {
-      covered = px;
-      vv.dispatchEvent(new Event('resize'));
-    };
-  });
+  await page.addInitScript(KEYBOARD_STUB);
   await signedInRoom(page);
   const keyboard = (px: number | null): Promise<void> => page.evaluate((h) => (window as unknown as KeyboardStub).__keyboard(h), px);
   const shellBottom = (): Promise<number> => page.getByTestId('mobile-shell').evaluate((el) => Math.round(el.getBoundingClientRect().bottom));
@@ -1684,4 +1705,94 @@ test('m-disk-trash', async ({ page }) => {
   await trash.getByTestId('phone-disk-more').tap();
   await expect(page.getByTestId('disk-empty-trash')).toBeVisible();
   await checkpoint(page, 'm-disk-trash-menu', { snapshot: false });
+});
+
+// ADR-0096 §7: «Вики» on the phone — the tab root (top-level pages as 56 px rows), a page as a pushed
+// screen (cover, icon, title, the document, subpages), the toolbar above the keyboard, the public page.
+test('m-wiki-root', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'wiki');
+  const root = page.getByTestId('phone-wiki');
+  await expect(root.getByTestId('phone-wiki-row')).toHaveCount(3);
+  await expect(root.getByTestId('phone-wiki-row').first()).toContainText('Справочник команды');
+  await checkpoint(page, 'm-wiki-root');
+  await root.getByTestId('phone-wiki-more').tap();
+  await expect(page.getByTestId('phone-wiki-more-menu')).toBeVisible();
+  await checkpoint(page, 'm-wiki-root-menu', { snapshot: false });
+});
+
+test('m-wiki-page', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'wiki');
+  await page.getByTestId('phone-wiki-row').filter({ hasText: 'Справочник команды' }).getByRole('button').tap();
+  const screen = page.getByTestId('phone-wiki-page');
+  await expect(screen).toBeVisible();
+  await expect(screen.getByTestId('phone-header')).toContainText('Справочник команды');
+  await expect(screen.locator('.wiki-prose')).toContainText('Первая неделя');
+  await expect(screen.getByTestId('wiki-subpages').getByTestId('phone-wiki-row')).toHaveCount(3);
+  await expectNoFieldFocus(page, 'wiki page');
+  await checkpoint(page, 'm-wiki-page');
+  // «⋯»: the desktop's actions as a centred card; «Доступ» is the desktop's dialog.
+  await screen.getByTestId('phone-wiki-page-more').tap();
+  await expect(page.getByTestId('phone-wiki-page-menu')).toBeVisible();
+  await checkpoint(page, 'm-wiki-page-menu', { snapshot: false });
+  await page.getByTestId('wiki-open-access').tap();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await checkpoint(page, 'm-wiki-share', { snapshot: false });
+});
+
+test('m-wiki-toolbar', async ({ page }) => {
+  await page.addInitScript(KEYBOARD_STUB);
+  await signedIn(page);
+  await tab(page, 'wiki');
+  await page.getByTestId('phone-wiki-row').filter({ hasText: 'Справочник команды' }).getByRole('button').tap();
+  const screen = page.getByTestId('phone-wiki-page');
+  const prose = screen.locator('.wiki-prose');
+  await expect(prose).toContainText('Первая неделя');
+  await expect(screen.getByTestId('wiki-phone-toolbar')).toHaveCount(0);
+  await prose.getByText('Зачем этот раздел').tap();
+  await page.evaluate((h) => (window as unknown as KeyboardStub).__keyboard(h), 300);
+  const bar = screen.getByTestId('wiki-phone-toolbar');
+  await expect(bar).toBeVisible();
+  const vh = page.viewportSize()?.height ?? 0;
+  await expect
+    .poll(async () => {
+      const box = await bar.boundingBox();
+      return box && Math.round(box.y + box.height);
+    }, 'toolbar right above the keyboard')
+    .toBe(vh - 300);
+  await checkpoint(page, 'm-wiki-toolbar', { keyboard: true });
+  // «+»: the block menu as a card in the middle of the screen.
+  await bar.getByTestId('wiki-tool-add').tap();
+  await expect(page.getByTestId('wiki-block-menu')).toBeVisible();
+  await checkpoint(page, 'm-wiki-blocks', { snapshot: false, keyboard: true });
+  await page.getByTestId('wiki-block-menu').getByRole('option', { name: /Цитата/ }).tap();
+  await expect(prose.locator('blockquote')).toHaveCount(2);
+});
+
+test('m-wiki-trash', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'wiki');
+  await page.getByTestId('phone-wiki-more').tap();
+  await page.getByTestId('phone-wiki-open-trash').tap();
+  const trash = page.getByTestId('phone-wiki-trash');
+  await expect(trash.getByTestId('phone-wiki-trash-row')).toHaveCount(2);
+  await checkpoint(page, 'm-wiki-trash', { snapshot: false });
+});
+
+// /w/{code} at 390 px: the outline is a «Содержание» disclosure above the text.
+test('m-wiki-public', async ({ page }) => {
+  await open(page, `/w/${WIKI_PUBLIC_CODE}`);
+  await expect(page.getByTestId('wiki-public-title')).toHaveText('Справочник команды');
+  await expect(page.locator('.wiki-prose')).toContainText('Первая неделя');
+  await expect(page.getByTestId('wiki-public-cover').locator('img')).toBeVisible();
+  await expect(page.getByTestId('wiki-public-outline')).toBeHidden();
+  await expect(page.getByTestId('wiki-public-footer')).toBeVisible();
+  await checkpoint(page, 'm-wiki-public');
+  await page.getByTestId('wiki-public-toc-toggle').tap();
+  const toc = page.getByTestId('wiki-public-toc');
+  await expect(toc.getByTestId('wiki-public-outline-row')).toHaveCount(7);
+  await checkpoint(page, 'm-wiki-public-toc', { snapshot: false });
+  await toc.getByTestId('wiki-public-outline-row').filter({ hasText: 'Процессы' }).tap();
+  await expect(page.getByTestId('wiki-public-title')).toHaveText('Процессы');
 });

@@ -141,4 +141,13 @@ export const zhWiki: DictShape<typeof ruWiki> = {
   'wiki.err.access': '无法修改访问权限',
   'wiki.err.link': '无法修改链接',
   'wiki.err.settings': '无法保存设置',
+  'wiki.public.outline': '目录',
+  'wiki.public.footer': '通过链接打开 · Calab',
+  'wiki.public.gone': '页面不可用',
+  'wiki.public.goneText': '链接已被撤销或已过期，或页面已被删除。',
+  'wiki.phone.editors': { other: '另有 {n} 人正在编辑' },
+  'wiki.phone.updated': '编辑于{when}',
+  'wiki.phone.addBlock': '添加区块',
+  'wiki.phone.toolbar': '格式工具栏',
+  'wiki.phone.loadFailed': '无法加载页面',
 };

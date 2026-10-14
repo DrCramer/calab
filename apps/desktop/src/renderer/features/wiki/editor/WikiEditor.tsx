@@ -9,6 +9,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { t } from '../../../i18n';
 import { cx } from '../../../components/ui';
+import { filterBlocks, type BlockDef } from './blocks';
 import { createEnv, type EditorEnv } from './env';
 import { buildExtensions } from './extensions';
 import { BubbleBar, SuggestionMenu, TableBar } from './Menus';
@@ -23,7 +24,7 @@ function assignEnv(env: EditorEnv, p: Pick<WikiEditorProps, 'onUploadImage' | 'm
   return env;
 }
 
-export default function WikiEditor({ doc, awareness, editable, me, onUploadImage, mentionSource, imagePath, onError, onReady, className }: WikiEditorProps): ReactNode {
+export default function WikiEditor({ doc, awareness, editable, me, onUploadImage, mentionSource, imagePath, onError, onReady, phone, className }: WikiEditorProps): ReactNode {
   const props = { onUploadImage, mentionSource, imagePath, onError };
   // Filled from the first props (node views read it while the editor is created), then kept fresh
   // without rebuilding the editor: the extensions read it at event time.
@@ -81,18 +82,33 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
       getJSON: () => editor.getJSON(),
       getText: () => editor.getText({ blockSeparator: '\n' }),
       focus: () => editor.commands.focus(),
+      editor,
+      openBlocks: () => {
+        if (editor.isDestroyed || !editor.isEditable) return;
+        const items = filterBlocks('').filter((b) => b.id !== 'image' || !!env.upload);
+        env.menu.set({
+          kind: 'slash',
+          items,
+          index: -1,
+          rect: { left: 0, top: 0, bottom: 0 },
+          pick: (b) => {
+            env.menu.set(null);
+            (b as BlockDef).run(editor.chain().focus()).run();
+          },
+        });
+      },
     });
     return () => ready.current?.(null);
-  }, [editor]);
+  }, [editor, env]);
 
   return (
-    <div className={cx('wiki-editor', className)} data-editable={editable || undefined}>
+    <div className={cx('wiki-editor', className)} data-editable={editable || undefined} data-phone={phone || undefined}>
       <EditorContent editor={editor} />
       {editable ? (
         <>
-          <BubbleBar editor={editor} env={env} />
+          {phone ? null : <BubbleBar editor={editor} env={env} />}
           <TableBar editor={editor} />
-          <SuggestionMenu env={env} />
+          <SuggestionMenu env={env} phone={phone === true} />
         </>
       ) : null}
     </div>

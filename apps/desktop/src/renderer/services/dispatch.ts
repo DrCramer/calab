@@ -29,6 +29,7 @@ import { useStreamFullscreen } from '../features/voice/fullscreen';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
+import './users';
 import { bansKey } from '../lib/moderation';
 import { applyDm, applyDmState, refreshDmPreview, refreshDms, refreshRoomPreview } from './dms';
 import { applyShelf, applyShelves, dropShelf } from './notes';
@@ -422,7 +423,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
-      useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
+      useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId, e.value.former);
+      void queryClient.invalidateQueries({ queryKey: ['former-members', e.value.workspaceId] });
       return;
     case 'workspaceBanAdd':
     case 'workspaceBanRemove': {

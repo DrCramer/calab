@@ -141,4 +141,13 @@ export const enWiki: DictShape<typeof ruWiki> = {
   'wiki.err.access': 'Could not change the access',
   'wiki.err.link': 'Could not change the link',
   'wiki.err.settings': 'Could not save the setting',
+  'wiki.public.outline': 'Contents',
+  'wiki.public.footer': 'Opened by link · Calab',
+  'wiki.public.gone': 'Page unavailable',
+  'wiki.public.goneText': 'The link was revoked or expired, or the page was deleted.',
+  'wiki.phone.editors': { one: '{n} more is editing', other: '{n} more are editing' },
+  'wiki.phone.updated': 'edited {when}',
+  'wiki.phone.addBlock': 'Add a block',
+  'wiki.phone.toolbar': 'Formatting toolbar',
+  'wiki.phone.loadFailed': 'Could not load the page',
 };

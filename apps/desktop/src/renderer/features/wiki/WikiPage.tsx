@@ -341,7 +341,7 @@ function TrashedBanner({ pageId, structure }: { pageId: string; structure: boole
  * The title (H1 size): typed text is applied to the store at once (the tree and crumbs follow) and
  * PATCHed 500 ms after the last key, and on blur. A remote rename shows while the field is not focused.
  */
-function TitleField({ pageId, editable }: { pageId: string; editable: boolean }): ReactNode {
+export function TitleField({ pageId, editable, className }: { pageId: string; editable: boolean; className?: string }): ReactNode {
   const stored = useWiki((s) => s.pages[pageId]?.title ?? '');
   const [value, setValue] = useState(stored);
   const saved = useRef(stored);
@@ -410,7 +410,7 @@ function TitleField({ pageId, editable }: { pageId: string; editable: boolean })
           document.querySelector<HTMLElement>('.wiki-prose')?.focus();
         }
       }}
-      className="w-full resize-none overflow-hidden bg-transparent text-[32px] font-bold leading-[40px] tracking-[-0.01em] text-fg outline-none placeholder:text-faint"
+      className={cx('w-full resize-none overflow-hidden bg-transparent font-bold tracking-[-0.01em] text-fg outline-none placeholder:text-faint', className ?? 'text-[32px] leading-[40px]')}
       data-testid="wiki-title"
     />
   );

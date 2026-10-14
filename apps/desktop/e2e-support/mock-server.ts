@@ -104,6 +104,7 @@ import {
   CreateWikiPageRequestSchema,
   EmptyWikiTrashResponseSchema,
   ListWikiPagesResponseSchema,
+  PublicWikiPageSchema,
   UpdateWikiPageRequestSchema,
   UpdateWikiPermissionsRequestSchema,
   WIKI_BITS,
@@ -154,6 +155,8 @@ import {
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
+  ListFormerMembersResponseSchema,
+  ListWorkspaceUsersResponseSchema,
   WorkspaceBanSchema,
   WorkspaceSuspensionSchema,
   AdminSetPlanResponseSchema,
@@ -933,6 +936,9 @@ function mockUsername(raw: string): string | null {
   if (n === '') return '';
   return /^[a-z][a-z0-9_]{2,31}$/.test(n) && !RESERVED_USERNAMES.has(n) ? n : null;
 }
+
+/** The public link of «Справочник команды» in the data scenario (`/w/{code}`, with subpages). */
+export const WIKI_PUBLIC_CODE = 'mockWikiPublicHandbook'.padEnd(43, 'x');
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
@@ -3364,6 +3370,42 @@ class MockImpl {
       s().members = s().members.filter((x) => x !== target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberRemove', value: { workspaceId: ws.id, userId: targetId } } });
       noContent(c.res);
+    });
+
+    // ---------------- former members (ADR-0097)
+    this.route('GET', '/api/workspaces/:id/users', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const ids = (c.url.searchParams.get('ids') ?? '').split(',').filter(Boolean).slice(0, 100);
+      const former = s().formerMembers.get(ws.id) ?? [];
+      const out = ids.flatMap((id) => {
+        const u = s().users.get(id);
+        if (!u) return [];
+        const f = former.find((x) => x.userId === id);
+        if (!f && !this.member(ws.id, id)) return [];
+        return [{ userId: id, displayName: u.user.displayName, avatarFileId: u.user.avatarFileId, former: !!f, ...(f ? { leftAt: f.leftAt, reason: f.reason } : {}) }];
+      });
+      sendMsg(c.res, 200, ListWorkspaceUsersResponseSchema, { users: out });
+    });
+    this.route('GET', '/api/workspaces/:id/former-members', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      const q = (c.url.searchParams.get('q') ?? '').trim().toLowerCase();
+      const guests = c.url.searchParams.get('guests') === '1';
+      const rows = (s().formerMembers.get(ws.id) ?? [])
+        .filter((f) => guests || f.role !== WorkspaceRole.GUEST)
+        .flatMap((f) => {
+          const u = s().users.get(f.userId);
+          if (!u || (q && !u.user.displayName.toLowerCase().includes(q))) return [];
+          return [
+            {
+              user: { userId: f.userId, displayName: u.user.displayName, avatarFileId: u.user.avatarFileId, former: true, leftAt: f.leftAt, reason: f.reason },
+              role: f.role,
+              removedBy: f.removedBy ?? '',
+              openTasks: f.openTasks ?? 0,
+            },
+          ];
+        });
+      sendMsg(c.res, 200, ListFormerMembersResponseSchema, { members: rows, nextCursor: '' });
     });
 
     // ---------------- bans (docs/09 #32): MANAGE_MEMBERS (ADR-0048), the rules of a kick
@@ -7549,6 +7591,7 @@ class MockImpl {
       '| Область | Ответственный |\n| --- | --- |\n| Голос и видео | Борис |\n| Дизайн | Вера |\n| Релизы | Анна |',
     ].join('\n\n');
     const handbook = w.put({ workspaceId: ws, title: 'Справочник команды', icon: '📘', cover: coverMeta, ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z'), updatedBy: U.vera, preview: 'Здесь собрано всё, что нужно знать новому человеку в команде' }, handbookMd);
+    w.seedLink(handbook.id, WIKI_PUBLIC_CODE, true);
     const onboarding = w.put({ workspaceId: ws, parentId: handbook.id, title: 'Онбординг', icon: '🚀', ownerId: U.anna }, '## Добро пожаловать\n\nПервые шаги в команде.');
     w.put({ workspaceId: ws, parentId: onboarding.id, title: 'Первый день', ownerId: U.anna }, 'Что сделать в первый день.');
     const processes = w.put({ workspaceId: ws, parentId: handbook.id, title: 'Процессы', icon: '⚙️', ownerId: U.boris, preview: 'Как мы выпускаем релизы и смотрим код' }, 'Как мы выпускаем релизы и смотрим код.');
@@ -7628,6 +7671,34 @@ class MockImpl {
       c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(state.length) });
       c.res.end(Buffer.from(state));
     });
+    // Public pages (ADR-0096 §6): anonymous, no sockets.
+    const pub = (h: (c: Ctx) => void): ((c: Ctx) => void) => (c) => {
+      try {
+        h(c);
+      } catch (e) {
+        if (e instanceof WikiError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    };
+    this.route('GET', '/api/public/wiki/:code', pub((c) => sendMsg(c.res, 200, PublicWikiPageSchema, w().publicMeta(p0(c), q(c, 'page')))));
+    this.route(
+      'GET',
+      '/api/public/wiki/:code/state',
+      pub((c) => {
+        const body = w().publicState(p0(c), q(c, 'page'));
+        c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(body.length), 'Cache-Control': 'no-store' });
+        c.res.end(Buffer.from(body));
+      }),
+    );
+    this.route(
+      'GET',
+      '/api/public/wiki/:code/files/:fid',
+      pub((c) => {
+        const f = w().publicFileAllowed(p0(c), c.params[1] ?? '') ? this.state.files.get(c.params[1] ?? '') : undefined;
+        if (!f) throw notFound();
+        send(c.res, 200, f.bytes, f.meta.mime, { 'Cache-Control': 'no-store' });
+      }),
+    );
     this.wikiRoute('POST', '/api/wiki/pages/:id/files', async (c, me) => {
       const page = w().get(p0(c), me);
       w().canUpload(page.id, me);
