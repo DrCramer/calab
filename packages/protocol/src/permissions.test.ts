@@ -80,7 +80,6 @@ interface Vector {
 
 interface TreeVector {
   guest?: boolean;
-  bot?: boolean;
   chain: {
     restricted?: boolean;
     owner?: boolean;
@@ -119,7 +118,7 @@ describe('computePermissions (shared vectors)', () => {
         const bits = v.disk ? DISK_BITS : WIKI_BITS;
         const compute = v.disk ? diskItemPermissions : wikiPagePermissions;
         const roles = toRoles(v.roles ?? []);
-        const opts = { guest: tree.guest ?? false, bot: tree.bot ?? false };
+        const opts = { guest: tree.guest ?? false };
         const chain = tree.chain.map((c) => ({
           restricted: c.restricted,
           owner: c.owner,
@@ -426,13 +425,13 @@ describe('disk bits (ADR-0094)', () => {
     expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & DISK_PERMISSIONS).toBe(0n);
     expect(vectors.filter((v) => v.disk).length).toBeGreaterThanOrEqual(25);
   });
-  it('ADMINISTRATOR includes them, guests and bots never', () => {
+  it('ADMINISTRATOR includes them, guests never, bots like members (addendum 2026-10-14)', () => {
     expect(diskPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
       DISK_PERMISSIONS,
     );
     expect(diskPermissions([{ permissions: DISK_BITS.MANAGE }])).toBe(DISK_PERMISSIONS);
     expect(diskPermissions([{ permissions: DISK_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
-    expect(diskPermissions([{ permissions: DISK_PERMISSIONS, builtin: WorkspaceRole.MEMBER }], { bot: true })).toBe(0n);
+    expect(diskPermissions([{ permissions: DISK_OVERRIDE_PERMISSIONS, builtin: WorkspaceRole.MEMBER }])).toBe(DISK_OVERRIDE_PERMISSIONS);
     expect(diskPermissions([{ permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }])).toBe(
       DISK_OVERRIDE_PERMISSIONS,
     );
@@ -450,14 +449,14 @@ describe('wiki bits (ADR-0096)', () => {
     expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & WIKI_PERMISSIONS).toBe(0n);
     expect(vectors.filter((v) => v.wiki).length).toBeGreaterThanOrEqual(20);
   });
-  it('ADMINISTRATOR includes them, guests and bots never, disk bits give none', () => {
+  it('ADMINISTRATOR includes them, guests never, bots like members, disk bits give none', () => {
     expect(wikiPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
       WIKI_PERMISSIONS,
     );
     expect(wikiPermissions([{ permissions: WIKI_BITS.MANAGE }])).toBe(WIKI_PERMISSIONS);
     expect(wikiPermissions([{ permissions: DISK_PERMISSIONS }])).toBe(0n);
     expect(wikiPermissions([{ permissions: WIKI_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
-    expect(wikiPermissions([{ permissions: WIKI_PERMISSIONS, builtin: WorkspaceRole.MEMBER }], { bot: true })).toBe(0n);
+    expect(wikiPermissions([{ permissions: WIKI_OVERRIDE_PERMISSIONS, builtin: WorkspaceRole.MEMBER }])).toBe(WIKI_OVERRIDE_PERMISSIONS);
   });
   it('the structure needs the owner or MANAGE', () => {
     const vw = WIKI_BITS.VIEW | WIKI_BITS.WRITE;

@@ -67,7 +67,6 @@ type vector struct {
 // treeVector is a chain of the shared tree rule (ComputeTree).
 type treeVector struct {
 	Guest bool `json:"guest"`
-	Bot   bool `json:"bot"`
 	Chain []struct {
 		Restricted    bool                `json:"restricted"`
 		Owner         bool                `json:"owner"`
@@ -237,9 +236,9 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	var got, gotIn Bits
 	if wiki {
 		tree, name = WikiTree, "ComputeWikiPage"
-		got, gotIn = ComputeWikiPage(m.Raw(), tv.Guest, tv.Bot, levels), ComputeWikiPageIn(m, tv.Bot, nodes)
+		got, gotIn = ComputeWikiPage(m.Raw(), tv.Guest, levels), ComputeWikiPageIn(m, nodes)
 	} else {
-		got, gotIn = ComputeDiskItem(m.Raw(), tv.Guest, tv.Bot, levels), ComputeDiskItemIn(m, tv.Bot, nodes)
+		got, gotIn = ComputeDiskItem(m.Raw(), tv.Guest, levels), ComputeDiskItemIn(m, nodes)
 	}
 	if got != v.Expected {
 		t.Errorf("%s: %s got %d want %d", v.Name, name, got, v.Expected)
@@ -247,7 +246,7 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	if gotIn != v.Expected {
 		t.Errorf("%s: %sIn got %d want %d", v.Name, name, gotIn, v.Expected)
 	}
-	if g := ComputeTree(tree, TreeInput{Raw: m.Raw(), Guest: tv.Guest, Bot: tv.Bot, Chain: levels}); g != v.Expected {
+	if g := ComputeTree(tree, TreeInput{Raw: m.Raw(), Guest: tv.Guest, Chain: levels}); g != v.Expected {
 		t.Errorf("%s: ComputeTree got %d want %d", v.Name, g, v.Expected)
 	}
 	if wiki {
@@ -288,7 +287,7 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if !ValidWikiOverride(WikiView, WikiWrite) || ValidWikiOverride(WikiManage, 0) || ValidWikiOverride(DiskView, 0) || ValidWikiOverride(0, ViewRoom) || ValidWikiOverride(WikiView, WikiView) || ValidDiskOverride(WikiView, 0) {
 		t.Fatal("wiki overrides carry WIKI_VIEW and WIKI_WRITE only")
 	}
-	if WikiOf(Administrator, false, false) != Wiki || WikiOf(WikiManage, false, false) != Wiki || WikiOf(Wiki, true, false) != 0 || WikiOf(Wiki, false, true) != 0 || WikiOf(RoleDefaults[RoleMember], false, false) != WikiOverride || WikiOf(Disk, false, false) != 0 {
+	if WikiOf(Administrator, false) != Wiki || WikiOf(WikiManage, false) != Wiki || WikiOf(Wiki, true) != 0 || WikiOf(RoleDefaults[RoleMember], false) != WikiOverride || WikiOf(Disk, false) != 0 {
 		t.Fatal("WikiOf")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {

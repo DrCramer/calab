@@ -45,7 +45,8 @@ import (
 // and the poster gets a COMPACT_REQUEST to persist it with a newer through_seq.
 //
 // The client's first message is a text frame with its access token (like the gateway's
-// IDENTIFY). The server then sends one SNAPSHOT (through_seq 0 and the empty Yjs update 0x00 0x00
+// IDENTIFY) — a person's access token or a bot token (bots are members like people, ADR-0096
+// §2 addendum 2026-10-14). The server then sends one SNAPSHOT (through_seq 0 and the empty Yjs update 0x00 0x00
 // for a page without one) and every UPDATE after it, then relays.
 const (
 	frameSnapshot     byte = 0
@@ -74,7 +75,7 @@ const (
 const (
 	closeTryAgain  = 4000 // a dependency failed: reconnect
 	closeBadFrame  = 4002 // malformed or unexpected frame
-	closeForbidden = 4003 // no WIKI_VIEW or not a member, bots, the access policy, a write without WIKI_WRITE
+	closeForbidden = 4003 // no WIKI_VIEW or not a member, the access policy, a write without WIKI_WRITE
 	closeAuth      = 4004 // the token is invalid or expired: refresh it
 	closeRate      = 4008 // too many frames, or > MaxConnsPerUser sockets on the page
 	closeIdle      = 4009 // no pong
@@ -470,6 +471,7 @@ type syncConn struct {
 	page   uuid.UUID
 	wsID   uuid.UUID
 	id     auth.Identity
+	botTok string // a bot's token: rechecked by authenticating it again (no session row)
 	key    string // the socket's member in the per-person set
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -590,7 +592,8 @@ func (h *syncHub) serve(w http.ResponseWriter, r *http.Request) {
 		c.close(closeAuth, "token expected")
 		return
 	}
-	id, err := h.auth.AuthenticateToken(ctx, strings.TrimSpace(string(tok)))
+	token := strings.TrimSpace(string(tok))
+	id, err := h.auth.AuthenticateToken(ctx, token)
 	switch {
 	case errors.Is(err, auth.ErrInvalidToken):
 		c.close(closeAuth, "authentication failed")
@@ -601,11 +604,11 @@ func (h *syncHub) serve(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		c.close(closeTryAgain, "try again")
 		return
-	case id.IsBot:
-		c.close(closeForbidden, "people only")
-		return
 	}
 	c.id = id
+	if id.IsBot {
+		c.botTok = token
+	}
 	if code, reason := c.authorize(); code != 0 {
 		c.close(code, reason)
 		return
@@ -678,7 +681,7 @@ func (c *syncConn) authorize() (int, string) {
 		}
 		return closeTryAgain, "try again"
 	}
-	bits := ch.Bits(m, false, &c.page)
+	bits := ch.Bits(m, &c.page)
 	if !bits.Has(perm.WikiView) {
 		return closeForbidden, "no access"
 	}
@@ -700,7 +703,16 @@ func (c *syncConn) pingLoop() {
 	defer recheck.Stop()
 	check := func() bool {
 		sctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
-		err := h.auth.CheckSession(sctx, c.id.SessionID)
+		var err error
+		if c.botTok != "" {
+			// A bot token has no session row: a replaced or revoked token fails again here.
+			_, err = h.auth.AuthenticateToken(sctx, c.botTok)
+			if errors.Is(err, auth.ErrInvalidToken) {
+				err = auth.ErrSessionRevoked
+			}
+		} else {
+			err = h.auth.CheckSession(sctx, c.id.SessionID)
+		}
 		cancel()
 		if errors.Is(err, auth.ErrSessionRevoked) {
 			c.close(closeRevoked, "session revoked")

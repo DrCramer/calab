@@ -100,11 +100,11 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 		}
 		var seen []sqlc.WikiPageHead
 		for _, row := range rows {
-			if ch.Bits(c.m, c.bot, &row.ID).Has(perm.WikiView) {
+			if ch.Bits(c.m, &row.ID).Has(perm.WikiView) {
 				seen = append(seen, row)
 			}
 		}
-		if out.Pages, err = decorated(ctx, q, c, seen, func(p sqlc.WikiPageHead) perm.Bits { return ch.Bits(c.m, c.bot, &p.ID) }, nil); err != nil {
+		if out.Pages, err = decorated(ctx, q, c, seen, func(p sqlc.WikiPageHead) perm.Bits { return ch.Bits(c.m, &p.ID) }, nil); err != nil {
 			return err
 		}
 		if len(rows) == limit {
@@ -148,11 +148,11 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	}
 	var seen []sqlc.WikiPageHead
 	for _, pg := range pages {
-		if ch.Bits(c.m, c.bot, &pg.ID).Has(perm.WikiView) {
+		if ch.Bits(c.m, &pg.ID).Has(perm.WikiView) {
 			seen = append(seen, pg)
 		}
 	}
-	if out.Pages, err = decorated(ctx, q, c, seen, func(pg sqlc.WikiPageHead) perm.Bits { return ch.Bits(c.m, c.bot, &pg.ID) }, children); err != nil {
+	if out.Pages, err = decorated(ctx, q, c, seen, func(pg sqlc.WikiPageHead) perm.Bits { return ch.Bits(c.m, &pg.ID) }, children); err != nil {
 		return err
 	}
 	if len(rows) == limit {
@@ -220,7 +220,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.publish(ctx, ws, []*v1.DispatchEvent{s.upsertEvent(ctx, pg, chain, nil)})
-	httpx.Write(w, http.StatusCreated, &v1.WikiPageResponse{Page: pageProto(pg, nil, false, false, nil, perm.ComputeWikiPageIn(c.m, c.bot, chain))})
+	httpx.Write(w, http.StatusCreated, &v1.WikiPageResponse{Page: pageProto(pg, nil, false, false, nil, perm.ComputeWikiPageIn(c.m, chain))})
 	return nil
 }
 
@@ -249,11 +249,11 @@ func (s *Service) path(w http.ResponseWriter, r *http.Request) error {
 	chain := a.chain.Path(a.page.ID)
 	start := 0
 	for i, p := range chain {
-		if !a.chain.Bits(a.c.m, a.c.bot, &p.ID).Has(perm.WikiView) {
+		if !a.chain.Bits(a.c.m, &p.ID).Has(perm.WikiView) {
 			start = i + 1
 		}
 	}
-	pages, err := decorated(r.Context(), s.db.Q, a.c, chain[start:], func(p sqlc.WikiPageHead) perm.Bits { return a.chain.Bits(a.c.m, a.c.bot, &p.ID) }, nil)
+	pages, err := decorated(r.Context(), s.db.Q, a.c, chain[start:], func(p sqlc.WikiPageHead) perm.Bits { return a.chain.Bits(a.c.m, &p.ID) }, nil)
 	if err != nil {
 		return err
 	}
@@ -445,7 +445,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	a.page, a.chain = ch.Page(id), ch
-	a.bits = ch.Bits(a.c.m, a.c.bot, &id)
+	a.bits = ch.Bits(a.c.m, &id)
 	if !a.bits.Has(perm.WikiView) { // made invisible to oneself (an override): answer what is known
 		httpx.Write(w, http.StatusOK, &v1.WikiPageResponse{Page: pageProto(a.page, nil, false, false, nil, a.bits)})
 		return nil
@@ -623,7 +623,7 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	a.page, a.chain, a.bits = ch.Page(id), ch, ch.Bits(a.c.m, a.c.bot, &id)
+	a.page, a.chain, a.bits = ch.Page(id), ch, ch.Bits(a.c.m, &id)
 	out, err := one(ctx, s.db.Q, a)
 	if err != nil {
 		return err
@@ -772,7 +772,7 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.EmptyWikiTrashResponse{}
 	var done []deleted
 	for _, p := range roots {
-		if !perm.WikiStructureAllowed(ch.Bits(c.m, c.bot, &p.ID), c.owns(p)) {
+		if !perm.WikiStructureAllowed(ch.Bits(c.m, &p.ID), c.owns(p)) {
 			continue
 		}
 		var d deleted

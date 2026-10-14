@@ -108,11 +108,11 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 		}
 		var seen []sqlc.DiskItem
 		for _, row := range rows {
-			if ch.Bits(c.m, c.bot, &row.DiskItem.ID).Has(perm.DiskView) {
+			if ch.Bits(c.m, &row.DiskItem.ID).Has(perm.DiskView) {
 				seen = append(seen, row.DiskItem)
 			}
 		}
-		if out.Items, err = decorated(ctx, q, c, seen, func(it sqlc.DiskItem) perm.Bits { return ch.Bits(c.m, c.bot, &it.ID) }); err != nil {
+		if out.Items, err = decorated(ctx, q, c, seen, func(it sqlc.DiskItem) perm.Bits { return ch.Bits(c.m, &it.ID) }); err != nil {
 			return err
 		}
 		if len(rows) == limit {
@@ -195,11 +195,11 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	}
 	var seen []sqlc.DiskItem
 	for _, it := range items {
-		if ch.Bits(c.m, c.bot, &it.ID).Has(perm.DiskView) {
+		if ch.Bits(c.m, &it.ID).Has(perm.DiskView) {
 			seen = append(seen, it)
 		}
 	}
-	if out.Items, err = decorated(ctx, q, c, seen, func(it sqlc.DiskItem) perm.Bits { return ch.Bits(c.m, c.bot, &it.ID) }); err != nil {
+	if out.Items, err = decorated(ctx, q, c, seen, func(it sqlc.DiskItem) perm.Bits { return ch.Bits(c.m, &it.ID) }); err != nil {
 		return err
 	}
 	if len(rows) == limit {
@@ -215,7 +215,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 // created answers a new item and announces it.
 func (s *Service) created(w http.ResponseWriter, r *http.Request, c caller, it sqlc.DiskItem, f *sqlc.File, chain []perm.DiskNode) {
 	s.publish(r.Context(), it.WorkspaceID, []*v1.DispatchEvent{upsertEvent(it, chain, nil)})
-	httpx.Write(w, http.StatusCreated, &v1.DiskItemResponse{Item: itemProto(it, f, false, nil, perm.ComputeDiskItemIn(c.m, c.bot, chain))})
+	httpx.Write(w, http.StatusCreated, &v1.DiskItemResponse{Item: itemProto(it, f, false, nil, perm.ComputeDiskItemIn(c.m, chain))})
 }
 
 // addable checks, under LockDiskTree, that the caller may create in folder parent: DISK_WRITE
@@ -377,12 +377,12 @@ func (s *Service) path(w http.ResponseWriter, r *http.Request) error {
 	chain := a.chain.Path(a.item.ID)
 	start := 0
 	for i, it := range chain {
-		if !a.chain.Bits(a.c.m, a.c.bot, &it.ID).Has(perm.DiskView) {
+		if !a.chain.Bits(a.c.m, &it.ID).Has(perm.DiskView) {
 			start = i + 1
 		}
 	}
 	shown := chain[start:]
-	items, err := decorated(r.Context(), s.db.Q, a.c, shown, func(it sqlc.DiskItem) perm.Bits { return a.chain.Bits(a.c.m, a.c.bot, &it.ID) })
+	items, err := decorated(r.Context(), s.db.Q, a.c, shown, func(it sqlc.DiskItem) perm.Bits { return a.chain.Bits(a.c.m, &it.ID) })
 	if err != nil {
 		return err
 	}
@@ -529,7 +529,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		after = ch.Nodes(id)
-		bits = perm.ComputeDiskItemIn(a.c.m, a.c.bot, after)
+		bits = perm.ComputeDiskItemIn(a.c.m, after)
 		return nil
 	})
 	if err != nil {
@@ -687,7 +687,7 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		after = ch.Nodes(id)
-		a.item, a.chain, a.bits = it, ch, perm.ComputeDiskItemIn(a.c.m, a.c.bot, after)
+		a.item, a.chain, a.bits = it, ch, perm.ComputeDiskItemIn(a.c.m, after)
 		return nil
 	})
 	if err != nil {
@@ -844,7 +844,7 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.EmptyDiskTrashResponse{}
 	var done []deleted
 	for _, it := range roots {
-		bits := ch.Bits(c.m, c.bot, &it.ID)
+		bits := ch.Bits(c.m, &it.ID)
 		if !bits.Has(perm.DiskView) || (!bits.Has(perm.DiskManage) && !c.owns(it)) {
 			continue
 		}

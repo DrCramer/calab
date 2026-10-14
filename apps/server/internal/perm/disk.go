@@ -8,8 +8,8 @@ package perm
 //   - per-item overrides (disk_permissions) carry DiskView and DiskWrite (DiskOverride) and
 //     nothing else; room and board overrides never carry them (RoomOnly / BoardOnly are within
 //     All);
-//   - guests and bots get nothing from their roles, only from an explicit user override on an
-//     item (or by owning it).
+//   - guests get nothing from their roles, only from an explicit user override on an item (or
+//     by owning it); bots are members like people (addendum 2026-10-14).
 //
 // The item rule is the shared tree rule (tree.go) over DiskTree.
 const (
@@ -36,21 +36,20 @@ type DiskLevel = TreeLevel
 // DiskNode is one item of a chain as stored: its flag, owner and full override list.
 type DiskNode = TreeNode
 
-// DiskOf is the workspace-level disk rule (TS: diskPermissions): guests and bots nothing;
+// DiskOf is the workspace-level disk rule (TS: diskPermissions): guests nothing;
 // ADMINISTRATOR (raw: the plain OR of the roles, not expanded) or DISK_MANAGE all three;
-// anyone else the disk bits of their roles.
-func DiskOf(raw Bits, guest, bot bool) Bits { return TreeOf(DiskTree, raw, guest, bot) }
+// anyone else (bots included) the disk bits of their roles.
+func DiskOf(raw Bits, guest bool) Bits { return TreeOf(DiskTree, raw, guest) }
 
 // ComputeDiskItem is the one item rule (ADR-0094 §2; TS: diskItemPermissions): ComputeTree over
 // DiskTree. chain runs from the topmost ancestor down to the item itself (empty = the root).
-func ComputeDiskItem(raw Bits, guest, bot bool, chain []DiskLevel) Bits {
-	return ComputeTree(DiskTree, TreeInput{Raw: raw, Guest: guest, Bot: bot, Chain: chain})
+func ComputeDiskItem(raw Bits, guest bool, chain []DiskLevel) Bits {
+	return ComputeTree(DiskTree, TreeInput{Raw: raw, Guest: guest, Chain: chain})
 }
 
-// ComputeDiskItemIn computes a member's bits on the last item of chain (root's child first);
-// bot: the member is a bot account.
-func ComputeDiskItemIn(m Member, bot bool, chain []DiskNode) Bits {
-	return ComputeTreeIn(DiskTree, m, bot, chain)
+// ComputeDiskItemIn computes a member's bits on the last item of chain (root's child first).
+func ComputeDiskItemIn(m Member, chain []DiskNode) Bits {
+	return ComputeTreeIn(DiskTree, m, chain)
 }
 
 // ValidDiskOverride reports whether an allow / deny pair may be stored in disk_permissions:

@@ -744,7 +744,7 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 				if err != nil {
 					return false, err
 				}
-				if ch.Bits(m, id.IsBot, &item.ID).Has(perm.DiskView) {
+				if ch.Bits(m, &item.ID).Has(perm.DiskView) {
 					return true, nil
 				}
 			} else if err := candidate(err); err != nil {
@@ -763,7 +763,7 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 			if ch.Has(pf.PageID) {
 				m, err := res.Member(ctx, ch.Page(pf.PageID).WorkspaceID, uid)
 				if err == nil {
-					if ch.Bits(m, id.IsBot, &pf.PageID).Has(perm.WikiView) {
+					if ch.Bits(m, &pf.PageID).Has(perm.WikiView) {
 						return true, nil
 					}
 				} else if err := candidate(err); err != nil {

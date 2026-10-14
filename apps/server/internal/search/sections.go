@@ -592,8 +592,8 @@ const WikiVector = "(to_tsvector('russian', w.title || ' ' || w.plain_text) || t
 // the candidates' chains, wikiacl) and the snippets are ts_headline of the page's text. Newest
 // first (sort=new) orders by id (uuidv7: creation).
 func (s *Service) wiki(ctx context.Context, tx pgx.Tx, req *request, sc *scope, sec *v1.SearchSection) error {
-	if len(sc.wss) == 0 || sc.bot {
-		return nil // bots get no wiki bits
+	if len(sc.wss) == 0 {
+		return nil
 	}
 	members := make(map[uuid.UUID]perm.Member, len(sc.wss))
 	for _, sp := range sc.wss {
@@ -616,7 +616,7 @@ func (s *Service) wiki(ctx context.Context, tx pgx.Tx, req *request, sc *scope, 
 	rel := req.relevance(sec.Type)
 	visible := rows[:0]
 	for _, r := range rows {
-		if ch.Has(r.ID) && ch.Bits(members[r.WorkspaceID], sc.bot, &r.ID).Has(perm.WikiView) {
+		if ch.Has(r.ID) && ch.Bits(members[r.WorkspaceID], &r.ID).Has(perm.WikiView) {
 			visible = append(visible, r)
 		}
 	}

@@ -154,7 +154,7 @@
 
 ## Диск (ADR-0094)
 
-Биты `DISK_VIEW` (35) / `DISK_WRITE` (36) / `DISK_MANAGE` (37) — уровень пространства, вне `ALL_PERMISSIONS`; у `member` по умолчанию VIEW + WRITE, `ADMINISTRATOR` даёт все три; гостям и ботам роли их не дают (только личный allow на элементе). Права на элемент — `perm.ComputeDiskItem` по цепочке предков (`internal/diskacl`), нет `DISK_VIEW` — 404.
+Биты `DISK_VIEW` (35) / `DISK_WRITE` (36) / `DISK_MANAGE` (37) — уровень пространства, вне `ALL_PERMISSIONS`; у `member` по умолчанию VIEW + WRITE, `ADMINISTRATOR` даёт все три; гостям роли их не дают (только личный allow на элементе); боты — как участники, по своим ролям, все маршруты диска им открыты (дополнение 2026-10-14). Права на элемент — `perm.ComputeDiskItem` по цепочке предков (`internal/diskacl`), нет `DISK_VIEW` — 404.
 
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
@@ -166,7 +166,7 @@
 
 ## Вики (ADR-0096)
 
-Биты `WIKI_VIEW` (38) / `WIKI_WRITE` (39) / `WIKI_MANAGE` (40) — как у диска: уровень пространства, вне `ALL_PERMISSIONS`, у `member` по умолчанию VIEW + WRITE, `ADMINISTRATOR` даёт все три, гостям и ботам — только личный allow на странице. Права на страницу — `perm.ComputeWikiPage` (общий `perm.ComputeTree` с диском), нет `WIKI_VIEW` — 404. Сервер и клиент — задачи W2/W4 (`docs/plans/wiki-v1-tasks.md`), столбцы заполняются вместе с ними.
+Биты `WIKI_VIEW` (38) / `WIKI_WRITE` (39) / `WIKI_MANAGE` (40) — как у диска: уровень пространства, вне `ALL_PERMISSIONS`, у `member` по умолчанию VIEW + WRITE, `ADMINISTRATOR` даёт все три, гостям — только личный allow на странице; боты — как участники, включая `/sync` бот-токеном (дополнение 2026-10-14). Права на страницу — `perm.ComputeWikiPage` (общий `perm.ComputeTree` с диском), нет `WIKI_VIEW` — 404. Сервер и клиент — задачи W2/W4 (`docs/plans/wiki-v1-tasks.md`), столбцы заполняются вместе с ними.
 
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
