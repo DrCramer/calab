@@ -267,7 +267,7 @@ func TestTaskNoticeRelayAccess(t *testing.T) {
 
 	// A private board: bob may view it, the bot may not (no VIEW_BOARD): relayed (ADR-0090 §4).
 	priv := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "HR", Key: "HRR", IsPrivate: true}, 201)
-	setBoardPerms(o, priv.GetId(), 200, userOv(bob.id, perm.ViewBoard, 0))
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o), userOv(bob.id, perm.ViewBoard, 0))
 	opsa.must(404, "GET", "/api/boards/"+priv.GetId(), nil, nil)
 	started := startedOf(priv)
 	// bob subscribes (not an assignee: an assignee keeps the task by task-scoped access).
@@ -278,7 +278,7 @@ func TestTaskNoticeRelayAccess(t *testing.T) {
 	gOpsa.wait("TASK_NOTICE of the private board", relayOf(bob.id, secret.GetId(), status))
 
 	// bob loses access to the board (still subscribed): no notice for him, nothing relayed.
-	setBoardPerms(o, priv.GetId(), 200)
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o))
 	todo := priv.GetStatuses()[0].GetId()
 	patchTask(t, o, secret.GetId(), &v1.UpdateTaskRequest{StatusId: &todo}, 200)
 	gBob.quiet("a notice of a board bob no longer sees", 400*time.Millisecond, noticeOf(secret.GetId(), status))

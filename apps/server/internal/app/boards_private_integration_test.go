@@ -89,7 +89,7 @@ func TestBoardsPrivateHiddenFromAdmins(t *testing.T) {
 		if want {
 			code = 200
 		}
-		for _, p := range []string{"/api/boards/" + bid, "/api/tasks/" + secret.GetId(), "/api/t/" + secret.GetKey(), "/api/boards/" + bid + "/tasks"} {
+		for _, p := range []string{"/api/boards/" + bid, "/api/tasks/" + secret.GetId(), "/api/t/" + secret.GetKey() + "?workspace_id=" + wid, "/api/boards/" + bid + "/tasks"} {
 			if got := c.do("GET", p, nil, nil); got != code {
 				t.Errorf("%s GET %s: %d, want %d", c.id, p, got, code)
 			}
