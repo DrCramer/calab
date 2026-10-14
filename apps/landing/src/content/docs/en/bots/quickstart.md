@@ -60,7 +60,7 @@ The response is the bot's profile:
     "commands": [],
     "tokenPrefix": "Xq3v9a",
     "createdAt": "2026-10-14T10:00:00Z",
-    "webhook": { "url": "", "enabled": false }
+    "webhook": { "url": "", "enabled": false, "lastError": "", "pending": 0 }
   }
 }
 ```
@@ -120,6 +120,9 @@ message = r.json()["message"]  # 201
     "nonce": "hello-1",
     "attachments": [],
     "reactions": [],
+    "pinnedBy": "",
+    "kind": "MESSAGE_KIND_UNSPECIFIED",
+    "keyboardRevision": "0",
     "createdAt": "2026-10-14T10:01:02.345Z"
   }
 }
