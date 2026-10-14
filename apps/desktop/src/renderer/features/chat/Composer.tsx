@@ -482,7 +482,8 @@ export function Composer({
             'mobile:grid mobile:min-h-11 mobile:grid-cols-[auto_minmax(0,1fr)_auto] mobile:items-center mobile:px-0',
             // Phone, two lines and more: a large radius that still reads as round (no corners).
             multi && 'mobile:rounded-[26px]',
-            voice.active && 'hidden',
+            // mobile:hidden too: the phone's mobile:grid would otherwise win over hidden and squeeze the recorder.
+            voice.active && 'hidden mobile:hidden',
           )}
         >
           {canAttach && !editMsg ? (

@@ -8,6 +8,9 @@ patchedDependencies:
   react-native-webview@13.16.1:
     hash: 3c5a05b91febba90cd57bbfa8a1270fb04411a2f581cbe3c226e09d427dc301a
     path: patches/react-native-webview@13.16.1.patch
+  react-virtuoso@4.18.16:
+    hash: e80b88493dd0c7a686d1b547f3144d3ae79679b0f6f520badb403d5ded60d2e1
+    path: patches/react-virtuoso@4.18.16.patch
   uiohook-napi@1.5.5:
     hash: 282705c768f79df9506bd71d711536ae16356835462851a2ffb3a566c427412e
     path: patches/uiohook-napi@1.5.5.patch
@@ -219,7 +222,7 @@ importers:
         version: 19.3.0(react@19.3.0)
       react-virtuoso:
         specifier: ^4.18.16
-        version: 4.18.16(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 4.18.16(patch_hash=e80b88493dd0c7a686d1b547f3144d3ae79679b0f6f520badb403d5ded60d2e1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       smtp-server:
         specifier: 3.19.21
         version: 3.19.21
@@ -12748,7 +12751,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  react-virtuoso@4.18.16(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  react-virtuoso@4.18.16(patch_hash=e80b88493dd0c7a686d1b547f3144d3ae79679b0f6f520badb403d5ded60d2e1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)

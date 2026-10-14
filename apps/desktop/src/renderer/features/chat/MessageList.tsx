@@ -1,7 +1,7 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
 import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -17,6 +17,8 @@ import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
 import { createBottomPin, initialFeedLocation } from './lastRowPin';
+import { readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
+import { useUi } from '../../stores/ui';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
@@ -31,6 +33,8 @@ const START_INDEX = 1_000_000_000;
 /** Live messages may grow the open window this far past WINDOW_CAP before its top is cut. */
 const CAP_SLACK = 100;
 const HIGHLIGHT_MS = 1800;
+/** Rows above the first rendered one at which the next page of older history is requested. */
+const PREFETCH_ROWS = 20;
 /** The floating date fades out this long after scrolling stops (Telegram). */
 const STICKY_IDLE_MS = 1000;
 
@@ -189,7 +193,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // Opens at the first unread message (docs/09 #39), otherwise at the last row's bottom.
   // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
   // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
-  const [{ location: initialIndex, stuck: openStuck }] = useState(() => initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter));
+  // Back from a screen pushed over the room (phone: members, settings…): where the reader left it.
+  const [{ location: initialIndex, stuck: openStuck }] = useState(() => {
+    const pos = takeFeedPosition(roomId);
+    const at = pos ? keyIndex(items).get(pos.key) : undefined;
+    if (pos && at !== undefined) return { location: { index: at, align: 'start' as const, offset: -pos.offset }, stuck: false };
+    return initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter);
+  });
   const [bottomPin] = useState(() => createBottomPin(openStuck));
 
   const lastSentId = useMemo(() => lastSentOf(items), [items]);
@@ -256,6 +266,15 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const startReached = useCallback(() => {
     if (state.hasMoreBefore && !state.loading) void loadOlder(roomId);
   }, [roomId, state.hasMoreBefore, state.loading]);
+  // Older history is asked for while the reader is still PREFETCH_ROWS above its first row, not
+  // when that row is already on screen: the page lands (and its rows are measured) above the
+  // viewport instead of under the reader's finger at the very top of the window.
+  const rangeChanged = useCallback(
+    (r: ListRange) => {
+      if (r.startIndex - firstIndex < PREFETCH_ROWS) startReached();
+    },
+    [firstIndex, startReached],
+  );
   const endReached = useCallback(() => {
     if (state.hasMoreAfter) void loadNewer(roomId);
   }, [roomId, state.hasMoreAfter]);
@@ -302,6 +321,18 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     if (list) ro.observe(list);
     return () => ro.disconnect();
   }, [bottomPin]);
+
+  // Phone: the room screen unmounts under a pushed screen (ADR-0073) — keep the reader's place
+  // for its return, unless they sat at the bottom (then it opens there anyway). Layout cleanup:
+  // the rows are still in the document.
+  useLayoutEffect(
+    () => () => {
+      const el = scroller.current;
+      const covered = useUi.getState().phone.stack.some((x) => (x.kind === 'room' || x.kind === 'dm') && x.room === roomId);
+      saveFeedPosition(roomId, covered && el && !bottomPin.isStuck() ? readFeedPosition(el) : null);
+    },
+    [bottomPin, roomId],
+  );
 
   const [sticky, setSticky] = useState<string | null>(null);
   const frame = useRef(0);
@@ -375,6 +406,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         firstItemIndex={firstIndex}
         initialTopMostItemIndex={initialIndex}
         startReached={startReached}
+        rangeChanged={rangeChanged}
         endReached={endReached}
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}

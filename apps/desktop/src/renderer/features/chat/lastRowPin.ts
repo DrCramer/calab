@@ -36,6 +36,8 @@ export interface BottomPin {
   /** False while newer history is not loaded (hasMoreAfter): the bottom is not the present, and
    * pinning there would keep triggering endReached. */
   setLive(live: boolean): void;
+  /** The reader sits at the bottom (what the feed's position is saved as, feedPosition.ts). */
+  isStuck(): boolean;
 }
 
 /** Distance from the bottom (px) still counted as «arrived at the bottom» when scrolling down —
@@ -80,6 +82,9 @@ export function createBottomPin(stuck = false): BottomPin {
     },
     setLive(v) {
       live = v;
+    },
+    isStuck() {
+      return stuck;
     },
   };
 }
