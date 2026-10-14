@@ -138,7 +138,7 @@ function CrumbTitle({ id }: { id: string }): ReactNode {
   const title = useWiki((s) => s.pages[id]?.title ?? '');
   const icon = useWiki((s) => s.pages[id]?.icon ?? '');
   return (
-    <h1 className="flex min-w-0 items-center gap-1 truncate px-1.5 text-body font-semibold" aria-current="page">
+    <h1 className="flex min-w-0 items-center gap-1.5 truncate px-1.5 text-body font-semibold" aria-current="page">
       {icon ? <span aria-hidden>{icon}</span> : null}
       <span className="truncate">{title || t('wiki.untitled')}</span>
     </h1>
@@ -348,6 +348,8 @@ function TitleField({ pageId, editable }: { pageId: string; editable: boolean })
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const focused = useRef(false);
+  /** The text typed and not PATCHed yet (null: nothing to save). Never read from the DOM: on unmount the ref is already detached. */
+  const typed = useRef<string | null>(null);
   useEffect(() => {
     if (!focused.current && stored !== value) {
       setValue(stored);
@@ -358,8 +360,9 @@ function TitleField({ pageId, editable }: { pageId: string; editable: boolean })
   const flush = (): void => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    const next = ref.current?.value ?? '';
-    if (next.trim() === saved.current.trim()) return;
+    const next = typed.current;
+    typed.current = null;
+    if (next === null || next.trim() === saved.current.trim()) return;
     const prev = saved.current;
     saved.current = next;
     void renamePage(pageId, next, prev);
@@ -395,6 +398,7 @@ function TitleField({ pageId, editable }: { pageId: string; editable: boolean })
       onChange={(e) => {
         const v = e.target.value.replace(/\n/g, ' ');
         setValue(v);
+        typed.current = v;
         setTitleLocal(pageId, v);
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(flush, 500);

@@ -115,7 +115,7 @@ const ChildList = memo(function ChildList({ workspaceId, parentId, depth }: { wo
     );
   }
   return (
-    <ul role={depth === 0 ? 'tree' : 'group'} className="flex flex-col">
+    <ul className="flex flex-col">
       {ids.map((id) => (
         <TreeNode key={id} workspaceId={workspaceId} id={id} depth={depth} />
       ))}
@@ -149,21 +149,13 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
   );
   const toggle = (): void => useWikiUi.getState().setExpanded(id, !expanded);
   return (
-    <li role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={active} className="flex flex-col">
+    <li className="flex flex-col">
+      {/* The row is a drag handle and a drop target; the page opens from its title button (no nested controls). */}
       <div
         ref={ref}
-        {...drag.attributes}
         {...drag.listeners}
-        role="button"
-        tabIndex={0}
-        onClick={() => openWikiPage(workspaceId, id)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') openWikiPage(workspaceId, id);
-          else if (e.key === 'ArrowRight' && hasChildren && !expanded) toggle();
-          else if (e.key === 'ArrowLeft' && expanded) toggle();
-        }}
         className={cx(
-          'group relative flex h-8 items-center gap-1 rounded-[var(--radius-row)] pr-1 text-body outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          'group relative flex h-8 items-center gap-1 rounded-[var(--radius-row)] pr-1 text-body',
           active ? 'bg-active text-fg' : 'text-fg hover:bg-hover',
           drag.isDragging && 'opacity-40',
           zone === 'inside' && 'bg-hover ring-2 ring-inset ring-accent',
@@ -177,11 +169,9 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
         ) : null}
         <button
           type="button"
-          tabIndex={-1}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
+          tabIndex={hasChildren ? 0 : -1}
+          aria-expanded={hasChildren ? expanded : undefined}
+          onClick={toggle}
           onPointerDown={(e) => e.stopPropagation()}
           className={cx('grid size-5 shrink-0 place-items-center rounded-[4px] text-faint hover:bg-active hover:text-fg', !hasChildren && 'invisible')}
           aria-label={expanded ? t('wiki.collapse') : t('wiki.expand')}
@@ -189,21 +179,30 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
         >
           <ChevronRight className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', expanded && 'rotate-90')} aria-hidden />
         </button>
-        <span className="grid size-5 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
-          {icon || <FileText className="size-4 text-muted" strokeWidth={1.75} />}
-        </span>
-        <span className={cx('min-w-0 flex-1 truncate', !title && 'text-muted')}>{title || t('wiki.untitled')}</span>
+        <button
+          type="button"
+          onClick={() => openWikiPage(workspaceId, id)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowRight' && hasChildren && !expanded) toggle();
+            else if (e.key === 'ArrowLeft' && expanded) toggle();
+          }}
+          aria-current={active ? 'page' : undefined}
+          className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          data-testid="wiki-node-open"
+        >
+          <span className="grid size-5 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+            {icon || <FileText className="size-4 text-muted" strokeWidth={1.75} />}
+          </span>
+          <span className={cx('min-w-0 flex-1 truncate', !title && 'text-muted')}>{title || t('wiki.untitled')}</span>
+        </button>
         {writable ? (
           <IconButton
             size="sm"
             tip={false}
             label={t('wiki.addSubpage')}
-            className="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+            className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              void createPage(workspaceId, id);
-            }}
+            onClick={() => void createPage(workspaceId, id)}
             data-testid="wiki-node-add"
           >
             <Plus className="size-3.5" aria-hidden />
@@ -349,30 +348,27 @@ const TrashRow = memo(function TrashRow({ workspaceId, id }: { workspaceId: stri
   const mine = canStructure(page, myUserId());
   const at = page.trashedAt ? timestampDate(page.trashedAt) : null;
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => useWikiUi.getState().openPage(workspaceId, id)}
-      onKeyDown={(e) => e.key === 'Enter' && useWikiUi.getState().openPage(workspaceId, id)}
-      className={cx('group flex h-11 items-center gap-2 rounded-[var(--radius-row)] px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent', active ? 'bg-active' : 'hover:bg-hover')}
-      data-testid="wiki-trash-row"
-    >
-      <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-        {page.icon || <FileText className="size-4 text-muted" strokeWidth={1.75} />}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body">{page.title || t('wiki.untitled')}</span>
-        {at ? <span className="truncate text-caption text-muted">{t('wiki.trashedAt', { date: fmt.listTime(at) })}</span> : null}
-      </span>
+    <div className={cx('group flex h-11 items-center gap-1 rounded-[var(--radius-row)] pr-1', active ? 'bg-active' : 'hover:bg-hover')} data-testid="wiki-trash-row">
+      <button
+        type="button"
+        onClick={() => useWikiUi.getState().openPage(workspaceId, id)}
+        aria-current={active ? 'page' : undefined}
+        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-row)] pl-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
+          {page.icon || <FileText className="size-4 text-muted" strokeWidth={1.75} />}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-body">{page.title || t('wiki.untitled')}</span>
+          {at ? <span className="truncate text-caption text-muted">{t('wiki.trashedAt', { date: fmt.listTime(at) })}</span> : null}
+        </span>
+      </button>
       {mine ? (
         <span className="flex shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
           <IconButton
             size="sm"
             label={t('wiki.restore')}
-            onClick={(e) => {
-              e.stopPropagation();
-              void restorePage(id);
-            }}
+            onClick={() => void restorePage(id)}
             data-testid="wiki-trash-restore"
           >
             <RotateCcw className="size-3.5" aria-hidden />
@@ -381,10 +377,7 @@ const TrashRow = memo(function TrashRow({ workspaceId, id }: { workspaceId: stri
             size="sm"
             danger
             label={t('wiki.deleteForever')}
-            onClick={(e) => {
-              e.stopPropagation();
-              void deleteForever(id);
-            }}
+            onClick={() => void deleteForever(id)}
             data-testid="wiki-trash-delete"
           >
             <Trash2 className="size-3.5" aria-hidden />
