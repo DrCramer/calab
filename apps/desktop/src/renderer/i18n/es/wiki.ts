@@ -103,6 +103,7 @@ export const esWiki: DictShape<typeof ruWiki> = {
   'wiki.versionsTitle': 'Historial de versiones de «{name}»',
   'wiki.versions.empty': 'Aún no hay versiones: se guardan cada 5 minutos al editar',
   'wiki.versions.pick': 'Elige una versión',
+  'wiki.versions.onlyChanges': 'Solo cambios',
   'wiki.versions.version': 'Esta versión',
   'wiki.versions.current': 'Ahora',
   'wiki.versions.noCurrent': 'El texto actual no está disponible',

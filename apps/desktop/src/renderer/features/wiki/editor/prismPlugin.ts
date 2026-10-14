@@ -72,7 +72,7 @@ function apply(tr: Transaction, prev: PrismState): PrismState {
   const doc = tr.doc;
   const misses: Miss[] = [];
   if (tr.getMeta(prismKey) === 'refresh') return { set: scan(doc, 0, doc.content.size, prev.set.map(tr.mapping, doc), misses), misses };
-  if (!tr.docChanged) return prev.misses.length ? { set: prev.set, misses: [] } : prev;
+  if (!tr.docChanged) return prev;
   let set = prev.set.map(tr.mapping, doc);
   // Changed ranges in the new doc: every step's map, carried through the later steps.
   const ranges: Array<[number, number]> = [];
@@ -83,7 +83,10 @@ function apply(tr: Transaction, prev: PrismState): PrismState {
     });
   });
   for (const [a, b] of ranges) set = scan(doc, Math.max(0, a), Math.min(doc.content.size, Math.max(a, b)), set, misses);
-  return { set, misses };
+  // Misses accumulate until highlighted: the view only sees the state after the LAST transaction of a
+  // dispatch chain (a sync follow-up lands before its update runs), so a miss must outlive the next one.
+  const pending = prev.misses.filter((m) => !cachedHighlight(m.code, m.id) && !misses.some((x) => x.id === m.id && x.code === m.code));
+  return { set, misses: pending.length ? [...pending, ...misses] : misses };
 }
 
 export function prismPlugin(): Plugin<PrismState> {
@@ -102,10 +105,15 @@ export function prismPlugin(): Plugin<PrismState> {
     view: (view) => {
       let alive = true;
       let waiting = 0;
+      const asked = new Set<string>();
       const schedule = (misses: Miss[]): void => {
         for (const m of misses) {
+          const key = `${m.id}\u0000${m.code}`;
+          if (asked.has(key)) continue;
+          asked.add(key);
           waiting++;
-          void highlightIdle(m.code, m.id).then(() => {
+          void highlightIdle(m.code, m.id).then((runs) => {
+            if (runs) asked.delete(key); // a block with no grammar is asked once, not on every refresh
             waiting--;
             // One refresh after the last pending block of the pass.
             if (alive && waiting === 0) view.dispatch(view.state.tr.setMeta(prismKey, 'refresh').setMeta('addToHistory', false));

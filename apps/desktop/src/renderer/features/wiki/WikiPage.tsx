@@ -22,7 +22,7 @@ import {
   takeTitleFocus,
   trashPage,
 } from '../../services/wiki';
-import { myUserId } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { useWiki } from '../../stores/wiki';
 import { useWikiUi } from '../../stores/wikiUi';
 import { EmojiPicker } from '../chat/EmojiPicker';
@@ -77,11 +77,13 @@ function WikiBar({ workspaceId, pageId }: { workspaceId: string; pageId: string 
   });
   const trashed = useWiki((s) => !!s.pages[pageId]?.trashedAt);
   const sync = useWikiUi((s) => s.sync);
+  // The global «Нет соединения» pill floats over the middle of this bar: keep the crumbs left of it and don't repeat the message.
+  const reconnecting = useSession((s) => s.ready && s.reconnectBanner);
   return (
     <Bar plain className="gap-2 pl-3 pr-3" data-testid="wiki-bar">
-      {pageId ? <Crumbs workspaceId={workspaceId} pageId={pageId} /> : <h1 className="px-1.5 text-headline font-semibold">{t('wiki.section')}</h1>}
+      {pageId ? <Crumbs workspaceId={workspaceId} pageId={pageId} clear={reconnecting} /> : <h1 className="px-1.5 text-headline font-semibold">{t('wiki.section')}</h1>}
       <span className="flex-1" />
-      {pageId && (sync === 'offline' || sync === 'readonly') ? (
+      {pageId && !(reconnecting && sync === 'offline') && (sync === 'offline' || sync === 'readonly') ? (
         <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-fill)] px-2.5 text-caption text-muted" role="status" data-testid="wiki-sync-pill">
           {sync === 'offline' ? <CloudOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
           {sync === 'offline' ? t('wiki.sync.offline') : t('wiki.sync.readonly')}
@@ -102,11 +104,11 @@ function WikiBar({ workspaceId, pageId }: { workspaceId: string; pageId: string 
   );
 }
 
-const Crumbs = memo(function Crumbs({ workspaceId, pageId }: { workspaceId: string; pageId: string }): ReactNode {
+const Crumbs = memo(function Crumbs({ workspaceId, pageId, clear }: { workspaceId: string; pageId: string; clear: boolean }): ReactNode {
   const path = useWiki(useShallow((s) => ancestorsOf(s.pages, pageId)));
   const shown: Array<string | null> = path.length > 3 ? [path[0] ?? null, null, ...path.slice(-2)] : path;
   return (
-    <nav aria-label={t('wiki.path')} className="flex min-w-0 items-center gap-0.5" data-testid="wiki-crumbs">
+    <nav aria-label={t('wiki.path')} className={cx('flex min-w-0 items-center gap-0.5', clear && 'max-w-[calc(50%-150px)]')} data-testid="wiki-crumbs">
       {shown.map((id, i) => (
         <span key={id ?? `gap${i}`} className="flex min-w-0 items-center gap-0.5">
           {id === null ? <span className="px-1 text-muted">…</span> : <CrumbButton workspaceId={workspaceId} id={id} />}
@@ -427,8 +429,8 @@ const Subpages = memo(function Subpages({ workspaceId, pageId, canAdd }: { works
   }, [hasChildren, loaded, workspaceId, pageId]);
   if (!ids.length && !canAdd) return null;
   return (
-    <section className="mt-10 flex flex-col gap-1 border-t border-line pt-4" aria-label={t('wiki.subpages')} data-testid="wiki-subpages">
-      <h2 className="px-2 text-caption font-semibold text-muted">{t('wiki.subpages')}</h2>
+    <section className="mt-6 flex flex-col gap-1 border-t border-line pt-4" aria-label={t('wiki.subpages')} data-testid="wiki-subpages">
+      <h2 className="text-caption font-semibold text-muted">{t('wiki.subpages')}</h2>
       {ids.map((id) => (
         <SubpageRow key={id} workspaceId={workspaceId} id={id} />
       ))}
@@ -436,7 +438,7 @@ const Subpages = memo(function Subpages({ workspaceId, pageId, canAdd }: { works
         <button
           type="button"
           onClick={() => void createPage(workspaceId, pageId)}
-          className="flex h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 text-body text-muted hover:bg-hover hover:text-fg"
+          className="-ml-2 flex h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 text-body text-muted hover:bg-hover hover:text-fg"
           data-testid="wiki-add-subpage"
         >
           <Plus className="size-4" aria-hidden />
@@ -457,7 +459,7 @@ const SubpageRow = memo(function SubpageRow({ workspaceId, id }: { workspaceId: 
     <button
       type="button"
       onClick={() => openWikiPage(workspaceId, id)}
-      className="flex min-h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-left hover:bg-hover"
+      className="-ml-2 flex min-h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-left hover:bg-hover"
       data-testid="wiki-subpage"
     >
       <span className="grid size-5 shrink-0 place-items-center" aria-hidden>

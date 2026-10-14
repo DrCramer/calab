@@ -92,13 +92,13 @@ const SlashRow = memo(function SlashRow({ b, active, onPick, onHover, i }: { b: 
         onPick(i);
       }}
       onMouseMove={() => (active ? undefined : onHover(i))}
-      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-accent-strong text-accent-fg' : 'text-fg')}
+      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-active text-accent-text' : 'text-fg')}
     >
-      <span className={cx('grid size-6 shrink-0 place-items-center rounded-[var(--radius-row)]', active ? '' : 'bg-hover')}>
+      <span className={cx('grid size-6 shrink-0 place-items-center rounded-[var(--radius-row)]', 'bg-hover')}>
         <Icon className="size-4" strokeWidth={1.75} aria-hidden />
       </span>
       <span className="min-w-0 flex-1 truncate">{t(b.label)}</span>
-      {b.hint ? <span className={cx('shrink-0 font-mono text-caption', active ? 'text-accent-fg' : 'text-muted')}>{b.hint}</span> : null}
+      {b.hint ? <span className={cx('shrink-0 font-mono text-caption', active ? 'text-accent-text' : 'text-muted')}>{b.hint}</span> : null}
     </li>
   );
 });
@@ -114,11 +114,11 @@ const MentionRow = memo(function MentionRow({ c, active, onPick, onHover, i }: {
         onPick(i);
       }}
       onMouseMove={() => (active ? undefined : onHover(i))}
-      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-accent-strong text-accent-fg' : 'text-fg')}
+      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-active text-accent-text' : 'text-fg')}
     >
       <Avatar userId={c.id} name={c.name} size={24} />
       <span className="min-w-0 truncate font-medium">{c.name}</span>
-      {c.nick ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>@{c.nick}</span> : null}
+      {c.nick ? <span className={cx('min-w-0 truncate', active ? 'text-accent-text' : 'text-muted')}>@{c.nick}</span> : null}
     </li>
   );
 });
@@ -147,7 +147,11 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
     <ul
       role="listbox"
       aria-label={label}
-      className="max-h-[min(320px,40vh)] overflow-y-auto p-1 pt-0"
+      className={cx(
+        'overflow-y-auto p-1 pt-0',
+        // Phone card: the list scrolls inside the card; the last 20 px fade out as the «more below» cue (padding keeps the end row clear).
+        phone && s.kind === 'slash' ? 'min-h-0 flex-1 pb-5 [mask-image:linear-gradient(to_bottom,#000_calc(100%-20px),transparent)]' : 'max-h-[min(320px,40vh)]',
+      )}
       {...(phone ? { tabIndex: 0, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {})}
     >
       {s.kind === 'slash'
@@ -160,7 +164,7 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
   if (phone && s.kind === 'slash') {
     return createPortal(
       <div
-        className="fixed inset-x-0 top-0 bottom-[var(--kb-inset,0px)] z-[var(--z-popover)] grid place-items-center"
+        className="fixed inset-x-0 top-0 bottom-[var(--kb-inset,0px)] z-[var(--z-popover)] box-border grid place-items-center px-4 pb-[calc(44px+var(--space-4))] pt-4"
         onPointerDown={(e) => {
           if (e.target === e.currentTarget) {
             e.preventDefault();
@@ -169,7 +173,7 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
         }}
         data-testid="wiki-block-menu-backdrop"
       >
-        <div className="mat-popover anim-in w-[var(--phone-card-w,min(360px,calc(100vw-32px)))] overflow-hidden rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]" data-testid="wiki-block-menu">
+        <div className="mat-popover anim-in flex max-h-[70%] w-[var(--phone-card-w,min(360px,calc(100vw-32px)))] flex-col overflow-hidden rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]" data-testid="wiki-block-menu">
           <div className="px-3 pb-1 pt-2.5 text-micro font-semibold text-muted" aria-hidden>
             {label}
           </div>

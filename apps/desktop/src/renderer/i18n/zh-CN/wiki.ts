@@ -103,6 +103,7 @@ export const zhWiki: DictShape<typeof ruWiki> = {
   'wiki.versionsTitle': '“{name}”的版本历史',
   'wiki.versions.empty': '还没有版本——编辑时每 5 分钟保存一次',
   'wiki.versions.pick': '选择一个版本',
+  'wiki.versions.onlyChanges': '仅显示更改',
   'wiki.versions.version': '此版本',
   'wiki.versions.current': '当前',
   'wiki.versions.noCurrent': '当前文本不可用',

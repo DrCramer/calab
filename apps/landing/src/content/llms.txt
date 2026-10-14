@@ -26,8 +26,7 @@ Calab is built for teams of up to 20–30 people online at once (up to 3 screen 
 ## Documentation
 
 - [README](https://github.com/itrcz/calab/blob/main/README.md): overview, quick start, plans (also in Russian, Spanish and Chinese)
-- [Bot API reference (English)](https://github.com/itrcz/calab/blob/main/docs/19-bot-api.en.md): tokens, REST, gateway events, commands, webhooks, voice through LiveKit, limits and errors
-- [Bot API reference (Russian)](https://github.com/itrcz/calab/blob/main/docs/19-bot-api.md)
+- [Developer documentation](https://calab.io/en/docs/): bots and the integration API, OAuth 2 / OIDC, SSO and the AD directory (also in Russian at /ru/docs/); the pages are listed under "Developer documentation" below
 - [Bot SDK for TypeScript](https://github.com/itrcz/calab/tree/main/packages/bot-sdk) and [bot examples](https://github.com/itrcz/calab/tree/main/examples/bots)
 - [Deployment guide](https://github.com/itrcz/calab/blob/main/docs/06-deployment.md): run your own server
 - [Architecture overview](https://github.com/itrcz/calab/blob/main/docs/01-architecture.md) and [media pipeline](https://github.com/itrcz/calab/blob/main/docs/02-media.md)
@@ -35,6 +34,8 @@ Calab is built for teams of up to 20–30 people online at once (up to 3 screen 
 - [Permissions matrix](https://github.com/itrcz/calab/blob/main/docs/16-permissions-matrix.md)
 - [Architecture decision records](https://github.com/itrcz/calab/tree/main/docs/adr): why each decision was made (plans, SIP, calendar, boards, roles and more)
 - [Source code](https://github.com/itrcz/calab)
+
+{{DOCS}}
 
 ## Legal and contact
 

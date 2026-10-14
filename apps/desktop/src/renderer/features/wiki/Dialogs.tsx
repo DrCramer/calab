@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Button, Input, Modal, Segmented, Select, Spinner, Switch, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { diffable, diffText, type DiffOp } from '../../lib/textDiff';
+import { diffable, diffBlocks, type DiffBlock } from '../../lib/textDiff';
 import { docHandle } from '../../lib/wiki/docHandle';
 import { ancestorsOf, childKey, isInSubtree, TOP } from '../../lib/wiki/tree';
 import { loadChildren, movePage, restoreVersion, wikiApi } from '../../services/wiki';
@@ -103,7 +103,7 @@ function ShareDialog({ pageId, tab: initial, onClose }: { pageId: string; tab: S
         )
       }
     >
-      <div className="flex flex-col gap-4" data-testid="wiki-share-dialog">
+      <div className="flex min-h-[340px] flex-col gap-4" data-testid="wiki-share-dialog">
         <Segmented<ShareTab>
           value={tab}
           label={t('wiki.share')}
@@ -198,9 +198,10 @@ function LinkPanel({ pageId }: { pageId: string }): ReactNode {
       {on ? (
         <>
           <div className="flex items-center gap-2">
-            <Input readOnly value={address} aria-label={t('disk.link.address')} className="font-mono text-caption" onFocus={(e) => e.currentTarget.select()} data-testid="wiki-link-url" />
+            <Input readOnly value={address} aria-label={t('disk.link.address')} className="min-w-0 flex-1 text-ellipsis font-mono text-caption" onFocus={(e) => e.currentTarget.select()} data-testid="wiki-link-url" />
             <Button
               variant="secondary"
+              className="shrink-0"
               disabled={!address}
               onClick={() =>
                 void navigator.clipboard.writeText(address).then(
@@ -240,8 +241,9 @@ function LinkPanel({ pageId }: { pageId: string }): ReactNode {
 
 // ---------------------------------------------------------------- «История версий»
 
-const DEL = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-red)_14%,transparent)] px-px text-danger-text line-through decoration-1';
-const ADD = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-green)_14%,transparent)] px-px text-[var(--color-green-text)] no-underline';
+// The tint carries the meaning; the text stays at full contrast on it (axe 4.5:1).
+const DEL = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-red)_20%,transparent)] px-px text-fg line-through decoration-1';
+const ADD = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-green)_20%,transparent)] px-px text-fg no-underline';
 
 /**
  * «История версий» (ADR-0096 §5): the versions newest first (date, authors) on the left; the
@@ -373,49 +375,64 @@ const VersionRow = memo(function VersionRow({ workspaceId, v, active, onPick }: 
 });
 
 function SideBySide({ before, after }: { before: string; after: string | null }): ReactNode {
-  const ops = useMemo((): DiffOp[] | null => (after !== null && diffable(before, after) ? diffText(before, after) : null), [before, after]);
+  const [only, setOnly] = useState(false);
+  // Blocks first, words only inside changed blocks; the same normalisation on both sides.
+  const diff = useMemo(() => (after !== null && diffable(before, after) ? diffBlocks(before, after) : null), [before, after]);
+  const plain = (text: string): ReactNode => <p className="whitespace-pre-wrap break-words">{text.trim() || '—'}</p>;
   const col = (label: string, body: ReactNode, testId: string): ReactNode => (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
       <h3 className="text-caption font-semibold text-muted">{label}</h3>
-      <p className="scrollbar-thin min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2 text-body" data-testid={testId}>
+      <div tabIndex={0} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2 text-body" data-testid={testId}>
         {body}
-      </p>
+      </div>
     </section>
   );
+  const blocks = (list: DiffBlock[], mark: 'del' | 'add'): ReactNode => {
+    const rows: ReactNode[] = [];
+    let gap = false;
+    list.forEach((b, i) => {
+      if (only && !b.changed) {
+        gap = rows.length > 0;
+        return;
+      }
+      if (gap)
+        rows.push(
+          <div key={`g${i}`} className="text-center text-caption text-faint" aria-hidden>
+            …
+          </div>,
+        );
+      gap = false;
+      rows.push(
+        <p
+          key={i}
+          className={cx('whitespace-pre-wrap break-words border-l-2 py-0.5 pl-2', b.changed ? (mark === 'del' ? 'border-[var(--color-red)]' : 'border-[var(--color-green)]') : 'border-transparent')}
+          data-changed={b.changed ? '' : undefined}
+        >
+          {b.ops.map((o, k) =>
+            o.op === 'eq' ? (
+              <span key={k}>{o.text}</span>
+            ) : o.op === 'del' ? (
+              <del key={k} className={DEL}>
+                {o.text}
+              </del>
+            ) : (
+              <ins key={k} className={ADD}>
+                {o.text}
+              </ins>
+            ),
+          )}
+        </p>,
+      );
+    });
+    return rows.length ? <div className="flex flex-col gap-1">{rows}</div> : <p className="text-muted">—</p>;
+  };
   return (
-    <div className="flex min-h-0 flex-1 gap-3">
-      {col(
-        t('wiki.versions.version'),
-        ops
-          ? ops.map((o, i) =>
-              o.op === 'add' ? null : o.op === 'del' ? (
-                <del key={i} className={DEL}>
-                  {o.text}
-                </del>
-              ) : (
-                <span key={i}>{o.text}</span>
-              ),
-            )
-          : before || '—',
-        'wiki-version-before',
-      )}
-      {col(
-        t('wiki.versions.current'),
-        after === null
-          ? t('wiki.versions.noCurrent')
-          : ops
-            ? ops.map((o, i) =>
-                o.op === 'del' ? null : o.op === 'add' ? (
-                  <ins key={i} className={ADD}>
-                    {o.text}
-                  </ins>
-                ) : (
-                  <span key={i}>{o.text}</span>
-                ),
-              )
-            : after || '—',
-        'wiki-version-after',
-      )}
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {diff ? <Switch checked={only} onChange={setOnly} label={t('wiki.versions.onlyChanges')} /> : null}
+      <div className="flex min-h-0 flex-1 gap-3">
+        {col(t('wiki.versions.version'), diff ? blocks(diff.before, 'del') : plain(before), 'wiki-version-before')}
+        {col(t('wiki.versions.current'), after === null ? t('wiki.versions.noCurrent') : diff ? blocks(diff.after, 'add') : plain(after), 'wiki-version-after')}
+      </div>
     </div>
   );
 }
