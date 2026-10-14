@@ -144,7 +144,12 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
   const label = s.kind === 'slash' ? t('wiki.slash.title') : t('chat.mentionList');
   if (s.kind === 'mention' && !s.items.length) return null;
   const rows = s.items.length ? (
-    <ul role="listbox" aria-label={label} className="max-h-[min(320px,40vh)] overflow-y-auto p-1 pt-0">
+    <ul
+      role="listbox"
+      aria-label={label}
+      className="max-h-[min(320px,40vh)] overflow-y-auto p-1 pt-0"
+      {...(phone ? { tabIndex: 0, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {})}
+    >
       {s.kind === 'slash'
         ? (s as MenuState<BlockDef>).items.map((b, i) => <SlashRow key={b.id} b={b} i={i} active={i === s.index} onPick={pick} onHover={hover} />)
         : (s as MenuState<MentionCandidate>).items.map((c, i) => <MentionRow key={c.id} c={c} i={i} active={i === s.index} onPick={pick} onHover={hover} />)}

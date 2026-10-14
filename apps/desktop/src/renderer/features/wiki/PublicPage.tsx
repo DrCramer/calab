@@ -83,7 +83,7 @@ export function WikiPublicPage({ code }: { code: string }): ReactNode {
 
   if (gone) return <Gone />;
   return (
-    <div ref={scroller} className="h-full overflow-y-auto bg-bg text-fg" data-testid="wiki-public">
+    <div ref={scroller} className="h-full overflow-y-auto bg-bg text-fg mobile:pt-[var(--safe-top,0px)]" data-testid="wiki-public">
       <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col">
         <div className="flex min-h-0 flex-1 mobile:flex-col">
           {rows.length > 1 && outline ? (
@@ -119,7 +119,7 @@ export function WikiPublicPage({ code }: { code: string }): ReactNode {
             )}
           </main>
         </div>
-        <footer className="shrink-0 px-4 pb-6 pt-2 text-center text-caption text-muted" data-testid="wiki-public-footer">
+        <footer className="shrink-0 px-4 pb-[calc(var(--safe-bottom,0px)+24px)] pt-2 text-center text-caption text-muted" data-testid="wiki-public-footer">
           {t('wiki.public.footer')}
         </footer>
       </div>

@@ -270,7 +270,7 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
 }
 
 /** Screenshot (baseline phone) + layout invariants + axe for the current screen. */
-async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[] } = {}): Promise<void> {
+async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[]; keyboard?: boolean } = {}): Promise<void> {
   await settle(page);
   const dir = process.env['CALABA_MOBILE_SHOTS'];
   if (dir) {
@@ -281,7 +281,9 @@ async function checkpoint(page: Page, name: string, opts: { main?: boolean; snap
   // Dialogs are centred cards on a phone too (owner 07.10); «outside the window» is checked here with
   // horizontal scrollers (the settings section pills) taken into account.
   const generic = (await layoutProblems(page)).filter((p) => p.kind !== 'offscreen').map((p) => `${p.kind}: ${p.detail}`);
-  expect.soft([...generic, ...(await mobileProblems(page, opts.main ?? false))], `layout invariants: ${name}`).toEqual([]);
+  // With the keyboard up the shell ends at the keyboard on purpose (m-keyboard checks that).
+  const problems = [...generic, ...(await mobileProblems(page, opts.main ?? false))].filter((p) => !(opts.keyboard && p.startsWith('shell ')));
+  expect.soft(problems, `layout invariants: ${name}`).toEqual([]);
   await expectAccessible(page, name);
 }
 
@@ -1753,13 +1755,17 @@ test('m-wiki-toolbar', async ({ page }) => {
   const bar = screen.getByTestId('wiki-phone-toolbar');
   await expect(bar).toBeVisible();
   const vh = page.viewportSize()?.height ?? 0;
-  const box = await bar.boundingBox();
-  expect(box && Math.round(box.y + box.height), 'toolbar right above the keyboard').toBe(vh - 300);
-  await checkpoint(page, 'm-wiki-toolbar');
+  await expect
+    .poll(async () => {
+      const box = await bar.boundingBox();
+      return box && Math.round(box.y + box.height);
+    }, 'toolbar right above the keyboard')
+    .toBe(vh - 300);
+  await checkpoint(page, 'm-wiki-toolbar', { keyboard: true });
   // «+»: the block menu as a card in the middle of the screen.
   await bar.getByTestId('wiki-tool-add').tap();
   await expect(page.getByTestId('wiki-block-menu')).toBeVisible();
-  await checkpoint(page, 'm-wiki-blocks', { snapshot: false });
+  await checkpoint(page, 'm-wiki-blocks', { snapshot: false, keyboard: true });
   await page.getByTestId('wiki-block-menu').getByRole('option', { name: /Цитата/ }).tap();
   await expect(prose.locator('blockquote')).toHaveCount(2);
 });
@@ -1779,12 +1785,14 @@ test('m-wiki-public', async ({ page }) => {
   await open(page, `/w/${WIKI_PUBLIC_CODE}`);
   await expect(page.getByTestId('wiki-public-title')).toHaveText('Справочник команды');
   await expect(page.locator('.wiki-prose')).toContainText('Первая неделя');
+  await expect(page.getByTestId('wiki-public-cover').locator('img')).toBeVisible();
   await expect(page.getByTestId('wiki-public-outline')).toBeHidden();
   await expect(page.getByTestId('wiki-public-footer')).toBeVisible();
   await checkpoint(page, 'm-wiki-public');
   await page.getByTestId('wiki-public-toc-toggle').tap();
-  await expect(page.getByTestId('wiki-public-outline-row')).toHaveCount(7);
+  const toc = page.getByTestId('wiki-public-toc');
+  await expect(toc.getByTestId('wiki-public-outline-row')).toHaveCount(7);
   await checkpoint(page, 'm-wiki-public-toc', { snapshot: false });
-  await page.getByTestId('wiki-public-outline-row').filter({ hasText: 'Процессы' }).tap();
+  await toc.getByTestId('wiki-public-outline-row').filter({ hasText: 'Процессы' }).tap();
   await expect(page.getByTestId('wiki-public-title')).toHaveText('Процессы');
 });

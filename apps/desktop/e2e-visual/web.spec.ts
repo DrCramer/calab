@@ -364,6 +364,7 @@ test('wiki-public', async ({ page }) => {
     await expect(page.locator('.wiki-prose')).toHaveAttribute('contenteditable', 'false');
     await expect(page.getByTestId('wiki-public-outline-row')).toHaveCount(7);
     await expect(page.getByTestId('wiki-public-footer')).toContainText('Открыто по ссылке');
+    await expect(page.getByTestId('wiki-public-cover').locator('img')).toBeVisible();
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex,nofollow');
     await checkpoint({ page, theme: 'dark', viewport }, 'wiki-public');
 
