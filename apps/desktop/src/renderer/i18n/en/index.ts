@@ -13,6 +13,7 @@ import { enMail } from './mail';
 import { enRecording } from './recording';
 import { enAnnot } from './annot';
 import { enPeople } from './people';
+import { enFormer } from './former';
 import { enModeration } from './moderation';
 import { enPicker } from './picker';
 import { enRoles } from './roles';
@@ -69,6 +70,7 @@ export const en: Dict = {
   ...enBilling,
   ...enTransitions,
   ...enCustomPlan,
+  ...enFormer,
   ...enModeration,
   ...enMail,
   ...enRecording,

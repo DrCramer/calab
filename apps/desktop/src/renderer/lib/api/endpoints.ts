@@ -36,6 +36,8 @@ import {
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
+  ListFormerMembersResponseSchema,
+  ListWorkspaceUsersResponseSchema,
   RequestCameraRequestSchema,
   RequestCameraResponseSchema,
   PutUserNoteRequestSchema,
@@ -307,6 +309,18 @@ export const api = {
     revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
     /** Bans (docs/09 #32; MANAGE_WORKSPACE): newest first. */
     bans: (id: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${id}/bans`, ListBansResponseSchema, undefined, signal),
+    /** Profiles by id for any past or present member (ADR-0097 §2): ≤ 100 ids. */
+    users: (id: string, ids: readonly string[], signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${id}/users?ids=${ids.map(encodeURIComponent).join(',')}`, ListWorkspaceUsersResponseSchema, undefined, signal),
+    /** Former members (ADR-0097 §3; MANAGE_MEMBERS): newest first, 50 per page. */
+    formerMembers: (id: string, o: { guests: boolean; q: string; cursor?: string }, signal?: AbortSignal) => {
+      const qs = new URLSearchParams();
+      if (o.guests) qs.set('guests', '1');
+      if (o.q) qs.set('q', o.q);
+      if (o.cursor) qs.set('cursor', o.cursor);
+      const s = qs.toString();
+      return call('GET', `/api/workspaces/${id}/former-members${s ? `?${s}` : ''}`, ListFormerMembersResponseSchema, undefined, signal);
+    },
     /** 201: removes the member (if one) and keeps them out (403 BANNED on every way back). */
     ban: (id: string, userId: string, reason: string) =>
       call('POST', `/api/workspaces/${id}/bans`, CreateBanResponseSchema, body(CreateBanRequestSchema, { userId, reason })),
