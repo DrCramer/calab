@@ -19,7 +19,6 @@
     root.toggleAttribute('data-nav-open', open);
     menu.setAttribute('aria-expanded', String(open));
     scrim.hidden = !open;
-    document.documentElement.classList.toggle('docs-lock', open);
     if (open) {
       var cur = nav.querySelector('[aria-current="page"]') || nav.querySelector('a');
       if (cur) { cur.scrollIntoView({ block: 'center' }); cur.focus({ preventScroll: true }); }

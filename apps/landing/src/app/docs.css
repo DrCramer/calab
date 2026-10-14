@@ -18,7 +18,7 @@
   --color-docs-danger: #ff7f75;
 }
 .docs { min-height: 100dvh; background: var(--color-bg); }
-html.docs-lock { overflow: hidden; }
+.docs-nav { overscroll-behavior: contain; }
 .docs-top {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px;
   height: var(--docs-top); padding: 0 24px; background: var(--color-bg); border-bottom: 1px solid var(--color-docs-line);
@@ -179,13 +179,13 @@ html.docs-lock { overflow: hidden; }
   .docs-main { margin: 0 auto; }
   .docs-menu { display: grid; }
   .docs-nav {
-    position: fixed; top: var(--docs-top); left: 0; bottom: 0; z-index: 30; width: min(320px, 86vw); height: auto;
+    position: fixed; top: var(--docs-top); left: 0; z-index: 30; width: min(320px, 86vw); height: calc(100dvh - var(--docs-top));
     padding: 16px 12px 32px; background: var(--color-bg); border-right: 1px solid var(--color-docs-line);
     transform: translateX(-100%); visibility: hidden; transition: transform .18s ease-out, visibility 0s linear .18s;
   }
   .docs[data-nav-open] .docs-nav { transform: none; visibility: visible; transition: transform .18s ease-out; }
   .docs-nav a { min-height: 44px; }
-  .docs-scrim:not([hidden]) { display: block; position: fixed; inset: var(--docs-top) 0 0 0; z-index: 29; background: var(--color-docs-scrim); }
+  .docs-scrim:not([hidden]) { display: block; position: fixed; top: var(--docs-top); left: 0; width: 100%; height: calc(100dvh - var(--docs-top)); z-index: 29; background: var(--color-docs-scrim); }
 }
 @media (max-width: 639px) {
   .docs-top { gap: 8px; padding: 0 16px; }

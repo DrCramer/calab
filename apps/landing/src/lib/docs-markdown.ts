@@ -227,6 +227,13 @@ const SCHEMA: SanitizeSchema = {
 // Heading data: TOC (h2/h3), every id on the page (anchor check), search sections. Runs after
 // rehype-slug and before the anchor links are appended (so `#` is not part of the text).
 
+const INLINE = new Set(['a', 'abbr', 'b', 'code', 'del', 'em', 'i', 'kbd', 'mark', 'span', 'strong', 'sub', 'sup']);
+/** Plain text with a space between block-level elements (table cells, list items), for search snippets. */
+const plainText = (node: ElementContent): string =>
+  node.type === 'text' ? node.value
+    : node.type !== 'element' ? ''
+      : node.children.map(plainText).join(INLINE.has(node.tagName) ? '' : ' ');
+
 function rehypeCollect(title: string, out: { toc: TocItem[]; ids: string[]; sections: SearchSection[] }) {
   return (tree: HastRoot) => {
     visit(tree, 'element', (el: Element) => {
@@ -245,10 +252,8 @@ function rehypeCollect(title: string, out: { toc: TocItem[]; ids: string[]; sect
         out.toc.push({ id: node.properties.id, text, depth });
         flush();
         current = { id: node.properties.id, heading: text, text: '' };
-      } else if (/^h[1-6]$/.test(node.tagName)) {
-        current.text += ` ${hastToString(node)}`;
       } else if (current.text.length < 400) {
-        current.text += ` ${hastToString(node)}`;
+        current.text += ` ${plainText(node)}`;
       }
     }
     flush();
