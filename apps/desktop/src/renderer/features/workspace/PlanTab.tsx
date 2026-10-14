@@ -19,6 +19,7 @@ import { useBillingBits } from './billing/access';
 import { billingPaymentsAllowed } from '../../services/billing';
 import { AdminAssignedNote } from './billing/Violations';
 import { useBilling } from '../../stores/billing';
+import { BuyStorage, UsageMeter } from '../disk/UsageMeter';
 
 /** Members that take a seat: everyone but guests (bots count, ADR-0024). */
 const seats = (members: Record<string, WorkspaceMember> | undefined): number => {
@@ -102,11 +103,12 @@ interface LimitRow {
   used: ReactNode;
   max: string;
   meter?: { used: number; limit: number };
+  /** «Файлы»: the Disk's three-segment meter on a full-width line under the numbers (ADR-0094 §6). */
+  storage?: boolean;
 }
 
 function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof planUsage>, storageUsed: bigint, packs: number | undefined): LimitRow[] {
   const l = limits;
-  const storageLimitBytes = Number(l?.storageMb ?? 0n) * 1024 * 1024;
   const counted = (label: string, used: number, limit: number): LimitRow => ({ label, used: fmt.number(used), max: countText(limit), meter: { used, limit } });
   return [
     { label: t('plan.limit.roomMembers'), used: fmt.number(usage.roomPeak), max: countText(l?.roomMembers ?? 0) },
@@ -132,7 +134,8 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
       label: t('plan.limit.storage'),
       used: fmt.size(storageUsed),
       max: storageText(l?.storageMb ?? 0n),
-      meter: { used: Number(storageUsed), limit: storageLimitBytes },
+      meter: { used: Number(storageUsed), limit: Number(l?.storageMb ?? 0n) * 1024 * 1024 },
+      storage: true,
     },
   ];
 }
@@ -202,6 +205,8 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
     Object.values(entry.members).map((m) => ({ guest: m.role === WorkspaceRole.GUEST, bot: !!m.user?.isBot })),
   );
   const rows = limitRows(plan.limits, usage, entry.ws.storageUsedBytes, packs);
+  // The Disk's meter (ADR-0094 §6) needs GET …/disk/usage: members only (guests keep the plain bar).
+  const diskMeter = entry.role !== WorkspaceRole.GUEST;
   const pricing = planOffersAllowed() ? import.meta.env.VITE_PRICING_URL : undefined;
   return (
     <>
@@ -249,17 +254,25 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
                 </span>
                 <span role="cell" className={cx('text-right tabular-nums text-muted mobile:text-left', noUse && 'mobile:hidden')}>
                   {r.used}
-                  {r.meter ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
+                  {r.meter && !(r.storage && diskMeter) ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
                 </span>
                 <span role="cell" className={cx('text-right tabular-nums', noUse && 'mobile:col-span-2 mobile:text-left')}>
                   {r.max}
                 </span>
+                {r.storage && diskMeter ? (
+                  <span role="cell" className="col-span-3 pb-1 mobile:col-span-2" data-testid="plan-storage-meter">
+                    <UsageMeter workspaceId={workspaceId} />
+                  </span>
+                ) : null}
               </div>
             );
           })}
         </div>
         <p className="px-1 text-caption text-faint">{t('plan.limitsFooter')}</p>
       </section>
+
+      {/* «Докупить место» (ADR-0094 §6): the storage packs, buying off until payments are on. */}
+      <BuyStorage workspaceId={workspaceId} />
 
       {(contact || pricing) && !billingManaged ? (
         <Card title={t('plan.card.buy')}>
