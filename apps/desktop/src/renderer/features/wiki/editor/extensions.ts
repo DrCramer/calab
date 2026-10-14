@@ -106,7 +106,8 @@ export function buildExtensions(o: { doc: Y.Doc; awareness: Awareness | null; me
     exts.push(
       CollaborationCaret.configure({
         provider: { awareness: o.awareness },
-        user: { id: o.me.id, name: o.me.name, color: o.me.color ?? '' },
+        // y-tiptap warns (per remote cursor render) about any colour but #rrggbb; ours come from the id (caret/selectionRender).
+        user: { id: o.me.id, name: o.me.name, color: '#8e8e93' },
         render: caret,
         selectionRender: (user: Record<string, unknown>) => ({
           class: 'wiki-remote-selection',

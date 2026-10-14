@@ -861,7 +861,7 @@ export const WikiAccessLevelSchema: GenMessage<WikiAccessLevel> = /*@__PURE__*/
 /**
  * WIKI_PAGE_UPSERT: a page was created or changed structurally (title, icon, cover, moved,
  * shared, link, trashed, restored, a new snapshot's preview). To members with WIKI_VIEW on the
- * page; page.my_bits is 0 (per recipient bits come with a refetch). A member who saw the page
+ * page; page.my_bits is the recipient's own bits (filled by the gateway). A member who saw the page
  * before the change and does not any more gets WIKI_PAGE_REMOVE instead.
  *
  * @generated from message calaba.v1.WikiPageUpsert

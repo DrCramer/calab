@@ -163,3 +163,26 @@ export function decodeFrame(data: Uint8Array): Frame | null {
       return null;
   }
 }
+
+/**
+ * The body of `GET /api/public/wiki/{code}/state` (docs/05): records `u32 BE length | frame` — a
+ * SNAPSHOT, then the UPDATEs after it. Returns the Yjs updates in order (apply each with
+ * `Y.applyUpdate`); null for a truncated or foreign body.
+ */
+export function decodeStateStream(body: Uint8Array): Uint8Array[] | null {
+  const dv = new DataView(body.buffer, body.byteOffset, body.byteLength);
+  const out: Uint8Array[] = [];
+  let at = 0;
+  while (at < body.length) {
+    if (at + 4 > body.length) return null;
+    const len = dv.getUint32(at);
+    at += 4;
+    if (at + len > body.length) return null;
+    const f = decodeFrame(body.subarray(at, at + len));
+    at += len;
+    if (f?.type === FRAME_SNAPSHOT) out.push(f.state);
+    else if (f?.type === FRAME_UPDATE) out.push(f.update);
+    else return null;
+  }
+  return out;
+}

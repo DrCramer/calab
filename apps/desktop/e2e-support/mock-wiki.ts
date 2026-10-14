@@ -7,6 +7,9 @@
  * SNAPSHOT_POST compacts silently (relayed as SNAPSHOT only with `broadcast`).
  * Routes, the WIKI_PAGE_* fan-out and the socket upgrade are wired in mock-server.ts.
  *
+ * Shapes are those of the real server (W7: services/wiki.wire.test.ts holds its captured answers):
+ * the upload answers {file}; the event page carries the recipient's my_bits but no link / shared.
+ *
  * Simplifications against the server: no TrashSweep, no post budget / rate limits, no version
  * thinning (a version per post whose text changed), the public page is not served.
  */
@@ -56,7 +59,8 @@ export interface WikiDeps {
   rolesOf: (m: MemberRec) => Role[];
   tick: () => Timestamp;
   nextId: () => string;
-  emit: (wsId: string, page: WikiPage, removed: boolean, viewers: (userId: string) => boolean) => void;
+  /** `bitsOf(userId)`: the recipient's wiki bits on the page (0 = not delivered); the gateway puts them in my_bits. */
+  emit: (wsId: string, page: WikiPage, removed: boolean, bitsOf: (userId: string) => bigint) => void;
 }
 
 /** One page's live document: the snapshot, the updates after it, the open sockets. */
@@ -155,7 +159,7 @@ export class WikiMock {
   }
 
   private emit(p: WikiPage, removed = false): void {
-    this.d.emit(p.workspaceId, p, removed, (u) => (this.bitsOf(p, p.workspaceId, u) & V) !== 0n);
+    this.d.emit(p.workspaceId, p, removed, (u) => this.bitsOf(p, p.workspaceId, u));
   }
 
   private siblings(wsId: string, parentId: string, except = ''): WikiPage[] {
@@ -201,6 +205,17 @@ export class WikiMock {
       ? [...this.pages.values()].filter((x) => x.workspaceId === wsId && !!x.trashedAt && x.trashedRoot).sort((a, b) => ms(b.trashedAt) - ms(a.trashedAt))
       : this.siblings(wsId, p.parent);
     return all.filter((x) => this.bitsOf(x, wsId, uid) & V).map((x) => this.out(x, uid));
+  }
+
+  /** `GET /api/search?type=wiki&scope=<ws>&q=`: live pages whose title or text (the preview) contain q, that I see. */
+  search(wsId: string, uid: string, q: string, limit: number): WikiPage[] {
+    if (!this.d.member(wsId, uid)) return [];
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [];
+    return [...this.pages.values()]
+      .filter((x) => x.workspaceId === wsId && !x.trashedAt && this.bitsOf(x, wsId, uid) & V && `${x.title}\n${x.preview}`.toLowerCase().includes(needle))
+      .slice(0, limit)
+      .map((x) => this.out(x, uid));
   }
 
   get(id: string, uid: string): WikiPage {
@@ -383,7 +398,10 @@ export class WikiMock {
       if (!f) return;
       const room = this.room(pageId);
       const me = sock;
-      if (f.type === FRAME_UPDATE && me.write) {
+      // A write frame from a socket without WIKI_WRITE: the server closes 4003 (sync.go onUpdate / onSnapshot).
+      if ((f.type === FRAME_UPDATE || f.type === FRAME_SNAPSHOT_POST) && !me.write) {
+        ws.close(4003, 'read only');
+      } else if (f.type === FRAME_UPDATE && me.write) {
         const seq = ++room.seq;
         const update = f.update.slice();
         room.updates.push({ seq, update });

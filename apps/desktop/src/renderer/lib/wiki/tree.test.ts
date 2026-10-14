@@ -30,6 +30,16 @@ describe('wiki tree reducers', () => {
     expect(s.lists[trashKey(WS)]).toEqual(['a1', 'old']);
   });
 
+  it('a list read older than an event does not bring back the old title', () => {
+    let s = applyList({ pages: {}, lists: {} }, childKey(WS, ''), [page('a')]);
+    s = applyUpsert(s, page('a', '', { title: 'Renamed', updatedAt: timestampFromMs(2000) }), true);
+    s = applyList(s, childKey(WS, ''), [page('a', '', { title: '', updatedAt: timestampFromMs(1000), myBits: WIKI_BITS.VIEW })]);
+    expect(s.pages['a']?.title).toBe('Renamed');
+    expect(s.pages['a']?.myBits).toBe(WIKI_BITS.VIEW); // the fetched rights are taken
+    s = applyList(s, childKey(WS, ''), [page('a', '', { title: 'Newer', updatedAt: timestampFromMs(3000) })]);
+    expect(s.pages['a']?.title).toBe('Newer');
+  });
+
   it('an event keeps the known bits and marks the parent as having children', () => {
     let s = applyUpsert(tree(), { ...page('b'), myBits: WIKI_BITS.VIEW });
     s = applyUpsert(s, page('b1', 'b'), true);

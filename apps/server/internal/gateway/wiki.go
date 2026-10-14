@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -15,13 +16,19 @@ import (
 // not any more gets WIKI_PAGE_REMOVE instead of the upsert. The content of pages never travels
 // here (the sync socket, internal/wiki).
 
-// wikiSees reports whether member uid sees a page with this chain (mu held).
-func (s *wsState) wikiSees(uid uuid.UUID, chain []perm.TreeNode) bool {
+// wikiBits is member uid's wiki bits on a page with this chain (mu held); 0 = not a member or no
+// chain.
+func (s *wsState) wikiBits(uid uuid.UUID, chain []perm.TreeNode) perm.Bits {
 	m, ok := s.members[uid]
 	if !ok || len(chain) == 0 {
-		return false
+		return 0
 	}
-	return perm.ComputeWikiPageIn(m, s.bots[uid], chain).Has(perm.WikiView)
+	return perm.ComputeWikiPageIn(m, s.bots[uid], chain) & perm.Wiki
+}
+
+// wikiSees reports whether member uid sees a page with this chain (mu held).
+func (s *wsState) wikiSees(uid uuid.UUID, chain []perm.TreeNode) bool {
+	return s.wikiBits(uid, chain).Has(perm.WikiView)
 }
 
 // wikiRemove is WIKI_PAGE_REMOVE as clients get it.
@@ -37,12 +44,21 @@ func (h *Hub) routeWiki(st *wsState, wid, id uuid.UUID, sessions []*Session, ev 
 		u := e.WikiPageUpsert
 		after := wikiacl.FromLevels(u.GetAccess())
 		before := wikiacl.FromLevels(u.GetAccessBefore())
-		upsert := newScopedEnc(wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_WikiPageUpsert{WikiPageUpsert: &v1.WikiPageUpsert{
-			WorkspaceId: u.GetWorkspaceId(), Page: u.GetPage()}}})
+		// my_bits is the recipient's own; one encoding per distinct value (few: viewer / editor / manager).
+		byBits := map[perm.Bits]*encEvent{}
 		var remove *encEvent
 		for _, s := range sessions {
+			bits := st.wikiBits(s.user, after)
 			switch {
-			case st.wikiSees(s.user, after):
+			case bits.Has(perm.WikiView):
+				upsert := byBits[bits]
+				if upsert == nil {
+					pg := proto.Clone(u.GetPage()).(*v1.WikiPage)
+					pg.MyBits = uint64(bits)
+					upsert = newScopedEnc(wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_WikiPageUpsert{WikiPageUpsert: &v1.WikiPageUpsert{
+						WorkspaceId: u.GetWorkspaceId(), Page: pg}}})
+					byBits[bits] = upsert
+				}
 				s.dispatchEnc(id, upsert)
 			case st.wikiSees(s.user, before):
 				if remove == nil {

@@ -67,9 +67,9 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
   // The name on my caret follows a rename without rebuilding.
   useEffect(() => {
     if (awareness && !editor.isDestroyed && editor.extensionManager.extensions.some((e) => e.name === 'collaborationCaret')) {
-      editor.commands.updateUser({ id: me.id, name: me.name, color: me.color ?? '' });
+      editor.commands.updateUser({ id: me.id, name: me.name, color: '#8e8e93' }); // carets are coloured by id (extensions.ts)
     }
-  }, [editor, awareness, me.id, me.name, me.color]);
+  }, [editor, awareness, me.id, me.name]);
 
   const ready = useRef(onReady);
   useEffect(() => {
