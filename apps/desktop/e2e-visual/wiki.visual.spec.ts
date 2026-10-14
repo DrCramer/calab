@@ -64,9 +64,13 @@ test('wiki-versions', async ({ open, win, shot, theme }) => {
   await expect(win.locator('.wiki-prose')).toContainText('Первая неделя');
   await win.getByTestId('wiki-more').click();
   await win.getByTestId('wiki-open-versions').click();
-  await expect(win.getByTestId('wiki-version-row').first()).toBeVisible();
+  // The older version differs most: it is the one to compare.
+  await win.getByTestId('wiki-version-row').nth(1).click();
   // Both columns share one block layout; changed blocks carry the accent bar and word marks.
   await expect(win.getByTestId('wiki-version-before').locator('[data-changed]').first()).toBeVisible();
   await expect(win.getByTestId('wiki-version-after').locator('ins').first()).toBeVisible();
   await checkpoint(shot, 'wiki-versions');
+  await win.getByRole('switch', { name: 'Только изменения' }).click();
+  await expect(win.getByTestId('wiki-version-after').locator('[data-changed]').first()).toBeVisible();
+  await checkpoint(shot, 'wiki-versions-changes');
 });

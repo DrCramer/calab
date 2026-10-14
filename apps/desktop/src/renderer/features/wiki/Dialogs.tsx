@@ -241,8 +241,9 @@ function LinkPanel({ pageId }: { pageId: string }): ReactNode {
 
 // ---------------------------------------------------------------- «История версий»
 
-const DEL = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-red)_14%,transparent)] px-px text-danger-text line-through decoration-1';
-const ADD = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-green)_14%,transparent)] px-px text-[var(--color-green-text)] no-underline';
+// The tint carries the meaning; the text stays at full contrast on it (axe 4.5:1).
+const DEL = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-red)_20%,transparent)] px-px text-fg line-through decoration-1';
+const ADD = 'rounded-[3px] bg-[color-mix(in_srgb,var(--color-green)_20%,transparent)] px-px text-fg no-underline';
 
 /**
  * «История версий» (ADR-0096 §5): the versions newest first (date, authors) on the left; the
@@ -381,7 +382,7 @@ function SideBySide({ before, after }: { before: string; after: string | null })
   const col = (label: string, body: ReactNode, testId: string): ReactNode => (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
       <h3 className="text-caption font-semibold text-muted">{label}</h3>
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2 text-body" data-testid={testId}>
+      <div tabIndex={0} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2 text-body" data-testid={testId}>
         {body}
       </div>
     </section>

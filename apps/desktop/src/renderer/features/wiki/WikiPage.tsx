@@ -429,7 +429,7 @@ const Subpages = memo(function Subpages({ workspaceId, pageId, canAdd }: { works
   }, [hasChildren, loaded, workspaceId, pageId]);
   if (!ids.length && !canAdd) return null;
   return (
-    <section className="mt-4 flex flex-col gap-1 border-t border-line pt-4" aria-label={t('wiki.subpages')} data-testid="wiki-subpages">
+    <section className="mt-6 flex flex-col gap-1 border-t border-line pt-4" aria-label={t('wiki.subpages')} data-testid="wiki-subpages">
       <h2 className="text-caption font-semibold text-muted">{t('wiki.subpages')}</h2>
       {ids.map((id) => (
         <SubpageRow key={id} workspaceId={workspaceId} id={id} />
@@ -438,7 +438,7 @@ const Subpages = memo(function Subpages({ workspaceId, pageId, canAdd }: { works
         <button
           type="button"
           onClick={() => void createPage(workspaceId, pageId)}
-          className="-mx-2 flex h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 text-body text-muted hover:bg-hover hover:text-fg"
+          className="-ml-2 flex h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 text-body text-muted hover:bg-hover hover:text-fg"
           data-testid="wiki-add-subpage"
         >
           <Plus className="size-4" aria-hidden />
@@ -459,7 +459,7 @@ const SubpageRow = memo(function SubpageRow({ workspaceId, id }: { workspaceId: 
     <button
       type="button"
       onClick={() => openWikiPage(workspaceId, id)}
-      className="-mx-2 flex min-h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-left hover:bg-hover"
+      className="-ml-2 flex min-h-9 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-left hover:bg-hover"
       data-testid="wiki-subpage"
     >
       <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
