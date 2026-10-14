@@ -26,18 +26,20 @@ type TreeLevel struct {
 
 // TreeInput is a member and a chain: Raw is the plain OR of the member's roles (ADMINISTRATOR
 // not expanded); Chain runs from the topmost ancestor down to the node itself (empty = the root
-// of the section).
+// of the section). A bot is a member like a person (ADR-0031; ADR-0094 §2 and ADR-0096 §2,
+// addendum 2026-10-14): no flag of its own.
 type TreeInput struct {
-	Raw        Bits
-	Guest, Bot bool
-	Chain      []TreeLevel
+	Raw   Bits
+	Guest bool
+	Chain []TreeLevel
 }
 
-// TreeOf is the workspace-level rule of a section (TS: treePermissions): guests and bots
-// nothing; ADMINISTRATOR or MANAGE all three; anyone else the section's bits of their roles.
-func TreeOf(b TreeBits, raw Bits, guest, bot bool) Bits {
+// TreeOf is the workspace-level rule of a section (TS: treePermissions): guests nothing;
+// ADMINISTRATOR or MANAGE all three; anyone else (bots included) the section's bits of their
+// roles.
+func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 	switch {
-	case guest || bot:
+	case guest:
 		return 0
 	case raw&(Administrator|b.Manage) != 0:
 		return b.All()
@@ -46,14 +48,14 @@ func TreeOf(b TreeBits, raw Bits, guest, bot bool) Bits {
 }
 
 // ComputeTree is the one node rule. MANAGE or ADMINISTRATOR (TreeOf): everything, restricted
-// nodes included. Otherwise the start is the member's VIEW | WRITE (none for guests and bots)
-// and at every level, top down: a restricted node drops what the roles and the ancestors gave;
-// then each role's override (lowest position first: deny, then allow; ignored for guests and
-// bots — they get access only as a person), then the user's own; the owner of the level always
+// nodes included. Otherwise the start is the member's VIEW | WRITE (none for guests) and at
+// every level, top down: a restricted node drops what the roles and the ancestors gave; then
+// each role's override (lowest position first: deny, then allow; ignored for guests — they get
+// access only as a person), then the user's own; the owner of the level always
 // has VIEW | WRITE. A child inherits its parent's result. Overrides touch b.Override() only.
 // Without VIEW nothing (404).
 func ComputeTree(b TreeBits, in TreeInput) Bits {
-	ws := TreeOf(b, in.Raw, in.Guest, in.Bot)
+	ws := TreeOf(b, in.Raw, in.Guest)
 	if ws&b.Manage != 0 {
 		return b.All()
 	}
@@ -64,7 +66,7 @@ func ComputeTree(b TreeBits, in TreeInput) Bits {
 		if l.Restricted {
 			p = 0
 		}
-		if !in.Guest && !in.Bot {
+		if !in.Guest {
 			for _, o := range l.RoleOvs {
 				p &^= o.Deny & ov
 				p |= o.Allow & ov
@@ -91,9 +93,9 @@ type TreeNode struct {
 	Overrides  []OverrideTarget
 }
 
-// ComputeTreeIn computes a member's bits on the last node of chain (the topmost first); bot:
-// the member is a bot account. Mirror of treeItemPermissions with override lists.
-func ComputeTreeIn(b TreeBits, m Member, bot bool, chain []TreeNode) Bits {
+// ComputeTreeIn computes a member's bits on the last node of chain (the topmost first). Mirror
+// of treeItemPermissions with override lists.
+func ComputeTreeIn(b TreeBits, m Member, chain []TreeNode) Bits {
 	var buf [16]TreeLevel
 	levels := buf[:0]
 	for _, n := range chain {
@@ -114,7 +116,7 @@ func ComputeTreeIn(b TreeBits, m Member, bot bool, chain []TreeNode) Bits {
 		}
 		levels = append(levels, l)
 	}
-	return ComputeTree(b, TreeInput{Raw: m.Raw(), Guest: m.Role == RoleGuest, Bot: bot, Chain: levels})
+	return ComputeTree(b, TreeInput{Raw: m.Raw(), Guest: m.Role == RoleGuest, Chain: levels})
 }
 
 // ValidTreeOverride reports whether an allow / deny pair may be stored as a node override of

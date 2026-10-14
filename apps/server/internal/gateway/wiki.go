@@ -21,7 +21,7 @@ func (s *wsState) wikiSees(uid uuid.UUID, chain []perm.TreeNode) bool {
 	if !ok || len(chain) == 0 {
 		return false
 	}
-	return perm.ComputeWikiPageIn(m, s.bots[uid], chain).Has(perm.WikiView)
+	return perm.ComputeWikiPageIn(m, chain).Has(perm.WikiView)
 }
 
 // wikiRemove is WIKI_PAGE_REMOVE as clients get it.

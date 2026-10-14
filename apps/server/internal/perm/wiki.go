@@ -2,9 +2,9 @@ package perm
 
 // Wiki bits (ADR-0096 §2): the same rules as the disk bits (disk.go) — listed in the comment of
 // enum Permission and docs/04, TS WIKI_BITS; in ADMINISTRATOR (WikiOf) but outside All; per-page
-// overrides (wiki_permissions) carry WikiView and WikiWrite only; guests and bots get nothing
-// from their roles, only from an explicit user override on a page (or by owning it). The page
-// rule is the shared tree rule (tree.go) over WikiTree.
+// overrides (wiki_permissions) carry WikiView and WikiWrite only; guests get nothing from their
+// roles, only from an explicit user override on a page (or by owning it); bots are members like
+// people (addendum 2026-10-14). The page rule is the shared tree rule (tree.go) over WikiTree.
 //
 // One difference from the Disk is in what the bits allow, not in how they are computed:
 // WIKI_WRITE on a page edits its content (the page is a shared document) and creates child
@@ -29,21 +29,21 @@ const (
 // WikiTree are the Wiki's bits for the tree rule.
 var WikiTree = TreeBits{View: WikiView, Write: WikiWrite, Manage: WikiManage}
 
-// WikiOf is the workspace-level wiki rule (TS: wikiPermissions): guests and bots nothing;
-// ADMINISTRATOR or WIKI_MANAGE all three; anyone else the wiki bits of their roles.
-func WikiOf(raw Bits, guest, bot bool) Bits { return TreeOf(WikiTree, raw, guest, bot) }
+// WikiOf is the workspace-level wiki rule (TS: wikiPermissions): guests nothing; ADMINISTRATOR
+// or WIKI_MANAGE all three; anyone else (bots included) the wiki bits of their roles.
+func WikiOf(raw Bits, guest bool) Bits { return TreeOf(WikiTree, raw, guest) }
 
 // ComputeWikiPage is the one page rule (ADR-0096 §2; TS: wikiPagePermissions): ComputeTree over
 // WikiTree. chain runs from the top-level ancestor down to the page itself (empty = the top
 // level of the Wiki: creating a top-level page needs WIKI_WRITE there).
-func ComputeWikiPage(raw Bits, guest, bot bool, chain []TreeLevel) Bits {
-	return ComputeTree(WikiTree, TreeInput{Raw: raw, Guest: guest, Bot: bot, Chain: chain})
+func ComputeWikiPage(raw Bits, guest bool, chain []TreeLevel) Bits {
+	return ComputeTree(WikiTree, TreeInput{Raw: raw, Guest: guest, Chain: chain})
 }
 
 // ComputeWikiPageIn computes a member's bits on the last page of chain (the top-level page
-// first); bot: the member is a bot account.
-func ComputeWikiPageIn(m Member, bot bool, chain []TreeNode) Bits {
-	return ComputeTreeIn(WikiTree, m, bot, chain)
+// first).
+func ComputeWikiPageIn(m Member, chain []TreeNode) Bits {
+	return ComputeTreeIn(WikiTree, m, chain)
 }
 
 // WikiStructureAllowed is the structural rule of a page (ADR-0096 §2; TS:

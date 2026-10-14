@@ -116,13 +116,13 @@ func (c *Chains) Nodes(id uuid.UUID) []perm.TreeNode {
 	return out
 }
 
-// Bits is a member's wiki bits on id (bot: a bot account). A nil id is the top level: the
+// Bits is a member's wiki bits on id. A nil id is the top level: the
 // workspace-level bits.
-func (c *Chains) Bits(m perm.Member, bot bool, id *uuid.UUID) perm.Bits {
+func (c *Chains) Bits(m perm.Member, id *uuid.UUID) perm.Bits {
 	if id == nil {
-		return perm.ComputeWikiPageIn(m, bot, nil)
+		return perm.ComputeWikiPageIn(m, nil)
 	}
-	return perm.ComputeWikiPageIn(m, bot, c.Nodes(*id))
+	return perm.ComputeWikiPageIn(m, c.Nodes(*id))
 }
 
 // Node is one level of a chain.

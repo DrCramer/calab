@@ -100,16 +100,17 @@ const treeAll = (b: TreeBits): PermissionBits => b.VIEW | b.WRITE | b.MANAGE;
 const treeOverride = (b: TreeBits): PermissionBits => b.VIEW | b.WRITE;
 
 /**
- * The workspace-level rule of a tree section (Go: perm.TreeOf): guests and bots nothing;
- * ADMINISTRATOR or MANAGE all three; anyone else the section's bits of their roles. A guest is
- * recognized by the built-in guest role without a member one unless `guest` is given.
+ * The workspace-level rule of a tree section (Go: perm.TreeOf): guests nothing; ADMINISTRATOR or
+ * MANAGE all three; anyone else (bots included: a bot is a member like a person, ADR-0094/0096
+ * addendum 2026-10-14) the section's bits of their roles. A guest is recognized by the built-in
+ * guest role without a member one unless `guest` is given.
  */
 export function treePermissions(
   bits: TreeBits,
   roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
-  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+  opts: { guest?: boolean | undefined } = {},
 ): PermissionBits {
-  if ((opts.guest ?? guestOnly(roles)) || opts.bot) return 0n;
+  if (opts.guest ?? guestOnly(roles)) return 0n;
   const raw = rawPermissions(roles);
   if (raw & (PERMISSION_BITS.ADMINISTRATOR | bits.MANAGE)) return treeAll(bits);
   return raw & treeAll(bits);
@@ -131,9 +132,9 @@ export interface TreeLevel {
  * The one tree node rule shared by the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §2); Go:
  * perm.ComputeTree. `chain` runs from the topmost ancestor down to the node (empty = the top of
  * the section). MANAGE or ADMINISTRATOR: all three bits, restricted nodes included. Otherwise the
- * start is the roles' VIEW | WRITE (none for guests and bots) and at every level, top down: a
- * restricted node drops what the roles and the ancestors gave; each role's override lowest
- * position first (ignored for guests and bots), then the viewer's own; the owner of the level
+ * start is the roles' VIEW | WRITE (none for guests) and at every level, top down: a restricted
+ * node drops what the roles and the ancestors gave; each role's override lowest position first
+ * (ignored for guests), then the viewer's own; the owner of the level
  * always has VIEW | WRITE. Overrides touch VIEW | WRITE only. Without VIEW nothing. The server
  * sends my_bits; this only predicts the UI.
  */
@@ -141,18 +142,17 @@ export function treeItemPermissions(
   bits: TreeBits,
   roles: readonly RoleBits[],
   chain: readonly TreeLevel[],
-  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+  opts: { guest?: boolean | undefined } = {},
 ): PermissionBits {
   const guest = opts.guest ?? guestOnly(roles);
-  const bot = opts.bot ?? false;
-  const ws = treePermissions(bits, roles, { guest, bot });
+  const ws = treePermissions(bits, roles, { guest });
   if (ws & bits.MANAGE) return treeAll(bits);
   const ov = treeOverride(bits);
   const ordered = [...roles].sort((a, b) => a.position - b.position);
   let p = ws & ov;
   for (const l of chain) {
     if (l.restricted) p = 0n;
-    if (!guest && !bot) {
+    if (!guest) {
       for (const r of ordered) {
         const o = overrideOf(l.roleOverrides, r.id);
         if (o) {
@@ -198,8 +198,8 @@ export type OverrideEntry = Pick<DiskPermissionEntry | WikiPermissionEntry, 'tar
  * Disk bits (ADR-0094 §2), Go: perm.DiskView / DiskWrite / DiskManage. Like the billing bits they
  * cannot be proto enum values (listed in the comment of enum Permission) and stay out of
  * ALL_PERMISSIONS (room and board rules never see them), but ADMINISTRATOR includes them
- * (diskPermissions). Guests and bots get nothing from their roles, only from a personal allow on
- * an item. Per-item overrides carry VIEW and WRITE only (DISK_OVERRIDE_PERMISSIONS).
+ * (diskPermissions). Guests get nothing from their roles, only from a personal allow on an item;
+ * bots are members like people. Per-item overrides carry VIEW and WRITE only (DISK_OVERRIDE_PERMISSIONS).
  */
 export const DISK_BITS = {
   /** See the Disk and every item that is not restricted. Member default. */
@@ -219,7 +219,7 @@ export const DISK_OVERRIDE_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_B
 /** The workspace-level disk rule (Go: perm.DiskOf): treePermissions over DISK_BITS. */
 export function diskPermissions(
   roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
-  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+  opts: { guest?: boolean | undefined } = {},
 ): PermissionBits {
   return treePermissions(DISK_BITS, roles, opts);
 }
@@ -234,7 +234,7 @@ export type DiskLevel = TreeLevel;
 export function diskItemPermissions(
   roles: readonly RoleBits[],
   chain: readonly DiskLevel[],
-  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+  opts: { guest?: boolean | undefined } = {},
 ): PermissionBits {
   return treeItemPermissions(DISK_BITS, roles, chain, opts);
 }
@@ -250,7 +250,7 @@ export function diskLevel(
 
 /**
  * Wiki bits (ADR-0096 §2), Go: perm.WikiView / WikiWrite / WikiManage. The same rules as the disk
- * bits: outside ALL_PERMISSIONS, in ADMINISTRATOR, never for guests and bots through roles,
+ * bits: outside ALL_PERMISSIONS, in ADMINISTRATOR, never for guests through roles,
  * per-page overrides carry VIEW and WRITE only (WIKI_OVERRIDE_PERMISSIONS). WRITE on a page edits
  * its content and adds subpages; the structure needs the owner or MANAGE (wikiStructureAllowed).
  */
@@ -272,7 +272,7 @@ export const WIKI_OVERRIDE_PERMISSIONS: PermissionBits = WIKI_BITS.VIEW | WIKI_B
 /** The workspace-level wiki rule (Go: perm.WikiOf): treePermissions over WIKI_BITS. */
 export function wikiPermissions(
   roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
-  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+  opts: { guest?: boolean | undefined } = {},
 ): PermissionBits {
   return treePermissions(WIKI_BITS, roles, opts);
 }
@@ -284,7 +284,7 @@ export function wikiPermissions(
 export function wikiPagePermissions(
   roles: readonly RoleBits[],
   chain: readonly TreeLevel[],
-  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+  opts: { guest?: boolean | undefined } = {},
 ): PermissionBits {
   return treeItemPermissions(WIKI_BITS, roles, chain, opts);
 }

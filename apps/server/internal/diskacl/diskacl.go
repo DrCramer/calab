@@ -111,13 +111,13 @@ func (c *Chains) Nodes(id uuid.UUID) []perm.DiskNode {
 	return out
 }
 
-// Bits is a member's disk bits on id (bot: a bot account). A nil id is the root: the
+// Bits is a member's disk bits on id. A nil id is the root: the
 // workspace-level bits.
-func (c *Chains) Bits(m perm.Member, bot bool, id *uuid.UUID) perm.Bits {
+func (c *Chains) Bits(m perm.Member, id *uuid.UUID) perm.Bits {
 	if id == nil {
-		return perm.ComputeDiskItemIn(m, bot, nil)
+		return perm.ComputeDiskItemIn(m, nil)
 	}
-	return perm.ComputeDiskItemIn(m, bot, c.Nodes(*id))
+	return perm.ComputeDiskItemIn(m, c.Nodes(*id))
 }
 
 // Node is one level of a chain.

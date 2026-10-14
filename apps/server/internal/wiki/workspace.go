@@ -181,7 +181,7 @@ func hidePlaces(ctx context.Context, q *sqlc.Queries, c caller, rows []sqlc.Wiki
 	}
 	hide := func(raw []byte) ([]byte, error) {
 		m, id := parentOf(raw)
-		if m == nil || (id != nil && ch.Has(*id) && ch.Bits(c.m, c.bot, id).Has(perm.WikiView)) {
+		if m == nil || (id != nil && ch.Has(*id) && ch.Bits(c.m, id).Has(perm.WikiView)) {
 			return raw, nil
 		}
 		m["parent_title"] = ""

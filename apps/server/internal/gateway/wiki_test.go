@@ -70,9 +70,9 @@ func TestWikiEventsPerRecipient(t *testing.T) {
 			}
 		}
 	}
-	check("open page", deliver(upsert(open, nil)), map[uuid.UUID]string{alice: "U", bob: "U", admin: "U"})
+	check("open page", deliver(upsert(open, nil)), map[uuid.UUID]string{alice: "U", bob: "U", admin: "U", bot: "U"}) // a bot is a member like bob (addendum 2026-10-14)
 	check("restricted: bob loses it, the guest gains it", deliver(upsert(closed, open)),
-		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "U"})
+		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "U", bot: "R"})
 	check("deleted forever", deliver(&v1.DispatchEvent{Event: &v1.DispatchEvent_WikiPageRemove{WikiPageRemove: &v1.WikiPageRemove{
 		WorkspaceId: wid.String(), PageId: page.GetId(), Access: wikiacl.Levels(closed)}}}),
 		map[uuid.UUID]string{alice: "R", guest: "R", admin: "R"})

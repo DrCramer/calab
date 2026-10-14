@@ -123,7 +123,6 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 // caller is the requester as a member of the page's workspace.
 type caller struct {
 	uid uuid.UUID
-	bot bool
 	m   perm.Member
 }
 
@@ -131,7 +130,7 @@ func (c caller) owns(p sqlc.WikiPageHead) bool { return p.OwnerID != nil && *p.O
 
 // wsBits are the caller's workspace-level wiki bits (perm.WikiOf).
 func (c caller) wsBits() perm.Bits {
-	return perm.WikiOf(c.m.Raw(), c.m.Role == perm.RoleGuest, c.bot)
+	return perm.WikiOf(c.m.Raw(), c.m.Role == perm.RoleGuest)
 }
 
 var errNotMember = httpx.NotFound("workspace")
@@ -146,7 +145,7 @@ func member(r *http.Request, ws uuid.UUID) (caller, error) {
 	if err != nil {
 		return caller{}, err
 	}
-	return caller{uid: id.UserID, bot: id.IsBot, m: m}, nil
+	return caller{uid: id.UserID, m: m}, nil
 }
 
 // pathWorkspace resolves {id} as a workspace the caller belongs to.
@@ -198,7 +197,7 @@ func resolve(r *http.Request, q *sqlc.Queries, id uuid.UUID) (access, error) {
 	if err != nil {
 		return access{}, err
 	}
-	bits := ch.Bits(c.m, c.bot, &id)
+	bits := ch.Bits(c.m, &id)
 	if !bits.Has(perm.WikiView) {
 		return access{}, errNoPage
 	}
@@ -231,7 +230,7 @@ func writable(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) error {
 func parentBits(r *http.Request, q *sqlc.Queries, ws uuid.UUID, c caller, parent *uuid.UUID) (perm.Bits, *wikiacl.Chains, error) {
 	if parent == nil {
 		ch, _ := wikiacl.Load(r.Context(), q, nil)
-		return ch.Bits(c.m, c.bot, nil), ch, nil
+		return ch.Bits(c.m, nil), ch, nil
 	}
 	ch, err := wikiacl.Load(r.Context(), q, []uuid.UUID{*parent})
 	if err != nil {
@@ -241,7 +240,7 @@ func parentBits(r *http.Request, q *sqlc.Queries, ws uuid.UUID, c caller, parent
 		return 0, nil, httpx.NotFound("parent page")
 	}
 	p := ch.Page(*parent)
-	bits := ch.Bits(c.m, c.bot, parent)
+	bits := ch.Bits(c.m, parent)
 	if p.WorkspaceID != ws || !bits.Has(perm.WikiView) {
 		return 0, nil, httpx.NotFound("parent page")
 	}
