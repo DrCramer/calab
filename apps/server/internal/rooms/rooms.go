@@ -417,10 +417,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			if err := setPrivate(r.Context(), q, wsID, room.ID, true); err != nil {
 				return err
 			}
-			// ADR-0078 addendum 2026-10-14: the creator keeps managing the room (MANAGE_ROOM is
-			// theirs to create it), the invited see it.
+			// ADR-0078 addendum 2026-10-14: the creator keeps in the room what a public one would
+			// give them (their workspace bits within RoomOnly, MANAGE_ROOM at least: it is theirs to
+			// create it) as a personal allow; the invited see it.
 			me := auth.MustFromContext(r.Context()).UserID
-			if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: room.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | perm.ManageRoom)}); err != nil {
+			if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: room.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | perm.ManageRoom | bits&perm.RoomOnly)}); err != nil { //nolint:gosec // bit mask
 				return err
 			}
 			if err := invited.grant(r.Context(), q, room.ID); err != nil {

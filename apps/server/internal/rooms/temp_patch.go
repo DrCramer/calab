@@ -102,9 +102,9 @@ func privacyPatch(req *v1.UpdateRoomRequest) (*bool, error) {
 
 // applyPrivate makes a locked live room private or public (ADR-0078 addendum 2026-10-14):
 // is_private and restricted together, the member role's VIEW_ROOM deny; a room made private
-// keeps the caller (a personal VIEW_ROOM, plus MANAGE_ROOM when they hold it in the room: the
-// creator of a temporary room manages it as its creator and must not get MANAGE_ROOM this way)
-// and its creator (VIEW_ROOM). Text and voice rooms only.
+// keeps the caller with the room bits they had (a personal allow of their bits within RoomOnly:
+// an admin keeps managing it; the creator of a temporary room, who manages it as its creator
+// without MANAGE_ROOM, gets none this way) and its creator (VIEW_ROOM). Text and voice rooms only.
 func applyPrivate(ctx context.Context, q *sqlc.Queries, cur sqlc.Room, private bool, me uuid.UUID, acc perm.RoomAccess) error {
 	if cur.Type != "text" && cur.Type != "voice" {
 		return httpx.Validation("isPrivate", "only text and voice rooms can be private")
@@ -123,7 +123,7 @@ func applyPrivate(ctx context.Context, q *sqlc.Queries, cur sqlc.Room, private b
 	}
 	if !acc.Member.SeesPrivate() {
 		if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{
-			RoomID: cur.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.ManageRoom), //nolint:gosec // bit mask
+			RoomID: cur.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.RoomOnly), //nolint:gosec // bit mask
 		}); err != nil {
 			return err
 		}

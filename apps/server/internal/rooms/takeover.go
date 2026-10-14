@@ -20,7 +20,7 @@ const (
 // takeOver: POST /api/rooms/{id}/take-over (ADR-0078 addendum 2026-10-14, «Сделать меня
 // владельцем»). The workspace owner with «Владелец видит приватное» on takes over a private
 // room whose creator is no longer a member of the workspace (or unknown): created_by becomes the
-// owner, who gets a personal VIEW_ROOM | MANAGE_ROOM, and a TAKE_OVER entry goes to the
+// owner, who gets a personal allow of every room bit (RoomOnly), and a TAKE_OVER entry goes to the
 // workspace journal. A room the caller does not see is 404; anyone else 403 OWNER_ONLY; a public
 // room, a creator still in the workspace or the caller's own room 409.
 func (h *Handlers) takeOver(w http.ResponseWriter, r *http.Request) error {
@@ -64,7 +64,7 @@ func (h *Handlers) takeOver(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: roomID, UserID: me.String(), Allow: int64(perm.ViewRoom | perm.ManageRoom)}); err != nil {
+		if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: roomID, UserID: me.String(), Allow: int64(perm.RoomOnly)}); err != nil { //nolint:gosec // bit mask
 			return err
 		}
 		subject := auditSubjectRoom

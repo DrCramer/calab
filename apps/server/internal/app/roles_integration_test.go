@@ -284,7 +284,8 @@ func TestRoleRoomMatrix(t *testing.T) {
 	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: "p", IsPrivate: true}, &cr)
 	rid := cr.GetRoom().GetId()
 	member := builtinRole(t, o, wid, v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER)
-	if ovs := cr.GetRoom().GetPermissionOverrides(); len(ovs) != 1 || ovs[0].GetTargetId() != member.GetId() {
+	// The member role's deny and the creator's personal allow (ADR-0078 addendum 2026-10-14).
+	if ovs := cr.GetRoom().GetPermissionOverrides(); len(ovs) != 2 || ovs[0].GetTargetId() != member.GetId() || ovs[1].GetTargetId() != o.id {
 		t.Fatalf("private room override targets the member role id: %v", ovs)
 	}
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
