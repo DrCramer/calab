@@ -101,6 +101,7 @@ asyncio.run(main())
 | `messageCreate` · `messageUpdate` · `messageDelete` | сообщения комнат и личных сообщений бота (свои тоже) |
 | `messageReactionAdd` · `messageReactionRemove` | реакции |
 | `botCallback` | человек нажал кнопку под сообщением бота — только этому боту, см. [Команды и кнопки](./commands-buttons) |
+| `contactShared` | человек поделился контактом по кнопке запроса — только этому боту, см. [Команды и кнопки](./commands-buttons#запрос-контакта) |
 | `voiceStateUpdate` · `voiceStreamStart` / `voiceStreamStop` · `voiceCameraStop` · `voiceMoved` | голос: кто в какой комнате, микрофон, стримы |
 | `presenceUpdate` · `userUpdate` | присутствие и профили |
 | `roomCreate` / `roomUpdate` / `roomDelete` · `roomPermissionsUpdate` · `categoryCreate` / `categoryUpdate` / `categoryDelete` | комнаты и категории |

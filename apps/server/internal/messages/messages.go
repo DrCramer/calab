@@ -76,6 +76,8 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("POST /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("POST /api/rooms/{id}/messages/{mid}/forward", wrap(httpx.HandlerFunc(h.forward)))
 	mux.Handle("POST /api/messages/{id}/interactions", wrap(httpx.HandlerFunc(h.interact)))
+	mux.Handle("POST /api/messages/{id}/buttons/{buttonId}/contact", wrap(httpx.HandlerFunc(h.shareContact)))
+	mux.Handle("GET /api/workspaces/{id}/bot-contact-shares", wrap(httpx.HandlerFunc(h.listContactShares)))
 	mux.Handle("PATCH /api/messages/{id}", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/messages/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/read", wrap(httpx.HandlerFunc(h.read)))
@@ -415,6 +417,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := contactDMOnly(req.InlineKeyboard, acc); err != nil {
+		return err
+	}
 	if req.InlineKeyboard != nil && req.GetStickerId() != "" {
 		return httpx.Validation("inlineKeyboard", "sticker messages cannot have keyboards")
 	}
@@ -629,6 +634,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	keyboard, err := encodeKeyboard(req.InlineKeyboard)
 	if err != nil {
+		return err
+	}
+	if err := contactDMOnly(req.InlineKeyboard, acc); err != nil {
 		return err
 	}
 	// The additive flag preserves the legacy content field and PATCH {} semantics.

@@ -42,6 +42,7 @@ await bot.webhook.set('https://bot.example.com/calab', process.env.WEBHOOK_SECRE
 - `eventCreate`, `eventUpdate`, `eventDelete`, `eventRsvp` — как в gateway: внешние адреса только боту, который может менять встречу.
 - `workspaceMemberUpdate`.
 - `botCallback` — нажатия кнопок под сообщениями бота (см. [Команды и кнопки](./commands-buttons)).
+- `contactShared` — контакты, которыми люди поделились с ботом (см. [Команды и кнопки](./commands-buttons#запрос-контакта)).
 - `taskNotice` — уведомления людей, выбравших этого бота (см. [Уведомления о задачах](./task-notices)).
 
 События голоса (`voiceStateUpdate` и другие) приходят **только** через gateway.
