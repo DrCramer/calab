@@ -106,19 +106,19 @@ func (BoardFormFieldType) EnumDescriptor() ([]byte, []int) {
 type BoardFormFieldTarget int32
 
 const (
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_NONE      BoardFormFieldTarget = 0
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_PRIORITY  BoardFormFieldTarget = 1 // SELECT, through option_priorities
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_DUE_DATE  BoardFormFieldTarget = 2 // DATE
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_LABELS    BoardFormFieldTarget = 3 // SELECT or MULTISELECT, through option_labels
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_ASSIGNEES BoardFormFieldTarget = 4 // PEOPLE; the first one is the lead
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_APPROVERS BoardFormFieldTarget = 5 // PEOPLE
-	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_WATCHERS  BoardFormFieldTarget = 6 // PEOPLE
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_UNSPECIFIED BoardFormFieldTarget = 0
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_PRIORITY    BoardFormFieldTarget = 1 // SELECT, through option_priorities
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_DUE_DATE    BoardFormFieldTarget = 2 // DATE
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_LABELS      BoardFormFieldTarget = 3 // SELECT or MULTISELECT, through option_labels
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_ASSIGNEES   BoardFormFieldTarget = 4 // PEOPLE; the first one is the lead
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_APPROVERS   BoardFormFieldTarget = 5 // PEOPLE
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_WATCHERS    BoardFormFieldTarget = 6 // PEOPLE
 )
 
 // Enum value maps for BoardFormFieldTarget.
 var (
 	BoardFormFieldTarget_name = map[int32]string{
-		0: "BOARD_FORM_FIELD_TARGET_NONE",
+		0: "BOARD_FORM_FIELD_TARGET_UNSPECIFIED",
 		1: "BOARD_FORM_FIELD_TARGET_PRIORITY",
 		2: "BOARD_FORM_FIELD_TARGET_DUE_DATE",
 		3: "BOARD_FORM_FIELD_TARGET_LABELS",
@@ -127,13 +127,13 @@ var (
 		6: "BOARD_FORM_FIELD_TARGET_WATCHERS",
 	}
 	BoardFormFieldTarget_value = map[string]int32{
-		"BOARD_FORM_FIELD_TARGET_NONE":      0,
-		"BOARD_FORM_FIELD_TARGET_PRIORITY":  1,
-		"BOARD_FORM_FIELD_TARGET_DUE_DATE":  2,
-		"BOARD_FORM_FIELD_TARGET_LABELS":    3,
-		"BOARD_FORM_FIELD_TARGET_ASSIGNEES": 4,
-		"BOARD_FORM_FIELD_TARGET_APPROVERS": 5,
-		"BOARD_FORM_FIELD_TARGET_WATCHERS":  6,
+		"BOARD_FORM_FIELD_TARGET_UNSPECIFIED": 0,
+		"BOARD_FORM_FIELD_TARGET_PRIORITY":    1,
+		"BOARD_FORM_FIELD_TARGET_DUE_DATE":    2,
+		"BOARD_FORM_FIELD_TARGET_LABELS":      3,
+		"BOARD_FORM_FIELD_TARGET_ASSIGNEES":   4,
+		"BOARD_FORM_FIELD_TARGET_APPROVERS":   5,
+		"BOARD_FORM_FIELD_TARGET_WATCHERS":    6,
 	}
 )
 
@@ -308,7 +308,7 @@ func (x *BoardFormField) GetTarget() BoardFormFieldTarget {
 	if x != nil {
 		return x.Target
 	}
-	return BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_NONE
+	return BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_UNSPECIFIED
 }
 
 func (x *BoardFormField) GetOptionPriorities() map[string]TaskPriority {
@@ -1390,9 +1390,9 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"!BOARD_FORM_FIELD_TYPE_MULTISELECT\x10\n" +
 	"\x12\x1e\n" +
 	"\x1aBOARD_FORM_FIELD_TYPE_FILE\x10\v\x12 \n" +
-	"\x1cBOARD_FORM_FIELD_TYPE_PEOPLE\x10\f*\x9c\x02\n" +
-	"\x14BoardFormFieldTarget\x12 \n" +
-	"\x1cBOARD_FORM_FIELD_TARGET_NONE\x10\x00\x12$\n" +
+	"\x1cBOARD_FORM_FIELD_TYPE_PEOPLE\x10\f*\xa3\x02\n" +
+	"\x14BoardFormFieldTarget\x12'\n" +
+	"#BOARD_FORM_FIELD_TARGET_UNSPECIFIED\x10\x00\x12$\n" +
 	" BOARD_FORM_FIELD_TARGET_PRIORITY\x10\x01\x12$\n" +
 	" BOARD_FORM_FIELD_TARGET_DUE_DATE\x10\x02\x12\"\n" +
 	"\x1eBOARD_FORM_FIELD_TARGET_LABELS\x10\x03\x12%\n" +

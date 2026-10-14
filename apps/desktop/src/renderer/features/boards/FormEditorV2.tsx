@@ -40,7 +40,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The task fields a field type can fill. */
 function targetsOf(type: Kind): [Target | typeof TITLE, MessageKey][] {
-  const out: [Target | typeof TITLE, MessageKey][] = [[Target.NONE, 'forms.map.none']];
+  const out: [Target | typeof TITLE, MessageKey][] = [[Target.UNSPECIFIED, 'forms.map.none']];
   if (type !== Kind.CHECKBOX && type !== Kind.MULTISELECT && type !== Kind.FILE && type !== Kind.PEOPLE) out.push([TITLE, 'forms.map.title']);
   if (type === Kind.SELECT) out.push([Target.PRIORITY, 'forms.map.priority']);
   if (type === Kind.DATE) out.push([Target.DUE_DATE, 'forms.map.due']);
@@ -61,7 +61,7 @@ export function retype(f: BoardFormField, type: Kind): Partial<BoardFormField> {
     maxFileMb: type === Kind.FILE ? f.maxFileMb : 0,
     accept: type === Kind.FILE ? f.accept : [],
     roleId: type === Kind.PEOPLE ? f.roleId : '',
-    target: keep ? f.target : Target.NONE,
+    target: keep ? f.target : Target.UNSPECIFIED,
     optionPriorities: keep && type === Kind.SELECT ? f.optionPriorities : {},
     optionLabels: keep ? f.optionLabels : {},
   };
@@ -151,7 +151,7 @@ export const FieldV2 = memo(function FieldV2({
           onChange={(e) => {
             const v = e.target.value;
             if (v === TITLE) {
-              onField(f.id, { target: Target.NONE, optionPriorities: {}, optionLabels: {} });
+              onField(f.id, { target: Target.UNSPECIFIED, optionPriorities: {}, optionLabels: {} });
               onTitle(f.id, true);
               return;
             }
@@ -165,7 +165,7 @@ export const FieldV2 = memo(function FieldV2({
           }}
         >
           {targetsOf(f.type).map(([x, label]) => (
-            <option key={x} value={String(x)} disabled={x !== TITLE && x !== Target.NONE && x !== Target.LABELS && x !== f.target && usedTargets.includes(x)}>
+            <option key={x} value={String(x)} disabled={x !== TITLE && x !== Target.UNSPECIFIED && x !== Target.LABELS && x !== f.target && usedTargets.includes(x)}>
               {t(label)}
             </option>
           ))}

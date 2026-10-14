@@ -22,7 +22,7 @@ enum BoardFormFieldType {
 }
 // Where an answer goes on the created task (ADR-0064 v2). The title uses title_field_id.
 enum BoardFormFieldTarget {
-  BOARD_FORM_FIELD_TARGET_NONE = 0;
+  BOARD_FORM_FIELD_TARGET_UNSPECIFIED = 0;
   BOARD_FORM_FIELD_TARGET_PRIORITY = 1; // SELECT, through option_priorities
   BOARD_FORM_FIELD_TARGET_DUE_DATE = 2; // DATE
   BOARD_FORM_FIELD_TARGET_LABELS = 3; // SELECT or MULTISELECT, through option_labels

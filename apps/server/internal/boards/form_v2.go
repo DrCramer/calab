@@ -36,7 +36,7 @@ const (
 	ftDate        = v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_DATE
 	ftCheckbox    = v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_CHECKBOX
 
-	toNone      = v1.BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_NONE
+	toNone      = v1.BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_UNSPECIFIED
 	toPriority  = v1.BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_PRIORITY
 	toDue       = v1.BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_DUE_DATE
 	toLabels    = v1.BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_LABELS
