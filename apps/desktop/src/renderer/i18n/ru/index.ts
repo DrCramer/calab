@@ -13,6 +13,7 @@ import { ruRecording } from './recording';
 import { ruAnnot } from './annot';
 import { ruPeople } from './people';
 import { ruFormer } from './former';
+import { ruPrivacy } from './privacy';
 import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
@@ -71,6 +72,7 @@ export const ru = {
   ...ruTransitions,
   ...ruCustomPlan,
   ...ruFormer,
+  ...ruPrivacy,
   ...ruModeration,
   ...ruMail,
   ...ruRecording,
@@ -270,10 +272,8 @@ export const ru = {
   'room.iconPreview': 'изменил(а) картинку комнаты',
   'room.iconRemovedPreview': 'убрал(а) картинку комнаты',
   'room.iconOpen': 'Открыть картинку комнаты',
-  'room.privateHint': 'Видят только администраторы и те, кому вы дадите доступ в правах',
   'room.accessCard': 'Доступ',
   'room.whoSees': 'Кто видит',
-  'room.whoSeesOwner': 'владелец, всегда',
   'room.whoSeesEmpty': 'В списке пока никого',
   'room.whoSeesAdd': 'Добавить',
   'room.whoSeesRemove': 'Убрать из списка: {name}',

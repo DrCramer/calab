@@ -69,6 +69,8 @@ export const wikiApi = {
   trash: (id: string) => call('POST', `${P(id)}/trash`, WikiPageResponseSchema),
   restore: (id: string) => call('POST', `${P(id)}/restore`, WikiPageResponseSchema),
   remove: (id: string) => callEmpty('DELETE', P(id)),
+  /** «Сделать меня владельцем» of a former member's private page: the owner with «Владелец видит приватное». */
+  takeOver: (id: string) => call('POST', `${P(id)}/take-over`, WikiPageResponseSchema),
   emptyTrash: (ws: string) => call('POST', `${W(ws)}/trash/empty`, EmptyWikiTrashResponseSchema),
   permissions: (id: string): Promise<WikiPermissionsResponse> => call('GET', `${P(id)}/permissions`, WikiPermissionsResponseSchema),
   setPermissions: (id: string, init: MessageInitShape<typeof UpdateWikiPermissionsRequestSchema>) => callEmpty('PUT', `${P(id)}/permissions`, body(UpdateWikiPermissionsRequestSchema, init)),

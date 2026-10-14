@@ -1,5 +1,6 @@
 import { computeMemberBoardPermissions, taskPermissions, Permission, WorkspaceRole, type Board, type Role, type Task, type WorkspaceMember } from '@calaba/protocol';
 import { t } from '../../i18n';
+import { ownerSeesPrivate } from '../permissions';
 import { rolesOfMember } from '../roles';
 
 /**
@@ -34,7 +35,7 @@ const MANAGE_BOARD = BigInt(Permission.MANAGE_BOARD);
 export type PickerAccess = 'hidden' | 'ok' | 'card';
 
 export function pickerAccess(
-  board: Pick<Board, 'permissionOverrides' | 'isPrivate' | 'restricted' | 'permissions'> | undefined,
+  board: Pick<Board, 'permissionOverrides' | 'isPrivate' | 'restricted' | 'permissions' | 'workspaceId' | 'createdBy'> | undefined,
   roles: readonly Role[],
   m: Pick<WorkspaceMember, 'role' | 'roleIds' | 'user'>,
 ): PickerAccess {
@@ -42,7 +43,20 @@ export function pickerAccess(
   // The server sends permissionOverrides only to viewers with MANAGE_BOARD: without them nobody's
   // access is known, so no guessing (no captions, nothing disabled; the server validates, 422 → toast).
   if (!board || (board.permissions & MANAGE_BOARD) === 0n) return 'ok';
-  const sees = (computeMemberBoardPermissions(rolesOfMember(roles, m), m.user?.id ?? '', board.permissionOverrides, board.isPrivate, false, board.restricted) & VIEW_BOARD) !== 0n;
+  const sees =
+    (computeMemberBoardPermissions(
+      rolesOfMember(roles, m),
+      m.user?.id ?? '',
+      board.permissionOverrides,
+      board.isPrivate,
+      false,
+      board.restricted,
+      m.role === WorkspaceRole.OWNER,
+      ownerSeesPrivate(board.workspaceId),
+      board.createdBy,
+    ) &
+      VIEW_BOARD) !==
+    0n;
   if (sees) return 'ok';
   return m.user?.isBot ? 'hidden' : 'card';
 }

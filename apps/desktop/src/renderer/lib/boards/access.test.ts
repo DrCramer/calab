@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { PERMISSION_BITS, TaskApproverSchema, TaskAssigneeSchema, TaskSchema, UserSchema, WorkspaceMemberSchema, WorkspaceRole, BoardSchema, type Board, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
+import { setOwnerSeesPrivate } from '../permissions';
 import { legacyRoles } from '../roles';
 import { accessChoice, boardScoped, boardVisible, pickerAccess, taskBits } from './access';
 
@@ -93,8 +94,16 @@ describe('pickerAccess / accessChoice (the assignee and approver pickers)', () =
     expect(accessChoice(a)).toEqual(accessChoice('card'));
     expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.MEMBER, true))).toBe('hidden');
   });
-  it('the owner sees a restricted board', () => {
-    expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.OWNER))).toBe('ok');
+  it('the owner sees a private board only with «Владелец видит приватное» (addendum 2026-10-14)', () => {
+    expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.OWNER))).toBe('card');
+    const wsBoard = { ...closedBoard, workspaceId: 'w-owner-sees' };
+    setOwnerSeesPrivate('w-owner-sees', true);
+    expect(pickerAccess(wsBoard, roles, member(WorkspaceRole.OWNER))).toBe('ok');
+    expect(pickerAccess(wsBoard, roles, member(WorkspaceRole.ADMIN))).toBe('card');
+    setOwnerSeesPrivate('w-owner-sees', false);
+  });
+  it('the creator of a private board sees it', () => {
+    expect(pickerAccess({ ...closedBoard, createdBy: 'u' }, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
   });
   it('guests are never listed; a bot only when it sees the board', () => {
     expect(pickerAccess(publicBoard, roles, member(WorkspaceRole.GUEST))).toBe('hidden');

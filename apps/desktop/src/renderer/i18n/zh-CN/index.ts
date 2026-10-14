@@ -14,6 +14,7 @@ import { zhRecording } from './recording';
 import { zhAnnot } from './annot';
 import { zhPeople } from './people';
 import { zhFormer } from './former';
+import { zhPrivacy } from './privacy';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
@@ -72,6 +73,7 @@ export const zhCN: Dict = {
   ...zhTransitions,
   ...zhCustomPlan,
   ...zhFormer,
+  ...zhPrivacy,
   ...zhModeration,
   ...zhMail,
   ...zhRecording,
@@ -272,10 +274,8 @@ export const zhCN: Dict = {
   'room.iconPreview': '更改了房间图片',
   'room.iconRemovedPreview': '移除了房间图片',
   'room.iconOpen': '打开房间图片',
-  'room.privateHint': '仅管理员和权限中被授权的成员可见',
   'room.accessCard': '访问权限',
   'room.whoSees': '谁可以看到',
-  'room.whoSeesOwner': '所有者，始终可见',
   'room.whoSeesEmpty': '名单中还没有人',
   'room.whoSeesAdd': '添加',
   'room.whoSeesRemove': '从名单中移除：{name}',

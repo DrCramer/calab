@@ -25,7 +25,11 @@ import {
   mayManageMembers,
   mayManageRecordings,
   mayOpenWorkspaceSettings,
+  mayTakeOver,
   mayViewJournals,
+  ownerSeesPrivate,
+  roomPerms,
+  setOwnerSeesPrivate,
   settingsAccess,
 } from './permissions';
 import { previewRoles, rolePreview, visibleBoards, visibleRooms } from './rolePreview';
@@ -153,21 +157,40 @@ describe('gating helpers (ADR-0048: no implication from MANAGE_WORKSPACE)', () =
   });
 });
 
-describe('access level (third level «По списку, без администраторов»)', () => {
-  it('reads the level off the flags', () => {
+describe('access level (two levels, ADR-0058 / ADR-0078 addenda 2026-10-14)', () => {
+  it('reads the level off the flags: isPrivate or the old restricted flag is private', () => {
     expect(accessLevelOf({ isPrivate: false, restricted: false })).toBe('all');
-    expect(accessLevelOf({ isPrivate: true, restricted: false })).toBe('list');
-    expect(accessLevelOf({ isPrivate: true, restricted: true })).toBe('restricted');
+    expect(accessLevelOf({ isPrivate: true, restricted: false })).toBe('private');
+    expect(accessLevelOf({ isPrivate: true, restricted: true })).toBe('private');
+    expect(accessLevelOf({ isPrivate: false, restricted: true })).toBe('private');
   });
 
-  it('orders the PATCHes: private before restricted, restricted lifted before public', () => {
-    expect(accessSteps('all', 'restricted')).toEqual([{ isPrivate: true }, { restricted: true }]);
-    expect(accessSteps('restricted', 'all')).toEqual([{ restricted: false }, { isPrivate: false }]);
-    expect(accessSteps('list', 'restricted')).toEqual([{ restricted: true }]);
-    expect(accessSteps('restricted', 'list')).toEqual([{ restricted: false }]);
-    expect(accessSteps('all', 'list')).toEqual([{ isPrivate: true }]);
-    expect(accessSteps('list', 'all')).toEqual([{ isPrivate: false }]);
-    expect(accessSteps('list', 'list')).toEqual([]);
+  it('one PATCH of is_private per change', () => {
+    expect(accessSteps('all', 'private')).toEqual([{ isPrivate: true }]);
+    expect(accessSteps('private', 'all')).toEqual([{ isPrivate: false }]);
+    expect(accessSteps('private', 'private')).toEqual([]);
+  });
+
+  it('take-over: the owner with the setting, a private item, a creator who left', () => {
+    const members = { u1: {} };
+    const base = { isOwner: true, seesPrivate: true, isPrivate: true, itemOwnerId: 'gone', members };
+    expect(mayTakeOver(base)).toBe(true);
+    expect(mayTakeOver({ ...base, itemOwnerId: '' })).toBe(true);
+    expect(mayTakeOver({ ...base, itemOwnerId: 'u1' })).toBe(false);
+    expect(mayTakeOver({ ...base, seesPrivate: false })).toBe(false);
+    expect(mayTakeOver({ ...base, isOwner: false })).toBe(false);
+    expect(mayTakeOver({ ...base, isPrivate: false })).toBe(false);
+  });
+
+  it('room bits follow «Владелец видит приватное» of the room\'s workspace', () => {
+    const room = create(RoomSchema, { id: 'r', workspaceId: 'w-sees', type: RoomType.TEXT, isPrivate: true, restricted: true, createdBy: 'c' });
+    const owner = [{ id: 'o', position: 1001, permissions: B.ADMINISTRATOR, builtin: WorkspaceRole.OWNER }];
+    expect(roomPerms(owner, 'u', room)).toBe(0n);
+    setOwnerSeesPrivate('w-sees', true);
+    expect(roomPerms(owner, 'u', room)).not.toBe(0n);
+    expect(ownerSeesPrivate('w-sees')).toBe(true);
+    setOwnerSeesPrivate('w-sees', false);
+    expect(roomPerms(owner, 'u', room)).toBe(0n);
   });
 });
 
@@ -194,8 +217,8 @@ describe('«Что увидит участник с этой ролью»', () =
     const ops = previewRoles(all, custom('ops', 3, 0n), 0n) ?? [];
     expect(visibleRooms(rooms, 'w', sales)).toBe('2/3');
     expect(visibleRooms(rooms, 'w', ops)).toBe('1/3');
-    // ADMINISTRATOR does not open a closed room.
-    expect(visibleRooms(rooms, 'w', [...ops, custom('adm', 900, B.ADMINISTRATOR)])).toBe('2/3');
+    // ADMINISTRATOR opens no private room (ADR-0078 addendum 2026-10-14).
+    expect(visibleRooms(rooms, 'w', [...ops, custom('adm', 900, B.ADMINISTRATOR)])).toBe('1/3');
   });
 
   it('boards: a guest sees none; a closed board only by an override', () => {

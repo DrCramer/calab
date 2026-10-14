@@ -25,6 +25,7 @@ import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
 import { can, settingsAccess, workspacePerms } from '../../lib/permissions';
 import { TempRoomsCards } from './TempRoomsCards';
+import { PrivacyCard } from './PrivacyCard';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -307,6 +308,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
           />
         </Row>
       </Card>
+      <PrivacyCard workspaceId={workspaceId} />
     </>
   );
 }
