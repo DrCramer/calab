@@ -148,10 +148,10 @@ export interface TreeLevel {
  * roles' VIEW | WRITE (none for guests) and at every level, top down: a restricted node drops
  * what the roles and the ancestors gave; each role's override lowest position first (ignored for
  * guests), then the viewer's own; the owner of the level always has VIEW | WRITE. Overrides touch
- * VIEW | WRITE only. Without VIEW nothing. Inside a restricted subtree a MANAGE holder let in
- * with WRITE has MANAGE there too. The workspace owner with «Владелец видит приватное»
- * (`ownerSeesPrivate`, Workspace.ownerSeesPrivate) has all three everywhere. The server sends
- * my_bits; this only predicts the UI.
+ * VIEW | WRITE only. Without VIEW nothing. Inside a restricted subtree a MANAGE holder is an
+ * ordinary member: «Правка» gives VIEW | WRITE, never MANAGE. The workspace owner with «Владелец
+ * видит приватное» (`ownerSeesPrivate`, Workspace.ownerSeesPrivate) has all three everywhere. The
+ * server sends my_bits; this only predicts the UI.
  */
 export function treeItemPermissions(
   bits: TreeBits,
@@ -184,9 +184,7 @@ export function treeItemPermissions(
     }
     if (l.owner) p |= ov;
   }
-  if (!(p & bits.VIEW)) return 0n;
-  if (ws & bits.MANAGE && p & bits.WRITE) p |= bits.MANAGE;
-  return p;
+  return p & bits.VIEW ? p : 0n;
 }
 
 /**

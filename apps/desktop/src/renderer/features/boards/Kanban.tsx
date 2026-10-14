@@ -247,7 +247,8 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
   /** Press on a card (event delegation from the column): a drag starts after 6 px. */
   const onCardPointerDown = useCallback(
     (e: ReactPointerEvent, taskId: string, statusId: string): void => {
-      if (e.button !== 0 || (e.target as HTMLElement).closest('button:not([data-task]), input, [role=menu]')) return;
+      // Touch never starts a drag (owner 14.10: on a phone the card must scroll); status changes go through the task menu.
+      if (e.pointerType !== 'mouse' || e.button !== 0 || (e.target as HTMLElement).closest('button:not([data-task]), input, [role=menu]')) return;
       const task = useBoards.getState().tasks[taskId];
       // Per-task bits: a scoped assignee drags his own cards (ADR-0059).
       if (!task || !hasBit(taskPermsOf(useBoards.getState(), task, myUserId()), CREATE_TASKS)) return;
@@ -260,7 +261,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
 
   const onHeaderPointerDown = useCallback(
     (e: ReactPointerEvent, statusId: string): void => {
-      if (!manage || e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return;
+      if (!manage || e.pointerType !== 'mouse' || e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return;
       const head = (e.currentTarget as HTMLElement).getBoundingClientRect();
       press.current = { kind: { kind: 'column', id: statusId }, x: e.clientX, y: e.clientY, dx: e.clientX - head.left, dy: e.clientY - head.top, w: head.width, started: false };
       pointer.current = { x: e.clientX, y: e.clientY };

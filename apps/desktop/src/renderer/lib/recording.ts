@@ -2,6 +2,7 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { MessageKind, RecordingStatus, RoomRecordingState, type AutomationCard, type BirthdayCard, type Message, type RecordingCard, type RoomIconCard, type RoomRecording } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { stickerPreview } from './stickers';
+import { contactSharedCardOf } from './contactRequest';
 import { callCardOf, callLogLine } from './callModel';
 import { myUserId } from '../stores/session';
 import { achievementCardOf } from './achievements';
@@ -261,6 +262,8 @@ export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: 
     if (authorName) return t(icon.fileId ? 'room.iconChanged' : 'room.iconRemoved', { name: authorName });
     return t(icon.fileId ? 'room.iconPreview' : 'room.iconRemovedPreview');
   }
+  // A contact shared with a bot (ADR-0100): «Контакт отправлен боту».
+  if (contactSharedCardOf(m)) return t('contact.preview');
   // A DM call log line (ADR-0034): «Исходящий звонок · 5:12», «Пропущенный звонок»…
   const call = callCardOf(m);
   if (call) return callLogLine(call, myUserId()).text;

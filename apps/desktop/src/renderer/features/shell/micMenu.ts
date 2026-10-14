@@ -21,7 +21,10 @@ export function selectMicMode(value: string): void {
 export function selectAutoMute(value: string): void {
   const sec = AUTO_MUTE_OPTIONS.find((o) => String(o) === value);
   if (sec === undefined || usePrefs.getState().autoMuteSec === sec) return;
-  usePrefs.getState().setPrefs({ autoMuteSec: sec });
+  // Any rustle keeps the mic «speaking» without noise suppression (owner, 14.10): turning auto-mute on
+  // also turns RNNoise on (not in musician mode, which bypasses processing).
+  const p = usePrefs.getState();
+  p.setPrefs(sec > 0 && !p.rnnoise && !p.musicianMode ? { autoMuteSec: sec, rnnoise: true } : { autoMuteSec: sec });
 }
 
 /**

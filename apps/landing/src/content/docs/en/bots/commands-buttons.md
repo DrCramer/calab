@@ -182,3 +182,73 @@ bot.on('callback', async (c) => {
 - The same person retrying a press with the same `nonce` (1–64 bytes) gets the original `interactionId` without a second delivery — even after the keyboard was edited or removed. Reusing a `nonce` for a different press is a conflict. Receipts live until the message is physically deleted. Different `nonce`s can both be accepted.
 - A bot must durably dedupe `callback.id` across transports and retries and make external effects idempotent. A press accepted before a draft changed is not cancelled — revalidate against your current version. The SDK's webhook cache is bounded and is not an exactly-once guarantee.
 - A bot removed from the last shared workspace doesn't receive old DM presses.
+
+## Contact request
+
+A bot can ask a person for their phone or email — as in Telegram. It is a button of kind `INLINE_BUTTON_KIND_REQUEST_CONTACT` in an ordinary keyboard. It works **only in the bot's direct chat with a person**: in a workspace room sending or editing such a message is `400 BAD_REQUEST`, `reason` `BOT_CONTACT_REQUEST_DM_ONLY`.
+
+```sh tab="curl"
+curl -s -X POST $CALAB/api/rooms/$DM/messages \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"content": "Leave your contact and we will call back", "nonce": "signup-42",
+       "inlineKeyboard": {"rows": [{"buttons": [{"id": "contact", "label": "Share contact",
+         "kind": "INLINE_BUTTON_KIND_REQUEST_CONTACT",
+         "fields": ["CONTACT_FIELD_PHONE", "CONTACT_FIELD_EMAIL"],
+         "reason": "So that a manager can call you back", "data": "signup:42"}]}]}}'
+```
+
+```js tab="JavaScript"
+await bot.send(dmRoomId, {
+  text: 'Leave your contact and we will call back',
+  buttons: [[{ kind: 'requestContact', text: 'Share contact', fields: ['phone', 'email'], reason: 'So that a manager can call you back', data: 'signup:42' }]],
+});
+```
+
+| Field | Rule |
+|---|---|
+| `kind` | `INLINE_BUTTON_KIND_REQUEST_CONTACT`; without it the button is an ordinary one (`botCallback`) |
+| `fields` | `CONTACT_FIELD_PHONE`, `CONTACT_FIELD_EMAIL` — one or both, no repeats |
+| `reason` | optional, up to 120 characters — the person sees why the bot asks |
+
+The person presses the button and sees a card: what the bot will get (the phone and email from their profile, whether each is verified, «not set» for an empty one) and your reason. Nothing is sent without their confirmation. On confirmation the client calls `POST /api/messages/{id}/buttons/{buttonId}/contact` (no body, people only) — **the server composes the contact from the profile**; the client never sends the values.
+
+Limits: one share per button per person (`409 CONTACT_ALREADY_SHARED`, the button shows «Sent»), at most 10 shares per person per hour (`429 CONTACT_SHARE_LIMIT`); none of the requested fields in the profile — `422 CONTACT_EMPTY`.
+
+### The `contactShared` event
+
+Goes **to this bot only** — over the gateway and the webhook. Only the fields the button asked for and that are set are filled:
+
+```json
+{
+  "contactShared": {
+    "id": "0192a1f0-…",
+    "botUserId": "0192a1b2-3c4d-7e5f-8a9b-0c1d2e3f4a5b",
+    "userId": "0191f0c2-7a10-7d3e-9b11-5c2f8e4a6d01",
+    "displayName": "Olga",
+    "phone": "+7 999 123-45-67",
+    "email": "olga@example.com",
+    "emailVerified": true,
+    "sharedAt": "2026-10-14T10:05:00Z",
+    "roomId": "0192a1c0-…",
+    "messageId": "0192a1d0-…",
+    "buttonId": "contact",
+    "data": "signup:42",
+    "fields": ["CONTACT_FIELD_PHONE", "CONTACT_FIELD_EMAIL"]
+  }
+}
+```
+
+- `emailVerified` — the address was confirmed with an emailed code. `phoneVerified` is always `false` for now: the product has no phone verification yet. A `false` field is omitted from the JSON.
+- `id` is the same over the gateway and the webhook and equals the delivery id — dedupe by it.
+- The chat gets a service line «You shared your contact with @bot: phone, email» — both sides see it, with no values. The bot receives it as an ordinary `messageCreate` (a `contactShared` system message).
+- The fact of the share (who, to which bot, which fields, when — no values) goes to the journal of the bot's workspace: `GET /api/workspaces/{id}/bot-contact-shares` for those with `VIEW_JOURNALS`.
+
+```js tab="JavaScript"
+bot.on('contactShared', async (c) => {
+  if (await seen(c.id)) return;
+  await saveLead({ userId: c.userId, name: c.displayName, phone: c.phone, email: c.email, emailVerified: c.emailVerified });
+});
+```
+
+> [!WARNING]
+> A contact is personal data. Keep it only for the purpose you gave in `reason`, and never post it to shared rooms.

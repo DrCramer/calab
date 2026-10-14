@@ -1,5 +1,7 @@
 package perm
 
+import "slices"
+
 // The tree rule shared by the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §2): a workspace-level
 // triple of bits (VIEW / WRITE / MANAGE) on roles, then per-node overrides down a chain of
 // ancestors. The two sections are two TreeBits over one algorithm (TS: treeItemPermissions).
@@ -60,9 +62,9 @@ func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 // then allow; ignored for guests — they get access only as a person), then the user's own; the
 // owner of the level always has VIEW | WRITE. A child inherits its parent's result. Overrides
 // touch b.Override() only. Without VIEW nothing (404). Inside a restricted subtree a MANAGE
-// holder let in with WRITE (by an override or ownership) has MANAGE there as well (the access
-// dialog, anyone's items); let in with VIEW only, just VIEW. The workspace owner with
-// OwnerSeesPrivate has all three bits everywhere (Member.SeesPrivate).
+// holder is an ordinary member (owner, 14.10): let in with «Правка» (WRITE) it gets VIEW | WRITE
+// like anyone with that grant, never MANAGE; with «Просмотр», just VIEW. The workspace owner
+// with OwnerSeesPrivate has all three bits everywhere (Member.SeesPrivate).
 func ComputeTree(b TreeBits, in TreeInput) Bits {
 	if in.Owner && in.OwnerSeesPrivate && !in.Guest {
 		return b.All()
@@ -94,9 +96,6 @@ func ComputeTree(b TreeBits, in TreeInput) Bits {
 	}
 	if p&b.View == 0 {
 		return 0
-	}
-	if ws&b.Manage != 0 && p&b.Write != 0 {
-		p |= b.Manage
 	}
 	return p
 }
@@ -161,4 +160,98 @@ func RestrictedIn(chain []TreeNode) bool {
 // not both ways.
 func ValidTreeOverride(b TreeBits, allow, deny Bits) bool {
 	return (allow|deny)&^b.Override() == 0 && allow&deny == 0
+}
+
+// Detached is what a node keeps when it leaves its chain for the top of its tree (a private
+// subtree detached from a parent its viewer cannot see being trashed, deleted or moved; owner,
+// 14.10): its own owner, and a flag and overrides that give, at the top, the access the chain
+// gave. A restricted node keeps its own (nothing above it counted). Otherwise the effective part
+// of the chain — from the deepest restricted ancestor down, or all of it — is folded into the
+// node per target, top down (each level: roles, then people, deny then allow, as ComputeTree
+// applies it), the owners of the ancestors in that part as personal allows of b.Override() after
+// their level; the node is restricted when that part is. The fold is exact for personal
+// overrides and ownership; for a member with several roles whose overrides disagree at different
+// levels it may differ from the chain (docs/12).
+func Detached(b TreeBits, chain []TreeNode, pin []Member) TreeNode {
+	if len(chain) == 0 {
+		return TreeNode{}
+	}
+	last := chain[len(chain)-1]
+	if last.Restricted {
+		return last
+	}
+	start := 0
+	for i := range chain {
+		if chain[i].Restricted {
+			start = i
+		}
+	}
+	ov := b.Override()
+	type key struct{ t, id string }
+	var order []key
+	acc := map[key]Override{}
+	apply := func(k key, o Override) {
+		cur, ok := acc[k]
+		if !ok {
+			order = append(order, k)
+		}
+		cur.Allow = (cur.Allow &^ (o.Deny & ov)) | (o.Allow & ov)
+		cur.Deny = (cur.Deny &^ (o.Allow & ov)) | (o.Deny & ov)
+		acc[k] = cur
+	}
+	for i := start; i < len(chain); i++ {
+		n := &chain[i]
+		for _, role := range []bool{true, false} {
+			for _, o := range n.Overrides {
+				if (o.TargetType == "role") == role {
+					apply(key{o.TargetType, o.TargetID}, o.Override)
+				}
+			}
+		}
+		if i < len(chain)-1 && n.OwnerID != "" {
+			apply(key{"user", n.OwnerID}, Override{Allow: ov})
+		}
+	}
+	out := TreeNode{Restricted: chain[start].Restricted, OwnerID: last.OwnerID}
+	for _, k := range order {
+		if o := acc[k]; o.Allow|o.Deny != 0 {
+			out.Overrides = append(out.Overrides, OverrideTarget{TargetType: k.t, TargetID: k.id, Override: o})
+		}
+	}
+	// Pinned members (the people the chain names, the actor) get exactly what the chain gave
+	// them: a personal override is the last word on a single level.
+	for _, m := range pin {
+		was, now := ComputeTreeIn(b, m, chain), ComputeTreeIn(b, m, []TreeNode{out})
+		if was == now || m.UserID == last.OwnerID {
+			continue
+		}
+		o := Override{Allow: was & ov, Deny: ov &^ was}
+		i := slices.IndexFunc(out.Overrides, func(x OverrideTarget) bool { return x.TargetType == "user" && x.TargetID == m.UserID })
+		if i < 0 {
+			out.Overrides = append(out.Overrides, OverrideTarget{TargetType: "user", TargetID: m.UserID, Override: o})
+		} else {
+			out.Overrides[i].Override = o
+		}
+	}
+	return out
+}
+
+// Named are the people a chain names: its owners and personal overrides (the members Detached
+// should pin, with the actor).
+func Named(chain []TreeNode) []string {
+	var out []string
+	add := func(id string) {
+		if id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	for i := range chain {
+		add(chain[i].OwnerID)
+		for _, o := range chain[i].Overrides {
+			if o.TargetType == "user" {
+				add(o.TargetID)
+			}
+		}
+	}
+	return out
 }
