@@ -83,6 +83,15 @@ func (q *Queries) CreateDiskItem(ctx context.Context, arg CreateDiskItemParams) 
 	return i, err
 }
 
+const deleteDiskActivity = `-- name: DeleteDiskActivity :exec
+DELETE FROM disk_activity WHERE id = $1
+`
+
+func (q *Queries) DeleteDiskActivity(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDiskActivity, id)
+	return err
+}
+
 const deleteDiskItem = `-- name: DeleteDiskItem :execrows
 DELETE FROM disk_items WHERE id = $1
 `
@@ -185,6 +194,61 @@ func (q *Queries) DiskItemPath(ctx context.Context, id uuid.UUID) ([]DiskItemPat
 	for rows.Next() {
 		var i DiskItemPathRow
 		if err := rows.Scan(
+			&i.DiskItem.ID,
+			&i.DiskItem.WorkspaceID,
+			&i.DiskItem.ParentID,
+			&i.DiskItem.Kind,
+			&i.DiskItem.Name,
+			&i.DiskItem.FileID,
+			&i.DiskItem.OwnerID,
+			&i.DiskItem.Restricted,
+			&i.DiskItem.CreatedAt,
+			&i.DiskItem.UpdatedAt,
+			&i.DiskItem.TrashedAt,
+			&i.DiskItem.TrashedBy,
+			&i.DiskItem.TrashedRoot,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const diskItemPaths = `-- name: DiskItemPaths :many
+WITH RECURSIVE up (leaf, id, parent_id, depth) AS (
+    SELECT d.id, d.id, d.parent_id, 0 FROM disk_items d WHERE d.id = ANY($1::uuid[])
+    UNION ALL
+    SELECT up.leaf, p.id, p.parent_id, up.depth + 1 FROM disk_items p JOIN up ON p.id = up.parent_id WHERE up.depth < 64
+)
+SELECT up.leaf::uuid AS leaf, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, up.depth::int AS depth
+FROM up JOIN disk_items di ON di.id = up.id
+ORDER BY up.leaf, up.depth DESC
+`
+
+type DiskItemPathsRow struct {
+	Leaf     uuid.UUID
+	DiskItem DiskItem
+	Depth    int32
+}
+
+// The chains of several items at once (a trash page, an event): every item with its ancestors,
+// per leaf the topmost first. Bounded at 64 levels like DiskItemPath.
+func (q *Queries) DiskItemPaths(ctx context.Context, ids []uuid.UUID) ([]DiskItemPathsRow, error) {
+	rows, err := q.db.Query(ctx, diskItemPaths, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DiskItemPathsRow{}
+	for rows.Next() {
+		var i DiskItemPathsRow
+		if err := rows.Scan(
+			&i.Leaf,
 			&i.DiskItem.ID,
 			&i.DiskItem.WorkspaceID,
 			&i.DiskItem.ParentID,
@@ -494,6 +558,28 @@ func (q *Queries) InsertDiskPermission(ctx context.Context, arg InsertDiskPermis
 		arg.Deny,
 	)
 	return err
+}
+
+const lastDiskActivity = `-- name: LastDiskActivity :one
+SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, created_at FROM disk_activity WHERE item_id = $1 ORDER BY id DESC LIMIT 1
+`
+
+// The newest journal entry of an item (the rename coalescing of ADR-0081).
+func (q *Queries) LastDiskActivity(ctx context.Context, itemID *uuid.UUID) (DiskActivity, error) {
+	row := q.db.QueryRow(ctx, lastDiskActivity, itemID)
+	var i DiskActivity
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ItemID,
+		&i.ItemName,
+		&i.ActorID,
+		&i.Kind,
+		&i.Before,
+		&i.After,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const listDiskFolderByName = `-- name: ListDiskFolderByName :many
@@ -893,6 +979,39 @@ func (q *Queries) ListDiskPermissionsForItems(ctx context.Context, ids []uuid.UU
 	return items, nil
 }
 
+const listDiskSweepWorkspaces = `-- name: ListDiskSweepWorkspaces :many
+SELECT w.id, w.disk_trash_days::int AS days FROM workspaces w
+WHERE w.disk_trash_days IS NOT NULL AND EXISTS (
+    SELECT 1 FROM disk_items di WHERE di.workspace_id = w.id AND di.trashed_root
+      AND di.trashed_at < $1::timestamptz - make_interval(days => w.disk_trash_days))
+`
+
+type ListDiskSweepWorkspacesRow struct {
+	ID   uuid.UUID
+	Days int32
+}
+
+// Workspaces with a trash retention and at least one expired trash root (the hourly sweeper).
+func (q *Queries) ListDiskSweepWorkspaces(ctx context.Context, now time.Time) ([]ListDiskSweepWorkspacesRow, error) {
+	rows, err := q.db.Query(ctx, listDiskSweepWorkspaces, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDiskSweepWorkspacesRow{}
+	for rows.Next() {
+		var i ListDiskSweepWorkspacesRow
+		if err := rows.Scan(&i.ID, &i.Days); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDiskTrash = `-- name: ListDiskTrash :many
 SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, coalesce(f.size, 0)::bigint AS size
 FROM disk_items di
@@ -964,6 +1083,54 @@ SELECT id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, c
 // Every trash root of a workspace («Очистить корзину»: the caller deletes those they may).
 func (q *Queries) ListDiskTrashRootsAll(ctx context.Context, workspaceID uuid.UUID) ([]DiskItem, error) {
 	rows, err := q.db.Query(ctx, listDiskTrashRootsAll, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DiskItem{}
+	for rows.Next() {
+		var i DiskItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ParentID,
+			&i.Kind,
+			&i.Name,
+			&i.FileID,
+			&i.OwnerID,
+			&i.Restricted,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TrashedAt,
+			&i.TrashedBy,
+			&i.TrashedRoot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDiskTrashRootsBefore = `-- name: ListDiskTrashRootsBefore :many
+SELECT id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM disk_items
+WHERE workspace_id = $1 AND trashed_root AND trashed_at < $2::timestamptz
+ORDER BY trashed_at, id
+LIMIT $3
+`
+
+type ListDiskTrashRootsBeforeParams struct {
+	WorkspaceID uuid.UUID
+	Cutoff      time.Time
+	Lim         int32
+}
+
+// The sweeper's batch of one workspace: its trash roots deleted before the cutoff, oldest first.
+func (q *Queries) ListDiskTrashRootsBefore(ctx context.Context, arg ListDiskTrashRootsBeforeParams) ([]DiskItem, error) {
+	rows, err := q.db.Query(ctx, listDiskTrashRootsBefore, arg.WorkspaceID, arg.Cutoff, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -1178,6 +1345,18 @@ func (q *Queries) ListWorkspaceDiskLinks(ctx context.Context, workspaceID uuid.U
 	return items, nil
 }
 
+const lockDiskTree = `-- name: LockDiskTree :exec
+SELECT pg_advisory_xact_lock(hashtext('calaba.disk.' || $1::uuid::text))
+`
+
+// Serializes the structural changes of one workspace's Disk (names in a folder, moves and their
+// cycle check, restore). Taken after any workspaces row lock of the transaction (an upload
+// reserves its quota first), never before one.
+func (q *Queries) LockDiskTree(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockDiskTree, workspaceID)
+	return err
+}
+
 const restoreDiskSubtree = `-- name: RestoreDiskSubtree :many
 WITH RECURSIVE root AS (
     SELECT r.id, r.trashed_at FROM disk_items r WHERE r.id = $1::uuid AND r.trashed_root
@@ -1342,6 +1521,22 @@ func (q *Queries) TrashDiskSubtree(ctx context.Context, arg TrashDiskSubtreePara
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateDiskActivityAfter = `-- name: UpdateDiskActivityAfter :exec
+UPDATE disk_activity SET after = $1, item_name = $2, created_at = now()
+WHERE id = $3
+`
+
+type UpdateDiskActivityAfterParams struct {
+	After    []byte
+	ItemName string
+	ID       uuid.UUID
+}
+
+func (q *Queries) UpdateDiskActivityAfter(ctx context.Context, arg UpdateDiskActivityAfterParams) error {
+	_, err := q.db.Exec(ctx, updateDiskActivityAfter, arg.After, arg.ItemName, arg.ID)
+	return err
 }
 
 const updateDiskItem = `-- name: UpdateDiskItem :one

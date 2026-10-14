@@ -294,3 +294,46 @@ FROM workspaces w WHERE w.id = $1;
 -- name: SumActiveStorageAddonsMB :one
 -- The storage add-ons of a workspace in effect (ADR-0094 §6), in MiB.
 SELECT coalesce(sum(size_mb), 0)::bigint FROM workspace_storage_addons WHERE workspace_id = $1 AND active;
+
+-- name: DiskItemPaths :many
+-- The chains of several items at once (a trash page, an event): every item with its ancestors,
+-- per leaf the topmost first. Bounded at 64 levels like DiskItemPath.
+WITH RECURSIVE up (leaf, id, parent_id, depth) AS (
+    SELECT d.id, d.id, d.parent_id, 0 FROM disk_items d WHERE d.id = ANY(sqlc.arg('ids')::uuid[])
+    UNION ALL
+    SELECT up.leaf, p.id, p.parent_id, up.depth + 1 FROM disk_items p JOIN up ON p.id = up.parent_id WHERE up.depth < 64
+)
+SELECT up.leaf::uuid AS leaf, sqlc.embed(di), up.depth::int AS depth
+FROM up JOIN disk_items di ON di.id = up.id
+ORDER BY up.leaf, up.depth DESC;
+
+-- name: LockDiskTree :exec
+-- Serializes the structural changes of one workspace's Disk (names in a folder, moves and their
+-- cycle check, restore). Taken after any workspaces row lock of the transaction (an upload
+-- reserves its quota first), never before one.
+SELECT pg_advisory_xact_lock(hashtext('calaba.disk.' || sqlc.arg('workspace_id')::uuid::text));
+
+-- name: LastDiskActivity :one
+-- The newest journal entry of an item (the rename coalescing of ADR-0081).
+SELECT * FROM disk_activity WHERE item_id = $1 ORDER BY id DESC LIMIT 1;
+
+-- name: UpdateDiskActivityAfter :exec
+UPDATE disk_activity SET after = sqlc.narg('after'), item_name = sqlc.arg('item_name'), created_at = now()
+WHERE id = sqlc.arg('id');
+
+-- name: DeleteDiskActivity :exec
+DELETE FROM disk_activity WHERE id = $1;
+
+-- name: ListDiskSweepWorkspaces :many
+-- Workspaces with a trash retention and at least one expired trash root (the hourly sweeper).
+SELECT w.id, w.disk_trash_days::int AS days FROM workspaces w
+WHERE w.disk_trash_days IS NOT NULL AND EXISTS (
+    SELECT 1 FROM disk_items di WHERE di.workspace_id = w.id AND di.trashed_root
+      AND di.trashed_at < sqlc.arg('now')::timestamptz - make_interval(days => w.disk_trash_days));
+
+-- name: ListDiskTrashRootsBefore :many
+-- The sweeper's batch of one workspace: its trash roots deleted before the cutoff, oldest first.
+SELECT * FROM disk_items
+WHERE workspace_id = sqlc.arg('workspace_id') AND trashed_root AND trashed_at < sqlc.arg('cutoff')::timestamptz
+ORDER BY trashed_at, id
+LIMIT sqlc.arg('lim');

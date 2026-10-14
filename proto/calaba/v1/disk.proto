@@ -186,12 +186,31 @@ message PublicDiskFile {
   google.protobuf.Timestamp expires_at = 7;
 }
 
+// GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).
+message DiskSettings {
+  uint32 trash_days = 1; // automatic deletion from the trash after this many days; 0 = never
+}
+
+// One level of an item's access chain (the topmost ancestor first, the item last): what
+// perm.ComputeDiskItem reads. Server-internal routing of the DISK_ITEM_* events, always empty
+// for clients.
+message DiskAccessLevel {
+  bool restricted = 1;
+  string owner_id = 2;
+  repeated DiskPermissionEntry overrides = 3;
+}
+
 // DISK_ITEM_UPSERT: an item was created or changed (renamed, moved, shared, trashed,
 // restored). To members with DISK_VIEW on the item; item.my_bits is 0 (per recipient bits come
-// with a refetch). Clients refetch the open folder and the trash.
+// with a refetch). A member who saw the item before the change and does not any more gets
+// DISK_ITEM_REMOVE instead. Clients refetch the open folder and the trash.
 message DiskItemUpsert {
   string workspace_id = 1;
   DiskItem item = 2;
+  // Server-internal routing, always empty for clients: the access chain after the change and,
+  // when it changed (move, restricted, overrides), before it (empty = nobody saw it before).
+  repeated DiskAccessLevel access = 3;
+  repeated DiskAccessLevel access_before = 4;
 }
 
 // DISK_ITEM_REMOVE: an item was deleted forever or the recipient lost access to it.
@@ -199,4 +218,7 @@ message DiskItemRemove {
   string workspace_id = 1;
   string item_id = 2;
   string parent_id = 3;
+  // Server-internal routing, always empty for clients: the access chain the item had (who saw
+  // it gets the event).
+  repeated DiskAccessLevel access = 4;
 }

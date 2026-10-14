@@ -1340,20 +1340,133 @@ func (x *PublicDiskFile) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).
+type DiskSettings struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TrashDays     uint32                 `protobuf:"varint,1,opt,name=trash_days,json=trashDays,proto3" json:"trash_days,omitempty"` // automatic deletion from the trash after this many days; 0 = never
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiskSettings) Reset() {
+	*x = DiskSettings{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiskSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiskSettings) ProtoMessage() {}
+
+func (x *DiskSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiskSettings.ProtoReflect.Descriptor instead.
+func (*DiskSettings) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *DiskSettings) GetTrashDays() uint32 {
+	if x != nil {
+		return x.TrashDays
+	}
+	return 0
+}
+
+// One level of an item's access chain (the topmost ancestor first, the item last): what
+// perm.ComputeDiskItem reads. Server-internal routing of the DISK_ITEM_* events, always empty
+// for clients.
+type DiskAccessLevel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Restricted    bool                   `protobuf:"varint,1,opt,name=restricted,proto3" json:"restricted,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	Overrides     []*DiskPermissionEntry `protobuf:"bytes,3,rep,name=overrides,proto3" json:"overrides,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiskAccessLevel) Reset() {
+	*x = DiskAccessLevel{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiskAccessLevel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiskAccessLevel) ProtoMessage() {}
+
+func (x *DiskAccessLevel) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiskAccessLevel.ProtoReflect.Descriptor instead.
+func (*DiskAccessLevel) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DiskAccessLevel) GetRestricted() bool {
+	if x != nil {
+		return x.Restricted
+	}
+	return false
+}
+
+func (x *DiskAccessLevel) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *DiskAccessLevel) GetOverrides() []*DiskPermissionEntry {
+	if x != nil {
+		return x.Overrides
+	}
+	return nil
+}
+
 // DISK_ITEM_UPSERT: an item was created or changed (renamed, moved, shared, trashed,
 // restored). To members with DISK_VIEW on the item; item.my_bits is 0 (per recipient bits come
-// with a refetch). Clients refetch the open folder and the trash.
+// with a refetch). A member who saw the item before the change and does not any more gets
+// DISK_ITEM_REMOVE instead. Clients refetch the open folder and the trash.
 type DiskItemUpsert struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Item          *DiskItem              `protobuf:"bytes,2,opt,name=item,proto3" json:"item,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Item        *DiskItem              `protobuf:"bytes,2,opt,name=item,proto3" json:"item,omitempty"`
+	// Server-internal routing, always empty for clients: the access chain after the change and,
+	// when it changed (move, restricted, overrides), before it (empty = nobody saw it before).
+	Access        []*DiskAccessLevel `protobuf:"bytes,3,rep,name=access,proto3" json:"access,omitempty"`
+	AccessBefore  []*DiskAccessLevel `protobuf:"bytes,4,rep,name=access_before,json=accessBefore,proto3" json:"access_before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DiskItemUpsert) Reset() {
 	*x = DiskItemUpsert{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[17]
+	mi := &file_calaba_v1_disk_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1365,7 +1478,7 @@ func (x *DiskItemUpsert) String() string {
 func (*DiskItemUpsert) ProtoMessage() {}
 
 func (x *DiskItemUpsert) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[17]
+	mi := &file_calaba_v1_disk_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1378,7 +1491,7 @@ func (x *DiskItemUpsert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskItemUpsert.ProtoReflect.Descriptor instead.
 func (*DiskItemUpsert) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DiskItemUpsert) GetWorkspaceId() string {
@@ -1395,19 +1508,36 @@ func (x *DiskItemUpsert) GetItem() *DiskItem {
 	return nil
 }
 
+func (x *DiskItemUpsert) GetAccess() []*DiskAccessLevel {
+	if x != nil {
+		return x.Access
+	}
+	return nil
+}
+
+func (x *DiskItemUpsert) GetAccessBefore() []*DiskAccessLevel {
+	if x != nil {
+		return x.AccessBefore
+	}
+	return nil
+}
+
 // DISK_ITEM_REMOVE: an item was deleted forever or the recipient lost access to it.
 type DiskItemRemove struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	ItemId        string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
-	ParentId      string                 `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	ItemId      string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ParentId    string                 `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	// Server-internal routing, always empty for clients: the access chain the item had (who saw
+	// it gets the event).
+	Access        []*DiskAccessLevel `protobuf:"bytes,4,rep,name=access,proto3" json:"access,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DiskItemRemove) Reset() {
 	*x = DiskItemRemove{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[18]
+	mi := &file_calaba_v1_disk_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1419,7 +1549,7 @@ func (x *DiskItemRemove) String() string {
 func (*DiskItemRemove) ProtoMessage() {}
 
 func (x *DiskItemRemove) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[18]
+	mi := &file_calaba_v1_disk_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1432,7 +1562,7 @@ func (x *DiskItemRemove) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskItemRemove.ProtoReflect.Descriptor instead.
 func (*DiskItemRemove) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DiskItemRemove) GetWorkspaceId() string {
@@ -1454,6 +1584,13 @@ func (x *DiskItemRemove) GetParentId() string {
 		return x.ParentId
 	}
 	return ""
+}
+
+func (x *DiskItemRemove) GetAccess() []*DiskAccessLevel {
+	if x != nil {
+		return x.Access
+	}
+	return nil
 }
 
 var File_calaba_v1_disk_proto protoreflect.FileDescriptor
@@ -1583,14 +1720,26 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\x06height\x18\x05 \x01(\rR\x06height\x12#\n" +
 	"\rhas_thumbnail\x18\x06 \x01(\bR\fhasThumbnail\x129\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\\\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"-\n" +
+	"\fDiskSettings\x12\x1d\n" +
+	"\n" +
+	"trash_days\x18\x01 \x01(\rR\ttrashDays\"\x8a\x01\n" +
+	"\x0fDiskAccessLevel\x12\x1e\n" +
+	"\n" +
+	"restricted\x18\x01 \x01(\bR\n" +
+	"restricted\x12\x19\n" +
+	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12<\n" +
+	"\toverrides\x18\x03 \x03(\v2\x1e.calaba.v1.DiskPermissionEntryR\toverrides\"\xd1\x01\n" +
 	"\x0eDiskItemUpsert\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12'\n" +
-	"\x04item\x18\x02 \x01(\v2\x13.calaba.v1.DiskItemR\x04item\"i\n" +
+	"\x04item\x18\x02 \x01(\v2\x13.calaba.v1.DiskItemR\x04item\x122\n" +
+	"\x06access\x18\x03 \x03(\v2\x1a.calaba.v1.DiskAccessLevelR\x06access\x12?\n" +
+	"\raccess_before\x18\x04 \x03(\v2\x1a.calaba.v1.DiskAccessLevelR\faccessBefore\"\x9d\x01\n" +
 	"\x0eDiskItemRemove\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
 	"\aitem_id\x18\x02 \x01(\tR\x06itemId\x12\x1b\n" +
-	"\tparent_id\x18\x03 \x01(\tR\bparentId*b\n" +
+	"\tparent_id\x18\x03 \x01(\tR\bparentId\x122\n" +
+	"\x06access\x18\x04 \x03(\v2\x1a.calaba.v1.DiskAccessLevelR\x06access*b\n" +
 	"\fDiskItemKind\x12\x1e\n" +
 	"\x1aDISK_ITEM_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15DISK_ITEM_KIND_FOLDER\x10\x01\x12\x17\n" +
@@ -1624,7 +1773,7 @@ func file_calaba_v1_disk_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_disk_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_disk_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_calaba_v1_disk_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_calaba_v1_disk_proto_goTypes = []any{
 	(DiskItemKind)(0),                    // 0: calaba.v1.DiskItemKind
 	(DiskActivityKind)(0),                // 1: calaba.v1.DiskActivityKind
@@ -1645,42 +1794,48 @@ var file_calaba_v1_disk_proto_goTypes = []any{
 	(*DiskLinkResponse)(nil),             // 16: calaba.v1.DiskLinkResponse
 	(*DiskActivityPage)(nil),             // 17: calaba.v1.DiskActivityPage
 	(*PublicDiskFile)(nil),               // 18: calaba.v1.PublicDiskFile
-	(*DiskItemUpsert)(nil),               // 19: calaba.v1.DiskItemUpsert
-	(*DiskItemRemove)(nil),               // 20: calaba.v1.DiskItemRemove
-	(*timestamppb.Timestamp)(nil),        // 21: google.protobuf.Timestamp
-	(*FileMeta)(nil),                     // 22: calaba.v1.FileMeta
-	(PermissionTargetType)(0),            // 23: calaba.v1.PermissionTargetType
-	(*structpb.Struct)(nil),              // 24: google.protobuf.Struct
+	(*DiskSettings)(nil),                 // 19: calaba.v1.DiskSettings
+	(*DiskAccessLevel)(nil),              // 20: calaba.v1.DiskAccessLevel
+	(*DiskItemUpsert)(nil),               // 21: calaba.v1.DiskItemUpsert
+	(*DiskItemRemove)(nil),               // 22: calaba.v1.DiskItemRemove
+	(*timestamppb.Timestamp)(nil),        // 23: google.protobuf.Timestamp
+	(*FileMeta)(nil),                     // 24: calaba.v1.FileMeta
+	(PermissionTargetType)(0),            // 25: calaba.v1.PermissionTargetType
+	(*structpb.Struct)(nil),              // 26: google.protobuf.Struct
 }
 var file_calaba_v1_disk_proto_depIdxs = []int32{
-	21, // 0: calaba.v1.DiskLink.expires_at:type_name -> google.protobuf.Timestamp
-	21, // 1: calaba.v1.DiskLink.created_at:type_name -> google.protobuf.Timestamp
+	23, // 0: calaba.v1.DiskLink.expires_at:type_name -> google.protobuf.Timestamp
+	23, // 1: calaba.v1.DiskLink.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: calaba.v1.DiskItem.kind:type_name -> calaba.v1.DiskItemKind
-	22, // 3: calaba.v1.DiskItem.file:type_name -> calaba.v1.FileMeta
+	24, // 3: calaba.v1.DiskItem.file:type_name -> calaba.v1.FileMeta
 	2,  // 4: calaba.v1.DiskItem.link:type_name -> calaba.v1.DiskLink
-	21, // 5: calaba.v1.DiskItem.trashed_at:type_name -> google.protobuf.Timestamp
-	21, // 6: calaba.v1.DiskItem.created_at:type_name -> google.protobuf.Timestamp
-	21, // 7: calaba.v1.DiskItem.updated_at:type_name -> google.protobuf.Timestamp
-	23, // 8: calaba.v1.DiskPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
+	23, // 5: calaba.v1.DiskItem.trashed_at:type_name -> google.protobuf.Timestamp
+	23, // 6: calaba.v1.DiskItem.created_at:type_name -> google.protobuf.Timestamp
+	23, // 7: calaba.v1.DiskItem.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 8: calaba.v1.DiskPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
 	1,  // 9: calaba.v1.DiskActivity.kind:type_name -> calaba.v1.DiskActivityKind
-	24, // 10: calaba.v1.DiskActivity.before:type_name -> google.protobuf.Struct
-	24, // 11: calaba.v1.DiskActivity.after:type_name -> google.protobuf.Struct
-	21, // 12: calaba.v1.DiskActivity.created_at:type_name -> google.protobuf.Timestamp
+	26, // 10: calaba.v1.DiskActivity.before:type_name -> google.protobuf.Struct
+	26, // 11: calaba.v1.DiskActivity.after:type_name -> google.protobuf.Struct
+	23, // 12: calaba.v1.DiskActivity.created_at:type_name -> google.protobuf.Timestamp
 	3,  // 13: calaba.v1.ListDiskItemsResponse.items:type_name -> calaba.v1.DiskItem
 	3,  // 14: calaba.v1.DiskItemResponse.item:type_name -> calaba.v1.DiskItem
 	3,  // 15: calaba.v1.DiskPathResponse.items:type_name -> calaba.v1.DiskItem
 	4,  // 16: calaba.v1.DiskPermissionsResponse.entries:type_name -> calaba.v1.DiskPermissionEntry
 	4,  // 17: calaba.v1.UpdateDiskPermissionsRequest.entries:type_name -> calaba.v1.DiskPermissionEntry
-	21, // 18: calaba.v1.CreateDiskLinkRequest.expires_at:type_name -> google.protobuf.Timestamp
+	23, // 18: calaba.v1.CreateDiskLinkRequest.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 19: calaba.v1.DiskLinkResponse.link:type_name -> calaba.v1.DiskLink
 	6,  // 20: calaba.v1.DiskActivityPage.activities:type_name -> calaba.v1.DiskActivity
-	21, // 21: calaba.v1.PublicDiskFile.expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 22: calaba.v1.DiskItemUpsert.item:type_name -> calaba.v1.DiskItem
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	23, // 21: calaba.v1.PublicDiskFile.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 22: calaba.v1.DiskAccessLevel.overrides:type_name -> calaba.v1.DiskPermissionEntry
+	3,  // 23: calaba.v1.DiskItemUpsert.item:type_name -> calaba.v1.DiskItem
+	20, // 24: calaba.v1.DiskItemUpsert.access:type_name -> calaba.v1.DiskAccessLevel
+	20, // 25: calaba.v1.DiskItemUpsert.access_before:type_name -> calaba.v1.DiskAccessLevel
+	20, // 26: calaba.v1.DiskItemRemove.access:type_name -> calaba.v1.DiskAccessLevel
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_disk_proto_init() }
@@ -1698,7 +1853,7 @@ func file_calaba_v1_disk_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_disk_proto_rawDesc), len(file_calaba_v1_disk_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
