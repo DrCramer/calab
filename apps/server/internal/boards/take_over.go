@@ -4,17 +4,18 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/wsaudit"
 )
 
-// reasonOwnerOnly (ApiError.reason, 403): only the workspace owner may do this (rooms.ReasonOwnerOnly).
-const reasonOwnerOnly = "OWNER_ONLY"
+var (
+	errTakeOverOwnerOnly = httpx.Forbidden("turn on «Владелец видит приватное» first").WithDetails(wsaudit.ReasonOwnerOnly, 0, 0)
+	errTakeOverMember    = httpx.Conflict("the board's creator is still a member of the workspace")
+)
 
 // takeOver: POST /api/boards/{id}/take-over — «Сделать меня владельцем» (ADR-0058 addendum
 // 2026-10-14). The workspace owner with «Владелец видит приватное» on takes over a private board
@@ -41,10 +42,7 @@ func (s *Service) takeOver(w http.ResponseWriter, r *http.Request) error {
 		if !acc.Bits.Has(perm.ViewBoard) {
 			return httpx.NotFound("board")
 		}
-		return httpx.Forbidden("only the workspace owner takes over a board").WithDetails(reasonOwnerOnly, 0, 0)
-	}
-	if !acc.Member.SeesPrivate() {
-		return httpx.Forbidden("turn on «Владелец видит приватное» first").WithDetails(reasonOwnerOnly, 0, 0)
+		return httpx.Forbidden("only the workspace owner takes over a board").WithDetails(wsaudit.ReasonOwnerOnly, 0, 0)
 	}
 	if err := writable(acc); err != nil {
 		return err
@@ -61,17 +59,11 @@ func (s *Service) takeOver(w http.ResponseWriter, r *http.Request) error {
 		if !cur.IsPrivate && !cur.Restricted {
 			return httpx.Conflict("only a private board is taken over")
 		}
-		if cur.CreatedBy != nil {
-			if *cur.CreatedBy == me {
-				return httpx.Conflict("the board is already yours")
-			}
-			_, err := q.GetMemberAccess(r.Context(), sqlc.GetMemberAccessParams{WorkspaceID: cur.WorkspaceID, UserID: *cur.CreatedBy})
-			if err == nil {
-				return httpx.Conflict("the board's creator is still a member of the workspace")
-			}
-			if !errors.Is(err, pgx.ErrNoRows) {
-				return err
-			}
+		if cur.CreatedBy != nil && *cur.CreatedBy == me {
+			return httpx.Conflict("the board is already yours")
+		}
+		if err := wsaudit.MayTakeOver(r.Context(), q, cur.WorkspaceID, acc.Member, cur.CreatedBy, errTakeOverOwnerOnly, errTakeOverMember); err != nil {
+			return err
 		}
 		if _, err := q.SetBoardCreator(r.Context(), sqlc.SetBoardCreatorParams{ID: id, CreatedBy: &me}); err != nil {
 			return err
@@ -81,11 +73,7 @@ func (s *Service) takeOver(w http.ResponseWriter, r *http.Request) error {
 		}); err != nil {
 			return err
 		}
-		subject, kind := "board", "take_over"
-		return q.InsertWorkspaceAudit(r.Context(), sqlc.InsertWorkspaceAuditParams{
-			WorkspaceID: cur.WorkspaceID, ActorID: &me, Kind: kind, SubjectType: &subject, SubjectID: &id,
-			PreviousOwnerID: cur.CreatedBy,
-		})
+		return wsaudit.RecordTakeOver(r.Context(), q, cur.WorkspaceID, me, wsaudit.SubjectBoard, id, cur.CreatedBy)
 	})
 	if err != nil {
 		return err

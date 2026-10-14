@@ -12,9 +12,7 @@ import (
 )
 
 const insertWorkspaceAudit = `-- name: InsertWorkspaceAudit :exec
-
-INSERT INTO workspace_audit (workspace_id, actor_id, kind, subject_type, subject_id, previous_owner_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO workspace_audit (workspace_id, actor_id, kind, subject_type, subject_id, previous_owner_id) VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type InsertWorkspaceAuditParams struct {
@@ -26,7 +24,6 @@ type InsertWorkspaceAuditParams struct {
 	PreviousOwnerID *uuid.UUID
 }
 
-// The workspace journal of private-access decisions (migration 00097, addendum 2026-10-14).
 func (q *Queries) InsertWorkspaceAudit(ctx context.Context, arg InsertWorkspaceAuditParams) error {
 	_, err := q.db.Exec(ctx, insertWorkspaceAudit,
 		arg.WorkspaceID,
@@ -37,4 +34,85 @@ func (q *Queries) InsertWorkspaceAudit(ctx context.Context, arg InsertWorkspaceA
 		arg.PreviousOwnerID,
 	)
 	return err
+}
+
+const isWorkspaceMember = `-- name: IsWorkspaceMember :one
+SELECT EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2)::boolean
+`
+
+type IsWorkspaceMemberParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+// Whether the user is a current member of the workspace (take-over: a former member's item).
+func (q *Queries) IsWorkspaceMember(ctx context.Context, arg IsWorkspaceMemberParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isWorkspaceMember, arg.WorkspaceID, arg.UserID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const listWorkspaceAudit = `-- name: ListWorkspaceAudit :many
+SELECT id, workspace_id, actor_id, kind, subject_type, subject_id, previous_owner_id, created_at FROM workspace_audit
+WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR id < $2::uuid)
+ORDER BY id DESC
+LIMIT $3
+`
+
+type ListWorkspaceAuditParams struct {
+	WorkspaceID uuid.UUID
+	Before      *uuid.UUID
+	Lim         int32
+}
+
+// The workspace journal (addendum 2026-10-14), newest first; before = the last id of the
+// previous page (NULL = from the top).
+func (q *Queries) ListWorkspaceAudit(ctx context.Context, arg ListWorkspaceAuditParams) ([]WorkspaceAudit, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceAudit, arg.WorkspaceID, arg.Before, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkspaceAudit{}
+	for rows.Next() {
+		var i WorkspaceAudit
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ActorID,
+			&i.Kind,
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.PreviousOwnerID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setOwnerSeesPrivate = `-- name: SetOwnerSeesPrivate :execrows
+UPDATE workspaces SET owner_sees_private = $1
+WHERE id = $2 AND owner_sees_private <> $1
+`
+
+type SetOwnerSeesPrivateParams struct {
+	On bool
+	ID uuid.UUID
+}
+
+// «Владелец видит приватное»: 1 row when the value changed, 0 when it already was so.
+func (q *Queries) SetOwnerSeesPrivate(ctx context.Context, arg SetOwnerSeesPrivateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setOwnerSeesPrivate, arg.On, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

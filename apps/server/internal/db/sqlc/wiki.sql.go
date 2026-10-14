@@ -1965,6 +1965,22 @@ func (q *Queries) SetWikiPageContent(ctx context.Context, arg SetWikiPageContent
 	return i, err
 }
 
+const setWikiPageOwner = `-- name: SetWikiPageOwner :exec
+UPDATE wiki_pages SET owner_id = $1, updated_by = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetWikiPageOwnerParams struct {
+	OwnerID *uuid.UUID
+	ID      uuid.UUID
+}
+
+// «Сделать меня владельцем» (addendum 2026-10-14): a former member's private page gets a new owner.
+func (q *Queries) SetWikiPageOwner(ctx context.Context, arg SetWikiPageOwnerParams) error {
+	_, err := q.db.Exec(ctx, setWikiPageOwner, arg.OwnerID, arg.ID)
+	return err
+}
+
 const setWikiTrashDays = `-- name: SetWikiTrashDays :exec
 UPDATE workspaces SET wiki_trash_days = $1 WHERE id = $2
 `
