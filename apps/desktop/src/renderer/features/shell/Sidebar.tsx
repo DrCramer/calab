@@ -71,7 +71,7 @@ import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMe
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { Bar, BAR_GROUP } from '../../components/Bar';
-import { PhoneSearchButton } from '../../components/PhoneHeader';
+import { CreateSlot, PhoneSearchButton } from '../../components/PhoneHeader';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -372,7 +372,8 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
         </div>
         <div className={BAR_GROUP}>
           <PhoneSearchButton />
-          {create}
+          {/* The «+» slot is kept when there is nothing to create (a guest): the magnifier does not move between sections. */}
+          {create ?? <CreateSlot />}
         </div>
       </Bar>
     );

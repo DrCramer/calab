@@ -464,7 +464,8 @@ test('billing-admin: accounts list and the account page', async ({ page }) => {
   test.skip(isLight(), 'dark only');
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM' });
   if (isPhone()) {
-    await tap(page.getByTestId('phone-tab-profile'));
+    await tap(page.getByTestId('phone-tab-more'));
+    await tap(page.getByTestId('more-row-profile'));
     await tap(page.getByRole('button', { name: 'Администрирование' }));
   } else {
     await tap(page.getByRole('button', { name: /^Мой статус/ }));
@@ -659,7 +660,8 @@ test('billing-custom-admin: «Индивидуальный тариф» on the a
   test.skip(isLight(), 'dark only');
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_CUSTOM', custom: true });
   if (isPhone()) {
-    await tap(page.getByTestId('phone-tab-profile'));
+    await tap(page.getByTestId('phone-tab-more'));
+    await tap(page.getByTestId('more-row-profile'));
     await tap(page.getByRole('button', { name: 'Администрирование' }));
   } else {
     await tap(page.getByRole('button', { name: /^Мой статус/ }));

@@ -28,7 +28,7 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { Bar } from '../../components/Bar';
-import { NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
+import { CreateSlot, NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { useDayDrag } from './dragState';
@@ -313,7 +313,7 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
           </Dropdown.Portal>
         </Dropdown.Root>
         <PhoneSearchButton />
-        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : null}
+        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : <CreateSlot />}
         {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
       </Bar>
     );

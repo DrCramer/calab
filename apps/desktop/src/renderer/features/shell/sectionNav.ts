@@ -39,7 +39,8 @@ export function showMode(mode: Mode): void {
 /** The phone layout (the web build at ≤ 768 px) — lib/mobile.ts without the platform import (unit tests run in Node). */
 const onPhone = (): boolean => typeof window !== 'undefined' && document.documentElement.classList.contains('web') && window.matchMedia(MOBILE_QUERY).matches;
 
-const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards' };
+// Disk (ADR-0094) has no centre mode yet: the desktop screen is task D4.
+const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards', disk: 'voice' };
 
 const isGuest = (wsId: string): boolean => useWorkspaces.getState().byId[wsId]?.role === WorkspaceRole.GUEST;
 
