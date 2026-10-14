@@ -324,7 +324,7 @@ func TestWikiPermissionsMatrix(t *testing.T) {
 	e.must(403, e.bob, "POST", page(guide.GetId())+"/link", &v1.CreateWikiLinkRequest{}, nil)
 	e.must(200, e.bob, "PATCH", page(sub.GetId()), &v1.UpdateWikiPageRequest{Title: proto.String("Bob's"), Icon: proto.String("📒")}, nil)
 	e.must(200, e.admin, "PATCH", page(guide.GetId()), &v1.UpdateWikiPageRequest{Title: proto.String("Guide v2")}, nil)
-	e.must(400, e.alice, "PATCH", page(guide.GetId()), &v1.UpdateWikiPageRequest{Icon: proto.String("not an emoji at all because it is long")}, nil)
+	e.must(422, e.alice, "PATCH", page(guide.GetId()), &v1.UpdateWikiPageRequest{Icon: proto.String("not an emoji at all because it is long")}, nil)
 	// Restricted, shared with the guest by name: bob loses the page and its subtree (his own
 	// subpage stays his: the owner always sees his pages).
 	var perms v1.WikiPermissionsResponse
@@ -360,11 +360,11 @@ func TestWikiPermissionsMatrix(t *testing.T) {
 	if err := e.d.Pool.QueryRow(context.Background(), `SELECT id FROM workspace_roles WHERE workspace_id = $1 AND builtin = 'guest'`, e.ws).Scan(&guestRole); err != nil {
 		t.Fatal(err)
 	}
-	e.must(400, e.alice, "PUT", page(guide.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
+	e.must(422, e.alice, "PUT", page(guide.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
 		{TargetType: role, TargetId: guestRole.String(), Allow: uint64(perm.WikiView)}}}, nil)
-	e.must(400, e.alice, "PUT", page(guide.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
+	e.must(422, e.alice, "PUT", page(guide.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
 		{TargetType: user, TargetId: e.bob.String(), Allow: uint64(perm.WikiManage)}}}, nil)
-	e.must(400, e.alice, "PUT", page(guide.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
+	e.must(422, e.alice, "PUT", page(guide.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
 		{TargetType: user, TargetId: e.outsider.String(), Allow: uint64(perm.WikiView)}}}, nil)
 	// The journal: create, rename, share…
 	var act v1.WikiActivityPage
@@ -451,7 +451,7 @@ func TestWikiTrashRestoreDelete(t *testing.T) {
 		t.Fatalf("guest upload: %d", w.Code)
 	}
 	e.must(200, e.alice, "PATCH", page(root.GetId()), &v1.UpdateWikiPageRequest{CoverFileId: proto.String(pic.GetId())}, nil)
-	e.must(400, e.alice, "PATCH", page(root.GetId()), &v1.UpdateWikiPageRequest{CoverFileId: proto.String(att.GetId())}, nil)
+	e.must(422, e.alice, "PATCH", page(root.GetId()), &v1.UpdateWikiPageRequest{CoverFileId: proto.String(att.GetId())}, nil)
 	e.must(200, e.bob, "GET", "/api/files/"+att.GetId(), nil, nil)
 	e.must(404, e.guest, "GET", "/api/files/"+att.GetId(), nil, nil)
 	var got v1.WikiPageResponse
@@ -618,16 +618,25 @@ type client struct {
 // dial opens the sync socket of a page as user (token = the user id).
 func (e *env) dial(u uuid.UUID, pageID string) *client {
 	e.t.Helper()
+	return e.dialToken(u.String(), pageID)
+}
+
+// dialToken opens the sync socket and sends tok as the first (text) frame.
+func (e *env) dialToken(tok, pageID string) *client {
+	e.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	url := "ws" + strings.TrimPrefix(e.srv.URL, "http") + page(pageID) + "/sync"
-	ws, _, err := websocket.Dial(ctx, url, nil)
+	ws, resp, err := websocket.Dial(ctx, url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	ws.SetReadLimit(8 << 20)
 	e.t.Cleanup(func() { _ = ws.CloseNow() })
-	if err := ws.Write(ctx, websocket.MessageText, []byte(u.String())); err != nil {
+	if err := ws.Write(ctx, websocket.MessageText, []byte(tok)); err != nil {
 		e.t.Fatal(err)
 	}
 	return &client{t: e.t, ws: ws}
@@ -649,6 +658,7 @@ func (c *client) read() ([]byte, websocket.StatusCode) {
 	defer cancel()
 	_, b, err := c.ws.Read(ctx)
 	if err != nil {
+		c.t.Logf("socket closed: %v", err)
 		return nil, websocket.CloseStatus(err)
 	}
 	return b, -1
@@ -681,12 +691,13 @@ func (c *client) closed(code websocket.StatusCode) {
 	c.t.Fatal("not closed")
 }
 
-func (c *client) quiet() {
+// quiet asserts nothing came before a probe: from sends an awareness frame and it must be
+// the next frame c gets (a read with a short deadline would close the socket).
+func (c *client) quiet(from *client) {
 	c.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	if _, b, err := c.ws.Read(ctx); err == nil {
-		c.t.Fatalf("unexpected frame %x", b[:min(len(b), 16)])
+	from.send([]byte{frameAwareness, 0xEE})
+	if f := c.next(frameAwareness); !bytes.Equal(f, []byte{frameAwareness, 0xEE}) {
+		c.t.Fatalf("unexpected awareness %x", f)
 	}
 }
 
@@ -694,8 +705,8 @@ func post(through int64, meta snapshotMeta, state []byte) []byte {
 	m, _ := json.Marshal(meta)
 	out := make([]byte, headerPost+len(m)+len(state))
 	out[0] = frameSnapshotPost
-	binary.BigEndian.PutUint64(out[1:9], uint64(through))
-	binary.BigEndian.PutUint32(out[9:13], uint32(len(m)))
+	binary.BigEndian.PutUint64(out[1:9], uint64(through)) //nolint:gosec // test values
+	binary.BigEndian.PutUint32(out[9:13], uint32(len(m))) //nolint:gosec // test values
 	copy(out[13:], m)
 	copy(out[13+len(m):], state)
 	return out
@@ -746,17 +757,15 @@ func TestWikiSyncExchange(t *testing.T) {
 		t.Fatalf("awareness %x", f)
 	}
 	c.next(frameAwareness)
-	a.quiet()
+	a.quiet(b)
 	var n int
 	if err := e.d.Pool.QueryRow(context.Background(), `SELECT count(*) FROM wiki_page_updates WHERE page_id = $1`, p.GetId()).Scan(&n); err != nil || n != 3 {
 		t.Fatalf("stored updates %d %v", n, err)
 	}
 	// Bad token, no access, unknown page.
-	bad := e.dial(uuid.Nil, p.GetId())
-	_ = bad.ws.Write(context.Background(), websocket.MessageText, []byte("bad"))
-	bad.closed(closeNotFound) // uuid.Nil parses: a non-member
+	e.dialToken("bad", p.GetId()).closed(closeAuth)
 	nobody := e.dial(e.outsider, p.GetId())
-	nobody.closed(closeNotFound)
+	nobody.closed(closeForbidden)
 	gone := e.dial(e.alice, uuid.NewString())
 	gone.closed(closeNotFound)
 	// Trashing the page closes its sockets.
@@ -821,12 +830,12 @@ func TestWikiSyncCompaction(t *testing.T) {
 		b.next(frameUpdate)
 	}
 	a.next(frameCompact) // after the 4th (> 3)
-	b.quiet()            // only the writer that crossed it is asked
-	// The snapshot through 4: ACK to a, SNAPSHOT to b, updates ≤ 4 gone, text and title set.
+	b.quiet(a)           // only the writer that crossed it is asked
+	// The snapshot through 4: SNAPSHOT to a and b, updates ≤ 4 gone, text and title set.
 	state := []byte("state-1")
 	a.send(post(4, snapshotMeta{PlainText: "Hello world", Title: "Notes 2", Preview: "Hello  world"}, state))
-	if f := a.next(frameAck); frameSeq(f) != 4 {
-		t.Fatalf("ack %x", f)
+	if f := a.next(frameSnapshot); frameSeq(f) != 4 || !bytes.Equal(f[9:], state) {
+		t.Fatalf("snapshot echo %x", f)
 	}
 	if f := b.next(frameSnapshot); frameSeq(f) != 4 || !bytes.Equal(f[9:], state) {
 		t.Fatalf("relayed snapshot %x", f)
@@ -836,7 +845,7 @@ func TestWikiSyncCompaction(t *testing.T) {
 		t.Fatalf("updates left %d %v", n, err)
 	}
 	pg, err := e.d.Q.GetWikiPageText(ctx, uuid.MustParse(p.GetId()))
-	if err != nil || pg.PlainText != "Hello world" || pg.Preview != "Hello world" || pg.Title != "Notes 2" || pg.DocSize != int32(len(state)) {
+	if err != nil || pg.PlainText != "Hello world" || pg.Preview != "Hello world" || pg.Title != "Notes 2" || pg.DocSize != int32(len(state)) { //nolint:gosec // 7 bytes
 		t.Fatalf("page after snapshot: %+v %v", pg, err)
 	}
 	var vs v1.WikiVersionsResponse
@@ -860,14 +869,14 @@ func TestWikiSyncCompaction(t *testing.T) {
 	// Stale (through < stored) and ahead (through ≥ next_seq) snapshots are ignored.
 	a.send(post(2, snapshotMeta{PlainText: "old"}, []byte("old")))
 	a.send(post(99, snapshotMeta{PlainText: "ahead"}, []byte("ahead")))
-	a.quiet()
-	b.quiet()
+	a.quiet(b)
+	b.quiet(a)
 	// The same text again: no new version; another update and the public stream.
 	a.send(updateFrame(0, []byte("u5")))
 	a.next(frameUpdate)
 	b.next(frameUpdate)
 	a.send(post(5, snapshotMeta{PlainText: "Hello world"}, []byte("state-2")))
-	a.next(frameAck)
+	a.next(frameSnapshot)
 	b.next(frameSnapshot)
 	e.must(200, e.bob, "GET", page(p.GetId())+"/versions", nil, &vs)
 	if len(vs.GetVersions()) != 1 {
@@ -926,5 +935,57 @@ func TestSearchWikiAccess(t *testing.T) {
 	e.must(200, e.alice, "POST", page(open.GetId())+"/trash", nil, nil)
 	if hits := find(e.bob, "release"); len(hits) != 0 {
 		t.Fatalf("trashed page found: %v", hits)
+	}
+}
+
+// Two server instances (one database, one Valkey): sockets on different instances get each
+// other's updates and awareness through wiki:<pageId>.
+func TestWikiSyncAcrossInstances(t *testing.T) {
+	e := newEnv(t, SyncConfig{})
+	p := e.create(e.alice, "", "Shared")
+	other := New(e.d, e.ev, e.fs, nil)
+	other.EnableSync(e.rc, fakeAuth{}, nil, SyncConfig{})
+	mux := http.NewServeMux()
+	other.Routes(mux, func(h http.Handler) http.Handler { return h })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	a := e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	second := &env{t: t, srv: srv}
+	b := second.dial(e.bob, p.GetId())
+	b.next(frameSnapshot)
+	time.Sleep(200 * time.Millisecond) // the second instance's SUBSCRIBE is asynchronous
+	a.send(updateFrame(0, []byte("x1")))
+	a.next(frameUpdate)
+	if f := b.next(frameUpdate); frameSeq(f) != 1 || string(f[9:]) != "x1" {
+		t.Fatalf("relayed %x", f)
+	}
+	b.send(updateFrame(0, []byte("y1")))
+	if f := a.next(frameUpdate); frameSeq(f) != 2 || string(f[9:]) != "y1" {
+		t.Fatalf("relayed back %x", f)
+	}
+	b.next(frameUpdate)
+	b.send([]byte{frameAwareness, 1})
+	a.next(frameAwareness)
+}
+
+// A frame lost between instances (published before the subscription, or dropped) is filled from
+// the database by the next update's sequence check.
+func TestWikiSyncGapCatchUp(t *testing.T) {
+	e := newEnv(t, SyncConfig{})
+	p := e.create(e.alice, "", "Gaps")
+	a := e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	// Updates written behind the sockets' back (another instance whose publish was lost).
+	for _, d := range []string{"g1", "g2"} {
+		if _, err := e.d.Q.AppendWikiUpdate(context.Background(), sqlc.AppendWikiUpdateParams{PageID: uuid.MustParse(p.GetId()), Data: []byte(d)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.send(updateFrame(0, []byte("g3")))
+	for want := int64(1); want <= 3; want++ {
+		if f := a.next(frameUpdate); frameSeq(f) != want {
+			t.Fatalf("seq %d, want %d", frameSeq(f), want)
+		}
 	}
 }

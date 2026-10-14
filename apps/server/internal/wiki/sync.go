@@ -37,7 +37,9 @@ import (
 //	2 AWARENESS       both ways        2 | awareness update (relayed, never stored)
 //	3 COMPACT_REQUEST server → client  3
 //	4 SNAPSHOT_POST   client → server  4 | u64 through_seq | u32 meta_len | meta JSON | state
-//	5 ACK             server → client  5 | u64 through_seq (the snapshot was stored)
+//
+// A stored SNAPSHOT_POST is answered with its state as a SNAPSHOT to every socket of the page,
+// the poster included (it may hold an edit no UPDATE carried: one too big for a frame).
 //
 // The client's first message is a text frame with its access token (like the gateway's
 // IDENTIFY). The server then sends one SNAPSHOT (through_seq 0 and the empty Yjs update 0x00 0x00
@@ -48,7 +50,6 @@ const (
 	frameAwareness    byte = 2
 	frameCompact      byte = 3
 	frameSnapshotPost byte = 4
-	frameAck          byte = 5
 	// ctlRecheck travels only between instances (Redis): every socket of the page checks its
 	// access again now (trash, overrides, restricted).
 	ctlRecheck byte = 0xF0
@@ -70,12 +71,12 @@ const (
 const (
 	closeTryAgain  = 4000 // a dependency failed: reconnect
 	closeBadFrame  = 4002 // malformed or unexpected frame
-	closeForbidden = 4003 // not allowed: bots, the access policy, a write without WIKI_WRITE
+	closeForbidden = 4003 // no WIKI_VIEW or not a member, bots, the access policy, a write without WIKI_WRITE
 	closeAuth      = 4004 // the token is invalid or expired: refresh it
 	closeRate      = 4008 // too many frames, or > MaxConnsPerUser sockets on the page
 	closeIdle      = 4009 // no pong
 	closeRevoked   = 4010 // the session was revoked
-	closeNotFound  = 4404 // no such page, not visible to the caller, or in the trash
+	closeNotFound  = 4404 // no such page, or it is in the trash
 )
 
 // emptyState is the Yjs update of an empty document (Y.encodeStateAsUpdate(new Y.Doc())).
@@ -153,7 +154,6 @@ func snapshotFrame(through int64, state []byte) []byte {
 	return seqFrame(frameSnapshot, through, state)
 }
 func updateFrame(seq int64, data []byte) []byte { return seqFrame(frameUpdate, seq, data) }
-func ackFrame(through int64) []byte             { return seqFrame(frameAck, through, nil) }
 
 func frameSeq(f []byte) int64 {
 	if len(f) < headerSeq {
@@ -508,8 +508,12 @@ func (c *syncConn) recheckSoon() {
 // close ends the socket once with a close code.
 func (c *syncConn) close(code int, reason string) {
 	c.closed.Do(func() {
-		c.cancel()
-		go func() { _ = c.ws.Close(websocket.StatusCode(code), reason) }() //nolint:gosec // close codes
+		// The close handshake first: cancelling the context of a pending Read or Write drops the
+		// connection without a close frame.
+		go func() {
+			_ = c.ws.Close(websocket.StatusCode(code), reason) //nolint:gosec // close codes
+			c.cancel()
+		}()
 	})
 }
 
@@ -538,7 +542,7 @@ func (h *syncHub) serve(w http.ResponseWriter, r *http.Request) {
 		out: make(chan outItem, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
 		updates:   newBucket(float64(h.cfg.UpdatesPerSecond), float64(h.cfg.UpdatesPerSecond)),
 		awareness: newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
-		snapshots: newBucket(3, 1)}
+		snapshots: newBucket(5, 1)} // snapshots: 5 at once, then one per second
 	defer c.close(1000, "")
 
 	// In-band auth: the first message is a text frame with the access token.
@@ -617,21 +621,21 @@ func (c *syncConn) authorize() (int, string) {
 	m, err := perm.FromContext(ctx).Member(ctx, p.WorkspaceID, c.id.UserID)
 	switch {
 	case errors.Is(err, perm.ErrNotMember):
-		return closeNotFound, "no such page"
-	case httpx.AsError(err) != nil:
+		return closeForbidden, "no access"
+	case isRefusal(err):
 		return closeForbidden, "access policy"
 	case err != nil:
 		return closeTryAgain, "try again"
 	}
 	if err := h.auth.CheckWorkspace(ctx, c.id, p.WorkspaceID, identitypolicy.WorkspaceRead); err != nil {
-		if httpx.AsError(err) != nil {
+		if isRefusal(err) {
 			return closeForbidden, "access policy"
 		}
 		return closeTryAgain, "try again"
 	}
 	bits := ch.Bits(m, false, &c.page)
 	if !bits.Has(perm.WikiView) {
-		return closeNotFound, "no such page"
+		return closeForbidden, "no access"
 	}
 	c.wsID = p.WorkspaceID
 	write := bits.Has(perm.WikiWrite) &&
@@ -901,8 +905,8 @@ type snapshotMeta struct {
 // onSnapshot stores a snapshot (ADR-0096 §4): in one transaction it checks through_seq against
 // the stored snapshot and the page's counter, saves it, drops the updates it contains, updates
 // the page's text, preview, size and (a non-empty title) title, and writes a version when due.
-// The sender gets ACK; the other sockets get the state as a SNAPSHOT (it may hold changes no
-// update carried: a transaction too big for one frame). A stale snapshot is ignored.
+// Every socket of the page, the sender included, then gets the state as a SNAPSHOT (it may hold
+// changes no update carried: a transaction too big for one frame). A stale snapshot is ignored.
 func (c *syncConn) onSnapshot(b []byte) bool {
 	if !c.write.Load() {
 		c.close(closeForbidden, "read only")
@@ -1001,8 +1005,9 @@ func (c *syncConn) onSnapshot(b []byte) bool {
 	if !stored {
 		return true
 	}
-	c.enqueue(ackFrame(through))
-	c.h.broadcast(c.ctx, c.page, c, snapshotFrame(through, state))
+	f := snapshotFrame(through, state)
+	c.enqueue(f)
+	c.h.broadcast(c.ctx, c.page, c, f)
 	if renamed {
 		s.upserted(c.ctx, c.page, nil)
 	}
@@ -1048,4 +1053,10 @@ func containsID(ids []uuid.UUID, id uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+// isRefusal reports an API refusal (an identity policy, a suspension), not a dependency failure.
+func isRefusal(err error) bool {
+	var e *httpx.Error
+	return errors.As(err, &e) && e.Err == nil
 }
