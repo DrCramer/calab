@@ -112,10 +112,11 @@ func TestRolesV2(t *testing.T) {
 	u["bots"].must(204, "DELETE", base+"/bots/"+bt.id, nil, nil)
 }
 
-// TestRolesV2ClosedBoard: a closed board (restricted, ADR-0048) is 404 for an administrator and
-// for workspace MANAGE_BOARD / VIEW_JOURNALS without an override on it, in lists, tasks, links,
-// search and the activity; the owner, the creator, a role override, a personal override and a
-// bot with an override see it; guests never; the owner opens it again.
+// TestRolesV2ClosedBoard: a private board (ADR-0048, ADR-0058 addendum 2026-10-14: restricted is
+// an alias of is_private) is 404 for an administrator, the workspace owner and workspace
+// MANAGE_BOARD / VIEW_JOURNALS without an override on it, in lists, tasks, links, search and the
+// activity; the creator, a role override, a personal override and a bot with an override see
+// it; guests never; the creator opens it again.
 func TestRolesV2ClosedBoard(t *testing.T) {
 	o := owner(t)
 	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
@@ -139,10 +140,15 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	bt := createBot(t, o, wid, "closedbot")
 	btOut := createBot(t, o, wid, "outbot")
 
-	// Closing needs a private board.
+	// restricted is an alias of is_private: both must agree.
 	open := createBoard(t, pm, wid, &v1.CreateBoardRequest{Name: "Open", Key: "OPN"}, 201)
 	on, off := true, false
-	pm.must(422, "PATCH", "/api/boards/"+open.GetId(), &v1.UpdateBoardRequest{Restricted: &on}, nil)
+	pm.must(422, "PATCH", "/api/boards/"+open.GetId(), &v1.UpdateBoardRequest{Restricted: &on, IsPrivate: &off}, nil)
+	var ob v1.BoardResponse
+	pm.must(200, "PATCH", "/api/boards/"+open.GetId(), &v1.UpdateBoardRequest{Restricted: &on}, &ob)
+	if !ob.GetBoard().GetIsPrivate() || !ob.GetBoard().GetRestricted() {
+		t.Fatalf("restricted on makes the board private: %v", ob.GetBoard())
+	}
 
 	b := createBoard(t, pm, wid, &v1.CreateBoardRequest{Name: "Deals", Key: "DLS", IsPrivate: true}, 201)
 	bid := b.GetId()
@@ -150,16 +156,15 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 		roleOv(sales.GetId(), perm.ViewBoard|perm.CreateTasks, 0),
 		userOv(adminOv.id, perm.ViewBoard, 0), userOv(bt.id, perm.ViewBoard, 0), userOv(guest.id, perm.ViewBoard, 0))...)
 	task := createTask(t, pm, bid, &v1.CreateTaskRequest{Title: "closed-needle"}, 201)
-	// Admins see the private board before it is closed (ADR-0042); pmo's workspace board bits
-	// never open a private board, closed or not.
-	admin.must(200, "GET", "/api/boards/"+bid, nil, nil)
+	// Admins do not see a private board (ADR-0058 addendum 2026-10-14); pmo's workspace board
+	// bits never open one either.
+	admin.must(404, "GET", "/api/boards/"+bid, nil, nil)
 
 	var br v1.BoardResponse
 	pm.must(200, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &on}, &br)
 	if !br.GetBoard().GetRestricted() || br.GetBoard().GetPermissions()&uint64(perm.ManageBoard) == 0 {
 		t.Fatalf("the creator after closing: %v", br.GetBoard())
 	}
-	pm.must(422, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{IsPrivate: &off}, nil)
 
 	type actor struct {
 		name string
@@ -171,7 +176,7 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 		return actor{n, x, func(m, p string) int { return x.do(m, p, nil, nil) }, sees}
 	}
 	actors := []actor{
-		userActor("owner", o, true), userActor("creator", pm, true), userActor("role override", seller, true),
+		userActor("owner", o, false), userActor("creator", pm, true), userActor("role override", seller, true),
 		userActor("admin with override", adminOv, true), userActor("admin", admin, false),
 		userActor("workspace MANAGE_BOARD/VIEW_JOURNALS", pmo, false), userActor("guest with override", guest, false),
 		userActor("member", plain, false),
@@ -217,14 +222,13 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	// An admin let in by an override has member bits there, not MANAGE_BOARD.
 	adminOv.must(403, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &off}, nil)
 
-	// The owner opens it: administrators see it again.
-	o.must(200, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &off}, nil)
+	// The owner does not see it either; the creator opens it: administrators see it again.
+	o.must(404, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &off}, nil)
+	pm.must(200, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{IsPrivate: &off}, nil)
 	admin.must(200, "GET", "/api/boards/"+bid, nil, nil)
 	admin.must(200, "GET", "/api/boards/"+bid+"/activity", nil, nil)
 
-	// An administrator who closes a board keeps it through a personal override.
-	o.must(200, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &on}, nil)
-	o.must(200, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &off}, nil)
+	// An administrator who makes a board private keeps it through a personal override.
 	admin.must(200, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &on}, &br)
 	if br.GetBoard().GetPermissions()&uint64(perm.ManageBoard) == 0 || perm.Bits(br.GetBoard().GetPermissions()) == perm.All {
 		t.Fatalf("the admin who closed it: %d", br.GetBoard().GetPermissions())

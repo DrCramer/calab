@@ -296,7 +296,7 @@ func (c *client) rawErr(method, path string) *v1.ApiError {
 func (c *client) must(want int, method, path string, in, out proto.Message) {
 	c.t.Helper()
 	if got := c.do(method, path, in, out); got != want {
-		c.t.Fatalf("%s %s: status %d, want %d", method, path, got, want)
+		c.t.Fatalf("%s %s: status %d, want %d (%s)", method, path, got, want, c.lastBody)
 	}
 }
 
