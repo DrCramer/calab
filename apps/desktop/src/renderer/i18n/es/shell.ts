@@ -260,4 +260,9 @@ export const esShell: DictShape<typeof enShell> = {
   'mobile.ptt': 'Mantén pulsado para hablar',
   'mobile.pttOn': 'En el aire',
   'mobile.takePhoto': 'Cámara',
+  'mobile.more': 'Más',
+  'mobile.tabDisk': 'Disco',
+  'mobile.diskSoon': 'Próximamente',
+  'mobile.pin': 'Fijar «{name}»',
+  'mobile.pinnedInstead': 'Fijado en lugar de «{name}»',
 } as const;

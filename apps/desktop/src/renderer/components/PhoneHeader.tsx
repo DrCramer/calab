@@ -41,6 +41,16 @@ export function PhoneSearchButton(): ReactNode {
   );
 }
 
+/**
+ * The empty «+» slot of a tab-root header (docs/08, M1): CreateButton's 36 px, so the search button
+ * is at the same x on every section whether or not the account may create there.
+ */
+export function CreateSlot(): ReactNode {
+  const root = useUi((s) => s.phone.stack.length === 0);
+  if (!root) return null;
+  return <span aria-hidden className="size-9 shrink-0" data-testid="create-slot" />;
+}
+
 /** The title of a pushed phone screen: the same style everywhere (ADR-0073 §1). */
 export const PHONE_TITLE = 'min-w-0 truncate text-list font-semibold leading-5';
 

@@ -16,6 +16,7 @@ import type { CameraPreset } from '../lib/plan';
 import { NO_BACKGROUND, SEG_FPS, normalizeSegFps, type CameraBackground, type SegFpsOption } from '../lib/media/background/logic';
 import { DEFAULT_CAMERA_EFFECTS, type CameraEffects } from '../lib/media/background/effects';
 import type { LocalePref } from '../i18n/types';
+import { DEFAULT_PINNED, normalizePinned, type PhoneTab } from '../lib/phoneNav';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
@@ -134,6 +135,8 @@ export interface Prefs {
   billingMarket: Record<string, 'global' | 'ru'>;
   /** «Виброотклик» (phone only, lib/haptics.ts): ticks on taps, toggles, swipe thresholds, long-press menus. */
   haptics: boolean;
+  /** The three tabs on the phone's bar, the rest behind «Ещё» (ADR-0095); oldest first. */
+  phonePinnedTabs: PhoneTab[];
 }
 
 const DEFAULTS: Prefs = {
@@ -192,6 +195,7 @@ const DEFAULTS: Prefs = {
   updateNag: null,
   billingMarket: {},
   haptics: true,
+  phonePinnedTabs: [...DEFAULT_PINNED],
 };
 
 interface PrefsState extends Prefs {
@@ -201,20 +205,20 @@ interface PrefsState extends Prefs {
 export const usePrefs = create<PrefsState>()(
   persist((set) => ({ ...DEFAULTS, setPrefs: (p) => set(p) }), {
     name: 'calaba-prefs',
-    version: 4,
+    version: 5,
     // v2: statuses moved to the server — a status chosen on this device before is sent once.
     // v3: RNNoise off for everyone (it was on by default and costs CPU); re-enable in settings.
     migrate: (state, version) => {
       let s = state as Partial<Prefs>;
       if (version < 2) s = { ...s, presenceSynced: (s.presence ?? PresenceStatus.ONLINE) === PresenceStatus.ONLINE };
       if (version < 3) s = { ...s, rnnoise: false };
-      // v4: cameraBgFps; anything outside 8/16/20/25 is the default.
-      return { ...s, cameraBgFps: normalizeSegFps(s.cameraBgFps), autoMuteSec: normalizeAutoMute(s.autoMuteSec) };
+      // v4: cameraBgFps; anything outside 8/16/20/25 is the default. v5: phonePinnedTabs (ADR-0095), default three.
+      return { ...s, cameraBgFps: normalizeSegFps(s.cameraBgFps), autoMuteSec: normalizeAutoMute(s.autoMuteSec), phonePinnedTabs: normalizePinned(s.phonePinnedTabs) };
     },
     // Whatever the stored value, the rate and the auto-mute period are one of the options.
     merge: (persisted, current) => {
       const p = (persisted ?? {}) as Partial<Prefs>;
-      return { ...current, ...p, cameraBgFps: normalizeSegFps(p.cameraBgFps), autoMuteSec: normalizeAutoMute(p.autoMuteSec) };
+      return { ...current, ...p, cameraBgFps: normalizeSegFps(p.cameraBgFps), autoMuteSec: normalizeAutoMute(p.autoMuteSec), phonePinnedTabs: normalizePinned(p.phonePinnedTabs) };
     },
     // Musician mode is never stored on (ADR-0052: it lasts until I leave voice).
     partialize: ({ setPrefs: _s, ...rest }) => ({ ...rest, musicianMode: false }),

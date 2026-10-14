@@ -5,8 +5,42 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'profile';
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'profile'];
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'profile';
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'disk', 'profile'];
+
+/** How many tabs sit on the bar itself; the rest live behind «Ещё» (ADR-0095). */
+export const PINNED_COUNT = 3;
+export const DEFAULT_PINNED: readonly PhoneTab[] = ['chats', 'dms', 'boards'];
+
+/**
+ * Pinning (ADR-0095 §2): exactly `PINNED_COUNT` tabs. Pinning a tab unpins it when it is pinned
+ * already (never below the count: that is a no-op, there must be three); pinning a new one drops
+ * the oldest (the first in the list) and reports it.
+ */
+export function pinTab(pinned: readonly PhoneTab[], tab: PhoneTab): { pinned: PhoneTab[]; unpinned?: PhoneTab } {
+  if (pinned.includes(tab)) return { pinned: [...pinned] };
+  const next = [...pinned, tab];
+  if (next.length <= PINNED_COUNT) return { pinned: next };
+  return { pinned: next.slice(1), unpinned: next[0] };
+}
+
+/** A stored list is valid when it holds distinct known tabs; else the default. */
+export function normalizePinned(v: unknown): PhoneTab[] {
+  if (!Array.isArray(v)) return [...DEFAULT_PINNED];
+  const out = [...new Set(v.filter((x): x is PhoneTab => PHONE_TABS.includes(x as PhoneTab)))].slice(0, PINNED_COUNT);
+  return out.length === PINNED_COUNT ? out : [...DEFAULT_PINNED];
+}
+
+/**
+ * The tabs shown on the bar for an account: the pinned ones it may open, topped up from the
+ * available ones (a guest has no «Личные», «Доски», «Календарь», «Диск»): at most `PINNED_COUNT`,
+ * in the pinned order. `more` = something is hidden, so «Ещё» is shown.
+ */
+export function barTabs(pinned: readonly PhoneTab[], available: readonly PhoneTab[]): { bar: PhoneTab[]; more: boolean } {
+  const bar = pinned.filter((t) => available.includes(t));
+  for (const t of available) if (bar.length < PINNED_COUNT && !bar.includes(t)) bar.push(t);
+  return { bar, more: available.some((t) => !bar.includes(t)) };
+}
 
 /**
  * A pushed screen. Chats carry their ids (back from room B shows room A again); the other kinds

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DEPTH,
+  barTabs,
+  normalizePinned,
+  pinTab,
   backStep,
   depthOfState,
   emptyPhoneNav,
@@ -161,5 +164,28 @@ describe('settings screens (ADR-0073, owner 07.10)', () => {
   it('a section opened straight from the profile has no list under it', () => {
     const n = pushScreen(nav({ stack: [] }), { kind: 'settings', section: 'general' });
     expect(popScreen(n).stack).toEqual([]);
+  });
+});
+
+describe('pinned tabs (ADR-0095)', () => {
+  it('pinning a fourth tab drops the oldest and reports it', () => {
+    expect(pinTab(['chats', 'dms', 'boards'], 'disk')).toEqual({ pinned: ['dms', 'boards', 'disk'], unpinned: 'chats' });
+  });
+  it('an already pinned tab changes nothing (always exactly three)', () => {
+    expect(pinTab(['chats', 'dms', 'boards'], 'dms')).toEqual({ pinned: ['chats', 'dms', 'boards'] });
+  });
+  it('a short list is topped up without dropping anything', () => {
+    expect(pinTab(['chats', 'dms'], 'disk')).toEqual({ pinned: ['chats', 'dms', 'disk'] });
+  });
+  it('normalizes a stored value', () => {
+    expect(normalizePinned(undefined)).toEqual(['chats', 'dms', 'boards']);
+    expect(normalizePinned(['chats', 'chats', 'x', 'disk'])).toEqual(['chats', 'dms', 'boards']);
+    expect(normalizePinned(['disk', 'profile', 'calendar'])).toEqual(['disk', 'profile', 'calendar']);
+  });
+  it('the bar shows the pinned tabs the account may open, topped up; «Ещё» only if something is hidden', () => {
+    const all = ['chats', 'dms', 'boards', 'calendar', 'disk', 'profile'] as const;
+    expect(barTabs(['chats', 'dms', 'boards'], all)).toEqual({ bar: ['chats', 'dms', 'boards'], more: true });
+    expect(barTabs(['chats', 'dms', 'boards'], ['chats', 'profile'])).toEqual({ bar: ['chats', 'profile'], more: false });
+    expect(barTabs(['calendar', 'disk', 'profile'], ['chats', 'profile', 'disk'])).toEqual({ bar: ['disk', 'profile', 'chats'], more: false });
   });
 });
