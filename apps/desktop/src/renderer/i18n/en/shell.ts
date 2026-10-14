@@ -262,6 +262,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'mobile.takePhoto': 'Camera',
   'mobile.more': 'More',
   'mobile.tabDisk': 'Disk',
+  'mobile.tabWiki': 'Wiki',
   'mobile.pin': 'Pin “{name}”',
   'mobile.pinnedInstead': 'Pinned instead of “{name}”',
 };

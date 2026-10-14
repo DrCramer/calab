@@ -20,7 +20,7 @@ const MaxTrashDays = 3650
 
 // wsBits are the caller's workspace-level disk bits (perm.DiskOf).
 func (c caller) wsBits() perm.Bits {
-	return perm.DiskOf(c.m.Raw(), c.m.Role == perm.RoleGuest, c.bot)
+	return perm.DiskOf(c.m.Raw(), c.m.Role == perm.RoleGuest)
 }
 
 // usage: GET /api/workspaces/{id}/disk/usage (DISK_VIEW on the workspace) — DiskUsage.
@@ -234,7 +234,7 @@ func hidePlaces(ctx context.Context, q *sqlc.Queries, c caller, rows []sqlc.Disk
 	}
 	hide := func(raw []byte) ([]byte, error) {
 		m, id := parentOf(raw)
-		if m == nil || (id != nil && ch.Has(*id) && ch.Bits(c.m, c.bot, id).Has(perm.DiskView)) {
+		if m == nil || (id != nil && ch.Has(*id) && ch.Bits(c.m, id).Has(perm.DiskView)) {
 			return raw, nil
 		}
 		m["parent_name"] = ""

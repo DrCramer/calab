@@ -14,6 +14,8 @@ import {
   PersonalIdleIcon,
   TeamActiveIcon,
   TeamIdleIcon,
+  WikiActiveIcon,
+  WikiIdleIcon,
 } from '../../assets/nav/icons';
 import { CountBadge, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -23,6 +25,7 @@ import { unreadCount, useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useCalendar } from '../../stores/calendar';
 import { useDiskUi } from '../../stores/diskUi';
+import { useWikiUi } from '../../stores/wikiUi';
 import { HOME } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
 import { useContextWorkspace } from '../../stores/sections';
@@ -72,6 +75,8 @@ export function SectionRail(): ReactNode {
         {ws && !guestWs ? <BoardsTile ws={ws} active={section === 'boards'} /> : null}
         {/* «Диск» (ADR-0094 §8): after «Доски»; guests have none (their access is per item, v1 keeps it simple). */}
         {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
+        {/* «Вики» (ADR-0096 §9): after «Диск»; guests have none (their access is per page). */}
+        {ws && !guestWs ? <WikiTile active={section === 'wiki'} /> : null}
         {/* «Почта» (ADR-0088 §8): personal, desktop app only — after «Доски», with or without a workspace. */}
         {MAIL ? <MailTile active={section === 'mail'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
@@ -88,8 +93,9 @@ function useSection(ws: string | null): Section | null {
   const boards = useBoardsUi((s) => s.active);
   const mail = useMailUi((s) => s.active);
   const disk = useDiskUi((s) => s.active);
+  const wiki = useWikiUi((s) => s.active);
   const app = useOpenApp(home ? null : ws) !== null;
-  return currentSection({ home, boards, calendar, app, mail, disk });
+  return currentSection({ home, boards, calendar, app, mail, disk, wiki });
 }
 
 /** Resolved once per page load (the API never appears later). */
@@ -108,6 +114,7 @@ const CALENDAR: NavIcons = [CalendarIdleIcon, CalendarActiveIcon];
 const BOARDS: NavIcons = [BoardsIdleIcon, BoardsActiveIcon];
 const MAIL_ICONS: NavIcons = [MailIdleIcon, MailActiveIcon];
 const DISK: NavIcons = [DiskIdleIcon, DiskActiveIcon];
+const WIKI: NavIcons = [WikiIdleIcon, WikiActiveIcon];
 
 function NavIcon({ icons, active, className }: { icons: NavIcons; active: boolean; className: string }): ReactNode {
   const Icon = icons[active ? 1 : 0];
@@ -283,6 +290,19 @@ const DiskTile = memo(function DiskTile({ active }: { active: boolean }): ReactN
     <Slot active={active}>
       <Tip label={label} side="right">
         <TileButton section="disk" icons={DISK} name={label} active={active} testId="section-disk" />
+      </Tip>
+    </Slot>
+  );
+});
+
+/** «Вики» (ADR-0096 §9): the pages of the context workspace; no counter. */
+const WikiTile = memo(function WikiTile({ active }: { active: boolean }): ReactNode {
+  useLocale();
+  const label = t('wiki.section');
+  return (
+    <Slot active={active}>
+      <Tip label={label} side="right">
+        <TileButton section="wiki" icons={WIKI} name={label} active={active} testId="section-wiki" />
       </Tip>
     </Slot>
   );

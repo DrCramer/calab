@@ -30,8 +30,9 @@ const (
 
 	// Billing are the three billing bits.
 	Billing = BillingView | BillingTopup | BillingManage
-	// Known are every bit a role may carry (the disk bits, ADR-0094, included).
-	Known = All | Billing | Disk
+	// Known are every bit a role may carry (the disk bits, ADR-0094, and the wiki bits,
+	// ADR-0096, included).
+	Known = All | Billing | Disk | Wiki
 )
 
 // BillingOf is the one billing rule (ADR-0087; TS: billingPermissions): the workspace owner has

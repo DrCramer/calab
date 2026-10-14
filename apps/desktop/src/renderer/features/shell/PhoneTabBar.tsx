@@ -2,7 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { WorkspaceRole } from '@calaba/protocol';
 import { ChevronDown, Ellipsis, Pin } from 'lucide-react';
 import { memo, useMemo, type ReactNode } from 'react';
-import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
+import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon, WikiActiveIcon, WikiIdleIcon } from '../../assets/nav/icons';
 import { CountBadge, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { haptics } from '../../lib/haptics';
@@ -45,6 +45,8 @@ export function tabLabel(tab: PhoneTab): string {
       return t('cal.open');
     case 'disk':
       return t('mobile.tabDisk');
+    case 'wiki':
+      return t('mobile.tabWiki');
     case 'profile':
       return t('mobile.profile');
   }
@@ -63,6 +65,8 @@ const TabIcon = memo(function TabIcon({ tab, active, cls }: { tab: PhoneTab; act
       return active ? <CalendarActiveIcon className={cls} /> : <CalendarIdleIcon className={cls} />;
     case 'disk':
       return active ? <DiskActiveIcon className={cls} /> : <DiskIdleIcon className={cls} />;
+    case 'wiki':
+      return active ? <WikiActiveIcon className={cls} /> : <WikiIdleIcon className={cls} />;
     case 'profile':
       return <ProfileTabIcon active={active} />;
   }
@@ -79,7 +83,7 @@ export function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
     () =>
       PHONE_TABS.filter((x) => {
         if (x === 'dms') return !guest;
-        if (x === 'boards' || x === 'calendar' || x === 'disk') return full && !guest;
+        if (x === 'boards' || x === 'calendar' || x === 'disk' || x === 'wiki') return full && !guest;
         return true;
       }),
     [guest, full],

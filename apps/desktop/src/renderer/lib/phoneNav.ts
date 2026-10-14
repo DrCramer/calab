@@ -5,8 +5,8 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'profile';
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'disk', 'profile'];
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile';
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'disk', 'wiki', 'profile'];
 
 /** How many tabs sit on the bar itself; the rest live behind «Ещё» (ADR-0095). */
 export const PINNED_COUNT = 3;
@@ -58,6 +58,8 @@ export type PhoneScreen =
   | { kind: 'archived'; room: string }
   /** A folder of «Диск» (ADR-0094 §8) or, with `trash`, its trash; the workspace is the open one. */
   | { kind: 'disk'; folderId: string; trash?: boolean }
+  /** A page of «Вики» (ADR-0096 §7), or with `trash` its trash (pageId ''); the workspace is the open one. */
+  | { kind: 'wiki'; pageId: string; trash?: boolean }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
    * as a screen: `section` null = the list of sections (also the search), else that section.
@@ -109,6 +111,8 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.section === (b as typeof a).section;
     case 'disk':
       return a.folderId === (b as typeof a).folderId && !!a.trash === !!(b as typeof a).trash;
+    case 'wiki':
+      return a.pageId === (b as typeof a).pageId && !!a.trash === !!(b as typeof a).trash;
     case 'search':
     case 'findTime':
       return true;

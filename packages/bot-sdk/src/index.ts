@@ -13,6 +13,9 @@ export type {
   SendOptions,
 } from './bot.js';
 export { ApiError, GatewayFatalError, type GatewayFatal } from './errors.js';
+export type { DiskApi, DiskDownload, DiskListOptions, DiskUploadData } from './disk.js';
+export type { WikiApi, WikiListOptions, WikiPageContent, WikiPageHandle, WikiWriteOptions } from './wiki.js';
+export { WikiSyncError, WikiSyncSession, wikiSyncUrl, type SyncSocket, type WikiSyncOptions } from './wikiSync.js';
 export { Gateway, gatewayUrl, type GatewayOptions, type GatewayStatus, type SocketLike } from './gateway.js';
 export { Rest, parseRetryAfter, type RestOptions } from './rest.js';
 export {
@@ -67,5 +70,12 @@ export type {
   VoiceState,
   Workspace,
   WorkspaceMember,
+  DiskItem,
+  DiskLink,
+  DiskPermissionEntry,
+  WikiPage,
+  WikiLink,
+  WikiPermissionEntry,
+  WikiVersion,
 } from '@calaba/protocol';
-export { BoardFeature, EstimateScale, RoomType } from '@calaba/protocol';
+export { BoardFeature, DISK_BITS, DiskItemKind, EstimateScale, PermissionTargetType, RoomType, WIKI_BITS } from '@calaba/protocol';

@@ -91,6 +91,14 @@ enum Permission {
   // 1 << 36 DISK_WRITE: create folders, upload; rename, move, trash one's own items (member default).
   // 1 << 37 DISK_MANAGE: any item, the trash retention, empty the whole trash, remove anyone's
   // public link; implies VIEW and WRITE.
+  // Wiki bits (ADR-0096), the same rules as the disk bits (in ADMINISTRATOR, never for guests and
+  // bots through roles, per-page overrides in wiki_permissions touch VIEW and WRITE only; TS
+  // WIKI_BITS, Go perm.WikiView …):
+  // 1 << 38 WIKI_VIEW: see the Wiki and every page that is not restricted (member default).
+  // 1 << 39 WIKI_WRITE: create pages and subpages, edit the content of any page one can write
+  // (member default); rename, move, trash and share one's own pages.
+  // 1 << 40 WIKI_MANAGE: the structure of any page, the trash retention, empty the whole trash,
+  // anyone's public link; implies VIEW and WRITE.
   PERMISSION_MANAGE_RECORDINGS = -2147483648;
 }
 

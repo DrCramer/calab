@@ -7,6 +7,7 @@ import { HOME } from '../../stores/dms';
 import { useSections } from '../../stores/sections';
 import { useUi } from '../../stores/ui';
 import { useWebApps } from '../../stores/webApps';
+import { useWikiUi } from '../../stores/wikiUi';
 import { useWorkspaces } from '../../stores/workspaces';
 import { openSection, openWorkspace } from './sectionNav';
 
@@ -19,6 +20,7 @@ describe('desktop sections (ADR-0074)', () => {
   beforeEach(async () => {
     useBoardsUi.setState({ active: false });
     useDiskUi.setState({ active: false });
+    useWikiUi.setState({ active: false });
     useMailUi.setState({ active: false });
     useWebApps.setState({ open: null });
     useWorkspaces.setState({ order: ['a', 'b', 'g'], byId: { a: entry('a'), b: entry('b'), g: entry('g', WorkspaceRole.GUEST) } });
@@ -88,6 +90,31 @@ describe('desktop sections (ADR-0074)', () => {
     openSection('calendar');
     expect(useDiskUi.getState().active).toBe(false);
     expect(useUi.getState().calDay).not.toBeNull();
+  });
+
+  it('«Вики» is exclusive with the Disk, the boards and the rooms, and remembered per workspace (ADR-0096 §9)', async () => {
+    openSection('disk');
+    openSection('wiki');
+    expect(useWikiUi.getState().active).toBe(true);
+    expect(useDiskUi.getState().active).toBe(false);
+    await settle();
+    expect(useSections.getState().of).toEqual({ a: 'wiki' });
+    openWorkspace('b');
+    expect(useWikiUi.getState().active).toBe(false);
+    await settle();
+    openWorkspace('a');
+    expect(useWikiUi.getState().active).toBe(true);
+    openSection('disk');
+    expect(useWikiUi.getState().active).toBe(false);
+    openSection('wiki');
+    useBoardsUi.getState().setActive(true);
+    expect(useWikiUi.getState().active).toBe(false);
+    openSection('wiki');
+    useUi.getState().openRoom('a', 'r1');
+    expect(useWikiUi.getState().active).toBe(false);
+    openWorkspace('g');
+    openSection('wiki');
+    expect(useWikiUi.getState().active).toBe(false);
   });
 
   it('a guest workspace opens on its rooms only', () => {

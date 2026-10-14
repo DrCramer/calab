@@ -262,6 +262,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'mobile.takePhoto': '相机',
   'mobile.more': '更多',
   'mobile.tabDisk': '云盘',
+  'mobile.tabWiki': '维基',
   'mobile.pin': '固定“{name}”',
   'mobile.pinnedInstead': '已固定，替换“{name}”',
 } as const;
