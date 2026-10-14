@@ -80,6 +80,7 @@ import {
 } from '@calaba/protocol';
 import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
 import { DiskError, DiskMock } from './mock-disk';
+import { WikiError, WikiMock } from './mock-wiki';
 import {
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
@@ -99,6 +100,21 @@ import {
   ListDiskItemsResponseSchema,
   UpdateDiskItemRequestSchema,
   UpdateDiskPermissionsRequestSchema,
+  CreateWikiLinkRequestSchema,
+  CreateWikiPageRequestSchema,
+  EmptyWikiTrashResponseSchema,
+  ListWikiPagesResponseSchema,
+  PublicWikiPageSchema,
+  UpdateWikiPageRequestSchema,
+  UpdateWikiPermissionsRequestSchema,
+  WIKI_BITS,
+  WikiLinkResponseSchema,
+  WikiPageResponseSchema,
+  WikiPathResponseSchema,
+  WikiPermissionEntrySchema,
+  WikiPermissionsResponseSchema,
+  WikiSettingsSchema,
+  WikiVersionsResponseSchema,
 } from '@calaba/protocol';
 import {
   AdminGetWorkspaceResponseSchema,
@@ -361,6 +377,8 @@ import {
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
+  SearchResponseSchema,
+  SearchType,
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
@@ -926,6 +944,9 @@ function mockUsername(raw: string): string | null {
   return /^[a-z][a-z0-9_]{2,31}$/.test(n) && !RESERVED_USERNAMES.has(n) ? n : null;
 }
 
+/** The public link of «Справочник команды» in the data scenario (`/w/{code}`, with subpages). */
+export const WIKI_PUBLIC_CODE = 'mockWikiPublicHandbook'.padEnd(43, 'x');
+
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
 /** ADR-0044: an archived temporary room — anything but its history. */
@@ -1164,6 +1185,10 @@ class MockImpl {
   boards: BoardsMock;
   /** Disk (ADR-0094); rebuilt with the state. */
   disk: DiskMock;
+  /** Wiki (ADR-0096); rebuilt with the state. */
+  wiki: WikiMock;
+  /** The wiki sync sockets (snapshots up to 2 MiB: not the gateway's 64 KiB limit). */
+  private readonly wikiWss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
   /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
   readonly calWorkHours = new Map<string, WorkHoursRec>();
   readonly calExternal = new Map<string, ExternalSpan[]>();
@@ -1176,6 +1201,7 @@ class MockImpl {
     this.state = buildState(opts.scenario ?? 'data');
     this.boards = this.newBoards();
     this.disk = this.newDisk();
+    this.wiki = this.newWiki();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -1192,8 +1218,16 @@ class MockImpl {
     this.seedBoards();
     this.diskRoutes();
     this.seedDisk();
+    this.wikiRoutes();
+    this.seedWiki();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
+      const sync = /^\/api\/wiki\/pages\/([^/]+)\/sync$/.exec(path);
+      if (sync?.[1]) {
+        const pageId = sync[1];
+        this.wikiWss.handleUpgrade(req, socket, head, (ws) => this.wiki.connect(ws, pageId, (token) => this.byAccessToken(token.trim())?.user.user.id ?? null));
+        return;
+      }
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
         socket.destroy();
         return;
@@ -1222,8 +1256,10 @@ class MockImpl {
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
     for (const c of this.conns) c.ws.terminate();
+    this.wiki.closeAll();
     this.conns.clear();
     await new Promise<void>((r) => this.wss.close(() => r()));
+    await new Promise<void>((r) => this.wikiWss.close(() => r()));
     this.http.closeAllConnections();
     await new Promise<void>((r) => this.http.close(() => r()));
   }
@@ -1237,6 +1273,9 @@ class MockImpl {
     this.seedBoards();
     this.disk = this.newDisk();
     this.seedDisk();
+    this.wiki.closeAll();
+    this.wiki = this.newWiki();
+    this.seedWiki();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
@@ -7506,6 +7545,185 @@ class MockImpl {
     });
     this.diskRoute('GET', '/api/disk/items/:id/activity', (c, me) => sendMsg(c.res, 200, DiskActivityPageSchema, { activities: d().itemActivity(p0(c), me) }));
     this.diskRoute('GET', '/api/disk/items/:id/path', (c, me) => sendMsg(c.res, 200, DiskPathResponseSchema, { items: d().path(p0(c), me) }));
+  }
+
+  // ------------------------------------------------ Wiki (ADR-0096, mock-wiki.ts)
+
+  private newWiki(): WikiMock {
+    return new WikiMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      tick: () => tick(this.state),
+      nextId: () => nextId(this.state, 'file'),
+      // As the gateway: the recipient's own bits in my_bits; the event page has no link and no `shared` flag.
+      emit: (wsId, page, removed, bitsOf) =>
+        this.fanout((u) => {
+          const bits = this.member(wsId, u) ? bitsOf(u) : 0n;
+          if (!(bits & WIKI_BITS.VIEW)) return null;
+          return removed
+            ? { event: { case: 'wikiPageRemove', value: { workspaceId: wsId, pageId: page.id, parentId: page.parentId } } }
+            : { event: { case: 'wikiPageUpsert', value: { workspaceId: wsId, page: { ...page, myBits: bits, shared: false, link: undefined } } } };
+        }),
+    });
+  }
+
+  /**
+   * The Wiki of «Команда Calab» (data scenario): «Справочник команды» (cover, icon, a real document
+   * with headings, lists, a checklist, a quote, code and a table; two versions) with «Онбординг»
+   * (→ «Первый день»), «Процессы» (→ «Релизы», «Код-ревью») and «Глоссарий»; «Встречи» (→ «Ретро
+   * 14.01»); «Черновики» (restricted, shared with Борис); in the trash «Старый регламент» and
+   * «Заметки Q3».
+   */
+  private seedWiki(): void {
+    if (this.state.scenario !== 'data') return;
+    const ws = IDS.workspaces.main;
+    const U = IDS.users;
+    const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
+    const w = this.wiki;
+    const coverBytes = encodePng(960, 240, cardPicture([64, 104, 196], [255, 255, 255], [150, 186, 255], 4));
+    const coverId = nextId(this.state, 'file');
+    const coverMeta = create(FileMetaSchema, fileMeta(coverId, ws, U.anna, 'cover.png', 'image/png', coverBytes, at('2026-01-10T10:00:00Z'), { width: 960, height: 240 }));
+    this.state.files.set(coverId, { meta: coverMeta, bytes: coverBytes, thumbnail: { bytes: coverBytes, mime: 'image/png' } });
+    const handbookMd = [
+      '## Зачем этот раздел',
+      'Здесь собрано всё, что нужно знать новому человеку в команде: как мы работаем, где что лежит и к кому идти с вопросами. Страницы правят все — если видите неточность, исправьте **сразу**.',
+      '## Первая неделя',
+      '- [x] Получить доступ к Calab и рабочей почте',
+      '- [x] Познакомиться с командой на утренней планёрке',
+      '- [ ] Пройти онбординг по продукту',
+      '- [ ] Выбрать первую задачу с меткой `good first issue`',
+      '> Не бойтесь задавать вопросы — лучше спросить дважды, чем гадать.',
+      '## Полезные команды',
+      '```bash\npnpm install && make gen\npnpm dev:desktop\n```',
+      '## Кто за что отвечает',
+      '| Область | Ответственный |\n| --- | --- |\n| Голос и видео | Борис |\n| Дизайн | Вера |\n| Релизы | Анна |',
+    ].join('\n\n');
+    const handbook = w.put({ workspaceId: ws, title: 'Справочник команды', icon: '📘', cover: coverMeta, ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z'), updatedBy: U.vera, preview: 'Здесь собрано всё, что нужно знать новому человеку в команде' }, handbookMd);
+    w.seedLink(handbook.id, WIKI_PUBLIC_CODE, true);
+    const onboarding = w.put({ workspaceId: ws, parentId: handbook.id, title: 'Онбординг', icon: '🚀', ownerId: U.anna }, '## Добро пожаловать\n\nПервые шаги в команде.');
+    w.put({ workspaceId: ws, parentId: onboarding.id, title: 'Первый день', ownerId: U.anna }, 'Что сделать в первый день.');
+    const processes = w.put({ workspaceId: ws, parentId: handbook.id, title: 'Процессы', icon: '⚙️', ownerId: U.boris, preview: 'Как мы выпускаем релизы и смотрим код' }, 'Как мы выпускаем релизы и смотрим код.');
+    w.put({ workspaceId: ws, parentId: processes.id, title: 'Релизы', ownerId: U.anna }, 'Релиз — по тегу.');
+    w.put({ workspaceId: ws, parentId: processes.id, title: 'Код-ревью', ownerId: U.boris }, 'Одно ревью на изменение.');
+    w.put({ workspaceId: ws, parentId: handbook.id, title: 'Глоссарий', icon: '📖', ownerId: U.vera, preview: 'Термины продукта от «островка» до «рейла»' }, 'Термины продукта.');
+    const meetings = w.put({ workspaceId: ws, title: 'Встречи', icon: '🗓️', ownerId: U.boris }, 'Протоколы встреч.');
+    w.put({ workspaceId: ws, parentId: meetings.id, title: 'Ретро 14.01', ownerId: U.boris }, 'Что получилось, что нет.');
+    const drafts = w.put({ workspaceId: ws, title: 'Черновики', icon: '📝', ownerId: U.anna, restricted: true }, 'Наброски.');
+    w.perms.set(drafts.id, [create(WikiPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.boris, allow: WIKI_BITS.VIEW | WIKI_BITS.WRITE })]);
+    w.put({ workspaceId: ws, title: 'Старый регламент', icon: '📄', ownerId: U.anna, trashedAt: at('2026-01-14T10:00:00Z'), trashedBy: U.anna, trashedRoot: true }, 'Устарело.');
+    w.put({ workspaceId: ws, title: 'Заметки Q3', ownerId: U.vera, trashedAt: at('2026-01-13T09:00:00Z'), trashedBy: U.vera, trashedRoot: true }, 'Заметки.');
+    w.addVersion(handbook.id, '## Зачем этот раздел\n\nЗдесь собрано всё, что нужно знать новому человеку.\n\n## Первая неделя\n\n- [ ] Получить доступ к Calab\n- [ ] Пройти онбординг', [U.anna], at('2026-01-12T11:00:00Z'));
+    w.addVersion(handbook.id, handbookMd.replace('**сразу**', 'сразу').replace('- [x] Познакомиться', '- [ ] Познакомиться'), [U.anna, U.vera], at('2026-01-14T15:40:00Z'));
+  }
+
+  private wikiRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof WikiError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    });
+  }
+
+  private wikiRoutes(): void {
+    const w = (): WikiMock => this.wiki;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const p0 = (c: Ctx): string => c.params[0] ?? '';
+    this.wikiRoute('GET', '/api/workspaces/:id/wiki/pages', (c, me) => {
+      const pages = w().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true' });
+      sendMsg(c.res, 200, ListWikiPagesResponseSchema, { pages });
+    });
+    this.wikiRoute('POST', '/api/workspaces/:id/wiki/pages', (c, me) => {
+      const b = parseBody(c, CreateWikiPageRequestSchema);
+      sendMsg(c.res, 201, WikiPageResponseSchema, { page: w().create(p0(c), me, b) });
+    });
+    // Search of the wiki section only (the one the Wiki tree uses): the shape of the real server's answer.
+    this.wikiRoute('GET', '/api/search', (c, me) => {
+      const hits = q(c, 'type') === 'wiki' ? w().search(q(c, 'scope'), me, q(c, 'q'), Number(q(c, 'limit')) || 20) : [];
+      sendMsg(c.res, 200, SearchResponseSchema, {
+        sections: q(c, 'type') === 'wiki' ? [{ type: SearchType.WIKI, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.title, title: h.title, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'wiki' as const, value: { pageId: h.id, icon: h.icon } } })) }] : [],
+      });
+    });
+    this.wikiRoute('POST', '/api/workspaces/:id/wiki/trash/empty', (c, me) => sendMsg(c.res, 200, EmptyWikiTrashResponseSchema, { deleted: w().emptyTrash(p0(c), me) }));
+    this.wikiRoute('GET', '/api/workspaces/:id/wiki/settings', (c, me) => sendMsg(c.res, 200, WikiSettingsSchema, { trashDays: w().settings(p0(c), me) }));
+    this.wikiRoute('PUT', '/api/workspaces/:id/wiki/settings', (c, me) => {
+      const b = parseBody(c, WikiSettingsSchema);
+      w().setSettings(p0(c), me, b.trashDays);
+      sendMsg(c.res, 200, WikiSettingsSchema, { trashDays: w().settings(p0(c), me) });
+    });
+    this.wikiRoute('GET', '/api/wiki/pages/:id', (c, me) => sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().get(p0(c), me) }));
+    this.wikiRoute('PATCH', '/api/wiki/pages/:id', (c, me) => {
+      const b = parseBody(c, UpdateWikiPageRequestSchema);
+      sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().update(p0(c), me, b, (id) => this.state.files.get(id)?.meta) });
+    });
+    this.wikiRoute('DELETE', '/api/wiki/pages/:id', (c, me) => {
+      w().remove(p0(c), me);
+      noContent(c.res);
+    });
+    this.wikiRoute('GET', '/api/wiki/pages/:id/path', (c, me) => sendMsg(c.res, 200, WikiPathResponseSchema, { pages: w().path(p0(c), me) }));
+    this.wikiRoute('POST', '/api/wiki/pages/:id/trash', (c, me) => sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().trash(p0(c), me) }));
+    this.wikiRoute('POST', '/api/wiki/pages/:id/restore', (c, me) => sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().restore(p0(c), me) }));
+    this.wikiRoute('GET', '/api/wiki/pages/:id/permissions', (c, me) => sendMsg(c.res, 200, WikiPermissionsResponseSchema, w().permissions(p0(c), me)));
+    this.wikiRoute('PUT', '/api/wiki/pages/:id/permissions', (c, me) => {
+      const b = parseBody(c, UpdateWikiPermissionsRequestSchema);
+      w().setPermissions(p0(c), me, b.entries, b.restricted);
+      noContent(c.res);
+    });
+    this.wikiRoute('POST', '/api/wiki/pages/:id/link', (c, me) => {
+      const b = parseBody(c, CreateWikiLinkRequestSchema);
+      sendMsg(c.res, 200, WikiLinkResponseSchema, w().createLink(p0(c), me, b));
+    });
+    this.wikiRoute('DELETE', '/api/wiki/pages/:id/link', (c, me) => {
+      w().deleteLink(p0(c), me);
+      noContent(c.res);
+    });
+    this.wikiRoute('GET', '/api/wiki/pages/:id/versions', (c, me) => sendMsg(c.res, 200, WikiVersionsResponseSchema, { versions: w().listVersions(p0(c), me) }));
+    this.wikiRoute('GET', '/api/wiki/pages/:id/versions/:vid', (c, me) => {
+      const state = w().versionState(p0(c), c.params[1] ?? '', me);
+      c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(state.length) });
+      c.res.end(Buffer.from(state));
+    });
+    // Public pages (ADR-0096 §6): anonymous, no sockets.
+    const pub = (h: (c: Ctx) => void): ((c: Ctx) => void) => (c) => {
+      try {
+        h(c);
+      } catch (e) {
+        if (e instanceof WikiError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    };
+    this.route('GET', '/api/public/wiki/:code', pub((c) => sendMsg(c.res, 200, PublicWikiPageSchema, w().publicMeta(p0(c), q(c, 'page')))));
+    this.route(
+      'GET',
+      '/api/public/wiki/:code/state',
+      pub((c) => {
+        const body = w().publicState(p0(c), q(c, 'page'));
+        c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(body.length), 'Cache-Control': 'no-store' });
+        c.res.end(Buffer.from(body));
+      }),
+    );
+    this.route(
+      'GET',
+      '/api/public/wiki/:code/files/:fid',
+      pub((c) => {
+        const f = w().publicFileAllowed(p0(c), c.params[1] ?? '') ? this.state.files.get(c.params[1] ?? '') : undefined;
+        if (!f) throw notFound();
+        send(c.res, 200, f.bytes, f.meta.mime, { 'Cache-Control': 'no-store' });
+      }),
+    );
+    this.wikiRoute('POST', '/api/wiki/pages/:id/files', async (c, me) => {
+      const page = w().get(p0(c), me);
+      w().canUpload(page.id, me);
+      const f = await parseMultipartFile(c);
+      const id = this.storeFile(page.workspaceId, me, f);
+      const meta = this.state.files.get(id)?.meta;
+      if (!meta) throw notFound();
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: meta }); // {file}, like POST /api/files
+    });
   }
 
   private newBoards(): BoardsMock {

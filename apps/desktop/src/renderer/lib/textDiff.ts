@@ -70,7 +70,7 @@ export function splitWords(s: string): string[] {
 }
 
 /** LCS diff of two token lists (common prefix and suffix trimmed first). Not merged. */
-function diffTokens(a: readonly string[], b: readonly string[]): DiffOp[] {
+export function diffTokens(a: readonly string[], b: readonly string[]): DiffOp[] {
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length;
@@ -158,5 +158,56 @@ function merge(ops: readonly DiffOp[]): DiffOp[] {
     if (del) out.push({ op: 'del', text: del });
     if (add) out.push({ op: 'add', text: add });
   }
+  return out;
+}
+
+/** One block (paragraph, list item, heading…) of a block diff; `ops` has no `add` on the before side and no `del` on the after side. */
+export interface DiffBlock {
+  changed: boolean;
+  ops: DiffOp[];
+}
+
+/** Both texts as non-empty trimmed lines: the same normalisation on both sides, so spacing alone is never a change. */
+export function normalizeBlocks(s: string): string[] {
+  return s
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Block diff for the side-by-side wiki history: blocks first (LCS over normalised lines), words
+ * only inside changed blocks (the i-th removed block is paired with the i-th added one). Returns
+ * one list per column, so both are drawn with identical block spacing.
+ */
+export function diffBlocks(before: string, after: string): { before: DiffBlock[]; after: DiffBlock[] } {
+  const out = { before: [] as DiffBlock[], after: [] as DiffBlock[] };
+  let dels: string[] = [];
+  let adds: string[] = [];
+  const flush = (): void => {
+    const n = Math.max(dels.length, adds.length);
+    for (let i = 0; i < n; i++) {
+      const d = dels[i];
+      const a = adds[i];
+      if (d !== undefined && a !== undefined) {
+        const ops = diffText(d, a);
+        out.before.push({ changed: true, ops: ops.filter((o) => o.op !== 'add') });
+        out.after.push({ changed: true, ops: ops.filter((o) => o.op !== 'del') });
+      } else if (d !== undefined) out.before.push({ changed: true, ops: [{ op: 'del', text: d }] });
+      else if (a !== undefined) out.after.push({ changed: true, ops: [{ op: 'add', text: a }] });
+    }
+    dels = [];
+    adds = [];
+  };
+  for (const o of diffTokens(normalizeBlocks(before), normalizeBlocks(after))) {
+    if (o.op === 'del') dels.push(o.text);
+    else if (o.op === 'add') adds.push(o.text);
+    else {
+      flush();
+      out.before.push({ changed: false, ops: [o] });
+      out.after.push({ changed: false, ops: [o] });
+    }
+  }
+  flush();
   return out;
 }

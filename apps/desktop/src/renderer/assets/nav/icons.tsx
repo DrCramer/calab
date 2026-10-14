@@ -103,6 +103,31 @@ export function DiskIdleIcon({ className }: IconProps): ReactNode {
   );
 }
 
+/** «Вики» (ADR-0096 §9): a book — the cover with a page edge and a title line; outline at rest. */
+export function WikiIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d="M8 34V10C8 6.69 10.69 4 14 4H34C35.1 4 36 4.9 36 6V36C36 37.1 35.1 38 34 38H14" />
+      <path d="M36 30H14C10.69 30 8 32.69 8 36C8 38.21 9.79 40 12 40H36" />
+      <path d="M16 12H28" />
+      <path d="M16 18H24" />
+    </svg>
+  );
+}
+
+/** «Вики», filled: the cover solid with the title lines cut out, the page edge below. */
+export function WikiActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path
+        fillRule="evenodd"
+        d="M14 3C10.13 3 7 6.13 7 10V31.1C8.83 29.8 11.07 29 13.5 29H37V6C37 4.34 35.66 3 34 3H14ZM16 11C15.45 11 15 11.45 15 12C15 12.55 15.45 13 16 13H28C28.55 13 29 12.55 29 12C29 11.45 28.55 11 28 11H16ZM16 17C15.45 17 15 17.45 15 18C15 18.55 15.45 19 16 19H24C24.55 19 25 18.55 25 18C25 17.45 24.55 17 24 17H16Z"
+      />
+      <path d="M13.5 32C11.01 32 9 33.79 9 36C9 38.21 11.01 40 13.5 40H36C36.55 40 37 39.55 37 39V32H13.5Z" />
+    </svg>
+  );
+}
+
 export function DiskActiveIcon({ className }: IconProps): ReactNode {
   return (
     <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">

@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { contextWorkspace, currentSection, rememberSection, type WsSection } from '../lib/sections';
 import { useBoardsUi } from './boardsUi';
 import { useDiskUi } from './diskUi';
+import { useWikiUi } from './wikiUi';
 import { HOME } from './dms';
 import { useUi } from './ui';
 import { useWorkspaces } from './workspaces';
@@ -26,7 +27,7 @@ function record(): void {
   const ui = useUi.getState();
   const ws = ui.activeWorkspaceId;
   if (!ws || ws === HOME) return;
-  const section = currentSection({ home: false, boards: useBoardsUi.getState().active, calendar: ui.calDay !== null, disk: useDiskUi.getState().active });
+  const section = currentSection({ home: false, boards: useBoardsUi.getState().active, calendar: ui.calDay !== null, disk: useDiskUi.getState().active, wiki: useWikiUi.getState().active });
   if (section === null || section === 'dms' || section === 'mail') return;
   const s = useSections.getState();
   const of = rememberSection(s.of, ws, section);
@@ -52,6 +53,9 @@ useBoardsUi.subscribe((s, prev) => {
   if (s.active !== prev.active) schedule();
 });
 useDiskUi.subscribe((s, prev) => {
+  if (s.active !== prev.active) schedule();
+});
+useWikiUi.subscribe((s, prev) => {
   if (s.active !== prev.active) schedule();
 });
 

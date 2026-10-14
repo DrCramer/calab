@@ -195,7 +195,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 | `owner` | 1001 | `ADMINISTRATOR` | только цвет/`mentionable`; снять/выдать нельзя; единственный, кто удаляет workspace |
 | `admin` | 1000 | `ADMINISTRATOR` | цвет/`mentionable`; выдаёт и снимает только владелец |
 | свои роли | 2 … | заданные | имя, цвет, права, порядок; удаляются |
-| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS, CREATE_TEMP_ROOMS, DISK_VIEW, DISK_WRITE` (биты досок — миграция 00046, ADR-0042; временные комнаты — 00048, ADR-0044; диск — 00088, ADR-0094) | права; есть у каждого не-гостя |
+| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS, CREATE_TEMP_ROOMS, DISK_VIEW, DISK_WRITE, WIKI_VIEW, WIKI_WRITE` (биты досок — миграция 00046, ADR-0042; временные комнаты — 00048, ADR-0044; диск — 00088, ADR-0094; вики — 00090, ADR-0096) | права; есть у каждого не-гостя |
 | `guest` | 0 | `CONNECT, SPEAK` (комнаты — только с явным `allow VIEW_ROOM`) | права в пределах `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` |
 
 - Встроенные роли участника следуют `workspace_members.role` (триггер): `owner` → owner + member, `admin` → admin + member, `member` → member, `guest` → guest. Поле `role` остаётся «старшей встроенной ролью» для клиентов до 0.6.0 (`WorkspaceMember.role`); свои роли назначаются отдельно (`member_roles`) и переживают смену встроенной. Имена встроенных ролей — ключи (`owner` …), клиент показывает локализованные.
@@ -271,6 +271,17 @@ const DISK_BITS = {
   VIEW:   1n << 35n,  // раздел «Диск» и всё не-restricted; у участника по умолчанию
   WRITE:  1n << 36n,  // папки, загрузка; переименовать / переместить / в корзину своё; у участника по умолчанию
   MANAGE: 1n << 37n,  // любой элемент, срок корзины, очистка всей корзины, чужие ссылки; включает VIEW + WRITE
+} as const;
+
+// Вики (ADR-0096, миграция 00090): правила как у диска; один алгоритм дерева для обоих —
+// treeItemPermissions(bits, …) (TS) / perm.ComputeTree(TreeBits, TreeInput) (Go); обёртки
+// wikiPagePermissions / perm.ComputeWikiPage, векторы `wiki`. WRITE на страницу — правка содержимого
+// и подстраницы; структура (имя, иконка, обложка, перенос, корзина, доступ, ссылка) — владелец
+// страницы или MANAGE: wikiStructureAllowed / perm.WikiStructureAllowed (не отдельный бит).
+const WIKI_BITS = {
+  VIEW:   1n << 38n,  // раздел «Вики» и все не-restricted страницы; у участника по умолчанию
+  WRITE:  1n << 39n,  // новые страницы; правка содержимого и подстраницы, где есть WRITE; у участника по умолчанию
+  MANAGE: 1n << 40n,  // структура любой страницы, срок корзины, очистка всей корзины, чужие ссылки; включает VIEW + WRITE
 } as const;
 ```
 
@@ -443,8 +454,15 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 
 ## Диск (ADR-0094, миграция 00088)
 - `disk_items` — папки и файлы пространства: `parent_id` (NULL = корень, `ON DELETE CASCADE`), `kind folder|file`, `name` 1..255 (уникально в папке без регистра среди не удалённых), `file_id → files` (только у файла; удаление строки `files` удаляет элемент), `owner_id`, `restricted` («Только выбранные»), `trashed_at` / `trashed_by` / `trashed_root` (корзина: всё поддерево с одной меткой, в списке корзины — только корни). Глубина ≤ 32, путь — рекурсивный CTE. Файлы диска (и в корзине) — ссылки для `ListOrphanFiles` / `UnattachedBytesByUploader`; удаление навсегда удаляет строки `files` поддерева и сразу освобождает квоту.
-- `disk_permissions(item_id, target_type role|user, target_id, allow, deny)` — только `DISK_VIEW | DISK_WRITE` (CHECK). Права элемента (`ComputeDiskItem`): `DISK_MANAGE`/ADMINISTRATOR — всё; иначе биты ролей, затем сверху вниз по цепочке предков и самому элементу: `restricted` сбрасывает унаследованное, переопределения ролей (по position) и личное, владелец элемента всегда VIEW | WRITE; нет VIEW → 404. Гостям и ботам — только личный allow.
+- `disk_permissions(item_id, target_type role|user, target_id, allow, deny)` — только `DISK_VIEW | DISK_WRITE` (CHECK). Права элемента (`ComputeDiskItem`): `DISK_MANAGE`/ADMINISTRATOR — всё; иначе биты ролей, затем сверху вниз по цепочке предков и самому элементу: `restricted` сбрасывает унаследованное, переопределения ролей (по position) и личное, владелец элемента всегда VIEW | WRITE; нет VIEW → 404. Гостям — только личный allow; боты — как участники, по своим ролям (дополнение ADR-0094 от 2026-10-14).
 - `disk_links` — публичная ссылка файла (`code` 43 символа, `expires_at`, `revoked_at`, `downloads`; одна строка на элемент), `disk_activity` — журнал (`create … delete`, снимки имён в `before/after`), `workspaces.disk_trash_days` (NULL = не удалять), `workspace_storage_addons(size_mb, sku, active)` — пакеты места: предел = `min(storage_quota_bytes, plan.storage_mb + Σ active size_mb)` (`plans.Service.EffectiveStorageBytes`).
+
+## Вики (ADR-0096, миграции 00090, 00091)
+- `wiki_pages` — дерево страниц пространства: `parent_id` (NULL = верхний уровень, `ON DELETE CASCADE`), `title` ≤ 200, `icon` (эмодзи), `cover_file_id → files` (`SET NULL`), `position` (порядок среди соседей 0.., при переносе соседи перенумеровываются — `ReindexWikiSiblings`), `owner_id`, `restricted`, `plain_text` (текст последнего снимка для поиска и версий, ≤ 256 КиБ — tsvector держит ≤ 1 МиБ), `preview` ≤ 200, `doc_size`, `next_seq` (счётчик обновлений страницы: `AppendWikiUpdate` берёт и увеличивает его одним оператором — блокировка строки страницы, без глобальной последовательности), `updated_by`, `trashed_at` / `trashed_by` / `trashed_root` (как у диска). Глубина ≤ 32. Вид `wiki_page_heads` — страница без `plain_text`: его читают списки, пути и проверки прав.
+- `wiki_page_updates(page_id, seq, data ≤ 64 КиБ, author_id)` (PK `(page_id, seq)`) — Yjs-обновления после снимка; `wiki_page_snapshots(page_id PK, state ≤ 2 МиБ, through_seq, saved_by)` — текущий снимок, `through_seq` не уменьшается (`UpsertWikiSnapshot`), после снимка обновления `≤ through_seq` удаляются; `wiki_page_versions(id, page_id, state, plain_text, title, authors uuid[])` — история: ≤ 200 на страницу, старше 7 дней — одна в сутки UTC (`PruneWikiVersions`). Сервер Yjs не разбирает.
+- `wiki_permissions(page_id, target_type, target_id, allow, deny)` — только `WIKI_VIEW | WIKI_WRITE` (CHECK); удаление роли и уход участника удаляют их строки (`DeleteRoleOverrides`, `DeleteUserOverridesInWorkspace`). Права страницы — `perm.ComputeWikiPage` (общий `ComputeTree`, как у диска); гостям — только личный allow, боты — как участники.
+- `wiki_links(page_id UNIQUE, code 43, include_children, expires_at, revoked_at, views)` — публичная ссылка; живая ссылка при изменении сохраняет код. `wiki_activity` — журнал (`create rename move share link_on link_off trash restore delete icon cover version`, `page_title`). `wiki_page_files(page_id, file_id)` — картинки и вложения страницы: вместе с обложками — ссылки для `ListOrphanFiles` / `UnattachedBytesByUploader`, в квоте пространства («вне диска»); удаление навсегда удаляет строки `files` поддерева, на которые не ссылаются страницы вне него (`DeleteWikiSubtreeFiles`), и освобождает квоту. `workspaces.wiki_trash_days` (NULL = не удалять).
+- Поиск (00091, `CONCURRENTLY`): GIN `to_tsvector('russian', title || ' ' || plain_text) || to_tsvector('simple', …)` и trgm по `title`, оба частичные `WHERE trashed_at IS NULL`; кандидаты — `SearchWikiPages`, фильтр доступа — в Go.
 
 ## Доски задач (ADR-0042, миграция 00046)
 - `boards` — доска пространства: `name` 1..60, `key` 2..6 `A–Z0–9` с буквы (уникален в пространстве, пустой → из названия: инициалы слов или 3 буквы, кириллица транслитерируется, занятый → суффикс цифрой), `emoji`, `icon_file_id`, `description` ≤ 2000, `is_private`, `position`, `next_number` (нумерация задач; ключ нельзя менять после первой задачи), `auto_archive_days` (30; 0 — никогда), `default_view_id`, `archived_at`, `restricted` (закрытая, только при `is_private`, ADR-0048, миграция 00052). Создаёт `CREATE_BOARDS`. Создатель получает `board_permissions` user-allow всех битов доски. Шаблоны статусов: «Простая» (Todo / В работе / Готово), «Разработка» (+ Backlog, Ревью, Отменено), «Пустая» (Todo).

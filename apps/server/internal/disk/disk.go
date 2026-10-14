@@ -101,7 +101,6 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 // caller is the requester as a member of the item's workspace.
 type caller struct {
 	uid uuid.UUID
-	bot bool
 	m   perm.Member
 }
 
@@ -119,7 +118,7 @@ func member(r *http.Request, ws uuid.UUID) (caller, error) {
 	if err != nil {
 		return caller{}, err
 	}
-	return caller{uid: id.UserID, bot: id.IsBot, m: m}, nil
+	return caller{uid: id.UserID, m: m}, nil
 }
 
 // pathWorkspace resolves {id} as a workspace the caller belongs to.
@@ -169,7 +168,7 @@ func resolve(r *http.Request, q *sqlc.Queries, id uuid.UUID) (access, error) {
 	if err != nil {
 		return access{}, err
 	}
-	bits := ch.Bits(c.m, c.bot, &id)
+	bits := ch.Bits(c.m, &id)
 	if !bits.Has(perm.DiskView) {
 		return access{}, errNoItem
 	}
@@ -202,7 +201,7 @@ func writable(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) error {
 func folderBits(r *http.Request, q *sqlc.Queries, ws uuid.UUID, c caller, parent *uuid.UUID) (perm.Bits, *diskacl.Chains, error) {
 	if parent == nil {
 		ch, _ := diskacl.Load(r.Context(), q, nil)
-		return ch.Bits(c.m, c.bot, nil), ch, nil
+		return ch.Bits(c.m, nil), ch, nil
 	}
 	ch, err := diskacl.Load(r.Context(), q, []uuid.UUID{*parent})
 	if err != nil {
@@ -212,7 +211,7 @@ func folderBits(r *http.Request, q *sqlc.Queries, ws uuid.UUID, c caller, parent
 		return 0, nil, httpx.NotFound("folder")
 	}
 	p := ch.Item(*parent)
-	bits := ch.Bits(c.m, c.bot, parent)
+	bits := ch.Bits(c.m, parent)
 	if p.WorkspaceID != ws || p.Kind != "folder" || !bits.Has(perm.DiskView) {
 		return 0, nil, httpx.NotFound("folder")
 	}

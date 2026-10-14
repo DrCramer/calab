@@ -32,6 +32,7 @@ export * from './gen/calaba/v1/sticker_pb.js';
 export * from './gen/calaba/v1/sound_pb.js';
 export * from './gen/calaba/v1/unfurl_pb.js';
 export * from './gen/calaba/v1/user_pb.js';
+export * from './gen/calaba/v1/wiki_pb.js';
 export * from './gen/calaba/v1/workspace_pb.js';
 
 // Hand-written helpers on top of the contract.
