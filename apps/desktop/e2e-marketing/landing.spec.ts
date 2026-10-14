@@ -26,8 +26,8 @@ import { SCENE, drawArt, seedBoard, seedMeetings, seedNotes, seedScene } from '.
 const OUT = resolve(import.meta.dirname, '../../landing/shots');
 const DIST = resolve(import.meta.dirname, '../dist-web');
 const SIZE = { width: 1440, height: 900 };
-/** chat: the window (CSS px) of the closer chat frame — a narrow feed (crop in apps/landing/scripts/assets.mjs). */
-const CHAT_WINDOW = { width: 930, height: 800 };
+/** chat: the window (CSS px) of the closer chat frame — the room list's edge, the header, the feed and the composer (crop in apps/landing/scripts/assets.mjs). */
+const CHAT_WINDOW = { width: 1280, height: 800 };
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const ALL: Short[] = ['ru', 'en', 'es', 'zh'];

@@ -2,7 +2,7 @@
 // Files: public/screens/<lang>/<name>.webp and <name>@2x.webp, the app and its team in that language.
 export const SCREENS = {
   voice: { width: 1440, height: 900 },
-  chat: { width: 600, height: 760 },
+  chat: { width: 1040, height: 762 },
   call: { width: 1440, height: 870 },
   calendar: { width: 1110, height: 870 },
   findtime: { width: 1110, height: 870 },

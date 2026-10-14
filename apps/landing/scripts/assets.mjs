@@ -27,9 +27,9 @@ const MAX = 300_000;
 export const CROPS = {
   // hero: the whole window in a call — the shared slide on the stage, cameras, the room list
   voice: null,
-  // chat: the room header (with «… печатает») and a narrow feed down to the composer: the mockup's end, a reply
-  // quote, short lines of four people with reactions, my last one read (the capture's window is 930×800)
-  chat: { left: 330, top: 40, width: 600, height: 760 },
+  // chat: the room header (with «… печатает») and the room list column, the feed down to the composer: the mockup's end, a reply
+  // quote, short lines of four people with reactions, my last one read (the capture's window is 1280×800)
+  chat: { left: 0, top: 38, width: 1040, height: 762 },
   // one-to-one call: the DM with «Звонок · 00:00 · Завершить», the island
   call: { left: 0, top: 30, width: 1440, height: 870 },
   // calendar: the day with the planning meeting's card
