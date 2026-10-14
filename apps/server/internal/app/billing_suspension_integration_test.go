@@ -361,7 +361,12 @@ func routeFixtures(t *testing.T, o, m *user, ws, room string) map[string]string 
 	if err != nil {
 		t.Fatal(err)
 	}
+	diskItem, err := testDB.Q.CreateDiskItem(ctx, sqlc.CreateDiskItemParams{WorkspaceID: wsID, Kind: "folder", Name: "Inventory folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return map[string]string{"achievement": achievement.ID.String(), "rule": rule.ID.String(), "board_category": boardCategory.ID.String(),
+		"disk_item": diskItem.ID.String(),
 		"checklist": checklist.ID.String(), "checklist_item": item.ID.String(), "workspace": ws, "room": room, "message": msg.Id,
 		"board": b.Id, "task": task.Id, "file": file.Id, "category": category.ID.String(), "pack": pack.ID.String(),
 		"sticker": sticker.ID.String(), "event": event.ID.String(), "app": webapp.ID.String()}

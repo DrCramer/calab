@@ -51,6 +51,8 @@ const (
 	// like scopeWorkspace; a separate scope so billing suspension (ADR-0080 §12) can keep the
 	// owner's recovery scope open while it closes the rest of the workspace.
 	scopeBilling
+	// scopeDiskItem: /api/disk/items/{id} (ADR-0094), the item's workspace.
+	scopeDiskItem
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -435,6 +437,30 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/boards/{id}/git":             scopeBoard,
 	"DELETE /api/boards/{id}/git":          scopeBoard,
 	"POST /api/git/boards/{id}/{provider}": scopePublic,
+	// Disk (ADR-0094 §7). The public link routes are anonymous like public forms; the handler
+	// applies auth.CheckPublicCapability of the link's workspace.
+	"GET /api/workspaces/{id}/disk/items":        scopeWorkspace,
+	"POST /api/workspaces/{id}/disk/folders":     scopeWorkspace,
+	"POST /api/workspaces/{id}/disk/upload":      scopeWorkspace,
+	"POST /api/workspaces/{id}/disk/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/disk/usage":        scopeWorkspace,
+	"GET /api/workspaces/{id}/disk/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/disk/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/disk/settings":     scopeWorkspace,
+	"GET /api/disk/items/{id}":                   scopeDiskItem,
+	"PATCH /api/disk/items/{id}":                 scopeDiskItem,
+	"DELETE /api/disk/items/{id}":                scopeDiskItem,
+	"POST /api/disk/items/{id}/trash":            scopeDiskItem,
+	"POST /api/disk/items/{id}/restore":          scopeDiskItem,
+	"GET /api/disk/items/{id}/path":              scopeDiskItem,
+	"GET /api/disk/items/{id}/activity":          scopeDiskItem,
+	"GET /api/disk/items/{id}/permissions":       scopeDiskItem,
+	"PUT /api/disk/items/{id}/permissions":       scopeDiskItem,
+	"POST /api/disk/items/{id}/link":             scopeDiskItem,
+	"DELETE /api/disk/items/{id}/link":           scopeDiskItem,
+	"GET /api/public/disk/{code}":                scopePublic,
+	"GET /api/public/disk/{code}/content":        scopePublic,
+	"GET /api/public/disk/{code}/thumbnail":      scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
@@ -682,6 +708,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeAchievement:
 		row, err := q.GetAchievement(ctx, id)
 		return row.WorkspaceID, err
+	case scopeDiskItem:
+		row, err := q.GetDiskItem(ctx, id)
+		return row.WorkspaceID, err
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -804,6 +833,8 @@ func IdentityRouteClass(pattern string) string {
 		return "app"
 	case scopeAchievement:
 		return "achievement"
+	case scopeDiskItem:
+		return "disk_item"
 	default:
 		return "specialized"
 	}
