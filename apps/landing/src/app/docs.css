@@ -141,6 +141,7 @@
 
 .docs-code { margin: 0; border-radius: 12px; border: 1px solid var(--color-docs-line); background: var(--color-card); overflow: hidden; }
 .docs-code-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 0 6px 0 14px; border-bottom: 1px solid var(--color-docs-line); }
+.docs-code-head .docs-copy { margin-left: auto; }
 .docs-code-lang { font: 12px/1 var(--font-mono); color: var(--color-text-secondary); }
 .docs-copy { min-height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; color: var(--color-text-secondary); cursor: pointer; }
 .docs-copy:hover { background: var(--color-docs-hover); color: var(--color-text); }
@@ -148,7 +149,10 @@
 .docs-code pre { margin: 0; padding: 14px 16px; overflow-x: auto; font: 13.5px/1.6 var(--font-mono); tab-size: 2; }
 .docs-code pre code { font: inherit; }
 .docs-tabs { border-radius: 12px; border: 1px solid var(--color-docs-line); background: var(--color-card); overflow: hidden; }
-.docs-tabs .docs-code { border: 0; border-radius: 0; }
+.docs-tabs .docs-code { position: relative; border: 0; border-radius: 0; }
+/* Tab group: the copy button floats over the code instead of taking an empty header row. */
+.docs-tabs .docs-code-head { position: absolute; top: 6px; right: 6px; z-index: 1; min-height: 0; padding: 0; border: 0; }
+.docs-tabs .docs-copy { background: var(--color-card); }
 .docs-tabs-list { display: flex; gap: 2px; padding: 4px 4px 0; overflow-x: auto; border-bottom: 1px solid var(--color-docs-line); }
 .docs-tabs-list [role=tab] {
   flex-shrink: 0; min-height: 36px; padding: 0 12px; border-bottom: 2px solid transparent; font-size: 13px; color: var(--color-text-secondary); cursor: pointer;
@@ -176,11 +180,11 @@
 @media (max-width: 1099px) {
   .docs-body { display: block; padding: 0 24px; }
   .docs-toc { display: none; }
-  .docs-main { margin: 0 auto; }
+  .docs-main { margin: 0 auto; padding-bottom: 96px; } /* clear the fixed cookie-settings button */
   .docs-menu { display: grid; }
   .docs-nav {
     position: fixed; top: var(--docs-top); left: 0; z-index: 30; width: min(320px, 86vw); height: calc(100dvh - var(--docs-top));
-    padding: 16px 12px 32px; background: var(--color-bg); border-right: 1px solid var(--color-docs-line);
+    padding: 16px 12px 96px; background: var(--color-bg); border-right: 1px solid var(--color-docs-line);
     transform: translateX(-100%); visibility: hidden; transition: transform .18s ease-out, visibility 0s linear .18s;
   }
   .docs[data-nav-open] .docs-nav { transform: none; visibility: visible; transition: transform .18s ease-out; }

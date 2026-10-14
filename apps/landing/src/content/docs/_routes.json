@@ -432,6 +432,7 @@
 {"method":"POST","path":"/api/workspaces/{id}/backgrounds","decision":"deny","group":"workspaces"},
 {"method":"PATCH","path":"/api/workspaces/{id}/backgrounds/{bgId}","decision":"deny","group":"workspaces"},
 {"method":"DELETE","path":"/api/workspaces/{id}/backgrounds/{bgId}","decision":"deny","group":"workspaces"},
+{"method":"GET","path":"/api/workspaces/{id}/former-members","decision":"allow","group":"workspaces"},
 {"method":"GET","path":"/api/workspaces/{id}/integrations/gptunnel","decision":"deny","group":"workspaces"},
 {"method":"POST","path":"/api/workspaces/{id}/integrations/gptunnel","decision":"deny","group":"workspaces"},
 {"method":"DELETE","path":"/api/workspaces/{id}/integrations/gptunnel","decision":"deny","group":"workspaces"},
@@ -440,5 +441,6 @@
 {"method":"GET","path":"/api/workspaces/{id}/sip","decision":"deny","group":"workspaces"},
 {"method":"PUT","path":"/api/workspaces/{id}/sip","decision":"deny","group":"workspaces"},
 {"method":"POST","path":"/api/workspaces/{id}/sip/test","decision":"deny","group":"workspaces"},
+{"method":"GET","path":"/api/workspaces/{id}/users","decision":"allow","group":"workspaces"},
 {"method":"GET","path":"/api/workspaces/discover","decision":"deny","group":"workspaces"}
 ]

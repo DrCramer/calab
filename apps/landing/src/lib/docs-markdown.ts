@@ -333,14 +333,15 @@ const h = (tagName: string, properties: Element['properties'], children: Element
   ({ type: 'element', tagName, properties, children });
 const text = (value: string): ElementContent => ({ type: 'text', value });
 
-function codeFigure(hl: Highlighter, f: Fence, copy: string): Element {
+function codeFigure(hl: Highlighter, f: Fence, copy: string, tabbed = false): Element {
   const lang = ALIASES[f.lang] ?? f.lang;
   const known = (LANGS as readonly string[]).includes(lang);
   const root = hl.codeToHast(f.code.replace(/\n$/, ''), { lang: known ? lang : 'text', theme: THEME });
   const pre = root.children[0] as Element;
   // Background and border come from the site tokens (.docs-code); token colours stay inline.
   pre.properties = { className: ['shiki'], tabIndex: 0 };
-  const label = known ? (LABELS[lang] ?? lang) : f.lang;
+  // Inside a tab group the tab already names the language: no repeated label in the header.
+  const label = tabbed ? '' : known ? (LABELS[lang] ?? lang) : f.lang;
   return h('figure', { className: ['docs-code'] }, [
     h('div', { className: ['docs-code-head'] }, [
       h('span', { className: ['docs-code-lang'] }, label ? [text(label)] : []),
@@ -363,7 +364,7 @@ function slotHtml(hl: Highlighter, slot: Slot, index: number, lang: DocLang): El
       }, [text(f.tab ?? f.lang)]))),
     ...slot.fences.map((f, i) => h('div', {
       role: 'tabpanel', id: id('panel', i), ariaLabelledBy: [id('tab', i)], hidden: i !== 0,
-    }, [codeFigure(hl, f, ui.copy)])),
+    }, [codeFigure(hl, f, ui.copy, true)])),
   ]);
 }
 
