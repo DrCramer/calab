@@ -132,6 +132,24 @@ func (r *Resolver) Member(ctx context.Context, workspaceID, userID uuid.UUID) (M
 	return m, nil
 }
 
+// MemberStore reads one member's roles.
+type MemberStore interface {
+	GetMemberAccess(ctx context.Context, arg sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error)
+}
+
+// LoadMember reads a member's roles straight from s, without the request's access policy (system
+// paths: the trash sweeper, detaching a private subtree); ok is false for a non-member.
+func LoadMember(ctx context.Context, s MemberStore, workspaceID, userID uuid.UUID) (m Member, ok bool, err error) {
+	row, err := s.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: workspaceID, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Member{}, false, nil
+	}
+	if err != nil {
+		return Member{}, false, fmt.Errorf("perm: load member: %w", err)
+	}
+	return NewMember(userID.String(), Role(row.Role), RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)), true, nil
+}
+
 // Role returns the user's highest built-in role in the workspace, or ErrNotMember.
 func (r *Resolver) Role(ctx context.Context, workspaceID, userID uuid.UUID) (Role, error) {
 	m, err := r.Member(ctx, workspaceID, userID)

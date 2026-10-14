@@ -266,6 +266,34 @@ func (q *Queries) DeleteWikiUpdatesThrough(ctx context.Context, arg DeleteWikiUp
 	return result.RowsAffected(), nil
 }
 
+const detachWikiPage = `-- name: DetachWikiPage :one
+UPDATE wiki_pages w SET
+    parent_id    = NULL,
+    restricted   = $1,
+    trashed_root = w.trashed_at IS NOT NULL,
+    position     = CASE WHEN w.trashed_at IS NULL THEN (
+        SELECT coalesce(max(s.position) + 1, 0) FROM wiki_pages s
+        WHERE s.workspace_id = w.workspace_id AND s.trashed_at IS NULL AND s.parent_id IS NULL) ELSE w.position END,
+    updated_at   = now()
+WHERE w.id = $2
+RETURNING w.id
+`
+
+type DetachWikiPageParams struct {
+	Restricted bool
+	ID         uuid.UUID
+}
+
+// Detaches a page (with its subtree) to the top level, last among the live top-level pages (under
+// LockWikiTree), with the flag that keeps its access (perm.Detached); in the trash it becomes a
+// trash root of its own.
+func (q *Queries) DetachWikiPage(ctx context.Context, arg DetachWikiPageParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, detachWikiPage, arg.Restricted, arg.ID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getWikiFilesBytes = `-- name: GetWikiFilesBytes :one
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.workspace_id = $1
@@ -1107,6 +1135,65 @@ func (q *Queries) ListWikiPermissionsForPages(ctx context.Context, ids []uuid.UU
 	return items, nil
 }
 
+const listWikiSubtree = `-- name: ListWikiSubtree :many
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM wiki_pages c WHERE c.parent_id = $1::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM wiki_pages c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT wp.id, wp.workspace_id, wp.parent_id, wp.title, wp.icon, wp.cover_file_id, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, down.depth::int AS depth
+FROM down JOIN wiki_page_heads wp ON wp.id = down.id
+ORDER BY down.depth, wp.id
+`
+
+type ListWikiSubtreeRow struct {
+	WikiPageHead WikiPageHead
+	Depth        int32
+}
+
+// The pages below a page (not the page itself), parents before children, trashed or not: a
+// trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
+// of ADR-0096 §2). Bounded at 64 levels.
+func (q *Queries) ListWikiSubtree(ctx context.Context, id uuid.UUID) ([]ListWikiSubtreeRow, error) {
+	rows, err := q.db.Query(ctx, listWikiSubtree, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWikiSubtreeRow{}
+	for rows.Next() {
+		var i ListWikiSubtreeRow
+		if err := rows.Scan(
+			&i.WikiPageHead.ID,
+			&i.WikiPageHead.WorkspaceID,
+			&i.WikiPageHead.ParentID,
+			&i.WikiPageHead.Title,
+			&i.WikiPageHead.Icon,
+			&i.WikiPageHead.CoverFileID,
+			&i.WikiPageHead.Position,
+			&i.WikiPageHead.OwnerID,
+			&i.WikiPageHead.Restricted,
+			&i.WikiPageHead.Preview,
+			&i.WikiPageHead.DocSize,
+			&i.WikiPageHead.NextSeq,
+			&i.WikiPageHead.UpdatedBy,
+			&i.WikiPageHead.CreatedAt,
+			&i.WikiPageHead.UpdatedAt,
+			&i.WikiPageHead.TrashedAt,
+			&i.WikiPageHead.TrashedBy,
+			&i.WikiPageHead.TrashedRoot,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWikiSweepWorkspaces = `-- name: ListWikiSweepWorkspaces :many
 
 SELECT w.id, w.wiki_trash_days::int AS days FROM workspaces w
@@ -1702,6 +1789,30 @@ func (q *Queries) RestoreWikiSubtree(ctx context.Context, arg RestoreWikiSubtree
 		return nil, err
 	}
 	return items, nil
+}
+
+const retimeWikiTrash = `-- name: RetimeWikiTrash :exec
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM wiki_pages r WHERE r.id = $2::uuid AND r.trashed_at IS NOT NULL
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM wiki_pages c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+UPDATE wiki_pages w SET trashed_at = $1::timestamptz FROM sub WHERE w.id = sub.id
+`
+
+type RetimeWikiTrashParams struct {
+	TrashedAt time.Time
+	ID        uuid.UUID
+}
+
+// The sweeper detached a trashed page from someone else's expired trash root: it and what was
+// trashed with it get a trash time of their own (now), so the retention counts from here.
+func (q *Queries) RetimeWikiTrash(ctx context.Context, arg RetimeWikiTrashParams) error {
+	_, err := q.db.Exec(ctx, retimeWikiTrash, arg.TrashedAt, arg.ID)
+	return err
 }
 
 const revokeWikiLink = `-- name: RevokeWikiLink :execrows

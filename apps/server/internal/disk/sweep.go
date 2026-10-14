@@ -10,6 +10,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/diskacl"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // SweepInterval is how often TrashSweep runs (ADR-0094 §4).
@@ -47,6 +48,7 @@ func (s *Service) TrashSweep(ctx context.Context) (int, error) {
 
 func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time) (int, bool, error) {
 	var done []deleted
+	now := s.Now()
 	more := false
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		ok, err := q.TryAdvisoryXactLock(ctx, "calaba.disk.sweep."+ws.String())
@@ -88,7 +90,14 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 			if !cur.TrashedRoot || cur.TrashedAt == nil || !cur.TrashedAt.Before(cutoff) {
 				continue
 			}
-			d, err := s.deleteTree(ctx, q, cur, ch.Nodes(it.ID), nil)
+			// The sweeper deletes what the root's deleter saw: a private item swept in from
+			// someone else's folder is detached as a trash root of its own, with its own
+			// retention from now (addendum 2026-10-14 of ADR-0094 §2).
+			v, err := s.sweepViewer(ctx, q, cur, ch.Nodes(it.ID))
+			if err != nil {
+				return err
+			}
+			d, err := s.deleteTree(ctx, q, cur, ch.Nodes(it.ID), nil, v, nil, &now)
 			if err != nil {
 				return err
 			}
@@ -101,6 +110,22 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 	}
 	s.finish(ctx, done)
 	return len(done), more, nil
+}
+
+// sweepViewer is what the deleter of trash root it (chain: its chain) sees; when they are no
+// longer a member, everything below it but restricted items.
+func (s *Service) sweepViewer(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem, chain []perm.DiskNode) (viewer, error) {
+	if it.TrashedBy != nil {
+		m, ok, err := perm.LoadMember(ctx, q, it.WorkspaceID, *it.TrashedBy)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return sees(m), nil
+		}
+	}
+	depth := len(chain)
+	return func(c []perm.DiskNode) bool { return len(c) < depth || !perm.RestrictedIn(c[depth:]) }, nil
 }
 
 // RunTrashSweep runs TrashSweep every interval until ctx is done.
