@@ -18,6 +18,7 @@ import (
 // functions (ADR-0062 §2).
 type space struct {
 	id     uuid.UUID
+	m      perm.Member             // the caller as a member (the wiki section's page rule)
 	rooms  []uuid.UUID             // rooms.VisibleBits: VIEW_ROOM (no task rooms, no archived rooms)
 	boards boards.Visible          // boards.VisibleBoards: full and task-scoped (TaskBits != 0)
 	events *calendar.SearchViewer  // the calendar's viewer; nil for guests
@@ -86,7 +87,7 @@ func (s *Service) buildScope(ctx context.Context, req *request, user uuid.UUID, 
 		if err != nil {
 			return nil, err
 		}
-		sp := space{id: id, bits: bits, rooms: make([]uuid.UUID, 0, len(bits))}
+		sp := space{id: id, m: m, bits: bits, rooms: make([]uuid.UUID, 0, len(bits))}
 		for rid, b := range bits {
 			if b.Has(perm.ViewRoom) {
 				sp.rooms = append(sp.rooms, rid)

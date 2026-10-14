@@ -473,6 +473,19 @@ func (q *Queries) GetWikiSnapshot(ctx context.Context, pageID uuid.UUID) (WikiPa
 	return i, err
 }
 
+const getWikiSnapshotSeq = `-- name: GetWikiSnapshotSeq :one
+SELECT through_seq FROM wiki_page_snapshots WHERE page_id = $1
+`
+
+// The through_seq of the page's snapshot without its state (the sync socket's catch-up and the
+// COMPACT_REQUEST check).
+func (q *Queries) GetWikiSnapshotSeq(ctx context.Context, pageID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getWikiSnapshotSeq, pageID)
+	var through_seq int64
+	err := row.Scan(&through_seq)
+	return through_seq, err
+}
+
 const getWikiTrashDays = `-- name: GetWikiTrashDays :one
 SELECT wiki_trash_days FROM workspaces WHERE id = $1
 `

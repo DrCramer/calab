@@ -435,6 +435,11 @@ DELETE FROM wiki_page_updates WHERE page_id = sqlc.arg('page_id') AND seq <= sql
 -- name: GetWikiSnapshot :one
 SELECT * FROM wiki_page_snapshots WHERE page_id = $1;
 
+-- name: GetWikiSnapshotSeq :one
+-- The through_seq of the page's snapshot without its state (the sync socket's catch-up and the
+-- COMPACT_REQUEST check).
+SELECT through_seq FROM wiki_page_snapshots WHERE page_id = $1;
+
 -- name: UpsertWikiSnapshot :execrows
 -- Saves a snapshot unless a newer one is stored (through_seq never goes back); 0 rows = stale.
 -- The caller checks through_seq < wiki_pages.next_seq.
