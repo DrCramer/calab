@@ -28,7 +28,13 @@ workspaces          id, slug (unique), name, icon_file_id, visibility ('private'
 workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest' — старшая встроенная роль),
                     nickname, joined_at,
                     badge_id? → workspace_badges (ON DELETE SET NULL),
-                    achievement_count (живые ачивки, ADR-0061)   PK (workspace_id, user_id)
+                    achievement_count (живые ачивки, ADR-0061),
+                    last_active_at? (только строки 'guest': активность для 48-часового сметания, ADR-0098)
+                                                                  PK (workspace_id, user_id)
+workspace_former_members  workspace_id, user_id, display_name, avatar_file_id? (SET NULL), nickname, role (старшая встроенная при уходе),
+                    joined_at? (NULL — неизвестно, бэкфилл), left_at,
+                    reason ('left'|'removed'|'banned'|'guest_expired'|'directory_disabled'), removed_by? (SET NULL)
+                                                                  PK (workspace_id, user_id)   ADR-0097
 workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
 workspace_backgrounds id, workspace_id, name (1..40), file_id → files, position, created_at (ADR-0035, ≤ 20 в пространстве)
 workspace_sounds    id, workspace_id, name (1..32), emoji (≤ 64 байт, '' = нет), file_id → files, duration_ms (1..5000), position, created_at (ADR-0036, ≤ 50 в пространстве)
@@ -534,7 +540,8 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   - (a) уже есть доступ к комнате — ничего не меняется, использование не тратится;
   - (b) зарегистрированный пользователь не из workspace → членство `guest` + user-override на комнату; если он участник без доступа к комнате — только override;
   - (c) без аккаунта → гостевой аккаунт `is_guest` (без email и пароля, имя = введённый ник), сессия 24 ч, продлевается каждым refresh.
-- Гость без активности 7 дней (`guest_expires_at`, сдвигается при refresh) **анонимизируется**, а не удаляется: членства, overrides, файлы и сессии удаляются, имя → «Гость (удалён)», сообщения остаются. Фоновая чистка — раз в час.
+- Гость без активности `GUEST_INACTIVITY` (по умолчанию 48 ч, ADR-0098; `guest_expires_at`, сдвигается при refresh) **анонимизируется**, а не удаляется: членства (каждое — строкой `workspace_former_members`, reason `guest_expired`, со снимком имени до анонимизации), overrides, файлы и сессии удаляются, имя → «Гость (удалён)», сообщения остаются. Фоновая чистка — раз в час.
+- **Членство-гость зарегистрированного пользователя** (ADR-0098) истекает так же: `workspace_members.last_active_at` (только строки `guest`) обновляется не чаще раза в 5 мин при API-запросе (вместе с `sessions.last_seen_at`) и при IDENTIFY шлюза; `NULL` — считается `joined_at`. Тот же часовой проход снимает членства-гости с `last_active_at < now − GUEST_INACTIVITY`, кроме тех, у кого сейчас живое присутствие (сессия шлюза или звонок — им `last_active_at` обновляется), как кик: `WORKSPACE_MEMBER_REMOVE.former`, строка бывшего (`guest_expired`), файлы и сообщения остаются; вернуться можно по новой ссылке. Участник, переведённый в гости, начинает отсчёт с момента перевода.
 - Гостевой аккаунт не может: создавать и находить workspace, входить в открытые workspace, менять статус и аватар (только имя и настройки). Роль `guest` не видит комнат без override, поэтому не создаёт ссылок и не видит чужих комнат.
 - **Кого видит гость** (роль `guest`, дополнение ADR-0016 от 02.10): себя и людей своих комнат — приглашённых поимённо (user-override комнаты, в т.ч. по ссылке) и создателя комнаты, пока они её видят; тех, кто сейчас в звонке комнаты; авторов её сообщений. Одной возможности видеть комнату мало: публичная (и временная публичная) комната открыта всем участникам, но каталог пространства через неё гостю не отдаётся. Правило одно — `perm.GuestVisible`: READY (`members`, `presences`, `voice_states`), события (`WORKSPACE_MEMBER_*`, `PRESENCE_UPDATE`, `USER_UPDATE`, `VOICE_STATE_UPDATE`, `TYPING_START`; синтетический `MEMBER_ADD` приходит до первого сообщения / входа в звонок нового человека, `MEMBER_REMOVE` — после ухода из звонка, если других причин видеть нет), REST `GET …/members`, `…/members/{userId}` (`404`), список отреагировавших (`GET /api/messages/{id}/reactions/{emoji}` без невидимых). `…/members/birthdays`, события банов и ботов гостю не отдаются ни при каких битах.
 - `POST …/members/{userId}/promote` (MANAGE_MEMBERS, ADR-0048): `guest` → `member`. Аккаунт гостя после этого не чистится.
@@ -548,3 +555,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 приватный ACL даёт только заполнение. Задача/комната/журнал/квитанция/outbox атомарны.
 PlanLimits.board_forms_disabled / board_forms_per_board: Free true/0, Team false/5,
 Business false/20, Custom/on-prem false/0 по умолчанию. Подробнее — контракт и ошибки в ADR.
+
+## Бывшие участники (ADR-0097)
+
+- `workspace_former_members` пишется в той же транзакции, что удаляет членство (`workspaces.RemoveMembership`): выход (`left`), исключение (`removed`, `removed_by`), бан (`banned`), истечение гостя (`guest_expired`, ADR-0098). `directory_disabled` зарезервирован: отключение в каталоге приостанавливает членство, а не удаляет его. Не пишется: удаление/вывод бота, снятие членства гостя после отклонённого стука (ADR-0040). Повторное вступление любым путём (`AddMember`) удаляет строку.
+- Снимок имени/аватара показывается только у анонимизированного гостевого аккаунта; пока аккаунт жив — живой профиль.
+- `GET /api/workspaces/{id}/users?ids=` (участник, ≤ 100 id) → `UserRef[]` только для тех, кто есть или был в этом пространстве (`former`, `left_at`, `reason`); чужие id пропускаются. Гость получает только видимых ему участников (`perm.GuestVisible`), бывших — нет.
+- `GET /api/workspaces/{id}/former-members?guests=0|1&q=&cursor=` (`MANAGE_MEMBERS`) → `FormerMember[]` (новые сверху, по 50, курсор `(left_at, user_id)`); бывшие гости (роль `guest` или гостевой аккаунт) — только с `guests=1`; `open_tasks` — открытые задачи живых досок пространства, где он исполнитель.
+- `WORKSPACE_MEMBER_REMOVE.former {left_at, reason}` — клиент помечает профиль бывшим, а не выкидывает; `WORKSPACE_MEMBER_ADD` снимает пометку.
+- Миграция 00089: бэкфилл авторов сообщений и участников задач (автор, действие в журнале, исполнитель) без членства → `removed`, `left_at` = их последний след в пространстве; `guest_expires_at = least(текущее, now + 48h)`; `last_active_at` гостевых членств — последняя активность сессий пользователя.

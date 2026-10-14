@@ -336,6 +336,13 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		}
 	}
 	_ = h.pres.set(ctx, s.user, s.id, s.status, s.client)
+	// Connecting is activity of the user's guest memberships (ADR-0098); best effort, the
+	// live presence alone keeps them from the sweep meanwhile.
+	if !id.IsBot {
+		if err := h.db.Q.TouchGuestMemberships(ctx, id.UserID); err != nil {
+			slog.WarnContext(ctx, "gateway: guest activity touch", "err", err)
+		}
+	}
 	ready, err := h.buildReady(ctx, s, id.UserID)
 	if err != nil {
 		slog.Error("gateway: build READY", "err", err)

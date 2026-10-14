@@ -243,6 +243,8 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/workspaces/{id}/members":                                    scopeWorkspace,
 	"GET /api/workspaces/{id}/members/birthdays":                          scopeWorkspace,
 	"GET /api/workspaces/{id}/members/{userId}":                           scopeWorkspace,
+	"GET /api/workspaces/{id}/users":                                      scopeWorkspace,
+	"GET /api/workspaces/{id}/former-members":                             scopeWorkspace,
 	"GET /api/workspaces/{id}/messages/search":                            scopeWorkspace,
 	"GET /api/workspaces/{id}/roles":                                      scopeWorkspace,
 	"GET /api/workspaces/{id}/rooms":                                      scopeWorkspace,

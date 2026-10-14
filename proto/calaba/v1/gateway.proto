@@ -726,6 +726,10 @@ message SoundPlay {
 message WorkspaceMemberRemove {
   string workspace_id = 1;
   string user_id = 2;
+  // Set when a former member record was kept (ADR-0097): keep the profile, marked as former;
+  // a WORKSPACE_MEMBER_ADD of the user clears the mark. Unset for a bot leaving or a guest
+  // whose knock was declined: drop the profile as before.
+  FormerMemberInfo former = 3;
 }
 
 message WorkspaceBanAdd {
