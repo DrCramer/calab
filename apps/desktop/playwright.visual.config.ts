@@ -51,6 +51,9 @@ export default defineConfig<VisualOptions>({
     { name: 'stream-dark-960', testMatch: /stream\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     // Member picker (docs/09 #33): the minimal desktop size only.
     { name: 'picker-dark-960', testMatch: /picker\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // «Диск» (ADR-0094 §8, a new interface): dark 960×600; «Доступ» also light (disk.visual.spec.ts).
+    { name: 'disk-dark-960', testMatch: /disk\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    { name: 'disk-light-960', testMatch: /disk\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // Text selection in the feed (issue #13): behaviour only, no screenshots.
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.

@@ -79,6 +79,26 @@ import {
   type TaskRelationKind,
 } from '@calaba/protocol';
 import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
+import { DiskError, DiskMock } from './mock-disk';
+import {
+  CreateDiskFolderRequestSchema,
+  CreateDiskLinkRequestSchema,
+  DISK_BITS,
+  DiskActivityPageSchema,
+  DiskItemKind,
+  DiskItemResponseSchema,
+  DiskLinkResponseSchema,
+  DiskLinkSchema,
+  DiskPathResponseSchema,
+  DiskPermissionEntrySchema,
+  DiskPermissionsResponseSchema,
+  DiskUsageSchema,
+  EmptyDiskTrashResponseSchema,
+  FileMetaSchema,
+  ListDiskItemsResponseSchema,
+  UpdateDiskItemRequestSchema,
+  UpdateDiskPermissionsRequestSchema,
+} from '@calaba/protocol';
 import {
   AdminGetWorkspaceResponseSchema,
   CallActionResponseSchema,
@@ -1134,6 +1154,8 @@ class MockImpl {
   private readonly calEvents = new Map<string, CalEventRec>();
   /** Task boards (ADR-0042); rebuilt with the state. */
   boards: BoardsMock;
+  /** Disk (ADR-0094); rebuilt with the state. */
+  disk: DiskMock;
   /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
   readonly calWorkHours = new Map<string, WorkHoursRec>();
   readonly calExternal = new Map<string, ExternalSpan[]>();
@@ -1145,6 +1167,7 @@ class MockImpl {
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
     this.boards = this.newBoards();
+    this.disk = this.newDisk();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -1159,6 +1182,8 @@ class MockImpl {
     this.admissionRoutes();
     this.boardRoutes();
     this.seedBoards();
+    this.diskRoutes();
+    this.seedDisk();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -1202,6 +1227,8 @@ class MockImpl {
     this.state = buildState(scenario);
     this.boards = this.newBoards();
     this.seedBoards();
+    this.disk = this.newDisk();
+    this.seedDisk();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
@@ -7285,6 +7312,156 @@ class MockImpl {
     this.state.reactions.set(m2.id, new Map([['👍', new Set([IDS.users.boris])]]));
     m2.reactions = [create(ReactionSchema, { emoji: '👍', count: 1, me: false })];
     t3.task.commentCount = list.length;
+  }
+
+  // ------------------------------------------------ Disk (ADR-0094, mock-disk.ts)
+
+  private newDisk(): DiskMock {
+    return new DiskMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      membersOf: (w) => this.membersOf(w),
+      quotaOf: (w) => {
+        const ws = this.state.workspaces.get(w);
+        const plan = this.planLimits(w).storageMb * 1024n * 1024n;
+        const quota = ws?.storageQuotaBytes ?? 0n;
+        return plan > 0n && (quota === 0n || plan < quota) ? plan : quota;
+      },
+      tick: () => tick(this.state),
+      nextId: () => nextId(this.state, 'file'),
+      emit: (wsId, item, removed, viewers) =>
+        this.fanout((u) => {
+          if (!this.member(wsId, u) || !viewers(u)) return null;
+          return removed
+            ? { event: { case: 'diskItemRemove', value: { workspaceId: wsId, itemId: item.id, parentId: item.parentId } } }
+            : { event: { case: 'diskItemUpsert', value: { workspaceId: wsId, item: { ...item, myBits: 0n } } } };
+        }),
+    });
+  }
+
+  /**
+   * The Disk of «Команда Calab» (data scenario): folders «Проекты» (with «Q4» inside), «Дизайн»,
+   * «Договоры» (restricted, shared with Борис), pictures with thumbnails, a PDF, a table, a
+   * video with a public link; in the trash an old mock-up and a draft. File sizes are inflated in
+   * the metadata (the bytes stay tiny) so the meter reads like a real workspace.
+   */
+  private seedDisk(): void {
+    if (this.state.scenario !== 'data') return;
+    const ws = IDS.workspaces.main;
+    const U = IDS.users;
+    const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
+    const file = (name: string, mime: string, size: bigint, pic?: { w: number; h: number; bg: [number, number, number]; fg: [number, number, number] }): FileMeta => {
+      const id = nextId(this.state, 'file');
+      const bytes = pic ? encodePng(pic.w, pic.h, cardPicture(pic.bg, [255, 255, 255], pic.fg, pic.w / pic.h)) : Buffer.from(`mock ${name}`);
+      const meta = create(FileMetaSchema, { ...fileMeta(id, ws, U.anna, name, mime, bytes, at('2026-01-10T10:00:00Z'), pic ? { width: pic.w, height: pic.h } : null), size });
+      this.state.files.set(id, { meta, bytes, ...(pic ? { thumbnail: { bytes, mime } } : {}) });
+      return meta;
+    };
+    const d = this.disk;
+    const F = DiskItemKind.FOLDER;
+    const FI = DiskItemKind.FILE;
+    const projects = d.put({ workspaceId: ws, kind: F, name: 'Проекты', ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z') });
+    d.put({ workspaceId: ws, kind: F, name: 'Q4', parentId: projects.id, ownerId: U.anna, createdAt: at('2026-01-06T09:00:00Z') });
+    d.put({ workspaceId: ws, kind: F, name: 'Дизайн', ownerId: U.vera, createdAt: at('2026-01-07T11:00:00Z'), updatedAt: at('2026-01-13T12:10:00Z') });
+    const contracts = d.put({ workspaceId: ws, kind: F, name: 'Договоры', ownerId: U.anna, restricted: true, createdAt: at('2026-01-08T10:00:00Z'), updatedAt: at('2026-01-12T10:00:00Z') });
+    d.perms.set(contracts.id, [
+      create(DiskPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.boris, allow: DISK_BITS.VIEW | DISK_BITS.WRITE }),
+      create(DiskPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.vera, allow: DISK_BITS.VIEW, deny: DISK_BITS.WRITE }),
+    ]);
+    const blue = { bg: [91, 141, 239] as [number, number, number], fg: [214, 228, 255] as [number, number, number] };
+    const green = { bg: [64, 170, 140] as [number, number, number], fg: [204, 240, 228] as [number, number, number] };
+    const orange = { bg: [236, 140, 72] as [number, number, number], fg: [255, 226, 200] as [number, number, number] };
+    d.put({ workspaceId: ws, kind: FI, name: 'Обложка релиза.png', ownerId: U.vera, file: file('Обложка релиза.png', 'image/png', 4_812_000n, { w: 480, h: 300, ...blue }), updatedAt: at('2026-01-14T15:00:00Z') });
+    d.put({ workspaceId: ws, kind: FI, name: 'Офис.png', ownerId: U.boris, file: file('Офис.png', 'image/png', 3_250_000n, { w: 400, h: 300, ...green }), updatedAt: at('2026-01-11T09:30:00Z') });
+    d.put({ workspaceId: ws, kind: FI, name: 'Отчёт за квартал.pdf', ownerId: U.anna, file: file('Отчёт за квартал.pdf', 'application/pdf', 2_400_000n), updatedAt: at('2026-01-13T18:45:00Z') });
+    d.put({ workspaceId: ws, kind: FI, name: 'Бюджет 2026.xlsx', ownerId: U.grigory, file: file('Бюджет 2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 312_000n), updatedAt: at('2026-01-09T14:00:00Z') });
+    const demo = d.put({ workspaceId: ws, kind: FI, name: 'Демо продукта.mp4', ownerId: U.anna, file: file('Демо продукта.mp4', 'video/mp4', 2_960_000_000n), updatedAt: at('2026-01-12T11:00:00Z') });
+    d.links.set(demo.id, create(DiskLinkSchema, { code: 'mockLinkDemo'.padEnd(43, 'x'), itemId: demo.id, createdBy: U.anna, createdAt: at('2026-01-12T11:05:00Z'), downloads: 14 }));
+    d.put({ workspaceId: ws, kind: FI, name: 'Исходники.zip', ownerId: U.boris, file: file('Исходники.zip', 'application/zip', 186_000_000n), updatedAt: at('2026-01-08T17:00:00Z') });
+    const trashed = (name: string, mime: string, size: bigint, by: string, iso: string, pic?: Parameters<typeof file>[3]): void => {
+      d.put({ workspaceId: ws, kind: FI, name, ownerId: by, file: file(name, mime, size, pic), trashedAt: at(iso), trashedBy: by, trashedRoot: true, updatedAt: at(iso) });
+    };
+    trashed('Старый макет.png', 'image/png', 412_000_000n, U.vera, '2026-01-14T10:00:00Z', { w: 400, h: 300, ...orange });
+    trashed('Черновик договора.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 96_000n, U.anna, '2026-01-13T09:00:00Z');
+    let disk = 0n;
+    for (const it of d.items.values()) disk += it.file?.size ?? 0n;
+    const w = this.state.workspaces.get(ws);
+    if (w) w.storageUsedBytes += disk;
+  }
+
+  private diskRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof DiskError) throw new HttpError(e.status, e.code, e.message, e.field, e.extra);
+        throw e;
+      }
+    });
+  }
+
+  private diskRoutes(): void {
+    const d = (): DiskMock => this.disk;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const p0 = (c: Ctx): string => c.params[0] ?? '';
+    this.diskRoute('GET', '/api/workspaces/:id/disk/items', (c, me) => {
+      const items = d().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true', sort: q(c, 'sort') });
+      sendMsg(c.res, 200, ListDiskItemsResponseSchema, { items });
+    });
+    this.diskRoute('POST', '/api/workspaces/:id/disk/folders', (c, me) => {
+      const b = parseBody(c, CreateDiskFolderRequestSchema);
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: d().createFolder(p0(c), me, b.parentId, b.name) });
+    });
+    this.diskRoute('POST', '/api/workspaces/:id/disk/upload', async (c, me) => {
+      const wsId = p0(c);
+      this.workspaceFor(wsId, me);
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      const id = this.storeFile(wsId, me, f);
+      const meta = this.state.files.get(id)?.meta;
+      if (!meta) throw notFound();
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: d().upload(wsId, me, q(c, 'parent'), meta) });
+    });
+    this.diskRoute('POST', '/api/workspaces/:id/disk/trash/empty', (c, me) => {
+      const r = d().emptyTrash(p0(c), me);
+      sendMsg(c.res, 200, EmptyDiskTrashResponseSchema, { deleted: r.deleted, freedBytes: r.freed });
+    });
+    this.diskRoute('GET', '/api/workspaces/:id/disk/usage', (c, me) => sendMsg(c.res, 200, DiskUsageSchema, d().usage(p0(c), me)));
+    this.diskRoute('GET', '/api/workspaces/:id/disk/activity', (c, me) => sendMsg(c.res, 200, DiskActivityPageSchema, { activities: d().wsActivity(p0(c), me) }));
+    this.diskRoute('GET', '/api/workspaces/:id/disk/settings', (c, me) => send(c.res, 200, JSON.stringify({ trashDays: d().settings(p0(c), me) }), 'application/json'));
+    this.diskRoute('PUT', '/api/workspaces/:id/disk/settings', (c, me) => {
+      const raw = c.raw.length ? (JSON.parse(c.raw.toString('utf8')) as { trashDays?: unknown }) : {};
+      d().setSettings(p0(c), me, Number(raw.trashDays ?? 0));
+      send(c.res, 200, JSON.stringify({ trashDays: d().settings(p0(c), me) }), 'application/json');
+    });
+    this.diskRoute('PATCH', '/api/disk/items/:id', (c, me) => {
+      const b = parseBody(c, UpdateDiskItemRequestSchema);
+      sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().update(p0(c), me, b) });
+    });
+    this.diskRoute('DELETE', '/api/disk/items/:id', (c, me) => {
+      d().remove(p0(c), me);
+      noContent(c.res);
+    });
+    this.diskRoute('POST', '/api/disk/items/:id/trash', (c, me) => sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().trash(p0(c), me) }));
+    this.diskRoute('POST', '/api/disk/items/:id/restore', (c, me) => sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().restore(p0(c), me) }));
+    this.diskRoute('GET', '/api/disk/items/:id/permissions', (c, me) => sendMsg(c.res, 200, DiskPermissionsResponseSchema, d().permissions(p0(c), me)));
+    this.diskRoute('PUT', '/api/disk/items/:id/permissions', (c, me) => {
+      const b = parseBody(c, UpdateDiskPermissionsRequestSchema);
+      d().setPermissions(p0(c), me, b.entries, b.restricted);
+      sendMsg(c.res, 200, DiskPermissionsResponseSchema, d().permissions(p0(c), me));
+    });
+    this.diskRoute('POST', '/api/disk/items/:id/link', (c, me) => {
+      const b = parseBody(c, CreateDiskLinkRequestSchema);
+      sendMsg(c.res, 200, DiskLinkResponseSchema, d().createLink(p0(c), me, b.expiresAt));
+    });
+    this.diskRoute('DELETE', '/api/disk/items/:id/link', (c, me) => {
+      d().deleteLink(p0(c), me);
+      noContent(c.res);
+    });
+    this.diskRoute('GET', '/api/disk/items/:id/activity', (c, me) => sendMsg(c.res, 200, DiskActivityPageSchema, { activities: d().itemActivity(p0(c), me) }));
+    this.diskRoute('GET', '/api/disk/items/:id/path', (c, me) => sendMsg(c.res, 200, DiskPathResponseSchema, { items: d().path(p0(c), me) }));
   }
 
   private newBoards(): BoardsMock {
