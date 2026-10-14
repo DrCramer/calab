@@ -90,6 +90,14 @@ The desktop app (macOS, Windows, Linux) has an Apple Mail–style email client i
 
 Up to 20 private shelves per person with their own names and emoji, like "Saved Messages" in Telegram, only several. Drag messages and files onto a shelf, forward to it, pin and search. Only the owner sees a shelf.
 
+## Wiki
+
+A team knowledge base in its own section: pages and subpages in a tree with covers, checklists, tables and code, real-time editing together with teammates' cursors, version history, access per page and publishing a page by link.
+
+## Disk
+
+Shared file storage of the workspace in its own section: folders with image and video previews, access per folder, public links with an expiry, a trash with restore and a storage meter.
+
 ## Guests
 
 - A guest link leads straight into a room, no sign-up: the guest types a name and joins. A guest sees only their room.
@@ -209,8 +217,6 @@ These are on the roadmap. Do not present them as existing features.
 - iPhone and Android apps: native apps with push notifications and calls on the lock screen are coming soon; until then the web app works in a phone's browser.
 - Voice AI assistant: a voice AI assistant in rooms. It is already in testing and is not generally available.
 - IVR: a voice menu and internal extension numbers for phone calls (SIP).
-- Wiki: a team knowledge base.
-- Disk: shared file storage for the workspace.
 
 ## Contact
 
@@ -218,7 +224,7 @@ it@gptunnel.ai for licensing, plans, support and security reports. Calab is deve
 
 ## Кратко по-русски
 
-Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера, Wiki, Диск. Сайт: https://calab.io/ru/, контакт: it@gptunnel.ai.
+Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера. Сайт: https://calab.io/ru/, контакт: it@gptunnel.ai.
 
 ## Workspace identity (Identity 2.0)
 
