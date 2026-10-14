@@ -1592,7 +1592,7 @@ func (q *Queries) ListUserOAuthGrantsWithClient(ctx context.Context, arg ListUse
 }
 
 const lockOAuthWorkspace = `-- name: LockOAuthWorkspace :one
-SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days FROM workspaces WHERE id=$1 FOR NO KEY UPDATE
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days FROM workspaces WHERE id=$1 FOR NO KEY UPDATE
 `
 
 // NO KEY UPDATE serializes identity writers and provider issuance without blocking
@@ -1622,6 +1622,7 @@ func (q *Queries) LockOAuthWorkspace(ctx context.Context, id uuid.UUID) (Workspa
 		&i.SipEnabled,
 		&i.DiskTrashDays,
 		&i.WikiTrashDays,
+		&i.TempArchiveDays,
 	)
 	return i, err
 }

@@ -14,8 +14,8 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { useBillingBits } from '../workspace/billing/access';
 
 /**
- * The storage meter (ADR-0094 §6, docs/08 «Диск»): one bar with three segments — the Disk, its
- * trash, everything else (chat and board attachments, stickers) — and the caption «12,4 ГБ из
+ * The storage meter (ADR-0094 §6, docs/08 «Диск»): one bar with segments — the Disk, its
+ * trash, chats, boards, wiki, everything else (stickers …); zero ones are hidden — and the caption «12,4 ГБ из
  * 300 ГБ · тариф Team»; from 90 % of the limit a warning line. The same component in the disk's
  * footer (`compact`), in «Место» and in «Тариф». It reads the workspace's DiskUsage (one object,
  * replaced on refetch) and the plan name — a primitive.
@@ -23,6 +23,9 @@ import { useBillingBits } from '../workspace/billing/access';
 const SEG = {
   disk: 'bg-accent',
   trash: 'bg-[var(--color-yellow)]',
+  chat: 'bg-[var(--color-green)]',
+  boards: 'bg-[var(--color-birthday-warm)]',
+  wiki: 'bg-[var(--color-attention)]',
   other: 'bg-[var(--color-label-tertiary)]',
 } as const;
 
@@ -36,6 +39,22 @@ export function UsageMeter({ workspaceId, compact = false, legend = true }: { wo
   if (!usage) return <div className={compact ? 'h-[22px]' : 'h-16'} aria-hidden />;
   const bar = usageBar(usage);
   const caption = bar.limit > 0 ? t('disk.usage.of', { used: fmt.size(bar.used), limit: fmt.size(bar.limit) }) : t('disk.usage.noLimit', { used: fmt.size(bar.used) });
+  const segments = [
+    { key: 'disk', tone: SEG.disk, share: bar.disk },
+    { key: 'trash', tone: SEG.trash, share: bar.trash },
+    { key: 'chat', tone: SEG.chat, share: bar.chat },
+    { key: 'boards', tone: SEG.boards, share: bar.boards },
+    { key: 'wiki', tone: SEG.wiki, share: bar.wiki },
+    { key: 'other', tone: SEG.other, share: bar.other },
+  ];
+  const legendRows = [
+    { key: 'disk', tone: SEG.disk, label: t('disk.usage.disk'), bytes: Number(usage.diskBytes - usage.trashBytes) },
+    { key: 'trash', tone: SEG.trash, label: t('disk.usage.trash'), bytes: Number(usage.trashBytes) },
+    { key: 'chat', tone: SEG.chat, label: t('disk.usage.chat'), bytes: Number(usage.chatBytes) },
+    { key: 'boards', tone: SEG.boards, label: t('disk.usage.boards'), bytes: Number(usage.boardsBytes) },
+    { key: 'wiki', tone: SEG.wiki, label: t('disk.usage.wiki'), bytes: Number(usage.wikiBytes) },
+    { key: 'other', tone: SEG.other, label: t('disk.usage.other'), bytes: Number(usage.otherBytes) },
+  ];
   const pct = (n: number): string => `${Math.max(0, Math.min(100, n * 100))}%`;
   return (
     <div className={cx('flex min-w-0 flex-col', compact ? 'gap-1' : 'gap-2')} data-testid="disk-meter" data-warn={bar.warn || undefined}>
@@ -52,17 +71,13 @@ export function UsageMeter({ workspaceId, compact = false, legend = true }: { wo
         aria-valuemax={bar.limit || bar.used}
         aria-valuenow={bar.used}
         aria-valuetext={caption}
-        className={cx('flex w-full overflow-hidden rounded-full bg-[var(--color-fill-hover)]', compact ? 'h-1' : 'h-2')}
+        className={cx('flex w-full gap-px overflow-hidden rounded-full bg-[var(--color-fill-hover)]', compact ? 'h-1' : 'h-2')}
       >
-        <span className={SEG.disk} style={{ width: pct(bar.disk) }} />
-        <span className={SEG.trash} style={{ width: pct(bar.trash) }} />
-        <span className={SEG.other} style={{ width: pct(bar.other) }} />
+        {segments.map((g) => (g.share > 0 ? <span key={g.key} className={g.tone} style={{ width: pct(g.share) }} /> : null))}
       </div>
       {legend && !compact ? (
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted">
-          <Legend tone={SEG.disk} label={t('disk.usage.disk')} bytes={Number(usage.diskBytes - usage.trashBytes)} />
-          <Legend tone={SEG.trash} label={t('disk.usage.trash')} bytes={Number(usage.trashBytes)} />
-          <Legend tone={SEG.other} label={t('disk.usage.other')} bytes={Number(usage.otherBytes)} />
+          {legendRows.map((r) => (r.bytes > 0 || r.key === 'disk' ? <Legend key={r.key} tone={r.tone} label={r.label} bytes={r.bytes} /> : null))}
         </ul>
       ) : null}
       {bar.warn && !compact ? (

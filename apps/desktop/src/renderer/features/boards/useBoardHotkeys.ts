@@ -9,6 +9,7 @@ import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { hotkeyOf, type BoardHotkeyId } from './hotkeys';
 import { hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS } from './model';
+import { escStep, taskNav } from './taskOrder';
 
 /** Where the keyboard is typing: single-letter keys stay text there. */
 function typing(el: Element | null): boolean {
@@ -69,12 +70,25 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
       if (!h) return;
       const inField = typing(document.activeElement);
       const hasMod = e.metaKey || e.ctrlKey;
-      if (inField && h.id !== 'expandPanel') return;
-      if (layerOpen() && h.id !== 'expandPanel') return;
       const ui = useBoardsUi.getState();
+      // The full-screen task (desktop): it is what the keys act on; ↑/↓ step through the board's order.
+      const view = ui.taskId ? taskNav.get() : null;
+      if (h.id === 'close') {
+        const step = escStep({ inField, layer: layerOpen(), taskOpen: !!ui.taskId, fieldInTask: !!view?.contains(document.activeElement), selected: Object.keys(ui.selected).length > 0, focused: !!ui.focused });
+        if (step === 'none') return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (step === 'blur') (document.activeElement as HTMLElement | null)?.blur();
+        else if (step === 'closeTask') ui.openTask(null);
+        else if (step === 'clearSelection') ui.clearSelection();
+        else if (step === 'unfocus') ui.setFocused(null);
+        else ui.setActive(false);
+        return;
+      }
+      if (inField || layerOpen()) return;
       const s = useBoards.getState();
       const board = boardId !== MY_TASKS ? s.boards[boardId] : undefined;
-      const target = ui.focused ?? ui.taskId;
+      const target = view ? ui.taskId : (ui.focused ?? ui.taskId);
       const task = target ? s.tasks[target] : undefined;
       const me = myUserId();
       // Per-task bits (ADR-0059): a scoped viewer holds them on his own cards only.
@@ -113,6 +127,10 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
           case 'right':
           case 'extendUp':
           case 'extendDown': {
+            if (view) {
+              if (id === 'up' || id === 'down') view.step(id === 'up' ? -1 : 1);
+              return id === 'up' || id === 'down';
+            }
             const grid = layout();
             if (!grid.length) return false;
             const at = position(grid, ui.focused);
@@ -146,23 +164,14 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
             return true;
           }
           case 'open':
-            if (!task) return false;
+            // Enter / Space inside the open task press its buttons.
+            if (!task || view) return false;
             ui.openTask(task.id);
             return true;
           case 'edit':
             if (!task) return false;
             ui.openTask(task.id);
             window.setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-testid=task-title]')?.focus(), 50);
-            return true;
-          case 'close':
-            if (ui.taskId) ui.openTask(null);
-            else if (Object.keys(ui.selected).length) ui.clearSelection();
-            else if (ui.focused) ui.setFocused(null);
-            else ui.setActive(false);
-            return true;
-          case 'expandPanel':
-            if (!ui.taskId) return false;
-            ui.setPanelWide(!ui.panelWide);
             return true;
           case 'status':
           case 'assignee':

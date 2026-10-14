@@ -16,6 +16,7 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { KnockBadge } from '../guests/KnockBadge';
@@ -57,6 +58,8 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
   const manageRooms = mayArrangeRooms(role);
   const admin = mayInviteMembers(role);
   const open = useUi((s) => s.openDialog);
+  const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
+  const archiveN = useArchiveCount(workspaceId, !guest);
   const { groups, temps } = useMemo(() => {
     let rooms = roomsOfWorkspace(roomsById, workspaceId);
     // «Скрыть заглушённые»: my voice room stays.
@@ -68,7 +71,7 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
 
   return (
     <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-4" data-testid="room-list">
-      {groups.length === 0 && temps.length === 0 ? (
+      {groups.length === 0 && temps.length === 0 && archiveN === 0 ? (
         <Empty
           action={
             manageRooms ? (
@@ -92,8 +95,8 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
           </ul>
         ),
       )}
-      {temps.length ? (
-        <Section id={`temp:${workspaceId}`} title={t('temp.group')} keep={voiceRoom}>
+      {temps.length || archiveN > 0 ? (
+        <Section id={`temp:${workspaceId}`} title={t('temp.group')} keep={voiceRoom} footer={archiveN > 0 ? <TempArchiveButton workspaceId={workspaceId} n={archiveN} /> : null}>
           {temps.map(row)}
         </Section>
       ) : null}
@@ -102,7 +105,7 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
 }
 
 /** A collapsible category (the desktop's collapse state): collapsed, only my voice room stays. */
-function Section({ id, title, keep, children }: { id: string; title: string; keep: string | null; children: ReactNode[] }): ReactNode {
+function Section({ id, title, keep, footer, children }: { id: string; title: string; keep: string | null; footer?: ReactNode; children: ReactNode[] }): ReactNode {
   const collapsed = useUi((s) => !!s.collapsed[id]);
   const toggle = useUi((s) => s.toggleCategory);
   const visible = collapsed ? children.filter((c) => (c as { key?: string | null }).key === keep) : children;
@@ -119,6 +122,7 @@ function Section({ id, title, keep, children }: { id: string; title: string; kee
         <span className="truncate">{title}</span>
       </button>
       {visible.length ? <ul className="flex flex-col">{visible}</ul> : null}
+      {footer}
     </section>
   );
 }

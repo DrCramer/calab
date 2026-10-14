@@ -324,6 +324,7 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		AllowSelfNickname: w.AllowSelfNickname,
 		TimeFormat:        timeFormatFromDB(w.TimeFormat),
 		SipEnabled:        w.SipEnabled,
+		TempArchiveDays:   uint32(w.TempArchiveDays), //nolint:gosec // DB CHECK bounds it
 	}
 }
 

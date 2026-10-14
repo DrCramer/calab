@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { CheckCheck, Inbox, Plus, SquareKanban } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Spinner, cx } from '../../components/ui';
 import { Choice } from '../../components/Choice';
@@ -24,6 +24,7 @@ import { Kanban } from './Kanban';
 import { EmptyBoard, ListRow, ListView } from './ListView';
 import { hasBit, CREATE_TASKS } from './model';
 import { TaskPanel } from './TaskPanel';
+import { TaskView } from './TaskView';
 import { Timeline } from './Timeline';
 import { useBoardHotkeys } from './useBoardHotkeys';
 import { CreateButton } from '../../components/CreateButton';
@@ -45,12 +46,17 @@ export function useActiveBoard(workspaceId: string): string {
 
 /**
  * The centre in boards mode (ADR-0042 §5): the open board (header, filter chips, kanban / list /
- * timeline) or «Мои задачи», the task panel on the right (a column from 1200 px, floating below,
- * the whole centre with ⌘\), the create / settings dialogs and the «?» sheet. Keys: hotkeys.ts.
+ * timeline) or «Мои задачи», the create / settings dialogs and the «?» sheet. Keys: hotkeys.ts.
+ * The open task (owner 14.10, Linear) covers the whole area on the desktop (TaskView) with the
+ * board kept mounted underneath — hidden and inert, its scrolls, groups and selection intact, so
+ * Esc returns to it as it was; on the phone it is a pushed full-screen page (TaskPanel).
  */
-export function BoardsView({ workspaceId, wide, mobile = false }: { workspaceId: string; wide: boolean; mobile?: boolean }): ReactNode {
+export function BoardsView({ workspaceId, mobile = false }: { workspaceId: string; mobile?: boolean }): ReactNode {
   const boardId = useActiveBoard(workspaceId);
   const taskId = useBoardsUi((s) => s.taskId);
+  const phone = useMobile() || mobile;
+  const covered = !!taskId && !phone;
+  const board = useRef<HTMLElement>(null);
   useBoardHotkeys(workspaceId, boardId);
   useEffect(() => {
     if (boardId === MY_TASKS) return;
@@ -59,10 +65,11 @@ export function BoardsView({ workspaceId, wide, mobile = false }: { workspaceId:
   }, [boardId]);
   return (
     <div className="relative flex min-w-0 flex-1" data-testid="boards-view">
-      <section className="mat-content flex min-w-0 flex-1 flex-col" aria-label={t('boards.boards')} data-toast-anchor>
+      {/* `invisible` keeps the layout (and so every scroll offset) but paints nothing under the task. */}
+      <section ref={board} className={cx('mat-content flex min-w-0 flex-1 flex-col', covered && 'invisible')} aria-label={t('boards.boards')} inert={covered} aria-hidden={covered || undefined} data-toast-anchor>
         {boardId === MY_TASKS ? <MyTasks key={workspaceId} workspaceId={workspaceId} /> : <Board boardId={boardId} workspaceId={workspaceId} />}
       </section>
-      {taskId ? <TaskPanel taskId={taskId} floating={!wide} page={mobile} /> : null}
+      {taskId ? phone ? <TaskPanel taskId={taskId} /> : <TaskView taskId={taskId} boardId={boardId} workspaceId={workspaceId} boardRef={board} /> : null}
       <BoardSettingsHost />
       <HotkeysSheet />
     </div>

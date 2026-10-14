@@ -12,4 +12,4 @@ export function preloadWikiEditor(): void {
   void import('./WikiEditor');
 }
 
-export type { MentionSource, UploadedImage, WikiEditorApi, WikiEditorProps, WikiEditorUser } from './types';
+export type { MentionSource, PageCandidate, PageLinkView, PageSource, UploadedImage, WikiEditorApi, WikiEditorProps, WikiEditorUser } from './types';

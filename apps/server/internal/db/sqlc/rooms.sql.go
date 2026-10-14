@@ -356,6 +356,43 @@ func (q *Queries) FollowRoomExpiry(ctx context.Context, arg FollowRoomExpiryPara
 	return err
 }
 
+const getArchivedTempRoomForUpdate = `-- name: GetArchivedTempRoomForUpdate :one
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id FROM rooms WHERE id = $1 AND archived_at IS NOT NULL AND expires_at IS NOT NULL FOR UPDATE
+`
+
+// The archived temporary room, locked (restore reads its original lifetime).
+func (q *Queries) GetArchivedTempRoomForUpdate(ctx context.Context, id uuid.UUID) (Room, error) {
+	row := q.db.QueryRow(ctx, getArchivedTempRoomForUpdate, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.IconFileID,
+	)
+	return i, err
+}
+
 const getCategory = `-- name: GetCategory :one
 SELECT id, workspace_id, name, position, created_at FROM room_categories WHERE id = $1
 `
@@ -935,21 +972,60 @@ func (q *Queries) LockTempRooms(ctx context.Context, workspaceID uuid.UUID) erro
 	return err
 }
 
-const purgeableTempRooms = `-- name: PurgeableTempRooms :many
-SELECT id FROM rooms
-WHERE expires_at IS NOT NULL AND archived_at IS NOT NULL AND archived_at < $1
-ORDER BY archived_at
-LIMIT $2
+const makeRoomPermanent = `-- name: MakeRoomPermanent :one
+UPDATE rooms r SET archived_at = NULL, expires_at = NULL, category_id = NULL,
+    position = (SELECT coalesce(max(o.position) + 1, 0) FROM rooms o
+                WHERE o.workspace_id = r.workspace_id AND o.archived_at IS NULL AND o.type <> 'task')
+WHERE r.id = $1 AND r.expires_at IS NOT NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id
 `
 
-type PurgeableTempRoomsParams struct {
-	Before *time.Time
-	Lim    int32
+// A temporary room (live or archived) becomes a regular live room after the last one; history,
+// overrides and settings stay.
+func (q *Queries) MakeRoomPermanent(ctx context.Context, id uuid.UUID) (Room, error) {
+	row := q.db.QueryRow(ctx, makeRoomPermanent, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.IconFileID,
+	)
+	return i, err
 }
 
-// Archived temporary rooms past the retention (TEMP_ROOM_RETENTION_DAYS).
-func (q *Queries) PurgeableTempRooms(ctx context.Context, arg PurgeableTempRoomsParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, purgeableTempRooms, arg.Before, arg.Lim)
+const purgeableTempRooms = `-- name: PurgeableTempRooms :many
+SELECT r.id FROM rooms r
+JOIN workspaces w ON w.id = r.workspace_id
+WHERE r.expires_at IS NOT NULL AND r.archived_at IS NOT NULL
+  AND r.archived_at < now() - make_interval(days => w.temp_archive_days)
+ORDER BY r.archived_at
+LIMIT $1
+`
+
+// Archived temporary rooms past their workspace's retention (workspaces.temp_archive_days).
+func (q *Queries) PurgeableTempRooms(ctx context.Context, lim int32) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, purgeableTempRooms, lim)
 	if err != nil {
 		return nil, err
 	}
@@ -983,6 +1059,52 @@ type RemoveRoleDenyParams struct {
 func (q *Queries) RemoveRoleDeny(ctx context.Context, arg RemoveRoleDenyParams) error {
 	_, err := q.db.Exec(ctx, removeRoleDeny, arg.Bits, arg.RoomID, arg.TargetID)
 	return err
+}
+
+const restoreTempRoom = `-- name: RestoreTempRoom :one
+UPDATE rooms r SET archived_at = NULL, expires_at = $1::timestamptz,
+    position = (SELECT coalesce(max(o.position) + 1, 0) FROM rooms o
+                WHERE o.workspace_id = r.workspace_id AND o.archived_at IS NULL AND o.type <> 'task')
+WHERE r.id = $2 AND r.archived_at IS NOT NULL AND r.expires_at IS NOT NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id
+`
+
+type RestoreTempRoomParams struct {
+	ExpiresAt time.Time
+	ID        uuid.UUID
+}
+
+// An archived temporary room back to life with a new end, after the last live room.
+func (q *Queries) RestoreTempRoom(ctx context.Context, arg RestoreTempRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, restoreTempRoom, arg.ExpiresAt, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.IconFileID,
+	)
+	return i, err
 }
 
 const revokeAllRoomInvites = `-- name: RevokeAllRoomInvites :exec

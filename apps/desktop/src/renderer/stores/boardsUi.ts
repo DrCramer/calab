@@ -7,7 +7,7 @@ import { isCompletion, migrateCompletion, type Completion } from '../lib/boards/
 
 /**
  * Boards mode UI state (ADR-0042 §5): whether the column shows boards instead of rooms, the open
- * board of each workspace, the open task (right panel) and — per board, kept in localStorage —
+ * board of each workspace, the open task (full screen over the board) and — per board, kept in localStorage —
  * the view (kanban / list / timeline), the filter, grouping, sort, «Показывать завершённые» and
  * hidden columns. Leaving the mode (icon, Esc) keeps all of it: coming back restores the board.
  */
@@ -51,10 +51,8 @@ interface BoardsUiState {
   active: boolean;
   /** Workspace → the open board id, or MY_TASKS. */
   boardOf: Record<string, string>;
-  /** The task in the right panel. */
+  /** The open task: full screen over the board on the desktop (owner 14.10, Linear), a pushed screen on the phone. */
   taskId: string | null;
-  /** ⌘\: the panel covers the whole centre. */
-  panelWide: boolean;
   prefs: Record<string, BoardPrefs>;
   /** Keyboard focus of the board (a card / row), multi-selection (X, Shift/⌘-click). */
   focused: string | null;
@@ -90,7 +88,6 @@ interface BoardsUiState {
   toggle: () => void;
   openBoard: (workspaceId: string, boardId: string) => void;
   openTask: (taskId: string | null) => void;
-  setPanelWide: (v: boolean) => void;
   setPrefs: (boardId: string, patch: Partial<BoardPrefs>) => void;
   setFocused: (id: string | null) => void;
   setSelected: (sel: Readonly<Record<string, true>>) => void;
@@ -112,7 +109,6 @@ export const useBoardsUi = create<BoardsUiState>()(
       active: false,
       boardOf: {},
       taskId: null,
-      panelWide: false,
       prefs: {},
       focused: null,
       selected: {},
@@ -142,9 +138,8 @@ export const useBoardsUi = create<BoardsUiState>()(
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
       toggle: () => set((s) => (s.active ? { active: false, filterOpen: false, helpOpen: false, menu: null } : { active: true })),
       openBoard: (wsId, boardId) =>
-        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, panelWide: false, selected: {}, focused: null, filterOpen: false })),
-      openTask: (taskId) => set((s) => (s.taskId === taskId ? {} : { taskId, panelWide: taskId ? s.panelWide : false })),
-      setPanelWide: (panelWide) => set({ panelWide }),
+        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, selected: {}, focused: null, filterOpen: false })),
+      openTask: (taskId) => set((s) => (s.taskId === taskId ? {} : { taskId })),
       setPrefs: (boardId, patch) => set((s) => ({ prefs: { ...s.prefs, [boardId]: { ...DEFAULT_PREFS, ...s.prefs[boardId], ...patch } } })),
       setFocused: (focused) => set((s) => (s.focused === focused ? {} : { focused })),
       setSelected: (selected) => set({ selected }),
@@ -169,7 +164,8 @@ export const useBoardsUi = create<BoardsUiState>()(
       partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, myCompletion: s.myCompletion, lastBoard: s.lastBoard, activityTab: s.activityTab, collapsedCats: s.collapsedCats, watchersOpen: s.watchersOpen }),
       // A stored value from an older / foreign build must not break the panel.
       merge: (stored, cur) => {
-        const p = (stored ?? {}) as Partial<BoardsUiState>;
+        // `panelWide` (the side panel's ⌘\, gone in 3.4.1) of an older build is dropped.
+        const { panelWide: _wide, ...p } = (stored ?? {}) as Partial<BoardsUiState> & { panelWide?: unknown };
         const cats = p.collapsedCats && typeof p.collapsedCats === 'object' ? p.collapsedCats : cur.collapsedCats;
         return {
           ...cur,

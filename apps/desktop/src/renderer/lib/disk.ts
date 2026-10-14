@@ -113,12 +113,18 @@ export const canShare = (item: Pick<DiskItem, 'ownerId' | 'myBits'>, me: string)
 
 // ---------------------------------------------------------------- the storage meter
 
-/** The three segments of the meter (ADR-0094 §6) as shares of the bar, 0…1 each, and the warning. */
+/** The segments of the meter (ADR-0094 §6) as shares of the bar, 0…1 each, and the warning. */
 export interface UsageBar {
   /** Files of the Disk outside the trash. */
   disk: number;
   trash: number;
-  /** Chat and board attachments, stickers … (used − disk). */
+  /** Message attachments outside the Disk. */
+  chat: number;
+  /** Task (board) attachments. */
+  boards: number;
+  /** Wiki page files and covers. */
+  wiki: number;
+  /** Everything else (stickers …). */
   other: number;
   used: number;
   /** The effective limit in bytes, 0 = unlimited (the bar is then relative to the usage). */
@@ -129,17 +135,23 @@ export interface UsageBar {
   full: boolean;
 }
 
-export function usageBar(u: Pick<DiskUsage, 'quotaBytes' | 'usedBytes' | 'diskBytes' | 'trashBytes' | 'otherBytes'>): UsageBar {
+export function usageBar(u: Pick<DiskUsage, 'quotaBytes' | 'usedBytes' | 'diskBytes' | 'trashBytes' | 'otherBytes' | 'chatBytes' | 'boardsBytes' | 'wikiBytes'>): UsageBar {
   const trash = Number(u.trashBytes);
   const disk = Math.max(0, Number(u.diskBytes) - trash);
+  const chat = Number(u.chatBytes);
+  const boards = Number(u.boardsBytes);
+  const wiki = Number(u.wikiBytes);
   const other = Number(u.otherBytes);
-  const used = Math.max(Number(u.usedBytes), disk + trash + other);
+  const used = Math.max(Number(u.usedBytes), disk + trash + chat + boards + wiki + other);
   const limit = Number(u.quotaBytes);
   const scale = limit > 0 ? Math.max(limit, used) : Math.max(used, 1);
   const share = (n: number): number => (scale > 0 ? n / scale : 0);
   return {
     disk: share(disk),
     trash: share(trash),
+    chat: share(chat),
+    boards: share(boards),
+    wiki: share(wiki),
     other: share(other),
     used,
     limit,

@@ -25,6 +25,7 @@ import { useChatView } from './chatView';
 import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
+import { WikiLinkCard, firstWikiPage } from '../wiki/WikiLinkCard';
 import { MessageActions, hasMessageActions } from './MessageActions';
 import { createHoverIntent, placeActionBar } from './hoverIntent';
 import { previewPartsOf, useMentionLabel } from './mentionText';
@@ -295,6 +296,8 @@ function Bubble({
   const highlight = useMemo(() => (hit && words?.length ? { words, current: hit === 2 } : undefined), [hit, words]);
   // Hidden previews (Message.embeds_hidden) are not rendered at all, for everyone.
   const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
+  // A wiki page link of this server (owner 14.10): the page card in place of the web preview.
+  const wikiPage = useMemo(() => (link ? firstWikiPage(nodes) : null), [link, nodes]);
   const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
@@ -429,7 +432,7 @@ function Bubble({
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />
+            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
           </div>
         ) : null}
         {rows.length ? (

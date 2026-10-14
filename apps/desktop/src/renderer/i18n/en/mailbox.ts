@@ -225,9 +225,10 @@ export const enMailbox: DictShape<typeof ruMailbox> = {
   'mbox.multi.move': 'Move {letters}',
   // «Send to chat…» (owner 12.10)
   'mbox.chat.title': 'Send to chat…',
-  'mbox.chat.hint': 'Sent under your name, with the message itself as an .eml file',
-  'mbox.chat.tooBig': 'The message is too large to send — only its text goes',
-  'mbox.chat.noAttach': '(the message file is not attached: files are not allowed in this chat)',
+  'mbox.chat.hint': 'Sent as you: the mail text and its attachments',
+  'mbox.chat.cut': '(message shortened)',
+  'mbox.chat.skipped': 'Not sent: {names}',
+  'mbox.chat.noAttach': '(the mail attachments are not attached: files are not allowed in this chat)',
   'mbox.chat.sent': 'Sent to {name}',
   'mbox.chat.sentMany': { one: 'Sent to {n} chat', other: 'Sent to {n} chats' },
   'mbox.chat.open': 'Open',

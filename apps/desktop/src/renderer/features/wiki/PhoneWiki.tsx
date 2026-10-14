@@ -1,7 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampDate, timestampMs } from '@bufbuild/protobuf/wkt';
 import { WorkspaceRole, wikiPermissions } from '@calaba/protocol';
-import { ChevronRight, Download, Ellipsis, FileText, FolderInput, History, Link2, Plus, RotateCcw, Search, Trash2, Users } from 'lucide-react';
+import { ChevronRight, Ellipsis, FileText, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { WikiIdleIcon } from '../../assets/nav/icons';
@@ -16,17 +16,20 @@ import { pushOnTab } from '../../lib/phoneNav';
 import { haptics } from '../../lib/haptics';
 import { canStructure, canWrite, childKey, filterPages, TOP, trashKey } from '../../lib/wiki/tree';
 import { phoneBack } from '../../services/phoneNav';
-import { createPage, deleteForever, emptyTrash, exportMarkdown, loadChildren, loadPage, loadTrash, openWikiPage, restorePage, searchPages, setCover, setIcon, trashPage } from '../../services/wiki';
+import { createPage, deleteForever, emptyTrash, loadChildren, loadPage, loadTrash, openWikiPage, restorePage, searchPages, setCover, setIcon } from '../../services/wiki';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useWiki } from '../../stores/wiki';
 import { useWikiUi } from '../../stores/wikiUi';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from '../chat/EmojiPicker';
-import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { menuBox, menuItem } from '../shell/menu';
+import { EditToggle, useEditMode } from './EditToggle';
+import { DROP, PageContextMenu, PageMenuEntries, RenameField, focusTitle } from './PageMenu';
 import { WikiDialogs } from './Dialogs';
 import { WikiDocLazy } from './lazy';
-import { TitleField } from './WikiPage';
+import { PageUnavailable, TitleField } from './WikiPage';
+import { useWikiRefs } from '../../stores/wikiRefs';
 
 /**
  * «Вики» on the phone (ADR-0096 §7, docs/08 «Вики: телефон»): the tab root lists the top-level
@@ -194,9 +197,19 @@ const PageRow = memo(function PageRow({ id, onOpen }: { id: string; onOpen: (id:
   });
   const kids = useWiki((s) => !!s.pages[id]?.hasChildren);
   const known = useWiki((s) => !!s.pages[id]);
+  const renaming = useWikiUi((s) => s.renaming === id);
   if (!known) return null;
   return (
+    <PageContextMenu pageId={id}>
     <div role="listitem" className="flex h-14 items-center pl-4 pr-3" data-testid="phone-wiki-row">
+      {renaming ? (
+        <div className="flex h-14 min-w-0 flex-1 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-fill)] text-[22px] leading-none" aria-hidden>
+            {icon || <FileText className="size-5 text-muted" strokeWidth={1.75} />}
+          </span>
+          <RenameField pageId={id} className="h-10 flex-1 text-list" />
+        </div>
+      ) : (
       <button type="button" onClick={() => onOpen(id)} className="tap-hit flex h-14 min-w-0 flex-1 items-center gap-3 text-left">
         <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-fill)] text-[22px] leading-none" aria-hidden>
           {icon || <FileText className="size-5 text-muted" strokeWidth={1.75} />}
@@ -207,7 +220,9 @@ const PageRow = memo(function PageRow({ id, onOpen }: { id: string; onOpen: (id:
         </span>
         {kids ? <ChevronRight className="size-4 shrink-0 text-faint" aria-hidden /> : null}
       </button>
+      )}
     </div>
+    </PageContextMenu>
   );
 });
 
@@ -269,6 +284,8 @@ export function PhoneWikiPage({ workspaceId, pageId }: { workspaceId: string; pa
   useLocale();
   useWikiOnScreen();
   const known = useWiki((s) => !!s.pages[pageId]);
+  // A page link to a page deleted for good or not mine to see: «Страница недоступна».
+  const gone = useWikiRefs((s) => s.state[pageId] === 'gone');
   const seen = useRef(false);
   useEffect(() => {
     useWikiUi.getState().openPage(workspaceId, pageId);
@@ -289,10 +306,14 @@ export function PhoneWikiPage({ workspaceId, pageId }: { workspaceId: string; pa
   const [host, setHost] = useState<HTMLElement | null>(null);
   return (
     <section className="mat-content relative flex min-h-0 flex-1 flex-col" aria-label={t('wiki.section')} data-testid="phone-wiki-page">
-      <PageHeader workspaceId={workspaceId} pageId={pageId} structure={structure && !trashed} canAdd={editable} trashed={trashed} />
+      <PageHeader workspaceId={workspaceId} pageId={pageId} canAdd={editable} />
       {known ? (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-testid="wiki-scroll">
           <PageBody workspaceId={workspaceId} pageId={pageId} editable={editable} setup={structure && !trashed} trashed={trashed} host={host} />
+        </div>
+      ) : gone ? (
+        <div className="min-h-0 flex-1">
+          <PageUnavailable />
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 place-items-center">
@@ -305,7 +326,7 @@ export function PhoneWikiPage({ workspaceId, pageId }: { workspaceId: string; pa
   );
 }
 
-function PageHeader({ workspaceId, pageId, structure, canAdd, trashed }: { workspaceId: string; pageId: string; structure: boolean; canAdd: boolean; trashed: boolean }): ReactNode {
+function PageHeader({ workspaceId, pageId, canAdd }: { workspaceId: string; pageId: string; canAdd: boolean }): ReactNode {
   const title = useWiki((s) => s.pages[pageId]?.title ?? '');
   const icon = useWiki((s) => s.pages[pageId]?.icon ?? '');
   const updated = useWiki((s) => {
@@ -324,24 +345,18 @@ function PageHeader({ workspaceId, pageId, structure, canAdd, trashed }: { works
       }
       {...(subtitle ? { subtitle } : {})}
     >
+      <EditToggle pageId={pageId} phone />
       {canAdd ? (
         <IconButton tip={false} bar label={t('wiki.addSubpage')} onClick={() => void createPage(workspaceId, pageId)} data-testid="phone-wiki-add-subpage">
           <Plus className="size-5" aria-hidden />
         </IconButton>
       ) : null}
-      <PageMenu pageId={pageId} structure={structure} trashed={trashed} />
+      <PageMenu pageId={pageId} />
     </PhoneHeader>
   );
 }
 
-function PageMenu({ pageId, structure, trashed }: { pageId: string; structure: boolean; trashed: boolean }): ReactNode {
-  const ui = useWikiUi.getState;
-  const item = (Icon: typeof Users, label: string, run: () => void, testId: string, danger = false): ReactNode => (
-    <Dropdown.Item className={cx(menuItem, danger && 'text-danger-text')} onSelect={run} data-testid={testId}>
-      <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-      {label}
-    </Dropdown.Item>
-  );
+function PageMenu({ pageId }: { pageId: string }): ReactNode {
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -351,34 +366,7 @@ function PageMenu({ pageId, structure, trashed }: { pageId: string; structure: b
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="end" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="phone-wiki-page-menu">
-          {structure ? item(Users, t('wiki.access'), () => ui().openDialog({ kind: 'share', pageId, tab: 'access' }), 'wiki-open-access') : null}
-          {structure ? item(Link2, t('wiki.link'), () => ui().openDialog({ kind: 'share', pageId, tab: 'link' }), 'wiki-open-link') : null}
-          {item(History, t('wiki.versions'), () => ui().openDialog({ kind: 'versions', pageId }), 'wiki-open-versions')}
-          {structure ? item(FolderInput, t('wiki.move'), () => ui().openDialog({ kind: 'move', pageId }), 'wiki-open-move') : null}
-          {item(Download, t('wiki.export'), () => exportMarkdown(pageId), 'wiki-export')}
-          {structure && !trashed ? (
-            <>
-              <Dropdown.Separator className={menuSeparator} />
-              {item(
-                Trash2,
-                t('wiki.toTrash'),
-                () => {
-                  void trashPage(pageId).then(() => {
-                    if (useWiki.getState().pages[pageId]?.trashedAt) phoneBack();
-                  });
-                },
-                'wiki-trash-page',
-                true,
-              )}
-            </>
-          ) : null}
-          {structure && trashed ? (
-            <>
-              <Dropdown.Separator className={menuSeparator} />
-              {item(RotateCcw, t('wiki.restore'), () => void restorePage(pageId), 'wiki-restore-page')}
-              {item(Trash2, t('wiki.deleteForever'), () => void deleteForever(pageId), 'wiki-delete-page', true)}
-            </>
-          ) : null}
+          <PageMenuEntries pageId={pageId} parts={DROP} onRename={focusTitle} afterTrash={phoneBack} />
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
@@ -388,6 +376,8 @@ function PageMenu({ pageId, structure, trashed }: { pageId: string; structure: b
 function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { workspaceId: string; pageId: string; editable: boolean; setup: boolean; trashed: boolean; host: HTMLElement | null }): ReactNode {
   const coverId = useWiki((s) => s.pages[pageId]?.cover?.id ?? '');
   const icon = useWiki((s) => s.pages[pageId]?.icon ?? '');
+  const editing = useWikiUi((s) => s.editing === pageId);
+  useEditMode(pageId, false);
   const coverInput = useRef<HTMLInputElement>(null);
   return (
     <article className="flex min-h-full flex-col pb-[calc(var(--safe-bottom,0px)+24px)]">
@@ -439,7 +429,7 @@ function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { wor
               )}
             </div>
           ) : null}
-          <TitleField pageId={pageId} editable={setup} className="!text-[26px] leading-8" />
+          <TitleField pageId={pageId} editable={setup && editing} className="!text-[26px] leading-8" />
         </div>
         <Suspense
           fallback={
@@ -448,7 +438,7 @@ function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { wor
             </div>
           }
         >
-          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} phone toolbarHost={host} />
+          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} editing={editable && editing} phone toolbarHost={host} />
         </Suspense>
         <PhoneSubpages workspaceId={workspaceId} pageId={pageId} canAdd={editable} />
       </div>

@@ -2,7 +2,7 @@ import type { ChainedCommands, Editor } from '@tiptap/core';
 import type { MessageKey } from '../../../i18n';
 import { t } from '../../../i18n';
 
-export type BlockId = 'text' | 'h1' | 'h2' | 'h3' | 'bullet' | 'ordered' | 'task' | 'quote' | 'divider' | 'code' | 'table' | 'image' | 'callout' | 'toggle';
+export type BlockId = 'text' | 'h1' | 'h2' | 'h3' | 'bullet' | 'ordered' | 'task' | 'quote' | 'divider' | 'code' | 'table' | 'image' | 'callout' | 'toggle' | 'pageLink';
 
 export interface BlockDef {
   id: BlockId;
@@ -31,6 +31,8 @@ export const BLOCKS: readonly BlockDef[] = [
   { id: 'divider', label: 'wiki.block.divider', keys: 'divider hr rule line', hint: '---', turnInto: false, run: (c) => c.setHorizontalRule() },
   { id: 'table', label: 'wiki.block.table', keys: 'table grid', turnInto: false, run: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }) },
   { id: 'image', label: 'wiki.block.image', keys: 'image picture photo img', turnInto: false, run: (c) => c.pickImage() },
+  // Types `[[`: the page picker opens where the caret is (owner 14.10).
+  { id: 'pageLink', label: 'wiki.pageLink.title', keys: 'page link wiki mention [[', hint: '[[', turnInto: false, run: (c) => c.insertContent('[[') },
 ];
 
 /** Blocks for a `/` query: label words or keys start with it (any of the query's words). */

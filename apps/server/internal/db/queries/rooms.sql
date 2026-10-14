@@ -285,11 +285,34 @@ SELECT * FROM room_permissions WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[])
 ORDER BY room_id, target_type, target_id;
 
 -- name: PurgeableTempRooms :many
--- Archived temporary rooms past the retention (TEMP_ROOM_RETENTION_DAYS).
-SELECT id FROM rooms
-WHERE expires_at IS NOT NULL AND archived_at IS NOT NULL AND archived_at < sqlc.arg('before')
-ORDER BY archived_at
+-- Archived temporary rooms past their workspace's retention (workspaces.temp_archive_days).
+SELECT r.id FROM rooms r
+JOIN workspaces w ON w.id = r.workspace_id
+WHERE r.expires_at IS NOT NULL AND r.archived_at IS NOT NULL
+  AND r.archived_at < now() - make_interval(days => w.temp_archive_days)
+ORDER BY r.archived_at
 LIMIT sqlc.arg('lim');
+
+-- name: RestoreTempRoom :one
+-- An archived temporary room back to life with a new end, after the last live room.
+UPDATE rooms r SET archived_at = NULL, expires_at = sqlc.arg('expires_at')::timestamptz,
+    position = (SELECT coalesce(max(o.position) + 1, 0) FROM rooms o
+                WHERE o.workspace_id = r.workspace_id AND o.archived_at IS NULL AND o.type <> 'task')
+WHERE r.id = sqlc.arg('id') AND r.archived_at IS NOT NULL AND r.expires_at IS NOT NULL
+RETURNING *;
+
+-- name: GetArchivedTempRoomForUpdate :one
+-- The archived temporary room, locked (restore reads its original lifetime).
+SELECT * FROM rooms WHERE id = $1 AND archived_at IS NOT NULL AND expires_at IS NOT NULL FOR UPDATE;
+
+-- name: MakeRoomPermanent :one
+-- A temporary room (live or archived) becomes a regular live room after the last one; history,
+-- overrides and settings stay.
+UPDATE rooms r SET archived_at = NULL, expires_at = NULL, category_id = NULL,
+    position = (SELECT coalesce(max(o.position) + 1, 0) FROM rooms o
+                WHERE o.workspace_id = r.workspace_id AND o.archived_at IS NULL AND o.type <> 'task')
+WHERE r.id = sqlc.arg('id') AND r.expires_at IS NOT NULL
+RETURNING *;
 
 -- name: DeleteArchivedTempRoom :execrows
 -- Messages, reactions, pins, read state, overrides and links go by cascade (as a deleted notes

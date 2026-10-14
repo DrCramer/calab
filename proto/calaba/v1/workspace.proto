@@ -54,6 +54,9 @@ message Workspace {
   // Balance billing (ADR-0080): state without amounts, for every member; unset = no billing
   // account. The owner reads the money through GET /api/workspaces/{id}/billing.
   WorkspaceBillingStatus billing = 17;
+  // How many days a closed temporary room stays in the archive before it is deleted with its
+  // history (ADR-0044 addendum): 1 | 7 | 30 | 90 | 365; new workspaces start with 30.
+  uint32 temp_archive_days = 18;
 }
 
 message WorkspaceSuspension {
@@ -160,6 +163,7 @@ message UpdateWorkspaceRequest {
   optional bool allow_self_nickname = 8;
   optional uint32 default_camera_limit = 9; // 0..25 (0 = cameras off)
   optional TimeFormat time_format = 10; // AUTO|H24|H12 (UNSPECIFIED is 422)
+  optional uint32 temp_archive_days = 11; // 1|7|30|90|365 (MANAGE_WORKSPACE; else 422)
 }
 
 message UpdateWorkspaceResponse {

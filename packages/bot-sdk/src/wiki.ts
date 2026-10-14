@@ -24,6 +24,7 @@ import {
   type WikiPermissionsResponse,
   type WikiVersionsResponse,
 } from '@calaba/protocol';
+import { wikiPageHref } from '@calaba/wiki-doc/links';
 import { docMeta } from '@calaba/wiki-doc/plainText';
 import { appendDocMarkdown, docToMarkdown, setDocMarkdown } from '@calaba/wiki-doc/ydoc';
 import type { FromMarkdownOptions, ToMarkdownOptions } from '@calaba/wiki-doc/markdown';
@@ -77,6 +78,8 @@ function toBlob(data: Uint8Array | ArrayBuffer | Blob, type?: string): Blob {
 
 export function createWikiApi(rest: Rest, token: string, createSocket: (url: string) => SyncSocket, syncOpts: WikiSyncOptions = {}) {
   const pagePath = (id: string): string => `/api/wiki/pages/${enc(id)}`;
+  // Links to wiki pages read as full addresses on this server unless the caller writes its own.
+  const mdOut = (o: ToMarkdownOptions): ToMarkdownOptions => ({ pageUrl: (id) => wikiPageHref(rest.server, id), ...o });
   const update = async (id: string, req: MessageInitShape<typeof UpdateWikiPageRequestSchema>): Promise<WikiPage> =>
     page(await rest.call(WikiPageResponseSchema, 'PATCH', pagePath(id), { json: Rest.body(UpdateWikiPageRequestSchema, req) }));
   const get = async (id: string): Promise<WikiPage> => page(await rest.call(WikiPageResponseSchema, 'GET', pagePath(id)));
@@ -97,7 +100,7 @@ export function createWikiApi(rest: Rest, token: string, createSocket: (url: str
       const p = await get(id);
       const s = await open(id);
       try {
-        return { title: p.title, markdown: docToMarkdown(s.doc, opts) };
+        return { title: p.title, markdown: docToMarkdown(s.doc, mdOut(opts)) };
       } finally {
         await s.close();
       }
@@ -172,7 +175,7 @@ export function createWikiApi(rest: Rest, token: string, createSocket: (url: str
         const res = await rest.response('GET', `${pagePath(pageId)}/versions/${enc(versionId)}`);
         const doc = new Y.Doc();
         Y.applyUpdate(doc, new Uint8Array(await res.arrayBuffer()));
-        return docToMarkdown(doc, opts);
+        return docToMarkdown(doc, mdOut(opts));
       },
     },
     files: {

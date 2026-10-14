@@ -264,5 +264,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'mobile.tabDisk': '云盘',
   'mobile.tabWiki': '维基',
   'mobile.pin': '固定“{name}”',
-  'mobile.pinnedInstead': '已固定，替换“{name}”',
+  'mobile.pinFull': '请先取消固定一个',
+  'mobile.reorder': '拖动“{name}”',
+  'mobile.unpin': '取消固定“{name}”',
 } as const;

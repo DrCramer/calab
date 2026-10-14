@@ -625,6 +625,15 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.TimeFormat = &f
 	}
+	if req.TempArchiveDays != nil {
+		switch d := req.GetTempArchiveDays(); d {
+		case 1, 7, 30, 90, 365:
+			v := int32(d) //nolint:gosec // validated
+			p.TempArchiveDays = &v
+		default:
+			return httpx.Validation("tempArchiveDays", "archive retention must be 1, 7, 30, 90 or 365 days")
+		}
+	}
 	ws, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")

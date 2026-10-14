@@ -134,7 +134,7 @@ bot_blocks          user_id, bot_user_id, created_at   PK (user_id, bot_user_id)
 bot_contact_shares  id (uuidv7), workspace_id → workspaces CASCADE («домашнее» пространство бота), bot_user_id (без FK),
                     user_id → users CASCADE, room_id (DM), message_id, button_id (без FK), fields text[] ('phone' | 'email',
                     1–2), created_at   UNIQUE (message_id, button_id, user_id) — контакт, отданный боту кнопкой
-                    REQUEST_CONTACT (ADR-0100, миграция 00092): и лимит (одна отдача на кнопку на человека, ≤ 10 в час —
+                    REQUEST_CONTACT (ADR-0100, миграция 00093): и лимит (одна отдача на кнопку на человека, ≤ 10 в час —
                     индекс (user_id, created_at)), и журнал пространства бота без значений (VIEW_JOURNALS)
 
                     users += username? (citext, UNIQUE, [a-z0-9_]{3,32}; одно пространство имён с ботами — у
@@ -515,7 +515,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Временная комната — обычная `voice` с `rooms.expires_at` (`Room.expires_at`, отдельного `is_temp` нет) и `created_by`. Создание — `POST /api/workspaces/{id}/rooms/temp` (`CREATE_TEMP_ROOMS`), лимиты: 20 живых на пространство, 5 на создателя (`409 TEMP_ROOM_LIMIT`).
 - Права: создатель (не гость) управляет своей временной комнатой как с `MANAGE_ROOM` — одна проверка `rooms.MayManage` (сервер) / `mayManageRoom` (клиент); `computePermissions` не меняется. На постоянных комнатах `created_by` прав не даёт. `make_permanent` — только настоящий `MANAGE_ROOM`.
 - Приватная временная = deny `VIEW_ROOM` роли `member` + личные allow (`VIEW_ROOM | CONNECT | SPEAK | VIDEO | STREAM | SEND_MESSAGES | ATTACH_FILES` в пределах прав создателя) создателю, выбранным людям и всем, кто вошёл по ссылке.
-- Архив: `archived_at` (удаление или истечение), ссылки отозваны, LiveKit-комната закрыта. История читается с `VIEW_ROOM` (сообщения, закрепы, вложения), остальное — `410 ROOM_ARCHIVED`; постоянные архивные комнаты по-прежнему скрыты (`404`). Через `TEMP_ROOM_RETENTION_DAYS` (90) архивная временная комната удаляется с историей.
+- Архив: `archived_at` (удаление или истечение), ссылки отозваны, LiveKit-комната закрыта. История читается с `VIEW_ROOM` (сообщения, закрепы, вложения), остальное — `410 ROOM_ARCHIVED`; постоянные архивные комнаты по-прежнему скрыты (`404`). Через `workspaces.temp_archive_days` (1/7/30/90/365, по умолчанию 30; ADR-0044, дополнение 14.10) архивная временная комната удаляется с историей; из архива её можно вернуть (`POST /api/rooms/{id}/restore`) или сделать постоянной (`POST /api/rooms/{id}/make-permanent`).
 
 ## Телефония (ADR-0046, миграция 00051)
 - `sip_accounts` — один аккаунт SIP-провайдера на пространство: `provider` (подпись), `host` (без порта, только публичный адрес — иначе `422`), `port` (по умолчанию 5060), `transport udp|tcp|tls`, `username`, `auth_username` (пусто — аутентификация как `username`), `password_enc` (sealbox `calaba/sip-password/v1`, как пароль CalDAV; `GET` отдаёт только `has_password`, `PUT` без поля пароля его не трогает, `""` — удаляет), `caller_id` (E.164), `outbound_prefix` (`+` и/или до 8 цифр перед цифрами номера), `allowed_prefixes text[]` (пусто — любые номера), `trunk_id` (`SIPOutboundTrunk` LiveKit; строка всегда совпадает с тем, что в LiveKit: отказ LiveKit меняет только `last_error`), `enabled`, `last_error`, `updated_at/by`.

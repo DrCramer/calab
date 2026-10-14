@@ -14,6 +14,7 @@ const zh: Dict = {
     navLabel: '页面导航',
     nav: {
       features: '功能',
+      docs: '文档',
       calendar: '日历',
       boards: '看板',
       download: '下载',

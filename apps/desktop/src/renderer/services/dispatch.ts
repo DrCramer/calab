@@ -21,6 +21,7 @@ import { mayMentionAll } from '../lib/permissions';
 import { useReadReceipts } from '../stores/readReceipts';
 import { useRoomPreviews } from '../stores/roomPreviews';
 import { useRooms } from '../stores/rooms';
+import { useTempArchive } from '../stores/tempArchive';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
@@ -113,6 +114,8 @@ export function removeRoom(workspaceId: string, roomId: string): void {
   const inVoice = voice.currentRoomId === roomId;
   if (room && isTempRoom(room) && (inVoice || (ui.activeWorkspaceId === workspaceId && ui.lastRoom[workspaceId] === roomId))) roomClosedToast(roomId);
   useRooms.getState().remove(roomId);
+  // A temporary room closed: it is in the archive now (a loaded list refetches).
+  if (room && isTempRoom(room)) useTempArchive.getState().refresh(workspaceId);
   useWorkspaces.getState().clearRoomVoice(workspaceId, roomId);
   useMessages.getState().unload(roomId);
   useRoomPreviews.getState().drop([roomId]);
@@ -437,6 +440,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'roomUpdate':
       if (e.value.room) {
         useRooms.getState().upsert(e.value.room);
+        if (e.case === 'roomCreate') useTempArchive.getState().drop(e.value.room.id); // restored / made permanent
         if (e.value.room.id === voice.currentRoomId) voice.refreshRights();
       }
       return;

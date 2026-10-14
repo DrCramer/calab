@@ -68,6 +68,8 @@ import {
   CreateRoomResponseSchema,
   CreateTempRoomRequestSchema,
   TempRoomResponseSchema,
+  RestoreTempRoomResponseSchema,
+  MakeRoomPermanentResponseSchema,
   ListRoomsResponseSchema,
   SetRoomOrderRequestSchema,
   SetRoomOrderResponseSchema,
@@ -487,7 +489,11 @@ export const api = {
      */
     createTemp: (workspaceId: string, init: MessageInitShape<typeof CreateTempRoomRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/rooms/temp`, TempRoomResponseSchema, body(CreateTempRoomRequestSchema, init)),
-    /** Closed temporary rooms (ADR-0044), newest first: MANAGE_ROOM at workspace level. */
+    /** An archived temporary room goes live again for its original lifetime (ADR-0044 addendum 14.10): the creator / MANAGE_ROOM; 409 TEMP_ROOM_LIMIT. */
+    restoreTemp: (id: string) => call('POST', `/api/rooms/${id}/restore`, RestoreTempRoomResponseSchema),
+    /** A temporary room (archived or live) becomes a regular one: workspace MANAGE_ROOM (the right to create rooms). */
+    makePermanent: (id: string) => call('POST', `/api/rooms/${id}/make-permanent`, MakeRoomPermanentResponseSchema),
+    /** Closed temporary rooms (ADR-0044), newest first: the ones I may manage (MANAGE_ROOM there or I created them). */
     archived: (workspaceId: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/rooms?archived=1`, ListRoomsResponseSchema, undefined, signal),
     get: (id: string) => call('GET', `/api/rooms/${id}`, GetRoomResponseSchema),
