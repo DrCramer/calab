@@ -341,9 +341,10 @@ export const DiskActivitySchema: GenMessage<DiskActivity> = /*@__PURE__*/
   messageDesc(file_calaba_v1_disk, 4);
 
 /**
- * GET /api/workspaces/{id}/disk/items?parent=&trashed=&cursor=&sort=&order= — the visible
- * content of a folder (parent empty = the root) or, with trashed=1, the trash roots the caller
- * can see. sort: name (folders first, default) | updated | size; order: asc | desc. ≤ 200 per page.
+ * GET /api/workspaces/{id}/disk/items?parent=&trashed=&cursor=&sort= — the visible content of a
+ * folder (parent empty = the root) or, with trashed=1, the trash roots the caller can see, the
+ * newest deletion first. sort: name (folders first, A–Z; default) | updated (newest first) |
+ * size (folders first, then the largest file first). ≤ 200 per page.
  *
  * @generated from message calaba.v1.ListDiskItemsResponse
  */
