@@ -503,7 +503,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			}
 			for _, id := range fileIDs {
 				f, ok := byID[id]
-				if !ok || f.UploaderID != uid(r) || !sameScope(f.WorkspaceID, acc) || f.Attached {
+				if !ok || f.UploaderID == nil || *f.UploaderID != uid(r) || !sameScope(f.WorkspaceID, acc) || f.Attached {
 					return httpx.Validation("attachmentIds", "file "+id.String()+" is not an unattached upload of yours in this workspace")
 				}
 				files = append(files, sqlc.File{

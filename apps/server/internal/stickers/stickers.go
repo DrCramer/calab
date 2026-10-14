@@ -620,7 +620,7 @@ func (h *Handlers) upload(w http.ResponseWriter, r *http.Request) error {
 		for i, rec := range recs {
 			wd, ht := int32(rec.info.Width), int32(rec.info.Height) //nolint:gosec // 1..512
 			if _, err := q.InsertFile(r.Context(), sqlc.InsertFileParams{
-				ID: rec.id, WorkspaceID: &ws, UploaderID: me, Key: rec.key, Name: rec.name, Mime: "image/webp",
+				ID: rec.id, WorkspaceID: &ws, UploaderID: &me, Key: rec.key, Name: rec.name, Mime: "image/webp",
 				Size: rec.size, Width: &wd, Height: &ht, Sha256: rec.sha,
 			}); err != nil {
 				return err
@@ -710,7 +710,7 @@ func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error 
 			ws := *p.WorkspaceID
 			wd, ht := int32(rec.info.Width), int32(rec.info.Height) //nolint:gosec // 1..512
 			if _, err := q.InsertFile(r.Context(), sqlc.InsertFileParams{
-				ID: rec.id, WorkspaceID: &ws, UploaderID: me, Key: rec.key, Name: rec.name, Mime: "image/webp",
+				ID: rec.id, WorkspaceID: &ws, UploaderID: &me, Key: rec.key, Name: rec.name, Mime: "image/webp",
 				Size: rec.size, Width: &wd, Height: &ht, Sha256: rec.sha,
 			}); err != nil {
 				return err

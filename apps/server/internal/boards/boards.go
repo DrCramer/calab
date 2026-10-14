@@ -27,9 +27,12 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 )
 
-// Uploader stores an upload of the caller into a workspace (files.Service).
+// Uploader stores an upload of the caller into a workspace (files.Service), or a staged upload
+// of a board form without an uploader (ADR-0064 v2).
 type Uploader interface {
 	UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.UUID) error
+	UploadStaged(w http.ResponseWriter, r *http.Request, wsID uuid.UUID, limit int64,
+		check func(mime, name string) error, attach func(q *sqlc.Queries, f sqlc.File) error) (sqlc.File, error)
 }
 
 // Limiter is a per-key rate limit (redisx.RateLimiter): Take answers 429 when the budget is out.
@@ -53,6 +56,9 @@ type Service struct {
 	// (security review 1.1.0; comments are messages under the message limit). nil = none.
 	CreateLimit, SearchLimit                                   Limiter
 	FormReadLimit, FormIPLimit, FormUserLimit, FormSubmitLimit Limiter
+	// FormUploadLimit: staged uploads of FILE fields per IP ("ip:") or user ("user:");
+	// FormUploadFormLimit: per form (ADR-0064 v2). nil = none.
+	FormUploadLimit, FormUploadFormLimit Limiter
 	// Now is the clock (tests move it).
 	Now func() time.Time
 	// Relay passes the users' task notices on to the bots they chose (ADR-0090); nil = off.
@@ -81,6 +87,8 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("POST /api/forms/{code}/submissions", s.submitForm)
 	mux.Handle("GET /api/public/forms/{code}", httpx.HandlerFunc(s.publicForm))
 	mux.Handle("POST /api/public/forms/{code}/submissions", httpx.HandlerFunc(s.submitForm))
+	h("POST /api/forms/{code}/files", s.uploadFormFile)
+	mux.Handle("POST /api/public/forms/{code}/files", httpx.HandlerFunc(s.uploadFormFile))
 	h("PATCH /api/boards/{id}", s.updateBoard)
 	h("DELETE /api/boards/{id}", s.deleteBoard)
 	h("POST /api/boards/{id}/restore", s.restoreBoard)

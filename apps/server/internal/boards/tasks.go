@@ -1086,7 +1086,7 @@ func attach(ctx context.Context, q *sqlc.Queries, t taskRow, ids []uuid.UUID, me
 			}
 		}
 		if len(check) > 0 {
-			ok, err := q.FilesAttachable(ctx, sqlc.FilesAttachableParams{Ids: check, UserID: me, WorkspaceID: t.WorkspaceID, TaskID: t.ID})
+			ok, err := q.FilesAttachable(ctx, sqlc.FilesAttachableParams{Ids: check, UserID: &me, WorkspaceID: t.WorkspaceID, TaskID: t.ID})
 			if err != nil {
 				return err
 			}

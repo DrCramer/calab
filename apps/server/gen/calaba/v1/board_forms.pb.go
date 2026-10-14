@@ -37,6 +37,8 @@ const (
 	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_PHONE       BoardFormFieldType = 8 // formatted phone text, 7..15 digits; ADR-0064
 	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_URL         BoardFormFieldType = 9 // absolute HTTP/HTTPS URL
 	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT BoardFormFieldType = 10
+	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_FILE        BoardFormFieldType = 11 // uploads via /files, answer values = upload ids; ADR-0064 v2
+	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_PEOPLE      BoardFormFieldType = 12 // workspace members, answer values = user ids
 )
 
 // Enum value maps for BoardFormFieldType.
@@ -53,6 +55,8 @@ var (
 		8:  "BOARD_FORM_FIELD_TYPE_PHONE",
 		9:  "BOARD_FORM_FIELD_TYPE_URL",
 		10: "BOARD_FORM_FIELD_TYPE_MULTISELECT",
+		11: "BOARD_FORM_FIELD_TYPE_FILE",
+		12: "BOARD_FORM_FIELD_TYPE_PEOPLE",
 	}
 	BoardFormFieldType_value = map[string]int32{
 		"BOARD_FORM_FIELD_TYPE_UNSPECIFIED": 0,
@@ -66,6 +70,8 @@ var (
 		"BOARD_FORM_FIELD_TYPE_PHONE":       8,
 		"BOARD_FORM_FIELD_TYPE_URL":         9,
 		"BOARD_FORM_FIELD_TYPE_MULTISELECT": 10,
+		"BOARD_FORM_FIELD_TYPE_FILE":        11,
+		"BOARD_FORM_FIELD_TYPE_PEOPLE":      12,
 	}
 )
 
@@ -96,17 +102,92 @@ func (BoardFormFieldType) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{0}
 }
 
+// Where an answer goes on the created task (ADR-0064 v2). The title uses title_field_id.
+type BoardFormFieldTarget int32
+
+const (
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_NONE      BoardFormFieldTarget = 0
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_PRIORITY  BoardFormFieldTarget = 1 // SELECT, through option_priorities
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_DUE_DATE  BoardFormFieldTarget = 2 // DATE
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_LABELS    BoardFormFieldTarget = 3 // SELECT or MULTISELECT, through option_labels
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_ASSIGNEES BoardFormFieldTarget = 4 // PEOPLE; the first one is the lead
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_APPROVERS BoardFormFieldTarget = 5 // PEOPLE
+	BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_WATCHERS  BoardFormFieldTarget = 6 // PEOPLE
+)
+
+// Enum value maps for BoardFormFieldTarget.
+var (
+	BoardFormFieldTarget_name = map[int32]string{
+		0: "BOARD_FORM_FIELD_TARGET_NONE",
+		1: "BOARD_FORM_FIELD_TARGET_PRIORITY",
+		2: "BOARD_FORM_FIELD_TARGET_DUE_DATE",
+		3: "BOARD_FORM_FIELD_TARGET_LABELS",
+		4: "BOARD_FORM_FIELD_TARGET_ASSIGNEES",
+		5: "BOARD_FORM_FIELD_TARGET_APPROVERS",
+		6: "BOARD_FORM_FIELD_TARGET_WATCHERS",
+	}
+	BoardFormFieldTarget_value = map[string]int32{
+		"BOARD_FORM_FIELD_TARGET_NONE":      0,
+		"BOARD_FORM_FIELD_TARGET_PRIORITY":  1,
+		"BOARD_FORM_FIELD_TARGET_DUE_DATE":  2,
+		"BOARD_FORM_FIELD_TARGET_LABELS":    3,
+		"BOARD_FORM_FIELD_TARGET_ASSIGNEES": 4,
+		"BOARD_FORM_FIELD_TARGET_APPROVERS": 5,
+		"BOARD_FORM_FIELD_TARGET_WATCHERS":  6,
+	}
+)
+
+func (x BoardFormFieldTarget) Enum() *BoardFormFieldTarget {
+	p := new(BoardFormFieldTarget)
+	*p = x
+	return p
+}
+
+func (x BoardFormFieldTarget) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BoardFormFieldTarget) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_board_forms_proto_enumTypes[1].Descriptor()
+}
+
+func (BoardFormFieldTarget) Type() protoreflect.EnumType {
+	return &file_calaba_v1_board_forms_proto_enumTypes[1]
+}
+
+func (x BoardFormFieldTarget) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BoardFormFieldTarget.Descriptor instead.
+func (BoardFormFieldTarget) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{1}
+}
+
 type BoardFormField struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Type          BoardFormFieldType     `protobuf:"varint,2,opt,name=type,proto3,enum=calaba.v1.BoardFormFieldType" json:"type,omitempty"`
-	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
-	Hint          string                 `protobuf:"bytes,4,opt,name=hint,proto3" json:"hint,omitempty"`
-	Placeholder   string                 `protobuf:"bytes,5,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
-	Required      bool                   `protobuf:"varint,6,opt,name=required,proto3" json:"required,omitempty"`
-	Options       []string               `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type        BoardFormFieldType     `protobuf:"varint,2,opt,name=type,proto3,enum=calaba.v1.BoardFormFieldType" json:"type,omitempty"`
+	Label       string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
+	Hint        string                 `protobuf:"bytes,4,opt,name=hint,proto3" json:"hint,omitempty"`
+	Placeholder string                 `protobuf:"bytes,5,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
+	Required    bool                   `protobuf:"varint,6,opt,name=required,proto3" json:"required,omitempty"`
+	Options     []string               `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
+	// FILE and PEOPLE: more than one answer value.
+	Multiple bool `protobuf:"varint,8,opt,name=multiple,proto3" json:"multiple,omitempty"`
+	// FILE: 1..20 files (1 without multiple), 1..100 MB each, accepted categories
+	// (image, pdf, document, video, audio, archive; empty = any).
+	MaxFiles  uint32   `protobuf:"varint,9,opt,name=max_files,json=maxFiles,proto3" json:"max_files,omitempty"`
+	MaxFileMb uint32   `protobuf:"varint,10,opt,name=max_file_mb,json=maxFileMb,proto3" json:"max_file_mb,omitempty"`
+	Accept    []string `protobuf:"bytes,11,rep,name=accept,proto3" json:"accept,omitempty"`
+	// PEOPLE: only members with this workspace role; empty = all members.
+	RoleId string `protobuf:"bytes,12,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	// Management only: never sent by the public GET.
+	Target           BoardFormFieldTarget    `protobuf:"varint,13,opt,name=target,proto3,enum=calaba.v1.BoardFormFieldTarget" json:"target,omitempty"`
+	OptionPriorities map[string]TaskPriority `protobuf:"bytes,14,rep,name=option_priorities,json=optionPriorities,proto3" json:"option_priorities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=calaba.v1.TaskPriority"` // option -> priority (PRIORITY)
+	OptionLabels     map[string]string       `protobuf:"bytes,15,rep,name=option_labels,json=optionLabels,proto3" json:"option_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`                                          // option -> label id of the form's board (LABELS)
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *BoardFormField) Reset() {
@@ -188,6 +269,131 @@ func (x *BoardFormField) GetOptions() []string {
 	return nil
 }
 
+func (x *BoardFormField) GetMultiple() bool {
+	if x != nil {
+		return x.Multiple
+	}
+	return false
+}
+
+func (x *BoardFormField) GetMaxFiles() uint32 {
+	if x != nil {
+		return x.MaxFiles
+	}
+	return 0
+}
+
+func (x *BoardFormField) GetMaxFileMb() uint32 {
+	if x != nil {
+		return x.MaxFileMb
+	}
+	return 0
+}
+
+func (x *BoardFormField) GetAccept() []string {
+	if x != nil {
+		return x.Accept
+	}
+	return nil
+}
+
+func (x *BoardFormField) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *BoardFormField) GetTarget() BoardFormFieldTarget {
+	if x != nil {
+		return x.Target
+	}
+	return BoardFormFieldTarget_BOARD_FORM_FIELD_TARGET_NONE
+}
+
+func (x *BoardFormField) GetOptionPriorities() map[string]TaskPriority {
+	if x != nil {
+		return x.OptionPriorities
+	}
+	return nil
+}
+
+func (x *BoardFormField) GetOptionLabels() map[string]string {
+	if x != nil {
+		return x.OptionLabels
+	}
+	return nil
+}
+
+// The first matching route picks the board of the new task; none matching: the form's board.
+type BoardFormRoute struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FieldId       string                 `protobuf:"bytes,1,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"` // a SELECT field of the form
+	Option        string                 `protobuf:"bytes,2,opt,name=option,proto3" json:"option,omitempty"`
+	BoardId       string                 `protobuf:"bytes,3,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`    // a board of the same workspace
+	StatusId      string                 `protobuf:"bytes,4,opt,name=status_id,json=statusId,proto3" json:"status_id,omitempty"` // a status of board_id; empty = its default status
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardFormRoute) Reset() {
+	*x = BoardFormRoute{}
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardFormRoute) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardFormRoute) ProtoMessage() {}
+
+func (x *BoardFormRoute) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardFormRoute.ProtoReflect.Descriptor instead.
+func (*BoardFormRoute) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BoardFormRoute) GetFieldId() string {
+	if x != nil {
+		return x.FieldId
+	}
+	return ""
+}
+
+func (x *BoardFormRoute) GetOption() string {
+	if x != nil {
+		return x.Option
+	}
+	return ""
+}
+
+func (x *BoardFormRoute) GetBoardId() string {
+	if x != nil {
+		return x.BoardId
+	}
+	return ""
+}
+
+func (x *BoardFormRoute) GetStatusId() string {
+	if x != nil {
+		return x.StatusId
+	}
+	return ""
+}
+
 type BoardFormDefinition struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Title          string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
@@ -198,13 +404,16 @@ type BoardFormDefinition struct {
 	AllowedUserIds []string               `protobuf:"bytes,6,rep,name=allowed_user_ids,json=allowedUserIds,proto3" json:"allowed_user_ids,omitempty"`
 	StatusId       string                 `protobuf:"bytes,7,opt,name=status_id,json=statusId,proto3" json:"status_id,omitempty"`
 	Priority       TaskPriority           `protobuf:"varint,8,opt,name=priority,proto3,enum=calaba.v1.TaskPriority" json:"priority,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	Routes         []*BoardFormRoute      `protobuf:"bytes,9,rep,name=routes,proto3" json:"routes,omitempty"`
+	// Anonymous fillers see PEOPLE fields and member names (default: hidden).
+	ShowMembers   bool `protobuf:"varint,10,opt,name=show_members,json=showMembers,proto3" json:"show_members,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BoardFormDefinition) Reset() {
 	*x = BoardFormDefinition{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[1]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -216,7 +425,7 @@ func (x *BoardFormDefinition) String() string {
 func (*BoardFormDefinition) ProtoMessage() {}
 
 func (x *BoardFormDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[1]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -229,7 +438,7 @@ func (x *BoardFormDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardFormDefinition.ProtoReflect.Descriptor instead.
 func (*BoardFormDefinition) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *BoardFormDefinition) GetTitle() string {
@@ -288,6 +497,20 @@ func (x *BoardFormDefinition) GetPriority() TaskPriority {
 	return TaskPriority_TASK_PRIORITY_NONE
 }
 
+func (x *BoardFormDefinition) GetRoutes() []*BoardFormRoute {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
+func (x *BoardFormDefinition) GetShowMembers() bool {
+	if x != nil {
+		return x.ShowMembers
+	}
+	return false
+}
+
 type BoardForm struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -304,7 +527,7 @@ type BoardForm struct {
 
 func (x *BoardForm) Reset() {
 	*x = BoardForm{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[2]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -316,7 +539,7 @@ func (x *BoardForm) String() string {
 func (*BoardForm) ProtoMessage() {}
 
 func (x *BoardForm) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[2]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -329,7 +552,7 @@ func (x *BoardForm) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardForm.ProtoReflect.Descriptor instead.
 func (*BoardForm) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *BoardForm) GetId() string {
@@ -397,7 +620,7 @@ type ListBoardFormsResponse struct {
 
 func (x *ListBoardFormsResponse) Reset() {
 	*x = ListBoardFormsResponse{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[3]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -409,7 +632,7 @@ func (x *ListBoardFormsResponse) String() string {
 func (*ListBoardFormsResponse) ProtoMessage() {}
 
 func (x *ListBoardFormsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[3]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -422,7 +645,7 @@ func (x *ListBoardFormsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBoardFormsResponse.ProtoReflect.Descriptor instead.
 func (*ListBoardFormsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListBoardFormsResponse) GetForms() []*BoardForm {
@@ -441,7 +664,7 @@ type BoardFormResponse struct {
 
 func (x *BoardFormResponse) Reset() {
 	*x = BoardFormResponse{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[4]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -453,7 +676,7 @@ func (x *BoardFormResponse) String() string {
 func (*BoardFormResponse) ProtoMessage() {}
 
 func (x *BoardFormResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[4]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -466,7 +689,7 @@ func (x *BoardFormResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardFormResponse.ProtoReflect.Descriptor instead.
 func (*BoardFormResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *BoardFormResponse) GetForm() *BoardForm {
@@ -485,7 +708,7 @@ type CreateBoardFormRequest struct {
 
 func (x *CreateBoardFormRequest) Reset() {
 	*x = CreateBoardFormRequest{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[5]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -497,7 +720,7 @@ func (x *CreateBoardFormRequest) String() string {
 func (*CreateBoardFormRequest) ProtoMessage() {}
 
 func (x *CreateBoardFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[5]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -510,7 +733,7 @@ func (x *CreateBoardFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardFormRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardFormRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateBoardFormRequest) GetDefinition() *BoardFormDefinition {
@@ -530,7 +753,7 @@ type UpdateBoardFormRequest struct {
 
 func (x *UpdateBoardFormRequest) Reset() {
 	*x = UpdateBoardFormRequest{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[6]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -542,7 +765,7 @@ func (x *UpdateBoardFormRequest) String() string {
 func (*UpdateBoardFormRequest) ProtoMessage() {}
 
 func (x *UpdateBoardFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[6]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -555,7 +778,7 @@ func (x *UpdateBoardFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardFormRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardFormRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UpdateBoardFormRequest) GetDefinition() *BoardFormDefinition {
@@ -576,14 +799,14 @@ type BoardFormAnswer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FieldId       string                 `protobuf:"bytes,1,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"`
 	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	Values        []string               `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty"` // MULTISELECT only; value must be empty
+	Values        []string               `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty"` // MULTISELECT, FILE, PEOPLE only; value must be empty
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BoardFormAnswer) Reset() {
 	*x = BoardFormAnswer{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[7]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -595,7 +818,7 @@ func (x *BoardFormAnswer) String() string {
 func (*BoardFormAnswer) ProtoMessage() {}
 
 func (x *BoardFormAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[7]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +831,7 @@ func (x *BoardFormAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardFormAnswer.ProtoReflect.Descriptor instead.
 func (*BoardFormAnswer) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BoardFormAnswer) GetFieldId() string {
@@ -642,7 +865,7 @@ type PreviewBoardFormRequest struct {
 
 func (x *PreviewBoardFormRequest) Reset() {
 	*x = PreviewBoardFormRequest{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[8]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -654,7 +877,7 @@ func (x *PreviewBoardFormRequest) String() string {
 func (*PreviewBoardFormRequest) ProtoMessage() {}
 
 func (x *PreviewBoardFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[8]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -667,7 +890,7 @@ func (x *PreviewBoardFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewBoardFormRequest.ProtoReflect.Descriptor instead.
 func (*PreviewBoardFormRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PreviewBoardFormRequest) GetDefinition() *BoardFormDefinition {
@@ -686,18 +909,19 @@ func (x *PreviewBoardFormRequest) GetAnswers() []*BoardFormAnswer {
 
 // Intentionally excludes board identity, routing settings and allowed users.
 type PublicBoardFormResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	Fields        []*BoardFormField      `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
-	Revision      uint32                 `protobuf:"varint,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Title         string                    `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                    `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Fields        []*BoardFormField         `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
+	Revision      uint32                    `protobuf:"varint,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	People        []*BoardFormPeopleOptions `protobuf:"bytes,5,rep,name=people,proto3" json:"people,omitempty"` // candidates of the PEOPLE fields shown
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PublicBoardFormResponse) Reset() {
 	*x = PublicBoardFormResponse{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[9]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +933,7 @@ func (x *PublicBoardFormResponse) String() string {
 func (*PublicBoardFormResponse) ProtoMessage() {}
 
 func (x *PublicBoardFormResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[9]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +946,7 @@ func (x *PublicBoardFormResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicBoardFormResponse.ProtoReflect.Descriptor instead.
 func (*PublicBoardFormResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PublicBoardFormResponse) GetTitle() string {
@@ -753,6 +977,186 @@ func (x *PublicBoardFormResponse) GetRevision() uint32 {
 	return 0
 }
 
+func (x *PublicBoardFormResponse) GetPeople() []*BoardFormPeopleOptions {
+	if x != nil {
+		return x.People
+	}
+	return nil
+}
+
+type BoardFormPerson struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardFormPerson) Reset() {
+	*x = BoardFormPerson{}
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardFormPerson) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardFormPerson) ProtoMessage() {}
+
+func (x *BoardFormPerson) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardFormPerson.ProtoReflect.Descriptor instead.
+func (*BoardFormPerson) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *BoardFormPerson) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *BoardFormPerson) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type BoardFormPeopleOptions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FieldId       string                 `protobuf:"bytes,1,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"`
+	People        []*BoardFormPerson     `protobuf:"bytes,2,rep,name=people,proto3" json:"people,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardFormPeopleOptions) Reset() {
+	*x = BoardFormPeopleOptions{}
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardFormPeopleOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardFormPeopleOptions) ProtoMessage() {}
+
+func (x *BoardFormPeopleOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardFormPeopleOptions.ProtoReflect.Descriptor instead.
+func (*BoardFormPeopleOptions) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *BoardFormPeopleOptions) GetFieldId() string {
+	if x != nil {
+		return x.FieldId
+	}
+	return ""
+}
+
+func (x *BoardFormPeopleOptions) GetPeople() []*BoardFormPerson {
+	if x != nil {
+		return x.People
+	}
+	return nil
+}
+
+// POST /api/(public/)forms/{code}/files?field=: a staged upload of a FILE field.
+type BoardFormUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"` // capability token, the answer value
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Size          uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	Mime          string                 `protobuf:"bytes,4,opt,name=mime,proto3" json:"mime,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardFormUploadResponse) Reset() {
+	*x = BoardFormUploadResponse{}
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardFormUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardFormUploadResponse) ProtoMessage() {}
+
+func (x *BoardFormUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardFormUploadResponse.ProtoReflect.Descriptor instead.
+func (*BoardFormUploadResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *BoardFormUploadResponse) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *BoardFormUploadResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *BoardFormUploadResponse) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *BoardFormUploadResponse) GetMime() string {
+	if x != nil {
+		return x.Mime
+	}
+	return ""
+}
+
 type SubmitBoardFormRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Revision      uint32                 `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
@@ -764,7 +1168,7 @@ type SubmitBoardFormRequest struct {
 
 func (x *SubmitBoardFormRequest) Reset() {
 	*x = SubmitBoardFormRequest{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[10]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +1180,7 @@ func (x *SubmitBoardFormRequest) String() string {
 func (*SubmitBoardFormRequest) ProtoMessage() {}
 
 func (x *SubmitBoardFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[10]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +1193,7 @@ func (x *SubmitBoardFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitBoardFormRequest.ProtoReflect.Descriptor instead.
 func (*SubmitBoardFormRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SubmitBoardFormRequest) GetRevision() uint32 {
@@ -823,7 +1227,7 @@ type FormSubmissionResponse struct {
 
 func (x *FormSubmissionResponse) Reset() {
 	*x = FormSubmissionResponse{}
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[11]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +1239,7 @@ func (x *FormSubmissionResponse) String() string {
 func (*FormSubmissionResponse) ProtoMessage() {}
 
 func (x *FormSubmissionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_board_forms_proto_msgTypes[11]
+	mi := &file_calaba_v1_board_forms_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +1252,7 @@ func (x *FormSubmissionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FormSubmissionResponse.ProtoReflect.Descriptor instead.
 func (*FormSubmissionResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{11}
+	return file_calaba_v1_board_forms_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FormSubmissionResponse) GetReceiptId() string {
@@ -869,7 +1273,7 @@ var File_calaba_v1_board_forms_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcalaba/v1/board_forms.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\"\xd5\x01\n" +
+	"\x1bcalaba/v1/board_forms.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\"\xe7\x05\n" +
 	"\x0eBoardFormField\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x121\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x1d.calaba.v1.BoardFormFieldTypeR\x04type\x12\x14\n" +
@@ -877,7 +1281,27 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\x04hint\x18\x04 \x01(\tR\x04hint\x12 \n" +
 	"\vplaceholder\x18\x05 \x01(\tR\vplaceholder\x12\x1a\n" +
 	"\brequired\x18\x06 \x01(\bR\brequired\x12\x18\n" +
-	"\aoptions\x18\a \x03(\tR\aoptions\"\xc1\x02\n" +
+	"\aoptions\x18\a \x03(\tR\aoptions\x12\x1a\n" +
+	"\bmultiple\x18\b \x01(\bR\bmultiple\x12\x1b\n" +
+	"\tmax_files\x18\t \x01(\rR\bmaxFiles\x12\x1e\n" +
+	"\vmax_file_mb\x18\n" +
+	" \x01(\rR\tmaxFileMb\x12\x16\n" +
+	"\x06accept\x18\v \x03(\tR\x06accept\x12\x17\n" +
+	"\arole_id\x18\f \x01(\tR\x06roleId\x127\n" +
+	"\x06target\x18\r \x01(\x0e2\x1f.calaba.v1.BoardFormFieldTargetR\x06target\x12\\\n" +
+	"\x11option_priorities\x18\x0e \x03(\v2/.calaba.v1.BoardFormField.OptionPrioritiesEntryR\x10optionPriorities\x12P\n" +
+	"\roption_labels\x18\x0f \x03(\v2+.calaba.v1.BoardFormField.OptionLabelsEntryR\foptionLabels\x1a\\\n" +
+	"\x15OptionPrioritiesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12-\n" +
+	"\x05value\x18\x02 \x01(\x0e2\x17.calaba.v1.TaskPriorityR\x05value:\x028\x01\x1a?\n" +
+	"\x11OptionLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"{\n" +
+	"\x0eBoardFormRoute\x12\x19\n" +
+	"\bfield_id\x18\x01 \x01(\tR\afieldId\x12\x16\n" +
+	"\x06option\x18\x02 \x01(\tR\x06option\x12\x19\n" +
+	"\bboard_id\x18\x03 \x01(\tR\aboardId\x12\x1b\n" +
+	"\tstatus_id\x18\x04 \x01(\tR\bstatusId\"\x97\x03\n" +
 	"\x13BoardFormDefinition\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x121\n" +
@@ -887,7 +1311,10 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"is_private\x18\x05 \x01(\bR\tisPrivate\x12(\n" +
 	"\x10allowed_user_ids\x18\x06 \x03(\tR\x0eallowedUserIds\x12\x1b\n" +
 	"\tstatus_id\x18\a \x01(\tR\bstatusId\x123\n" +
-	"\bpriority\x18\b \x01(\x0e2\x17.calaba.v1.TaskPriorityR\bpriority\"\xb9\x02\n" +
+	"\bpriority\x18\b \x01(\x0e2\x17.calaba.v1.TaskPriorityR\bpriority\x121\n" +
+	"\x06routes\x18\t \x03(\v2\x19.calaba.v1.BoardFormRouteR\x06routes\x12!\n" +
+	"\fshow_members\x18\n" +
+	" \x01(\bR\vshowMembers\"\xb9\x02\n" +
 	"\tBoardForm\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bboard_id\x18\x02 \x01(\tR\aboardId\x12\x10\n" +
@@ -923,12 +1350,24 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2\x1e.calaba.v1.BoardFormDefinitionR\n" +
 	"definition\x124\n" +
-	"\aanswers\x18\x02 \x03(\v2\x1a.calaba.v1.BoardFormAnswerR\aanswers\"\xa0\x01\n" +
+	"\aanswers\x18\x02 \x03(\v2\x1a.calaba.v1.BoardFormAnswerR\aanswers\"\xdb\x01\n" +
 	"\x17PublicBoardFormResponse\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x121\n" +
 	"\x06fields\x18\x03 \x03(\v2\x19.calaba.v1.BoardFormFieldR\x06fields\x12\x1a\n" +
-	"\brevision\x18\x04 \x01(\rR\brevision\"\x80\x01\n" +
+	"\brevision\x18\x04 \x01(\rR\brevision\x129\n" +
+	"\x06people\x18\x05 \x03(\v2!.calaba.v1.BoardFormPeopleOptionsR\x06people\">\n" +
+	"\x0fBoardFormPerson\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"g\n" +
+	"\x16BoardFormPeopleOptions\x12\x19\n" +
+	"\bfield_id\x18\x01 \x01(\tR\afieldId\x122\n" +
+	"\x06people\x18\x02 \x03(\v2\x1a.calaba.v1.BoardFormPersonR\x06people\"r\n" +
+	"\x17BoardFormUploadResponse\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\x12\x12\n" +
+	"\x04mime\x18\x04 \x01(\tR\x04mime\"\x80\x01\n" +
 	"\x16SubmitBoardFormRequest\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\rR\brevision\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\tR\x05nonce\x124\n" +
@@ -936,7 +1375,7 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\x16FormSubmissionResponse\x12\x1d\n" +
 	"\n" +
 	"receipt_id\x18\x01 \x01(\tR\treceiptId\x12\x18\n" +
-	"\apreview\x18\x02 \x01(\bR\apreview*\x90\x03\n" +
+	"\apreview\x18\x02 \x01(\bR\apreview*\xd2\x03\n" +
 	"\x12BoardFormFieldType\x12%\n" +
 	"!BOARD_FORM_FIELD_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aBOARD_FORM_FIELD_TYPE_TEXT\x10\x01\x12#\n" +
@@ -949,7 +1388,17 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\x1bBOARD_FORM_FIELD_TYPE_PHONE\x10\b\x12\x1d\n" +
 	"\x19BOARD_FORM_FIELD_TYPE_URL\x10\t\x12%\n" +
 	"!BOARD_FORM_FIELD_TYPE_MULTISELECT\x10\n" +
-	"B\x9d\x01\n" +
+	"\x12\x1e\n" +
+	"\x1aBOARD_FORM_FIELD_TYPE_FILE\x10\v\x12 \n" +
+	"\x1cBOARD_FORM_FIELD_TYPE_PEOPLE\x10\f*\x9c\x02\n" +
+	"\x14BoardFormFieldTarget\x12 \n" +
+	"\x1cBOARD_FORM_FIELD_TARGET_NONE\x10\x00\x12$\n" +
+	" BOARD_FORM_FIELD_TARGET_PRIORITY\x10\x01\x12$\n" +
+	" BOARD_FORM_FIELD_TARGET_DUE_DATE\x10\x02\x12\"\n" +
+	"\x1eBOARD_FORM_FIELD_TARGET_LABELS\x10\x03\x12%\n" +
+	"!BOARD_FORM_FIELD_TARGET_ASSIGNEES\x10\x04\x12%\n" +
+	"!BOARD_FORM_FIELD_TARGET_APPROVERS\x10\x05\x12$\n" +
+	" BOARD_FORM_FIELD_TARGET_WATCHERS\x10\x06B\x9d\x01\n" +
 	"\rcom.calaba.v1B\x0fBoardFormsProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -965,45 +1414,59 @@ func file_calaba_v1_board_forms_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_board_forms_proto_rawDescData
 }
 
-var file_calaba_v1_board_forms_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_board_forms_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_calaba_v1_board_forms_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_calaba_v1_board_forms_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_calaba_v1_board_forms_proto_goTypes = []any{
 	(BoardFormFieldType)(0),         // 0: calaba.v1.BoardFormFieldType
-	(*BoardFormField)(nil),          // 1: calaba.v1.BoardFormField
-	(*BoardFormDefinition)(nil),     // 2: calaba.v1.BoardFormDefinition
-	(*BoardForm)(nil),               // 3: calaba.v1.BoardForm
-	(*ListBoardFormsResponse)(nil),  // 4: calaba.v1.ListBoardFormsResponse
-	(*BoardFormResponse)(nil),       // 5: calaba.v1.BoardFormResponse
-	(*CreateBoardFormRequest)(nil),  // 6: calaba.v1.CreateBoardFormRequest
-	(*UpdateBoardFormRequest)(nil),  // 7: calaba.v1.UpdateBoardFormRequest
-	(*BoardFormAnswer)(nil),         // 8: calaba.v1.BoardFormAnswer
-	(*PreviewBoardFormRequest)(nil), // 9: calaba.v1.PreviewBoardFormRequest
-	(*PublicBoardFormResponse)(nil), // 10: calaba.v1.PublicBoardFormResponse
-	(*SubmitBoardFormRequest)(nil),  // 11: calaba.v1.SubmitBoardFormRequest
-	(*FormSubmissionResponse)(nil),  // 12: calaba.v1.FormSubmissionResponse
-	(TaskPriority)(0),               // 13: calaba.v1.TaskPriority
-	(*timestamppb.Timestamp)(nil),   // 14: google.protobuf.Timestamp
+	(BoardFormFieldTarget)(0),       // 1: calaba.v1.BoardFormFieldTarget
+	(*BoardFormField)(nil),          // 2: calaba.v1.BoardFormField
+	(*BoardFormRoute)(nil),          // 3: calaba.v1.BoardFormRoute
+	(*BoardFormDefinition)(nil),     // 4: calaba.v1.BoardFormDefinition
+	(*BoardForm)(nil),               // 5: calaba.v1.BoardForm
+	(*ListBoardFormsResponse)(nil),  // 6: calaba.v1.ListBoardFormsResponse
+	(*BoardFormResponse)(nil),       // 7: calaba.v1.BoardFormResponse
+	(*CreateBoardFormRequest)(nil),  // 8: calaba.v1.CreateBoardFormRequest
+	(*UpdateBoardFormRequest)(nil),  // 9: calaba.v1.UpdateBoardFormRequest
+	(*BoardFormAnswer)(nil),         // 10: calaba.v1.BoardFormAnswer
+	(*PreviewBoardFormRequest)(nil), // 11: calaba.v1.PreviewBoardFormRequest
+	(*PublicBoardFormResponse)(nil), // 12: calaba.v1.PublicBoardFormResponse
+	(*BoardFormPerson)(nil),         // 13: calaba.v1.BoardFormPerson
+	(*BoardFormPeopleOptions)(nil),  // 14: calaba.v1.BoardFormPeopleOptions
+	(*BoardFormUploadResponse)(nil), // 15: calaba.v1.BoardFormUploadResponse
+	(*SubmitBoardFormRequest)(nil),  // 16: calaba.v1.SubmitBoardFormRequest
+	(*FormSubmissionResponse)(nil),  // 17: calaba.v1.FormSubmissionResponse
+	nil,                             // 18: calaba.v1.BoardFormField.OptionPrioritiesEntry
+	nil,                             // 19: calaba.v1.BoardFormField.OptionLabelsEntry
+	(TaskPriority)(0),               // 20: calaba.v1.TaskPriority
+	(*timestamppb.Timestamp)(nil),   // 21: google.protobuf.Timestamp
 }
 var file_calaba_v1_board_forms_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.BoardFormField.type:type_name -> calaba.v1.BoardFormFieldType
-	1,  // 1: calaba.v1.BoardFormDefinition.fields:type_name -> calaba.v1.BoardFormField
-	13, // 2: calaba.v1.BoardFormDefinition.priority:type_name -> calaba.v1.TaskPriority
-	2,  // 3: calaba.v1.BoardForm.definition:type_name -> calaba.v1.BoardFormDefinition
-	14, // 4: calaba.v1.BoardForm.created_at:type_name -> google.protobuf.Timestamp
-	14, // 5: calaba.v1.BoardForm.updated_at:type_name -> google.protobuf.Timestamp
-	3,  // 6: calaba.v1.ListBoardFormsResponse.forms:type_name -> calaba.v1.BoardForm
-	3,  // 7: calaba.v1.BoardFormResponse.form:type_name -> calaba.v1.BoardForm
-	2,  // 8: calaba.v1.CreateBoardFormRequest.definition:type_name -> calaba.v1.BoardFormDefinition
-	2,  // 9: calaba.v1.UpdateBoardFormRequest.definition:type_name -> calaba.v1.BoardFormDefinition
-	2,  // 10: calaba.v1.PreviewBoardFormRequest.definition:type_name -> calaba.v1.BoardFormDefinition
-	8,  // 11: calaba.v1.PreviewBoardFormRequest.answers:type_name -> calaba.v1.BoardFormAnswer
-	1,  // 12: calaba.v1.PublicBoardFormResponse.fields:type_name -> calaba.v1.BoardFormField
-	8,  // 13: calaba.v1.SubmitBoardFormRequest.answers:type_name -> calaba.v1.BoardFormAnswer
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	1,  // 1: calaba.v1.BoardFormField.target:type_name -> calaba.v1.BoardFormFieldTarget
+	18, // 2: calaba.v1.BoardFormField.option_priorities:type_name -> calaba.v1.BoardFormField.OptionPrioritiesEntry
+	19, // 3: calaba.v1.BoardFormField.option_labels:type_name -> calaba.v1.BoardFormField.OptionLabelsEntry
+	2,  // 4: calaba.v1.BoardFormDefinition.fields:type_name -> calaba.v1.BoardFormField
+	20, // 5: calaba.v1.BoardFormDefinition.priority:type_name -> calaba.v1.TaskPriority
+	3,  // 6: calaba.v1.BoardFormDefinition.routes:type_name -> calaba.v1.BoardFormRoute
+	4,  // 7: calaba.v1.BoardForm.definition:type_name -> calaba.v1.BoardFormDefinition
+	21, // 8: calaba.v1.BoardForm.created_at:type_name -> google.protobuf.Timestamp
+	21, // 9: calaba.v1.BoardForm.updated_at:type_name -> google.protobuf.Timestamp
+	5,  // 10: calaba.v1.ListBoardFormsResponse.forms:type_name -> calaba.v1.BoardForm
+	5,  // 11: calaba.v1.BoardFormResponse.form:type_name -> calaba.v1.BoardForm
+	4,  // 12: calaba.v1.CreateBoardFormRequest.definition:type_name -> calaba.v1.BoardFormDefinition
+	4,  // 13: calaba.v1.UpdateBoardFormRequest.definition:type_name -> calaba.v1.BoardFormDefinition
+	4,  // 14: calaba.v1.PreviewBoardFormRequest.definition:type_name -> calaba.v1.BoardFormDefinition
+	10, // 15: calaba.v1.PreviewBoardFormRequest.answers:type_name -> calaba.v1.BoardFormAnswer
+	2,  // 16: calaba.v1.PublicBoardFormResponse.fields:type_name -> calaba.v1.BoardFormField
+	14, // 17: calaba.v1.PublicBoardFormResponse.people:type_name -> calaba.v1.BoardFormPeopleOptions
+	13, // 18: calaba.v1.BoardFormPeopleOptions.people:type_name -> calaba.v1.BoardFormPerson
+	10, // 19: calaba.v1.SubmitBoardFormRequest.answers:type_name -> calaba.v1.BoardFormAnswer
+	20, // 20: calaba.v1.BoardFormField.OptionPrioritiesEntry.value:type_name -> calaba.v1.TaskPriority
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_board_forms_proto_init() }
@@ -1017,8 +1480,8 @@ func file_calaba_v1_board_forms_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_board_forms_proto_rawDesc), len(file_calaba_v1_board_forms_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   12,
+			NumEnums:      2,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

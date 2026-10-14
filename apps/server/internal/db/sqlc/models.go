@@ -415,6 +415,7 @@ type BoardForm struct {
 	CreatedBy  *uuid.UUID
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	UpdatedBy  *uuid.UUID
 }
 
 type BoardFormSubmission struct {
@@ -425,6 +426,16 @@ type BoardFormSubmission struct {
 	ActorID     *uuid.UUID
 	TaskID      *uuid.UUID
 	CreatedAt   time.Time
+}
+
+type BoardFormUpload struct {
+	FileID    uuid.UUID
+	FormID    uuid.UUID
+	FieldID   uuid.UUID
+	TokenHash []byte
+	ActorID   *uuid.UUID
+	Size      int64
+	CreatedAt time.Time
 }
 
 type BoardGit struct {
@@ -834,7 +845,7 @@ type ExternalRemindersSent struct {
 type File struct {
 	ID              uuid.UUID
 	WorkspaceID     *uuid.UUID
-	UploaderID      uuid.UUID
+	UploaderID      *uuid.UUID
 	Key             string
 	ThumbnailKey    *string
 	Name            string

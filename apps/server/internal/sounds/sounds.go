@@ -139,7 +139,7 @@ func source(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, raw st
 	if err != nil {
 		return f, err
 	}
-	if f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller || f.Size > files.MaxSoundSourceBytes || f.Width != nil {
+	if f.WorkspaceID == nil || *f.WorkspaceID != wsID || (f.UploaderID == nil || *f.UploaderID != caller) || f.Size > files.MaxSoundSourceBytes || f.Width != nil {
 		return f, bad
 	}
 	if _, err := q.GetStickerFileWorkspace(ctx, id); err == nil {

@@ -1,4 +1,4 @@
-import { BoardFormResponseSchema, CreateBoardFormRequestSchema, UpdateBoardFormRequestSchema, ListBoardFormsResponseSchema, PublicBoardFormResponseSchema, SubmitBoardFormRequestSchema, PreviewBoardFormRequestSchema, FormSubmissionResponseSchema } from '@calaba/protocol';
+import { BoardFormResponseSchema, BoardFormUploadResponseSchema, CreateBoardFormRequestSchema, UpdateBoardFormRequestSchema, ListBoardFormsResponseSchema, PublicBoardFormResponseSchema, SubmitBoardFormRequestSchema, PreviewBoardFormRequestSchema, FormSubmissionResponseSchema } from '@calaba/protocol';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { create, toJson, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
@@ -702,6 +702,15 @@ export class Bot extends Emitter<BotEvents> {
     delete: (boardId: string, formId: string) => this.rest.request('DELETE', `/api/boards/${enc(boardId)}/forms/${enc(formId)}`),
     get: (code: string) => this.rest.call(PublicBoardFormResponseSchema, 'GET', `/api/forms/${enc(code)}`),
     submit: (code: string, input: MessageInitShape<typeof SubmitBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/forms/${enc(code)}/submissions`, { json: Rest.body(SubmitBoardFormRequestSchema, input) }),
+    /** Stages a file of a FILE field (ADR-0064 v2); answer the field with `values: [uploadId]` within an hour. */
+    upload: (code: string, fieldId: string, file: FileInput) =>
+      this.rest.call(BoardFormUploadResponseSchema, 'POST', `/api/forms/${enc(code)}/files?field=${enc(fieldId)}`, {
+        form: () => {
+          const f = new FormData();
+          f.append('file', toBlob(file.data, file.type), file.name);
+          return f;
+        },
+      }),
     preview: (boardId: string, input: MessageInitShape<typeof PreviewBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/boards/${enc(boardId)}/forms/preview`, { json: Rest.body(PreviewBoardFormRequestSchema, input) }),
   };
 

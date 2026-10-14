@@ -112,7 +112,7 @@ func PersonalQuota(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, defau
 	if err != nil {
 		return Quota{}, err
 	}
-	used, err := q.PersonalStorageBytes(ctx, userID)
+	used, err := q.PersonalStorageBytes(ctx, &userID)
 	if err != nil {
 		return Quota{}, err
 	}

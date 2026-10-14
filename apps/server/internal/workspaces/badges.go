@@ -70,7 +70,7 @@ func badgeFile(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, raw
 		return uuid.Nil, err
 	}
 	switch {
-	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller:
+	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || (f.UploaderID == nil || *f.UploaderID != caller):
 		return uuid.Nil, bad
 	case f.Mime != "image/png" && f.Mime != "image/webp" && f.Mime != "image/jpeg":
 		return uuid.Nil, bad

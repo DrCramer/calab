@@ -173,6 +173,8 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/forms/{code}/submissions":                                                scopeForm,
 	"GET /api/public/forms/{code}":                                                      scopePublic,
 	"POST /api/public/forms/{code}/submissions":                                         scopePublic,
+	"POST /api/forms/{code}/files":                                                      scopeForm,
+	"POST /api/public/forms/{code}/files":                                               scopePublic,
 
 	"GET /api/workspaces/{id}/achievements":                               scopeWorkspace,
 	"POST /api/workspaces/{id}/achievements":                              scopeWorkspace,
