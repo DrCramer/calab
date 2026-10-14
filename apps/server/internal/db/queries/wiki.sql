@@ -538,3 +538,8 @@ SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.title),
     to_tsquery('russian', sqlc.arg('tsq')::text) || to_tsquery('simple', sqlc.arg('tsq')::text),
     sqlc.arg('options')::text)::text AS snippet
 FROM wiki_pages w WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: SetWikiPageOwner :exec
+-- «Сделать меня владельцем» (addendum 2026-10-14): a former member's private page gets a new owner.
+UPDATE wiki_pages SET owner_id = sqlc.arg('owner_id'), updated_by = sqlc.arg('owner_id'), updated_at = now()
+WHERE id = sqlc.arg('id');

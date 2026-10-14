@@ -47,6 +47,8 @@ func apiErrOf(t *testing.T, c *client, want int, method, path string, in any) (v
 		st = c.do(method, path, m, nil)
 	case *v1.JoinRoomInviteRequest:
 		st = c.do(method, path, m, nil)
+	case *v1.UpdateWorkspaceRequest:
+		st = c.do(method, path, m, nil)
 	default:
 		t.Fatalf("unexpected body %T", in)
 	}

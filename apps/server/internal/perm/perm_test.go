@@ -76,7 +76,7 @@ type treeVector struct {
 	// Addendum 2026-10-14: the member is the workspace owner with «Владелец видит приватное».
 	Owner            bool `json:"owner"`
 	OwnerSeesPrivate bool `json:"ownerSeesPrivate"`
-	Chain []struct {
+	Chain            []struct {
 		Restricted    bool                `json:"restricted"`
 		Owner         bool                `json:"owner"`
 		RoleOverrides map[string]Override `json:"roleOverrides"`

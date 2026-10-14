@@ -401,6 +401,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/disk/trash/empty": botAllow,
 	"GET /api/workspaces/{id}/disk/usage":        botAllow,
 	"GET /api/workspaces/{id}/disk/activity":     botAllow,
+	"GET /api/workspaces/{id}/audit":             botAllow, // VIEW_JOURNALS, if a role gives it
 	"GET /api/workspaces/{id}/disk/settings":     botAllow,
 	"PUT /api/workspaces/{id}/disk/settings":     botAllow,
 	"GET /api/disk/items/{id}":                   botAllow,
@@ -412,6 +413,7 @@ var botRoutes = map[string]botAccess{
 	"GET /api/disk/items/{id}/activity":          botAllow,
 	"GET /api/disk/items/{id}/permissions":       botAllow,
 	"PUT /api/disk/items/{id}/permissions":       botAllow,
+	"POST /api/disk/items/{id}/take-over":        botDeny, // the workspace owner only
 	"POST /api/disk/items/{id}/link":             botAllow,
 	"DELETE /api/disk/items/{id}/link":           botAllow,
 	"GET /api/public/disk/{code}":                botPublic,
@@ -435,6 +437,7 @@ var botRoutes = map[string]botAccess{
 	"GET /api/wiki/pages/{id}/activity":          botAllow,
 	"GET /api/wiki/pages/{id}/permissions":       botAllow,
 	"PUT /api/wiki/pages/{id}/permissions":       botAllow,
+	"POST /api/wiki/pages/{id}/take-over":        botDeny, // the workspace owner only
 	"POST /api/wiki/pages/{id}/link":             botAllow,
 	"DELETE /api/wiki/pages/{id}/link":           botAllow,
 	"GET /api/wiki/pages/{id}/versions":          botAllow,

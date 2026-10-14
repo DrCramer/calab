@@ -1540,6 +1540,39 @@ func (q *Queries) RevokeDiskLink(ctx context.Context, itemID uuid.UUID) (int64, 
 	return result.RowsAffected(), nil
 }
 
+const setDiskItemOwner = `-- name: SetDiskItemOwner :one
+UPDATE disk_items SET owner_id = $1, updated_at = now()
+WHERE id = $2
+RETURNING id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root
+`
+
+type SetDiskItemOwnerParams struct {
+	OwnerID *uuid.UUID
+	ID      uuid.UUID
+}
+
+// «Сделать меня владельцем» (addendum 2026-10-14): a former member's private item gets a new owner.
+func (q *Queries) SetDiskItemOwner(ctx context.Context, arg SetDiskItemOwnerParams) (DiskItem, error) {
+	row := q.db.QueryRow(ctx, setDiskItemOwner, arg.OwnerID, arg.ID)
+	var i DiskItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ParentID,
+		&i.Kind,
+		&i.Name,
+		&i.FileID,
+		&i.OwnerID,
+		&i.Restricted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TrashedAt,
+		&i.TrashedBy,
+		&i.TrashedRoot,
+	)
+	return i, err
+}
+
 const setDiskTrashDays = `-- name: SetDiskTrashDays :exec
 UPDATE workspaces SET disk_trash_days = $1 WHERE id = $2
 `

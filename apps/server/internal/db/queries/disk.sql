@@ -376,3 +376,9 @@ SELECT * FROM files WHERE id = ANY(sqlc.arg('ids')::uuid[]);
 -- order of an upload (ReserveQuota, then the item under LockDiskTree), so a deletion and an upload
 -- into the same folder never wait for each other crosswise.
 SELECT 1 FROM workspaces WHERE id = $1 FOR NO KEY UPDATE;
+
+-- name: SetDiskItemOwner :one
+-- «Сделать меня владельцем» (addendum 2026-10-14): a former member's private item gets a new owner.
+UPDATE disk_items SET owner_id = sqlc.arg('owner_id'), updated_at = now()
+WHERE id = sqlc.arg('id')
+RETURNING *;
