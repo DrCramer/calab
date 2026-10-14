@@ -47,7 +47,7 @@ func (q *Queries) AdminSearchWorkspaces(ctx context.Context, pattern string) ([]
 }
 
 const adminWorkspaceDetails = `-- name: AdminWorkspaceDetails :many
-SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
+SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
     p.note AS plan_note, p.updated_by AS plan_updated_by, p.updated_at AS plan_updated_at,
     sb.email AS suspended_by_email,
     (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role <> 'guest')::integer AS members,
@@ -109,6 +109,7 @@ func (q *Queries) AdminWorkspaceDetails(ctx context.Context, ids []uuid.UUID) ([
 			&i.Workspace.SuspendedBy,
 			&i.Workspace.TimeFormat,
 			&i.Workspace.SipEnabled,
+			&i.Workspace.DiskTrashDays,
 			&i.User.ID,
 			&i.User.Email,
 			&i.User.PasswordHash,
@@ -192,6 +193,8 @@ SELECT
     (SELECT count(*) FROM workspace_members m JOIN users u ON u.id = m.user_id
         WHERE m.workspace_id = $1::uuid AND u.is_bot)::bigint AS bots,
     (SELECT w.storage_used_bytes FROM workspaces w WHERE w.id = $1::uuid)::bigint AS storage_bytes,
+    (SELECT coalesce(sum(a.size_mb), 0) FROM workspace_storage_addons a
+        WHERE a.workspace_id = $1::uuid AND a.active)::bigint AS storage_addon_mb,
     (SELECT count(*) FROM boards b WHERE b.workspace_id = $1::uuid)::bigint AS boards,
     (SELECT count(*) FROM sticker_packs p WHERE p.workspace_id = $1::uuid AND p.deleted_at IS NULL)::bigint AS sticker_packs,
     (SELECT count(*) FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL
@@ -216,6 +219,7 @@ type GetWorkspacePlanUsageRow struct {
 	Members          int64
 	Bots             int64
 	StorageBytes     int64
+	StorageAddonMb   int64
 	Boards           int64
 	StickerPacks     int64
 	Stickers         int64
@@ -240,6 +244,7 @@ func (q *Queries) GetWorkspacePlanUsage(ctx context.Context, workspaceID uuid.UU
 		&i.Members,
 		&i.Bots,
 		&i.StorageBytes,
+		&i.StorageAddonMb,
 		&i.Boards,
 		&i.StickerPacks,
 		&i.Stickers,

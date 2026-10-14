@@ -655,6 +655,53 @@ type DirectorySyncRun struct {
 	FinishedAt    *time.Time
 }
 
+type DiskActivity struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ItemID      *uuid.UUID
+	ItemName    string
+	ActorID     *uuid.UUID
+	Kind        string
+	Before      []byte
+	After       []byte
+	CreatedAt   time.Time
+}
+
+type DiskItem struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	FileID      *uuid.UUID
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type DiskLink struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	Code      string
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt *time.Time
+	RevokedAt *time.Time
+	Downloads int32
+}
+
+type DiskPermission struct {
+	ItemID     uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
+}
+
 type DmMember struct {
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
@@ -1574,6 +1621,7 @@ type Workspace struct {
 	SuspendedBy             *uuid.UUID
 	TimeFormat              string
 	SipEnabled              bool
+	DiskTrashDays           *int32
 }
 
 type WorkspaceAdminLog struct {
@@ -1819,4 +1867,14 @@ type WorkspaceSound struct {
 	DurationMs  int32
 	Position    int16
 	CreatedAt   time.Time
+}
+
+type WorkspaceStorageAddon struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	SizeMb      int64
+	Sku         string
+	Active      bool
+	CreatedAt   time.Time
+	EndedAt     *time.Time
 }

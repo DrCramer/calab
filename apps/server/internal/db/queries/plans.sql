@@ -66,6 +66,8 @@ SELECT
     (SELECT count(*) FROM workspace_members m JOIN users u ON u.id = m.user_id
         WHERE m.workspace_id = sqlc.arg('workspace_id')::uuid AND u.is_bot)::bigint AS bots,
     (SELECT w.storage_used_bytes FROM workspaces w WHERE w.id = sqlc.arg('workspace_id')::uuid)::bigint AS storage_bytes,
+    (SELECT coalesce(sum(a.size_mb), 0) FROM workspace_storage_addons a
+        WHERE a.workspace_id = sqlc.arg('workspace_id')::uuid AND a.active)::bigint AS storage_addon_mb,
     (SELECT count(*) FROM boards b WHERE b.workspace_id = sqlc.arg('workspace_id')::uuid)::bigint AS boards,
     (SELECT count(*) FROM sticker_packs p WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid AND p.deleted_at IS NULL)::bigint AS sticker_packs,
     (SELECT count(*) FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL

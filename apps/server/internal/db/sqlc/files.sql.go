@@ -234,6 +234,7 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM rooms ri WHERE ri.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
                     AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text AND mi.deleted_at IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500
 `
@@ -241,7 +242,8 @@ LIMIT 500
 // Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
 // (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
 // (ADR-0061), room picture or its live system message (ADR-0092; deleted messages are never
-// purged, so a deleted one must not keep the file), older than the cutoff.
+// purged, so a deleted one must not keep the file), not a file of the Disk (ADR-0094; trashed
+// ones included: the trash counts in the quota until deleted forever), older than the cutoff.
 func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]File, error) {
 	rows, err := q.db.Query(ctx, listOrphanFiles, createdAt)
 	if err != nil {
@@ -387,6 +389,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
 `
 
 type UnattachedBytesByUploaderParams struct {
@@ -395,7 +398,7 @@ type UnattachedBytesByUploaderParams struct {
 }
 
 // Bytes a user uploaded to a workspace that are not attached to any message yet (stickers
-// are not uploads waiting for a message).
+// and files of the Disk, ADR-0094, are not uploads waiting for a message).
 func (q *Queries) UnattachedBytesByUploader(ctx context.Context, arg UnattachedBytesByUploaderParams) (int64, error) {
 	row := q.db.QueryRow(ctx, unattachedBytesByUploader, arg.UploaderID, arg.WorkspaceID)
 	var column_1 int64

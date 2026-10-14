@@ -81,11 +81,15 @@ RETURNING *;
 DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
 
 -- name: DeleteUserOverridesInWorkspace :exec
--- A member leaves: their room overrides and board overrides (ADR-0042) go.
+-- A member leaves: their room, board (ADR-0042) and disk (ADR-0094) overrides go.
 WITH boards_gone AS (
     DELETE FROM board_permissions bp USING boards bb
     WHERE bp.board_id = bb.id AND bb.workspace_id = sqlc.arg('workspace_id')::uuid
       AND bp.target_type = 'user' AND bp.target_id = sqlc.arg('user_id')::text
+), disk_gone AS (
+    DELETE FROM disk_permissions dp USING disk_items di
+    WHERE dp.item_id = di.id AND di.workspace_id = sqlc.arg('workspace_id')::uuid
+      AND dp.target_type = 'user' AND dp.target_id = sqlc.arg('user_id')::text
 )
 DELETE FROM room_permissions rp
 USING rooms r

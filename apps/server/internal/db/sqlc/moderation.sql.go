@@ -241,7 +241,7 @@ SET suspended_at     = $1,
     suspended_reason = $2,
     suspended_by     = $3
 WHERE id = $4
-RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days
 `
 
 type SetWorkspaceSuspensionParams struct {
@@ -280,6 +280,7 @@ func (q *Queries) SetWorkspaceSuspension(ctx context.Context, arg SetWorkspaceSu
 		&i.SuspendedBy,
 		&i.TimeFormat,
 		&i.SipEnabled,
+		&i.DiskTrashDays,
 	)
 	return i, err
 }

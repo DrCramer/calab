@@ -91,8 +91,8 @@ const (
 // RoleDefaults are the initial permissions of the built-in roles (migration 00021 creates
 // them with these values; member and guest are editable since ADR-0026).
 var RoleDefaults = map[Role]Bits{
-	RoleOwner:  Administrator,
-	RoleAdmin:  Administrator,
+	RoleOwner: Administrator,
+	RoleAdmin: Administrator,
 	// DiskView | DiskWrite (ADR-0094): migration 00088 gave them to the existing member roles.
 	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
