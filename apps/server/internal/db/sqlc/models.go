@@ -577,6 +577,18 @@ type BotCommand struct {
 	Position    int16
 }
 
+type BotContactShare struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	BotUserID   uuid.UUID
+	UserID      uuid.UUID
+	RoomID      uuid.UUID
+	MessageID   uuid.UUID
+	ButtonID    string
+	Fields      []string
+	CreatedAt   time.Time
+}
+
 type BotWebhookDelivery struct {
 	ID          uuid.UUID
 	BotUserID   uuid.UUID
