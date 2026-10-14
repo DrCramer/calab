@@ -12,29 +12,30 @@ export type BotRoute = { method: string; path: string; decision: Decision; group
 
 const DECISIONS: Record<string, Decision> = { botAllow: 'allow', botDeny: 'deny', botPublic: 'public' };
 
-// First match wins: more specific prefixes go first. A path that matches nothing is `other`.
+// Groups are the areas of the docs (`<!-- routes:<group> -->` markers in apps/landing/src/content/docs):
+// boards = boards + tasks, rooms = rooms + voice + sounds, profile = /api/me + /api/bots/me.
+// First match wins: more specific rules go first. A path that matches nothing is `other`.
 const GROUP_RULES: [RegExp, string][] = [
   [/^\/(?:oidc\/|\.well-known\/oauth)|\/oauth(?:\/|-grants)|^\/api\/oauth\//, 'oauth'],
   [/\/identity(?:\/|$)|^\/api\/auth\/sso\//, 'sso'],
   [/^\/api\/auth\//, 'auth'],
   [/^\/api\/admin\//, 'admin'],
   [/\/billing(?:\/|$)/, 'billing'],
-  [/^\/api\/bots\/|\/bot-commands$|\/bots(?:\/|$)|\/blocked-bots/, 'bots'],
+  [/sticker/, 'stickers'],
+  [/^\/api\/bots\/me(?:\/|$)|\/bot-commands$/, 'profile'],
+  [/^\/api\/bots\/|\/bots(?:\/|$)|\/blocked-bots/, 'bots'],
   [/forms(?:\/|$)/, 'forms'],
   [/\/disk(?:\/|$)/, 'disk'],
   [/\/wiki(?:\/|$)/, 'wiki'],
-  [/\/search$/, 'search'],
   [/^\/api\/notes(?:\/|$)/, 'notes'],
-  [/^\/api\/(?:tasks|t|checklists|checklist-items|task-milestones)\/|^\/api\/me\/tasks$|\/boards\/\{[^}]+\}\/tasks$/, 'tasks'],
-  [/^\/api\/(?:boards|board-categories|rules|git)\/|\/boards(?:\/order)?$|\/board-categories$/, 'boards'],
+  [/^\/api\/(?:tasks|t|checklists|checklist-items|task-milestones|boards|board-categories|rules|git)\/|^\/api\/me\/tasks$|\/tasks\/search$|\/boards(?:\/order)?$|\/board-categories$/, 'boards'],
+  [/\/search$|^\/api\/me\/mentions$/, 'search'],
   [/^\/api\/(?:events|event-rsvp)(?:\/|$)|\/events(?:\/|$)|\/freebusy|\/caldav|\/external-events/, 'calendar'],
-  [/^\/api\/dms(?:\/|$)/, 'dms'],
-  [/\/messages(?:\/|$)|^\/api\/messages\/|\/pins$|^\/api\/unfurl|\/rooms\/\{[^}]+\}\/read$/, 'messages'],
-  [/\/voice|^\/api\/rooms\/\{[^}]+\}\/join$|\/stream\/|\/camera\/|\/sounds\/play$|\/recording|\/admissions|\/calls(?:\/|$)|^\/api\/rtc\//, 'voice'],
-  [/sticker/, 'stickers'],
+  [/^\/api\/dms(?:\/|$)/, 'dm'],
+  [/\/messages(?:\/|$)|^\/api\/messages\/|\/pins$|^\/api\/unfurl|\/rooms\/\{[^}]+\}\/read$|\/transcript$/, 'messages'],
+  [/\/voice|^\/api\/rooms\/\{[^}]+\}\/join$|\/stream\/|\/camera\/|\/sounds(?:\/|$)|\/recording|\/admissions|\/calls(?:\/|$)|^\/api\/rtc\/|\/rooms(?:\/|$)|^\/api\/rooms\/|\/categories(?:\/|$)|^\/api\/categories\//, 'rooms'],
   [/\/files(?:\/|$)|^\/api\/files\//, 'files'],
-  [/\/rooms(?:\/|$)|^\/api\/rooms\/|\/categories(?:\/|$)|^\/api\/categories\//, 'rooms'],
-  [/\/(?:members|roles|bans|badges|invites|birthdays|achievements)(?:\/|$)|^\/api\/invites\/|^\/api\/room-invites\//, 'members'],
+  [/\/(?:members|roles|bans|badges|invites|birthdays|achievements)(?:\/|$)|^\/api\/invites\/|^\/api\/room-invites\/|^\/api\/workspaces(?:\/\{[^}]+\})?$/, 'members'],
   [/^\/api\/me(?:\/|$)|^\/api\/users\/|^\/api\/usernames\//, 'profile'],
   [/^\/api\/workspaces(?:\/|$)|^\/api\/workspace-apps\//, 'workspaces'],
   [/^\/(?:gateway|healthz|readyz|metrics)$|^\/api\/version$|^\/api\/$/, 'system'],

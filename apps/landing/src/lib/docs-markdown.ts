@@ -6,7 +6,7 @@
 // slots filled with shiki output) → HTML string. Generated markup (code blocks, tabs) is inserted
 // after sanitizing, so the allowlist only has to admit what authors may write by hand.
 import { posix } from 'node:path';
-import type { Element, ElementContent, Root as HastRoot, RootContent as HastContent } from 'hast';
+import type { Element, ElementContent, Root as HastRoot } from 'hast';
 import { toString as hastToString } from 'hast-util-to-string';
 import type { Blockquote, Code, Parent, Root as MdRoot, RootContent } from 'mdast';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
@@ -39,6 +39,8 @@ export type Rendered = {
   ids: string[];
   links: DocLink[];
   sections: SearchSection[];
+  /** Source without frontmatter, route tables expanded (llms-full.txt). */
+  markdown: string;
 };
 export type RenderContext = {
   lang: DocLang;
@@ -50,36 +52,60 @@ export type RenderContext = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Directives: `<!-- routes:group=boards -->` (or a ```routes group=boards fence) → a GFM table
-// of that group's routes from _routes.json. Expanded in the source text, so the same table goes
-// to the HTML and to llms-full.txt. Options: `group=<name>|all`, `decision=allow,public`.
+// Route tables (DOC2 convention): `<!-- routes:<spec> -->` … hand-written GFM table … `<!-- /routes -->`.
+// At build time the rows between the markers are regenerated from _routes.json (botroutes.go), so a
+// new route appears without editing the page; the third column («Что делает» / «Область») is kept
+// from the hand-written row with the same method + path. Specs:
+//   <group>        bot routes of the group (`allow`) plus any other listed row, hand order first
+//   allow:<group>  bot routes of the group
+//   public | deny  every public / people-only route
+// The build fails on an unknown spec, a group without routes, or a hand-written row that is no
+// longer in botroutes.go. Expanded in the source text: the HTML and llms-full.txt get the same table.
 
-const DIRECTIVE = /^[ \t]*(?:<!--\s*routes:([^\n]*?)\s*-->|```routes([^\n]*)\n```)[ \t]*$/gm;
+const BLOCK = /^<!--[ \t]*routes:([^\s>]+)[ \t]*-->[ \t]*\n([\s\S]*?)^<!--[ \t]*\/routes[ \t]*-->[ \t]*$/gm;
+const ROW = /^\|\s*`([A-Z]+)`\s*\|\s*`([^`]+)`\s*\|(.*)\|\s*$/;
+const routeKey = (method: string, path: string) => `${method === '*' ? 'ANY' : method} ${path}`;
 
-function directiveOptions(text: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const m of text.matchAll(/([a-z]+)=("[^"]*"|\S+)/g)) out[m[1] ?? ''] = (m[2] ?? '').replace(/^"|"$/g, '');
-  return out;
-}
+export function expandRouteBlock(spec: string, body: string, routes: readonly BotRoute[], lang: DocLang): string {
+  const lines = body.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('|'));
+  const header = lines[0] ?? `| ${docsUi(lang).routes.method} | ${docsUi(lang).routes.path} | ${docsUi(lang).routes.bots} |`;
+  const byKey = new Map(routes.map((r) => [routeKey(r.method, r.path), r]));
+  const hand = new Map<string, string>();
+  const stale: string[] = [];
+  for (const line of lines.slice(2)) {
+    const m = ROW.exec(line);
+    if (!m) continue;
+    const key = routeKey(m[1] ?? '', m[2] ?? '');
+    if (!byKey.has(key)) stale.push(key);
+    hand.set(key, (m[3] ?? '').trim());
+  }
+  if (stale.length > 0) throw new Error(`routes:${spec}: not in botroutes.go: ${stale.join(', ')}`);
 
-export function routesTable(routes: readonly BotRoute[], options: Record<string, string>, lang: DocLang): string {
+  let selected: BotRoute[];
+  const [kind, group] = spec.includes(':') ? spec.split(':') : [null, spec];
+  if (spec === 'public' || spec === 'deny') selected = routes.filter((r) => r.decision === spec);
+  else if (kind === 'allow') selected = routes.filter((r) => r.decision === 'allow' && r.group === group);
+  else if (kind === null) selected = routes.filter((r) => r.decision === 'allow' && r.group === group);
+  else throw new Error(`routes:${spec}: unknown spec (use <group>, allow:<group>, public or deny)`);
+  if (selected.length === 0) throw new Error(`routes:${spec}: no routes of this group in _routes.json`);
+
+  const keys = new Set(selected.map((r) => routeKey(r.method, r.path)));
+  // `<group>` pages may list related rows of other groups (DM files on the Files page): keep them.
+  const order = kind === null ? [...hand.keys(), ...[...keys].filter((k) => !hand.has(k))] : [...keys];
   const ui = docsUi(lang);
-  const group = options.group;
-  if (group === undefined || group === '') throw new Error('routes directive: `group=` is required');
-  const decisions = options.decision?.split(',').map((d) => d.trim());
-  const rows = routes.filter((r) => (group === 'all' || r.group === group) && (decisions === undefined || decisions.includes(r.decision)));
-  if (rows.length === 0) throw new Error(`routes directive: no routes for ${JSON.stringify(options)}`);
-  const cell = (s: string) => s.replace(/\|/g, '\\|');
-  return [
-    `| ${ui.routes.method} | ${ui.routes.path} | ${ui.routes.bots} |`,
-    '| --- | --- | --- |',
-    ...rows.map((r) => `| \`${r.method === '*' ? 'ANY' : r.method}\` | \`${cell(r.path)}\` | ${ui.decisions[r.decision]} |`),
-  ].join('\n');
+  const fallback = (r: BotRoute) => (r.decision === 'deny' ? r.group : r.decision === 'public' ? ui.decisions.public : '—');
+  const rows = order.map((key) => {
+    const r = byKey.get(key);
+    if (r === undefined) return '';
+    const [method, ...path] = key.split(' ');
+    return `| \`${method ?? ''}\` | \`${path.join(' ')}\` | ${hand.get(key) || fallback(r)} |`;
+  });
+  return [header, '|---|---|---|', ...rows].join('\n');
 }
 
 export const expandDirectives = (source: string, routes: readonly BotRoute[], lang: DocLang): string =>
-  source.replace(DIRECTIVE, (_m, comment: string | undefined, fence: string | undefined) =>
-    routesTable(routes, directiveOptions(comment ?? fence ?? ''), lang));
+  source.replace(BLOCK, (_m, spec: string, body: string) =>
+    `<!-- routes:${spec} -->\n${expandRouteBlock(spec, body, routes, lang)}\n<!-- /routes -->`);
 
 // ---------------------------------------------------------------------------------------------
 // Frontmatter
@@ -148,7 +174,7 @@ function remarkCodeSlots(slots: Slot[]) {
   return (tree: MdRoot) => {
     const walk = (parent: Parent) => {
       const out: RootContent[] = [];
-      const kids = parent.children as RootContent[];
+      const kids = parent.children;
       for (let i = 0; i < kids.length; i++) {
         const node = kids[i];
         if (node === undefined) continue;
@@ -160,7 +186,7 @@ function remarkCodeSlots(slots: Slot[]) {
           out.push(slotNode(group));
           continue;
         }
-        if ('children' in node) walk(node as Parent);
+        if ('children' in node) walk(node);
         out.push(node);
       }
       (parent as { children: RootContent[] }).children = out;
@@ -256,7 +282,7 @@ function rehypeLinks(ctx: RenderContext, links: DocLink[]) {
   return (tree: HastRoot) => {
     visit(tree, 'element', (el: Element) => {
       if (el.tagName !== 'a' || typeof el.properties.href !== 'string') return;
-      if ((el.properties.className as string[] | undefined)?.includes('docs-anchor')) return;
+      if ((el.properties.className)?.includes('docs-anchor')) return;
       const raw = el.properties.href;
       const target = resolveDocLink(ctx.slug, raw);
       if (target === null) {
@@ -284,13 +310,13 @@ function rehypeTables() {
 // ---------------------------------------------------------------------------------------------
 // Code blocks: shiki at build time (inline token colours, background from the site token).
 
-const LANGS = ['bash', 'json', 'javascript', 'typescript', 'python', 'go', 'http', 'yaml'] as const;
+const LANGS = ['bash', 'json', 'javascript', 'typescript', 'python', 'go', 'http', 'yaml', 'powershell'] as const;
 const ALIASES: Record<string, string> = {
   sh: 'bash', shell: 'bash', zsh: 'bash', console: 'bash', curl: 'bash',
-  js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', yml: 'yaml', jsonc: 'json', golang: 'go',
+  js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', yml: 'yaml', jsonc: 'json', golang: 'go', ps1: 'powershell', pwsh: 'powershell',
 };
 const LABELS: Record<string, string> = {
-  bash: 'bash', json: 'JSON', javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python', go: 'Go', http: 'HTTP', yaml: 'YAML',
+  bash: 'bash', json: 'JSON', javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python', go: 'Go', http: 'HTTP', yaml: 'YAML', powershell: 'PowerShell',
 };
 export const THEME = 'github-dark-default';
 
@@ -327,11 +353,11 @@ function slotHtml(hl: Highlighter, slot: Slot, index: number, lang: DocLang): El
   return h('div', { className: ['docs-tabs'], dataTabs: '' }, [
     h('div', { className: ['docs-tabs-list'], role: 'tablist', ariaLabel: ui.codeExamples },
       slot.fences.map((f, i) => h('button', {
-        type: 'button', role: 'tab', id: id('tab', i), ariaControls: id('panel', i), ariaSelected: i === 0 ? 'true' : 'false',
+        type: 'button', role: 'tab', id: id('tab', i), ariaControls: [id('panel', i)], ariaSelected: i === 0 ? 'true' : 'false',
         tabIndex: i === 0 ? 0 : -1, dataTab: f.tab ?? f.lang,
       }, [text(f.tab ?? f.lang)]))),
     ...slot.fences.map((f, i) => h('div', {
-      role: 'tabpanel', id: id('panel', i), ariaLabelledBy: id('tab', i), hidden: i !== 0,
+      role: 'tabpanel', id: id('panel', i), ariaLabelledBy: [id('tab', i)], hidden: i !== 0,
     }, [codeFigure(hl, f, ui.copy)])),
   ]);
 }
@@ -344,7 +370,7 @@ function rehypeFillSlots(hl: Highlighter, slots: Slot[], lang: DocLang) {
       const n = Number(slot);
       const s = slots[n];
       if (s === undefined) return;
-      parent.children[index] = slotHtml(hl, s, n, lang) as HastContent & ElementContent;
+      parent.children[index] = slotHtml(hl, s, n, lang);
     });
   };
 }
@@ -358,7 +384,8 @@ export async function renderMarkdown(source: string, ctx: RenderContext): Promis
   const links: DocLink[] = [];
   const collected = { toc: [] as TocItem[], ids: [] as string[], sections: [] as SearchSection[] };
   const md = unified().use(remarkParse).use(remarkFrontmatter, ['yaml']).use(remarkGfm);
-  const tree = md.parse(expandDirectives(source, ctx.routes, ctx.lang));
+  const expanded = expandDirectives(source, ctx.routes, ctx.lang);
+  const tree = md.parse(expanded);
   const frontmatter = readFrontmatter(tree);
   const processor = unified()
     .use(remarkCallouts, ctx.lang)
@@ -378,7 +405,8 @@ export async function renderMarkdown(source: string, ctx: RenderContext): Promis
     .use(rehypeTables)
     .use(rehypeFillSlots, hl, slots, ctx.lang)
     .use(rehypeStringify);
-  const hast = await processor.run(tree as MdRoot);
-  const html = processor.stringify(hast as HastRoot);
-  return { frontmatter, html, links, ...collected };
+  const hast = await processor.run(tree);
+  const html = processor.stringify(hast);
+  const markdown = expanded.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/<!--[\s\S]*?-->\n?/g, '').trim();
+  return { frontmatter, html, links, markdown, ...collected };
 }

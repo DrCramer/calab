@@ -6,6 +6,8 @@
   "license": "BUSL-1.1",
   "scripts": {
     "dev": "next dev",
+    "gen:routes": "tsx ../../tools/gen-bot-routes.ts",
+    "prebuild": "pnpm gen:routes",
     "build": "next build",
     "assets": "node scripts/assets.mjs",
     "lint": "eslint .",
@@ -13,7 +15,8 @@
     "test:preferences": "node scripts/check-site-preferences.mjs",
     "test:offers": "node scripts/check-offers.mjs",
     "test:mail-link": "node scripts/check-mail-link.mjs",
-    "test": "pnpm test:preferences && pnpm test:offers && pnpm test:mail-link"
+    "test": "pnpm test:preferences && pnpm test:offers && pnpm test:mail-link && pnpm test:docs",
+    "test:docs": "vitest run"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",
