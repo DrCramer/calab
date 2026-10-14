@@ -454,6 +454,7 @@ func New(d Deps) *App {
 	guestSvc := guests.NewService(d.DB, authSvc, pub, d.Blob,
 		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP
 	guestSvc.Plans = planSvc
+	guestSvc.Present = hub.Present // the guest-membership sweep skips connected users (ADR-0098)
 	guestSvc.Routes(mux, private)
 	admin := plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)) // 60 per minute
 	admin.StorageQuota = func(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*v1.UserStorageQuota, error) {

@@ -76,6 +76,9 @@ type Config struct {
 	// recheck, auth/sessioncheck.go). Self-hosted installs may tighten both.
 	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
 	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"8760h"`
+	// GuestInactivity: guests (guest accounts and registered users' guest memberships) are
+	// removed after this long without activity (ADR-0098). 0 in a Config built in code = 48h.
+	GuestInactivity time.Duration `env:"GUEST_INACTIVITY" envDefault:"48h"`
 
 	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
 	// Whether an unconfirmed address blocks actions (ADR-0065). Without SMTP addresses count
@@ -260,6 +263,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AccessTokenTTL < time.Minute || c.RefreshTokenTTL < c.AccessTokenTTL {
 		errs = append(errs, errors.New("ACCESS_TOKEN_TTL must be >= 1m and REFRESH_TOKEN_TTL >= ACCESS_TOKEN_TTL"))
+	}
+	if c.GuestInactivity < 0 || (c.GuestInactivity > 0 && c.GuestInactivity < time.Hour) {
+		errs = append(errs, errors.New("GUEST_INACTIVITY must be >= 1h"))
 	}
 	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
 		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
