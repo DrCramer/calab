@@ -104,7 +104,7 @@ func (s *Service) iconFile(ctx context.Context, wsID, me uuid.UUID, cur *uuid.UU
 	}
 	f, err := s.db.Q.GetFile(ctx, id)
 	if db.IsNotFound(err) || (err == nil && (f.WorkspaceID == nil || *f.WorkspaceID != wsID || !strings.HasPrefix(f.Mime, "image/") ||
-		(f.UploaderID != me && (cur == nil || *cur != id)))) {
+		((f.UploaderID == nil || *f.UploaderID != me) && (cur == nil || *cur != id)))) {
 		return nil, httpx.Validation("iconFileId", "an image you uploaded to this workspace is required")
 	}
 	return &id, err

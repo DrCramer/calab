@@ -307,6 +307,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	var pg sqlc.WikiPageHead
 	var before []perm.TreeNode
 	var a access
+	var det []moved
 	changed := false
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		if a, err = resolve(r, q, id); err != nil {
@@ -402,6 +403,10 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 					return httpx.Conflict("pages may be nested at most 32 deep")
 				}
 				parent = target
+				// What the caller does not see below the page stays (addendum 2026-10-14).
+				if det, err = s.detachHidden(ctx, q, cur, sees(a.c.m), &a.c.m, nil); err != nil {
+					return err
+				}
 			}
 			row, err := s.place(ctx, q, pg, parent, req.Position, uid)
 			if err != nil {
@@ -436,6 +441,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.announceMoved(ctx, det)
 	if changed {
 		s.upserted(ctx, id, before)
 		s.recheck(ctx, id) // the sync sockets of the page: restricted or a move may have closed it
@@ -499,6 +505,7 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	var a access
 	var ids []uuid.UUID
+	var det []moved
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		if a, err = resolve(r, q, id); err != nil {
 			return err
@@ -514,6 +521,10 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 		}
 		// Under the tree lock: a create or a move into the subtree checked its parent is live.
 		if err := q.LockWikiTree(ctx, a.page.WorkspaceID); err != nil {
+			return err
+		}
+		// What the caller does not see below the page stays (addendum 2026-10-14).
+		if det, err = s.detachHidden(ctx, q, a.page, sees(a.c.m), &a.c.m, nil); err != nil {
 			return err
 		}
 		if ids, err = q.TrashWikiSubtree(ctx, sqlc.TrashWikiSubtreeParams{ID: id, TrashedAt: s.Now(), TrashedBy: &a.c.uid}); err != nil {
@@ -538,6 +549,7 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.announceMoved(ctx, det)
 	s.kick(ctx, ids)
 	s.publish(ctx, a.page.WorkspaceID, []*v1.DispatchEvent{s.upsertEvent(ctx, a.page, a.nodes(), nil)})
 	out, err := one(ctx, s.db.Q, a)
@@ -638,6 +650,7 @@ type deleted struct {
 	chain []perm.TreeNode
 	files []sqlc.File
 	bytes int64
+	moved []moved // detached from the subtree first
 }
 
 // deleteTree deletes page p and its subtree forever in q's transaction, in the Disk's order
@@ -646,8 +659,16 @@ type deleted struct {
 // overrides, links). The blobs are the caller's after the commit (files.DeleteBlobs): the orphan
 // cleanup never sees these rows, so the bytes are released once. The caller holds the
 // workspaces row (LockDiskQuota) and LockWikiTree.
-func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageHead, chain []perm.TreeNode, actor *uuid.UUID) (deleted, error) {
+//
+// What v does not see below the page is detached first (addendum 2026-10-14): by actor's
+// operation (m: the actor as a member), or by the sweeper (v: what the trash root's deleter saw;
+// retrash: the detached trash gets a time of its own).
+func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, p sqlc.WikiPageHead, chain []perm.TreeNode, actor *uuid.UUID, v viewer, m *perm.Member, retrash *time.Time) (deleted, error) {
 	d := deleted{page: p, chain: chain}
+	var err error
+	if d.moved, err = s.detachHidden(ctx, q, p, v, m, retrash); err != nil {
+		return d, err
+	}
 	// The journal of a restricted subtree stays out of the workspace journal once its chains are
 	// gone (addendum 2026-10-14 of ADR-0096 §2).
 	private := perm.RestrictedIn(chain)
@@ -688,6 +709,7 @@ func (s *Service) finish(ctx context.Context, ds []deleted) {
 	var keys []sqlc.ListWorkspaceFileKeysRow
 	evs := make([]*v1.DispatchEvent, 0, len(ds))
 	for _, d := range ds {
+		s.announceMoved(ctx, d.moved)
 		for _, f := range d.files {
 			keys = append(keys, sqlc.ListWorkspaceFileKeysRow{Key: f.Key, ThumbnailKey: f.ThumbnailKey})
 		}
@@ -739,7 +761,7 @@ func (s *Service) deleteForever(w http.ResponseWriter, r *http.Request) error {
 		if cur.TrashedAt == nil {
 			return httpx.Conflict("move the page to the trash first")
 		}
-		d, err = s.deleteTree(ctx, q, cur, a.nodes(), &a.c.uid)
+		d, err = s.deleteTree(ctx, q, cur, a.nodes(), &a.c.uid, sees(a.c.m), &a.c.m, nil)
 		return err
 	})
 	if err != nil {
@@ -797,7 +819,7 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 			if err != nil || !cur.TrashedRoot { // gone or restored meanwhile
 				return errSkip
 			}
-			d, err = s.deleteTree(ctx, q, cur, a.nodes(), &c.uid)
+			d, err = s.deleteTree(ctx, q, cur, a.nodes(), &c.uid, sees(c.m), &c.m, nil)
 			return err
 		})
 		if err == errSkip { //nolint:errorlint // sentinel returned as is

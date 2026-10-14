@@ -631,7 +631,7 @@ func File(f sqlc.File) *v1.FileMeta {
 	m := &v1.FileMeta{
 		Id:          f.ID.String(),
 		WorkspaceId: idp(f.WorkspaceID),
-		UploaderId:  f.UploaderID.String(),
+		UploaderId:  idp(f.UploaderID),
 		Name:        f.Name,
 		Mime:        f.Mime,
 		Size:        uint64(max(f.Size, 0)),

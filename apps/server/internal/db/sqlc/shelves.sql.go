@@ -252,7 +252,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id IS NULL
 
 // The user's personal quota usage (ADR-0039 §5): their user-scoped uploads (no workspace, not
 // the avatar) that are not attached yet or are attached to a live message of a shelf.
-func (q *Queries) PersonalStorageBytes(ctx context.Context, uploaderID uuid.UUID) (int64, error) {
+func (q *Queries) PersonalStorageBytes(ctx context.Context, uploaderID *uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, personalStorageBytes, uploaderID)
 	var column_1 int64
 	err := row.Scan(&column_1)

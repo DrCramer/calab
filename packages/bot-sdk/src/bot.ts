@@ -1,4 +1,4 @@
-import { BoardFormResponseSchema, CreateBoardFormRequestSchema, UpdateBoardFormRequestSchema, ListBoardFormsResponseSchema, PublicBoardFormResponseSchema, SubmitBoardFormRequestSchema, PreviewBoardFormRequestSchema, FormSubmissionResponseSchema } from '@calaba/protocol';
+import { BoardFormResponseSchema, BoardFormUploadResponseSchema, CreateBoardFormRequestSchema, UpdateBoardFormRequestSchema, ListBoardFormsResponseSchema, PublicBoardFormResponseSchema, SubmitBoardFormRequestSchema, PreviewBoardFormRequestSchema, FormSubmissionResponseSchema } from '@calaba/protocol';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { create, toJson, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
@@ -62,6 +62,9 @@ import {
   InlineKeyboardSchema,
   type BotCallback,
   type TaskNoticeRelay,
+  type ContactShared,
+  ContactField,
+  InlineButtonKind,
   CreateTaskRequestSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
@@ -181,6 +184,8 @@ export interface SendOptions {
   nonce?: string;
   /** Public callback metadata; never include secrets. */
   inlineKeyboard?: MessageInitShape<typeof InlineKeyboardSchema>;
+  /** Shorthand for `inlineKeyboard`: rows of buttons (ignored when `inlineKeyboard` is set). */
+  buttons?: ButtonSpec[][];
 }
 
 export type SendContent = string | SendOptions;
@@ -189,6 +194,61 @@ export interface EditOptions {
   text?: string;
   /** Omitted = keep; { rows: [] } = remove. */
   inlineKeyboard?: MessageInitShape<typeof InlineKeyboardSchema>;
+  /** Shorthand for `inlineKeyboard`; `[]` removes the keyboard. */
+  buttons?: ButtonSpec[][];
+}
+
+/** A contact field a `requestContact` button asks for (ADR-0100). */
+export type ContactFieldName = 'phone' | 'email';
+
+/** A callback button: pressing it sends `callback` with `data` (ADR-0047). */
+export interface CallbackButtonSpec {
+  kind?: 'callback';
+  /** Unique within the keyboard: 1..64 ASCII letters, digits, `_`, `-`. */
+  id: string;
+  text: string;
+  /** Public metadata (≤ 512 bytes); never include secrets. */
+  data?: string;
+  disabled?: boolean;
+}
+
+/**
+ * «Share contact» (ADR-0100): only in the bot's DM with a person. The person confirms on their
+ * client and the bot gets `contactShared` with the requested fields that are set in the profile.
+ */
+export interface RequestContactButtonSpec {
+  kind: 'requestContact';
+  /** Defaults to `contact`. */
+  id?: string;
+  text: string;
+  /** One or both, no repeats. */
+  fields: ContactFieldName[];
+  /** Why the bot asks (≤ 120 characters), shown to the person. */
+  reason?: string;
+  /** Public metadata echoed in `contactShared.data`. */
+  data?: string;
+  disabled?: boolean;
+}
+
+export type ButtonSpec = CallbackButtonSpec | RequestContactButtonSpec;
+
+const CONTACT_FIELDS: Record<ContactFieldName, ContactField> = { phone: ContactField.PHONE, email: ContactField.EMAIL };
+
+/** Converts `buttons` rows to the contract's `InlineKeyboard`. */
+export function keyboardFromButtons(rows: ButtonSpec[][]): MessageInitShape<typeof InlineKeyboardSchema> {
+  return {
+    rows: rows.map((row) => ({
+      buttons: row.map((b) =>
+        b.kind === 'requestContact'
+          ? { id: b.id ?? 'contact', label: b.text, data: b.data ?? '', disabled: b.disabled ?? false, kind: InlineButtonKind.REQUEST_CONTACT, fields: b.fields.map((f) => CONTACT_FIELDS[f]), reason: b.reason ?? '' }
+          : { id: b.id, label: b.text, data: b.data ?? '', disabled: b.disabled ?? false },
+      ),
+    })),
+  };
+}
+
+function keyboardOf(o: { inlineKeyboard?: MessageInitShape<typeof InlineKeyboardSchema>; buttons?: ButtonSpec[][] }) {
+  return o.inlineKeyboard ?? (o.buttons ? keyboardFromButtons(o.buttons) : undefined);
 }
 
 /** A `/command` addressed to this bot (ADR-0031 §6). */
@@ -233,6 +293,11 @@ export interface BotEvents {
   callback: BotCallback;
   /** A person's task notification relayed to this bot because they chose it (ADR-0090). */
   taskNotice: TaskNoticeRelay;
+  /**
+   * A person confirmed a `requestContact` button (ADR-0100): only the requested fields that are set
+   * in their profile; `emailVerified` / `phoneVerified` say whether the value was confirmed. Dedupe by id.
+   */
+  contactShared: ContactShared;
   voiceState: VoiceState;
   /** Every gateway / webhook event, raw. */
   dispatch: DispatchEvent;
@@ -370,7 +435,7 @@ export class Bot extends Emitter<BotEvents> {
         content: o.text ?? '',
         attachmentIds,
         replyToId: o.replyTo ?? '',
-        inlineKeyboard: o.inlineKeyboard,
+        inlineKeyboard: keyboardOf(o),
         stickerId: o.stickerId ?? '',
         nonce: o.nonce ?? randomUUID(),
       }),
@@ -401,8 +466,9 @@ export class Bot extends Emitter<BotEvents> {
   /** Edits the bot's own message. */
   async edit(messageId: string, content: string | EditOptions): Promise<Message> {
     const o: EditOptions = typeof content === 'string' ? { text: content } : content;
+    const keyboard = keyboardOf(o);
     const r = await this.rest.call(UpdateMessageResponseSchema, 'PATCH', `/api/messages/${enc(messageId)}`, {
-      json: Rest.body(UpdateMessageRequestSchema, { content: o.text ?? '', inlineKeyboard: o.inlineKeyboard, preserveContent: o.text === undefined && o.inlineKeyboard !== undefined }),
+      json: Rest.body(UpdateMessageRequestSchema, { content: o.text ?? '', inlineKeyboard: keyboard, preserveContent: o.text === undefined && keyboard !== undefined }),
     });
     if (!r.message) throw new Error('edit: empty response');
     return r.message;
@@ -636,6 +702,15 @@ export class Bot extends Emitter<BotEvents> {
     delete: (boardId: string, formId: string) => this.rest.request('DELETE', `/api/boards/${enc(boardId)}/forms/${enc(formId)}`),
     get: (code: string) => this.rest.call(PublicBoardFormResponseSchema, 'GET', `/api/forms/${enc(code)}`),
     submit: (code: string, input: MessageInitShape<typeof SubmitBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/forms/${enc(code)}/submissions`, { json: Rest.body(SubmitBoardFormRequestSchema, input) }),
+    /** Stages a file of a FILE field (ADR-0064 v2); answer the field with `values: [uploadId]` within an hour. */
+    upload: (code: string, fieldId: string, file: FileInput) =>
+      this.rest.call(BoardFormUploadResponseSchema, 'POST', `/api/forms/${enc(code)}/files?field=${enc(fieldId)}`, {
+        form: () => {
+          const f = new FormData();
+          f.append('file', toBlob(file.data, file.type), file.name);
+          return f;
+        },
+      }),
     preview: (boardId: string, input: MessageInitShape<typeof PreviewBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/boards/${enc(boardId)}/forms/preview`, { json: Rest.body(PreviewBoardFormRequestSchema, input) }),
   };
 
@@ -998,6 +1073,9 @@ export class Bot extends Emitter<BotEvents> {
         return;
       case 'taskNotice':
         this.emit('taskNotice', e.value);
+        return;
+      case 'contactShared':
+        if (e.value.botUserId === this.botUserId || !this.botUserId) this.emit('contactShared', e.value);
         return;
       case 'messageUpdate':
         if (e.value.message && !this.isOwn(e.value.message.authorId)) this.emit('messageUpdate', e.value.message);

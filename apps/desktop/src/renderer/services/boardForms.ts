@@ -1,4 +1,5 @@
 import {
+  BoardFormUploadResponseSchema,
   BoardFormResponseSchema,
   CreateBoardFormRequestSchema,
   FormSubmissionResponseSchema,
@@ -9,8 +10,10 @@ import {
   UpdateBoardFormRequestSchema,
   type BoardFormDefinition,
   type BoardFormAnswer,
+  type BoardFormUploadResponse,
 } from '@calaba/protocol';
 import { body, call, callEmpty } from '../lib/api/client';
+import { uploadInto } from '../lib/api/endpoints';
 const enc = encodeURIComponent;
 export const boardForms = {
   list: (id: string) => call('GET', `/api/boards/${enc(id)}/forms`, ListBoardFormsResponseSchema),
@@ -38,6 +41,16 @@ export const boardForms = {
       `/api/${signed ? '' : 'public/'}forms/${enc(code)}/submissions`,
       FormSubmissionResponseSchema,
       body(SubmitBoardFormRequestSchema, { revision, nonce, answers }),
+    ),
+  /** A staged file of a FILE field (ADR-0064 v2); the upload id is the answer value. */
+  upload: (code: string, signed: boolean, fieldId: string, file: File, onProgress: (fraction: number) => void) =>
+    uploadInto<typeof BoardFormUploadResponseSchema, BoardFormUploadResponse>(
+      `/api/${signed ? '' : 'public/'}forms/${enc(code)}/files?field=${enc(fieldId)}`,
+      BoardFormUploadResponseSchema,
+      (r) => (r.uploadId ? r : undefined),
+      file,
+      file.name,
+      onProgress,
     ),
 };
 export const formPageCode = (): string | null =>

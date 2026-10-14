@@ -169,6 +169,7 @@ func (a *App) Run(ctx context.Context) {
 		go a.runIdentityDirectory(ctx)
 	}
 	go a.Files.RunCleanup(ctx, time.Hour)
+	go a.Files.RunStagedCleanup(ctx, 10*time.Minute) // board form uploads never submitted (ADR-0064 v2)
 	go a.Disk.RunTrashSweep(ctx, disk.SweepInterval)
 	go a.Wiki.RunTrashSweep(ctx, wiki.SweepInterval)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
@@ -429,8 +430,10 @@ func New(d Deps) *App {
 	boardSvc.FormIPLimit = redisx.NewRateLimiter(d.Redis, "rl:form-ip:", 5, 5)
 	boardSvc.FormUserLimit = redisx.NewRateLimiter(d.Redis, "rl:form-user:", 10, 10)
 	boardSvc.FormSubmitLimit = redisx.NewRateLimiter(d.Redis, "rl:form-submit:", 30, 30)
-	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
-	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
+	boardSvc.FormUploadLimit = redisx.NewRateLimiter(d.Redis, "rl:form-upload:", 20, 20)       // staged files: 20 per minute per IP / user
+	boardSvc.FormUploadFormLimit = redisx.NewRateLimiter(d.Redis, "rl:form-upload-f:", 60, 60) // and 60 per minute per form
+	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60)           // 60 at once, one per second
+	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60)           // ⌘K: 30 at once, one per second
 	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.TaskCommentHook = boardSvc.TaskCommentHook
 	boardHooks := boardSvc.EnableWebhooks(d.Redis, []byte(d.Config.JWTSecret), whOpts) // same delivery options as bots

@@ -239,22 +239,23 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/categories/{id}":                          botAllow,
 	"PUT /api/workspaces/{id}/rooms/order":                 botAllow,
 	// messages
-	"GET /api/rooms/{id}/messages":                botAllow,
-	"GET /api/rooms/{id}/messages/{messageId}":    botAllow,
-	"POST /api/rooms/{id}/messages":               botAllow,
-	"POST /api/rooms/{id}/messages/{mid}/forward": botAllow, // ADR-0033
-	"POST /api/messages/{id}/interactions":        botDeny,  // human intent only
-	"PATCH /api/messages/{id}":                    botAllow,
-	"DELETE /api/messages/{id}":                   botAllow,
-	"PUT /api/rooms/{id}/read":                    botAllow,
-	"GET /api/workspaces/{id}/messages/search":    botAllow,
-	"GET /api/messages/{id}/reactions/{emoji}":    botAllow,
-	"PUT /api/messages/{id}/reactions/{emoji}":    botAllow,
-	"DELETE /api/messages/{id}/reactions/{emoji}": botAllow,
-	"PUT /api/messages/{id}/pin":                  botAllow,
-	"DELETE /api/messages/{id}/pin":               botAllow,
-	"GET /api/rooms/{id}/pins":                    botAllow,
-	"PUT /api/messages/{id}/embeds-hidden":        botAllow,
+	"GET /api/rooms/{id}/messages":                       botAllow,
+	"GET /api/rooms/{id}/messages/{messageId}":           botAllow,
+	"POST /api/rooms/{id}/messages":                      botAllow,
+	"POST /api/rooms/{id}/messages/{mid}/forward":        botAllow, // ADR-0033
+	"POST /api/messages/{id}/interactions":               botDeny,  // human intent only
+	"POST /api/messages/{id}/buttons/{buttonId}/contact": botDeny,  // the person's consent (ADR-0100)
+	"PATCH /api/messages/{id}":                           botAllow,
+	"DELETE /api/messages/{id}":                          botAllow,
+	"PUT /api/rooms/{id}/read":                           botAllow,
+	"GET /api/workspaces/{id}/messages/search":           botAllow,
+	"GET /api/messages/{id}/reactions/{emoji}":           botAllow,
+	"PUT /api/messages/{id}/reactions/{emoji}":           botAllow,
+	"DELETE /api/messages/{id}/reactions/{emoji}":        botAllow,
+	"PUT /api/messages/{id}/pin":                         botAllow,
+	"DELETE /api/messages/{id}/pin":                      botAllow,
+	"GET /api/rooms/{id}/pins":                           botAllow,
+	"PUT /api/messages/{id}/embeds-hidden":               botAllow,
 	// DMs: a bot writes to members of shared workspaces (unless blocked)
 	"POST /api/dms":             botAllow,
 	"GET /api/dms":              botAllow,
@@ -393,6 +394,8 @@ var botRoutes = map[string]botAccess{
 	"POST /api/forms/{code}/submissions":        botAllow,
 	"GET /api/public/forms/{code}":              botPublic,
 	"POST /api/public/forms/{code}/submissions": botPublic,
+	"POST /api/forms/{code}/files":              botAllow,
+	"POST /api/public/forms/{code}/files":       botPublic,
 	// Disk (ADR-0094; §2 addendum 2026-10-14): bots like people, by the disk bits of their roles
 	// and the item overrides; the public link routes are anonymous.
 	"GET /api/workspaces/{id}/disk/items":        botAllow,
@@ -527,8 +530,10 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/workspaces/{id}/sip":       botDeny,
 	"POST /api/workspaces/{id}/sip/test": botDeny,
 	"GET /api/workspaces/{id}/calls":     botDeny,
-	"POST /api/rooms/{id}/calls":         botAllow,
-	"DELETE /api/rooms/{id}/calls/{cid}": botAllow,
+	// the journal of contacts shared with bots (ADR-0100, VIEW_JOURNALS) is for people
+	"GET /api/workspaces/{id}/bot-contact-shares": botDeny,
+	"POST /api/rooms/{id}/calls":                  botAllow,
+	"DELETE /api/rooms/{id}/calls/{cid}":          botAllow,
 
 	// ADR-0061: bots read the workspace catalog and members' achievements; people manage the
 	// catalog (MANAGE_WORKSPACE) and grant and revoke (MANAGE_MEMBERS).

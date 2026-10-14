@@ -255,6 +255,8 @@ vi.mock('../lib/media/opusTierPublish', () => ({
   applyMicTier: (r: unknown, s: unknown, t: { kbps: number; dtx?: boolean; stereo?: boolean }) => applyMicTier(r, s, t),
 }));
 const playSound = vi.fn((_name: string) => undefined);
+const phone = vi.hoisted(() => ({ on: false }));
+vi.mock('../lib/mobile', () => ({ isMobileNow: () => phone.on }));
 vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
 const pushToast = vi.hoisted(() => vi.fn());
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() }, useToasts: { getState: () => ({ push: pushToast }) } }));
@@ -1336,6 +1338,20 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       room?.emit('TrackSubscribed', track, { source: 'microphone' }, { identity: 'u2:phone' });
       room?.emit('TrackUnsubscribed', track, { source: 'microphone' });
       expect(removed).toHaveBeenCalled();
+    });
+
+    it('no PTT cue on the phone, whatever the setting', async () => {
+      usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: 0, pttBinding: { kind: 'key', code: 66, label: 'F8', mode: 'hold' } });
+      await voice.join('A', 'ws');
+      await settle();
+      const hold = (down: boolean): void => (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down });
+      phone.on = true;
+      playSound.mockClear();
+      hold(true);
+      hold(false);
+      phone.on = false;
+      expect(playSound).not.toHaveBeenCalled();
+      usePrefs.getState().setPrefs({ micMode: 'voice' });
     });
 
     it('PTT while deafened: nothing on air, no activation sound (#12)', async () => {

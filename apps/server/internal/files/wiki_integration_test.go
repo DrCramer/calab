@@ -57,7 +57,7 @@ func TestCleanupOrphansKeepsWikiFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pending, err := d.Q.UnattachedBytesByUploader(ctx, sqlc.UnattachedBytesByUploaderParams{UploaderID: user, WorkspaceID: &ws})
+	pending, err := d.Q.UnattachedBytesByUploader(ctx, sqlc.UnattachedBytesByUploaderParams{UploaderID: &user, WorkspaceID: &ws})
 	if err != nil {
 		t.Fatal(err)
 	}

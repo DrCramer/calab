@@ -85,6 +85,7 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `messageUpdate`, `messageDelete` | `Message` / `{ workspaceId, roomId, messageId }` |
 | `reaction` | `{ type: 'add' \| 'remove', workspaceId, roomId, messageId, userId, emoji }` |
 | `voiceState` | `VoiceState` (`roomId` empty = left voice) |
+| `contactShared` | `ContactShared` — a person confirmed a `requestContact` button (ADR-0100): `userId`, `displayName`, the requested `phone` / `email` that are set, `phoneVerified` / `emailVerified` |
 | `taskNotice` | `TaskNoticeRelay` — a person's task notification, when they chose this bot (ADR-0090): `userId`, `task`, `notice.kind`, `taskUrl` |
 | `dispatch` | every raw `DispatchEvent` (rooms, members, presence, …) |
 | `status` | `connecting` · `ready` · `reconnecting` · `resuming` · `stopped` |
@@ -137,6 +138,14 @@ receives the generated `BotCallback` type over gateway or webhook. Persist and d
 and revalidate your current draft version and author before external effects. Data is public,
 never a secret; acceptance is not completion. For delivery guarantees and REST fields see
 [Bot API](../../docs/19-bot-api.en.md#inline-buttons-adr-0047).
+
+`buttons` is a shorthand for `inlineKeyboard`: rows of `{ id, text, data }` callback buttons and
+`{ kind: 'requestContact', text, fields: ['phone', 'email'], reason }` (ADR-0100). A contact request
+works only in the bot's DM with a person (elsewhere the send is 400 `BOT_CONTACT_REQUEST_DM_ONLY`).
+The person confirms on their client; `bot.on('contactShared', c => …)` then gets `ContactShared`
+(gateway or webhook): `userId`, `displayName` and only the requested fields that are set —
+`phone` / `phoneVerified` (always `false` for now), `email` / `emailVerified`. At most one share per
+button per person; dedupe by `c.id`.
 
 ## Disk and Wiki (ADR-0094, ADR-0096)
 

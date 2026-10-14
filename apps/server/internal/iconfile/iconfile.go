@@ -41,7 +41,7 @@ func Own(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, cur *uuid
 	if err != nil {
 		return nil, err
 	}
-	if f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller || !pbconv.IsImage(f.Mime) || f.Size > MaxBytes {
+	if f.WorkspaceID == nil || *f.WorkspaceID != wsID || (f.UploaderID == nil || *f.UploaderID != caller) || !pbconv.IsImage(f.Mime) || f.Size > MaxBytes {
 		return nil, bad
 	}
 	if _, err := q.GetStickerFileWorkspace(ctx, id); err == nil {

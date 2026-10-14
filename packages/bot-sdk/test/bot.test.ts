@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { DispatchEventSchema } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ApiError, Bot, GatewayFatalError, parseRetryAfter, signWebhook, verifyWebhookSignature, type BotOptions, type CommandEvent, type Message, type ReactionEvent } from '../src/index.js';
+import { ApiError, Bot, ContactField, GatewayFatalError, parseRetryAfter, parseWebhookUpdate, signWebhook, verifyWebhookSignature, type BotOptions, type CommandEvent, type Message, type ReactionEvent } from '../src/index.js';
 import { BOT_ID, FakeServer, TEXT_ROOM, TOKEN, VOICE_ROOM, WS_ID, messageEvent, waitFor } from './fake-server.js';
 
 let srv: FakeServer;
@@ -384,5 +384,47 @@ describe('inline callbacks', () => {
     expect(bot.handleWebhook(body, { 'X-Calab-Signature': signWebhook(secret, body) })).toBe(true);
     // Cross-transport durable effect dedup belongs to the bot, not the SDK's bounded delivery cache.
     expect(got).toEqual(['interaction-1:actor:draft:1:1', 'interaction-1:actor:draft:1:1']);
+  });
+});
+
+describe('contact requests (ADR-0100)', () => {
+  it('sends requestContact buttons through the buttons shorthand', async () => {
+    srv.route(`POST /api/rooms/${TEXT_ROOM}/messages`, { json: messageJson('m', 'contact') });
+    srv.route('PATCH /api/messages/m', { json: messageJson('m', 'contact') });
+    const bot = newBot();
+    await bot.send(TEXT_ROOM, {
+      text: 'Leave your contact',
+      buttons: [[{ kind: 'requestContact', text: 'Share contact', fields: ['phone', 'email'], reason: 'To call you back' }, { id: 'later', text: 'Later', data: 'x' }]],
+    });
+    expect(srv.requests.at(-1)?.json).toMatchObject({
+      inlineKeyboard: {
+        rows: [{ buttons: [
+          { id: 'contact', label: 'Share contact', kind: 'INLINE_BUTTON_KIND_REQUEST_CONTACT', fields: ['CONTACT_FIELD_PHONE', 'CONTACT_FIELD_EMAIL'], reason: 'To call you back' },
+          { id: 'later', label: 'Later', data: 'x' },
+        ] }],
+      },
+    });
+    const sent = srv.requests.at(-1)?.json as { inlineKeyboard: { rows: { buttons: Record<string, unknown>[] }[] } };
+    expect(sent.inlineKeyboard.rows[0]?.buttons[1]?.kind).toBeUndefined();
+    await bot.edit('m', { buttons: [] });
+    expect(srv.requests.at(-1)?.json).toEqual({ inlineKeyboard: {}, preserveContent: true });
+  });
+
+  it('emits contactShared from the gateway and a signed webhook', async () => {
+    const secret = 'contact-secret-for-testing';
+    const bot = newBot(TOKEN, { webhookSecret: secret });
+    const got: string[] = [];
+    bot.on('contactShared', (c) => { got.push(`${c.id}:${c.userId}:${c.phone}:${c.phoneVerified}:${c.email}:${c.emailVerified}:${c.fields.join(',')}`); });
+    await bot.start();
+    const contact = { id: 'share-1', botUserId: BOT_ID, userId: 'person', displayName: 'Olga', phone: '+79990001122', email: 'olga@example.test', emailVerified: true, roomId: TEXT_ROOM, messageId: 'm', buttonId: 'contact', fields: [ContactField.PHONE, ContactField.EMAIL] };
+    srv.dispatch(create(DispatchEventSchema, { event: { case: 'contactShared', value: contact } }));
+    await waitFor(() => got.length === 1);
+    // Another bot's contact is never emitted.
+    srv.dispatch(create(DispatchEventSchema, { event: { case: 'contactShared', value: { ...contact, id: 'share-x', botUserId: 'other-bot' } } }));
+    const body = JSON.stringify({ id: 'share-1', botUserId: BOT_ID, event: { contactShared: { ...contact, fields: ['CONTACT_FIELD_PHONE', 'CONTACT_FIELD_EMAIL'] } } });
+    expect(bot.handleWebhook(body, { 'X-Calab-Signature': signWebhook(secret, body) })).toBe(true);
+    await waitFor(() => got.length === 2);
+    expect(parseWebhookUpdate(body).event?.event.case).toBe('contactShared');
+    expect(got).toEqual(['share-1:person:+79990001122:false:olga@example.test:true:1,2', 'share-1:person:+79990001122:false:olga@example.test:true:1,2']);
   });
 });

@@ -79,6 +79,7 @@ OAuth protocol errors (`invalid_grant`, `invalid_client` and others) use the RFC
 | `CHECKLIST_LIMIT` · `CHECKLIST_ITEM_LIMIT` · `BOARD_CATEGORY_LIMIT` | `CONFLICT` | 10 checklists per task · 100 items per checklist · 50 board categories |
 | `TASK_MILESTONE_LIMIT` · `TASK_MILESTONE_AUTO` | `CONFLICT` | 20 milestones per task · the server computes the milestone's completion |
 | `KEYBOARD_STALE` · `BUTTON_UNAVAILABLE` | `CONFLICT` | the message keyboard changed · the button is unavailable |
+| `BOT_CONTACT_REQUEST_DM_ONLY` · `CONTACT_ALREADY_SHARED` · `CONTACT_EMPTY` · `CONTACT_SHARE_LIMIT` | `BAD_REQUEST` · `CONFLICT` · `VALIDATION` · `RATE_LIMITED` | a contact request only in a DM · the contact was already shared through this button · none of the requested fields in the profile · more than 10 shares an hour |
 | `FORM_CHANGED` · `NONCE_CONFLICT` · `FORM_TARGET_UNAVAILABLE` | `CONFLICT` | the form changed · the `nonce` was used for other content · the form's status was removed |
 | `OWNER_ONLY` | `FORBIDDEN` | the workspace owner only |
 | `MESSAGE_NOT_EDITABLE` · `NOT_FORWARDABLE` | `VALIDATION` | a forwarded copy can't be edited · this message can't be forwarded |

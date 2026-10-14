@@ -37,16 +37,18 @@ export function FormPublicPage({ code }: { code: string }): ReactNode {
   }, []);
   useEffect(() => {
     let live = true;
-    void boardForms
-      .get(code, false)
-      .then((v) => ({ value: v, privateRoute: false }))
-      .catch(async (e: unknown) => {
-        if (e instanceof ApiError && e.status === 401 && signed) {
-          const v = await boardForms.get(code, true);
-          return { value: v, privateRoute: true };
-        }
-        throw e;
-      })
+    // A signed-in member fills as themselves (and sees PEOPLE fields, ADR-0064 v2 §3); someone
+    // outside the form's workspace falls back to the public route.
+    const open = signed
+      ? boardForms
+          .get(code, true)
+          .then((v) => ({ value: v, privateRoute: true }))
+          .catch(async (e: unknown) => {
+            if (e instanceof ApiError && e.status === 404) return { value: await boardForms.get(code, false), privateRoute: false };
+            throw e;
+          })
+      : boardForms.get(code, false).then((v) => ({ value: v, privateRoute: false }));
+    void open
       .then((v) => {
         if (live) {
           setForm(v.value);
@@ -59,7 +61,7 @@ export function FormPublicPage({ code }: { code: string }): ReactNode {
         if (live) {
           setForm(undefined);
           setError(t('forms.unavailable'));
-          setNeedLogin(e instanceof ApiError && e.status === 401);
+          setNeedLogin(e instanceof ApiError && e.status === 401 && !signed);
         }
       });
     return () => {
@@ -88,6 +90,11 @@ export function FormPublicPage({ code }: { code: string }): ReactNode {
               <FormFields
                 key={code}
                 fields={form.fields}
+                people={form.people}
+                upload={(fieldId, file, onProgress) => {
+                  const h = boardForms.upload(code, privateRoute, fieldId, file, onProgress);
+                  return { promise: h.promise.then((r) => r.uploadId), abort: () => h.abort() };
+                }}
                 submit={async (answers) => {
                   try {
                     const response = await boardForms.submit(code, privateRoute, form.revision, nonce, answers);

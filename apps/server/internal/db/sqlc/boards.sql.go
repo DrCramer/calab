@@ -955,7 +955,7 @@ WHERE f.id = ANY($1::uuid[]) AND f.uploader_id = $2 AND f.workspace_id = $3::uui
 
 type FilesAttachableParams struct {
 	Ids         []uuid.UUID
-	UserID      uuid.UUID
+	UserID      *uuid.UUID
 	WorkspaceID uuid.UUID
 	TaskID      uuid.UUID
 }

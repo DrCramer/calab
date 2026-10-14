@@ -675,7 +675,7 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 			}
 			return err
 		}
-		files, err := q.ListUserFiles(ctx, uid)
+		files, err := q.ListUserFiles(ctx, &uid)
 		if err != nil {
 			return err
 		}

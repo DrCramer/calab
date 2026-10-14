@@ -25,9 +25,10 @@ Forms per board: Team — 5, Business — 20, a self-hosted installation — as 
 | `POST` | `/api/boards/{id}/forms/preview` | Validate an unsaved definition and answers without creating a task |
 | `GET` | `/api/forms/{code}` | The form as a respondent sees it → `{title, description, fields, revision}` |
 | `POST` | `/api/forms/{code}/submissions` | Submit answers → `{receiptId}` |
+| `POST` | `/api/forms/{code}/files` | Upload a file of a `FILE` field (`?field=<id>`, multipart `file`) → `{uploadId, name, size, mime}` |
 <!-- /routes -->
 
-The anonymous `GET /api/public/forms/{code}` and `POST /api/public/forms/{code}/submissions` are public link access for people without an account; enforced workspace SSO closes them. Bots use the authenticated `/api/forms/{code}…`.
+The anonymous `GET /api/public/forms/{code}`, `POST /api/public/forms/{code}/files` and `POST /api/public/forms/{code}/submissions` are public link access for people without an account; enforced workspace SSO closes them. Bots use the authenticated `/api/forms/{code}…`.
 
 ## Form definition
 
@@ -40,8 +41,22 @@ The anonymous `GET /api/public/forms/{code}` and `POST /api/public/forms/{code}/
 | `titleFieldId` | Optional single-value field used as the task title (not `CHECKBOX` or `MULTISELECT`) |
 | `statusId`, `priority` | Status and priority of the created tasks |
 | `isPrivate`, `allowedUserIds` | A private form and who may submit it |
+| `routes` | Routes by answer: `{fieldId, option, boardId, statusId}` — the first matching rule creates the task on another board of the same workspace (empty `statusId` — that board's default status); otherwise the form's board |
+| `showMembers` | Anonymous visitors see `PEOPLE` fields and member names (off by default) |
 
-Field types (with the `BOARD_FORM_FIELD_TYPE_` prefix in JSON): `TEXT`, `PARAGRAPH`, `EMAIL`, `NUMBER`, `DATE`, `SELECT`, `CHECKBOX`, `PHONE`, `URL`, `MULTISELECT`.
+Field types (with the `BOARD_FORM_FIELD_TYPE_` prefix in JSON): `TEXT`, `PARAGRAPH`, `EMAIL`, `NUMBER`, `DATE`, `SELECT`, `CHECKBOX`, `PHONE`, `URL`, `MULTISELECT`, `FILE`, `PEOPLE`.
+
+More field settings:
+
+| Field | Description |
+|---|---|
+| `multiple` | `FILE` and `PEOPLE`: several values (up to 10 people) |
+| `maxFiles`, `maxFileMb`, `accept` | `FILE`: up to 20 files (≤ 20 across all fields), up to 100 MB each, categories `image`, `pdf`, `document`, `video`, `audio`, `archive` (empty — any) |
+| `roleId` | `PEOPLE`: only members with this role |
+| `target` | Where the answer goes on the task (`BOARD_FORM_FIELD_TARGET_…`): `PRIORITY` (`SELECT`), `DUE_DATE` (`DATE`), `LABELS` (`SELECT`/`MULTISELECT`), `ASSIGNEES`, `APPROVERS`, `WATCHERS` (`PEOPLE`); each target but labels on one field only |
+| `optionPriorities`, `optionLabels` | Option → priority / label id of the form's board |
+
+Routes, `target`, option maps and `roleId` are for managers only: `GET /api/forms/{code}` never returns them. The routes' owner is whoever saved the form last: they need `VIEW_BOARD` and `CREATE_TASKS` on the target boards (checked on save and on submit).
 
 > [!WARNING]
 > Managing a form does not bypass a private form's allowlist: for the bot to submit it, add the bot's user id to `allowedUserIds` explicitly.
@@ -82,6 +97,8 @@ The answer is `{form: {id, boardId, url, definition, revision, createdBy, create
 
 - Values are strings; a checkbox is `"true"` or `"false"`.
 - `MULTISELECT` uses `{fieldId, values: ["Design", "Support"]}` with no `value`; other types use only `value`.
+- `FILE` — `values` of `uploadId`s; `PEOPLE` — `values` of member ids (the first assignee is the lead). Upload a file first with `POST /api/forms/{code}/files?field=<id>` (SDK `bot.forms.upload`); its type is detected from the content, HTML/SVG/scripts are refused, a file not submitted within an hour is deleted. Once submitted it is a task attachment, readable only by those who see the task.
+- An answer with a `target` fills that task field (priority, due date, labels, assignees, approvers, watchers); all answers still go into the description.
 - Unknown and duplicate options are rejected; the order of chosen options does not affect idempotency.
 - `PHONE` keeps formatting and leading zeroes: 7–15 digits, up to 64 characters, an optional leading `+`, spaces, parentheses, dots and hyphens.
 - `URL` is an absolute HTTP/HTTPS URL without credentials or whitespace; the server never fetches it.
@@ -132,7 +149,7 @@ All errors below are `409 CONFLICT` with the given `reason`; field errors are `4
 |---|---|
 | `FORM_CHANGED` | The form changed — reload `revision` |
 | `NONCE_CONFLICT` | The `nonce` was already used for different content |
-| `FORM_TARGET_UNAVAILABLE` | The status the form creates tasks in was removed |
+| `FORM_TARGET_UNAVAILABLE` | The status the form creates tasks in was removed, or the routes' owner can no longer create tasks on the target board |
 | `PLAN_LIMIT` | The plan's form limit per board |
 | `FEATURE_DISABLED` | The “Forms” feature is off on the board |
 
