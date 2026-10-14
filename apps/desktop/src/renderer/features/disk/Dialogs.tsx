@@ -153,6 +153,7 @@ function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void
       open
       onClose={onClose}
       medium
+      initialFocus="body"
       title={t('disk.accessTitle', { name: item.name })}
       footer={
         <>
@@ -316,7 +317,7 @@ function LinkDialog({ itemId, onClose }: { itemId: string; onClose: () => void }
   };
   const until = item.link?.expiresAt ? timestampDate(item.link.expiresAt) : null;
   return (
-    <Modal open onClose={onClose} title={t('disk.linkTitle', { name: item.name })}>
+    <Modal open onClose={onClose} initialFocus="body" title={t('disk.linkTitle', { name: item.name })}>
       <div className="flex flex-col gap-4" data-testid="disk-link">
         <Switch checked={on} onChange={toggle} label={t('disk.link.on')} hint={t('disk.link.hint')} disabled={busy} />
         {on ? (
@@ -487,6 +488,7 @@ function MoveDialog({ workspaceId, itemIds, onClose }: { workspaceId: string; it
     <Modal
       open
       onClose={onClose}
+      initialFocus="body"
       title={items.length === 1 ? t('disk.moveTitle', { name: items[0]?.name ?? '' }) : t('disk.moveTitleMany', { n: items.length })}
       footer={
         <>
@@ -556,6 +558,7 @@ function UsageDialog({ workspaceId, full, onClose }: { workspaceId: string; full
     <Modal
       open
       onClose={onClose}
+      initialFocus="body"
       title={full ? t('disk.usage.fullTitle') : t('disk.usage.title')}
       description={full ? t('disk.usage.fullText') : undefined}
       footer={
@@ -580,7 +583,7 @@ function PreviewDialog({ itemId, onClose }: { itemId: string; onClose: () => voi
   const item = useDisk((s) => s.items[itemId]);
   if (!item?.file) return null;
   return (
-    <Modal open onClose={onClose} wide title={item.name}>
+    <Modal open onClose={onClose} wide initialFocus="body" title={item.name}>
       <div className="flex justify-center pb-1">
         <VideoAttachment f={item.file} />
       </div>

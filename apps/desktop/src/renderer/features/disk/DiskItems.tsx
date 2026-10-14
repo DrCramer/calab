@@ -244,7 +244,7 @@ const Tile = memo(function Tile({ id }: { id: string }): ReactNode {
         ref={setRef}
         role="listitem"
         tabIndex={0}
-        aria-selected={selected}
+        data-selected={selected || undefined}
         aria-label={item.name}
         {...listeners}
         {...actions}
@@ -317,7 +317,7 @@ const Row = memo(function Row({ id }: { id: string }): ReactNode {
         ref={setRef}
         role="row"
         tabIndex={0}
-        aria-selected={selected}
+        data-selected={selected || undefined}
         {...listeners}
         {...actions}
         {...fileHandlers}
@@ -392,7 +392,7 @@ const TrashRow = memo(function TrashRow({ id }: { id: string }): ReactNode {
       <div
         role="row"
         tabIndex={0}
-        aria-selected={selected}
+        data-selected={selected || undefined}
         onClick={() => useDiskUi.getState().select(id)}
         className={cx(TRASH_COLS, 'group/row h-9 cursor-default rounded-[var(--radius-row)] px-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-focus)]', selected ? 'bg-active' : 'hover:bg-hover')}
         data-testid="disk-trash-row"

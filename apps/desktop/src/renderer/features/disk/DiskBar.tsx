@@ -153,7 +153,7 @@ function SortMenu(): ReactNode {
         </IconButton>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={menuBox} sideOffset={4} align="end" collisionPadding={16}>
+        <Dropdown.Content className={menuBox} sideOffset={4} align="end" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()}>
           <Dropdown.Label className={menuLabel}>{t('disk.sort')}</Dropdown.Label>
           <Dropdown.RadioGroup value={sort} onValueChange={(v) => usePrefs.getState().setPrefs({ diskSort: v as DiskSort })}>
             {DISK_SORTS.map((s) => (
@@ -178,7 +178,7 @@ function CreateMenu({ workspaceId, folderId }: { workspaceId: string; folderId: 
           <CreateButton label={t('disk.create')} data-testid="disk-create" />
         </Dropdown.Trigger>
         <Dropdown.Portal>
-          <Dropdown.Content className={menuBox} sideOffset={4} align="end" collisionPadding={16} data-testid="disk-create-menu">
+          <Dropdown.Content className={menuBox} sideOffset={4} align="end" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="disk-create-menu">
             <Dropdown.Item className={menuItem} onSelect={() => void createFolder(workspaceId, folderId)} data-testid="disk-new-folder">
               <FolderPlus className="size-4" strokeWidth={1.75} aria-hidden />
               {t('disk.newFolder')}
@@ -216,7 +216,7 @@ function MoreMenu({ workspaceId, trash, manage }: { workspaceId: string; trash: 
         </IconButton>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="end" collisionPadding={16} data-testid="disk-more-menu">
+        <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="end" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="disk-more-menu">
           <Dropdown.Item className={menuItem} onSelect={() => ui().openTrash(workspaceId, !trash)} data-testid="disk-open-trash">
             <Trash2 className="size-4" strokeWidth={1.75} aria-hidden />
             {trash ? t('disk.backToDisk') : t('disk.trash')}
