@@ -263,5 +263,7 @@ export const ruShell = {
   'mobile.tabDisk': 'Диск',
   'mobile.tabWiki': 'Вики',
   'mobile.pin': 'Закрепить «{name}»',
-  'mobile.pinnedInstead': 'Закреплено вместо «{name}»',
+  'mobile.pinFull': 'Сначала открепите один',
+  'mobile.reorder': 'Перетащить «{name}»',
+  'mobile.unpin': 'Открепить «{name}»',
 } as const;

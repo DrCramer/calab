@@ -73,12 +73,12 @@ export function SectionRail(): ReactNode {
         {local ? <DmsTile active={section === 'dms'} /> : null}
         {ws && !guestWs ? <CalendarTile active={section === 'calendar'} /> : null}
         {ws && !guestWs ? <BoardsTile ws={ws} active={section === 'boards'} /> : null}
-        {/* «Диск» (ADR-0094 §8): after «Доски»; guests have none (their access is per item, v1 keeps it simple). */}
-        {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
-        {/* «Вики» (ADR-0096 §9): after «Диск»; guests have none (their access is per page). */}
-        {ws && !guestWs ? <WikiTile active={section === 'wiki'} /> : null}
         {/* «Почта» (ADR-0088 §8): personal, desktop app only — after «Доски», with or without a workspace. */}
         {MAIL ? <MailTile active={section === 'mail'} /> : null}
+        {/* «Вики» (ADR-0096 §9): after «Почта» (ADR-0095 addendum 2026-10-14); guests have none (their access is per page). */}
+        {ws && !guestWs ? <WikiTile active={section === 'wiki'} /> : null}
+        {/* «Диск» (ADR-0094 §8): last; guests have none (their access is per item, v1 keeps it simple). */}
+        {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
       </nav>
