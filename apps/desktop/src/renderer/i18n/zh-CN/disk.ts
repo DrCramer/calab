@@ -68,7 +68,7 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.badge.link': '已通过链接共享',
   'disk.accessTitle': '“{name}”的访问权限',
   'disk.restricted': '仅限指定成员',
-  'disk.restrictedHint': '空间角色不再授予访问权限：所有者、网盘管理员和列表中的成员仍可访问',
+  'disk.restrictedHint': '管理员和空间所有者也看不到：仅文件夹所有者和列表中的成员',
   'disk.accessWho': '谁有访问权限',
   'disk.accessInherited': '与上级文件夹相同',
   'disk.accessAdd': '添加角色或成员',

@@ -68,7 +68,7 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.badge.link': 'Compartido por enlace',
   'disk.accessTitle': 'Acceso a «{name}»',
   'disk.restricted': 'Solo personas seleccionadas',
-  'disk.restrictedHint': 'Los roles del espacio dejan de dar acceso: lo conservan el propietario, los administradores del Disco y la lista',
+  'disk.restrictedHint': 'Ni los administradores ni el propietario del espacio lo ven: solo el propietario de la carpeta y la lista',
   'disk.accessWho': 'Quién tiene acceso',
   'disk.accessInherited': 'Mismo acceso que la carpeta superior',
   'disk.accessAdd': 'Añadir un rol o una persona',
