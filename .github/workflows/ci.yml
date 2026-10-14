@@ -327,6 +327,9 @@ jobs:
       - run: pnpm -F @calaba/landing lint
       - run: pnpm -F @calaba/landing build
       - run: test -f apps/landing/out/index.html
+      # Docs route tables (ADR-0099): `prebuild` regenerates _routes.json from botroutes.go
+      - name: _routes.json matches botroutes.go
+        run: git diff --exit-code apps/landing/src/content/docs/_routes.json
 
   # Alias of the required check «landing lint / typecheck / build» (branch protection): the landing is
   # checked in `ts` now. Drop this job after removing the check from the protection of main.
