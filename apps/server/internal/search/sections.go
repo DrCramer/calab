@@ -574,3 +574,17 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 	}
 	return nil
 }
+
+// ---- wiki ----
+
+// WikiVector must stay the expression of wiki_pages_search_idx (00090) over wiki_pages w; the
+// sqlc query SearchWikiPages (queries/wiki.sql) spells it out too.
+const WikiVector = "(to_tsvector('russian', w.title || ' ' || w.plain_text) || to_tsvector('simple', w.title || ' ' || w.plain_text))"
+
+// wiki is the section of wiki pages (ADR-0096 §7). Candidates come from sqlc SearchWikiPages;
+// the access filter (perm.ComputeWikiPageIn over the pages' chains) and the hits come with the
+// wiki service (task W2). Until then the section is always empty, so that a search over every
+// type keeps working.
+func (s *Service) wiki(context.Context, pgx.Tx, *request, *scope, *v1.SearchSection) error {
+	return nil
+}
