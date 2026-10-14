@@ -29,13 +29,14 @@ export function NavButton(): ReactNode {
 
 /**
  * The magnifier left of the «+» on a tab root (owner, 08.10): opens the search screen (the pushed
- * `search` screen; the store's `show` with an empty query, everywhere). Nothing on a pushed screen.
+ * `search` screen; the store's `show` with an empty query, everywhere; `onClick` overrides it, e.g. the disk's
+ * in-folder filter). Nothing on a pushed screen.
  */
-export function PhoneSearchButton(): ReactNode {
+export function PhoneSearchButton({ onClick, active, label }: { onClick?: () => void; active?: boolean; label?: string } = {}): ReactNode {
   const root = useUi((s) => s.phone.stack.length === 0);
   if (!root) return null;
   return (
-    <IconButton tip={false} label={t('common.search')} onClick={() => useSearchPanel.getState().show('', 'all', 'messages')} bar data-testid="phone-search">
+    <IconButton tip={false} label={label ?? t('common.search')} active={active} onClick={onClick ?? (() => useSearchPanel.getState().show('', 'all', 'messages'))} bar data-testid="phone-search">
       <Search className="size-5" aria-hidden />
     </IconButton>
   );

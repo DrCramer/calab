@@ -771,7 +771,13 @@ test('m-more', async ({ page }) => {
   await expect(card.getByTestId('more-pin-disk')).toHaveAttribute('aria-checked', 'true');
   await expect(card.getByTestId('more-pin-chats')).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByText('Закреплено вместо «Команда»')).toBeVisible();
-  // A section from the card: its root, its plate in the fourth slot.
+  // A section from the card: its root, its plate in the fourth slot. Nothing jumps: the pinned tabs keep their x.
+  const pinnedX = async (): Promise<number[]> => {
+    const xs: number[] = [];
+    for (const id of ['dms', 'boards', 'disk']) xs.push(Math.round((await page.getByTestId(`phone-tab-${id}`).boundingBox())?.x ?? -1));
+    return xs;
+  };
+  const xsBefore = await pinnedX();
   await card.getByTestId('more-row-profile').tap();
   await expect(card).toHaveCount(0);
   await expect(page.getByTestId('phone-profile')).toBeVisible();
@@ -779,6 +785,7 @@ test('m-more', async ({ page }) => {
   await expect(more).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('phone-tab-more-plate')).toContainText('Профиль');
   expect(Math.round((await page.getByTestId('phone-tab-more-plate').boundingBox())?.height ?? 0), 'a 36 px plate').toBe(36);
+  expect(await pinnedX(), 'the pinned tabs keep their x under the plate').toEqual(xsBefore);
   await checkpoint(page, 'm-more-active');
   // A pinned tab brings «⋯ Ещё» back; the plate's tap reopens the card.
   await page.getByTestId('phone-tab-dms').tap();
