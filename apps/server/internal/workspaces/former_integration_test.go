@@ -226,6 +226,20 @@ func TestWorkspaceUsersResolvesFormerOnly(t *testing.T) {
 		g.GetReason() != v1.FormerMemberReason_FORMER_MEMBER_REASON_REMOVED {
 		t.Fatalf("gone: %v", g)
 	}
+	// A guest resolves only the members visible to it: never a former member.
+	guest := f.user("Guest")
+	f.member(ws, guest, perm.RoleGuest)
+	w = f.do("GET", "/api/workspaces/"+ws.String()+"/users?ids="+strings.Join([]string{guest.String(), gone.String(), stranger.String()}, ","), guest, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("guest users: %d %s", w.Code, w.Body)
+	}
+	var gresp v1.ListWorkspaceUsersResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &gresp); err != nil {
+		t.Fatal(err)
+	}
+	if len(gresp.GetUsers()) != 1 || gresp.GetUsers()[0].GetUserId() != guest.String() || gresp.GetUsers()[0].GetFormer() {
+		t.Fatalf("guest users: %v", gresp.GetUsers())
+	}
 	if w := f.do("GET", "/api/workspaces/"+ws.String()+"/users?ids="+mate.String(), stranger, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("stranger: %d", w.Code)
 	}

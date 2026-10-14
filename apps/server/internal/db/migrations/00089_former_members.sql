@@ -44,17 +44,9 @@ CREATE INDEX workspace_former_members_user_idx ON workspace_former_members (user
 CREATE INDEX workspace_former_members_avatar_idx ON workspace_former_members (avatar_file_id) WHERE avatar_file_id IS NOT NULL;
 CREATE INDEX workspace_former_members_removed_by_idx ON workspace_former_members (removed_by) WHERE removed_by IS NOT NULL;
 
-ALTER TABLE workspace_members ADD COLUMN last_active_at timestamptz;
-CREATE INDEX workspace_members_guest_active_idx ON workspace_members ((coalesce(last_active_at, joined_at)))
-    WHERE role = 'guest';
-
-UPDATE workspace_members m SET last_active_at = s.seen
-FROM (SELECT user_id, max(last_seen_at) AS seen FROM sessions GROUP BY user_id) s
-WHERE m.role = 'guest' AND s.user_id = m.user_id;
-
-UPDATE users SET guest_expires_at = least(guest_expires_at, now() + interval '48 hours')
-WHERE is_guest AND guest_expires_at IS NOT NULL;
-
+-- The one pass over messages / task tables runs before workspace_members is altered: the
+-- ACCESS EXCLUSIVE lock of ALTER TABLE is then held only for the short guest updates below,
+-- not for the whole scan (every permission check reads workspace_members).
 INSERT INTO workspace_former_members (workspace_id, user_id, display_name, avatar_file_id, role, left_at, reason)
 SELECT t.workspace_id, t.user_id, u.display_name, u.avatar_file_id,
        CASE WHEN u.is_guest THEN 'guest' ELSE 'member' END, max(t.at), 'removed'
@@ -78,6 +70,17 @@ JOIN users u ON u.id = t.user_id
 WHERE NOT EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = t.user_id)
 GROUP BY t.workspace_id, t.user_id, u.display_name, u.avatar_file_id, u.is_guest
 ON CONFLICT DO NOTHING;
+
+ALTER TABLE workspace_members ADD COLUMN last_active_at timestamptz;
+CREATE INDEX workspace_members_guest_active_idx ON workspace_members ((coalesce(last_active_at, joined_at)))
+    WHERE role = 'guest';
+
+UPDATE workspace_members m SET last_active_at = s.seen
+FROM (SELECT user_id, max(last_seen_at) AS seen FROM sessions GROUP BY user_id) s
+WHERE m.role = 'guest' AND s.user_id = m.user_id;
+
+UPDATE users SET guest_expires_at = least(guest_expires_at, now() + interval '48 hours')
+WHERE is_guest AND guest_expires_at IS NOT NULL;
 
 -- +goose Down
 SET LOCAL lock_timeout = '10s';
