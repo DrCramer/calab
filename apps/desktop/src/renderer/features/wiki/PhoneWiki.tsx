@@ -439,7 +439,7 @@ function PageBody({ workspaceId, pageId, editable, setup, trashed, host }: { wor
               )}
             </div>
           ) : null}
-          <TitleField pageId={pageId} editable={setup} className="text-[26px] leading-8" />
+          <TitleField pageId={pageId} editable={setup} className="!text-[26px] leading-8" />
         </div>
         <Suspense
           fallback={

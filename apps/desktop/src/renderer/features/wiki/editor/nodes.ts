@@ -148,6 +148,7 @@ export const WikiCodeBlock = CodeBlock.extend({
       });
       const pre = document.createElement('pre');
       const code = document.createElement('code');
+      code.spellcheck = false; // no red squiggles under identifiers and commands
       pre.append(code);
       dom.append(select, pre);
       let current = node;

@@ -475,7 +475,7 @@ function MoveDialog({ workspaceId, pageId, onClose }: { workspaceId: string; pag
             </span>
           ))}
         </nav>
-        <div className="flex h-60 flex-col overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] p-1">
+        <div tabIndex={-1} className="flex h-60 flex-col overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] p-1 outline-none">
           {!loaded ? (
             <div className="grid flex-1 place-items-center">
               <Spinner />
