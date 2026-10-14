@@ -189,3 +189,15 @@ describe('pinned tabs (ADR-0095)', () => {
     expect(barTabs(['calendar', 'disk', 'profile'], ['chats', 'profile', 'disk'])).toEqual({ bar: ['disk', 'profile', 'chats'], more: false });
   });
 });
+
+describe('disk screens (ADR-0094 §8)', () => {
+  it('folders stack over the Disk tab; the same folder is returned to, the trash is its own screen', () => {
+    let n = pushOnTab(nav({ tab: 'chats' }), 'disk', { kind: 'disk', folderId: 'a' });
+    expect(n.tab).toBe('disk');
+    n = pushScreen(n, { kind: 'disk', folderId: 'b' });
+    n = pushScreen(n, { kind: 'disk', folderId: '', trash: true });
+    expect(n.stack).toHaveLength(3);
+    n = pushScreen(n, { kind: 'disk', folderId: 'a' });
+    expect(n.stack).toEqual([{ kind: 'disk', folderId: 'a' }]);
+  });
+});

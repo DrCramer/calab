@@ -169,7 +169,7 @@ function SortMenu(): ReactNode {
   );
 }
 
-function CreateMenu({ workspaceId, folderId }: { workspaceId: string; folderId: string }): ReactNode {
+export function CreateMenu({ workspaceId, folderId }: { workspaceId: string; folderId: string }): ReactNode {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>

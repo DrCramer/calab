@@ -1613,3 +1613,68 @@ test('m-chat-inline-buttons', async ({ page }) => {
   await expect(page.getByTestId('inline-keyboard')).toBeVisible();
   await checkpoint(page, 'm-chat-inline-buttons', { main: true });
 });
+
+// ADR-0094 §8: «Диск» on the phone — the tab root (the workspace root as 56 px rows), a folder and
+// the trash as pushed screens, the item card, the desktop's dialogs as centred cards.
+test('m-disk-root', async ({ page }) => {
+  await signedIn(page, { diskView: 'list' });
+  await tab(page, 'disk');
+  const root = page.getByTestId('phone-disk');
+  await expect(root.getByTestId('disk-row')).toHaveCount(9);
+  await expect(root.getByTestId('disk-row').first()).toContainText('Дизайн');
+  await checkpoint(page, 'm-disk-root');
+  // Tiles: two columns.
+  await root.getByTestId('phone-disk-more').tap();
+  await page.getByTestId('phone-disk-view-tiles').tap();
+  await expect(root.getByTestId('disk-tile')).toHaveCount(9);
+  await checkpoint(page, 'm-disk-tiles', { snapshot: false });
+  // «⋯» card: view, sort, trash, history, usage.
+  await root.getByTestId('phone-disk-more').tap();
+  await expect(page.getByTestId('phone-disk-more-menu')).toBeVisible();
+  await checkpoint(page, 'm-disk-more', { snapshot: false });
+  await page.getByTestId('disk-open-usage').tap();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await checkpoint(page, 'm-disk-usage', { snapshot: false });
+});
+
+test('m-disk-folder', async ({ page }) => {
+  await signedIn(page, { diskView: 'list' });
+  await tab(page, 'disk');
+  await page.getByTestId('disk-row').filter({ hasText: 'Проекты' }).getByTestId('disk-row-open').tap();
+  const folder = page.getByTestId('phone-disk-folder');
+  await expect(folder).toBeVisible();
+  await expect(folder.getByTestId('phone-header')).toContainText('Проекты');
+  await expect(folder.getByTestId('disk-row')).toHaveCount(1);
+  await checkpoint(page, 'm-disk-folder');
+  await page.getByTestId('phone-back').tap();
+  await expect(page.getByTestId('phone-disk')).toBeVisible();
+});
+
+test('m-disk-item-menu', async ({ page }) => {
+  await signedIn(page, { diskView: 'list' });
+  await tab(page, 'disk');
+  const row = page.getByTestId('disk-row').filter({ hasText: 'Отчёт за квартал.pdf' });
+  await row.getByTestId('disk-item-more').tap();
+  const menu = page.getByTestId('disk-item-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByTestId('disk-menu-move')).toBeVisible();
+  await checkpoint(page, 'm-disk-item-menu');
+  // «Переместить» is the desktop's dialog, as a centred card.
+  await menu.getByTestId('disk-menu-move').tap();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await checkpoint(page, 'm-disk-move', { snapshot: false });
+});
+
+test('m-disk-trash', async ({ page }) => {
+  await signedIn(page, { diskView: 'list' });
+  await tab(page, 'disk');
+  await page.getByTestId('phone-disk-more').tap();
+  await page.getByTestId('disk-open-trash').tap();
+  const trash = page.getByTestId('phone-disk-folder');
+  await expect(trash.getByTestId('disk-row')).toHaveCount(2);
+  await expect(trash.getByTestId('phone-header')).toContainText('Корзина');
+  await checkpoint(page, 'm-disk-trash');
+  await trash.getByTestId('phone-disk-more').tap();
+  await expect(page.getByTestId('disk-empty-trash')).toBeVisible();
+  await checkpoint(page, 'm-disk-trash-menu', { snapshot: false });
+});

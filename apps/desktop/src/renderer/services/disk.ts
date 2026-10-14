@@ -27,6 +27,7 @@ import { t } from '../i18n';
 import { ApiError, body, call, callEmpty, qs } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { fmt } from '../lib/format';
+import { pushOnTab, type PhoneScreen } from '../lib/phoneNav';
 import { uploadInto } from '../lib/api/endpoints';
 import { folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
 import { getLocale } from '../i18n';
@@ -416,7 +417,9 @@ export function downloadItem(item: DiskItem): void {
  */
 export function openItem(item: DiskItem, siblings: readonly string[] = []): void {
   if (isFolder(item)) {
-    useDiskUi.getState().openFolder(item.workspaceId, item.id);
+    // The phone pushes the folder as a screen (ADR-0094 §8); the desktop switches its panel.
+    if (useUi.getState().phone.on) openPhoneDisk({ kind: 'disk', folderId: item.id });
+    else useDiskUi.getState().openFolder(item.workspaceId, item.id);
     return;
   }
   const kind = previewable(item.file);
@@ -452,4 +455,9 @@ export async function copyItemLink(id: string): Promise<void> {
   } catch (e) {
     fail(e, t('disk.err.link'));
   }
+}
+
+/** Pushes a disk screen (a folder or the trash) over the phone's «Диск» tab. */
+export function openPhoneDisk(screen: Extract<PhoneScreen, { kind: 'disk' }>): void {
+  useUi.getState().setPhone((n) => pushOnTab(n, 'disk', screen));
 }
