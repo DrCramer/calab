@@ -1835,19 +1835,22 @@ test('settings-bans', async ({ open, win, mock, shot }) => {
 });
 
 /** Вера left the main workspace (ADR-0097): she keeps her messages, tasks and comments, but is no member. */
-function veraLeaves(mock: MockServer): void {
+async function veraLeaves(win: Page, mock: MockServer): Promise<void> {
   const ws = IDS.workspaces.main;
   mock.state.members = mock.state.members.filter((m) => !(m.workspaceId === ws && (m.userId === IDS.users.vera || m.userId === IDS.users.dina)));
   mock.state.formerMembers.set(ws, [
     { userId: IDS.users.vera, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.REMOVED, leftAt: ts('2026-01-14T09:00:00Z'), removedBy: IDS.users.anna, openTasks: 2 },
     { userId: IDS.users.dina, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.LEFT, leftAt: ts('2026-01-05T09:00:00Z'), openTasks: 0 },
   ]);
+  // The app learns it from a fresh snapshot, as after a restart.
+  await win.reload();
+  await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });
 }
 
 /** Settings → «Участники» → «Бывшие» (ADR-0097 §3): who left, why, when, by whom; open tasks; «Пригласить снова». */
 test('former-tab', async ({ open, win, mock, shot }) => {
-  veraLeaves(mock);
   await open();
+  await veraLeaves(win, mock);
   await mainWindow(win, mock);
   await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
@@ -1858,8 +1861,8 @@ test('former-tab', async ({ open, win, mock, shot }) => {
 
 /** The feed with a message of someone who left: grey avatar, «бывший» next to the name (ADR-0097 §4). */
 test('former-chip', async ({ open, win, mock, shot }) => {
-  veraLeaves(mock);
   await open();
+  await veraLeaves(win, mock);
   await mainWindow(win, mock);
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: 'Передаю дела, всё описано в задачах' });
   await expect(win.locator('[data-message-id] [data-former-chip]').last()).toBeVisible();
@@ -1872,11 +1875,11 @@ test('former-chip', async ({ open, win, mock, shot }) => {
 
 /** A task of someone who left: chip, grey avatar and «Переназначить» on the assignee row. */
 test('former-task', async ({ open, win, mock, shot }) => {
-  veraLeaves(mock);
   await open();
+  await veraLeaves(win, mock);
   await mainWindow(win, mock);
   await boardsMode(win, mock);
-  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  await win.getByTestId('task-card').filter({ hasText: 'Тёмная тема' }).getByTestId('card-title').click();
   const panel = win.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-reassign')).toBeVisible();
   await checkpoint(shot, 'former-task');

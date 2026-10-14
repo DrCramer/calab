@@ -88,8 +88,8 @@ const FormerRow = memo(function FormerRow({ workspaceId, m }: { workspaceId: str
   const when = u.leftAt ? fmt.shortDate(timestampDate(u.leftAt)) : '—';
   const meta = [formerReasonText(u.reason), when, m.removedBy ? t('former.by', { who: memberName(workspaceId, m.removedBy) }) : ''].filter(Boolean).join(' · ');
   return (
-    <div className="flex min-h-12 items-center gap-3 px-3 py-2 mobile:flex-wrap" data-testid="ws-former-row" data-user={u.userId}>
-      <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={t('people.openProfile', { name })} onClick={() => openProfile(workspaceId, u.userId)}>
+    <div className="flex min-h-12 items-center gap-3 px-3 py-2 mobile:flex-wrap mobile:gap-y-2" data-testid="ws-former-row" data-user={u.userId}>
+      <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left mobile:basis-full" aria-label={t('people.openProfile', { name })} onClick={() => openProfile(workspaceId, u.userId)}>
         <Avatar userId={u.userId} name={name} fileId={u.avatarFileId || undefined} size={32} former ring="var(--color-card)" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-body font-medium" title={name}>

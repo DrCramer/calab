@@ -719,7 +719,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
   };
   return (
     <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)] mobile:grid mobile:grid-cols-[minmax(0,1fr)_auto_auto] mobile:gap-x-1 mobile:px-0" data-testid="assignee-row" data-user={userId}>
-      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full">
+      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className={cx('inline-flex min-w-0 shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full', former ? 'max-w-[62%]' : 'max-w-[40%]')}>
         <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
         <span className="min-w-0 truncate text-control font-medium mobile:text-[15px] mobile:font-semibold">{name}</span>
         <FormerChip workspaceId={task.workspaceId} userId={userId} />
