@@ -395,9 +395,9 @@ func (q *Queries) CountLiveTasks(ctx context.Context, boardID uuid.UUID) (int32,
 }
 
 const createBoard = `-- name: CreateBoard :one
-INSERT INTO boards (workspace_id, name, key, emoji, icon_file_id, description, is_private, position, created_by)
+INSERT INTO boards (workspace_id, name, key, emoji, icon_file_id, description, is_private, restricted, position, created_by)
 VALUES ($1, $2, $3, $4, $5,
-        $6, $7,
+        $6, $7, $7,
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = $1),
         $8)
 RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
@@ -2869,6 +2869,45 @@ type SetBoardArchivedParams struct {
 
 func (q *Queries) SetBoardArchived(ctx context.Context, arg SetBoardArchivedParams) (Board, error) {
 	row := q.db.QueryRow(ctx, setBoardArchived, arg.Archived, arg.ID)
+	var i Board
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Key,
+		&i.Emoji,
+		&i.IconFileID,
+		&i.Description,
+		&i.IsPrivate,
+		&i.Position,
+		&i.NextNumber,
+		&i.AutoArchiveDays,
+		&i.DefaultViewID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
+	)
+	return i, err
+}
+
+const setBoardCreator = `-- name: SetBoardCreator :one
+UPDATE boards SET created_by = $1 WHERE id = $2 RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
+`
+
+type SetBoardCreatorParams struct {
+	CreatedBy *uuid.UUID
+	ID        uuid.UUID
+}
+
+// «Сделать меня владельцем» (addendum 2026-10-14): the workspace owner takes over a private board
+// whose creator left the workspace.
+func (q *Queries) SetBoardCreator(ctx context.Context, arg SetBoardCreatorParams) (Board, error) {
+	row := q.db.QueryRow(ctx, setBoardCreator, arg.CreatedBy, arg.ID)
 	var i Board
 	err := row.Scan(
 		&i.ID,

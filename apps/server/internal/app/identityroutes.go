@@ -383,6 +383,7 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/admin/workspaces/{id}/plan":                                 scopeAdmin,
 	"PUT /api/admin/workspaces/{id}/suspension":                           scopeAdmin,
 	"PUT /api/boards/{id}/permissions":                                    scopeBoard,
+	"POST /api/boards/{id}/take-over":                                     scopeBoard,
 	"PUT /api/boards/{id}/position":                                       scopeBoard,
 	"PUT /api/bots/me/commands":                                           scopeMachine,
 	"PUT /api/bots/me/webhook":                                            scopeMachine,

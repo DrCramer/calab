@@ -128,9 +128,9 @@ SELECT count(*)::integer FROM boards WHERE workspace_id = $1 AND archived_at IS 
 SELECT count(*)::integer FROM boards WHERE workspace_id = $1;
 
 -- name: CreateBoard :one
-INSERT INTO boards (workspace_id, name, key, emoji, icon_file_id, description, is_private, position, created_by)
+INSERT INTO boards (workspace_id, name, key, emoji, icon_file_id, description, is_private, restricted, position, created_by)
 VALUES (sqlc.arg('workspace_id'), sqlc.arg('name'), sqlc.arg('key'), sqlc.arg('emoji'), sqlc.narg('icon_file_id'),
-        sqlc.arg('description'), sqlc.arg('is_private'),
+        sqlc.arg('description'), sqlc.arg('is_private'), sqlc.arg('is_private'),
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = sqlc.arg('workspace_id')),
         sqlc.arg('created_by'))
 RETURNING *;
@@ -771,3 +771,8 @@ DELETE FROM task_due_notices WHERE task_id = $1;
 -- name: PurgeTaskDueNotices :execrows
 -- The dedup rows older than any notice they could still prevent.
 DELETE FROM task_due_notices WHERE sent_at < now() - interval '30 days';
+
+-- name: SetBoardCreator :one
+-- «Сделать меня владельцем» (addendum 2026-10-14): the workspace owner takes over a private board
+-- whose creator left the workspace.
+UPDATE boards SET created_by = sqlc.arg('created_by') WHERE id = sqlc.arg('id') RETURNING *;

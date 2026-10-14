@@ -451,6 +451,7 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/boards/{id}/position":              botAllow,
 	"GET /api/boards/{id}/permissions":           botAllow,
 	"PUT /api/boards/{id}/permissions":           botDeny,
+	"POST /api/boards/{id}/take-over":            botDeny,
 	"POST /api/boards/{id}/statuses":             botAllow,
 	"PATCH /api/boards/{id}/statuses/{sid}":      botAllow,
 	"DELETE /api/boards/{id}/statuses/{sid}":     botAllow,

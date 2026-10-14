@@ -213,3 +213,34 @@ func TestTaskOfActivityEvent(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0058 addendum 2026-10-14: a private board reaches neither an admin nor the owner — the
+// owner only while «Владелец видит приватное» is on —, its creator always.
+func TestPrivateBoardRouting(t *testing.T) {
+	wid, bid := uuid.New(), uuid.New()
+	admin, owner, creator, member := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	st := &wsState{ws: &v1.Workspace{Id: wid.String()}, rooms: map[uuid.UUID]*v1.Room{}, roleDefs: perm.Roles{
+		"member": {ID: "member", Position: perm.PosMember, Permissions: perm.RoleDefaults[perm.RoleMember]},
+		"admin":  {ID: "admin", Position: perm.PosAdmin, Permissions: perm.Administrator},
+		"owner":  {ID: "owner", Position: perm.PosOwner, Permissions: perm.Administrator},
+	}}
+	st.setMember(admin, perm.RoleAdmin, []string{"member", "admin"})
+	st.setMember(owner, perm.RoleOwner, []string{"member", "owner"})
+	st.setMember(creator, perm.RoleMember, []string{"member"})
+	st.setMember(member, perm.RoleMember, []string{"member"})
+	st.setBoard(bid, &v1.Board{Id: bid.String(), WorkspaceId: wid.String(), IsPrivate: true, Restricted: true, CreatedBy: creator.String()})
+	sees := func(u uuid.UUID) bool { return st.boardView(bid, u).visible() }
+	if sees(admin) || sees(owner) || sees(member) || !sees(creator) {
+		t.Fatalf("setting off: admin %v owner %v member %v creator %v", sees(admin), sees(owner), sees(member), sees(creator))
+	}
+	st.ws = &v1.Workspace{Id: wid.String(), OwnerSeesPrivate: true}
+	st.rebuild()
+	if sees(admin) || !sees(owner) || st.boardBits(bid, owner) != perm.All {
+		t.Fatalf("setting on: admin %v owner %v bits %d", sees(admin), sees(owner), st.boardBits(bid, owner))
+	}
+	// A public board keeps the admin's bypass.
+	st.setBoard(bid, &v1.Board{Id: bid.String(), WorkspaceId: wid.String(), CreatedBy: creator.String()})
+	if !sees(admin) || !sees(member) {
+		t.Fatal("public board: admin and member see it")
+	}
+}
