@@ -8,6 +8,7 @@ import {
   CalendarSync,
   Check,
   DoorOpen,
+  FolderOpen,
   KeyRound,
   LayoutGrid,
   Lock,
@@ -131,7 +132,7 @@ const figure = (name: ScreenName, locale: Locale, alt: string, caption: string, 
 
 /**
  * Landing v3 feature sections (docs/09 #139), in the order of the brief: voice and video, chat,
- * calendar, boards, notes, guests, bots, self-hosted. Every screenshot is the app in the page's
+ * calendar, boards, mail, search, notes, disk, guests, web apps, bots, self-hosted. Every screenshot is the app in the page's
  * language with that language's team; nothing here needs JS.
  */
 export function Features({ t, locale }: { t: T; locale: Locale }) {
@@ -281,9 +282,20 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
-        id="guests"
+        id="disk"
         alt
         flip
+        text={
+          <>
+            <Intro id="disk-title" icon={FolderOpen} {...t.disk} />
+            <Points items={t.disk.points} className="mt-7" />
+          </>
+        }
+        shot={shot('disk', locale, t.disk.alt)}
+      />
+
+      <Split
+        id="guests"
         text={
           <>
             <Intro id="guests-title" icon={DoorOpen} {...t.guests} />
@@ -302,6 +314,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
 
       <Split
         id="webapps"
+        alt
         flip
         text={
           <>
@@ -314,7 +327,6 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
 
       <Split
         id="bots"
-        alt
         text={
           <>
             <Intro id="bots-title" icon={Bot} {...t.bots} />

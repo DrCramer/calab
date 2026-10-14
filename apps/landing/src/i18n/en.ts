@@ -5,7 +5,7 @@ const en: Dict = {
     title: 'Calab — voice, chat, meetings and tasks for your team, on your own server',
     description:
       'Voice rooms and video meetings, Telegram-style chat, a calendar, task boards, email in the desktop app, search across everything and flexible notifications — in the cloud or on your own server. Meeting recordings with summaries, bots and an API, works behind VPNs. macOS, Windows, Linux and the browser; iPhone and Android coming soon.',
-    ogAlt: 'Calab — the app window during a planning meeting: a shared slide and participants’ cameras',
+    ogAlt: 'Calab — the app window in a call: a shared screen and participants’ cameras',
   },
   header: {
     skip: 'Skip to content',
@@ -31,7 +31,7 @@ const en: Dict = {
     download: 'Download',
     openWeb: 'Open in browser',
     trust: 'Open source (BSL 1.1) · macOS · Windows · Linux · web',
-    shotAlt: 'The Calab window during a planning meeting: a “Release 1.1” slide on the stage, participants’ cameras below, the workspace rooms on the left',
+    shotAlt: 'The Calab window in a call: a shared browser with an image board on the stage, participants’ cameras below, the workspace rooms on the left',
   },
   why: {
     title: 'Why Calab',
@@ -74,7 +74,7 @@ const en: Dict = {
       title: 'Chat like Telegram',
       text: 'Every room has its own chat: replies, reactions, forwarding, stickers, voice messages, files with previews, pins and search. Read ticks, just as you’re used to.',
       points: ['Forward to several chats at once', 'Built-in stickers and workspace sticker packs', 'Voice messages, music and video with a built-in player', 'Mentions by @username, per-room notifications: all, mentions or nothing'],
-      alt: 'The “general” room: a mockup with reactions, a reply to it, a sticker and the members online',
+      alt: 'The “general” room: short messages from four people with reactions, a reply quoting a mockup, read ticks and “typing” in the header',
     },
     calendar: {
       eyebrow: 'Calendar and meetings',
@@ -127,6 +127,13 @@ const en: Dict = {
       text: 'Up to 20 shelves with your own names and emoji — like Saved Messages in Telegram, only several. Only you can see a shelf.',
       points: ['Drag a message onto a shelf or forward it', 'Drop files from Finder or Explorer straight onto a shelf', 'Pins and search, as in any chat'],
       alt: 'Notes: the “Ideas”, “Links” and “For the release” shelves and an open shelf with notes and a forwarded message',
+    },
+    disk: {
+      eyebrow: 'Disk',
+      title: 'The team’s files in one place',
+      text: 'Workspace folders and files, with previews of pictures and videos. Access is set per folder, any file can go out as a public link, and deleted items land in the trash first.',
+      points: ['Restricted folders for selected people and roles only', 'Public links: download without signing in, with an expiry date', 'Trash with restore and automatic cleanup', 'A meter shows how much space your plan has left'],
+      alt: 'Disk as tiles: the Contracts (locked), Design and Projects folders, a spreadsheet, a video with a public link, pictures with previews and a PDF; the storage meter at the bottom',
     },
     guests: {
       eyebrow: 'Guests',
@@ -186,8 +193,8 @@ const en: Dict = {
     },
     webapps: {
       eyebrow: 'Web apps',
-      title: 'Your services in the same window as the call',
-      text: 'An admin pins site shortcuts to the left rail — Grafana, the wiki, the CRM. One click opens the site inside Calab, full window, and the call keeps going.',
+      title: 'Your tools and bots, right inside the messenger',
+      text: 'An admin pins the team’s services to the left rail — a CRM, a sales dashboard, the wiki. One click on a shortcut opens the service inside Calab, and the call keeps going. Bots bring the key bits into the chat: a daily summary with Open report and Remind me buttons.',
       points: [
         'A shortcut is a picture, a name and an address; up to 20 apps per workspace',
         'The call is not interrupted: the island with your microphone stays at the bottom',
@@ -196,7 +203,7 @@ const en: Dict = {
         'Drag to reorder; right-click to edit, open in the browser, reload or delete',
         'Everyone except guests sees them; people with the integrations permission add and change them',
       ],
-      alt: 'The Calab window: three shortcuts (Grafana, Wiki, CRM) under the workspace in the left rail, a Grafana dashboard open full window and the active call panel still at the bottom',
+      alt: 'The Calab window: three app shortcuts in the left rail, the Sales dashboard open with KPIs, a weekly chart, a funnel and top deals; on top, a bot’s “Yesterday’s sales” message with Open report and Remind me at 6 pm buttons',
     },
     bots: {
       eyebrow: 'Bots and SDK',

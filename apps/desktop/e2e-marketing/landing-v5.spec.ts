@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { create, toJson } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
@@ -9,7 +9,8 @@ import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { startPublisher, type Publisher } from '../e2e-visual/publisher';
 import { APP_LOCALE, COPY, type Copy, type Short } from './copy';
 import { COPY3, type Copy3 } from './copy3';
-import { cameraPhoto, dataUrl } from './photos';
+import { mockupHtml, render } from './art';
+import { cameraPhoto, dataUrl, heroStream } from './photos';
 import { drawArt, msk, seedBoard, seedMeetings, seedNotes, seedScene } from './seed';
 
 /**
@@ -48,8 +49,16 @@ const PREFIX = process.env['MOCK_LIVEKIT_ROOM_PREFIX'] || 'landing_';
 /** The title bar's settings button in each language (the app's `settings.title`). */
 const SETTINGS: Record<Short, string> = { ru: 'Настройки', en: 'Settings', es: 'Ajustes', zh: '设置' };
 
-/** iPhone 14 portrait: the notch and the home indicator (WebKit here has no real safe area). */
-const INSETS = { top: 47, bottom: 34 };
+/** «Диск»: the fixture's folders (Проекты, Дизайн, Договоры) and files in each language. */
+const DISK: Record<Short, { folders: [string, string, string]; files: [string, string, string, string, string, string] }> = {
+  ru: { folders: ['Проекты', 'Дизайн', 'Договоры'], files: ['Обложка релиза.png', 'Мудборд коллекции.jpg', 'Офсайт команды.png', 'Отчёт за квартал.pdf', 'Бюджет 2026.xlsx', 'Демо продукта.mp4'] },
+  en: { folders: ['Projects', 'Design', 'Contracts'], files: ['Release cover.png', 'Collection moodboard.jpg', 'Team offsite.png', 'Quarterly report.pdf', 'Budget 2026.xlsx', 'Product demo.mp4'] },
+  es: { folders: ['Proyectos', 'Diseño', 'Contratos'], files: ['Portada de la versión.png', 'Moodboard de la colección.jpg', 'Offsite del equipo.png', 'Informe trimestral.pdf', 'Presupuesto 2026.xlsx', 'Demo del producto.mp4'] },
+  zh: { folders: ['项目', '设计', '合同'], files: ['版本封面.png', '系列灵感板.jpg', '团队团建.png', '季度报告.pdf', '2026 预算.xlsx', '产品演示.mp4'] },
+};
+
+/** Safe-area insets of the phone shots: just enough to clear the landing's rounded device edge (landing 14.10 — no empty notch / home-indicator bands). */
+const INSETS = { top: 12, bottom: 8 };
 
 interface Ctx {
   browser: Browser;
@@ -331,11 +340,10 @@ const scenes: Record<string, Scene> = {
     },
   },
 
-  // A video meeting in «Галерея» (ADR-0066): my camera, Борис and Григорий on camera, Вера and Дина as avatar tiles.
+  // A video meeting in «Галерея» (ADR-0066), the grid only (landing 14.10): my camera, Борис and Григорий on camera, Вера as an avatar tile — a clean 2 × 2.
   gallery: {
     seed: (mock) => {
       inRoom(mock, 'vera', { muted: true });
-      inRoom(mock, 'dina', { muted: true });
     },
     async run(ctx) {
       const { page, mock, c } = ctx;
@@ -362,12 +370,18 @@ const scenes: Record<string, Scene> = {
       }
       await expect(grid).toBeVisible();
       await expect(grid).toHaveAttribute('data-view', 'gallery');
-      await expect(page.getByTestId('video-tile')).toHaveCount(5, { timeout: 30_000 });
+      await expect(page.getByTestId('video-tile')).toHaveCount(4, { timeout: 30_000 });
       await frames(page, 3);
       await expect(page.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
       await speaking(page, [U.boris]);
       await setLocale(page, ctx.short);
       await page.waitForTimeout(1500);
+      // The tiles' box (CSS px): CROPS.gallery in apps/landing/scripts/assets.mjs is this plus a margin.
+      const box = await page.getByTestId('video-tile').evaluateAll((els) => {
+        const rs = els.map((e) => e.getBoundingClientRect());
+        return [Math.min(...rs.map((r) => r.left)), Math.min(...rs.map((r) => r.top)), Math.max(...rs.map((r) => r.right)), Math.max(...rs.map((r) => r.bottom))].map(Math.round);
+      });
+      console.log('gallery tiles', box.join(','));
       await shoot(ctx, 'gallery');
     },
   },
@@ -423,6 +437,63 @@ const scenes: Record<string, Scene> = {
       await expect(qs.getByTestId('search-hit').first()).toBeVisible({ timeout: 15_000 });
       await page.waitForTimeout(600);
       await shoot(ctx, 'search');
+    },
+  },
+
+  // «Диск» (ADR-0094) as tiles: the team's folders (one restricted — the lock), files with real
+  // thumbnails, a video with a public link, the storage meter. The mock's Disk fixture, renamed to
+  // the page language, its pictures replaced by real ones.
+  disk: {
+    async run(ctx) {
+      const { page, mock, c, short } = ctx;
+      const names = DISK[short];
+      const team = readFileSync(resolve(import.meta.dirname, '../../landing/public/editorial/team-conversation.webp'));
+      const pics: Record<string, { bytes: Buffer; mime: string; w: number; h: number }> = {
+        cover: { bytes: await render(ctx.browser, mockupHtml(c), 1600, 900), mime: 'image/png', w: 1600, h: 900 },
+        board: { bytes: heroStream(), mime: 'image/jpeg', w: 1280, h: 720 },
+        team: { bytes: await render(ctx.browser, `<img src="data:image/webp;base64,${team.toString('base64')}" style="display:block;width:1200px;height:800px;object-fit:cover">`, 1200, 800), mime: 'image/png', w: 1200, h: 800 },
+      };
+      // Fixture name → [the page language's name, the picture that replaces the file's bytes].
+      const map: Record<string, [string, string?]> = {
+        Проекты: [names.folders[0]],
+        Дизайн: [names.folders[1]],
+        Договоры: [names.folders[2]],
+        'Обложка релиза.png': [names.files[0], 'cover'],
+        'Офис.png': [names.files[1], 'board'],
+        'Исходники.zip': [names.files[2], 'team'],
+        'Отчёт за квартал.pdf': [names.files[3]],
+        'Бюджет 2026.xlsx': [names.files[4]],
+        'Демо продукта.mp4': [names.files[5]],
+      };
+      for (const it of mock.disk.items.values()) {
+        const m = map[it.name];
+        if (!m) continue;
+        it.name = m[0];
+        if (!it.file) continue;
+        it.file.name = m[0];
+        const pic = m[1] ? pics[m[1]] : undefined;
+        const rec = mock.state.files.get(it.file.id);
+        if (!pic || !rec) continue;
+        it.file.mime = pic.mime;
+        if (m[1] === 'team') it.file.size = 5_412_000n;
+        it.file.thumbnailUrl = `/api/files/${it.file.id}/thumbnail`;
+        it.file.width = pic.w;
+        it.file.height = pic.h;
+        rec.meta = it.file;
+        rec.bytes = pic.bytes;
+        rec.thumbnail = { bytes: pic.bytes, mime: pic.mime };
+      }
+      await setLocale(page, short);
+      // A smaller window: two full rows of tiles above the storage meter, no empty floor.
+      await page.setViewportSize({ width: 1060, height: 600 });
+      await page.getByTestId('section-disk').click();
+      const tiles = page.getByTestId('disk-tile');
+      await expect(tiles).toHaveCount(9, { timeout: 15_000 });
+      await expect(page.getByTestId('disk-meter')).toBeVisible();
+      await expect.poll(() => page.locator('[data-testid="disk-tile"] img').evaluateAll((l) => l.filter((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0).length), { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+      await page.mouse.move(0, 599);
+      await page.waitForTimeout(600);
+      await shoot(ctx, 'disk');
     },
   },
 

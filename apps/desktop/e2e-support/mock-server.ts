@@ -790,6 +790,8 @@ export interface MockServer {
   failMessagesOnce(roomId: string): void;
   /** Task boards (ADR-0042, mock-boards.ts): the live domain (tasks, boards, activity). */
   readonly boards: BoardsMock;
+  /** Disk (ADR-0094, mock-disk.ts): the live items, rights and links (marketing scenes rename the fixture). */
+  readonly disk: DiskMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
   updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
@@ -860,6 +862,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
     get boards() {
       return impl.boards;
+    },
+    get disk() {
+      return impl.disk;
     },
     updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
     failMessagesOnce: (roomId) => impl.failMessages.set(roomId, (impl.failMessages.get(roomId) ?? 0) + 1),
