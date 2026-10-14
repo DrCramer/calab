@@ -1,8 +1,8 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ChevronDown, Ellipsis, HardDrive, Pin } from 'lucide-react';
+import { ChevronDown, Ellipsis, Pin } from 'lucide-react';
 import { memo, useMemo, type ReactNode } from 'react';
-import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
+import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
 import { CountBadge, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { haptics } from '../../lib/haptics';
@@ -50,7 +50,7 @@ export function tabLabel(tab: PhoneTab): string {
   }
 }
 
-/** The tab's icon: the owner's drawings (filled when open), «Диск» a line glyph, «Профиль» my avatar. `cls` sizes the drawings. */
+/** The tab's icon: the owner's drawings (filled when open), «Профиль» my avatar. `cls` sizes the drawings. */
 const TabIcon = memo(function TabIcon({ tab, active, cls }: { tab: PhoneTab; active: boolean; cls: string }): ReactNode {
   switch (tab) {
     case 'chats':
@@ -62,11 +62,7 @@ const TabIcon = memo(function TabIcon({ tab, active, cls }: { tab: PhoneTab; act
     case 'calendar':
       return active ? <CalendarActiveIcon className={cls} /> : <CalendarIdleIcon className={cls} />;
     case 'disk':
-      return (
-        <span className="flex size-7 items-center justify-center">
-          <HardDrive className="size-[22px]" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
-        </span>
-      );
+      return active ? <DiskActiveIcon className={cls} /> : <DiskIdleIcon className={cls} />;
     case 'profile':
       return <ProfileTabIcon active={active} />;
   }

@@ -68,6 +68,8 @@ import {
 } from './calendar';
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
+import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
+import { useDisk } from '../stores/disk';
 import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
@@ -297,11 +299,21 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'workspaceUpdate':
       if (e.value.workspace) {
+        const usedBefore = useWorkspaces.getState().byId[e.value.workspace.id]?.ws.storageUsedBytes;
         useWorkspaces.getState().updateWorkspace(e.value.workspace);
+        // The Disk's storage meter (ADR-0094 §6) follows the workspace's usage.
+        if (usedBefore !== e.value.workspace.storageUsedBytes) onWorkspaceStorage(e.value.workspace.id);
         onWorkspaceBilling(e.value.workspace);
         // «Тариф не активен» starts / ends live: the stream / camera buttons of my call follow.
         if (e.value.workspace.id === useVoice.getState().workspaceId) voice.refreshRights();
       }
+      return;
+    // Disk (ADR-0094 §7): the open listing follows; a hidden section drops its stale lists.
+    case 'diskItemUpsert':
+      onDiskItemUpsert(e.value);
+      return;
+    case 'diskItemRemove':
+      onDiskItemRemove(e.value);
       return;
     case 'billingUpdate':
       onBillingUpdate(e.value.workspaceId, e.value.revision);
@@ -317,6 +329,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       dropSipCalls((_room, c) => c.workspaceId === id);
       dropWorkspaceEvents(id);
       dropWorkspaceBoards(id);
+      useDisk.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();

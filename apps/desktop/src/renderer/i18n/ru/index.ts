@@ -17,6 +17,7 @@ import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
 import { ruMailbox } from './mailbox';
+import { ruDisk } from './disk';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
 import { ruHistory } from './history';
@@ -75,6 +76,7 @@ export const ru = {
   ...ruRoles,
   ...ruCalendar,
   ...ruMailbox,
+  ...ruDisk,
   ...ruBoards,
   ...ruBoards2,
   ...ruHistory,

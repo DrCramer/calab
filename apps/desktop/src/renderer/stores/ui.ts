@@ -9,6 +9,7 @@ import type { LightboxImage } from '../lib/lightbox';
 import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
 import { leaveMail } from './mailUi';
+import { leaveDisk } from './diskUi';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -175,6 +176,7 @@ export const useUi = create<UiState>()(
         set((s) => {
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
           leaveMail();
+          leaveDisk();
           return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
@@ -198,6 +200,7 @@ export const useUi = create<UiState>()(
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
           leaveMail();
+          leaveDisk();
           return {
           calDay: null,
           calEvent: null,
@@ -269,6 +272,7 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   if (!r) return {};
   if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
   leaveMail();
+  leaveDisk();
   const { ws, room } = r.to;
   return {
     calDay: null,

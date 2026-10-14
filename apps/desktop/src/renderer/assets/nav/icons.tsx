@@ -91,3 +91,23 @@ export function MailActiveIcon({ className }: IconProps): ReactNode {
     </svg>
   );
 }
+
+// «Диск» (ADR-0094 §8): a folder drawn to match the set — the same 3…41 frame, radius 5 and
+// 2-unit lines as «Почта»; idle = outline with the tab, active = filled with the tab's seam cut out.
+export function DiskIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d="M4 13C4 10.24 6.24 8 9 8H16.34C17.67 8 18.94 8.53 19.88 9.46L22.41 12H35C37.76 12 40 14.24 40 17V31C40 33.76 37.76 36 35 36H9C6.24 36 4 33.76 4 31V13Z" />
+      <path d="M4 18H40" />
+    </svg>
+  );
+}
+
+export function DiskActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path d="M3 13C3 9.69 5.69 7 9 7H16.34C17.93 7 19.46 7.63 20.59 8.76L22.83 11H35C38.31 11 41 13.69 41 17H3V13Z" />
+      <path d="M3 19H41V31C41 34.31 38.31 37 35 37H9C5.69 37 3 34.31 3 31V19Z" />
+    </svg>
+  );
+}
