@@ -39,6 +39,8 @@ import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
 import { AchievementCardView } from './AchievementCard';
 import { RoomIconLine } from './RoomIconLine';
+import { ContactSharedLine } from './ContactSharedLine';
+import { contactSharedCardOf } from '../../lib/contactRequest';
 import { achievementCardOf } from '../../lib/achievements';
 import { CallLogRow } from '../call/CallBits';
 import { callCardOf } from '../../lib/callModel';
@@ -162,8 +164,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   const auto = automationCardOf(c.msg);
   // The room picture changed (ADR-0092): a centred service line with the new picture.
   const icon = roomIconCardOf(c.msg);
+  // A contact shared with a bot (ADR-0100): a centred service line in the DM.
+  const contact = contactSharedCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon || contact ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -192,6 +196,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       ) : icon ? (
         <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <RoomIconLine card={icon} authorId={c.msg.authorId} workspaceId={workspaceId} />
+        </div>
+      ) : contact ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <ContactSharedLine card={contact} authorId={c.msg.authorId} workspaceId={workspaceId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />
@@ -474,7 +482,7 @@ function Bubble({
         >
           {body}
           {m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' ? (
-            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
+            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} botId={m.authorId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
           ) : null}
           {bar.visible ? (
             <ActionBarSlot own={own}>

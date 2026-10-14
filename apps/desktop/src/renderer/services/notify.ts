@@ -17,6 +17,7 @@ import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
 import { t } from '../i18n';
 import { roomIconCardOf, systemPreview } from '../lib/recording';
+import { contactSharedCardOf } from '../lib/contactRequest';
 import { callCardOf } from '../lib/callModel';
 
 export { mentionsMe };
@@ -94,7 +95,7 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   // moves when it is seen).
   if (!visible) useRooms.getState().addUnread(m.roomId, m.id, mention);
   // The room picture changed (ADR-0092): counted, never a sound or a notification.
-  if (roomIconCardOf(m)) return;
+  if (roomIconCardOf(m) || contactSharedCardOf(m)) return; // a contact share too (ADR-0100)
   const system = !visible && notify && p.presence !== PresenceStatus.DND && ((mention && p.notifyMentions) || p.notifyAll);
   // A tab showing the chat claims the message even when it stays quiet, so another tab does
   // not notify about what is on screen.

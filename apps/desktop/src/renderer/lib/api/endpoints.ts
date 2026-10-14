@@ -140,6 +140,7 @@ import {
   MessageSchema,
   CreateMessageInteractionRequestSchema,
   CreateMessageInteractionResponseSchema,
+  ShareContactResponseSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
   ForwardMessageRequestSchema,
@@ -571,6 +572,9 @@ export const api = {
     get: (roomId: string, id: string) => call('GET', `/api/rooms/${roomId}/messages/${id}`, MessageSchema),
     interact: (id: string, p: MessageInitShape<typeof CreateMessageInteractionRequestSchema>) =>
       call('POST', `/api/messages/${id}/interactions`, CreateMessageInteractionResponseSchema, body(CreateMessageInteractionRequestSchema, p)),
+    /** Confirms a REQUEST_CONTACT button (ADR-0100): the server sends my contact from the profile. */
+    shareContact: (id: string, buttonId: string) =>
+      call('POST', `/api/messages/${id}/buttons/${encodeURIComponent(buttonId)}/contact`, ShareContactResponseSchema),
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
       call('GET', `/api/rooms/${roomId}/messages${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
     create: (roomId: string, init: MessageInitShape<typeof CreateMessageRequestSchema>) =>
