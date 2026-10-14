@@ -248,7 +248,7 @@ func visibleActivity(ctx context.Context, q *sqlc.Queries, c caller, rows []sqlc
 	out := rows[:0:0]
 	for _, a := range rows {
 		if a.ItemID == nil {
-			if !a.Private {
+			if !a.Private || c.m.SeesPrivate() { // the owner with «Владелец видит приватное» sees them too
 				out = append(out, a)
 			}
 			continue

@@ -539,6 +539,11 @@ SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.title),
     sqlc.arg('options')::text)::text AS snippet
 FROM wiki_pages w WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);
 
+-- name: SetWikiPageOwner :exec
+-- «Сделать меня владельцем» (addendum 2026-10-14): a former member's private page gets a new owner.
+UPDATE wiki_pages SET owner_id = sqlc.arg('owner_id'), updated_by = sqlc.arg('owner_id'), updated_at = now()
+WHERE id = sqlc.arg('id');
+
 -- name: ListWikiSubtree :many
 -- The pages below a page (not the page itself), parents before children, trashed or not: a
 -- trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14

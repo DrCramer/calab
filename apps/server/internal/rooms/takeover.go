@@ -9,13 +9,10 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/wsaudit"
 )
 
-// Workspace journal values of «Сделать меня владельцем» (workspace_audit, migration 00097).
-const (
-	auditTakeOver    = "take_over"
-	auditSubjectRoom = "room"
-)
+var errTakeOverOwnerOnly = httpx.Forbidden("only the workspace owner with «owner sees private» on").WithDetails(wsaudit.ReasonOwnerOnly, 0, 0)
 
 // takeOver: POST /api/rooms/{id}/take-over (ADR-0078 addendum 2026-10-14, «Сделать меня
 // владельцем»). The workspace owner with «Владелец видит приватное» on takes over a private
@@ -33,7 +30,7 @@ func (h *Handlers) takeOver(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !acc.Member.SeesPrivate() {
-		return httpx.Forbidden("only the workspace owner with «owner sees private» on").WithDetails(ReasonOwnerOnly, 0, 0)
+		return errTakeOverOwnerOnly
 	}
 	if !acc.Private {
 		return httpx.Conflict("only a private room is taken over")
@@ -48,17 +45,9 @@ func (h *Handlers) takeOver(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if cur.CreatedBy != nil {
-			if *cur.CreatedBy == me {
-				return httpx.Conflict("the room is already yours")
-			}
-			_, err := q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: acc.WorkspaceID, UserID: *cur.CreatedBy})
-			if err == nil {
-				return httpx.Conflict("the room's creator is still a member of the workspace")
-			}
-			if !db.IsNotFound(err) {
-				return err
-			}
+		if err := wsaudit.MayTakeOver(r.Context(), q, acc.WorkspaceID, acc.Member, cur.CreatedBy, errTakeOverOwnerOnly,
+			httpx.Conflict("the room's creator is still a member of the workspace")); err != nil {
+			return err
 		}
 		room, err := q.SetRoomCreator(r.Context(), sqlc.SetRoomCreatorParams{ID: roomID, CreatedBy: &me})
 		if err != nil {
@@ -67,10 +56,7 @@ func (h *Handlers) takeOver(w http.ResponseWriter, r *http.Request) error {
 		if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: roomID, UserID: me.String(), Allow: int64(perm.RoomOnly)}); err != nil { //nolint:gosec // bit mask
 			return err
 		}
-		subject := auditSubjectRoom
-		if err := q.InsertWorkspaceAudit(r.Context(), sqlc.InsertWorkspaceAuditParams{
-			WorkspaceID: acc.WorkspaceID, ActorID: &me, Kind: auditTakeOver, SubjectType: &subject, SubjectID: &roomID, PreviousOwnerID: cur.CreatedBy,
-		}); err != nil {
+		if err := wsaudit.RecordTakeOver(r.Context(), q, acc.WorkspaceID, me, wsaudit.SubjectRoom, roomID, cur.CreatedBy); err != nil {
 			return err
 		}
 		pb, err = h.load(r.Context(), q, room)
