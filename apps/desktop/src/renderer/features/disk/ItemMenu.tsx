@@ -9,7 +9,7 @@ import { copyItemLink, deleteForever, downloadItem, openItem, restoreItems, tras
 import { useDisk } from '../../stores/disk';
 import { useDiskUi } from '../../stores/diskUi';
 import { myUserId } from '../../stores/session';
-import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 
 /**
  * The item's menu (ADR-0094 §8): the same entries on a right click (ContextMenu) and on the «⋯»
@@ -21,14 +21,15 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 interface Parts {
   Item: ComponentType<{ className?: string; onSelect?: (e: Event) => void; disabled?: boolean; children?: ReactNode; 'data-testid'?: string }>;
   Separator: ComponentType<{ className?: string }>;
+  Label: ComponentType<{ className?: string; children?: ReactNode }>;
 }
-const CTX: Parts = { Item: ContextMenu.Item, Separator: ContextMenu.Separator };
-const DROP: Parts = { Item: Dropdown.Item, Separator: Dropdown.Separator };
+const CTX: Parts = { Item: ContextMenu.Item, Separator: ContextMenu.Separator, Label: ContextMenu.Label };
+const DROP: Parts = { Item: Dropdown.Item, Separator: Dropdown.Separator, Label: Dropdown.Label };
 
 function Entries({ id, parts }: { id: string; parts: Parts }): ReactNode {
   const item = useDisk((s) => s.items[id]);
   if (!item) return null;
-  const { Item, Separator } = parts;
+  const { Item, Separator, Label } = parts;
   const ui = useDiskUi.getState();
   const write = canWrite(item.myBits);
   const share = canShare(item, myUserId());
@@ -40,9 +41,17 @@ function Entries({ id, parts }: { id: string; parts: Parts }): ReactNode {
     </Item>
   );
   const ic = (I: typeof Download): ReactNode => <I className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />;
+  // The phone's card names its item (the card covers the row): one line, ellipsis.
+  const title = (
+    <>
+      <Label className={cx(menuLabel, 'hidden truncate mobile:block')} data-testid="disk-item-menu-title">{item.name}</Label>
+      <Separator className={cx(menuSeparator, 'hidden mobile:block')} />
+    </>
+  );
   if (item.trashedAt) {
     return (
       <>
+        {title}
         {write ? row(ic(RotateCcw), t('disk.restore'), () => void restoreItems([id]), { testId: 'disk-menu-restore' }) : null}
         {write ? <Separator className={menuSeparator} /> : null}
         {write ? row(ic(Trash2), t('disk.deleteForever'), () => void deleteForever(id), { danger: true, testId: 'disk-menu-delete' }) : null}
@@ -52,6 +61,7 @@ function Entries({ id, parts }: { id: string; parts: Parts }): ReactNode {
   }
   return (
     <>
+      {title}
       {row(ic(FolderOpen), t('disk.open'), () => openItem(item), { testId: 'disk-menu-open' })}
       {!folder ? row(ic(Download), t('disk.download'), () => downloadItem(item), { testId: 'disk-menu-download' }) : null}
       {write ? row(ic(Pencil), t('disk.rename'), () => ui.setRenaming(id), { testId: 'disk-menu-rename' }) : null}

@@ -1,12 +1,13 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, diskPermissions, WorkspaceRole, type DiskItem } from '@calaba/protocol';
-import { Check, Ellipsis, Gauge, HardDrive, History, Search, Trash2, Users } from 'lucide-react';
+import { Check, Ellipsis, Gauge, History, Search, Trash2, Users } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar, BAR_GROUP } from '../../components/Bar';
+import { DiskIdleIcon } from '../../assets/nav/icons';
 import { MediaImg } from '../../components/MediaImg';
-import { HeaderIcon, PhoneHeader } from '../../components/PhoneHeader';
+import { CreateSlot, HeaderIcon, PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
 import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
@@ -60,14 +61,20 @@ export function PhoneDisk({ workspaceId, folderId, trash, root }: { workspaceId:
   }, [folderId, trash]);
 
   const title = trash ? t('disk.trash') : root ? t('mobile.tabDisk') : name;
+  const toggleSearch = (): void => setSearching((v) => !v);
+  // Standard order «⋯ · поиск · +» (docs/08): the magnifier and the «+» slot are at the same x as on every root.
   const actions = (
     <>
-      <IconButton tip={false} bar label={t('disk.search')} active={searching} onClick={() => setSearching((v) => !v)} data-testid="phone-disk-search">
-        <Search className="size-5" aria-hidden />
-      </IconButton>
-      {/* No «+» in the trash / a read-only folder: its slot stays, so the magnifier keeps its place (docs/08). */}
-      {!trash && write ? <CreateMenu workspaceId={workspaceId} folderId={folderId} /> : <span aria-hidden className="size-9 shrink-0" />}
       <MoreMenu workspaceId={workspaceId} folderId={folderId} trash={trash} write={write} manage={manage} shareFolder={shareFolder} />
+      {root ? (
+        <PhoneSearchButton onClick={toggleSearch} active={searching} label={t('disk.search')} />
+      ) : (
+        <IconButton tip={false} bar label={t('disk.search')} active={searching} onClick={toggleSearch} data-testid="phone-disk-search">
+          <Search className="size-5" aria-hidden />
+        </IconButton>
+      )}
+      {/* No «+» in the trash / a read-only folder: its slot stays, so the magnifier keeps its place (docs/08). */}
+      {!trash && write ? <CreateMenu workspaceId={workspaceId} folderId={folderId} /> : root ? <CreateSlot /> : <span aria-hidden className="size-9 shrink-0" data-testid="create-slot" />}
     </>
   );
 
@@ -75,7 +82,7 @@ export function PhoneDisk({ workspaceId, folderId, trash, root }: { workspaceId:
     <section className="mat-content relative flex min-h-0 flex-1 flex-col" aria-label={t('disk.section')} data-testid={root ? 'phone-disk' : 'phone-disk-folder'}>
       {root ? (
         <Bar>
-          <HeaderIcon icon={HardDrive} />
+          <HeaderIcon><DiskIdleIcon className="size-5" /></HeaderIcon>
           <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{title}</h1>
           <div className={BAR_GROUP}>{actions}</div>
         </Bar>
