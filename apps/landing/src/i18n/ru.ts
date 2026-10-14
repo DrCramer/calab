@@ -14,6 +14,7 @@ const ru = {
     navLabel: 'Разделы',
     nav: {
       features: 'Возможности',
+      docs: 'Документация',
       calendar: 'Календарь',
       boards: 'Доски',
       download: 'Скачать',
