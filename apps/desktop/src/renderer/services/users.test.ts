@@ -2,8 +2,8 @@ import { FormerMemberReason, UserRefSchema, ListWorkspaceUsersResponseSchema } f
 import { create } from '@bufbuild/protobuf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const users = vi.fn();
-vi.mock('../lib/api/endpoints', () => ({ api: { workspaces: { users: (...a: unknown[]) => users(...a) } } }));
+const users = vi.fn<(ws: string, ids: string[]) => Promise<unknown>>();
+vi.mock('../lib/api/endpoints', () => ({ api: { workspaces: { users: (ws: string, ids: string[]) => users(ws, ids) } } }));
 
 import { formerKey, useWorkspaces } from '../stores/workspaces';
 import { RESOLVE_BATCH, resetResolver, resolveUsers } from './users';
@@ -17,7 +17,7 @@ describe('resolveUsers', () => {
     resetResolver();
     useWorkspaces.getState().reset();
     users.mockReset();
-    users.mockImplementation((_ws: string, ids: string[]) =>
+    users.mockImplementation((_ws, ids) =>
       Promise.resolve(create(ListWorkspaceUsersResponseSchema, { users: ids.filter((i) => i !== 'ghost').map((i) => ref(i)) })),
     );
   });
@@ -42,7 +42,7 @@ describe('resolveUsers', () => {
     );
     resolveUsers('w', ['ghost']);
     await vi.advanceTimersByTimeAsync(200);
-    expect(users.mock.calls.map((c) => (c[1] as string[]).length)).toEqual([RESOLVE_BATCH, 6]);
+    expect(users.mock.calls.map((c) => (c[1]).length)).toEqual([RESOLVE_BATCH, 6]);
     resolveUsers('w', ['ghost', 'u1']);
     await vi.advanceTimersByTimeAsync(200);
     expect(users).toHaveBeenCalledTimes(2);

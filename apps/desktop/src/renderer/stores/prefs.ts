@@ -134,6 +134,8 @@ export interface Prefs {
    * preselect of the next visit while both markets are open. A hint only — the server decides.
    */
   billingMarket: Record<string, 'global' | 'ru'>;
+  /** «Гости · N» in the members column, per workspace: the viewer's choice; unset = open up to 5 guests (ADR-0098 §3). */
+  guestsOpen: Record<string, boolean>;
   /** «Виброотклик» (phone only, lib/haptics.ts): ticks on taps, toggles, swipe thresholds, long-press menus. */
   haptics: boolean;
   /** The three tabs on the phone's bar, the rest behind «Ещё» (ADR-0095); oldest first. */
@@ -198,6 +200,7 @@ const DEFAULTS: Prefs = {
   soundboardUsage: {},
   updateNag: null,
   billingMarket: {},
+  guestsOpen: {},
   haptics: true,
   phonePinnedTabs: [...DEFAULT_PINNED],
   diskView: 'tiles',
