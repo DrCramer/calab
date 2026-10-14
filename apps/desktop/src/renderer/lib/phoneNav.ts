@@ -6,40 +6,73 @@
  */
 
 export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile';
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'disk', 'wiki', 'profile'];
+/** Default order of all sections (rail order without mail, ADR-0095 addendum 2026-10-14). */
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile'];
 
 /** How many tabs sit on the bar itself; the rest live behind «Ещё» (ADR-0095). */
-export const PINNED_COUNT = 3;
-export const DEFAULT_PINNED: readonly PhoneTab[] = ['chats', 'dms', 'boards'];
+export const PINNED_COUNT = 4;
+/** Candidates for the pinned set, in the order they top up a short list. */
+export const DEFAULT_PINNED: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar'];
 
 /**
- * Pinning (ADR-0095 §2): exactly `PINNED_COUNT` tabs. Pinning a tab unpins it when it is pinned
- * already (never below the count: that is a no-op, there must be three); pinning a new one drops
- * the oldest (the first in the list) and reports it.
+ * Pin toggle (addendum 2026-10-14): only changes the set, never the order. Pinning with the bar
+ * full is refused (`full`, the card disables the pin with a hint); unpinning is always possible.
  */
-export function pinTab(pinned: readonly PhoneTab[], tab: PhoneTab): { pinned: PhoneTab[]; unpinned?: PhoneTab } {
-  if (pinned.includes(tab)) return { pinned: [...pinned] };
-  const next = [...pinned, tab];
-  if (next.length <= PINNED_COUNT) return { pinned: next };
-  return { pinned: next.slice(1), unpinned: next[0] };
+export function togglePin(pinned: readonly PhoneTab[], tab: PhoneTab): { pinned: PhoneTab[]; full?: boolean } {
+  if (pinned.includes(tab)) return { pinned: pinned.filter((x) => x !== tab) };
+  if (pinned.length >= PINNED_COUNT) return { pinned: [...pinned], full: true };
+  return { pinned: [...pinned, tab] };
 }
 
-/** A stored list is valid when it holds distinct known tabs; else the default. */
+const known = (v: unknown): PhoneTab[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is PhoneTab => PHONE_TABS.includes(x as PhoneTab)))] : []);
+
+/** A stored pinned set is valid when it holds distinct known tabs, at most `PINNED_COUNT` (fewer is fine: the user unpinned). Not an array = default. */
 export function normalizePinned(v: unknown): PhoneTab[] {
-  if (!Array.isArray(v)) return [...DEFAULT_PINNED];
-  const out = [...new Set(v.filter((x): x is PhoneTab => PHONE_TABS.includes(x as PhoneTab)))].slice(0, PINNED_COUNT);
-  return out.length === PINNED_COUNT ? out : [...DEFAULT_PINNED];
+  return Array.isArray(v) ? known(v).slice(0, PINNED_COUNT) : [...DEFAULT_PINNED];
+}
+
+/** Migration from the three-cell bar (prefs v5): a full old list of 3 gets the next default appended. */
+export function migratePinned(v: unknown): PhoneTab[] {
+  const out = normalizePinned(v);
+  if (out.length === PINNED_COUNT - 1) {
+    const next = DEFAULT_PINNED.find((x) => !out.includes(x));
+    if (next) out.push(next);
+  }
+  return out.length === 0 ? [...DEFAULT_PINNED] : out;
 }
 
 /**
- * The tabs shown on the bar for an account: the pinned ones it may open, topped up from the
- * available ones (a guest has no «Личные», «Доски», «Календарь», «Диск»): at most `PINNED_COUNT`,
- * in the pinned order. `more` = something is hidden, so «Ещё» is shown.
+ * The full order of the sections (pinned and not): stored ids first, the missing ones after in the
+ * default order. Migration passes the old pinned list as `lead` so the bar keeps its order.
  */
-export function barTabs(pinned: readonly PhoneTab[], available: readonly PhoneTab[]): { bar: PhoneTab[]; more: boolean } {
-  const bar = pinned.filter((t) => available.includes(t));
-  for (const t of available) if (bar.length < PINNED_COUNT && !bar.includes(t)) bar.push(t);
-  return { bar, more: available.some((t) => !bar.includes(t)) };
+export function normalizeOrder(v: unknown, lead: readonly PhoneTab[] = []): PhoneTab[] {
+  const out = [...new Set([...lead, ...known(v)])];
+  for (const t of PHONE_TABS) if (!out.includes(t)) out.push(t);
+  return out;
+}
+
+/** Moves `from` onto the place of `to` (drag and drop of a card row). */
+export function moveTab(order: readonly PhoneTab[], from: PhoneTab, to: PhoneTab): PhoneTab[] {
+  const a = order.indexOf(from);
+  const b = order.indexOf(to);
+  if (a < 0 || b < 0 || a === b) return [...order];
+  const out = [...order];
+  out.splice(a, 1);
+  out.splice(b, 0, from);
+  return out;
+}
+
+/**
+ * The tabs shown on the bar for an account: pinned and available, in the `order`, topped up from
+ * the available ones in that order (a guest has few sections): at most `PINNED_COUNT`. `more` =
+ * something is hidden, so «Ещё» is shown.
+ */
+export function barTabs(pinned: readonly PhoneTab[], available: readonly PhoneTab[], order: readonly PhoneTab[] = PHONE_TABS): { bar: PhoneTab[]; more: boolean } {
+  const ordered = order.filter((t) => available.includes(t));
+  const bar = ordered.filter((t) => pinned.includes(t)).slice(0, PINNED_COUNT);
+  for (const t of ordered) if (bar.length < PINNED_COUNT && !bar.includes(t)) bar.push(t);
+  const sorted = ordered.filter((t) => bar.includes(t));
+  return { bar: sorted, more: available.some((t) => !sorted.includes(t)) };
 }
 
 /**

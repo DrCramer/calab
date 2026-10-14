@@ -65,14 +65,16 @@ function mentionSource(workspaceId: string, me: string): MentionSource {
 export interface WikiDocProps {
   workspaceId: string;
   pageId: string;
-  /** WIKI_WRITE on the page and not in the trash. */
+  /** WIKI_WRITE on the page and not in the trash: the sync socket may send updates. */
   editable: boolean;
+  /** Edit mode (lib/wiki/mode.ts): the editor takes input. Read mode keeps the socket and the carets, it just sends nothing. */
+  editing: boolean;
   /** The phone's page (ADR-0096 §7): no carets of others, a counter instead of the avatars, the toolbar in `toolbarHost`. */
   phone?: boolean;
   toolbarHost?: HTMLElement | null;
 }
 
-export default function WikiDoc({ workspaceId, pageId, editable, phone = false, toolbarHost = null }: WikiDocProps): ReactNode {
+export default function WikiDoc({ workspaceId, pageId, editable, editing, phone = false, toolbarHost = null }: WikiDocProps): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myName = useWorkspaces((s) => (me && s.byId[workspaceId]?.members[me] ? memberName(workspaceId, me) : '')) || ' ';
   const [{ doc, awareness }] = useState(() => {
@@ -156,8 +158,8 @@ export default function WikiDoc({ workspaceId, pageId, editable, phone = false, 
   return (
     <>
       {phone ? <PeersReporter awareness={awareness} me={me} /> : <MetaLine workspaceId={workspaceId} pageId={pageId} awareness={awareness} me={me} />}
-      <WikiEditor doc={doc} awareness={awareness} editable={editable} me={user} onUploadImage={upload} mentionSource={mentions} onError={onError} onReady={onReady} phone={phone} className={phone ? 'mt-2' : 'mt-4'} />
-      {phone && editable && toolbarHost && phoneApi ? createPortal(<PhoneToolbar editor={phoneApi.editor} onBlocks={() => phoneApi.openBlocks()} />, toolbarHost) : null}
+      <WikiEditor doc={doc} awareness={awareness} editable={editable && editing} me={user} onUploadImage={upload} mentionSource={mentions} onError={onError} onReady={onReady} phone={phone} className={phone ? 'mt-2' : 'mt-4'} />
+      {phone && editable && editing && toolbarHost && phoneApi ? createPortal(<PhoneToolbar editor={phoneApi.editor} onBlocks={() => phoneApi.openBlocks()} />, toolbarHost) : null}
     </>
   );
 }

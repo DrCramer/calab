@@ -1,12 +1,13 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ChevronDown, Ellipsis, Pin } from 'lucide-react';
-import { memo, useMemo, type ReactNode } from 'react';
+import { DndContext, MouseSensor, TouchSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { Ellipsis, GripVertical, Pin } from 'lucide-react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon, WikiActiveIcon, WikiIdleIcon } from '../../assets/nav/icons';
 import { CountBadge, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { haptics } from '../../lib/haptics';
-import { PHONE_TABS, barTabs, pinTab, type PhoneTab } from '../../lib/phoneNav';
+import { PHONE_TABS, PINNED_COUNT, barTabs, moveTab, togglePin, type PhoneTab } from '../../lib/phoneNav';
 import { UNREAD_DOT, dmBadge, type Badge } from '../../lib/sections';
 import { openTab } from '../../services/phoneNav';
 import { unreadCount, useBoards } from '../../stores/boards';
@@ -14,22 +15,23 @@ import { HOME, isDm } from '../../stores/dms';
 import { usePrefs } from '../../stores/prefs';
 import { showsUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
-import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ProfileTabIcon } from './PhoneProfile';
 
 /**
- * The phone's bottom tab bar (ADR-0073 §1, ADR-0095): three pinned tabs and «Ещё». «Ещё» opens a
- * centred card (a Radix Dropdown: lib/phoneMenus.ts does the card look) with every section the
- * account may open, a 52 px row each: icon · name · unread · a pin button. A tap on a row opens the
- * section, a tap on the pin changes the pinned set (exactly three; the oldest is replaced) and
- * leaves the card open. When the open section is not pinned, the fourth button shows its icon and
- * name on a plate with a «⌄» — a switch that reopens the card.
+ * The phone's bottom tab bar (ADR-0073 §1, ADR-0095 + addendum 2026-10-14): four pinned tabs and
+ * «Ещё», five equal cells. «Ещё» opens a centred card (a Radix Dropdown: lib/phoneMenus.ts does the
+ * card look) with every section the account may open, a 52 px row each: icon · name · unread · pin ·
+ * drag handle. A tap on a row opens the section; the pin only pins/unpins (disabled with a hint when
+ * four are pinned) and never reorders; the order of the rows (long-press the handle, drag) is the
+ * left-to-right order of the pinned tabs. When the open section is not pinned, the fifth cell shows
+ * its icon and name exactly like a tab; a tap reopens the card.
  *
  * Re-renders (CLAUDE.md): the bar subscribes to primitives (guest flag, can-open-full), the pinned
- * list and the open tab; buttons are memo; badges are leaves with id-free primitive selectors that
- * short-circuit to 0 for tabs they do not show; the card is mounted only while open (Radix portal).
+ * list and the order; buttons are memo; badges are leaves with id-free primitive selectors that
+ * short-circuit to 0 for tabs they do not show; the card is mounted only while open (Radix portal),
+ * its rows get primitives only.
  */
 
 /** The name of a tab, as the bar and the card show it. */
@@ -79,6 +81,7 @@ export function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
   // Calendar, boards and the disk belong to a workspace the account is a full member of (a guest has rooms only).
   const full = useWorkspaces((s) => s.order.some((id) => s.byId[id] && s.byId[id].role !== WorkspaceRole.GUEST));
   const pinned = usePrefs((s) => s.phonePinnedTabs);
+  const order = usePrefs((s) => s.phoneTabOrder);
   const available = useMemo(
     () =>
       PHONE_TABS.filter((x) => {
@@ -88,7 +91,7 @@ export function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
       }),
     [guest, full],
   );
-  const { bar, more } = useMemo(() => barTabs(pinned, available), [pinned, available]);
+  const { bar, more } = useMemo(() => barTabs(pinned, available, order), [pinned, available, order]);
   const hidden = useMemo(() => available.filter((x) => !bar.includes(x)), [available, bar]);
   const inBar = bar.includes(tab);
   return (
@@ -100,7 +103,7 @@ export function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
       {bar.map((x) => (
         <TabButton key={x} tab={x} active={x === tab} />
       ))}
-      {more || !inBar ? <MoreButton tab={tab} inBar={inBar} hidden={hidden} available={available} /> : null}
+      {more || !inBar ? <MoreButton tab={tab} inBar={inBar} hidden={hidden} available={available} bar={bar} /> : null}
     </nav>
   );
 }
@@ -128,8 +131,8 @@ const TabButton = memo(function TabButton({ tab, active }: { tab: PhoneTab; acti
   );
 });
 
-/** «Ещё» (`⋯`), or — when the open section is not pinned — that section on a plate with «⌄». */
-const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available }: { tab: PhoneTab; inBar: boolean; hidden: readonly PhoneTab[]; available: readonly PhoneTab[] }): ReactNode {
+/** «Ещё» (`⋯`), or — when the open section is not pinned — that section, drawn like any other tab. */
+const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available, bar }: { tab: PhoneTab; inBar: boolean; hidden: readonly PhoneTab[]; available: readonly PhoneTab[]; bar: readonly PhoneTab[] }): ReactNode {
   const others = useMemo(() => (inBar ? hidden : hidden.filter((x) => x !== tab)), [inBar, hidden, tab]);
   return (
     <Dropdown.Root modal={false}>
@@ -139,27 +142,20 @@ const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available }: {
           aria-current={inBar ? undefined : 'page'}
           aria-label={inBar ? t('mobile.more') : `${tabLabel(tab)}, ${t('mobile.more')}`}
           data-testid="phone-tab-more"
-          className={cx(BUTTON, inBar ? 'flex-[1.7] text-muted' : 'flex-[1.7] px-2 text-fg')}
+          className={cx(BUTTON, inBar ? 'text-muted' : 'text-fg')}
           onClick={() => haptics.tap()}
         >
-          {inBar ? (
-            <>
-              <span className="relative flex">
-                <span className={cx(ICON, 'flex items-center justify-center')}>
-                  <Ellipsis className="size-6" strokeWidth={1.75} aria-hidden />
-                </span>
-                <BadgeOf tabs={others} />
+          <span className="relative flex">
+            {inBar ? (
+              <span className={cx(ICON, 'flex items-center justify-center')}>
+                <Ellipsis className="size-6" strokeWidth={1.75} aria-hidden />
               </span>
-              <span className="max-w-full truncate px-1">{t('mobile.more')}</span>
-            </>
-          ) : (
-            <span data-testid="phone-tab-more-plate" className="relative flex h-9 w-full min-w-0 items-center justify-center gap-1 rounded-[10px] bg-hover px-2">
-              <span className="flex size-7 shrink-0 items-center justify-center"><TabIcon tab={tab} active cls="size-[22px]" /></span>
-              <span className="min-w-0 truncate">{tabLabel(tab)}</span>
-              <ChevronDown className="size-3.5 shrink-0 text-muted" strokeWidth={2.25} aria-hidden />
-              <BadgeOf tabs={others} plate />
-            </span>
-          )}
+            ) : (
+              <TabIcon tab={tab} active cls={ICON} />
+            )}
+            <BadgeOf tabs={others} />
+          </span>
+          <span className="max-w-full truncate px-1">{inBar ? t('mobile.more') : tabLabel(tab)}</span>
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
@@ -170,32 +166,70 @@ const MoreButton = memo(function MoreButton({ tab, inBar, hidden, available }: {
           collisionPadding={16}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          {available.map((x) => (
-            <MoreRow key={x} tab={x} />
-          ))}
+          <MoreList available={available} bar={bar} />
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
   );
 });
 
-/** Pins `tab`; a fourth pin replaces the oldest (toast names it). A pinned tab stays: the set is always three. */
-function pin(tab: PhoneTab): void {
-  const cur = usePrefs.getState().phonePinnedTabs;
-  const { pinned, unpinned } = pinTab(cur, tab);
-  if (!unpinned && pinned.length === cur.length && pinned.every((x, i) => x === cur[i])) return;
-  usePrefs.getState().setPrefs({ phonePinnedTabs: pinned });
-  haptics.select();
-  if (unpinned) toast.info(t('mobile.pinnedInstead', { name: tabLabel(unpinned) }));
+/** The card's rows in the user's order; a drop on another row moves the dragged one there (pins untouched). */
+function MoreList({ available, bar }: { available: readonly PhoneTab[]; bar: readonly PhoneTab[] }): ReactNode {
+  const order = usePrefs((s) => s.phoneTabOrder);
+  const rows = useMemo(() => order.filter((x) => available.includes(x)), [order, available]);
+  const full = bar.length >= PINNED_COUNT;
+  // Mouse: a small move starts a drag; touch: press and hold 300 ms (as the other lists), a swipe before that scrolls.
+  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 4 } }), useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 8 } }));
+  const onEnd = useCallback((e: DragEndEvent): void => {
+    const from = e.active.id as PhoneTab;
+    const to = e.over?.id as PhoneTab | undefined;
+    if (!to || from === to) return;
+    usePrefs.getState().setPrefs({ phoneTabOrder: moveTab(usePrefs.getState().phoneTabOrder, from, to) });
+    haptics.select();
+  }, []);
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onEnd}>
+      {rows.map((x) => (
+        <MoreRow key={x} tab={x} pinned={bar.includes(x)} pinDisabled={full && !bar.includes(x)} bar={bar} />
+      ))}
+      {full ? (
+        <p data-testid="more-pin-hint" className="px-3 pb-1.5 pt-1 text-micro text-muted">
+          {t('mobile.pinFull')}
+        </p>
+      ) : null}
+    </DndContext>
+  );
 }
 
-/** A row of the «Ещё» card: the section (tap = open) and its pin (a separate 44 px button, the card stays open). */
-const MoreRow = memo(function MoreRow({ tab }: { tab: PhoneTab }): ReactNode {
-  const pinned = usePrefs((s) => s.phonePinnedTabs.includes(tab));
+/** Toggles the pin of `tab` on top of the bar as shown (so a guest's topped-up bar counts). The order is not touched. */
+function pin(tab: PhoneTab, bar: readonly PhoneTab[]): void {
+  const { pinned, full } = togglePin(bar, tab);
+  if (full) return;
+  usePrefs.getState().setPrefs({ phonePinnedTabs: pinned });
+  haptics.select();
+}
+
+/** A row of the «Ещё» card: the section (tap = open), its pin (a separate 44 px button, the card stays open) and the drag handle. */
+const MoreRow = memo(function MoreRow({ tab, pinned, pinDisabled, bar }: { tab: PhoneTab; pinned: boolean; pinDisabled: boolean; bar: readonly PhoneTab[] }): ReactNode {
   const active = useUi((s) => s.phone.tab === tab);
   const label = tabLabel(tab);
+  const { setNodeRef: setDragRef, setActivatorNodeRef, listeners, transform, isDragging } = useDraggable({ id: tab });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: tab });
+  const setRef = useCallback(
+    (el: HTMLElement | null) => {
+      setDragRef(el);
+      setDropRef(el);
+    },
+    [setDragRef, setDropRef],
+  );
   return (
-    <div className="flex h-[52px] items-center" role="none">
+    <div
+      ref={setRef}
+      className={cx('relative flex h-[52px] items-center', isDragging && 'z-10 rounded-[var(--radius-control)] bg-hover shadow-md', isOver && !isDragging && 'bg-hover/60')}
+      style={transform ? { transform: `translate3d(0, ${Math.round(transform.y)}px, 0)` } : undefined}
+      role="none"
+      data-testid={`more-wrap-${tab}`}
+    >
       <Dropdown.Item
         className="flex h-[52px] min-w-0 flex-1 cursor-default items-center gap-3 rounded-[var(--radius-control)] pl-2.5 pr-1 text-list outline-none data-[highlighted]:bg-hover"
         onSelect={() => {
@@ -212,16 +246,28 @@ const MoreRow = memo(function MoreRow({ tab }: { tab: PhoneTab }): ReactNode {
       {/* A menuitemcheckbox, not a bare button: a menu may hold menu items only (axe aria-required-children); onSelect keeps the card open. */}
       <Dropdown.CheckboxItem
         checked={pinned}
-        aria-label={t('mobile.pin', { name: label })}
+        disabled={pinDisabled}
+        aria-label={pinned ? t('mobile.unpin', { name: label }) : t('mobile.pin', { name: label })}
         data-testid={`more-pin-${tab}`}
         onSelect={(e) => {
           e.preventDefault();
-          pin(tab);
+          pin(tab, bar);
         }}
-        className={cx('grid size-11 shrink-0 cursor-default place-items-center rounded-full outline-none data-[highlighted]:bg-hover', pinned ? 'text-fg' : 'text-muted')}
+        className={cx('grid size-11 shrink-0 cursor-default place-items-center rounded-full outline-none data-[highlighted]:bg-hover data-[disabled]:opacity-40', pinned ? 'text-fg' : 'text-muted')}
       >
         <Pin className={cx('size-5', pinned && 'fill-current')} strokeWidth={1.75} aria-hidden />
       </Dropdown.CheckboxItem>
+      {/* The handle is the only draggable part (touch: 300 ms hold); not a menu item, hidden from the a11y tree. */}
+      <span
+        ref={setActivatorNodeRef}
+        {...listeners}
+        aria-hidden
+        title={t('mobile.reorder', { name: label })}
+        data-testid={`more-drag-${tab}`}
+        className="grid size-11 shrink-0 touch-none place-items-center text-muted"
+      >
+        <GripVertical className="size-5" strokeWidth={1.75} aria-hidden />
+      </span>
     </div>
   );
 });

@@ -4,8 +4,11 @@ import {
   MAX_DEPTH,
   PHONE_TABS,
   barTabs,
+  migratePinned,
+  moveTab,
+  normalizeOrder,
   normalizePinned,
-  pinTab,
+  togglePin,
   backStep,
   depthOfState,
   emptyPhoneNav,
@@ -169,26 +172,64 @@ describe('settings screens (ADR-0073, owner 07.10)', () => {
   });
 });
 
-describe('pinned tabs (ADR-0095)', () => {
-  it('pinning a fourth tab drops the oldest and reports it', () => {
-    expect(pinTab(['chats', 'dms', 'boards'], 'disk')).toEqual({ pinned: ['dms', 'boards', 'disk'], unpinned: 'chats' });
+describe('pinned tabs (ADR-0095 + addendum 2026-10-14)', () => {
+  const four = ['chats', 'dms', 'boards', 'calendar'] as const;
+  it('default is four pinned: chats, dms, boards, calendar', () => {
+    expect(DEFAULT_PINNED).toEqual(four);
   });
-  it('an already pinned tab changes nothing (always exactly three)', () => {
-    expect(pinTab(['chats', 'dms', 'boards'], 'dms')).toEqual({ pinned: ['chats', 'dms', 'boards'] });
+  it('pinning never reorders and appends to the set', () => {
+    expect(togglePin(['chats', 'dms'], 'disk')).toEqual({ pinned: ['chats', 'dms', 'disk'] });
   });
-  it('a short list is topped up without dropping anything', () => {
-    expect(pinTab(['chats', 'dms'], 'disk')).toEqual({ pinned: ['chats', 'dms', 'disk'] });
+  it('pinning a fifth is refused (the card disables the pin), the set is untouched', () => {
+    expect(togglePin(four, 'disk')).toEqual({ pinned: [...four], full: true });
   });
-  it('normalizes a stored value', () => {
-    expect(normalizePinned(undefined)).toEqual(['chats', 'dms', 'boards']);
-    expect(normalizePinned(['chats', 'chats', 'x', 'disk'])).toEqual(['chats', 'dms', 'boards']);
-    expect(normalizePinned(['disk', 'profile', 'calendar'])).toEqual(['disk', 'profile', 'calendar']);
+  it('unpinning removes just that tab, any time', () => {
+    expect(togglePin(four, 'dms')).toEqual({ pinned: ['chats', 'boards', 'calendar'] });
+    expect(togglePin(['chats'], 'chats')).toEqual({ pinned: [] });
   });
-  it('the bar shows the pinned tabs the account may open, topped up; «Ещё» only if something is hidden', () => {
-    const all = ['chats', 'dms', 'boards', 'calendar', 'disk', 'profile'] as const;
-    expect(barTabs(['chats', 'dms', 'boards'], all)).toEqual({ bar: ['chats', 'dms', 'boards'], more: true });
-    expect(barTabs(['chats', 'dms', 'boards'], ['chats', 'profile'])).toEqual({ bar: ['chats', 'profile'], more: false });
-    expect(barTabs(['calendar', 'disk', 'profile'], ['chats', 'profile', 'disk'])).toEqual({ bar: ['disk', 'profile', 'chats'], more: false });
+  it('normalizes a stored value without topping it up', () => {
+    expect(normalizePinned(undefined)).toEqual([...four]);
+    expect(normalizePinned(['chats', 'chats', 'x', 'disk'])).toEqual(['chats', 'disk']);
+    expect(normalizePinned(['chats', 'dms', 'boards'])).toEqual(['chats', 'dms', 'boards']);
+    expect(normalizePinned(['disk', 'wiki', 'calendar', 'dms', 'chats'])).toEqual(['disk', 'wiki', 'calendar', 'dms']);
+  });
+  it('migration from three cells appends the next available default', () => {
+    expect(migratePinned(['chats', 'dms', 'boards'])).toEqual(['chats', 'dms', 'boards', 'calendar']);
+    expect(migratePinned(['disk', 'chats', 'dms'])).toEqual(['disk', 'chats', 'dms', 'boards']);
+    expect(migratePinned(['chats', 'calendar', 'boards'])).toEqual(['chats', 'calendar', 'boards', 'dms']);
+    expect(migratePinned(undefined)).toEqual([...four]);
+    expect(migratePinned([])).toEqual([...four]);
+    expect(migratePinned(four)).toEqual([...four]);
+  });
+  it('order: stored first, missing appended in the default sequence; the lead keeps the old bar order', () => {
+    expect(normalizeOrder(undefined)).toEqual([...PHONE_TABS]);
+    expect(normalizeOrder(['profile', 'x', 'chats', 'chats'])).toEqual(['profile', 'chats', 'dms', 'calendar', 'boards', 'wiki', 'disk']);
+    expect(normalizeOrder(undefined, ['disk', 'chats', 'dms', 'boards'])).toEqual(['disk', 'chats', 'dms', 'boards', 'calendar', 'wiki', 'profile']);
+  });
+  it('default order follows the rail: chats, dms, calendar, boards, wiki, disk, profile', () => {
+    expect(PHONE_TABS).toEqual(['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile']);
+  });
+  it('moveTab puts the dragged row on the place of the target, both ways', () => {
+    const o = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile'] as const;
+    expect(moveTab(o, 'disk', 'dms')).toEqual(['chats', 'disk', 'dms', 'calendar', 'boards', 'wiki', 'profile']);
+    expect(moveTab(o, 'chats', 'boards')).toEqual(['dms', 'calendar', 'boards', 'chats', 'wiki', 'disk', 'profile']);
+    expect(moveTab(o, 'dms', 'dms')).toEqual([...o]);
+    expect(moveTab(o, 'dms', 'nope' as never)).toEqual([...o]);
+  });
+  it('the bar is the pinned tabs in the order; dragging a row moves the tab, pins stay', () => {
+    const all = [...PHONE_TABS];
+    expect(barTabs(four, all)).toEqual({ bar: ['chats', 'dms', 'calendar', 'boards'], more: true });
+    const order = moveTab(all, 'boards', 'chats');
+    expect(barTabs(four, all, order)).toEqual({ bar: ['boards', 'chats', 'dms', 'calendar'], more: true });
+    // moving an unpinned row does not move any pinned tab
+    expect(barTabs(four, all, moveTab(all, 'disk', 'chats')).bar).toEqual(['chats', 'dms', 'calendar', 'boards']);
+  });
+  it('a guest gets what is available, topped up in order; «Ещё» only if something is hidden', () => {
+    expect(barTabs(four, ['chats', 'profile'])).toEqual({ bar: ['chats', 'profile'], more: false });
+    expect(barTabs(['calendar', 'disk', 'profile'], ['chats', 'profile', 'disk'])).toEqual({ bar: ['chats', 'disk', 'profile'], more: false });
+  });
+  it('fewer pinned than four is topped up from the available in order', () => {
+    expect(barTabs(['disk'], [...PHONE_TABS]).bar).toEqual(['chats', 'dms', 'calendar', 'disk']);
   });
 });
 
@@ -216,7 +257,7 @@ describe('wiki screens (ADR-0096 §7)', () => {
   });
   it('the Wiki tab is behind «Ещё» by default and can be pinned', () => {
     expect(PHONE_TABS).toContain('wiki');
-    expect(barTabs(DEFAULT_PINNED, PHONE_TABS).bar).toEqual(['chats', 'dms', 'boards']);
-    expect(pinTab(['chats', 'dms', 'boards'], 'wiki')).toEqual({ pinned: ['dms', 'boards', 'wiki'], unpinned: 'chats' });
+    expect(barTabs(DEFAULT_PINNED, PHONE_TABS).bar).not.toContain('wiki');
+    expect(togglePin(['chats', 'dms', 'boards'], 'wiki')).toEqual({ pinned: ['chats', 'dms', 'boards', 'wiki'] });
   });
 });

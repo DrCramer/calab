@@ -264,5 +264,7 @@ export const esShell: DictShape<typeof enShell> = {
   'mobile.tabDisk': 'Disco',
   'mobile.tabWiki': 'Wiki',
   'mobile.pin': 'Fijar «{name}»',
-  'mobile.pinnedInstead': 'Fijado en lugar de «{name}»',
+  'mobile.pinFull': 'Primero desfija uno',
+  'mobile.reorder': 'Arrastrar «{name}»',
+  'mobile.unpin': 'Desfijar «{name}»',
 } as const;

@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { ChevronRight, CloudOff, Download, Ellipsis, Eye, FileText, FolderInput, History, ImagePlus, Plus, RotateCcw, Share2, Smile, Trash2, Users, X } from 'lucide-react';
+import { ChevronRight, CloudOff, Ellipsis, Eye, FileText, ImagePlus, Plus, Share2, Smile, Trash2, X } from 'lucide-react';
 import { memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar, BAR_GROUP } from '../../components/Bar';
@@ -10,7 +10,6 @@ import { ancestorsOf, canStructure, canWrite, childKey } from '../../lib/wiki/tr
 import {
   createPage,
   deleteForever,
-  exportMarkdown,
   loadChildren,
   openWikiPage,
   removeCover,
@@ -20,13 +19,14 @@ import {
   setIcon,
   setTitleLocal,
   takeTitleFocus,
-  trashPage,
 } from '../../services/wiki';
 import { myUserId, useSession } from '../../stores/session';
 import { useWiki } from '../../stores/wiki';
 import { useWikiUi } from '../../stores/wikiUi';
 import { EmojiPicker } from '../chat/EmojiPicker';
-import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { menuBox } from '../shell/menu';
+import { EditToggle, useEditMode } from './EditToggle';
+import { DROP, PageMenuEntries, focusTitle } from './PageMenu';
 import { WikiDocLazy } from './lazy';
 
 /**
@@ -91,13 +91,14 @@ function WikiBar({ workspaceId, pageId }: { workspaceId: string; pageId: string 
       ) : null}
       {pageId ? (
         <span className={BAR_GROUP}>
+          <EditToggle pageId={pageId} />
           {structure && !trashed ? (
             <Button variant="secondary" size="sm" onClick={() => useWikiUi.getState().openDialog({ kind: 'share', pageId, tab: 'access' })} data-testid="wiki-share">
               <Share2 className="size-3.5" aria-hidden />
               {t('wiki.share')}
             </Button>
           ) : null}
-          <MoreMenu pageId={pageId} structure={structure} trashed={trashed} />
+          <MoreMenu pageId={pageId} />
         </span>
       ) : null}
     </Bar>
@@ -147,8 +148,8 @@ function CrumbTitle({ id }: { id: string }): ReactNode {
   );
 }
 
-function MoreMenu({ pageId, structure, trashed }: { pageId: string; structure: boolean; trashed: boolean }): ReactNode {
-  const ui = useWikiUi.getState;
+/** The header's «⋯»: the same menu as the tree rows' (PageMenu.tsx); «Переименовать» focuses the title. */
+function MoreMenu({ pageId }: { pageId: string }): ReactNode {
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -158,44 +159,7 @@ function MoreMenu({ pageId, structure, trashed }: { pageId: string; structure: b
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="end" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="wiki-more-menu">
-          <Dropdown.Item className={menuItem} onSelect={() => ui().openDialog({ kind: 'versions', pageId })} data-testid="wiki-open-versions">
-            <History className="size-4" strokeWidth={1.75} aria-hidden />
-            {t('wiki.versions')}
-          </Dropdown.Item>
-          <Dropdown.Item className={menuItem} onSelect={() => exportMarkdown(pageId)} data-testid="wiki-export">
-            <Download className="size-4" strokeWidth={1.75} aria-hidden />
-            {t('wiki.export')}
-          </Dropdown.Item>
-          {structure && !trashed ? (
-            <>
-              <Dropdown.Item className={menuItem} onSelect={() => ui().openDialog({ kind: 'move', pageId })} data-testid="wiki-open-move">
-                <FolderInput className="size-4" strokeWidth={1.75} aria-hidden />
-                {t('wiki.move')}
-              </Dropdown.Item>
-              <Dropdown.Item className={menuItem} onSelect={() => ui().openDialog({ kind: 'share', pageId, tab: 'access' })} data-testid="wiki-open-access">
-                <Users className="size-4" strokeWidth={1.75} aria-hidden />
-                {t('wiki.access')}
-              </Dropdown.Item>
-              <Dropdown.Separator className={menuSeparator} />
-              <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void trashPage(pageId)} data-testid="wiki-trash-page">
-                <Trash2 className="size-4" strokeWidth={1.75} aria-hidden />
-                {t('wiki.toTrash')}
-              </Dropdown.Item>
-            </>
-          ) : null}
-          {structure && trashed ? (
-            <>
-              <Dropdown.Separator className={menuSeparator} />
-              <Dropdown.Item className={menuItem} onSelect={() => void restorePage(pageId)} data-testid="wiki-restore-page">
-                <RotateCcw className="size-4" strokeWidth={1.75} aria-hidden />
-                {t('wiki.restore')}
-              </Dropdown.Item>
-              <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void deleteForever(pageId)} data-testid="wiki-delete-page">
-                <Trash2 className="size-4" strokeWidth={1.75} aria-hidden />
-                {t('wiki.deleteForever')}
-              </Dropdown.Item>
-            </>
-          ) : null}
+          <PageMenuEntries pageId={pageId} parts={DROP} onRename={focusTitle} />
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
@@ -216,6 +180,8 @@ function PageView({ workspaceId, pageId }: { workspaceId: string; pageId: string
   const write = useWiki((s) => canWrite(s.pages[pageId]?.myBits ?? 0n));
   const editable = write && !trashed;
   const setup = structure && !trashed;
+  const editing = useWikiUi((s) => s.editing === pageId);
+  useEditMode(pageId, true);
   const coverInput = useRef<HTMLInputElement>(null);
   return (
     <article className="flex min-h-full flex-col pb-24" data-testid="wiki-page">
@@ -273,7 +239,7 @@ function PageView({ workspaceId, pageId }: { workspaceId: string; pageId: string
           ) : (
             <div className="h-2" />
           )}
-          <TitleField pageId={pageId} editable={setup} />
+          <TitleField pageId={pageId} editable={setup && editing} />
         </div>
         <Suspense
           fallback={
@@ -282,7 +248,7 @@ function PageView({ workspaceId, pageId }: { workspaceId: string; pageId: string
             </div>
           }
         >
-          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} />
+          <WikiDocLazy workspaceId={workspaceId} pageId={pageId} editable={editable} editing={editable && editing} />
         </Suspense>
         <Subpages workspaceId={workspaceId} pageId={pageId} canAdd={editable} />
       </div>

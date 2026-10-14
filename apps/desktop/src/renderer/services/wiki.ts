@@ -28,6 +28,7 @@ import { t } from '../i18n';
 import { ApiError, body, call, callBytes, callEmpty, qs } from '../lib/api/client';
 import { api, uploadInto } from '../lib/api/endpoints';
 import { docHandle } from '../lib/wiki/docHandle';
+import { nextEditing } from '../lib/wiki/mode';
 import { ancestorsOf, childKey, exportName, TOP, trashKey } from '../lib/wiki/tree';
 import { useWiki } from '../stores/wiki';
 import { pageOf, useWikiUi } from '../stores/wikiUi';
@@ -167,6 +168,8 @@ export async function openWiki(ws: string): Promise<void> {
 /** Opens a page from anywhere (a search hit, a subpage row, a crumb): the section, the workspace, the page. */
 export function openWikiPage(ws: string, id: string): void {
   const ui = useWikiUi.getState();
+  // An existing page opens for reading (links are clickable); «Редактировать» switches.
+  ui.setEditing(nextEditing(ui.editing, { kind: 'open', id }));
   ui.openTrash(ws, false);
   ui.openPage(ws, id);
   if (!useWiki.getState().pages[id]) void loadPage(ws, id);
@@ -252,6 +255,8 @@ export async function createPage(ws: string, parentId: string): Promise<void> {
     if (parentId) useWikiUi.getState().setExpanded(parentId, true);
     titleFocus = r.page.id;
     openWikiPage(ws, r.page.id);
+    // A page just created opens for editing, the cursor in its title (lib/wiki/mode.ts).
+    useWikiUi.getState().setEditing(nextEditing(useWikiUi.getState().editing, { kind: 'create', id: r.page.id }));
   } catch (e) {
     fail(e, t('wiki.err.create'));
   }

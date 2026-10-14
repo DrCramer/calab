@@ -342,7 +342,7 @@ const PhoneTile = memo(function PhoneTile({ id, onOpen }: { id: string; onOpen: 
           </span>
           {renaming ? null : (
             <>
-              <span className="line-clamp-2 break-words px-0.5 text-body font-medium leading-[18px] text-fg">{item.name}</span>
+              <span className="line-clamp-2 min-w-0 break-words px-0 text-[13px] font-medium leading-4 [overflow-wrap:anywhere] text-fg">{item.name}</span>
               <span className="truncate px-0.5 text-caption leading-4 text-muted">{isFolder(item) ? t('disk.folder') : sizeOf(item)}</span>
             </>
           )}
