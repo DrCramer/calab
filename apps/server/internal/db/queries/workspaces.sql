@@ -81,7 +81,7 @@ RETURNING *;
 DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
 
 -- name: DeleteUserOverridesInWorkspace :exec
--- A member leaves: their room, board (ADR-0042) and disk (ADR-0094) overrides go.
+-- A member leaves: their room, board (ADR-0042), disk (ADR-0094) and wiki (ADR-0096) overrides go.
 WITH boards_gone AS (
     DELETE FROM board_permissions bp USING boards bb
     WHERE bp.board_id = bb.id AND bb.workspace_id = sqlc.arg('workspace_id')::uuid
@@ -90,6 +90,10 @@ WITH boards_gone AS (
     DELETE FROM disk_permissions dp USING disk_items di
     WHERE dp.item_id = di.id AND di.workspace_id = sqlc.arg('workspace_id')::uuid
       AND dp.target_type = 'user' AND dp.target_id = sqlc.arg('user_id')::text
+), wiki_gone AS (
+    DELETE FROM wiki_permissions wpm USING wiki_pages wp
+    WHERE wpm.page_id = wp.id AND wp.workspace_id = sqlc.arg('workspace_id')::uuid
+      AND wpm.target_type = 'user' AND wpm.target_id = sqlc.arg('user_id')::text
 )
 DELETE FROM room_permissions rp
 USING rooms r

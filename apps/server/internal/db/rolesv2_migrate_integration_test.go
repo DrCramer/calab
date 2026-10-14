@@ -89,8 +89,9 @@ func TestRolesV2Migration(t *testing.T) {
 	if got := perms(other); got != 256 {
 		t.Fatalf("a role without MANAGE_WORKSPACE: %d", got)
 	}
-	// Only 00088 (ADR-0094) adds DISK_VIEW | DISK_WRITE to the member role.
-	if got := perms(memberRole); got != memberBefore|3<<35 {
+	// Only 00088 (ADR-0094) adds DISK_VIEW | DISK_WRITE and 00089 (ADR-0096) WIKI_VIEW |
+	// WIKI_WRITE to the member role.
+	if got := perms(memberRole); got != memberBefore|3<<35|3<<38 {
 		t.Fatalf("member role changed: %d → %d", memberBefore, got)
 	}
 	if got := perms(guestRole); got&v2 != 0 {

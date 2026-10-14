@@ -1601,6 +1601,113 @@ type UserStickerPack struct {
 	AddedAt  time.Time
 }
 
+type WikiActivity struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	PageID      *uuid.UUID
+	PageTitle   string
+	ActorID     *uuid.UUID
+	Kind        string
+	Before      []byte
+	After       []byte
+	CreatedAt   time.Time
+}
+
+type WikiLink struct {
+	ID              uuid.UUID
+	PageID          uuid.UUID
+	Code            string
+	IncludeChildren bool
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+	ExpiresAt       *time.Time
+	RevokedAt       *time.Time
+	Views           int32
+}
+
+type WikiPage struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Title       string
+	Icon        *string
+	CoverFileID *uuid.UUID
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	PlainText   string
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type WikiPageFile struct {
+	PageID    uuid.UUID
+	FileID    uuid.UUID
+	CreatedAt time.Time
+}
+
+type WikiPageHead struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Title       string
+	Icon        *string
+	CoverFileID *uuid.UUID
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type WikiPageSnapshot struct {
+	PageID     uuid.UUID
+	State      []byte
+	ThroughSeq int64
+	SavedBy    *uuid.UUID
+	SavedAt    time.Time
+}
+
+type WikiPageUpdate struct {
+	PageID    uuid.UUID
+	Seq       int64
+	Data      []byte
+	AuthorID  *uuid.UUID
+	CreatedAt time.Time
+}
+
+type WikiPageVersion struct {
+	ID        uuid.UUID
+	PageID    uuid.UUID
+	State     []byte
+	PlainText string
+	Title     string
+	Authors   []uuid.UUID
+	CreatedAt time.Time
+}
+
+type WikiPermission struct {
+	PageID     uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
+}
+
 type Workspace struct {
 	ID                      uuid.UUID
 	Slug                    string
@@ -1622,6 +1729,7 @@ type Workspace struct {
 	TimeFormat              string
 	SipEnabled              bool
 	DiskTrashDays           *int32
+	WikiTrashDays           *int32
 }
 
 type WorkspaceAdminLog struct {

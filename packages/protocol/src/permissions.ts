@@ -2,6 +2,7 @@ import { Permission, WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, type RoomPermissionOverride } from './gen/calaba/v1/room_pb.js';
 import type { Board, Task } from './gen/calaba/v1/boards_pb.js';
 import type { DiskPermissionEntry } from './gen/calaba/v1/disk_pb.js';
+import type { WikiPermissionEntry } from './gen/calaba/v1/wiki_pb.js';
 
 /**
  * Permission bits as bigint (uint64 on the wire). Values come from the generated
@@ -86,6 +87,114 @@ export function billingPermissions(
 }
 
 /**
+ * The three bits of one tree section (the Disk, the Wiki): the workspace-level VIEW / WRITE /
+ * MANAGE on roles, per-node overrides of VIEW and WRITE (Go: perm.TreeBits).
+ */
+export interface TreeBits {
+  readonly VIEW: PermissionBits;
+  readonly WRITE: PermissionBits;
+  readonly MANAGE: PermissionBits;
+}
+
+const treeAll = (b: TreeBits): PermissionBits => b.VIEW | b.WRITE | b.MANAGE;
+const treeOverride = (b: TreeBits): PermissionBits => b.VIEW | b.WRITE;
+
+/**
+ * The workspace-level rule of a tree section (Go: perm.TreeOf): guests and bots nothing;
+ * ADMINISTRATOR or MANAGE all three; anyone else the section's bits of their roles. A guest is
+ * recognized by the built-in guest role without a member one unless `guest` is given.
+ */
+export function treePermissions(
+  bits: TreeBits,
+  roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
+  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+): PermissionBits {
+  if ((opts.guest ?? guestOnly(roles)) || opts.bot) return 0n;
+  const raw = rawPermissions(roles);
+  if (raw & (PERMISSION_BITS.ADMINISTRATOR | bits.MANAGE)) return treeAll(bits);
+  return raw & treeAll(bits);
+}
+
+/** One node on the way from the top to the checked node, as far as the viewer is concerned. */
+export interface TreeLevel {
+  /** The node's «Только выбранные» (DiskItem.restricted, WikiPage.restricted). */
+  restricted?: boolean | undefined;
+  /** The viewer owns this node (ownerId). */
+  owner?: boolean | undefined;
+  /** The node's role overrides by role id. */
+  roleOverrides?: Readonly<Record<string, OverrideBits>> | ReadonlyMap<string, OverrideBits> | undefined;
+  /** The node's override of the viewer. */
+  userOverride?: OverrideBits | undefined;
+}
+
+/**
+ * The one tree node rule shared by the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §2); Go:
+ * perm.ComputeTree. `chain` runs from the topmost ancestor down to the node (empty = the top of
+ * the section). MANAGE or ADMINISTRATOR: all three bits, restricted nodes included. Otherwise the
+ * start is the roles' VIEW | WRITE (none for guests and bots) and at every level, top down: a
+ * restricted node drops what the roles and the ancestors gave; each role's override lowest
+ * position first (ignored for guests and bots), then the viewer's own; the owner of the level
+ * always has VIEW | WRITE. Overrides touch VIEW | WRITE only. Without VIEW nothing. The server
+ * sends my_bits; this only predicts the UI.
+ */
+export function treeItemPermissions(
+  bits: TreeBits,
+  roles: readonly RoleBits[],
+  chain: readonly TreeLevel[],
+  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+): PermissionBits {
+  const guest = opts.guest ?? guestOnly(roles);
+  const bot = opts.bot ?? false;
+  const ws = treePermissions(bits, roles, { guest, bot });
+  if (ws & bits.MANAGE) return treeAll(bits);
+  const ov = treeOverride(bits);
+  const ordered = [...roles].sort((a, b) => a.position - b.position);
+  let p = ws & ov;
+  for (const l of chain) {
+    if (l.restricted) p = 0n;
+    if (!guest && !bot) {
+      for (const r of ordered) {
+        const o = overrideOf(l.roleOverrides, r.id);
+        if (o) {
+          p &= ~(o.deny & ov);
+          p |= o.allow & ov;
+        }
+      }
+    }
+    if (l.userOverride) {
+      p &= ~(l.userOverride.deny & ov);
+      p |= l.userOverride.allow & ov;
+    }
+    if (l.owner) p |= ov;
+  }
+  return p & bits.VIEW ? p : 0n;
+}
+
+/**
+ * A TreeLevel from a node's stored overrides (DiskPermissionsResponse / WikiPermissionsResponse
+ * entries) for `userId`.
+ */
+export function treeLevel(
+  node: { restricted: boolean; ownerId: string },
+  entries: readonly OverrideEntry[],
+  userId: string,
+): TreeLevel {
+  const roleOverrides = new Map<string, OverrideBits>();
+  for (const e of entries) {
+    if (e.targetType === PermissionTargetType.ROLE && !roleOverrides.has(e.targetId)) roleOverrides.set(e.targetId, e);
+  }
+  return {
+    restricted: node.restricted,
+    owner: node.ownerId !== '' && node.ownerId === userId,
+    roleOverrides,
+    userOverride: entries.find((e) => e.targetType === PermissionTargetType.USER && e.targetId === userId),
+  };
+}
+
+/** A stored override row of a tree node (DiskPermissionEntry, WikiPermissionEntry). */
+export type OverrideEntry = Pick<DiskPermissionEntry | WikiPermissionEntry, 'targetType' | 'targetId' | 'allow' | 'deny'>;
+
+/**
  * Disk bits (ADR-0094 §2), Go: perm.DiskView / DiskWrite / DiskManage. Like the billing bits they
  * cannot be proto enum values (listed in the comment of enum Permission) and stay out of
  * ALL_PERMISSIONS (room and board rules never see them), but ADMINISTRATOR includes them
@@ -99,7 +208,7 @@ export const DISK_BITS = {
   WRITE: 1n << 36n,
   /** Any item, the trash retention, empty the whole trash, anyone's public link. Implies VIEW + WRITE. */
   MANAGE: 1n << 37n,
-} as const;
+} as const satisfies TreeBits;
 
 /** The three disk bits (Go: perm.Disk). */
 export const DISK_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE | DISK_BITS.MANAGE;
@@ -107,90 +216,87 @@ export const DISK_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE
 /** Bits a disk item override may allow or deny (Go: perm.DiskOverride): «Просмотр» / «Правка». */
 export const DISK_OVERRIDE_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE;
 
-/**
- * The workspace-level disk rule (Go: perm.DiskOf): guests and bots nothing; ADMINISTRATOR or
- * DISK_MANAGE all three; anyone else the disk bits of their roles. A guest is recognized by the
- * built-in guest role without a member one unless `guest` is given.
- */
+/** The workspace-level disk rule (Go: perm.DiskOf): treePermissions over DISK_BITS. */
 export function diskPermissions(
   roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
   opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
 ): PermissionBits {
-  if ((opts.guest ?? guestOnly(roles)) || opts.bot) return 0n;
-  const raw = rawPermissions(roles);
-  if (raw & (PERMISSION_BITS.ADMINISTRATOR | DISK_BITS.MANAGE)) return DISK_PERMISSIONS;
-  return raw & DISK_PERMISSIONS;
+  return treePermissions(DISK_BITS, roles, opts);
 }
 
-/** One item on the way from the root to the checked item, as far as the viewer is concerned. */
-export interface DiskLevel {
-  /** DiskItem.restricted («Только выбранные»). */
-  restricted?: boolean | undefined;
-  /** The viewer owns this item (DiskItem.ownerId). */
-  owner?: boolean | undefined;
-  /** The item's role overrides by role id. */
-  roleOverrides?: Readonly<Record<string, OverrideBits>> | ReadonlyMap<string, OverrideBits> | undefined;
-  /** The item's override of the viewer. */
-  userOverride?: OverrideBits | undefined;
-}
+/** One item on the way from the root to the checked item. */
+export type DiskLevel = TreeLevel;
 
 /**
- * The one disk item rule (ADR-0094 §2; Go: perm.ComputeDiskItem). `chain` runs from the topmost
- * ancestor down to the item (empty = the root). DISK_MANAGE or ADMINISTRATOR: all three bits,
- * restricted items included. Otherwise the start is the roles' VIEW | WRITE (none for guests and
- * bots) and at every level, top down: a restricted item drops what the roles and the ancestors
- * gave; each role's override lowest position first (ignored for guests and bots), then the
- * viewer's own; the owner of the level always has VIEW | WRITE. Overrides touch
- * DISK_OVERRIDE_PERMISSIONS only. Without VIEW nothing. The server sends DiskItem.myBits; this
- * only predicts the UI.
+ * The one disk item rule (ADR-0094 §2; Go: perm.ComputeDiskItem): treeItemPermissions over
+ * DISK_BITS. `chain` runs from the topmost ancestor down to the item (empty = the root).
  */
 export function diskItemPermissions(
   roles: readonly RoleBits[],
   chain: readonly DiskLevel[],
   opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
 ): PermissionBits {
-  const guest = opts.guest ?? guestOnly(roles);
-  const bot = opts.bot ?? false;
-  const ws = diskPermissions(roles, { guest, bot });
-  if (ws & DISK_BITS.MANAGE) return DISK_PERMISSIONS;
-  const ordered = [...roles].sort((a, b) => a.position - b.position);
-  let p = ws & DISK_OVERRIDE_PERMISSIONS;
-  for (const l of chain) {
-    if (l.restricted) p = 0n;
-    if (!guest && !bot) {
-      for (const r of ordered) {
-        const o = overrideOf(l.roleOverrides, r.id);
-        if (o) {
-          p &= ~(o.deny & DISK_OVERRIDE_PERMISSIONS);
-          p |= o.allow & DISK_OVERRIDE_PERMISSIONS;
-        }
-      }
-    }
-    if (l.userOverride) {
-      p &= ~(l.userOverride.deny & DISK_OVERRIDE_PERMISSIONS);
-      p |= l.userOverride.allow & DISK_OVERRIDE_PERMISSIONS;
-    }
-    if (l.owner) p |= DISK_OVERRIDE_PERMISSIONS;
-  }
-  return p & DISK_BITS.VIEW ? p : 0n;
+  return treeItemPermissions(DISK_BITS, roles, chain, opts);
 }
 
 /** A DiskLevel from an item's stored overrides (DiskPermissionsResponse.entries) for `userId`. */
 export function diskLevel(
   item: { restricted: boolean; ownerId: string },
-  entries: readonly DiskPermissionEntry[],
+  entries: readonly OverrideEntry[],
   userId: string,
 ): DiskLevel {
-  const roleOverrides = new Map<string, OverrideBits>();
-  for (const e of entries) {
-    if (e.targetType === PermissionTargetType.ROLE && !roleOverrides.has(e.targetId)) roleOverrides.set(e.targetId, e);
-  }
-  return {
-    restricted: item.restricted,
-    owner: item.ownerId !== '' && item.ownerId === userId,
-    roleOverrides,
-    userOverride: entries.find((e) => e.targetType === PermissionTargetType.USER && e.targetId === userId),
-  };
+  return treeLevel(item, entries, userId);
+}
+
+/**
+ * Wiki bits (ADR-0096 §2), Go: perm.WikiView / WikiWrite / WikiManage. The same rules as the disk
+ * bits: outside ALL_PERMISSIONS, in ADMINISTRATOR, never for guests and bots through roles,
+ * per-page overrides carry VIEW and WRITE only (WIKI_OVERRIDE_PERMISSIONS). WRITE on a page edits
+ * its content and adds subpages; the structure needs the owner or MANAGE (wikiStructureAllowed).
+ */
+export const WIKI_BITS = {
+  /** See the Wiki and every page that is not restricted. Member default. */
+  VIEW: 1n << 38n,
+  /** Create pages; edit the content of and add subpages to any page one can write. Member default. */
+  WRITE: 1n << 39n,
+  /** The structure of any page, the trash retention, empty the whole trash, anyone's public link. Implies VIEW + WRITE. */
+  MANAGE: 1n << 40n,
+} as const satisfies TreeBits;
+
+/** The three wiki bits (Go: perm.Wiki). */
+export const WIKI_PERMISSIONS: PermissionBits = WIKI_BITS.VIEW | WIKI_BITS.WRITE | WIKI_BITS.MANAGE;
+
+/** Bits a wiki page override may allow or deny (Go: perm.WikiOverride): «Просмотр» / «Правка». */
+export const WIKI_OVERRIDE_PERMISSIONS: PermissionBits = WIKI_BITS.VIEW | WIKI_BITS.WRITE;
+
+/** The workspace-level wiki rule (Go: perm.WikiOf): treePermissions over WIKI_BITS. */
+export function wikiPermissions(
+  roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
+  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+): PermissionBits {
+  return treePermissions(WIKI_BITS, roles, opts);
+}
+
+/**
+ * The one wiki page rule (ADR-0096 §2; Go: perm.ComputeWikiPage): treeItemPermissions over
+ * WIKI_BITS. `chain` runs from the top-level ancestor down to the page (empty = the top level).
+ */
+export function wikiPagePermissions(
+  roles: readonly RoleBits[],
+  chain: readonly TreeLevel[],
+  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+): PermissionBits {
+  return treeItemPermissions(WIKI_BITS, roles, chain, opts);
+}
+
+/**
+ * The structural rule of a wiki page (ADR-0096 §2; Go: perm.WikiStructureAllowed): rename, icon,
+ * cover, move, trash, restore, delete, access and the public link need VIEW on the page (`bits`,
+ * WikiPage.myBits) and either its ownership or WIKI_MANAGE. WRITE alone edits the content and
+ * adds subpages.
+ */
+export function wikiStructureAllowed(bits: PermissionBits, owner: boolean): boolean {
+  return (bits & WIKI_BITS.VIEW) !== 0n && (owner || (bits & WIKI_BITS.MANAGE) !== 0n);
 }
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -299,7 +405,10 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     CREATE_TEMP_ROOMS |
     // ADR-0094: migration 00088 gave them to the existing member roles.
     DISK_BITS.VIEW |
-    DISK_BITS.WRITE,
+    DISK_BITS.WRITE |
+    // ADR-0096: migration 00089.
+    WIKI_BITS.VIEW |
+    WIKI_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };
