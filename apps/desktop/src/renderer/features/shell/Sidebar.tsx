@@ -115,7 +115,6 @@ import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
-import { RestrictedMark } from '../workspace/AccessLevel';
 import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
 import { PlanBadge } from '../workspace/billing/PlanBadge';
 
@@ -1263,7 +1262,6 @@ const TextRoomRow = memo(function TextRoomRow({
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
             </span>
-            {room.restricted ? <RestrictedMark /> : null}
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
             <KnockBadge roomId={room.id} />
@@ -1409,10 +1407,9 @@ function VoiceRoomRow({
                     <RoomIcon roomId={room.id} size={16} pictureSize={20} live={inRoom} />
                   )}
                 </span>
-                <span className={cx('min-w-0 truncate', !temp && !room.restricted && 'flex-1')} title={room.name}>
+                <span className={cx('min-w-0 truncate', !temp && 'flex-1')} title={room.name}>
                   {room.name}
                 </span>
-                {room.restricted ? <RestrictedMark className={temp ? undefined : 'mr-auto'} /> : null}
                 {temp ? <TempLeft expires={expires} /> : null}
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>

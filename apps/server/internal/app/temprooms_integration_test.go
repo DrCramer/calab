@@ -47,6 +47,8 @@ func apiErrOf(t *testing.T, c *client, want int, method, path string, in any) (v
 		st = c.do(method, path, m, nil)
 	case *v1.JoinRoomInviteRequest:
 		st = c.do(method, path, m, nil)
+	case *v1.UpdateWorkspaceRequest:
+		st = c.do(method, path, m, nil)
 	default:
 		t.Fatalf("unexpected body %T", in)
 	}
@@ -184,7 +186,8 @@ func TestTempRooms(t *testing.T) {
 	sqlExec(t, "UPDATE rooms SET created_by = $1 WHERE id = $2", bob.id, cr.GetRoom().GetId())
 	apiErrOf(t, bob.client, 403, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{Name: &name})
 	apiErrOf(t, bob.client, 403, "DELETE", "/api/rooms/"+cr.GetRoom().GetId(), nil)
-	apiErrOf(t, o.client, 422, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IsPrivate: &tr})
+	// ADR-0078 addendum 2026-10-14: a permanent room switches private / public too.
+	o.must(200, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IsPrivate: &tr}, nil)
 
 	// Limits: 5 live per creator, 20 per workspace.
 	for i := range 3 {

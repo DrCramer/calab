@@ -223,7 +223,7 @@ func (s *wsState) boardBits(boardID, userID uuid.UUID) perm.Bits {
 	if !ok || b == nil {
 		return 0
 	}
-	return perm.ComputeBoardIn(m, b.GetIsPrivate(), b.GetRestricted(), s.btargets[boardID])
+	return perm.ComputeBoardIn(m, pbconv.BoardFlags(b), s.btargets[boardID])
 }
 
 // boardView is how a member sees a live board: their bits, or task-scoped (ADR-0059).

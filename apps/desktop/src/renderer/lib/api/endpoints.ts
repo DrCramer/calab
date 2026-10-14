@@ -159,6 +159,7 @@ import {
   UpdateVoiceStatusRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
+  ListWorkspaceAuditResponseSchema,
   UploadFileResponseSchema,
   VerifyEmailRequestSchema,
   VerifyEmailResponseSchema,
@@ -267,6 +268,9 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateWorkspaceRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}`, UpdateWorkspaceResponseSchema, body(UpdateWorkspaceRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/workspaces/${id}`),
+    /** The journal of private-access decisions (addendum 2026-10-14): the owner or VIEW_JOURNALS; newest first. */
+    audit: (id: string, before = '', signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${id}/audit${before ? `?before=${encodeURIComponent(before)}` : ''}`, ListWorkspaceAuditResponseSchema, undefined, signal),
     joinOpen: (id: string) => call('POST', `/api/workspaces/${id}/join`, JoinWorkspaceResponseSchema),
     /** My notification settings of the workspace; replaces them (MENTIONS without mutedUntil = default). */
     setNotifications: (id: string, init: MessageInitShape<typeof UpdateWorkspaceNotificationSettingsRequestSchema>) =>
@@ -503,6 +507,8 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateRoomRequestSchema>) =>
       call('PATCH', `/api/rooms/${id}`, UpdateRoomResponseSchema, body(UpdateRoomRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/rooms/${id}`),
+    /** «Сделать меня владельцем» of a former member's private room: the owner with «Владелец видит приватное» (403 / 409 otherwise). */
+    takeOver: (id: string) => call('POST', `/api/rooms/${id}/take-over`, UpdateRoomResponseSchema),
     /** Voice rooms: the status line of the current call (≤ 60 chars; '' clears); everyone gets ROOM_UPDATE. */
     setVoiceStatus: (id: string, status: string) =>
       call('PATCH', `/api/rooms/${id}/voice-status`, UpdateRoomResponseSchema, body(UpdateVoiceStatusRequestSchema, { status })),

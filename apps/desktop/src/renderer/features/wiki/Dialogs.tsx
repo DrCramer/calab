@@ -121,6 +121,9 @@ function ShareDialog({ pageId, tab: initial, onClose }: { pageId: string; tab: S
             ownerId={page.ownerId}
             access={access}
             hint={t('wiki.restrictedHint')}
+            hintOwner={t('wiki.restrictedHintOwner')}
+            itemName={page.title || t('wiki.untitled')}
+            onTakeOver={() => wikiApi.takeOver(pageId).then((r) => r.page && useWiki.getState().upsert(r.page))}
             inherited={t('wiki.accessInherited')}
             footer={t('wiki.accessFooter')}
             testId="wiki-access"

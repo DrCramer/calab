@@ -411,7 +411,7 @@ func mayDeleteOthers(acc perm.RoomAccess) bool {
 	if acc.Bits.Has(perm.ManageMessages) {
 		return true
 	}
-	if acc.PrivateTemp || acc.Role == perm.RoleGuest {
+	if acc.NoBypass() || acc.Role == perm.RoleGuest {
 		return false
 	}
 	return acc.Role == perm.RoleOwner || acc.Member.Workspace().Has(perm.ManageRecordings)

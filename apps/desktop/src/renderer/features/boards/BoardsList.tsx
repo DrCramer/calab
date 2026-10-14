@@ -33,7 +33,6 @@ import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { RestrictedMark } from '../workspace/AccessLevel';
 import { hasBit, MANAGE_BOARD } from './model';
 import { useFeatureOn } from './useBoardView';
 
@@ -400,8 +399,8 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
 const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDown }: { id: string; workspaceId: string; dragging: boolean; onPointerDown: (e: ReactPointerEvent, id: string) => void }): ReactNode {
   const name = useBoards((s) => s.boards[id]?.name ?? '');
   const emoji = useBoards((s) => s.boards[id]?.emoji ?? '');
-  const priv = useBoards((s) => s.boards[id]?.isPrivate ?? false);
-  const restricted = useBoards((s) => s.boards[id]?.restricted ?? false);
+  // One kind of private board (ADR-0058 addendum 2026-10-14): isPrivate or the pre-3.5 restricted flag.
+  const priv = useBoards((s) => !!(s.boards[id]?.isPrivate || s.boards[id]?.restricted));
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
   const perms = useBoards((s) => s.boards[id]?.permissions);
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
@@ -443,7 +442,6 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
             <span className="min-w-0 flex-1 truncate">{name}</span>
           )}
           {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
-          {restricted ? <RestrictedMark /> : null}
           {mine > 0 ? (
             <span
               className="pointer-events-none absolute right-1 top-1/2 grid h-6 min-w-6 -translate-y-1/2 place-items-center rounded-[var(--radius-icon)] bg-[var(--color-fill)] px-1.5 text-caption tabular-nums text-muted group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:h-[22px] mobile:min-w-[22px] mobile:translate-y-0 mobile:rounded-full mobile:px-1.5 mobile:text-fg mobile:group-hover/board:opacity-100"

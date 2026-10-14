@@ -70,6 +70,8 @@ export const diskApi = {
   trash: (id: string) => call('POST', `${I(id)}/trash`, DiskItemResponseSchema),
   restore: (id: string) => call('POST', `${I(id)}/restore`, DiskItemResponseSchema),
   remove: (id: string) => callEmpty('DELETE', I(id)),
+  /** «Сделать меня владельцем» of a former member's private item: the owner with «Владелец видит приватное». */
+  takeOver: (id: string) => call('POST', `${I(id)}/take-over`, DiskItemResponseSchema),
   emptyTrash: (ws: string) => call('POST', `${W(ws)}/trash/empty`, EmptyDiskTrashResponseSchema),
   permissions: (id: string): Promise<DiskPermissionsResponse> => call('GET', `${I(id)}/permissions`, DiskPermissionsResponseSchema),
   setPermissions: (id: string, init: MessageInitShape<typeof UpdateDiskPermissionsRequestSchema>) =>

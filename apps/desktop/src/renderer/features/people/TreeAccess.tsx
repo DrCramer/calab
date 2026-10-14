@@ -10,6 +10,7 @@ import { MemberAvatar } from '../boards/menus';
 import { RoleMark, roleName } from './MemberBits';
 import { MemberPicker } from './MemberPicker';
 import { memberItems, type PeoplePickItem, type RolePickItem } from './memberPickItems';
+import { FixedAccessRow, TakeOverButton, useOwnerSeesPrivate, useWorkspaceOwnerId } from './PrivateAccess';
 
 /**
  * «Доступ» of a tree item — one editor for the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §6):
@@ -98,6 +99,9 @@ export function TreeAccessEditor({
   ownerId,
   access,
   hint,
+  hintOwner,
+  itemName,
+  onTakeOver,
   inherited,
   footer,
   testId,
@@ -107,6 +111,12 @@ export function TreeAccessEditor({
   access: TreeAccess;
   /** Under «Только выбранные». */
   hint: string;
+  /** The same while «Владелец видит приватное» is on (the workspace owner then sees it too). */
+  hintOwner: string;
+  /** The item's name (the take-over confirmation). */
+  itemName: string;
+  /** «Сделать меня владельцем» (addenda 2026-10-14): calls the take-over endpoint and stores the answer. */
+  onTakeOver: () => Promise<unknown>;
   /** No overrides and not restricted. */
   inherited: string;
   footer: string;
@@ -114,6 +124,8 @@ export function TreeAccessEditor({
   testId: string;
 }): ReactNode {
   const { drafts, setDrafts, restricted, setRestricted } = access;
+  const sees = useOwnerSeesPrivate(workspaceId);
+  const wsOwnerId = useWorkspaceOwnerId(workspaceId);
   const roles = useWorkspaces((s) => s.byId[workspaceId]?.roles);
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const [adding, setAdding] = useState(false);
@@ -133,14 +145,14 @@ export function TreeAccessEditor({
       }));
     const people = memberItems(Object.values(members ?? {}), {
       ...(roles ? { roles } : {}),
-      exclude: new Set(ownerId ? [ownerId] : []),
+      exclude: new Set([...(ownerId ? [ownerId] : []), ...(restricted && sees && wsOwnerId ? [wsOwnerId] : [])]),
       decorate: (m) => (listed.has(`${PermissionTargetType.USER}:${m.user?.id ?? ''}`) ? { note: t('picker.listed') } : undefined),
     });
     return [
       { id: 'roles', label: t('picker.roles'), items: rs },
       { id: 'members', label: t('picker.members'), items: people },
     ];
-  }, [drafts, roles, members, ownerId]);
+  }, [drafts, roles, members, ownerId, restricted, sees, wsOwnerId]);
   const setLevel = useMemo(
     () =>
       (k: string, level: Level): void =>
@@ -155,11 +167,15 @@ export function TreeAccessEditor({
   );
   return (
     <div className="flex flex-col gap-4" data-testid={testId}>
-      <Switch checked={restricted} onChange={setRestricted} label={t('disk.restricted')} hint={hint} disabled={!drafts} />
+      <Switch checked={restricted} onChange={setRestricted} label={t('disk.restricted')} hint={sees ? hintOwner : hint} disabled={!drafts} />
       <section className="flex flex-col gap-1">
         <h3 className="text-caption font-semibold text-muted">{t('disk.accessWho')}</h3>
         <div className="flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]">
           {ownerId ? <OwnerRow workspaceId={workspaceId} userId={ownerId} /> : null}
+          {/* «Владелец видит приватное» (addenda 2026-10-14): the workspace owner as a fixed row — display only, not an override. */}
+          {restricted && sees && wsOwnerId && wsOwnerId !== ownerId ? (
+            <FixedAccessRow workspaceId={workspaceId} userId={wsOwnerId} kind="wsOwner" withRights className="h-11 border-b border-[var(--color-card-line)] px-3" />
+          ) : null}
           {drafts === null ? (
             <div className="grid h-12 place-items-center">
               <Spinner />
@@ -198,6 +214,7 @@ export function TreeAccessEditor({
           </Button>
         </MemberPicker>
       </section>
+      <TakeOverButton workspaceId={workspaceId} itemOwnerId={ownerId} isPrivate={restricted} name={itemName} run={onTakeOver} testId={`${testId}-take-over`} />
       <p className="text-caption text-faint">{footer}</p>
     </div>
   );

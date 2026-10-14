@@ -116,6 +116,17 @@ export function treePermissions(
   return raw & treeAll(bits);
 }
 
+/**
+ * Viewer options of the tree rule: `guest` (recognized by the built-in guest role without a member
+ * one unless given), `owner` (the built-in owner role unless given) and `ownerSeesPrivate`
+ * (Workspace.ownerSeesPrivate, addendum 2026-10-14).
+ */
+export interface TreeOptions {
+  guest?: boolean | undefined;
+  owner?: boolean | undefined;
+  ownerSeesPrivate?: boolean | undefined;
+}
+
 /** One node on the way from the top to the checked node, as far as the viewer is concerned. */
 export interface TreeLevel {
   /** The node's «Только выбранные» (DiskItem.restricted, WikiPage.restricted). */
@@ -138,16 +149,18 @@ export interface TreeLevel {
  * what the roles and the ancestors gave; each role's override lowest position first (ignored for
  * guests), then the viewer's own; the owner of the level always has VIEW | WRITE. Overrides touch
  * VIEW | WRITE only. Without VIEW nothing. Inside a restricted subtree a MANAGE holder is an
- * ordinary member: «Правка» gives VIEW | WRITE, never MANAGE. The server sends my_bits; this only
- * predicts the UI.
+ * ordinary member: «Правка» gives VIEW | WRITE, never MANAGE. The workspace owner with «Владелец
+ * видит приватное» (`ownerSeesPrivate`, Workspace.ownerSeesPrivate) has all three everywhere. The
+ * server sends my_bits; this only predicts the UI.
  */
 export function treeItemPermissions(
   bits: TreeBits,
   roles: readonly RoleBits[],
   chain: readonly TreeLevel[],
-  opts: { guest?: boolean | undefined } = {},
+  opts: TreeOptions = {},
 ): PermissionBits {
   const guest = opts.guest ?? guestOnly(roles);
+  if (!guest && (opts.owner ?? holdsOwnerRole(roles)) && opts.ownerSeesPrivate) return treeAll(bits);
   const ws = treePermissions(bits, roles, { guest });
   const restricted = chain.some((l) => l.restricted);
   if (ws & bits.MANAGE && !restricted) return treeAll(bits);
@@ -238,7 +251,7 @@ export type DiskLevel = TreeLevel;
 export function diskItemPermissions(
   roles: readonly RoleBits[],
   chain: readonly DiskLevel[],
-  opts: { guest?: boolean | undefined } = {},
+  opts: TreeOptions = {},
 ): PermissionBits {
   return treeItemPermissions(DISK_BITS, roles, chain, opts);
 }
@@ -288,7 +301,7 @@ export function wikiPermissions(
 export function wikiPagePermissions(
   roles: readonly RoleBits[],
   chain: readonly TreeLevel[],
-  opts: { guest?: boolean | undefined } = {},
+  opts: TreeOptions = {},
 ): PermissionBits {
   return treeItemPermissions(WIKI_BITS, roles, chain, opts);
 }
@@ -471,28 +484,33 @@ export interface ComputePermissionsInput {
   /** Set for a DM room (Room.type DM): the fixed DM set for a participant, role/overrides ignored. */
   dm?: { participant: boolean } | undefined;
   /**
-   * Room.restricted (ADR-0029, ADR-0048): ADMINISTRATOR gives no bypass — admins count as plain
-   * members of the room — and VIEW_ROOM comes only from an allow override on the room; the
-   * workspace owner (`owner`) has everything.
+   * A private room (Room.isPrivate || Room.restricted; ADR-0078 and its addendum 2026-10-14):
+   * nobody bypasses it — ADMINISTRATOR, the workspace owner and workspace-level MANAGE_ROOM count
+   * for nothing —, the roles' VIEW_ROOM is dropped and VIEW_ROOM comes only from an allow override
+   * on the room or being its `creator`; the owner (`owner`) with `ownerSeesPrivate` alone has
+   * everything.
    */
   restricted?: boolean | undefined;
   /** The user is the workspace owner (Workspace.owner_id; holder of the built-in owner role). */
   owner?: boolean | undefined;
+  /** Workspace.ownerSeesPrivate («Владелец видит приватное»): with `owner`, private gives everything. */
+  ownerSeesPrivate?: boolean | undefined;
   /**
-   * A private temporary room (Room.isPrivate && Room.expiresAt, live or archived; ADR-0078):
-   * nobody bypasses it — not ADMINISTRATOR, not the owner — the roles' VIEW_ROOM is dropped and
-   * role overrides cannot grant it: only the user's own override does, or being its `creator`.
+   * A private temporary room (Room.isPrivate && Room.expiresAt, live or archived; ADR-0078): private
+   * (as `restricted`), and role overrides cannot grant VIEW_ROOM: only the user's own override does,
+   * or being its `creator`.
    */
   privateTemp?: boolean | undefined;
-  /** The user created this temporary room (Room.createdBy) and is not a guest (ADR-0044). */
+  /** The user created this room (Room.createdBy) and is not a guest: VIEW_ROOM in a private room. */
   creator?: boolean | undefined;
   /**
    * Set for a task board (ADR-0042): the overrides are the board's and touch only
    * BOARD_ONLY_PERMISSIONS; a private board (Board.isPrivate) drops the roles' VIEW_BOARD
    * first; without VIEW_BOARD nothing; a guest (highest built-in role GUEST) gets nothing.
-   * A restricted board (Board.restricted, ADR-0048; implies private) drops ADMINISTRATOR, the
-   * owner (`board.owner`) has everything. The room fields `restricted` / `owner` do not apply.
-   * Go: perm.ComputeBoard.
+   * A private board has no bypass (ADR-0058 addendum 2026-10-14): ADMINISTRATOR is dropped too,
+   * the `creator` keeps VIEW_BOARD, the owner (`board.owner`) with `ownerSeesPrivate` alone has
+   * everything. `restricted` (Board.restricted, the pre-3.5 flag) is the same as `private`. The
+   * room fields `restricted` / `owner` do not apply. Go: perm.ComputeBoard.
    */
   board?:
     | {
@@ -500,6 +518,8 @@ export interface ComputePermissionsInput {
         guest?: boolean | undefined;
         restricted?: boolean | undefined;
         owner?: boolean | undefined;
+        ownerSeesPrivate?: boolean | undefined;
+        creator?: boolean | undefined;
       }
     | undefined;
 }
@@ -531,15 +551,15 @@ function overrideOf(ovs: ComputePermissionsInput['roleOverrides'], id: string): 
 }
 
 /**
- * The single function computing effective room permissions (docs/04, ADR-0026, ADR-0029, ADR-0048):
- * workspace bits (OR of the roles; ADMINISTRATOR → everything, overrides ignored — except in a
- * restricted room, where the owner gets everything and ADMINISTRATOR and the roles' VIEW_ROOM are
- * dropped: only an allow override lets anyone in), then each role's
- * room override lowest position first (deny, then allow: the most senior role wins), then the
- * user's own override; without VIEW_ROOM nothing. Overrides only touch ROOM_ONLY_PERMISSIONS.
- * A private temporary room (`privateTemp`, ADR-0078) has no bypass at all — not even the owner's:
- * ADMINISTRATOR and the roles' VIEW_ROOM are dropped, role overrides do not grant VIEW_ROOM, only
- * the user's own override does, and the `creator` always has it.
+ * The single function computing effective room permissions (docs/04, ADR-0026, ADR-0029, ADR-0048,
+ * ADR-0078 and its addendum 2026-10-14): workspace bits (OR of the roles; ADMINISTRATOR →
+ * everything, overrides ignored — except in a private room (`restricted`), which has no bypass:
+ * ADMINISTRATOR and the roles' VIEW_ROOM are dropped, admins and the owner count as members, only
+ * an allow override lets anyone in, the `creator` always has VIEW_ROOM, and the owner with
+ * `ownerSeesPrivate` alone gets everything), then each role's room override lowest position first
+ * (deny, then allow: the most senior role wins), then the user's own override; without VIEW_ROOM
+ * nothing. Overrides only touch ROOM_ONLY_PERMISSIONS. In a private temporary room (`privateTemp`)
+ * role overrides do not grant VIEW_ROOM either: only the user's own override does.
  * Used by the client for UI; mirrored in Go (apps/server/internal/perm). Pure.
  */
 export function computePermissions(input: ComputePermissionsInput): PermissionBits {
@@ -563,17 +583,27 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
   }
   let perms = rawPermissions(roles);
   if (input.board) {
-    if (input.board.guest) return 0n;
-    if (input.board.restricted) {
-      if (input.board.owner) return ALL_PERMISSIONS;
+    const b = input.board;
+    if (b.guest) return 0n;
+    if (b.private || b.restricted) {
+      if (b.owner && b.ownerSeesPrivate) return ALL_PERMISSIONS;
       perms &= ~(ADMINISTRATOR | VIEW_BOARD);
-    } else if (perms & ADMINISTRATOR) {
-      return ALL_PERMISSIONS;
+      return applyOverrides(
+        perms,
+        roles,
+        roleOverrides,
+        input.userOverride,
+        BOARD_ONLY_PERMISSIONS,
+        VIEW_BOARD,
+        BOARD_ONLY_PERMISSIONS,
+        b.creator ? VIEW_BOARD : 0n,
+      );
     }
-    if (input.board.private) perms &= ~VIEW_BOARD;
+    if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
     return applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
   }
-  if (input.privateTemp) {
+  if (input.restricted || input.privateTemp) {
+    if (input.owner && input.ownerSeesPrivate) return ALL_PERMISSIONS;
     perms &= ~(ADMINISTRATOR | VIEW_ROOM);
     return applyOverrides(
       perms,
@@ -582,17 +612,11 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
       input.userOverride,
       ROOM_ONLY_PERMISSIONS,
       VIEW_ROOM,
-      ROOM_ONLY_PERMISSIONS & ~VIEW_ROOM,
+      input.privateTemp ? ROOM_ONLY_PERMISSIONS & ~VIEW_ROOM : ROOM_ONLY_PERMISSIONS,
       input.creator ? VIEW_ROOM : 0n,
     );
   }
-  if (input.restricted) {
-    if (input.owner) return ALL_PERMISSIONS;
-    perms &= ~(ADMINISTRATOR | VIEW_ROOM);
-  } else if (perms & ADMINISTRATOR) {
-    return ALL_PERMISSIONS;
-  }
-
+  if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
   return applyOverrides(perms, roles, roleOverrides, input.userOverride, ROOM_ONLY_PERMISSIONS, VIEW_ROOM);
 }
 
@@ -630,8 +654,10 @@ function applyOverrides(
 
 /**
  * Effective permissions of a member with `roles` on a task board, given Board.permissionOverrides,
- * Board.isPrivate (ADR-0042) and Board.restricted (ADR-0048). `guest`: the member's highest
- * built-in role is GUEST; the owner is recognized by the built-in owner role unless `owner` is given.
+ * Board.isPrivate (ADR-0042) and Board.restricted (ADR-0048; the same as private since the
+ * ADR-0058 addendum 2026-10-14). `guest`: the member's highest built-in role is GUEST; the owner
+ * is recognized by the built-in owner role unless `owner` is given; `ownerSeesPrivate`:
+ * Workspace.ownerSeesPrivate; `createdBy`: Board.createdBy (the creator keeps a private board).
  */
 export function computeMemberBoardPermissions(
   roles: readonly RoleBits[],
@@ -641,6 +667,8 @@ export function computeMemberBoardPermissions(
   guest = false,
   restricted = false,
   owner: boolean = holdsOwnerRole(roles),
+  ownerSeesPrivate = false,
+  createdBy = '',
 ): PermissionBits {
   const roleOverrides = new Map<string, OverrideBits>();
   for (const o of overrides) {
@@ -650,7 +678,13 @@ export function computeMemberBoardPermissions(
     roles,
     roleOverrides,
     userOverride: overrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
-    board: { private: isPrivate || restricted, guest, restricted, owner },
+    board: {
+      private: isPrivate || restricted,
+      guest,
+      owner,
+      ownerSeesPrivate,
+      creator: createdBy !== '' && createdBy === userId,
+    },
   });
 }
 
@@ -688,21 +722,24 @@ export function taskPermissions(
   return 0n;
 }
 
-/** A temporary room as computeMemberRoomPermissions needs it (ADR-0044, ADR-0078). */
-export interface TempRoomScope {
-  /** Room.isPrivate: only its creator and people with a personal allow see it, admins included. */
+/** A room as computeMemberRoomPermissions needs it besides its overrides (ADR-0044, ADR-0078). */
+export interface RoomScope {
+  /** Room.isPrivate || Room.restricted: only its creator and those let in see it, admins included. */
   private: boolean;
   /** Room.createdBy ('' when unknown). */
   createdBy: string;
+  /** A temporary room (Room.expiresAt set): in a private one only personal overrides let in. */
+  temp: boolean;
 }
 
-/** The temporary-room scope of a room (undefined for a permanent one: no Room.expiresAt). */
-export function tempRoomScope(room: {
+/** The scope of a room (Room.isPrivate / restricted, createdBy, expiresAt). */
+export function roomScope(room: {
   isPrivate: boolean;
+  restricted?: boolean | undefined;
   expiresAt?: unknown;
   createdBy: string;
-}): TempRoomScope | undefined {
-  return room.expiresAt ? { private: room.isPrivate, createdBy: room.createdBy } : undefined;
+}): RoomScope {
+  return { private: room.isPrivate || !!room.restricted, createdBy: room.createdBy, temp: !!room.expiresAt };
 }
 
 /** Whether the member's highest built-in role is GUEST (no built-in role above it among `roles`). */
@@ -724,9 +761,9 @@ export function memberRoles<R extends RoleBits>(all: readonly R[], roleIds: read
 
 /**
  * Effective permissions of a member with `roles` in a room, given Room.permissionOverrides and
- * Room.restricted (ADR-0029). The owner is recognized by the built-in owner role among `roles`
- * unless `owner` is given. `temp`: the room is temporary (Room.expiresAt) — `private` is
- * Room.isPrivate (ADR-0078: no bypass), `createdBy` Room.createdBy; see tempRoomScope.
+ * Room.restricted (any private room, ADR-0078 addendum 2026-10-14). The owner is recognized by the
+ * built-in owner role among `roles` unless `owner` is given. `scope`: roomScope(room) — private,
+ * creator, temporary; `ownerSeesPrivate`: Workspace.ownerSeesPrivate.
  */
 export function computeMemberRoomPermissions(
   roles: readonly RoleBits[],
@@ -734,7 +771,8 @@ export function computeMemberRoomPermissions(
   overrides: readonly RoomPermissionOverride[],
   restricted = false,
   owner: boolean = holdsOwnerRole(roles),
-  temp?: TempRoomScope | undefined,
+  scope?: RoomScope | undefined,
+  ownerSeesPrivate = false,
 ): PermissionBits {
   const roleOverrides = new Map<string, OverrideBits>();
   // First match per target, like Go perm.ComputeIn (the server never stores duplicates).
@@ -745,10 +783,11 @@ export function computeMemberRoomPermissions(
     roles,
     roleOverrides,
     userOverride: overrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
-    restricted,
+    restricted: restricted || (scope?.private ?? false),
     owner,
-    privateTemp: temp?.private ?? false,
-    creator: !!temp?.createdBy && temp.createdBy === userId && !guestOnly(roles),
+    ownerSeesPrivate,
+    privateTemp: !!scope?.private && scope.temp,
+    creator: !!scope?.createdBy && scope.createdBy === userId && !guestOnly(roles),
   });
 }
 

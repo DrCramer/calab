@@ -14,8 +14,9 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// Restricted rooms (ADR-0029, docs/16): in a private room with restricted = true ADMINISTRATOR
-// gives no bypass. Actors: the owner; an admin without access; an admin allowed personally; an
+// Private rooms (ADR-0029, docs/16; ADR-0078 addendum 2026-10-14: every private room is
+// restricted, the owner bypasses only with «Владелец видит приватное»): ADMINISTRATOR gives no
+// bypass; the owner here is the rooms' creator and keeps them by a personal allow of the room bits. Actors: the owner; an admin without access; an admin allowed personally; an
 // admin allowed through a custom role; a member without access; a member allowed personally;
 // a guest.
 type restrictedFixture struct {
@@ -95,8 +96,8 @@ func TestRestrictedRoomMatrix(t *testing.T) {
 			t.Errorf("%s: listed=%v, want %v", n, listed, want)
 		case want && st != 200, !want && st != 404:
 			t.Errorf("%s: GET room %d", n, st)
-		case n == "owner" && perm.Bits(bits) != perm.All:
-			t.Errorf("owner: bits %d, want all", bits)
+		case n == "owner" && (perm.Bits(bits)&perm.RoomOnly != perm.RoomOnly || perm.Bits(bits) == perm.All):
+			t.Errorf("owner (the creator): bits %d, want every room bit, no bypass", bits)
 		case n != "owner" && want && perm.Bits(bits) != perm.RoleDefaults[perm.RoleMember]:
 			t.Errorf("%s: bits %d, want the member's %d (no ADMINISTRATOR bypass)", n, bits, perm.RoleDefaults[perm.RoleMember])
 		}
@@ -208,9 +209,9 @@ func TestRestrictedRoomMatrix(t *testing.T) {
 	}
 }
 
-// ADR-0048 (was owner-only in ADR-0029): MANAGE_ROOM in the room changes the flag; only private
-// rooms take it; whoever closes the room keeps it through a personal override, other admins lose
-// it; the owner can always open it again.
+// ADR-0078 addendum 2026-10-14: restricted is an alias of is_private — any text / voice room
+// takes it (public ⇄ private); MANAGE_ROOM in the room changes it; whoever makes a room private
+// keeps it through a personal allow of their room bits, other admins lose it.
 func TestRestrictedFlagManageRoom(t *testing.T) {
 	o := owner(t)
 	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
@@ -221,38 +222,39 @@ func TestRestrictedFlagManageRoom(t *testing.T) {
 	for _, a := range []*user{admin, admin2} {
 		o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+a.id, &v1.UpdateMemberRequest{Role: &adminR}, nil)
 	}
-	var pub, priv v1.CreateRoomResponse
+	var pub v1.CreateRoomResponse
 	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "pub"}, &pub)
-	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "priv", IsPrivate: true}, &priv)
 	on, off := true, false
-	if st := o.do("PATCH", "/api/rooms/"+pub.GetRoom().GetId(), &v1.UpdateRoomRequest{Restricted: &on}, nil); st != 422 {
-		t.Fatalf("public room restricted: %d, want 422", st)
-	}
-	pid := priv.GetRoom().GetId()
-	if st := mem.do("PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &on}, nil); st != 404 {
-		t.Fatalf("a member who does not see the room closes it: %d, want 404", st)
+	pid := pub.GetRoom().GetId()
+	if st := mem.do("PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &on}, nil); st != 403 {
+		t.Fatalf("a member without MANAGE_ROOM makes it private: %d, want 403", st)
 	}
 	var res v1.UpdateRoomResponse
 	admin.must(200, "PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &on}, &res)
-	if !res.GetRoom().GetRestricted() {
-		t.Fatal("restricted not set")
+	if !res.GetRoom().GetRestricted() || !res.GetRoom().GetIsPrivate() {
+		t.Fatal("restricted alias: the room is not private")
 	}
 	if bits, st := roomPerms(t, admin, pid); st != 200 || !perm.Bits(bits).Has(perm.ViewRoom|perm.ManageRoom) || perm.Bits(bits) == perm.All {
-		t.Fatalf("the admin who closed it: %d bits %d, want 200 with VIEW_ROOM | MANAGE_ROOM, not all", st, bits)
+		t.Fatalf("the admin who made it private: %d bits %d, want 200 with VIEW_ROOM | MANAGE_ROOM, not all", st, bits)
 	}
-	if _, st := roomPerms(t, admin2, pid); st != 404 {
-		t.Fatalf("another admin sees the closed room: %d", st)
+	// The owner created the room (the creator always sees it) — not checked here.
+	for name, u := range map[string]*user{"another admin": admin2, "a member": mem} {
+		if _, st := roomPerms(t, u, pid); st != 404 {
+			t.Fatalf("%s sees the private room: %d", name, st)
+		}
 	}
 	if st := admin2.do("PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &off}, nil); st != 404 {
 		t.Fatalf("another admin opens it: %d, want 404", st)
 	}
-	o.must(200, "PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &off}, &res)
-	if bits, st := roomPerms(t, admin2, pid); st != 200 || perm.Bits(bits) != perm.All {
-		t.Fatalf("admin after opening: %d bits %d, want 200 / all", st, bits)
+	admin.must(200, "PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &off}, &res)
+	if res.GetRoom().GetIsPrivate() || res.GetRoom().GetRestricted() {
+		t.Fatal("opened room still private")
 	}
-	// The admin who closed it can open it again too (MANAGE_ROOM through the override).
-	admin.must(200, "PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &on}, nil)
-	admin.must(200, "PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &off}, nil)
+	for _, u := range []*user{admin2, o} {
+		if bits, st := roomPerms(t, u, pid); st != 200 || perm.Bits(bits) != perm.All {
+			t.Fatalf("after opening: %d bits %d, want 200 / all", st, bits)
+		}
+	}
 }
 
 // Role membership is no way in (ADR-0029): an admin who cannot see the room may not hand

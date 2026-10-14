@@ -14,6 +14,7 @@ import { enRecording } from './recording';
 import { enAnnot } from './annot';
 import { enPeople } from './people';
 import { enFormer } from './former';
+import { enPrivacy } from './privacy';
 import { enModeration } from './moderation';
 import { enPicker } from './picker';
 import { enRoles } from './roles';
@@ -72,6 +73,7 @@ export const en: Dict = {
   ...enTransitions,
   ...enCustomPlan,
   ...enFormer,
+  ...enPrivacy,
   ...enModeration,
   ...enMail,
   ...enRecording,
@@ -272,10 +274,8 @@ export const en: Dict = {
   'room.iconPreview': 'changed the room picture',
   'room.iconRemovedPreview': 'removed the room picture',
   'room.iconOpen': 'Open the room picture',
-  'room.privateHint': 'Visible only to admins and people you grant access in permissions',
   'room.accessCard': 'Access',
   'room.whoSees': 'Who can see it',
-  'room.whoSeesOwner': 'owner, always',
   'room.whoSeesEmpty': 'No one on the list yet',
   'room.whoSeesAdd': 'Add',
   'room.whoSeesRemove': 'Remove from the list: {name}',

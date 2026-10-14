@@ -1,13 +1,14 @@
 -- name: CreateRoom :one
 -- expires_at set = a temporary room (ADR-0044); created_by: the creator (NULL: not recorded).
-INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
+-- restricted mirrors is_private (ADR-0078 addendum 2026-10-14: one kind of private room).
+INSERT INTO rooms (workspace_id, type, name, topic, position, is_private, restricted,
                    audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit,
                    expires_at, created_by)
 VALUES (sqlc.arg('workspace_id')::uuid, sqlc.arg('type'), sqlc.arg('name'), sqlc.arg('topic'),
         coalesce(sqlc.narg('position')::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL AND type <> 'task')),
-        sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
+        sqlc.arg('is_private'), sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
         sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'), sqlc.narg('camera_limit'),
         sqlc.narg('expires_at'), sqlc.narg('created_by'))
 RETURNING *;
@@ -85,7 +86,8 @@ SELECT r.workspace_id,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        (r.archived_at IS NOT NULL)::boolean AS archived,
        (r.expires_at IS NOT NULL)::boolean AS temp,
-       r.created_by
+       r.created_by,
+       coalesce(w.owner_sees_private, false)::boolean AS owner_sees_private
 FROM rooms r
 LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = sqlc.arg('user_id')
@@ -123,7 +125,8 @@ SELECT r.workspace_id,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        (r.archived_at IS NOT NULL)::boolean AS archived,
        (r.expires_at IS NOT NULL)::boolean AS temp,
-       r.created_by
+       r.created_by,
+       coalesce(w.owner_sees_private, false)::boolean AS owner_sees_private
 FROM rooms r
 CROSS JOIN unnest(sqlc.arg('user_ids')::uuid[]) WITH ORDINALITY AS k(user_id, ord)
 LEFT JOIN workspaces w ON w.id = r.workspace_id
@@ -226,9 +229,25 @@ WHERE room_id = sqlc.arg('room_id') AND revoked_at IS NULL AND event_id IS NULL
   AND expires_at = sqlc.arg('old_expires_at');
 
 -- name: SetRoomPrivate :one
-UPDATE rooms SET is_private = sqlc.arg('is_private')
+-- is_private and restricted together (ADR-0078 addendum 2026-10-14: one kind of private room).
+UPDATE rooms SET is_private = sqlc.arg('is_private'), restricted = sqlc.arg('is_private')
 WHERE id = sqlc.arg('id') AND archived_at IS NULL
 RETURNING *;
+
+-- name: SetRoomCreator :one
+-- «Сделать меня владельцем» (ADR-0078 addendum 2026-10-14): the workspace owner takes over a
+-- former member's private room.
+UPDATE rooms SET created_by = sqlc.arg('created_by')
+WHERE id = sqlc.arg('id') AND archived_at IS NULL
+RETURNING *;
+
+-- name: GrantRoleOverride :exec
+-- A role allow for a private room (roles invited at creation): added to an existing override,
+-- never lifting its denies.
+INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
+VALUES (sqlc.arg('room_id'), 'role', sqlc.arg('role_id')::text, sqlc.arg('allow'), 0)
+ON CONFLICT (room_id, target_type, target_id) DO UPDATE
+    SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny);
 
 -- name: RemoveRoleDeny :exec
 -- Removes deny bits from one role override; an override left empty is dropped.

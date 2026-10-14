@@ -27,6 +27,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useMemberRoles } from '../../stores/workspaces';
 import { PeopleBar } from '../calendar/PeopleBar';
+import { useOwnerSeesPrivate } from '../people/PrivateAccess';
 
 /**
  * «Временная комната» (ADR-0044 §UI, docs/08 «Колонка комнат»): name (Enter creates), lifetime
@@ -67,6 +68,7 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
   const [preset, setPreset] = useState<LifetimePreset>('1h');
   const [until, setUntil] = useState(() => toLocalInput(now + 24 * 3_600_000));
   const [vis, setVis] = useState<Visibility>('all');
+  const ownerSees = useOwnerSeesPrivate(workspaceId);
   const [people, setPeople] = useState<readonly string[]>([]);
   const [guests, setGuests] = useState(true);
   const [withEvent, setWithEvent] = useState(false);
@@ -204,7 +206,7 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
               ]}
             />
           </div>
-          <span className="text-caption text-muted">{vis === 'all' ? t('temp.visAllHint') : t('temp.visSelectedHint')}</span>
+          <span className="text-caption text-muted">{vis === 'all' ? t('temp.visAllHint') : t(ownerSees ? 'temp.visSelectedHintOwner' : 'temp.visSelectedHint')}</span>
           {vis === 'selected' ? (
             // Up to 3 rows of 28 px chips, then the field scrolls on its own (the dialog stays put).
             <div className="-m-1 max-h-[108px] overflow-y-auto overscroll-contain p-1" data-testid="temp-people-scroll">

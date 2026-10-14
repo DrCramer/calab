@@ -591,7 +591,20 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 		st.delMember(uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
-		st.ws = e.WorkspaceUpdate.GetWorkspace()
+		next := e.WorkspaceUpdate.GetWorkspace()
+		if next.GetOwnerSeesPrivate() != st.ws.GetOwnerSeesPrivate() {
+			// «Владелец видит приватное» flipped (addendum 2026-10-14): the owner's sessions gain or
+			// lose the private rooms and boards (ROOM_CREATE / ROOM_DELETE, BOARD_CREATE /
+			// BOARD_DELETE), everyone else sees nothing change.
+			owner := func(u uuid.UUID) bool { return st.role(u) == perm.RoleOwner }
+			h.reviewRooms(st, wid, sessions, owner, func() {
+				h.reviewBoards(st, wid, sessions, owner, func() {
+					st.ws = next
+					st.rebuild() // Member.OwnerSeesPrivate
+				})
+			})
+		}
+		st.ws = next
 		// The suspension reason is for the owner / admins only (item 32).
 		var hidden *encEvent
 		for _, s := range sessions {

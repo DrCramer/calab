@@ -155,7 +155,7 @@ func TestResolverTaskRoom(t *testing.T) {
 	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board}
 	s.invites = map[key][3]bool{{task, other}: {false, false, true}}
 	restricted := access(true, false)
-	restricted.Invited, restricted.Restricted = true, true
+	restricted.Invited, restricted.IsPrivate, restricted.Restricted = true, true, true
 	s.boards[key{board, other}] = restricted
 	r = NewResolver(s)
 	if b, _ := r.Board(ctx, board, other); !b.TaskScoped || b.Bits != 0 {
@@ -306,10 +306,11 @@ func TestComputeInPrivateRoom(t *testing.T) {
 
 func i64(b Bits) int64 { return int64(b) } //nolint:gosec // small bit masks in tests
 
-// ADR-0029: in a restricted room an admin counts as a plain member, the owner has everything.
+// ADR-0029, ADR-0078 addendum 2026-10-14: in a private room an admin and the owner count as
+// plain members; the owner has everything only with «Владелец видит приватное».
 func TestResolverRestricted(t *testing.T) {
 	ws, room := uuid.New(), uuid.New()
-	adminU, ownerU := uuid.New(), uuid.New()
+	adminU, ownerU, seerU := uuid.New(), uuid.New(), uuid.New()
 	adminR, ownerR, memberR := uuid.New(), uuid.New(), uuid.New()
 	row := func(role string, top uuid.UUID, pos int32) sqlc.GetRoomAccessRow {
 		return sqlc.GetRoomAccessRow{
@@ -322,14 +323,21 @@ func TestResolverRestricted(t *testing.T) {
 	s := &fakeStore{access: map[key]sqlc.GetRoomAccessRow{
 		{room, adminU}: row("admin", adminR, PosAdmin),
 		{room, ownerU}: row("owner", ownerR, PosOwner),
+		{room, seerU}:  row("owner", ownerR, PosOwner),
 	}}
+	seer := s.access[key{room, seerU}]
+	seer.OwnerSeesPrivate = true
+	s.access[key{room, seerU}] = seer
 	r := NewResolver(s)
 	ctx := context.Background()
-	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.Restricted {
+	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.Private || !acc.NoBypass() {
 		t.Fatalf("admin: %+v %v", acc, err)
 	}
-	if acc, err := r.Room(ctx, room, ownerU); err != nil || acc.Bits != All {
+	if acc, err := r.Room(ctx, room, ownerU); err != nil || acc.Bits != 0 || !acc.NoBypass() {
 		t.Fatalf("owner: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, seerU); err != nil || acc.Bits != All || acc.NoBypass() {
+		t.Fatalf("owner who sees private: %+v %v", acc, err)
 	}
 }
 
@@ -359,7 +367,7 @@ func TestResolverPrivateTemp(t *testing.T) {
 	}}
 	r := NewResolver(s)
 	ctx := context.Background()
-	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.PrivateTemp {
+	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.Private {
 		t.Fatalf("admin: %+v %v", acc, err)
 	}
 	if acc, err := r.ReadRoom(ctx, room, ownerU); err != nil || acc.Bits != 0 {
@@ -373,7 +381,7 @@ func TestResolverPrivateTemp(t *testing.T) {
 	}
 	// A guest is never the creator (ADR-0044), whatever created_by says.
 	guest := Member{UserID: creatorU.String(), Role: RoleGuest, Roles: []RoleBits{{ID: "g", Permissions: RoleDefaults[RoleGuest]}}}
-	if got := ComputeIn(guest, RoomFlags{PrivateTemp: true, CreatedBy: creatorU}, nil); got != 0 {
+	if got := ComputeIn(guest, RoomFlags{Private: true, PrivateTemp: true, CreatedBy: creatorU}, nil); got != 0 {
 		t.Fatalf("guest creator: %d", got)
 	}
 	// A public temporary room keeps the admin's bypass.
@@ -381,9 +389,14 @@ func TestResolverPrivateTemp(t *testing.T) {
 	if got := ComputeIn(admin, Flags(false, false, true, &creatorU), nil); got != All {
 		t.Fatalf("admin in a public temporary room: %d", got)
 	}
-	// A private permanent room too (ADR-0008).
-	if got := ComputeIn(admin, Flags(false, true, false, &creatorU), nil); got != All {
+	// A private permanent room has no bypass either (ADR-0078 addendum 2026-10-14) ...
+	if got := ComputeIn(admin, Flags(false, true, false, &creatorU), nil); got != 0 {
 		t.Fatalf("admin in a private permanent room: %d", got)
+	}
+	// ... but its creator, an admin, sees it as a member.
+	adminCreator := Member{UserID: creatorU.String(), Role: RoleAdmin, Roles: admin.Roles}
+	if got := ComputeIn(adminCreator, Flags(true, true, false, &creatorU), nil); got != ViewRoom {
+		t.Fatalf("admin creator of a private permanent room: %d", got)
 	}
 }
 
