@@ -1,8 +1,8 @@
-import { MAIL_RAW_MAX, type MailMessage } from '../../../shared/mail';
+import type { MailMessage } from '../../../shared/mail';
 import { plural, t } from '../../i18n';
 import { log } from '../../lib/log';
 import { can, roomPerms } from '../../lib/permissions';
-import { sendMessage, type OutgoingFile } from '../../services/chat';
+import { MAX_ATTACHMENTS, MAX_CONTENT, sendMessage, type OutgoingFile } from '../../services/chat';
 import { ensureDm } from '../../services/dms';
 import { HOME } from '../../stores/dms';
 import { mailApi, useMail } from '../../stores/mail';
@@ -12,14 +12,17 @@ import { useToasts } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { rolesOf, useWorkspaces } from '../../stores/workspaces';
 import type { ForwardItem } from '../chat/forwardModel';
-import { chatText, emlName } from './chatText';
+import { chatAttachments, chatText, planAttachments } from './chatText';
+
+/** The chat's file upload limit per file (server `MAX_FILE_SIZE_MB`, default 50). */
+const UPLOAD_MAX = 50 * 1024 * 1024;
 
 /**
- * «Отправить в чат…» (owner 12.10): one chat message per picked chat — a short card (subject,
- * sender, date, the start of the text) and the raw message as `<Тема>.eml`, so the recipient can
- * open the original in their mail app. Through the chat's own send path (optimistic, uploads with
- * progress); the server checks the rights, the client only leaves the file out where attaching is
- * not allowed (with a note in the text).
+ * «Отправить в чат…» (owner 12.10, fixed 14.10): one chat message per picked chat — a short header
+ * (subject, sender, date) and the plain text of the mail, plus the mail's real attachments (no
+ * `cid:` furniture, never an .eml). Through the chat's own send path (optimistic, uploads with
+ * progress); the server checks the rights, the client only leaves the files out where attaching is
+ * not allowed (with a note in the text). Files that do not fit the limits are listed in a toast.
  */
 
 async function messageOf(id: string): Promise<MailMessage> {
@@ -51,27 +54,28 @@ export async function sendMailToChats(messageId: string, targets: readonly Forwa
     return;
   }
   const text = chatText(msg);
-  let file: OutgoingFile | null = null;
-  let tooBig = msg.size > MAIL_RAW_MAX;
-  if (!tooBig) {
+  const { take, skipped } = planAttachments(chatAttachments(msg), MAX_ATTACHMENTS, UPLOAD_MAX);
+  const files: OutgoingFile[] = [];
+  const lost = skipped.map((a) => a.name);
+  for (const a of take) {
     try {
-      const raw = await api.messages.raw(messageId);
-      file = { file: new Blob([raw as BlobPart], { type: 'message/rfc822' }), name: emlName(msg.subject) };
+      const bytes = await api.messages.attachment(msg.id, a.id);
+      files.push({ file: new Blob([bytes as BlobPart], { type: a.mime || 'application/octet-stream' }), name: a.name });
     } catch (e) {
-      log.warn('mail to chat: raw source', e);
-      tooBig = true;
+      log.warn('mail to chat: attachment', e);
+      lost.push(a.name);
     }
   }
-  if (tooBig) useToasts.getState().push('info', t('mbox.chat.tooBig'));
+  if (lost.length) useToasts.getState().push('info', t('mbox.chat.skipped', { names: lost.join(', ') }));
   let last: { ws: string; room: string; name: string } | null = null;
   let failed = 0;
   for (const target of targets) {
     try {
       const roomId = target.kind === 'room' ? target.roomId : await ensureDm(target.userId);
       const ws = useRooms.getState().byId[roomId]?.workspaceId ?? '';
-      const attach = !!file && canAttach(roomId);
-      const content = file && !attach ? `${text}\n\n${t('mbox.chat.noAttach')}` : text;
-      await sendMessage(ws, roomId, content, attach && file ? [file] : [], undefined);
+      const attach = files.length > 0 && canAttach(roomId);
+      const content = files.length && !attach ? `${text}\n\n${t('mbox.chat.noAttach')}`.slice(0, MAX_CONTENT) : text;
+      await sendMessage(ws, roomId, content, attach ? files : [], undefined);
       last = { ws, room: roomId, name: target.name };
     } catch (e) {
       log.warn('mail to chat: send', e);

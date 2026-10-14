@@ -24,7 +24,7 @@ describe('board hotkeys registry', () => {
     expect(hotkeyOf(key({ code: 'KeyC', key: 'c', ctrlKey: true }), true)).toBeNull();
     expect(hotkeyOf(key({ code: 'Comma', key: ',', metaKey: true, shiftKey: true }), true)?.id).toBe('moveLeft');
     expect(hotkeyOf(key({ code: 'Slash', key: '?', shiftKey: true }), true)?.id).toBe('help');
-    expect(hotkeyOf(key({ code: 'Backslash', key: '\\', metaKey: true }), true)?.id).toBe('expandPanel');
+    expect(hotkeyOf(key({ code: 'Backslash', key: '\\', metaKey: true }), true)).toBeNull();
     expect(matchesChord(key({ code: 'KeyS', key: 's', altKey: true }), { code: 'KeyS' }, true)).toBe(false);
   });
 

@@ -654,8 +654,8 @@ const scenes: Record<string, Scene> = {
         const texts = (el: Y.XmlFragment | Y.XmlElement | Y.XmlText): Y.XmlText[] => (el instanceof Y.XmlText ? [el] : (el.toArray() as Array<Y.XmlElement | Y.XmlText>).flatMap(texts));
         const all = frag.toArray() as Y.XmlElement[];
         const target = where === 'intro' ? texts(all[0] as Y.XmlElement)[0] : texts(all.filter((e) => e.nodeName.toLowerCase() === 'tasklist')[2] as Y.XmlElement)[0];
-        if (!target) throw new Error('no caret target ' + where + ' ' + all.map((e) => e.nodeName + ':' + (e.toArray?.().length ?? '-')).join(','));
-        const pos = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(target, Math.min(offset, target.length)));
+        if (!target) throw new Error(`no caret target ${where} ${all.map((e) => `${e.nodeName}:${e.toArray().length}`).join(',')}`);
+        const pos: unknown = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(target, Math.min(offset, target.length)));
         const aw = new Awareness(doc);
         aw.setLocalState({ user: { id: U[user], name: c.people[user].name.split(' ')[0], color: '#8e8e93' }, cursor: { anchor: pos, head: pos } });
         sock.send(encodeAwareness(encodeAwarenessUpdate(aw, [aw.clientID])));

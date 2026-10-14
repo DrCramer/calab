@@ -264,5 +264,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'mobile.tabDisk': 'Disk',
   'mobile.tabWiki': 'Wiki',
   'mobile.pin': 'Pin “{name}”',
-  'mobile.pinnedInstead': 'Pinned instead of “{name}”',
+  'mobile.pinFull': 'Unpin one first',
+  'mobile.reorder': 'Drag “{name}”',
+  'mobile.unpin': 'Unpin “{name}”',
 };

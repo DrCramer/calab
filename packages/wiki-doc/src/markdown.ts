@@ -7,6 +7,7 @@
  * GFM tables, paragraphs); inline marks come from the chat's markdown-lite (lib/markdown/parse).
  */
 import { isSafeHref, parseMarkdown, type MdNode } from './inline';
+import { wikiPageHref, wikiPageIdOf } from './links';
 
 export interface PmMark {
   type: string;
@@ -31,6 +32,10 @@ export interface ToMarkdownOptions {
   imageUrl?: (fileId: string) => string;
   /** Text written for a mention (default `@label`, `@id` without a label). */
   mention?: (id: string, label: string) => string;
+  /** Address written for a link to a wiki page (default: the bare `/wiki/<id>` path). */
+  pageUrl?: (pageId: string) => string;
+  /** Link text for a wiki page link (default / unknown: the address itself — no title is guessed). */
+  pageTitle?: (pageId: string) => string | undefined;
 }
 
 const MARK_ORDER = ['link', 'bold', 'italic', 'strike', 'code'];
@@ -98,6 +103,13 @@ function inlineMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>): 
     if (n.type === 'text') out += code ? codeSpan(n.text ?? '') : escapeText(n.text ?? '');
     else if (n.type === 'hardBreak') out += '\\\n';
     else if (n.type === 'mention') out += o.mention(str(n.attrs?.['id'], ''), str(n.attrs?.['label'], ''));
+    else if (n.type === 'wikiPageLink') {
+      const id = str(n.attrs?.['pageId'], '');
+      if (!id) continue;
+      const url = o.pageUrl(id);
+      // Brackets would end the link text early; the text is a label only (parsing reads the address).
+      out += `[${escapeText((o.pageTitle(id) ?? '').replace(/[[\]]/g, '').trim() || url)}](${url})`;
+    }
   }
   closeTo(0);
   return out;
@@ -206,6 +218,8 @@ export function toMarkdown(doc: PmNode, opts: ToMarkdownOptions & { title?: stri
   const o: Required<ToMarkdownOptions> = {
     imageUrl: opts.imageUrl ?? ((id) => `/api/files/${id}`),
     mention: opts.mention ?? ((id, label) => `@${label || id}`),
+    pageUrl: opts.pageUrl ?? ((id) => wikiPageHref('', id)),
+    pageTitle: opts.pageTitle ?? (() => undefined),
   };
   const body = blocksMd(doc.content, o).replace(/\n{3,}/g, '\n\n').trim();
   const title = opts.title?.trim();
@@ -246,9 +260,16 @@ function mdInline(nodes: MdNode[], marks: PmMark[], o: FromMarkdownOptions, out:
       case 's':
         mdInline(n.c, [...marks, { type: 'strike' }], o, out);
         break;
-      case 'link':
+      case 'link': {
+        // A wiki page address (any origin, owner 14.10) is a page link: the title is live, not the link text.
+        const pageId = wikiPageIdOf(n.href);
+        if (pageId) {
+          out.push({ type: 'wikiPageLink', attrs: { pageId } });
+          break;
+        }
         mdInline(n.c, isSafeHref(n.href) ? [{ type: 'link', attrs: { href: n.href } }, ...marks] : marks, o, out);
         break;
+      }
       case 'mention':
         if (UUID_RE.test(n.v)) out.push({ type: 'mention', attrs: { id: n.v.toLowerCase(), label: o.mentionLabel?.(n.v.toLowerCase()) ?? '' } });
         else text(`@${n.v}`, marks);
@@ -266,7 +287,10 @@ function inlineFrom(lines: string[], o: FromMarkdownOptions): PmNode[] {
   lines.forEach((l, i) => {
     if (i > 0) out.push({ type: 'hardBreak' });
     // Images: never inlined (only uploaded files are images); keep the alt text / URL as a link.
-    const src = l.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt: string, url: string) => `[${alt || url}](${url})`);
+    const src = l
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt: string, url: string) => `[${alt || url}](${url})`)
+      // The bare `/wiki/<id>` page path (the serializer's default) reads as a link too (any host matches).
+      .replace(/\]\(\/wiki\//g, '](https://_/wiki/');
     mdInline(parseMarkdown(src.replace(/\\$/, '')), [], o, out);
   });
   return out;

@@ -6,7 +6,7 @@
 import { mergeAttributes } from '@tiptap/core';
 import { str } from '../../../lib/wiki/markdown';
 import { CodeBlock } from '@tiptap/extension-code-block';
-import { CalloutNode, HighlightMark, ImageNode, ToggleNode } from '@calaba/wiki-doc/schema';
+import { CalloutNode, HighlightMark, ImageNode, ToggleNode, WikiPageLinkNode } from '@calaba/wiki-doc/schema';
 import { Mention } from '@tiptap/extension-mention';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 import type { Node as PmNode } from '@tiptap/pm/model';
@@ -226,3 +226,95 @@ export { HIGHLIGHT_COLORS, type HighlightColor } from '@calaba/wiki-doc/schema';
 
 /** Highlight colours are names (themed by CSS), never raw CSS from the doc. */
 export const WikiHighlight = HighlightMark;
+
+const SVG = 'http://www.w3.org/2000/svg';
+/** lucide «file-text», drawn per link (light DOM: no React root per link). */
+function pageGlyph(): SVGSVGElement {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.75');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  for (const d of ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M10 9H8', 'M16 13H8', 'M16 17H8']) {
+    const path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/**
+ * A link to another wiki page (schema: @calaba/wiki-doc, owner 14.10): the page's icon and its
+ * live title from the wiki store (a rename follows), resolved lazily by the page GET; deleted / no
+ * access → greyed «Недоступная страница» (no title). Light DOM: each link subscribes on its own and
+ * repaints only when what it shows changes. Read mode: a click opens the page in the app; edit mode:
+ * ⌘/Ctrl-click (a plain click selects the link).
+ */
+export function wikiPageLink(env: EditorEnv) {
+  return WikiPageLinkNode.extend({
+    addNodeView() {
+      return ({ node, editor }) => {
+        const dom = document.createElement('a');
+        dom.className = 'wiki-page-link';
+        dom.contentEditable = 'false';
+        dom.draggable = false;
+        const icon = document.createElement('span');
+        icon.className = 'wiki-page-link-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'wiki-page-link-title';
+        dom.append(icon, label);
+        let id = str(node.attrs['pageId'], '');
+        let shown = '';
+        let open = false;
+        const paint = (): void => {
+          const v = env.pages && id ? env.pages.view(id) : { state: 'unavailable' as const, title: '', icon: '' };
+          const key = `${id}|${v.state}|${v.icon}|${v.title}`;
+          if (key === shown) return;
+          shown = key;
+          open = v.state !== 'unavailable';
+          dom.dataset['state'] = v.state;
+          dom.dataset['pageId'] = id;
+          if (open && env.pages) dom.href = env.pages.url(id);
+          else dom.removeAttribute('href');
+          icon.replaceChildren(v.state === 'page' && v.icon ? document.createTextNode(v.icon) : pageGlyph());
+          label.textContent = v.state === 'page' ? v.title || t('wiki.untitled') : v.state === 'loading' ? t('wiki.pageLink.loading') : t('wiki.pageLink.unavailable');
+        };
+        paint();
+        if (id) env.pages?.ensure(id);
+        const unsub = env.pages?.subscribe(paint);
+        const onClick = (e: MouseEvent): void => {
+          // Never the browser's navigation (target, middle click): the app opens the page itself.
+          e.preventDefault();
+          if (editor.isEditable && !(e.metaKey || e.ctrlKey)) return;
+          e.stopPropagation();
+          if (open && id) env.pages?.open(id);
+        };
+        const onAux = (e: MouseEvent): void => e.preventDefault();
+        dom.addEventListener('click', onClick);
+        dom.addEventListener('auxclick', onAux);
+        return {
+          dom,
+          update: (n) => {
+            if (n.type !== node.type) return false;
+            const next = str(n.attrs['pageId'], '');
+            if (next !== id) {
+              id = next;
+              if (id) env.pages?.ensure(id);
+            }
+            paint();
+            return true;
+          },
+          ignoreMutation: () => true,
+          destroy: () => {
+            unsub?.();
+            dom.removeEventListener('click', onClick);
+            dom.removeEventListener('auxclick', onAux);
+          },
+        };
+      };
+    },
+  });
+}

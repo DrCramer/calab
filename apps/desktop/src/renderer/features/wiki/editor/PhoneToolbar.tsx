@@ -8,11 +8,12 @@
  */
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Bold, CheckSquare, Code2, Heading1, Heading2, Italic, List, ListOrdered, Plus, Quote, Strikethrough, type LucideIcon } from 'lucide-react';
+import { Bold, CheckSquare, Code2, ExternalLink, Heading1, Heading2, Italic, List, ListOrdered, Plus, Quote, Strikethrough, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { t, type MessageKey } from '../../../i18n';
 import { haptics } from '../../../lib/haptics';
+import { isAllowedHref } from './extensions';
 
 interface Tool {
   id: string;
@@ -40,6 +41,7 @@ export function PhoneToolbar({ editor, onBlocks }: { editor: Editor; onBlocks: (
     editor,
     selector: ({ editor: e }) => ({
       focused: e.isFocused,
+      link: (e.getAttributes('link')['href'] as string | undefined) ?? '',
       on: TOOLS.map((tool) => (tool.active(e) ? '1' : '0')).join(''),
     }),
   });
@@ -69,6 +71,21 @@ export function PhoneToolbar({ editor, onBlocks }: { editor: Editor; onBlocks: (
           );
         })}
       </div>
+      {st.link && isAllowedHref(st.link) ? (
+        <button
+          type="button"
+          aria-label={t('wiki.link.open')}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            haptics.tap();
+            window.open(st.link, '_blank', 'noopener,noreferrer');
+          }}
+          className="grid h-11 w-11 shrink-0 place-items-center border-l border-line text-accent-text"
+          data-testid="wiki-tool-open-link"
+        >
+          <ExternalLink className="size-5" strokeWidth={1.75} aria-hidden />
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label={t('wiki.phone.addBlock')}

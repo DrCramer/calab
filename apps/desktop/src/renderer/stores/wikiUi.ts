@@ -28,6 +28,9 @@ interface WikiUiState {
   /** Workspace → the open page id ('' = none yet). */
   pageOf: Readonly<Record<string, string>>;
   openPage: (wsId: string, pageId: string) => void;
+  /** A page link (deep link, a link in a page, a chat card) that could not be opened: «Страница недоступна» in place of the page. Cleared by any open. */
+  unavailable: string | null;
+  setUnavailable: (id: string | null) => void;
   /** Workspace → the tree column shows the trash. */
   trashOf: Readonly<Record<string, true>>;
   openTrash: (wsId: string, on: boolean) => void;
@@ -39,6 +42,12 @@ interface WikiUiState {
   /** The tree's title filter; cleared when the section closes. */
   query: string;
   setQuery: (q: string) => void;
+  /** The page open for editing (lib/wiki/mode.ts); every other page is in read mode. Not persisted. */
+  editing: string | null;
+  setEditing: (id: string | null) => void;
+  /** The page whose tree / list row is being renamed in place (not persisted). */
+  renaming: string | null;
+  setRenaming: (id: string | null) => void;
   dialog: WikiDialog | null;
   openDialog: (d: WikiDialog | null) => void;
   /** The open page's sync status ('online' while nothing is open). */
@@ -53,13 +62,15 @@ export const useWikiUi = create<WikiUiState>()(
   persist(
     (set) => ({
       active: false,
-      setActive: (active) => set((s) => (s.active === active ? s : active ? { active } : { active, query: '', dialog: null })),
+      setActive: (active) => set((s) => (s.active === active ? s : active ? { active } : { active, query: '', dialog: null, unavailable: null })),
       pageOf: {},
       openPage: (wsId, pageId) =>
         set((s) => {
-          if (s.pageOf[wsId] === pageId && !s.trashOf[wsId]) return s;
-          return { pageOf: { ...s.pageOf, [wsId]: pageId }, dialog: null };
+          if (s.pageOf[wsId] === pageId && !s.trashOf[wsId]) return s.unavailable ? { unavailable: null } : s;
+          return { pageOf: { ...s.pageOf, [wsId]: pageId }, dialog: null, unavailable: null };
         }),
+      unavailable: null,
+      setUnavailable: (unavailable) => set((s) => (s.unavailable === unavailable ? s : { unavailable })),
       trashOf: {},
       openTrash: (wsId, on) =>
         set((s) => {
@@ -81,6 +92,10 @@ export const useWikiUi = create<WikiUiState>()(
       setTreeWidth: (w) => set((s) => (s.treeWidth === clampTree(w) ? s : { treeWidth: clampTree(w) })),
       query: '',
       setQuery: (query) => set({ query }),
+      editing: null,
+      setEditing: (editing) => set((s) => (s.editing === editing ? s : { editing })),
+      renaming: null,
+      setRenaming: (renaming) => set((s) => (s.renaming === renaming ? s : { renaming })),
       dialog: null,
       openDialog: (dialog) => set({ dialog }),
       sync: 'online',

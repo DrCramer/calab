@@ -250,7 +250,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
   const blocked = useBlockedStatuses(task, boardId);
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const focused = useBoardsUi((s) => s.focused === id || s.taskId === id);
-  const menu = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu.kind : null));
+  const menu = useBoardsUi((s) => (s.menu?.taskId === id && !s.taskId ? s.menu.kind : null));
   const disabled = useDisabledFeatures(boardId);
   const today = useToday();
   const me = myUserId();

@@ -4,7 +4,6 @@ import { BotsPage } from '@/components/bots';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { getDict, hreflangAlternates, isLocale, LOCALE_INFO, localePath } from '@/i18n';
-import { botDocs } from '@/lib/site';
 
 type Params = Promise<{ locale: string }>;
 
@@ -42,7 +41,7 @@ export default async function Bots({ params }: { params: Params }) {
       <Header t={t.header} locale={locale} page={PAGE} />
       <main id="main">
         {/* Russian docs for ru; the English ones for every other locale (es/zh: English only). */}
-        <BotsPage t={t.bots} docsUrl={botDocs(locale === 'ru')} />
+        <BotsPage t={t.bots} docsUrl={localePath(locale, 'docs/bots/')} />
       </main>
       <Footer t={t.footer} locale={locale} />
     </>

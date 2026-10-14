@@ -463,12 +463,15 @@ const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: ''
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
- * (room link, ADR-0016), https://<domain>/dm/<id> (a DM, ADR-0020), https://<domain>/e/<id> (a meeting, ADR-0038) — the same URLs the app shares. Handed on as the https link; the address
+ * (room link, ADR-0016), https://<domain>/dm/<id> (a DM, ADR-0020), https://<domain>/e/<id> (a meeting, ADR-0038), https://<domain>/wiki/<id> (a wiki page) — the same URLs the app shares. Handed on as the https link; the address
  * bar keeps the path while the link card is shown (docs/09 #53, services/linkLanding.ts).
  */
 function takeDeepLink(): Promise<string | null> {
   const msg = /^\/m\/([0-9a-fA-F-]{36})\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (msg?.[1] && msg[2]) return Promise.resolve(`${location.origin}/m/${msg[1]}/${msg[2]}`);
+  // A wiki page (owner 14.10): /wiki/<page id>.
+  const wiki = /^\/wiki\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
+  if (wiki?.[1]) return Promise.resolve(`${location.origin}/wiki/${wiki[1]}`);
   const m = /^\/(join|r|dm|e|b|t)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);

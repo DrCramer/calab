@@ -9,8 +9,10 @@ const checkDmLink = vi.hoisted(() => vi.fn());
 vi.mock('./dms', () => ({ checkDmLink }));
 const openEventLink = vi.hoisted(() => vi.fn());
 vi.mock('./calendar', () => ({ openEventLink }));
+const openWikiLink = vi.hoisted(() => vi.fn());
+vi.mock('./wiki', () => ({ openWikiLink }));
 
-const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, parseBoardLink, parseDmLink, parseEventLink, parseInviteCode, parseMessageLink, parseRoomInviteCode, roomInviteUrl } = await import('./links');
+const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, openOwnLink, ownWikiPageId, parseBoardLink, parseDmLink, parseEventLink, parseInviteCode, parseMessageLink, parseRoomInviteCode, parseWikiLink, roomInviteUrl, wikiPageUrl } = await import('./links');
 
 describe('DM links (ADR-0020)', () => {
   const ID = '00000000-0000-7000-8003-000000000021';
@@ -161,5 +163,34 @@ describe('board, task and message links (ADR-0042)', () => {
     expect(parseMessageLink(`https://app.calab.io/m/${B}/${M}`)).toEqual({ roomId: B, messageId: M });
     expect(parseMessageLink(`calab://m/${B}/${M}`)).toEqual({ roomId: B, messageId: M });
     expect(parseMessageLink(`https://app.calab.io/m/${B}`)).toBeNull();
+  });
+});
+
+describe('wiki page links (owner 14.10)', () => {
+  const P = '0190a0b0-0000-7000-80c1-000000000003';
+  afterEach(() => {
+    session.settings = null;
+  });
+  it('parses https://<server>/wiki/<id> and calab://wiki/<id>, nothing else', () => {
+    expect(parseWikiLink(`https://app.calab.io/wiki/${P}`)).toBe(P);
+    expect(parseWikiLink(`calab://wiki/${P.toUpperCase()}/`)).toBe(P);
+    expect(parseWikiLink(`/wiki/${P}`)).toBeNull();
+    expect(parseWikiLink(`https://app.calab.io/w/${P}`)).toBeNull();
+    expect(parseWikiLink('https://app.calab.io/wiki/abc')).toBeNull();
+  });
+  it('builds the address on this server and recognises only this server as own', () => {
+    session.settings = { serverUrl: 'https://app.calab.io/' };
+    expect(wikiPageUrl(P)).toBe(`https://app.calab.io/wiki/${P}`);
+    expect(ownWikiPageId(`https://app.calab.io/wiki/${P}`)).toBe(P);
+    expect(ownWikiPageId(`https://other.test/wiki/${P}`)).toBeNull();
+  });
+  it('opens the page in the app (deep link, a click in a message)', async () => {
+    handleDeepLink(`calab://wiki/${P}`);
+    await vi.waitFor(() => expect(openWikiLink).toHaveBeenCalledWith(P));
+    openWikiLink.mockClear();
+    session.settings = { serverUrl: 'https://app.calab.io' };
+    expect(openOwnLink(`https://app.calab.io/wiki/${P}`)).toBe(true);
+    await vi.waitFor(() => expect(openWikiLink).toHaveBeenCalledWith(P));
+    expect(openOwnLink(`https://other.test/wiki/${P}`)).toBe(false);
   });
 });

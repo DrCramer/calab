@@ -489,6 +489,10 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         ];
         return new TextEncoder().encode(`${head.join('\r\n')}\r\n\r\n${m.html ?? m.text ?? ''}\r\n`);
       },
+      attachment: async (id, attId) => {
+        const a = message(id).attachments.find((x) => x.id === attId) ?? fail('NOT_FOUND', `no attachment ${attId}`);
+        return new TextEncoder().encode(`mock attachment ${a.name}`);
+      },
       thread: async (threadId) => {
         const list = [...messages.values()].filter((m) => m.threadId === threadId).sort((a, b) => a.date - b.date);
         if (!list.length) fail('NOT_FOUND', `no thread ${threadId}`);

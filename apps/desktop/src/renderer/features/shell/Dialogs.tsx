@@ -9,6 +9,8 @@ import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
+import { sendPageToChats } from '../../services/wiki';
+import { t } from '../../i18n';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileRoute } from '../people/FormerProfile';
 import { AchievementLayers } from '../people/AchievementLayers';
@@ -74,6 +76,19 @@ export function Dialogs(): ReactNode {
         break;
       case 'forward':
         node = <ForwardDialog roomId={d.roomId} messageId={d.messageId} onClose={close} />;
+        break;
+      case 'wiki-send':
+        node = (
+          <ForwardDialog
+            roomId=""
+            messageId=""
+            onClose={close}
+            title={t('wiki.send.title')}
+            description={t('wiki.send.hint')}
+            comment
+            onSend={(targets, comment) => sendPageToChats(d.pageId, targets, comment)}
+          />
+        );
         break;
       case 'room-invite':
         node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;

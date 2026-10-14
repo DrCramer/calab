@@ -463,13 +463,31 @@ func (q *Queries) GetDiskLinkByItem(ctx context.Context, itemID uuid.UUID) (Disk
 
 const getDiskUsage = `-- name: GetDiskUsage :one
 SELECT w.storage_used_bytes, w.storage_quota_bytes,
-    (SELECT coalesce(sum(f.size), 0) FROM files f JOIN disk_items di ON di.file_id = f.id
-        WHERE f.workspace_id = w.id)::bigint AS disk_bytes,
-    (SELECT coalesce(sum(f.size), 0) FROM files f JOIN disk_items di ON di.file_id = f.id
-        WHERE f.workspace_id = w.id AND di.trashed_at IS NOT NULL)::bigint AS trash_bytes,
+    b.disk_bytes, b.trash_bytes, b.chat_bytes, b.boards_bytes, b.wiki_bytes,
     (SELECT coalesce(sum(a.size_mb), 0) FROM workspace_storage_addons a
         WHERE a.workspace_id = w.id AND a.active)::bigint AS addon_mb
-FROM workspaces w WHERE w.id = $1
+FROM workspaces w
+CROSS JOIN LATERAL (
+    -- One pass over files(workspace_id); a file is counted once, priority disk > chat > boards > wiki.
+    SELECT
+        coalesce(sum(x.size) FILTER (WHERE x.in_disk), 0)::bigint AS disk_bytes,
+        coalesce(sum(x.size) FILTER (WHERE x.in_disk AND x.trashed), 0)::bigint AS trash_bytes,
+        coalesce(sum(x.size) FILTER (WHERE NOT x.in_disk AND x.in_chat), 0)::bigint AS chat_bytes,
+        coalesce(sum(x.size) FILTER (WHERE NOT x.in_disk AND NOT x.in_chat AND x.in_boards), 0)::bigint AS boards_bytes,
+        coalesce(sum(x.size) FILTER (WHERE NOT x.in_disk AND NOT x.in_chat AND NOT x.in_boards AND x.in_wiki), 0)::bigint AS wiki_bytes
+    FROM (
+        SELECT f.size,
+            di.file_id IS NOT NULL AS in_disk,
+            di.trashed_at IS NOT NULL AS trashed,
+            EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id) AS in_chat,
+            EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id) AS in_boards,
+            (EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+                OR EXISTS (SELECT 1 FROM wiki_pages wp WHERE wp.cover_file_id = f.id)) AS in_wiki
+        FROM files f LEFT JOIN disk_items di ON di.file_id = f.id
+        WHERE f.workspace_id = w.id
+    ) x
+) b
+WHERE w.id = $1
 `
 
 type GetDiskUsageRow struct {
@@ -477,11 +495,14 @@ type GetDiskUsageRow struct {
 	StorageQuotaBytes int64
 	DiskBytes         int64
 	TrashBytes        int64
+	ChatBytes         int64
+	BoardsBytes       int64
+	WikiBytes         int64
 	AddonMb           int64
 }
 
-// DiskUsage (ADR-0094 §6): the workspace's counters, the bytes of the Disk (trash included)
-// and of its trash, through files(workspace_id) ⋈ disk_items(file_id).
+// DiskUsage (ADR-0094 §6): the workspace's counters, the bytes of the Disk (trash included),
+// of its trash and of chats / boards / wiki, through files(workspace_id).
 func (q *Queries) GetDiskUsage(ctx context.Context, id uuid.UUID) (GetDiskUsageRow, error) {
 	row := q.db.QueryRow(ctx, getDiskUsage, id)
 	var i GetDiskUsageRow
@@ -490,6 +511,9 @@ func (q *Queries) GetDiskUsage(ctx context.Context, id uuid.UUID) (GetDiskUsageR
 		&i.StorageQuotaBytes,
 		&i.DiskBytes,
 		&i.TrashBytes,
+		&i.ChatBytes,
+		&i.BoardsBytes,
+		&i.WikiBytes,
 		&i.AddonMb,
 	)
 	return i, err

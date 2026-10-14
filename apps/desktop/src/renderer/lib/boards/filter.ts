@@ -141,14 +141,11 @@ export function toggleValue(c: Cond, value: string): Cond {
 
 // ------------------------------------------------------------------ quick chips
 
-export type QuickChip = 'mine' | 'overdue' | 'unassigned' | 'approval';
+export type QuickChip = 'approval';
 
 const QUICK: Record<QuickChip, Cond> = {
-  mine: { field: TaskField.ASSIGNEE, op: TaskOp.IS, values: ['me'] },
-  // «Ждут моего согласования» (ADR-0049): my vote is still pending.
+  // «Ждут моего согласования» (ADR-0049): my vote is still pending. A toggle in the filter menu.
   approval: { field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['me'] },
-  overdue: { field: TaskField.DUE_ON, op: TaskOp.BEFORE, values: ['today'] },
-  unassigned: { field: TaskField.ASSIGNEE, op: TaskOp.EMPTY, values: [] },
 };
 
 const sameCond = (a: Cond, b: Cond): boolean => a.field === b.field && a.op === b.op && a.values.join('\u0000') === b.values.join('\u0000');
@@ -157,12 +154,10 @@ export function quickOn(f: FilterState, chip: QuickChip): boolean {
   return f.conds.some((c) => sameCond(c, QUICK[chip]));
 }
 
-/** Toggles a quick chip: adds its condition, or removes it (mine / unassigned exclude each other). */
+/** Toggles a quick condition: adds it, or removes it. */
 export function toggleQuick(f: FilterState, chip: QuickChip): FilterState {
   if (quickOn(f, chip)) return { ...f, conds: f.conds.filter((c) => !sameCond(c, QUICK[chip])) };
-  const other: QuickChip | null = chip === 'mine' ? 'unassigned' : chip === 'unassigned' ? 'mine' : null;
-  const conds = other ? f.conds.filter((c) => !sameCond(c, QUICK[other])) : f.conds;
-  return { ...f, conds: [...conds, { ...QUICK[chip], values: [...QUICK[chip].values] }] };
+  return { ...f, conds: [...f.conds, { ...QUICK[chip], values: [...QUICK[chip].values] }] };
 }
 
 // ------------------------------------------------------------------ dates

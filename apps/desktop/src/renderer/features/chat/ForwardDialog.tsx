@@ -2,7 +2,7 @@ import { WorkspaceRole, type User } from '@calaba/protocol';
 import { Check, Lock, NotebookText, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PickerPanel } from '../../components/picker/Picker';
-import { Button, CLOSE_HIT, Modal, cx } from '../../components/ui';
+import { Button, CLOSE_HIT, Input, Modal, cx } from '../../components/ui';
 import { RoomIcon } from '../../components/RoomIcon';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
@@ -39,7 +39,8 @@ function sharedRole(userId: string): WorkspaceRole | undefined {
  * room «только по списку» (ADR-0029) a note warns that the recipients will see the content.
  *
  * `onSend` replaces the chat forward with another sender over the same picker (a mail message
- * «Отправить в чат…», ADR-0088); then `roomId` is '' (every workspace's rooms) and `title` / `description` name it.
+ * «Отправить в чат…», ADR-0088; a wiki page, owner 14.10); then `roomId` is '' (every workspace's rooms) and `title` / `description` name it.
+ * `comment` adds an optional comment field under the list; its text goes to `onSend`.
  */
 export function ForwardDialog({
   roomId,
@@ -48,13 +49,15 @@ export function ForwardDialog({
   onSend,
   title,
   description,
+  comment = false,
 }: {
   roomId: string;
   messageId: string;
   onClose: () => void;
-  onSend?: (targets: readonly ForwardItem[]) => Promise<void>;
+  onSend?: (targets: readonly ForwardItem[], comment: string) => Promise<void>;
   title?: string;
   description?: string;
+  comment?: boolean;
 }): ReactNode {
   const src = useRooms((s) => s.byId[roomId]);
   const byId = useRooms((s) => s.byId);
@@ -67,6 +70,7 @@ export function ForwardDialog({
   const [found, setFound] = useState<{ q: string; users: User[] } | null>(null);
   const [selected, setSelected] = useState<ForwardItem[]>([]);
   const [sending, setSending] = useState(false);
+  const [note, setNote] = useState('');
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -117,7 +121,7 @@ export function ForwardDialog({
     if (!selected.length || sending) return;
     setSending(true);
     if (onSend) {
-      await onSend(selected);
+      await onSend(selected, note);
       setSending(false);
       onClose();
       return;
@@ -196,6 +200,17 @@ export function ForwardDialog({
             }}
           />
         </div>
+        {comment ? (
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={2000}
+            placeholder={t('wiki.send.comment')}
+            aria-label={t('wiki.send.comment')}
+            className="shrink-0"
+            data-testid="forward-comment"
+          />
+        ) : null}
       </div>
     </Modal>
   );

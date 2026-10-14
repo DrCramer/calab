@@ -55,19 +55,15 @@ describe('TaskFilter round trip', () => {
     expect(fromTaskFilter(unknown).conds).toHaveLength(0);
   });
 
-  it('toggles values and quick chips (mine / unassigned exclude each other)', () => {
+  it('toggles values and the approval toggle', () => {
     const c = toggleValue({ field: TaskField.LABEL, op: TaskOp.ANY_OF, values: ['a'] }, 'b');
     expect(c.values).toEqual(['a', 'b']);
     expect(toggleValue(c, 'a').values).toEqual(['b']);
     expect(toggleValue({ field: TaskField.TEXT, op: TaskOp.CONTAINS, values: ['x'] }, 'y').values).toEqual(['y']);
-    let f = toggleQuick(EMPTY_FILTER, 'mine');
-    expect(quickOn(f, 'mine')).toBe(true);
-    f = toggleQuick(f, 'unassigned');
-    expect(quickOn(f, 'mine')).toBe(false);
-    expect(quickOn(f, 'unassigned')).toBe(true);
-    f = toggleQuick(f, 'unassigned');
-    expect(f.conds).toHaveLength(0);
-    expect(filterKey(toggleQuick(EMPTY_FILTER, 'overdue'))).not.toBe(filterKey(EMPTY_FILTER));
+    const f = toggleQuick(EMPTY_FILTER, 'approval');
+    expect(quickOn(f, 'approval')).toBe(true);
+    expect(filterKey(f)).not.toBe(filterKey(EMPTY_FILTER));
+    expect(toggleQuick(f, 'approval').conds).toHaveLength(0);
   });
 });
 

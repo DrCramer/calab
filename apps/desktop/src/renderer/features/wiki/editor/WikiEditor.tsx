@@ -16,16 +16,17 @@ import { BubbleBar, SuggestionMenu, TableBar } from './Menus';
 import type { WikiEditorProps } from './types';
 import './wiki.css';
 
-function assignEnv(env: EditorEnv, p: Pick<WikiEditorProps, 'onUploadImage' | 'mentionSource' | 'imagePath' | 'onError'>): EditorEnv {
+function assignEnv(env: EditorEnv, p: Pick<WikiEditorProps, 'onUploadImage' | 'mentionSource' | 'pageSource' | 'imagePath' | 'onError'>): EditorEnv {
   env.upload = p.onUploadImage ?? null;
   env.mentions = p.mentionSource ?? null;
+  env.pages = p.pageSource ?? null;
   env.imagePath = p.imagePath ?? ((id) => `/api/files/${id}`);
   env.onError = p.onError ?? ((m) => console.warn(m));
   return env;
 }
 
-export default function WikiEditor({ doc, awareness, editable, me, onUploadImage, mentionSource, imagePath, onError, onReady, phone, className }: WikiEditorProps): ReactNode {
-  const props = { onUploadImage, mentionSource, imagePath, onError };
+export default function WikiEditor({ doc, awareness, editable, me, onUploadImage, mentionSource, pageSource, imagePath, onError, onReady, phone, className }: WikiEditorProps): ReactNode {
+  const props = { onUploadImage, mentionSource, pageSource, imagePath, onError };
   // Filled from the first props (node views read it while the editor is created), then kept fresh
   // without rebuilding the editor: the extensions read it at event time.
   const [env] = useState<EditorEnv>(() => assignEnv(createEnv(), props));
@@ -85,7 +86,7 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
       editor,
       openBlocks: () => {
         if (editor.isDestroyed || !editor.isEditable) return;
-        const items = filterBlocks('').filter((b) => b.id !== 'image' || !!env.upload);
+        const items = filterBlocks('').filter((b) => (b.id !== 'image' || !!env.upload) && (b.id !== 'pageLink' || !!env.pages));
         env.menu.set({
           kind: 'slash',
           items,
