@@ -145,7 +145,8 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent, id: string) => {
-      if (e.button !== 0 || (e.target as HTMLElement).closest('[data-row-menu]')) return;
+      // Touch / pen never drag (a scroll must scroll; «up / down» in the ⋯ menu reorders on a phone).
+      if (e.pointerType !== 'mouse' || e.button !== 0 || (e.target as HTMLElement).closest('[data-row-menu]')) return;
       const b = useBoards.getState().boards[id];
       if (!hasBit(b?.permissions, MANAGE_BOARD)) return;
       press.current = { kind: 'board', id, y: e.clientY, started: false, layout: layoutNow() };
@@ -154,7 +155,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   );
   const onCategoryPointerDown = useCallback(
     (e: ReactPointerEvent, id: string) => {
-      if (e.button !== 0 || !creator || (e.target as HTMLElement).closest('input, [data-row-menu]')) return;
+      if (e.pointerType !== 'mouse' || e.button !== 0 || !creator || (e.target as HTMLElement).closest('input, [data-row-menu]')) return;
       press.current = { kind: 'cat', id, y: e.clientY, started: false, layout: layoutNow() };
     },
     [creator, layoutNow],

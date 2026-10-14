@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
-import { Check, ChevronLeft, ChevronRight, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
+import { Check, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
@@ -8,7 +8,7 @@ import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup, PickerItem } from '../../components/picker/pickerModel';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { addDays, addMonths, dayKey, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
+import { addDays, dayKey, monthOf } from '../../lib/calendar/time';
 import { MAX_APPROVERS } from '../../lib/boards/approvals';
 import { MAX_WATCHERS } from '../../lib/boards/watchers';
 import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
@@ -19,6 +19,7 @@ import { useBoards } from '../../stores/boards';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
+import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
 import { doneType } from './model';
 import { Dot, PALETTE, PRIORITIES, PRIORITY_LABEL, PriorityIcon, StatusIcon, colorCss, formatDue } from './visuals';
@@ -526,8 +527,6 @@ export function DateMenu({ value, onPick, title, ...shell }: MenuShell & { value
       setFocus(value || today);
     }
   }
-  const first = weekStart();
-  const grid = useMemo(() => monthGrid(month, first), [month, first]);
   const pick = (d: string): void => {
     onPick(d);
     setOpen(false);
@@ -579,47 +578,7 @@ export function DateMenu({ value, onPick, title, ...shell }: MenuShell & { value
               </button>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 pb-1">
-            <span className="flex-1 pl-1 text-control font-semibold">{formatMonth(month)}</span>
-            <button type="button" aria-label={t('cal.prevMonth')} onClick={() => setMonth(addMonths(month, -1))} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg">
-              <ChevronLeft className="size-4" aria-hidden />
-            </button>
-            <button type="button" aria-label={t('cal.nextMonth')} onClick={() => setMonth(addMonths(month, 1))} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg">
-              <ChevronRight className="size-4" aria-hidden />
-            </button>
-          </div>
-          <div className="grid grid-cols-7 text-center text-micro text-faint">
-            {weekdayNames(first).map((d, i) => (
-              <span key={i} className="py-1">
-                {d}
-              </span>
-            ))}
-          </div>
-          <div className="grid grid-cols-7" role="grid" aria-label={formatMonth(month)}>
-            {grid.map((d) => {
-              const other = monthOf(d) !== month;
-              const sel = d === value;
-              const isToday = d === today;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  tabIndex={-1}
-                  onClick={() => pick(d)}
-                  aria-pressed={sel}
-                  data-day={d}
-                  className={cx(
-                    'mx-auto grid size-8 place-items-center rounded-full text-control tabular-nums',
-                    sel ? 'bg-accent-strong text-accent-fg' : isToday ? 'font-semibold text-accent-text' : other ? 'text-faint' : 'text-fg',
-                    !sel && 'hover:bg-hover',
-                    d === focus && !sel && 'ring-1 ring-accent',
-                  )}
-                >
-                  {Number(d.slice(8))}
-                </button>
-              );
-            })}
-          </div>
+          <MonthPicker month={month} onMonth={setMonth} value={value} today={today} focus={focus} onPick={pick} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

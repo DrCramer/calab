@@ -183,6 +183,42 @@ export function installPhoneMenus(opts: { backLabel: () => string; onLongPressOp
     if (!(e.target instanceof Element) || !e.target.closest(WRAP) || !isMobileNow()) return;
     e.stopPropagation();
   };
+  // A menu button opens on the tap's release, not on touch-down (owner 14.10: «⋯» fired by a stray
+  // touch, a scroll that began on it). Radix DropdownMenu.Trigger toggles on `pointerdown`; for a
+  // finger / pen that press is held back here (nothing else on the page sees it either: no outside-
+  // press logic is involved while the menu is shut) and replayed as a mouse press on `click`, which
+  // the browser never fires after a scroll or a cancelled touch.
+  let held: Element | null = null;
+  let replaying = false;
+  const triggerOf = (t: EventTarget | null): HTMLElement | null => {
+    const el = t instanceof Element ? t.closest('[aria-haspopup="menu"]') : null;
+    return el instanceof HTMLElement && !(el.getAttribute('role') ?? '').startsWith('menuitem') ? el : null;
+  };
+  const holdOpen = (e: PointerEvent): void => {
+    held = null;
+    if (replaying || e.pointerType === 'mouse' || !isMobileNow()) return;
+    const trg = triggerOf(e.target);
+    if (!trg || (trg as HTMLButtonElement).disabled || trg.getAttribute('aria-expanded') === 'true') return;
+    held = trg;
+    e.stopPropagation();
+  };
+  const replayOpen = (e: MouseEvent): void => {
+    const trg = held;
+    held = null;
+    if (!trg || !trg.contains(e.target as Node)) return;
+    replaying = true;
+    try {
+      trg.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse', isPrimary: true }));
+    } finally {
+      replaying = false;
+    }
+  };
+  const dropHeld = (): void => {
+    held = null;
+  };
+  document.addEventListener('pointerdown', holdOpen, true);
+  document.addEventListener('click', replayOpen, true);
+  document.addEventListener('pointercancel', dropHeld, true);
   const HOVER = ['pointermove', 'pointerover', 'pointerout'] as const;
   const onTouchDown = (e: PointerEvent): void => {
     touchPress = e.pointerType === 'touch' && e.isPrimary ? { at: e.timeStamp, id: e.pointerId } : null;
@@ -198,6 +234,9 @@ export function installPhoneMenus(opts: { backLabel: () => string; onLongPressOp
   const mq = window.matchMedia(MOBILE_QUERY);
   mq.addEventListener('change', schedule);
   return () => {
+    document.removeEventListener('pointerdown', holdOpen, true);
+    document.removeEventListener('click', replayOpen, true);
+    document.removeEventListener('pointercancel', dropHeld, true);
     portals.disconnect();
     poseObserver?.disconnect();
     poseObserver = null;
