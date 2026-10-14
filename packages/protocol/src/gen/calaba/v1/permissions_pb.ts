@@ -370,6 +370,13 @@ export enum Permission {
    * 1 << 33 BILLING_TOPUP: manual top-up through a hosted payment page; implies VIEW.
    * 1 << 34 BILLING_MANAGE: plan changes, one-click top-up, auto-topup, saved methods, payer,
    * refund requests, the market before the first payment; implies VIEW and TOPUP.
+   * Disk bits (ADR-0094), workspace-level, in ADMINISTRATOR (unlike billing), never for guests
+   * and bots through roles (only an explicit per-item user allow); per-item overrides
+   * (disk_permissions) touch VIEW and WRITE only (TS DISK_BITS, Go perm.DiskView …):
+   * 1 << 35 DISK_VIEW: see the Disk and every item that is not restricted (member default).
+   * 1 << 36 DISK_WRITE: create folders, upload; rename, move, trash one's own items (member default).
+   * 1 << 37 DISK_MANAGE: any item, the trash retention, empty the whole trash, remove anyone's
+   * public link; implies VIEW and WRITE.
    *
    * @generated from enum value: PERMISSION_MANAGE_RECORDINGS = -2147483648;
    */

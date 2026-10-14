@@ -280,6 +280,8 @@ var eventScope = map[protoreflect.Name]bool{
 	// Task notice relay (ADR-0090): published on a bot's user channel only; bot sessions are
 	// not lease-gated, a person's session never gets it.
 	"task_notice": false,
+	// Disk (ADR-0094 §7): workspace channel; routed to the item's viewers (DISK_VIEW).
+	"disk_item_upsert": true, "disk_item_remove": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

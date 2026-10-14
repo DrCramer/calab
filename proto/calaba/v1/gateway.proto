@@ -8,6 +8,7 @@ import "calaba/v1/billing.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
+import "calaba/v1/disk.proto";
 import "calaba/v1/event.proto";
 import "calaba/v1/invite.proto";
 import "calaba/v1/identity.proto";
@@ -287,6 +288,10 @@ message DispatchEvent {
     // A user's task notice relayed to a bot they chose (ADR-0090): to that bot's user channel
     // (gateway) and webhook only.
     TaskNoticeRelay task_notice = 97;
+    // Disk (ADR-0094 §7): workspace channel, routed per recipient like boards (DISK_VIEW on the
+    // item); the client refetches the open folder and the trash.
+    DiskItemUpsert disk_item_upsert = 98;
+    DiskItemRemove disk_item_remove = 99;
   }
 }
 

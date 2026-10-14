@@ -9,6 +9,7 @@ export * from './gen/calaba/v1/boards_pb.js';
 export * from './gen/calaba/v1/bot_pb.js';
 export * from './gen/calaba/v1/call_pb.js';
 export * from './gen/calaba/v1/common_pb.js';
+export * from './gen/calaba/v1/disk_pb.js';
 export * from './gen/calaba/v1/dm_pb.js';
 export * from './gen/calaba/v1/event_pb.js';
 export * from './gen/calaba/v1/file_pb.js';
