@@ -93,7 +93,8 @@ const (
 var RoleDefaults = map[Role]Bits{
 	RoleOwner:  Administrator,
 	RoleAdmin:  Administrator,
-	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms,
+	// DiskView | DiskWrite (ADR-0094): migration 00088 gave them to the existing member roles.
+	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
 	RoleGuest: Connect | Speak,
 }

@@ -1,6 +1,7 @@
 import { Permission, WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, type RoomPermissionOverride } from './gen/calaba/v1/room_pb.js';
 import type { Board, Task } from './gen/calaba/v1/boards_pb.js';
+import type { DiskPermissionEntry } from './gen/calaba/v1/disk_pb.js';
 
 /**
  * Permission bits as bigint (uint64 on the wire). Values come from the generated
@@ -82,6 +83,114 @@ export function billingPermissions(
   if (b & BILLING_BITS.MANAGE) b |= BILLING_BITS.TOPUP;
   if (b & BILLING_BITS.TOPUP) b |= BILLING_BITS.VIEW;
   return b;
+}
+
+/**
+ * Disk bits (ADR-0094 §2), Go: perm.DiskView / DiskWrite / DiskManage. Like the billing bits they
+ * cannot be proto enum values (listed in the comment of enum Permission) and stay out of
+ * ALL_PERMISSIONS (room and board rules never see them), but ADMINISTRATOR includes them
+ * (diskPermissions). Guests and bots get nothing from their roles, only from a personal allow on
+ * an item. Per-item overrides carry VIEW and WRITE only (DISK_OVERRIDE_PERMISSIONS).
+ */
+export const DISK_BITS = {
+  /** See the Disk and every item that is not restricted. Member default. */
+  VIEW: 1n << 35n,
+  /** Create folders, upload; rename, move and trash one's own items. Member default. */
+  WRITE: 1n << 36n,
+  /** Any item, the trash retention, empty the whole trash, anyone's public link. Implies VIEW + WRITE. */
+  MANAGE: 1n << 37n,
+} as const;
+
+/** The three disk bits (Go: perm.Disk). */
+export const DISK_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE | DISK_BITS.MANAGE;
+
+/** Bits a disk item override may allow or deny (Go: perm.DiskOverride): «Просмотр» / «Правка». */
+export const DISK_OVERRIDE_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE;
+
+/**
+ * The workspace-level disk rule (Go: perm.DiskOf): guests and bots nothing; ADMINISTRATOR or
+ * DISK_MANAGE all three; anyone else the disk bits of their roles. A guest is recognized by the
+ * built-in guest role without a member one unless `guest` is given.
+ */
+export function diskPermissions(
+  roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
+  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+): PermissionBits {
+  if ((opts.guest ?? guestOnly(roles)) || opts.bot) return 0n;
+  const raw = rawPermissions(roles);
+  if (raw & (PERMISSION_BITS.ADMINISTRATOR | DISK_BITS.MANAGE)) return DISK_PERMISSIONS;
+  return raw & DISK_PERMISSIONS;
+}
+
+/** One item on the way from the root to the checked item, as far as the viewer is concerned. */
+export interface DiskLevel {
+  /** DiskItem.restricted («Только выбранные»). */
+  restricted?: boolean | undefined;
+  /** The viewer owns this item (DiskItem.ownerId). */
+  owner?: boolean | undefined;
+  /** The item's role overrides by role id. */
+  roleOverrides?: Readonly<Record<string, OverrideBits>> | ReadonlyMap<string, OverrideBits> | undefined;
+  /** The item's override of the viewer. */
+  userOverride?: OverrideBits | undefined;
+}
+
+/**
+ * The one disk item rule (ADR-0094 §2; Go: perm.ComputeDiskItem). `chain` runs from the topmost
+ * ancestor down to the item (empty = the root). DISK_MANAGE or ADMINISTRATOR: all three bits,
+ * restricted items included. Otherwise the start is the roles' VIEW | WRITE (none for guests and
+ * bots) and at every level, top down: a restricted item drops what the roles and the ancestors
+ * gave; each role's override lowest position first (ignored for guests and bots), then the
+ * viewer's own; the owner of the level always has VIEW | WRITE. Overrides touch
+ * DISK_OVERRIDE_PERMISSIONS only. Without VIEW nothing. The server sends DiskItem.myBits; this
+ * only predicts the UI.
+ */
+export function diskItemPermissions(
+  roles: readonly RoleBits[],
+  chain: readonly DiskLevel[],
+  opts: { guest?: boolean | undefined; bot?: boolean | undefined } = {},
+): PermissionBits {
+  const guest = opts.guest ?? guestOnly(roles);
+  const bot = opts.bot ?? false;
+  const ws = diskPermissions(roles, { guest, bot });
+  if (ws & DISK_BITS.MANAGE) return DISK_PERMISSIONS;
+  const ordered = [...roles].sort((a, b) => a.position - b.position);
+  let p = ws & DISK_OVERRIDE_PERMISSIONS;
+  for (const l of chain) {
+    if (l.restricted) p = 0n;
+    if (!guest && !bot) {
+      for (const r of ordered) {
+        const o = overrideOf(l.roleOverrides, r.id);
+        if (o) {
+          p &= ~(o.deny & DISK_OVERRIDE_PERMISSIONS);
+          p |= o.allow & DISK_OVERRIDE_PERMISSIONS;
+        }
+      }
+    }
+    if (l.userOverride) {
+      p &= ~(l.userOverride.deny & DISK_OVERRIDE_PERMISSIONS);
+      p |= l.userOverride.allow & DISK_OVERRIDE_PERMISSIONS;
+    }
+    if (l.owner) p |= DISK_OVERRIDE_PERMISSIONS;
+  }
+  return p & DISK_BITS.VIEW ? p : 0n;
+}
+
+/** A DiskLevel from an item's stored overrides (DiskPermissionsResponse.entries) for `userId`. */
+export function diskLevel(
+  item: { restricted: boolean; ownerId: string },
+  entries: readonly DiskPermissionEntry[],
+  userId: string,
+): DiskLevel {
+  const roleOverrides = new Map<string, OverrideBits>();
+  for (const e of entries) {
+    if (e.targetType === PermissionTargetType.ROLE && !roleOverrides.has(e.targetId)) roleOverrides.set(e.targetId, e);
+  }
+  return {
+    restricted: item.restricted,
+    owner: item.ownerId !== '' && item.ownerId === userId,
+    roleOverrides,
+    userOverride: entries.find((e) => e.targetType === PermissionTargetType.USER && e.targetId === userId),
+  };
 }
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -187,7 +296,10 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     VIDEO |
     VIEW_BOARD |
     CREATE_TASKS |
-    CREATE_TEMP_ROOMS,
+    CREATE_TEMP_ROOMS |
+    // ADR-0094: migration 00088 gave them to the existing member roles.
+    DISK_BITS.VIEW |
+    DISK_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };

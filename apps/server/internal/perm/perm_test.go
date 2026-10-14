@@ -56,6 +56,17 @@ type vector struct {
 	PlanInactive *struct {
 		Bits Bits `json:"bits"`
 	} `json:"planInactive"`
+	// ADR-0094: a disk item vector (ComputeDiskItem over the chain, root's child first).
+	Disk *struct {
+		Guest bool `json:"guest"`
+		Bot   bool `json:"bot"`
+		Chain []struct {
+			Restricted    bool                `json:"restricted"`
+			Owner         bool                `json:"owner"`
+			RoleOverrides map[string]Override `json:"roleOverrides"`
+			UserOverride  *Override           `json:"userOverride"`
+		} `json:"chain"`
+	} `json:"disk"`
 	Expected Bits `json:"expected"`
 }
 
@@ -73,9 +84,12 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n, boards, taskRooms, billing, inactive := 0, 0, 0, 0, 0
+	n, boards, taskRooms, billing, inactive, disk := 0, 0, 0, 0, 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
+		case v.Disk != nil:
+			disk++
+			testDiskVector(t, v)
 		case v.PlanInactive != nil:
 			inactive++
 			if got := PlanInactive(v.PlanInactive.Bits); got != v.Expected {
@@ -167,9 +181,52 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 {
-		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors",
-			n, boards, taskRooms, billing, inactive)
+	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 || disk < 25 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors, %d disk vectors",
+			n, boards, taskRooms, billing, inactive, disk)
+	}
+}
+
+// testDiskVector checks a disk vector through ComputeDiskItem (levels built from the sorted
+// roles) and ComputeDiskItemIn (the stored form: override lists, owner ids).
+func testDiskVector(t *testing.T, v vector) {
+	t.Helper()
+	roles := make([]RoleBits, len(v.Roles))
+	for i, r := range v.Roles {
+		roles[i] = RoleBits(r)
+	}
+	const uid = "00000000-0000-0000-0000-0000000000a1"
+	role := RoleMember
+	if v.Disk.Guest {
+		role = RoleGuest
+	}
+	m := NewMember(uid, role, roles)
+	levels := make([]DiskLevel, len(v.Disk.Chain))
+	nodes := make([]DiskNode, len(v.Disk.Chain))
+	for i, c := range v.Disk.Chain {
+		l := DiskLevel{Restricted: c.Restricted, Owner: c.Owner, UserOv: c.UserOverride}
+		n := DiskNode{Restricted: c.Restricted, OwnerID: "00000000-0000-0000-0000-0000000000b2"}
+		if c.Owner {
+			n.OwnerID = uid
+		}
+		for _, r := range m.Roles {
+			if o, ok := c.RoleOverrides[r.ID]; ok {
+				l.RoleOvs = append(l.RoleOvs, o)
+			}
+		}
+		for id, o := range c.RoleOverrides {
+			n.Overrides = append(n.Overrides, OverrideTarget{TargetType: "role", TargetID: id, Override: o})
+		}
+		if c.UserOverride != nil {
+			n.Overrides = append(n.Overrides, OverrideTarget{TargetType: "user", TargetID: uid, Override: *c.UserOverride})
+		}
+		levels[i], nodes[i] = l, n
+	}
+	if got := ComputeDiskItem(m.Raw(), v.Disk.Guest, v.Disk.Bot, levels); got != v.Expected {
+		t.Errorf("%s: ComputeDiskItem got %d want %d", v.Name, got, v.Expected)
+	}
+	if got := ComputeDiskItemIn(m, v.Disk.Bot, nodes); got != v.Expected {
+		t.Errorf("%s: ComputeDiskItemIn got %d want %d", v.Name, got, v.Expected)
 	}
 }
 
@@ -184,8 +241,14 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<32-1 || RoomOnly&RolesV2 != 0 || BoardOnly&RolesV2 != 0 || GuestMax&RolesV2 != 0 || RoleDefaults[RoleMember]&RolesV2 != 0 || RolesV2 != 0xFE000000 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
 	}
-	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<35-1 {
+	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<38-1 {
 		t.Fatal("billing bits stand apart: not in All, overrides, guest bounds or the defaults")
+	}
+	if All&Disk != 0 || GuestMax&Disk != 0 || RoleDefaults[RoleMember]&Disk != DiskView|DiskWrite || Disk != 7<<35 || Billing&Disk != 0 {
+		t.Fatal("disk bits: outside All and the guest bounds, VIEW | WRITE in the member default")
+	}
+	if !ValidDiskOverride(DiskView, DiskWrite) || ValidDiskOverride(DiskManage, 0) || ValidDiskOverride(BillingView, 0) || ValidDiskOverride(0, ViewRoom) || ValidDiskOverride(DiskView, DiskView) {
+		t.Fatal("disk overrides carry DISK_VIEW and DISK_WRITE only")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {
 		t.Fatal("guest bounds")

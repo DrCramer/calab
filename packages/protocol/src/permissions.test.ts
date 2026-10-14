@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, RoomPermissionOverrideSchema } from './gen/calaba/v1/room_pb.js';
 import { TaskApproverSchema, TaskAssigneeSchema } from './gen/calaba/v1/boards_pb.js';
+import { DiskPermissionEntrySchema } from './gen/calaba/v1/disk_pb.js';
 import { TimestampSchema } from '@bufbuild/protobuf/wkt';
 import {
   ALL_PERMISSIONS,
@@ -22,6 +23,12 @@ import {
   planInactivePermissions,
   BILLING_BITS,
   BILLING_PERMISSIONS,
+  DISK_BITS,
+  DISK_PERMISSIONS,
+  DISK_OVERRIDE_PERMISSIONS,
+  diskItemPermissions,
+  diskLevel,
+  diskPermissions,
   tempRoomScope,
   computeRoomPermissions,
   memberRoles,
@@ -54,6 +61,17 @@ interface Vector {
   billing?: { owner: boolean; guest: boolean };
   // ADR-0086 amendment: a restricted-mode vector (planInactivePermissions over computed bits).
   planInactive?: { bits: number };
+  // ADR-0094: a disk item vector (diskItemPermissions over the chain, root's child first).
+  disk?: {
+    guest?: boolean;
+    bot?: boolean;
+    chain: {
+      restricted?: boolean;
+      owner?: boolean;
+      roleOverrides?: Record<string, { allow: number; deny: number }>;
+      userOverride?: { allow: number; deny: number };
+    }[];
+  };
   expected: number;
 }
 
@@ -82,6 +100,48 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.disk) {
+        const roles = toRoles(v.roles ?? []);
+        const opts = { guest: v.disk.guest ?? false, bot: v.disk.bot ?? false };
+        const chain = v.disk.chain.map((c) => ({
+          restricted: c.restricted,
+          owner: c.owner,
+          roleOverrides: Object.fromEntries(
+            Object.entries(c.roleOverrides ?? {}).map(([id, o]) => [id, toOv(o) as OverrideBits]),
+          ),
+          userOverride: toOv(c.userOverride),
+        }));
+        expect(diskItemPermissions(roles, chain, opts)).toBe(BigInt(v.expected));
+        // The stored form: entries of DiskPermissionsResponse and the item's owner.
+        const stored = v.disk.chain.map((c) =>
+          diskLevel(
+            { restricted: c.restricted ?? false, ownerId: c.owner ? 'u1' : 'u2' },
+            [
+              ...Object.entries(c.roleOverrides ?? {}).map(([id, o]) =>
+                create(DiskPermissionEntrySchema, {
+                  targetType: PermissionTargetType.ROLE,
+                  targetId: id,
+                  allow: BigInt(o.allow),
+                  deny: BigInt(o.deny),
+                }),
+              ),
+              ...(c.userOverride
+                ? [
+                    create(DiskPermissionEntrySchema, {
+                      targetType: PermissionTargetType.USER,
+                      targetId: 'u1',
+                      allow: BigInt(c.userOverride.allow),
+                      deny: BigInt(c.userOverride.deny),
+                    }),
+                  ]
+                : []),
+            ],
+            'u1',
+          ),
+        );
+        expect(diskItemPermissions(roles, stored, opts)).toBe(BigInt(v.expected));
+        return;
+      }
       if (v.planInactive) {
         expect(planInactivePermissions(BigInt(v.planInactive.bits))).toBe(BigInt(v.expected));
         return;
@@ -329,5 +389,29 @@ describe('billing bits (ADR-0087)', () => {
     expect(billingPermissions([{ permissions: 1024n, builtin: WorkspaceRole.OWNER }])).toBe(BILLING_PERMISSIONS);
     expect(billingPermissions([{ permissions: BILLING_BITS.MANAGE, builtin: WorkspaceRole.GUEST }])).toBe(0n);
     expect(billingPermissions([{ permissions: 1024n, builtin: WorkspaceRole.ADMIN }])).toBe(0n);
+  });
+});
+
+describe('disk bits (ADR-0094)', () => {
+  it('stand outside ALL_PERMISSIONS and the overrides of rooms and boards; VIEW | WRITE by default', () => {
+    expect(DISK_PERMISSIONS).toBe(0x7n << 35n);
+    expect(ALL_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(BILLING_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & DISK_PERMISSIONS).toBe(DISK_OVERRIDE_PERMISSIONS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & DISK_PERMISSIONS).toBe(0n);
+    expect(vectors.filter((v) => v.disk).length).toBeGreaterThanOrEqual(25);
+  });
+  it('ADMINISTRATOR includes them, guests and bots never', () => {
+    expect(diskPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
+      DISK_PERMISSIONS,
+    );
+    expect(diskPermissions([{ permissions: DISK_BITS.MANAGE }])).toBe(DISK_PERMISSIONS);
+    expect(diskPermissions([{ permissions: DISK_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(diskPermissions([{ permissions: DISK_PERMISSIONS, builtin: WorkspaceRole.MEMBER }], { bot: true })).toBe(0n);
+    expect(diskPermissions([{ permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }])).toBe(
+      DISK_OVERRIDE_PERMISSIONS,
+    );
   });
 });
