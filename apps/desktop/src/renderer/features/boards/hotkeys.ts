@@ -37,7 +37,6 @@ export type BoardHotkeyId =
   | 'moveDown'
   | 'copyKey'
   | 'copyLink'
-  | 'expandPanel'
   | 'archive'
   | 'save'
   | 'help';
@@ -78,7 +77,6 @@ export const BOARD_HOTKEYS: readonly BoardHotkey[] = [
   { id: 'right', group: 'navigation', label: 'boards.kbd.right', chords: [k('ArrowRight')] },
   { id: 'open', group: 'navigation', label: 'boards.kbd.open', chords: [k('Enter'), k('Space')], needsTask: true },
   { id: 'close', group: 'navigation', label: 'boards.kbd.close', chords: [k('Escape')] },
-  { id: 'expandPanel', group: 'navigation', label: 'boards.kbd.expandPanel', chords: [k('Backslash', { mod: true })] },
   { id: 'status', group: 'task', label: 'boards.kbd.status', chords: [k('KeyS')], needsTask: true },
   { id: 'assignee', group: 'task', label: 'boards.kbd.assignee', chords: [k('KeyA')], needsTask: true },
   { id: 'priority', group: 'task', label: 'boards.kbd.priority', chords: [k('KeyP')], needsTask: true },

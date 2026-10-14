@@ -63,7 +63,8 @@ export const TaskCard = memo(function TaskCard({
   const focused = useBoardsUi((s) => s.focused === id);
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const open = useBoardsUi((s) => s.taskId === id);
-  const menuReq = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu : null));
+  // A hotkey menu (S, A, P…) goes to the open task's view, not to its card underneath.
+  const menuReq = useBoardsUi((s) => (s.menu?.taskId === id && !s.taskId ? s.menu : null));
   const today = useToday();
   // Board features (ADR-0058 §3): the board's array, stable until BOARD_UPDATE.
   const disabled = useDisabledFeatures(boardId);

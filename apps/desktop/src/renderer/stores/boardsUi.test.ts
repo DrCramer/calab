@@ -2,16 +2,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useBoardsUi } from './boardsUi';
 
 describe('boardsUi task vs board navigation', () => {
-  beforeEach(() => useBoardsUi.setState({ active: false, boardOf: {}, taskId: null, panelWide: false }));
+  beforeEach(() => useBoardsUi.setState({ active: false, boardOf: {}, taskId: null }));
 
   it('switching to another board closes the open task', () => {
     const ui = useBoardsUi.getState();
     ui.openBoard('w', 'b1');
     ui.openTask('t1');
-    ui.setPanelWide(true);
     ui.openBoard('w', 'b2');
     expect(useBoardsUi.getState().taskId).toBeNull();
-    expect(useBoardsUi.getState().panelWide).toBe(false);
   });
 
   it('re-opening the same board keeps the task; openTask after openBoard sticks', () => {
@@ -23,5 +21,18 @@ describe('boardsUi task vs board navigation', () => {
     ui.openBoard('w', 'b2');
     ui.openTask('t2');
     expect(useBoardsUi.getState().taskId).toBe('t2');
+  });
+
+  it('closing the task keeps the board view state (prefs, focus)', () => {
+    const ui = useBoardsUi.getState();
+    ui.openBoard('w', 'b1');
+    ui.setPrefs('b1', { kind: 'list', groupBy: 'priority' });
+    ui.setFocused('t1');
+    ui.openTask('t1');
+    ui.openTask(null);
+    const s = useBoardsUi.getState();
+    expect(s.taskId).toBeNull();
+    expect(s.focused).toBe('t1');
+    expect(s.prefs['b1']?.groupBy).toBe('priority');
   });
 });
