@@ -2,7 +2,8 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { RecordingStatus } from '@calaba/protocol';
+import { FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 import { seedDay } from './calendarWeb';
@@ -1464,6 +1465,21 @@ test('m-dialog', async ({ page }) => {
   await expectNoFieldFocus(page, 'dialog');
   // A centred card (owner 07.10), not a bottom sheet: the generic «modal centred» invariant checks it.
   await checkpoint(page, 'm-dialog');
+});
+
+// ADR-0097 §3: Settings → «Бывшие» on the phone — the same tab as on the desktop, rows wrap under the name.
+test('m-former-tab', async ({ page }) => {
+  await signedIn(page);
+  mock.state.formerMembers.set(IDS.workspaces.main, [
+    { userId: IDS.users.vera, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.REMOVED, leftAt: ts('2026-01-14T09:00:00Z'), removedBy: IDS.users.anna, openTasks: 2 },
+    { userId: IDS.users.dina, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.LEFT, leftAt: ts('2026-01-05T09:00:00Z'), openTasks: 0 },
+  ]);
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
+  const dialog = page.getByTestId('settings-page');
+  await dialog.getByRole('tab', { name: 'Бывшие' }).tap();
+  await expect(dialog.getByTestId('ws-former-row')).toHaveCount(2);
+  await checkpoint(page, 'm-former-tab');
 });
 
 // ADR-0031: workspace settings → «Боты» as pushed screens — the create form wraps, the bot rows

@@ -13,6 +13,7 @@ import { esMail } from './mail';
 import { esRecording } from './recording';
 import { esAnnot } from './annot';
 import { esPeople } from './people';
+import { esFormer } from './former';
 import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
@@ -69,6 +70,7 @@ export const es: Dict = {
   ...esBilling,
   ...esTransitions,
   ...esCustomPlan,
+  ...esFormer,
   ...esModeration,
   ...esMail,
   ...esRecording,

@@ -1,7 +1,7 @@
 import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
-import { PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
+import { FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
@@ -126,6 +126,10 @@ const KEY = new Set([
   'admin-plan',
   'admin-suspend',
   'settings-bans',
+  // Former members (ADR-0097).
+  'former-tab',
+  'former-chip',
+  'former-task',
   'workspace-suspended',
   'chat-sticker',
   'sticker-picker',
@@ -1828,6 +1832,57 @@ test('settings-bans', async ({ open, win, mock, shot }) => {
   await win.getByRole('dialog').getByRole('tab', { name: 'Забаненные' }).click();
   await expect(win.getByTestId('ws-ban-row')).toHaveCount(1);
   await checkpoint(shot, 'settings-bans');
+});
+
+/** Вера left the main workspace (ADR-0097): she keeps her messages, tasks and comments, but is no member. */
+async function veraLeaves(win: Page, mock: MockServer): Promise<void> {
+  const ws = IDS.workspaces.main;
+  mock.state.members = mock.state.members.filter((m) => !(m.workspaceId === ws && (m.userId === IDS.users.vera || m.userId === IDS.users.dina)));
+  mock.state.formerMembers.set(ws, [
+    { userId: IDS.users.vera, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.REMOVED, leftAt: ts('2026-01-14T09:00:00Z'), removedBy: IDS.users.anna, openTasks: 2 },
+    { userId: IDS.users.dina, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.LEFT, leftAt: ts('2026-01-05T09:00:00Z'), openTasks: 0 },
+  ]);
+  // The app learns it from a fresh snapshot, as after a restart.
+  await win.reload();
+  await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });
+}
+
+/** Settings → «Участники» → «Бывшие» (ADR-0097 §3): who left, why, when, by whom; open tasks; «Пригласить снова». */
+test('former-tab', async ({ open, win, mock, shot }) => {
+  await open();
+  await veraLeaves(win, mock);
+  await mainWindow(win, mock);
+  await win.getByTestId('titlebar-title').click();
+  await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
+  await win.getByRole('dialog').getByRole('tab', { name: 'Бывшие' }).click();
+  await expect(win.getByTestId('ws-former-row')).toHaveCount(2);
+  await checkpoint(shot, 'former-tab');
+});
+
+/** The feed with a message of someone who left: grey avatar, «бывший» next to the name (ADR-0097 §4). */
+test('former-chip', async ({ open, win, mock, shot }) => {
+  await open();
+  await veraLeaves(win, mock);
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: 'Передаю дела, всё описано в задачах' });
+  await expect(win.locator('[data-message-id] [data-former-chip]').last()).toBeVisible();
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'former-chip');
+});
+
+/** A task of someone who left: chip, grey avatar and «Переназначить» on the assignee row. */
+test('former-task', async ({ open, win, mock, shot }) => {
+  await open();
+  await veraLeaves(win, mock);
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'Тёмная тема' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-reassign')).toBeVisible();
+  await checkpoint(shot, 'former-task');
 });
 
 /** A suspended workspace as its owner sees it: the bar with the reason and «Связаться», the read-only composer. */

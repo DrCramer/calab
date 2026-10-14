@@ -1,14 +1,14 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { TaskField, TaskOp, WorkspaceRole, type Board } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleSlash, Filter, X } from 'lucide-react';
+import { ArrowLeft, Check, CircleSlash, Filter, UserX, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
+import { FORMER, addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
 import { estimateName, fieldOff, scaleValues } from '../../lib/boards/features';
 import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
 import { autoFocusAllowed } from '../../lib/mobile';
@@ -61,6 +61,8 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
           .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
           .map((m) => c(m.user?.id ?? '', nameOf(m), <Avatar userId={m.user?.id ?? ''} name={nameOf(m)} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />));
         const extra = def.field === TaskField.ASSIGNEE || def.field === TaskField.LEAD ? [c('', t('boards.noAssignee'), <CircleSlash className="size-4 text-muted" />, TaskOp.EMPTY)] : [];
+        // ADR-0097 §4: what to hand out after someone left.
+        if (def.field === TaskField.ASSIGNEE) extra.push(c(FORMER, t('former.filterValue'), <UserX className="size-4 text-muted" />));
         return [...(noMe ? [] : [c('me', t('boards.me'))]), ...extra, ...people];
       }
       case 'priority':
@@ -326,6 +328,7 @@ function valueText(c: Cond, board: Board | undefined, workspaceId: string, today
       }
       case 'user': {
         if (v === 'me') return t('boards.me');
+        if (v === FORMER) return t('former.filterValue');
         const m = useWorkspaces.getState().byId[workspaceId]?.members[v];
         return m ? nameOf(m) : '?';
       }

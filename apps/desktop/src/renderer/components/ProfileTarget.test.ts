@@ -3,10 +3,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const open = vi.fn<(ws: string, id: string) => void>();
-type State = { byId: Record<string, { members: Record<string, { user?: object }> }> };
-const state: State = { byId: { w1: { members: { u1: { user: { id: 'u1' } } } } } };
+type State = { byId: Record<string, { members: Record<string, { user?: object }> }>; former: Record<string, object> };
+const state: State = { byId: { w1: { members: { u1: { user: { id: 'u1' } } } } }, former: {} };
 vi.mock('../features/people/actions', () => ({ openProfile: (ws: string, id: string) => open(ws, id) }));
-vi.mock('../stores/workspaces', () => ({ useWorkspaces: (sel: (s: State) => unknown) => sel(state) }));
+vi.mock('../stores/workspaces', () => ({ useWorkspaces: (sel: (s: State) => unknown) => sel(state), formerKey: (w: string, u: string) => `${w}:${u}` }));
 vi.mock('../stores/ui', () => ({ useUi: (sel: (s: { activeWorkspaceId: string }) => unknown) => sel({ activeWorkspaceId: 'w1' }) }));
 import { ProfileTarget, openProfileFromClick } from './ProfileTarget';
 

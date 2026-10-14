@@ -18,7 +18,8 @@ import { useCalendar } from '../../stores/calendar';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { FormerChip } from '../people/MemberBits';
 import { menuBox, menuItem } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
@@ -101,7 +102,8 @@ export function EventCard({
   const room = useRooms((s) => (ev.roomId ? s.byId[ev.roomId] : undefined));
   const guest = useWorkspaces((s) => s.byId[ev.workspaceId]?.role === WorkspaceRole.GUEST);
   const organizer = useMemberName(ev.workspaceId, ev.organizerId);
-  const organizerAvatar = useWorkspaces((s) => s.byId[ev.workspaceId]?.members[ev.organizerId]?.user?.avatarFileId ?? '');
+  const organizerAvatar = useWorkspaces((s) => s.byId[ev.workspaceId]?.members[ev.organizerId]?.user?.avatarFileId ?? s.users[ev.organizerId]?.avatarFileId ?? '');
+  const organizerFormer = !!useFormerInfo(ev.workspaceId, ev.organizerId);
   const editable = !guest && canEditEvent(ev);
   const mine = myStatusOf(ev, me);
   // RSVP only for an invitee (lib/calendar/events.ts isInvitee): a viewer of the room is not one.
@@ -169,8 +171,9 @@ export function EventCard({
         ) : null}
         <div className="mt-2 flex items-center gap-2">
           <ProfileTarget userId={ev.organizerId} name={organizer} workspaceId={ev.workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
-            <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} />
+            <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} former={organizerFormer} />
             <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal">{organizer}</span>
+            <FormerChip workspaceId={ev.workspaceId} userId={ev.organizerId} />
           </ProfileTarget>
           <span className="shrink-0 text-caption text-muted">{t('cal.organizer')}</span>
         </div>
@@ -317,14 +320,16 @@ function Count({ status, n }: { status: AttendeeStatus; n: number }): ReactNode 
 
 function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: CalendarEventAttendee; organizer: boolean }): ReactNode {
   const name = useMemberName(workspaceId, a.userId);
-  const avatar = useWorkspaces((s) => (a.userId ? (s.byId[workspaceId]?.members[a.userId]?.user?.avatarFileId ?? '') : ''));
+  const avatar = useWorkspaces((s) => (a.userId ? (s.byId[workspaceId]?.members[a.userId]?.user?.avatarFileId ?? s.users[a.userId]?.avatarFileId ?? '') : ''));
+  const former = !!useFormerInfo(workspaceId, a.userId);
   return (
     <li className="flex h-8 items-center gap-2 mobile:h-auto mobile:tap-min-h mobile:py-1" data-testid="event-attendee">
       {a.userId ? (
         <ProfileTarget userId={a.userId} name={name} workspaceId={workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
-          <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
+          <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} former={former} />
           {/* phone: a long name wraps to two lines instead of an ellipsis */}
           <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal mobile:[overflow-wrap:anywhere]">{name}</span>
+          <FormerChip workspaceId={workspaceId} userId={a.userId} />
         </ProfileTarget>
       ) : (
         <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill)]" title={t('cal.external')}>

@@ -14,7 +14,7 @@ import { loadHistory, openBoardLink } from '../../services/boards';
 import { ruleNameOf, useAutomations } from '../../stores/automations';
 import { taskMilestonesOf, useBoards } from '../../stores/boards';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
-import { BotBadge } from '../people/MemberBits';
+import { BotBadge, FormerChip } from '../people/MemberBits';
 import { MemberAvatar, estimateLabel } from './menus';
 import { TaskLinkCard } from './TaskLinkCard';
 import { colorCss } from './visuals';
@@ -147,7 +147,8 @@ const HistoryRow = memo(function HistoryRow({ a, workspaceId, boardId }: { a: Ta
               <ProfileTarget userId={a.actorId} name={name} workspaceId={workspaceId} className="rounded-[var(--radius-control)] text-left font-medium text-fg hover:underline">
                 {name}
               </ProfileTarget>
-              {bot ? <BotBadge className="ml-1 align-[1px]" /> : null}{' '}
+              {bot ? <BotBadge className="ml-1 align-[1px]" /> : null}
+              <FormerChip workspaceId={workspaceId} userId={a.actorId} className="ml-1 align-[1px]" />{' '}
             </>
           )}
           <span data-testid="history-text">{e.text}</span>

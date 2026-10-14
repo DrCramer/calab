@@ -10,7 +10,7 @@ import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
-import { ProfileDialog } from '../people/ProfileDialog';
+import { ProfileRoute } from '../people/FormerProfile';
 import { AchievementLayers } from '../people/AchievementLayers';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
@@ -79,7 +79,7 @@ export function Dialogs(): ReactNode {
         node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;
         break;
       case 'profile':
-        node = <ProfileDialog key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
+        node = <ProfileRoute key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
         break;
       case 'admin':
         // Only for superadmins (the server answers 404 to anyone else anyway).
