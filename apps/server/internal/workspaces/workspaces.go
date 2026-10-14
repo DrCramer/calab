@@ -118,6 +118,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	h.badgeRoutes(handle)
 	h.backgroundRoutes(handle)
 	h.appRoutes(handle)
+	h.formerRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -1267,31 +1268,30 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	actor := uid(r)
+	reason, by := ReasonRemoved, &actor
+	if target == actor {
+		reason, by = ReasonLeft, nil
+	}
+	var (
+		former  sqlc.WorkspaceFormerMember
+		removed bool
+	)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		actor := uid(r)
 		if err := auth.InvalidateIdentity(r.Context(), q, wsID, &target, &actor, "member_removed"); err != nil {
 			return err
 		}
-		if n, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
-			return err
-		} else if n > 0 {
-			if err := h.limits.Plans.SeatRemoved(r.Context(), q, wsID, target, cur.Role); err != nil {
-				return err
-			}
-		}
-		return q.DeleteUserOverridesInWorkspace(r.Context(), sqlc.DeleteUserOverridesInWorkspaceParams{WorkspaceID: wsID, UserID: target.String()})
+		var err error
+		former, removed, err = RemoveMembership(r.Context(), q, h.limits.Plans, wsID, target, reason, by)
+		return err
 	})
 	if err != nil {
 		return err
 	}
 	perm.FromContext(r.Context()).Invalidate()
-	// LiveKit participants of the removed user are disconnected by rtc.SyncPublisher.
-	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
-		WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: wsID.String(), UserId: target.String()},
-	}})
-	h.events.User(r.Context(), target, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{
-		WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: wsID.String()},
-	}})
+	if removed {
+		PublishRemoved(r.Context(), h.events, former)
+	}
 	httpx.NoContent(w)
 	return nil
 }
