@@ -141,4 +141,13 @@ export const esWiki: DictShape<typeof ruWiki> = {
   'wiki.err.access': 'No se pudo cambiar el acceso',
   'wiki.err.link': 'No se pudo cambiar el enlace',
   'wiki.err.settings': 'No se pudo guardar el ajuste',
+  'wiki.public.outline': 'Contenido',
+  'wiki.public.footer': 'Abierto por enlace · Calab',
+  'wiki.public.gone': 'Página no disponible',
+  'wiki.public.goneText': 'El enlace fue revocado o caducó, o la página se eliminó.',
+  'wiki.phone.editors': { one: '{n} más está editando', many: '{n} más están editando', other: '{n} más están editando' },
+  'wiki.phone.updated': 'editado {when}',
+  'wiki.phone.addBlock': 'Añadir bloque',
+  'wiki.phone.toolbar': 'Barra de formato',
+  'wiki.phone.loadFailed': 'No se pudo cargar la página',
 };

@@ -261,6 +261,7 @@ export const ruShell = {
   'mobile.takePhoto': 'Камера',
   'mobile.more': 'Ещё',
   'mobile.tabDisk': 'Диск',
+  'mobile.tabWiki': 'Вики',
   'mobile.pin': 'Закрепить «{name}»',
   'mobile.pinnedInstead': 'Закреплено вместо «{name}»',
 } as const;

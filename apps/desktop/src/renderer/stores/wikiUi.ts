@@ -44,6 +44,9 @@ interface WikiUiState {
   /** The open page's sync status ('online' while nothing is open). */
   sync: WikiSyncStatus;
   setSync: (s: WikiSyncStatus) => void;
+  /** Phone: how many other people are on the open page (awareness; the header's «ещё N редактируют»). */
+  peers: number;
+  setPeers: (n: number) => void;
 }
 
 export const useWikiUi = create<WikiUiState>()(
@@ -82,6 +85,8 @@ export const useWikiUi = create<WikiUiState>()(
       openDialog: (dialog) => set({ dialog }),
       sync: 'online',
       setSync: (sync) => set((s) => (s.sync === sync ? s : { sync })),
+      peers: 0,
+      setPeers: (peers) => set((s) => (s.peers === peers ? s : { peers })),
     }),
     {
       name: 'calaba-wiki-ui',

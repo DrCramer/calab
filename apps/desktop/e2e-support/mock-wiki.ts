@@ -8,13 +8,15 @@
  * Routes, the WIKI_PAGE_* fan-out and the socket upgrade are wired in mock-server.ts.
  *
  * Simplifications against the server: no TrashSweep, no post budget / rate limits, no version
- * thinning (a version per post whose text changed), the public page is not served.
+ * thinning (a version per post whose text changed) and the public page serves the same document without a socket (see publicMeta / publicState).
  */
 import { create } from '@bufbuild/protobuf';
 import { timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   ErrorCode,
   WIKI_BITS,
+  PublicWikiPageRefSchema,
+  PublicWikiPageSchema,
   WikiLinkSchema,
   WikiPageSchema,
   WikiPermissionEntrySchema,
@@ -24,6 +26,7 @@ import {
   wikiPagePermissions,
   wikiStructureAllowed,
   type FileMeta,
+  type PublicWikiPage,
   type Role,
   type WikiLink,
   type WikiPage,
@@ -317,6 +320,13 @@ export class WikiMock {
     return { link, url: `https://calab.test/w/${code}` };
   }
 
+  /** A fixture link with a fixed code (the public page's visual tests open `/w/{code}`). */
+  seedLink(pageId: string, code: string, includeChildren: boolean): void {
+    const p = this.pages.get(pageId);
+    if (!p) return;
+    this.links.set(pageId, create(WikiLinkSchema, { code, pageId, createdBy: p.ownerId, createdAt: p.createdAt, includeChildren, views: 0 }));
+  }
+
   deleteLink(id: string, uid: string): void {
     const p = this.structural(id, uid);
     if (this.links.delete(id)) this.emit(p);
@@ -354,6 +364,91 @@ export class WikiMock {
   /** An upload into the page needs WRITE on it. */
   canUpload(id: string, uid: string): void {
     this.writable(id, uid);
+  }
+
+  // ---------------------------------------------------------------- public pages (/w/{code})
+
+  /** The live link of a code and its page (not in the trash); 404 otherwise, like the server. */
+  private linked(code: string): { link: WikiLink; page: WikiPage } {
+    for (const link of this.links.values()) {
+      if (link.code !== code) continue;
+      if (link.expiresAt && timestampMs(link.expiresAt) < Date.now()) break;
+      const page = this.pages.get(link.pageId);
+      if (page && !page.trashedAt) return { link, page };
+    }
+    throw notFound();
+  }
+
+  /** The visible branch below a linked page: not restricted, not below a restricted one, parents first. */
+  private branch(link: WikiLink): WikiPage[] {
+    if (!link.includeChildren) return [];
+    const out: WikiPage[] = [];
+    const walk = (parent: string): void => {
+      for (const c of [...this.pages.values()].filter((p) => p.parentId === parent && !p.trashedAt && !p.restricted).sort((a, b) => a.position - b.position)) {
+        out.push(c);
+        walk(c.id);
+      }
+    };
+    walk(link.pageId);
+    return out;
+  }
+
+  private target(code: string, pageId: string): { link: WikiLink; root: WikiPage; page: WikiPage; branch: WikiPage[] } {
+    const { link, page: root } = this.linked(code);
+    const branch = this.branch(link);
+    if (!pageId || pageId === root.id) return { link, root, page: root, branch };
+    const page = branch.find((p) => p.id === pageId);
+    if (!page) throw notFound();
+    return { link, root, page, branch };
+  }
+
+  /** GET /api/public/wiki/{code}[?page=] */
+  publicMeta(code: string, pageId: string): PublicWikiPage {
+    const { link, root, page, branch } = this.target(code, pageId);
+    if (!pageId) this.links.set(root.id, { ...link, views: link.views + 1 });
+    return create(PublicWikiPageSchema, {
+      id: page.id,
+      title: page.title,
+      icon: page.icon,
+      coverFileId: page.cover?.id ?? '',
+      updatedAt: page.updatedAt,
+      rootId: root.id,
+      ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}),
+      children: branch.map((c) => create(PublicWikiPageRefSchema, { id: c.id, parentId: c.parentId, title: c.title, icon: c.icon })),
+    });
+  }
+
+  /** GET /api/public/wiki/{code}/state[?page=]: records of `u32 length | frame` (SNAPSHOT, then the UPDATEs). */
+  publicState(code: string, pageId: string): Uint8Array {
+    const { page } = this.target(code, pageId);
+    const room = this.room(page.id);
+    const frames = [encodeSnapshot(room.throughSeq, room.state), ...room.updates.map((u) => encodeUpdate(u.update, u.seq))];
+    const out = new Uint8Array(frames.reduce((n, f) => n + 4 + f.length, 0));
+    let at = 0;
+    for (const f of frames) {
+      new DataView(out.buffer).setUint32(at, f.length);
+      out.set(f, at + 4);
+      at += 4 + f.length;
+    }
+    return out;
+  }
+
+  /** Whether a public visit of `code` may read file `fileId` (the cover or a picture of the branch's pages; the mock allows the cover and any file a branch document names). */
+  publicFileAllowed(code: string, fileId: string): boolean {
+    const { link, page } = this.linked(code);
+    const pages = [page, ...this.branch(link)];
+    return pages.some((p) => p.cover?.id === fileId) || pages.some((p) => this.docMentions(p.id, fileId));
+  }
+
+  private docMentions(pageId: string, fileId: string): boolean {
+    const room = this.docs.get(pageId);
+    if (!room) return false;
+    const d = new Y.Doc();
+    Y.applyUpdate(d, room.state);
+    for (const u of room.updates) Y.applyUpdate(d, u.update);
+    const found = d.getXmlFragment('default').toJSON().includes(fileId);
+    d.destroy();
+    return found;
   }
 
   // ---------------------------------------------------------------- the sync socket

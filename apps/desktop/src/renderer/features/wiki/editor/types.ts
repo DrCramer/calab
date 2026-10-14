@@ -1,3 +1,4 @@
+import type { Editor } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { MentionCandidate } from '../../../lib/mentions';
@@ -40,6 +41,12 @@ export interface WikiEditorProps {
   onError?: (message: string) => void;
   /** Receives the editor API once it exists (export, focus); null on unmount. */
   onReady?: (api: WikiEditorApi | null) => void;
+  /**
+   * The phone layout (ADR-0096 §7): the `/` block menu is a card in the middle of the screen, no
+   * selection bubble (the page has its own toolbar above the keyboard), collaborators' carets are
+   * not drawn (the page shows a counter instead).
+   */
+  phone?: boolean;
   className?: string;
 }
 
@@ -50,4 +57,8 @@ export interface WikiEditorApi {
   /** Plain text (one line per block). */
   getText(): string;
   focus(): void;
+  /** The Tiptap editor (the phone toolbar runs its commands; types only outside the chunk). */
+  editor: Editor;
+  /** Opens the block menu (the toolbar's «+»). */
+  openBlocks(): void;
 }
