@@ -294,8 +294,9 @@ func TestDiskPermissionsMatrix(t *testing.T) {
 	if w := e.uploadAs(e.guest, team.GetId(), "g.txt", 5); w.Code != 403 {
 		t.Fatalf("guest upload with VIEW only: %d %s", w.Code, w.Body.String())
 	}
-	e.must(200, e.admin, "GET", item(doc.GetId()), nil, nil)
-	e.must(200, e.owner, "GET", item(doc.GetId()), nil, nil)
+	// Nor the administrator and the workspace owner (addendum 2026-10-14).
+	e.must(404, e.admin, "GET", item(doc.GetId()), nil, nil)
+	e.must(404, e.owner, "GET", item(doc.GetId()), nil, nil)
 	// Bob's own file in the restricted folder stays his (the owner always sees his items).
 	var bobs v1.ListDiskItemsResponse
 	e.must(200, e.alice, "GET", "/api/workspaces/"+e.ws.String()+"/disk/items?parent="+team.GetId(), nil, &bobs)

@@ -677,6 +677,7 @@ type DiskActivity struct {
 	Before      []byte
 	After       []byte
 	CreatedAt   time.Time
+	Private     bool
 }
 
 type DiskItem struct {
@@ -1623,6 +1624,7 @@ type WikiActivity struct {
 	Before      []byte
 	After       []byte
 	CreatedAt   time.Time
+	Private     bool
 }
 
 type WikiLink struct {

@@ -257,10 +257,21 @@ WHERE di.workspace_id = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR
 ORDER BY l.created_at DESC;
 
 -- name: InsertDiskActivity :one
-INSERT INTO disk_activity (workspace_id, item_id, item_name, actor_id, kind, before, after)
+INSERT INTO disk_activity (workspace_id, item_id, item_name, actor_id, kind, before, after, private)
 VALUES (sqlc.arg('workspace_id'), sqlc.narg('item_id'), sqlc.arg('item_name'), sqlc.narg('actor_id'), sqlc.arg('kind'),
-        sqlc.narg('before'), sqlc.narg('after'))
+        sqlc.narg('before'), sqlc.narg('after'), sqlc.arg('private'))
 RETURNING *;
+
+-- name: MarkDiskSubtreeActivityPrivate :exec
+-- Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2): the journal entries of
+-- every node of the subtree that lies under a restricted node (restricted: the root's chain has
+-- one) become private — the workspace journal cannot check a chain that is gone.
+WITH RECURSIVE sub (id, r) AS (
+    SELECT t.id, sqlc.arg('restricted')::bool FROM disk_items t WHERE t.id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, sub.r OR c.restricted FROM disk_items c JOIN sub ON c.parent_id = sub.id
+)
+UPDATE disk_activity a SET private = true FROM sub WHERE a.item_id = sub.id AND sub.r AND NOT a.private;
 
 -- name: ListDiskItemActivity :many
 -- An item's history, the newest first; cursor: the last id (NULL = the first page).

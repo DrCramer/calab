@@ -91,7 +91,7 @@ export const esWiki: DictShape<typeof ruWiki> = {
   'wiki.share': 'Compartir',
   'wiki.shareTitle': 'Compartir «{name}»',
   'wiki.access': 'Acceso',
-  'wiki.restrictedHint': 'Los roles del espacio dejan de dar acceso: quedan el propietario, los administradores de la wiki y los de la lista',
+  'wiki.restrictedHint': 'Ni los administradores ni el propietario del espacio la ven: solo el propietario de la página y la lista',
   'wiki.accessInherited': 'Acceso como en la página superior',
   'wiki.accessFooter': 'Las subpáginas reciben el mismo acceso. «Editar» cambia el texto y añade subpáginas. A un invitado solo se le da acceso por nombre.',
   'wiki.link.on': 'Acceso por enlace',

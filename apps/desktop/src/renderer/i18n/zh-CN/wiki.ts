@@ -91,7 +91,7 @@ export const zhWiki: DictShape<typeof ruWiki> = {
   'wiki.share': '共享',
   'wiki.shareTitle': '共享“{name}”',
   'wiki.access': '访问权限',
-  'wiki.restrictedHint': '空间角色不再授予访问权限：仅保留所有者、Wiki 管理员和列表中的人',
+  'wiki.restrictedHint': '管理员和空间所有者也看不到：仅页面所有者和列表中的成员',
   'wiki.accessInherited': '与上级页面相同的访问权限',
   'wiki.accessFooter': '子页面获得相同的访问权限。“编辑”可修改文本并添加子页面。访客只能单独授权。',
   'wiki.link.on': '通过链接访问',

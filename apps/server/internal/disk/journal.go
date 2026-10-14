@@ -30,6 +30,12 @@ func encode(m snap) ([]byte, error) {
 
 // journal writes one entry about item it (its name as now); actor nil = the sweeper.
 func (s *Service) journal(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem, actor *uuid.UUID, kind string, before, after snap) error {
+	return s.journalEntry(ctx, q, it, actor, kind, before, after, false)
+}
+
+// journalEntry is journal with the private flag of a "delete" entry (the item's chain ran
+// through a restricted folder: the workspace journal leaves it out, addendum 2026-10-14).
+func (s *Service) journalEntry(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem, actor *uuid.UUID, kind string, before, after snap, private bool) error {
 	b, err := encode(before)
 	if err != nil {
 		return err
@@ -58,7 +64,7 @@ func (s *Service) journal(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem
 		item = &it.ID
 	}
 	_, err = q.InsertDiskActivity(ctx, sqlc.InsertDiskActivityParams{WorkspaceID: it.WorkspaceID, ItemID: item, ItemName: it.Name,
-		ActorID: actor, Kind: kind, Before: b, After: a})
+		ActorID: actor, Kind: kind, Before: b, After: a, Private: private})
 	return err
 }
 
