@@ -164,17 +164,19 @@ func (q quotaLimit) err(used int64) error {
 	return errQuota.WithDetails(reason, uint64(max(used, 0)), uint64(max(q.limit, 0)))
 }
 
-// quota returns the effective quota and the plan's limit for ReserveQuota (MaxInt64 = none).
-func (s *Service) quota(ctx context.Context, ws sqlc.Workspace) (quotaLimit, int64, error) {
+// quota returns the effective quota and the plan's limit for ReserveQuota (MaxInt64 = none):
+// the plan's storage plus the active storage add-ons (ADR-0094 §6). dq reads the add-ons (the
+// caller's transaction or s.db.Q).
+func (s *Service) quota(ctx context.Context, dq *sqlc.Queries, ws sqlc.Workspace) (quotaLimit, int64, error) {
 	q, planQuota := quotaLimit{limit: ws.StorageQuotaBytes}, int64(math.MaxInt64)
 	if s.plans == nil {
 		return q, planQuota, nil
 	}
-	l, err := s.plans.Effective(ctx, ws.ID)
+	b, ok, err := s.plans.EffectiveStorageBytes(ctx, dq, ws.ID)
 	if err != nil {
 		return q, planQuota, err
 	}
-	if b, ok := l.StorageBytes(); ok {
+	if ok {
 		planQuota = b
 		if b < q.limit {
 			q = quotaLimit{limit: b, byPlan: true}
@@ -457,7 +459,7 @@ func (s *Service) UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.U
 	if err != nil {
 		return err
 	}
-	quota, planQuota, err := s.quota(r.Context(), ws)
+	quota, planQuota, err := s.quota(r.Context(), s.db.Q, ws)
 	if err != nil {
 		return err
 	}

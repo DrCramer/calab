@@ -48,6 +48,16 @@ const (
 	featureOAuth     = "oauth_provider"
 )
 
+// storageLimitMB is the target plan's storage with the workspace's active add-ons (ADR-0094 §6);
+// 0 = unlimited.
+func storageLimitMB(target Limits, addonMB int64) uint64 {
+	b, ok := target.StorageWithAddons(addonMB)
+	if !ok {
+		return 0
+	}
+	return uint64(b >> 20) //nolint:gosec // positive, bounded
+}
+
 func over(kind v1.PlanLimitKind, used int64, limit uint64) *v1.PlanLimitViolation {
 	if limit == 0 || used <= 0 || uint64(used) <= limit {
 		return nil
@@ -72,7 +82,7 @@ func (u Usage) Violations(target Limits, identity bool) []*v1.PlanLimitViolation
 	out := []*v1.PlanLimitViolation{
 		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_MEMBERS, r.Members, uint64(target.Members)),
 		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_BOTS, r.Bots, uint64(target.Bots)),
-		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_STORAGE_MB, storageMB, target.StorageMB),
+		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_STORAGE_MB, storageMB, storageLimitMB(target, r.StorageAddonMb)),
 		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_BOARDS, r.Boards, uint64(target.Boards)),
 		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_STICKER_PACKS, r.StickerPacks, uint64(target.StickerPacks)),
 		over(v1.PlanLimitKind_PLAN_LIMIT_KIND_STICKERS, r.Stickers, uint64(target.Stickers)),
