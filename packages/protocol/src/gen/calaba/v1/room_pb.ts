@@ -754,7 +754,7 @@ export type CreateRoomRequest = Message<"calaba.v1.CreateRoomRequest"> & {
    * Private rooms only (ADR-0078 addendum 2026-10-14; 422 on a public one): who is invited —
    * members of the workspace (422 otherwise) get a personal allow VIEW_ROOM, roles of the
    * workspace (not owner / admin / guest built-ins) a role allow VIEW_ROOM. The creator always
-   * sees the room (and gets VIEW_ROOM | MANAGE_ROOM personally).
+   * sees the room (and gets a personal allow of their room-level bits).
    *
    * @generated from field: repeated string member_ids = 9;
    */
@@ -928,7 +928,7 @@ export type UpdateRoomRequest = Message<"calaba.v1.UpdateRoomRequest"> & {
    * member role loses VIEW_ROOM (a deny override, as a private room at creation) and the room
    * is hidden from admins and the owner; public = that deny is removed. Personal overrides
    * stay. MANAGE_ROOM or the creator of a temporary room. Switching to private gives the caller
-   * a personal allow VIEW_ROOM (| MANAGE_ROOM when they hold it) so they keep access.
+   * a personal allow of their room-level bits (VIEW_ROOM included) so they keep access.
    *
    * @generated from field: optional bool is_private = 12;
    */

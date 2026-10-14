@@ -12,15 +12,6 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// setOwnerSeesPrivate flips «Владелец видит приватное» directly in the database (the REST switch
-// is the workspace settings' business); REST requests resolve permissions per request.
-func setOwnerSeesPrivate(t *testing.T, wid string, on bool) {
-	t.Helper()
-	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE workspaces SET owner_sees_private = $2 WHERE id = $1", wid, on); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // ADR-0078 addendum 2026-10-14: a private permanent room is seen by its creator and the invited
 // (people and roles) only — not by admins, not by the workspace owner unless «Владелец видит
 // приватное» is on, and then the owner alone has every bit.

@@ -208,7 +208,7 @@ message ListWorkspaceAuditResponse {
 // owner_sees_private is on, on a private item (a restricted Disk item / Wiki page) whose owner
 // (rooms, boards: created_by; Disk, Wiki: owner_id) is not a member of the workspace any more
 // (or unknown): 403 OWNER_ONLY / 409 CONFLICT otherwise. The caller becomes its owner (rooms:
-// created_by and a personal allow VIEW_ROOM | MANAGE_ROOM; boards: created_by and a personal
+// created_by and a personal allow of every room bit; boards: created_by and a personal
 // allow of every board bit; Disk / Wiki: owner_id) and a TAKE_OVER journal entry is written. The
 // answer is the item as GET returns it (UpdateRoomResponse, BoardResponse, DiskItemResponse,
 // WikiPageResponse).

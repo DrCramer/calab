@@ -1368,7 +1368,7 @@ type CreateRoomRequest struct {
 	// Private rooms only (ADR-0078 addendum 2026-10-14; 422 on a public one): who is invited —
 	// members of the workspace (422 otherwise) get a personal allow VIEW_ROOM, roles of the
 	// workspace (not owner / admin / guest built-ins) a role allow VIEW_ROOM. The creator always
-	// sees the room (and gets VIEW_ROOM | MANAGE_ROOM personally).
+	// sees the room (and gets a personal allow of their room-level bits).
 	MemberIds     []string `protobuf:"bytes,9,rep,name=member_ids,json=memberIds,proto3" json:"member_ids,omitempty"`
 	RoleIds       []string `protobuf:"bytes,10,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1652,7 +1652,7 @@ type UpdateRoomRequest struct {
 	// member role loses VIEW_ROOM (a deny override, as a private room at creation) and the room
 	// is hidden from admins and the owner; public = that deny is removed. Personal overrides
 	// stay. MANAGE_ROOM or the creator of a temporary room. Switching to private gives the caller
-	// a personal allow VIEW_ROOM (| MANAGE_ROOM when they hold it) so they keep access.
+	// a personal allow of their room-level bits (VIEW_ROOM included) so they keep access.
 	IsPrivate *bool `protobuf:"varint,12,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
 	// The room's picture (ADR-0092), text and voice rooms only (422 otherwise). "" removes it. Same
 	// right as the name (MANAGE_ROOM or the creator of a temporary room). An image the caller
