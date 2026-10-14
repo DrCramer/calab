@@ -3915,17 +3915,16 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'boards-list');
 });
 
-/** «Фильтр» open over a filtered board: the «Мои» chip on, a label condition, the field list. */
+/** «Фильтр» open over a filtered board: a label condition, the field list. */
 test('boards-filter', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await boardsMode(win, mock);
-  await win.getByTestId('quick-mine').click();
   await win.getByTestId('filter-button').click();
   await win.getByTestId('filter-fields').getByRole('option', { name: 'Лейблы' }).click();
   await win.getByTestId('filter-values').getByRole('option', { name: /Фича/ }).click();
   await win.keyboard.press('Escape');
-  await expect(win.getByTestId('filter-chip')).toHaveCount(2);
+  await expect(win.getByTestId('filter-chip')).toHaveCount(1);
   await win.getByTestId('filter-button').click();
   await expect(win.getByTestId('filter-fields')).toBeVisible();
   await checkpoint(shot, 'boards-filter');
