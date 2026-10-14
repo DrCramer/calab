@@ -1,6 +1,6 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
-import { CircleUserRound, HardDrive, MessageCircle, SquareKanban, Users } from 'lucide-react';
+import { CircleUserRound, MessageCircle, SquareKanban, Users } from 'lucide-react';
 import { useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
 import { Bar } from '../../components/Bar';
@@ -35,6 +35,7 @@ import { DayView } from '../calendar/DayView';
 import { EventPanel } from '../calendar/EventCard';
 import { BoardsList } from '../boards/BoardsList';
 import { BoardsView } from '../boards/BoardsView';
+import { PhoneDisk } from '../disk/PhoneDisk';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
@@ -137,7 +138,7 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
     case 'calendar':
       return <CalendarRoot welcome={welcome} />;
     case 'disk':
-      return <DiskRoot />;
+      return <DiskRoot welcome={welcome} />;
     case 'profile':
       return <ProfileRoot />;
   }
@@ -227,14 +228,12 @@ function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return day ? <DayView workspaceId={ws} /> : <div className="flex-1" />;
 }
 
-/** «Диск» (ADR-0094): the phone screen is its own task (D5); until then an empty state under the standard header. */
-function DiskRoot(): ReactNode {
-  return (
-    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-disk">
-      <RootTitle title={t('mobile.tabDisk')} icon={<HeaderIcon icon={HardDrive} />} search />
-      <p className="grid flex-1 place-items-center text-body text-muted">{t('mobile.diskSoon')}</p>
-    </section>
-  );
+/** «Диск» (ADR-0094 §8): the root folder of the open workspace; folders and the trash are pushed screens (guests have no tab). */
+function DiskRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneDisk workspaceId={ws} folderId="" trash={false} root />;
 }
 
 /** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
@@ -290,6 +289,8 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <ArchivedScreen />;
     case 'settings':
       return <SettingsScreen section={screen.section} />;
+    case 'disk':
+      return <ActiveWorkspace>{(ws) => <PhoneDisk key={`${screen.folderId}|${screen.trash ? 't' : ''}`} workspaceId={ws} folderId={screen.folderId} trash={!!screen.trash} root={false} />}</ActiveWorkspace>;
   }
 }
 

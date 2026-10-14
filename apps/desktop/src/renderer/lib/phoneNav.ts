@@ -56,6 +56,8 @@ export type PhoneScreen =
   | { kind: 'board'; ws: string }
   | { kind: 'task'; id: string }
   | { kind: 'archived'; room: string }
+  /** A folder of «Диск» (ADR-0094 §8) or, with `trash`, its trash; the workspace is the open one. */
+  | { kind: 'disk'; folderId: string; trash?: boolean }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
    * as a screen: `section` null = the list of sections (also the search), else that section.
@@ -105,6 +107,8 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.id === (b as typeof a).id;
     case 'settings':
       return a.section === (b as typeof a).section;
+    case 'disk':
+      return a.folderId === (b as typeof a).folderId && !!a.trash === !!(b as typeof a).trash;
     case 'search':
     case 'findTime':
       return true;

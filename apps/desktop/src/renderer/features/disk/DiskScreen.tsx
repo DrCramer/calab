@@ -138,7 +138,7 @@ function Uploads({ workspaceId }: { workspaceId: string }): ReactNode {
   );
 }
 
-const UploadRow = memo(function UploadRow({ id }: { id: string }): ReactNode {
+export const UploadRow = memo(function UploadRow({ id }: { id: string }): ReactNode {
   const u = useDiskUploads((s) => s.byId[id]);
   if (!u) return null;
   const pct = Math.round(u.progress * 100);

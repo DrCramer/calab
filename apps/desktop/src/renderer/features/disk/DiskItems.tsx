@@ -102,7 +102,7 @@ export function DiskListing({ workspaceId, folderId, trash }: { workspaceId: str
 }
 
 /** The trash: the newest deletion first (the server's order), filtered by the search. */
-function trashOrder(ids: readonly string[] | undefined, items: Readonly<Record<string, DiskItem>>, query: string): string[] {
+export function trashOrder(ids: readonly string[] | undefined, items: Readonly<Record<string, DiskItem>>, query: string): string[] {
   if (!ids) return [];
   const q = query.trim().toLocaleLowerCase();
   const ms = (i: DiskItem): number => (i.trashedAt ? timestampDate(i.trashedAt).getTime() : 0);
@@ -113,7 +113,7 @@ function trashOrder(ids: readonly string[] | undefined, items: Readonly<Record<s
     .map((i) => i.id);
 }
 
-function Center({ children, testId }: { children: ReactNode; testId?: string }): ReactNode {
+export function Center({ children, testId }: { children: ReactNode; testId?: string }): ReactNode {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center text-body text-muted" data-testid={testId}>
       {children}
@@ -186,7 +186,7 @@ function useItemActions(id: string) {
 }
 
 /** The name as an input (Finder: Enter saves, Esc cancels, leaving the field saves). */
-function RenameField({ item, className }: { item: DiskItem; className?: string }): ReactNode {
+export function RenameField({ item, className }: { item: DiskItem; className?: string }): ReactNode {
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
   useEffect(() => {
