@@ -165,12 +165,23 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
   const boards = useBoards(useShallow((s) => workspaceBoards(s.boards, task.workspaceId).filter((b) => b.id !== task.boardId && hasBit(b.permissions, MANAGE_BOARD)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
   const me = myUserId();
   const subscribed = task.subscribed && !task.muted;
+  const parent = useBoards((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
   return (
     <Bar plain className="gap-1 pl-2 pr-2" data-testid="task-panel-header">
       {mobile ? (
         <PhoneBack />
       ) : null}
-      <span className="min-w-0 truncate pl-2 text-caption text-muted">{boardName}</span>
+      <button type="button" onClick={onClose} className="min-w-0 truncate rounded-[var(--radius-icon)] px-2 text-caption text-muted hover:bg-hover hover:text-fg mobile:tap-h" data-testid="panel-crumb-board">
+        {boardName}
+      </button>
+      {parent ? (
+        <>
+          <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
+          <button type="button" onClick={() => useBoardsUi.getState().openTask(parent.id)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums text-muted hover:bg-hover hover:text-fg mobile:tap-h" data-testid="panel-crumb-parent">
+            {parent.key}
+          </button>
+        </>
+      ) : null}
       <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
       <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover mobile:tap-h" title={t('boards.copyLink')} data-testid="panel-key">
         {task.key}

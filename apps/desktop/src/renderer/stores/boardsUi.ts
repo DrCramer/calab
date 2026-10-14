@@ -142,7 +142,7 @@ export const useBoardsUi = create<BoardsUiState>()(
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
       toggle: () => set((s) => (s.active ? { active: false, filterOpen: false, helpOpen: false, menu: null } : { active: true })),
       openBoard: (wsId, boardId) =>
-        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, selected: {}, focused: null, filterOpen: false })),
+        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, panelWide: false, selected: {}, focused: null, filterOpen: false })),
       openTask: (taskId) => set((s) => (s.taskId === taskId ? {} : { taskId, panelWide: taskId ? s.panelWide : false })),
       setPanelWide: (panelWide) => set({ panelWide }),
       setPrefs: (boardId, patch) => set((s) => ({ prefs: { ...s.prefs, [boardId]: { ...DEFAULT_PREFS, ...s.prefs[boardId], ...patch } } })),
