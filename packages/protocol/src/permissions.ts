@@ -131,12 +131,14 @@ export interface TreeLevel {
 /**
  * The one tree node rule shared by the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §2); Go:
  * perm.ComputeTree. `chain` runs from the topmost ancestor down to the node (empty = the top of
- * the section). MANAGE or ADMINISTRATOR: all three bits, restricted nodes included. Otherwise the
- * start is the roles' VIEW | WRITE (none for guests) and at every level, top down: a restricted
- * node drops what the roles and the ancestors gave; each role's override lowest position first
- * (ignored for guests), then the viewer's own; the owner of the level
- * always has VIEW | WRITE. Overrides touch VIEW | WRITE only. Without VIEW nothing. The server
- * sends my_bits; this only predicts the UI.
+ * the section). MANAGE or ADMINISTRATOR (the workspace owner too): all three bits outside any
+ * restricted node. Otherwise — and for them as well once the chain has a restricted node
+ * (addendum 2026-10-14: «Только выбранные» is not bypassed by administrators) — the start is the
+ * roles' VIEW | WRITE (none for guests) and at every level, top down: a restricted node drops
+ * what the roles and the ancestors gave; each role's override lowest position first (ignored for
+ * guests), then the viewer's own; the owner of the level always has VIEW | WRITE. Overrides touch
+ * VIEW | WRITE only. Without VIEW nothing. Inside a restricted subtree a MANAGE holder let in
+ * with WRITE has MANAGE there too. The server sends my_bits; this only predicts the UI.
  */
 export function treeItemPermissions(
   bits: TreeBits,
@@ -146,7 +148,8 @@ export function treeItemPermissions(
 ): PermissionBits {
   const guest = opts.guest ?? guestOnly(roles);
   const ws = treePermissions(bits, roles, { guest });
-  if (ws & bits.MANAGE) return treeAll(bits);
+  const restricted = chain.some((l) => l.restricted);
+  if (ws & bits.MANAGE && !restricted) return treeAll(bits);
   const ov = treeOverride(bits);
   const ordered = [...roles].sort((a, b) => a.position - b.position);
   let p = ws & ov;
@@ -167,7 +170,9 @@ export function treeItemPermissions(
     }
     if (l.owner) p |= ov;
   }
-  return p & bits.VIEW ? p : 0n;
+  if (!(p & bits.VIEW)) return 0n;
+  if (ws & bits.MANAGE && p & bits.WRITE) p |= bits.MANAGE;
+  return p;
 }
 
 /**

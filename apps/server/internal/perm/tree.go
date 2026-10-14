@@ -47,16 +47,20 @@ func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 	return raw & b.All()
 }
 
-// ComputeTree is the one node rule. MANAGE or ADMINISTRATOR (TreeOf): everything, restricted
-// nodes included. Otherwise the start is the member's VIEW | WRITE (none for guests) and at
-// every level, top down: a restricted node drops what the roles and the ancestors gave; then
-// each role's override (lowest position first: deny, then allow; ignored for guests — they get
-// access only as a person), then the user's own; the owner of the level always
-// has VIEW | WRITE. A child inherits its parent's result. Overrides touch b.Override() only.
-// Without VIEW nothing (404).
+// ComputeTree is the one node rule. MANAGE or ADMINISTRATOR (TreeOf; the workspace owner is
+// ADMINISTRATOR): everything on nodes outside any restricted node. Otherwise — and for them too
+// once the chain has a restricted node (addendum 2026-10-14: «Только выбранные» is not bypassed
+// by ADMINISTRATOR, MANAGE or the workspace owner, the ADR-0078 precedent) — the start is the
+// member's VIEW | WRITE (none for guests) and at every level, top down: a restricted node drops
+// what the roles and the ancestors gave; then each role's override (lowest position first: deny,
+// then allow; ignored for guests — they get access only as a person), then the user's own; the
+// owner of the level always has VIEW | WRITE. A child inherits its parent's result. Overrides
+// touch b.Override() only. Without VIEW nothing (404). Inside a restricted subtree a MANAGE
+// holder let in with WRITE (by an override or ownership) has MANAGE there as well (the access
+// dialog, anyone's items); let in with VIEW only, just VIEW.
 func ComputeTree(b TreeBits, in TreeInput) Bits {
 	ws := TreeOf(b, in.Raw, in.Guest)
-	if ws&b.Manage != 0 {
+	if ws&b.Manage != 0 && !Restricted(in.Chain) {
 		return b.All()
 	}
 	ov := b.Override()
@@ -83,7 +87,21 @@ func ComputeTree(b TreeBits, in TreeInput) Bits {
 	if p&b.View == 0 {
 		return 0
 	}
+	if ws&b.Manage != 0 && p&b.Write != 0 {
+		p |= b.Manage
+	}
 	return p
+}
+
+// Restricted reports whether a chain runs through a restricted node: the node is private, and
+// ADMINISTRATOR / MANAGE / the workspace owner get only what its overrides give them.
+func Restricted(chain []TreeLevel) bool {
+	for i := range chain {
+		if chain[i].Restricted {
+			return true
+		}
+	}
+	return false
 }
 
 // TreeNode is one node of a chain as stored: its flag, owner and full override list.
