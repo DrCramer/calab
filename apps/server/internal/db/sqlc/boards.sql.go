@@ -950,6 +950,7 @@ SELECT f.id FROM files f
 WHERE f.id = ANY($1::uuid[]) AND f.uploader_id = $2 AND f.workspace_id = $3::uuid
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id AND ta.task_id <> $4::uuid)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
 `
 
 type FilesAttachableParams struct {
@@ -960,7 +961,7 @@ type FilesAttachableParams struct {
 }
 
 // Uploads of the user in the workspace that are neither attached to a message nor to another
-// task (task_id's own ones count as free).
+// task (task_id's own ones count as free), nor files of the Disk (ADR-0094).
 func (q *Queries) FilesAttachable(ctx context.Context, arg FilesAttachableParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, filesAttachable,
 		arg.Ids,

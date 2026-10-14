@@ -791,10 +791,23 @@ func (s *Service) deleteForever(w http.ResponseWriter, r *http.Request) error {
 		if err := q.LockDiskQuota(ctx, a.item.WorkspaceID); err != nil {
 			return err
 		}
-		if _, err := q.GetDiskItemForUpdate(ctx, id); err != nil {
+		// The tree lock after the quota row (an upload's order): no restore or move of this
+		// subtree runs while it is deleted.
+		if err := q.LockDiskTree(ctx, a.item.WorkspaceID); err != nil {
 			return err
 		}
-		d, err = s.deleteTree(ctx, q, a.item, a.nodes(), &a.c.uid)
+		// Re-read under the row lock: a concurrent restore must not be undone by this deletion.
+		cur, err := q.GetDiskItemForUpdate(ctx, id)
+		if db.IsNotFound(err) {
+			return errNoItem
+		}
+		if err != nil {
+			return err
+		}
+		if cur.TrashedAt == nil {
+			return httpx.Conflict("move the item to the trash first")
+		}
+		d, err = s.deleteTree(ctx, q, cur, a.nodes(), &a.c.uid)
 		return err
 	})
 	if err != nil {
@@ -844,10 +857,16 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 			if err := q.LockDiskQuota(ctx, ws); err != nil {
 				return err
 			}
-			if _, err := q.GetDiskItemForUpdate(ctx, it.ID); err != nil {
+			// The tree lock after the quota row (an upload's order): no restore or move of this
+			// subtree runs while it is deleted.
+			if err := q.LockDiskTree(ctx, ws); err != nil {
+				return err
+			}
+			cur, err := q.GetDiskItemForUpdate(ctx, it.ID)
+			if err != nil || !cur.TrashedRoot { // gone or restored meanwhile
 				return errSkip
 			}
-			d, err = s.deleteTree(ctx, q, a.item, a.nodes(), &c.uid)
+			d, err = s.deleteTree(ctx, q, cur, a.nodes(), &c.uid)
 			return err
 		})
 		if err == errSkip { //nolint:errorlint // sentinel returned as is

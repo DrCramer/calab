@@ -20,8 +20,11 @@ WHERE id = sqlc.arg('id');
 SELECT * FROM files WHERE id = $1;
 
 -- name: GetFilesWithUsage :many
+-- attached: already in a message or a task, or a file of the Disk (ADR-0094: deleting the Disk
+-- item forever deletes the file, which would silently drop it from a message).
 SELECT f.*, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id))::boolean AS attached
+    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
+    OR EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id))::boolean AS attached
 FROM files f WHERE f.id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: FileRooms :many

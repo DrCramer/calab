@@ -1,6 +1,8 @@
 package disk
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -8,6 +10,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/diskacl"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
 )
@@ -158,6 +161,9 @@ func (s *Service) itemActivity(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := hidePlaces(r.Context(), s.db.Q, a.c, rows); err != nil {
+		return err
+	}
 	writeActivity(w, rows, limit)
 	return nil
 }
@@ -185,5 +191,62 @@ func (s *Service) workspaceActivity(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	writeActivity(w, rows, limit)
+	return nil
+}
+
+// hidePlaces blanks the folder names (parent_name) of an item's journal entries for folders the
+// caller does not see (ADR-0094 §2: no names without DISK_VIEW): an item moved out of a
+// restricted folder, or created in one, must not reveal that folder's name to whoever sees the
+// item now. A folder that no longer exists is hidden too (its access cannot be checked).
+func hidePlaces(ctx context.Context, q *sqlc.Queries, c caller, rows []sqlc.DiskActivity) error {
+	parentOf := func(raw []byte) (map[string]any, *uuid.UUID) {
+		if len(raw) == 0 {
+			return nil, nil
+		}
+		var m map[string]any
+		if json.Unmarshal(raw, &m) != nil {
+			return nil, nil
+		}
+		if n, _ := m["parent_name"].(string); n == "" {
+			return nil, nil
+		}
+		pid, _ := m["parent_id"].(string)
+		id, err := uuid.Parse(pid)
+		if err != nil {
+			return m, nil
+		}
+		return m, &id
+	}
+	var ids []uuid.UUID
+	for _, a := range rows {
+		for _, side := range [][]byte{a.Before, a.After} {
+			if _, id := parentOf(side); id != nil {
+				ids = append(ids, *id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	ch, err := diskacl.Load(ctx, q, ids)
+	if err != nil {
+		return err
+	}
+	hide := func(raw []byte) ([]byte, error) {
+		m, id := parentOf(raw)
+		if m == nil || (id != nil && ch.Has(*id) && ch.Bits(c.m, c.bot, id).Has(perm.DiskView)) {
+			return raw, nil
+		}
+		m["parent_name"] = ""
+		return json.Marshal(m)
+	}
+	for i := range rows {
+		if rows[i].Before, err = hide(rows[i].Before); err != nil {
+			return err
+		}
+		if rows[i].After, err = hide(rows[i].After); err != nil {
+			return err
+		}
+	}
 	return nil
 }

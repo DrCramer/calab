@@ -89,7 +89,8 @@ func (q *Queries) GetFile(ctx context.Context, id uuid.UUID) (File, error) {
 
 const getFilesWithUsage = `-- name: GetFilesWithUsage :many
 SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id))::boolean AS attached
+    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
+    OR EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id))::boolean AS attached
 FROM files f WHERE f.id = ANY($1::uuid[])
 `
 
@@ -111,6 +112,8 @@ type GetFilesWithUsageRow struct {
 	Attached        bool
 }
 
+// attached: already in a message or a task, or a file of the Disk (ADR-0094: deleting the Disk
+// item forever deletes the file, which would silently drop it from a message).
 func (q *Queries) GetFilesWithUsage(ctx context.Context, ids []uuid.UUID) ([]GetFilesWithUsageRow, error) {
 	rows, err := q.db.Query(ctx, getFilesWithUsage, ids)
 	if err != nil {

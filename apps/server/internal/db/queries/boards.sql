@@ -462,11 +462,12 @@ INSERT INTO task_attachments (task_id, file_id, position) VALUES ($1, $2, $3);
 
 -- name: FilesAttachable :many
 -- Uploads of the user in the workspace that are neither attached to a message nor to another
--- task (task_id's own ones count as free).
+-- task (task_id's own ones count as free), nor files of the Disk (ADR-0094).
 SELECT f.id FROM files f
 WHERE f.id = ANY(sqlc.arg('ids')::uuid[]) AND f.uploader_id = sqlc.arg('user_id') AND f.workspace_id = sqlc.arg('workspace_id')::uuid
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id AND ta.task_id <> sqlc.arg('task_id')::uuid);
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id AND ta.task_id <> sqlc.arg('task_id')::uuid)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id);
 
 -- ---- subscriptions, notifications ----
 

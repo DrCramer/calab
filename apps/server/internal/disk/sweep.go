@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/diskacl"
 )
@@ -61,6 +62,11 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 			if err := q.LockDiskQuota(ctx, ws); err != nil {
 				return err
 			}
+			// The tree lock after the quota row (an upload's order): no restore or move of this
+			// subtree runs while it is deleted.
+			if err := q.LockDiskTree(ctx, ws); err != nil {
+				return err
+			}
 		}
 		ids := make([]uuid.UUID, len(roots))
 		for i, it := range roots {
@@ -71,10 +77,18 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 			return err
 		}
 		for _, it := range roots {
-			if _, err := q.GetDiskItemForUpdate(ctx, it.ID); err != nil {
+			// Re-read under the row lock: skip a root deleted or restored since the listing.
+			cur, err := q.GetDiskItemForUpdate(ctx, it.ID)
+			if db.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
 				return err
 			}
-			d, err := s.deleteTree(ctx, q, it, ch.Nodes(it.ID), nil)
+			if !cur.TrashedRoot || cur.TrashedAt == nil || !cur.TrashedAt.Before(cutoff) {
+				continue
+			}
+			d, err := s.deleteTree(ctx, q, cur, ch.Nodes(it.ID), nil)
 			if err != nil {
 				return err
 			}
