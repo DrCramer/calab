@@ -65,7 +65,7 @@ func TestPrivateRoomHiddenFromAdminsAndOwner(t *testing.T) {
 		st   int
 		bits perm.Bits
 	}{
-		"creator (an admin)": {creator, 200, member | perm.ManageRoom},
+		"creator (an admin)": {creator, 200, member | perm.RoomOnly},
 		"admin":              {admin, 404, 0},
 		"owner":              {o, 404, 0},
 		"invited":            {invited, 200, member},

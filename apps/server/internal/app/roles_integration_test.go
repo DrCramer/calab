@@ -320,7 +320,9 @@ func TestRoleRoomMatrix(t *testing.T) {
 		{"low + high: high wins the conflicts", ab, (m | perm.MuteMembers) &^ perm.Speak},
 		{"no custom role: private", none, 0},
 		{"guest with low", g, perm.Connect | perm.Speak | perm.ViewRoom | perm.MentionEveryone},
-		{"owner", o, perm.All},
+		// The creator, no bypass (ADR-0078 addendum): their personal allow of the room bits, kept
+		// over the PUT that left it out.
+		{"owner", o, m | perm.RoomOnly},
 	} {
 		bits, st := roomPerms(t, c.u, rid)
 		if perm.Bits(bits) != c.bits || (c.bits == 0) != (st == 404) {

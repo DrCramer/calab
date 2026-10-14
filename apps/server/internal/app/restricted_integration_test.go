@@ -237,7 +237,8 @@ func TestRestrictedFlagManageRoom(t *testing.T) {
 	if bits, st := roomPerms(t, admin, pid); st != 200 || !perm.Bits(bits).Has(perm.ViewRoom|perm.ManageRoom) || perm.Bits(bits) == perm.All {
 		t.Fatalf("the admin who made it private: %d bits %d, want 200 with VIEW_ROOM | MANAGE_ROOM, not all", st, bits)
 	}
-	for name, u := range map[string]*user{"another admin": admin2, "the owner": o, "a member": mem} {
+	// The owner created the room (the creator always sees it) — not checked here.
+	for name, u := range map[string]*user{"another admin": admin2, "a member": mem} {
 		if _, st := roomPerms(t, u, pid); st != 404 {
 			t.Fatalf("%s sees the private room: %d", name, st)
 		}

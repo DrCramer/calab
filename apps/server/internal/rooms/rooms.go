@@ -893,6 +893,7 @@ func (h *Handlers) setPermissions(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
+		params = keepOwn(params, existing, acc, auth.MustFromContext(r.Context()).UserID)
 		room, err := q.GetRoom(r.Context(), roomID)
 		if db.IsNotFound(err) {
 			return httpx.NotFound("room")

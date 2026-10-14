@@ -496,8 +496,8 @@ func TestPermissionsFlow(t *testing.T) {
 		status int
 	}{
 		// ADR-0078 addendum 2026-10-14: no owner bypass in a private room; the owner created it and
-		// sees it as a member (the PUT above replaced their personal override).
-		{"owner/secret", o, sID, perm.RoleDefaults[perm.RoleMember], 200},
+		// keeps their personal allow of the room bits (a PUT without it keeps it).
+		{"owner/secret", o, sID, perm.RoleDefaults[perm.RoleMember] | perm.RoomOnly, 200},
 		{"alice/secret", alice, sID, member, 200},
 		{"bob/secret", bob, sID, 0, 404},
 		{"gus/secret", gus, sID, 0, 404},

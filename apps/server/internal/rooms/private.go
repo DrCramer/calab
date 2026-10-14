@@ -89,3 +89,23 @@ func (in invited) grant(ctx context.Context, q *sqlc.Queries, roomID uuid.UUID) 
 	}
 	return nil
 }
+
+// keepOwn keeps the caller's personal override of a private room when a PUT of the room's
+// overrides leaves it out (ADR-0078 addendum 2026-10-14, «не отбирать у себя» of ADR-0048):
+// without a bypass, dropping it would shut the caller out of managing the room they manage.
+// An override for the caller in the request replaces it as before.
+func keepOwn(params []sqlc.InsertRoomOverrideParams, existing []sqlc.RoomPermission, acc perm.RoomAccess, me uuid.UUID) []sqlc.InsertRoomOverrideParams {
+	if !acc.NoBypass() {
+		return params
+	}
+	id := me.String()
+	if slices.ContainsFunc(params, func(p sqlc.InsertRoomOverrideParams) bool { return p.TargetType == "user" && p.TargetID == id }) {
+		return params
+	}
+	for _, e := range existing {
+		if e.TargetType == "user" && e.TargetID == id {
+			return append(params, sqlc.InsertRoomOverrideParams{TargetType: e.TargetType, TargetID: e.TargetID, Allow: e.Allow, Deny: e.Deny})
+		}
+	}
+	return params
+}

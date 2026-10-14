@@ -271,7 +271,7 @@ func TestRolesV2ClosedRoom(t *testing.T) {
 	if bits, st := roomPerms(t, insider, rid); st != 200 || perm.Bits(bits) != perm.RoleDefaults[perm.RoleMember] {
 		t.Errorf("insider: %d bits %d", st, bits)
 	}
-	if bits, st := roomPerms(t, o, rid); st != 200 || perm.Bits(bits) != perm.RoleDefaults[perm.RoleMember] {
+	if bits, st := roomPerms(t, o, rid); st != 200 || perm.Bits(bits) != perm.RoleDefaults[perm.RoleMember]|perm.RoomOnly {
 		t.Errorf("owner (the creator, no bypass): %d bits %d", st, bits)
 	}
 
