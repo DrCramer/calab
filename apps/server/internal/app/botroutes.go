@@ -394,6 +394,8 @@ var botRoutes = map[string]botAccess{
 	"POST /api/forms/{code}/submissions":        botAllow,
 	"GET /api/public/forms/{code}":              botPublic,
 	"POST /api/public/forms/{code}/submissions": botPublic,
+	"POST /api/forms/{code}/files":              botAllow,
+	"POST /api/public/forms/{code}/files":       botPublic,
 	// Disk (ADR-0094; §2 addendum 2026-10-14): bots like people, by the disk bits of their roles
 	// and the item overrides; the public link routes are anonymous.
 	"GET /api/workspaces/{id}/disk/items":        botAllow,

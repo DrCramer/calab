@@ -25,9 +25,10 @@ order: 8
 | `POST` | `/api/boards/{id}/forms/preview` | Проверить несохранённое определение и ответы без создания задачи |
 | `GET` | `/api/forms/{code}` | Форма глазами отвечающего → `{title, description, fields, revision}` |
 | `POST` | `/api/forms/{code}/submissions` | Отправить ответы → `{receiptId}` |
+| `POST` | `/api/forms/{code}/files` | Загрузить файл поля `FILE` (`?field=<id>`, multipart `file`) → `{uploadId, name, size, mime}` |
 <!-- /routes -->
 
-Анонимные `GET /api/public/forms/{code}` и `POST /api/public/forms/{code}/submissions` — публичный доступ по ссылке для людей без аккаунта; при обязательном SSO пространства он закрыт. Боты пользуются авторизованными `/api/forms/{code}…`.
+Анонимные `GET /api/public/forms/{code}`, `POST /api/public/forms/{code}/files` и `POST /api/public/forms/{code}/submissions` — публичный доступ по ссылке для людей без аккаунта; при обязательном SSO пространства он закрыт. Боты пользуются авторизованными `/api/forms/{code}…`.
 
 ## Определение формы
 
@@ -40,8 +41,22 @@ order: 8
 | `titleFieldId` | Необязательное поле с одним значением — источник названия задачи (не `CHECKBOX` и не `MULTISELECT`) |
 | `statusId`, `priority` | Статус и приоритет создаваемых задач |
 | `isPrivate`, `allowedUserIds` | Закрытая форма и кто может её отправлять |
+| `routes` | Маршруты по ответу: `{fieldId, option, boardId, statusId}` — первое совпавшее правило создаёт задачу на другой доске того же пространства (пустой `statusId` — статус по умолчанию той доски); иначе — доска формы |
+| `showMembers` | Анонимные посетители видят поля `PEOPLE` и имена участников (по умолчанию нет) |
 
-Типы полей (с префиксом `BOARD_FORM_FIELD_TYPE_` в JSON): `TEXT`, `PARAGRAPH`, `EMAIL`, `NUMBER`, `DATE`, `SELECT`, `CHECKBOX`, `PHONE`, `URL`, `MULTISELECT`.
+Типы полей (с префиксом `BOARD_FORM_FIELD_TYPE_` в JSON): `TEXT`, `PARAGRAPH`, `EMAIL`, `NUMBER`, `DATE`, `SELECT`, `CHECKBOX`, `PHONE`, `URL`, `MULTISELECT`, `FILE`, `PEOPLE`.
+
+Дополнительно у поля:
+
+| Поле | Описание |
+|---|---|
+| `multiple` | `FILE` и `PEOPLE`: несколько значений (людей — до 10) |
+| `maxFiles`, `maxFileMb`, `accept` | `FILE`: до 20 файлов (сумма по всем полям ≤ 20), до 100 МБ каждый, категории `image`, `pdf`, `document`, `video`, `audio`, `archive` (пусто — любые) |
+| `roleId` | `PEOPLE`: только участники с этой ролью |
+| `target` | Куда ответ попадает в задаче (`BOARD_FORM_FIELD_TARGET_…`): `PRIORITY` (`SELECT`), `DUE_DATE` (`DATE`), `LABELS` (`SELECT`/`MULTISELECT`), `ASSIGNEES`, `APPROVERS`, `WATCHERS` (`PEOPLE`); каждая цель, кроме меток, — у одного поля |
+| `optionPriorities`, `optionLabels` | Вариант → приоритет / id метки доски формы |
+
+Настройки маршрутов, `target`, карты вариантов и `roleId` видит только управляющий: `GET /api/forms/{code}` их не отдаёт. Владелец маршрутов — последний, кто сохранил форму: он должен иметь `VIEW_BOARD` и `CREATE_TASKS` на целевых досках (проверяется при сохранении и при отправке).
 
 > [!WARNING]
 > Право управлять формой не обходит список доступа закрытой формы: чтобы бот мог её отправлять, явно добавьте id бота в `allowedUserIds`.
@@ -81,7 +96,9 @@ const { form } = await bot.forms.create(boardId, {
 `POST /api/forms/{code}/submissions {revision, nonce, answers: [{fieldId, value}]}` → `{receiptId}` без подробностей о задаче.
 
 - Значения — строки; чекбокс — `"true"` или `"false"`.
-- `MULTISELECT` — `{fieldId, values: ["Дизайн", "Поддержка"]}` без `value`; остальные типы — только `value`.
+- `MULTISELECT` — `{fieldId, values: ["Дизайн", "Поддержка"]}` без `value`; `FILE` — `values` из `uploadId`; `PEOPLE` — `values` из id участников (первый исполнитель — ведущий); остальные типы — только `value`.
+- Файл сначала загружается `POST /api/forms/{code}/files?field=<id>` (SDK `bot.forms.upload`); тип определяется по содержимому, HTML/SVG/скрипты не принимаются. Неотправленный за час файл удаляется. После отправки файл — вложение задачи и доступен только тем, кто видит задачу.
+- Ответ с `target` заполняет поле задачи (приоритет, срок, метки, исполнители, согласующие, наблюдатели); все ответы всё равно попадают в описание.
 - Неизвестные и повторяющиеся варианты отклоняются; порядок выбранных вариантов не влияет на идемпотентность.
 - `PHONE` сохраняет форматирование и ведущие нули: 7–15 цифр, до 64 символов, допустимы ведущий `+`, пробелы, скобки, точки и дефисы.
 - `URL` — абсолютный HTTP/HTTPS без учётных данных и пробелов; сервер ссылку не открывает.
@@ -132,7 +149,7 @@ r = requests.post(f"{CALAB}/api/forms/{code}/submissions", headers=H, json={
 |---|---|
 | `FORM_CHANGED` | Форма изменилась — перечитайте `revision` |
 | `NONCE_CONFLICT` | `nonce` уже использован для другого содержимого |
-| `FORM_TARGET_UNAVAILABLE` | Статус, в который форма создаёт задачи, удалён |
+| `FORM_TARGET_UNAVAILABLE` | Статус, в который форма создаёт задачи, удалён, или владелец маршрутов больше не может создавать задачи на целевой доске |
 | `PLAN_LIMIT` | Лимит форм на доску по тарифу |
 | `FEATURE_DISABLED` | Функция «Формы» выключена на доске |
 

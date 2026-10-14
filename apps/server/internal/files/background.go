@@ -75,7 +75,7 @@ func BackgroundImages(ctx context.Context, open func() (io.ReadCloser, error)) (
 type PreparedFile struct {
 	st          *stored
 	workspaceID uuid.UUID
-	uploader    uuid.UUID
+	uploader    *uuid.UUID
 }
 
 // PrepareBackground makes the camera background of the image file src (a workspace file; the
@@ -130,7 +130,7 @@ func (s *Service) PrepareImage(ctx context.Context, wsID, uploader uuid.UUID, na
 	if err := s.store.Put(ctx, st.key, bytes.NewReader(data), st.size, mime); err != nil {
 		return nil, fmt.Errorf("store %s: %w", name, err)
 	}
-	return &PreparedFile{st: st, workspaceID: wsID, uploader: uploader}, nil
+	return &PreparedFile{st: st, workspaceID: wsID, uploader: &uploader}, nil
 }
 
 // InsertPreparedUnchecked inserts the file's row and counts its bytes into the workspace usage

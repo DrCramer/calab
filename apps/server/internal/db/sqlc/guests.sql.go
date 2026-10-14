@@ -338,7 +338,7 @@ const listUserFiles = `-- name: ListUserFiles :many
 SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform FROM files WHERE uploader_id = $1
 `
 
-func (q *Queries) ListUserFiles(ctx context.Context, uploaderID uuid.UUID) ([]File, error) {
+func (q *Queries) ListUserFiles(ctx context.Context, uploaderID *uuid.UUID) ([]File, error) {
 	rows, err := q.db.Query(ctx, listUserFiles, uploaderID)
 	if err != nil {
 		return nil, err

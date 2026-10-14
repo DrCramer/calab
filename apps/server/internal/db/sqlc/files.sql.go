@@ -97,7 +97,7 @@ FROM files f WHERE f.id = ANY($1::uuid[])
 type GetFilesWithUsageRow struct {
 	ID              uuid.UUID
 	WorkspaceID     *uuid.UUID
-	UploaderID      uuid.UUID
+	UploaderID      *uuid.UUID
 	Key             string
 	ThumbnailKey    *string
 	Name            string
@@ -160,7 +160,7 @@ RETURNING id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, w
 type InsertFileParams struct {
 	ID              uuid.UUID
 	WorkspaceID     *uuid.UUID
-	UploaderID      uuid.UUID
+	UploaderID      *uuid.UUID
 	Key             string
 	ThumbnailKey    *string
 	Name            string
@@ -401,7 +401,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
 `
 
 type UnattachedBytesByUploaderParams struct {
-	UploaderID  uuid.UUID
+	UploaderID  *uuid.UUID
 	WorkspaceID *uuid.UUID
 }
 

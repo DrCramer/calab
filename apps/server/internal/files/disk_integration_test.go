@@ -41,7 +41,7 @@ func diskFile(ctx context.Context, t *testing.T, d *db.DB, store blob.Store, ws,
 	if err := store.Put(ctx, key, bytes.NewReader(make([]byte, size)), size, "application/octet-stream"); err != nil {
 		t.Fatal(err)
 	}
-	f, err := d.Q.InsertFile(ctx, sqlc.InsertFileParams{ID: id, WorkspaceID: &ws, UploaderID: user, Key: key, Name: "f.bin", Mime: "application/octet-stream", Size: size, Sha256: "00"})
+	f, err := d.Q.InsertFile(ctx, sqlc.InsertFileParams{ID: id, WorkspaceID: &ws, UploaderID: &user, Key: key, Name: "f.bin", Mime: "application/octet-stream", Size: size, Sha256: "00"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCleanupOrphansKeepsDiskFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pending, err := d.Q.UnattachedBytesByUploader(ctx, sqlc.UnattachedBytesByUploaderParams{UploaderID: user, WorkspaceID: &ws})
+	pending, err := d.Q.UnattachedBytesByUploader(ctx, sqlc.UnattachedBytesByUploaderParams{UploaderID: &user, WorkspaceID: &ws})
 	if err != nil {
 		t.Fatal(err)
 	}

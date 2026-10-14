@@ -312,6 +312,12 @@ func IsOggOpus(head []byte) bool {
 // receive streams the "file" part of a multipart request into the store under
 // keyFn(id) and makes a thumbnail for images. Blobs are removed on any error.
 func (s *Service) receive(w http.ResponseWriter, r *http.Request, limit int64, keyFn func(uuid.UUID) string, kind accept) (*stored, error) {
+	return s.receiveChecked(w, r, limit, keyFn, kind, nil)
+}
+
+// receiveChecked is receive with check (nil = none) of the detected type and the sanitized
+// name before anything is stored.
+func (s *Service) receiveChecked(w http.ResponseWriter, r *http.Request, limit int64, keyFn func(uuid.UUID) string, kind accept, check func(mime, name string) error) (*stored, error) {
 	var voice *voiceMeta
 	if kind != acceptImage {
 		v, err := parseVoice(r.URL.Query())
@@ -358,6 +364,11 @@ func (s *Service) receive(w http.ResponseWriter, r *http.Request, limit int64, k
 		}
 		mt = VoiceMime
 	case acceptAny:
+	}
+	if check != nil {
+		if err := check(mt, SanitizeName(part.FileName())); err != nil {
+			return nil, err
+		}
 	}
 	id, err := uuid.NewV7() // file ids are generated here: the blob key is needed before the row exists
 	if err != nil {
@@ -461,7 +472,7 @@ func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.U
 			return sqlc.File{}, err
 		}
 	}
-	pending, err := s.db.Q.UnattachedBytesByUploader(r.Context(), sqlc.UnattachedBytesByUploaderParams{UploaderID: uid, WorkspaceID: &wsID})
+	pending, err := s.db.Q.UnattachedBytesByUploader(r.Context(), sqlc.UnattachedBytesByUploaderParams{UploaderID: &uid, WorkspaceID: &wsID})
 	if err != nil {
 		return sqlc.File{}, err
 	}
@@ -498,7 +509,7 @@ func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.U
 			}
 			return err
 		}
-		if f, err = q.InsertFile(r.Context(), s.row(st, &wsID, uid)); err != nil {
+		if f, err = q.InsertFile(r.Context(), s.row(st, &wsID, &uid)); err != nil {
 			return err
 		}
 		if attach != nil {
@@ -538,7 +549,7 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	pending, err := s.db.Q.UnattachedUserBytes(r.Context(), uid)
+	pending, err := s.db.Q.UnattachedUserBytes(r.Context(), &uid)
 	if err != nil {
 		return err
 	}
@@ -565,7 +576,7 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		f, err = q.InsertFile(r.Context(), s.row(st, nil, uid))
+		f, err = q.InsertFile(r.Context(), s.row(st, nil, &uid))
 		return err
 	})
 	if err != nil {
@@ -605,7 +616,7 @@ func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (
 	return false, nil
 }
 
-func (s *Service) row(st *stored, wsID *uuid.UUID, uploader uuid.UUID) sqlc.InsertFileParams {
+func (s *Service) row(st *stored, wsID *uuid.UUID, uploader *uuid.UUID) sqlc.InsertFileParams {
 	p := sqlc.InsertFileParams{
 		ID: st.id, WorkspaceID: wsID, UploaderID: uploader, Key: st.key, ThumbnailKey: st.thumbKey,
 		Name: st.name, Mime: st.mime, Size: st.size, Width: st.width, Height: st.height, Sha256: st.sha256,
@@ -646,7 +657,7 @@ func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.
 		if err := s.checkTotal(r.Context(), q, st.size); err != nil {
 			return err
 		}
-		if _, err := q.InsertFile(r.Context(), s.row(st, nil, uid)); err != nil {
+		if _, err := q.InsertFile(r.Context(), s.row(st, nil, &uid)); err != nil {
 			return err
 		}
 		u, err = q.UpdateUser(r.Context(), sqlc.UpdateUserParams{ID: uid, SetAvatar: true, AvatarFileID: &st.id})
@@ -707,7 +718,7 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 			}
 		}
 	}
-	if f.UploaderID == uid {
+	if f.UploaderID != nil && *f.UploaderID == uid {
 		ws := uuid.Nil
 		if f.WorkspaceID != nil {
 			ws = *f.WorkspaceID
@@ -1016,7 +1027,7 @@ func ValidateOwnImage(ctx context.Context, q *sqlc.Queries, fileID, userID uuid.
 		return errBadImage
 	}
 	if workspaceID == nil {
-		if f.UploaderID != userID {
+		if f.UploaderID == nil || *f.UploaderID != userID {
 			return errBadImage
 		}
 		return nil

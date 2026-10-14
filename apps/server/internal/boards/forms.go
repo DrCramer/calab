@@ -152,10 +152,10 @@ func (s *Service) createForm(w http.ResponseWriter, r *http.Request) error {
 		if l.BoardFormsPerBoard > 0 && n >= int64(l.BoardFormsPerBoard) {
 			return httpx.Conflict("board form limit reached").WithDetails(httpx.ReasonPlanLimit, uint64(max(n, 0)), uint64(l.BoardFormsPerBoard))
 		} //nolint:gosec // count is nonnegative
-		if err := validateFormTarget(r.Context(), q, b, req.Definition); err != nil {
+		me := uid(r)
+		if err := validateFormSave(r.Context(), q, b, req.Definition, me); err != nil {
 			return err
 		}
-		me := uid(r)
 		row, err = q.InsertBoardForm(r.Context(), sqlc.InsertBoardFormParams{BoardID: id, Code: base64.RawURLEncoding.EncodeToString(secret), Definition: data, CreatedBy: &me})
 		return err
 	})
@@ -204,7 +204,8 @@ func (s *Service) updateForm(w http.ResponseWriter, r *http.Request) error {
 		if _, err := s.formPlan(r.Context(), b.WorkspaceID); err != nil {
 			return err
 		}
-		if err := validateFormTarget(r.Context(), q, b, req.Definition); err != nil {
+		me := uid(r)
+		if err := validateFormSave(r.Context(), q, b, req.Definition, me); err != nil {
 			return err
 		}
 		if _, err := q.GetBoardForm(r.Context(), sqlc.GetBoardFormParams{ID: fid, BoardID: id}); err != nil {
@@ -213,7 +214,7 @@ func (s *Service) updateForm(w http.ResponseWriter, r *http.Request) error {
 			}
 			return err
 		}
-		row, err = q.UpdateBoardForm(r.Context(), sqlc.UpdateBoardFormParams{ID: fid, BoardID: id, Definition: data, Revision: int32(req.Revision)}) //nolint:gosec // checked above
+		row, err = q.UpdateBoardForm(r.Context(), sqlc.UpdateBoardFormParams{ID: fid, BoardID: id, Definition: data, Revision: int32(req.Revision), UpdatedBy: &me}) //nolint:gosec // checked above
 		if db.IsNotFound(err) {
 			return httpx.Conflict("form changed").WithDetails("FORM_CHANGED", 0, 0)
 		}
@@ -284,10 +285,11 @@ func (s *Service) previewForm(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := validateFormTarget(r.Context(), s.db.Q, b, req.Definition); err != nil {
+	if err := validateFormSave(r.Context(), s.db.Q, b, req.Definition, uid(r)); err != nil {
 		return err
 	}
-	if _, _, err := formAnswers(req.Definition, req.Answers); err != nil {
+	// Uploads are not staged for a draft: file answers are checked by count only.
+	if _, err := parseAnswers(req.Definition, req.Answers, answerOpts{people: peopleResolver(r.Context(), s.db.Q, b.WorkspaceID)}); err != nil {
 		return err
 	}
 	httpx.Write(w, http.StatusOK, &v1.FormSubmissionResponse{Preview: true})

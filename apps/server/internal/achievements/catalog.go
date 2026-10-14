@@ -40,7 +40,7 @@ func sourceFile(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, ra
 		return f, err
 	}
 	switch {
-	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller:
+	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || (f.UploaderID == nil || *f.UploaderID != caller):
 		return f, bad
 	case f.Mime != "image/png" && f.Mime != "image/webp":
 		return f, bad

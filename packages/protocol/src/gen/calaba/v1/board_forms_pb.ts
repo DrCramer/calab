@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/board_forms.proto.
  */
 export const file_calaba_v1_board_forms: GenFile = /*@__PURE__*/
-  fileDesc("ChtjYWxhYmEvdjEvYm9hcmRfZm9ybXMucHJvdG8SCWNhbGFiYS52MSKeAQoOQm9hcmRGb3JtRmllbGQSCgoCaWQYASABKAkSKwoEdHlwZRgCIAEoDjIdLmNhbGFiYS52MS5Cb2FyZEZvcm1GaWVsZFR5cGUSDQoFbGFiZWwYAyABKAkSDAoEaGludBgEIAEoCRITCgtwbGFjZWhvbGRlchgFIAEoCRIQCghyZXF1aXJlZBgGIAEoCBIPCgdvcHRpb25zGAcgAygJIugBChNCb2FyZEZvcm1EZWZpbml0aW9uEg0KBXRpdGxlGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEikKBmZpZWxkcxgDIAMoCzIZLmNhbGFiYS52MS5Cb2FyZEZvcm1GaWVsZBIWCg50aXRsZV9maWVsZF9pZBgEIAEoCRISCgppc19wcml2YXRlGAUgASgIEhgKEGFsbG93ZWRfdXNlcl9pZHMYBiADKAkSEQoJc3RhdHVzX2lkGAcgASgJEikKCHByaW9yaXR5GAggASgOMhcuY2FsYWJhLnYxLlRhc2tQcmlvcml0eSLwAQoJQm9hcmRGb3JtEgoKAmlkGAEgASgJEhAKCGJvYXJkX2lkGAIgASgJEgsKA3VybBgDIAEoCRIyCgpkZWZpbml0aW9uGAQgASgLMh4uY2FsYWJhLnYxLkJvYXJkRm9ybURlZmluaXRpb24SEAoIcmV2aXNpb24YBSABKA0SEgoKY3JlYXRlZF9ieRgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI9ChZMaXN0Qm9hcmRGb3Jtc1Jlc3BvbnNlEiMKBWZvcm1zGAEgAygLMhQuY2FsYWJhLnYxLkJvYXJkRm9ybSI3ChFCb2FyZEZvcm1SZXNwb25zZRIiCgRmb3JtGAEgASgLMhQuY2FsYWJhLnYxLkJvYXJkRm9ybSJMChZDcmVhdGVCb2FyZEZvcm1SZXF1ZXN0EjIKCmRlZmluaXRpb24YASABKAsyHi5jYWxhYmEudjEuQm9hcmRGb3JtRGVmaW5pdGlvbiJeChZVcGRhdGVCb2FyZEZvcm1SZXF1ZXN0EjIKCmRlZmluaXRpb24YASABKAsyHi5jYWxhYmEudjEuQm9hcmRGb3JtRGVmaW5pdGlvbhIQCghyZXZpc2lvbhgCIAEoDSJCCg9Cb2FyZEZvcm1BbnN3ZXISEAoIZmllbGRfaWQYASABKAkSDQoFdmFsdWUYAiABKAkSDgoGdmFsdWVzGAMgAygJInoKF1ByZXZpZXdCb2FyZEZvcm1SZXF1ZXN0EjIKCmRlZmluaXRpb24YASABKAsyHi5jYWxhYmEudjEuQm9hcmRGb3JtRGVmaW5pdGlvbhIrCgdhbnN3ZXJzGAIgAygLMhouY2FsYWJhLnYxLkJvYXJkRm9ybUFuc3dlciJ6ChdQdWJsaWNCb2FyZEZvcm1SZXNwb25zZRINCgV0aXRsZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIpCgZmaWVsZHMYAyADKAsyGS5jYWxhYmEudjEuQm9hcmRGb3JtRmllbGQSEAoIcmV2aXNpb24YBCABKA0iZgoWU3VibWl0Qm9hcmRGb3JtUmVxdWVzdBIQCghyZXZpc2lvbhgBIAEoDRINCgVub25jZRgCIAEoCRIrCgdhbnN3ZXJzGAMgAygLMhouY2FsYWJhLnYxLkJvYXJkRm9ybUFuc3dlciI9ChZGb3JtU3VibWlzc2lvblJlc3BvbnNlEhIKCnJlY2VpcHRfaWQYASABKAkSDwoHcHJldmlldxgCIAEoCCqQAwoSQm9hcmRGb3JtRmllbGRUeXBlEiUKIUJPQVJEX0ZPUk1fRklFTERfVFlQRV9VTlNQRUNJRklFRBAAEh4KGkJPQVJEX0ZPUk1fRklFTERfVFlQRV9URVhUEAESIwofQk9BUkRfRk9STV9GSUVMRF9UWVBFX1BBUkFHUkFQSBACEh8KG0JPQVJEX0ZPUk1fRklFTERfVFlQRV9FTUFJTBADEiAKHEJPQVJEX0ZPUk1fRklFTERfVFlQRV9OVU1CRVIQBBIeChpCT0FSRF9GT1JNX0ZJRUxEX1RZUEVfREFURRAFEiAKHEJPQVJEX0ZPUk1fRklFTERfVFlQRV9TRUxFQ1QQBhIiCh5CT0FSRF9GT1JNX0ZJRUxEX1RZUEVfQ0hFQ0tCT1gQBxIfChtCT0FSRF9GT1JNX0ZJRUxEX1RZUEVfUEhPTkUQCBIdChlCT0FSRF9GT1JNX0ZJRUxEX1RZUEVfVVJMEAkSJQohQk9BUkRfRk9STV9GSUVMRF9UWVBFX01VTFRJU0VMRUNUEApCnQEKDWNvbS5jYWxhYmEudjFCD0JvYXJkRm9ybXNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_boards]);
+  fileDesc("ChtjYWxhYmEvdjEvYm9hcmRfZm9ybXMucHJvdG8SCWNhbGFiYS52MSLBBAoOQm9hcmRGb3JtRmllbGQSCgoCaWQYASABKAkSKwoEdHlwZRgCIAEoDjIdLmNhbGFiYS52MS5Cb2FyZEZvcm1GaWVsZFR5cGUSDQoFbGFiZWwYAyABKAkSDAoEaGludBgEIAEoCRITCgtwbGFjZWhvbGRlchgFIAEoCRIQCghyZXF1aXJlZBgGIAEoCBIPCgdvcHRpb25zGAcgAygJEhAKCG11bHRpcGxlGAggASgIEhEKCW1heF9maWxlcxgJIAEoDRITCgttYXhfZmlsZV9tYhgKIAEoDRIOCgZhY2NlcHQYCyADKAkSDwoHcm9sZV9pZBgMIAEoCRIvCgZ0YXJnZXQYDSABKA4yHy5jYWxhYmEudjEuQm9hcmRGb3JtRmllbGRUYXJnZXQSSgoRb3B0aW9uX3ByaW9yaXRpZXMYDiADKAsyLy5jYWxhYmEudjEuQm9hcmRGb3JtRmllbGQuT3B0aW9uUHJpb3JpdGllc0VudHJ5EkIKDW9wdGlvbl9sYWJlbHMYDyADKAsyKy5jYWxhYmEudjEuQm9hcmRGb3JtRmllbGQuT3B0aW9uTGFiZWxzRW50cnkaUAoVT3B0aW9uUHJpb3JpdGllc0VudHJ5EgsKA2tleRgBIAEoCRImCgV2YWx1ZRgCIAEoDjIXLmNhbGFiYS52MS5UYXNrUHJpb3JpdHk6AjgBGjMKEU9wdGlvbkxhYmVsc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiVwoOQm9hcmRGb3JtUm91dGUSEAoIZmllbGRfaWQYASABKAkSDgoGb3B0aW9uGAIgASgJEhAKCGJvYXJkX2lkGAMgASgJEhEKCXN0YXR1c19pZBgEIAEoCSKpAgoTQm9hcmRGb3JtRGVmaW5pdGlvbhINCgV0aXRsZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIpCgZmaWVsZHMYAyADKAsyGS5jYWxhYmEudjEuQm9hcmRGb3JtRmllbGQSFgoOdGl0bGVfZmllbGRfaWQYBCABKAkSEgoKaXNfcHJpdmF0ZRgFIAEoCBIYChBhbGxvd2VkX3VzZXJfaWRzGAYgAygJEhEKCXN0YXR1c19pZBgHIAEoCRIpCghwcmlvcml0eRgIIAEoDjIXLmNhbGFiYS52MS5UYXNrUHJpb3JpdHkSKQoGcm91dGVzGAkgAygLMhkuY2FsYWJhLnYxLkJvYXJkRm9ybVJvdXRlEhQKDHNob3dfbWVtYmVycxgKIAEoCCLwAQoJQm9hcmRGb3JtEgoKAmlkGAEgASgJEhAKCGJvYXJkX2lkGAIgASgJEgsKA3VybBgDIAEoCRIyCgpkZWZpbml0aW9uGAQgASgLMh4uY2FsYWJhLnYxLkJvYXJkRm9ybURlZmluaXRpb24SEAoIcmV2aXNpb24YBSABKA0SEgoKY3JlYXRlZF9ieRgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI9ChZMaXN0Qm9hcmRGb3Jtc1Jlc3BvbnNlEiMKBWZvcm1zGAEgAygLMhQuY2FsYWJhLnYxLkJvYXJkRm9ybSI3ChFCb2FyZEZvcm1SZXNwb25zZRIiCgRmb3JtGAEgASgLMhQuY2FsYWJhLnYxLkJvYXJkRm9ybSJMChZDcmVhdGVCb2FyZEZvcm1SZXF1ZXN0EjIKCmRlZmluaXRpb24YASABKAsyHi5jYWxhYmEudjEuQm9hcmRGb3JtRGVmaW5pdGlvbiJeChZVcGRhdGVCb2FyZEZvcm1SZXF1ZXN0EjIKCmRlZmluaXRpb24YASABKAsyHi5jYWxhYmEudjEuQm9hcmRGb3JtRGVmaW5pdGlvbhIQCghyZXZpc2lvbhgCIAEoDSJCCg9Cb2FyZEZvcm1BbnN3ZXISEAoIZmllbGRfaWQYASABKAkSDQoFdmFsdWUYAiABKAkSDgoGdmFsdWVzGAMgAygJInoKF1ByZXZpZXdCb2FyZEZvcm1SZXF1ZXN0EjIKCmRlZmluaXRpb24YASABKAsyHi5jYWxhYmEudjEuQm9hcmRGb3JtRGVmaW5pdGlvbhIrCgdhbnN3ZXJzGAIgAygLMhouY2FsYWJhLnYxLkJvYXJkRm9ybUFuc3dlciKtAQoXUHVibGljQm9hcmRGb3JtUmVzcG9uc2USDQoFdGl0bGUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSKQoGZmllbGRzGAMgAygLMhkuY2FsYWJhLnYxLkJvYXJkRm9ybUZpZWxkEhAKCHJldmlzaW9uGAQgASgNEjEKBnBlb3BsZRgFIAMoCzIhLmNhbGFiYS52MS5Cb2FyZEZvcm1QZW9wbGVPcHRpb25zIjAKD0JvYXJkRm9ybVBlcnNvbhIPCgd1c2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkiVgoWQm9hcmRGb3JtUGVvcGxlT3B0aW9ucxIQCghmaWVsZF9pZBgBIAEoCRIqCgZwZW9wbGUYAiADKAsyGi5jYWxhYmEudjEuQm9hcmRGb3JtUGVyc29uIlYKF0JvYXJkRm9ybVVwbG9hZFJlc3BvbnNlEhEKCXVwbG9hZF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHNpemUYAyABKAQSDAoEbWltZRgEIAEoCSJmChZTdWJtaXRCb2FyZEZvcm1SZXF1ZXN0EhAKCHJldmlzaW9uGAEgASgNEg0KBW5vbmNlGAIgASgJEisKB2Fuc3dlcnMYAyADKAsyGi5jYWxhYmEudjEuQm9hcmRGb3JtQW5zd2VyIj0KFkZvcm1TdWJtaXNzaW9uUmVzcG9uc2USEgoKcmVjZWlwdF9pZBgBIAEoCRIPCgdwcmV2aWV3GAIgASgIKtIDChJCb2FyZEZvcm1GaWVsZFR5cGUSJQohQk9BUkRfRk9STV9GSUVMRF9UWVBFX1VOU1BFQ0lGSUVEEAASHgoaQk9BUkRfRk9STV9GSUVMRF9UWVBFX1RFWFQQARIjCh9CT0FSRF9GT1JNX0ZJRUxEX1RZUEVfUEFSQUdSQVBIEAISHwobQk9BUkRfRk9STV9GSUVMRF9UWVBFX0VNQUlMEAMSIAocQk9BUkRfRk9STV9GSUVMRF9UWVBFX05VTUJFUhAEEh4KGkJPQVJEX0ZPUk1fRklFTERfVFlQRV9EQVRFEAUSIAocQk9BUkRfRk9STV9GSUVMRF9UWVBFX1NFTEVDVBAGEiIKHkJPQVJEX0ZPUk1fRklFTERfVFlQRV9DSEVDS0JPWBAHEh8KG0JPQVJEX0ZPUk1fRklFTERfVFlQRV9QSE9ORRAIEh0KGUJPQVJEX0ZPUk1fRklFTERfVFlQRV9VUkwQCRIlCiFCT0FSRF9GT1JNX0ZJRUxEX1RZUEVfTVVMVElTRUxFQ1QQChIeChpCT0FSRF9GT1JNX0ZJRUxEX1RZUEVfRklMRRALEiAKHEJPQVJEX0ZPUk1fRklFTERfVFlQRV9QRU9QTEUQDCqcAgoUQm9hcmRGb3JtRmllbGRUYXJnZXQSIAocQk9BUkRfRk9STV9GSUVMRF9UQVJHRVRfTk9ORRAAEiQKIEJPQVJEX0ZPUk1fRklFTERfVEFSR0VUX1BSSU9SSVRZEAESJAogQk9BUkRfRk9STV9GSUVMRF9UQVJHRVRfRFVFX0RBVEUQAhIiCh5CT0FSRF9GT1JNX0ZJRUxEX1RBUkdFVF9MQUJFTFMQAxIlCiFCT0FSRF9GT1JNX0ZJRUxEX1RBUkdFVF9BU1NJR05FRVMQBBIlCiFCT0FSRF9GT1JNX0ZJRUxEX1RBUkdFVF9BUFBST1ZFUlMQBRIkCiBCT0FSRF9GT1JNX0ZJRUxEX1RBUkdFVF9XQVRDSEVSUxAGQp0BCg1jb20uY2FsYWJhLnYxQg9Cb2FyZEZvcm1zUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_boards]);
 
 /**
  * @generated from message calaba.v1.BoardFormField
@@ -54,6 +54,59 @@ export type BoardFormField = Message<"calaba.v1.BoardFormField"> & {
    * @generated from field: repeated string options = 7;
    */
   options: string[];
+
+  /**
+   * FILE and PEOPLE: more than one answer value.
+   *
+   * @generated from field: bool multiple = 8;
+   */
+  multiple: boolean;
+
+  /**
+   * FILE: 1..20 files (1 without multiple), 1..100 MB each, accepted categories
+   * (image, pdf, document, video, audio, archive; empty = any).
+   *
+   * @generated from field: uint32 max_files = 9;
+   */
+  maxFiles: number;
+
+  /**
+   * @generated from field: uint32 max_file_mb = 10;
+   */
+  maxFileMb: number;
+
+  /**
+   * @generated from field: repeated string accept = 11;
+   */
+  accept: string[];
+
+  /**
+   * PEOPLE: only members with this workspace role; empty = all members.
+   *
+   * @generated from field: string role_id = 12;
+   */
+  roleId: string;
+
+  /**
+   * Management only: never sent by the public GET.
+   *
+   * @generated from field: calaba.v1.BoardFormFieldTarget target = 13;
+   */
+  target: BoardFormFieldTarget;
+
+  /**
+   * option -> priority (PRIORITY)
+   *
+   * @generated from field: map<string, calaba.v1.TaskPriority> option_priorities = 14;
+   */
+  optionPriorities: { [key: string]: TaskPriority };
+
+  /**
+   * option -> label id of the form's board (LABELS)
+   *
+   * @generated from field: map<string, string> option_labels = 15;
+   */
+  optionLabels: { [key: string]: string };
 };
 
 /**
@@ -62,6 +115,46 @@ export type BoardFormField = Message<"calaba.v1.BoardFormField"> & {
  */
 export const BoardFormFieldSchema: GenMessage<BoardFormField> = /*@__PURE__*/
   messageDesc(file_calaba_v1_board_forms, 0);
+
+/**
+ * The first matching route picks the board of the new task; none matching: the form's board.
+ *
+ * @generated from message calaba.v1.BoardFormRoute
+ */
+export type BoardFormRoute = Message<"calaba.v1.BoardFormRoute"> & {
+  /**
+   * a SELECT field of the form
+   *
+   * @generated from field: string field_id = 1;
+   */
+  fieldId: string;
+
+  /**
+   * @generated from field: string option = 2;
+   */
+  option: string;
+
+  /**
+   * a board of the same workspace
+   *
+   * @generated from field: string board_id = 3;
+   */
+  boardId: string;
+
+  /**
+   * a status of board_id; empty = its default status
+   *
+   * @generated from field: string status_id = 4;
+   */
+  statusId: string;
+};
+
+/**
+ * Describes the message calaba.v1.BoardFormRoute.
+ * Use `create(BoardFormRouteSchema)` to create a new message.
+ */
+export const BoardFormRouteSchema: GenMessage<BoardFormRoute> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_board_forms, 1);
 
 /**
  * @generated from message calaba.v1.BoardFormDefinition
@@ -108,6 +201,18 @@ export type BoardFormDefinition = Message<"calaba.v1.BoardFormDefinition"> & {
    * @generated from field: calaba.v1.TaskPriority priority = 8;
    */
   priority: TaskPriority;
+
+  /**
+   * @generated from field: repeated calaba.v1.BoardFormRoute routes = 9;
+   */
+  routes: BoardFormRoute[];
+
+  /**
+   * Anonymous fillers see PEOPLE fields and member names (default: hidden).
+   *
+   * @generated from field: bool show_members = 10;
+   */
+  showMembers: boolean;
 };
 
 /**
@@ -115,7 +220,7 @@ export type BoardFormDefinition = Message<"calaba.v1.BoardFormDefinition"> & {
  * Use `create(BoardFormDefinitionSchema)` to create a new message.
  */
 export const BoardFormDefinitionSchema: GenMessage<BoardFormDefinition> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 1);
+  messageDesc(file_calaba_v1_board_forms, 2);
 
 /**
  * @generated from message calaba.v1.BoardForm
@@ -167,7 +272,7 @@ export type BoardForm = Message<"calaba.v1.BoardForm"> & {
  * Use `create(BoardFormSchema)` to create a new message.
  */
 export const BoardFormSchema: GenMessage<BoardForm> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 2);
+  messageDesc(file_calaba_v1_board_forms, 3);
 
 /**
  * @generated from message calaba.v1.ListBoardFormsResponse
@@ -184,7 +289,7 @@ export type ListBoardFormsResponse = Message<"calaba.v1.ListBoardFormsResponse">
  * Use `create(ListBoardFormsResponseSchema)` to create a new message.
  */
 export const ListBoardFormsResponseSchema: GenMessage<ListBoardFormsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 3);
+  messageDesc(file_calaba_v1_board_forms, 4);
 
 /**
  * @generated from message calaba.v1.BoardFormResponse
@@ -201,7 +306,7 @@ export type BoardFormResponse = Message<"calaba.v1.BoardFormResponse"> & {
  * Use `create(BoardFormResponseSchema)` to create a new message.
  */
 export const BoardFormResponseSchema: GenMessage<BoardFormResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 4);
+  messageDesc(file_calaba_v1_board_forms, 5);
 
 /**
  * @generated from message calaba.v1.CreateBoardFormRequest
@@ -218,7 +323,7 @@ export type CreateBoardFormRequest = Message<"calaba.v1.CreateBoardFormRequest">
  * Use `create(CreateBoardFormRequestSchema)` to create a new message.
  */
 export const CreateBoardFormRequestSchema: GenMessage<CreateBoardFormRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 5);
+  messageDesc(file_calaba_v1_board_forms, 6);
 
 /**
  * @generated from message calaba.v1.UpdateBoardFormRequest
@@ -240,7 +345,7 @@ export type UpdateBoardFormRequest = Message<"calaba.v1.UpdateBoardFormRequest">
  * Use `create(UpdateBoardFormRequestSchema)` to create a new message.
  */
 export const UpdateBoardFormRequestSchema: GenMessage<UpdateBoardFormRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 6);
+  messageDesc(file_calaba_v1_board_forms, 7);
 
 /**
  * @generated from message calaba.v1.BoardFormAnswer
@@ -257,7 +362,7 @@ export type BoardFormAnswer = Message<"calaba.v1.BoardFormAnswer"> & {
   value: string;
 
   /**
-   * MULTISELECT only; value must be empty
+   * MULTISELECT, FILE, PEOPLE only; value must be empty
    *
    * @generated from field: repeated string values = 3;
    */
@@ -269,7 +374,7 @@ export type BoardFormAnswer = Message<"calaba.v1.BoardFormAnswer"> & {
  * Use `create(BoardFormAnswerSchema)` to create a new message.
  */
 export const BoardFormAnswerSchema: GenMessage<BoardFormAnswer> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 7);
+  messageDesc(file_calaba_v1_board_forms, 8);
 
 /**
  * @generated from message calaba.v1.PreviewBoardFormRequest
@@ -291,7 +396,7 @@ export type PreviewBoardFormRequest = Message<"calaba.v1.PreviewBoardFormRequest
  * Use `create(PreviewBoardFormRequestSchema)` to create a new message.
  */
 export const PreviewBoardFormRequestSchema: GenMessage<PreviewBoardFormRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 8);
+  messageDesc(file_calaba_v1_board_forms, 9);
 
 /**
  * Intentionally excludes board identity, routing settings and allowed users.
@@ -318,6 +423,13 @@ export type PublicBoardFormResponse = Message<"calaba.v1.PublicBoardFormResponse
    * @generated from field: uint32 revision = 4;
    */
   revision: number;
+
+  /**
+   * candidates of the PEOPLE fields shown
+   *
+   * @generated from field: repeated calaba.v1.BoardFormPeopleOptions people = 5;
+   */
+  people: BoardFormPeopleOptions[];
 };
 
 /**
@@ -325,7 +437,87 @@ export type PublicBoardFormResponse = Message<"calaba.v1.PublicBoardFormResponse
  * Use `create(PublicBoardFormResponseSchema)` to create a new message.
  */
 export const PublicBoardFormResponseSchema: GenMessage<PublicBoardFormResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 9);
+  messageDesc(file_calaba_v1_board_forms, 10);
+
+/**
+ * @generated from message calaba.v1.BoardFormPerson
+ */
+export type BoardFormPerson = Message<"calaba.v1.BoardFormPerson"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message calaba.v1.BoardFormPerson.
+ * Use `create(BoardFormPersonSchema)` to create a new message.
+ */
+export const BoardFormPersonSchema: GenMessage<BoardFormPerson> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_board_forms, 11);
+
+/**
+ * @generated from message calaba.v1.BoardFormPeopleOptions
+ */
+export type BoardFormPeopleOptions = Message<"calaba.v1.BoardFormPeopleOptions"> & {
+  /**
+   * @generated from field: string field_id = 1;
+   */
+  fieldId: string;
+
+  /**
+   * @generated from field: repeated calaba.v1.BoardFormPerson people = 2;
+   */
+  people: BoardFormPerson[];
+};
+
+/**
+ * Describes the message calaba.v1.BoardFormPeopleOptions.
+ * Use `create(BoardFormPeopleOptionsSchema)` to create a new message.
+ */
+export const BoardFormPeopleOptionsSchema: GenMessage<BoardFormPeopleOptions> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_board_forms, 12);
+
+/**
+ * POST /api/(public/)forms/{code}/files?field=: a staged upload of a FILE field.
+ *
+ * @generated from message calaba.v1.BoardFormUploadResponse
+ */
+export type BoardFormUploadResponse = Message<"calaba.v1.BoardFormUploadResponse"> & {
+  /**
+   * capability token, the answer value
+   *
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: uint64 size = 3;
+   */
+  size: bigint;
+
+  /**
+   * @generated from field: string mime = 4;
+   */
+  mime: string;
+};
+
+/**
+ * Describes the message calaba.v1.BoardFormUploadResponse.
+ * Use `create(BoardFormUploadResponseSchema)` to create a new message.
+ */
+export const BoardFormUploadResponseSchema: GenMessage<BoardFormUploadResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_board_forms, 13);
 
 /**
  * @generated from message calaba.v1.SubmitBoardFormRequest
@@ -352,7 +544,7 @@ export type SubmitBoardFormRequest = Message<"calaba.v1.SubmitBoardFormRequest">
  * Use `create(SubmitBoardFormRequestSchema)` to create a new message.
  */
 export const SubmitBoardFormRequestSchema: GenMessage<SubmitBoardFormRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 10);
+  messageDesc(file_calaba_v1_board_forms, 14);
 
 /**
  * @generated from message calaba.v1.FormSubmissionResponse
@@ -374,7 +566,7 @@ export type FormSubmissionResponse = Message<"calaba.v1.FormSubmissionResponse">
  * Use `create(FormSubmissionResponseSchema)` to create a new message.
  */
 export const FormSubmissionResponseSchema: GenMessage<FormSubmissionResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_board_forms, 11);
+  messageDesc(file_calaba_v1_board_forms, 15);
 
 /**
  * Board intake forms (ADR-0064). Management definitions are never public responses.
@@ -440,6 +632,20 @@ export enum BoardFormFieldType {
    * @generated from enum value: BOARD_FORM_FIELD_TYPE_MULTISELECT = 10;
    */
   MULTISELECT = 10,
+
+  /**
+   * uploads via /files, answer values = upload ids; ADR-0064 v2
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TYPE_FILE = 11;
+   */
+  FILE = 11,
+
+  /**
+   * workspace members, answer values = user ids
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TYPE_PEOPLE = 12;
+   */
+  PEOPLE = 12,
 }
 
 /**
@@ -447,4 +653,64 @@ export enum BoardFormFieldType {
  */
 export const BoardFormFieldTypeSchema: GenEnum<BoardFormFieldType> = /*@__PURE__*/
   enumDesc(file_calaba_v1_board_forms, 0);
+
+/**
+ * Where an answer goes on the created task (ADR-0064 v2). The title uses title_field_id.
+ *
+ * @generated from enum calaba.v1.BoardFormFieldTarget
+ */
+export enum BoardFormFieldTarget {
+  /**
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_NONE = 0;
+   */
+  NONE = 0,
+
+  /**
+   * SELECT, through option_priorities
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_PRIORITY = 1;
+   */
+  PRIORITY = 1,
+
+  /**
+   * DATE
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_DUE_DATE = 2;
+   */
+  DUE_DATE = 2,
+
+  /**
+   * SELECT or MULTISELECT, through option_labels
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_LABELS = 3;
+   */
+  LABELS = 3,
+
+  /**
+   * PEOPLE; the first one is the lead
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_ASSIGNEES = 4;
+   */
+  ASSIGNEES = 4,
+
+  /**
+   * PEOPLE
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_APPROVERS = 5;
+   */
+  APPROVERS = 5,
+
+  /**
+   * PEOPLE
+   *
+   * @generated from enum value: BOARD_FORM_FIELD_TARGET_WATCHERS = 6;
+   */
+  WATCHERS = 6,
+}
+
+/**
+ * Describes the enum calaba.v1.BoardFormFieldTarget.
+ */
+export const BoardFormFieldTargetSchema: GenEnum<BoardFormFieldTarget> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_board_forms, 1);
 

@@ -17,6 +17,7 @@ import { boardForms } from '../../services/boardForms';
 import { copyText } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { FieldV2, pruneOptions, retype, RoutesEditor } from './FormEditorV2';
 import { FormFields, formControl, formError } from './FormFields';
 
 const TYPES: [Kind, MessageKey][] = [
@@ -30,6 +31,8 @@ const TYPES: [Kind, MessageKey][] = [
   [Kind.SELECT, 'forms.select'],
   [Kind.MULTISELECT, 'forms.multiselect'],
   [Kind.CHECKBOX, 'forms.checkbox'],
+  [Kind.FILE, 'forms.file'],
+  [Kind.PEOPLE, 'forms.people'],
 ];
 
 export function BoardForms({ boardId, workspaceId, onClose }: { boardId: string; workspaceId: string; onClose: () => void }): ReactNode {
@@ -184,7 +187,9 @@ function FormEditor({
     if (busy) return;
     setBusy(true);
     setError('');
-    void (existing ? boardForms.update(boardId, existing.id, draft, existing.revision) : boardForms.create(boardId, draft))
+    // Unfinished route rows are dropped rather than refused.
+    const definition = { ...draft, routes: draft.routes.filter((r) => r.fieldId && r.option && r.boardId) };
+    void (existing ? boardForms.update(boardId, existing.id, definition, existing.revision) : boardForms.create(boardId, definition))
       .then((r) => {
         if (r.form) {
           setDirty(false);
@@ -197,7 +202,20 @@ function FormEditor({
   if (preview)
     return (
       <Modal open onClose={() => setPreview(false)} title={draft.title}>
-        <FormFields fields={draft.fields} preview submit={(answers) => boardForms.preview(boardId, draft, answers)} />
+        <FormFields
+          fields={draft.fields}
+          preview
+          people={draft.fields
+            .filter((f) => f.type === Kind.PEOPLE)
+            .map((f) => ({
+              $typeName: 'calaba.v1.BoardFormPeopleOptions' as const,
+              fieldId: f.id,
+              people: Object.values(members ?? {}).flatMap((m) =>
+                m.user && !m.user.isBot ? [{ $typeName: 'calaba.v1.BoardFormPerson' as const, userId: m.user.id, name: memberName(workspaceId, m.user.id) }] : [],
+              ),
+            }))}
+          submit={(answers) => boardForms.preview(boardId, { ...draft, routes: draft.routes.filter((r) => r.fieldId && r.option && r.boardId) }, answers)}
+        />
       </Modal>
     );
   return (
@@ -263,7 +281,7 @@ function FormEditor({
                 value={f.type}
                 onChange={(e) => {
                   const type = TYPES.find(([kind]) => String(kind) === e.target.value)?.[0] ?? Kind.TEXT;
-                  field(f.id, { type, options: type === Kind.SELECT || type === Kind.MULTISELECT ? f.options : [] });
+                  field(f.id, retype(f, type));
                 }}
               >
                 {TYPES.map(([kind, label]) => (
@@ -288,10 +306,19 @@ function FormEditor({
                   className={`${formControl} !rounded-[var(--radius-card)]`}
                   rows={3}
                   value={f.options.join('\n')}
-                  onChange={(e) => field(f.id, { options: e.target.value.split('\n') })}
+                  onChange={(e) => field(f.id, pruneOptions(f, e.target.value.split('\n')))}
                 />
               </Field>
             ) : null}
+            <FieldV2
+              f={f}
+              boardId={boardId}
+              workspaceId={workspaceId}
+              isTitle={draft.titleFieldId === f.id}
+              usedTargets={draft.fields.filter((x) => x.id !== f.id).map((x) => x.target)}
+              onField={field}
+              onTitle={(id, on) => change({ titleFieldId: on ? id : '' })}
+            />
             <Switch checked={f.required} onChange={(v) => field(f.id, { required: v })} label={t('forms.required')} />
           </section>
         ))}
@@ -345,6 +372,13 @@ function FormEditor({
             ))}
           </Select>
         </Field>
+        <RoutesEditor draft={draft} boardId={boardId} workspaceId={workspaceId} onChange={change} />
+        <Switch
+          checked={draft.showMembers}
+          onChange={(v) => change({ showMembers: v })}
+          label={t('forms.showMembers')}
+          hint={t('forms.showMembersHint')}
+        />
         <Switch
           checked={draft.isPrivate}
           onChange={(v) =>
