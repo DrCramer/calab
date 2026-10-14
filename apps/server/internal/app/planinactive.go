@@ -20,12 +20,13 @@ import "github.com/calaba/calaba/server/internal/plans"
 // forms, the account-less room links and every new membership (plans.AdmitSeat, guests.grant).
 var planInactiveRoutes = map[string]string{
 	// writing (messages, threads, reactions, pins, bot buttons)
-	"POST /api/rooms/{id}/messages":               plans.RestrictedSend,
-	"POST /api/rooms/{id}/messages/{mid}/forward": plans.RestrictedSend,
-	"PATCH /api/messages/{id}":                    plans.RestrictedSend,
-	"PUT /api/messages/{id}/reactions/{emoji}":    plans.RestrictedSend,
-	"PUT /api/messages/{id}/pin":                  plans.RestrictedSend,
-	"POST /api/messages/{id}/interactions":        plans.RestrictedSend,
+	"POST /api/rooms/{id}/messages":                      plans.RestrictedSend,
+	"POST /api/rooms/{id}/messages/{mid}/forward":        plans.RestrictedSend,
+	"PATCH /api/messages/{id}":                           plans.RestrictedSend,
+	"PUT /api/messages/{id}/reactions/{emoji}":           plans.RestrictedSend,
+	"PUT /api/messages/{id}/pin":                         plans.RestrictedSend,
+	"POST /api/messages/{id}/interactions":               plans.RestrictedSend,
+	"POST /api/messages/{id}/buttons/{buttonId}/contact": plans.RestrictedSend,
 	// files
 	"POST /api/workspaces/{id}/files":       plans.RestrictedUpload,
 	"POST /api/boards/{id}/files":           plans.RestrictedUpload,

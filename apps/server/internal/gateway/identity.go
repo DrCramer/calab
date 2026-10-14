@@ -284,6 +284,9 @@ var eventScope = map[protoreflect.Name]bool{
 	"disk_item_upsert": true, "disk_item_remove": true,
 	// Wiki (ADR-0096 §8): workspace channel; routed to the page's viewers (WIKI_VIEW) by routeWiki.
 	"wiki_page_upsert": true, "wiki_page_remove": true,
+	// A contact shared with a bot (ADR-0100): the bot's user channel only; routeUser drops it
+	// for people's sessions.
+	"contact_shared": false,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

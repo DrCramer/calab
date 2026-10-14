@@ -206,7 +206,7 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
     setDrag(d);
   };
   const onBarDown = useCallback((e: ReactPointerEvent, id: string, mode: DragMode) => {
-    if (e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return; // touch scrolls the timeline (owner 14.10)
     e.preventDefault();
     e.stopPropagation();
     const d: Drag = { kind: 'bar', id, mode, x: e.clientX, delta: 0, moved: false };
@@ -214,14 +214,14 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
     setDrag(d);
   }, []);
   const onMsDown = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     e.preventDefault();
     const d: Drag = { kind: 'ms', id, x: e.clientX, delta: 0, moved: false };
     dragRef.current = d;
     setDrag(d);
   }, []);
   const onPlaceDown = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     e.preventDefault();
     const d: Drag = { kind: 'place', id, x: e.clientX, y: e.clientY, moved: false };
     dragRef.current = d;

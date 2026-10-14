@@ -524,6 +524,7 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `GET` | `/api/workspaces/{id}/members/birthdays` | Members |
 | `POST` | `/api/files/convert` | Messages and files |
 | `POST` | `/api/messages/{id}/interactions` | Messages and files |
+| `POST` | `/api/messages/{id}/buttons/{buttonId}/contact` | Messages and files |
 | `GET` | `/api/unfurl` | Messages and files |
 | `GET` | `/api/unfurl/image` | Messages and files |
 | `GET` | `/api/notes` | Notes |
@@ -556,6 +557,7 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | Telephony and recordings |
 | `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | Telephony and recordings |
 | `GET` | `/api/workspaces/{id}/calls` | Telephony and recordings |
+| `GET` | `/api/workspaces/{id}/bot-contact-shares` | Journals |
 | `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | Telephony and recordings |
 | `GET` | `/api/workspaces/{id}/integrations/gptunnel` | Telephony and recordings |
 | `POST` | `/api/workspaces/{id}/integrations/gptunnel` | Telephony and recordings |

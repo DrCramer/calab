@@ -77,6 +77,7 @@ An event is one of the `DispatchEvent` fields, lowerCamelCase in JSON. The “Bo
 | `messageReactionAdd` · `messageReactionRemove` | yes | reactions |
 | `typingStart` | conditional | “is typing” — only in rooms from `SUBSCRIBE` |
 | `botCallback` | conditional | a button press — only to the message's author bot |
+| `contactShared` | conditional | a person's contact from a contact request button — only to that bot (ADR-0100) |
 | `dmCreate` | yes | a new DM with the bot |
 | `stickerPackCreate` · `stickerPackUpdate` · `stickerPackDelete` | yes | the workspace's sticker packs |
 | `readReceipt` | no | people's “read” marks — never sent to bots |
