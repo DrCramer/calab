@@ -103,6 +103,7 @@ export const ruWiki = {
   'wiki.versionsTitle': 'История версий «{name}»',
   'wiki.versions.empty': 'Версий пока нет — они сохраняются раз в 5 минут при правках',
   'wiki.versions.pick': 'Выберите версию',
+  'wiki.versions.onlyChanges': 'Только изменения',
   'wiki.versions.version': 'Эта версия',
   'wiki.versions.current': 'Сейчас',
   'wiki.versions.noCurrent': 'Текущий текст недоступен',

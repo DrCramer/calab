@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DIFF_LIMIT, diffStats, diffText, diffable, splitLines, splitWords, type DiffOp } from './textDiff';
+import { DIFF_LIMIT, diffBlocks, diffStats, diffText, diffable, splitLines, splitWords, type DiffOp } from './textDiff';
 
 const join = (ops: readonly DiffOp[], side: 'before' | 'after'): string => ops.filter((o) => o.op === 'eq' || o.op === (side === 'before' ? 'del' : 'add')).map((o) => o.text).join('');
 
@@ -71,5 +71,22 @@ describe('textDiff', () => {
   it('long texts are not diffable', () => {
     expect(diffable('a'.repeat(DIFF_LIMIT / 2), 'b'.repeat(DIFF_LIMIT / 2))).toBe(true);
     expect(diffable('a'.repeat(DIFF_LIMIT), 'b')).toBe(false);
+  });
+});
+
+describe('diffBlocks', () => {
+  it('ignores blank lines and spacing: equal texts have no changed block', () => {
+    const d = diffBlocks('One\n\n\nTwo\n', '  One\nTwo');
+    expect(d.before.some((b) => b.changed)).toBe(false);
+    expect(d.before).toEqual(d.after);
+  });
+
+  it('marks only the changed block and diffs words inside it', () => {
+    const d = diffBlocks('Intro\n\nHello old world\n\nEnd', 'Intro\nHello new world\nEnd\nAdded block');
+    expect(d.before.map((b) => b.changed)).toEqual([false, true, false]);
+    expect(d.after.map((b) => b.changed)).toEqual([false, true, false, true]);
+    expect(d.before[1]?.ops.filter((o) => o.op === 'del').map((o) => o.text)).toEqual(['old']);
+    expect(d.after[1]?.ops.filter((o) => o.op === 'add').map((o) => o.text)).toEqual(['new']);
+    expect(d.after[3]?.ops).toEqual([{ op: 'add', text: 'Added block' }]);
   });
 });

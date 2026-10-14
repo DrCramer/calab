@@ -46,7 +46,8 @@ export function PhoneToolbar({ editor, onBlocks }: { editor: Editor; onBlocks: (
   if (!st.focused) return null;
   return (
     <div className="mat-toolbar flex shrink-0 items-stretch border-t border-line" role="toolbar" aria-label={t('wiki.phone.toolbar')} data-testid="wiki-phone-toolbar">
-      <div className="scrollbar-none flex min-w-0 flex-1 overflow-x-auto">
+      {/* Scrolls (10 tools do not fit at 390 px): snap to buttons, the last 16 px fade out as the «more» cue; pr-4 keeps the final button clear of the fade. */}
+      <div className="scrollbar-none fade-end flex min-w-0 flex-1 snap-x snap-proximity overflow-x-auto pr-4">
         {TOOLS.map((tool, i) => {
           const on = st.on[i] === '1';
           return (
@@ -60,7 +61,7 @@ export function PhoneToolbar({ editor, onBlocks }: { editor: Editor; onBlocks: (
               haptics.tap();
               tool.run(editor);
             }}
-            className={cx('grid h-11 w-11 shrink-0 place-items-center', on ? 'text-accent-text' : 'text-fg')}
+            className={cx('grid h-11 w-11 shrink-0 snap-start place-items-center', on ? 'text-accent-text' : 'text-fg')}
             data-testid={`wiki-tool-${tool.id}`}
           >
             <tool.Icon className="size-5" strokeWidth={on ? 2.25 : 1.75} aria-hidden />
