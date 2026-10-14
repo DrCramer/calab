@@ -14,7 +14,7 @@ const shots: Record<Exclude<CatalogKey, 'phone'>, ScreenName> = {
   calendar: 'findtime',
   search: 'search',
   mail: 'mail',
-  notes: 'notes',
+  wiki: 'wiki',
   disk: 'disk',
   notify: 'notifyrelay',
   apps: 'webapps',
@@ -31,7 +31,7 @@ const links: Record<CatalogKey, string> = {
   calendar: 'features/#calendar',
   search: 'features/#search',
   mail: 'features/#mail',
-  notes: 'features/#notes',
+  wiki: 'features/#wiki',
   disk: 'features/#disk',
   phone: '#mobile',
   notify: '#notifications',
@@ -39,9 +39,9 @@ const links: Record<CatalogKey, string> = {
   sip: 'features/#sip',
 };
 /** Display order: the two-column cards come in pairs between the wide ones. */
-const ORDER: CatalogKey[] = ['voice', 'gallery', 'chat', 'boards', 'calendar', 'search', 'disk', 'mail', 'notes', 'notify', 'phone', 'apps', 'sip'];
+const ORDER: CatalogKey[] = ['voice', 'gallery', 'chat', 'boards', 'calendar', 'search', 'disk', 'mail', 'wiki', 'notify', 'phone', 'apps', 'sip'];
 /** Two-column cards show their shot in one 16:11 window (cover); the part that matters stays in view. */
-const FOCUS: Partial<Record<CatalogKey, string>> = { chat: 'object-bottom', notes: 'object-left-top', apps: '!object-contain object-center', sip: '!object-contain object-center' };
+const FOCUS: Partial<Record<CatalogKey, string>> = { chat: 'object-bottom', apps: '!object-contain object-center', sip: '!object-contain object-center' };
 export const PHONE_SHOTS = ['phone-rooms', 'phone-chat', 'phone-board'] as const satisfies readonly ScreenName[];
 
 /** A phone screenshot in a rounded device edge (the capture is the 390×844 iPhone 14 viewport). */

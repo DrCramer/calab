@@ -792,6 +792,8 @@ export interface MockServer {
   readonly boards: BoardsMock;
   /** Disk (ADR-0094, mock-disk.ts): the live items, rights and links (marketing scenes rename the fixture). */
   readonly disk: DiskMock;
+  /** Wiki (ADR-0096, mock-wiki.ts): the live pages, documents and sync sockets (marketing scenes replace the fixture). */
+  readonly wiki: WikiMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
   updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
@@ -865,6 +867,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     },
     get disk() {
       return impl.disk;
+    },
+    get wiki() {
+      return impl.wiki;
     },
     updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
     failMessagesOnce: (roomId) => impl.failMessages.set(roomId, (impl.failMessages.get(roomId) ?? 0) + 1),

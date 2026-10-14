@@ -40,8 +40,6 @@ export const CROPS = {
   kanban: { left: 330, top: 30, width: 1110, height: 600 },
   timeline: { left: 330, top: 30, width: 1110, height: 870 },
   task: { left: 930, top: 30, width: 510, height: 870 },
-  // notes: the shelves and the open shelf
-  notes: { left: 70, top: 30, width: 1370, height: 560 },
   // the guest's waiting card
   guest: { left: 420, top: 220, width: 600, height: 460 },
   // landing v4 (e2e-marketing/landing-v4.spec.ts): SIP dialer popover over the room header and the members
@@ -82,6 +80,8 @@ export const CROPS = {
   gallery: { left: 329, top: 202, width: 872, height: 504 },
   // «Диск» as tiles: folders (one restricted), files with thumbnails, the storage meter (window 1060×600)
   disk: { left: 70, top: 30, width: 990, height: 570 },
+  // «Вики»: the page tree with branches open and a page with a cover, a checklist, a table and two carets (window 1060×780)
+  wiki: { left: 70, top: 30, width: 990, height: 750 },
   // ⌘K with the unified search sections
   search: { left: 390, top: 115, width: 660, height: 650 },
   // the phone (iPhone 14 viewport, 390×844): rooms, chat, «В голосе», a board

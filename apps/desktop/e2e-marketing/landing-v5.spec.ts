@@ -4,6 +4,9 @@ import { create, toJson } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { SearchResponseSchema, SearchType, TaskNoticeKind, TaskPriority } from '@calaba/protocol';
 import { chromium, devices, expect, test, webkit, type Browser, type Page } from '@playwright/test';
+import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import WebSocket from 'ws';
+import * as Y from 'yjs';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { startPublisher, type Publisher } from '../e2e-visual/publisher';
@@ -11,6 +14,7 @@ import { APP_LOCALE, COPY, type Copy, type Short } from './copy';
 import { COPY3, type Copy3 } from './copy3';
 import { mockupHtml, render } from './art';
 import { cameraPhoto, dataUrl, heroStream } from './photos';
+import { decodeFrame, encodeAwareness, FRAME_SNAPSHOT, FRAME_UPDATE } from '../src/renderer/lib/wiki/frames';
 import { drawArt, msk, seedBoard, seedMeetings, seedNotes, seedScene } from './seed';
 
 /**
@@ -55,6 +59,56 @@ const DISK: Record<Short, { folders: [string, string, string]; files: [string, s
   en: { folders: ['Projects', 'Design', 'Contracts'], files: ['Release cover.png', 'Collection moodboard.jpg', 'Team offsite.png', 'Quarterly report.pdf', 'Budget 2026.xlsx', 'Product demo.mp4'] },
   es: { folders: ['Proyectos', 'Diseño', 'Contratos'], files: ['Portada de la versión.png', 'Moodboard de la colección.jpg', 'Offsite del equipo.png', 'Informe trimestral.pdf', 'Presupuesto 2026.xlsx', 'Demo del producto.mp4'] },
   zh: { folders: ['项目', '设计', '合同'], files: ['版本封面.png', '系列灵感板.jpg', '团队团建.png', '季度报告.pdf', '2026 预算.xlsx', '产品演示.mp4'] },
+};
+
+
+/** «Вики»: the page tree and the open page in each language (the fixture's pages are replaced). */
+interface WikiCopy {
+  title: string;
+  tree: { handbook: string; onboarding: string; day: string; processes: string; releases: string; review: string; glossary: string; meetings: string; retro: string; drafts: string };
+  intro: string;
+  week: string;
+  tasks: [string, string, string, string];
+  who: string;
+  table: [[string, string], [string, string], [string, string], [string, string]];
+}
+const WIKI: Record<Short, WikiCopy> = {
+  ru: {
+    title: 'Справочник команды',
+    tree: { handbook: 'Справочник команды', onboarding: 'Онбординг', day: 'Первый день', processes: 'Процессы', releases: 'Релизы', review: 'Код-ревью', glossary: 'Глоссарий', meetings: 'Встречи', retro: 'Ретро 14.01', drafts: 'Черновики' },
+    intro: 'Здесь собрано всё, что нужно знать новому человеку в команде: как мы работаем, где что лежит и к кому идти с вопросами. Страницы правят все, кто работает над продуктом.',
+    week: 'Первая неделя',
+    tasks: ['Получить доступ к Нордлайт и рабочей почте', 'Познакомиться с командой на планёрке', 'Пройти онбординг по продукту', 'Выбрать первую задачу'],
+    who: 'Кто за что отвечает',
+    table: [['Область', 'Ответственный'], ['Голос и видео', 'Борис'], ['Дизайн', 'Вера'], ['Релизы', 'Анна']],
+  },
+  en: {
+    title: 'Team handbook',
+    tree: { handbook: 'Team handbook', onboarding: 'Onboarding', day: 'First day', processes: 'Processes', releases: 'Releases', review: 'Code review', glossary: 'Glossary', meetings: 'Meetings', retro: 'Retro Jan 14', drafts: 'Drafts' },
+    intro: 'Everything a new teammate needs to know: how we work, where things live and who to ask. Everyone who works on the product can edit these pages.',
+    week: 'First week',
+    tasks: ['Get access to Northlight and work email', 'Meet the team at the stand-up', 'Go through the product onboarding', 'Pick your first task'],
+    who: 'Who owns what',
+    table: [['Area', 'Owner'], ['Voice and video', 'Ben'], ['Design', 'Olivia'], ['Releases', 'Emma']],
+  },
+  es: {
+    title: 'Manual del equipo',
+    tree: { handbook: 'Manual del equipo', onboarding: 'Incorporación', day: 'Primer día', processes: 'Procesos', releases: 'Versiones', review: 'Revisión de código', glossary: 'Glosario', meetings: 'Reuniones', retro: 'Retro 14/01', drafts: 'Borradores' },
+    intro: 'Todo lo que una persona nueva necesita saber: cómo trabajamos, dónde está cada cosa y a quién preguntar. Las páginas las edita todo el que trabaja en el producto.',
+    week: 'Primera semana',
+    tasks: ['Conseguir acceso a Northlight y al correo de trabajo', 'Conocer al equipo en la reunión diaria', 'Hacer la incorporación al producto', 'Elegir la primera tarea'],
+    who: 'Quién se encarga de qué',
+    table: [['Área', 'Responsable'], ['Voz y vídeo', 'Ben'], ['Diseño', 'Olivia'], ['Versiones', 'Emma']],
+  },
+  zh: {
+    title: '团队手册',
+    tree: { handbook: '团队手册', onboarding: '新人入职', day: '第一天', processes: '流程', releases: '发布', review: '代码评审', glossary: '术语表', meetings: '会议', retro: '1 月 14 日复盘', drafts: '草稿' },
+    intro: '新同事需要了解的一切：我们如何协作、资料放在哪里、有问题找谁。所有参与产品的人都可以编辑这些页面。',
+    week: '第一周',
+    tasks: ['开通 Northlight 和工作邮箱', '在晨会上认识团队', '完成产品入职培训', '挑选第一个任务'],
+    who: '谁负责什么',
+    table: [['领域', '负责人'], ['语音与视频', 'Ben'], ['设计', 'Olivia'], ['发布', 'Emma']],
+  },
 };
 
 /** Safe-area insets of the phone shots: just enough to clear the landing's rounded device edge (landing 14.10 — no empty notch / home-indicator bands). */
@@ -494,6 +548,128 @@ const scenes: Record<string, Scene> = {
       await page.mouse.move(0, 599);
       await page.waitForTimeout(600);
       await shoot(ctx, 'disk');
+    },
+  },
+
+  // «Вики» (ADR-0096): the page tree with expanded branches and an open page — cover, icon, a checklist,
+  // a table — with two collaborators' carets (their awareness frames over the mock's sync socket).
+  wiki: {
+    async run(ctx) {
+      const { page, mock, c, short } = ctx;
+      const k = WIKI[short];
+      const ws = IDS.workspaces.main;
+      const w = mock.wiki;
+      // The fixture's pages are replaced by the landing's.
+      const old = [...w.pages.values()].find((p) => p.cover);
+      w.pages.clear();
+      w.docs.clear();
+      w.links.clear();
+      w.perms.clear();
+      w.versions.clear();
+      const stamp = (iso: string) => timestampFromMs(Date.parse(iso));
+      const cover = old?.cover;
+      if (cover) {
+        const png = await render(
+          ctx.browser,
+          `<div style="width:1920px;height:480px;position:relative;overflow:hidden;background:linear-gradient(120deg,#1d2a6b 0%,#4b3fd1 48%,#c26be0 100%)">
+             <div style="position:absolute;left:-120px;top:-200px;width:620px;height:620px;border-radius:50%;background:rgba(255,255,255,.12)"></div>
+             <div style="position:absolute;left:520px;top:210px;width:900px;height:900px;border-radius:50%;background:rgba(10,14,60,.35)"></div>
+             <div style="position:absolute;right:140px;top:40px;width:340px;height:340px;border-radius:50%;background:rgba(255,196,120,.85)"></div>
+           </div>`,
+          1920,
+          480,
+        );
+        const rec = mock.state.files.get(cover.id);
+        if (rec) {
+          rec.bytes = png;
+          rec.thumbnail = { bytes: png, mime: 'image/png' };
+        }
+        cover.size = BigInt(png.length);
+        cover.width = 1920;
+        cover.height = 480;
+      }
+      const intro = k.intro.split(/(?<=[.。])\s*/)[0] ?? k.intro;
+      const md = [
+        intro,
+        `## ${k.week}`,
+        `- [x] ${k.tasks[0]}`,
+        `- [x] ${k.tasks[1]}`,
+        `- [ ] ${k.tasks[2]}`,
+        `| ${k.table[0][0]} | ${k.table[0][1]} |\n| --- | --- |\n${k.table
+          .slice(1, 3)
+          .map((r) => `| ${r[0]} | ${r[1]} |`)
+          .join('\n')}`,
+      ].join('\n\n');
+      const base = { workspaceId: ws, ownerId: U.anna } as const;
+      const handbook = w.put({ ...base, title: k.title, icon: '📘', ...(cover ? { cover } : {}), createdAt: stamp('2026-01-05T09:00:00Z'), updatedAt: stamp('2026-01-14T16:20:00Z'), updatedBy: U.vera, preview: intro.slice(0, 80) }, md);
+      const onboarding = w.put({ ...base, parentId: handbook.id, title: k.tree.onboarding, icon: '🚀' }, k.tree.onboarding);
+      w.put({ ...base, parentId: onboarding.id, title: k.tree.day }, k.tree.day);
+      const processes = w.put({ ...base, parentId: handbook.id, title: k.tree.processes, icon: '⚙️', ownerId: U.boris }, k.tree.processes);
+      w.put({ ...base, parentId: processes.id, title: k.tree.releases }, k.tree.releases);
+      w.put({ ...base, parentId: processes.id, title: k.tree.review, ownerId: U.boris }, k.tree.review);
+      w.put({ ...base, parentId: handbook.id, title: k.tree.glossary, icon: '📖', ownerId: U.vera }, k.tree.glossary);
+      const meetings = w.put({ ...base, title: k.tree.meetings, icon: '🗓️', ownerId: U.boris }, k.tree.meetings);
+      w.put({ ...base, parentId: meetings.id, title: k.tree.retro, ownerId: U.boris }, k.tree.retro);
+      w.put({ ...base, title: k.tree.drafts, icon: '📝', restricted: true }, k.tree.drafts);
+      await setLocale(page, short);
+      await page.setViewportSize({ width: 1060, height: 780 });
+      await page.getByTestId('section-wiki').click();
+      const nodes = page.getByTestId('wiki-node');
+      await expect(nodes.first()).toContainText(k.tree.handbook);
+      const open = async (name: string, count: number) => {
+        await nodes.filter({ hasText: name }).first().getByTestId('wiki-node-toggle').click();
+        await expect(nodes).toHaveCount(count);
+      };
+      await open(k.tree.handbook, 6);
+      await open(k.tree.onboarding, 7);
+      await open(k.tree.processes, 9);
+      await open(k.tree.meetings, 10);
+      await nodes.filter({ hasText: k.tree.handbook }).first().click();
+      await expect(page.getByTestId('wiki-title')).toHaveValue(k.title);
+      await expect(page.locator('.wiki-prose')).toContainText(k.week);
+      await page.waitForTimeout(800);
+      // Two collaborators join the page with carets in the intro and in a checklist item.
+      const origin = mock.url;
+      const peers: WebSocket[] = [];
+      const join = async (user: 'boris' | 'vera', where: 'intro' | 'task', offset: number) => {
+        const res = await fetch(`${origin}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${user}@calaba.test`, password: PASSWORD }) });
+        const token = ((await res.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+        const sock = new WebSocket(`${origin.replace(/^http/, 'ws')}/api/wiki/pages/${handbook.id}/sync`);
+        peers.push(sock);
+        const doc = new Y.Doc();
+        const ready = new Promise<void>((resolveReady) => {
+          sock.on('message', (data: Buffer) => {
+            const f = decodeFrame(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+            if (!f) return;
+            if (f.type === FRAME_SNAPSHOT) {
+              Y.applyUpdate(doc, f.state);
+              resolveReady();
+            } else if (f.type === FRAME_UPDATE) Y.applyUpdate(doc, f.update);
+          });
+        });
+        await new Promise<void>((r) => sock.once('open', () => r()));
+        sock.send(token);
+        await ready;
+        const frag = doc.getXmlFragment('default');
+        const texts = (el: Y.XmlFragment | Y.XmlElement | Y.XmlText): Y.XmlText[] => (el instanceof Y.XmlText ? [el] : (el.toArray() as Array<Y.XmlElement | Y.XmlText>).flatMap(texts));
+        const all = frag.toArray() as Y.XmlElement[];
+        const target = where === 'intro' ? texts(all[0] as Y.XmlElement)[0] : texts(all.filter((e) => e.nodeName.toLowerCase() === 'tasklist')[2] as Y.XmlElement)[0];
+        if (!target) throw new Error('no caret target ' + where + ' ' + all.map((e) => e.nodeName + ':' + (e.toArray?.().length ?? '-')).join(','));
+        const pos = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(target, Math.min(offset, target.length)));
+        const aw = new Awareness(doc);
+        aw.setLocalState({ user: { id: U[user], name: c.people[user].name.split(' ')[0], color: '#8e8e93' }, cursor: { anchor: pos, head: pos } });
+        sock.send(encodeAwareness(encodeAwarenessUpdate(aw, [aw.clientID])));
+      };
+      try {
+        await join('boris', 'intro', 96);
+        await join('vera', 'task', 14);
+        await expect(page.locator('.wiki-caret')).toHaveCount(2, { timeout: 10_000 });
+        await page.mouse.move(0, 779);
+        await page.waitForTimeout(500);
+        await shoot(ctx, 'wiki');
+      } finally {
+        for (const p of peers) p.close();
+      }
     },
   },
 

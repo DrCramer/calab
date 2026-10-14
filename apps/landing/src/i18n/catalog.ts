@@ -5,7 +5,7 @@ import type { Locale } from './locales';
  * screenshot and one or two sentences — plus the «Уведомления» section and the «скоро iOS / Android»
  * block. Screenshots: lib/screens.ts (the app and its team in the page's language).
  */
-export type CatalogKey = 'voice' | 'gallery' | 'chat' | 'boards' | 'calendar' | 'search' | 'mail' | 'notes' | 'disk' | 'phone' | 'notify' | 'apps' | 'sip';
+export type CatalogKey = 'voice' | 'gallery' | 'chat' | 'boards' | 'calendar' | 'search' | 'mail' | 'wiki' | 'disk' | 'phone' | 'notify' | 'apps' | 'sip';
 export type CatalogCard = { key: CatalogKey; title: string; text: string; alt: string };
 type Channel = { title: string; points: string[] };
 
@@ -54,7 +54,7 @@ const catalogs: Record<Locale, Catalog> = {
       { key: 'calendar', title: 'Календарь и подбор времени', text: 'Встречи со ссылкой на комнату и приглашением .ics, подбор общего окна по занятости коллег, синхронизация CalDAV.', alt: 'Подбор времени для четырёх человек: колонки занятости и выбранный слот' },
       { key: 'search', title: 'Поиск по всему', text: '⌘K находит сообщения, задачи, комментарии, встречи, файлы, заметки и расшифровки записей встреч — с подсветкой и опечатками.', alt: 'Окно поиска: по запросу «релиз» найдены заметки, комната, сообщения, задачи и комментарии' },
       { key: 'mail', title: 'Почта прямо в Calab', text: 'Подключите Gmail, Яндекс, Mail.ru, iCloud или рабочий ящик по IMAP — настройки подберутся сами. Читайте, отвечайте и отправляйте письмо в чат вместе с файлом.', alt: 'Раздел «Почта»: список писем «Все входящие» и открытое письмо с двумя вложениями' },
-      { key: 'notes', title: 'Заметки и личные сообщения', text: 'До 20 личных полок для ссылок, идей и пересланных сообщений. Личные чаты и звонки один на один — там же.', alt: 'Заметки: полки и открытая полка с заметками и пересланным сообщением' },
+      { key: 'wiki', title: 'Вики', text: 'Страницы и подстраницы деревом, редактирование вместе в реальном времени, версии, доступ по страницам и публикация по ссылке.', alt: 'Вики: дерево страниц и открытая страница с обложкой, чек-листом, таблицей и курсорами коллег' },
       { key: 'disk', title: 'Диск команды', text: 'Папки и файлы с превью, доступ по папкам, публичные ссылки и корзина. Индикатор показывает, сколько места осталось.', alt: '«Диск» плитками: папки (одна закрытая), файлы с превью и индикатор места' },
       { key: 'phone', title: 'С телефона', text: 'Веб-версия на телефоне уже работает: комнаты, чат, голос, доски и календарь. Приложения для iPhone и Android — скоро.', alt: 'Calab на телефоне' },
       { key: 'notify', title: 'Уведомления под контролем', text: 'Уровень для каждого пространства и комнаты, «Не беспокоить», триггеры задач по отдельности и пересылка своему боту — например, в Telegram.', alt: 'Настройки уведомлений о задачах: переключатели по событиям и «Передавать боту»' },
@@ -101,7 +101,7 @@ const catalogs: Record<Locale, Catalog> = {
       { key: 'calendar', title: 'Calendar and find a time', text: 'Meetings with a room link and an .ics invitation, a shared free slot from colleagues’ busy times, CalDAV sync.', alt: 'Finding a time for four people: busy columns and the picked slot' },
       { key: 'search', title: 'Search everything', text: '⌘K finds messages, tasks, comments, meetings, files, notes and meeting transcripts, with highlights and typo tolerance.', alt: 'The search window: notes, a room, messages, tasks and comments found for “release”' },
       { key: 'mail', title: 'Email right inside Calab', text: 'Connect Gmail, iCloud, Yandex, Mail.ru or any IMAP work mailbox — the settings are found for you. Read, reply and send a letter to a chat with its file.', alt: 'The Mail section: the All inboxes list and an open letter with two attachments' },
-      { key: 'notes', title: 'Notes and direct messages', text: 'Up to 20 private shelves for links, ideas and forwarded messages. Direct chats and one-to-one calls sit right there.', alt: 'Notes: the shelves and an open shelf with notes and a forwarded message' },
+      { key: 'wiki', title: 'Wiki', text: 'Pages and subpages in a tree, real-time editing together, versions, per-page access and publishing by link.', alt: 'Wiki: the page tree and an open page with a cover, a checklist, a table and teammates’ cursors' },
       { key: 'disk', title: 'Team disk', text: 'Folders and files with previews, per-folder access, public links and a trash. A meter shows how much space is left.', alt: 'Disk as tiles: folders (one restricted), files with previews and the storage meter' },
       { key: 'phone', title: 'On your phone', text: 'The web app already works on phones: rooms, chat, voice, boards and calendar. iPhone and Android apps are coming soon.', alt: 'Calab on a phone' },
       { key: 'notify', title: 'Notifications under control', text: 'A level for every workspace and room, Do not disturb, task triggers one by one and relaying to your own bot — to Telegram, for example.', alt: 'Task notification settings: a switch per event and “Relay to a bot”' },
@@ -148,7 +148,7 @@ const catalogs: Record<Locale, Catalog> = {
       { key: 'calendar', title: 'Calendario y buscar hora', text: 'Reuniones con enlace a la sala e invitación .ics, un hueco común según la disponibilidad de tus colegas, sincronización CalDAV.', alt: 'Buscar hora para cuatro personas: columnas de ocupación y la franja elegida' },
       { key: 'search', title: 'Busca en todo', text: '⌘K encuentra mensajes, tareas, comentarios, reuniones, archivos, notas y transcripciones de reuniones, con resaltado y tolerancia a erratas.', alt: 'La ventana de búsqueda: notas, una sala, mensajes, tareas y comentarios para «versión»' },
       { key: 'mail', title: 'Correo dentro de Calab', text: 'Conecta Gmail, iCloud, Yandex, Mail.ru o cualquier buzón IMAP del trabajo: la configuración se detecta sola. Lee, responde y envía un correo al chat con su archivo.', alt: 'La sección Correo: la lista «Todas las bandejas» y un correo abierto con dos adjuntos' },
-      { key: 'notes', title: 'Notas y mensajes directos', text: 'Hasta 20 estantes privados para enlaces, ideas y mensajes reenviados. Los chats directos y las llamadas uno a uno, ahí mismo.', alt: 'Notas: los estantes y un estante abierto con notas y un mensaje reenviado' },
+      { key: 'wiki', title: 'Wiki', text: 'Páginas y subpáginas en árbol, edición conjunta en tiempo real, versiones, acceso por página y publicación por enlace.', alt: 'Wiki: el árbol de páginas y una página abierta con portada, lista de tareas, tabla y los cursores de los compañeros' },
       { key: 'disk', title: 'Disco del equipo', text: 'Carpetas y archivos con vista previa, acceso por carpeta, enlaces públicos y papelera. Un indicador muestra cuánto espacio queda.', alt: 'Disco en mosaico: carpetas (una restringida), archivos con vista previa y el indicador de espacio' },
       { key: 'phone', title: 'Desde el móvil', text: 'La versión web ya funciona en el móvil: salas, chat, voz, tableros y calendario. Las apps para iPhone y Android llegan pronto.', alt: 'Calab en un móvil' },
       { key: 'notify', title: 'Notificaciones bajo control', text: 'Un nivel para cada espacio y sala, «No molestar», avisos de tareas uno a uno y reenvío a tu propio bot, por ejemplo a Telegram.', alt: 'Ajustes de notificaciones de tareas: un interruptor por evento y «Reenviar a un bot»' },
@@ -195,7 +195,7 @@ const catalogs: Record<Locale, Catalog> = {
       { key: 'calendar', title: '日历与查找时间', text: '会议附房间链接和 .ics 邀请，根据同事的忙闲找到共同空档，支持 CalDAV 同步。', alt: '为四个人查找时间：忙闲列与选中的时段' },
       { key: 'search', title: '全局搜索', text: '⌘K 可搜索消息、任务、评论、会议、文件、笔记和会议转写，支持高亮和容错。', alt: '搜索窗口：按“发布”找到的笔记、房间、消息、任务和评论' },
       { key: 'mail', title: '在 Calab 里收发邮件', text: '连接 Gmail、iCloud、Yandex、Mail.ru 或任意 IMAP 工作邮箱，设置会自动识别。阅读、回复，还能把邮件连同附件发到聊天。', alt: '“邮件”分区：“全部收件箱”列表和带两个附件的已打开邮件' },
-      { key: 'notes', title: '笔记与私信', text: '最多 20 个私人笔记架，存放链接、想法和转发的消息。私聊和一对一通话也在这里。', alt: '笔记：笔记架以及打开的一个笔记架，含笔记和转发的消息' },
+      { key: 'wiki', title: '维基', text: '页面与子页面树状排列，多人实时共同编辑，版本历史，按页面设置权限，并可通过链接发布。', alt: '维基：页面树和打开的页面，含封面、清单、表格以及同事的光标' },
       { key: 'disk', title: '团队网盘', text: '带预览的文件夹和文件、按文件夹的权限、公开链接和回收站。用量条显示还剩多少空间。', alt: '平铺视图的网盘：文件夹（其中一个受限）、带预览的文件和空间用量条' },
       { key: 'phone', title: '在手机上', text: '手机网页版已经可用：房间、聊天、语音、看板和日历。iPhone 和 Android 应用即将推出。', alt: '手机上的 Calab' },
       { key: 'notify', title: '通知尽在掌控', text: '为每个空间和房间设置通知级别、“请勿打扰”、逐项开关任务通知，还能转发给你自己的机器人，例如 Telegram。', alt: '任务通知设置：按事件的开关和“转发给机器人”' },

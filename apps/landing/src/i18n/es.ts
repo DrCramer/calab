@@ -121,12 +121,12 @@ const es: Dict = {
       points: ['Este espacio o todos, incluidos los mensajes directos', '«Todos los resultados» por secciones, con filtros y orden', 'Una tarea se encuentra por su clave, como APP-12'],
       alt: 'La ventana de búsqueda ⌘K: una nota, una sala, mensajes, tareas y un comentario encontrados',
     },
-    notes: {
-      eyebrow: 'Notas',
-      title: 'Estantes privados para lo importante',
-      text: 'Hasta 20 estantes con tus nombres y emoji, como «Mensajes guardados» de Telegram, pero varios. Solo tú ves cada estante.',
-      points: ['Arrastra un mensaje a un estante o reenvíalo', 'Suelta archivos desde Finder o el Explorador', 'Mensajes fijados y búsqueda, como en cualquier chat'],
-      alt: 'Notas: los estantes «Ideas», «Enlaces» y «Para la versión» y un estante abierto con notas y un mensaje reenviado',
+    wiki: {
+      eyebrow: 'Wiki',
+      title: 'Una base de conocimiento que se escribe en equipo',
+      text: 'Páginas y subpáginas en árbol, con portada, listas de tareas, tablas y código. Edita junto a tus compañeros en tiempo real: ves sus cursores al instante y puedes recuperar versiones anteriores de la página.',
+      points: ['El acceso se ajusta por página y sus subpáginas', 'Historial de versiones con restauración', 'Publica una página con un enlace: se lee sin iniciar sesión', 'Papelera con restauración'],
+      alt: 'Wiki: el árbol de páginas y la página abierta «Manual del equipo» con portada, lista de tareas y tabla, con los cursores de Ben y Olivia',
     },
     disk: {
       eyebrow: 'Disco',

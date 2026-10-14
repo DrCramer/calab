@@ -13,7 +13,7 @@ import {
   LayoutGrid,
   Lock,
   MessagesSquare,
-  NotebookPen,
+  BookOpenText,
   Server,
   ShieldCheck,
   Globe,
@@ -132,7 +132,7 @@ const figure = (name: ScreenName, locale: Locale, alt: string, caption: string, 
 
 /**
  * Landing v3 feature sections (docs/09 #139), in the order of the brief: voice and video, chat,
- * calendar, boards, mail, search, notes, disk, guests, web apps, bots, self-hosted. Every screenshot is the app in the page's
+ * calendar, boards, mail, search, wiki, disk, guests, web apps, bots, self-hosted. Every screenshot is the app in the page's
  * language with that language's team; nothing here needs JS.
  */
 export function Features({ t, locale }: { t: T; locale: Locale }) {
@@ -271,14 +271,14 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
-        id="notes"
+        id="wiki"
         text={
           <>
-            <Intro id="notes-title" icon={NotebookPen} {...t.notes} />
-            <Points items={t.notes.points} className="mt-7" />
+            <Intro id="wiki-title" icon={BookOpenText} {...t.wiki} />
+            <Points items={t.wiki.points} className="mt-7" />
           </>
         }
-        shot={shot('notes', locale, t.notes.alt)}
+        shot={shot('wiki', locale, t.wiki.alt)}
       />
 
       <Split

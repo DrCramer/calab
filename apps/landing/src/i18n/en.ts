@@ -121,12 +121,12 @@ const en: Dict = {
       points: ['This workspace or all of them, direct messages included', '“All results” by section, with filters and sorting', 'A task is found by its key, like APP-12'],
       alt: 'The ⌘K search window: a note, a room, messages, tasks and a task comment found for the query',
     },
-    notes: {
-      eyebrow: 'Notes',
-      title: 'Private shelves for everything important',
-      text: 'Up to 20 shelves with your own names and emoji — like Saved Messages in Telegram, only several. Only you can see a shelf.',
-      points: ['Drag a message onto a shelf or forward it', 'Drop files from Finder or Explorer straight onto a shelf', 'Pins and search, as in any chat'],
-      alt: 'Notes: the “Ideas”, “Links” and “For the release” shelves and an open shelf with notes and a forwarded message',
+    wiki: {
+      eyebrow: 'Wiki',
+      title: 'A knowledge base written together',
+      text: 'Pages and subpages in a tree, with covers, checklists, tables and code. Edit together in real time — you see teammates’ cursors right away, and earlier versions of a page can be restored.',
+      points: ['Access is set per page and its subpages', 'Version history with a restore to any version', 'Publish a page by link — readable without signing in', 'A trash with restore'],
+      alt: 'Wiki: the page tree and the open “Team handbook” page with a cover, a checklist and a table, with Ben’s and Olivia’s cursors',
     },
     disk: {
       eyebrow: 'Disk',
