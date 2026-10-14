@@ -53,6 +53,7 @@ WHERE u.id = ANY(sqlc.arg('ids')::uuid[]) AND (m.user_id IS NOT NULL OR f.user_i
 -- name: ListFormerMembers :many
 -- GET …/former-members (ADR-0097 §3): newest first, keyset by (left_at, user_id). Former guests
 -- (guest role or guest account) only with include_guests. q: an ILIKE pattern ('' = all).
+-- Bots are never former members.
 -- open_tasks: open tasks of live boards of the workspace where the user is an assignee.
 SELECT sqlc.embed(f), u.display_name AS live_name, u.avatar_file_id AS live_avatar, u.username,
        u.is_guest, u.is_bot, u.disabled_at,
@@ -62,7 +63,7 @@ SELECT sqlc.embed(f), u.display_name AS live_name, u.avatar_file_id AS live_avat
         JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL AND b.workspace_id = f.workspace_id
         WHERE a.user_id = f.user_id)::integer AS open_tasks
 FROM workspace_former_members f JOIN users u ON u.id = f.user_id
-WHERE f.workspace_id = sqlc.arg('workspace_id')::uuid
+WHERE f.workspace_id = sqlc.arg('workspace_id')::uuid AND NOT u.is_bot
   AND (sqlc.arg('include_guests')::boolean OR NOT (f.role = 'guest' OR u.is_guest))
   AND (sqlc.arg('q')::text = '' OR u.display_name ILIKE sqlc.arg('q')::text OR f.display_name ILIKE sqlc.arg('q')::text
        OR coalesce(u.username, '') ILIKE sqlc.arg('q')::text OR f.nickname ILIKE sqlc.arg('q')::text)

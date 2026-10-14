@@ -57,13 +57,37 @@ func FormerInfo(f sqlc.WorkspaceFormerMember) *v1.FormerMemberInfo {
 // workspace. removed = false: not a member (nothing changed). The caller invalidates the
 // identity (auth.InvalidateIdentity, with its own reason) and publishes PublishRemoved after
 // the commit. by: the manager who removed them; nil = themself or the server.
+//
+// A bot is not a former member: its membership goes without a row, and f.Reason is empty
+// (PublishRemoved then leaves WORKSPACE_MEMBER_REMOVE.former unset).
 func RemoveMembership(ctx context.Context, q *sqlc.Queries, pl *plans.Service, wsID, userID uuid.UUID, reason string, by *uuid.UUID) (f sqlc.WorkspaceFormerMember, removed bool, err error) {
-	f, err = q.RemoveMemberAsFormer(ctx, sqlc.RemoveMemberAsFormerParams{WorkspaceID: wsID, UserID: userID, Reason: reason, RemovedBy: by})
+	u, err := q.GetUser(ctx, userID)
 	if db.IsNotFound(err) {
 		return f, false, nil
 	}
 	if err != nil {
 		return f, false, err
+	}
+	if u.IsBot {
+		m, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
+		if db.IsNotFound(err) {
+			return f, false, nil
+		}
+		if err != nil {
+			return f, false, err
+		}
+		if n, err := q.RemoveMember(ctx, sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: userID}); err != nil || n == 0 {
+			return f, false, err
+		}
+		f = sqlc.WorkspaceFormerMember{WorkspaceID: wsID, UserID: userID, Role: m.Role}
+	} else {
+		f, err = q.RemoveMemberAsFormer(ctx, sqlc.RemoveMemberAsFormerParams{WorkspaceID: wsID, UserID: userID, Reason: reason, RemovedBy: by})
+		if db.IsNotFound(err) {
+			return f, false, nil
+		}
+		if err != nil {
+			return f, false, err
+		}
 	}
 	if err := pl.SeatRemoved(ctx, q, wsID, userID, f.Role); err != nil {
 		return f, false, err
@@ -78,9 +102,11 @@ func RemoveMembership(ctx context.Context, q *sqlc.Queries, pl *plans.Service, w
 // workspace, WORKSPACE_DELETE to the user (LiveKit participants are disconnected by
 // rtc.SyncPublisher).
 func PublishRemoved(ctx context.Context, ev events.Publisher, f sqlc.WorkspaceFormerMember) {
-	ev.Workspace(ctx, f.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
-		WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: f.WorkspaceID.String(), UserId: f.UserID.String(), Former: FormerInfo(f)},
-	}})
+	rm := &v1.WorkspaceMemberRemove{WorkspaceId: f.WorkspaceID.String(), UserId: f.UserID.String()}
+	if f.Reason != "" { // a bot leaves no former-member row
+		rm.Former = FormerInfo(f)
+	}
+	ev.Workspace(ctx, f.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{WorkspaceMemberRemove: rm}})
 	ev.User(ctx, f.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{
 		WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: f.WorkspaceID.String()},
 	}})

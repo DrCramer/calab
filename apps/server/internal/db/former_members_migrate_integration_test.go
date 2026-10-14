@@ -16,7 +16,7 @@ import (
 
 // TestFormerMembersBackfill (ADR-0097 §6, ADR-0098 §2, migration 00089) on a populated
 // database: message authors and task actors / assignees without a membership become former
-// members ('removed', left_at = their last trace in that workspace); members, DM-only authors
+// members ('removed', left_at = their last trace in that workspace); members, bots, DM-only authors
 // and other workspaces' people do not; guest accounts get at most 48 h left; guest memberships
 // start from the user's last session activity; down and up again works.
 func TestFormerMembersBackfill(t *testing.T) {
@@ -54,6 +54,8 @@ func TestFormerMembersBackfill(t *testing.T) {
 	for _, id := range []uuid.UUID{owner, author, actor, assignee, dmOnly, regGuest} {
 		must(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, $3)`, id, "u-"+id.String()[:8]+"@example.com", "N"+id.String()[:4])
 	}
+	bot := uuid.New() // a removed bot that posted: not a former member
+	must(`INSERT INTO users (id, display_name, is_bot) VALUES ($1, 'Bot', true)`, bot)
 	guestAcc := uuid.New()
 	must(`INSERT INTO users (id, display_name, is_guest, guest_expires_at) VALUES ($1, 'Guest', true, now() + interval '7 days')`, guestAcc)
 	ws, other := uuid.New(), uuid.New()
@@ -83,6 +85,7 @@ func TestFormerMembersBackfill(t *testing.T) {
 	msg(chat, author, t0)
 	msg(chat, author, t0.Add(time.Hour)) // the last trace
 	msg(chat, guestAcc, t0)
+	msg(chat, bot, t0)
 	msg(otherChat, actor, t0) // another workspace: a former member there, not here
 	msg(dm, dmOnly, t0)
 
@@ -124,7 +127,7 @@ func TestFormerMembersBackfill(t *testing.T) {
 		return out
 	}
 	got := read(ws)
-	if len(got) != 4 {
+	if _, ok := got[bot]; ok || len(got) != 4 {
 		t.Fatalf("former members: %v", got)
 	}
 	for user, want := range map[uuid.UUID]time.Time{author: t0.Add(time.Hour), actor: t0.Add(2 * time.Hour), assignee: t0.Add(3 * time.Hour), guestAcc: t0} {

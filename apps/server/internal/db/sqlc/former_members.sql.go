@@ -48,7 +48,7 @@ SELECT f.workspace_id, f.user_id, f.display_name, f.avatar_file_id, f.nickname, 
         JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL AND b.workspace_id = f.workspace_id
         WHERE a.user_id = f.user_id)::integer AS open_tasks
 FROM workspace_former_members f JOIN users u ON u.id = f.user_id
-WHERE f.workspace_id = $1::uuid
+WHERE f.workspace_id = $1::uuid AND NOT u.is_bot
   AND ($2::boolean OR NOT (f.role = 'guest' OR u.is_guest))
   AND ($3::text = '' OR u.display_name ILIKE $3::text OR f.display_name ILIKE $3::text
        OR coalesce(u.username, '') ILIKE $3::text OR f.nickname ILIKE $3::text)
@@ -80,6 +80,7 @@ type ListFormerMembersRow struct {
 
 // GET …/former-members (ADR-0097 §3): newest first, keyset by (left_at, user_id). Former guests
 // (guest role or guest account) only with include_guests. q: an ILIKE pattern (” = all).
+// Bots are never former members.
 // open_tasks: open tasks of live boards of the workspace where the user is an assignee.
 func (q *Queries) ListFormerMembers(ctx context.Context, arg ListFormerMembersParams) ([]ListFormerMembersRow, error) {
 	rows, err := q.db.Query(ctx, listFormerMembers,

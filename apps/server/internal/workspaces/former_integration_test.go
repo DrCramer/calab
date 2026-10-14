@@ -188,6 +188,23 @@ func TestFormerMemberRecordedOnEveryRemoval(t *testing.T) {
 	if row, ok = f.former(ws, kicked); !ok || row.Reason != ReasonLeft || row.RemovedBy != nil {
 		t.Fatalf("second leave row: %+v", row)
 	}
+
+	// A removed bot is not a former member: no row, no `former` in the event.
+	bot := f.user("Bot")
+	f.exec(`UPDATE users SET is_bot = true WHERE id = $1`, bot)
+	f.member(ws, bot, perm.RoleMember)
+	if w := f.do("DELETE", "/api/workspaces/"+ws.String()+"/members/"+bot.String(), owner, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("kick bot: %d %s", w.Code, w.Body)
+	}
+	if _, ok := f.former(ws, bot); ok {
+		t.Fatal("a removed bot got a former-member row")
+	}
+	if ev := f.ev.last(t); ev.GetUserId() != bot.String() || ev.GetFormer() != nil {
+		t.Fatalf("bot event: %v", ev)
+	}
+	if _, err := f.d.Q.GetMember(context.Background(), sqlc.GetMemberParams{WorkspaceID: ws, UserID: bot}); err == nil {
+		t.Fatal("the bot is still a member")
+	}
 }
 
 // GET …/users?ids= returns members and former members of this workspace only; strangers and

@@ -66,7 +66,7 @@ FROM (
     SELECT b.workspace_id, ta.user_id, ta.assigned_at
     FROM task_assignees ta JOIN tasks t ON t.id = ta.task_id JOIN boards b ON b.id = t.board_id
 ) t
-JOIN users u ON u.id = t.user_id
+JOIN users u ON u.id = t.user_id AND NOT u.is_bot -- a removed bot is not a former member
 WHERE NOT EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = t.user_id)
 GROUP BY t.workspace_id, t.user_id, u.display_name, u.avatar_file_id, u.is_guest
 ON CONFLICT DO NOTHING;
