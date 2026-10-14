@@ -57,17 +57,24 @@ type vector struct {
 		Bits Bits `json:"bits"`
 	} `json:"planInactive"`
 	// ADR-0094: a disk item vector (ComputeDiskItem over the chain, root's child first).
-	Disk *struct {
-		Guest bool `json:"guest"`
-		Bot   bool `json:"bot"`
-		Chain []struct {
-			Restricted    bool                `json:"restricted"`
-			Owner         bool                `json:"owner"`
-			RoleOverrides map[string]Override `json:"roleOverrides"`
-			UserOverride  *Override           `json:"userOverride"`
-		} `json:"chain"`
-	} `json:"disk"`
-	Expected Bits `json:"expected"`
+	Disk *treeVector `json:"disk"`
+	// ADR-0096: a wiki page vector (ComputeWikiPage over the chain, the top-level page first;
+	// structure: the expected WikiStructureAllowed for the owner flag of the last level).
+	Wiki     *treeVector `json:"wiki"`
+	Expected Bits        `json:"expected"`
+}
+
+// treeVector is a chain of the shared tree rule (ComputeTree).
+type treeVector struct {
+	Guest bool `json:"guest"`
+	Bot   bool `json:"bot"`
+	Chain []struct {
+		Restricted    bool                `json:"restricted"`
+		Owner         bool                `json:"owner"`
+		RoleOverrides map[string]Override `json:"roleOverrides"`
+		UserOverride  *Override           `json:"userOverride"`
+	} `json:"chain"`
+	Structure *bool `json:"structure"`
 }
 
 func loadVectors(t *testing.T) []vector {
@@ -84,12 +91,15 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n, boards, taskRooms, billing, inactive, disk := 0, 0, 0, 0, 0, 0
+	n, boards, taskRooms, billing, inactive, disk, wiki := 0, 0, 0, 0, 0, 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
 		case v.Disk != nil:
 			disk++
-			testDiskVector(t, v)
+			testTreeVector(t, v, v.Disk, false)
+		case v.Wiki != nil:
+			wiki++
+			testTreeVector(t, v, v.Wiki, true)
 		case v.PlanInactive != nil:
 			inactive++
 			if got := PlanInactive(v.PlanInactive.Bits); got != v.Expected {
@@ -181,15 +191,16 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 || disk < 25 {
-		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors, %d disk vectors",
-			n, boards, taskRooms, billing, inactive, disk)
+	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 || disk < 25 || wiki < 20 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors, %d disk vectors, %d wiki vectors",
+			n, boards, taskRooms, billing, inactive, disk, wiki)
 	}
 }
 
-// testDiskVector checks a disk vector through ComputeDiskItem (levels built from the sorted
-// roles) and ComputeDiskItemIn (the stored form: override lists, owner ids).
-func testDiskVector(t *testing.T, v vector) {
+// testTreeVector checks a disk or wiki vector through the section's wrapper (levels built from
+// the sorted roles), its stored form (override lists, owner ids) and the generic ComputeTree;
+// a wiki vector also checks WikiStructureAllowed.
+func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	t.Helper()
 	roles := make([]RoleBits, len(v.Roles))
 	for i, r := range v.Roles {
@@ -197,15 +208,15 @@ func testDiskVector(t *testing.T, v vector) {
 	}
 	const uid = "00000000-0000-0000-0000-0000000000a1"
 	role := RoleMember
-	if v.Disk.Guest {
+	if tv.Guest {
 		role = RoleGuest
 	}
 	m := NewMember(uid, role, roles)
-	levels := make([]DiskLevel, len(v.Disk.Chain))
-	nodes := make([]DiskNode, len(v.Disk.Chain))
-	for i, c := range v.Disk.Chain {
-		l := DiskLevel{Restricted: c.Restricted, Owner: c.Owner, UserOv: c.UserOverride}
-		n := DiskNode{Restricted: c.Restricted, OwnerID: "00000000-0000-0000-0000-0000000000b2"}
+	levels := make([]TreeLevel, len(tv.Chain))
+	nodes := make([]TreeNode, len(tv.Chain))
+	for i, c := range tv.Chain {
+		l := TreeLevel{Restricted: c.Restricted, Owner: c.Owner, UserOv: c.UserOverride}
+		n := TreeNode{Restricted: c.Restricted, OwnerID: "00000000-0000-0000-0000-0000000000b2"}
 		if c.Owner {
 			n.OwnerID = uid
 		}
@@ -222,11 +233,32 @@ func testDiskVector(t *testing.T, v vector) {
 		}
 		levels[i], nodes[i] = l, n
 	}
-	if got := ComputeDiskItem(m.Raw(), v.Disk.Guest, v.Disk.Bot, levels); got != v.Expected {
-		t.Errorf("%s: ComputeDiskItem got %d want %d", v.Name, got, v.Expected)
+	tree, name := DiskTree, "ComputeDiskItem"
+	var got, gotIn Bits
+	if wiki {
+		tree, name = WikiTree, "ComputeWikiPage"
+		got, gotIn = ComputeWikiPage(m.Raw(), tv.Guest, tv.Bot, levels), ComputeWikiPageIn(m, tv.Bot, nodes)
+	} else {
+		got, gotIn = ComputeDiskItem(m.Raw(), tv.Guest, tv.Bot, levels), ComputeDiskItemIn(m, tv.Bot, nodes)
 	}
-	if got := ComputeDiskItemIn(m, v.Disk.Bot, nodes); got != v.Expected {
-		t.Errorf("%s: ComputeDiskItemIn got %d want %d", v.Name, got, v.Expected)
+	if got != v.Expected {
+		t.Errorf("%s: %s got %d want %d", v.Name, name, got, v.Expected)
+	}
+	if gotIn != v.Expected {
+		t.Errorf("%s: %sIn got %d want %d", v.Name, name, gotIn, v.Expected)
+	}
+	if g := ComputeTree(tree, TreeInput{Raw: m.Raw(), Guest: tv.Guest, Bot: tv.Bot, Chain: levels}); g != v.Expected {
+		t.Errorf("%s: ComputeTree got %d want %d", v.Name, g, v.Expected)
+	}
+	if wiki {
+		if tv.Structure == nil {
+			t.Errorf("%s: a wiki vector states structure", v.Name)
+			return
+		}
+		owner := len(tv.Chain) > 0 && tv.Chain[len(tv.Chain)-1].Owner
+		if g := WikiStructureAllowed(got, owner); g != *tv.Structure {
+			t.Errorf("%s: WikiStructureAllowed got %v want %v", v.Name, g, *tv.Structure)
+		}
 	}
 }
 
@@ -241,7 +273,7 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<32-1 || RoomOnly&RolesV2 != 0 || BoardOnly&RolesV2 != 0 || GuestMax&RolesV2 != 0 || RoleDefaults[RoleMember]&RolesV2 != 0 || RolesV2 != 0xFE000000 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
 	}
-	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<38-1 {
+	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<41-1 {
 		t.Fatal("billing bits stand apart: not in All, overrides, guest bounds or the defaults")
 	}
 	if All&Disk != 0 || GuestMax&Disk != 0 || RoleDefaults[RoleMember]&Disk != DiskView|DiskWrite || Disk != 7<<35 || Billing&Disk != 0 {
@@ -249,6 +281,15 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	}
 	if !ValidDiskOverride(DiskView, DiskWrite) || ValidDiskOverride(DiskManage, 0) || ValidDiskOverride(BillingView, 0) || ValidDiskOverride(0, ViewRoom) || ValidDiskOverride(DiskView, DiskView) {
 		t.Fatal("disk overrides carry DISK_VIEW and DISK_WRITE only")
+	}
+	if All&Wiki != 0 || GuestMax&Wiki != 0 || RoleDefaults[RoleMember]&Wiki != WikiView|WikiWrite || Wiki != 7<<38 || (Billing|Disk)&Wiki != 0 {
+		t.Fatal("wiki bits: outside All and the guest bounds, VIEW | WRITE in the member default")
+	}
+	if !ValidWikiOverride(WikiView, WikiWrite) || ValidWikiOverride(WikiManage, 0) || ValidWikiOverride(DiskView, 0) || ValidWikiOverride(0, ViewRoom) || ValidWikiOverride(WikiView, WikiView) || ValidDiskOverride(WikiView, 0) {
+		t.Fatal("wiki overrides carry WIKI_VIEW and WIKI_WRITE only")
+	}
+	if WikiOf(Administrator, false, false) != Wiki || WikiOf(WikiManage, false, false) != Wiki || WikiOf(Wiki, true, false) != 0 || WikiOf(Wiki, false, true) != 0 || WikiOf(RoleDefaults[RoleMember], false, false) != WikiOverride || WikiOf(Disk, false, false) != 0 {
+		t.Fatal("WikiOf")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {
 		t.Fatal("guest bounds")

@@ -5,6 +5,7 @@ import { WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, RoomPermissionOverrideSchema } from './gen/calaba/v1/room_pb.js';
 import { TaskApproverSchema, TaskAssigneeSchema } from './gen/calaba/v1/boards_pb.js';
 import { DiskPermissionEntrySchema } from './gen/calaba/v1/disk_pb.js';
+import { WikiPermissionEntrySchema } from './gen/calaba/v1/wiki_pb.js';
 import { TimestampSchema } from '@bufbuild/protobuf/wkt';
 import {
   ALL_PERMISSIONS,
@@ -29,6 +30,14 @@ import {
   diskItemPermissions,
   diskLevel,
   diskPermissions,
+  treeItemPermissions,
+  treeLevel,
+  WIKI_BITS,
+  WIKI_PERMISSIONS,
+  WIKI_OVERRIDE_PERMISSIONS,
+  wikiPagePermissions,
+  wikiPermissions,
+  wikiStructureAllowed,
   tempRoomScope,
   computeRoomPermissions,
   memberRoles,
@@ -62,17 +71,22 @@ interface Vector {
   // ADR-0086 amendment: a restricted-mode vector (planInactivePermissions over computed bits).
   planInactive?: { bits: number };
   // ADR-0094: a disk item vector (diskItemPermissions over the chain, root's child first).
-  disk?: {
-    guest?: boolean;
-    bot?: boolean;
-    chain: {
-      restricted?: boolean;
-      owner?: boolean;
-      roleOverrides?: Record<string, { allow: number; deny: number }>;
-      userOverride?: { allow: number; deny: number };
-    }[];
-  };
+  disk?: TreeVector;
+  // ADR-0096: a wiki page vector (wikiPagePermissions over the chain, the top-level page first;
+  // structure: wikiStructureAllowed for the owner flag of the last level).
+  wiki?: TreeVector & { structure: boolean };
   expected: number;
+}
+
+interface TreeVector {
+  guest?: boolean;
+  bot?: boolean;
+  chain: {
+    restricted?: boolean;
+    owner?: boolean;
+    roleOverrides?: Record<string, { allow: number; deny: number }>;
+    userOverride?: { allow: number; deny: number };
+  }[];
 }
 
 const roles = {
@@ -100,10 +114,13 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
-      if (v.disk) {
+      const tree = v.disk ?? v.wiki;
+      if (tree) {
+        const bits = v.disk ? DISK_BITS : WIKI_BITS;
+        const compute = v.disk ? diskItemPermissions : wikiPagePermissions;
         const roles = toRoles(v.roles ?? []);
-        const opts = { guest: v.disk.guest ?? false, bot: v.disk.bot ?? false };
-        const chain = v.disk.chain.map((c) => ({
+        const opts = { guest: tree.guest ?? false, bot: tree.bot ?? false };
+        const chain = tree.chain.map((c) => ({
           restricted: c.restricted,
           owner: c.owner,
           roleOverrides: Object.fromEntries(
@@ -111,14 +128,16 @@ describe('computePermissions (shared vectors)', () => {
           ),
           userOverride: toOv(c.userOverride),
         }));
-        expect(diskItemPermissions(roles, chain, opts)).toBe(BigInt(v.expected));
-        // The stored form: entries of DiskPermissionsResponse and the item's owner.
-        const stored = v.disk.chain.map((c) =>
-          diskLevel(
+        const got = compute(roles, chain, opts);
+        expect(got).toBe(BigInt(v.expected));
+        expect(treeItemPermissions(bits, roles, chain, opts)).toBe(BigInt(v.expected));
+        // The stored form: entries of Disk/WikiPermissionsResponse and the node's owner.
+        const stored = tree.chain.map((c) =>
+          (v.disk ? diskLevel : treeLevel)(
             { restricted: c.restricted ?? false, ownerId: c.owner ? 'u1' : 'u2' },
             [
               ...Object.entries(c.roleOverrides ?? {}).map(([id, o]) =>
-                create(DiskPermissionEntrySchema, {
+                create(v.disk ? DiskPermissionEntrySchema : WikiPermissionEntrySchema, {
                   targetType: PermissionTargetType.ROLE,
                   targetId: id,
                   allow: BigInt(o.allow),
@@ -127,7 +146,7 @@ describe('computePermissions (shared vectors)', () => {
               ),
               ...(c.userOverride
                 ? [
-                    create(DiskPermissionEntrySchema, {
+                    create(v.disk ? DiskPermissionEntrySchema : WikiPermissionEntrySchema, {
                       targetType: PermissionTargetType.USER,
                       targetId: 'u1',
                       allow: BigInt(c.userOverride.allow),
@@ -139,7 +158,11 @@ describe('computePermissions (shared vectors)', () => {
             'u1',
           ),
         );
-        expect(diskItemPermissions(roles, stored, opts)).toBe(BigInt(v.expected));
+        expect(compute(roles, stored, opts)).toBe(BigInt(v.expected));
+        if (v.wiki) {
+          const owner = v.wiki.chain.at(-1)?.owner ?? false;
+          expect(wikiStructureAllowed(got, owner)).toBe(v.wiki.structure);
+        }
         return;
       }
       if (v.planInactive) {
@@ -413,5 +436,35 @@ describe('disk bits (ADR-0094)', () => {
     expect(diskPermissions([{ permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }])).toBe(
       DISK_OVERRIDE_PERMISSIONS,
     );
+  });
+});
+
+describe('wiki bits (ADR-0096)', () => {
+  it('stand apart like the disk bits; VIEW | WRITE by default', () => {
+    expect(WIKI_PERMISSIONS).toBe(0x7n << 38n);
+    expect(ALL_PERMISSIONS & WIKI_PERMISSIONS).toBe(0n);
+    expect((BILLING_PERMISSIONS | DISK_PERMISSIONS) & WIKI_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & WIKI_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & WIKI_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & WIKI_PERMISSIONS).toBe(WIKI_OVERRIDE_PERMISSIONS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & WIKI_PERMISSIONS).toBe(0n);
+    expect(vectors.filter((v) => v.wiki).length).toBeGreaterThanOrEqual(20);
+  });
+  it('ADMINISTRATOR includes them, guests and bots never, disk bits give none', () => {
+    expect(wikiPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
+      WIKI_PERMISSIONS,
+    );
+    expect(wikiPermissions([{ permissions: WIKI_BITS.MANAGE }])).toBe(WIKI_PERMISSIONS);
+    expect(wikiPermissions([{ permissions: DISK_PERMISSIONS }])).toBe(0n);
+    expect(wikiPermissions([{ permissions: WIKI_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(wikiPermissions([{ permissions: WIKI_PERMISSIONS, builtin: WorkspaceRole.MEMBER }], { bot: true })).toBe(0n);
+  });
+  it('the structure needs the owner or MANAGE', () => {
+    const vw = WIKI_BITS.VIEW | WIKI_BITS.WRITE;
+    expect(wikiStructureAllowed(vw, false)).toBe(false);
+    expect(wikiStructureAllowed(vw, true)).toBe(true);
+    expect(wikiStructureAllowed(WIKI_PERMISSIONS, false)).toBe(true);
+    expect(wikiStructureAllowed(0n, true)).toBe(false);
+    expect(wikiStructureAllowed(DISK_PERMISSIONS, true)).toBe(false);
   });
 });
