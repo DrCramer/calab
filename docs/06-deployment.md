@@ -215,6 +215,20 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 
 **Секреты в GitHub:** `infra/ci/set-secrets.sh [--dry-run] [.env]` — читает `.env` без `source` (никакого выполнения), берёт только ключи из таблицы (прочее, напр. `CFTOKEN`, игнорирует), ставит через `gh secret set --repo itrcz/calab`; авторизация — `GITHUB_TOKEN` из `.env`/окружения (как `GH_TOKEN`) или `gh auth login`. Для base64-сертификатов сообщает `valid`/`INVALID (…)` (та же проверка, что в workflow), значения не печатает; `--dry-run` — только имена, длины и валидность. Секреты передаются в `gh secret set` через stdin (флаг `--body -` сохранил бы буквальный «-» — так было до исправления, из-за чего rc.4/rc.5 собрались без подписи). На 2026-09-26 поставлены S3 (5) и Apple (6, включая `APPLE_TEAM_ID`); Windows — без сертификата, собирается неподписанным.
 
+### Релиз с 3.0: текущий runbook (k8s)
+
+Прод API/веб — Kubernetes в Yandex Cloud (`app.calab.io`). Compose-стенд `141.105.69.177` держит только Caddy/LiveKit/SIP/egress/Valkey: postgres и API там нет, поэтому `release.sh` с шагами `deploy`/`backup` и `calaba-backup.service` на стенде **к проду не относятся** — для прода их не запускать.
+
+1. Релизная ветка зелёная, смержена в `main` fast-forward, `ci.yml` на этом SHA зелёный. Релизный агент до тега: CHANGELOG версии с блоком `### Коротко`, `python3 tools/usage-stats.py` → `docs/13-usage.md` (см. «Срезы» ниже), свободное место на диске.
+2. Тег `vX.Y.Z` на этом SHA → `ci` тега (~1 мин через `reuse`) → параллельно `release.yml` (установщики, S3-фид `releases.calab.io` становится живым сразу, GitHub Release остаётся **черновиком**) и `images.yml` (образы API+веб → GitHub Deployment `calab-prod`; кластер забирает заявку сам, ~3 мин).
+3. Дождаться `https://app.calab.io/api/version` = новая версия. Потом `gh release edit vX.Y.Z --draft=false --latest`.
+4. Анонс в комнату «Что нового? ✨»: `CALAB_RELEASE_BOT_TOKEN` из локального `.env` владельца, `VERSION=X.Y.Z STEPS=announce infra/docker/release.sh <sha>` (или `tools/release-announce.py X.Y.Z`); бот публикует только `### Коротко`.
+5. Если preflight `release.yml` упал на внешней причине (Yandex TLS reset, registry 503) — `gh run rerun <id> --failed`, когда хосты отвечают.
+
+Если всё зелёное — релиз идёт без подтверждения владельца (решение 2026-10-14); спрашивать только при сбое или нестандартном необратимом шаге.
+
+**Срезы `tools/usage-stats.py`.** Скрипт заменяет срез своей машины целиком; если транскрипты на диске уже подчищены, обычный перезапуск уменьшит срез. Перед записью сравнить `--no-write` с существующим срезом (tmin/tmax, n); если меньше — писать только сессии после tmax под отдельной меткой `--machine=<host>-<label>`.
+
 ### Релиз 2.0.0: текущий порядок
 
 Выпущено 2026-10-02 с PR #52 + исправлениями ревью (`34c2270a`): первое ревью (4 направления) и второе
