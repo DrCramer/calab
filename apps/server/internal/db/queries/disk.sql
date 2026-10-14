@@ -4,7 +4,7 @@
 -- name: ListDiskFolderByName :many
 -- A folder's live items (parent_id NULL = the root), folders first, then by name ignoring case.
 -- Cursor: the last row's (folder_rank, lower(name), id); cursor_id NULL = the first page.
-SELECT sqlc.embed(di), coalesce(f.size, 0)::bigint AS size
+SELECT sqlc.embed(di), coalesce(f.size, 0)::bigint AS size, lower(di.name)::text AS lname
 FROM disk_items di
 LEFT JOIN files f ON f.id = di.file_id
 WHERE di.workspace_id = sqlc.arg('workspace_id')::uuid
@@ -33,7 +33,7 @@ LIMIT sqlc.arg('lim');
 -- name: ListDiskFolderBySize :many
 -- A folder's live items, folders first (by name), then files the largest first. Cursor: the
 -- last row's (folder_rank, size, lower(name), id).
-SELECT sqlc.embed(di), coalesce(f.size, 0)::bigint AS size
+SELECT sqlc.embed(di), coalesce(f.size, 0)::bigint AS size, lower(di.name)::text AS lname
 FROM disk_items di
 LEFT JOIN files f ON f.id = di.file_id
 WHERE di.workspace_id = sqlc.arg('workspace_id')::uuid
@@ -337,3 +337,7 @@ SELECT * FROM disk_items
 WHERE workspace_id = sqlc.arg('workspace_id') AND trashed_root AND trashed_at < sqlc.arg('cutoff')::timestamptz
 ORDER BY trashed_at, id
 LIMIT sqlc.arg('lim');
+
+-- name: ListDiskFiles :many
+-- The files rows of a page of items.
+SELECT * FROM files WHERE id = ANY(sqlc.arg('ids')::uuid[]);

@@ -582,9 +582,49 @@ func (q *Queries) LastDiskActivity(ctx context.Context, itemID *uuid.UUID) (Disk
 	return i, err
 }
 
+const listDiskFiles = `-- name: ListDiskFiles :many
+SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform FROM files WHERE id = ANY($1::uuid[])
+`
+
+// The files rows of a page of items.
+func (q *Queries) ListDiskFiles(ctx context.Context, ids []uuid.UUID) ([]File, error) {
+	rows, err := q.db.Query(ctx, listDiskFiles, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []File{}
+	for rows.Next() {
+		var i File
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.UploaderID,
+			&i.Key,
+			&i.ThumbnailKey,
+			&i.Name,
+			&i.Mime,
+			&i.Size,
+			&i.Width,
+			&i.Height,
+			&i.Sha256,
+			&i.CreatedAt,
+			&i.VoiceDurationMs,
+			&i.VoiceWaveform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDiskFolderByName = `-- name: ListDiskFolderByName :many
 
-SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, coalesce(f.size, 0)::bigint AS size
+SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, coalesce(f.size, 0)::bigint AS size, lower(di.name)::text AS lname
 FROM disk_items di
 LEFT JOIN files f ON f.id = di.file_id
 WHERE di.workspace_id = $1::uuid
@@ -609,6 +649,7 @@ type ListDiskFolderByNameParams struct {
 type ListDiskFolderByNameRow struct {
 	DiskItem DiskItem
 	Size     int64
+	Lname    string
 }
 
 // Disk (ADR-0094). Access is computed in Go (perm.ComputeDiskItem) over DiskItemPath and the
@@ -646,6 +687,7 @@ func (q *Queries) ListDiskFolderByName(ctx context.Context, arg ListDiskFolderBy
 			&i.DiskItem.TrashedBy,
 			&i.DiskItem.TrashedRoot,
 			&i.Size,
+			&i.Lname,
 		); err != nil {
 			return nil, err
 		}
@@ -658,7 +700,7 @@ func (q *Queries) ListDiskFolderByName(ctx context.Context, arg ListDiskFolderBy
 }
 
 const listDiskFolderBySize = `-- name: ListDiskFolderBySize :many
-SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, coalesce(f.size, 0)::bigint AS size
+SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, coalesce(f.size, 0)::bigint AS size, lower(di.name)::text AS lname
 FROM disk_items di
 LEFT JOIN files f ON f.id = di.file_id
 WHERE di.workspace_id = $1::uuid
@@ -684,6 +726,7 @@ type ListDiskFolderBySizeParams struct {
 type ListDiskFolderBySizeRow struct {
 	DiskItem DiskItem
 	Size     int64
+	Lname    string
 }
 
 // A folder's live items, folders first (by name), then files the largest first. Cursor: the
@@ -720,6 +763,7 @@ func (q *Queries) ListDiskFolderBySize(ctx context.Context, arg ListDiskFolderBy
 			&i.DiskItem.TrashedBy,
 			&i.DiskItem.TrashedRoot,
 			&i.Size,
+			&i.Lname,
 		); err != nil {
 			return nil, err
 		}
