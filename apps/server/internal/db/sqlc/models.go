@@ -1730,6 +1730,7 @@ type Workspace struct {
 	SipEnabled              bool
 	DiskTrashDays           *int32
 	WikiTrashDays           *int32
+	TempArchiveDays         int32
 }
 
 type WorkspaceAdminLog struct {

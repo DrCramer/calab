@@ -187,6 +187,7 @@ export const es: Dict = {
   'ws.leaveConfirm': '¿Abandonar «{name}»? Solo podrás volver con una invitación.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voz y pantalla compartida',
+  'ws.tabRooms': 'Salas',
   'ws.tabLibrary': 'Biblioteca',
   'ws.tabInvites': 'Invitaciones',
   'ws.tabDanger': 'Eliminar',
