@@ -157,8 +157,10 @@ const getMemberAccess = `-- name: GetMemberAccess :one
 SELECT m.role,
        coalesce(r.ids, '{}')::uuid[] AS role_ids,
        coalesce(r.positions, '{}')::integer[] AS role_positions,
-       coalesce(r.perms, '{}')::bigint[] AS role_permissions
+       coalesce(r.perms, '{}')::bigint[] AS role_permissions,
+       w.owner_sees_private
 FROM workspace_members m
+JOIN workspaces w ON w.id = m.workspace_id
 LEFT JOIN LATERAL (
     SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
            array_agg(wr.position ORDER BY wr.position) AS positions,
@@ -175,13 +177,15 @@ type GetMemberAccessParams struct {
 }
 
 type GetMemberAccessRow struct {
-	Role            string
-	RoleIds         []uuid.UUID
-	RolePositions   []int32
-	RolePermissions []int64
+	Role             string
+	RoleIds          []uuid.UUID
+	RolePositions    []int32
+	RolePermissions  []int64
+	OwnerSeesPrivate bool
 }
 
-// A member's built-in role and roles (lowest position first) for perm.Resolver.
+// A member's built-in role and roles (lowest position first) for perm.Resolver, and the
+// workspace's «Владелец видит приватное».
 func (q *Queries) GetMemberAccess(ctx context.Context, arg GetMemberAccessParams) (GetMemberAccessRow, error) {
 	row := q.db.QueryRow(ctx, getMemberAccess, arg.WorkspaceID, arg.UserID)
 	var i GetMemberAccessRow
@@ -190,6 +194,7 @@ func (q *Queries) GetMemberAccess(ctx context.Context, arg GetMemberAccessParams
 		&i.RoleIds,
 		&i.RolePositions,
 		&i.RolePermissions,
+		&i.OwnerSeesPrivate,
 	)
 	return i, err
 }

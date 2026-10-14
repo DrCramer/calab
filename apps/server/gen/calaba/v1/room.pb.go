@@ -335,7 +335,11 @@ type Room struct {
 	Name        string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Topic       string                 `protobuf:"bytes,5,opt,name=topic,proto3" json:"topic,omitempty"`
 	Position    int32                  `protobuf:"varint,6,opt,name=position,proto3" json:"position,omitempty"`
-	// Informational: private rooms get `deny VIEW_ROOM` for role member on creation.
+	// A private room (ADR-0078 and its addendum 2026-10-14; «Только приглашённые»): only its
+	// creator (created_by) and those let in by an allow override on the room (a role's or a
+	// person's) see it. ADMINISTRATOR, the workspace owner and workspace-level MANAGE_ROOM give no
+	// bypass; the owner alone does while Workspace.owner_sees_private is on. The member role also
+	// gets `deny VIEW_ROOM` on creation. Strangers get 404 for the room everywhere.
 	IsPrivate bool `protobuf:"varint,7,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
 	// Effective settings (override merged over workspace defaults). Clients apply these.
 	Media *RoomMediaSettings `protobuf:"bytes,8,opt,name=media,proto3" json:"media,omitempty"`
@@ -360,10 +364,9 @@ type Room struct {
 	// Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
 	// PATCH /api/rooms/{id} allow_recording, which needs MANAGE_RECORDINGS (ADR-0048).
 	AllowRecording bool `protobuf:"varint,18,opt,name=allow_recording,json=allowRecording,proto3" json:"allow_recording,omitempty"`
-	// Private rooms only (ADR-0029, ADR-0048): closed even to administrators. ADMINISTRATOR gives
-	// no bypass and VIEW_ROOM comes only from an allow override on the room (by role or
-	// personally); the workspace owner always sees it. Changed with PATCH /api/rooms/{id}
-	// restricted. Strangers get 404 for the room everywhere.
+	// The pre-3.5 «закрытая» flag (ADR-0029, ADR-0048). Since the ADR-0078 addendum 2026-10-14
+	// every private room is closed even to administrators and the owner: the server keeps
+	// restricted equal to is_private; clients read either as «private».
 	Restricted bool `protobuf:"varint,19,opt,name=restricted,proto3" json:"restricted,omitempty"`
 	// Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
 	// override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
@@ -1362,6 +1365,12 @@ type CreateRoomRequest struct {
 	Position      *int32                 `protobuf:"varint,6,opt,name=position,proto3,oneof" json:"position,omitempty"`                // default: after the last room
 	CategoryId    string                 `protobuf:"bytes,7,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"` // optional category of the same workspace
 	UserLimit     uint32                 `protobuf:"varint,8,opt,name=user_limit,json=userLimit,proto3" json:"user_limit,omitempty"`   // voice rooms only, 0..99
+	// Private rooms only (ADR-0078 addendum 2026-10-14; 422 on a public one): who is invited —
+	// members of the workspace (422 otherwise) get a personal allow VIEW_ROOM, roles of the
+	// workspace (not owner / admin / guest built-ins) a role allow VIEW_ROOM. The creator always
+	// sees the room (and gets VIEW_ROOM | MANAGE_ROOM personally).
+	MemberIds     []string `protobuf:"bytes,9,rep,name=member_ids,json=memberIds,proto3" json:"member_ids,omitempty"`
+	RoleIds       []string `protobuf:"bytes,10,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1450,6 +1459,20 @@ func (x *CreateRoomRequest) GetUserLimit() uint32 {
 		return x.UserLimit
 	}
 	return 0
+}
+
+func (x *CreateRoomRequest) GetMemberIds() []string {
+	if x != nil {
+		return x.MemberIds
+	}
+	return nil
+}
+
+func (x *CreateRoomRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
 }
 
 type CreateRoomResponse struct {
@@ -1614,9 +1637,8 @@ type UpdateRoomRequest struct {
 	// Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_RECORDINGS (ADR-0048) besides
 	// MANAGE_ROOM; switching it off stops a running recording.
 	AllowRecording *bool `protobuf:"varint,7,opt,name=allow_recording,json=allowRecording,proto3,oneof" json:"allow_recording,omitempty"`
-	// Private rooms only (ADR-0029, 422 on a public one). MANAGE_ROOM in the room (ADR-0048; the
-	// creator of a temporary room too); the owner may always lift it. Switching it on gives the
-	// caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM so they keep access.
+	// Deprecated alias of is_private (ADR-0078 addendum 2026-10-14): true = private, false =
+	// public; with is_private both must agree (422 otherwise).
 	Restricted    *bool `protobuf:"varint,8,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
 	GuestApproval *bool `protobuf:"varint,9,opt,name=guest_approval,json=guestApproval,proto3,oneof" json:"guest_approval,omitempty"` // ADR-0040
 	// Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at
@@ -1626,10 +1648,11 @@ type UpdateRoomRequest struct {
 	// Temporary rooms only: true makes the room permanent (expires_at cleared). Needs real
 	// MANAGE_ROOM in the room (the creator's implicit right is not enough: 403).
 	MakePermanent bool `protobuf:"varint,11,opt,name=make_permanent,json=makePermanent,proto3" json:"make_permanent,omitempty"`
-	// Temporary rooms only (ADR-0044, «Доступ»): private = the member role loses VIEW_ROOM (a
-	// deny override, as a private room at creation); public = that deny is removed. Personal
-	// overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
-	// edits the overrides with PUT /api/rooms/{id}/permissions).
+	// «Доступ» (ADR-0044, ADR-0078 addendum 2026-10-14), any text / voice room: private = the
+	// member role loses VIEW_ROOM (a deny override, as a private room at creation) and the room
+	// is hidden from admins and the owner; public = that deny is removed. Personal overrides
+	// stay. MANAGE_ROOM or the creator of a temporary room. Switching to private gives the caller
+	// a personal allow VIEW_ROOM (| MANAGE_ROOM when they hold it) so they keep access.
 	IsPrivate *bool `protobuf:"varint,12,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
 	// The room's picture (ADR-0092), text and voice rooms only (422 otherwise). "" removes it. Same
 	// right as the name (MANAGE_ROOM or the creator of a temporary room). An image the caller
@@ -2445,7 +2468,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\x127\n" +
 	"\n" +
 	"categories\x18\x02 \x03(\v2\x17.calaba.v1.RoomCategoryR\n" +
-	"categories\"\xb8\x02\n" +
+	"categories\"\xf2\x02\n" +
 	"\x11CreateRoomRequest\x12'\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x13.calaba.v1.RoomTypeR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -2457,7 +2480,11 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\vcategory_id\x18\a \x01(\tR\n" +
 	"categoryId\x12\x1d\n" +
 	"\n" +
-	"user_limit\x18\b \x01(\rR\tuserLimitB\v\n" +
+	"user_limit\x18\b \x01(\rR\tuserLimit\x12\x1d\n" +
+	"\n" +
+	"member_ids\x18\t \x03(\tR\tmemberIds\x12\x19\n" +
+	"\brole_ids\x18\n" +
+	" \x03(\tR\aroleIdsB\v\n" +
 	"\t_position\"9\n" +
 	"\x12CreateRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\":\n" +

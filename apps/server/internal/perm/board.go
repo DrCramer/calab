@@ -1,45 +1,71 @@
 package perm
 
-// BoardScope carries the board-level inputs of the rule besides the overrides (ADR-0042).
+import "github.com/google/uuid"
+
+// BoardScope carries the board-level inputs of the rule besides the overrides (ADR-0042,
+// ADR-0058 addendum 2026-10-14).
 type BoardScope struct {
-	// Private: boards.is_private — VIEW_BOARD comes only from an override (a role's or the
-	// user's own), not from the roles' permissions.
+	// Private: a private board (boards.is_private or boards.restricted; the addendum: one kind
+	// of private board, «Только выбранные»). Nobody bypasses it — ADMINISTRATOR, the workspace
+	// owner and workspace-level VIEW_BOARD / MANAGE_BOARD count for nothing —: VIEW_BOARD comes
+	// only from an allow override on the board (a role's or the user's own) or from being its
+	// Creator. The one exception is the owner with OwnerSeesPrivate.
 	Private bool
 	// Guest: the member's highest built-in role is guest — guests never see boards.
 	Guest bool
-	// Restricted: boards.restricted (ADR-0048, only on a private board) — ADMINISTRATOR gives
-	// no bypass; the owner (Owner) gets everything.
-	Restricted bool
 	// Owner: the user is the workspace owner (holder of the built-in owner role).
 	Owner bool
+	// OwnerSeesPrivate: the workspace's «Владелец видит приватное»; with Owner a private board
+	// gives everything.
+	OwnerSeesPrivate bool
+	// Creator: the user created the board (boards.created_by); on a private board they always
+	// keep VIEW_BOARD (the rest comes from the personal override they got at creation).
+	Creator bool
 }
 
-// BoardScopeOf returns the scope of member m on a board.
-func BoardScopeOf(m Member, private, restricted bool) BoardScope {
-	return BoardScope{Private: private || restricted, Guest: m.Role == RoleGuest, Restricted: restricted, Owner: m.Role == RoleOwner}
+// BoardFlags are a board's own inputs of the rule besides its overrides.
+type BoardFlags struct {
+	Private   bool      // boards.is_private OR boards.restricted
+	CreatedBy uuid.UUID // boards.created_by; uuid.Nil when unknown
 }
 
-// ComputeBoard is the board form of the one permission rule (ADR-0042, ADR-0048): the order of
-// ComputeOrdered (ADMINISTRATOR → everything, each role's override lowest position first, then
-// the user's), but the overrides touch only BoardOnly bits, a private board first drops the
-// roles' VIEW_BOARD, and without VIEW_BOARD there is nothing. Guests get nothing. On a
-// restricted board the owner gets everything and ADMINISTRATOR is dropped (like a restricted
-// room). Mirror of computePermissions({board}) in packages/protocol.
+// BoardFlagsOf builds BoardFlags from a board's columns: is_private, restricted (the pre-3.5
+// «закрытая» flag, now the same as is_private: migration 00097 aligned them) and created_by.
+func BoardFlagsOf(private, restricted bool, createdBy *uuid.UUID) BoardFlags {
+	f := BoardFlags{Private: private || restricted}
+	if createdBy != nil {
+		f.CreatedBy = *createdBy
+	}
+	return f
+}
+
+// BoardScopeOf returns the scope of member m on a board with flags f.
+func BoardScopeOf(m Member, f BoardFlags) BoardScope {
+	return BoardScope{
+		Private: f.Private, Guest: m.Role == RoleGuest, Owner: m.Role == RoleOwner, OwnerSeesPrivate: m.OwnerSeesPrivate,
+		Creator: f.CreatedBy != uuid.Nil && m.UserID == f.CreatedBy.String(),
+	}
+}
+
+// ComputeBoard is the board form of the one permission rule (ADR-0042, ADR-0048, ADR-0058
+// addendum 2026-10-14): the order of ComputeOrdered (ADMINISTRATOR → everything, each role's
+// override lowest position first, then the user's), but the overrides touch only BoardOnly bits
+// and without VIEW_BOARD there is nothing. Guests get nothing. A private board has no bypass —
+// the owner with OwnerSeesPrivate alone gets everything —: ADMINISTRATOR and the roles'
+// VIEW_BOARD are dropped, only an allow override lets anyone in, and the creator always keeps
+// VIEW_BOARD. Mirror of computePermissions({board}) in packages/protocol.
 func ComputeBoard(raw Bits, sc BoardScope, roleOvs []Override, userOv *Override) Bits {
 	switch {
 	case sc.Guest:
 		return 0
-	case sc.Restricted && sc.Owner:
+	case sc.Private && sc.Owner && sc.OwnerSeesPrivate:
 		return All
-	case sc.Restricted:
+	case sc.Private:
 		raw &^= Administrator | ViewBoard
 	case raw&Administrator != 0:
 		return All
 	}
 	p := raw
-	if sc.Private {
-		p &^= ViewBoard
-	}
 	for _, o := range roleOvs {
 		p &^= o.Deny & BoardOnly
 		p |= o.Allow & BoardOnly
@@ -48,15 +74,17 @@ func ComputeBoard(raw Bits, sc BoardScope, roleOvs []Override, userOv *Override)
 		p &^= userOv.Deny & BoardOnly
 		p |= userOv.Allow & BoardOnly
 	}
+	if sc.Private && sc.Creator {
+		p |= ViewBoard
+	}
 	if p&ViewBoard == 0 {
 		return 0
 	}
 	return p
 }
 
-// ComputeBoardIn computes a member's board permissions from the board's override list;
-// restricted is boards.restricted (ADR-0048).
-func ComputeBoardIn(m Member, private, restricted bool, overrides []OverrideTarget) Bits {
+// ComputeBoardIn computes a member's board permissions from the board's flags and override list.
+func ComputeBoardIn(m Member, f BoardFlags, overrides []OverrideTarget) Bits {
 	var userOv *Override
 	var buf [8]Override
 	roleOvs := buf[:0]
@@ -74,7 +102,7 @@ func ComputeBoardIn(m Member, private, restricted bool, overrides []OverrideTarg
 			break
 		}
 	}
-	return ComputeBoard(m.Raw(), BoardScopeOf(m, private, restricted), roleOvs, userOv)
+	return ComputeBoard(m.Raw(), BoardScopeOf(m, f), roleOvs, userOv)
 }
 
 // ComputeBoardRoles is ComputeBoard from the member's roles (any order) and the board's role

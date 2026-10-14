@@ -5,7 +5,7 @@ import {
   computeMemberRoomPermissions,
   computePermissions,
   planInactivePermissions,
-  tempRoomScope,
+  roomScope,
   WorkspaceRole,
   has,
   workspacePermissions,
@@ -28,7 +28,7 @@ export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string
   if (!room || !roles || roles.length === 0) return 0n;
   // ADR-0029: in a restricted room admins count as members; the owner (built-in owner role) has all.
   // ADR-0078: a private temporary room has no bypass at all (not even the owner).
-  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted, undefined, tempRoomScope(room));
+  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted, undefined, roomScope(room));
 }
 
 /**

@@ -591,7 +591,11 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 		st.delMember(uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
+		seesBefore := st.ws.GetOwnerSeesPrivate()
 		st.ws = e.WorkspaceUpdate.GetWorkspace()
+		if st.ws.GetOwnerSeesPrivate() != seesBefore {
+			st.rebuild() // Member.OwnerSeesPrivate
+		}
 		// The suspension reason is for the owner / admins only (item 32).
 		var hidden *encEvent
 		for _, s := range sessions {

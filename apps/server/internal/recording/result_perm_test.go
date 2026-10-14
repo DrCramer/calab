@@ -24,10 +24,10 @@ func TestMayDeleteOthers(t *testing.T) {
 		{"guest with the bit", perm.RoomAccess{Role: perm.RoleGuest, Member: guest, Bits: perm.ViewRoom}, false},
 		{"MANAGE_MESSAGES in the room", perm.RoomAccess{Role: perm.RoleMember, Member: plain, Bits: member | perm.ManageMessages}, true},
 		// ADR-0078: a chosen owner / admin counts as a member in a private temporary room.
-		{"owner chosen into a private temp room", perm.RoomAccess{Role: perm.RoleOwner, Member: owner, Bits: member, PrivateTemp: true}, false},
-		{"admin chosen into a private temp room", perm.RoomAccess{Role: perm.RoleAdmin, Member: admin, Bits: member, PrivateTemp: true}, false},
-		{"MANAGE_RECORDINGS role in a private temp room", perm.RoomAccess{Role: perm.RoleMember, Member: rec, Bits: member, PrivateTemp: true}, false},
-		{"MANAGE_MESSAGES in a private temp room", perm.RoomAccess{Role: perm.RoleMember, Member: plain, Bits: member | perm.ManageMessages, PrivateTemp: true}, true},
+		{"owner chosen into a private temp room", perm.RoomAccess{Role: perm.RoleOwner, Member: owner, Bits: member, Private: true}, false},
+		{"admin chosen into a private temp room", perm.RoomAccess{Role: perm.RoleAdmin, Member: admin, Bits: member, Private: true}, false},
+		{"MANAGE_RECORDINGS role in a private temp room", perm.RoomAccess{Role: perm.RoleMember, Member: rec, Bits: member, Private: true}, false},
+		{"MANAGE_MESSAGES in a private temp room", perm.RoomAccess{Role: perm.RoleMember, Member: plain, Bits: member | perm.ManageMessages, Private: true}, true},
 	} {
 		if got := mayDeleteOthers(c.acc); got != c.want {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)

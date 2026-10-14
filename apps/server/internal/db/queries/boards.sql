@@ -19,6 +19,8 @@ SELECT b.workspace_id,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        b.disabled_features,
+       b.created_by,
+       w.owner_sees_private,
        -- ADR-0059 / ADR-0076: the user (a human) is an assignee, an approver or a watcher of a
        -- live task of the board.
        (NOT coalesce(u.is_bot, true) AND (

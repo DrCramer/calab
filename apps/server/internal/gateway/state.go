@@ -50,7 +50,7 @@ func (s *wsState) setMember(uid uuid.UUID, role perm.Role, ids []string) {
 		s.members = map[uuid.UUID]perm.Member{}
 	}
 	s.roleIDs[uid] = ids
-	s.members[uid] = s.roleDefs.Member(uid.String(), role, ids)
+	s.members[uid] = s.member(uid.String(), role, ids)
 	s.guestVis = nil
 }
 
@@ -85,9 +85,17 @@ func (s *wsState) delRoleDef(id string) {
 	s.rebuild()
 }
 
+// member builds a member from the role definitions and the workspace's «Владелец видит
+// приватное» (Member.OwnerSeesPrivate; rebuild when it changes).
+func (s *wsState) member(uid string, role perm.Role, ids []string) perm.Member {
+	m := s.roleDefs.Member(uid, role, ids)
+	m.OwnerSeesPrivate = s.ws.GetOwnerSeesPrivate()
+	return m
+}
+
 func (s *wsState) rebuild() {
 	for u, m := range s.members {
-		s.members[u] = s.roleDefs.Member(m.UserID, m.Role, s.roleIDs[u])
+		s.members[u] = s.member(m.UserID, m.Role, s.roleIDs[u])
 	}
 	s.guestVis = nil
 }

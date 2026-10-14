@@ -85,7 +85,8 @@ SELECT r.workspace_id,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        (r.archived_at IS NOT NULL)::boolean AS archived,
        (r.expires_at IS NOT NULL)::boolean AS temp,
-       r.created_by
+       r.created_by,
+       coalesce(w.owner_sees_private, false)::boolean AS owner_sees_private
 FROM rooms r
 LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = sqlc.arg('user_id')
@@ -123,7 +124,8 @@ SELECT r.workspace_id,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        (r.archived_at IS NOT NULL)::boolean AS archived,
        (r.expires_at IS NOT NULL)::boolean AS temp,
-       r.created_by
+       r.created_by,
+       coalesce(w.owner_sees_private, false)::boolean AS owner_sees_private
 FROM rooms r
 CROSS JOIN unnest(sqlc.arg('user_ids')::uuid[]) WITH ORDINALITY AS k(user_id, ord)
 LEFT JOIN workspaces w ON w.id = r.workspace_id

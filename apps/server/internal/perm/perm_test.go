@@ -26,20 +26,26 @@ type vector struct {
 	ExpectedWorkspace *Bits               `json:"expectedWorkspace"`
 	// DM vectors (ADR-0020): roomType "dm" ignores role and overrides.
 	RoomType string `json:"roomType"`
-	// ADR-0029: a restricted room and whether the member is the workspace owner.
-	Restricted  bool `json:"restricted"`
-	Owner       bool `json:"owner"`
-	Participant bool `json:"participant"`
+	// ADR-0029: a restricted room and whether the member is the workspace owner. Since the
+	// ADR-0078 addendum 2026-10-14 restricted is any private room; ownerSeesPrivate is the
+	// workspace's «Владелец видит приватное».
+	Restricted       bool `json:"restricted"`
+	Owner            bool `json:"owner"`
+	OwnerSeesPrivate bool `json:"ownerSeesPrivate"`
+	Participant      bool `json:"participant"`
 	// ADR-0078: a private temporary room and whether the member created it.
 	PrivateTemp bool `json:"privateTemp"`
 	Creator     bool `json:"creator"`
 	// ADR-0042: a board vector (ComputeBoard with the board's overrides).
 	// ADR-0048: restricted / owner on a board.
+	// ADR-0058 addendum 2026-10-14: restricted is an alias of private; ownerSeesPrivate, creator.
 	Board *struct {
-		Private    bool `json:"private"`
-		Guest      bool `json:"guest"`
-		Restricted bool `json:"restricted"`
-		Owner      bool `json:"owner"`
+		Private          bool `json:"private"`
+		Guest            bool `json:"guest"`
+		Restricted       bool `json:"restricted"`
+		Owner            bool `json:"owner"`
+		OwnerSeesPrivate bool `json:"ownerSeesPrivate"`
+		Creator          bool `json:"creator"`
 	} `json:"board"`
 	// ADR-0042 / ADR-0058 §3: a task room vector (TaskRoom from the board bits).
 	TaskRoom *struct {
@@ -67,6 +73,9 @@ type vector struct {
 // treeVector is a chain of the shared tree rule (ComputeTree).
 type treeVector struct {
 	Guest bool `json:"guest"`
+	// Addendum 2026-10-14: the member is the workspace owner with «Владелец видит приватное».
+	Owner            bool `json:"owner"`
+	OwnerSeesPrivate bool `json:"ownerSeesPrivate"`
 	Chain []struct {
 		Restricted    bool                `json:"restricted"`
 		Owner         bool                `json:"owner"`
@@ -124,11 +133,11 @@ func TestComputeVectors(t *testing.T) {
 			for i, r := range v.Roles {
 				roles[i] = RoleBits(r)
 			}
-			sc := BoardScope{Private: v.Board.Private || v.Board.Restricted, Guest: v.Board.Guest, Restricted: v.Board.Restricted, Owner: v.Board.Owner}
+			sc := BoardScope{Private: v.Board.Private || v.Board.Restricted, Guest: v.Board.Guest, Owner: v.Board.Owner, OwnerSeesPrivate: v.Board.OwnerSeesPrivate, Creator: v.Board.Creator}
 			if got := ComputeBoardRoles(roles, sc, v.RoleOverrides, v.UserOverride); got != v.Expected {
 				t.Errorf("%s: ComputeBoardRoles got %d want %d", v.Name, got, v.Expected)
 			}
-			const uid = "u1"
+			const uid = "00000000-0000-0000-0000-0000000000a1"
 			var ovs []OverrideTarget
 			for id, o := range v.RoleOverrides {
 				ovs = append(ovs, OverrideTarget{TargetType: "role", TargetID: id, Override: o})
@@ -143,7 +152,13 @@ func TestComputeVectors(t *testing.T) {
 			case v.Board.Owner:
 				role = RoleOwner
 			}
-			if got := ComputeBoardIn(NewMember(uid, role, roles), v.Board.Private, v.Board.Restricted, ovs); got != v.Expected {
+			bm := NewMember(uid, role, roles)
+			bm.OwnerSeesPrivate = v.Board.OwnerSeesPrivate
+			by := uuid.MustParse("00000000-0000-0000-0000-0000000000b2")
+			if v.Board.Creator {
+				by = uuid.MustParse(uid)
+			}
+			if got := ComputeBoardIn(bm, BoardFlagsOf(v.Board.Private, v.Board.Restricted, &by), ovs); got != v.Expected {
 				t.Errorf("%s: ComputeBoardIn got %d want %d", v.Name, got, v.Expected)
 			}
 		case v.RoomType == "dm":
@@ -156,13 +171,13 @@ func TestComputeVectors(t *testing.T) {
 			for i, r := range v.Roles {
 				roles[i] = RoleBits(r)
 			}
-			sc := Scope{Restricted: v.Restricted, Owner: v.Owner, PrivateTemp: v.PrivateTemp, Creator: v.Creator}
+			sc := Scope{Private: v.Restricted || v.PrivateTemp, PrivateTemp: v.PrivateTemp, Owner: v.Owner, OwnerSeesPrivate: v.OwnerSeesPrivate, Creator: v.Creator}
 			if got := ComputeRoles(roles, sc, v.RoleOverrides, v.UserOverride); got != v.Expected {
 				t.Errorf("%s: ComputeRoles got %d want %d", v.Name, got, v.Expected)
 			}
 			// The same rule through a member and the room's override list (gateway, snapshots).
 			const uid = "00000000-0000-0000-0000-0000000000a1"
-			flags := RoomFlags{Restricted: v.Restricted, PrivateTemp: v.PrivateTemp, CreatedBy: uuid.MustParse("00000000-0000-0000-0000-0000000000b2")}
+			flags := RoomFlags{Private: v.Restricted || v.PrivateTemp, PrivateTemp: v.PrivateTemp, CreatedBy: uuid.MustParse("00000000-0000-0000-0000-0000000000b2")}
 			if v.Creator {
 				flags.CreatedBy = uuid.MustParse(uid)
 			}
@@ -178,6 +193,7 @@ func TestComputeVectors(t *testing.T) {
 				role = RoleOwner
 			}
 			m := NewMember(uid, role, roles)
+			m.OwnerSeesPrivate = v.OwnerSeesPrivate
 			if got := ComputeIn(m, flags, ovs); got != v.Expected {
 				t.Errorf("%s: ComputeIn got %d want %d", v.Name, got, v.Expected)
 			}
@@ -207,10 +223,15 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	}
 	const uid = "00000000-0000-0000-0000-0000000000a1"
 	role := RoleMember
-	if tv.Guest {
+	switch {
+	case tv.Guest:
 		role = RoleGuest
+	case tv.Owner:
+		role = RoleOwner
 	}
 	m := NewMember(uid, role, roles)
+	m.OwnerSeesPrivate = tv.OwnerSeesPrivate
+	plain := !tv.Owner || !tv.OwnerSeesPrivate // the section wrappers know no owner
 	levels := make([]TreeLevel, len(tv.Chain))
 	nodes := make([]TreeNode, len(tv.Chain))
 	for i, c := range tv.Chain {
@@ -240,13 +261,13 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	} else {
 		got, gotIn = ComputeDiskItem(m.Raw(), tv.Guest, levels), ComputeDiskItemIn(m, nodes)
 	}
-	if got != v.Expected {
+	if plain && got != v.Expected {
 		t.Errorf("%s: %s got %d want %d", v.Name, name, got, v.Expected)
 	}
 	if gotIn != v.Expected {
 		t.Errorf("%s: %sIn got %d want %d", v.Name, name, gotIn, v.Expected)
 	}
-	if g := ComputeTree(tree, TreeInput{Raw: m.Raw(), Guest: tv.Guest, Chain: levels}); g != v.Expected {
+	if g := ComputeTree(tree, TreeInput{Raw: m.Raw(), Guest: tv.Guest, Chain: levels, Owner: tv.Owner, OwnerSeesPrivate: tv.OwnerSeesPrivate}); g != v.Expected {
 		t.Errorf("%s: ComputeTree got %d want %d", v.Name, g, v.Expected)
 	}
 	if wiki {
@@ -255,7 +276,7 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 			return
 		}
 		owner := len(tv.Chain) > 0 && tv.Chain[len(tv.Chain)-1].Owner
-		if g := WikiStructureAllowed(got, owner); g != *tv.Structure {
+		if g := WikiStructureAllowed(gotIn, owner); g != *tv.Structure {
 			t.Errorf("%s: WikiStructureAllowed got %v want %v", v.Name, g, *tv.Structure)
 		}
 	}

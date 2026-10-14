@@ -235,9 +235,11 @@ message Board {
   repeated RoomPermissionOverride permission_overrides = 21;
   bool key_locked = 22;         // the key can no longer change: the board has had a task
   string default_view_id = 23;  // a shared view opened by default; empty = kanban without filter
-  // Private boards only (ADR-0048): closed even to administrators. ADMINISTRATOR and
-  // workspace-level bits give no access; VIEW_BOARD comes only from an allow override on the
-  // board (by role or personally); the workspace owner always sees it. Strangers get 404.
+  // The pre-3.5 «закрытая» flag (ADR-0048). Since the ADR-0058 addendum 2026-10-14 every
+  // private board (is_private) is closed even to administrators and the owner — VIEW_BOARD only
+  // from an allow override on the board (by role or personally) or being its creator; the owner
+  // alone bypasses while Workspace.owner_sees_private is on. The server keeps restricted equal
+  // to is_private; clients read either as «private». Strangers get 404.
   bool restricted = 24;
   // Board categories (ADR-0058 §1): the category the board is listed in; empty = none.
   // position is the order within that container (a category or «без категории»).
@@ -530,6 +532,11 @@ message CreateBoardRequest {
   string description = 5;
   BoardTemplate template = 6;
   string icon_file_id = 7;
+  // Private boards only (ADR-0058 addendum 2026-10-14; 422 on a public one): who is added —
+  // members of the workspace (422 otherwise) get a personal allow VIEW_BOARD | CREATE_TASKS,
+  // roles of the workspace (not owner / admin / guest built-ins) a role allow of the same.
+  repeated string member_ids = 8;
+  repeated string role_ids = 9;
 }
 
 // Answer of every board route that changes the board (statuses, labels, milestones,
@@ -549,9 +556,9 @@ message UpdateBoardRequest {
   optional bool is_private = 6;
   optional uint32 auto_archive_days = 7; // 0..3650
   optional string default_view_id = 8;   // a shared view of the board; "" = none
-  // Private boards only (ADR-0048; 422 otherwise, and is_private false is refused while set).
-  // MANAGE_BOARD on the board; the owner may always lift it. Switching it on gives the caller
-  // (unless the owner) a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
+  // Deprecated alias of is_private (ADR-0058 addendum 2026-10-14): true = private, false =
+  // public; with is_private both must agree (422 otherwise). Switching a board to private gives
+  // the caller a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
   optional bool restricted = 9;
   // Board features (ADR-0058 §3): set_disabled_features replaces the disabled set with
   // disabled_features (UNSPECIFIED and unknown values are 422); estimate_scale UNSPECIFIED is 422.

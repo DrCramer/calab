@@ -2002,9 +2002,11 @@ type Board struct {
 	PermissionOverrides []*RoomPermissionOverride `protobuf:"bytes,21,rep,name=permission_overrides,json=permissionOverrides,proto3" json:"permission_overrides,omitempty"`
 	KeyLocked           bool                      `protobuf:"varint,22,opt,name=key_locked,json=keyLocked,proto3" json:"key_locked,omitempty"`              // the key can no longer change: the board has had a task
 	DefaultViewId       string                    `protobuf:"bytes,23,opt,name=default_view_id,json=defaultViewId,proto3" json:"default_view_id,omitempty"` // a shared view opened by default; empty = kanban without filter
-	// Private boards only (ADR-0048): closed even to administrators. ADMINISTRATOR and
-	// workspace-level bits give no access; VIEW_BOARD comes only from an allow override on the
-	// board (by role or personally); the workspace owner always sees it. Strangers get 404.
+	// The pre-3.5 «закрытая» flag (ADR-0048). Since the ADR-0058 addendum 2026-10-14 every
+	// private board (is_private) is closed even to administrators and the owner — VIEW_BOARD only
+	// from an allow override on the board (by role or personally) or being its creator; the owner
+	// alone bypasses while Workspace.owner_sees_private is on. The server keeps restricted equal
+	// to is_private; clients read either as «private». Strangers get 404.
 	Restricted bool `protobuf:"varint,24,opt,name=restricted,proto3" json:"restricted,omitempty"`
 	// Board categories (ADR-0058 §1): the category the board is listed in; empty = none.
 	// position is the order within that container (a category or «без категории»).
@@ -3396,14 +3398,19 @@ func (x *ListBoardsResponse) GetBoards() []*Board {
 // user override with every board bit. ≤ 50 boards per workspace and the plan's max_boards
 // (409 CONFLICT, reason "PLAN_LIMIT" / "BOARD_LIMIT").
 type CreateBoardRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"` // empty = derived from the name
-	Emoji         string                 `protobuf:"bytes,3,opt,name=emoji,proto3" json:"emoji,omitempty"`
-	IsPrivate     bool                   `protobuf:"varint,4,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
-	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
-	Template      BoardTemplate          `protobuf:"varint,6,opt,name=template,proto3,enum=calaba.v1.BoardTemplate" json:"template,omitempty"`
-	IconFileId    string                 `protobuf:"bytes,7,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Key         string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"` // empty = derived from the name
+	Emoji       string                 `protobuf:"bytes,3,opt,name=emoji,proto3" json:"emoji,omitempty"`
+	IsPrivate   bool                   `protobuf:"varint,4,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
+	Description string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	Template    BoardTemplate          `protobuf:"varint,6,opt,name=template,proto3,enum=calaba.v1.BoardTemplate" json:"template,omitempty"`
+	IconFileId  string                 `protobuf:"bytes,7,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
+	// Private boards only (ADR-0058 addendum 2026-10-14; 422 on a public one): who is added —
+	// members of the workspace (422 otherwise) get a personal allow VIEW_BOARD | CREATE_TASKS,
+	// roles of the workspace (not owner / admin / guest built-ins) a role allow of the same.
+	MemberIds     []string `protobuf:"bytes,8,rep,name=member_ids,json=memberIds,proto3" json:"member_ids,omitempty"`
+	RoleIds       []string `protobuf:"bytes,9,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3487,6 +3494,20 @@ func (x *CreateBoardRequest) GetIconFileId() string {
 	return ""
 }
 
+func (x *CreateBoardRequest) GetMemberIds() []string {
+	if x != nil {
+		return x.MemberIds
+	}
+	return nil
+}
+
+func (x *CreateBoardRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
+}
+
 // Answer of every board route that changes the board (statuses, labels, milestones,
 // permissions, position): the board as the caller sees it. BOARD_UPDATE goes to its viewers.
 type BoardResponse struct {
@@ -3545,9 +3566,9 @@ type UpdateBoardRequest struct {
 	IsPrivate       *bool                  `protobuf:"varint,6,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
 	AutoArchiveDays *uint32                `protobuf:"varint,7,opt,name=auto_archive_days,json=autoArchiveDays,proto3,oneof" json:"auto_archive_days,omitempty"` // 0..3650
 	DefaultViewId   *string                `protobuf:"bytes,8,opt,name=default_view_id,json=defaultViewId,proto3,oneof" json:"default_view_id,omitempty"`        // a shared view of the board; "" = none
-	// Private boards only (ADR-0048; 422 otherwise, and is_private false is refused while set).
-	// MANAGE_BOARD on the board; the owner may always lift it. Switching it on gives the caller
-	// (unless the owner) a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
+	// Deprecated alias of is_private (ADR-0058 addendum 2026-10-14): true = private, false =
+	// public; with is_private both must agree (422 otherwise). Switching a board to private gives
+	// the caller a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
 	Restricted *bool `protobuf:"varint,9,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
 	// Board features (ADR-0058 §3): set_disabled_features replaces the disabled set with
 	// disabled_features (UNSPECIFIED and unknown values are 422); estimate_scale UNSPECIFIED is 422.
@@ -8767,7 +8788,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"conditions\x12\x10\n" +
 	"\x03any\x18\x02 \x01(\bR\x03any\">\n" +
 	"\x12ListBoardsResponse\x12(\n" +
-	"\x06boards\x18\x01 \x03(\v2\x10.calaba.v1.BoardR\x06boards\"\xe9\x01\n" +
+	"\x06boards\x18\x01 \x03(\v2\x10.calaba.v1.BoardR\x06boards\"\xa3\x02\n" +
 	"\x12CreateBoardRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x14\n" +
@@ -8777,7 +8798,10 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x124\n" +
 	"\btemplate\x18\x06 \x01(\x0e2\x18.calaba.v1.BoardTemplateR\btemplate\x12 \n" +
 	"\ficon_file_id\x18\a \x01(\tR\n" +
-	"iconFileId\"7\n" +
+	"iconFileId\x12\x1d\n" +
+	"\n" +
+	"member_ids\x18\b \x03(\tR\tmemberIds\x12\x19\n" +
+	"\brole_ids\x18\t \x03(\tR\aroleIds\"7\n" +
 	"\rBoardResponse\x12&\n" +
 	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\x95\x06\n" +
 	"\x12UpdateBoardRequest\x12\x17\n" +

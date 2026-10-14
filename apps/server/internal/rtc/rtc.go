@@ -189,7 +189,7 @@ func (a admission) active() bool { return a.room > 0 || a.plan > 0 }
 // limitExempt: whether acc skips the room's user_limit — the workspace owner, except in a
 // private temporary room, where the owner counts as anyone (ADR-0078).
 func limitExempt(acc perm.RoomAccess) bool {
-	return acc.Role == perm.RoleOwner && !acc.PrivateTemp
+	return acc.Role == perm.RoleOwner && !acc.NoBypass()
 }
 
 func admissionFor(room wsRoom, exempt bool) admission {

@@ -1733,6 +1733,7 @@ type Workspace struct {
 	DiskTrashDays           *int32
 	WikiTrashDays           *int32
 	TempArchiveDays         int32
+	OwnerSeesPrivate        bool
 }
 
 type WorkspaceAdminLog struct {
@@ -1754,6 +1755,17 @@ type WorkspaceApp struct {
 	CreatedBy   *uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type WorkspaceAudit struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	ActorID         *uuid.UUID
+	Kind            string
+	SubjectType     *string
+	SubjectID       *uuid.UUID
+	PreviousOwnerID *uuid.UUID
+	CreatedAt       time.Time
 }
 
 type WorkspaceBackground struct {

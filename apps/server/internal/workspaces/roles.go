@@ -664,13 +664,13 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 	var closed []uuid.UUID
 	flags := map[uuid.UUID]perm.RoomFlags{}
 	for _, room := range rs {
-		if room.Restricted {
+		if perm.FlagsOf(room).Private {
 			closed = append(closed, room.ID)
 			flags[room.ID] = perm.FlagsOf(room)
 		}
 	}
 	for _, a := range archived {
-		if a.Room.Restricted {
+		if perm.FlagsOf(a.Room).Private {
 			closed = append(closed, a.Room.ID)
 			flags[a.Room.ID] = perm.FlagsOf(a.Room)
 		}
@@ -710,7 +710,7 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 	}
 	var bovs []sqlc.BoardPermission
 	for _, b := range bs {
-		if !b.Restricted {
+		if !perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy).Private {
 			continue
 		}
 		if err := loadMembers(); err != nil {
@@ -730,7 +730,7 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 		}
 		seen := map[uuid.UUID]bool{}
 		for id, m := range members {
-			if perm.ComputeBoardIn(m, true, true, ovs).Has(perm.ViewBoard) {
+			if perm.ComputeBoardIn(m, perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy), ovs).Has(perm.ViewBoard) {
 				seen[id] = true
 			}
 		}
@@ -747,11 +747,11 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 // transaction.
 type restrictedGuard struct {
 	actor  uuid.UUID
-	before map[uuid.UUID]map[uuid.UUID]bool // nil: the owner acts, nothing to check
+	before map[uuid.UUID]map[uuid.UUID]bool // nil: the owner who sees private acts, nothing to check
 }
 
 func newRestrictedGuard(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor perm.Member, actorID uuid.UUID) (restrictedGuard, error) {
-	if actor.Role == perm.RoleOwner {
+	if actor.SeesPrivate() { // ADR-0078 addendum: the owner is guarded too unless «Владелец видит приватное»
 		return restrictedGuard{}, nil
 	}
 	before, err := restrictedViews(ctx, q, wsID)

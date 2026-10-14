@@ -15,8 +15,9 @@ func TestLimitExempt(t *testing.T) {
 		{"owner", perm.RoomAccess{Role: perm.RoleOwner}, true},
 		{"admin", perm.RoomAccess{Role: perm.RoleAdmin}, false},
 		{"member", perm.RoomAccess{Role: perm.RoleMember}, false},
-		{"owner in a private temp room (ADR-0078)", perm.RoomAccess{Role: perm.RoleOwner, PrivateTemp: true}, false},
-		{"owner in a restricted room", perm.RoomAccess{Role: perm.RoleOwner, Restricted: true}, true},
+		{"owner in a private temp room (ADR-0078)", perm.RoomAccess{Role: perm.RoleOwner, Private: true}, false},
+		{"owner in a private permanent room (ADR-0078 addendum)", perm.RoomAccess{Role: perm.RoleOwner, Private: true}, false},
+		{"owner who sees private, private room", perm.RoomAccess{Role: perm.RoleOwner, Private: true, Member: perm.Member{Role: perm.RoleOwner, OwnerSeesPrivate: true}}, true},
 	} {
 		if got := limitExempt(c.acc); got != c.want {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
@@ -24,7 +25,7 @@ func TestLimitExempt(t *testing.T) {
 	}
 	room := wsRoom{}
 	room.UserLimit = 2
-	if a := admissionFor(room, limitExempt(perm.RoomAccess{Role: perm.RoleOwner, PrivateTemp: true})); a.room != 2 {
+	if a := admissionFor(room, limitExempt(perm.RoomAccess{Role: perm.RoleOwner, Private: true})); a.room != 2 {
 		t.Fatalf("owner in a private temp room skips user_limit: %+v", a)
 	}
 }

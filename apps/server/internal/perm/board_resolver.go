@@ -20,10 +20,13 @@ type BoardAccess struct {
 	Role        Role // highest built-in role
 	Member      Member
 	Bits        Bits // 0 = the board is hidden from the user
-	Private     bool
-	Restricted  bool // boards.restricted (ADR-0048)
-	Archived    bool
-	Suspended   bool
+	// Private: a private board (is_private or restricted; ADR-0058 addendum 2026-10-14): no
+	// bypass for ADMINISTRATOR, workspace-level board bits or the owner (NoBypass).
+	Private bool
+	// CreatedBy: the board's creator (uuid.Nil when unknown).
+	CreatedBy uuid.UUID
+	Archived  bool
+	Suspended bool
 	// DisabledFeatures: boards.disabled_features, the BoardFeature bit mask switched off
 	// (ADR-0058 §3; bit = the enum value).
 	DisabledFeatures int64
@@ -32,6 +35,11 @@ type BoardAccess struct {
 	// ADR-0076 §2) — they see the board through those tasks only (TaskBits).
 	TaskScoped bool
 }
+
+// NoBypass reports whether workspace-level rights (VIEW_JOURNALS, ADMINISTRATOR, the owner) stay
+// outside the board: a private board, unless the member is the owner with «Владелец видит
+// приватное» on.
+func (a BoardAccess) NoBypass() bool { return a.Private && !a.Member.SeesPrivate() }
 
 // Board returns the user's access to a board, or ErrNoBoard when the board does not exist or
 // the user is not a member of its workspace. Bits may be 0 (a hidden board): callers answer 404
@@ -49,7 +57,8 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 		case err != nil:
 			return BoardAccess{}, fmt.Errorf("perm: load board access: %w", err)
 		case row.Role != nil:
-			m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)}
+			m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions), OwnerSeesPrivate: row.OwnerSeesPrivate}
+			flags := BoardFlagsOf(row.IsPrivate, row.Restricted, row.CreatedBy)
 			n := min(len(row.RoleAllows), len(row.RoleDenies))
 			ovs := make([]Override, n)
 			for i := range n {
@@ -57,8 +66,8 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 			}
 			acc = BoardAccess{
 				WorkspaceID: row.WorkspaceID, Role: m.Role, Member: m,
-				Bits:    ComputeBoard(m.Raw(), BoardScopeOf(m, row.IsPrivate, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
-				Private: row.IsPrivate, Restricted: row.Restricted, Archived: row.Archived, Suspended: row.Suspended,
+				Bits:    ComputeBoard(m.Raw(), BoardScopeOf(m, flags), ovs, override(row.UserAllow, row.UserDeny)),
+				Private: flags.Private, CreatedBy: flags.CreatedBy, Archived: row.Archived, Suspended: row.Suspended,
 				DisabledFeatures: row.DisabledFeatures,
 			}
 			acc.TaskScoped = row.Invited && acc.Bits == 0 && m.Role != RoleGuest && !row.Archived

@@ -463,7 +463,8 @@ SELECT r.workspace_id,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        (r.archived_at IS NOT NULL)::boolean AS archived,
        (r.expires_at IS NOT NULL)::boolean AS temp,
-       r.created_by
+       r.created_by,
+       coalesce(w.owner_sees_private, false)::boolean AS owner_sees_private
 FROM rooms r
 LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = $1
@@ -488,23 +489,24 @@ type GetRoomAccessParams struct {
 }
 
 type GetRoomAccessRow struct {
-	WorkspaceID     *uuid.UUID
-	Type            string
-	Restricted      bool
-	IsPrivate       bool
-	Role            *string
-	RoleIds         []uuid.UUID
-	RolePositions   []int32
-	RolePermissions []int64
-	RoleAllows      []int64
-	RoleDenies      []int64
-	UserAllow       *int64
-	UserDeny        *int64
-	DmMembers       []uuid.UUID
-	Suspended       bool
-	Archived        bool
-	Temp            bool
-	CreatedBy       *uuid.UUID
+	WorkspaceID      *uuid.UUID
+	Type             string
+	Restricted       bool
+	IsPrivate        bool
+	Role             *string
+	RoleIds          []uuid.UUID
+	RolePositions    []int32
+	RolePermissions  []int64
+	RoleAllows       []int64
+	RoleDenies       []int64
+	UserAllow        *int64
+	UserDeny         *int64
+	DmMembers        []uuid.UUID
+	Suspended        bool
+	Archived         bool
+	Temp             bool
+	CreatedBy        *uuid.UUID
+	OwnerSeesPrivate bool
 }
 
 // Everything needed to compute a user's permissions in a room, in one round trip. Workspace
@@ -535,6 +537,7 @@ func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (G
 		&i.Archived,
 		&i.Temp,
 		&i.CreatedBy,
+		&i.OwnerSeesPrivate,
 	)
 	return i, err
 }
@@ -556,7 +559,8 @@ SELECT r.workspace_id,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        (r.archived_at IS NOT NULL)::boolean AS archived,
        (r.expires_at IS NOT NULL)::boolean AS temp,
-       r.created_by
+       r.created_by,
+       coalesce(w.owner_sees_private, false)::boolean AS owner_sees_private
 FROM rooms r
 CROSS JOIN unnest($1::uuid[]) WITH ORDINALITY AS k(user_id, ord)
 LEFT JOIN workspaces w ON w.id = r.workspace_id
@@ -583,23 +587,24 @@ type GetRoomAccessesParams struct {
 }
 
 type GetRoomAccessesRow struct {
-	WorkspaceID     *uuid.UUID
-	Type            string
-	Restricted      bool
-	IsPrivate       bool
-	Role            *string
-	RoleIds         []uuid.UUID
-	RolePositions   []int32
-	RolePermissions []int64
-	RoleAllows      []int64
-	RoleDenies      []int64
-	UserAllow       *int64
-	UserDeny        *int64
-	DmMembers       []uuid.UUID
-	Suspended       bool
-	Archived        bool
-	Temp            bool
-	CreatedBy       *uuid.UUID
+	WorkspaceID      *uuid.UUID
+	Type             string
+	Restricted       bool
+	IsPrivate        bool
+	Role             *string
+	RoleIds          []uuid.UUID
+	RolePositions    []int32
+	RolePermissions  []int64
+	RoleAllows       []int64
+	RoleDenies       []int64
+	UserAllow        *int64
+	UserDeny         *int64
+	DmMembers        []uuid.UUID
+	Suspended        bool
+	Archived         bool
+	Temp             bool
+	CreatedBy        *uuid.UUID
+	OwnerSeesPrivate bool
 }
 
 // GetRoomAccess for several users at once (the RTC identity sweep checks a room in one call):
@@ -632,6 +637,7 @@ func (q *Queries) GetRoomAccesses(ctx context.Context, arg GetRoomAccessesParams
 			&i.Archived,
 			&i.Temp,
 			&i.CreatedBy,
+			&i.OwnerSeesPrivate,
 		); err != nil {
 			return nil, err
 		}

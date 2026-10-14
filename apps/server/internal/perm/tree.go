@@ -32,6 +32,10 @@ type TreeInput struct {
 	Raw   Bits
 	Guest bool
 	Chain []TreeLevel
+	// Owner: the member is the workspace owner; OwnerSeesPrivate: the workspace's «Владелец
+	// видит приватное» (addendum 2026-10-14). Both together: all three bits on every node,
+	// restricted or not — the owner manages what a former member left behind.
+	Owner, OwnerSeesPrivate bool
 }
 
 // TreeOf is the workspace-level rule of a section (TS: treePermissions): guests nothing;
@@ -57,8 +61,12 @@ func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 // owner of the level always has VIEW | WRITE. A child inherits its parent's result. Overrides
 // touch b.Override() only. Without VIEW nothing (404). Inside a restricted subtree a MANAGE
 // holder let in with WRITE (by an override or ownership) has MANAGE there as well (the access
-// dialog, anyone's items); let in with VIEW only, just VIEW.
+// dialog, anyone's items); let in with VIEW only, just VIEW. The workspace owner with
+// OwnerSeesPrivate has all three bits everywhere (Member.SeesPrivate).
 func ComputeTree(b TreeBits, in TreeInput) Bits {
+	if in.Owner && in.OwnerSeesPrivate && !in.Guest {
+		return b.All()
+	}
 	ws := TreeOf(b, in.Raw, in.Guest)
 	if ws&b.Manage != 0 && !Restricted(in.Chain) {
 		return b.All()
@@ -134,7 +142,7 @@ func ComputeTreeIn(b TreeBits, m Member, chain []TreeNode) Bits {
 		}
 		levels = append(levels, l)
 	}
-	return ComputeTree(b, TreeInput{Raw: m.Raw(), Guest: m.Role == RoleGuest, Chain: levels})
+	return ComputeTree(b, TreeInput{Raw: m.Raw(), Guest: m.Role == RoleGuest, Chain: levels, Owner: m.Role == RoleOwner, OwnerSeesPrivate: m.OwnerSeesPrivate})
 }
 
 // RestrictedIn reports whether a stored chain runs through a restricted node (Restricted over
