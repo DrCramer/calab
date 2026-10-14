@@ -131,6 +131,11 @@ bot_commands        bot_user_id, name ([a-z0-9_]{1,32}), description (≤ 256), 
 bot_webhook_deliveries id (uuidv7 приложения = id в теле), bot_user_id, payload? (JSON; NULL после завершения), attempts,
                     next_at, created_at, delivered_at?, failed_at?, error          — outbox webhook-ов ботов
 bot_blocks          user_id, bot_user_id, created_at   PK (user_id, bot_user_id) — человек заблокировал бота
+bot_contact_shares  id (uuidv7), workspace_id → workspaces CASCADE («домашнее» пространство бота), bot_user_id (без FK),
+                    user_id → users CASCADE, room_id (DM), message_id, button_id (без FK), fields text[] ('phone' | 'email',
+                    1–2), created_at   UNIQUE (message_id, button_id, user_id) — контакт, отданный боту кнопкой
+                    REQUEST_CONTACT (ADR-0100, миграция 00092): и лимит (одна отдача на кнопку на человека, ≤ 10 в час —
+                    индекс (user_id, created_at)), и журнал пространства бота без значений (VIEW_JOURNALS)
 
                     users += username? (citext, UNIQUE, [a-z0-9_]{3,32}; одно пространство имён с ботами — у
                     аккаунта бота его bots.username, удалённый бот освобождает), phone? (≤ 32: +, цифры, пробелы,

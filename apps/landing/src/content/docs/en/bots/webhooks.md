@@ -42,6 +42,7 @@ await bot.webhook.set('https://bot.example.com/calab', process.env.WEBHOOK_SECRE
 - `eventCreate`, `eventUpdate`, `eventDelete`, `eventRsvp` — as on the gateway: outside addresses only to a bot that may change the meeting.
 - `workspaceMemberUpdate`.
 - `botCallback` — presses of buttons under the bot's messages (see [Commands and buttons](./commands-buttons)).
+- `contactShared` — contacts people shared with the bot (see [Commands and buttons](./commands-buttons#contact-request)).
 - `taskNotice` — notifications of people who chose this bot (see [Task notifications](./task-notices)).
 
 Voice events (`voiceStateUpdate` and others) arrive **only** over the gateway.

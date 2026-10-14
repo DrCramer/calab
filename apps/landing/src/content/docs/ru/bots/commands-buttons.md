@@ -182,3 +182,73 @@ bot.on('callback', async (c) => {
 - Повтор нажатия тем же человеком с тем же `nonce` (1–64 байта) возвращает исходный `interactionId` без повторной доставки — даже после правки или удаления клавиатуры. Тот же `nonce` для другого нажатия — конфликт. Квитанции живут, пока сообщение не удалено физически. Разные `nonce` могут быть приняты оба.
 - Бот обязан надёжно дедуплицировать `callback.id` между транспортами и повторами и делать внешние эффекты идемпотентными. Нажатие, принятое до изменения черновика, не отменяется — сверяйте свою текущую версию. Кеш вебхуков в SDK ограничен и не даёт гарантии «ровно один раз».
 - Бот, убранный из последнего общего пространства, не получает старые нажатия из DM.
+
+## Запрос контакта
+
+Бот может попросить у человека телефон или почту — как в Telegram. Это кнопка вида `INLINE_BUTTON_KIND_REQUEST_CONTACT` в обычной клавиатуре. Работает **только в личном чате бота с человеком**: в комнате пространства отправка или правка такого сообщения — `400 BAD_REQUEST`, `reason` `BOT_CONTACT_REQUEST_DM_ONLY`.
+
+```sh tab="curl"
+curl -s -X POST $CALAB/api/rooms/$DM/messages \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"content": "Оставьте контакт — перезвоним", "nonce": "signup-42",
+       "inlineKeyboard": {"rows": [{"buttons": [{"id": "contact", "label": "Поделиться контактом",
+         "kind": "INLINE_BUTTON_KIND_REQUEST_CONTACT",
+         "fields": ["CONTACT_FIELD_PHONE", "CONTACT_FIELD_EMAIL"],
+         "reason": "Чтобы менеджер мог перезвонить", "data": "signup:42"}]}]}}'
+```
+
+```js tab="JavaScript"
+await bot.send(dmRoomId, {
+  text: 'Оставьте контакт — перезвоним',
+  buttons: [[{ kind: 'requestContact', text: 'Поделиться контактом', fields: ['phone', 'email'], reason: 'Чтобы менеджер мог перезвонить', data: 'signup:42' }]],
+});
+```
+
+| Поле | Правило |
+|---|---|
+| `kind` | `INLINE_BUTTON_KIND_REQUEST_CONTACT`; без него кнопка обычная (`botCallback`) |
+| `fields` | `CONTACT_FIELD_PHONE`, `CONTACT_FIELD_EMAIL` — одно или оба, без повторов |
+| `reason` | необязательно, до 120 символов — человек видит, зачем боту контакт |
+
+Человек нажимает кнопку и видит карточку: что получит бот (телефон и почта из профиля, подтверждены ли они, пустое поле — «не указан») и вашу причину. Без его подтверждения ничего не уходит. После подтверждения клиент вызывает `POST /api/messages/{id}/buttons/{buttonId}/contact` (без тела, только люди) — контакт **собирает сервер из профиля**, клиент значения не присылает.
+
+Ограничения: одна отдача на кнопку на человека (`409 CONTACT_ALREADY_SHARED`, кнопка показывается как «Отправлено»), не больше 10 отдач в час на человека (`429 CONTACT_SHARE_LIMIT`), ни одного запрошенного поля в профиле — `422 CONTACT_EMPTY`.
+
+### Событие `contactShared`
+
+Приходит **только этому боту** — через gateway и вебхук. Заполнены только запрошенные кнопкой и непустые поля:
+
+```json
+{
+  "contactShared": {
+    "id": "0192a1f0-…",
+    "botUserId": "0192a1b2-3c4d-7e5f-8a9b-0c1d2e3f4a5b",
+    "userId": "0191f0c2-7a10-7d3e-9b11-5c2f8e4a6d01",
+    "displayName": "Ольга",
+    "phone": "+7 999 123-45-67",
+    "email": "olga@example.com",
+    "emailVerified": true,
+    "sharedAt": "2026-10-14T10:05:00Z",
+    "roomId": "0192a1c0-…",
+    "messageId": "0192a1d0-…",
+    "buttonId": "contact",
+    "data": "signup:42",
+    "fields": ["CONTACT_FIELD_PHONE", "CONTACT_FIELD_EMAIL"]
+  }
+}
+```
+
+- `emailVerified` — адрес подтверждён кодом из письма. `phoneVerified` пока всегда `false`: подтверждения телефона в продукте нет. Поле с `false` в JSON не выводится.
+- `id` одинаков в gateway и вебхуке и совпадает с id доставки — дедуплицируйте по нему.
+- В чате появляется служебная строка «Вы поделились контактом с @bot: телефон, почта» — её видят оба, значений в ней нет. Бот получает её как обычный `messageCreate` (системное сообщение `contactShared`).
+- Факт отдачи (кто, какому боту, какие поля, когда — без значений) записывается в журнал пространства бота: `GET /api/workspaces/{id}/bot-contact-shares` для тех, у кого `VIEW_JOURNALS`.
+
+```js tab="JavaScript"
+bot.on('contactShared', async (c) => {
+  if (await seen(c.id)) return;
+  await saveLead({ userId: c.userId, name: c.displayName, phone: c.phone, email: c.email, emailVerified: c.emailVerified });
+});
+```
+
+> [!WARNING]
+> Контакт — персональные данные. Храните его только для той цели, что указали в `reason`, и не публикуйте в общие комнаты.

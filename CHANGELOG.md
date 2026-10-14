@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Добавлено
+- **Бот запрашивает контакт** (ADR-0100): кнопка `REQUEST_CONTACT` («Поделиться контактом») в DM бота с человеком (вне DM — `400 BOT_CONTACT_REQUEST_DM_ONLY`); человек видит, что получит бот (телефон / почта, подтверждено или нет, причина бота) и подтверждает; `POST /api/messages/{id}/buttons/{buttonId}/contact` — контакт собирает сервер из профиля, только запрошенные и непустые поля; событие `CONTACT_SHARED` (102) только этому боту — gateway и вебхук; системная строка «Вы поделились контактом с @bot: …» в DM; ≤ 1 отдачи на кнопку, ≤ 10 в час; журнал `GET /api/workspaces/{id}/bot-contact-shares` (`VIEW_JOURNALS`, без значений; миграция 00092).
+- **Bot SDK**: `buttons` с видом `requestContact`, событие `contactShared`, `keyboardFromButtons`.
+
 ## [3.4.0] — 2026-10-14
 
 ### Коротко
