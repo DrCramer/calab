@@ -15,6 +15,7 @@ import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileRoute } from '../people/FormerProfile';
 import { AchievementLayers } from '../people/AchievementLayers';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
+import { TempArchiveDialog } from '../workspace/TempArchive';
 import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
@@ -52,6 +53,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'temp-room-create':
         node = <TempRoomDialog onClose={close} workspaceId={d.workspaceId} />;
+        break;
+      case 'temp-archive':
+        node = <TempArchiveDialog onClose={close} workspaceId={d.workspaceId} />;
         break;
       case 'temp-room-extend':
         node = <TempExtendDialog onClose={close} roomId={d.roomId} />;

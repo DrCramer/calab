@@ -187,6 +187,7 @@ export const en: Dict = {
   'ws.leaveConfirm': 'Leave “{name}”? You can only come back with an invite.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voice & screen share',
+  'ws.tabRooms': 'Rooms',
   'ws.tabLibrary': 'Library',
   'ws.tabInvites': 'Invites',
   'ws.tabDanger': 'Delete',

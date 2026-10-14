@@ -22,6 +22,8 @@ export type Dialog =
   | { kind: 'temp-room-create'; workspaceId: string }
   /** «Продлить › До даты…» of a temporary room. */
   | { kind: 'temp-room-extend'; roomId: string }
+  /** The archive of temporary rooms (ADR-0044 addendum 14.10): a dialog on the desktop, a pushed screen on the phone. */
+  | { kind: 'temp-archive'; workspaceId: string }
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
