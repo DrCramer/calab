@@ -44,6 +44,7 @@ import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '..
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
+import { isMobileNow } from '../lib/mobile';
 import { playSound } from '../lib/sounds';
 import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
@@ -2395,7 +2396,8 @@ class VoiceEngine {
     setVoice({ pttDown: on });
     this.applyTransmit();
     const cue = pttCue(on, useVoice.getState(), inCall);
-    if (cue) playSound(cue);
+    // Never on the phone: the hold button gives a haptic, and the cue is a separate device-local setting.
+    if (cue && !isMobileNow()) playSound(cue);
     const up = this.pttUp;
     if (!on && up) {
       this.pttUp = null;
