@@ -4,11 +4,11 @@ import {
   CreateWikiLinkRequestSchema,
   CreateWikiPageRequestSchema,
   EmptyWikiTrashResponseSchema,
-  FileMetaSchema,
   ListWikiPagesResponseSchema,
   SearchType,
   UpdateWikiPageRequestSchema,
   UpdateWikiPermissionsRequestSchema,
+  UploadFileResponseSchema,
   WikiLinkResponseSchema,
   WikiPageResponseSchema,
   WikiPathResponseSchema,
@@ -79,7 +79,7 @@ export const wikiApi = {
   trashDays: async (ws: string): Promise<number> => (await call('GET', `${W(ws)}/settings`, WikiSettingsSchema)).trashDays,
   setTrashDays: (ws: string, days: number) => callEmpty('PUT', `${W(ws)}/settings`, body(WikiSettingsSchema, { trashDays: days })),
   /** A picture into the page (`wiki_page_files`): the editor's images and the cover. */
-  upload: (id: string, file: File, onProgress: (f: number) => void = () => undefined) => uploadInto(`${P(id)}/files`, FileMetaSchema, (r) => (r.id ? r : undefined), file, file.name, onProgress),
+  upload: (id: string, file: File, onProgress: (f: number) => void = () => undefined) => uploadInto(`${P(id)}/files`, UploadFileResponseSchema, (r) => r.file, file, file.name, onProgress),
 };
 
 // ---------------------------------------------------------------- loading
@@ -201,24 +201,31 @@ function refetch(ws: string, keys: readonly string[]): void {
 }
 
 /**
- * WIKI_PAGE_UPSERT: applied at once (my_bits = 0 in an event — the known bits stay) and, with the
- * section on screen, the touched lists are refetched (real positions and bits). A hidden section
- * keeps nothing fresh: its lists are dropped and reload on the next open (no requests now).
+ * WIKI_PAGE_UPSERT: applied at once. The gateway fills my_bits per recipient, but the event page
+ * carries no link and no `shared` flag (those are for who may manage), so the known ones stay.
+ * With the section on screen the touched lists are refetched (real positions of the siblings) only
+ * when the structure changed (new, moved, trashed or restored) — a title, icon or preview update
+ * costs no request. A hidden section keeps nothing fresh: its lists are dropped and reload on the
+ * next open (no requests now).
  */
 export function onWikiPageUpsert(e: WikiPageUpsert): void {
-  const page = e.page;
-  if (!page) return;
+  const incoming = e.page;
+  if (!incoming) return;
+  const prev = useWiki.getState().pages[incoming.id];
+  const page = prev ? { ...incoming, link: prev.link, shared: prev.shared } : incoming;
   if (!onScreen(e.workspaceId)) {
     useWiki.getState().forgetLists(e.workspaceId);
-    if (useWiki.getState().pages[page.id]) useWiki.getState().upsert(page, true);
+    if (prev) useWiki.getState().upsert(page, true);
     return;
   }
-  const prev = useWiki.getState().pages[page.id];
   useWiki.getState().upsert(page, true);
-  const keys = [childKey(e.workspaceId, page.parentId), trashKey(e.workspaceId)];
-  if (prev && prev.parentId !== page.parentId) keys.push(childKey(e.workspaceId, prev.parentId));
-  refetch(e.workspaceId, keys);
-  // The open page: its own bits may have changed with the access.
+  const structural = !prev || prev.parentId !== page.parentId || prev.position !== page.position || !!prev.trashedAt !== !!page.trashedAt || prev.trashedRoot !== page.trashedRoot;
+  if (structural) {
+    const keys = [childKey(e.workspaceId, page.parentId), trashKey(e.workspaceId)];
+    if (prev && prev.parentId !== page.parentId) keys.push(childKey(e.workspaceId, prev.parentId));
+    refetch(e.workspaceId, keys);
+  }
+  // The open page: its link and sharing (not in the event) may have changed with the access.
   if (pageOf(useWikiUi.getState(), e.workspaceId) === page.id) void loadPage(e.workspaceId, page.id);
 }
 

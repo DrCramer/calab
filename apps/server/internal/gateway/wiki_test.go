@@ -33,6 +33,7 @@ func TestWikiEventsPerRecipient(t *testing.T) {
 	closed := []perm.TreeNode{{Restricted: true, OwnerID: alice.String(), Overrides: []perm.OverrideTarget{
 		{TargetType: "user", TargetID: guest.String(), Override: perm.Override{Allow: perm.WikiView}}}}}
 
+	myBits := map[uuid.UUID]perm.Bits{}
 	deliver := func(ev *v1.DispatchEvent) map[uuid.UUID]string {
 		sessions := []*Session{{user: alice}, {user: bob}, {user: guest}, {user: admin}, {user: bot}}
 		if !h.routeWiki(st, wid, uuid.New(), sessions, ev) {
@@ -47,6 +48,7 @@ func TestWikiEventsPerRecipient(t *testing.T) {
 						t.Fatal("access chain leaked to a client")
 					}
 					out[s.user] += "U"
+					myBits[s.user] = perm.Bits(x.WikiPageUpsert.GetPage().GetMyBits())
 				case *v1.DispatchEvent_WikiPageRemove:
 					if len(x.WikiPageRemove.GetAccess()) > 0 {
 						t.Fatal("access chain leaked to a client")
@@ -71,6 +73,10 @@ func TestWikiEventsPerRecipient(t *testing.T) {
 		}
 	}
 	check("open page", deliver(upsert(open, nil)), map[uuid.UUID]string{alice: "U", bob: "U", admin: "U", bot: "U"}) // a bot is a member like bob (addendum 2026-10-14)
+	// my_bits is the recipient's own: an administrator manages, a member with WIKI_WRITE does not.
+	if myBits[admin]&perm.WikiManage == 0 || myBits[bob]&perm.WikiManage != 0 || myBits[bob]&perm.WikiWrite == 0 || myBits[bob]&perm.WikiView == 0 {
+		t.Errorf("my_bits per recipient: admin %b, bob %b", myBits[admin], myBits[bob])
+	}
 	check("restricted: bob loses it, the guest gains it", deliver(upsert(closed, open)),
 		map[uuid.UUID]string{alice: "U", bob: "R", guest: "U", admin: "U", bot: "R"})
 	check("deleted forever", deliver(&v1.DispatchEvent{Event: &v1.DispatchEvent_WikiPageRemove{WikiPageRemove: &v1.WikiPageRemove{

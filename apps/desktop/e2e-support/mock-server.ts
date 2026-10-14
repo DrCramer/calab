@@ -377,6 +377,8 @@ import {
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
+  SearchResponseSchema,
+  SearchType,
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
@@ -7549,12 +7551,14 @@ class MockImpl {
       rolesOf: (m) => this.memberRoles(m),
       tick: () => tick(this.state),
       nextId: () => nextId(this.state, 'file'),
-      emit: (wsId, page, removed, viewers) =>
+      // As the gateway: the recipient's own bits in my_bits; the event page has no link and no `shared` flag.
+      emit: (wsId, page, removed, bitsOf) =>
         this.fanout((u) => {
-          if (!this.member(wsId, u) || !viewers(u)) return null;
+          const bits = this.member(wsId, u) ? bitsOf(u) : 0n;
+          if (!(bits & WIKI_BITS.VIEW)) return null;
           return removed
             ? { event: { case: 'wikiPageRemove', value: { workspaceId: wsId, pageId: page.id, parentId: page.parentId } } }
-            : { event: { case: 'wikiPageUpsert', value: { workspaceId: wsId, page: { ...page, myBits: 0n } } } };
+            : { event: { case: 'wikiPageUpsert', value: { workspaceId: wsId, page: { ...page, myBits: bits, shared: false, link: undefined } } } };
         }),
     });
   }
@@ -7632,6 +7636,13 @@ class MockImpl {
       const b = parseBody(c, CreateWikiPageRequestSchema);
       sendMsg(c.res, 201, WikiPageResponseSchema, { page: w().create(p0(c), me, b) });
     });
+    // Search of the wiki section only (the one the Wiki tree uses): the shape of the real server's answer.
+    this.wikiRoute('GET', '/api/search', (c, me) => {
+      const hits = q(c, 'type') === 'wiki' ? w().search(q(c, 'scope'), me, q(c, 'q'), Number(q(c, 'limit')) || 20) : [];
+      sendMsg(c.res, 200, SearchResponseSchema, {
+        sections: q(c, 'type') === 'wiki' ? [{ type: SearchType.WIKI, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.title, title: h.title, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'wiki' as const, value: { pageId: h.id, icon: h.icon } } })) }] : [],
+      });
+    });
     this.wikiRoute('POST', '/api/workspaces/:id/wiki/trash/empty', (c, me) => sendMsg(c.res, 200, EmptyWikiTrashResponseSchema, { deleted: w().emptyTrash(p0(c), me) }));
     this.wikiRoute('GET', '/api/workspaces/:id/wiki/settings', (c, me) => sendMsg(c.res, 200, WikiSettingsSchema, { trashDays: w().settings(p0(c), me) }));
     this.wikiRoute('PUT', '/api/workspaces/:id/wiki/settings', (c, me) => {
@@ -7706,7 +7717,7 @@ class MockImpl {
       const id = this.storeFile(page.workspaceId, me, f);
       const meta = this.state.files.get(id)?.meta;
       if (!meta) throw notFound();
-      sendMsg(c.res, 201, FileMetaSchema, meta);
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: meta }); // {file}, like POST /api/files
     });
   }
 

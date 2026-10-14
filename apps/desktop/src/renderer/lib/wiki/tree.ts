@@ -22,11 +22,22 @@ export interface WikiData {
 /** A loaded child list (or the trash): its pages are stored, the list replaced. */
 export function applyList(s: WikiData, key: string, pages: readonly WikiPage[]): WikiData {
   const next = { ...s.pages };
-  for (const p of pages) next[p.id] = keepBits(s.pages[p.id], p);
+  for (const p of pages) next[p.id] = freshest(s.pages[p.id], p);
   return { pages: next, lists: { ...s.lists, [key]: pages.map((p) => p.id) } };
 }
 
-/** An event's page carries my_bits = 0 (per recipient bits come with a refetch): the known ones stay. */
+const stamp = (p: WikiPage): bigint => (p.updatedAt ? p.updatedAt.seconds * 1_000_000_000n + BigInt(p.updatedAt.nanos) : 0n);
+
+/**
+ * A fetched list row against the stored page: a list read that started before an event (a rename
+ * a moment after the page was created) may arrive after it — the newer content stays, the fetched
+ * rights, sharing and link are taken (the event has none of the last two).
+ */
+function freshest(prev: WikiPage | undefined, p: WikiPage): WikiPage {
+  return prev && stamp(prev) > stamp(p) ? { ...prev, myBits: p.myBits, shared: p.shared, link: p.link } : keepBits(prev, p);
+}
+
+/** An event's page normally carries my_bits (the gateway fills them); a 0 (an older server) keeps the known ones. */
 function keepBits(prev: WikiPage | undefined, p: WikiPage, fromEvent = false): WikiPage {
   return fromEvent && prev && p.myBits === 0n ? { ...p, myBits: prev.myBits } : p;
 }

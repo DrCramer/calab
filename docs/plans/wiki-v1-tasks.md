@@ -15,3 +15,13 @@ ADR: [0096 Вики](../adr/0096-wiki.md). Ветка интеграции — `
 | R2 | Docs (01, 05, 08 «Вики» и правила редактора, 16), CHANGELOG «Коротко», статусы | Sonnet | всё | `docs/` |
 
 Параллельно стартуют W1 и W3 (редактор не зависит от сервера). W2 — после W1; W4 — после W3 и контракта W1.
+
+## Проверка W7
+
+Живой стек (PG17 и Redis локально, без Docker, LiveKit не нужен): `createdb calaba_w7`; сервер — `DATABASE_URL=postgres://$USER@localhost/calaba_w7 REDIS_URL=redis://localhost:6379/14 REDIS_KEY_PREFIX=w7: JWT_SECRET=<32+ символов> REGISTRATION_MODE=open EMAIL_VERIFICATION=optional HTTP_ADDR=127.0.0.1:3077 PUBLIC_APP_URL=http://localhost:4177 STORAGE_PATH=/tmp/w7 AUTH_RATE_BURST=1000 AUTH_RATE_PER_MINUTE=1000 go run ./cmd/server` (в `apps/server`; миграции применяются сами).
+- REST: `tools/wiki-walk.sh http://127.0.0.1:3077 [dir]` — 40 шагов с теми же запросами, что `services/wiki.ts`; с `dir` сохраняет ответы-фикстуры в `apps/desktop/src/renderer/services/__fixtures__/wiki` (читает `services/wiki.wire.test.ts`; версии и состояния — из прогона e2e, см. ниже).
+- Два клиента: `pnpm -F @calaba/desktop build:web`, затем `CALABA_WEB_PROXY=http://127.0.0.1:3077 pnpm -F @calaba/desktop preview:web --port 4177` (прокси `/api` теперь с `ws: true` — без него сокет `/sync` не доходит до сервера) и `CALABA_WIKI_REAL=1 CALABA_WEB_URL=http://localhost:4177 pnpm -F @calaba/desktop e2e:web --project=chromium wiki.spec.ts`.
+- Спека: два контекста chromium (два участника одного пространства) — страница приходит к B событием без перезагрузки, текст A у B ≈ 0,3–0,8 с, текст B у A ≈ 0,1–0,2 с, каретки с именами, сходимость двух одновременных вставок, компакция по бездействию (превью страницы ≈ 3 с после последней клавиши), перезагрузка, восстановление версии (у B ≈ 0,1–0,4 с), публичная ссылка анонимно: `/api/public/wiki/{code}` и поток `/state`.
+- Правило «версия не чаще 5 мин» обходится само: первая компакция страницы создаёт версию (нет предыдущей); второй версии спека не ждёт — восстановление проверено на первой.
+- Расхождения и правки — ниже: загрузка картинки отвечает `{file}`; событие теперь несёт `my_bits` получателя (шлюз), без `link`/`shared`; список, запрошенный до события, не затирает новый заголовок; цвет awareness-пользователя — `#rrggbb` (y-tiptap иначе пишет предупреждение на каждый курсор).
+- Остановить: `pkill -f vite.*preview`, остановить сервер, `dropdb calaba_w7`.
