@@ -827,7 +827,9 @@ func TestWikiSyncLimits(t *testing.T) {
 // COMPACT_REQUEST past the threshold; SNAPSHOT_POST compacts, updates the text and writes a
 // version; a stale snapshot is ignored; the public state stream is snapshot + later updates.
 func TestWikiSyncCompaction(t *testing.T) {
-	e := newEnv(t, SyncConfig{CompactUpdates: 3, CompactCheckEvery: -1, VersionEvery: time.Millisecond, SnapshotEvery: time.Millisecond})
+	e := newEnv(t, SyncConfig{CompactUpdates: 3, CompactCheckEvery: -1, VersionEvery: time.Millisecond, SnapshotEvery: time.Microsecond})
+	// Four snapshots in a row against a burst of 2: with 1 ms per token the test needs 2 ms of wall
+	// time between them, which a loaded machine sometimes does not give (4008 rate limited).
 	ctx := context.Background()
 	p := e.create(e.alice, "", "Notes")
 	a, b := e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
