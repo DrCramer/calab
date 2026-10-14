@@ -17,7 +17,7 @@ import { createLabel } from '../../services/boards';
 import { accessChoice, pickerAccess, type PickerAccess } from '../../lib/boards/access';
 import { useBoards } from '../../stores/boards';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
 import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
@@ -591,8 +591,13 @@ export { useToday, dayKey };
 /** A 20 px avatar of a member (cards, rows, chips). */
 export function MemberAvatar({ workspaceId, userId, size = 20 }: { workspaceId: string; userId: string; size?: number }): ReactNode {
   const m = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]);
-  const name = m ? nameOf(m) : '';
-  return m ? <Avatar userId={userId} name={name} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={size} /> : <UserRound className="shrink-0 text-muted" style={{ width: size, height: size }} aria-hidden />;
+  // Someone who left (ADR-0097): the profile comes by id, the picture is grey with the «left» glyph.
+  const u = useWorkspaces((s) => (m ? undefined : s.users[userId]));
+  const former = !!useFormerInfo(workspaceId, userId);
+  useResolveUnknown(workspaceId, userId);
+  if (m) return <Avatar userId={userId} name={nameOf(m)} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={size} />;
+  if (u) return <Avatar userId={userId} name={u.displayName} {...(u.avatarFileId ? { fileId: u.avatarFileId } : {})} size={size} former={former} />;
+  return <UserRound className="shrink-0 text-muted" style={{ width: size, height: size }} aria-hidden />;
 }
 
 export { colorCss };

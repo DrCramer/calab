@@ -9,6 +9,7 @@ import { useBoards } from '../../stores/boards';
 import { setApprovers, voteApproval } from '../../services/boards';
 import { myUserId } from '../../stores/session';
 import { memberName, useMemberName } from '../../stores/workspaces';
+import { FormerChip } from '../people/MemberBits';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { menuBox, menuItem } from '../shell/menu';
 import { ApproverMenu, MemberAvatar } from './menus';
@@ -220,6 +221,7 @@ const ApproverRow = memo(function ApproverRow({ workspaceId, userId, state, comm
         </span>
       </Tip>
       <span className="min-w-0 flex-1 truncate text-control font-medium">{name}</span>
+      <FormerChip workspaceId={workspaceId} userId={userId} />
       {state === ApproverState.REJECTED && comment ? (
         <Tip label={comment}>
           <span className="min-w-0 max-w-[45%] truncate text-caption text-danger-text" data-testid="approver-comment">

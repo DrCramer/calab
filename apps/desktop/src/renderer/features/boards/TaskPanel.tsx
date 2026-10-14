@@ -28,7 +28,7 @@ import { t } from '../../i18n';
 import { Markdown } from '../../lib/markdown/Markdown';
 import type { ActivityTab } from '../../lib/boards/activity';
 import { approvalsWouldReset, blockedStatusIds, decidedApprovers } from '../../lib/boards/approvals';
-import { addAssignee, draftsOf, removeAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
+import { addAssignee, draftsOf, removeAssignee, replaceAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { useMobile } from '../../lib/mobile';
 import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
@@ -56,7 +56,8 @@ import { EMPTY_ROOM_MESSAGES, useMessages } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { myUserId, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import { memberName, useMemberName } from '../../stores/workspaces';
+import { memberName, useFormerInfo, useMemberName } from '../../stores/workspaces';
+import { FormerChip } from '../people/MemberBits';
 import { Composer, toOutgoing } from '../chat/Composer';
 import { buildMetas, type RowMeta } from '../chat/grouping';
 import { MessageRow, SystemRow } from '../chat/MessageBubble';
@@ -705,6 +706,7 @@ function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: 
 
 const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdit }: { task: Task; userId: string; lead: boolean; note: string; canEdit: boolean }): ReactNode {
   const name = useMemberName(task.workspaceId, userId);
+  const former = !!useFormerInfo(task.workspaceId, userId);
   const [v, setV] = useState(note);
   const [prev, setPrev] = useState(note);
   if (prev !== note) {
@@ -720,7 +722,22 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
       <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full">
         <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
         <span className="min-w-0 truncate text-control font-medium mobile:text-[15px] mobile:font-semibold">{name}</span>
+        <FormerChip workspaceId={task.workspaceId} userId={userId} />
       </ProfileTarget>
+      {former && canEdit ? (
+        // ADR-0097 §4: a task of someone who left is not reassigned automatically — the usual picker, one tap.
+        <AssigneeMenu
+          workspaceId={task.workspaceId}
+          boardId={task.boardId}
+          value={task.assignees.map((a) => a.userId)}
+          onToggle={(u) => void setAssignees(task.id, replaceAssignee(drafts, userId, u))}
+          onNone={() => void setAssignees(task.id, removeAssignee(drafts, userId))}
+        >
+          <button type="button" className="inline-flex h-6 shrink-0 items-center rounded-full border border-line px-2 text-caption text-accent-text hover:bg-hover" data-testid="assignee-reassign">
+            {t('former.reassign')}
+          </button>
+        </AssigneeMenu>
+      ) : null}
       <Tip label={lead ? t('boards.lead') : t('boards.makeLead')}>
         <button
           type="button"

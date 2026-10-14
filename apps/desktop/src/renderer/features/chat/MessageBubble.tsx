@@ -20,7 +20,7 @@ import { useReadReceipt } from '../../stores/readReceipts';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
@@ -51,7 +51,7 @@ import { useMobile } from '../../lib/mobile';
 import { ReplySwipeIcon, useReplySwipe } from './replySwipe';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
-import { BotBadge } from '../people/MemberBits';
+import { BotBadge, FormerChip } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 import { InlineKeyboardView } from './InlineKeyboard';
@@ -67,12 +67,17 @@ const IMAGE_MAX_VH = 60;
 function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; own: boolean }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const label = useMentionLabel(workspaceId, v);
-  const mine = !own && (v === me || v === 'everyone' || v === 'here');
+  const special = v === 'everyone' || v === 'here';
+  useResolveUnknown(workspaceId, special ? '' : v);
+  // A mention of someone who left (ADR-0097 §4): no notification tint, the «бывший» chip after it.
+  const former = !!useFormerInfo(workspaceId, v);
+  const mine = !own && !former && (v === me || special);
   return (
     <ProfileTarget userId={v} name={label} workspaceId={workspaceId} className="inline text-left align-baseline">
-      <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : 'bg-accent/15 text-accent-text')} data-mention={v}>
+      <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : former ? 'bg-[var(--color-fill)] text-muted' : 'bg-accent/15 text-accent-text')} data-mention={v}>
         {label}
       </span>
+      {former ? <FormerChip workspaceId={workspaceId} userId={v} className="ml-1 align-[1px]" /> : null}
     </ProfileTarget>
   );
 }
@@ -97,6 +102,8 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);
+  useResolveUnknown(workspaceId, m.authorId); // an author who left: the profile comes by id (ADR-0097)
+  const former = !!useFormerInfo(workspaceId, m.authorId);
   // Phone: a left swipe replies (Telegram iOS) — whoever may reply from the menu.
   const mobile = useMobile();
   const reply = useCallback(() => useUi.getState().setReply(roomId, m.id), [roomId, m.id]);
@@ -126,7 +133,7 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
           <div className={cx('w-9 shrink-0 self-end', !!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}>
             {meta.last ? (
               <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
-                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} />
+                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} former={former} />
               </AuthorTarget>
             ) : null}
           </div>
@@ -376,6 +383,7 @@ function Bubble({
               {name}
             </AuthorTarget>
             <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
+            <FormerChip workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 align-[1px]" />
             {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
           </div>
         ) : null}
