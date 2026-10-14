@@ -41,6 +41,7 @@ import {
   UserSettingsSchema,
   VoiceStateSchema,
   WorkspaceRole,
+  FormerMemberReason,
   WorkspaceSchema,
   WorkspaceVisibility,
   type FileMeta,
@@ -365,6 +366,16 @@ export interface FileRec {
   thumbnail?: { bytes: Buffer; mime: string };
 }
 
+/** A person who left a workspace (ADR-0097); the profile is the mock user's. */
+export interface MockFormer {
+  userId: string;
+  role: WorkspaceRole;
+  reason: FormerMemberReason;
+  leftAt: Timestamp;
+  removedBy?: string;
+  openTasks?: number;
+}
+
 export interface MockState {
   scenario: Scenario;
   /** GET /api/version `version` ('dev' = never newer than a bundle; a test sets e.g. '99.0.0'). */
@@ -417,6 +428,8 @@ export interface MockState {
   suspendedBy: Map<string, string>;
   /** workspaceId → bans, newest first (docs/09 #32). */
   bans: Map<string, WorkspaceBan[]>;
+  /** workspaceId → former members, newest first (ADR-0097); served by …/former-members and …/users?ids=. */
+  formerMembers: Map<string, MockFormer[]>;
   /**
    * workspaceId → roles (ADR-0026). The four built-ins carry their legacy names as ids
    * («member»…: the fixture's room overrides stay valid); created lazily for new workspaces.
@@ -772,6 +785,7 @@ export function buildState(scenario: Scenario): MockState {
     planLog: new Map(),
     suspendedBy: new Map(),
     bans: new Map(),
+    formerMembers: new Map(),
     roles: new Map(),
     badges: new Map(),
     backgrounds: new Map(),

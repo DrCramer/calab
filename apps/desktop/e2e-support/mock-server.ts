@@ -139,6 +139,8 @@ import {
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
+  ListFormerMembersResponseSchema,
+  ListWorkspaceUsersResponseSchema,
   WorkspaceBanSchema,
   WorkspaceSuspensionSchema,
   AdminSetPlanResponseSchema,
@@ -3331,6 +3333,42 @@ class MockImpl {
       s().members = s().members.filter((x) => x !== target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberRemove', value: { workspaceId: ws.id, userId: targetId } } });
       noContent(c.res);
+    });
+
+    // ---------------- former members (ADR-0097)
+    this.route('GET', '/api/workspaces/:id/users', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const ids = (c.url.searchParams.get('ids') ?? '').split(',').filter(Boolean).slice(0, 100);
+      const former = s().formerMembers.get(ws.id) ?? [];
+      const out = ids.flatMap((id) => {
+        const u = s().users.get(id);
+        if (!u) return [];
+        const f = former.find((x) => x.userId === id);
+        if (!f && !this.member(ws.id, id)) return [];
+        return [{ userId: id, displayName: u.user.displayName, avatarFileId: u.user.avatarFileId, former: !!f, ...(f ? { leftAt: f.leftAt, reason: f.reason } : {}) }];
+      });
+      sendMsg(c.res, 200, ListWorkspaceUsersResponseSchema, { users: out });
+    });
+    this.route('GET', '/api/workspaces/:id/former-members', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      const q = (c.url.searchParams.get('q') ?? '').trim().toLowerCase();
+      const guests = c.url.searchParams.get('guests') === '1';
+      const rows = (s().formerMembers.get(ws.id) ?? [])
+        .filter((f) => guests || f.role !== WorkspaceRole.GUEST)
+        .flatMap((f) => {
+          const u = s().users.get(f.userId);
+          if (!u || (q && !u.user.displayName.toLowerCase().includes(q))) return [];
+          return [
+            {
+              user: { userId: f.userId, displayName: u.user.displayName, avatarFileId: u.user.avatarFileId, former: true, leftAt: f.leftAt, reason: f.reason },
+              role: f.role,
+              removedBy: f.removedBy ?? '',
+              openTasks: f.openTasks ?? 0,
+            },
+          ];
+        });
+      sendMsg(c.res, 200, ListFormerMembersResponseSchema, { members: rows, nextCursor: '' });
     });
 
     // ---------------- bans (docs/09 #32): MANAGE_MEMBERS (ADR-0048), the rules of a kick
