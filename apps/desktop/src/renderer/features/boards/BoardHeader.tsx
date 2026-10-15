@@ -1,7 +1,7 @@
 import { BoardForms } from './BoardForms';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, ArrowDownUp, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
 import { useCallback, useState, type ReactNode } from 'react';
 import { COMPLETIONS, type Completion } from '../../lib/boards/completion';
@@ -66,6 +66,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         {mobile ? null : (
           <>
             <FilterButton boardId={boardId} workspaceId={workspaceId} bar />
+            <SortMenu boardId={boardId} />
             <DisplayMenu boardId={boardId} />
             <ViewSwitch boardId={boardId} />
           </>
@@ -273,6 +274,38 @@ const SORTS: ReadonlyArray<{ v: SortBy; label: 'boards.sort.manual' | 'boards.so
   { v: 'priority', label: 'boards.sort.priority' },
   { v: 'key', label: 'boards.sort.key' },
 ];
+
+/**
+ * «Сортировка» (desktop, list view only): a header icon with the same choices as «Отображение» →
+ * Сортировка, written to `prefs.sort`. Choices of a feature the board switched off are not offered
+ * (ADR-0058 §3); lit while the sort is not the board order.
+ */
+function SortMenu({ boardId }: { boardId: string }): ReactNode {
+  const kind = useViewKind(boardId);
+  const sort = useBoardsUi((s) => prefsOf(s, boardId).sort);
+  const disabled = useDisabledFeatures(boardId);
+  if (kind !== 'list') return null;
+  const current = sortOn(sort, disabled) ? sort : 'manual';
+  return (
+    <Dropdown.Root modal={false}>
+      <Dropdown.Trigger asChild>
+        <IconButton bar label={t('boards.sortBy')} active={current !== 'manual'} className="data-[state=open]:bg-active" data-testid="sort-menu">
+          <ArrowDownUp className="size-[18px]" aria-hidden />
+        </IconButton>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-52')} sideOffset={4} align="end">
+          {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
+            <Dropdown.Item key={g.v} className={menuItem} onSelect={() => useBoardsUi.getState().setPrefs(boardId, { sort: g.v })} data-testid={`sort-${g.v}`}>
+              <span className="flex-1">{t(g.label)}</span>
+              {current === g.v ? <Check className="size-4" aria-hidden /> : null}
+            </Dropdown.Item>
+          ))}
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
 
 /** Whether the phone's «…» offers «Отображение» (the list's grouping / sort, hidden columns). */
 function useHasDisplay(boardId: string): boolean {
