@@ -11,7 +11,7 @@ import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from '
 import { Button, Card, Field, Input, Modal, Select, Spinner, Switch as Toggle } from '../../components/ui';
 import { confirmIdentity as confirmAction } from './confirm';
 import { t } from '../../i18n';
-import { errorText, identityNotConfigured } from '../../lib/api/errors';
+import { describeError, errorText, identityNotConfigured } from '../../lib/api/errors';
 import { PlanLock } from '../../components/PlanLock';
 import { planHasIdentity } from '../../lib/plan';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -19,7 +19,7 @@ import { IdentityAbout, IdentityNotConfigured } from './IdentityGate';
 import { useSession } from '../../stores/session';
 import { AuthScreen } from '../auth/AuthScreen';
 import { identityApi } from './api';
-import { lines } from './model';
+import { canSubmit, formField, validateOAuthClientForm, type OAuthFormField } from './oauthClientForm';
 import { identityDate, OneTimeSecret, useIdentityAction } from './IdentitySettings';
 import { useIdentity } from '../../stores/identity';
 import { localAuthority } from './model';
@@ -57,7 +57,6 @@ export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNod
   }, []);
   return (
     <div className="flex flex-col gap-6" data-testid="oauth-clients">
-      <LocalReauth />
       <section className="flex flex-col gap-2" aria-label={t('identity.oauth')}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <h3 className="text-caption font-semibold text-muted">{t('identity.oauth')}</h3>
@@ -187,20 +186,34 @@ function ClientForm({
   const [profile, setProfile] = useState(client?.scopes.includes('profile') ?? true);
   const [email, setEmail] = useState(client?.scopes.includes('email') ?? false);
   const [refresh, setRefresh] = useState(client?.refreshEnabled ?? false);
+  // Inline errors under the fields: the form's own pre-validation, or a 422 of the server.
+  const [errors, setErrors] = useState<Partial<Record<OAuthFormField, string>>>({});
   const action = useIdentityAction();
+  const clearError = (field: OAuthFormField): void => setErrors((e) => (e[field] ? { ...e, [field]: undefined } : e));
   const save = async (): Promise<void> => {
+    const checked = validateOAuthClientForm({ name, type, redirects, origins });
+    const found = Object.entries(checked.errors).map(([field, e]) => [field, e.value ? `${t(e.key)}: ${e.value}` : t(e.key)] as const);
+    setErrors(Object.fromEntries(found));
+    if (found.length) return;
     const init = {
-      name,
-      redirectUris: lines(redirects),
-      allowedOrigins: lines(origins),
+      ...checked.value,
       scopes: ['openid', ...(profile ? ['profile'] : []), ...(email ? ['email'] : [])],
       refreshEnabled: refresh,
     };
-    if (client) {
-      await identityApi.updateClient(workspaceId, client.clientId, { ...init, version: client.version });
-      onSaved(null);
-    } else onSaved(await identityApi.createClient(workspaceId, { ...init, type }));
+    try {
+      if (client) {
+        await identityApi.updateClient(workspaceId, client.clientId, { ...init, version: client.version });
+        onSaved(null);
+      } else onSaved(await identityApi.createClient(workspaceId, { ...init, type }));
+    } catch (e) {
+      const h = describeError(e);
+      const field = formField(h.field);
+      if (!field) throw e;
+      setErrors({ [field]: h.text });
+    }
   };
+  const native = type === OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_NATIVE;
+  const spa = type === OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_SPA;
   return (
     <Modal
       open
@@ -211,12 +224,7 @@ function ClientForm({
           <Button className="self-end mobile:self-stretch" variant="secondary" onClick={onClose}>
             {t('identity.cancel')}
           </Button>
-          <Button
-            className="self-end mobile:self-stretch"
-            busy={action.busy}
-            disabled={!name.trim() || !lines(redirects).length || lines(redirects).length > 10 || lines(origins).length > 10}
-            onClick={() => void action.run(save)}
-          >
+          <Button className="self-end mobile:self-stretch" busy={action.busy} disabled={!canSubmit(name, redirects)} onClick={() => void action.run(save)}>
             {t('identity.save')}
           </Button>
         </div>
@@ -224,37 +232,61 @@ function ClientForm({
     >
       <div className="flex flex-col gap-3">
         <h3 className="text-body font-semibold">{t('identity.appDetails')}</h3>
-        <Field label={t('identity.name')}>
-          <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+        <Field label={t('identity.name')} error={errors.name}>
+          <Input
+            value={name}
+            maxLength={100}
+            onChange={(e) => {
+              setName(e.target.value);
+              clearError('name');
+            }}
+          />
         </Field>
-        <Field label={t('identity.type')}>
-          <Select disabled={!!client} value={type} onChange={(e) => setType(Number(e.target.value))}>
+        <Field label={t('identity.type')} hint={t(native ? 'identity.clientNativeHelp' : spa ? 'identity.clientSpaHelp' : 'identity.clientWebHelp')}>
+          <Select
+            disabled={!!client}
+            value={type}
+            onChange={(e) => {
+              setType(Number(e.target.value));
+              setErrors({});
+            }}
+          >
             <option value={OAuthClientType.OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB}>{t('identity.clientWeb')}</option>
             <option value={OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_NATIVE}>{t('identity.clientNative')}</option>
             <option value={OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_SPA}>{t('identity.clientSpa')}</option>
           </Select>
         </Field>
         <h3 className="mt-2 text-body font-semibold">{t('identity.callbackSection')}</h3>
-        <Field label={t('identity.redirects')} hint={t(type === OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_NATIVE ? 'identity.nativeRedirectHelp' : 'identity.redirectHelp')}>
+        <Field label={t('identity.redirects')} hint={t(native ? 'identity.nativeRedirectHelp' : 'identity.redirectHelp')} error={errors.redirectUris}>
           <textarea
             className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
             rows={3}
             placeholder="https://app.example.com/auth/callback"
             spellCheck={false}
             value={redirects}
-            onChange={(e) => setRedirects(e.target.value)}
+            aria-invalid={!!errors.redirectUris}
+            onChange={(e) => {
+              setRedirects(e.target.value);
+              clearError('redirectUris');
+            }}
           />
         </Field>
-        <Field label={t('identity.origins')} hint={t('identity.originsHelp')}>
-          <textarea
-            className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
-            rows={2}
-            placeholder="https://app.example.com"
-            spellCheck={false}
-            value={origins}
-            onChange={(e) => setOrigins(e.target.value)}
-          />
-        </Field>
+        {spa ? (
+          <Field label={t('identity.origins')} hint={t('identity.originsHelp')} error={errors.allowedOrigins}>
+            <textarea
+              className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+              rows={2}
+              placeholder="https://app.example.com"
+              spellCheck={false}
+              value={origins}
+              aria-invalid={!!errors.allowedOrigins}
+              onChange={(e) => {
+                setOrigins(e.target.value);
+                clearError('allowedOrigins');
+              }}
+            />
+          </Field>
+        ) : null}
         <h3 className="mt-2 text-body font-semibold">{t('identity.accessSection')}</h3>
         <Toggle label={t('identity.scopes')} checked={profile} onChange={setProfile} />
         <Toggle label={t('auth.email')} checked={email} onChange={setEmail} />
