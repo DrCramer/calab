@@ -396,7 +396,11 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	if p.Guest && feature != "" {
 		return deny(ScopeDenied)
 	}
-	if op == ManageSSO || op == ManageOAuth || op == ManageDirectory || op == BootstrapLink {
+	// ManageOAuth needs no fresh password (ADR-0102): the bearer session already
+	// authenticates the admin, consent stays explicit per user, secrets are shown once and
+	// every mutation is audited. A local account passes without recency; a workspace_sso
+	// session passes only through the SSO proof below; recovery was denied above.
+	if op == ManageSSO || op == ManageDirectory || op == BootstrapLink {
 		if p.Authority != LocalAccount || !recent(now, p.LocalAuthenticatedAt, ManagementMaxAge) {
 			return deny(RecentAuthRequired)
 		}
