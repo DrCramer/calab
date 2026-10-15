@@ -125,8 +125,9 @@ describe('mentionableOnBoard (task comment @-mentions)', () => {
   const roles = legacyRoles('w');
   const member = (role: WorkspaceRole) => create(WorkspaceMemberSchema, { role, user: create(UserSchema, { id: 'u' }) });
   const MANAGE = PERMISSION_BITS.MANAGE_BOARD;
-  it('no board known: nobody', () => {
-    expect(mentionableOnBoard(undefined, roles, member(WorkspaceRole.MEMBER))).toBe(false);
+  it('board not loaded yet: everyone but guests', () => {
+    expect(mentionableOnBoard(undefined, roles, member(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mentionableOnBoard(undefined, roles, member(WorkspaceRole.GUEST))).toBe(false);
   });
   it('a manager sees the overrides: members of a public board yes, of a private board no', () => {
     expect(mentionableOnBoard(board({ permissions: VIEW | MANAGE }), roles, member(WorkspaceRole.MEMBER))).toBe(true);

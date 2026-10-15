@@ -56,7 +56,7 @@ export function memberSeesBoard(
 
 /**
  * Who a task comment may @-mention (a task room's access derives from its board, ADR-0042): members
- * who view the board. Without the board's overrides (viewer lacks MANAGE_BOARD) nobody is excluded
+ * who view the board. Without the board's overrides (board not loaded yet, or viewer lacks MANAGE_BOARD) nobody is excluded
  * by guesswork except guests; the server filters the notifications anyway.
  */
 export function mentionableOnBoard(
@@ -64,8 +64,7 @@ export function mentionableOnBoard(
   roles: readonly Role[],
   m: Pick<WorkspaceMember, 'role' | 'roleIds' | 'user'>,
 ): boolean {
-  if (!board) return false;
-  if ((board.permissions & MANAGE_BOARD) === 0n) return m.role !== WorkspaceRole.GUEST;
+  if (!board || (board.permissions & MANAGE_BOARD) === 0n) return m.role !== WorkspaceRole.GUEST;
   return memberSeesBoard(board, roles, m);
 }
 
