@@ -108,7 +108,7 @@ export class SniffingIconv extends Transform {
   private pending: Buffer[] = [];
   private pendingLen = 0;
 
-  constructor(fromCharset: string, _toCharset?: string) {
+  constructor(fromCharset: string | undefined, _toCharset?: string) {
     super();
     // The '//TRANSLIT//IGNORE' suffix is node-iconv syntax on the target; output here is plain UTF-8.
     this.declared = (fromCharset ?? '').trim();
@@ -119,7 +119,8 @@ export class SniffingIconv extends Transform {
     const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'latin1') : chunk;
     if (this.decoder || this.passthrough) {
       this.pushDecoded(buf);
-      return done();
+      done();
+      return;
     }
     this.pending.push(buf);
     this.pendingLen += buf.length;
@@ -153,7 +154,8 @@ export class SniffingIconv extends Transform {
       if (buf.length) this.push(buf);
       return;
     }
-    const text = this.decoder!.decode(buf, { stream: true });
+    if (!this.decoder) return;
+    const text = this.decoder.decode(buf, { stream: true });
     if (text) this.push(Buffer.from(text, 'utf8'));
   }
 }

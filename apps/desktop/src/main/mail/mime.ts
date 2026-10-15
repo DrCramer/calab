@@ -176,20 +176,21 @@ function dirtyCount(s: string | null | undefined): number {
  * Content-Type headers are touched, and only after a first parse came out dirty.
  */
 export function retagTextCharsets(source: Buffer): Buffer | null {
-  let changed = false;
+  // A box, not a `let`: TS narrows a local assigned only in a callback to its initial `false`.
+  const state = { changed: false };
   const out = source
     .toString('latin1')
     .replace(/^(content-type[ \t]*:[ \t]*text\/(?:plain|html)\b[^\r\n]*)/gim, (line: string) => {
       if (/charset[ \t]*=/i.test(line)) {
         const retagged = line.replace(/(charset[ \t]*=[ \t]*"?)((?:utf-?8)|(?:us-?ascii)|(?:ansi_x3\.4-?1968)|(?:ascii))("?)(?=[ \t]*(?:;|$))/gi, (_m, q1: string, _label: string, q2: string) => `${q1}x-calaba-sniff${q2}`);
-        changed ||= retagged !== line;
+        state.changed ||= retagged !== line;
         return retagged;
       }
-      changed = true;
+      state.changed = true;
       const trimmed = line.replace(/[ \t;]+$/, '');
       return `${trimmed}; charset=x-calaba-sniff`;
     });
-  return changed ? Buffer.from(out, 'latin1') : null;
+  return state.changed ? Buffer.from(out, 'latin1') : null;
 }
 
 /** Full parse of an RFC 822 source (mailparser): raw HTML (cid: links kept), text, attachments. */
