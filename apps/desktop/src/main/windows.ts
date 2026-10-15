@@ -8,6 +8,7 @@ import { isAppSession, isCheckoutSession } from './appSessions';
 import { RendererCrashBudget } from './crashRecovery';
 import { log } from './logging';
 import { windowIconPath } from './icons';
+import { isPdfViewerFrame } from './pdfFrame';
 import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -273,7 +274,8 @@ export function guardWebContents(wc: WebContents): void {
     if (!isOwnPage(url)) e.preventDefault();
   });
   wc.on('will-frame-navigate', (e) => {
-    if (!e.isMainFrame && !isOwnPage(e.url)) e.preventDefault();
+    // The PDF viewer (ADR-0103): our page's blob: frame and Chromium's viewer extension inside it.
+    if (!e.isMainFrame && !isOwnPage(e.url) && !isPdfViewerFrame(e.url, process.env['ELECTRON_RENDERER_URL'])) e.preventDefault();
   });
   wc.on('will-redirect', (e, url) => {
     if (!isOwnPage(url)) e.preventDefault();

@@ -21,7 +21,39 @@ function saveUrl(url: string, name: string): void {
   a.remove();
 }
 
-const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
+export const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
+
+/**
+ * The viewer's top row (the Lightbox, the PDF viewer): the window's title bar row in Electron — a
+ * drag region with the macOS traffic lights' 80 px and Windows' caption buttons
+ * (env(titlebar-area-*)) kept clear, like TitleBar — the name, `meta` (a counter, a size), the
+ * actions and «Закрыть». Rendered inside a Radix Dialog.Content (it holds the dialog's Title).
+ */
+export function ViewerBar({ title, meta, children }: { title: string; meta?: string | undefined; children: ReactNode }): ReactNode {
+  const os = useSession((s) => s.appInfo?.platform);
+  const electron = platform.kind === 'electron';
+  const mac = electron && os === 'darwin';
+  return (
+    <div
+      className={cx(
+        'flex shrink-0 items-center gap-2 px-4 text-[color:var(--color-on-accent)]',
+        electron ? 'drag h-[var(--titlebar-height)]' : 'h-12',
+        mac && 'pl-[80px]',
+      )}
+      style={electron ? { paddingRight: 'calc(16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' } : undefined}
+    >
+      <DialogP.Title className="min-w-0 flex-1 truncate text-body font-medium" title={title}>
+        {title}
+      </DialogP.Title>
+      {meta ? <span className="shrink-0 text-caption tabular-nums opacity-75">{meta}</span> : null}
+      <DialogP.Description className="sr-only">{title}</DialogP.Description>
+      {children}
+      <DialogP.Close asChild>
+        <CloseButton label={t('lightbox.close')} size="md" className={onDark} />
+      </DialogP.Close>
+    </div>
+  );
+}
 
 /**
  * Full-window image viewer (issue #7): opens at once with the chat thumbnail and a spinner over it,
@@ -31,7 +63,6 @@ const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14
  */
 export function Lightbox({ images, index: start, onClose, onShowInChat }: { images: LightboxImage[]; index: number; onClose: () => void; onShowInChat?: () => void }): ReactNode {
   const [index, setIndex] = useState(start);
-  const os = useSession((s) => s.appInfo?.platform);
   // Where the press began: a drag from the image released over the backdrop is not a backdrop click
   // (the click then targets their common ancestor).
   const pressedOn = useRef<EventTarget | null>(null);
@@ -55,8 +86,6 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
     );
   };
   const gallery = images.length > 1;
-  const electron = platform.kind === 'electron';
-  const mac = electron && os === 'darwin';
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
@@ -79,21 +108,7 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
           }}
           onClick={closeOnBackdrop}
         >
-          {/* The window's title bar row (Electron): a drag region, the macOS traffic lights' 80 px
-              kept clear, Windows' caption buttons (env(titlebar-area-*)) too — like TitleBar. */}
-          <div
-            className={cx(
-              'flex shrink-0 items-center gap-2 px-4 text-[color:var(--color-on-accent)]',
-              electron ? 'drag h-[var(--titlebar-height)]' : 'h-12',
-              mac && 'pl-[80px]',
-            )}
-            style={electron ? { paddingRight: 'calc(16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' } : undefined}
-          >
-            <DialogP.Title className="min-w-0 flex-1 truncate text-body font-medium" title={img.name}>
-              {img.name}
-            </DialogP.Title>
-            {gallery ? <span className="shrink-0 text-caption tabular-nums opacity-75">{`${index + 1} / ${images.length}`}</span> : null}
-            <DialogP.Description className="sr-only">{img.name}</DialogP.Description>
+          <ViewerBar title={img.name} meta={gallery ? `${index + 1} / ${images.length}` : undefined}>
             {/* Opened from a search hit (ADR-0062 §4): the message carrying the file. */}
             {onShowInChat ? (
               <IconButton label={t('search.showInChat')} onClick={onShowInChat} className={onDark}>
@@ -103,10 +118,7 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
             <IconButton label={t('lightbox.download')} onClick={download} className={onDark}>
               <Download className="size-5" />
             </IconButton>
-            <DialogP.Close asChild>
-              <CloseButton label={t('lightbox.close')} size="md" className={onDark} />
-            </DialogP.Close>
-          </div>
+          </ViewerBar>
           <div className="relative flex min-h-0 flex-1 items-center" onClick={closeOnBackdrop}>
             {gallery ? (
               <IconButton label={t('lightbox.prev')} onClick={() => step(-1)} disabled={index === 0} className={cx('z-[1] ml-2 shrink-0', onDark)}>

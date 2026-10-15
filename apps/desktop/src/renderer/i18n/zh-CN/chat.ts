@@ -164,6 +164,8 @@ export const zhChat: DictShape<typeof enChat> = {
   'lightbox.next': '下一张',
   'lightbox.loading': '正在加载图片',
   'lightbox.failed': '无法加载图片',
+  'pdfViewer.loading': '正在加载文档',
+  'pdfViewer.failed': '无法打开文档',
   // code blocks (docs/08, «Код в сообщениях»)
   'chat.code.copy': '复制代码',
   'chat.code.label': '代码',

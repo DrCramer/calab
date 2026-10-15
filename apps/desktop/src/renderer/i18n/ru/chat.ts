@@ -162,6 +162,8 @@ export const ruChat = {
   'lightbox.next': 'Следующее',
   'lightbox.loading': 'Загрузка изображения',
   'lightbox.failed': 'Не удалось загрузить изображение',
+  'pdfViewer.loading': 'Загрузка документа',
+  'pdfViewer.failed': 'Не удалось открыть документ',
   // code blocks (docs/08, «Код в сообщениях»)
   'chat.code.copy': 'Копировать код',
   'chat.code.label': 'Код',

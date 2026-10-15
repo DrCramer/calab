@@ -13,6 +13,7 @@ import { installMailGuards, shutdownMail, startMail } from './mail';
 import { initLogging, log } from './logging';
 import { recoverCapsRemap } from './capsRemap';
 import { installRendererCsp } from './csp';
+import { installDownloadHandler } from './downloads';
 import { applyDevDockIcon } from './icons';
 import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
@@ -114,6 +115,8 @@ function lockDownSession(): void {
   );
   installDisplayMediaHandler(ses);
   installRendererCsp();
+  // Every download, ours or the PDF viewer's own (ADR-0103), gets quarantine / Mark-of-the-Web.
+  installDownloadHandler(ses);
 }
 
 function forwardPower(ev: PowerEvent): void {

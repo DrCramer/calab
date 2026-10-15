@@ -164,6 +164,8 @@ export const esChat: DictShape<typeof enChat> = {
   'lightbox.next': 'Siguiente',
   'lightbox.loading': 'Cargando imagen',
   'lightbox.failed': 'No se pudo cargar la imagen',
+  'pdfViewer.loading': 'Cargando el documento',
+  'pdfViewer.failed': 'No se pudo abrir el documento',
   // code blocks (docs/08, «Код в сообщениях»)
   'chat.code.copy': 'Copiar código',
   'chat.code.label': 'Código',

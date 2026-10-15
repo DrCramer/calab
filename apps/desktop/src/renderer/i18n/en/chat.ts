@@ -164,6 +164,8 @@ export const enChat: DictShape<typeof ruChat> = {
   'lightbox.next': 'Next',
   'lightbox.loading': 'Loading image',
   'lightbox.failed': 'Could not load the image',
+  'pdfViewer.loading': 'Loading the document',
+  'pdfViewer.failed': 'Could not open the document',
   // code blocks (docs/08, «Код в сообщениях»)
   'chat.code.copy': 'Copy code',
   'chat.code.label': 'Code',

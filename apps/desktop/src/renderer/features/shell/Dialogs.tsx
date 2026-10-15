@@ -3,6 +3,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { openMessage } from '../../services/searchNav';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
+import { PdfViewer } from '../chat/PdfViewer';
 import { useUi } from '../../stores/ui';
 import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
@@ -140,6 +141,9 @@ export function Dialogs(): ReactNode {
         );
         break;
       }
+      case 'pdf':
+        node = <PdfViewer key={d.file.id} file={d.file} onClose={close} />;
+        break;
       case 'transcript':
         node = (
           <Suspense fallback={null}>

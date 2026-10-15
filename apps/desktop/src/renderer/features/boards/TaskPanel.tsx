@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type Room, type Task } from '@calaba/protocol';
+import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
 import {
   Archive,
   Bell,
@@ -65,6 +65,7 @@ import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
 import { WatchersSection } from './Watchers';
 import { GitSection } from './GitLinks';
+import { AttachmentChip } from './AttachmentChip';
 import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
@@ -375,6 +376,7 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
       setBusy(false);
     }
   };
+  const removeAttachment = (f: FileMeta): void => guard(() => void setTaskAttachments(task.id, task.attachments.filter((x) => x.id !== f.id).map((x) => x.id)));
   const mention = useCallback((val: string, key: string) => <span key={key} className="font-medium text-accent-text">@{memberName(task.workspaceId, val)}</span>, [task.workspaceId]);
   return (
     <section className="flex flex-col gap-2" aria-label={t('boards.description')}>
@@ -426,17 +428,7 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
       {attachments && (task.attachments.length || canEdit) ? (
         <div className="flex flex-wrap items-center gap-1.5">
           {task.attachments.map((f) => (
-            <span key={f.id} className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-full border border-line pl-2 pr-1 text-caption">
-              <Paperclip className="size-3.5 shrink-0 text-muted" aria-hidden />
-              <a href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:underline">
-                {f.name}
-              </a>
-              {canEdit ? (
-                <button type="button" aria-label={t('boards.removeAttachment', { name: f.name })} onClick={() => guard(() => void setTaskAttachments(task.id, task.attachments.filter((x) => x.id !== f.id).map((x) => x.id)))} className="grid size-5 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">
-                  <X className="size-3" aria-hidden />
-                </button>
-              ) : null}
-            </span>
+            <AttachmentChip key={f.id} file={f} list={task.attachments} {...(canEdit ? { onRemove: removeAttachment } : {})} />
           ))}
           {canEdit ? (
             <>

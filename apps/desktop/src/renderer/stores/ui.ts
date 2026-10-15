@@ -31,6 +31,8 @@ export type Dialog =
   | { kind: 'camera-preview' }
   /** The image viewer; `images` are the message's images (←/→), `index` the one opened; `inChat`: «Показать в чате». */
   | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string } }
+  /** The PDF viewer of an API file (ADR-0103): Chromium's built-in viewer in a blob: frame, «Скачать». */
+  | { kind: 'pdf'; file: { id: string; name: string; size: bigint } }
   /**
    * A meeting recording opened from a search hit at a segment (ADR-0062 §4): the player and the
    * summary from its card message (messageId, '' = gone), the transcript.

@@ -49,7 +49,7 @@ interface Pending {
   reject: (e: Error) => void;
 }
 
-/** Our downloads by URL; other downloads (none today) keep Chromium's default handling. */
+/** Our downloads by URL; other downloads keep Chromium's default handling (marked on completion). */
 const pending = new Map<string, Pending>();
 let installedOn: Session | null = null;
 
@@ -57,10 +57,26 @@ function broadcast(p: DownloadProgress): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(IPC.filesProgress, p);
 }
 
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
 function onWillDownload(_e: Electron.Event, item: DownloadItem): void {
   const url = item.getURLChain()[0] ?? item.getURL();
   const job = pending.get(url);
-  if (!job) return;
+  if (!job) {
+    // Another download keeps Chromium's handling (a save dialog) — today the PDF viewer's own
+    // «Скачать» / «Сохранить» (ADR-0103, a blob: of our page): the saved file is marked all the same.
+    item.once('done', (_ev, state) => {
+      const path = item.getSavePath();
+      if (state === 'completed' && path) void markFromInternet(path, originOf(currentServerUrl()));
+    });
+    return;
+  }
   pending.delete(url);
   const path = uniquePath(app.getPath('downloads'), job.name);
   item.setSavePath(path); // no save dialog
@@ -81,7 +97,8 @@ function onWillDownload(_e: Electron.Event, item: DownloadItem): void {
   });
 }
 
-function ensureHandler(ses: Session): void {
+/** The `will-download` handler on `ses` (once; also installed lazily by downloadFile). */
+export function installDownloadHandler(ses: Session): void {
   if (installedOn === ses) return;
   ses.on('will-download', onWillDownload);
   installedOn = ses;
@@ -91,7 +108,7 @@ function ensureHandler(ses: Session): void {
 export async function downloadFile(args: DownloadArgs): Promise<string> {
   if (!/^[0-9a-f-]{36}$/i.test(args.fileId)) throw new Error('invalid file id');
   const ses = session.defaultSession;
-  ensureHandler(ses);
+  installDownloadHandler(ses);
   const token = await getAccessToken();
   // A per-request marker keeps concurrent downloads of the same file apart.
   const url = `${currentServerUrl()}/api/files/${args.fileId}?dl=${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
