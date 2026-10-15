@@ -241,7 +241,7 @@ export function EmptyBoard(): ReactNode {
   return <div className="grid flex-1 place-items-center p-8 text-center text-body text-muted" data-testid="board-empty">{t('boards.empty')}</div>;
 }
 
-export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick, selecting }: { id: string; boardId: string; workspaceId: string; onClick: (id: string, e: MouseEvent) => void; selecting: boolean }): ReactNode {
+export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspaceId, onClick, selecting }: { id: string; boardId: string; boardLabel?: string; workspaceId: string; onClick: (id: string, e: MouseEvent) => void; selecting: boolean }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
   const perms = useTaskPerms(task);
   const scoped = useBoardScoped(boardId);
@@ -321,6 +321,11 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         {/* phone: the meta (badges, date) wraps under the title, aligned with it */}
         <span className="hidden h-0 basis-full mobile:block" aria-hidden />
         <span className="hidden w-[56px] shrink-0 mobile:block" aria-hidden />
+        {boardLabel ? (
+          <span className="max-w-[150px] shrink truncate text-micro text-muted" data-testid="row-board">
+            {boardLabel}
+          </span>
+        ) : null}
         {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} compact /> : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}

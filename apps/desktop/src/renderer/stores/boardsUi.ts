@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { migrateActivityTab, type ActivityTab } from '../lib/boards/activity';
 import { EMPTY_FILTER, type FilterState } from '../lib/boards/filter';
 import type { TimelineGroup, Zoom } from '../lib/boards/timeline';
+import { EMPTY_MY_FILTER, isMySort, migrateMyFilter, type MyFilter, type MySort } from '../lib/boards/myTasks';
 import { isCompletion, migrateCompletion, type Completion } from '../lib/boards/completion';
 
 /**
@@ -74,6 +75,13 @@ interface BoardsUiState {
   /** «Мои задачи» scope tabs: «Незавершённые · Завершённые · Все». */
   myCompletion: Completion;
   setMyCompletion: (v: Completion) => void;
+  /** «Мои задачи»: ordering (newest first by default), grouping by board and the light filter. */
+  mySort: MySort;
+  setMySort: (v: MySort) => void;
+  myGroup: boolean;
+  setMyGroup: (v: boolean) => void;
+  myFilter: MyFilter;
+  setMyFilter: (v: MyFilter) => void;
   /** Collapsed board categories (ADR-0058 §1: local to the client), persisted. */
   collapsedCats: Readonly<Record<string, true>>;
   toggleCategory: (categoryId: string) => void;
@@ -123,6 +131,12 @@ export const useBoardsUi = create<BoardsUiState>()(
       setMyScope: (myScope) => set({ myScope }),
       myCompletion: 'open',
       setMyCompletion: (myCompletion) => set({ myCompletion }),
+      mySort: 'created',
+      setMySort: (mySort) => set({ mySort }),
+      myGroup: true,
+      setMyGroup: (myGroup) => set({ myGroup }),
+      myFilter: EMPTY_MY_FILTER,
+      setMyFilter: (myFilter) => set({ myFilter }),
       collapsedCats: {},
       toggleCategory: (id) =>
         set((s) => {
@@ -161,7 +175,7 @@ export const useBoardsUi = create<BoardsUiState>()(
     {
       name: 'calaba-boards-ui',
       version: 1,
-      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, myCompletion: s.myCompletion, lastBoard: s.lastBoard, activityTab: s.activityTab, collapsedCats: s.collapsedCats, watchersOpen: s.watchersOpen }),
+      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, myCompletion: s.myCompletion, mySort: s.mySort, myGroup: s.myGroup, myFilter: s.myFilter, lastBoard: s.lastBoard, activityTab: s.activityTab, collapsedCats: s.collapsedCats, watchersOpen: s.watchersOpen }),
       // A stored value from an older / foreign build must not break the panel.
       merge: (stored, cur) => {
         // `panelWide` (the side panel's ⌘\, gone in 3.4.1) of an older build is dropped.
@@ -172,6 +186,9 @@ export const useBoardsUi = create<BoardsUiState>()(
           ...p,
           prefs: migratePrefs(p.prefs),
           myCompletion: isCompletion(p.myCompletion) ? p.myCompletion : cur.myCompletion,
+          mySort: isMySort(p.mySort) ? p.mySort : cur.mySort,
+          myGroup: typeof p.myGroup === 'boolean' ? p.myGroup : cur.myGroup,
+          myFilter: migrateMyFilter(p.myFilter),
           activityTab: migrateActivityTab(p.activityTab),
           collapsedCats: cats,
           watchersOpen: p.watchersOpen === true,
