@@ -194,6 +194,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.yes': 'Sí',
   'boards.no': 'No',
   'boards.hasParent': 'Tiene tarea principal',
+  'boards.f.author': 'Autor',
   'boards.f.status': 'Estado',
   'boards.f.statusType': 'Tipo de estado',
   'boards.f.assignee': 'Asignado',

@@ -194,6 +194,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.yes': '是',
   'boards.no': '否',
   'boards.hasParent': '有父任务',
+  'boards.f.author': '作者',
   'boards.f.status': '状态',
   'boards.f.statusType': '状态类型',
   'boards.f.assignee': '指派人',

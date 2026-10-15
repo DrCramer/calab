@@ -441,7 +441,13 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           ) : (
             <span className="min-w-0 flex-1 truncate">{name}</span>
           )}
-          {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
+          {priv && mine === 0 ? (
+            // Desktop: the lock sits in the menu button's slot and the «…» replaces it on hover / focus / open menu.
+            <span className="pointer-events-none absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center group-focus-within/board:opacity-0 group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:size-auto mobile:translate-y-0 mobile:opacity-100 mobile:group-hover/board:opacity-100">
+              <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} />
+            </span>
+          ) : null}
+          {priv && mine > 0 ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
           {mine > 0 ? (
             <span
               className="pointer-events-none absolute right-1 top-1/2 grid h-6 min-w-6 -translate-y-1/2 place-items-center rounded-[var(--radius-icon)] bg-[var(--color-fill)] px-1.5 text-caption tabular-nums text-muted group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:h-[22px] mobile:min-w-[22px] mobile:translate-y-0 mobile:rounded-full mobile:px-1.5 mobile:text-fg mobile:group-hover/board:opacity-100"

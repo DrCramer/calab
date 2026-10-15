@@ -194,6 +194,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.yes': 'Yes',
   'boards.no': 'No',
   'boards.hasParent': 'Has a parent',
+  'boards.f.author': 'Author',
   'boards.f.status': 'Status',
   'boards.f.statusType': 'Status type',
   'boards.f.assignee': 'Assignee',

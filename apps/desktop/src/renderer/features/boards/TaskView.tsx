@@ -198,8 +198,8 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
   return (
     <div className="flex min-h-0 flex-1">
       <div ref={scroller} className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="task-scroll">
-        <div className="px-6 pb-10 pt-8 min-[1200px]:pl-[104px] min-[1200px]:pr-12">
-          <div className="flex max-w-[760px] flex-col gap-5">
+        <div className="px-6 pb-10 pt-8 min-[1200px]:px-12">
+          <div className="mx-auto flex max-w-[760px] flex-col gap-5">
             <TitleEditor task={task} canEdit={canEdit} large />
             <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
             {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
@@ -210,7 +210,7 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
             {room ? (
               <>
                 <Activity task={task} room={room} toEnd={toEnd} commentsOff={commentsOff} aside={<ActivityAside task={task} />} />
-                <CommentBox task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="overflow-hidden rounded-[var(--radius-card)] border border-line" />
+                <CommentBox task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="-mx-4" />
               </>
             ) : (
               <div className="grid h-16 place-items-center">

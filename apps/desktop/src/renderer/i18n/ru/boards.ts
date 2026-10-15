@@ -197,6 +197,7 @@ export const ruBoards = {
   'boards.yes': 'Да',
   'boards.no': 'Нет',
   'boards.hasParent': 'Есть родитель',
+  'boards.f.author': 'Автор',
   'boards.f.status': 'Статус',
   'boards.f.statusType': 'Тип статуса',
   'boards.f.assignee': 'Исполнитель',

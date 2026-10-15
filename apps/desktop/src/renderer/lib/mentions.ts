@@ -147,10 +147,10 @@ export interface MentionCandidate {
   nick?: string;
 }
 
-const LATIN = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`";
-const CYRILLIC = 'йцукенгшщзхъфывапролджэячсмитьбюё';
-const TO_CYR = new Map([...LATIN].map((ch, i) => [ch, CYRILLIC[i] ?? ch]));
-const TO_LAT = new Map([...CYRILLIC].map((ch, i) => [ch, LATIN[i] ?? ch]));
+const LATIN = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`".split('');
+const CYRILLIC = 'йцукенгшщзхъфывапролджэячсмитьбюё'.split('');
+const TO_CYR = new Map<string, string>(LATIN.map((ch, i) => [ch, CYRILLIC[i] ?? ch]));
+const TO_LAT = new Map<string, string>(CYRILLIC.map((ch, i) => [ch, LATIN[i] ?? ch]));
 
 /**
  * The query as typed in the other keyboard layout (QWERTY ↔ ЙЦУКЕН, both ways, lower-case):
@@ -158,7 +158,7 @@ const TO_LAT = new Map([...CYRILLIC].map((ch, i) => [ch, LATIN[i] ?? ch]));
  */
 export function layoutSwap(query: string): string {
   const q = query.toLowerCase();
-  const chars = [...q];
+  const chars = Array.from(q);
   const hasLat = chars.some((c) => TO_CYR.has(c) && /[a-z]/.test(c));
   const hasCyr = chars.some((c) => TO_LAT.has(c));
   if (hasLat === hasCyr) return q;

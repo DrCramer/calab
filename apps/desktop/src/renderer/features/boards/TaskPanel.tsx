@@ -464,6 +464,19 @@ export function Prop({ label, children, testId }: { label: string; children: Rea
   );
 }
 
+/** The task's author (Task.created_by: a user or a bot), read-only, the first property. */
+const AuthorProp = memo(function AuthorProp({ task }: { task: Task }): ReactNode {
+  const name = useMemberName(task.workspaceId, task.createdBy);
+  return (
+    <Prop label={t('boards.f.author')} testId="prop-author">
+      <ProfileTarget userId={task.createdBy} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex h-7 min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] px-1 text-left">
+        <MemberAvatar workspaceId={task.workspaceId} userId={task.createdBy} size={20} />
+        <span className="min-w-0 truncate text-control font-medium">{name}</span>
+      </ProfileTarget>
+    </Prop>
+  );
+});
+
 export const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
 export function Properties({ task, canEdit, perms, scoped, disabled, bare = false }: { task: Task; canEdit: boolean; perms: bigint | undefined; scoped: boolean; disabled: Disabled; bare?: boolean }): ReactNode {
@@ -483,6 +496,7 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
   const req = (k: string): { open?: boolean; onOpenChange?: (v: boolean) => void } => (menu === k ? { open: true, onOpenChange: (v) => !v && useBoardsUi.getState().closeMenu() } : {});
   return (
     <section className={cx('flex flex-col gap-0.5', !bare && 'rounded-[var(--radius-card)] border border-line p-2')} aria-label={t('boards.properties')} data-testid="task-properties">
+      {task.createdBy ? <AuthorProp task={task} /> : null}
       <Prop label={t('boards.f.status')}>
         <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(task.id, { statusId: s })} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
@@ -711,8 +725,8 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
     if (v.trim() !== note) void setAssignees(task.id, setNote(drafts, userId, v));
   };
   return (
-    <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)] mobile:grid mobile:grid-cols-[minmax(0,1fr)_auto_auto] mobile:gap-x-1 mobile:px-0" data-testid="assignee-row" data-user={userId}>
-      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className={cx('inline-flex min-w-0 shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full', stacked ? 'flex-1' : former ? 'max-w-[62%]' : 'max-w-[40%]')}>
+    <div className={cx('group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)] mobile:grid mobile:grid-cols-[minmax(0,1fr)_auto_auto] mobile:gap-x-1 mobile:px-0', stacked && 'relative')} data-testid="assignee-row" data-user={userId}>
+      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className={cx('inline-flex min-w-0 shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full', stacked ? 'flex-1' : 'max-w-full')}>
         <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
         <span className="min-w-0 truncate text-control font-medium mobile:text-[15px] mobile:font-semibold">{name}</span>
         <FormerChip workspaceId={task.workspaceId} userId={userId} />
@@ -738,7 +752,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
           aria-pressed={lead}
           aria-label={lead ? t('boards.lead') : t('boards.makeLead')}
           onClick={() => void setAssignees(task.id, setLead(drafts, userId))}
-          className={cx('grid size-6 shrink-0 place-items-center rounded-full', lead ? 'text-[var(--color-role-owner)]' : 'text-faint opacity-0 hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100')}
+          className={cx('grid size-6 shrink-0 place-items-center rounded-full', lead ? 'text-[var(--color-role-owner)]' : cx('text-faint opacity-0 hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100', stacked && 'absolute right-7 top-1 bg-elev'))}
           data-testid="assignee-lead"
         >
           <Crown className="size-3.5" aria-hidden />
@@ -771,7 +785,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
       </span>
       </div>
       {canEdit ? (
-        <button type="button" aria-label={t('boards.removeAssignee', { name })} onClick={() => void setAssignees(task.id, removeAssignee(drafts, userId))} className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100">
+        <button type="button" aria-label={t('boards.removeAssignee', { name })} onClick={() => void setAssignees(task.id, removeAssignee(drafts, userId))} className={cx('grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100', stacked && 'absolute right-1 top-1 bg-elev')}>
           <X className="size-3.5" aria-hidden />
         </button>
       ) : null}
@@ -1057,7 +1071,7 @@ export function CommentBox({ task, room, perms, commentsOff, className, autoFocu
   const [dragging, drop] = useFileDrop(canAttach, addFiles);
   if (!(roomPerms & BigInt(Permission.SEND_MESSAGES))) return null;
   return (
-    <div className={cx('relative shrink-0 bg-feed', className ?? 'border-t border-line mobile:pb-[var(--safe-bottom)]')} data-testid="task-composer" {...drop}>
+    <div className={cx('relative shrink-0', className ?? 'border-t border-line bg-feed mobile:pb-[var(--safe-bottom)]')} data-testid="task-composer" {...drop}>
       <Composer workspaceId={task.workspaceId} room={room} perms={roomPerms} files={files} setFiles={setFiles} addFiles={addFiles} {...(autoFocus === false ? { autoFocus } : {})} />
       {dragging ? <div className="pointer-events-none absolute inset-1 rounded-[var(--radius-card)] border-2 border-dashed border-accent" aria-hidden /> : null}
     </div>
