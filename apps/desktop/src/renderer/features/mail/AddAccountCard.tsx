@@ -78,6 +78,13 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
     setError(null);
     setCerts([]);
   }
+  // The deep-link password must not outlive the form, however it goes away (closed, or the screen left).
+  useEffect(
+    () => () => {
+      useMailUi.setState({ prefill: null });
+    },
+    [],
+  );
   useEffect(() => {
     if (prefill?.password) submitRef.current?.focus();
     else if (prefill?.email) passwordRef.current?.focus();

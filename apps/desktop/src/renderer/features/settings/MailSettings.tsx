@@ -10,7 +10,8 @@ import { useMailUi } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { accountCertIssues, CertNotice, certTitle, pinTail, unpin } from '../mail/CertNotice';
-import { mailErrorText } from '../mail/format';
+import { platform } from '../../platform';
+import { APP_PASSWORD_URL, mailErrorText } from '../mail/format';
 import { openSection } from '../shell/sectionNav';
 import { CommitInput } from './CommitInput';
 
@@ -271,10 +272,12 @@ function PasswordDialog({ account, onClose }: { account: MailAccount; onClose: (
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [help, setHelp] = useState<string | null>(null);
   const save = async (): Promise<void> => {
     const api = mailApi();
     if (!api || !value || busy) return;
     setBusy(true);
+    setHelp(null);
     try {
       await api.accounts.setPassword(account.id, value);
       toast.success(t('mbox.settings.passwordSaved'));
@@ -282,6 +285,8 @@ function PasswordDialog({ account, onClose }: { account: MailAccount; onClose: (
     } catch (e) {
       setBusy(false);
       setError(errText(e));
+      // Same hint as the add form: a wrong password at a provider with app passwords.
+      setHelp(isMailError(e) && e.code === 'AUTH_FAILED' ? (APP_PASSWORD_URL[account.provider] ?? null) : null);
     }
   };
   return (
@@ -309,6 +314,14 @@ function PasswordDialog({ account, onClose }: { account: MailAccount; onClose: (
         <Field label={t('mbox.add.password')} error={error}>
           <PasswordInput autoFocus autoComplete="current-password" value={value} onChange={(e) => setValue(e.target.value)} />
         </Field>
+        {help ? (
+          <p className="pt-2 text-caption text-muted" data-testid="mail-password-help">
+            {t('mbox.add.needAppPassword')}{' '}
+            <button type="button" className="text-accent-text underline" onClick={() => void platform.app.openExternal(help)}>
+              {t('mbox.add.appPasswordHow')}
+            </button>
+          </p>
+        ) : null}
       </form>
     </Modal>
   );
