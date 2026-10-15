@@ -41,6 +41,9 @@ function stripMetaCsp(): Plugin {
  */
 const SERVICE_WORKER = `// Calab — install-only service worker (ADR-0021): no fetch handler, no cache.
 self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 `;
 const WEB_THEME = '#1c1c1e'; // --color-bg (dark), the app opens dark by default

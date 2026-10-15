@@ -6,6 +6,7 @@ import { t } from '../i18n';
 import { peerOf } from '../lib/callModel';
 import { log } from '../lib/log';
 import { decideResume, type ResumeContext } from '../lib/resumeVoice';
+import { activateWebUpdate, browserUpdateEnv } from '../lib/webUpdate';
 import { canAutoplayAudio, pageWasReloaded, reloadSeat, saveVoiceSelf, saveWebResume, tabStorage, takeVoiceSelf, takeWebResume } from '../lib/webResume';
 import { isWeb, platform } from '../platform';
 import { useRooms } from '../stores/rooms';
@@ -111,6 +112,7 @@ export async function reloadForUpdate(): Promise<void> {
   if (seat?.kind === 'dm-call') keepCallOnExit();
   log.info(`update reload: voice seat ${seat ? `${seat.kind} ${seat.roomId}` : 'none'}`);
   await platform.app.setResumeVoice(seat).catch((e: unknown) => log.warn('resume voice: store failed', e));
+  await activateWebUpdate(browserUpdateEnv());
   window.location.reload();
 }
 
