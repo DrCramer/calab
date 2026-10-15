@@ -57,6 +57,7 @@ import {
   type Message,
   type Role,
   type RoomPermissionOverride,
+  type FileMeta,
   type Task,
   type TaskActivity,
   type TaskAssigneeInput,
@@ -1193,6 +1194,9 @@ export class BoardsMock {
       afterTaskId?: string;
       beforeTaskId?: string;
       boardId?: string | undefined;
+      /** set_attachments (ADR-0042): the description's files, already resolved by the route. */
+      setAttachments?: boolean;
+      attachments?: readonly FileMeta[];
     },
   ): TaskRec {
     const { t, b, p } = this.taskFor(id, userId);
@@ -1214,6 +1218,13 @@ export class BoardsMock {
       log.push(['description', {}, {}]);
       this.resetVotes(t, userId);
       task.description = req.description.slice(0, 20000);
+    }
+    if (req.setAttachments) {
+      const files = (f: readonly FileMeta[]): JsonObject => ({ file_ids: f.map((x) => x.id), files: f.map((x) => ({ file_id: x.id, name: x.name, size: Number(x.size), mime: x.mime })) });
+      log.push(['attachments', files(task.attachments), files(req.attachments ?? [])]);
+      this.resetVotes(t, userId);
+      task.attachments = [...(req.attachments ?? [])];
+      task.attachmentCount = task.attachments.length;
     }
     if (req.priority !== undefined && req.priority !== task.priority) {
       log.push(['priority', { priority: task.priority }, { priority: req.priority }]);

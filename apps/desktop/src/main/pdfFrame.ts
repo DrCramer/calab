@@ -1,7 +1,8 @@
 /**
- * The PDF viewer's sub-frames (ADR-0103), let through the navigation guard (windows.ts
- * guardWebContents): the renderer shows a PDF as a blob: URL of its own page in an <iframe>, and
- * Chromium's built-in viewer then navigates that frame's inner frame to its component extension.
+ * The PDF viewer's sub-frames (ADR-0103), let through the navigation guards (windows.ts
+ * guardWebContents, mail/frameGuard.ts): the renderer shows a PDF as a blob: URL of its own page
+ * in an <iframe>, and Chromium's built-in viewer then navigates that frame's inner frame to its
+ * component extension.
  * Proven on Electron 44 (macOS): blocking either leaves an empty viewer. No `plugins: true` needed.
  */
 

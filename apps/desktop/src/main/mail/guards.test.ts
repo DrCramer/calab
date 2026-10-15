@@ -99,6 +99,13 @@ describe('frame guard decisions', () => {
     expect(decideFrameNavigation({ ...inMail, url: 'https://example.org', selfInitiated: false })).toEqual({ action: 'block' });
     expect(decideFrameNavigation({ ...inMail, url: 'https://example.org', frameUrl: 'https://embed.example' })).toEqual({ action: 'block' });
   });
+  it("the PDF viewer's frames (ADR-0103) pass unless a mail body navigates to them", () => {
+    const page = { isMainFrame: false, frameUrl: '', selfInitiated: false };
+    expect(decideFrameNavigation({ ...page, url: 'blob:file:///d1844b69-abef-4d6d-96d9-5f53de97ebd1' })).toEqual({ action: 'ignore' });
+    expect(decideFrameNavigation({ ...page, frameUrl: 'about:blank', url: 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html' })).toEqual({ action: 'ignore' });
+    expect(decideFrameNavigation({ ...inMail, url: 'blob:file:///d1844b69-abef-4d6d-96d9-5f53de97ebd1' })).toEqual({ action: 'block' });
+    expect(decideFrameNavigation({ ...inMail, url: 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html' })).toEqual({ action: 'block' });
+  });
   it('main frame and srcdoc loads are left to the other guards', () => {
     expect(decideFrameNavigation({ ...inMail, url: 'https://example.org', isMainFrame: true })).toEqual({ action: 'ignore' });
     expect(decideFrameNavigation({ ...inMail, url: 'about:srcdoc', selfInitiated: false })).toEqual({ action: 'ignore' });

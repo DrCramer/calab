@@ -7310,7 +7310,14 @@ class MockImpl {
     this.boardRoute('GET', '/api/t/:key', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().byKey(c.params[0] ?? '', me), me, true)));
     this.boardRoute('PATCH', '/api/tasks/:id', (c, me) => {
       const r = parseBody(c, UpdateTaskRequestSchema);
-      const t = b().updateTask(c.params[0] ?? '', me, r);
+      const attachments = r.setAttachments
+        ? r.attachmentIds.map((id) => {
+            const f = this.state.files.get(id)?.meta;
+            if (!f) throw invalid('attachment_ids', 'unknown file');
+            return f;
+          })
+        : [];
+      const t = b().updateTask(c.params[0] ?? '', me, { ...r, attachments });
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(t.task.id, me));
     });
     this.boardRoute('POST', '/api/tasks/:id/archive', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, true).task.id, me)));

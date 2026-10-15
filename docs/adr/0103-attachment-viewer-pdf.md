@@ -24,10 +24,12 @@
 3. **Что пришлось открыть** (проверено на Electron 44, macOS, отдельным стендом):
    - `plugins: true` **не нужен** — просмотрщик работает с `plugins: false`;
    - CSP renderer-а (`index.html`) и веба (`sites.caddy`, едет в web-образе прода): `frame-src` + `blob:`;
-   - навигационный guard (`guardWebContents`, `will-frame-navigate`) пропускает подфреймы
+   - навигационные guard-ы (`guardWebContents` и почтовый `mail/frameGuard.ts`, оба на
+     `will-frame-navigate`) пропускают подфреймы
      `blob:` нашей страницы (`blob:file:///…`, в dev — `blob:<dev origin>/…`) и страницу расширения
      просмотрщика `chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/` (`main/pdfFrame.ts`).
-     Без любого из двух — пустой просмотрщик.
+     Без любого из двух — пустой просмотрщик. Почтовый guard не пропускает их, если навигацию
+     начало само тело письма (`about:srcdoc`).
    - Своя кнопка «Скачать»/печать просмотрщика идёт мимо нашего `downloadFile` (диалог сохранения
      Chromium): обработчик `will-download` ставится на старте и метит карантином/MotW и такие файлы.
 4. **Телефон** (WebView Android без PDF) — PDF скачивается, как раньше.

@@ -7,12 +7,14 @@
  *   the window's renderer on the deep-link channel, anything else → blocked;
  * - frames whose src the page set (not from inside a mail body) → only blocked, never opened;
  * - the app window navigating to `calaba-mail://attachment/…` → cancelled and downloaded (§7).
- * `about:srcdoc` / `about:blank` (the reader iframe and its hidden measuring copy) always pass.
+ * `about:srcdoc` / `about:blank` (the reader iframe and its hidden measuring copy) always pass, and so
+ * do the PDF viewer's frames (ADR-0103) unless a mail body navigates to them.
  */
 import { app, session, shell, type WebContents, type WebFrameMain } from 'electron';
 import { IPC } from '../../shared/ipc';
 import { mailComposeLink } from '../../shared/mail';
 import { log } from '../logging';
+import { isPdfViewerFrame } from '../pdfFrame';
 import { installMailDownloads, parseAttachmentUrl } from './attachmentProtocol';
 
 export type FrameDecision = { action: 'ignore' } | { action: 'block' } | { action: 'external'; url: string } | { action: 'compose'; link: string };
@@ -65,8 +67,12 @@ export interface FrameNav {
 export function decideFrameNavigation(n: FrameNav): FrameDecision {
   if (n.isMainFrame) return { action: 'ignore' };
   if (n.url === 'about:srcdoc' || n.url === 'about:blank') return { action: 'ignore' };
+  const inMail = n.selfInitiated && n.frameUrl === 'about:srcdoc';
+  // The PDF viewer's frames (ADR-0103: our page's blob:, Chromium's viewer extension) are left to
+  // the general guard (windows.ts); never when a mail body itself navigates to them.
+  if (!inMail && isPdfViewerFrame(n.url, process.env['ELECTRON_RENDERER_URL'])) return { action: 'ignore' };
   // Only a link inside a mail body (an about:srcdoc document) may leave the app.
-  if (!n.selfInitiated || n.frameUrl !== 'about:srcdoc') return { action: 'block' };
+  if (!inMail) return { action: 'block' };
   if (/^https?:\/\//i.test(n.url)) return { action: 'external', url: n.url };
   if (/^mailto:/i.test(n.url)) {
     const link = parseMailto(n.url);

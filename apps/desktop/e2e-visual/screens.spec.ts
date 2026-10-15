@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
-import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
+import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
@@ -3863,6 +3863,23 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await expect(panel.locator('[data-message-id]')).toHaveCount(2);
   await checkpoint(shot, 'boards-task');
+
+  // ADR-0103 (owner 15.10: a click on a task attachment did nothing): attach a PDF, click its
+  // chip — the PDF viewer, not a dead link; Esc brings the task back.
+  const upload = win.waitForResponse((r) => r.request().method() === 'PATCH' && /\/api\/tasks\/[^/]+$/.test(r.url()));
+  await panel.locator('input[type=file]').first().setInputFiles({ name: 'load-test-report.pdf', mimeType: 'application/pdf', buffer: mockPdf(245_760) });
+  expect((await upload).ok()).toBe(true);
+  await panel.getByTestId('task-attachment-open').filter({ hasText: 'load-test-report.pdf' }).click();
+  const viewer = win.getByTestId('pdf-viewer');
+  await expect(viewer).toHaveAttribute('data-state', 'ready');
+  await expect(viewer.getByRole('heading', { name: 'load-test-report.pdf' })).toBeVisible();
+  // Chromium's viewer paints in its own process: give it a moment past the frame's load.
+  await viewer.getByTestId('pdf-frame').evaluate((f) => new Promise<void>((done) => ((f as HTMLIFrameElement).contentDocument?.readyState === 'complete' ? done() : f.addEventListener('load', () => done(), { once: true }))));
+  await win.waitForTimeout(1500);
+  await checkpoint(shot, 'boards-task-pdf');
+  await win.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+  await expect(panel).toBeVisible();
 });
 
 /** CAL-3's panel at its lower section: the «Комментарии» tab (the default) with the composer. */

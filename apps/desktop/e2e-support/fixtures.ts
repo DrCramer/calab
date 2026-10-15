@@ -566,6 +566,39 @@ export function sha256(b: Buffer): string {
   return createHash('sha256').update(b).digest('hex');
 }
 
+/**
+ * A real one-page A4 PDF (a heading and a table of numbers, Courier) of exactly `size` bytes —
+ * the padding is a comment after the header — so the PDF viewer (ADR-0103) has something to show.
+ */
+export function mockPdf(size: number): Buffer {
+  const rows = ['Load test report - January 2026', '', 'Scenario            Users   p50 ms   p95 ms', 'Join voice room       200       84      212', 'Send message          500       31       96', 'Open task             300       45      130', 'Upload 10 MB file      50      910     1840'];
+  const text = rows.map((r, i) => `BT /F1 ${i === 0 ? 20 : 12} Tf 56 ${770 - i * 24} Td (${r}) Tj ET`).join('\n');
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>',
+    // The viewer's toolbar shows the title (else the blob: URL's random id: a stable screenshot).
+    '<< /Title (Load test report) >>',
+  ];
+  const build = (pad: number): string => {
+    let out = `%PDF-1.4\n%${' '.repeat(pad)}\n`;
+    const offs: number[] = [];
+    objs.forEach((o, i) => {
+      offs.push(out.length);
+      out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    });
+    const xref = out.length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+    return `${out}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R /Info ${objs.length} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  };
+  // startxref grows by a digit or two with the padding: settle the padding in a couple of passes.
+  let pad = Math.max(0, size - build(0).length);
+  for (let i = 0; i < 3; i++) pad = Math.max(0, pad - (build(pad).length - size));
+  return Buffer.from(build(pad), 'latin1');
+}
+
 export function fileMeta(
   id: string,
   workspaceId: string,
@@ -881,8 +914,7 @@ export function buildState(scenario: Scenario): MockState {
     bytes: image,
     thumbnail: { bytes: imageThumb, mime: 'image/png' },
   });
-  const pdf = Buffer.alloc(245_760, 0x20);
-  pdf.write('%PDF-1.4\n% Calab mock report\n', 0, 'latin1');
+  const pdf = mockPdf(245_760);
   s.files.set(IDS.files.pdf, {
     meta: fileMeta(IDS.files.pdf, IDS.workspaces.main, U.grigory, 'load-test-report.pdf', 'application/pdf', pdf, ts('2026-01-14T16:29:00Z')),
     bytes: pdf,
