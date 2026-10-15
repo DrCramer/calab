@@ -133,7 +133,7 @@ export const useBoardsUi = create<BoardsUiState>()(
       setMyCompletion: (myCompletion) => set({ myCompletion }),
       mySort: 'created',
       setMySort: (mySort) => set({ mySort }),
-      myGroup: true,
+      myGroup: false,
       setMyGroup: (myGroup) => set({ myGroup }),
       myFilter: EMPTY_MY_FILTER,
       setMyFilter: (myFilter) => set({ myFilter }),

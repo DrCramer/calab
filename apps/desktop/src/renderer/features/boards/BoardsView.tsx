@@ -216,7 +216,7 @@ function MySortMenu(): ReactNode {
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
-        <IconButton size="sm" label={t('boards.sortBy')} active={sort !== 'created' || !group} className="data-[state=open]:bg-active" data-testid="my-sort">
+        <IconButton size="sm" label={t('boards.sortBy')} active={sort !== 'created' || group} className="data-[state=open]:bg-active" data-testid="my-sort">
           <ArrowDownUp className="size-4" aria-hidden />
         </IconButton>
       </Dropdown.Trigger>
