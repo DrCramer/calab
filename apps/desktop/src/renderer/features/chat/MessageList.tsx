@@ -16,7 +16,7 @@ import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
-import { createBottomPin, initialFeedLocation } from './lastRowPin';
+import { createBottomPin, initialFeedLocation, lastRowChange } from './lastRowPin';
 import { readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
 import { useUi } from '../../stores/ui';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
@@ -279,6 +279,9 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     if (state.hasMoreAfter) void loadNewer(roomId);
   }, [roomId, state.hasMoreAfter]);
 
+  // A new item: my own unsent row jumps to the bottom from anywhere ('auto'; it lands on Virtuoso's
+  // estimate of the row — the pin, stuck by the send, takes it to the real bottom); someone else's
+  // scrolls smoothly, only when the reader is at the bottom.
   const followOutput = useCallback(
     (isAtBottom: boolean) => {
       if (state.hasMoreAfter) return false;
@@ -291,11 +294,27 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // Layout effects: a window loaded away from the present must stop the pin before the next
   // ResizeObserver delivery (which precedes passive effects), or it would chase endReached.
   useLayoutEffect(() => bottomPin.setLive(!state.hasMoreAfter), [bottomPin, state.hasMoreAfter]);
-  const lastKey = items[items.length - 1]?.key ?? '';
+  // The last row, as primitives (lastRowChange): its key, whether it is my own unsent row, its nonce.
+  const last = items[items.length - 1];
+  const lastKey = last?.key ?? '';
+  const lastOwn = !!last && last.msg.authorId === me;
+  const lastPending = !!last && last.status !== 'sent';
+  const lastNonce = last?.msg.nonce ?? '';
+  // The last key the bottom pin's observer has accounted for: a different current key means a new
+  // last row whose first resize is left to followOutput (someone else's message, smooth follow).
   const lastKeyRef = useRef(lastKey);
+  const seenKeyRef = useRef(lastKey);
+  // Layout effect: decided before the ResizeObserver delivery that measures the new row.
   useLayoutEffect(() => {
+    const prev = lastKeyRef.current;
+    if (prev === lastKey) return;
     lastKeyRef.current = lastKey;
-  }, [lastKey]);
+    const change = lastRowChange(prev, { key: lastKey, own: lastOwn, pending: lastPending, nonce: lastNonce });
+    // My own send sticks the pin wherever the reader was, and neither it nor its server echo is
+    // «fresh»: the observer pins through the row's real height, not Virtuoso's estimate.
+    if (change === 'send') bottomPin.stick();
+    if (change !== 'fresh') seenKeyRef.current = lastKey;
+  }, [bottomPin, lastKey, lastOwn, lastPending, lastNonce]);
 
   // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
   const scroller = useRef<HTMLElement | null>(null);
@@ -306,14 +325,16 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // docs/09 #149: keep the bottom while stuck to it. One observer, no per-render or per-frame
   // work, on two elements: the scroller (its height — the composer growing, the window resizing)
   // and Virtuoso's item list (the rendered rows' height — any row changing size, the last one
-  // included). A new last message is left to followOutput, so incoming ones still scroll smoothly.
+  // included). Someone else's new last message is left to followOutput, so it still scrolls
+  // smoothly; my own just-sent row and its server echo are not (lastRowChange): a send sticks the
+  // pin, which then holds the bottom through the row's real height — several lines, a sticker or an
+  // image loading, upload → preview, the echo re-rendering it — and the composer shrinking.
   useEffect(() => {
     const root = scroller.current;
     if (!root || typeof ResizeObserver === 'undefined') return;
-    let seenKey = lastKeyRef.current;
     const ro = new ResizeObserver(() => {
-      const fresh = seenKey !== lastKeyRef.current;
-      seenKey = lastKeyRef.current;
+      const fresh = seenKeyRef.current !== lastKeyRef.current;
+      seenKeyRef.current = lastKeyRef.current;
       if (bottomPin.resized(root) && !fresh) root.scrollTop = root.scrollHeight;
     });
     ro.observe(root);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBottomPin, initialFeedLocation, type FeedGeometry } from './lastRowPin';
+import { createBottomPin, initialFeedLocation, lastRowChange, type FeedGeometry } from './lastRowPin';
 
 /** A feed of `content` px in a scroller of `view` px, scrolled to `top`. */
 const g = (content: number, view: number, top: number): FeedGeometry => ({ scrollHeight: content, clientHeight: view, scrollTop: top });
@@ -137,6 +137,115 @@ describe('createBottomPin (docs/09 #149)', () => {
     pin.scrolled(g(5000, 600, 4400));
     pin.scrolled(g(4900, 600, 4300)); // estimates corrected, the bottom moved up
     expect(pin.resized(g(5300, 600, 4300))).toBe(true);
+  });
+});
+
+// Owner, 15.10: «sent a text / sticker / image — the feed is not at the bottom».
+describe('createBottomPin: my own send sticks (stick())', () => {
+  it('scrolled far up: the send pins through the row’s real height, its image and the composer shrinking', () => {
+    const pin = createBottomPin();
+    pin.scrolled(g(2000, 600, 1400));
+    pin.scrolled(g(2000, 600, 300)); // far up in history
+    pin.stick(); // my pending row appeared
+    // followOutput('auto') landed on the estimate, 40 px short of the real bottom: still pinned.
+    pin.scrolled(g(2060, 600, 1420));
+    expect(pin.resized(g(2100, 600, 1420))).toBe(true);
+    pin.scrolled(atEnd(2100, 600));
+    expect(pin.resized(g(2400, 600, 1500))).toBe(true); // the image decoded / upload → preview
+    pin.scrolled(atEnd(2400, 600));
+    expect(pin.resized(g(2400, 680, 1800))).toBe(false); // the composer shrank: clamped, at the bottom
+    pin.scrolled(g(2400, 680, 1720));
+    expect(pin.resized(g(2440, 680, 1720))).toBe(true); // the echo re-rendered taller
+  });
+
+  it('opened at the first unread and never scrolled: the send sticks', () => {
+    const pin = createBottomPin();
+    pin.stick();
+    expect(pin.resized(g(5040, 600, 2000))).toBe(true);
+  });
+
+  it('a few px short of the bottom (never stuck): the send sticks', () => {
+    const pin = createBottomPin();
+    pin.scrolled(g(2000, 600, 1380)); // 20 px short, arrived moving down: not stuck
+    expect(pin.resized(g(2028, 600, 1380))).toBe(false);
+    pin.stick();
+    expect(pin.resized(g(2100, 600, 1380))).toBe(true);
+  });
+
+  it('the reader scrolling up after the send unsticks', () => {
+    const pin = createBottomPin();
+    pin.stick();
+    pin.scrolled(atEnd(2100, 600));
+    pin.scrolled(g(2100, 600, 1200));
+    expect(pin.resized(g(2400, 600, 1200))).toBe(false); // the image loads: no jump
+  });
+
+  it('sent from an old window: stays stuck until the present is loaded, then pins', () => {
+    const pin = createBottomPin();
+    pin.scrolled(g(8000, 600, 1000));
+    pin.setLive(false);
+    pin.stick();
+    expect(pin.resized(g(8100, 600, 1000))).toBe(false); // the old window: nothing to pin to
+    pin.setLive(true); // the present loaded
+    expect(pin.resized(g(9000, 600, 1000))).toBe(true);
+  });
+
+  it('sent from an old window, then scrolled up there: the intent is gone', () => {
+    const pin = createBottomPin();
+    pin.scrolled(g(8000, 600, 1000));
+    pin.setLive(false);
+    pin.stick();
+    pin.scrolled(g(8000, 600, 700));
+    pin.setLive(true);
+    expect(pin.resized(g(9000, 600, 700))).toBe(false);
+  });
+
+  it('a send does not make a later old window stick (the intent is spent once live)', () => {
+    const pin = createBottomPin();
+    pin.stick();
+    expect(pin.resized(g(2100, 600, 1400))).toBe(true);
+    pin.setLive(false); // jumped to an old window while still at the bottom
+    expect(pin.resized(g(2200, 600, 1500))).toBe(false);
+    pin.setLive(true);
+    expect(pin.resized(g(2300, 600, 1500))).toBe(false);
+  });
+
+  it('the 2.4.1 clamp still does not stick after a send was scrolled away from', () => {
+    const pin = createBottomPin();
+    pin.stick();
+    pin.scrolled(g(138560, 600, 137960)); // at the bottom
+    pin.scrolled(g(138560, 600, 137885)); // the reader: 75 px up
+    expect(pin.resized(g(138141, 600, 137541))).toBe(false);
+    pin.scrolled(g(138141, 600, 137541)); // the clamp: up, onto the bottom
+    expect(pin.resized(g(138141, 600, 137466))).toBe(false);
+    pin.scrolled(g(138141, 600, 137466));
+    expect(pin.resized(g(138200, 600, 137466))).toBe(false);
+  });
+});
+
+describe('lastRowChange', () => {
+  const row = (key: string, own: boolean, pending: boolean, nonce = '') => ({ key, own, pending, nonce });
+
+  it('my optimistic row appearing is a send', () => {
+    expect(lastRowChange('m1', row('local:n1', true, true, 'n1'))).toBe('send');
+    expect(lastRowChange('local:n1', row('local:n2', true, true, 'n2'))).toBe('send'); // two sends in a row
+  });
+
+  it('the server echo of my last row is an echo, not fresh', () => {
+    expect(lastRowChange('local:n1', row('m2', true, false, 'n1'))).toBe('echo');
+  });
+
+  it('someone else’s new message stays fresh (left to the smooth follow)', () => {
+    expect(lastRowChange('m1', row('m2', false, false, 'x9'))).toBe('fresh');
+    expect(lastRowChange('m1', row('m2', false, false))).toBe('fresh');
+  });
+
+  it('my own message from another device (already sent) is fresh', () => {
+    expect(lastRowChange('m1', row('m2', true, false, 'n7'))).toBe('fresh');
+  });
+
+  it('a removed last row exposing an older one is fresh', () => {
+    expect(lastRowChange('m2', row('m1', false, false))).toBe('fresh');
   });
 });
 
