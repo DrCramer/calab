@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { MessageKind, MessageSchema } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { applyMention, codeRanges, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, mentionsMe, toWire } from './mentions';
+import { applyMention, codeRanges, exactNames, filterCandidates, filterSpecial, fromWire, layoutSwap, mentionQuery, mentionsMe, toWire } from './mentions';
 
 const ANNA = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a01';
 const ANNA2 = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a02';
@@ -165,5 +165,33 @@ describe('mentionsMe', () => {
     // A birthday card is authored by its person too, yet mentions nobody.
     const bday = create(MessageSchema, { authorId: ME, kind: MessageKind.SYSTEM, system: { payload: { case: 'birthday', value: { day: 1, month: 2 } } } });
     expect(mentionsMe(bday, ME)).toBe(false);
+  });
+});
+
+describe('layout tolerance', () => {
+  const list = [
+    { id: ANNA, name: 'Анна', alt: [] },
+    { id: BORIS, name: 'Ann', alt: [] },
+  ];
+  it('layoutSwap maps both ways', () => {
+    expect(layoutSwap('Fyyf')).toBe('анна');
+    expect(layoutSwap('фтт')).toBe('ann');
+    expect(layoutSwap('123')).toBe('123');
+  });
+  it('finds a Cyrillic name typed in the Latin layout', () => {
+    expect(filterCandidates('fyyf', list).map((c) => c.id)).toEqual([ANNA]);
+    expect(filterCandidates('Fyyf', list).map((c) => c.id)).toEqual([ANNA]);
+  });
+  it('finds a Latin name typed in the Cyrillic layout', () => {
+    expect(filterCandidates('Фтт', list).map((c) => c.id)).toEqual([BORIS]);
+  });
+  it('plain queries still work; raw ranks above swapped; no duplicates', () => {
+    expect(filterCandidates('анн', list).map((c) => c.id)).toEqual([ANNA]);
+    const both = [
+      { id: ANNA, name: 'Ann', alt: [] },
+      { id: BORIS, name: 'Фтт', alt: [] },
+    ];
+    expect(filterCandidates('ann', both).map((c) => c.id)).toEqual([ANNA, BORIS]);
+    expect(new Set(filterCandidates('a', list).map((c) => c.id)).size).toBe(filterCandidates('a', list).length);
   });
 });

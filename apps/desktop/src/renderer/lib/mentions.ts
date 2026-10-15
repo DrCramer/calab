@@ -147,18 +147,39 @@ export interface MentionCandidate {
   nick?: string;
 }
 
+const LATIN = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`";
+const CYRILLIC = 'йцукенгшщзхъфывапролджэячсмитьбюё';
+const TO_CYR = new Map([...LATIN].map((ch, i) => [ch, CYRILLIC[i] ?? ch]));
+const TO_LAT = new Map([...CYRILLIC].map((ch, i) => [ch, LATIN[i] ?? ch]));
+
 /**
- * Candidates for a query: a word of the name (or of an alt name) or the nickname starts with it;
- * best first.
+ * The query as typed in the other keyboard layout (QWERTY ↔ ЙЦУКЕН, both ways, lower-case):
+ * `fyyf` → `анна`, `фтт` → `ann`. A query mixing both scripts is left as is.
+ */
+export function layoutSwap(query: string): string {
+  const q = query.toLowerCase();
+  const chars = [...q];
+  const hasLat = chars.some((c) => TO_CYR.has(c) && /[a-z]/.test(c));
+  const hasCyr = chars.some((c) => TO_LAT.has(c));
+  if (hasLat === hasCyr) return q;
+  const map = hasLat ? TO_CYR : TO_LAT;
+  return chars.map((c) => map.get(c) ?? c).join('');
+}
+
+/**
+ * Candidates for a query: a word of the name (or of an alt name) or the nickname starts with it
+ * (also when it was typed in the other keyboard layout, ranked lower); best first.
  */
 export function filterCandidates(query: string, list: readonly MentionCandidate[], limit = 8): MentionCandidate[] {
   const q = query.trim().toLowerCase();
+  const swapped = q ? layoutSwap(q) : q;
   const score = (c: MentionCandidate): number => {
     const names = [c.name, ...c.alt, ...(c.nick ? [c.nick] : [])].map((n) => n.toLowerCase());
     if (!q) return 1;
-    if (names.some((n) => n.startsWith(q))) return 2;
-    if (names.some((n) => n.split(/[\s._-]+/).some((w) => w.startsWith(q)))) return 1;
-    return 0;
+    const by = (x: string): number => (names.some((n) => n.startsWith(x)) ? 2 : names.some((n) => n.split(/[\s._-]+/).some((w) => w.startsWith(x))) ? 1 : 0);
+    const raw = by(q);
+    if (raw) return raw + 2;
+    return swapped !== q ? by(swapped) : 0;
   };
   return list
     .map((c) => ({ c, s: score(c) }))

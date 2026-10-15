@@ -4,7 +4,7 @@ import { PERMISSION_BITS, TaskApproverSchema, TaskAssigneeSchema, TaskSchema, Us
 import { describe, expect, it } from 'vitest';
 import { setOwnerSeesPrivate } from '../permissions';
 import { legacyRoles } from '../roles';
-import { accessChoice, boardScoped, boardVisible, pickerAccess, taskBits } from './access';
+import { accessChoice, boardScoped, boardVisible, mentionableOnBoard, pickerAccess, taskBits } from './access';
 
 // ADR-0059 §2 / §5, ADR-0076: the client mirrors taskPermissions; the picker follows computeMemberBoardPermissions.
 const VIEW = PERMISSION_BITS.VIEW_BOARD;
@@ -118,5 +118,22 @@ describe('pickerAccess / accessChoice (the assignee and approver pickers)', () =
       expect(pickerAccess(b, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
     }
     expect(pickerAccess(board({ permissions: VIEW }), roles, member(WorkspaceRole.GUEST))).toBe('hidden');
+  });
+});
+
+describe('mentionableOnBoard (task comment @-mentions)', () => {
+  const roles = legacyRoles('w');
+  const member = (role: WorkspaceRole) => create(WorkspaceMemberSchema, { role, user: create(UserSchema, { id: 'u' }) });
+  const MANAGE = PERMISSION_BITS.MANAGE_BOARD;
+  it('no board known: nobody', () => {
+    expect(mentionableOnBoard(undefined, roles, member(WorkspaceRole.MEMBER))).toBe(false);
+  });
+  it('a manager sees the overrides: members of a public board yes, of a private board no', () => {
+    expect(mentionableOnBoard(board({ permissions: VIEW | MANAGE }), roles, member(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mentionableOnBoard(board({ permissions: VIEW | MANAGE, isPrivate: true }), roles, member(WorkspaceRole.MEMBER))).toBe(false);
+  });
+  it('without overrides (no MANAGE_BOARD) everyone but guests', () => {
+    expect(mentionableOnBoard(board({ permissions: VIEW }), roles, member(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mentionableOnBoard(board({ permissions: VIEW }), roles, member(WorkspaceRole.GUEST))).toBe(false);
   });
 });

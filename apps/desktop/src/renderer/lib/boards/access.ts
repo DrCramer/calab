@@ -28,6 +28,48 @@ const VIEW_BOARD = BigInt(Permission.VIEW_BOARD);
 const MANAGE_BOARD = BigInt(Permission.MANAGE_BOARD);
 
 /**
+ * Whether a member's roles let them view the board (overrides, privacy, owner rules). Shared by the
+ * pickers and the task-comment @-mention list. Needs `permissionOverrides`, which the server sends
+ * to MANAGE_BOARD viewers only.
+ */
+export function memberSeesBoard(
+  board: Pick<Board, 'permissionOverrides' | 'isPrivate' | 'restricted' | 'workspaceId' | 'createdBy'>,
+  roles: readonly Role[],
+  m: Pick<WorkspaceMember, 'role' | 'roleIds' | 'user'>,
+): boolean {
+  return (
+    (computeMemberBoardPermissions(
+      rolesOfMember(roles, m),
+      m.user?.id ?? '',
+      board.permissionOverrides,
+      board.isPrivate,
+      false,
+      board.restricted,
+      m.role === WorkspaceRole.OWNER,
+      ownerSeesPrivate(board.workspaceId),
+      board.createdBy,
+    ) &
+      VIEW_BOARD) !==
+    0n
+  );
+}
+
+/**
+ * Who a task comment may @-mention (a task room's access derives from its board, ADR-0042): members
+ * who view the board. Without the board's overrides (viewer lacks MANAGE_BOARD) nobody is excluded
+ * by guesswork except guests; the server filters the notifications anyway.
+ */
+export function mentionableOnBoard(
+  board: Pick<Board, 'permissions' | 'permissionOverrides' | 'isPrivate' | 'restricted' | 'workspaceId' | 'createdBy'> | undefined,
+  roles: readonly Role[],
+  m: Pick<WorkspaceMember, 'role' | 'roleIds' | 'user'>,
+): boolean {
+  if (!board) return false;
+  if ((board.permissions & MANAGE_BOARD) === 0n) return m.role !== WorkspaceRole.GUEST;
+  return memberSeesBoard(board, roles, m);
+}
+
+/**
  * How the assignee / approver / watcher pickers treat a member (ADR-0059 §5, ADR-0076 §7):
  * `hidden` (guest, or a bot that does not see the board), `ok` (sees the board), `card` (does not
  * see it: gets only this task, caption «увидит только эту задачу» — restricted boards too).
@@ -43,20 +85,7 @@ export function pickerAccess(
   // The server sends permissionOverrides only to viewers with MANAGE_BOARD: without them nobody's
   // access is known, so no guessing (no captions, nothing disabled; the server validates, 422 → toast).
   if (!board || (board.permissions & MANAGE_BOARD) === 0n) return 'ok';
-  const sees =
-    (computeMemberBoardPermissions(
-      rolesOfMember(roles, m),
-      m.user?.id ?? '',
-      board.permissionOverrides,
-      board.isPrivate,
-      false,
-      board.restricted,
-      m.role === WorkspaceRole.OWNER,
-      ownerSeesPrivate(board.workspaceId),
-      board.createdBy,
-    ) &
-      VIEW_BOARD) !==
-    0n;
+  const sees = memberSeesBoard(board, roles, m);
   if (sees) return 'ok';
   return m.user?.isBot ? 'hidden' : 'card';
 }
