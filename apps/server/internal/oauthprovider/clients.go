@@ -3,6 +3,7 @@ package oauthprovider
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -40,30 +42,51 @@ func wireClientType(t string) v1.OAuthClientType {
 	}
 }
 
+// validateClient reports the first problem as a field-level validation error
+// (ADR-0102). Field names are the protojson names of CreateOAuthClientRequest; the
+// messages are stable, and the desktop form keys its texts on them.
 func validateClient(name, kind string, redirects, origins, scopes []string) error {
-	if strings.TrimSpace(name) == "" || len([]rune(name)) > 100 || kind == "" || len(redirects) == 0 || len(redirects) > 10 || len(origins) > 10 {
-		return oauthError("invalid_request")
+	if strings.TrimSpace(name) == "" || len([]rune(name)) > 100 {
+		return httpx.Validation("name", "name must be 1 to 100 characters")
 	}
-	parsed, ok := scopeSet(strings.Join(scopes, " "))
-	if !ok || len(parsed) != len(scopes) {
-		return oauthError("invalid_scope")
+	if kind == "" {
+		return httpx.Validation("type", "unknown client type")
+	}
+	if len(redirects) == 0 {
+		return httpx.Validation("redirectUris", "at least one redirect URI is required")
+	}
+	if len(redirects) > 10 {
+		return httpx.Validation("redirectUris", "at most 10 redirect URIs")
 	}
 	seen := map[string]bool{}
 	for _, r := range redirects {
-		if _, ok := parseRedirect(r, kind); !ok || seen[r] {
-			return oauthError("invalid_request")
+		if _, problem := redirectProblem(r, kind); problem != "" {
+			return httpx.Validation("redirectUris", problem)
+		}
+		if seen[r] {
+			return httpx.Validation("redirectUris", "duplicate redirect URI")
 		}
 		seen[r] = true
 	}
-	seen = map[string]bool{}
 	if kind != "public_spa" && len(origins) != 0 {
-		return oauthError("invalid_request")
+		return httpx.Validation("allowedOrigins", "allowed origins are only for SPA clients")
 	}
+	if len(origins) > 10 {
+		return httpx.Validation("allowedOrigins", "at most 10 allowed origins")
+	}
+	seen = map[string]bool{}
 	for _, o := range origins {
-		if !validOrigin(o) || seen[o] {
-			return oauthError("invalid_request")
+		if !validOrigin(o) {
+			return httpx.Validation("allowedOrigins", "origin must be https://host[:port] without a path")
+		}
+		if seen[o] {
+			return httpx.Validation("allowedOrigins", "duplicate origin")
 		}
 		seen[o] = true
+	}
+	parsed, ok := scopeSet(strings.Join(scopes, " "))
+	if !ok || len(parsed) != len(scopes) {
+		return httpx.Validation("scopes", "scopes must include openid and only openid, profile, email")
 	}
 	return nil
 }
@@ -95,8 +118,12 @@ func (s *Service) management(_ http.ResponseWriter, r *http.Request, fn func(con
 	if err != nil {
 		return apiSessionError(err)
 	}
-	if r.Method != http.MethodGet && !s.sameOrigin(r) {
-		return oauthError("invalid_request")
+	if r.Method != http.MethodGet && !s.appOrigin(r) {
+		// Not a CSRF defence (the session is a bearer, no cookie is involved): it keeps
+		// management calls to the first-party app. Log what was seen so a desktop
+		// pointed at an unlisted alias host is diagnosable (ADR-0102).
+		slog.InfoContext(r.Context(), "oauthprovider: management origin rejected", "origin", truncate(r.Header.Get("Origin"), 200), "sec_fetch_site", truncate(r.Header.Get("Sec-Fetch-Site"), 32), "route", r.Pattern)
+		return httpx.Forbidden("request origin is not an app origin")
 	}
 	read := r.Method == http.MethodGet
 	return s.c.DB.Tx(r.Context(), func(q *sqlc.Queries) error {

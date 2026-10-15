@@ -42,30 +42,62 @@ func validVerifier(raw string) bool {
 	return true
 }
 
+// parseRedirect accepts an exact https URI for every client type, and a plain-http
+// loopback URI (localhost, 127.0.0.1, [::1]) for every type too (ADR-0102): loopback
+// traffic never leaves the machine, and providers accept it for development. Only
+// native clients may register a reverse-domain private scheme (RFC 8252 §7.1).
 func parseRedirect(raw, kind string) (*url.URL, bool) {
-	if len(raw) == 0 || len(raw) > 2048 || strings.ContainsAny(raw, "\r\n\t ") || strings.Contains(raw, "#") || strings.Contains(raw, "*") {
-		return nil, false
+	u, problem := redirectProblem(raw, kind)
+	return u, problem == ""
+}
+
+// Redirect URI problems, reported as stable validation messages (field redirectUris);
+// the desktop form keys its texts on them (lib/api/errors.ts).
+const (
+	redirectInvalid = "redirect URI is not a valid absolute URL"
+	redirectChars   = "redirect URI must not contain spaces, # or *"
+	redirectScheme  = "redirect URI must use https (http only for localhost, 127.0.0.1 or [::1])"
+	redirectNative  = "custom scheme redirect URIs are only for native clients"
+)
+
+func redirectProblem(raw, kind string) (*url.URL, string) {
+	if len(raw) == 0 || len(raw) > 2048 {
+		return nil, redirectInvalid
+	}
+	if strings.ContainsAny(raw, "\r\n\t ") || strings.Contains(raw, "#") || strings.Contains(raw, "*") {
+		return nil, redirectChars
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.User != nil || u.Opaque != "" || u.Scheme == "" {
-		return nil, false
+		return nil, redirectInvalid
 	}
-	if u.Scheme == "https" && u.Host != "" {
-		return u, true
+	if u.Scheme == "https" {
+		if u.Host == "" {
+			return nil, redirectInvalid
+		}
+		return u, ""
 	}
-	if kind != "public_native" {
-		return nil, false
-	}
-	if u.Scheme == "http" && loopback(u) {
-		return u, true
+	if u.Scheme == "http" {
+		if loopback(u) {
+			return u, ""
+		}
+		return nil, redirectScheme
 	}
 	// Reverse-domain private schemes require administrative registration and PKCE.
-	if strings.Contains(u.Scheme, ".") && u.Scheme != "http" && u.Scheme != "https" && u.Path != "" {
-		return u, true
+	if strings.Contains(u.Scheme, ".") && u.Path != "" {
+		if kind != "public_native" {
+			return nil, redirectNative
+		}
+		return u, ""
 	}
-	return nil, false
+	return nil, redirectScheme
 }
+
+// loopback reports a plain loopback host: the literal 127.0.0.1 or ::1, or localhost.
 func loopback(u *url.URL) bool {
+	return u.Hostname() == "localhost" || loopbackIP(u)
+}
+func loopbackIP(u *url.URL) bool {
 	if u.Hostname() != "127.0.0.1" && u.Hostname() != "::1" {
 		return false
 	}
@@ -80,6 +112,10 @@ func loopback(u *url.URL) bool {
 	}
 	return true
 }
+
+// redirectMatches compares exactly. Only a native client may vary the port of a
+// registered loopback IP literal (RFC 8252 §7.3); web and SPA loopback URIs, and
+// localhost for every type, must match byte for byte.
 func redirectMatches(raw, registered, kind string) bool {
 	u, ok := parseRedirect(raw, kind)
 	if !ok {
@@ -92,7 +128,7 @@ func redirectMatches(raw, registered, kind string) bool {
 	if raw == registered {
 		return true
 	}
-	if kind != "public_native" || u.Scheme != "http" || r.Scheme != "http" || !loopback(u) || !loopback(r) || u.Hostname() != r.Hostname() {
+	if kind != "public_native" || u.Scheme != "http" || r.Scheme != "http" || !loopbackIP(u) || !loopbackIP(r) || u.Hostname() != r.Hostname() {
 		return false
 	}
 	// Strip only the literal loopback port; every other byte remains exact.

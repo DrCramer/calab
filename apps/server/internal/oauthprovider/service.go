@@ -30,8 +30,12 @@ type SessionResolver func(context.Context, *http.Request) (identitypolicy.Princi
 
 // Config consists exclusively of trusted server dependencies and operator config.
 type Config struct {
-	DB                 *db.DB
-	PublicOrigin       string
+	DB           *db.DB
+	PublicOrigin string
+	// AppOrigins are the first-party app origins (config.AllowedOrigins: PUBLIC_APP_URL,
+	// _ALT, _URLS) accepted on bearer management routes besides PublicOrigin. Consent
+	// bind/decision keep the exact PublicOrigin.
+	AppOrigins         []string
 	Entitlements       identitypolicy.EntitlementConfig
 	ResolveSession     SessionResolver
 	SignerForWorkspace func(uuid.UUID) (*signing.Keyring, error)
@@ -51,7 +55,10 @@ type Config struct {
 }
 
 // Service exposes protocol routes and Calaba consent/management routes.
-type Service struct{ c Config }
+type Service struct {
+	c          Config
+	appOrigins []string // lower-case PublicOrigin + AppOrigins
+}
 
 // New rejects a partial configuration. No feature can fall back to plaintext keys
 // or a public origin derived from request Host or forwarded headers.
@@ -69,7 +76,13 @@ func New(c Config) (*Service, error) {
 		copied[k] = v
 	}
 	c.Entitlements.EnterpriseWorkspaceIDs = copied
-	return &Service{c: c}, nil
+	origins := []string{strings.ToLower(c.PublicOrigin)}
+	for _, o := range c.AppOrigins {
+		if o = strings.ToLower(strings.TrimSpace(o)); o != "" && !slices.Contains(origins, o) {
+			origins = append(origins, o)
+		}
+	}
+	return &Service{c: c, appOrigins: origins}, nil
 }
 
 func (s *Service) issuer(ws uuid.UUID) string {

@@ -138,9 +138,10 @@ func TestProviderClientCapAndBuiltinRole(t *testing.T) {
 	if st, _, _ := f.proto("GET", "/api/workspaces/"+f.ws.String()+"/oauth/clients", nil); st != 200 {
 		t.Fatal("builtin admin denied")
 	}
+	// ADR-0102: the bearer session suffices, no fresh password for OAuth clients.
 	f.sql("UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '6 minutes' WHERE id=$1", f.session)
-	if st, _, _ := f.proto("GET", "/api/workspaces/"+f.ws.String()+"/oauth/clients", nil); st != 403 {
-		t.Fatal("management lacked recent local reauth")
+	if st, _, _ := f.proto("GET", "/api/workspaces/"+f.ws.String()+"/oauth/clients", nil); st != 200 {
+		t.Fatal("management demanded a recent local reauth")
 	}
 }
 
@@ -197,15 +198,16 @@ func TestProviderIdleExpiresWhileSessionLocked(t *testing.T) {
 	}
 }
 
-func TestProviderManagementRejectsDatabaseExpiredProofAndGrant(t *testing.T) {
+func TestProviderManagementRejectsDatabaseExpiredGrant(t *testing.T) {
 	f := fixture(t)
 	c := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, false)
 	f.s.c.Now = func() time.Time { return time.Now().Add(-2 * time.Second) }
+	// A local password older than the management window no longer matters (ADR-0102).
 	f.sql("UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '5 minutes 1 second' WHERE id=$1", f.session)
 	path := "/api/workspaces/" + f.ws.String() + "/oauth/clients/" + c.Client.Id
-	st, _, body := f.proto("GET", path, nil)
-	assertAPIError(t, st, body, 403, v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED)
-	f.sql("UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '30 seconds' WHERE id=$1", f.session)
+	if st, _, body := f.proto("GET", path, nil); st != 200 {
+		t.Fatalf("stale local password denied management: %d %s", st, body)
+	}
 	f.sql("UPDATE workspace_identity_grants SET valid_until=clock_timestamp()-interval '1 second' WHERE workspace_id=$1 AND feature='oauth_provider'", f.ws)
 	if st, _, _ := f.proto("GET", path, nil); st != 409 {
 		t.Fatalf("DB-expired entitlement accepted by slow app clock: %d", st)
