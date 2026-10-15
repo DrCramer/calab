@@ -1,6 +1,6 @@
 import { EventRepeat, RoomType, WorkspaceRole } from '@calaba/protocol';
 import { CalendarSearch, Mail, Plus, X } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Field, Input, Modal, Select, Switch, cx } from '../../components/ui';
@@ -9,10 +9,12 @@ import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
 import {
+  MAX_ATTENDEES,
   MAX_DESCRIPTION,
   MAX_TITLE,
   addEmail,
   addMember,
+  addMembers,
   copyDraft,
   draftDirty,
   draftOf,
@@ -34,7 +36,7 @@ import { MEMBERS_COLUMN_MIN, type EventDraftInit } from '../../stores/ui';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { FormerChip } from '../people/MemberBits';
-import { memberItems } from '../people/memberPickItems';
+import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
 import { REPEAT_LABEL } from './EventCard';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
@@ -346,7 +348,19 @@ function RoomField({ workspaceId, value, onChange }: { workspaceId: string; valu
   );
 }
 
-/** Attendee chips (a click toggles required / optional), the member picker, external addresses; members dropped here are added. */
+/** Above this many chips the list folds to the first CHIPS_SHOWN and a «+N» chip (an «@all» of a big workspace). */
+const CHIPS_FOLD = 12;
+const CHIPS_SHOWN = 10;
+/** Id of the picker's «@all» row. */
+const ALL_ID = '@all';
+
+const chipKey = (a: { userId: string; email: string }): string => a.userId || a.email;
+
+/**
+ * Attendee chips (a click toggles required / optional), the member picker with «@all» (every
+ * member of the workspace, not guests or bots — expanded here into the list), external
+ * addresses; members dropped here are added.
+ */
 function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: string; draft: EventDraft; onChange: (list: EventDraft['attendees']) => void; error: string | undefined }): ReactNode {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const roles = useWorkspaces((s) => s.byId[workspaceId]?.roles);
@@ -354,17 +368,52 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
   const [email, setEmail] = useState('');
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [over, setOver] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
   const id = useId();
   const me = myUserId();
   // The members list stands beside the day view only from 1200 px: the drag hint only then.
   const wide = useMediaQuery(`(min-width: ${MEMBERS_COLUMN_MIN}px)`);
+  // Who «@all» means: current members (former ones are not in `members`), not guests or bots, not me.
+  const everyone = useMemo(
+    () =>
+      Object.values(members ?? {})
+        .filter((m) => m.user && !m.user.isBot && !m.user.isGuest && m.role !== WorkspaceRole.GUEST && m.user.id !== me)
+        .map((m) => m.user?.id ?? ''),
+    [members, me],
+  );
   const groups = useMemo(() => {
     const taken = new Set([me, ...draft.attendees.map((a) => a.userId).filter(Boolean)]);
     const list = Object.values(members ?? {}).filter((m) => m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST);
-    return [{ id: 'members', label: '', items: memberItems(list, { exclude: taken, ...(roles ? { roles } : {}) }) }];
-  }, [members, roles, draft.attendees, me]);
+    const missing = everyone.filter((u) => !taken.has(u)).length;
+    // The organizer takes a place too (MAX_ATTENDEES with them).
+    const fits = draft.attendees.length + missing + 1 <= MAX_ATTENDEES;
+    const all: RolePickItem[] =
+      missing > 1
+        ? [
+            {
+              kind: 'role',
+              id: ALL_ID,
+              role: WorkspaceRole.MEMBER,
+              roleId: '',
+              color: 0,
+              label: 'all',
+              note: fits ? t('cal.f.all', { n: everyone.length }) : t('cal.f.allTooMany'),
+              search: ['@all', t('cal.f.allSearch')],
+              ...(fits ? {} : { disabled: true }),
+            },
+          ]
+        : [];
+    return [
+      { id: 'all', label: '', items: all },
+      { id: 'members', label: '', items: memberItems(list, { exclude: taken, ...(roles ? { roles } : {}) }) },
+    ];
+  }, [members, roles, draft.attendees, me, everyone]);
 
   const add = (userId: string): void => onChange(addMember(draft.attendees, userId));
+  const select = (it: PeoplePickItem): void => {
+    if (it.kind === 'member') add(it.userId);
+    else if (it.id === ALL_ID) onChange(addMembers(draft.attendees, everyone));
+  };
   const addAddress = (): void => {
     const r = addEmail(draft.attendees, email);
     if ('error' in r) {
@@ -375,6 +424,22 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
     setEmailErr(null);
     onChange(r.list);
   };
+  // Chips are memo rows: their handlers are stable and read the latest list.
+  const latest = useRef({ list: draft.attendees, onChange });
+  useLayoutEffect(() => {
+    latest.current = { list: draft.attendees, onChange };
+  });
+  const toggle = useCallback((key: string) => {
+    const { list, onChange: change } = latest.current;
+    change(list.map((x) => (chipKey(x) === key ? { ...x, required: !x.required } : x)));
+  }, []);
+  const remove = useCallback((key: string) => {
+    const { list, onChange: change } = latest.current;
+    change(list.filter((x) => chipKey(x) !== key));
+  }, []);
+  const many = draft.attendees.length > CHIPS_FOLD;
+  const folded = !unfolded && many;
+  const shown = folded ? draft.attendees.slice(0, CHIPS_SHOWN) : draft.attendees;
 
   return (
     <div
@@ -396,23 +461,42 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
       }}
       data-testid="event-attendees"
     >
-      <span id={`${id}-label`} className="text-caption font-medium text-muted">
-        {t('cal.f.attendees')}
+      <span className="flex items-center gap-2 text-caption font-medium text-muted">
+        <span id={`${id}-label`}>{t('cal.f.attendees')}</span>
+        {many ? (
+          <>
+            <span className="tabular-nums text-faint">{draft.attendees.length}</span>
+            <button type="button" className="ml-auto rounded-full px-1.5 font-normal text-accent-text hover:bg-hover" onClick={() => onChange([])} data-testid="event-remove-all">
+              {t('cal.f.removeAll')}
+            </button>
+          </>
+        ) : null}
       </span>
       <ul aria-labelledby={`${id}-label`} className="flex flex-wrap gap-1.5">
-        {draft.attendees.map((a, i) => (
-          <Chip
-            key={a.userId || a.email}
-            workspaceId={workspaceId}
-            userId={a.userId}
-            email={a.email}
-            required={a.required}
-            onToggle={() => onChange(draft.attendees.map((x, j) => (j === i ? { ...x, required: !x.required } : x)))}
-            onRemove={() => onChange(draft.attendees.filter((_, j) => j !== i))}
-          />
+        {shown.map((a) => (
+          <Chip key={chipKey(a)} chipId={chipKey(a)} workspaceId={workspaceId} userId={a.userId} email={a.email} required={a.required} onToggle={toggle} onRemove={remove} />
         ))}
+        {folded ? (
+          <li>
+            <button
+              type="button"
+              onClick={() => setUnfolded(true)}
+              aria-label={t('cal.f.moreLabel', { n: draft.attendees.length - CHIPS_SHOWN })}
+              className="flex h-7 items-center rounded-full bg-[var(--color-fill)] px-2.5 text-caption font-medium tabular-nums text-fg hover:bg-[var(--color-fill-hover)]"
+              data-testid="event-chips-more"
+            >
+              {t('cal.f.more', { n: draft.attendees.length - CHIPS_SHOWN })}
+            </button>
+          </li>
+        ) : many ? (
+          <li>
+            <Button variant="ghost" size="sm" onClick={() => setUnfolded(false)}>
+              {t('cal.f.collapse')}
+            </Button>
+          </li>
+        ) : null}
         <li>
-          <MemberPicker open={picking} onOpenChange={setPicking} groups={groups} onSelect={(it) => it.kind === 'member' && add(it.userId)} placeholder={t('picker.searchPeople')} label={t('cal.f.addPeople')} testId="event-member-picker">
+          <MemberPicker open={picking} onOpenChange={setPicking} groups={groups} onSelect={select} placeholder={t('picker.searchPeople')} label={t('cal.f.addPeople')} testId="event-member-picker">
             <Button variant="secondary" size="sm" data-testid="event-add-people">
               <Plus className="size-3.5" aria-hidden />
               {t('cal.f.addPeople')}
@@ -454,7 +538,8 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
   );
 }
 
-function Chip({
+const Chip = memo(function Chip({
+  chipId,
   workspaceId,
   userId,
   email,
@@ -462,12 +547,13 @@ function Chip({
   onToggle,
   onRemove,
 }: {
+  chipId: string;
   workspaceId: string;
   userId: string;
   email: string;
   required: boolean;
-  onToggle: () => void;
-  onRemove: () => void;
+  onToggle: (chipId: string) => void;
+  onRemove: (chipId: string) => void;
 }): ReactNode {
   const name = useMemberName(workspaceId, userId);
   const avatar = useWorkspaces((s) => (userId ? (s.byId[workspaceId]?.members[userId]?.user?.avatarFileId ?? s.users[userId]?.avatarFileId ?? '') : ''));
@@ -480,7 +566,7 @@ function Chip({
     >
       <button
         type="button"
-        onClick={onToggle}
+        onClick={() => onToggle(chipId)}
         aria-pressed={!required}
         aria-label={required ? t('cal.f.makeOptional', { name: label }) : t('cal.f.makeRequired', { name: label })}
         title={required ? t('cal.f.required') : t('cal.f.optional')}
@@ -497,9 +583,9 @@ function Chip({
         {userId ? <FormerChip workspaceId={workspaceId} userId={userId} /> : null}
         {required ? null : <span className="text-muted">{t('cal.optional')}</span>}
       </button>
-      <button type="button" onClick={onRemove} aria-label={t('cal.f.remove', { name: label })} className="grid size-6 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">
+      <button type="button" onClick={() => onRemove(chipId)} aria-label={t('cal.f.remove', { name: label })} className="grid size-6 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">
         <X className="size-3.5" aria-hidden />
       </button>
     </li>
   );
-}
+});
