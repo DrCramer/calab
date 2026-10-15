@@ -83,7 +83,7 @@ export function CountBadge({
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
 export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 
-type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention' | 'record';
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
@@ -94,6 +94,9 @@ const VARIANTS: Record<Variant, string> = {
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
   // An invitation to set something up (docs/08 «Цвета»: orange, e.g. «Подключить свой календарь»).
   attention: 'bg-attention text-attention-fg hover:brightness-110 active:brightness-95',
+  // Starting a recording (docs/08 «Календарь»: «Начать» of the meeting's record prompt): the solid
+  // REC red of the recording pill / call buttons, white text (≥ 4.5:1 in both themes).
+  record: 'bg-danger-fill text-white hover:brightness-110 active:brightness-95',
 };
 
 export const Button = forwardRef<
@@ -117,7 +120,7 @@ export const Button = forwardRef<
         VARIANTS[variant],
         // Phone: a dimmed (opacity .4) label fell under 3:1 — a disabled button is a flat grey one with a readable label.
         'mobile:disabled:text-[var(--color-label-secondary)] mobile:disabled:opacity-100',
-        (variant === 'primary' || variant === 'attention') && 'mobile:disabled:bg-[var(--color-fill-hover)]',
+        (variant === 'primary' || variant === 'attention' || variant === 'record') && 'mobile:disabled:bg-[var(--color-fill-hover)]',
         className,
       )}
       {...rest}
