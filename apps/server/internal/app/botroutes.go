@@ -371,7 +371,7 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/events/{id}":           botAllow,
 	"DELETE /api/events/{id}":          botAllow,
 	"PUT /api/events/{id}/rsvp":        botDeny, // bots are never attendees
-	// comments on a meeting (ADR-0103): people only in v1
+	// comments on a meeting (ADR-0104): people only in v1
 	"GET /api/events/{id}/comments":                 botDeny,
 	"POST /api/events/{id}/comments":                botDeny,
 	"PATCH /api/events/{id}/comments/{comment_id}":  botDeny,

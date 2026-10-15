@@ -2630,7 +2630,7 @@ type DispatchEvent_ContactShared struct {
 }
 
 type DispatchEvent_EventCommentUpsert struct {
-	// Comments on a meeting (ADR-0103): to everyone who may see the event, as EVENT_UPDATE.
+	// Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
 	EventCommentUpsert *CalendarEventCommentUpsert `protobuf:"bytes,103,opt,name=event_comment_upsert,json=eventCommentUpsert,proto3,oneof"`
 }
 

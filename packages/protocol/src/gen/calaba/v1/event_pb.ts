@@ -89,7 +89,7 @@ export type CalendarEventCounts = Message<"calaba.v1.CalendarEventCounts"> & {
   pending: number;
 
   /**
-   * Comments on the meeting (ADR-0103; the series as a whole). 0 for guests.
+   * Comments on the meeting (ADR-0104; the series as a whole). 0 for guests.
    *
    * @generated from field: uint32 comments = 5;
    */

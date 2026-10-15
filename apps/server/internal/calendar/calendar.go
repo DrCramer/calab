@@ -90,7 +90,7 @@ type Service struct {
 	// EmailGate: whether adding outside attendees needs a confirmed address (ADR-0023,
 	// EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
 	EmailGate auth.EmailGate
-	// CommentLimit: per-user budget of comment writes (ADR-0103), apart from the meeting
+	// CommentLimit: per-user budget of comment writes (ADR-0104), apart from the meeting
 	// writes so a discussion does not eat the budget of editing; nil = unlimited.
 	CommentLimit *redisx.RateLimiter
 }
@@ -134,7 +134,7 @@ type bundle struct {
 	series Series
 	att    []sqlc.EventAttendee
 	recs   map[int64]uuid.UUID // occurrence start (Unix s) → recording
-	// comments: how many comments the event has (ADR-0103).
+	// comments: how many comments the event has (ADR-0104).
 	comments int32
 }
 
@@ -355,7 +355,7 @@ func attendeeProto(a sqlc.EventAttendee) *v1.CalendarEventAttendee {
 	return out
 }
 
-// counts of the answers and the comments (ADR-0103).
+// counts of the answers and the comments (ADR-0104).
 func (b *bundle) counts() *v1.CalendarEventCounts {
 	c := counts(b.att)
 	c.Comments = uint32(max(b.comments, 0)) //nolint:gosec // non-negative count

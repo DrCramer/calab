@@ -1,4 +1,4 @@
--- Comments on a meeting (ADR-0103).
+-- Comments on a meeting (ADR-0104).
 
 -- name: CountEventComments :many
 SELECT event_id, count(*)::integer AS n FROM event_comments

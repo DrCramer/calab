@@ -1088,7 +1088,7 @@ export type DispatchEvent = Message<"calaba.v1.DispatchEvent"> & {
     case: "contactShared";
   } | {
     /**
-     * Comments on a meeting (ADR-0103): to everyone who may see the event, as EVENT_UPDATE.
+     * Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
      *
      * @generated from field: calaba.v1.CalendarEventCommentUpsert event_comment_upsert = 103;
      */

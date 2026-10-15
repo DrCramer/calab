@@ -22,7 +22,7 @@ type CountEventCommentsRow struct {
 	N       int32
 }
 
-// Comments on a meeting (ADR-0103).
+// Comments on a meeting (ADR-0104).
 func (q *Queries) CountEventComments(ctx context.Context, eventIds []uuid.UUID) ([]CountEventCommentsRow, error) {
 	rows, err := q.db.Query(ctx, countEventComments, eventIds)
 	if err != nil {

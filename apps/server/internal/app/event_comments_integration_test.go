@@ -10,7 +10,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
 
-// Comments on a meeting (ADR-0103): whoever sees the event reads and writes them (organizer,
+// Comments on a meeting (ADR-0104): whoever sees the event reads and writes them (organizer,
 // attendees, viewers of its room); a member who does not see it gets 404, a guest 403; the
 // author edits, the author or the organizer deletes; EVENT_COMMENT_* reach only the event's
 // audience, without the routing fields; the count rides in CalendarEvent.counts.

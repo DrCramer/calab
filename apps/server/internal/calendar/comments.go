@@ -19,7 +19,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 )
 
-// Comments on a meeting (ADR-0103): a plain list per event (the series as a whole). Whoever
+// Comments on a meeting (ADR-0104): a plain list per event (the series as a whole). Whoever
 // sees the event (viewer.sees) reads and writes; the author edits; the author or an editor of
 // the event (viewer.canEdit) deletes. Guests get 403 (the calendar is closed to them), bots
 // are refused by the route table. EVENT_COMMENT_* go to the event's audience (the gateway's

@@ -114,7 +114,7 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 	}
 }
 
-// routeEventComment delivers EVENT_COMMENT_UPSERT / DELETE (ADR-0103) to those who see the
+// routeEventComment delivers EVENT_COMMENT_UPSERT / DELETE (ADR-0104) to those who see the
 // event — its organizer, its attendees and the viewers of its room, as EVENT_UPDATE — never to
 // guests or bots (comments are people-only, the calendar is closed to guests). The routing
 // fields are cleared before delivery.

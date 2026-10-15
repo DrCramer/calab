@@ -73,7 +73,7 @@ func EventForGuest(ev *v1.CalendarEvent) *v1.CalendarEvent {
 	out.CanEdit = false
 	out.GuestLinks = false
 	if out.Counts != nil {
-		out.Counts.Comments = 0 // comments are part of the calendar, closed to guests (ADR-0103)
+		out.Counts.Comments = 0 // comments are part of the calendar, closed to guests (ADR-0104)
 	}
 	return out
 }

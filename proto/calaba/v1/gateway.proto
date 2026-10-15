@@ -300,7 +300,7 @@ message DispatchEvent {
     // A person shared their contact with a bot (ADR-0100): to that bot's user channel (gateway)
     // and webhook only.
     ContactShared contact_shared = 102;
-    // Comments on a meeting (ADR-0103): to everyone who may see the event, as EVENT_UPDATE.
+    // Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
     CalendarEventCommentUpsert event_comment_upsert = 103;
     CalendarEventCommentDelete event_comment_delete = 104;
   }

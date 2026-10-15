@@ -373,7 +373,7 @@ type CalendarEventCounts struct {
 	Declined uint32                 `protobuf:"varint,2,opt,name=declined,proto3" json:"declined,omitempty"`
 	Maybe    uint32                 `protobuf:"varint,3,opt,name=maybe,proto3" json:"maybe,omitempty"`
 	Pending  uint32                 `protobuf:"varint,4,opt,name=pending,proto3" json:"pending,omitempty"`
-	// Comments on the meeting (ADR-0103; the series as a whole). 0 for guests.
+	// Comments on the meeting (ADR-0104; the series as a whole). 0 for guests.
 	Comments      uint32 `protobuf:"varint,5,opt,name=comments,proto3" json:"comments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

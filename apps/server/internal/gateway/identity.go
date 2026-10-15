@@ -287,7 +287,7 @@ var eventScope = map[protoreflect.Name]bool{
 	// A contact shared with a bot (ADR-0100): the bot's user channel only; routeUser drops it
 	// for people's sessions.
 	"contact_shared": false,
-	// Comments on a meeting (ADR-0103): workspace channel; routed by routeEventComment to the
+	// Comments on a meeting (ADR-0104): workspace channel; routed by routeEventComment to the
 	// event's audience (as EVENT_UPDATE, not guests or bots).
 	"event_comment_upsert": true, "event_comment_delete": true,
 }

@@ -1,4 +1,4 @@
--- Comments on a meeting (ADR-0103): one row per comment of an event (the series as a whole).
+-- Comments on a meeting (ADR-0104): one row per comment of an event (the series as a whole).
 -- Read and written by whoever sees the event (calendar.viewer.sees); the author edits, the
 -- author or an editor of the event deletes (hard delete). A deleted event or author takes its
 -- comments with it.
