@@ -8,9 +8,10 @@ import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
 import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
-import { leaveMail } from './mailUi';
-import { leaveDisk } from './diskUi';
-import { leaveWiki } from './wikiUi';
+import { leaveMail, useMailUi } from './mailUi';
+import { leaveDisk, useDiskUi } from './diskUi';
+import { leaveWiki, useWikiUi } from './wikiUi';
+import { chatFollow, followTarget, type FollowEvent } from '../lib/chatFollow';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -301,4 +302,33 @@ export function activeRoomId(): string | null {
   const s = useUi.getState();
   if (s.phone.on) return visibleRoom(s.phone);
   return s.activeWorkspaceId ? (s.lastRoom[s.activeWorkspaceId] ?? null) : null;
+}
+
+/**
+ * Another view covers the room column: the boards (an open task), mail, disk, wiki, a web app,
+ * the calendar day, or the DM list «Личные».
+ */
+function roomColumnCovered(s: UiState): boolean {
+  return (
+    s.activeWorkspaceId === HOME ||
+    s.calDay !== null ||
+    useBoardsUi.getState().active ||
+    useMailUi.getState().active ||
+    useDiskUi.getState().active ||
+    useWikiUi.getState().active ||
+    useWebApps.getState().open !== null
+  );
+}
+
+/** The chat follows my own voice join / move (issue #127; lib/chatFollow.ts decides). */
+export function followVoiceChat(ev: FollowEvent): void {
+  const s = useUi.getState();
+  const d = chatFollow(ev, {
+    phone: s.phone.on,
+    shownRoomId: activeRoomId(),
+    rememberedRoomId: s.lastRoom[ev.workspaceId] ?? null,
+    covered: roomColumnCovered(s),
+  });
+  if (d === 'open') s.openRoom(ev.workspaceId, followTarget(ev));
+  else if (d === 'remember') s.selectDefaultRoom(ev.workspaceId, followTarget(ev));
 }

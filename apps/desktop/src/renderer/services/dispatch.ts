@@ -24,7 +24,7 @@ import { useRooms } from '../stores/rooms';
 import { useTempArchive } from '../stores/tempArchive';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
-import { activeRoomId, useUi } from '../stores/ui';
+import { activeRoomId, followVoiceChat, useUi } from '../stores/ui';
 import { streamCoversChat, useVoice } from '../stores/voice';
 import { useStreamFullscreen } from '../features/voice/fullscreen';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
@@ -510,8 +510,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'voiceMoved':
       // App-level move (ADR-0019): the UI follows to the target room, as when joining it, if the
-      // user was looking at the room they were moved out of.
-      if (voice.onMoved(e.value) && activeRoomId() === e.value.fromRoomId) useUi.getState().openRoom(e.value.workspaceId, e.value.toRoomId);
+      // user was looking at the room they were moved out of (lib/chatFollow.ts).
+      if (voice.onMoved(e.value)) followVoiceChat({ kind: 'moved', workspaceId: e.value.workspaceId, fromRoomId: e.value.fromRoomId, toRoomId: e.value.toRoomId });
       return;
     case 'voiceDisconnected':
       // The user joined voice on another device (docs/05 «Несколько устройств»): this one leaves.

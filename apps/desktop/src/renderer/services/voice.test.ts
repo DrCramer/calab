@@ -444,6 +444,17 @@ describe('VoiceEngine', () => {
     expect(useUi.getState().lastRoom['ws']).toBe('A');
   });
 
+  it('a join with the boards open keeps them and only remembers the room (issue #127)', async () => {
+    const { useUi } = await import('../stores/ui');
+    const { useBoardsUi } = await import('../stores/boardsUi');
+    useUi.getState().openRoom('ws', 'chat');
+    useBoardsUi.getState().setActive(true);
+    await voice.join('A', 'ws');
+    expect(useBoardsUi.getState().active).toBe(true);
+    expect(useUi.getState().lastRoom['ws']).toBe('A');
+    useBoardsUi.getState().setActive(false);
+  });
+
   it('optimistic join rolled back: a failed /join takes me out of the room with a toast', async () => {
     joinVoice.mockRejectedValueOnce(new Error('503'));
     const p = voice.join('A', 'ws');

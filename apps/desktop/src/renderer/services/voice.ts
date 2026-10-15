@@ -66,7 +66,7 @@ import { platform } from '../platform';
 import { VOICE_TABS_CHANNEL, parseClaim, yieldsTo, type VoiceClaim } from '../lib/voiceTabs';
 import { cameraWanted } from '../lib/media/cameraLogic';
 import { CameraShown, type ShownQuality } from '../lib/media/cameraShown';
-import { activeRoomId, useUi } from '../stores/ui';
+import { followVoiceChat, useUi } from '../stores/ui';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { lastSpoke, speakingStarts } from '../lib/lastSpoke';
@@ -430,12 +430,9 @@ class VoiceEngine {
     // «Войти и смотреть» (ADR-0066 §3): the call view opens as soon as the cameras are known.
     this.videoOnJoin = opts.video === true ? roomId : null;
     // The chat follows the voice (issue #127): a user join shows the room's own chat, so a message
-    // is not sent to the previously open room by mistake. A click on another room still opens it.
-    // Not for a reload resume / a DM call, and not on a phone (opening a chat there pushes a screen).
-    if (opts.resumed !== true && opts.call !== true && workspaceId) {
-      const ui = useUi.getState();
-      if (!ui.phone.on && activeRoomId() !== roomId) ui.openRoom(workspaceId, roomId);
-    }
+    // is not sent to the previously open room by mistake; an open task / mail / DM is not taken
+    // away (lib/chatFollow.ts). A click on another room still opens it.
+    followVoiceChat({ kind: 'join', workspaceId, roomId, resumed: opts.resumed, call: opts.call });
     this.announceJoin();
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
