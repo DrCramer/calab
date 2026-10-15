@@ -197,28 +197,37 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
   const commentsOff = !on(BoardFeature.COMMENTS);
   return (
     <div className="flex min-h-0 flex-1">
-      <div ref={scroller} className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="task-scroll">
-        <div className="px-6 pb-10 pt-8 min-[1200px]:px-12">
-          <div className="mx-auto flex max-w-[760px] flex-col gap-5">
-            <TitleEditor task={task} canEdit={canEdit} large />
-            <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
-            {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
-            {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={subtasks ?? NONE} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} /> : null}
-            {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
-            {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}
-            {on(BoardFeature.RELATIONS) ? <Relations task={task} ids={related ?? NONE} canEdit={canEdit} /> : null}
-            {room ? (
-              <>
+      {/* Main column: the content scrolls, the composer stays pinned under it (as in the side panel). */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div ref={scroller} className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="task-scroll">
+          <div className="px-6 pb-10 pt-8 min-[1200px]:px-12">
+            <div className="mx-auto flex max-w-[760px] flex-col gap-5">
+              <TitleEditor task={task} canEdit={canEdit} large />
+              <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
+              {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
+              {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={subtasks ?? NONE} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} /> : null}
+              {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
+              {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}
+              {on(BoardFeature.RELATIONS) ? <Relations task={task} ids={related ?? NONE} canEdit={canEdit} /> : null}
+              {room ? (
                 <Activity task={task} room={room} toEnd={toEnd} commentsOff={commentsOff} aside={<ActivityAside task={task} />} />
-                <CommentBox task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="-mx-4" />
-              </>
-            ) : (
-              <div className="grid h-16 place-items-center">
-                <Spinner />
-              </div>
-            )}
+              ) : (
+                <div className="grid h-16 place-items-center">
+                  <Spinner />
+                </div>
+              )}
+            </div>
           </div>
         </div>
+        {room ? (
+          <div className="relative shrink-0 px-6 pb-3 min-[1200px]:px-12" data-testid="task-composer-dock">
+            {/* A short fade so the text does not end on a hard edge above the composer (no backdrop-filter: docs/08). */}
+            <span className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-t from-[var(--color-bg)] to-transparent" aria-hidden />
+            <div className="mx-auto max-w-[760px]">
+              <CommentBox task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="" />
+            </div>
+          </div>
+        ) : null}
       </div>
       <aside className="scrollbar-thin flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-line px-3 pb-6 pt-2 [&_[data-prop-label]]:w-[88px]" aria-label={t('boards.properties')} data-testid="task-props-column">
         <div className="flex items-center justify-end gap-0.5">
