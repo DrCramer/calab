@@ -17,7 +17,7 @@ import { memberName, useMemberName, useWorkspaces } from '../../stores/workspace
 import { BotBadge, FormerChip } from '../people/MemberBits';
 import { MemberAvatar, estimateLabel } from './menus';
 import { TaskLinkCard } from './TaskLinkCard';
-import { colorCss } from './visuals';
+import { StatusIcon, colorCss } from './visuals';
 
 interface Page {
   items: TaskActivity[];
@@ -121,6 +121,9 @@ const HistoryRow = memo(function HistoryRow({ a, workspaceId, boardId }: { a: Ta
   const bot = useWorkspaces((s) => (a.actorId ? (s.users[a.actorId]?.isBot ?? false) : false));
   // A change made by an automation rule (ADR-0060): no actor, «⚙ Автоматизация: имя правила».
   const rule = !a.actorId && !!a.ruleId;
+  // A status change shows the new status' icon before the text (ADR-0091, ADR-0093).
+  const toId = a.kind === 'status' ? (a.after as Record<string, unknown> | undefined)?.['status_id'] : undefined;
+  const toStatus = useBoards((s) => (typeof toId === 'string' ? s.boards[boardId]?.statuses.find((x) => x.id === toId) : undefined));
   const at = new Date(e.at);
   const detail = hasDetail(e.detail) ? e.detail : null;
   const toggle = (): void => setOpen((v) => !v);
@@ -152,6 +155,11 @@ const HistoryRow = memo(function HistoryRow({ a, workspaceId, boardId }: { a: Ta
             </>
           )}
           <span data-testid="history-text">{e.text}</span>
+          {toStatus ? (
+            <span className="ml-1 inline-flex align-[-3px]" data-testid="history-status-icon">
+              <StatusIcon type={toStatus.type} color={toStatus.color} icon={toStatus.icon} />
+            </span>
+          ) : null}
         </p>
         {e.at ? (
           <time className="shrink-0 pt-px text-caption leading-[22px] tabular-nums text-faint" dateTime={at.toISOString()} title={fmt.full(at)}>

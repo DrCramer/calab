@@ -409,7 +409,7 @@ function StatusesTab({ board }: { board: Board }): ReactNode {
             <StatusIconPicker status={s} onPick={(icon) => void updateStatus(board.id, s.id, { icon })} testId={i === 0 ? 'status-icon-picker' : undefined} />
             <CommitInput className="w-44 mobile:w-auto mobile:min-w-0 mobile:flex-1" label={t('boards.set.name')} value={s.name} maxLength={32} onCommit={(v) => (v ? updateStatus(board.id, s.id, { name: v }).then(() => undefined) : undefined)} />
             <span className="hidden mobile:block mobile:basis-full" aria-hidden />
-            <Select className="w-36 mobile:w-28" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
+            <Select className="w-36 mobile:w-auto mobile:min-w-32" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
               {STATUS_TYPES.map((ty) => (
                 <option key={ty} value={ty}>
                   {t(STATUS_TYPE_LABEL[ty] ?? 'boards.type.unstarted')}
