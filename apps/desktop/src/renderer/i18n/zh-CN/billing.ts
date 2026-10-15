@@ -110,7 +110,7 @@ export const zhBilling: DictShape<typeof ruBilling> = {
   'billing.topup.later': '关闭，稍后付款',
   'billing.topup.close': '完成',
 
-  'billing.checkout.waiting': '正在等待浏览器中的付款…',
+  'billing.checkout.waiting': '正在等待付款…',
   'billing.checkout.window': '付款已在单独的窗口中打开…',
   'billing.checkout.showWindow': '显示付款窗口',
   'billing.checkout.checking': '正在核实付款…',

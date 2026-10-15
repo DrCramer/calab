@@ -111,7 +111,7 @@ export const ruBilling = {
   'billing.topup.later': 'Закрыть, оплачу позже',
   'billing.topup.close': 'Готово',
 
-  'billing.checkout.waiting': 'Ждём оплату в браузере…',
+  'billing.checkout.waiting': 'Ждём оплату…',
   'billing.checkout.window': 'Оплата открыта в отдельном окне…',
   'billing.checkout.showWindow': 'Показать окно оплаты',
   'billing.checkout.checking': 'Проверяем оплату…',

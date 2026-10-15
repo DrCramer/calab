@@ -110,7 +110,7 @@ export const enBilling: DictShape<typeof ruBilling> = {
   'billing.topup.later': 'Close, pay later',
   'billing.topup.close': 'Done',
 
-  'billing.checkout.waiting': 'Waiting for the payment in the browser…',
+  'billing.checkout.waiting': 'Waiting for the payment…',
   'billing.checkout.window': 'The payment is open in a separate window…',
   'billing.checkout.showWindow': 'Show the payment window',
   'billing.checkout.checking': 'Checking the payment…',
