@@ -1,6 +1,6 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
-import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
@@ -19,6 +19,7 @@ import { createMetaBuilder, type RowMeta } from './grouping';
 import { createBottomPin, initialFeedLocation, lastRowChange } from './lastRowPin';
 import { readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
 import { useUi } from '../../stores/ui';
+import { DisclosureScope } from '../../lib/disclosure';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
@@ -146,24 +147,52 @@ const FEED_COMPONENTS = { Header: FeedHeader, Footer: FeedFooter };
 const INCREASE_VIEWPORT = { top: 800, bottom: 400 };
 const itemKey = (_i: number, c: ChatMessage): string => c.key;
 
-function feedRow(index: number, c: ChatMessage, x: FeedContext): ReactNode {
-  const meta = x.metas[index - x.firstIndex] ?? FALLBACK_META;
+/**
+ * One row, memoised on primitives: Virtuoso re-runs every mounted row's renderer whenever its
+ * rendered range changes (each row mounted or unmounted while scrolling); unchanged rows stop here.
+ */
+const FeedRow = memo(function FeedRow({
+  c,
+  meta,
+  own,
+  workspaceId,
+  roomId,
+  perms,
+  highlighted,
+}: {
+  c: ChatMessage;
+  meta: RowMeta;
+  own: boolean;
+  workspaceId: string;
+  roomId: string;
+  perms: PermissionBits;
+  highlighted: boolean;
+}): ReactNode {
   return (
     <RowBoundary id={c.key}>
-      {c.msg.kind === MessageKind.SYSTEM ? (
-        <SystemRow c={c} meta={meta} workspaceId={x.workspaceId} perms={x.perms} highlighted={x.highlight === c.key} />
-      ) : (
-        <MessageRow
-          c={c}
-          meta={meta}
-          own={c.msg.authorId === x.me}
-          workspaceId={x.workspaceId}
-          roomId={x.roomId}
-          perms={x.perms}
-          highlighted={x.highlight === c.key}
-        />
-      )}
+      {/* Disclosures in the row («Показать всё») outlive its unmount (lib/disclosure.ts). */}
+      <DisclosureScope.Provider value={c.key}>
+        {c.msg.kind === MessageKind.SYSTEM ? (
+          <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlighted} />
+        ) : (
+          <MessageRow c={c} meta={meta} own={own} workspaceId={workspaceId} roomId={roomId} perms={perms} highlighted={highlighted} />
+        )}
+      </DisclosureScope.Provider>
     </RowBoundary>
+  );
+});
+
+function feedRow(index: number, c: ChatMessage, x: FeedContext): ReactNode {
+  return (
+    <FeedRow
+      c={c}
+      meta={x.metas[index - x.firstIndex] ?? FALLBACK_META}
+      own={c.msg.authorId === x.me}
+      workspaceId={x.workspaceId}
+      roomId={x.roomId}
+      perms={x.perms}
+      highlighted={x.highlight === c.key}
+    />
   );
 }
 
@@ -355,19 +384,32 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     [bottomPin, roomId],
   );
 
-  const [sticky, setSticky] = useState<string | null>(null);
+  // An unfold the reader clicked («Показать всё») grows its row down from where they read: the
+  // bottom pin lets go, or a last row unfolding at the bottom threw them to the end of its text.
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const onClick = (e: MouseEvent): void => {
+      if (e.target instanceof Element && e.target.closest('[data-feed-expand]')) bottomPin.release();
+    };
+    root.addEventListener('click', onClick, true);
+    return () => root.removeEventListener('click', onClick, true);
+  }, [bottomPin]);
+
+  // The floating date and the scrolling flag change while scrolling: only FeedOverlays reads them
+  // (a Feed render re-runs every mounted row's renderer).
+  const [view] = useState(createScrollView);
   const frame = useRef(0);
   // Telegram: the floating date shows while scrolling and fades out 1 s after it stops; the
   // overlay scrollbar (styles.css, non-mac) follows the same [data-scrolling] flag.
-  const [scrolling, setScrolling] = useState(false);
   const idle = useRef(0);
   const onScroll = useCallback(() => {
     if (scroller.current) bottomPin.scrolled(scroller.current);
-    setScrolling(true);
+    view.setScrolling(true);
     scroller.current?.setAttribute('data-scrolling', '');
     window.clearTimeout(idle.current);
     idle.current = window.setTimeout(() => {
-      setScrolling(false);
+      view.setScrolling(false);
       scroller.current?.removeAttribute('data-scrolling');
     }, STICKY_IDLE_MS);
     if (frame.current) return;
@@ -385,12 +427,12 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         const pillInView = row.dataset['dayStart'] === '1' && r.top >= top - 4;
         // The next day's pill is about to reach the top: let it take over (no two pills at once).
         const nextPillNear = list.slice(i + 1, i + 4).some((n) => n.dataset['dayStart'] === '1' && n.getBoundingClientRect().top < top + 72);
-        setSticky(pillInView || nextPillNear || el.scrollTop < 8 ? null : (row.dataset['messageId'] ?? null));
+        view.setSticky(pillInView || nextPillNear || el.scrollTop < 8 ? null : (row.dataset['messageId'] ?? null));
         return;
       }
-      setSticky(null);
+      view.setSticky(null);
     });
-  }, [bottomPin]);
+  }, [bottomPin, view]);
   useEffect(
     () => () => {
       cancelAnimationFrame(frame.current);
@@ -453,8 +495,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         hasMoreAfter={state.hasMoreAfter}
         atBottom={atBottom}
         mini={mini}
-        stickyKey={sticky}
-        scrolling={scrolling}
+        view={view}
         virtuoso={virtuoso}
       />
     </div>
@@ -476,8 +517,7 @@ const FeedOverlays = memo(function FeedOverlays({
   hasMoreAfter,
   atBottom,
   mini,
-  stickyKey,
-  scrolling,
+  view,
   virtuoso,
 }: {
   roomId: string;
@@ -489,10 +529,11 @@ const FeedOverlays = memo(function FeedOverlays({
   hasMoreAfter: boolean;
   atBottom: boolean;
   mini: boolean;
-  stickyKey: string | null;
-  scrolling: boolean;
+  view: ScrollView;
   virtuoso: RefObject<VirtuosoHandle | null>;
 }): ReactNode {
+  const stickyKey = useSyncExternalStore(view.subscribe, view.sticky);
+  const scrolling = useSyncExternalStore(view.subscribe, view.scrolling);
   const readMarker = useRooms((s) => s.readState[roomId] ?? '');
   const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
 
@@ -587,6 +628,40 @@ const FeedOverlays = memo(function FeedOverlays({
     </>
   );
 });
+
+/** The floating date's row and «scrolling now»: set from the feed's scroll handler, read by FeedOverlays only. */
+interface ScrollView {
+  sticky: () => string | null;
+  scrolling: () => boolean;
+  setSticky: (key: string | null) => void;
+  setScrolling: (v: boolean) => void;
+  subscribe: (f: () => void) => () => void;
+}
+
+function createScrollView(): ScrollView {
+  let sticky: string | null = null;
+  let scrolling = false;
+  const subs = new Set<() => void>();
+  const emit = (): void => subs.forEach((f) => f());
+  return {
+    sticky: () => sticky,
+    scrolling: () => scrolling,
+    setSticky: (key) => {
+      if (key === sticky) return;
+      sticky = key;
+      emit();
+    },
+    setScrolling: (v) => {
+      if (v === scrolling) return;
+      scrolling = v;
+      emit();
+    },
+    subscribe: (f) => {
+      subs.add(f);
+      return () => void subs.delete(f);
+    },
+  };
+}
 
 const FALLBACK_META: RowMeta = { day: false, isNew: false, first: true, last: true };
 

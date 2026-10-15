@@ -249,6 +249,34 @@ describe('lastRowChange', () => {
   });
 });
 
+describe('createBottomPin: an unfold the reader clicked lets go (release())', () => {
+  it('the last row unfolding at the bottom is not pinned: it grows down from where they read', () => {
+    const pin = stuckAtBottom();
+    pin.release();
+    expect(pin.resized(g(4600, 600, 1400))).toBe(false);
+    expect(pin.isStuck()).toBe(false);
+  });
+
+  it('scrolling down to the new bottom sticks again', () => {
+    const pin = stuckAtBottom();
+    pin.release();
+    pin.resized(g(4600, 600, 1400));
+    pin.scrolled(g(4600, 600, 2500));
+    expect(pin.isStuck()).toBe(false);
+    pin.scrolled(atEnd(4600, 600));
+    expect(pin.resized(g(4628, 600, 4000))).toBe(true);
+  });
+
+  it('also drops a send still waiting for the present', () => {
+    const pin = stuckAtBottom();
+    pin.stick();
+    pin.setLive(false);
+    pin.release();
+    pin.setLive(true);
+    expect(pin.resized(g(2400, 600, 1400))).toBe(false);
+  });
+});
+
 describe('initialFeedLocation', () => {
   it('no unread: the last row aligned by its bottom (a tall last message is not cut off), stuck', () => {
     expect(initialFeedLocation(-1, false)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: true });

@@ -61,6 +61,19 @@ export function summaryBlocks(md: string): SummaryBlock[] {
   return out;
 }
 
+/** Lines of a folded summary (docs/08: 4–6 lines). */
+export const SUMMARY_FOLD_LINES = 6;
+
+/**
+ * Whether the summary folds, known before layout: every block is at least one line, so more
+ * blocks than SUMMARY_FOLD_LINES never fit. Fewer may still wrap past the fold — the card measures
+ * those — but a long summary is folded (and has its «Показать всё») from its very first render, so
+ * the virtualised feed never measures it unfolded.
+ */
+export function summaryFoldsUpfront(blocks: readonly SummaryBlock[]): boolean {
+  return blocks.length > SUMMARY_FOLD_LINES;
+}
+
 /** Inline markdown-lite → plain text: markers dropped, a link keeps its address, mentions `@<v>`. */
 function inlinePlain(nodes: MdNode[]): string {
   let out = '';

@@ -10,6 +10,7 @@ import {
   speakerNumber,
   stamp,
   summaryBlocks,
+  summaryFoldsUpfront,
   summaryPlainText,
   transcriptFileName,
   transcriptText,
@@ -35,6 +36,15 @@ describe('summary blocks', () => {
       { t: 'h', text: 'A' },
       { t: 'li', text: 'b' },
     ]);
+  });
+});
+
+describe('summary folds upfront', () => {
+  it('more blocks than folded lines fold before layout; fewer are left to the measure', () => {
+    const lines = (n: number): string => Array.from({ length: n }, (_, i) => `- пункт ${i}`).join('\n');
+    expect(summaryFoldsUpfront(summaryBlocks(lines(7)))).toBe(true);
+    expect(summaryFoldsUpfront(summaryBlocks(lines(6)))).toBe(false);
+    expect(summaryFoldsUpfront(summaryBlocks(''))).toBe(false);
   });
 });
 

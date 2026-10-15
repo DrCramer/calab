@@ -2,13 +2,14 @@ import { WorkspaceRole, type PermissionBits, type RecordingCard as Card } from '
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { AlertCircle, Copy, CornerUpLeft, FileText, Forward, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { lazy, Suspense, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { formatTime } from '../../lib/chatMedia';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
-import { mayDeleteRecording, recordingAudio, summaryBlocks, summaryPlainText } from '../../lib/meetingResult';
+import { SUMMARY_FOLD_LINES, mayDeleteRecording, recordingAudio, summaryBlocks, summaryFoldsUpfront, summaryPlainText } from '../../lib/meetingResult';
+import { useDisclosure } from '../../lib/disclosure';
 import { can, mayManageRecordings } from '../../lib/permissions';
 import { cardStatus, durationText, retryActions, type RetryAction } from '../../lib/recording';
 import { openForward } from '../../services/forward';
@@ -204,28 +205,38 @@ function CardMenu({ onForward, onCopy, onDelete }: { onForward: (() => void) | u
   );
 }
 
-/** Summary lines shown folded (docs/08: 4–6 lines); 20 px each. */
-const FOLDED_PX = 6 * 20;
+/** The folded summary's height: SUMMARY_FOLD_LINES lines, 20 px each. */
+const FOLDED_PX = SUMMARY_FOLD_LINES * 20;
 
 /**
  * GPTunneL's summary: headings, lists, inline markdown-lite; folded to 6 lines with «Показать всё».
  * Also in the recording window opened from search (RecordingResult): the copy button shows on
  * hover / focus of the nearest `group/rec`.
+ *
+ * In the feed (a virtualised row) the open state is kept by message (useDisclosure): the row comes
+ * back open after scrolling far away, at the height the feed cached for it. Folded, the text is
+ * clipped from the first render — a long one is known to fold before layout (summaryFoldsUpfront),
+ * a short one is measured — so the feed never measures it unfolded: its synchronous row measure
+ * (patches/react-virtuoso) runs before this component's layout effect, and the unfolded first
+ * frame of a long summary was thousands of px the feed then scrolled by.
  */
 export function Summary({ text }: { text: string }): ReactNode {
-  const [open, setOpen] = useState(false);
-  const [tall, setTall] = useState(false);
+  const [open, setOpen] = useDisclosure('summary');
+  const blocks = useMemo(() => summaryBlocks(text), [text]);
+  const upfront = summaryFoldsUpfront(blocks);
+  const [measured, setMeasured] = useState(false);
+  const tall = upfront || measured;
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = box.current;
-    if (!el) return;
-    const measure = (): void => setTall(el.scrollHeight > FOLDED_PX + 4);
+    if (!el || upfront) return;
+    const measure = (): void => setMeasured(el.scrollHeight > FOLDED_PX + 4);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [text]);
-  const blocks = summaryBlocks(text);
+  }, [text, upfront]);
+  const folded = !open || !tall;
   const plain = (v: string): string => `@${v}`;
   return (
     <section aria-label={t('rec.card.summary')} data-testid="recording-card-summary" className="relative border-t border-line pt-2.5">
@@ -241,8 +252,8 @@ export function Summary({ text }: { text: string }): ReactNode {
       </IconButton>
       <div
         ref={box}
-        className={cx('relative pr-7 text-body leading-5 text-fg mobile:pr-9', !open && tall && 'overflow-hidden')}
-        style={!open && tall ? { maxHeight: FOLDED_PX, maskImage: 'linear-gradient(to bottom, #000 70%, transparent)' } : undefined}
+        className={cx('relative pr-7 text-body leading-5 text-fg mobile:pr-9', folded && 'overflow-hidden')}
+        style={folded ? (tall ? { maxHeight: FOLDED_PX, maskImage: 'linear-gradient(to bottom, #000 70%, transparent)' } : { maxHeight: FOLDED_PX + 4 }) : undefined}
       >
         {blocks.map((b, i) =>
           b.t === 'h' ? (
@@ -266,7 +277,7 @@ export function Summary({ text }: { text: string }): ReactNode {
         )}
       </div>
       {tall ? (
-        <button type="button" className="mt-1 text-caption font-medium text-accent-text hover:underline mobile:-mb-2 mobile:min-h-8" onClick={() => setOpen((v) => !v)} aria-expanded={open} data-testid="recording-card-more">
+        <button type="button" className="mt-1 text-caption font-medium text-accent-text hover:underline mobile:-mb-2 mobile:min-h-8" onClick={() => setOpen(!open)} aria-expanded={open} data-feed-expand={open ? undefined : ''} data-testid="recording-card-more">
           {open ? t('rec.card.less') : t('rec.card.more')}
         </button>
       ) : null}

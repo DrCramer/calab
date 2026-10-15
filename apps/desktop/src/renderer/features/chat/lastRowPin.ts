@@ -52,6 +52,10 @@ export interface BottomPin {
   /** My own message was just sent: stick to the bottom (and keep that through a window that is not
    * live yet) until the reader scrolls up. */
   stick(): void;
+  /** The reader unfolded something in the feed («Показать всё» of a meeting summary or a long code
+   * block): they read on from where they clicked, so its growth must not pin the bottom and throw
+   * them to the end of the text. Stuck again only by scrolling down to the bottom. */
+  release(): void;
   /** The reader sits at the bottom (what the feed's position is saved as, feedPosition.ts). */
   isStuck(): boolean;
 }
@@ -105,6 +109,9 @@ export function createBottomPin(stuck = false): BottomPin {
     },
     stick() {
       stuck = sent = true;
+    },
+    release() {
+      stuck = sent = false;
     },
     isStuck() {
       return stuck;
