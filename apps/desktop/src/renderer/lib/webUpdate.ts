@@ -68,6 +68,7 @@ export async function activateWebUpdate(env: UpdateEnv): Promise<void> {
 export function browserUpdateEnv(): UpdateEnv {
   return {
     sw: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
-    refetchIndex: () => fetch('/', { cache: 'reload', credentials: 'same-origin' }),
+    // The page the reload will load (a deep link like /t/KEY-1 has its own HTTP cache entry), and the root.
+    refetchIndex: () => Promise.all([...new Set([location.href.split('#')[0] ?? '/', '/'])].map((u) => fetch(u, { cache: 'reload', credentials: 'same-origin' }))),
   };
 }
