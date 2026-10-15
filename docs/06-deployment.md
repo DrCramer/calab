@@ -502,10 +502,12 @@ UUID grant отдельный, автоматического постоянно
 #### OAuth clients и точный DTO contract
 
 Issuer: `${IDENTITY_PUBLIC_ORIGIN}/oidc/workspaces/{workspace_uuid}`. Client принадлежит
-одному workspace; CRUD — builtin owner/admin с recent local reauth и требуемой
-assurance, одного custom MANAGE_INTEGRATIONS недостаточно. Types из generated
+одному workspace; CRUD — builtin owner/admin с требуемой assurance, без свежего пароля
+(ADR-0102), одного custom MANAGE_INTEGRATIONS недостаточно. Origin записи — `IDENTITY_PUBLIC_ORIGIN`
+или любой origin из `PUBLIC_APP_URL*`; чужой — 403 и строка лога `oauthprovider: management
+origin rejected` с увиденным Origin. Types из generated
 `OAuthClientType`: confidential web (`client_secret_basic`), public native/SPA (`none`).
-Exact registered redirects, S256, обязательные state/nonce, explicit user consent;
+Exact registered redirects (http://localhost / 127.0.0.1 / [::1] — для всех типов), S256, обязательные state/nonce, explicit user consent;
 **nonce обязателен и в code flow** (OIDC Core §3.1.2.1 делает его там необязательным —
 наш профиль строже): authorize без `state` или `nonce` (1–512 байт) отвечает
 `invalid_request`; RP сверяет `nonce` в ID token и `state`/`iss` в redirect;
