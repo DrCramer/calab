@@ -56,6 +56,7 @@ export const enBilling: DictShape<typeof ruBilling> = {
   'billing.quote.text.activate': 'The first day for the whole team is charged now, then every 24 hours.',
   'billing.quote.text.change': 'The rest of the paid days goes back to the balance, and a full day of the new plan starts now.',
   'billing.quote.text.stop': 'No new charges. Paid days run to their end, then the workspace moves to Free limits. Nothing is returned for them — to get money back, send a refund request.',
+  'billing.quote.text.stopUntil': 'The paid days run until {date}, then the workspace moves to Free limits. No new charges; a refund is by request.',
   'billing.quote.text.resumePaid': 'The debt is paid first, then a new day for the whole team. Nothing is charged for the pause.',
   'billing.quote.text.resumeFree': 'Only the debt is paid, no paid days are bought. Free limits apply.',
   'billing.quote.debt': 'Debt',

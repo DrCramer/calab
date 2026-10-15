@@ -56,6 +56,7 @@ export const zhBilling: DictShape<typeof ruBilling> = {
   'billing.quote.text.activate': '立即扣除全队首日费用，之后每 24 小时扣一次。',
   'billing.quote.text.change': '已付天数的剩余部分退回余额，新套餐的完整一天立即开始。',
   'billing.quote.text.stop': '不再产生新的扣费。已付费的天数用到结束，之后空间改用 Free 限额。已付费部分不退回——如需退款，请提交退款申请。',
+  'billing.quote.text.stopUntil': '已付费的天数用到 {date}，之后空间改用 Free 限额。不再产生新的扣费，退款请提交申请。',
   'billing.quote.text.resumePaid': '先还清欠款，再为全队购买新的一天。暂停期间不收费。',
   'billing.quote.text.resumeFree': '只还清欠款，不购买付费天数。适用 Free 限额。',
   'billing.quote.debt': '欠款',

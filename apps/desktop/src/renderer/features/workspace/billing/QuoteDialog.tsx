@@ -9,6 +9,7 @@ import { nowMs } from '../../../lib/billing/checkout';
 import { requestId } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
 import { adminAssignedError, violationsOf } from '../../../lib/billing/violations';
+import { fmt } from '../../../lib/format';
 import { PLAN_LABEL } from '../../../lib/plan';
 import { ownerBilling, reloadBilling } from '../../../services/billing';
 import { useBilling } from '../../../stores/billing';
@@ -30,7 +31,7 @@ export function ChangeNet({ q, from, to }: { q: BillingQuote; from: Plan; to: Pl
         from: t(PLAN_LABEL[from]),
         charge: formatMoney(q.charge),
         to: t(PLAN_LABEL[to]),
-        total: formatMinor(total, cur, { signed: true }),
+        result: total < 0n ? t('billing.quote.netCharge', { amount: formatMinor(-total, cur) }) : t('billing.quote.netReturn', { amount: formatMinor(total, cur) }),
       })}
     </p>
   );
@@ -138,6 +139,9 @@ export function QuoteDialog({
   const overFree = useBilling((s) =>
     action.kind === 'stop' ? (s.byWs[workspaceId]?.data?.offers.find((o) => o.plan === Plan.FREE)?.violations ?? NONE) : NONE,
   );
+  // A stop keeps the paid days to their end: the next charge date is where they end.
+  const dueAt = useBilling((s) => (action.kind === 'stop' ? s.byWs[workspaceId]?.data?.summary?.nextDueAt : undefined));
+  const paidUntil = dueAt ? timestampMs(dueAt) : 0;
   const reqId = useRef(requestId());
   const q = quote.data;
   const quoteBlocked = violationsOf(quote.error);
@@ -182,7 +186,7 @@ export function QuoteDialog({
       initialFocus="body"
       onClose={onClose}
       title={t(titleKey, action.kind === 'change' ? { plan: t(PLAN_NAME[action.plan]) } : undefined)}
-      description={t(textKey)}
+      description={paidUntil > 0 ? t('billing.quote.text.stopUntil', { date: fmt.dateTime(new Date(paidUntil), 'short') }) : t(textKey)}
       closeButton={false}
       footer={
         <>

@@ -56,6 +56,7 @@ export const esBilling: DictShape<typeof ruBilling> = {
   'billing.quote.text.activate': 'Se cobra ahora el primer día de todo el equipo y después cada 24 horas.',
   'billing.quote.text.change': 'Lo que queda de los días pagados vuelve al saldo y empieza ya un día completo del nuevo plan.',
   'billing.quote.text.stop': 'No habrá cargos nuevos. Los días pagados siguen hasta su fin; después el espacio pasa a los límites de Free. No se devuelve nada por ellos: para recuperar dinero, envía una solicitud de reembolso.',
+  'billing.quote.text.stopUntil': 'Los días pagados siguen hasta {date}; después el espacio pasa a los límites de Free. No habrá cargos nuevos; el reembolso, por solicitud.',
   'billing.quote.text.resumePaid': 'Primero se paga la deuda y luego un día nuevo para todo el equipo. La pausa no se cobra.',
   'billing.quote.text.resumeFree': 'Solo se paga la deuda, no se compran días de pago. Rigen los límites de Free.',
   'billing.quote.debt': 'Deuda',
