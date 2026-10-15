@@ -494,7 +494,11 @@ function PlanCard({
         <Mail className="size-3.5" aria-hidden />
         {t('billing.plans.contact')}
       </Button>
-    ) : null;
+    ) : (
+      <span className="text-caption text-muted" data-testid={`plans-contact-unknown-${Plan[tier]}`}>
+        {t('billing.plans.contactUnknown')}
+      </span>
+    );
   } else if (step.kind === 'stop' || step.kind === 'toFree') {
     action = (
       <Button variant="secondary" onClick={() => onChoose(step)} data-testid="plans-to-free">
