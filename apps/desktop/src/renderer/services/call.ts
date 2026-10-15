@@ -150,6 +150,11 @@ export function keepCallOnExit(): void {
   keepOnExit = true;
 }
 
+/** The active call survives this page going away (keepCallOnExit was asked for). */
+export function callKeptOnExit(): boolean {
+  return keepOnExit;
+}
+
 // ---------------------------------------------------------------- actions
 
 /**
