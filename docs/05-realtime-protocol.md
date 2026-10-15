@@ -114,6 +114,8 @@ EVENT_DELETE                  { event } — встреча отменена (can
                                 (другая комната, удалён из участников; cancelled_at пуст — за ним EVENT_UPDATE тем, кто её видит)
 EVENT_RSVP                    { workspace_id, event_id, attendee, counts, event } — участник ответил
 EVENT_REMINDER                { event (вхождение), occurrence_at, minutes } — напоминание, в user:<id>
+EVENT_COMMENT_UPSERT          { workspace_id, event_id, comment, comments } — комментарий к встрече добавлен/изменён (ADR-0103); кому EVENT_UPDATE, без гостей и ботов
+EVENT_COMMENT_DELETE          { workspace_id, event_id, comment_id, comments } — комментарий удалён
 ROOM_EVENT_ACTIVE             { workspace_id, room_id, event (вхождение) } — за 15 мин до начала и до конца: значок встречи у комнаты
 ROOM_EVENT_ENDED              { workspace_id, room_id, event_id, occurrence_at } — вхождение закончилось, отменено или перенесено
 ROOM_ADMISSION_REQUEST        { admission: RoomAdmission } — гость стучится в комнату (ADR-0040), решающим
@@ -257,6 +259,8 @@ GET    /api/events/{id}                        серия (отменённая 
 PATCH  /api/events/{id}                        UpdateCalendarEventRequest → CalendarEventResponse (организатор / MANAGE_ROOM / MANAGE_WORKSPACE)
 DELETE /api/events/{id}[?occurrence=<RFC 3339>] 204: отмена встречи (письмо CANCEL) или одного вхождения серии (EVENT_UPDATE, письмо с EXDATE)
 PUT    /api/events/{id}/rsvp                   { status: ACCEPTED | DECLINED | MAYBE } → CalendarEventResponse (только участник)
+GET    /api/events/{id}/comments?before=&limit= комментарии к встрече (ADR-0103), новейшие ≤ 100 по возрастанию → { comments, has_more }; видящие встречу, гость — 403, бот — 403
+POST   /api/events/{id}/comments               { body } → 201 { comment }; PATCH …/comments/{comment_id} — автор; DELETE — автор или canEdit встречи → 204
 GET    /api/me/events/today?tz=                сегодняшние предстоящие встречи (не отклонённые) во всех пространствах → { count, events }
 GET    /api/event-rsvp?t=                      публично: встреча по view- или answer-токену внешнего участника → EventRsvpTokenResponse (описание, комната, my_status, три answer-токена, guest_url + окно, повтор, почта организатора; без других участников)
 POST   /api/event-rsvp { token }               публично: сохранить ответ answer-токена (идемпотентно); view-токен — 400; после конца — 410 EVENT_OVER; битая — 404

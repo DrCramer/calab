@@ -365,26 +365,31 @@ var botRoutes = map[string]botAccess{
 	// calendar (ADR-0038, ADR-0051): a bot organizes meetings (never an attendee) and changes
 	// others' by MANAGE_ROOM / MANAGE_EVENTS like people; it sees free / busy without external
 	// details; answers, "today" and external calendars are for people
-	"GET /api/workspaces/{id}/events":            botAllow,
-	"POST /api/workspaces/{id}/events":           botAllow,
-	"GET /api/events/{id}":                       botAllow,
-	"PATCH /api/events/{id}":                     botAllow,
-	"DELETE /api/events/{id}":                    botAllow,
-	"PUT /api/events/{id}/rsvp":                  botDeny, // bots are never attendees
-	"GET /api/me/events/today":                   botDeny,
-	"GET /api/workspaces/{id}/freebusy":          botAllow,
-	"POST /api/workspaces/{id}/freebusy/suggest": botAllow,
-	"GET /api/me/caldav":                         botDeny,
-	"POST /api/me/caldav":                        botDeny,
-	"PUT /api/me/caldav":                         botDeny,
-	"PATCH /api/me/caldav":                       botDeny,
-	"GET /api/me/external-events":                botDeny, // ADR-0045 §5: the owner's own events, people only
-	"DELETE /api/me/caldav":                      botDeny,
-	"DELETE /api/me/external-events":             botDeny, // ADR-0045 amendment 1: the owner deletes from their calendar
-	"POST /api/me/external-events/rsvp":          botDeny, // ADR-0045 amendment 2: the owner answers in their calendar
-	"POST /api/me/caldav/sync":                   botDeny,
-	"GET /api/event-rsvp":                        botPublic, // signed answer links of external attendees; refuses bot tokens
-	"POST /api/event-rsvp":                       botPublic,
+	"GET /api/workspaces/{id}/events":  botAllow,
+	"POST /api/workspaces/{id}/events": botAllow,
+	"GET /api/events/{id}":             botAllow,
+	"PATCH /api/events/{id}":           botAllow,
+	"DELETE /api/events/{id}":          botAllow,
+	"PUT /api/events/{id}/rsvp":        botDeny, // bots are never attendees
+	// comments on a meeting (ADR-0103): people only in v1
+	"GET /api/events/{id}/comments":                 botDeny,
+	"POST /api/events/{id}/comments":                botDeny,
+	"PATCH /api/events/{id}/comments/{comment_id}":  botDeny,
+	"DELETE /api/events/{id}/comments/{comment_id}": botDeny,
+	"GET /api/me/events/today":                      botDeny,
+	"GET /api/workspaces/{id}/freebusy":             botAllow,
+	"POST /api/workspaces/{id}/freebusy/suggest":    botAllow,
+	"GET /api/me/caldav":                            botDeny,
+	"POST /api/me/caldav":                           botDeny,
+	"PUT /api/me/caldav":                            botDeny,
+	"PATCH /api/me/caldav":                          botDeny,
+	"GET /api/me/external-events":                   botDeny, // ADR-0045 §5: the owner's own events, people only
+	"DELETE /api/me/caldav":                         botDeny,
+	"DELETE /api/me/external-events":                botDeny, // ADR-0045 amendment 1: the owner deletes from their calendar
+	"POST /api/me/external-events/rsvp":             botDeny, // ADR-0045 amendment 2: the owner answers in their calendar
+	"POST /api/me/caldav/sync":                      botDeny,
+	"GET /api/event-rsvp":                           botPublic, // signed answer links of external attendees; refuses bot tokens
+	"POST /api/event-rsvp":                          botPublic,
 	// task boards (ADR-0042 §3): bots work like people within their board bits (creating a board
 	// needs CREATE_BOARDS, the activity export MANAGE_BOARD / EDIT_TASKS / VIEW_JOURNALS, ADR-0048;
 	// a closed board only with an override); access and the final delete (DELETE ?purge=1,

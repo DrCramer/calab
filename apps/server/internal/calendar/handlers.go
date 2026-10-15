@@ -661,7 +661,7 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Service) publishRSVP(ctx context.Context, b *bundle, a sqlc.EventAttendee) {
 	s.ev.Workspace(ctx, b.ev.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventRsvp{EventRsvp: &v1.CalendarEventRsvp{
-		WorkspaceId: b.ev.WorkspaceID.String(), EventId: b.ev.ID.String(), Attendee: attendeeProto(a), Counts: counts(b.att),
+		WorkspaceId: b.ev.WorkspaceID.String(), EventId: b.ev.ID.String(), Attendee: attendeeProto(a), Counts: b.counts(),
 		Event: b.proto(nil, nil),
 	}}})
 }

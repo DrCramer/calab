@@ -791,6 +791,15 @@ type EventAttendee struct {
 	InviteID    *uuid.UUID
 }
 
+type EventComment struct {
+	ID        uuid.UUID
+	EventID   uuid.UUID
+	AuthorID  uuid.UUID
+	Body      string
+	CreatedAt time.Time
+	EditedAt  *time.Time
+}
+
 type EventException struct {
 	EventID      uuid.UUID
 	OccurrenceAt time.Time

@@ -56,6 +56,8 @@ message CalendarEventCounts {
   uint32 declined = 2;
   uint32 maybe = 3;
   uint32 pending = 4;
+  // Comments on the meeting (ADR-0103; the series as a whole). 0 for guests.
+  uint32 comments = 5;
 }
 
 // A meeting, or one occurrence of a series. In lists (GET …/events) every occurrence in the
@@ -444,6 +446,42 @@ message RespondExternalEventRequest {
   AttendeeStatus status = 4; // ACCEPTED, DECLINED or MAYBE
 }
 
+// ---- comments (ADR-0103) ----
+//
+// Comments belong to the event (the series as a whole, not one occurrence). Whoever sees the
+// event (see «Visibility» above: the organizer, the attendees, the viewers of its room) reads
+// and writes them; guests and bots do not (403), others get 404 as for the event. Busy-only
+// viewers (free / busy, ADR-0041) see no event and so no comments. The author edits their
+// comment; the author or whoever may edit the event (CalendarEvent.can_edit) deletes it.
+// A cancelled event keeps its comments readable; new ones and edits → 404.
+
+message CalendarEventComment {
+  string id = 1;
+  string event_id = 2;
+  string author_id = 3;
+  string body = 4; // 1..4000 characters, markdown-lite, trimmed
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp edited_at = 6; // unset = never edited
+}
+
+// GET /api/events/{id}/comments?before=<comment id>&limit=<1..100, default 50> — the newest
+// `limit` comments older than `before` (none = the newest), oldest first.
+message ListCalendarEventCommentsResponse {
+  repeated CalendarEventComment comments = 1;
+  bool has_more = 2; // older comments exist
+}
+
+// POST /api/events/{id}/comments → 201 CalendarEventCommentResponse.
+// PATCH /api/events/{id}/comments/{comment_id} → CalendarEventCommentResponse (the author only).
+message CalendarEventCommentRequest {
+  string body = 1;
+}
+
+// DELETE /api/events/{id}/comments/{comment_id} → 204 (the author, or can_edit of the event).
+message CalendarEventCommentResponse {
+  CalendarEventComment comment = 1;
+}
+
 // ---- gateway (docs/05) ----
 
 // EVENT_CREATE / EVENT_UPDATE / EVENT_DELETE: the series (occurrence_at unset, my_status
@@ -498,4 +536,29 @@ message RoomEventEnded {
   string room_id = 2;
   string event_id = 3;
   google.protobuf.Timestamp occurrence_at = 4;
+}
+
+// EVENT_COMMENT_UPSERT: a comment was added or edited; EVENT_COMMENT_DELETE: removed. To
+// everyone who may see the event, as EVENT_UPDATE (not guests). `comments` is the event's
+// count after the change.
+message CalendarEventCommentUpsert {
+  string workspace_id = 1;
+  string event_id = 2;
+  CalendarEventComment comment = 3;
+  uint32 comments = 4;
+  // Routing for the gateway (who sees the event); cleared before delivery.
+  string room_id = 5;
+  string organizer_id = 6;
+  repeated string attendee_ids = 7;
+}
+
+message CalendarEventCommentDelete {
+  string workspace_id = 1;
+  string event_id = 2;
+  string comment_id = 3;
+  uint32 comments = 4;
+  // Routing, as in CalendarEventCommentUpsert.
+  string room_id = 5;
+  string organizer_id = 6;
+  repeated string attendee_ids = 7;
 }

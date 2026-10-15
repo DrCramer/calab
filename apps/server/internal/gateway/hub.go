@@ -652,6 +652,8 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
 		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
 		h.routeCalendar(st, sessions, view, id, ev)
+	case *v1.DispatchEvent_EventCommentUpsert, *v1.DispatchEvent_EventCommentDelete:
+		h.routeEventComment(st, sessions, view, id, ev)
 	case *v1.DispatchEvent_RoomAdmissionRequest:
 		// A knock (ADR-0040 §3, amendment 2026-10-06): only to the author of the link the guest
 		// came by and to deciders (INVITE_GUESTS there, not guests) who are in the room's voice

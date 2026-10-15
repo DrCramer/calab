@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/pbconv"
@@ -110,5 +111,48 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 			v = pbconv.EmailsNone
 		}
 		s.dispatchEnc(id, enc(v))
+	}
+}
+
+// routeEventComment delivers EVENT_COMMENT_UPSERT / DELETE (ADR-0103) to those who see the
+// event — its organizer, its attendees and the viewers of its room, as EVENT_UPDATE — never to
+// guests or bots (comments are people-only, the calendar is closed to guests). The routing
+// fields are cleared before delivery.
+func (h *Hub) routeEventComment(st *wsState, sessions []*Session, view func(rid, uid uuid.UUID) bool, id uuid.UUID, ev *v1.DispatchEvent) {
+	var room, organizer string
+	var attendees []string
+	var out *v1.DispatchEvent
+	switch x := ev.GetEvent().(type) {
+	case *v1.DispatchEvent_EventCommentUpsert:
+		c := proto.CloneOf(x.EventCommentUpsert)
+		room, organizer, attendees = c.GetRoomId(), c.GetOrganizerId(), c.GetAttendeeIds()
+		c.RoomId, c.OrganizerId, c.AttendeeIds = "", "", nil
+		out = &v1.DispatchEvent{Event: &v1.DispatchEvent_EventCommentUpsert{EventCommentUpsert: c}}
+	case *v1.DispatchEvent_EventCommentDelete:
+		c := proto.CloneOf(x.EventCommentDelete)
+		room, organizer, attendees = c.GetRoomId(), c.GetOrganizerId(), c.GetAttendeeIds()
+		c.RoomId, c.OrganizerId, c.AttendeeIds = "", "", nil
+		out = &v1.DispatchEvent{Event: &v1.DispatchEvent_EventCommentDelete{EventCommentDelete: c}}
+	default:
+		return
+	}
+	rid := parseID(room)
+	involved := map[uuid.UUID]bool{parseID(organizer): true}
+	for _, a := range attendees {
+		involved[parseID(a)] = true
+	}
+	delete(involved, uuid.Nil)
+	var enc *encEvent
+	for _, s := range sessions {
+		if s.bot || st.role(s.user) == perm.RoleGuest {
+			continue
+		}
+		if !involved[s.user] && (rid == uuid.Nil || !view(rid, s.user)) {
+			continue
+		}
+		if enc == nil {
+			enc = newScopedEnc(parseID(st.ws.GetId()), out)
+		}
+		s.dispatchEnc(id, enc)
 	}
 }

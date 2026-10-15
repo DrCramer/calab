@@ -505,6 +505,7 @@ func New(d Deps) *App {
 		d.DB, pub, mailSvc,
 		redisx.NewRateLimiter(d.Redis, "rl:event-write:", 30, 2), // 30 at once, 120 per hour
 		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
+	calSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:event-comment:", 20, 20) // ADR-0103: 20 at once, 20 per minute
 	calSvc.Presence = hub.Statuses
 	calSvc.EmailGate = authSvc.EmailGate()
 	// CalDAV push and meeting mails leave Calab without a request: the workspace identity
