@@ -68,6 +68,8 @@ import {
   onRoomEventActive,
   onRoomEventEnded,
 } from './calendar';
+import { onCommentDelete, onCommentUpsert } from './eventComments';
+import { useEventComments } from '../stores/eventComments';
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
 import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
@@ -166,6 +168,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       rooms.reset();
       useSounds.getState().reset();
       useWebApps.getState().reset();
+      // Meeting comments missed while away (ADR-0104): an open card refetches its thread.
+      useEventComments.getState().reset();
       // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
       useReadReceipts.getState().reset();
       for (const pr of r.peerReads) useReadReceipts.getState().set(pr.roomId, pr.lastReadMessageId);
@@ -593,6 +597,13 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'eventReminder':
       onEventReminder(e.value);
+      return;
+    // Comments on a meeting (ADR-0104).
+    case 'eventCommentUpsert':
+      onCommentUpsert(e.value);
+      return;
+    case 'eventCommentDelete':
+      onCommentDelete(e.value);
       return;
     case 'roomEventActive':
       onRoomEventActive(e.value);

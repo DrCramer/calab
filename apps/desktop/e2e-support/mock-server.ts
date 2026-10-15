@@ -428,7 +428,12 @@ import {
   type WorkspaceSnapshot,
   AttendeeStatus,
   CalendarEventAttendeeSchema,
+  CalendarEventCommentRequestSchema,
+  CalendarEventCommentResponseSchema,
+  CalendarEventCommentSchema,
   CalendarEventResponseSchema,
+  ListCalendarEventCommentsResponseSchema,
+  type CalendarEventComment,
   CalendarEventSchema,
   CreateCalendarEventRequestSchema,
   EventRepeat,
@@ -742,6 +747,8 @@ export interface MockServer {
   addEvent(a: AddEventArgs): CalendarEvent;
   /** ADR-0038: `userId` answers (PUT /api/events/{id}/rsvp) → EVENT_RSVP. */
   rsvp(eventId: string, userId: string, status: AttendeeStatus): CalendarEvent;
+  /** ADR-0104: a comment on a meeting by `authorId` (POST /api/events/{id}/comments) → EVENT_COMMENT_UPSERT. */
+  addEventComment(eventId: string, authorId: string, body: string, atMs?: number): CalendarEventComment;
   /** ADR-0038 §5: EVENT_REMINDER to `userId` (default occurrence: the next one). */
   emitReminder(eventId: string, userId: string, minutes: number, occurrenceAtMs?: number): void;
   /** ADR-0038 §6: the room badge of an occurrence starts (ROOM_EVENT_ACTIVE) or ends (ROOM_EVENT_ENDED). */
@@ -849,6 +856,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     callAction: (id, by, action) => impl.callTransition(id, by, action),
     addEvent: (a) => impl.addEvent(a),
     rsvp: (id, u, st) => impl.rsvpEvent(id, u, st),
+    addEventComment: (id, author, text, at) => impl.addEventComment(id, author, text, at),
     emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setBusy: (u, list) => impl.calExternal.set(u, [...list]),
@@ -1186,6 +1194,9 @@ class MockImpl {
   private callSeq = 0;
   /** Meetings (ADR-0038) by id; cancelled ones stay (cancelled_at). */
   private readonly calEvents = new Map<string, CalEventRec>();
+  /** ADR-0104: comments per event id, oldest first. */
+  private readonly calComments = new Map<string, CalendarEventComment[]>();
+  private calCommentSeq = 0;
   /** Task boards (ADR-0042); rebuilt with the state. */
   boards: BoardsMock;
   /** Disk (ADR-0094); rebuilt with the state. */
@@ -1286,6 +1297,8 @@ class MockImpl {
     this.userCall.clear();
     this.callSeq = 0;
     this.calEvents.clear();
+    this.calComments.clear();
+    this.calCommentSeq = 0;
     this.calWorkHours.clear();
     this.calExternal.clear();
     this.calDav.clear();
@@ -6998,6 +7011,29 @@ class MockImpl {
     return out;
   }
 
+  /** ADR-0104: a comment (POST …/comments and addEventComment()) → EVENT_COMMENT_UPSERT to the event's audience. */
+  addEventComment(eventId: string, authorId: string, body: string, atMs?: number): CalendarEventComment {
+    const rec = this.calEvents.get(eventId);
+    if (!rec) throw notFound('event not found');
+    const text = body.trim();
+    if (!text || Array.from(text).length > 4000) throw invalid('body', 'body must be 1..4000 characters');
+    this.calCommentSeq += 1;
+    const c = create(CalendarEventCommentSchema, {
+      id: `0199c0de-0000-7000-8000-${String(this.calCommentSeq).padStart(12, '0')}`, eventId, authorId, body: text,
+      createdAt: timestampFromMs(atMs ?? this.calNow()),
+    });
+    const list = this.calComments.get(eventId) ?? [];
+    list.push(c);
+    this.calComments.set(eventId, list);
+    this.calCommentPublish(rec, { event: { case: 'eventCommentUpsert', value: { workspaceId: rec.ev.workspaceId, eventId, comment: c, comments: list.length } } });
+    return c;
+  }
+
+  /** EVENT_COMMENT_* to whoever sees the event (as EVENT_UPDATE), not bots. */
+  private calCommentPublish(rec: CalEventRec, ev: EventInit): void {
+    this.fanout((u) => (this.calView(rec, u) && !this.state.users.get(u)?.user.isBot ? ev : null));
+  }
+
   /** Creates a meeting (POST …/events and addEvent()): EVENT_CREATE, ROOM_EVENT_ACTIVE when active now. */
   addEvent(a: AddEventArgs): CalendarEvent {
     const organizer = a.organizerId ?? IDS.users.anna;
@@ -7907,6 +7943,58 @@ class MockImpl {
       const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
       this.rsvpEvent(rec.ev.id, me, parseBody(c, RsvpCalendarEventRequestSchema).status);
       sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, canEdit) });
+    });
+
+    // Comments on a meeting (ADR-0104): whoever sees the event; the author edits, the author or an editor deletes.
+    this.route('GET', '/api/events/:id/comments', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec } = this.calRec(c.params[0] ?? '', me);
+      const before = c.url.searchParams.get('before') ?? '';
+      const lim = Number(c.url.searchParams.get('limit') ?? 50);
+      const older = (this.calComments.get(rec.ev.id) ?? []).filter((x) => !before || x.id < before);
+      const page = older.slice(-lim);
+      sendMsg(c.res, 200, ListCalendarEventCommentsResponseSchema, { comments: page, hasMore: older.length > page.length });
+    });
+
+    this.route('POST', '/api/events/:id/comments', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec } = this.calRec(c.params[0] ?? '', me);
+      if (rec.ev.cancelledAt) throw notFound('event not found');
+      const comment = this.addEventComment(rec.ev.id, me, parseBody(c, CalendarEventCommentRequestSchema).body);
+      sendMsg(c.res, 201, CalendarEventCommentResponseSchema, { comment });
+    });
+
+    this.route('PATCH', '/api/events/:id/comments/:cid', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec } = this.calRec(c.params[0] ?? '', me);
+      if (rec.ev.cancelledAt) throw notFound('event not found');
+      const list = this.calComments.get(rec.ev.id) ?? [];
+      const cm = list.find((x) => x.id === c.params[1]);
+      if (!cm) throw notFound('comment not found');
+      if (cm.authorId !== me) throw forbidden('only the author edits a comment');
+      const text = parseBody(c, CalendarEventCommentRequestSchema).body.trim();
+      if (!text || Array.from(text).length > 4000) throw invalid('body', 'body must be 1..4000 characters');
+      cm.body = text;
+      cm.editedAt = timestampFromMs(this.calNow());
+      this.calCommentPublish(rec, { event: { case: 'eventCommentUpsert', value: { workspaceId: rec.ev.workspaceId, eventId: rec.ev.id, comment: cm, comments: list.length } } });
+      sendMsg(c.res, 200, CalendarEventCommentResponseSchema, { comment: cm });
+    });
+
+    this.route('DELETE', '/api/events/:id/comments/:cid', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      const list = this.calComments.get(rec.ev.id) ?? [];
+      const i = list.findIndex((x) => x.id === c.params[1]);
+      const cm = list[i];
+      if (!cm) throw notFound('comment not found');
+      if (cm.authorId !== me && !canEdit) throw forbidden('only the author or the organizer deletes a comment');
+      list.splice(i, 1);
+      this.calCommentPublish(rec, { event: { case: 'eventCommentDelete', value: { workspaceId: rec.ev.workspaceId, eventId: rec.ev.id, commentId: cm.id, comments: list.length } } });
+      noContent(c.res);
     });
 
     this.route('GET', '/api/me/events/today', (c) => {

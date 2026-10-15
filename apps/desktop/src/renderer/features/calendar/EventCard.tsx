@@ -23,6 +23,7 @@ import { FormerChip } from '../people/MemberBits';
 import { menuBox, menuItem } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
+import { EventComments } from './EventComments';
 
 const RecordingTranscript = lazy(() => import('../chat/RecordingTranscript'));
 
@@ -200,6 +201,7 @@ export function EventCard({
 
         <Attendees ev={ev} guest={guest} />
         {ev.roomId && externals.length > 0 && !ev.guestLinks && !guest ? <p className="mt-2 text-caption text-muted">{t('cal.noGuestLinks')}</p> : null}
+        {guest ? null : <EventComments ev={ev} moderate={editable} />}
       </div>
       {editable ? (
         <div className={cx('flex shrink-0 flex-wrap items-center gap-2 border-t border-line mobile:grid mobile:grid-cols-2 mobile:pb-[calc(var(--safe-bottom)+12px)]', variant === 'popover' ? 'px-3 py-2' : 'px-4 py-3')}>

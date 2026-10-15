@@ -3688,11 +3688,13 @@ function externalEvent(mock: MockServer): void {
 }
 
 /** The calendar screens: a full day of meetings (calendarWeb.seedDay), the mock's clock at NOW. */
-async function calendarDay(win: Page, mock: MockServer): Promise<void> {
+/** Seeds the day (seedDay) and opens the calendar; returns the id of «Планёрка». */
+async function calendarDay(win: Page, mock: MockServer): Promise<string> {
   mock.setClock(NOW.getTime());
-  seedDay(mock);
+  const planerka = seedDay(mock);
   await win.getByTestId('section-calendar').click();
   await expect(win.getByTestId('mini-calendar')).toBeVisible();
+  return planerka;
 }
 
 /** The header icon with today's count: today's day view at once, the mini month under the header (ADR-0041 §3). */
@@ -3706,12 +3708,17 @@ test('calendar-mini', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'calendar-mini');
 });
 
-/** The day view with the red «now» line, overlapping blocks, the all-day row and the selected meeting's card. */
+/**
+ * The day view with the red «now» line, overlapping blocks, the all-day row and the selected meeting's
+ * card; then the card's comments (ADR-0104): the thread, a comment of mine sent from the field.
+ */
 test('calendar-day', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   externalEvent(mock);
-  await calendarDay(win, mock);
+  const planerka = await calendarDay(win, mock);
+  mock.addEventComment(planerka, IDS.users.boris, 'Повестка: релиз 1.0 и **ретро** спринта. Ссылки — в описании.', NOW.getTime() - 3 * 3_600_000);
+  mock.addEventComment(planerka, IDS.users.vera, 'Опоздаю минут на пять', NOW.getTime() - 20 * 60_000);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
   await expect(win.getByTestId('day-view')).toBeVisible();
   await expect(win.getByTestId('now-line')).toBeVisible();
@@ -3722,6 +3729,18 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   // My external calendar's event (ADR-0045 §3): a dashed card with its title and place.
   await expect(win.getByTestId('external-block')).toContainText('Созвон с подрядчиком');
   await checkpoint(shot, 'calendar-day');
+
+  const comments = card.getByTestId('event-comments');
+  await comments.scrollIntoViewIfNeeded();
+  await expect(comments.getByTestId('event-comment')).toHaveCount(2);
+  await comments.getByTestId('event-comment-input').fill('Подготовлю демо');
+  await comments.getByTestId('event-comment-input').press('Enter');
+  await expect(comments.getByTestId('event-comment')).toHaveCount(3);
+  await expect(comments.getByRole('heading')).toHaveText('Комментарии — 3');
+  await expect(comments.getByTestId('event-comment-input')).toBeInViewport();
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await comments.getByTestId('event-comment').last().hover();
+  await checkpoint(shot, 'calendar-comments', { keepPointer: true });
 });
 
 /**

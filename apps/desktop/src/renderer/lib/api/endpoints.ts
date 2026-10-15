@@ -13,6 +13,9 @@ import {
   UpdateNotesResponseSchema,
   GetVersionResponseSchema,
   CalendarEventResponseSchema,
+  CalendarEventCommentRequestSchema,
+  CalendarEventCommentResponseSchema,
+  ListCalendarEventCommentsResponseSchema,
   CreateCalendarEventRequestSchema,
   EventRsvpTokenRequestSchema,
   EventRsvpTokenResponseSchema,
@@ -427,6 +430,17 @@ export const api = {
     cancel: (id: string, occurrence?: Date) => callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString() })}`),
     rsvp: (id: string, status: AttendeeStatus) =>
       call('PUT', `/api/events/${id}/rsvp`, CalendarEventResponseSchema, body(RsvpCalendarEventRequestSchema, { status })),
+    /** Comments on a meeting (ADR-0104): the newest `limit` before `before`, oldest first; 404 hidden, 403 guest. */
+    comments: (id: string, before?: string, signal?: AbortSignal) =>
+      call('GET', `/api/events/${id}/comments${qs({ before })}`, ListCalendarEventCommentsResponseSchema, undefined, signal),
+    /** 201 → EVENT_COMMENT_UPSERT; 404 for a cancelled meeting; 422 body 1..4000. */
+    addComment: (id: string, text: string) =>
+      call('POST', `/api/events/${id}/comments`, CalendarEventCommentResponseSchema, body(CalendarEventCommentRequestSchema, { body: text })),
+    /** The author only (403 otherwise). */
+    editComment: (id: string, commentId: string, text: string) =>
+      call('PATCH', `/api/events/${id}/comments/${commentId}`, CalendarEventCommentResponseSchema, body(CalendarEventCommentRequestSchema, { body: text })),
+    /** 204; the author or whoever may edit the meeting. */
+    deleteComment: (id: string, commentId: string) => callEmpty('DELETE', `/api/events/${id}/comments/${commentId}`),
     /** My upcoming meetings of today in `tz`, across workspaces (the calendar icon's number). */
     today: (tz: string) => call('GET', `/api/me/events/today${qs({ tz })}`, TodayCalendarEventsResponseSchema),
     /** External attendee's answer page (public, no login): preview and answer by the signed token. */
