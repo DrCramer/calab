@@ -15,6 +15,13 @@ const NONE: readonly number[] = [];
 const NO_BOTS: readonly string[] = [];
 
 /**
+ * Only the latest PATCH of me.settings may write its answer: a slower earlier answer carries the
+ * list from before the later switch and would flip it back for a moment (or for good, if the
+ * answers arrive out of order). One counter for both cards — the answer is the whole `me`.
+ */
+let saveSeq = 0;
+
+/**
  * Saves a row's switch (ADR-0089 §5): optimistic — the session's settings change at once, the
  * server's answer replaces them, an error puts the previous list back (unless something newer
  * already replaced it).
@@ -26,9 +33,10 @@ async function saveRow(row: TaskNotifyRow, on: boolean): Promise<void> {
   const prev = me.settings.taskNotifyOff;
   const next = withRow(prev, row, on);
   s.set({ me: { ...me, settings: { ...me.settings, taskNotifyOff: next } } });
+  const seq = ++saveSeq;
   try {
     const r = await api.me.update({ taskNotifyOff: { kinds: next } });
-    if (r.me) useSession.getState().set({ me: r.me });
+    if (r.me && seq === saveSeq) useSession.getState().set({ me: r.me });
   } catch (e) {
     const cur = useSession.getState().me;
     if (cur?.settings && cur.settings.taskNotifyOff === next) {
@@ -60,9 +68,10 @@ async function saveBot(id: string, on: boolean, listed: readonly string[]): Prom
   const prev = me.settings.taskNotifyBots;
   const next = withBot(prev, id, on, listed);
   s.set({ me: { ...me, settings: { ...me.settings, taskNotifyBots: next } } });
+  const seq = ++saveSeq;
   try {
     const r = await api.me.update({ taskNotifyBots: { botUserIds: next } });
-    if (r.me) useSession.getState().set({ me: r.me });
+    if (r.me && seq === saveSeq) useSession.getState().set({ me: r.me });
   } catch (e) {
     const cur = useSession.getState().me;
     if (cur?.settings && cur.settings.taskNotifyBots === next) {
@@ -99,6 +108,20 @@ const BotRow = memo(function BotRow({ id, listed }: { id: string; listed: readon
 });
 
 /**
+ * The bots of one workspace's member map, cached by the map's reference and the users map's: the
+ * settings screen re-evaluates its selector on every workspaces-store change, and most of them
+ * touch neither (docs/09, ADR-0090).
+ */
+const botsByMembers = new WeakMap<object, { users: object; ids: string[] }>();
+function membersBots(members: Record<string, unknown>, users: Record<string, { isBot?: boolean } | undefined>): string[] {
+  const hit = botsByMembers.get(members);
+  if (hit && hit.users === users) return hit.ids;
+  const ids = Object.keys(members).filter((u) => !!users[u]?.isBot);
+  botsByMembers.set(members, { users, ids });
+  return ids;
+}
+
+/**
  * «Передавать боту» (ADR-0090 §5): a switch per bot of my workspaces; the server relays my task
  * notices (by the switches above) to the chosen ones. Hidden when there is no bot.
  */
@@ -108,9 +131,9 @@ function RelayGroup(): ReactNode {
       relayBotIds(
         s.order.map((w) => {
           const e = s.byId[w];
-          return { guest: !e || e.role === WorkspaceRole.GUEST, memberIds: e ? Object.keys(e.members) : [] };
+          return { guest: !e || e.role === WorkspaceRole.GUEST, memberIds: e ? membersBots(e.members, s.users) : NO_BOTS };
         }),
-        (u) => !!s.users[u]?.isBot,
+        () => true,
       ),
     ),
   );
