@@ -34,6 +34,30 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 
 ## Features
 
+### Features at a glance
+
+| Area | In one line |
+|---|---|
+| Voice and video | Voice rooms with clean sound and push-to-talk, screen sharing, camera, meeting gallery, recording with transcript, soundboard, annotations on a shared screen, musician mode |
+| Phone calls (SIP) | Dial a landline or mobile number from a voice room through your own SIP provider |
+| Temporary rooms and guests | A room for an hour or a day with a guest link; guests need no sign-up and are removed after 48 hours of inactivity |
+| Chat | Replies, reactions, stickers, voice messages, forwarding, files with previews, pins, read ticks, mentions |
+| Direct messages and notes | One-on-one chats and calls with an archive; up to 20 private notes shelves |
+| Calendar | Meetings with invitations by email (`.ics`), find a time for several people, CalDAV sync |
+| Task boards | Kanban, list and timeline; full-screen task, approvals, checklists, milestones, automations, intake forms, board webhooks, full change history |
+| Mail | An IMAP/SMTP mail client built into the desktop app |
+| Wiki | Team pages with real-time co-editing, page links, versions and public pages |
+| Disk | Workspace folders and files with per-folder access, public links, trash and a storage meter |
+| Search | `⌘K` finds messages, tasks, comments, events, files, notes and transcripts |
+| Notifications | Per-room levels and per-event task triggers; task notices can be relayed to your own bot (e.g. Telegram) |
+| Bots and integration API | Bots with tokens, TypeScript SDK, WebSocket gateway, signed webhooks, voice, buttons; [developer docs](https://calab.io/en/docs/) |
+| Identity and roles | OIDC SSO, LDAP/AD directory sync, “Sign in with Calab” (OAuth 2); roles by function with private rooms and boards |
+| Members | Profiles with `@nick`, achievements and birthdays, former members kept in history |
+| Billing and plans | Free, Team, Business and a free-for-non-commercial Enterprise on your own server |
+| Phone | The web app works in a phone browser today; iPhone and Android apps are coming |
+| Web apps in the rail | Pin Grafana, the CRM or any site next to Calab; the call keeps going |
+| Self-hosting | One `docker compose`, PostgreSQL and LiveKit inside, automatic certificates and backups |
+
 ### 🎙 Voice and video
 
 <img src="apps/landing/public/screens/en/call.webp" width="880" alt="A one-on-one call in direct messages">
@@ -48,6 +72,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - **Soundboard**, moderation (server mute, disconnect, move by drag and drop), statuses.
 - **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default. Business plan and Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Temporary rooms** — a room for an hour or a day with a ready guest link and an optional calendar meeting: a Zoom replacement that disappears by itself ([ADR-0044](docs/adr/0044-temp-rooms.md)).
+- **Video meeting gallery** — everyone in equal tiles, paged (up to 25 on a large screen), with a Gallery | Speaker switch; speakers are prioritised.
 
 ### 💬 Chat
 
@@ -56,6 +81,8 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - Bubbles like Telegram: replies, **reactions**, forwarding to several chats, stickers, voice messages, files with previews, pins, read ticks.
 - **Mentions**, per-room notifications, workspace search with morphology, `⌘K` quick switcher.
 - **Direct messages** with an archive; the web app adapts to phones and installs to the home screen.
+- **Search** — `⌘K` finds messages, tasks and their comments, calendar events, files, notes and meeting transcripts, by word start and with typo tolerance.
+- **Notifications** — per-room levels; for tasks every kind of event can be switched off separately, and your task notices can be relayed to a bot of your choice (for example into Telegram).
 
 ### 📅 Calendar and meetings
 
@@ -88,17 +115,29 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - Filters, saved views, bulk actions; **create a task from any message**; a task link unfolds into a card in the chat.
 
 - **Approvals** — assign approvers and how many approvals are needed (all or N of M); a task can’t move on until it is approved ([ADR-0049](docs/adr/0049-task-approvals.md)).
+- **Full-screen task** on desktop, as in Linear: `Esc` returns to the board, `↑`/`↓` go to neighbouring tasks.
+- **Checklists** inside tasks (Team and above) with progress on the card and “turn an item into a subtask”.
+- **Milestones** inside a big task with due dates and progress; they appear as diamonds on the timeline ([ADR-0063](docs/adr/0063-task-milestones.md)).
+- **Automations** — “When → If → Then” rules per board: change a status, assign, write to a room and more (Team and above, [ADR-0060](docs/adr/0060-board-automations.md)).
+- **Intake forms** — a public link or a private form that creates tasks, with fields, default status and priority (Team 5 per board, Business 20, [ADR-0064](docs/adr/0064-board-forms.md)).
+- **Board webhooks** — signed events for your own systems (Business); each board switches its features on and off separately.
+- **History** — the “Comments” and “History” tabs: who changed what and when, with before and after values; repeated edits are merged. Watchers, per-task access on closed boards, approval reminders.
+
+### ✉️ Mail
+
+A mail client in the desktop app: connect Gmail, Yandex, Mail.ru or iCloud (an app password is needed), read and send mail without leaving Calab. A message can be forwarded to a chat as text with its attachments. Mail runs locally — passwords stay in the system keychain and the server takes no part; there is no mail in the web or phone app ([ADR-0088](docs/adr/0088-mail-client.md)).
+
 ### 📚 Wiki
 
 <img src="apps/landing/public/screens/en/wiki.webp" width="880" alt="Team wiki">
 
-Pages and sub-pages like Notion: a rich editor with tables, checklists, code and images, real-time co-editing with live cursors, version history with restore, access per page and public read-only links.
+Pages and sub-pages like Notion: a rich editor with tables, checklists, code and images, real-time co-editing with live cursors, version history with restore, access per page and public read-only links. Pages link to each other (`[[`) and a page link in chat unfolds into a card; one menu for the tree row and the page “⋯”: rename, sub-page, move, access, link, versions, export, trash.
 
 ### 🗂️ Disk
 
 <img src="apps/landing/public/screens/en/disk.webp" width="880" alt="Team drive">
 
-Folders and files of the workspace: drag & drop upload, tiles or list, access per folder (private folders are hidden even from admins), public file links, trash with auto-cleanup and a clear storage meter.
+Folders and files of the workspace: drag & drop upload, tiles or list, access per folder (private folders are hidden even from admins), public file links, trash with auto-cleanup and a clear storage meter. The meter shows what takes the space: chats, boards, wiki and the rest.
 
 ### 📝 Notes
 
@@ -108,11 +147,20 @@ Up to 20 private shelves with your own names and emoji — like Saved Messages i
 
 <img src="apps/landing/public/screens/en/guest.webp" width="360" alt="A guest waiting for the organizer’s approval">
 
-A guest link leads straight into a room — no sign-up. With approval turned on (per room or per link), the guest waits on this screen until the organizer clicks “Let in”.
+A guest link leads straight into a room — no sign-up. With approval turned on (per room or per link), the guest waits on this screen until the organizer clicks “Let in”. Guests who have not signed in for 48 hours are removed automatically and are grouped separately in the member list. People who left stay in history as “former” members: their messages and tasks remain, and admins see them in a separate tab.
+
+### 🎂 People
+
+- **Profiles** with email and phone (copy in one tap), a unique `@nick` for mentions, status and birthday.
+- **Birthdays** — a festive card in chat and a banner in the members panel; **achievements** awarded “for something” with a card in chat and a row in the profile ([ADR-0061](docs/adr/0061-achievements.md)).
 
 ### 🧩 Web apps
 
 An admin pins site shortcuts (Grafana, the wiki, the CRM) under the workspace icon in the left rail. A click opens the site full-window inside Calab and the call keeps going; logins are kept separately per app, camera and microphone only with your permission ([ADR-0050](docs/adr/0050-workspace-apps.md)).
+
+### 📱 Phone
+
+The web app adapts to phones and installs to the home screen: Telegram-like room list, swipes (reply, mark read), pinned tabs plus “More”, who is in a voice room at a glance. iPhone and Android apps (calls on the lock screen, push) are coming soon ([ADR-0067](docs/adr/0067-phone-shared-web-host.md)).
 
 ### 🤖 Bots and SDK
 
@@ -127,6 +175,8 @@ await bot.start();
 ```
 
 SDK — [`packages/bot-sdk`](packages/bot-sdk), examples — [`examples/bots`](examples/bots) (echo, voice echo, TTS, Python), docs — [docs/19-bot-api.en.md](docs/19-bot-api.en.md) · [Русский](docs/19-bot-api.md).
+
+Bots also work with Disk and Wiki (folders, files, pages) and with board webhooks. Developer documentation — bots as an integration API, OAuth 2 / OIDC, SSO: **[calab.io/en/docs/](https://calab.io/en/docs/)**.
 
 ### 🔒 Self-hosted and secure
 
@@ -143,8 +193,7 @@ Planned, not available yet:
 
 - **Voice AI assistant** — a voice AI assistant in rooms (in testing).
 - **IVR** — a voice menu and internal extension numbers for phone calls (SIP).
-- **Wiki** — a team knowledge base.
-- **Disk** — shared file storage for the workspace.
+- **Contact requests for integrations** — coming; not available yet.
 
 ## Quick start
 
@@ -200,6 +249,8 @@ Checks: `make lint` from the repository root, `make test` (Go + TS), `make test-
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |
 
 Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.io/en/#pricing](https://calab.io/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+**Billing.** A workspace has a balance charged per seat per day; pay by card or SBP (Russia). Paid plans are being enabled workspace by workspace; roles have separate “view / top up / manage” billing permissions, and with the plan inactive a workspace stays readable ([ADR-0080](docs/adr/0080-seat-billing.md)).
 
 ## Licence
 

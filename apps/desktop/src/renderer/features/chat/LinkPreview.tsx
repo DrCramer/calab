@@ -1,5 +1,5 @@
 import type { UnfurlResponse } from '@calaba/protocol';
-import { X } from 'lucide-react';
+import { Lock, X } from 'lucide-react';
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -7,6 +7,8 @@ import { t } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
 import { unfurl } from '../../services/chat';
+import { ownBoardLink } from '../../lib/ownBoardLink';
+import { useSession } from '../../stores/session';
 import { TaskLinkCard } from '../boards/TaskLinkCard';
 import { hostOf, siteColor, siteKey } from './siteColor';
 
@@ -19,7 +21,8 @@ const isProxied = (p: string): boolean => p.startsWith('/api/unfurl/image');
  * MANAGE_MESSAGES) gets «×» on hover / keyboard focus.
  */
 export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void) | undefined }): ReactNode {
-  const [card, setCard] = useState<UnfurlResponse | null>(null);
+  // undefined while loading; null = nothing to show (the server had no preview, or no access).
+  const [card, setCard] = useState<UnfurlResponse | null | undefined>(undefined);
   useEffect(() => {
     let alive = true;
     void unfurl(url).then((c) => {
@@ -29,9 +32,20 @@ export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void
       alive = false;
     };
   }, [url]);
-  if (!card) return null;
+  if (card === undefined) return null;
   // Our own /t/ and /b/ links (ADR-0042): the task / board card, opened in the app.
-  if (card.task || card.board) return <TaskLinkCard res={card} href={url} />;
+  if (card?.task || card?.board) return <TaskLinkCard res={card} href={url} />;
+  // One the viewer cannot open (a private board, addendum 2026-10-14): no title, no preview — just say so.
+  const own = ownBoardLink(url, useSession.getState().serverUrl);
+  if (own) {
+    return (
+      <div className="mt-1.5 flex min-w-0 max-w-[400px] items-center gap-1.5 rounded-[var(--radius-row)] border-l-[3px] border-l-[var(--color-fill-hover)] bg-[var(--color-fill)] py-1.5 pl-2 pr-2 text-body text-muted" data-testid="task-link-unavailable">
+        <Lock className="size-3.5 shrink-0" aria-hidden />
+        {t(own === 'task' ? 'boards.taskUnavailable' : 'boards.boardUnavailable')}
+      </div>
+    );
+  }
+  if (!card) return null;
   const href = card.url && isSafeHref(card.url) ? card.url : url;
   const image = card.imageUrl && isProxied(card.imageUrl) ? card.imageUrl : '';
   const site = card.siteName || hostOf(href);

@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import { useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { t } from '../i18n';
+import { setOwnerSeesPrivate } from '../lib/permissions';
 import { customLook, legacyRoles, rolesOfMember, sortRoles } from '../lib/roles';
 
 export interface WorkspaceEntry {
@@ -143,6 +144,7 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
     set((s) => {
       const ws = snap.workspace;
       if (!ws) return {};
+      setOwnerSeesPrivate(ws.id, ws.ownerSeesPrivate);
       const members: Record<string, WorkspaceMember> = {};
       const users = { ...s.users };
       let former = s.former;
@@ -186,7 +188,10 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
         voice: {},
       })),
     ),
-  updateWorkspace: (ws) => set((s) => withEntry(s, ws.id, (e) => ({ ...e, ws }))),
+  updateWorkspace: (ws) => {
+    setOwnerSeesPrivate(ws.id, ws.ownerSeesPrivate);
+    set((s) => withEntry(s, ws.id, (e) => ({ ...e, ws })));
+  },
   upsertMember: (m) =>
     set((s) => {
       if (!m.user) return {};

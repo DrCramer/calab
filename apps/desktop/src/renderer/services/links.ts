@@ -4,6 +4,7 @@ import { setPendingInvite } from '../stores/invite';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 import { parseMailLink } from '../features/mail/mailLink';
+import { wikiPageIdOf } from '@calaba/wiki-doc/links';
 
 /**
  * Invite links: `https://<server>/join/<code>` (shareable: opens the web client, and the
@@ -140,13 +141,36 @@ export function parseMessageLink(input: string): { roomId: string; messageId: st
 }
 
 /**
- * A link clicked in a message: our own /m/, /t/, /b/ links (this server) open in the app instead
+ * Wiki page links (owner 14.10): `https://<server>/wiki/<page id>` and `calab://wiki/<page id>` —
+ * the wiki section opens on the page (its workspace switched to); no access → «Страница недоступна».
+ */
+export function parseWikiLink(input: string): string | null {
+  const s = input.trim();
+  const m = new RegExp(`^${SCHEME}://wiki/([0-9a-fA-F-]{36})/?$`).exec(s);
+  if (m?.[1]) return wikiPageIdOf(`/wiki/${m[1]}`);
+  return /^https?:\/\//i.test(s) ? wikiPageIdOf(s) : null;
+}
+
+/** The shareable address of a wiki page on this server (null: no server known). */
+export function wikiPageUrl(pageId: string): string | null {
+  const origin = shareOrigin('');
+  return origin ? `${origin}/wiki/${pageId}` : null;
+}
+
+/** A wiki page link of this server (the chat's card, a paste into a page); null for any other URL. */
+export function ownWikiPageId(href: string): string | null {
+  const origin = shareOrigin('');
+  return origin && href.startsWith(`${origin}/`) ? parseWikiLink(href) : null;
+}
+
+/**
+ * A link clicked in a message: our own /m/, /t/, /b/, /wiki/ links (this server) open in the app instead
  * of the browser. False = not ours (the caller opens it outside).
  */
 export function openOwnLink(href: string): boolean {
   const origin = shareOrigin('');
   if (!origin || !href.startsWith(`${origin}/`)) return false;
-  if (!parseMessageLink(href) && !parseBoardLink(href)) return false;
+  if (!parseMessageLink(href) && !parseBoardLink(href) && !parseWikiLink(href)) return false;
   handleDeepLink(href);
   return true;
 }
@@ -162,6 +186,12 @@ export function handleDeepLink(url: string): void {
   const msg = parseMessageLink(url);
   if (msg) {
     void import('./messageLink').then((m) => m.openMessageLink(msg.roomId, msg.messageId)).catch(() => undefined);
+    return;
+  }
+  const wiki = parseWikiLink(url);
+  if (wiki) {
+    // Loaded lazily, like the boards: links.ts stays free of the API / platform graph.
+    void import('./wiki').then((m) => m.openWikiLink(wiki)).catch(() => undefined);
     return;
   }
   const board = parseBoardLink(url);

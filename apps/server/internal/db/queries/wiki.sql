@@ -325,10 +325,21 @@ ORDER BY l.created_at DESC;
 -- ---- journal ----
 
 -- name: InsertWikiActivity :one
-INSERT INTO wiki_activity (workspace_id, page_id, page_title, actor_id, kind, before, after)
+INSERT INTO wiki_activity (workspace_id, page_id, page_title, actor_id, kind, before, after, private)
 VALUES (sqlc.arg('workspace_id'), sqlc.narg('page_id'), sqlc.arg('page_title'), sqlc.narg('actor_id'), sqlc.arg('kind'),
-        sqlc.narg('before'), sqlc.narg('after'))
+        sqlc.narg('before'), sqlc.narg('after'), sqlc.arg('private'))
 RETURNING *;
+
+-- name: MarkWikiSubtreeActivityPrivate :exec
+-- Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2): the journal entries of
+-- every node of the subtree that lies under a restricted node (restricted: the root's chain has
+-- one) become private — the workspace journal cannot check a chain that is gone.
+WITH RECURSIVE sub (id, r) AS (
+    SELECT t.id, sqlc.arg('restricted')::bool FROM wiki_pages t WHERE t.id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, sub.r OR c.restricted FROM wiki_pages c JOIN sub ON c.parent_id = sub.id
+)
+UPDATE wiki_activity a SET private = true FROM sub WHERE a.page_id = sub.id AND sub.r AND NOT a.private;
 
 -- name: ListWikiPageActivity :many
 -- A page's history, the newest first; cursor: the last id (NULL = the first page).
@@ -527,3 +538,49 @@ SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.title),
     to_tsquery('russian', sqlc.arg('tsq')::text) || to_tsquery('simple', sqlc.arg('tsq')::text),
     sqlc.arg('options')::text)::text AS snippet
 FROM wiki_pages w WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: SetWikiPageOwner :exec
+-- «Сделать меня владельцем» (addendum 2026-10-14): a former member's private page gets a new owner.
+UPDATE wiki_pages SET owner_id = sqlc.arg('owner_id'), updated_by = sqlc.arg('owner_id'), updated_at = now()
+WHERE id = sqlc.arg('id');
+
+-- name: ListWikiSubtree :many
+-- The pages below a page (not the page itself), parents before children, trashed or not: a
+-- trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
+-- of ADR-0096 §2). Bounded at 64 levels.
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM wiki_pages c WHERE c.parent_id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM wiki_pages c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT sqlc.embed(wp), down.depth::int AS depth
+FROM down JOIN wiki_page_heads wp ON wp.id = down.id
+ORDER BY down.depth, wp.id;
+
+-- name: DetachWikiPage :one
+-- Detaches a page (with its subtree) to the top level, last among the live top-level pages (under
+-- LockWikiTree), with the flag that keeps its access (perm.Detached); in the trash it becomes a
+-- trash root of its own.
+UPDATE wiki_pages w SET
+    parent_id    = NULL,
+    restricted   = sqlc.arg('restricted'),
+    trashed_root = w.trashed_at IS NOT NULL,
+    position     = CASE WHEN w.trashed_at IS NULL THEN (
+        SELECT coalesce(max(s.position) + 1, 0) FROM wiki_pages s
+        WHERE s.workspace_id = w.workspace_id AND s.trashed_at IS NULL AND s.parent_id IS NULL) ELSE w.position END,
+    updated_at   = now()
+WHERE w.id = sqlc.arg('id')
+RETURNING w.id;
+
+-- name: RetimeWikiTrash :exec
+-- The sweeper detached a trashed page from someone else's expired trash root: it and what was
+-- trashed with it get a trash time of their own (now), so the retention counts from here.
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM wiki_pages r WHERE r.id = sqlc.arg('id')::uuid AND r.trashed_at IS NOT NULL
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM wiki_pages c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+UPDATE wiki_pages w SET trashed_at = sqlc.arg('trashed_at')::timestamptz FROM sub WHERE w.id = sub.id;

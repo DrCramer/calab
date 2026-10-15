@@ -102,6 +102,11 @@ func activityKinds(t *testing.T, u musty, taskID string) []string {
 	return out
 }
 
+// creatorOv is the personal override with every board bit that a board's creator got at
+// creation: a PUT replaces the list, and on a private board the owner who drops it loses the
+// board (ADR-0058 addendum 2026-10-14), so the creator's PUTs keep it, like the client does.
+func creatorOv(u *user) *v1.RoomPermissionOverride { return userOv(u.id, perm.BoardOnly, 0) }
+
 func setBoardPerms(u musty, boardID string, want int, ovs ...*v1.RoomPermissionOverride) {
 	u.must(want, "PUT", "/api/boards/"+boardID+"/permissions", &v1.SetBoardPermissionsRequest{Overrides: ovs}, nil)
 }
@@ -152,7 +157,7 @@ func TestBoardPermissions(t *testing.T) {
 	bob.must(404, "GET", "/api/t/SEC-1", nil, nil)
 
 	// A user override: bob sees it; EDIT_TASKS lets him edit others' tasks.
-	setBoardPerms(o, priv.GetId(), 200, userOv(bob.id, perm.ViewBoard|perm.EditTasks, 0))
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o), userOv(bob.id, perm.ViewBoard|perm.EditTasks, 0))
 	bob.must(200, "GET", "/api/boards/"+priv.GetId(), nil, nil)
 	title := "тайна раскрыта"
 	patchTask(t, bob, secret.GetId(), &v1.UpdateTaskRequest{Title: &title}, 200)
@@ -170,12 +175,12 @@ func TestBoardPermissions(t *testing.T) {
 		t.Fatalf("set roles: %d", st)
 	}
 	carol.must(404, "GET", "/api/boards/"+priv.GetId(), nil, nil)
-	setBoardPerms(o, priv.GetId(), 200, userOv(bob.id, perm.ViewBoard|perm.EditTasks, 0), roleOv(team.GetId(), perm.ViewBoard, 0))
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o), userOv(bob.id, perm.ViewBoard|perm.EditTasks, 0), roleOv(team.GetId(), perm.ViewBoard, 0))
 	carol.must(200, "GET", "/api/boards/"+priv.GetId(), nil, nil)
 	// The allow opens the board; her other board bits come from her roles (CREATE_TASKS of member).
 	carol.must(201, "POST", "/api/boards/"+priv.GetId()+"/tasks", &v1.CreateTaskRequest{Title: "от Кэрол"}, nil)
 	// Room bits cannot be set per board; a member cannot grant what they lack.
-	setBoardPerms(o, priv.GetId(), 422, userOv(bob.id, perm.ViewBoard|perm.ManageRoom, 0))
+	setBoardPerms(o, priv.GetId(), 422, creatorOv(o), userOv(bob.id, perm.ViewBoard|perm.ManageRoom, 0))
 	setBoardPerms(o, b.GetId(), 200, userOv(bob.id, perm.ManageBoard, 0))
 	setBoardPerms(bob, b.GetId(), 403, userOv(carol.id, perm.ManageBoard|perm.EditTasks, 0))
 
@@ -211,7 +216,7 @@ func TestBoardPermissions(t *testing.T) {
 		t.Fatalf("bot task %v", bTask)
 	}
 	bt.must(403, "PUT", "/api/boards/"+b.GetId()+"/permissions", &v1.SetBoardPermissionsRequest{}, nil)
-	setBoardPerms(o, priv.GetId(), 200, userOv(bob.id, perm.ViewBoard|perm.EditTasks, 0), roleOv(team.GetId(), perm.ViewBoard, 0),
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o), userOv(bob.id, perm.ViewBoard|perm.EditTasks, 0), roleOv(team.GetId(), perm.ViewBoard, 0),
 		userOv(bt.id, perm.ViewBoard|perm.CreateTasks|perm.ManageBoard, 0))
 	bt.must(200, "GET", "/api/boards/"+priv.GetId(), nil, nil)
 	bt.must(403, "DELETE", "/api/boards/"+priv.GetId()+"?purge=1", nil, nil)
@@ -490,13 +495,13 @@ func TestTaskComments(t *testing.T) {
 	})
 	bob.must(404, "PUT", "/api/messages/"+pm.GetId()+"/reactions/"+url.PathEscape("👍"), nil, nil)
 	// Granting him the board turns the board up live and its comments reach him.
-	setBoardPerms(o, priv.GetId(), 200, userOv(bob.id, perm.ViewBoard, 0))
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o), userOv(bob.id, perm.ViewBoard, 0))
 	gb.wait("BOARD_CREATE of the private board", func(e *v1.DispatchEvent) bool {
 		return e.GetBoardCreate().GetBoard().GetId() == priv.GetId() && e.GetBoardCreate().GetBoard().GetPermissions()&uint64(perm.ViewBoard) != 0
 	})
 	pm2 := send(t, o, ptask.GetRoomId(), "теперь видно", uniq("p"))
 	gb.wait("private comment after the grant", func(e *v1.DispatchEvent) bool { return e.GetMessageCreate().GetMessage().GetId() == pm2.GetId() })
-	setBoardPerms(o, priv.GetId(), 200)
+	setBoardPerms(o, priv.GetId(), 200, creatorOv(o))
 	gb.wait("BOARD_DELETE on losing the board", func(e *v1.DispatchEvent) bool { return e.GetBoardDelete().GetBoardId() == priv.GetId() })
 
 	// Forward into a task and out of it.

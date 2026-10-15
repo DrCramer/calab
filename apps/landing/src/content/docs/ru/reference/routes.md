@@ -544,6 +544,7 @@ order: 1
 | `GET` | `/api/workspaces/discover` | Пространства и приглашения |
 | `POST` | `/api/files/convert` | Сообщения и файлы |
 | `POST` | `/api/messages/{id}/interactions` | Сообщения и файлы |
+| `POST` | `/api/messages/{id}/buttons/{buttonId}/contact` | Сообщения и файлы |
 | `GET` | `/api/unfurl` | Сообщения и файлы |
 | `GET` | `/api/unfurl/image` | Сообщения и файлы |
 | `GET` | `/api/admin/users/{id}/storage-quota` | Суперадминка |
@@ -557,6 +558,7 @@ order: 1
 | `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | Телефония и записи |
 | `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | Телефония и записи |
 | `GET` | `/api/workspaces/{id}/calls` | Телефония и записи |
+| `GET` | `/api/workspaces/{id}/bot-contact-shares` | Журналы |
 | `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | Телефония и записи |
 | `GET` | `/api/workspaces/{id}/integrations/gptunnel` | Телефония и записи |
 | `POST` | `/api/workspaces/{id}/integrations/gptunnel` | Телефония и записи |

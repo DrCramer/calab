@@ -585,6 +585,8 @@ export interface MailApi {
      * `MAIL_RAW_MAX` bytes (larger: `INVALID`). «Отправить в чат» attaches it as `.eml`.
      */
     raw(messageId: string): Promise<Uint8Array>;
+    /** The bytes of one attachment (from the local cache; the message is downloaded again when evicted). «Отправить в чат» attaches these. */
+    attachment(messageId: string, attachmentId: string): Promise<Uint8Array>;
     /** Applied locally at once (events follow), queued to IMAP; rolled back with an event on failure. */
     setFlags(sel: MailSelection, patch: MailFlagPatch): Promise<void>;
     move(sel: MailSelection, folderId: string): Promise<void>;
@@ -683,6 +685,7 @@ export const mailMethods = [
   'messages.list',
   'messages.get',
   'messages.raw',
+  'messages.attachment',
   'messages.thread',
   'messages.setFlags',
   'messages.move',

@@ -115,7 +115,7 @@ import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
-import { RestrictedMark } from '../workspace/AccessLevel';
+import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
 import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 export { menuBox, menuItem };
@@ -180,6 +180,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   // Workspace invites (rows' «Пригласить»): INVITE_MEMBERS (ADR-0043), a custom role's included.
   const admin = mayInviteMembers(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
+  // «Архив · N» closes the «Временные» group (ADR-0044 addendum 14.10); guests have no archive.
+  const archiveN = useArchiveCount(workspaceId, !guest);
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
   const canDrag = manageRooms && !mobile;
@@ -194,7 +196,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   if (!entry) return null;
   // Calendar mode (owner, 02.10): the column is the header and the mini calendar only — no room list.
   const calList = calOpen && !guest && !boards;
-  const empty = groups.length === 0 && temps.length === 0;
+  const empty = groups.length === 0 && temps.length === 0 && archiveN === 0;
 
   return (
     <aside className="mat-sidebar mat-sidebar-window island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
@@ -259,8 +261,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
                 </CategoryGroup>
               );
             })}
-            {temps.length ? (
-              <TempGroup workspaceId={workspaceId}>
+            {temps.length || archiveN > 0 ? (
+              <TempGroup workspaceId={workspaceId} archiveN={archiveN}>
                 {temps.map((r) => (
                   <VoiceRoomRow
                     key={r.id}
@@ -1260,7 +1262,6 @@ const TextRoomRow = memo(function TextRoomRow({
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
             </span>
-            {room.restricted ? <RestrictedMark /> : null}
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
             <KnockBadge roomId={room.id} />
@@ -1406,10 +1407,9 @@ function VoiceRoomRow({
                     <RoomIcon roomId={room.id} size={16} pictureSize={20} live={inRoom} />
                   )}
                 </span>
-                <span className={cx('min-w-0 truncate', !temp && !room.restricted && 'flex-1')} title={room.name}>
+                <span className={cx('min-w-0 truncate', !temp && 'flex-1')} title={room.name}>
                   {room.name}
                 </span>
-                {room.restricted ? <RestrictedMark className={temp ? undefined : 'mr-auto'} /> : null}
                 {temp ? <TempLeft expires={expires} /> : null}
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
@@ -1511,7 +1511,7 @@ const remainingUnits = {
  * «Временные» (ADR-0044): a virtual group under the categories — not a DB category, not dragged,
  * hidden when empty. Collapsible like a category (the open room and my voice room stay visible).
  */
-function TempGroup({ workspaceId, children }: { workspaceId: string; children: ReactNode[] }): ReactNode {
+function TempGroup({ workspaceId, archiveN, children }: { workspaceId: string; archiveN: number; children: ReactNode[] }): ReactNode {
   const key = `temp:${workspaceId}`;
   const collapsed = useUi((s) => !!s.collapsed[key]);
   const toggle = useUi((s) => s.toggleCategory);
@@ -1539,6 +1539,7 @@ function TempGroup({ workspaceId, children }: { workspaceId: string; children: R
         </button>
       </div>
       {visible.length ? <div className="flex flex-col gap-px">{visible}</div> : null}
+      {archiveN > 0 ? <TempArchiveButton workspaceId={workspaceId} n={archiveN} /> : null}
     </section>
   );
 }

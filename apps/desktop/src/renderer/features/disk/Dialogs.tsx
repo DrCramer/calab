@@ -107,6 +107,9 @@ function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void
         ownerId={item.ownerId}
         access={access}
         hint={t('disk.restrictedHint')}
+        hintOwner={t('disk.restrictedHintOwner')}
+        itemName={item.name}
+        onTakeOver={() => diskApi.takeOver(itemId).then((r) => r.item && useDisk.getState().upsert(r.item))}
         inherited={t('disk.accessInherited')}
         footer={t('disk.accessFooter')}
         testId="disk-access"

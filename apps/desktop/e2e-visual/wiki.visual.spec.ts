@@ -63,7 +63,7 @@ test('wiki-versions', async ({ open, win, shot, theme }) => {
   await win.getByTestId('section-wiki').click();
   await expect(win.locator('.wiki-prose')).toContainText('Первая неделя');
   await win.getByTestId('wiki-more').click();
-  await win.getByTestId('wiki-open-versions').click();
+  await win.getByTestId('wiki-menu-versions').click();
   // The older version differs most: it is the one to compare.
   await win.getByTestId('wiki-version-row').nth(1).click();
   // Both columns share one block layout; changed blocks carry the accent bar and word marks.

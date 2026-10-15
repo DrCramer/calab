@@ -265,7 +265,7 @@ const Tile = memo(function Tile({ id }: { id: string }): ReactNode {
         {renaming ? (
           <RenameField item={item} className="h-6 w-full text-center" />
         ) : (
-          <span className="line-clamp-2 break-words px-0.5 text-center text-body font-medium leading-[18px] text-fg" title={item.name}>
+          <span className="line-clamp-2 min-w-0 break-words px-0 text-center text-[13px] font-medium leading-4 [overflow-wrap:anywhere] text-fg" title={item.name}>
             {item.name}
           </span>
         )}

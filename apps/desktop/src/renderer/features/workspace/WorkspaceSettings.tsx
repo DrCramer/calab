@@ -9,7 +9,7 @@ import { WikiSettingsTab } from '../wiki/WikiSettings';
 import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -23,8 +23,9 @@ import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoi
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
-import { can, mayArrangeRooms, settingsAccess, workspacePerms } from '../../lib/permissions';
+import { can, settingsAccess, workspacePerms } from '../../lib/permissions';
 import { TempRoomsCards } from './TempRoomsCards';
+import { PrivacyCard } from './PrivacyCard';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -132,9 +133,17 @@ export function WorkspaceSettingsDialog({
             id: 'general',
             label: t('ws.tabGeneral'),
             icon: Settings2,
-            content: <GeneralTab workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={mayArrangeRooms(myRoles)} />,
+            content: <GeneralTab workspaceId={workspaceId} />,
           },
           { id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab workspaceId={workspaceId} /> },
+          // Temporary rooms (ADR-0044): the members' right (MANAGE_ROLES) and the archive retention.
+          {
+            id: 'rooms',
+            label: t('ws.tabRooms'),
+            icon: DoorOpen,
+            keywords: t('temp.allowAll'),
+            content: <TempRoomsCards workspaceId={workspaceId} manageRoles={manageRoles} />,
+          },
         ]
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
@@ -226,15 +235,7 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({
-  workspaceId,
-  manageRoles,
-  manageRooms,
-}: {
-  workspaceId: string;
-  manageRoles: boolean;
-  manageRooms: boolean;
-}): ReactNode {
+function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -307,8 +308,7 @@ function GeneralTab({
           />
         </Row>
       </Card>
-      {/* Temporary rooms (ADR-0044): the members' right (MANAGE_ROLES) and the archive (MANAGE_ROOM). */}
-      <TempRoomsCards workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={manageRooms} />
+      <PrivacyCard workspaceId={workspaceId} />
     </>
   );
 }

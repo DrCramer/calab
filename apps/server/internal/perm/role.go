@@ -60,7 +60,7 @@ type OverrideTarget struct {
 func ComputeIn(m Member, f RoomFlags, overrides []OverrideTarget) Bits {
 	sc := ScopeOf(m, f)
 	raw := m.Raw()
-	if !f.Restricted && !f.PrivateTemp && raw&Administrator != 0 {
+	if !f.Private && raw&Administrator != 0 {
 		return All
 	}
 	var userOv *Override

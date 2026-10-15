@@ -84,6 +84,8 @@ export const boardsApi = {
     call('PATCH', `/api/boards/${boardId}`, BoardResponseSchema, body(UpdateBoardRequestSchema, init)),
   /** Archive; `purge` deletes for good (MANAGE_BOARD, people only). */
   remove: (boardId: string, purge = false) => callEmpty('DELETE', `/api/boards/${boardId}${qs({ purge: purge ? 1 : undefined })}`),
+  /** «Сделать меня владельцем» of a former member's private board: the owner with «Владелец видит приватное». */
+  takeOver: (boardId: string) => call('POST', `/api/boards/${boardId}/take-over`, BoardResponseSchema),
   /** Back from the archive (MANAGE_BOARD). */
   restore: (boardId: string) => call('POST', `/api/boards/${boardId}/restore`, BoardResponseSchema),
   /** `categoryId` set: into that category ('' = none) at `position` there (ADR-0058 §1). */

@@ -10,6 +10,30 @@
   padding-bottom: 0;
   caret-color: var(--color-accent);
 }
+.wiki-prose {
+  min-width: 0;
+  max-width: 100%;
+}
+/* Wide blocks (a resized table, a long code line, a wide image, an embed) scroll or shrink inside their own box,
+   never widen the page (owner 14.10: «вики в редакторе не помещается по ширине»). */
+.wiki-prose > *,
+.wiki-prose li,
+.wiki-prose blockquote {
+  max-width: 100%;
+  min-width: 0;
+}
+.wiki-prose img,
+.wiki-prose video,
+.wiki-prose iframe {
+  max-width: 100%;
+  height: auto;
+}
+.wiki-prose pre {
+  max-width: 100%;
+}
+.wiki-prose .tableWrapper {
+  max-width: 100%;
+}
 .wiki-prose > * + * {
   margin-top: var(--space-2);
 }
@@ -178,6 +202,61 @@
   border-radius: 4px;
   padding: 0 2px;
   white-space: nowrap;
+}
+
+/* A link to another wiki page (owner 14.10): icon + live title, no underline (it reads as a chip). */
+.wiki-prose a.wiki-page-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  max-width: 100%;
+  color: var(--color-fg);
+  text-decoration: none;
+  border-radius: 4px;
+  padding: 0 3px;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.wiki-prose a.wiki-page-link .wiki-page-link-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--color-separator);
+  text-underline-offset: 2px;
+}
+.wiki-prose a.wiki-page-link:hover {
+  background: var(--color-hover);
+}
+.wiki-prose a.wiki-page-link .wiki-page-link-icon {
+  align-self: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.wiki-prose a.wiki-page-link .wiki-page-link-icon svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+  color: var(--color-muted);
+}
+.wiki-prose a.wiki-page-link[data-state='loading'] .wiki-page-link-title,
+.wiki-prose a.wiki-page-link[data-state='unavailable'] .wiki-page-link-title {
+  color: var(--color-faint);
+  font-weight: 400;
+}
+.wiki-prose a.wiki-page-link[data-state='unavailable'] {
+  cursor: default;
+}
+.wiki-prose a.wiki-page-link[data-state='unavailable']:hover {
+  background: none;
+}
+.wiki-prose a.wiki-page-link.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+}
+.wiki-editor[data-editable] a.wiki-page-link {
+  cursor: text;
 }
 
 /* Code block: the chat's look (docs/08 «Код в сообщениях»), a language picker on hover. */

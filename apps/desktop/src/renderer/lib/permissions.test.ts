@@ -14,6 +14,7 @@ import {
   mayMoveMembersIn,
   mayMoveVoice,
   roomPerms,
+  setOwnerSeesPrivate,
   triOf,
   voiceCaps,
   withTri,
@@ -61,18 +62,23 @@ describe('roomPerms', () => {
     expect(can(roomPerms(as(WorkspaceRole.ADMIN), 'a', r), 'STREAM')).toBe(true);
   });
 
-  it('restricted room (ADR-0029): admins count as members, the owner sees everything', () => {
+  it('private room (ADR-0078 addendum 2026-10-14): admins and the owner count as members; the owner sees all only with «Владелец видит приватное»', () => {
     const r = room([
       { t: PermissionTargetType.ROLE, id: 'member', deny: VIEW_ROOM },
       { t: PermissionTargetType.USER, id: 'a2', allow: VIEW_ROOM },
     ]);
     r.restricted = true;
+    r.workspaceId = 'w-private';
     expect(roomPerms(as(WorkspaceRole.ADMIN), 'a', r)).toBe(0n);
     const listed = roomPerms(as(WorkspaceRole.ADMIN), 'a2', r);
     expect(can(listed, 'VIEW_ROOM') && can(listed, 'SEND_MESSAGES')).toBe(true);
     expect(can(listed, 'MANAGE_ROOM')).toBe(false);
+    expect(roomPerms(as(WorkspaceRole.OWNER), 'o', r)).toBe(0n);
+    setOwnerSeesPrivate(r.workspaceId, true);
     expect(can(roomPerms(as(WorkspaceRole.OWNER), 'o', r), 'MANAGE_ROOM')).toBe(true);
-    // Not restricted: the admin bypass is back.
+    expect(roomPerms(as(WorkspaceRole.ADMIN), 'a', r)).toBe(0n);
+    setOwnerSeesPrivate(r.workspaceId, false);
+    // Not private: the admin bypass is back.
     r.restricted = false;
     expect(can(roomPerms(as(WorkspaceRole.ADMIN), 'a', r), 'MANAGE_ROOM')).toBe(true);
   });

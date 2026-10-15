@@ -14,6 +14,7 @@ import { esRecording } from './recording';
 import { esAnnot } from './annot';
 import { esPeople } from './people';
 import { esFormer } from './former';
+import { esPrivacy } from './privacy';
 import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
@@ -72,6 +73,7 @@ export const es: Dict = {
   ...esTransitions,
   ...esCustomPlan,
   ...esFormer,
+  ...esPrivacy,
   ...esModeration,
   ...esMail,
   ...esRecording,
@@ -187,6 +189,7 @@ export const es: Dict = {
   'ws.leaveConfirm': '¿Abandonar «{name}»? Solo podrás volver con una invitación.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voz y pantalla compartida',
+  'ws.tabRooms': 'Salas',
   'ws.tabLibrary': 'Biblioteca',
   'ws.tabInvites': 'Invitaciones',
   'ws.tabDanger': 'Eliminar',
@@ -271,10 +274,8 @@ export const es: Dict = {
   'room.iconPreview': 'cambió la imagen de la sala',
   'room.iconRemovedPreview': 'quitó la imagen de la sala',
   'room.iconOpen': 'Abrir la imagen de la sala',
-  'room.privateHint': 'Visible solo para administradores y quienes tú autorices en los permisos',
   'room.accessCard': 'Acceso',
   'room.whoSees': 'Quién la ve',
-  'room.whoSeesOwner': 'propietario, siempre',
   'room.whoSeesEmpty': 'Aún no hay nadie en la lista',
   'room.whoSeesAdd': 'Añadir',
   'room.whoSeesRemove': 'Quitar de la lista: {name}',

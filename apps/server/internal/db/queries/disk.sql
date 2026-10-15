@@ -257,10 +257,21 @@ WHERE di.workspace_id = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR
 ORDER BY l.created_at DESC;
 
 -- name: InsertDiskActivity :one
-INSERT INTO disk_activity (workspace_id, item_id, item_name, actor_id, kind, before, after)
+INSERT INTO disk_activity (workspace_id, item_id, item_name, actor_id, kind, before, after, private)
 VALUES (sqlc.arg('workspace_id'), sqlc.narg('item_id'), sqlc.arg('item_name'), sqlc.narg('actor_id'), sqlc.arg('kind'),
-        sqlc.narg('before'), sqlc.narg('after'))
+        sqlc.narg('before'), sqlc.narg('after'), sqlc.arg('private'))
 RETURNING *;
+
+-- name: MarkDiskSubtreeActivityPrivate :exec
+-- Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2): the journal entries of
+-- every node of the subtree that lies under a restricted node (restricted: the root's chain has
+-- one) become private — the workspace journal cannot check a chain that is gone.
+WITH RECURSIVE sub (id, r) AS (
+    SELECT t.id, sqlc.arg('restricted')::bool FROM disk_items t WHERE t.id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, sub.r OR c.restricted FROM disk_items c JOIN sub ON c.parent_id = sub.id
+)
+UPDATE disk_activity a SET private = true FROM sub WHERE a.item_id = sub.id AND sub.r AND NOT a.private;
 
 -- name: ListDiskItemActivity :many
 -- An item's history, the newest first; cursor: the last id (NULL = the first page).
@@ -280,16 +291,34 @@ ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
 -- name: GetDiskUsage :one
--- DiskUsage (ADR-0094 §6): the workspace's counters, the bytes of the Disk (trash included)
--- and of its trash, through files(workspace_id) ⋈ disk_items(file_id).
+-- DiskUsage (ADR-0094 §6): the workspace's counters, the bytes of the Disk (trash included),
+-- of its trash and of chats / boards / wiki, through files(workspace_id).
 SELECT w.storage_used_bytes, w.storage_quota_bytes,
-    (SELECT coalesce(sum(f.size), 0) FROM files f JOIN disk_items di ON di.file_id = f.id
-        WHERE f.workspace_id = w.id)::bigint AS disk_bytes,
-    (SELECT coalesce(sum(f.size), 0) FROM files f JOIN disk_items di ON di.file_id = f.id
-        WHERE f.workspace_id = w.id AND di.trashed_at IS NOT NULL)::bigint AS trash_bytes,
+    b.disk_bytes, b.trash_bytes, b.chat_bytes, b.boards_bytes, b.wiki_bytes,
     (SELECT coalesce(sum(a.size_mb), 0) FROM workspace_storage_addons a
         WHERE a.workspace_id = w.id AND a.active)::bigint AS addon_mb
-FROM workspaces w WHERE w.id = $1;
+FROM workspaces w
+CROSS JOIN LATERAL (
+    -- One pass over files(workspace_id); a file is counted once, priority disk > chat > boards > wiki.
+    SELECT
+        coalesce(sum(x.size) FILTER (WHERE x.in_disk), 0)::bigint AS disk_bytes,
+        coalesce(sum(x.size) FILTER (WHERE x.in_disk AND x.trashed), 0)::bigint AS trash_bytes,
+        coalesce(sum(x.size) FILTER (WHERE NOT x.in_disk AND x.in_chat), 0)::bigint AS chat_bytes,
+        coalesce(sum(x.size) FILTER (WHERE NOT x.in_disk AND NOT x.in_chat AND x.in_boards), 0)::bigint AS boards_bytes,
+        coalesce(sum(x.size) FILTER (WHERE NOT x.in_disk AND NOT x.in_chat AND NOT x.in_boards AND x.in_wiki), 0)::bigint AS wiki_bytes
+    FROM (
+        SELECT f.size,
+            di.file_id IS NOT NULL AS in_disk,
+            di.trashed_at IS NOT NULL AS trashed,
+            EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id) AS in_chat,
+            EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id) AS in_boards,
+            (EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+                OR EXISTS (SELECT 1 FROM wiki_pages wp WHERE wp.cover_file_id = f.id)) AS in_wiki
+        FROM files f LEFT JOIN disk_items di ON di.file_id = f.id
+        WHERE f.workspace_id = w.id
+    ) x
+) b
+WHERE w.id = $1;
 
 -- name: SumActiveStorageAddonsMB :one
 -- The storage add-ons of a workspace in effect (ADR-0094 §6), in MiB.
@@ -347,3 +376,47 @@ SELECT * FROM files WHERE id = ANY(sqlc.arg('ids')::uuid[]);
 -- order of an upload (ReserveQuota, then the item under LockDiskTree), so a deletion and an upload
 -- into the same folder never wait for each other crosswise.
 SELECT 1 FROM workspaces WHERE id = $1 FOR NO KEY UPDATE;
+
+-- name: SetDiskItemOwner :one
+-- «Сделать меня владельцем» (addendum 2026-10-14): a former member's private item gets a new owner.
+UPDATE disk_items SET owner_id = sqlc.arg('owner_id'), updated_at = now()
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: ListDiskSubtree :many
+-- The items below an item (not the item itself), parents before children, trashed or not: a
+-- trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
+-- of ADR-0094 §2). Bounded at 64 levels.
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM disk_items c WHERE c.parent_id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM disk_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT sqlc.embed(di), down.depth::int AS depth
+FROM down JOIN disk_items di ON di.id = down.id
+ORDER BY down.depth, di.id;
+
+-- name: DetachDiskItem :one
+-- Detaches an item (with its subtree) to the root of the Disk under a free name, with the flag
+-- that keeps its access (perm.Detached); in the trash it becomes a trash root of its own.
+UPDATE disk_items SET
+    parent_id    = NULL,
+    name         = sqlc.arg('name'),
+    restricted   = sqlc.arg('restricted'),
+    trashed_root = trashed_at IS NOT NULL,
+    updated_at   = now()
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: RetimeDiskTrash :exec
+-- The sweeper detached a trash item from someone else's expired trash root: it and what was
+-- trashed with it get a trash time of their own (now), so the retention counts from here.
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM disk_items r WHERE r.id = sqlc.arg('id')::uuid AND r.trashed_at IS NOT NULL
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM disk_items c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+UPDATE disk_items d SET trashed_at = sqlc.arg('trashed_at')::timestamptz FROM sub WHERE d.id = sub.id;

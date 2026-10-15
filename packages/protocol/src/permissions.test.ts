@@ -38,7 +38,7 @@ import {
   wikiPagePermissions,
   wikiPermissions,
   wikiStructureAllowed,
-  tempRoomScope,
+  roomScope,
   computeRoomPermissions,
   memberRoles,
   workspacePermissions,
@@ -59,11 +59,20 @@ interface Vector {
   // ADR-0029: a restricted room and whether the member is the workspace owner.
   restricted?: boolean;
   owner?: boolean;
+  // Addendum 2026-10-14: the workspace's «Владелец видит приватное».
+  ownerSeesPrivate?: boolean;
   // ADR-0078: a private temporary room and whether the member created it.
   privateTemp?: boolean;
   creator?: boolean;
   // ADR-0042: a board vector.
-  board?: { private: boolean; guest?: boolean; restricted?: boolean; owner?: boolean };
+  board?: {
+    private: boolean;
+    guest?: boolean;
+    restricted?: boolean;
+    owner?: boolean;
+    ownerSeesPrivate?: boolean;
+    creator?: boolean;
+  };
   // ADR-0042 / ADR-0058 §3: a task room vector (taskRoomPermissions from the board bits).
   taskRoom?: { board: number; archived: boolean; commentsOff: boolean };
   // ADR-0087: a billing vector (billingPermissions over the roles).
@@ -80,6 +89,8 @@ interface Vector {
 
 interface TreeVector {
   guest?: boolean;
+  owner?: boolean;
+  ownerSeesPrivate?: boolean;
   chain: {
     restricted?: boolean;
     owner?: boolean;
@@ -118,7 +129,7 @@ describe('computePermissions (shared vectors)', () => {
         const bits = v.disk ? DISK_BITS : WIKI_BITS;
         const compute = v.disk ? diskItemPermissions : wikiPagePermissions;
         const roles = toRoles(v.roles ?? []);
-        const opts = { guest: tree.guest ?? false };
+        const opts = { guest: tree.guest ?? false, owner: tree.owner ?? false, ownerSeesPrivate: tree.ownerSeesPrivate ?? false };
         const chain = tree.chain.map((c) => ({
           restricted: c.restricted,
           owner: c.owner,
@@ -220,6 +231,8 @@ describe('computePermissions (shared vectors)', () => {
             v.board.guest ?? false,
             v.board.restricted ?? false,
             v.board.owner ?? false,
+            v.board.ownerSeesPrivate ?? false,
+            v.board.creator ? 'u1' : 'u2',
           ),
         ).toBe(BigInt(v.expected));
         return;
@@ -236,6 +249,7 @@ describe('computePermissions (shared vectors)', () => {
             userOverride: toOv(v.userOverride),
             restricted: v.restricted,
             owner: v.owner,
+            ownerSeesPrivate: v.ownerSeesPrivate,
             privateTemp: v.privateTemp,
             creator: v.creator,
           }),
@@ -261,16 +275,23 @@ describe('computePermissions (shared vectors)', () => {
               ]
             : []),
         ];
-        // A temporary room: private per the vector, created by u1 (the member) or someone else.
-        const temp = v.privateTemp !== undefined ? { private: v.privateTemp, createdBy: v.creator ? 'u1' : 'u2' } : undefined;
-        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false, temp)).toBe(
+        // The room: private and temporary per the vector, created by u1 (the member) or someone else.
+        const scope = {
+          private: (v.restricted ?? false) || (v.privateTemp ?? false),
+          createdBy: v.creator ? 'u1' : 'u2',
+          temp: v.privateTemp ?? false,
+        };
+        const sees = v.ownerSeesPrivate ?? false;
+        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false, scope, sees)).toBe(
           BigInt(v.expected),
         );
         // The owner is recognized by the built-in owner role as well.
         const withBuiltin = roles.map((r) =>
           r.id === 'owner' && v.owner ? { ...r, builtin: WorkspaceRole.OWNER } : r,
         );
-        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted, undefined, temp)).toBe(BigInt(v.expected));
+        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted, undefined, scope, sees)).toBe(
+          BigInt(v.expected),
+        );
         if (v.expectedWorkspace !== undefined) expect(workspacePermissions(roles)).toBe(BigInt(v.expectedWorkspace));
         return;
       }
@@ -381,21 +402,33 @@ describe('roles (ADR-0026)', () => {
       PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
     );
   });
-  // ADR-0078: the room's flags from a Room; a guest is never the creator (Go: perm.ScopeOf).
-  it('private temporary rooms (ADR-0078)', () => {
+  // ADR-0078 and its addendum: the room's flags from a Room; a guest is never the creator (Go: perm.ScopeOf).
+  it('private rooms (ADR-0078)', () => {
     const expiresAt = create(TimestampSchema, { seconds: 1n });
-    expect(tempRoomScope({ isPrivate: true, expiresAt, createdBy: 'u1' })).toEqual({ private: true, createdBy: 'u1' });
-    expect(tempRoomScope({ isPrivate: true, expiresAt: undefined, createdBy: 'u1' })).toBeUndefined();
+    expect(roomScope({ isPrivate: true, expiresAt, createdBy: 'u1' })).toEqual({ private: true, createdBy: 'u1', temp: true });
+    expect(roomScope({ isPrivate: false, restricted: true, createdBy: 'u1' })).toEqual({
+      private: true,
+      createdBy: 'u1',
+      temp: false,
+    });
     const guest = [{ id: 'g', position: 0, permissions: ROLE_DEFAULTS[WorkspaceRole.GUEST], builtin: WorkspaceRole.GUEST }];
     const member = [{ id: 'm', position: 1, permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }];
-    const temp = { private: true, createdBy: 'u1' };
+    const temp = { private: true, createdBy: 'u1', temp: true };
     expect(computeMemberRoomPermissions(guest, 'u1', [], false, false, temp)).toBe(0n);
     expect(computeMemberRoomPermissions(member, 'u1', [], false, false, temp)).toBe(ROLE_DEFAULTS[WorkspaceRole.MEMBER]);
     expect(computeMemberRoomPermissions(member, 'u2', [], false, false, temp)).toBe(0n);
-    // The owner's built-in role gives nothing; a public temporary room keeps the bypass.
+    // The owner's built-in role gives nothing unless «Владелец видит приватное»; a public room
+    // keeps the bypass.
     const owner = [{ id: 'o', position: 1001, permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.OWNER }];
     expect(computeMemberRoomPermissions(owner, 'u2', [], true, undefined, temp)).toBe(0n);
-    expect(computeMemberRoomPermissions(owner, 'u2', [], false, undefined, { private: false, createdBy: 'u1' })).toBe(ALL_PERMISSIONS);
+    expect(computeMemberRoomPermissions(owner, 'u2', [], true, undefined, temp, true)).toBe(ALL_PERMISSIONS);
+    expect(computeMemberRoomPermissions(owner, 'u2', [], false, undefined, { private: false, createdBy: 'u1', temp: true })).toBe(
+      ALL_PERMISSIONS,
+    );
+    // A private permanent room: its creator sees it, an admin does not.
+    const permanent = roomScope({ isPrivate: true, createdBy: 'u1' });
+    expect(computeMemberRoomPermissions(member, 'u1', [], false, false, permanent)).toBe(ROLE_DEFAULTS[WorkspaceRole.MEMBER]);
+    expect(computeMemberRoomPermissions(owner, 'u2', [], false, undefined, permanent)).toBe(0n);
   });
 });
 

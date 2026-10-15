@@ -154,8 +154,6 @@ type App struct {
 	billing    *billingRuntime
 	redis      rueidis.Client
 	identityDB *db.DB
-	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
-	tempRetention time.Duration
 	// dueTZ: TASKS_DUE_TZ, the zone of the due notices of tasks (ADR-0089).
 	dueTZ *time.Location
 	// Routes: every registered route pattern (the bot route table test).
@@ -171,6 +169,7 @@ func (a *App) Run(ctx context.Context) {
 		go a.runIdentityDirectory(ctx)
 	}
 	go a.Files.RunCleanup(ctx, time.Hour)
+	go a.Files.RunStagedCleanup(ctx, 10*time.Minute) // board form uploads never submitted (ADR-0064 v2)
 	go a.Disk.RunTrashSweep(ctx, disk.SweepInterval)
 	go a.Wiki.RunTrashSweep(ctx, wiki.SweepInterval)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
@@ -196,7 +195,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.RunRules(ctx, a.redis)                                 // scheduled automation rules (ADR-0060)
 	go a.Boards.RunApprovalNotices(ctx, boards.ApprovalNoticeInterval) // delayed approval notices (ADR-0082)
 	go a.Boards.RunDueNotices(ctx, boards.DueNoticeInterval, a.dueTZ)  // due soon / overdue (ADR-0089)
-	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
+	go a.Rooms.RunTempRooms(ctx, a.redis)
 	go a.SIP.Run(ctx)
 	go a.billing.Run(ctx) // returns at once while BILLING_ENABLED=false
 	if a.OAuth != nil {
@@ -431,8 +430,10 @@ func New(d Deps) *App {
 	boardSvc.FormIPLimit = redisx.NewRateLimiter(d.Redis, "rl:form-ip:", 5, 5)
 	boardSvc.FormUserLimit = redisx.NewRateLimiter(d.Redis, "rl:form-user:", 10, 10)
 	boardSvc.FormSubmitLimit = redisx.NewRateLimiter(d.Redis, "rl:form-submit:", 30, 30)
-	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
-	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
+	boardSvc.FormUploadLimit = redisx.NewRateLimiter(d.Redis, "rl:form-upload:", 20, 20)       // staged files: 20 per minute per IP / user
+	boardSvc.FormUploadFormLimit = redisx.NewRateLimiter(d.Redis, "rl:form-upload-f:", 60, 60) // and 60 per minute per form
+	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60)           // 60 at once, one per second
+	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60)           // ⌘K: 30 at once, one per second
 	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.TaskCommentHook = boardSvc.TaskCommentHook
 	boardHooks := boardSvc.EnableWebhooks(d.Redis, []byte(d.Config.JWTSecret), whOpts) // same delivery options as bots
@@ -553,7 +554,7 @@ func New(d Deps) *App {
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
 		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
-		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour, dueTZ: boards.DueZone(d.Config.TasksDueTZ)}
+		dueTZ: boards.DueZone(d.Config.TasksDueTZ)}
 }
 
 // SetBilling switches billing admission and enforcement at run time (tests; the startup values

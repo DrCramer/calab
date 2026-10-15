@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, FileText, Plus, RotateCcw, Search, Trash2 } fr
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
@@ -13,6 +14,7 @@ import { myUserId } from '../../stores/session';
 import { useWiki } from '../../stores/wiki';
 import { useWikiUi } from '../../stores/wikiUi';
 import { preloadWikiDoc } from './lazy';
+import { PageContextMenu, RenameField } from './PageMenu';
 
 /**
  * The tree column of «Вики» (ADR-0096 §9, docs/08 «Вики»): the title filter and «+ страница» on
@@ -66,9 +68,7 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
           />
         </span>
         {canCreate ? (
-          <IconButton label={t('wiki.newPage')} onClick={() => void createPage(workspaceId, TOP)} data-testid="wiki-new-page">
-            <Plus className="size-4" aria-hidden />
-          </IconButton>
+          <CreateButton label={t('wiki.newPage')} onClick={() => void createPage(workspaceId, TOP)} data-testid="wiki-new-page" />
         ) : null}
       </div>
       <nav className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1.5" aria-label={t('wiki.tree')} data-testid="wiki-tree" onPointerEnter={preloadWikiDoc}>
@@ -135,6 +135,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
     return !!p && canStructure(p, myUserId());
   });
   const expanded = useWikiUi((s) => !!s.expanded[id]);
+  const renaming = useWikiUi((s) => s.renaming === id);
   const active = useWikiUi((s) => s.pageOf[workspaceId] === id);
   const zone = useWikiDrag((s) => (s.overId === id ? s.zone : null));
   const drag = useDraggable({ id, disabled: !movable });
@@ -150,7 +151,8 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
   const toggle = (): void => useWikiUi.getState().setExpanded(id, !expanded);
   return (
     <li className="flex flex-col">
-      {/* The row is a drag handle and a drop target; the page opens from its title button (no nested controls). */}
+      {/* The row is a drag handle and a drop target; the page opens from its title button (no nested controls). A right click / long press opens the page menu. */}
+      <PageContextMenu pageId={id}>
       <div
         ref={ref}
         {...drag.listeners}
@@ -179,6 +181,14 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
         >
           <ChevronRight className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', expanded && 'rotate-90')} aria-hidden />
         </button>
+        {renaming ? (
+          <>
+            <span className="grid size-5 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+              {icon || <FileText className="size-4 text-muted" strokeWidth={1.75} />}
+            </span>
+            <RenameField pageId={id} className="h-6 flex-1" />
+          </>
+        ) : (
         <button
           type="button"
           onClick={() => openWikiPage(workspaceId, id)}
@@ -195,7 +205,8 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
           </span>
           <span className={cx('min-w-0 flex-1 truncate', !title && 'text-muted')}>{title || t('wiki.untitled')}</span>
         </button>
-        {writable ? (
+        )}
+        {writable && !renaming ? (
           <IconButton
             size="sm"
             tip={false}
@@ -209,6 +220,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
           </IconButton>
         ) : null}
       </div>
+      </PageContextMenu>
       {expanded ? <ChildList workspaceId={workspaceId} parentId={id} depth={depth + 1} /> : null}
     </li>
   );
@@ -348,6 +360,7 @@ const TrashRow = memo(function TrashRow({ workspaceId, id }: { workspaceId: stri
   const mine = canStructure(page, myUserId());
   const at = page.trashedAt ? timestampDate(page.trashedAt) : null;
   return (
+    <PageContextMenu pageId={id}>
     <div className={cx('group flex h-11 items-center gap-1 rounded-[var(--radius-row)] pr-1', active ? 'bg-active' : 'hover:bg-hover')} data-testid="wiki-trash-row">
       <button
         type="button"
@@ -385,5 +398,6 @@ const TrashRow = memo(function TrashRow({ workspaceId, id }: { workspaceId: stri
         </span>
       ) : null}
     </div>
+    </PageContextMenu>
   );
 });

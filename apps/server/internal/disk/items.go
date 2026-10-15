@@ -423,6 +423,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	var before, after []perm.DiskNode
 	var bits perm.Bits
 	var c caller
+	var det []moved
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		a, err := resolve(r, q, id)
 		if err != nil {
@@ -465,6 +466,10 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 				return httpx.Conflict("folders may be nested at most 32 deep")
 			}
 			p.SetParent, p.ParentID, parent = true, target, target
+			// What the caller does not see below the item stays (addendum 2026-10-14).
+			if det, err = s.detachHidden(ctx, q, cur, sees(a.c.m), &a.c.m, nil); err != nil {
+				return err
+			}
 		}
 		name := cur.Name
 		if newName != nil && *newName != cur.Name {
@@ -535,6 +540,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.publish(ctx, it.WorkspaceID, movedEvents(det))
 	if !sameChain(before, after) {
 		s.publish(ctx, it.WorkspaceID, []*v1.DispatchEvent{upsertEvent(it, after, before)})
 	} else {
@@ -565,6 +571,7 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	var it sqlc.DiskItem
 	var a access
+	var det []moved
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		if a, err = resolve(r, q, id); err != nil {
 			return err
@@ -580,6 +587,10 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 		}
 		// Under the tree lock: an upload or a move into the subtree checked its folder is live.
 		if err := q.LockDiskTree(ctx, a.item.WorkspaceID); err != nil {
+			return err
+		}
+		// What the caller does not see below the item stays (addendum 2026-10-14).
+		if det, err = s.detachHidden(ctx, q, a.item, sees(a.c.m), &a.c.m, nil); err != nil {
 			return err
 		}
 		rows, err := q.TrashDiskSubtree(ctx, sqlc.TrashDiskSubtreeParams{ID: id, TrashedAt: s.Now(), TrashedBy: &a.c.uid})
@@ -600,7 +611,7 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	s.publish(ctx, it.WorkspaceID, []*v1.DispatchEvent{upsertEvent(it, a.nodes(), nil)})
+	s.publish(ctx, it.WorkspaceID, append(movedEvents(det), upsertEvent(it, a.nodes(), nil)))
 	a.item = it
 	out, err := one(ctx, s.db.Q, a)
 	if err != nil {
@@ -712,14 +723,29 @@ type deleted struct {
 	chain []perm.DiskNode
 	files []sqlc.File
 	bytes int64
+	moved []moved // detached from the subtree first
 }
 
 // deleteTree deletes item it and its subtree forever in q's transaction (ADR-0094 §4, D1
 // decision): the journal entry, the files rows of the subtree (their items go with them) with
 // their quota released at once, then the item. The blobs are the caller's after the commit
 // (files.DeleteBlobs): the orphan cleanup never sees these rows, so the bytes are released once.
-func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem, chain []perm.DiskNode, actor *uuid.UUID) (deleted, error) {
+//
+// What v does not see below the item is detached first (addendum 2026-10-14): by actor's
+// operation (m: the actor as a member), or by the sweeper (v: what the trash root's deleter saw;
+// retrash: the detached trash gets a time of its own).
+func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, it sqlc.DiskItem, chain []perm.DiskNode, actor *uuid.UUID, v viewer, m *perm.Member, retrash *time.Time) (deleted, error) {
 	d := deleted{item: it, chain: chain}
+	var err error
+	if d.moved, err = s.detachHidden(ctx, q, it, v, m, retrash); err != nil {
+		return d, err
+	}
+	// The journal of a restricted subtree stays out of the workspace journal once its chains are
+	// gone (addendum 2026-10-14 of ADR-0094 §2).
+	private := perm.RestrictedIn(chain)
+	if err := q.MarkDiskSubtreeActivityPrivate(ctx, sqlc.MarkDiskSubtreeActivityPrivateParams{ID: it.ID, Restricted: private}); err != nil {
+		return d, err
+	}
 	fs, err := q.DeleteDiskSubtreeFiles(ctx, it.ID)
 	if err != nil {
 		if db.IsForeignKeyViolation(err) {
@@ -740,7 +766,7 @@ func (s *Service) deleteTree(ctx context.Context, q *sqlc.Queries, it sqlc.DiskI
 		return d, err
 	}
 	before := snap{"name": it.Name, "kind": it.Kind, "size": float64(d.bytes), "files": float64(len(fs))}
-	if err := s.journal(ctx, q, it, actor, "delete", before, nil); err != nil {
+	if err := s.journalEntry(ctx, q, it, actor, "delete", before, nil, private); err != nil {
 		return d, err
 	}
 	return d, nil
@@ -754,6 +780,7 @@ func (s *Service) finish(ctx context.Context, ds []deleted) {
 	var keys []sqlc.ListWorkspaceFileKeysRow
 	evs := make([]*v1.DispatchEvent, 0, len(ds))
 	for _, d := range ds {
+		evs = append(evs, movedEvents(d.moved)...)
 		for _, f := range d.files {
 			keys = append(keys, sqlc.ListWorkspaceFileKeysRow{Key: f.Key, ThumbnailKey: f.ThumbnailKey})
 		}
@@ -807,7 +834,7 @@ func (s *Service) deleteForever(w http.ResponseWriter, r *http.Request) error {
 		if cur.TrashedAt == nil {
 			return httpx.Conflict("move the item to the trash first")
 		}
-		d, err = s.deleteTree(ctx, q, cur, a.nodes(), &a.c.uid)
+		d, err = s.deleteTree(ctx, q, cur, a.nodes(), &a.c.uid, sees(a.c.m), &a.c.m, nil)
 		return err
 	})
 	if err != nil {
@@ -866,7 +893,7 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 			if err != nil || !cur.TrashedRoot { // gone or restored meanwhile
 				return errSkip
 			}
-			d, err = s.deleteTree(ctx, q, cur, a.nodes(), &c.uid)
+			d, err = s.deleteTree(ctx, q, cur, a.nodes(), &c.uid, sees(c.m), &c.m, nil)
 			return err
 		})
 		if err == errSkip { //nolint:errorlint // sentinel returned as is

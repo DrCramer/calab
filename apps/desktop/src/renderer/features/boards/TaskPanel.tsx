@@ -11,8 +11,6 @@ import {
   FolderInput,
   GitFork,
   Link2,
-  Maximize2,
-  Minimize2,
   Paperclip,
   Plus,
   X,
@@ -30,7 +28,6 @@ import type { ActivityTab } from '../../lib/boards/activity';
 import { approvalsWouldReset, blockedStatusIds, decidedApprovers } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, replaceAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
-import { useMobile } from '../../lib/mobile';
 import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
 import { useChatView } from '../chat/chatView';
 import { subscribeRooms } from '../../services/gateway';
@@ -81,26 +78,19 @@ const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 20000;
 
 /**
- * The task panel (ADR-0042 §5, Linear's issue page): on the right, twice the members column
- * (a floating sheet under 1200 px, ⌘\ covers the whole centre, full screen on a phone). One
- * scroll: title (inline), description (markdown-lite with attachments), properties — status,
- * priority, assignees with the lead and «за что отвечает», labels, dates, estimate, milestone,
- * parent — subtasks, relations and the activity: the task room's messages (the chat's own rows:
- * reactions, stickers, voice, replies, edits) interleaved with the journal; the chat composer
- * at the bottom.
+ * The task on the phone (ADR-0042 §5, ADR-0073): a full-screen pushed page with «←». One scroll:
+ * title (inline), description (markdown-lite with attachments), properties — status, priority,
+ * assignees with the lead and «за что отвечает», labels, dates, estimate, milestone, parent —
+ * subtasks, relations and the activity; the chat composer at the bottom. The desktop shows the
+ * same sections in two columns (TaskView.tsx); the pieces below are shared.
  */
-export function TaskPanel({ taskId, floating = false, page = false }: { taskId: string; floating?: boolean; page?: boolean }): ReactNode {
+export function TaskPanel({ taskId }: { taskId: string }): ReactNode {
   const task = useBoards((s) => s.tasks[taskId]);
-  const wide = useBoardsUi((s) => s.panelWide);
-  const mobile = useMobile();
   useEffect(() => {
     void loadTask(taskId);
   }, [taskId]);
   const close = (): void => useBoardsUi.getState().openTask(null);
-  const shell = cx(
-    'mat-content relative flex min-w-0 flex-col',
-    page || mobile ? 'fixed inset-0 z-[var(--z-modal)] pt-[var(--safe-top)]' : wide ? 'absolute inset-0 z-[var(--z-sticky)]' : floating ? 'absolute inset-y-0 right-0 z-[var(--z-sticky)] w-[min(480px,100%)] border-l border-line shadow-[var(--shadow-popover)]' : 'w-[480px] shrink-0 border-l border-line',
-  );
+  const shell = 'mat-content fixed inset-0 z-[var(--z-modal)] flex min-w-0 flex-col pt-[var(--safe-top)]';
   if (!task) {
     return (
       <aside className={shell} aria-label={t('boards.task')} data-testid="task-panel">
@@ -115,12 +105,12 @@ export function TaskPanel({ taskId, floating = false, page = false }: { taskId: 
   }
   return (
     <aside className={shell} aria-label={`${task.key} ${task.title}`} data-testid="task-panel">
-      <PanelBody task={task} onClose={close} wide={wide} mobile={mobile || page} />
+      <PanelBody task={task} onClose={close} />
     </aside>
   );
 }
 
-function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
+function PanelBody({ task, onClose }: { task: Task; onClose: () => void }): ReactNode {
   const perms = useTaskPerms(task);
   const scoped = useBoardScoped(task.boardId);
   const boardName = useBoards((s) => s.boards[task.boardId]?.name ?? '');
@@ -138,9 +128,9 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   }, []);
   return (
     <>
-      <PanelHeader task={task} boardName={boardName} perms={perms} scoped={scoped} onClose={onClose} wide={wide} mobile={mobile} />
+      <PanelHeader task={task} boardName={boardName} perms={perms} scoped={scoped} onClose={onClose} />
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto" data-testid="task-scroll">
-        <div className={cx('flex flex-col gap-5 px-5 pb-6 pt-4', wide && 'mx-auto w-full max-w-[860px]')}>
+        <div className="flex flex-col gap-5 px-5 pb-6 pt-4">
           <TitleEditor task={task} canEdit={canEdit} />
           <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
           {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
@@ -162,16 +152,12 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   );
 }
 
-function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: { task: Task; boardName: string; perms: bigint | undefined; scoped: boolean; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
-  const boards = useBoards(useShallow((s) => workspaceBoards(s.boards, task.workspaceId).filter((b) => b.id !== task.boardId && hasBit(b.permissions, MANAGE_BOARD)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
-  const me = myUserId();
+function PanelHeader({ task, boardName, perms, scoped, onClose }: { task: Task; boardName: string; perms: bigint | undefined; scoped: boolean; onClose: () => void }): ReactNode {
   const subscribed = task.subscribed && !task.muted;
   const parent = useBoards((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
   return (
     <Bar plain className="gap-1 pl-2 pr-2" data-testid="task-panel-header">
-      {mobile ? (
-        <PhoneBack />
-      ) : null}
+      <PhoneBack />
       <button type="button" onClick={onClose} className="min-w-0 truncate rounded-[var(--radius-icon)] px-2 text-caption text-muted hover:bg-hover hover:text-fg mobile:tap-h" data-testid="panel-crumb-board">
         {boardName}
       </button>
@@ -195,60 +181,66 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
       <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)}>
         <Link2 className="size-4" aria-hidden />
       </IconButton>
-      <Dropdown.Root modal={false}>
-        <Dropdown.Trigger asChild>
-          <IconButton tip={false} label={t('boards.more')} className="data-[state=open]:bg-active" data-testid="panel-more">
-            <Ellipsis className="size-4" aria-hidden />
-          </IconButton>
-        </Dropdown.Trigger>
-        <Dropdown.Portal>
-          <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
-            {hasBit(perms, CREATE_TASKS) && !scoped ? (
-              <Dropdown.Item className={menuItem} onSelect={() => void duplicateTask(task.id).then((c) => c && useBoardsUi.getState().openTask(c.id))}>
-                <CopyPlus className="size-4" aria-hidden /> {t('boards.duplicate')}
-              </Dropdown.Item>
-            ) : null}
-            {boards.length && !scoped && hasBit(perms, MANAGE_BOARD) ? (
-              <Dropdown.Sub>
-                <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
-                  <FolderInput className="size-4" aria-hidden /> <span className="flex-1">{t('boards.moveToBoard')}</span> <ChevronRight className="size-4" aria-hidden />
-                </Dropdown.SubTrigger>
-                <Dropdown.Portal>
-                  <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={16}>
-                    {boards.map((x) => {
-                      const [id = '', label = ''] = x.split('\u0000');
-                      return (
-                        <Dropdown.Item key={id} className={menuItem} onSelect={() => void moveTaskToBoard(task.id, id)}>
-                          {label}
-                        </Dropdown.Item>
-                      );
-                    })}
-                  </Dropdown.SubContent>
-                </Dropdown.Portal>
-              </Dropdown.Sub>
-            ) : null}
-            {mayArchiveTask(task, perms, me) ? (
-              <>
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archiveTask(task.id)} data-testid="panel-archive">
-                  <Archive className="size-4" aria-hidden /> {t('boards.archive')}
-                </Dropdown.Item>
-              </>
-            ) : null}
-          </Dropdown.Content>
-        </Dropdown.Portal>
-      </Dropdown.Root>
-      {!mobile ? (
-        <IconButton label={wide ? t('boards.collapsePanel') : t('boards.expandPanel')} shortcut={`${isMac() ? '⌘' : 'Ctrl+'}\\`} onClick={() => useBoardsUi.getState().setPanelWide(!wide)} data-testid="panel-expand">
-          {wide ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
-        </IconButton>
-      ) : null}
-      {!mobile ? <CloseButton onClick={onClose} /> : null}
+      <TaskMoreMenu task={task} perms={perms} scoped={scoped} />
     </Bar>
   );
 }
 
-const isMac = (): boolean => typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent);
+/** Boards a task can be moved to (MANAGE_BOARD there), as `id\0emoji name`. */
+export function useMoveTargets(task: Pick<Task, 'workspaceId' | 'boardId'>): string[] {
+  return useBoards(useShallow((s) => workspaceBoards(s.boards, task.workspaceId).filter((b) => b.id !== task.boardId && hasBit(b.permissions, MANAGE_BOARD)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
+}
+
+/** The task's «⋯»: duplicate, move to a board, archive. */
+export function TaskMoreMenu({ task, perms, scoped }: { task: Task; perms: bigint | undefined; scoped: boolean }): ReactNode {
+  const boards = useMoveTargets(task);
+  const me = myUserId();
+  return (
+    <Dropdown.Root modal={false}>
+      <Dropdown.Trigger asChild>
+        <IconButton tip={false} label={t('boards.more')} className="data-[state=open]:bg-active" data-testid="panel-more">
+          <Ellipsis className="size-4" aria-hidden />
+        </IconButton>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
+          {hasBit(perms, CREATE_TASKS) && !scoped ? (
+            <Dropdown.Item className={menuItem} onSelect={() => void duplicateTask(task.id).then((c) => c && useBoardsUi.getState().openTask(c.id))}>
+              <CopyPlus className="size-4" aria-hidden /> {t('boards.duplicate')}
+            </Dropdown.Item>
+          ) : null}
+          {boards.length && !scoped && hasBit(perms, MANAGE_BOARD) ? (
+            <Dropdown.Sub>
+              <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
+                <FolderInput className="size-4" aria-hidden /> <span className="flex-1">{t('boards.moveToBoard')}</span> <ChevronRight className="size-4" aria-hidden />
+              </Dropdown.SubTrigger>
+              <Dropdown.Portal>
+                <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={16}>
+                  {boards.map((x) => {
+                    const [id = '', label = ''] = x.split('\u0000');
+                    return (
+                      <Dropdown.Item key={id} className={menuItem} onSelect={() => void moveTaskToBoard(task.id, id)}>
+                        {label}
+                      </Dropdown.Item>
+                    );
+                  })}
+                </Dropdown.SubContent>
+              </Dropdown.Portal>
+            </Dropdown.Sub>
+          ) : null}
+          {mayArchiveTask(task, perms, me) ? (
+            <>
+              <Dropdown.Separator className={menuSeparator} />
+              <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archiveTask(task.id)} data-testid="panel-archive">
+                <Archive className="size-4" aria-hidden /> {t('boards.archive')}
+              </Dropdown.Item>
+            </>
+          ) : null}
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
 
 // ------------------------------------------------------------------ title / description
 
@@ -294,7 +286,7 @@ function useResetGuard(task: Task): { guard: (go: () => void, cancel?: () => voi
   return { guard, dialog };
 }
 
-function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): ReactNode {
+export function TitleEditor({ task, canEdit, large = false }: { task: Task; canEdit: boolean; large?: boolean }): ReactNode {
   const { guard, dialog } = useResetGuard(task);
   const [v, setV] = useState(task.title);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -338,7 +330,7 @@ function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): React
         }
       }}
       aria-label={t('boards.taskTitle')}
-      className="selectable w-full resize-none overflow-hidden rounded-[var(--radius-row)] bg-transparent text-title font-semibold leading-[26px] text-fg outline-none focus-visible:bg-hover"
+      className={cx('selectable w-full resize-none overflow-hidden rounded-[var(--radius-row)] bg-transparent font-semibold text-fg outline-none focus-visible:bg-hover', large ? 'text-large leading-[34px]' : 'text-title leading-[26px]')}
       data-testid="task-title"
     />
     {dialog}
@@ -346,7 +338,7 @@ function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): React
   );
 }
 
-function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit: boolean; attachments: boolean }): ReactNode {
+export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit: boolean; attachments: boolean }): ReactNode {
   const { guard, dialog } = useResetGuard(task);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(task.description);
@@ -463,18 +455,18 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
 
 // ------------------------------------------------------------------ properties
 
-function Prop({ label, children, testId }: { label: string; children: ReactNode; testId?: string }): ReactNode {
+export function Prop({ label, children, testId }: { label: string; children: ReactNode; testId?: string }): ReactNode {
   return (
     <div className="flex min-h-8 items-start gap-3 mobile:flex-col mobile:gap-0.5 mobile:py-1" data-testid={testId}>
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{label}</span>
+      <span data-prop-label className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{children}</div>
     </div>
   );
 }
 
-const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
+export const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
-function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; canEdit: boolean; perms: bigint | undefined; scoped: boolean; disabled: Disabled }): ReactNode {
+export function Properties({ task, canEdit, perms, scoped, disabled, bare = false }: { task: Task; canEdit: boolean; perms: bigint | undefined; scoped: boolean; disabled: Disabled; bare?: boolean }): ReactNode {
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
@@ -490,7 +482,7 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
   const menu = useBoardsUi((s) => (s.menu?.taskId === task.id ? s.menu.kind : null));
   const req = (k: string): { open?: boolean; onOpenChange?: (v: boolean) => void } => (menu === k ? { open: true, onOpenChange: (v) => !v && useBoardsUi.getState().closeMenu() } : {});
   return (
-    <section className="flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-line p-2" aria-label={t('boards.properties')} data-testid="task-properties">
+    <section className={cx('flex flex-col gap-0.5', !bare && 'rounded-[var(--radius-card)] border border-line p-2')} aria-label={t('boards.properties')} data-testid="task-properties">
       <Prop label={t('boards.f.status')}>
         <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(task.id, { statusId: s })} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
@@ -507,7 +499,7 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
           </PriorityMenu>
         </Prop>
       ) : null}
-      <Assignees task={task} canEdit={canEdit} req={req('assignee')} />
+      <Assignees task={task} canEdit={canEdit} req={req('assignee')} stacked={bare} />
       {on(BoardFeature.LABELS) ? (
         <Prop label={t('boards.f.label')}>
           {mine.map((l) => (
@@ -664,7 +656,7 @@ function ParentMenu({ task, children }: { task: Task; children: ReactNode }): Re
 
 // ------------------------------------------------------------------ assignees
 
-function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void } }): ReactNode {
+function Assignees({ task, canEdit, req, stacked = false }: { task: Task; canEdit: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void }; stacked?: boolean }): ReactNode {
   const [over, setOver] = useState(false);
   const drafts = useMemo(() => draftsOf(task.assignees), [task.assignees]);
   const onDragOver = (e: DragEvent): void => {
@@ -682,10 +674,10 @@ function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: 
   };
   return (
     <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)] mobile:flex-col mobile:gap-0.5 mobile:py-1', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-assignees">
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{t('boards.assignees')}</span>
+      <span data-prop-label className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{t('boards.assignees')}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 mobile:w-full mobile:gap-1.5">
         {task.assignees.map((a) => (
-          <AssigneeRow key={a.userId} task={task} userId={a.userId} lead={a.isLead} note={a.note} canEdit={canEdit} />
+          <AssigneeRow key={a.userId} task={task} userId={a.userId} lead={a.isLead} note={a.note} canEdit={canEdit} stacked={stacked} />
         ))}
         <AssigneeMenu
           workspaceId={task.workspaceId}
@@ -704,7 +696,8 @@ function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: 
   );
 }
 
-const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdit }: { task: Task; userId: string; lead: boolean; note: string; canEdit: boolean }): ReactNode {
+/** `stacked` (the full-screen task's properties column, 300 px): the name on its own line, «за что отвечает» under it. */
+const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdit, stacked = false }: { task: Task; userId: string; lead: boolean; note: string; canEdit: boolean; stacked?: boolean }): ReactNode {
   const name = useMemberName(task.workspaceId, userId);
   const former = !!useFormerInfo(task.workspaceId, userId);
   const [v, setV] = useState(note);
@@ -719,7 +712,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
   };
   return (
     <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)] mobile:grid mobile:grid-cols-[minmax(0,1fr)_auto_auto] mobile:gap-x-1 mobile:px-0" data-testid="assignee-row" data-user={userId}>
-      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className={cx('inline-flex min-w-0 shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full', former ? 'max-w-[62%]' : 'max-w-[40%]')}>
+      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className={cx('inline-flex min-w-0 shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full', stacked ? 'flex-1' : former ? 'max-w-[62%]' : 'max-w-[40%]')}>
         <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
         <span className="min-w-0 truncate text-control font-medium mobile:text-[15px] mobile:font-semibold">{name}</span>
         <FormerChip workspaceId={task.workspaceId} userId={userId} />
@@ -770,7 +763,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
         }}
         placeholder={canEdit ? t('boards.notePlaceholder') : ''}
         aria-label={t('boards.noteOf', { name })}
-        className="selectable peer h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg mobile:h-8 mobile:w-full mobile:min-w-0 mobile:px-0 mobile:text-transparent mobile:caret-[var(--color-label-secondary)] mobile:placeholder:text-transparent mobile:focus:text-fg"
+        className={cx(stacked ? 'order-last -mt-1 ml-6 min-w-0 basis-full' : 'min-w-[140px] flex-1', 'selectable peer h-7 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg mobile:h-8 mobile:w-full mobile:min-w-0 mobile:px-0 mobile:text-transparent mobile:caret-[var(--color-label-secondary)] mobile:placeholder:text-transparent mobile:focus:text-fg')}
         data-testid="assignee-note"
       />
       <span aria-hidden className="pointer-events-none absolute inset-0 hidden items-center truncate text-[13px] leading-8 text-muted mobile:flex mobile:peer-focus:hidden">
@@ -802,7 +795,7 @@ function TaskLine({ id }: { id: string }): ReactNode {
   );
 }
 
-function Subtasks({ task, ids, canCreate }: { task: Task; ids: string[]; canCreate: boolean }): ReactNode {
+export function Subtasks({ task, ids, canCreate }: { task: Task; ids: string[]; canCreate: boolean }): ReactNode {
   const [adding, setAdding] = useState(false);
   const [v, setV] = useState('');
   const add = async (): Promise<void> => {
@@ -863,7 +856,7 @@ const REL_GROUPS: ReadonlyArray<{ key: 'blocks' | 'blocked' | 'relates' | 'dupli
   { key: 'duplicates', label: 'boards.rel.duplicates' },
 ];
 
-function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: boolean }): ReactNode {
+export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: boolean }): ReactNode {
   const [kind, setKind] = useState<TaskRelationKind | null>(null);
   const choices = useTaskChoices(task.boardId, task.id, kind !== null);
   const groups = useMemo(() => {
@@ -937,7 +930,7 @@ function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: bool
  * the composer below) and «История» (the journal timeline, newest first). The tab is remembered;
  * sending a comment or jumping to one (a search hit) switches to «Комментарии».
  */
-function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; toEnd: () => void; commentsOff: boolean }): ReactNode {
+export function Activity({ task, room, toEnd, commentsOff, aside }: { task: Task; room: Room; toEnd: () => void; commentsOff: boolean; aside?: ReactNode }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   useEffect(() => {
     void openRoom(room.id);
@@ -1000,6 +993,12 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
   ], []);
   return (
     <section ref={section} className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity" data-tab={tab}>
+      {aside ? (
+        <div className="flex min-h-8 items-center gap-2 px-5 pb-2">
+          <h2 className="flex-1 text-control font-semibold text-fg">{t('boards.activity')}</h2>
+          {aside}
+        </div>
+      ) : null}
       <div className="flex items-center px-5 pb-2">
         <ChoiceSwitch value={tab} options={tabs} onChange={useBoardsUi.getState().setActivityTab} label={t('boards.hist.label')} phone="segmented" testId="activity-tabs" />
       </div>
@@ -1049,7 +1048,7 @@ function TaskComments({ task, roomId, commentsOff }: { task: Task; roomId: strin
 }
 
 /** The chat composer of the task room (attachments, stickers, voice, replies, mentions). */
-function CommentBox({ task, room, perms, commentsOff }: { task: Task; room: Room; perms: bigint | undefined; commentsOff: boolean }): ReactNode {
+export function CommentBox({ task, room, perms, commentsOff, className, autoFocus }: { task: Task; room: Room; perms: bigint | undefined; commentsOff: boolean; className?: string; autoFocus?: boolean }): ReactNode {
   // COMMENTS off (ADR-0058 §3): the room is read-only like an archived task's — no composer.
   const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
@@ -1058,8 +1057,8 @@ function CommentBox({ task, room, perms, commentsOff }: { task: Task; room: Room
   const [dragging, drop] = useFileDrop(canAttach, addFiles);
   if (!(roomPerms & BigInt(Permission.SEND_MESSAGES))) return null;
   return (
-    <div className="relative shrink-0 border-t border-line bg-feed mobile:pb-[var(--safe-bottom)]" data-testid="task-composer" {...drop}>
-      <Composer workspaceId={task.workspaceId} room={room} perms={roomPerms} files={files} setFiles={setFiles} addFiles={addFiles} />
+    <div className={cx('relative shrink-0 bg-feed', className ?? 'border-t border-line mobile:pb-[var(--safe-bottom)]')} data-testid="task-composer" {...drop}>
+      <Composer workspaceId={task.workspaceId} room={room} perms={roomPerms} files={files} setFiles={setFiles} addFiles={addFiles} {...(autoFocus === false ? { autoFocus } : {})} />
       {dragging ? <div className="pointer-events-none absolute inset-1 rounded-[var(--radius-card)] border-2 border-dashed border-accent" aria-hidden /> : null}
     </div>
   );

@@ -25,6 +25,7 @@ import { useChatView } from './chatView';
 import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
+import { WikiLinkCard, firstWikiPage } from '../wiki/WikiLinkCard';
 import { MessageActions, hasMessageActions } from './MessageActions';
 import { createHoverIntent, placeActionBar } from './hoverIntent';
 import { previewPartsOf, useMentionLabel } from './mentionText';
@@ -39,6 +40,8 @@ import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
 import { AchievementCardView } from './AchievementCard';
 import { RoomIconLine } from './RoomIconLine';
+import { ContactSharedLine } from './ContactSharedLine';
+import { contactSharedCardOf } from '../../lib/contactRequest';
 import { achievementCardOf } from '../../lib/achievements';
 import { CallLogRow } from '../call/CallBits';
 import { callCardOf } from '../../lib/callModel';
@@ -162,8 +165,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   const auto = automationCardOf(c.msg);
   // The room picture changed (ADR-0092): a centred service line with the new picture.
   const icon = roomIconCardOf(c.msg);
+  // A contact shared with a bot (ADR-0100): a centred service line in the DM.
+  const contact = contactSharedCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon || contact ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -192,6 +197,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       ) : icon ? (
         <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <RoomIconLine card={icon} authorId={c.msg.authorId} workspaceId={workspaceId} />
+        </div>
+      ) : contact ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <ContactSharedLine card={contact} authorId={c.msg.authorId} workspaceId={workspaceId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />
@@ -287,6 +296,8 @@ function Bubble({
   const highlight = useMemo(() => (hit && words?.length ? { words, current: hit === 2 } : undefined), [hit, words]);
   // Hidden previews (Message.embeds_hidden) are not rendered at all, for everyone.
   const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
+  // A wiki page link of this server (owner 14.10): the page card in place of the web preview.
+  const wikiPage = useMemo(() => (link ? firstWikiPage(nodes) : null), [link, nodes]);
   const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
@@ -370,7 +381,7 @@ function Bubble({
   ) : (
     // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
-      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 70 % lane, #9).
+      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 85 % lane, owner 14.10).
       className="relative max-w-full bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
       style={{ ...radius, ...(width ? { width } : {}) }}
       data-focus-shape
@@ -421,7 +432,7 @@ function Bubble({
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />
+            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
           </div>
         ) : null}
         {rows.length ? (
@@ -458,7 +469,7 @@ function Bubble({
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
           className={cx(
-            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)]',
+            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)] mobile:max-w-[85%]',
             own ? 'bubble-out' : 'bubble-in',
             c.status === 'pending' && 'opacity-80',
           )}
@@ -474,7 +485,7 @@ function Bubble({
         >
           {body}
           {m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' ? (
-            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
+            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} botId={m.authorId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
           ) : null}
           {bar.visible ? (
             <ActionBarSlot own={own}>

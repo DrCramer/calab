@@ -104,7 +104,7 @@ func (s *Service) iconFile(ctx context.Context, wsID, me uuid.UUID, cur *uuid.UU
 	}
 	f, err := s.db.Q.GetFile(ctx, id)
 	if db.IsNotFound(err) || (err == nil && (f.WorkspaceID == nil || *f.WorkspaceID != wsID || !strings.HasPrefix(f.Mime, "image/") ||
-		(f.UploaderID != me && (cur == nil || *cur != id)))) {
+		((f.UploaderID == nil || *f.UploaderID != me) && (cur == nil || *cur != id)))) {
 		return nil, httpx.Validation("iconFileId", "an image you uploaded to this workspace is required")
 	}
 	return &id, err
@@ -299,14 +299,85 @@ func (s *Service) createBoard(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		// The creator manages the board (ADR-0042 §2), and sees it when it is private.
-		return q.InsertBoardOverride(r.Context(), sqlc.InsertBoardOverrideParams{
+		if err := q.InsertBoardOverride(r.Context(), sqlc.InsertBoardOverrideParams{
 			BoardID: b.ID, TargetType: "user", TargetID: me.String(), Allow: int64(perm.BoardOnly),
-		})
+		}); err != nil {
+			return err
+		}
+		return addInvited(r.Context(), q, wsID, b.ID, me, req.GetIsPrivate(), req.GetMemberIds(), req.GetRoleIds())
 	})
 	if err != nil {
 		return err
 	}
 	return s.respondBoard(w, r, b.ID, perm.BoardAccess{WorkspaceID: wsID}, http.StatusCreated)
+}
+
+// invitedBits: what the people and roles chosen in the create dialog get on a private board
+// (ADR-0058 addendum 2026-10-14): they see it and create tasks.
+const invitedBits = perm.ViewBoard | perm.CreateTasks
+
+// addInvited stores CreateBoardRequest.member_ids / role_ids of a new private board as allow
+// overrides: members of the workspace (not the creator: they hold every bit already) and roles of
+// the workspace other than the owner / admin / guest built-ins. 422 on a public board.
+func addInvited(ctx context.Context, q *sqlc.Queries, wsID, boardID, me uuid.UUID, private bool, members, roles []string) error {
+	if len(members)+len(roles) == 0 {
+		return nil
+	}
+	if !private {
+		return httpx.Validation("memberIds", "only a private board takes chosen members and roles")
+	}
+	if len(members)+len(roles) > 100 {
+		return httpx.Validation("memberIds", "too many members and roles")
+	}
+	seen := map[string]bool{}
+	for i, raw := range members {
+		u, err := uuid.Parse(raw)
+		if err != nil {
+			return httpx.Validation("memberIds["+strconv.Itoa(i)+"]", "invalid user id")
+		}
+		if u == me || seen["u"+u.String()] {
+			continue
+		}
+		seen["u"+u.String()] = true
+		if _, err := q.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: wsID, UserID: u}); db.IsNotFound(err) {
+			return httpx.Validation("memberIds["+strconv.Itoa(i)+"]", "not a member of the workspace")
+		} else if err != nil {
+			return err
+		}
+		if err := q.InsertBoardOverride(ctx, sqlc.InsertBoardOverrideParams{
+			BoardID: boardID, TargetType: "user", TargetID: u.String(), Allow: int64(invitedBits),
+		}); err != nil {
+			return err
+		}
+	}
+	if len(roles) == 0 {
+		return nil
+	}
+	rows, err := q.ListWorkspaceRoles(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	ok := map[string]bool{}
+	for _, rr := range rows {
+		if rr.Builtin == nil || *rr.Builtin == string(perm.RoleMember) {
+			ok[rr.ID.String()] = true
+		}
+	}
+	for i, id := range roles {
+		if !ok[id] {
+			return httpx.Validation("roleIds["+strconv.Itoa(i)+"]", "not a role of the workspace that can be chosen")
+		}
+		if seen["r"+id] {
+			continue
+		}
+		seen["r"+id] = true
+		if err := q.InsertBoardOverride(ctx, sqlc.InsertBoardOverrideParams{
+			BoardID: boardID, TargetType: "role", TargetID: id, Allow: int64(invitedBits),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) getBoard(w http.ResponseWriter, r *http.Request) error {
@@ -331,7 +402,16 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	p := sqlc.UpdateBoardParams{ID: id, IsPrivate: req.IsPrivate, Restricted: req.Restricted}
+	// One kind of private board (ADR-0058 addendum 2026-10-14): restricted is an alias of
+	// is_private, both columns are written together.
+	private := req.IsPrivate
+	if req.Restricted != nil {
+		if private != nil && *private != *req.Restricted {
+			return httpx.Validation("restricted", "restricted is an alias of isPrivate: both must agree")
+		}
+		private = req.Restricted
+	}
+	p := sqlc.UpdateBoardParams{ID: id, IsPrivate: private, Restricted: private}
 	if req.Name != nil {
 		n, err := validText("name", req.GetName(), 1, MaxBoardName)
 		if err != nil {
@@ -415,7 +495,7 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if err := s.restrict(r, q, cur, req.IsPrivate, req.Restricted, acc); err != nil {
+		if err := s.restrict(r, q, cur, private, acc); err != nil {
 			return err
 		}
 		if features.DisabledFeatures != nil || features.EstimateScale != nil {
@@ -451,25 +531,14 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
 }
 
-// restrict checks a change of is_private / restricted (ADR-0048: a closed board stays private)
-// and, when the board gets closed, gives the caller a personal VIEW_BOARD | MANAGE_BOARD so they
-// keep it (the owner sees it anyway; the creator has had every board bit since creation).
-// MANAGE_BOARD on the board is checked by the caller (manageBoard): the owner always has it.
-func (s *Service) restrict(r *http.Request, q *sqlc.Queries, cur sqlc.Board, private, restricted *bool, acc perm.BoardAccess) error {
-	nextPrivate, nextRestricted := cur.IsPrivate, cur.Restricted
-	if private != nil {
-		nextPrivate = *private
-	}
-	if restricted != nil {
-		nextRestricted = *restricted
-	}
-	switch {
-	case restricted != nil && *restricted && !nextPrivate:
-		return httpx.Validation("restricted", "only private boards can be closed")
-	case nextRestricted && !nextPrivate:
-		return httpx.Validation("isPrivate", "a closed board stays private")
-	}
-	if !nextRestricted || cur.Restricted || acc.Role == perm.RoleOwner {
+// restrict: when a public board becomes private (ADR-0058 addendum 2026-10-14: hidden from
+// admins and the owner too), the caller gets a personal VIEW_BOARD | MANAGE_BOARD so they keep
+// it — unless they are the owner with «Владелец видит приватное», who sees it anyway. The
+// creator has had every board bit since creation. MANAGE_BOARD on the board is checked by the
+// caller (manageBoard).
+func (s *Service) restrict(r *http.Request, q *sqlc.Queries, cur sqlc.Board, private *bool, acc perm.BoardAccess) error {
+	wasPrivate := cur.IsPrivate || cur.Restricted
+	if private == nil || !*private || wasPrivate || acc.Member.SeesPrivate() {
 		return nil
 	}
 	return q.GrantBoardUserOverride(r.Context(), sqlc.GrantBoardUserOverrideParams{

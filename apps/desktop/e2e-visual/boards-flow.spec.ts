@@ -95,7 +95,8 @@ test('boards: kanban → create → drag → assignees → comment → filter �
   await expect(panel.getByTestId('history-row').first()).toHaveAttribute('data-kind', 'assignees');
   await panel.getByTestId('task-activity').getByRole('radio', { name: 'Комментарии' }).click();
   await expect(comment).toBeVisible();
-  await panel.getByRole('button', { name: 'Закрыть' }).click();
+  // Esc closes the full-screen task: the board is back as it was.
+  await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 
   // Filter by a label (F → Лейблы → Баг): only CAL-3 stays.

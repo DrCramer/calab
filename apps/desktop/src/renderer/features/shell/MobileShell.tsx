@@ -293,9 +293,9 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
     case 'findTime':
       return <ActiveWorkspace>{(ws) => <DayView workspaceId={ws} />}</ActiveWorkspace>;
     case 'board':
-      return <BoardsView workspaceId={screen.ws} wide={false} mobile />;
+      return <BoardsView workspaceId={screen.ws} mobile />;
     case 'task':
-      return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} wide={false} mobile />}</ActiveWorkspace>;
+      return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} mobile />}</ActiveWorkspace>;
     case 'archived':
       return <ArchivedScreen />;
     case 'settings':

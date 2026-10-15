@@ -415,6 +415,7 @@ type BoardForm struct {
 	CreatedBy  *uuid.UUID
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	UpdatedBy  *uuid.UUID
 }
 
 type BoardFormSubmission struct {
@@ -425,6 +426,16 @@ type BoardFormSubmission struct {
 	ActorID     *uuid.UUID
 	TaskID      *uuid.UUID
 	CreatedAt   time.Time
+}
+
+type BoardFormUpload struct {
+	FileID    uuid.UUID
+	FormID    uuid.UUID
+	FieldID   uuid.UUID
+	TokenHash []byte
+	ActorID   *uuid.UUID
+	Size      int64
+	CreatedAt time.Time
 }
 
 type BoardGit struct {
@@ -577,6 +588,18 @@ type BotCommand struct {
 	Position    int16
 }
 
+type BotContactShare struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	BotUserID   uuid.UUID
+	UserID      uuid.UUID
+	RoomID      uuid.UUID
+	MessageID   uuid.UUID
+	ButtonID    string
+	Fields      []string
+	CreatedAt   time.Time
+}
+
 type BotWebhookDelivery struct {
 	ID          uuid.UUID
 	BotUserID   uuid.UUID
@@ -665,6 +688,7 @@ type DiskActivity struct {
 	Before      []byte
 	After       []byte
 	CreatedAt   time.Time
+	Private     bool
 }
 
 type DiskItem struct {
@@ -821,7 +845,7 @@ type ExternalRemindersSent struct {
 type File struct {
 	ID              uuid.UUID
 	WorkspaceID     *uuid.UUID
-	UploaderID      uuid.UUID
+	UploaderID      *uuid.UUID
 	Key             string
 	ThumbnailKey    *string
 	Name            string
@@ -1611,6 +1635,7 @@ type WikiActivity struct {
 	Before      []byte
 	After       []byte
 	CreatedAt   time.Time
+	Private     bool
 }
 
 type WikiLink struct {
@@ -1730,6 +1755,8 @@ type Workspace struct {
 	SipEnabled              bool
 	DiskTrashDays           *int32
 	WikiTrashDays           *int32
+	TempArchiveDays         int32
+	OwnerSeesPrivate        bool
 }
 
 type WorkspaceAdminLog struct {
@@ -1751,6 +1778,17 @@ type WorkspaceApp struct {
 	CreatedBy   *uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type WorkspaceAudit struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	ActorID         *uuid.UUID
+	Kind            string
+	SubjectType     *string
+	SubjectID       *uuid.UUID
+	PreviousOwnerID *uuid.UUID
+	CreatedAt       time.Time
 }
 
 type WorkspaceBackground struct {

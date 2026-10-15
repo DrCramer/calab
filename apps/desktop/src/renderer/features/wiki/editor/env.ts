@@ -1,4 +1,4 @@
-import type { MentionSource, UploadedImage } from './types';
+import type { MentionSource, PageSource, UploadedImage } from './types';
 import { MenuStore } from './menuStore';
 
 /**
@@ -8,6 +8,7 @@ import { MenuStore } from './menuStore';
 export interface EditorEnv {
   upload: ((file: File) => Promise<UploadedImage>) | null;
   mentions: MentionSource | null;
+  pages: PageSource | null;
   imagePath: (fileId: string) => string;
   onError: (message: string) => void;
   menu: MenuStore;
@@ -22,6 +23,7 @@ export function createEnv(): EditorEnv {
   return {
     upload: null,
     mentions: null,
+    pages: null,
     imagePath: (id) => `/api/files/${id}`,
     onError: (m) => console.warn(m),
     menu: new MenuStore(),

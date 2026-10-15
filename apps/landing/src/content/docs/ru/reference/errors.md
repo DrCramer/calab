@@ -79,6 +79,7 @@ order: 3
 | `CHECKLIST_LIMIT` · `CHECKLIST_ITEM_LIMIT` · `BOARD_CATEGORY_LIMIT` | `CONFLICT` | 10 чек-листов на задачу · 100 пунктов в чек-листе · 50 категорий досок |
 | `TASK_MILESTONE_LIMIT` · `TASK_MILESTONE_AUTO` | `CONFLICT` | 20 вех на задачу · готовность вехи считает сервер |
 | `KEYBOARD_STALE` · `BUTTON_UNAVAILABLE` | `CONFLICT` | клавиатура сообщения изменилась · кнопка недоступна |
+| `BOT_CONTACT_REQUEST_DM_ONLY` · `CONTACT_ALREADY_SHARED` · `CONTACT_EMPTY` · `CONTACT_SHARE_LIMIT` | `BAD_REQUEST` · `CONFLICT` · `VALIDATION` · `RATE_LIMITED` | запрос контакта — только в DM · контакт по этой кнопке уже отдан · в профиле нет запрошенных полей · больше 10 отдач в час |
 | `FORM_CHANGED` · `NONCE_CONFLICT` · `FORM_TARGET_UNAVAILABLE` | `CONFLICT` | форма изменилась · `nonce` использован для другого содержимого · статус формы удалён |
 | `OWNER_ONLY` | `FORBIDDEN` | только владелец пространства |
 | `MESSAGE_NOT_EDITABLE` · `NOT_FORWARDABLE` | `VALIDATION` | пересланную копию нельзя править · это сообщение нельзя переслать |

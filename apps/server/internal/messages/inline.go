@@ -53,7 +53,7 @@ func encodeKeyboard(k *v1.InlineKeyboard) ([]byte, error) {
 			return invalid()
 		}
 		for _, b := range row.GetButtons() {
-			if !buttonID.MatchString(b.GetId()) || ids[b.GetId()] || strings.TrimSpace(b.GetLabel()) == "" || utf8.RuneCountInString(b.GetLabel()) > 80 || strings.ContainsFunc(b.GetLabel(), unicode.IsControl) || len(b.GetData()) > 512 {
+			if !buttonID.MatchString(b.GetId()) || ids[b.GetId()] || strings.TrimSpace(b.GetLabel()) == "" || utf8.RuneCountInString(b.GetLabel()) > 80 || strings.ContainsFunc(b.GetLabel(), unicode.IsControl) || len(b.GetData()) > 512 || !validContactButton(b) {
 				return invalid()
 			}
 			ids[b.GetId()] = true
@@ -78,7 +78,8 @@ func callbackButton(m sqlc.Message, user uuid.UUID, req *v1.CreateMessageInterac
 	}
 	for _, row := range k.GetRows() {
 		for _, b := range row.GetButtons() {
-			if b.GetId() == req.GetButtonId() && !b.GetDisabled() {
+			// A REQUEST_CONTACT button is confirmed through …/buttons/{id}/contact (ADR-0100).
+			if b.GetId() == req.GetButtonId() && !b.GetDisabled() && b.GetKind() == v1.InlineButtonKind_INLINE_BUTTON_KIND_UNSPECIFIED {
 				return b, nil
 			}
 		}

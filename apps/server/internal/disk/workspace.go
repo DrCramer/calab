@@ -39,7 +39,8 @@ func (s *Service) usage(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.DiskUsage{
 		UsedBytes: uint64(max(row.StorageUsedBytes, 0)), DiskBytes: uint64(max(row.DiskBytes, 0)),
-		TrashBytes: uint64(max(row.TrashBytes, 0)), OtherBytes: uint64(max(row.StorageUsedBytes-row.DiskBytes, 0)),
+		TrashBytes: uint64(max(row.TrashBytes, 0)), ChatBytes: uint64(max(row.ChatBytes, 0)), BoardsBytes: uint64(max(row.BoardsBytes, 0)), WikiBytes: uint64(max(row.WikiBytes, 0)),
+		OtherBytes: uint64(max(row.StorageUsedBytes-row.DiskBytes-row.ChatBytes-row.BoardsBytes-row.WikiBytes, 0)),
 		AddonBytes: uint64(max(row.AddonMb, 0)) << 20,
 	}
 	quota := row.StorageQuotaBytes
@@ -186,12 +187,77 @@ func (s *Service) workspaceActivity(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Q.ListWorkspaceDiskActivity(r.Context(), sqlc.ListWorkspaceDiskActivityParams{WorkspaceID: ws, ActorID: actor, Cursor: cur, Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
-	if err != nil {
+	ctx, q := r.Context(), s.db.Q
+	// Entries of items the caller does not see (restricted ones: DISK_MANAGE and ADMINISTRATOR
+	// do not see them, addendum 2026-10-14) are left out; a page is read again past them, a few
+	// times at most, so that a long private stretch does not end the listing early.
+	out := &v1.DiskActivityPage{}
+	var shown []sqlc.DiskActivity
+	for range activityRounds {
+		rows, err := q.ListWorkspaceDiskActivity(ctx, sqlc.ListWorkspaceDiskActivityParams{WorkspaceID: ws, ActorID: actor, Cursor: cur, Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
+		if err != nil {
+			return err
+		}
+		seen, err := visibleActivity(ctx, q, c, rows)
+		if err != nil {
+			return err
+		}
+		shown = append(shown, seen...)
+		if len(rows) <= limit {
+			out.NextCursor = ""
+			break
+		}
+		cur = &rows[len(rows)-1].ID
+		out.NextCursor = cur.String()
+		if len(shown) > limit {
+			break
+		}
+	}
+	if len(shown) > limit {
+		shown = shown[:limit]
+		out.NextCursor = shown[limit-1].ID.String()
+	}
+	if err := hidePlaces(ctx, q, c, shown); err != nil {
 		return err
 	}
-	writeActivity(w, rows, limit)
+	for _, a := range shown {
+		out.Activities = append(out.Activities, activityProto(a))
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.Write(w, http.StatusOK, out)
 	return nil
+}
+
+// activityRounds bounds the reads of one workspace journal page past entries the caller does
+// not see.
+const activityRounds = 5
+
+// visibleActivity keeps the entries of items the caller sees (DISK_VIEW on the item now); an
+// entry of an item deleted forever stays unless it was in a restricted subtree (private).
+func visibleActivity(ctx context.Context, q *sqlc.Queries, c caller, rows []sqlc.DiskActivity) ([]sqlc.DiskActivity, error) {
+	var ids []uuid.UUID
+	for _, a := range rows {
+		if a.ItemID != nil {
+			ids = append(ids, *a.ItemID)
+		}
+	}
+	ch, err := diskacl.Load(ctx, q, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := rows[:0:0]
+	for _, a := range rows {
+		if a.ItemID == nil {
+			if !a.Private || c.m.SeesPrivate() { // the owner with «Владелец видит приватное» sees them too
+				out = append(out, a)
+			}
+			continue
+		}
+		if ch.Has(*a.ItemID) && ch.Bits(c.m, a.ItemID).Has(perm.DiskView) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // hidePlaces blanks the folder names (parent_name) of an item's journal entries for folders the

@@ -17,6 +17,18 @@ enum BoardFormFieldType {
   BOARD_FORM_FIELD_TYPE_PHONE = 8; // formatted phone text, 7..15 digits; ADR-0064
   BOARD_FORM_FIELD_TYPE_URL = 9; // absolute HTTP/HTTPS URL
   BOARD_FORM_FIELD_TYPE_MULTISELECT = 10;
+  BOARD_FORM_FIELD_TYPE_FILE = 11; // uploads via /files, answer values = upload ids; ADR-0064 v2
+  BOARD_FORM_FIELD_TYPE_PEOPLE = 12; // workspace members, answer values = user ids
+}
+// Where an answer goes on the created task (ADR-0064 v2). The title uses title_field_id.
+enum BoardFormFieldTarget {
+  BOARD_FORM_FIELD_TARGET_UNSPECIFIED = 0;
+  BOARD_FORM_FIELD_TARGET_PRIORITY = 1; // SELECT, through option_priorities
+  BOARD_FORM_FIELD_TARGET_DUE_DATE = 2; // DATE
+  BOARD_FORM_FIELD_TARGET_LABELS = 3; // SELECT or MULTISELECT, through option_labels
+  BOARD_FORM_FIELD_TARGET_ASSIGNEES = 4; // PEOPLE; the first one is the lead
+  BOARD_FORM_FIELD_TARGET_APPROVERS = 5; // PEOPLE
+  BOARD_FORM_FIELD_TARGET_WATCHERS = 6; // PEOPLE
 }
 message BoardFormField {
   string id = 1;
@@ -26,6 +38,26 @@ message BoardFormField {
   string placeholder = 5;
   bool required = 6;
   repeated string options = 7;
+  // FILE and PEOPLE: more than one answer value.
+  bool multiple = 8;
+  // FILE: 1..20 files (1 without multiple), 1..100 MB each, accepted categories
+  // (image, pdf, document, video, audio, archive; empty = any).
+  uint32 max_files = 9;
+  uint32 max_file_mb = 10;
+  repeated string accept = 11;
+  // PEOPLE: only members with this workspace role; empty = all members.
+  string role_id = 12;
+  // Management only: never sent by the public GET.
+  BoardFormFieldTarget target = 13;
+  map<string, TaskPriority> option_priorities = 14; // option -> priority (PRIORITY)
+  map<string, string> option_labels = 15; // option -> label id of the form's board (LABELS)
+}
+// The first matching route picks the board of the new task; none matching: the form's board.
+message BoardFormRoute {
+  string field_id = 1; // a SELECT field of the form
+  string option = 2;
+  string board_id = 3; // a board of the same workspace
+  string status_id = 4; // a status of board_id; empty = its default status
 }
 message BoardFormDefinition {
   string title = 1;
@@ -36,6 +68,9 @@ message BoardFormDefinition {
   repeated string allowed_user_ids = 6;
   string status_id = 7;
   TaskPriority priority = 8;
+  repeated BoardFormRoute routes = 9;
+  // Anonymous fillers see PEOPLE fields and member names (default: hidden).
+  bool show_members = 10;
 }
 message BoardForm {
   string id = 1;
@@ -57,7 +92,7 @@ message UpdateBoardFormRequest {
 message BoardFormAnswer {
   string field_id = 1;
   string value = 2;
-  repeated string values = 3; // MULTISELECT only; value must be empty
+  repeated string values = 3; // MULTISELECT, FILE, PEOPLE only; value must be empty
 }
 message PreviewBoardFormRequest {
   BoardFormDefinition definition = 1;
@@ -69,6 +104,22 @@ message PublicBoardFormResponse {
   string description = 2;
   repeated BoardFormField fields = 3;
   uint32 revision = 4;
+  repeated BoardFormPeopleOptions people = 5; // candidates of the PEOPLE fields shown
+}
+message BoardFormPerson {
+  string user_id = 1;
+  string name = 2;
+}
+message BoardFormPeopleOptions {
+  string field_id = 1;
+  repeated BoardFormPerson people = 2;
+}
+// POST /api/(public/)forms/{code}/files?field=: a staged upload of a FILE field.
+message BoardFormUploadResponse {
+  string upload_id = 1; // capability token, the answer value
+  string name = 2;
+  uint64 size = 3;
+  string mime = 4;
 }
 message SubmitBoardFormRequest {
   uint32 revision = 1;

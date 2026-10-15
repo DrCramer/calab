@@ -1,14 +1,14 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { TaskField, TaskOp, WorkspaceRole, type Board } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleSlash, Filter, UserX, X } from 'lucide-react';
+import { ArrowLeft, Check, CircleSlash, Filter, ListFilter, UserX, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup } from '../../components/picker/pickerModel';
-import { Tip, cx } from '../../components/ui';
+import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { FORMER, addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
+import { FORMER, activeConds, addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState } from '../../lib/boards/filter';
 import { estimateName, fieldOff, scaleValues } from '../../lib/boards/features';
 import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
 import { autoFocusAllowed } from '../../lib/mobile';
@@ -19,7 +19,6 @@ import { nameOf } from '../people/members';
 import { menuBox, menuItem } from '../shell/menu';
 import type { Choice } from './menus';
 import { useToday } from './menus';
-import { useDisabledFeatures } from './useBoardView';
 import { Dot, PRIORITIES, PRIORITY_LABEL, PriorityIcon, STATUS_TYPES, STATUS_TYPE_LABEL, STATUS_TYPE_TOKEN, StatusIcon, formatDue } from './visuals';
 
 /**
@@ -27,7 +26,7 @@ import { Dot, PRIORITIES, PRIORITY_LABEL, PriorityIcon, STATUS_TYPES, STATUS_TYP
  * универсально»; Linear «Add Filter»): «Фильтр» (F) opens the field list with a search, a field
  * opens its values (checkboxes, presets, text); applied conditions are chips «Поле · операция ·
  * значения» — a click on the operation switches it, on the values re-opens them, × removes;
- * «все условия / любое», quick chips «Мои / Просрочено / Без исполнителя». Built from the field
+ * «все условия / любое», «Ждут моего согласования» as a toggle at the top. Built from the field
  * registry (lib/boards/filterFields.ts): a new field needs no code here unless it is a new kind.
  */
 export function useFilter(boardId: string): [FilterState, (f: FilterState) => void] {
@@ -176,27 +175,51 @@ interface FieldChoice extends Choice {
   def: FieldDef;
 }
 
-/** «Фильтр» (F): the field list, then the chosen field's values. */
-export function FilterButton({ boardId, workspaceId, compact = false }: { boardId: string; workspaceId: string; compact?: boolean }): ReactNode {
+/**
+ * «Фильтр» (F): the field list, then the chosen field's values. Desktop (`bar`): a 32 px header
+ * IconButton with a count badge; phone: the pill in the filter row.
+ */
+export function FilterButton({ boardId, workspaceId, bar = false }: { boardId: string; workspaceId: string; bar?: boolean }): ReactNode {
   const open = useBoardsUi((s) => s.filterOpen);
   const setOpen = useBoardsUi((s) => s.setFilterOpen);
   const board = useBoards((s) => s.boards[boardId]);
   const [filter, setFilter] = useFilter(boardId);
+  const count = activeConds(filter).length;
   return (
-    <FilterPopover board={board} workspaceId={workspaceId} filter={filter} setFilter={setFilter} open={open} setOpen={setOpen} label={t('boards.filter')}>
-      <Tip label={t('boards.filter')} shortcut="F">
+    <FilterPopover board={board} workspaceId={workspaceId} filter={filter} setFilter={setFilter} open={open} setOpen={setOpen} label={t('boards.filter')} approval>
+      {bar ? (
         <Popover.Trigger asChild>
-          <button
-            type="button"
-            className={cx('inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg', compact && 'px-2')}
-            data-testid="filter-button"
-          >
-            <Filter className="size-3.5" aria-hidden />
-            {compact ? null : t('boards.filter')}
-          </button>
+          <IconButton bar label={t('boards.filter')} shortcut="F" className="relative data-[state=open]:bg-active" data-testid="filter-button">
+            <ListFilter className="size-[18px]" aria-hidden />
+            <CountBadge n={count} />
+          </IconButton>
         </Popover.Trigger>
-      </Tip>
+      ) : (
+        <Tip label={t('boards.filter')} shortcut="F">
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+              data-testid="filter-button"
+            >
+              <Filter className="size-3.5" aria-hidden />
+              {t('boards.filter')}
+              {count > 0 ? <span className="text-accent-text">{count}</span> : null}
+            </button>
+          </Popover.Trigger>
+        </Tip>
+      )}
     </FilterPopover>
+  );
+}
+
+/** The small count dot on a header icon whose menu has something applied. */
+export function CountBadge({ n }: { n: number }): ReactNode {
+  if (n <= 0) return null;
+  return (
+    <span className="pointer-events-none absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-[10px] font-semibold leading-none text-accent-fg" data-testid="filter-count">
+      {n}
+    </span>
   );
 }
 
@@ -214,6 +237,7 @@ export function FilterPopover({
   setOpen,
   label,
   noMe = false,
+  approval = false,
   children,
 }: {
   board: Board | undefined;
@@ -224,6 +248,8 @@ export function FilterPopover({
   setOpen: (v: boolean) => void;
   label: string;
   noMe?: boolean;
+  /** The board's «Ждут моего согласования» toggle above the field list. */
+  approval?: boolean;
   children: ReactNode;
 }): ReactNode {
   const [field, setField] = useState<TaskField | null>(null);
@@ -287,6 +313,22 @@ export function FilterPopover({
               }}
             />
           ) : (
+            <>
+              {approval && !fieldOff(disabled, TaskField.APPROVER_PENDING) ? (
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={quickOn(filter, 'approval')}
+                  onClick={() => setFilter(toggleQuick(filter, 'approval'))}
+                  className="mb-1 flex h-8 items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover"
+                  data-testid="filter-approval"
+                >
+                  <span className="min-w-0 flex-1 truncate">{t('boards.quick.approval')}</span>
+                  <span className={cx('grid size-4 shrink-0 place-items-center rounded-[4px] border', quickOn(filter, 'approval') ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]')}>
+                    {quickOn(filter, 'approval') ? <Check className="size-3" aria-hidden /> : null}
+                  </span>
+                </button>
+              ) : null}
             <PickerPanel<FieldChoice>
               groups={fields}
               inputRef={input}
@@ -306,6 +348,7 @@ export function FilterPopover({
               )}
               testId="filter-fields"
             />
+            </>
           )}
         </Popover.Content>
       </Popover.Portal>
@@ -449,38 +492,3 @@ function FilterChip({ cond, board, workspaceId, text, onChange, onRemove, noMe }
     </span>
   );
 }
-
-const QUICK: ReadonlyArray<{ chip: QuickChip; label: 'boards.quick.mine' | 'boards.quick.overdue' | 'boards.quick.unassigned' | 'boards.quick.approval' }> = [
-  { chip: 'mine', label: 'boards.quick.mine' },
-  { chip: 'overdue', label: 'boards.quick.overdue' },
-  { chip: 'unassigned', label: 'boards.quick.unassigned' },
-  { chip: 'approval', label: 'boards.quick.approval' },
-];
-
-/** «Мои», «Просрочено», «Без исполнителя», «Ждут моего согласования» (ADR-0049). */
-export function QuickChips({ boardId }: { boardId: string }): ReactNode {
-  const [filter, setFilter] = useFilter(boardId);
-  const disabled = useDisabledFeatures(boardId);
-  return (
-    <div className="flex shrink-0 items-center gap-1" role="group" aria-label={t('boards.quick')}>
-      {QUICK.map((q) => {
-        const on = quickOn(filter, q.chip);
-        // «Просрочено» needs due dates, «Ждут моего согласования» approvals (ADR-0058 §3); an applied one stays to switch off.
-        if (!on && ((q.chip === 'overdue' && fieldOff(disabled, TaskField.DUE_ON)) || (q.chip === 'approval' && fieldOff(disabled, TaskField.APPROVER_PENDING)))) return null;
-        return (
-          <button
-            key={q.chip}
-            type="button"
-            aria-pressed={on}
-            onClick={() => setFilter(toggleQuick(filter, q.chip))}
-            className={cx('h-7 rounded-full px-2.5 text-control transition-colors duration-[var(--motion-fast)]', on ? 'bg-accent-strong text-accent-fg' : 'text-muted hover:bg-hover hover:text-fg')}
-            data-testid={`quick-${q.chip}`}
-          >
-            {t(q.label)}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-

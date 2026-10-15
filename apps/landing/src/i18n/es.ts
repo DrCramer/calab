@@ -13,6 +13,7 @@ const es: Dict = {
     navLabel: 'Secciones',
     nav: {
       features: 'Funciones',
+      docs: 'Documentación',
       calendar: 'Calendario',
       boards: 'Tableros',
       download: 'Descargar',

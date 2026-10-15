@@ -337,7 +337,7 @@ func TestWikiPermissionsMatrix(t *testing.T) {
 	e.must(200, e.bob, "GET", page(sub.GetId()), nil, nil)
 	e.must(200, e.guest, "GET", page(guide.GetId()), nil, nil)
 	e.must(403, e.guest, "POST", "/api/workspaces/"+e.ws.String()+"/wiki/pages", &v1.CreateWikiPageRequest{ParentId: guide.GetId(), Title: "g"}, nil)
-	e.must(200, e.admin, "GET", page(guide.GetId()), nil, nil)
+	e.must(404, e.admin, "GET", page(guide.GetId()), nil, nil) // addendum 2026-10-14
 	// The event of the change: bob saw it before (access_before), the guest after.
 	var upsert *v1.WikiPageUpsert
 	for _, ev := range e.ev.take() {

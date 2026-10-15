@@ -18,7 +18,8 @@ const (
 	// DiskWrite: create folders, upload; rename, move and trash one's own items. Member default.
 	DiskWrite Bits = 1 << 36
 	// DiskManage: any item, the trash retention, empty the whole trash, remove anyone's public
-	// link. Implies View and Write; sees restricted items too.
+	// link. Implies View and Write; not inside restricted items
+	// (addendum 2026-10-14): there only what their overrides give (ComputeTree).
 	DiskManage Bits = 1 << 37
 
 	// Disk are the three disk bits.

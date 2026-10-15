@@ -266,6 +266,34 @@ func (q *Queries) DeleteWikiUpdatesThrough(ctx context.Context, arg DeleteWikiUp
 	return result.RowsAffected(), nil
 }
 
+const detachWikiPage = `-- name: DetachWikiPage :one
+UPDATE wiki_pages w SET
+    parent_id    = NULL,
+    restricted   = $1,
+    trashed_root = w.trashed_at IS NOT NULL,
+    position     = CASE WHEN w.trashed_at IS NULL THEN (
+        SELECT coalesce(max(s.position) + 1, 0) FROM wiki_pages s
+        WHERE s.workspace_id = w.workspace_id AND s.trashed_at IS NULL AND s.parent_id IS NULL) ELSE w.position END,
+    updated_at   = now()
+WHERE w.id = $2
+RETURNING w.id
+`
+
+type DetachWikiPageParams struct {
+	Restricted bool
+	ID         uuid.UUID
+}
+
+// Detaches a page (with its subtree) to the top level, last among the live top-level pages (under
+// LockWikiTree), with the flag that keeps its access (perm.Detached); in the trash it becomes a
+// trash root of its own.
+func (q *Queries) DetachWikiPage(ctx context.Context, arg DetachWikiPageParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, detachWikiPage, arg.Restricted, arg.ID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getWikiFilesBytes = `-- name: GetWikiFilesBytes :one
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.workspace_id = $1
@@ -524,10 +552,10 @@ func (q *Queries) GetWikiVersion(ctx context.Context, arg GetWikiVersionParams) 
 
 const insertWikiActivity = `-- name: InsertWikiActivity :one
 
-INSERT INTO wiki_activity (workspace_id, page_id, page_title, actor_id, kind, before, after)
+INSERT INTO wiki_activity (workspace_id, page_id, page_title, actor_id, kind, before, after, private)
 VALUES ($1, $2, $3, $4, $5,
-        $6, $7)
-RETURNING id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at
+        $6, $7, $8)
+RETURNING id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at, private
 `
 
 type InsertWikiActivityParams struct {
@@ -538,6 +566,7 @@ type InsertWikiActivityParams struct {
 	Kind        string
 	Before      []byte
 	After       []byte
+	Private     bool
 }
 
 // ---- journal ----
@@ -550,6 +579,7 @@ func (q *Queries) InsertWikiActivity(ctx context.Context, arg InsertWikiActivity
 		arg.Kind,
 		arg.Before,
 		arg.After,
+		arg.Private,
 	)
 	var i WikiActivity
 	err := row.Scan(
@@ -562,6 +592,7 @@ func (q *Queries) InsertWikiActivity(ctx context.Context, arg InsertWikiActivity
 		&i.Before,
 		&i.After,
 		&i.CreatedAt,
+		&i.Private,
 	)
 	return i, err
 }
@@ -635,7 +666,7 @@ func (q *Queries) InsertWikiVersion(ctx context.Context, arg InsertWikiVersionPa
 }
 
 const lastWikiActivity = `-- name: LastWikiActivity :one
-SELECT id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at FROM wiki_activity WHERE page_id = $1 ORDER BY id DESC LIMIT 1
+SELECT id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at, private FROM wiki_activity WHERE page_id = $1 ORDER BY id DESC LIMIT 1
 `
 
 // The newest journal entry of a page (the rename coalescing of ADR-0081).
@@ -652,6 +683,7 @@ func (q *Queries) LastWikiActivity(ctx context.Context, pageID *uuid.UUID) (Wiki
 		&i.Before,
 		&i.After,
 		&i.CreatedAt,
+		&i.Private,
 	)
 	return i, err
 }
@@ -885,7 +917,7 @@ func (q *Queries) ListWikiLinksForPages(ctx context.Context, ids []uuid.UUID) ([
 }
 
 const listWikiPageActivity = `-- name: ListWikiPageActivity :many
-SELECT id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at FROM wiki_activity
+SELECT id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at, private FROM wiki_activity
 WHERE page_id = $1::uuid
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC
@@ -918,6 +950,7 @@ func (q *Queries) ListWikiPageActivity(ctx context.Context, arg ListWikiPageActi
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.Private,
 		); err != nil {
 			return nil, err
 		}
@@ -1091,6 +1124,65 @@ func (q *Queries) ListWikiPermissionsForPages(ctx context.Context, ids []uuid.UU
 			&i.TargetID,
 			&i.Allow,
 			&i.Deny,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWikiSubtree = `-- name: ListWikiSubtree :many
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM wiki_pages c WHERE c.parent_id = $1::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM wiki_pages c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT wp.id, wp.workspace_id, wp.parent_id, wp.title, wp.icon, wp.cover_file_id, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, down.depth::int AS depth
+FROM down JOIN wiki_page_heads wp ON wp.id = down.id
+ORDER BY down.depth, wp.id
+`
+
+type ListWikiSubtreeRow struct {
+	WikiPageHead WikiPageHead
+	Depth        int32
+}
+
+// The pages below a page (not the page itself), parents before children, trashed or not: a
+// trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
+// of ADR-0096 §2). Bounded at 64 levels.
+func (q *Queries) ListWikiSubtree(ctx context.Context, id uuid.UUID) ([]ListWikiSubtreeRow, error) {
+	rows, err := q.db.Query(ctx, listWikiSubtree, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWikiSubtreeRow{}
+	for rows.Next() {
+		var i ListWikiSubtreeRow
+		if err := rows.Scan(
+			&i.WikiPageHead.ID,
+			&i.WikiPageHead.WorkspaceID,
+			&i.WikiPageHead.ParentID,
+			&i.WikiPageHead.Title,
+			&i.WikiPageHead.Icon,
+			&i.WikiPageHead.CoverFileID,
+			&i.WikiPageHead.Position,
+			&i.WikiPageHead.OwnerID,
+			&i.WikiPageHead.Restricted,
+			&i.WikiPageHead.Preview,
+			&i.WikiPageHead.DocSize,
+			&i.WikiPageHead.NextSeq,
+			&i.WikiPageHead.UpdatedBy,
+			&i.WikiPageHead.CreatedAt,
+			&i.WikiPageHead.UpdatedAt,
+			&i.WikiPageHead.TrashedAt,
+			&i.WikiPageHead.TrashedBy,
+			&i.WikiPageHead.TrashedRoot,
+			&i.Depth,
 		); err != nil {
 			return nil, err
 		}
@@ -1397,7 +1489,7 @@ func (q *Queries) ListWikiVersions(ctx context.Context, arg ListWikiVersionsPara
 }
 
 const listWorkspaceWikiActivity = `-- name: ListWorkspaceWikiActivity :many
-SELECT id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at FROM wiki_activity
+SELECT id, workspace_id, page_id, page_title, actor_id, kind, before, after, created_at, private FROM wiki_activity
 WHERE workspace_id = $1::uuid
   AND ($2::uuid IS NULL OR actor_id = $2::uuid)
   AND ($3::uuid IS NULL OR id < $3::uuid)
@@ -1437,6 +1529,7 @@ func (q *Queries) ListWorkspaceWikiActivity(ctx context.Context, arg ListWorkspa
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.Private,
 		); err != nil {
 			return nil, err
 		}
@@ -1518,6 +1611,28 @@ SELECT pg_advisory_xact_lock(hashtext('calaba.wiki.' || $1::uuid::text))
 // before one (the order of the Disk's LockDiskTree).
 func (q *Queries) LockWikiTree(ctx context.Context, workspaceID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, lockWikiTree, workspaceID)
+	return err
+}
+
+const markWikiSubtreeActivityPrivate = `-- name: MarkWikiSubtreeActivityPrivate :exec
+WITH RECURSIVE sub (id, r) AS (
+    SELECT t.id, $1::bool FROM wiki_pages t WHERE t.id = $2::uuid
+    UNION ALL
+    SELECT c.id, sub.r OR c.restricted FROM wiki_pages c JOIN sub ON c.parent_id = sub.id
+)
+UPDATE wiki_activity a SET private = true FROM sub WHERE a.page_id = sub.id AND sub.r AND NOT a.private
+`
+
+type MarkWikiSubtreeActivityPrivateParams struct {
+	Restricted bool
+	ID         uuid.UUID
+}
+
+// Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2): the journal entries of
+// every node of the subtree that lies under a restricted node (restricted: the root's chain has
+// one) become private — the workspace journal cannot check a chain that is gone.
+func (q *Queries) MarkWikiSubtreeActivityPrivate(ctx context.Context, arg MarkWikiSubtreeActivityPrivateParams) error {
+	_, err := q.db.Exec(ctx, markWikiSubtreeActivityPrivate, arg.Restricted, arg.ID)
 	return err
 }
 
@@ -1676,6 +1791,30 @@ func (q *Queries) RestoreWikiSubtree(ctx context.Context, arg RestoreWikiSubtree
 	return items, nil
 }
 
+const retimeWikiTrash = `-- name: RetimeWikiTrash :exec
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM wiki_pages r WHERE r.id = $2::uuid AND r.trashed_at IS NOT NULL
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM wiki_pages c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+UPDATE wiki_pages w SET trashed_at = $1::timestamptz FROM sub WHERE w.id = sub.id
+`
+
+type RetimeWikiTrashParams struct {
+	TrashedAt time.Time
+	ID        uuid.UUID
+}
+
+// The sweeper detached a trashed page from someone else's expired trash root: it and what was
+// trashed with it get a trash time of their own (now), so the retention counts from here.
+func (q *Queries) RetimeWikiTrash(ctx context.Context, arg RetimeWikiTrashParams) error {
+	_, err := q.db.Exec(ctx, retimeWikiTrash, arg.TrashedAt, arg.ID)
+	return err
+}
+
 const revokeWikiLink = `-- name: RevokeWikiLink :execrows
 UPDATE wiki_links SET revoked_at = now() WHERE page_id = $1 AND revoked_at IS NULL
 `
@@ -1824,6 +1963,22 @@ func (q *Queries) SetWikiPageContent(ctx context.Context, arg SetWikiPageContent
 		&i.TrashedRoot,
 	)
 	return i, err
+}
+
+const setWikiPageOwner = `-- name: SetWikiPageOwner :exec
+UPDATE wiki_pages SET owner_id = $1, updated_by = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetWikiPageOwnerParams struct {
+	OwnerID *uuid.UUID
+	ID      uuid.UUID
+}
+
+// «Сделать меня владельцем» (addendum 2026-10-14): a former member's private page gets a new owner.
+func (q *Queries) SetWikiPageOwner(ctx context.Context, arg SetWikiPageOwnerParams) error {
+	_, err := q.db.Exec(ctx, setWikiPageOwner, arg.OwnerID, arg.ID)
+	return err
 }
 
 const setWikiTrashDays = `-- name: SetWikiTrashDays :exec

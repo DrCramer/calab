@@ -77,6 +77,7 @@ order: 2
 | `messageReactionAdd` · `messageReactionRemove` | да | реакции |
 | `typingStart` | по условию | «печатает» — только в комнатах из `SUBSCRIBE` |
 | `botCallback` | по условию | нажатие кнопки — только боту-автору сообщения |
+| `contactShared` | по условию | контакт человека по кнопке запроса — только этому боту (ADR-0100) |
 | `dmCreate` | да | новый DM с ботом |
 | `stickerPackCreate` · `stickerPackUpdate` · `stickerPackDelete` | да | стикерпаки пространства |
 | `readReceipt` | нет | отметки «прочитано» людей — ботам не отправляются |

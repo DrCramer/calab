@@ -271,7 +271,7 @@ function SettingsForm({ workspaceId, settings }: { workspaceId: string; settings
                 value={d.port}
                 inputMode="numeric"
                 placeholder={String(DEFAULT_SIP_PORT)}
-                className="w-20 shrink-0 tabular-nums"
+                className="w-20! shrink-0 tabular-nums"
                 aria-invalid={fieldErr['port'] ? true : undefined}
                 onChange={(e) => set('port', e.target.value.replace(/\D/g, '').slice(0, 5))}
               />

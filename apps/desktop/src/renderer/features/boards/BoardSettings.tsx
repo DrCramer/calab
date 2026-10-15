@@ -26,11 +26,11 @@ import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { useUi } from '../../stores/ui';
-import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
-import { accessLevelOf, accessSteps, compactDrafts, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { accessLevelOf, accessSteps, compactDrafts, isPrivateObject, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { planHas } from '../../lib/plan';
 import { isFullRole } from '../../lib/roles';
 import {
@@ -67,6 +67,7 @@ import { MemberPicker } from '../people/MemberPicker';
 import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { CommitInput } from '../settings/CommitInput';
 import { AccessLevelPicker } from '../workspace/AccessLevel';
+import { ChosenList, PrivateFixedRows, TakeOverButton, chosenIds, useOwnerSeesPrivate, type Chosen } from '../people/PrivateAccess';
 import { TriToggle } from '../workspace/RoomDialogs';
 import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
@@ -574,9 +575,14 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   const [selected, setSelected] = useState(`${PermissionTargetType.ROLE}:${memberRole}`);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
-  // A restricted board (ADR-0048): admins are plain members there — their role becomes a target; only the owner is fixed.
-  const restricted = board.restricted;
-  const targetable = useCallback((r: Pick<Role, 'builtin'>): boolean => (restricted ? r.builtin !== WorkspaceRole.OWNER : !isFullRole(r)), [restricted]);
+  // A private board (ADR-0058 addendum 2026-10-14): admins and the owner are plain members there —
+  // their roles become targets; the owner is fixed only while «Владелец видит приватное» is on.
+  const restricted = isPrivateObject(board);
+  const ownerFixed = useOwnerSeesPrivate(board.workspaceId);
+  const targetable = useCallback(
+    (r: Pick<Role, 'builtin'>): boolean => (restricted ? !(ownerFixed && r.builtin === WorkspaceRole.OWNER) : !isFullRole(r)),
+    [ownerFixed, restricted],
+  );
   const targets = useMemo(() => {
     const rs = roles.filter((r) => targetable(r) && r.builtin !== WorkspaceRole.GUEST).map((r) => ({ key: `${PermissionTargetType.ROLE}:${r.id}`, type: PermissionTargetType.ROLE, id: r.id, label: `@${roleName(r)}`, role: r }));
     const us = drafts.filter((d) => d.targetType === PermissionTargetType.USER).map((d) => ({ key: key(d), type: d.targetType, id: d.targetId, label: memberName(board.workspaceId, d.targetId), role: undefined }));
@@ -640,13 +646,26 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   }, [drafts, members, roles, targetable]);
   return (
     <>
-      {/* ADR-0048: Все участники / По списку / По списку, без администраторов (this tab is MANAGE_BOARD's). */}
-      <Card title={t('boards.access')} footer={board.isPrivate ? t('boards.set.privateHint') : undefined}>
-        <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} />
-        {restricted ? <TaskScopedCount boardId={board.id} /> : null}
+      {/* ADR-0058 addendum 2026-10-14: «Для всех» / «Только выбранные» (this tab is MANAGE_BOARD's). */}
+      <Card title={t('boards.access')} footer={restricted ? t('boards.set.privateHint') : undefined}>
+        <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} kind="board" workspaceId={board.workspaceId} />
+        {restricted ? (
+          <div className="flex flex-col gap-1 px-3 pb-2" data-testid="board-access-fixed">
+            <PrivateFixedRows workspaceId={board.workspaceId} creatorId={board.createdBy} isPrivate />
+            <TaskScopedCount boardId={board.id} />
+            <TakeOverButton
+              workspaceId={board.workspaceId}
+              itemOwnerId={board.createdBy}
+              isPrivate
+              name={board.name}
+              run={() => boardsApi.takeOver(board.id).then((r) => r.board && useBoards.getState().upsertBoard(r.board))}
+              testId="board-take-over"
+            />
+          </div>
+        ) : null}
       </Card>
-      <div className="flex gap-4" data-testid="board-access">
-        <div className="flex w-52 shrink-0 flex-col gap-0.5">
+      <div className="flex gap-4 mobile:flex-col" data-testid="board-access">
+        <div className="flex w-52 shrink-0 flex-col gap-0.5 mobile:w-full">
           {targets.map((x) => {
             const on = current?.key === x.key;
             const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
@@ -795,13 +814,22 @@ export function CreateBoardDialog({ workspaceId, onClose }: { workspaceId: strin
   const [name, setName] = useState('');
   const [boardKey, setKey] = useState('');
   const [emoji, setEmoji] = useState('📋');
-  const [priv, setPriv] = useState(false);
+  const [level, setLevel] = useState<AccessLevel>('all');
+  const [chosen, setChosen] = useState<Chosen[]>([]);
+  const priv = level === 'private';
   const [tpl, setTpl] = useState<BoardTemplate>(BoardTemplate.SIMPLE);
   const [busy, setBusy] = useState(false);
   const submit = (): void => {
     if (!name.trim()) return;
     setBusy(true);
-    void createBoard(workspaceId, { name: name.trim(), key: boardKey.trim().toUpperCase(), emoji, isPrivate: priv, template: tpl }).then((b) => {
+    void createBoard(workspaceId, {
+      name: name.trim(),
+      key: boardKey.trim().toUpperCase(),
+      emoji,
+      isPrivate: priv,
+      template: tpl,
+      ...(priv ? chosenIds(chosen) : {}),
+    }).then((b) => {
       setBusy(false);
       if (!b) return;
       onClose();
@@ -861,7 +889,15 @@ export function CreateBoardDialog({ workspaceId, onClose }: { workspaceId: strin
             </label>
           ))}
         </fieldset>
-        <Switch checked={priv} onChange={setPriv} label={t('boards.set.private')} hint={t('boards.set.privateHint')} />
+        {/* Two levels (ADR-0058 addendum 2026-10-14): «Для всех» / «Только выбранные» with the people and roles to add. */}
+        <div className="flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]">
+          <AccessLevelPicker value={level} onChange={setLevel} disabled={busy} kind="board" workspaceId={workspaceId} />
+          {priv ? (
+            <div className="px-3 pb-3">
+              <ChosenList workspaceId={workspaceId} value={chosen} onChange={setChosen} noGuests testId="board-create-chosen" />
+            </div>
+          ) : null}
+        </div>
       </form>
     </Modal>
   );

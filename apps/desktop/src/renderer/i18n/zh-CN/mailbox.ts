@@ -225,9 +225,10 @@ export const zhMailbox: DictShape<typeof ruMailbox> = {
   'mbox.multi.move': '移动 {letters}',
   // 发送到聊天 (owner 12.10)
   'mbox.chat.title': '发送到聊天…',
-  'mbox.chat.hint': '以你的名义发送，邮件本身作为 .eml 文件附上',
-  'mbox.chat.tooBig': '邮件过大，只发送正文',
-  'mbox.chat.noAttach': '（未附上邮件文件：此聊天不允许发送文件）',
+  'mbox.chat.hint': '将以你的名义发送：邮件正文及附件',
+  'mbox.chat.cut': '（邮件已截断）',
+  'mbox.chat.skipped': '未发送：{names}',
+  'mbox.chat.noAttach': '（未附上邮件附件：此聊天不允许发送文件）',
   'mbox.chat.sent': '已发送到 {name}',
   'mbox.chat.sentMany': { other: '已发送到 {n} 个聊天' },
   'mbox.chat.open': '打开',

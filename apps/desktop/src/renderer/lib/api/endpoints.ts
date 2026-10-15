@@ -68,6 +68,8 @@ import {
   CreateRoomResponseSchema,
   CreateTempRoomRequestSchema,
   TempRoomResponseSchema,
+  RestoreTempRoomResponseSchema,
+  MakeRoomPermanentResponseSchema,
   ListRoomsResponseSchema,
   SetRoomOrderRequestSchema,
   SetRoomOrderResponseSchema,
@@ -140,6 +142,7 @@ import {
   MessageSchema,
   CreateMessageInteractionRequestSchema,
   CreateMessageInteractionResponseSchema,
+  ShareContactResponseSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
   ForwardMessageRequestSchema,
@@ -156,6 +159,7 @@ import {
   UpdateVoiceStatusRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
+  ListWorkspaceAuditResponseSchema,
   UploadFileResponseSchema,
   VerifyEmailRequestSchema,
   VerifyEmailResponseSchema,
@@ -264,6 +268,9 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateWorkspaceRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}`, UpdateWorkspaceResponseSchema, body(UpdateWorkspaceRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/workspaces/${id}`),
+    /** The journal of private-access decisions (addendum 2026-10-14): the owner or VIEW_JOURNALS; newest first. */
+    audit: (id: string, before = '', signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${id}/audit${before ? `?before=${encodeURIComponent(before)}` : ''}`, ListWorkspaceAuditResponseSchema, undefined, signal),
     joinOpen: (id: string) => call('POST', `/api/workspaces/${id}/join`, JoinWorkspaceResponseSchema),
     /** My notification settings of the workspace; replaces them (MENTIONS without mutedUntil = default). */
     setNotifications: (id: string, init: MessageInitShape<typeof UpdateWorkspaceNotificationSettingsRequestSchema>) =>
@@ -486,7 +493,11 @@ export const api = {
      */
     createTemp: (workspaceId: string, init: MessageInitShape<typeof CreateTempRoomRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/rooms/temp`, TempRoomResponseSchema, body(CreateTempRoomRequestSchema, init)),
-    /** Closed temporary rooms (ADR-0044), newest first: MANAGE_ROOM at workspace level. */
+    /** An archived temporary room goes live again for its original lifetime (ADR-0044 addendum 14.10): the creator / MANAGE_ROOM; 409 TEMP_ROOM_LIMIT. */
+    restoreTemp: (id: string) => call('POST', `/api/rooms/${id}/restore`, RestoreTempRoomResponseSchema),
+    /** A temporary room (archived or live) becomes a regular one: workspace MANAGE_ROOM (the right to create rooms). */
+    makePermanent: (id: string) => call('POST', `/api/rooms/${id}/make-permanent`, MakeRoomPermanentResponseSchema),
+    /** Closed temporary rooms (ADR-0044), newest first: the ones I may manage (MANAGE_ROOM there or I created them). */
     archived: (workspaceId: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/rooms?archived=1`, ListRoomsResponseSchema, undefined, signal),
     get: (id: string) => call('GET', `/api/rooms/${id}`, GetRoomResponseSchema),
@@ -496,6 +507,8 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateRoomRequestSchema>) =>
       call('PATCH', `/api/rooms/${id}`, UpdateRoomResponseSchema, body(UpdateRoomRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/rooms/${id}`),
+    /** «Сделать меня владельцем» of a former member's private room: the owner with «Владелец видит приватное» (403 / 409 otherwise). */
+    takeOver: (id: string) => call('POST', `/api/rooms/${id}/take-over`, UpdateRoomResponseSchema),
     /** Voice rooms: the status line of the current call (≤ 60 chars; '' clears); everyone gets ROOM_UPDATE. */
     setVoiceStatus: (id: string, status: string) =>
       call('PATCH', `/api/rooms/${id}/voice-status`, UpdateRoomResponseSchema, body(UpdateVoiceStatusRequestSchema, { status })),
@@ -571,6 +584,9 @@ export const api = {
     get: (roomId: string, id: string) => call('GET', `/api/rooms/${roomId}/messages/${id}`, MessageSchema),
     interact: (id: string, p: MessageInitShape<typeof CreateMessageInteractionRequestSchema>) =>
       call('POST', `/api/messages/${id}/interactions`, CreateMessageInteractionResponseSchema, body(CreateMessageInteractionRequestSchema, p)),
+    /** Confirms a REQUEST_CONTACT button (ADR-0100): the server sends my contact from the profile. */
+    shareContact: (id: string, buttonId: string) =>
+      call('POST', `/api/messages/${id}/buttons/${encodeURIComponent(buttonId)}/contact`, ShareContactResponseSchema),
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
       call('GET', `/api/rooms/${roomId}/messages${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
     create: (roomId: string, init: MessageInitShape<typeof CreateMessageRequestSchema>) =>

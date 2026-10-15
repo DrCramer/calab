@@ -535,7 +535,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id IS NULL
 `
 
 // Bytes a user uploaded for DMs (user-scoped, not an avatar) not attached to a message yet.
-func (q *Queries) UnattachedUserBytes(ctx context.Context, uploaderID uuid.UUID) (int64, error) {
+func (q *Queries) UnattachedUserBytes(ctx context.Context, uploaderID *uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, unattachedUserBytes, uploaderID)
 	var column_1 int64
 	err := row.Scan(&column_1)

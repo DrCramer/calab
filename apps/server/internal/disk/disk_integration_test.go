@@ -294,8 +294,9 @@ func TestDiskPermissionsMatrix(t *testing.T) {
 	if w := e.uploadAs(e.guest, team.GetId(), "g.txt", 5); w.Code != 403 {
 		t.Fatalf("guest upload with VIEW only: %d %s", w.Code, w.Body.String())
 	}
-	e.must(200, e.admin, "GET", item(doc.GetId()), nil, nil)
-	e.must(200, e.owner, "GET", item(doc.GetId()), nil, nil)
+	// Nor the administrator and the workspace owner (addendum 2026-10-14).
+	e.must(404, e.admin, "GET", item(doc.GetId()), nil, nil)
+	e.must(404, e.owner, "GET", item(doc.GetId()), nil, nil)
 	// Bob's own file in the restricted folder stays his (the owner always sees his items).
 	var bobs v1.ListDiskItemsResponse
 	e.must(200, e.alice, "GET", "/api/workspaces/"+e.ws.String()+"/disk/items?parent="+team.GetId(), nil, &bobs)
@@ -702,5 +703,51 @@ func TestDiskTrashSweep(t *testing.T) {
 	e.must(200, e.bob, "GET", "/api/workspaces/"+e.ws.String()+"/disk/settings", nil, &st)
 	if st.GetTrashDays() != 0 {
 		t.Fatalf("retention off: %v", &st)
+	}
+}
+
+// TestDiskUsageBreakdown: a file is counted once, priority disk > chat > boards > wiki; the rest is «other».
+func TestDiskUsageBreakdown(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.upload(e.alice, "", "d.bin", 10)
+	// Links to messages / tasks / pages are inserted with FK triggers off (the rows they point
+	// at are irrelevant to the sums).
+	tx, err := e.d.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+		t.Skipf("needs a superuser test database: %v", err)
+	}
+	file := func(size int) uuid.UUID {
+		id := uuid.New()
+		if _, err := tx.Exec(ctx, `INSERT INTO files (id, workspace_id, uploader_id, key, name, mime, size, sha256) VALUES ($1, $2, $3, 'k', 'f', 'x/y', $4, 'h')`,
+			id, e.ws, e.alice, size); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	exec := func(sql string, args ...any) {
+		if _, err := tx.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chat, both, board, wikiLink, wikiCover := file(100), file(1000), file(200), file(300), file(400)
+	file(500) // in no feature: «other»
+	exec(`INSERT INTO message_attachments (message_id, file_id, position) VALUES ($1, $2, 0), ($1, $3, 1)`, uuid.New(), chat, both)
+	exec(`INSERT INTO task_attachments (task_id, file_id) VALUES ($1, $2), ($1, $3)`, uuid.New(), board, both)
+	exec(`INSERT INTO wiki_page_files (page_id, file_id) VALUES ($1, $2), ($1, $3)`, uuid.New(), wikiLink, board)
+	exec(`INSERT INTO wiki_pages (id, workspace_id, title, cover_file_id) VALUES ($1, $2, 'p', $3)`, uuid.New(), e.ws, wikiCover)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.d.Pool.Exec(ctx, `UPDATE workspaces SET storage_used_bytes = 2510 WHERE id = $1`, e.ws); err != nil {
+		t.Fatal(err)
+	}
+	u := e.usage()
+	if u.GetDiskBytes() != 10 || u.GetChatBytes() != 1100 || u.GetBoardsBytes() != 200 || u.GetWikiBytes() != 700 || u.GetOtherBytes() != 500 {
+		t.Fatalf("usage %v", u)
 	}
 }

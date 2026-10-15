@@ -324,6 +324,8 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		AllowSelfNickname: w.AllowSelfNickname,
 		TimeFormat:        timeFormatFromDB(w.TimeFormat),
 		SipEnabled:        w.SipEnabled,
+		TempArchiveDays:   uint32(w.TempArchiveDays), //nolint:gosec // DB CHECK bounds it
+		OwnerSeesPrivate:  w.OwnerSeesPrivate,
 	}
 }
 
@@ -630,7 +632,7 @@ func File(f sqlc.File) *v1.FileMeta {
 	m := &v1.FileMeta{
 		Id:          f.ID.String(),
 		WorkspaceId: idp(f.WorkspaceID),
-		UploaderId:  f.UploaderID.String(),
+		UploaderId:  idp(f.UploaderID),
 		Name:        f.Name,
 		Mime:        f.Mime,
 		Size:        uint64(max(f.Size, 0)),
@@ -691,14 +693,24 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 // MessageKindSystem is messages.kind of a system message (ADR-0025).
 const MessageKindSystem = "system"
 
-// RoomFlags returns the permission flags of a wire room for perm.ComputeIn (restricted,
-// ADR-0029; private temporary and its creator, ADR-0078).
+// RoomFlags returns the permission flags of a wire room for perm.ComputeIn (private and its
+// creator, ADR-0078 and its addendum 2026-10-14).
 func RoomFlags(r *v1.Room) perm.RoomFlags {
-	f := perm.RoomFlags{Restricted: r.GetRestricted(), PrivateTemp: r.GetIsPrivate() && r.GetExpiresAt() != nil}
+	var by *uuid.UUID
 	if id, err := uuid.Parse(r.GetCreatedBy()); err == nil {
-		f.CreatedBy = id
+		by = &id
 	}
-	return f
+	return perm.Flags(r.GetRestricted(), r.GetIsPrivate(), r.GetExpiresAt() != nil, by)
+}
+
+// BoardFlags returns the permission flags of a wire board for perm.ComputeBoardIn (private and
+// its creator, ADR-0058 addendum 2026-10-14).
+func BoardFlags(b *v1.Board) perm.BoardFlags {
+	var by *uuid.UUID
+	if id, err := uuid.Parse(b.GetCreatedBy()); err == nil {
+		by = &id
+	}
+	return perm.BoardFlagsOf(b.GetIsPrivate(), b.GetRestricted(), by)
 }
 
 // ProtoOverrideTargets converts wire overrides for perm.ComputeIn.

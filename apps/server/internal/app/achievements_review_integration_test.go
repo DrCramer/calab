@@ -292,7 +292,7 @@ func TestAchievementsAnnouncementRoom(t *testing.T) {
 			if k := rng.IntN(len(cats) + 1); k < len(cats) {
 				cat = &cats[k]
 			}
-			if _, err := testDB.Pool.Exec(ctx, `UPDATE rooms SET category_id = $2, position = $3, is_private = $4,
+			if _, err := testDB.Pool.Exec(ctx, `UPDATE rooms SET category_id = $2, position = $3, is_private = $4, restricted = $4,
 				archived_at = CASE WHEN $5 THEN now() END WHERE id = $1`, r, cat, rng.IntN(3), rng.IntN(3) == 0, rng.IntN(8) == 0); err != nil {
 				t.Fatal(err)
 			}
