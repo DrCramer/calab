@@ -55,6 +55,7 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.col.owner': '所有者',
   'disk.col.changed': '修改时间',
   'disk.col.size': '大小',
+  'disk.col.actions': '操作',
   'disk.col.trashedBy': '删除者',
   'disk.col.trashedAt': '删除时间',
   'disk.empty.root': '网盘还是空的',

@@ -55,6 +55,7 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.col.owner': 'Propietario',
   'disk.col.changed': 'Modificado',
   'disk.col.size': 'Tamaño',
+  'disk.col.actions': 'Acciones',
   'disk.col.trashedBy': 'Eliminado por',
   'disk.col.trashedAt': 'Eliminado',
   'disk.empty.root': 'El Disco está vacío',

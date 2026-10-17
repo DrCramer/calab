@@ -1,7 +1,7 @@
 import { BILLING_BITS } from '@calaba/protocol';
 import { TriangleAlert } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
-import { Button, Tip, cx } from '../../components/ui';
+import { Button, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { STORAGE_PACKS, usageBar } from '../../lib/disk';
 import { fmt } from '../../lib/format';
@@ -124,14 +124,13 @@ export function BuyStorage({ workspaceId }: { workspaceId: string }): ReactNode 
           <div key={p.sku} className="flex min-h-10 items-center gap-3 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0" data-testid="disk-pack">
             <span className="min-w-0 flex-1 font-medium">{t(`disk.pack.${p.gb}` as const)}</span>
             <span className="tabular-nums text-muted">{t(`disk.pack.price.${p.gb}` as const)}</span>
-            <Tip label={t('disk.buy.soon')}>
-              {/* A disabled button gets no pointer events: the wrapper carries the tooltip. */}
-              <span tabIndex={0} className="inline-flex rounded-full">
-                <Button size="sm" variant="secondary" disabled>
-                  {t('disk.buy.add')}
-                </Button>
-              </span>
-            </Tip>
+            {/* The reason is a visible label, not a tooltip a disabled button cannot show. */}
+            <span className="text-caption text-muted" data-testid="disk-pack-soon">
+              {t('disk.buy.soon')}
+            </span>
+            <Button size="sm" variant="secondary" disabled>
+              {t('disk.buy.add')}
+            </Button>
           </div>
         ))}
       </div>

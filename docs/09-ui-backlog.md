@@ -387,13 +387,11 @@ must be recorded on supported iOS versions; INPerson donation alone is not proof
 
 ### Desktop section rail follow-ups (ADR-0074, 07.10)
 
-- «Доски»: the column header «+» (new board) duplicates the «+» beside «ДОСКИ» inside the shared BoardsList (phone uses it too) — drop one.
 - The workspace switcher has no drag-reorder (the old rail had none either); the order is the server order.
 - Pre-existing, not ADR-0074: the visual mock opens «Маркетинг» first (boards-list, boards-kanban, boards-flow expect CAL); calendar-day «editing a selected meeting» drags a room from the list, which the calendar section hides since 02.10.
 
 ### UI review 3.0 (minor, 06.10)
 
-- Calendar event card: the trash icon of «Отменить встречу» looks smaller than the pencil of «Изменить» (both `size-3.5`, the Trash2 glyph is lighter) — align the two button icons.
 - Room voice banner (phone): the banner overlays the top of the «Это начало комнаты» icon when the feed is short — pad the feed under the banner.
 - Voice room row: the limit pill renders «02 / 04» (zero-padded `pad2`) on phone and desktop; check with the owner whether leading zeros are wanted outside the Discord-style segmented pill.
 - Desktop visual spec is stale in places after 3.0: `settings-stickers*` look for a «Стикеры» tab (now inside «Библиотека»), `sidebar-create-menu` expects «Создать комнату» in the create menu, `dm-chat` waits for `aside` on the DM screen; voice screens need the dev LiveKit reachable (`livekit-server --dev --node-ip 127.0.0.1` locally — with a VPN interface the signal start hung ~60 s).
@@ -416,13 +414,7 @@ must be recorded on supported iOS versions; INPerson donation alone is not proof
 2026-10-14 · Диск v1 QA (скриншоты: десктоп dark 960×600 + light, iPhone 14)
 - Диск v1 QA · minor · телефон, карточка «⋯» шапки: пункты радио-групп без иконок сдвинуты влево относительно «Корзина/История/Место» — два отступа в одной карточке. Фикс: общий отступ или иконки-заглушки.
 - Диск v1 QA · minor · телефон, «Переместить»: список подпапок в рамке пустой на две трети, кнопка «Переместить сюда» в корне неактивна без пояснения. Фикс: подпись «Уже здесь» или скрыть неактивную кнопку.
-- Диск v1 QA · minor · десктоп, меню элемента у нижнего края окна (960×600): последний пункт «В корзину» вплотную к краю окна, нет отступа 8 px (`collisionPadding`).
-- Диск v1 QA · minor · десктоп, диалоги диска: «Ссылка»/«Место» шириной 440, «Доступ»/«История» — 560; один тип карточек, разные ширины. Фикс: одна ширина или правило в docs/08.
-- Диск v1 QA · minor · десктоп, «Доступ»: подпись «Владелец» не выровнена по правому краю с «×» и селектами строк ниже.
-- Диск v1 QA · minor · десктоп, «Корзина»: нет срока «удалится через N дн.» при включённой автоочистке; колонка действий без заголовка.
-- Диск v1 QA · minor · десктоп, «Тариф»: в строке «Участников пространства» число «4» поднято над строкой (под ним полоса), у соседних строк — по центру; высота строки скачет 80/90 px.
-- Диск v1 QA · minor · десктоп, «Докупить место»: кнопки «Подключить» неактивны с низким контрастом, причина («Скоро») видна только по наведению; добавить видимую подпись.
-- Диск v1 QA · minor · десктоп, плитки на 960: сетка прижата к левому краю (поле слева 45, справа 90 px) — распределять колонки по ширине.
+- Диск v1 QA · minor · десктоп, «Корзина»: нет срока «удалится через N дн.» при включённой автоочистке (`trashDays` приходит только из `GET …/disk/settings`, в списке корзины его нет — нужен запрос или поле в листинге).
 - Диск v1 QA · не проверено: «История» файла и диска пуста в моке («Истории пока нет»), реальная вёрстка событий не снята; состояние «≥90 % места» (`disk-meter-warn`) и «Не хватает места» (413) не снимались.
 
 ## Docs site QA (2026-10-14)
@@ -437,6 +429,4 @@ must be recorded on supported iOS versions; INPerson donation alone is not proof
 - Вики v1 QA · minor · телефон, диалог «Поделиться»: длинный заголовок «Поделиться «Справочник команды»» переносится на две строки с крестиком по центру блока, а не по первой строке.
 - Вики v1 QA · не проверено: каретки двух соавторов видны только на десктопе (на телефоне — счётчик, не снимался); режим «Только чтение» снят только на странице из корзины; светлая тема — только страница (не диалоги); меню «⋯» строки на корне вики и публичная страница на телефоне в светлой теме не снимались; пилюля «Нет связи» — через остановку мок-сервера.
 - Просмотр PDF (ADR-0103) · minor · десктоп: у PDF без `/Title` тулбар встроенного просмотрщика показывает случайный id `blob:`-URL, а его собственная кнопка «Скачать» сохраняет файл под этим id (наша «Скачать» в шапке — с настоящим именем); варианты — `#toolbar=0` + свои зум/страницы или подмена имени.
-- Просмотр PDF / лайтбокс · minor · Electron: заголовок окна (поиск, бейдж входящих, настройки) просвечивает сквозь затемнение 82 % под панелью просмотрщика; красный бейдж оказывается прямо под «Скачать». Затемнить полосу заголовка плотнее или поднять панель выше слоя тайтлбара.
-- Вложения · minor: в чате и на Диске PDF по клику по-прежнему скачивается — перевести на `openAttachment` (просмотр PDF), как вложения задачи.
 - Список задач / «обновлено» · minor: возраст («2 ч», «5 дн») считается при рендере строки и не тикает по таймеру — устаревает, пока строка не перерисуется; общий грубый таймер (раз в минуту) добавим, если заметят.

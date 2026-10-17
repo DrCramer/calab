@@ -37,7 +37,9 @@ export function ViewerBar({ title, meta, children }: { title: string; meta?: str
     <div
       className={cx(
         'flex shrink-0 items-center gap-2 px-4 text-[color:var(--color-on-accent)]',
-        electron ? 'drag h-[var(--titlebar-height)]' : 'h-12',
+        // Electron: a second dim layer over the 82 % backdrop so the window title bar (search, badges)
+        // under the strip is practically hidden instead of showing through.
+        electron ? 'drag h-[var(--titlebar-height)] bg-[rgb(0_0_0/70%)]' : 'h-12',
         mac && 'pl-[80px]',
       )}
       style={electron ? { paddingRight: 'calc(16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' } : undefined}

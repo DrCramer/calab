@@ -56,6 +56,7 @@ export const ruDisk = {
   'disk.col.owner': 'Владелец',
   'disk.col.changed': 'Изменён',
   'disk.col.size': 'Размер',
+  'disk.col.actions': 'Действия',
   'disk.col.trashedBy': 'Удалил',
   'disk.col.trashedAt': 'Удалено',
   'disk.empty.root': 'На диске пока пусто',

@@ -352,7 +352,8 @@ function CancelButton({ ev, occ }: { ev: CalendarEvent; occ: string }): ReactNod
   if (ev.repeat === EventRepeat.UNSPECIFIED) {
     return (
       <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" onClick={() => void cancelWithConfirm(occ)} data-testid="event-cancel">
-        <Trash2 className="size-3.5" aria-hidden />
+        {/* Trash2 draws lighter than Pencil at the same box: one step larger matches the pair optically. */}
+        <Trash2 className="size-4" aria-hidden />
         {t('cal.cancel')}
       </Button>
     );
@@ -361,7 +362,8 @@ function CancelButton({ ev, occ }: { ev: CalendarEvent; occ: string }): ReactNod
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
         <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" data-testid="event-cancel">
-          <Trash2 className="size-3.5" aria-hidden />
+          {/* Trash2 draws lighter than Pencil at the same box: one step larger matches the pair optically. */}
+        <Trash2 className="size-4" aria-hidden />
           {t('cal.cancel')}
         </Button>
       </Dropdown.Trigger>

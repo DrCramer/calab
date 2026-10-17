@@ -92,7 +92,7 @@ function Meter({ used, limit }: { used: number; limit: number }): ReactNode {
   if (limit <= 0) return null;
   const share = Math.min(1, used / limit);
   return (
-    <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-[var(--color-fill-hover)]" aria-hidden>
+    <span className="absolute inset-x-0 top-full mt-0.5 block h-1 overflow-hidden rounded-full bg-[var(--color-fill-hover)]" aria-hidden>
       <span className={cx('block h-full rounded-full', share >= 0.9 ? 'bg-warn' : 'bg-accent')} style={{ width: `${Math.max(2, share * 100)}%` }} />
     </span>
   );
@@ -252,7 +252,7 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
                 <span role="cell" className="min-w-0 truncate mobile:col-span-2 mobile:whitespace-normal" data-settings-label>
                   {r.label}
                 </span>
-                <span role="cell" className={cx('text-right tabular-nums text-muted mobile:text-left', noUse && 'mobile:hidden')}>
+                <span role="cell" className={cx('relative text-right tabular-nums text-muted mobile:text-left', noUse && 'mobile:hidden')}>
                   {r.used}
                   {r.meter && !(r.storage && diskMeter) ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
                 </span>

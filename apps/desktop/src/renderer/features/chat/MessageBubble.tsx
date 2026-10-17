@@ -12,13 +12,13 @@ import { THUMB_LARGE, thumbWidthPath, wantsLargeThumb } from '../../lib/thumbs';
 import { fmt, toDate, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
-import { platform } from '../../platform';
+import { filePreview } from '../../lib/filePreview';
+import { openAttachment } from '../../services/files';
 import { can } from '../../lib/permissions';
 import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
 import { messageById, useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
 import { useReadReceipt } from '../../stores/readReceipts';
 import { useSession } from '../../stores/session';
-import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { memberName, useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
@@ -884,11 +884,9 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
 }
 
 function FileRow({ f }: { f: FileMeta }): ReactNode {
-  const download = (): void =>
-    void platform.files.download({ fileId: f.id, name: f.name }).then(
-      () => toast.success(t('chat.downloaded', { name: f.name })),
-      (e: unknown) => toast.fail(e, t('err.ctx.download')),
-    );
+  // A PDF opens in the viewer (ADR-0103, its header has «Скачать»); anything else is saved.
+  const pdf = filePreview(f, useUi.getState().phone.on) === 'pdf';
+  const download = (): void => openAttachment(f, [f]);
   return (
     <div className="group/file flex min-w-[min(220px,100%)] items-center gap-3 py-1">
       <Tip label={t('chat.download')}>
@@ -898,8 +896,8 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
           aria-label={`${t('chat.download')} ${f.name}`}
           className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]"
         >
-          <FileText className="size-5 group-hover/file:hidden" aria-hidden />
-          <Download className="hidden size-5 group-hover/file:block" aria-hidden />
+          <FileText className={cx('size-5', !pdf && 'group-hover/file:hidden')} aria-hidden />
+          {pdf ? null : <Download className="hidden size-5 group-hover/file:block" aria-hidden />}
         </button>
       </Tip>
       <div className="min-w-0 flex-1">

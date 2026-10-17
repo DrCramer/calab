@@ -226,7 +226,9 @@ function OwnerRow({ workspaceId, userId }: { workspaceId: string; userId: string
     <div className="flex h-11 items-center gap-2.5 border-b border-[var(--color-card-line)] px-3">
       <MemberAvatar workspaceId={workspaceId} userId={userId} size={24} />
       <span className="min-w-0 flex-1 truncate text-body">{name}</span>
-      <span className="text-caption text-muted">{t('disk.owner')}</span>
+      {/* Same columns as TargetRow: the label ends where the selects end, a spacer holds the «×» slot. */}
+      <span className="w-36 shrink-0 pr-2.5 text-right text-caption text-muted">{t('disk.owner')}</span>
+      <span className="size-7 shrink-0 mobile:tap-size" aria-hidden />
     </div>
   );
 }

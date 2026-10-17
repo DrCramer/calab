@@ -27,6 +27,7 @@ import { t } from '../i18n';
 import { ApiError, body, call, callEmpty, qs } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { fmt } from '../lib/format';
+import { filePreview } from '../lib/filePreview';
 import { pushOnTab, type PhoneScreen } from '../lib/phoneNav';
 import { uploadInto } from '../lib/api/endpoints';
 import { folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
@@ -415,7 +416,7 @@ export function downloadItem(item: DiskItem): void {
 
 /**
  * «Открыть»: a folder opens, a picture goes to the Lightbox with the other pictures of the
- * listing (←/→), a video to the player card, anything else is downloaded.
+ * listing (←/→), a video to the player card, a PDF to the PDF viewer, anything else is downloaded.
  */
 export function openItem(item: DiskItem, siblings: readonly string[] = []): void {
   if (isFolder(item)) {
@@ -439,6 +440,11 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
   }
   if (kind === 'video') {
     useDiskUi.getState().openDialog({ kind: 'preview', itemId: item.id });
+    return;
+  }
+  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment; the rest is saved.
+  if (item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf') {
+    useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size } });
     return;
   }
   downloadItem(item);

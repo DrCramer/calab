@@ -402,11 +402,10 @@ function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; gue
   const add = boardsOn ? (
     boardCreator ? (
       <>
-        {/* «Новая категория»: quiet, left of the accent «+» (owner, 07.10). */}
         <IconButton label={t('boards.cat.new')} onClick={() => setNewCat(true)} data-testid="board-category-new">
           <FolderPlus className="size-[18px]" strokeWidth={1.75} aria-hidden />
         </IconButton>
-        <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
+        {/* «Новая доска» lives in BoardsList («+ Доска», shared with the phone): no second «+» here. */}
         {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
       </>
     ) : null

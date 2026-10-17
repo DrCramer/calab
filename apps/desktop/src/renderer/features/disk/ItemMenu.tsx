@@ -91,7 +91,7 @@ export function ItemContextMenu({ id, children }: { id: string; children: ReactN
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         {open ? (
-          <ContextMenu.Content className={menuBox} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="disk-item-menu">
+          <ContextMenu.Content className={menuBox} collisionPadding={8} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="disk-item-menu">
             <Entries id={id} parts={CTX} />
           </ContextMenu.Content>
         ) : null}

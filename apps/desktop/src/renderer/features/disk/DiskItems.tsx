@@ -91,7 +91,7 @@ export function DiskListing({ workspaceId, folderId, trash }: { workspaceId: str
       ) : view === 'list' ? (
         <List ids={ids} workspaceId={workspaceId} />
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,160px)] gap-2 px-4 pb-6 pt-3" role="list" aria-label={t('disk.section')} data-testid="disk-tiles">
+        <div className="grid grid-cols-[repeat(auto-fill,160px)] justify-between gap-2 px-4 pb-6 pt-3" role="list" aria-label={t('disk.section')} data-testid="disk-tiles">
           {ids.map((id) => (
             <Tile key={id} id={id} />
           ))}
@@ -372,7 +372,9 @@ function TrashList({ ids }: { ids: readonly string[] }): ReactNode {
         <span role="columnheader" className="text-right">
           {t('disk.col.size')}
         </span>
-        <span aria-hidden className="w-[148px]" />
+        <span role="columnheader" className="w-[148px] text-right">
+          {t('disk.col.actions')}
+        </span>
       </div>
       {ids.map((id) => (
         <TrashRow key={id} id={id} />
