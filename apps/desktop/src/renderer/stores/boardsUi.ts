@@ -91,6 +91,9 @@ interface BoardsUiState {
   /** The task panel's «Наблюдатели» section expanded (collapsed by default), remembered. */
   watchersOpen: boolean;
   setWatchersOpen: (v: boolean) => void;
+  /** The open task's properties column width (TaskView), remembered; PROPS_MIN–PROPS_MAX. */
+  propsWidth: number;
+  setPropsWidth: (w: number) => void;
 
   setActive: (on: boolean) => void;
   toggle: () => void;
@@ -108,6 +111,12 @@ interface BoardsUiState {
   setFilterOpen: (v: boolean) => void;
   setHelpOpen: (v: boolean) => void;
 }
+
+/** The task view's properties column: default and bounds (px). */
+export const PROPS_DEFAULT = 300;
+export const PROPS_MIN = 240;
+export const PROPS_MAX = 480;
+const clampPropsWidth = (w: number): number => Math.round(Math.max(PROPS_MIN, Math.min(PROPS_MAX, w)));
 
 let menuSeq = 0;
 
@@ -149,6 +158,8 @@ export const useBoardsUi = create<BoardsUiState>()(
       setActivityTab: (activityTab) => set({ activityTab }),
       watchersOpen: false,
       setWatchersOpen: (watchersOpen) => set({ watchersOpen }),
+      propsWidth: PROPS_DEFAULT,
+      setPropsWidth: (w) => set({ propsWidth: clampPropsWidth(w) }),
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
       toggle: () => set((s) => (s.active ? { active: false, filterOpen: false, helpOpen: false, menu: null } : { active: true })),
       openBoard: (wsId, boardId) =>
@@ -175,7 +186,7 @@ export const useBoardsUi = create<BoardsUiState>()(
     {
       name: 'calaba-boards-ui',
       version: 1,
-      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, myCompletion: s.myCompletion, mySort: s.mySort, myGroup: s.myGroup, myFilter: s.myFilter, lastBoard: s.lastBoard, activityTab: s.activityTab, collapsedCats: s.collapsedCats, watchersOpen: s.watchersOpen }),
+      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, myCompletion: s.myCompletion, mySort: s.mySort, myGroup: s.myGroup, myFilter: s.myFilter, lastBoard: s.lastBoard, activityTab: s.activityTab, collapsedCats: s.collapsedCats, watchersOpen: s.watchersOpen, propsWidth: s.propsWidth }),
       // A stored value from an older / foreign build must not break the panel.
       merge: (stored, cur) => {
         // `panelWide` (the side panel's ⌘\, gone in 3.4.1) of an older build is dropped.
@@ -192,6 +203,7 @@ export const useBoardsUi = create<BoardsUiState>()(
           activityTab: migrateActivityTab(p.activityTab),
           collapsedCats: cats,
           watchersOpen: p.watchersOpen === true,
+          propsWidth: typeof p.propsWidth === 'number' && Number.isFinite(p.propsWidth) ? clampPropsWidth(p.propsWidth) : PROPS_DEFAULT,
         };
       },
     },

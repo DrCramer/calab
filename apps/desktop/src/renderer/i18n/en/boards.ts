@@ -374,6 +374,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.nAssignees': 'Assignees: {n}',
   'boards.subscribe': 'Subscribe',
   'boards.unsubscribe': 'Unsubscribe',
+  'boards.propsResize': 'Properties column width',
   'boards.properties': 'Properties',
   'boards.assignees': 'Assignees',
   'boards.addAssignee': 'Add',

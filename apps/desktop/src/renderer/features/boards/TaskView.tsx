@@ -3,12 +3,13 @@ import { BoardFeature, type Task } from '@calaba/protocol';
 import { Bell, BellOff, ChevronDown, ChevronRight, ChevronUp, Hash, Link2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Bar } from '../../components/Bar';
+import { ResizeHandle } from '../../components/ResizeHandle';
 import { IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { featureOn } from '../../lib/boards/features';
 import { copyTaskKey, copyTaskLink, loadTask, moveTaskToBoard, openBoard, setSubscription, useTaskDetails } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
-import { MY_TASKS, prefsOf, useBoardsUi } from '../../stores/boardsUi';
+import { MY_TASKS, PROPS_DEFAULT, PROPS_MAX, PROPS_MIN, prefsOf, useBoardsUi } from '../../stores/boardsUi';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { menuBox, menuItem } from '../shell/menu';
@@ -30,6 +31,9 @@ import { WatchersSection } from './Watchers';
  * order of the view the task came from (taskOrder.ts). Body: the content column (title,
  * description, subtasks, checklists, activity, composer) and the properties column on the right.
  */
+/** The main column never gets narrower than this (px); keep in sync with the aside's max-w. */
+const MAIN_MIN = 480;
+
 export function TaskView({ taskId, boardId, workspaceId, boardRef }: { taskId: string; boardId: string; workspaceId: string; boardRef: RefObject<HTMLElement | null> }): ReactNode {
   const task = useBoards((s) => s.tasks[taskId]);
   const root = useRef<HTMLElement>(null);
@@ -195,8 +199,11 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
     if (scroller.current) scroller.current.scrollTop = 0;
   }, [task.id]);
   const commentsOff = !on(BoardFeature.COMMENTS);
+  const propsWidth = useBoardsUi((s) => s.propsWidth);
+  const root = useRef<HTMLDivElement>(null);
+  const column = useRef<HTMLElement>(null);
   return (
-    <div className="flex min-h-0 flex-1">
+    <div ref={root} className="flex min-h-0 flex-1">
       {/* Main column: the content scrolls, the composer stays pinned under it (as in the side panel). */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div ref={scroller} className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="task-scroll">
@@ -229,7 +236,25 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
           </div>
         ) : null}
       </div>
-      <aside className="scrollbar-thin flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-line px-3 pb-6 pt-2 [&_[data-prop-label]]:w-[88px]" aria-label={t('boards.properties')} data-testid="task-props-column">
+      {/* The handle's line is the column border. While dragging only the column's style is written;
+          the store (and the persisted value) is set on release. */}
+      <ResizeHandle
+        edge="left"
+        width={() => useBoardsUi.getState().propsWidth}
+        min={PROPS_MIN}
+        max={() => Math.min(PROPS_MAX, (root.current?.clientWidth ?? Infinity) - MAIN_MIN)}
+        label={t('boards.propsResize')}
+        onChange={(w, final) => {
+          if (column.current) column.current.style.width = `${w}px`;
+          if (final) useBoardsUi.getState().setPropsWidth(w);
+        }}
+        onReset={() => {
+          if (column.current) column.current.style.width = `${PROPS_DEFAULT}px`;
+          useBoardsUi.getState().setPropsWidth(PROPS_DEFAULT);
+        }}
+        testId="task-props-resize"
+      />
+      <aside ref={column} style={{ width: propsWidth }} className="scrollbar-thin flex max-w-[calc(100%-480px)] shrink-0 flex-col gap-3 overflow-y-auto px-3 pb-6 pt-2 [&_[data-prop-label]]:w-[88px]" aria-label={t('boards.properties')} data-testid="task-props-column">
         <div className="flex items-center justify-end gap-0.5">
           <IconButton size="sm" label={t('boards.copyKey')} onClick={() => copyTaskKey(task.key)} data-testid="task-copy-key">
             <Hash className="size-3.5" aria-hidden />

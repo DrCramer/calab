@@ -5,8 +5,9 @@ import { localAuthority, lockScreen } from '../identity/model';
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
 import { WorkspaceRole } from '@calaba/protocol';
-import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Button, Spinner, cx } from '../../components/ui';
+import { ResizeHandle } from '../../components/ResizeHandle';
 import { t } from '../../i18n';
 import { mayArrangeRooms } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
@@ -180,7 +181,7 @@ function ShellLayout(): ReactNode {
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DmSidebar />
-            <ResizeHandle />
+            <SidebarResize />
             <div className="mat-content relative flex min-w-0 flex-1">
               {dmId ? <ChatPane key={dmId} workspaceId="" roomId={dmId} /> : <DmPick />}
               {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
@@ -199,7 +200,7 @@ function ShellLayout(): ReactNode {
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
-            <ResizeHandle />
+            <SidebarResize />
             <div className="mat-content relative flex min-w-0 flex-1">
               {boards ? (
                 <BoardsView workspaceId={wsId} />
@@ -275,39 +276,14 @@ function useActiveRoom(wsId: string | null): string | undefined {
 }
 
 /** Drag the right edge of the room column (200–320 px). */
-function ResizeHandle(): ReactNode {
-  const setWidth = useUi((s) => s.setSidebarWidth);
-  const start = useRef<{ x: number; w: number } | null>(null);
-  const onDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    start.current = { x: e.clientX, w: useUi.getState().sidebarWidth };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (start.current) setWidth(start.current.w + e.clientX - start.current.x);
-  };
-  const onUp = (): void => {
-    start.current = null;
-  };
+function SidebarResize(): ReactNode {
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={t('shell.resize')}
-      aria-valuemin={200}
-      aria-valuemax={320}
-      aria-valuenow={useUi.getState().sidebarWidth}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        const w = useUi.getState().sidebarWidth;
-        if (e.key === 'ArrowLeft') setWidth(w - 8);
-        if (e.key === 'ArrowRight') setWidth(w + 8);
-      }}
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      // Zero layout width: the 6 px grab area overlaps both panes, so the column and the chat touch
-      // (a visible 3 px strip of the window layer showed between them otherwise).
-      className="relative z-[var(--z-sticky)] -ml-[3px] -mr-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-line hover:after:bg-accent focus-visible:after:bg-accent"
+    <ResizeHandle
+      width={() => useUi.getState().sidebarWidth}
+      min={200}
+      max={320}
+      label={t('shell.resize')}
+      onChange={(w) => useUi.getState().setSidebarWidth(w)}
     />
   );
 }

@@ -381,6 +381,7 @@ export const ruBoards = {
   // panel
   'boards.subscribe': 'Подписаться',
   'boards.unsubscribe': 'Отписаться',
+  'boards.propsResize': 'Ширина колонки свойств',
   'boards.properties': 'Свойства',
   'boards.assignees': 'Исполнители',
   'boards.addAssignee': 'Добавить',

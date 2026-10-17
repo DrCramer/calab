@@ -374,6 +374,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.nAssignees': 'Asignados: {n}',
   'boards.subscribe': 'Suscribirse',
   'boards.unsubscribe': 'Cancelar suscripción',
+  'boards.propsResize': 'Ancho de la columna de propiedades',
   'boards.properties': 'Propiedades',
   'boards.assignees': 'Asignados',
   'boards.addAssignee': 'Añadir',

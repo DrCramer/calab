@@ -374,6 +374,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.nAssignees': '指派人：{n}',
   'boards.subscribe': '订阅',
   'boards.unsubscribe': '取消订阅',
+  'boards.propsResize': '属性栏宽度',
   'boards.properties': '属性',
   'boards.assignees': '指派人',
   'boards.addAssignee': '添加',
