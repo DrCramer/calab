@@ -1,13 +1,13 @@
 import { RoomType, type SearchHit } from '@calaba/protocol';
 import { Paperclip, Search } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, Input, Select, Spinner, cx } from '../../components/ui';
 import { Bar } from '../../components/Bar';
 import { HeaderIcon, PhoneBack } from '../../components/PhoneHeader';
 import { getLocale, t } from '../../i18n';
 import { log } from '../../lib/log';
-import { NO_FILTERS, panelRequest, paramsKey, type PanelFilters, type Period, type RoomKindOf } from '../../lib/search/query';
+import { panelRequest, paramsKey, type PanelFilters, type Period, type RoomKindOf } from '../../lib/search/query';
 import { debouncedSearch } from '../../lib/search/runner';
 import { scopeParam, writeScope } from '../../lib/search/scope';
 import { SECTION_ORDER, hitId, messageLike, orderedSections, sectionTotal, type SectionName } from '../../lib/search/sections';
@@ -15,7 +15,7 @@ import { openHit } from '../../services/searchNav';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { HOME } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
-import { useSearchPanel } from '../../stores/searchPanel';
+import { useSearchPanel, type SearchFeed } from '../../stores/searchPanel';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { roomLabel } from '../chat/roomLabel';
@@ -25,45 +25,29 @@ import { fetchSearch, searchCache, useSearchSummary } from './useSearch';
 /** Pages in a row that added no visible row (filters on) before the list waits for «Искать дальше». */
 const MAX_EMPTY_RUN = 4;
 
-interface Feed {
-  /** The request (first page's parameters) these hits answer. */
-  key: string;
-  hits: SearchHit[];
-  cursor: string;
-  done: boolean;
-  total: number;
-  timedOut: boolean;
-  failed: boolean;
-  /** Pages in a row that added no row passing the filters. */
-  emptyRun: number;
-}
-
 const roomKindOf: RoomKindOf = (roomId) => {
   const type = useRooms.getState().byId[roomId]?.type;
   return type === RoomType.TASK ? 'task' : type === RoomType.NOTES ? 'notes' : 'chat';
 };
 
-function nowMs(): number {
-  return Date.now();
-}
-
 /**
  * «Результаты поиска» (ADR-0062 §4, docs/08): the right panel beside the chat — a column from
  * 1200 px, floating below, full screen on a phone. Section tabs with counts (the ⌘K summary,
  * cached), filters (author, room / board, period, «Только с файлами»), relevance / newest, and an
- * endless list by cursor. The hits live in this component's state only: no feed store is
- * written; a click opens the hit where it lives (services/searchNav.ts).
+ * endless list by cursor. No feed store is written; a click opens the hit where it lives
+ * (services/searchNav.ts). The query, tab and filters are in stores/searchPanel.ts, and the loaded
+ * list with its scroll offset is handed there on unmount (ADR-0105): a trip to the boards and
+ * back shows the same results at the same place.
  */
 export function SearchResultsPanel({ floating = false, page = false }: { floating?: boolean; page?: boolean }): ReactNode {
   const q = useSearchPanel((s) => s.q);
   const scope = useSearchPanel((s) => s.scope);
   const tab = useSearchPanel((s) => s.tab);
   const close = useSearchPanel((s) => s.close);
+  const filters = useSearchPanel((s) => s.filters);
+  const anchor = useSearchPanel((s) => s.anchor);
   const activeWs = useUi((s) => (s.activeWorkspaceId && s.activeWorkspaceId !== HOME ? s.activeWorkspaceId : null));
   const [draft, setDraft] = useState(q);
-  const [filters, setFilters] = useState<PanelFilters>(NO_FILTERS);
-  // The moment the period is measured from: set when a period is picked (render stays pure).
-  const [anchor, setAnchor] = useState(nowMs);
   const commit = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(commit.current), []);
 
@@ -72,15 +56,8 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
     window.clearTimeout(commit.current);
     commit.current = window.setTimeout(() => useSearchPanel.getState().setQuery(v.trim()), 300);
   };
-  const pickTab = (s: SectionName): void => {
-    useSearchPanel.getState().setTab(s);
-    // Board / room ids differ between tabs; the rest of the filters stay.
-    setFilters((f) => ({ ...f, place: '' }));
-  };
-  const setFilter = <K extends keyof PanelFilters>(k: K, v: PanelFilters[K]): void => {
-    if (k === 'period') setAnchor(Date.now());
-    setFilters((f) => ({ ...f, [k]: v }));
-  };
+  const pickTab = (s: SectionName): void => useSearchPanel.getState().setTab(s);
+  const setFilter = useSearchPanel.getState().setFilter;
 
   // Tab counts: the ⌘K summary of the same query (usually cached already).
   const summary = useSearchSummary(q, scope);
@@ -93,12 +70,21 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
 
   const req = useMemo(() => panelRequest({ q, scope, tab }, filters, anchor, roomKindOf), [q, scope, tab, filters, anchor]);
   const reqKey = q ? paramsKey(req.params) : '';
-  const [feed, setFeed] = useState<Feed | null>(null);
+  // What this search had loaded before the panel was last unmounted (boards and back): shown as is.
+  const [restored] = useState(() => {
+    const v = useSearchPanel.getState().view;
+    return v && v.seq === useSearchPanel.getState().seq ? v : null;
+  });
+  const [feed, setFeed] = useState<SearchFeed | null>(() => restored?.feed ?? null);
+  // The request the restored list answers: its first page is not fetched again on mount.
+  const resume = useRef({ req, key: restored?.feed?.key });
   const loadingMore = useRef<AbortController | null>(null);
 
   // The first page: debounced (typing in the panel's field), cached, the previous one aborted.
   useEffect(() => {
     if (!reqKey) return;
+    // Remounted on the same request: keep every page already loaded (and the scroll over them).
+    if (req === resume.current.req && resume.current.key === reqKey) return;
     const params = req.params;
     const match = req.match;
     loadingMore.current?.abort();
@@ -165,9 +151,21 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
   }, [feed, reqKey, req]);
   useEffect(() => () => loadingMore.current?.abort(), []);
 
+  // Hand the list and its scroll offset to the store on unmount; put the offset back on mount.
+  const scroller = useRef<HTMLDivElement>(null);
+  const feedNow = useRef(feed);
+  useEffect(() => {
+    feedNow.current = feed;
+  }, [feed]);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && restored) el.scrollTop = restored.scrollTop;
+    const seq = useSearchPanel.getState().seq;
+    return () => useSearchPanel.getState().saveView({ seq, feed: feedNow.current, scrollTop: el?.scrollTop ?? 0 });
+  }, [restored]);
+
   // Endless list: the sentinel under the rows loads the next page while it is in view (also
   // right after a page whose hits the filters dropped), up to MAX_EMPTY_RUN empty pages in a row.
-  const scroller = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
@@ -199,7 +197,7 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
   };
 
   const resetButton = (
-    <button type="button" aria-label={t('search.panel.reset')} className="shrink-0 rounded-full px-1.5 text-caption text-accent-text hover:underline" onClick={() => setFilters(NO_FILTERS)}>
+    <button type="button" aria-label={t('search.panel.reset')} className="shrink-0 rounded-full px-1.5 text-caption text-accent-text hover:underline" onClick={useSearchPanel.getState().resetFilters}>
       {t('search.panel.resetShort')}
     </button>
   );
@@ -209,7 +207,10 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
       aria-label={t('search.panel.title')}
       data-testid="search-panel"
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && !e.defaultPrevented) close();
+        if (e.key !== 'Escape' || e.defaultPrevented) return;
+        // Taken here: the boards' Esc (window) must not also close the task / leave the mode.
+        e.preventDefault();
+        close();
       }}
       className={
         page

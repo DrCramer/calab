@@ -203,7 +203,11 @@ function ShellLayout(): ReactNode {
             <SidebarResize />
             <div className="mat-content relative flex min-w-0 flex-1">
               {boards ? (
-                <BoardsView workspaceId={wsId} />
+                // Task hits open here, the results stay beside the board (ADR-0105).
+                <>
+                  <BoardsView workspaceId={wsId} />
+                  {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
+                </>
               ) : calDay ? (
                 // Calendar (ADR-0038 §7): the day instead of the room, the selected meeting instead of the
                 // members (a column from 1200 px, floating below); no meeting selected — the members, so

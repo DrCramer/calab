@@ -177,7 +177,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     });
   }, [items, groups, needle]);
 
-  /** «Все результаты» of a section: the results panel (the chat stays where it is). */
+  /** «Все результаты» of a section: the results panel (beside the chat or the boards; «Задачи» opens the boards, ADR-0105). */
   const openAll = (section: SectionName): void => {
     if (!text) return;
     useSearchPanel.getState().show(text, scope, section);
