@@ -5,7 +5,7 @@ import { Archive, CalendarClock, Check, ChevronDown, CircleSlash, Tag, UserRound
 import { memo, useCallback, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, cx } from '../../components/ui';
+import { Button, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { matchTask, type MatchCtx } from '../../lib/boards/filter';
@@ -21,7 +21,20 @@ import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
 import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { UpdatedAge } from './UpdatedAge';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
+
+/**
+ * Fixed meta columns of a row (right-aligned, an empty cell when the value is absent) so approvals,
+ * checklist, age, date and assignees line up across rows. Narrow windows drop the low-priority ones
+ * (no wrapping); the phone layout has its own flow (auto width, empty cells hidden).
+ */
+const COL = 'flex shrink-0 items-center justify-end mobile:w-auto mobile:justify-start mobile:empty:hidden';
+const COL_APPROVALS = cx(COL, 'w-[52px]');
+const COL_CHECKLIST = cx(COL, 'w-[48px] min-[769px]:max-[1000px]:hidden');
+const COL_UPDATED = cx(COL, 'w-[40px] text-micro min-[769px]:max-[1100px]:hidden');
+const COL_DUE = cx(COL, 'w-[76px]');
+const COL_ASSIGNEE = cx(COL, 'w-[44px] order-last mobile:order-none');
 
 type Item = { kind: 'group'; key: string; label: ReactNode; count: number } | { kind: 'row'; id: string };
 
@@ -260,6 +273,9 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
   const done = doneType(status?.type);
   const stop = (e: MouseEvent): void => e.stopPropagation();
   const req = (k: string): { open?: boolean; onOpenChange?: (v: boolean) => void } => (menu === k ? { open: true, onOpenChange: (v) => !v && useBoardsUi.getState().closeMenu() } : {});
+  const names = task.assignees.map((a) => memberName(workspaceId, a.userId)).join(', ');
+  const assigneeTip = names ? t('boards.tip.assignees', { names }) : t('boards.tip.noAssignee');
+  const dueTip = task.dueOn ? t(isOverdue(task.dueOn, today, done) ? 'boards.tip.dueOverdue' : 'boards.tip.due', { date: formatDue(task.dueOn, today) }) : t('boards.f.dueOn');
   const mine = (labels ?? []).filter((l) => task.labelIds.includes(l.id));
   const cell = 'grid shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover disabled:hover:bg-transparent';
   return (
@@ -304,6 +320,8 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
         </StatusMenu>
         <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
         {/* Placed here for the phone (end of the title line); `order-last` keeps it rightmost on desktop. */}
+        <Tip label={assigneeTip}>
+        <span className={COL_ASSIGNEE}>
         <AssigneeMenu
           workspaceId={workspaceId}
           boardId={boardId}
@@ -313,11 +331,13 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
           align="end"
           {...req('assignee')}
         >
-          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent order-last mobile:order-none" aria-label={t('boards.f.assignee')}>
+          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:pointer-events-none disabled:hover:bg-transparent" aria-label={t('boards.f.assignee')}>
             {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
             {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
           </button>
         </AssigneeMenu>
+        </span>
+        </Tip>
         {/* phone: the meta (badges, date) wraps under the title, aligned with it */}
         <span className="hidden h-0 basis-full mobile:block" aria-hidden />
         <span className="hidden w-[56px] shrink-0 mobile:block" aria-hidden />
@@ -326,8 +346,8 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
             {boardLabel}
           </span>
         ) : null}
-        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} compact /> : null}
-        {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} compact slot={COL_APPROVALS} /> : null}
+        {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} slot={COL_CHECKLIST} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
         {on(BoardFeature.LABELS) && (mine.length || menu === 'label') ? (
           <LabelMenu
@@ -349,19 +369,24 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
             </button>
           </LabelMenu>
         ) : null}
+        <UpdatedAge id={id} slot={COL_UPDATED} />
         {on(BoardFeature.DUE_DATE) ? (
+          <Tip label={dueTip}>
+          <span className={COL_DUE}>
           <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} align="end" {...req('due')}>
             <button
               type="button"
               onClick={stop}
               disabled={!canEdit}
-              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover mobile:w-auto mobile:justify-start', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
+              className={cx('inline-flex h-6 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover disabled:pointer-events-none mobile:justify-start', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
               aria-label={t('boards.f.dueOn')}
             >
               <CalendarClock className="size-3 shrink-0" aria-hidden />
               {task.dueOn ? formatDue(task.dueOn, today) : ''}
             </button>
           </DateMenu>
+          </span>
+          </Tip>
         ) : null}
       </div>
     </TaskContextMenu>

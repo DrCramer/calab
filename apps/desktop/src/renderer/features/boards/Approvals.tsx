@@ -28,8 +28,10 @@ import { hasBit, VIEW_BOARD } from './model';
  * after a veto; nothing without approvers. Reads its task by id through a primitive selector
  * (approvalTagKey): a card's TASK_UPDATE re-renders the tag only when the tag itself changes.
  */
-export const ApprovalTag = memo(function ApprovalTag({ id, compact = false }: { id: string; compact?: boolean }): ReactNode {
+export const ApprovalTag = memo(function ApprovalTag({ id, compact = false, slot }: { id: string; compact?: boolean; slot?: string }): ReactNode {
   const key = useBoards((s) => approvalTagKey(s.tasks[id]));
+  // `slot`: a fixed-width column cell (the list row) that stays, empty, when there is no tag.
+  if (slot !== undefined) return <span className={slot}>{key ? <TagView tag={key} id={id} compact={compact} /> : null}</span>;
   return key ? <TagView tag={key} id={id} compact={compact} /> : null;
 });
 
@@ -43,10 +45,10 @@ export function TagView({ tag, id, compact }: { tag: string; id: string; compact
   const who = task ? rejecters(task).map((u) => memberName(task.workspaceId, u)).join(', ') : '';
   const label = kind === 'pending' ? t('boards.approvalProgress', { n, m }) : kind === 'approved' ? t('boards.approvalDoneN', { n, m }) : t('boards.gate.rejected', { name: who });
   return (
+    <Tip label={label}>
     <span
       role="img"
       aria-label={label}
-      title={label}
       className={cx(
         'inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-micro font-medium tabular-nums',
         kind === 'approved' && 'border-transparent bg-ok-fill text-white',
@@ -60,6 +62,7 @@ export function TagView({ tag, id, compact }: { tag: string; id: string; compact
       {kind === 'approved' ? <Check className="size-3" strokeWidth={3} aria-hidden /> : kind === 'rejected' ? <X className="size-3" strokeWidth={3} aria-hidden /> : null}
       {n}/{m}
     </span>
+    </Tip>
   );
 }
 

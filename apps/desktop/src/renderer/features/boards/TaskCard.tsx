@@ -2,7 +2,7 @@ import * as ContextMenu from '@radix-ui/react-context-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
 import { CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
-import { cx } from '../../components/ui';
+import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
@@ -233,15 +233,19 @@ export const TaskCard = memo(function TaskCard({
  * The card's checklist progress «3/7» (ADR-0058 §2, always shown when the task has items): a leaf
  * subscribed to the counters only — a tick in the panel re-renders this chip, not the card.
  */
-export const ChecklistBadge = memo(function ChecklistBadge({ id }: { id: string }): ReactNode {
+export const ChecklistBadge = memo(function ChecklistBadge({ id, slot }: { id: string; slot?: string }): ReactNode {
   const text = useBoards((s) => checklistProgress(s, id));
-  if (!text) return null;
-  return (
-    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.cl.title')} data-testid="card-checklist">
-      <ListChecks className="size-3" aria-hidden />
-      {text}
-    </span>
-  );
+  const [done, total] = text.split('/');
+  const badge = text ? (
+    <Tip label={t('boards.cl.tip', { done: done ?? '', total: total ?? '' })}>
+      <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" data-testid="card-checklist">
+        <ListChecks className="size-3" aria-hidden />
+        {text}
+      </span>
+    </Tip>
+  ) : null;
+  // `slot`: a fixed-width column cell (the list row) that stays, empty, when there are no items.
+  return slot !== undefined ? <span className={slot}>{badge}</span> : badge;
 });
 
 /**
@@ -253,10 +257,12 @@ export const MilestoneBadge = memo(function MilestoneBadge({ id }: { id: string 
   if (!text) return null;
   const [done, total] = text.split('/');
   return (
-    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.ms.chip', { done: done ?? '', total: total ?? '' })} data-testid="card-milestones">
-      <Diamond className="size-3" aria-hidden />
-      {text}
-    </span>
+    <Tip label={t('boards.ms.chip', { done: done ?? '', total: total ?? '' })}>
+      <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" data-testid="card-milestones">
+        <Diamond className="size-3" aria-hidden />
+        {text}
+      </span>
+    </Tip>
   );
 });
 
