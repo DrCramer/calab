@@ -381,7 +381,8 @@ function MoveDialog({ workspaceId, itemIds, onClose }: { workspaceId: string; it
             </span>
           ))}
         </nav>
-        <div className="flex h-60 flex-col overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] p-1">
+        {/* Phone: the list is as tall as its rows (no empty bordered field); a disabled «Переместить сюда» says why. */}
+        <div className="flex h-60 flex-col overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] p-1 mobile:h-auto mobile:max-h-60 mobile:min-h-14">
           {!loaded ? (
             <div className="grid flex-1 place-items-center">
               <Spinner />
@@ -392,6 +393,7 @@ function MoveDialog({ workspaceId, itemIds, onClose }: { workspaceId: string; it
             <p className="grid flex-1 place-items-center text-caption text-muted">{t('disk.moveNoFolders')}</p>
           )}
         </div>
+        {loaded && !ok ? <p className="hidden text-caption text-muted mobile:block" data-testid="disk-move-hint">{t('disk.moveAlreadyHere')}</p> : null}
       </div>
     </Modal>
   );

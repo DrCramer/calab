@@ -113,6 +113,7 @@ export const ruDisk = {
   'disk.moveTitleMany': 'Переместить объекты: {n}',
   'disk.moveHere': 'Переместить сюда',
   'disk.moveNoFolders': 'Здесь нет папок',
+  'disk.moveAlreadyHere': 'Уже здесь — выберите другую папку',
   // usage and packs
   'disk.usage.title': 'Место',
   'disk.usage.of': '{used} из {limit}',

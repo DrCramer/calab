@@ -108,6 +108,7 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.moveTitleMany': 'Mover elementos: {n}',
   'disk.moveHere': 'Mover aquí',
   'disk.moveNoFolders': 'No hay carpetas aquí',
+  'disk.moveAlreadyHere': 'Ya está aquí: elige otra carpeta',
   'disk.usage.title': 'Espacio',
   'disk.usage.of': '{used} de {limit}',
   'disk.usage.noLimit': '{used} · sin límite',

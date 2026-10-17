@@ -108,6 +108,7 @@ export const enDisk: DictShape<typeof ruDisk> = {
   'disk.moveTitleMany': 'Move items: {n}',
   'disk.moveHere': 'Move here',
   'disk.moveNoFolders': 'No folders here',
+  'disk.moveAlreadyHere': 'Already here — pick another folder',
   'disk.usage.title': 'Storage',
   'disk.usage.of': '{used} of {limit}',
   'disk.usage.noLimit': '{used} · unlimited',

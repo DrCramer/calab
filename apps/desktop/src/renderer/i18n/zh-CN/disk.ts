@@ -108,6 +108,7 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.moveTitleMany': '移动项目：{n}',
   'disk.moveHere': '移到这里',
   'disk.moveNoFolders': '这里没有文件夹',
+  'disk.moveAlreadyHere': '已在此处，请选择其他文件夹',
   'disk.usage.title': '存储空间',
   'disk.usage.of': '{used} / {limit}',
   'disk.usage.noLimit': '{used} · 不限',

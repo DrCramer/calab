@@ -161,6 +161,8 @@ const MoreMenu = memo(function MoreMenu({
       {label}
     </Dropdown.Item>
   );
+  // The choice's check sits in the icon column, so radio labels line up with the icon items below.
+  const radioMark = (on: boolean): ReactNode => (on ? <Check className="size-4 shrink-0" strokeWidth={1.75} aria-hidden /> : <span className="size-4 shrink-0" aria-hidden />);
   const ic = (I: typeof Gauge): ReactNode => <I className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />;
   return (
     <Dropdown.Root modal={false}>
@@ -179,8 +181,8 @@ const MoreMenu = memo(function MoreMenu({
               <Dropdown.RadioGroup value={view} onValueChange={(v) => usePrefs.getState().setPrefs({ diskView: v as DiskView })}>
                 {VIEWS.map((o) => (
                   <Dropdown.RadioItem key={o.value} value={o.value} className={menuItem} data-testid={`phone-disk-view-${o.value}`}>
+                    {radioMark(o.value === view)}
                     <span className="min-w-0 flex-1">{t(o.label)}</span>
-                    {o.value === view ? <Check className="size-4 shrink-0" aria-hidden /> : null}
                   </Dropdown.RadioItem>
                 ))}
               </Dropdown.RadioGroup>
@@ -189,8 +191,8 @@ const MoreMenu = memo(function MoreMenu({
               <Dropdown.RadioGroup value={sort} onValueChange={(v) => usePrefs.getState().setPrefs({ diskSort: v as DiskSort })}>
                 {DISK_SORTS.map((s) => (
                   <Dropdown.RadioItem key={s} value={s} className={menuItem} data-testid={`phone-disk-sort-${s}`}>
+                    {radioMark(s === sort)}
                     <span className="min-w-0 flex-1">{t(SORT_LABEL[s])}</span>
-                    {s === sort ? <Check className="size-4 shrink-0" aria-hidden /> : null}
                   </Dropdown.RadioItem>
                 ))}
               </Dropdown.RadioGroup>
