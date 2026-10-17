@@ -306,6 +306,10 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 		if err := c.record(ctx, q, t, msg.AuthorID, kindComment, nil, after); err != nil {
 			return err
 		}
+		// A comment is activity: the list's «updated» age and the sort by it follow it.
+		if err := q.TouchTask(ctx, t.ID); err != nil {
+			return err
+		}
 		if err := q.Subscribe(ctx, sqlc.SubscribeParams{TaskID: t.ID, UserIds: []uuid.UUID{msg.AuthorID}}); err != nil {
 			return err
 		}
