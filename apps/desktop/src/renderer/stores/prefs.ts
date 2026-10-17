@@ -113,6 +113,8 @@ export interface Prefs {
   personalBitrateKbps: number | null;
   /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
   onboarded: boolean;
+  /** This device already offered native notifications (including an explicit Later choice). */
+  nativeNotifyOffered: boolean;
   /** The onboarding step shown last (features/onboarding/steps.ts): a relaunch resumes there. empty = from the start. */
   onboardingStep: string;
   /** AFK: minutes without input before presence becomes idle; 0 = off (docs/09 #34). */
@@ -194,6 +196,7 @@ const DEFAULTS: Prefs = {
   recentStatuses: [],
   personalBitrateKbps: null,
   onboarded: false,
+  nativeNotifyOffered: false,
   onboardingStep: '',
   afkMinutes: 10,
   soundboardVolume: 1,
