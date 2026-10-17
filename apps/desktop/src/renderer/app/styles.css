@@ -1177,6 +1177,13 @@ svg.lucide {
     --phone-card-w: min(360px, calc(100vw - 32px));
     --phone-card-max-h: min(calc(var(--app-height) * 0.7), calc(var(--app-height) - 2 * max(var(--safe-top), var(--safe-bottom)) - 16px));
     --phone-dialog-max-h: calc(var(--app-height) - 2 * max(var(--safe-top), var(--safe-bottom)) - 16px);
+    /* Scroll cue of a card that scrolls (menus, the profile): a soft edge shade at the side with more
+       content past it. Pure CSS (`local` layers hide the shade at the scroll end), no JS, no repaint cost. */
+    --phone-scroll-cue:
+      linear-gradient(var(--color-popover-solid) 30%, transparent),
+      linear-gradient(transparent, var(--color-popover-solid) 70%),
+      linear-gradient(rgb(0 0 0 / 28%), transparent),
+      linear-gradient(transparent, rgb(0 0 0 / 28%));
     --motion-card: 150ms;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -1295,7 +1302,12 @@ svg.lucide {
     overscroll-behavior: contain;
     border-radius: var(--radius-panel) !important;
     padding-inline: 6px !important;
-    background: var(--color-popover-solid);
+    background-color: var(--color-popover-solid);
+    background-image: var(--phone-scroll-cue);
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+    background-size: 100% 24px, 100% 24px, 100% 10px, 100% 10px;
+    background-position: top, bottom, top, bottom;
     box-shadow: var(--shadow-popover) !important;
     pointer-events: auto;
     transform-origin: center;
@@ -1365,6 +1377,14 @@ svg.lucide {
   /* Dialogs (forms, confirmations, the profile card): a centred card too, never a bottom sheet;
      centred above the keyboard, clear of the notch and the home indicator (Modal in
      components/ui.tsx, ProfileDialog, AchievementView). The `-translate-*-1/2` stay from desktop. */
+  :root.web .phone-scroll-cue {
+    background-color: var(--color-popover-solid);
+    background-image: var(--phone-scroll-cue);
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+    background-size: 100% 24px, 100% 24px, 100% 10px, 100% 10px;
+    background-position: top, bottom, top, bottom;
+  }
   :root.web .phone-dialog {
     top: calc(50% - var(--kb-inset) / 2);
     width: calc(100vw - 32px);

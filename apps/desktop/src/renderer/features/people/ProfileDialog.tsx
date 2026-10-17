@@ -148,7 +148,7 @@ export function ProfileDialog({
         >
           {/* Banner and body scroll together: the avatar overlaps the banner edge and must not be
               clipped by the scroll box. The close box stays on top, outside the scroller. */}
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={scroller} className="phone-scroll-cue min-h-0 flex-1 overflow-y-auto">
             <div className="h-[88px]" style={{ background: banner }} data-testid="profile-banner" />
             <div className="px-5 pb-5">
               {/* Avatar 80 over the banner edge, ringed with the sheet colour (presence dot too). */}

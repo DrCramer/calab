@@ -744,7 +744,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
           aria-pressed={lead}
           aria-label={lead ? t('boards.lead') : t('boards.makeLead')}
           onClick={() => void setAssignees(task.id, setLead(drafts, userId))}
-          className={cx('grid size-6 shrink-0 place-items-center rounded-full', lead ? 'text-[var(--color-role-owner)]' : cx('text-faint opacity-0 hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100', stacked && 'absolute right-7 top-1 bg-elev'))}
+          className={cx('grid size-6 shrink-0 place-items-center rounded-full mobile:col-start-3 mobile:row-start-1 mobile:justify-self-end', lead ? 'text-[var(--color-role-owner)]' : cx('text-faint opacity-0 hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100', stacked && 'absolute right-7 top-1 bg-elev'))}
           data-testid="assignee-lead"
         >
           <Crown className="size-3.5" aria-hidden />
@@ -777,7 +777,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
       </span>
       </div>
       {canEdit ? (
-        <button type="button" aria-label={t('boards.removeAssignee', { name })} onClick={() => void setAssignees(task.id, removeAssignee(drafts, userId))} className={cx('grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100', stacked && 'absolute right-1 top-1 bg-elev')}>
+        <button type="button" aria-label={t('boards.removeAssignee', { name })} onClick={() => void setAssignees(task.id, removeAssignee(drafts, userId))} className={cx('grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover mobile:col-start-2 mobile:row-start-1 hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100', stacked && 'absolute right-1 top-1 bg-elev')}>
           <X className="size-3.5" aria-hidden />
         </button>
       ) : null}
