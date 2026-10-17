@@ -396,6 +396,19 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     return () => root.removeEventListener('click', onClick, true);
   }, [bottomPin]);
 
+  // Phone: a scroll the finger did not make (opening at the bottom, the composer growing, a
+  // re-pin) must not flash the floating date over a message or the «Новые сообщения» divider.
+  const fingerDown = useRef(false);
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const down = (): void => {
+      fingerDown.current = true;
+    };
+    root.addEventListener('touchstart', down, { passive: true });
+    return () => root.removeEventListener('touchstart', down);
+  }, []);
+
   // The floating date and the scrolling flag change while scrolling: only FeedOverlays reads them
   // (a Feed render re-runs every mounted row's renderer).
   const [view] = useState(createScrollView);
@@ -405,10 +418,12 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const idle = useRef(0);
   const onScroll = useCallback(() => {
     if (scroller.current) bottomPin.scrolled(scroller.current);
-    view.setScrolling(true);
+    const programmatic = !fingerDown.current && window.matchMedia('(pointer: coarse)').matches;
+    if (!programmatic) view.setScrolling(true);
     scroller.current?.setAttribute('data-scrolling', '');
     window.clearTimeout(idle.current);
     idle.current = window.setTimeout(() => {
+      fingerDown.current = false;
       view.setScrolling(false);
       scroller.current?.removeAttribute('data-scrolling');
     }, STICKY_IDLE_MS);
