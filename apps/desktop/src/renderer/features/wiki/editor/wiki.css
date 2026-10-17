@@ -153,6 +153,9 @@
   background: var(--color-code);
   border-radius: 4px;
   padding: 1px 4px;
+  /* A wrapped inline code is one plate cut across two lines, not two separate pills. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .wiki-prose a.wiki-link,
 .wiki-prose a[href] {

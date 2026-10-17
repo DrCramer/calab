@@ -348,7 +348,8 @@ function PageHeader({ workspaceId, pageId, canAdd }: { workspaceId: string; page
       <EditToggle pageId={pageId} phone />
       {canAdd ? (
         <IconButton tip={false} bar label={t('wiki.addSubpage')} onClick={() => void createPage(workspaceId, pageId)} data-testid="phone-wiki-add-subpage">
-          <Plus className="size-5" aria-hidden />
+          {/* Heavier stroke: a thin «+» reads weaker than the filled dots of «⋯» beside it. */}
+          <Plus className="size-5" strokeWidth={2.25} aria-hidden />
         </IconButton>
       ) : null}
       <PageMenu pageId={pageId} />

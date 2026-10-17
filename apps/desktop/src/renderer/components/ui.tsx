@@ -718,7 +718,7 @@ export function Modal({
               )}
             </div>
             {closeButton ? (
-              <CloseButton className="-mr-1 -mt-1" onClick={onClose} />
+              <CloseButton className="-mr-1 -mt-1 mobile:-mt-2.5" onClick={onClose} />
             ) : null}
           </div>
           {/* Only the body scrolls (the header and the buttons stay, docs/09 #147); a hairline at an
