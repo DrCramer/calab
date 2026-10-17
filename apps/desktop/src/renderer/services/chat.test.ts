@@ -1,18 +1,23 @@
 import { create } from '@bufbuild/protobuf';
-import { MessageSchema, type Message } from '@calaba/protocol';
+import { MessageSchema, UnfurlResponseSchema, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createMessage = vi.fn<(roomId: string, body: { nonce: string; content: string }) => Promise<{ message?: Message }>>();
 const listPins = vi.fn<(roomId: string) => Promise<{ messages: Message[] }>>();
+const unfurlGet = vi.fn<(url: string) => Promise<UnfurlResponse>>();
 vi.mock('../lib/api/endpoints', () => ({
-  api: { messages: { create: (roomId: string, body: { nonce: string; content: string }) => createMessage(roomId, body), pins: (roomId: string) => listPins(roomId) } },
+  api: {
+    messages: { create: (roomId: string, body: { nonce: string; content: string }) => createMessage(roomId, body), pins: (roomId: string) => listPins(roomId) },
+    unfurl: { get: (url: string) => unfurlGet(url) },
+  },
   uploadFile: vi.fn(),
 }));
 vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { sendMessage, retrySend, loadPins, resyncPins } = await import('./chat');
+const { sendMessage, retrySend, loadPins, resyncPins, unfurl } = await import('./chat');
+const { ApiError } = await import('../lib/api/client');
 const { useMessages } = await import('../stores/messages');
 
 const ROOM = 'room-1';
@@ -117,5 +122,24 @@ describe('chat.loadPins (docs/18 step 4)', () => {
     await loadPins(ROOM);
     await loadPins(ROOM);
     expect(listPins).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Issue #220: «preview not found» (404) is the server's normal answer for a link without a card.
+describe('chat.unfurl', () => {
+  it('a 404 is «no preview»: resolves null, never rejects, and is not fetched again', async () => {
+    unfurlGet.mockReset();
+    unfurlGet.mockRejectedValue(new ApiError('ERROR_CODE_NOT_FOUND', 'preview not found', 404));
+    const url = 'https://example.test/no-card';
+    await expect(unfurl(url)).resolves.toBeNull();
+    await expect(unfurl(url)).resolves.toBeNull(); // a remounted row (Virtuoso) asks again
+    expect(unfurlGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('a card without anything to show is null too; a real card is returned', async () => {
+    unfurlGet.mockReset();
+    unfurlGet.mockImplementation((u) => Promise.resolve(create(UnfurlResponseSchema, u.endsWith('/empty') ? { url: u } : { url: u, title: 'Title' })));
+    await expect(unfurl('https://example.test/empty')).resolves.toBeNull();
+    await expect(unfurl('https://example.test/card')).resolves.toMatchObject({ title: 'Title' });
   });
 });
