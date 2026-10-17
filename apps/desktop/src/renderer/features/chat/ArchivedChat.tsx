@@ -8,7 +8,7 @@ import { openRoom } from '../../services/chat';
 import { useArchiveView } from '../../stores/archiveView';
 import { useMessages } from '../../stores/messages';
 import { Bar } from '../../components/Bar';
-import { NavButton } from '../../components/PhoneHeader';
+import { HeaderIcon, NavButton } from '../../components/PhoneHeader';
 import { MessageList } from './MessageList';
 
 /** Reading only: no reply, reaction, pin or send action is offered (they would get 410 anyway). */
@@ -31,7 +31,7 @@ export function ArchivedChat({ workspaceId, room }: { workspaceId: string; room:
     <section data-toast-anchor className="mat-content relative flex min-w-0 flex-1 flex-col" aria-label={room.name} data-testid="archived-chat">
       <Bar className="drag sticky top-0 z-[var(--z-sticky)] min-w-0 gap-2 pl-4 pr-2">
         {mobile ? <NavButton /> : null}
-        <Timer className="size-5 shrink-0 text-faint" aria-hidden />
+        {mobile ? <HeaderIcon icon={Archive} /> : <Timer className="size-5 shrink-0 text-faint" aria-hidden />}
         <h1 className="min-w-0 flex-1 truncate text-list font-semibold" title={room.name}>
           {room.name}
         </h1>

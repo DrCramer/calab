@@ -20,3 +20,10 @@ func TestCallCardsDoNotBecomeGenericMessageAlerts(t *testing.T) {
 		})
 	}
 }
+
+func TestRoomIconCardIsSilent(t *testing.T) {
+	m := &v1.Message{Id: uuid.NewString(), RoomId: uuid.NewString(), Kind: v1.MessageKind_MESSAGE_KIND_SYSTEM, System: &v1.SystemMessage{Payload: &v1.SystemMessage_RoomIcon{RoomIcon: &v1.RoomIconCard{FileId: uuid.NewString()}}}}
+	if _, ok := eventJob(&v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{MessageCreate: &v1.MessageCreate{Message: m}}}); ok {
+		t.Fatal("a room picture change queued a push (ADR-0092: silent)")
+	}
+}

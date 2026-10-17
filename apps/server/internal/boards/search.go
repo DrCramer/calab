@@ -71,7 +71,7 @@ func VisibleBoards(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.
 		by[o.BoardID] = append(by[o.BoardID], o)
 	}
 	for _, b := range rows {
-		if bits := perm.ComputeBoardIn(m, b.IsPrivate, b.Restricted, OverrideTargets(by[b.ID])); bits.Has(perm.ViewBoard) {
+		if bits := perm.ComputeBoardIn(m, perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy), OverrideTargets(by[b.ID])); bits.Has(perm.ViewBoard) {
 			out.Full[b.ID] = bits
 		}
 	}

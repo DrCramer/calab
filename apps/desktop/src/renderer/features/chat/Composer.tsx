@@ -1,4 +1,4 @@
-import { RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
+import { BillingState, RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
@@ -18,6 +18,7 @@ import { useDms } from '../../stores/dms';
 import { sendSticker } from '../../services/stickers';
 import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { useBillingState } from '../workspace/billing/BillingPaywall';
 import { EmojiPicker } from './EmojiPicker';
 import { StickerButton } from './stickers/StickerPicker';
 import { StickerSuggest, type StickerSuggestHandle } from './stickers/StickerSuggest';
@@ -61,6 +62,7 @@ export function Composer({
   files,
   setFiles,
   addFiles,
+  autoFocus = true,
 }: {
   workspaceId: string;
   room: Room;
@@ -68,6 +70,8 @@ export function Composer({
   files: OutgoingFile[];
   setFiles: (f: OutgoingFile[]) => void;
   addFiles: (f: File[]) => void;
+  /** Focus the field when the room opens (desktop); off where it is not the main thing (a full-screen task). */
+  autoFocus?: boolean;
 }): ReactNode {
   const [text, setText] = useState(() => loadDraft(useSession.getState().me?.user?.id ?? '', room.id).text);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -91,6 +95,8 @@ export function Composer({
   const canSend = can(perms, 'SEND_MESSAGES');
   // A suspended workspace is read-only (docs/09 #32): the server refuses, the field explains.
   const suspended = useWorkspaces((s) => !!workspaceId && !!s.byId[workspaceId]?.ws.suspension);
+  // «Тариф не активен» (ADR-0086 amendment): the server refuses writing; the field says why.
+  const planInactive = useBillingState(workspaceId) === BillingState.LAPSED;
   const canAttach = can(perms, 'ATTACH_FILES');
   // Edit mode uses the same field: the draft is kept aside and comes back afterwards
   // (derived during render when the edited message changes — no effect cascade).
@@ -224,10 +230,12 @@ export function Composer({
   // (iOS would scroll to it and raise the keyboard, lib/mobile.ts). «Ответить» is the user's own
   // request to write: it focuses the field everywhere.
   useEffect(() => {
-    if (autoFocusAllowed()) ref.current?.focus();
+    if (autoFocus && autoFocusAllowed()) ref.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on a room change only
   }, [room.id]);
   useEffect(() => {
-    if (replyTo || autoFocusAllowed()) ref.current?.focus();
+    if (replyTo || (autoFocus && autoFocusAllowed())) ref.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on a reply change only
   }, [replyTo]);
   // Staging a file (drop, paste, the paperclip, the camera) always focuses the field, on phones
   // too — like «Ответить» above, it is the user's own request to keep writing (docs/09 #149).
@@ -415,6 +423,13 @@ export function Composer({
       </div>
     );
   }
+  if (planInactive) {
+    return (
+      <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted" data-testid="composer-plan-inactive">
+        {t('billing.lapsed.composer')}
+      </div>
+    );
+  }
   if (!canSend) {
     return <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted">{t('chat.noSend')}</div>;
   }
@@ -467,7 +482,8 @@ export function Composer({
             'mobile:grid mobile:min-h-11 mobile:grid-cols-[auto_minmax(0,1fr)_auto] mobile:items-center mobile:px-0',
             // Phone, two lines and more: a large radius that still reads as round (no corners).
             multi && 'mobile:rounded-[26px]',
-            voice.active && 'hidden',
+            // mobile:hidden too: the phone's mobile:grid would otherwise win over hidden and squeeze the recorder.
+            voice.active && 'hidden mobile:hidden',
           )}
         >
           {canAttach && !editMsg ? (
@@ -626,7 +642,7 @@ function snippet(workspaceId: string, content: string, empty = ''): ReactNode {
 /** Reply / edit strip above the field (accent bar, title, snippet, ×). */
 function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: string; text: ReactNode; onClose: () => void }): ReactNode {
   return (
-    <div className="mb-2 flex items-center gap-3 pl-2">
+    <div className="mb-2 flex items-center gap-3 pl-2" data-testid="composer-context">
       <span className="text-accent-text">{icon}</span>
       <div className="min-w-0 flex-1 border-l-2 border-accent pl-2">
         <div className="truncate text-body font-semibold text-accent-text">{title}</div>

@@ -50,9 +50,10 @@
 (web_security_headers) {
 	header {
 		# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
-		# frame-src https: — the sandboxed iframe of a workspace web app (ADR-0050 §6); the page has no
-		# other frames. No http: — this page is served over https, where an http frame is mixed content.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# frame-src https: blob: — the sandboxed iframe of a workspace web app (ADR-0050 §6); the page has no
+		# other frames but the PDF viewer's blob: frame of a file the page fetched itself (ADR-0103). No http: —
+		# this page is served over https, where an http frame is mixed content.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
@@ -78,7 +79,7 @@
 		header {
 			# Next.js static export hydrates through inline <script> tags: 'unsafe-inline' for scripts is the
 			# price of a no-server export (no nonces). No connect targets beyond self; no framing.
-			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'{$RELEASES_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'{$RELEASES_ORIGIN}{$APP_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 			X-Content-Type-Options nosniff
 			Referrer-Policy strict-origin-when-cross-origin
 			X-Frame-Options DENY
@@ -183,7 +184,7 @@
 		header @manifest Content-Type "application/manifest+json"
 		import web_security_headers
 		# The same SPA scripts/CSP load on completion and consent, but URLs/HTML are sensitive.
-		@sensitive_spa path /sso/complete /oauth/consent /f/*
+		@sensitive_spa path /sso/complete /oauth/consent /f/* /w/*
 		handle @sensitive_spa {
 			header X-Robots-Tag "noindex, nofollow"
 			header >Cache-Control "no-store"

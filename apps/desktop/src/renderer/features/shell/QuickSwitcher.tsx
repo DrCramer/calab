@@ -1,8 +1,9 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba/protocol';
-import { ArrowRight, Hash, MessageCircle, MessageSquare, NotebookText, Phone, Search, Volume2, X } from 'lucide-react';
+import { ArrowRight, MessageCircle, MessageSquare, NotebookText, Phone, Search, X } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { RoomIcon } from '../../components/RoomIcon';
 import { Button, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
@@ -176,7 +177,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     });
   }, [items, groups, needle]);
 
-  /** «Все результаты» of a section: the results panel (the chat stays where it is). */
+  /** «Все результаты» of a section: the results panel (beside the chat or the boards; «Задачи» opens the boards, ADR-0105). */
   const openAll = (section: SectionName): void => {
     if (!text) return;
     useSearchPanel.getState().show(text, scope, section);
@@ -598,10 +599,9 @@ function RowBody({ it, q, workspaceName, activeWs, rooms }: { it: Item; q: strin
   }
   if (it.kind === 'room') {
     const r = it.room;
-    const Icon = r.type === RoomType.VOICE ? Volume2 : Hash;
     return (
       <>
-        <Icon className="size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
+        <RoomIcon roomId={r.id} room={r} size={16} ring="var(--color-popover-solid)" />
         <span className="min-w-0 flex-1 truncate">
           <Highlight text={r.name} q={q} />
         </span>

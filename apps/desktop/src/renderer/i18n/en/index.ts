@@ -13,15 +13,25 @@ import { enMail } from './mail';
 import { enRecording } from './recording';
 import { enAnnot } from './annot';
 import { enPeople } from './people';
+import { enFormer } from './former';
+import { enPrivacy } from './privacy';
 import { enModeration } from './moderation';
 import { enPicker } from './picker';
 import { enRoles } from './roles';
 import { enCalendar } from './calendar';
+import { enMailbox } from './mailbox';
+import { enDisk } from './disk';
+import { enWiki } from './wiki';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
+import { enHistory } from './history';
 import { enMilestones } from './milestones';
+import { enTaskNotify } from './taskNotify';
 import { enAutomations } from './automations';
 import { enPlan } from './plan';
+import { enBilling } from './billing';
+import { enTransitions } from './transitions';
+import { enCustomPlan } from './customPlan';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
@@ -59,6 +69,11 @@ export const en: Dict = {
   ...enMusic,
   ...enMedia,
   ...enPlan,
+  ...enBilling,
+  ...enTransitions,
+  ...enCustomPlan,
+  ...enFormer,
+  ...enPrivacy,
   ...enModeration,
   ...enMail,
   ...enRecording,
@@ -66,9 +81,14 @@ export const en: Dict = {
   ...enPicker,
   ...enRoles,
   ...enCalendar,
+  ...enMailbox,
+  ...enDisk,
+  ...enWiki,
   ...enBoards,
   ...enBoards2,
+  ...enHistory,
   ...enMilestones,
+  ...enTaskNotify,
   ...enAutomations,
   'voice.pendingMember': 'Connecting…',
   // common
@@ -169,6 +189,7 @@ export const en: Dict = {
   'ws.leaveConfirm': 'Leave “{name}”? You can only come back with an invite.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voice & screen share',
+  'ws.tabRooms': 'Rooms',
   'ws.tabLibrary': 'Library',
   'ws.tabInvites': 'Invites',
   'ws.tabDanger': 'Delete',
@@ -245,10 +266,16 @@ export const en: Dict = {
   'room.name': 'Name',
   'room.topic': 'Topic',
   'room.private': 'Private room',
-  'room.privateHint': 'Visible only to admins and people you grant access in permissions',
+  'room.picture': 'Picture',
+  'room.pictureHint': 'Shown in the room list and the header instead of the icon',
+  'room.pictureUpload': 'Upload picture',
+  'room.iconChanged': '{name} changed the room picture',
+  'room.iconRemoved': '{name} removed the room picture',
+  'room.iconPreview': 'changed the room picture',
+  'room.iconRemovedPreview': 'removed the room picture',
+  'room.iconOpen': 'Open the room picture',
   'room.accessCard': 'Access',
   'room.whoSees': 'Who can see it',
-  'room.whoSeesOwner': 'owner, always',
   'room.whoSeesEmpty': 'No one on the list yet',
   'room.whoSeesAdd': 'Add',
   'room.whoSeesRemove': 'Remove from the list: {name}',
@@ -259,6 +286,9 @@ export const en: Dict = {
   'room.tabPerms': 'Permissions',
   'room.mediaText': '“Workspace default” uses the workspace setting.',
   'room.markRead': 'Mark as read',
+  'room.swipeRead': 'Read',
+  'room.swipeMute': 'Mute',
+  'room.swipeUnmute': 'Unmute',
   'room.delete': 'Delete room',
   'room.deleteConfirm': 'Messages and files in “{name}” will be deleted. This can’t be undone.',
 
@@ -389,6 +419,19 @@ export const en: Dict = {
     'Caps Lock works as a toggle: press once to turn the mic on, press again to turn it off. To hold instead, allow “Input Monitoring” or turn on “Caps Lock doesn’t change case”.',
   'voice.pttToggleNote': 'Toggle mode: press once to turn the mic on, press again to turn it off.',
   'voice.pttRelease': 'Release delay',
+  'autoMute.label': 'Mute my mic when I’m silent',
+  'autoMute.menu': 'Mute when I’m silent',
+  'autoMute.hint': 'For when you forget your mic on: after a pause it turns off, like the mute button. Voice activation only.',
+  'autoMute.off': 'Off',
+  'autoMute.s30': '30 s',
+  'autoMute.m1': '1 min',
+  'autoMute.m5': '5 min',
+  'autoMute.m10': '10 min',
+  'autoMute.toast30': 'Mic muted: you were silent for 30 seconds',
+  'autoMute.toast60': 'Mic muted: you were silent for 1 minute',
+  'autoMute.toast300': 'Mic muted: you were silent for 5 minutes',
+  'autoMute.toast600': 'Mic muted: you were silent for 10 minutes',
+  'autoMute.unmute': 'Unmute',
   'voice.pttReleaseHint': 'How long the mic stays on after you release the key.',
   'voice.pttReleaseToggle': 'Not used in toggle mode: the mic turns off as soon as you press the key again.',
   'voice.pttLastKey': 'Last key: {key} {dir} ({source}; code {code}, raw {raw})',
@@ -462,6 +505,8 @@ export const en: Dict = {
   'settings.general': 'General',
   'settings.logout': 'Sign out',
   'settings.theme': 'Theme',
+  'settings.haptics': 'Haptic feedback',
+  'settings.hapticsHint': 'A light vibration on taps, switches, swipes and long presses',
   'theme.dark': 'Dark',
   'theme.light': 'Light',
   'theme.system': 'System',
@@ -753,4 +798,6 @@ export const en: Dict = {
   'main.webAppOpenLink': 'Open link in browser',
   'main.webAppCopyLink': 'Copy link address',
   'main.webAppOpenPage': 'Open page in browser',
+  'main.checkoutTitle': 'Payment',
+  'main.checkoutCancel': 'Cancel',
 };

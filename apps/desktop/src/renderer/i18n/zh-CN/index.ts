@@ -13,15 +13,25 @@ import { zhMail } from './mail';
 import { zhRecording } from './recording';
 import { zhAnnot } from './annot';
 import { zhPeople } from './people';
+import { zhFormer } from './former';
+import { zhPrivacy } from './privacy';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
+import { zhMailbox } from './mailbox';
+import { zhDisk } from './disk';
+import { zhWiki } from './wiki';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
+import { zhHistory } from './history';
 import { zhMilestones } from './milestones';
+import { zhTaskNotify } from './taskNotify';
 import { zhAutomations } from './automations';
 import { zhPlan } from './plan';
+import { zhBilling } from './billing';
+import { zhTransitions } from './transitions';
+import { zhCustomPlan } from './customPlan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
@@ -59,6 +69,11 @@ export const zhCN: Dict = {
   ...zhMusic,
   ...zhMedia,
   ...zhPlan,
+  ...zhBilling,
+  ...zhTransitions,
+  ...zhCustomPlan,
+  ...zhFormer,
+  ...zhPrivacy,
   ...zhModeration,
   ...zhMail,
   ...zhRecording,
@@ -66,9 +81,14 @@ export const zhCN: Dict = {
   ...zhPicker,
   ...zhRoles,
   ...zhCalendar,
+  ...zhMailbox,
+  ...zhDisk,
+  ...zhWiki,
   ...zhBoards,
   ...zhBoards2,
+  ...zhHistory,
   ...zhMilestones,
+  ...zhTaskNotify,
   ...zhAutomations,
   'voice.pendingMember': '连接中…',
   // common
@@ -169,6 +189,7 @@ export const zhCN: Dict = {
   'ws.leaveConfirm': '退出"{name}"？只能通过邀请再次加入。',
   'ws.tabGeneral': '常规',
   'ws.tabMedia': '语音与屏幕共享',
+  'ws.tabRooms': '房间',
   'ws.tabLibrary': '资料库',
   'ws.tabInvites': '邀请',
   'ws.tabDanger': '删除',
@@ -245,10 +266,16 @@ export const zhCN: Dict = {
   'room.name': '名称',
   'room.topic': '主题',
   'room.private': '私密房间',
-  'room.privateHint': '仅管理员和权限中被授权的成员可见',
+  'room.picture': '图片',
+  'room.pictureHint': '在房间列表和标题栏中代替图标显示',
+  'room.pictureUpload': '上传图片',
+  'room.iconChanged': '{name} 更改了房间图片',
+  'room.iconRemoved': '{name} 移除了房间图片',
+  'room.iconPreview': '更改了房间图片',
+  'room.iconRemovedPreview': '移除了房间图片',
+  'room.iconOpen': '打开房间图片',
   'room.accessCard': '访问权限',
   'room.whoSees': '谁可以看到',
-  'room.whoSeesOwner': '所有者，始终可见',
   'room.whoSeesEmpty': '名单中还没有人',
   'room.whoSeesAdd': '添加',
   'room.whoSeesRemove': '从名单中移除：{name}',
@@ -259,6 +286,9 @@ export const zhCN: Dict = {
   'room.tabPerms': '权限',
   'room.mediaText': '"跟随工作区"表示使用工作区的设置。',
   'room.markRead': '标为已读',
+  'room.swipeRead': '已读',
+  'room.swipeMute': '静音',
+  'room.swipeUnmute': '取消静音',
   'room.delete': '删除房间',
   'room.deleteConfirm': '"{name}"中的消息和文件将被删除，此操作无法撤销。',
 
@@ -389,6 +419,19 @@ export const zhCN: Dict = {
     '大写锁定键为切换模式：按一次开启麦克风，再按一次关闭。若要改为按住模式，请允许"输入监控"权限，或开启"大写锁定键不改变大小写"。',
   'voice.pttToggleNote': '切换模式：按一次开启麦克风，再按一次关闭。',
   'voice.pttRelease': '松开延迟',
+  'autoMute.label': '我不说话时关闭麦克风',
+  'autoMute.menu': '不说话时关闭',
+  'autoMute.hint': '适合忘记关麦的人：停顿一段时间后自动静音，与静音按钮相同。仅限语音激活模式。',
+  'autoMute.off': '关闭',
+  'autoMute.s30': '30 秒',
+  'autoMute.m1': '1 分钟',
+  'autoMute.m5': '5 分钟',
+  'autoMute.m10': '10 分钟',
+  'autoMute.toast30': '麦克风已静音：你已 30 秒未说话',
+  'autoMute.toast60': '麦克风已静音：你已 1 分钟未说话',
+  'autoMute.toast300': '麦克风已静音：你已 5 分钟未说话',
+  'autoMute.toast600': '麦克风已静音：你已 10 分钟未说话',
+  'autoMute.unmute': '取消静音',
   'voice.pttReleaseHint': '松开按键后麦克风继续保持开启的时长。',
   'voice.pttReleaseToggle': '切换模式下不使用：再次按键时麦克风立即关闭。',
   'voice.pttLastKey': '最近按键：{key} {dir}（{source}；代码 {code}，原始 {raw}）',
@@ -461,6 +504,8 @@ export const zhCN: Dict = {
   'settings.general': '常规',
   'settings.logout': '退出登录',
   'settings.theme': '主题',
+  'settings.haptics': '触感反馈',
+  'settings.hapticsHint': '轻触、开关、滑动和长按时轻微振动',
   'theme.dark': '深色',
   'theme.light': '浅色',
   'theme.system': '跟随系统',
@@ -752,4 +797,6 @@ export const zhCN: Dict = {
   'main.webAppOpenLink': '在浏览器中打开链接',
   'main.webAppCopyLink': '复制链接地址',
   'main.webAppOpenPage': '在浏览器中打开页面',
+  'main.checkoutTitle': '付款',
+  'main.checkoutCancel': '取消',
 };

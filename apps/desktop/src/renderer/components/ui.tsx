@@ -3,10 +3,11 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useCallback, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
+import { haptics } from '../lib/haptics';
 import { autoFocusAllowed } from '../lib/phone';
 import { mirrorTip } from '../services/webAppTip';
 import { useWebApps } from '../stores/webApps';
@@ -82,17 +83,20 @@ export function CountBadge({
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
 export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 
-type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention' | 'record';
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
   secondary: 'bg-hover text-fg hover:bg-[var(--color-fill-hover)] active:brightness-95',
   // HIG: destructive actions are red *text* on a neutral control.
-  // macOS: destructive = red text (docs/08); a faint red tint keeps the text ≥ 4.5:1 on any surface.
-  destructive: 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-danger-text hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] active:brightness-95',
+  // macOS: destructive = red text on a neutral fill (docs/08): a red tint over a dark card turns muddy and loses contrast.
+  destructive: 'bg-transparent text-danger-text ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-danger)_50%,transparent)] hover:bg-hover active:brightness-95',
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
   // An invitation to set something up (docs/08 «Цвета»: orange, e.g. «Подключить свой календарь»).
   attention: 'bg-attention text-attention-fg hover:brightness-110 active:brightness-95',
+  // Starting a recording (docs/08 «Календарь»: «Начать» of the meeting's record prompt): the solid
+  // REC red of the recording pill / call buttons, white text (≥ 4.5:1 in both themes).
+  record: 'bg-danger-fill text-white hover:brightness-110 active:brightness-95',
 };
 
 export const Button = forwardRef<
@@ -116,7 +120,7 @@ export const Button = forwardRef<
         VARIANTS[variant],
         // Phone: a dimmed (opacity .4) label fell under 3:1 — a disabled button is a flat grey one with a readable label.
         'mobile:disabled:text-[var(--color-label-secondary)] mobile:disabled:opacity-100',
-        (variant === 'primary' || variant === 'attention') && 'mobile:disabled:bg-[var(--color-fill-hover)]',
+        (variant === 'primary' || variant === 'attention' || variant === 'record') && 'mobile:disabled:bg-[var(--color-fill-hover)]',
         className,
       )}
       {...rest}
@@ -421,7 +425,11 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
     <SwitchP.Root
       checked={checked}
       disabled={disabled}
-      onCheckedChange={onChange}
+      onCheckedChange={(v) => {
+        onChange(v);
+        // After the change: turning «Виброотклик» on is felt, turning it off is not.
+        haptics.toggle(v);
+      }}
       aria-label={label}
       className="tap-hit relative h-[22px] w-[38px] shrink-0 rounded-full bg-[var(--color-fill-hover)] transition-colors duration-[var(--motion-fast)] data-[state=checked]:bg-accent disabled:opacity-40"
     >
@@ -446,31 +454,50 @@ export function Switch({ checked, onChange, label, hint, disabled }: { checked: 
 }
 
 /** macOS segmented control. */
+/**
+ * `fill`: the track takes the width of its row and the segments share it (a form field,
+ * e.g. the payer type). Without it the track hugs its segments; inside a stretching flex column
+ * the host must not stretch it (`self-start`), or the segments bunch at the start of a wide track.
+ */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
   label,
+  fill = false,
+  testId,
 }: {
   value: T;
   options: Array<{ value: T; label: string }>;
   onChange: (v: T) => void;
   label: string;
+  fill?: boolean;
+  testId?: string;
 }): ReactNode {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-[var(--radius-control)] bg-hover p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      data-testid={testId}
+      className={cx('rounded-[var(--radius-control)] bg-hover p-0.5', fill ? 'flex w-full' : 'inline-flex')}
+    >
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           role="radio"
           aria-checked={value === o.value}
-          onClick={() => onChange(o.value)}
+          onClick={() => {
+            if (value !== o.value) haptics.select();
+            onChange(o.value);
+          }}
           className={cx(
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
             // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it
             // fills the track's 2 px padding instead of spilling onto the neighbours.
             'h-6 whitespace-nowrap rounded-full px-3 mobile:tap-h mobile:px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
+            // Each segment grows from its label's width: a long «Частное лицо» next to «ИП» still fits on a phone.
+            fill && 'min-w-0 flex-auto truncate',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
@@ -580,6 +607,9 @@ function trackScrollEdges(el: HTMLDivElement | null): (() => void) | undefined {
   const update = (): void => {
     const top = el.scrollTop > 1;
     const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    // A scrolling region must be reachable by keyboard (axe scrollable-region-focusable); -1 keeps it focusable by code.
+    const tab = el.scrollHeight > el.clientHeight + 1 ? 0 : -1;
+    if (el.tabIndex !== tab) el.tabIndex = tab;
     if (top !== el.hasAttribute('data-scroll-top')) el.toggleAttribute('data-scroll-top', top);
     if (bottom !== el.hasAttribute('data-scroll-bottom')) el.toggleAttribute('data-scroll-bottom', bottom);
   };
@@ -620,8 +650,11 @@ export function Modal({
   footer?: ReactNode;
   /** macOS alerts have no close box (confirmations): only «Отмена» and the action. */
   closeButton?: boolean;
-  /** Field focused on open (Radix would focus the close box first — and show its tooltip). */
-  initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Field focused on open (Radix would focus the close box first — and show its tooltip, which then
+   * eats the first Escape). `'body'`: the scrolling body itself, for a dialog with nothing to type into.
+   */
+  initialFocus?: RefObject<HTMLElement | null> | 'body';
   /**
    * A list dialog (docs/09 #52): the body is a flex column, so a child with `flex-1 min-h-0`
    * (PickerPanel with `fill`) takes the height left under the header, down to the bottom
@@ -637,6 +670,14 @@ export function Modal({
   nonModal?: boolean;
   keepOpen?: (target: Element) => boolean;
 }): ReactNode {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const setBody = useCallback(
+    (el: HTMLDivElement | null) => {
+      bodyRef.current = el;
+      return fill ? undefined : trackScrollEdges(el);
+    },
+    [fill],
+  );
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()} modal={!nonModal}>
       <DialogP.Portal>
@@ -653,9 +694,10 @@ export function Modal({
               (e.currentTarget as HTMLElement | null)?.focus();
               return;
             }
-            if (!initialFocus?.current) return;
+            const target = initialFocus === 'body' ? bodyRef.current : initialFocus?.current;
+            if (!target) return;
             e.preventDefault();
-            initialFocus.current.focus();
+            target.focus();
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
@@ -683,9 +725,10 @@ export function Modal({
               edge with more content past it is the scroll cue — set on the node, no re-render; `-my-px`
               keeps the transparent borders out of the layout. */}
           <div
-            ref={fill ? undefined : trackScrollEdges}
+            ref={setBody}
+            tabIndex={-1}
             className={cx(
-              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
+              '-my-px min-h-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-focus)] flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
               fill && 'flex flex-col',
               !footer && 'pb-5',
             )}

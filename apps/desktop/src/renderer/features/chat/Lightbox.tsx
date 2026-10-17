@@ -11,7 +11,49 @@ import { toast } from '../../stores/toasts';
 import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
 import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
 
-const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
+/** A URL image saved through the standard download path (main applies quarantine / Mark-of-the-Web). */
+function saveUrl(url: string, name: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+export const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
+
+/**
+ * The viewer's top row (the Lightbox, the PDF viewer): the window's title bar row in Electron — a
+ * drag region with the macOS traffic lights' 80 px and Windows' caption buttons
+ * (env(titlebar-area-*)) kept clear, like TitleBar — the name, `meta` (a counter, a size), the
+ * actions and «Закрыть». Rendered inside a Radix Dialog.Content (it holds the dialog's Title).
+ */
+export function ViewerBar({ title, meta, children }: { title: string; meta?: string | undefined; children: ReactNode }): ReactNode {
+  const os = useSession((s) => s.appInfo?.platform);
+  const electron = platform.kind === 'electron';
+  const mac = electron && os === 'darwin';
+  return (
+    <div
+      className={cx(
+        'flex shrink-0 items-center gap-2 px-4 text-[color:var(--color-on-accent)]',
+        electron ? 'drag h-[var(--titlebar-height)]' : 'h-12',
+        mac && 'pl-[80px]',
+      )}
+      style={electron ? { paddingRight: 'calc(16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' } : undefined}
+    >
+      <DialogP.Title className="min-w-0 flex-1 truncate text-body font-medium" title={title}>
+        {title}
+      </DialogP.Title>
+      {meta ? <span className="shrink-0 text-caption tabular-nums opacity-75">{meta}</span> : null}
+      <DialogP.Description className="sr-only">{title}</DialogP.Description>
+      {children}
+      <DialogP.Close asChild>
+        <CloseButton label={t('lightbox.close')} size="md" className={onDark} />
+      </DialogP.Close>
+    </div>
+  );
+}
 
 /**
  * Full-window image viewer (issue #7): opens at once with the chat thumbnail and a spinner over it,
@@ -21,7 +63,6 @@ const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14
  */
 export function Lightbox({ images, index: start, onClose, onShowInChat }: { images: LightboxImage[]; index: number; onClose: () => void; onShowInChat?: () => void }): ReactNode {
   const [index, setIndex] = useState(start);
-  const os = useSession((s) => s.appInfo?.platform);
   // Where the press began: a drag from the image released over the backdrop is not a backdrop click
   // (the click then targets their common ancestor).
   const pressedOn = useRef<EventTarget | null>(null);
@@ -34,14 +75,17 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
   const closeOnBackdrop = (e: MouseEvent): void => {
     if (e.target === e.currentTarget && pressedOn.current === e.target) onClose();
   };
-  const download = (): void =>
+  const download = (): void => {
+    if (img.src) {
+      saveUrl(img.src, img.name);
+      return;
+    }
     void platform.files.download({ fileId: img.fileId, name: img.name }).then(
       () => toast.success(t('chat.downloaded', { name: img.name })),
       (e: unknown) => toast.fail(e, t('err.ctx.download')),
     );
+  };
   const gallery = images.length > 1;
-  const electron = platform.kind === 'electron';
-  const mac = electron && os === 'darwin';
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
@@ -64,21 +108,7 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
           }}
           onClick={closeOnBackdrop}
         >
-          {/* The window's title bar row (Electron): a drag region, the macOS traffic lights' 80 px
-              kept clear, Windows' caption buttons (env(titlebar-area-*)) too — like TitleBar. */}
-          <div
-            className={cx(
-              'flex shrink-0 items-center gap-2 px-4 text-[color:var(--color-on-accent)]',
-              electron ? 'drag h-[var(--titlebar-height)]' : 'h-12',
-              mac && 'pl-[80px]',
-            )}
-            style={electron ? { paddingRight: 'calc(16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' } : undefined}
-          >
-            <DialogP.Title className="min-w-0 flex-1 truncate text-body font-medium" title={img.name}>
-              {img.name}
-            </DialogP.Title>
-            {gallery ? <span className="shrink-0 text-caption tabular-nums opacity-75">{`${index + 1} / ${images.length}`}</span> : null}
-            <DialogP.Description className="sr-only">{img.name}</DialogP.Description>
+          <ViewerBar title={img.name} meta={gallery ? `${index + 1} / ${images.length}` : undefined}>
             {/* Opened from a search hit (ADR-0062 §4): the message carrying the file. */}
             {onShowInChat ? (
               <IconButton label={t('search.showInChat')} onClick={onShowInChat} className={onDark}>
@@ -88,10 +118,7 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
             <IconButton label={t('lightbox.download')} onClick={download} className={onDark}>
               <Download className="size-5" />
             </IconButton>
-            <DialogP.Close asChild>
-              <CloseButton label={t('lightbox.close')} size="md" className={onDark} />
-            </DialogP.Close>
-          </div>
+          </ViewerBar>
           <div className="relative flex min-h-0 flex-1 items-center" onClick={closeOnBackdrop}>
             {gallery ? (
               <IconButton label={t('lightbox.prev')} onClick={() => step(-1)} disabled={index === 0} className={cx('z-[1] ml-2 shrink-0', onDark)}>
@@ -128,8 +155,11 @@ function ImageStage({
   const [full, setFull] = useState<LoadState>('loading');
   const [thumbAspect, setThumbAspect] = useState<Dims | null>(null);
   const [natural, setNatural] = useState<Dims | null>(null);
-  const thumbSrc = useMediaUrl(thumbnailPath(img.fileId));
-  const fullSrc = useMediaUrl(filePath(img.fileId), () => setFull('error'));
+  // A ready URL (a mail attachment) has no thumbnail: the full image only.
+  const apiThumb = useMediaUrl(img.src ? null : thumbnailPath(img.fileId));
+  const apiFull = useMediaUrl(img.src ? null : filePath(img.fileId), () => setFull('error'));
+  const thumbSrc = img.src ? undefined : apiThumb;
+  const fullSrc = img.src ?? apiFull;
   const known = dimsOf(img.width, img.height) ?? natural;
   const frame = fitFrame(known ?? thumbAspect, !!known);
   const layers = lightboxLayers(thumb, full);
@@ -200,7 +230,7 @@ function ImageStage({
           />
         ) : null}
         {fullSrc && layers.full ? (
-          <img src={fullSrc} alt={img.name} {...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime })} {...dragOutHandlers} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
+          <img src={fullSrc} alt={img.name} {...(img.src ? { draggable: false } : { ...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime }), ...dragOutHandlers })} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
         ) : null}
         {layers.spinner ? (
           <span className="absolute inset-0 grid place-items-center">

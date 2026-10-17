@@ -4,7 +4,7 @@ import { rich } from '@/lib/rich';
 import { CONTACT_FORM_URL } from '@/lib/site';
 import { Section, SectionHeading } from './ui';
 
-const ORDER = ['server', 'identity', 'recording', 'sip', 'security', 'firewall', 'enterprise', 'buy'] as const;
+const ORDER = ['server', 'identity', 'mail', 'mobile', 'recording', 'sip', 'security', 'firewall', 'enterprise', 'buy'] as const;
 
 export function Faq({ t }: { t: Dict['faq'] }) {
   const contact = (

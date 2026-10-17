@@ -45,7 +45,11 @@ message Room {
   string name = 4;
   string topic = 5;
   int32 position = 6;
-  // Informational: private rooms get `deny VIEW_ROOM` for role member on creation.
+  // A private room (ADR-0078 and its addendum 2026-10-14; «Только приглашённые»): only its
+  // creator (created_by) and those let in by an allow override on the room (a role's or a
+  // person's) see it. ADMINISTRATOR, the workspace owner and workspace-level MANAGE_ROOM give no
+  // bypass; the owner alone does while Workspace.owner_sees_private is on. The member role also
+  // gets `deny VIEW_ROOM` on creation. Strangers get 404 for the room everywhere.
   bool is_private = 7;
   // Effective settings (override merged over workspace defaults). Clients apply these.
   RoomMediaSettings media = 8;
@@ -70,10 +74,9 @@ message Room {
   // Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
   // PATCH /api/rooms/{id} allow_recording, which needs MANAGE_RECORDINGS (ADR-0048).
   bool allow_recording = 18;
-  // Private rooms only (ADR-0029, ADR-0048): closed even to administrators. ADMINISTRATOR gives
-  // no bypass and VIEW_ROOM comes only from an allow override on the room (by role or
-  // personally); the workspace owner always sees it. Changed with PATCH /api/rooms/{id}
-  // restricted. Strangers get 404 for the room everywhere.
+  // The pre-3.5 «закрытая» flag (ADR-0029, ADR-0048). Since the ADR-0078 addendum 2026-10-14
+  // every private room is closed even to administrators and the owner: the server keeps
+  // restricted equal to is_private; clients read either as «private».
   bool restricted = 19;
   // Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
   // override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
@@ -90,6 +93,10 @@ message Room {
   // Set only in the archive listing (GET /api/workspaces/{id}/rooms?archived=1).
   google.protobuf.Timestamp archived_at = 23;
   uint32 message_count = 24; // the archive listing only: live messages of the room
+  // The room's picture (ADR-0092): an image file of the workspace, shown instead of the glyph of
+  // the room type; empty = the glyph. Clients load it as /api/files/{id} (readable by everyone who
+  // sees the room). Changed with PATCH /api/rooms/{id} icon_file_id; a deleted file clears it.
+  string icon_file_id = 25;
 }
 
 // Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
@@ -215,6 +222,12 @@ message CreateRoomRequest {
   optional int32 position = 6; // default: after the last room
   string category_id = 7;       // optional category of the same workspace
   uint32 user_limit = 8;        // voice rooms only, 0..99
+  // Private rooms only (ADR-0078 addendum 2026-10-14; 422 on a public one): who is invited —
+  // members of the workspace (422 otherwise) get a personal allow VIEW_ROOM, roles of the
+  // workspace (not owner / admin / guest built-ins) a role allow VIEW_ROOM. The creator always
+  // sees the room (and gets a personal allow of their room-level bits).
+  repeated string member_ids = 9;
+  repeated string role_ids = 10;
 }
 
 message CreateRoomResponse {
@@ -251,9 +264,8 @@ message UpdateRoomRequest {
   // Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_RECORDINGS (ADR-0048) besides
   // MANAGE_ROOM; switching it off stops a running recording.
   optional bool allow_recording = 7;
-  // Private rooms only (ADR-0029, 422 on a public one). MANAGE_ROOM in the room (ADR-0048; the
-  // creator of a temporary room too); the owner may always lift it. Switching it on gives the
-  // caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM so they keep access.
+  // Deprecated alias of is_private (ADR-0078 addendum 2026-10-14): true = private, false =
+  // public; with is_private both must agree (422 otherwise).
   optional bool restricted = 8;
   optional bool guest_approval = 9; // ADR-0040
   // Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at
@@ -263,11 +275,17 @@ message UpdateRoomRequest {
   // Temporary rooms only: true makes the room permanent (expires_at cleared). Needs real
   // MANAGE_ROOM in the room (the creator's implicit right is not enough: 403).
   bool make_permanent = 11;
-  // Temporary rooms only (ADR-0044, «Доступ»): private = the member role loses VIEW_ROOM (a
-  // deny override, as a private room at creation); public = that deny is removed. Personal
-  // overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
-  // edits the overrides with PUT /api/rooms/{id}/permissions).
+  // «Доступ» (ADR-0044, ADR-0078 addendum 2026-10-14), any text / voice room: private = the
+  // member role loses VIEW_ROOM (a deny override, as a private room at creation) and the room
+  // is hidden from admins and the owner; public = that deny is removed. Personal overrides
+  // stay. MANAGE_ROOM or the creator of a temporary room. Switching to private gives the caller
+  // a personal allow of their room-level bits (VIEW_ROOM included) so they keep access.
   optional bool is_private = 12;
+  // The room's picture (ADR-0092), text and voice rooms only (422 otherwise). "" removes it. Same
+  // right as the name (MANAGE_ROOM or the creator of a temporary room). An image the caller
+  // uploaded to this workspace (422 iconFileId otherwise). A change posts a system message
+  // room_icon (SystemMessage.room_icon) into the room from the caller.
+  optional string icon_file_id = 13;
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or
@@ -311,6 +329,23 @@ message CreateTempRoomRequest {
   bool private = 5;
   // Private rooms: up to 50 workspace members (not guests; 422 otherwise) who get access too.
   repeated string member_ids = 6;
+}
+
+// POST /api/rooms/{id}/restore (ADR-0044 addendum): an archived temporary room becomes live
+// again with a new end, now + its original lifetime (expires_at - created_at, clamped to
+// 15 min .. 7 days; 1 day when that is not usable). MANAGE_ROOM in the room or its creator;
+// the live caps of CreateTempRoomRequest apply (409 TEMP_ROOM_LIMIT). A fresh members-only
+// link is made. Everyone who sees the room gets ROOM_CREATE. Not archived: 409.
+message RestoreTempRoomResponse {
+  Room room = 1;
+}
+
+// POST /api/rooms/{id}/make-permanent (ADR-0044 addendum): a temporary room, archived or
+// live, becomes a regular room (no end, no category, after the last room; history, members
+// and settings stay). Needs MANAGE_ROOM at workspace level (the right to create regular
+// rooms) and sight of the room; 403 otherwise. Archived: ROOM_CREATE, live: ROOM_UPDATE.
+message MakeRoomPermanentResponse {
+  Room room = 1;
 }
 
 message TempRoomResponse {

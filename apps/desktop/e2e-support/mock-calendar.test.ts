@@ -189,3 +189,30 @@ async function readyOf(token: string): Promise<Ready> {
     ws.close();
   }
 }
+
+describe('meeting comments (ADR-0104)', () => {
+  it('whoever sees the meeting comments; the author edits; the author or the organizer deletes', async () => {
+    server.reset();
+    const anna = await login();
+    const vera = await login('vera@calaba.test');
+    const boris = await login('boris@calaba.test');
+    const start = Date.UTC(2030, 0, 7, 10);
+    const res = await api(anna, `/api/workspaces/${IDS.workspaces.main}/events`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Ретро', startsAt: iso(start), endsAt: iso(start + HOUR), tz: 'UTC', attendees: [{ userId: IDS.users.vera, required: true }] }),
+    });
+    const id = ((await res.json()) as { event: Ev }).event.id;
+    const base = `/api/events/${id}/comments`;
+    const post = (token: string, body: string): Promise<Response> => api(token, base, { method: 'POST', body: JSON.stringify({ body }) });
+    const mine = (await (await post(vera, '  Повестка  ')).json()) as { comment: { id: string; body: string } };
+    expect(mine.comment.body).toBe('Повестка');
+    expect((await post(boris, 'я тут')).status).toBe(404); // not invited, no room
+    expect((await post(vera, '   ')).status).toBe(422);
+    await post(anna, 'Ок');
+    const list = (await (await api(vera, `${base}?limit=1`)).json()) as { comments: { body: string }[]; hasMore?: boolean };
+    expect([list.comments.map((c) => c.body), list.hasMore]).toEqual([['Ок'], true]);
+    expect((await api(anna, `${base}/${mine.comment.id}`, { method: 'PATCH', body: JSON.stringify({ body: 'чужое' }) })).status).toBe(403);
+    expect((await api(vera, `${base}/${mine.comment.id}`, { method: 'PATCH', body: JSON.stringify({ body: 'Повестка v2' }) })).status).toBe(200);
+    expect((await api(anna, `${base}/${mine.comment.id}`, { method: 'DELETE' })).status).toBe(204);
+  });
+});

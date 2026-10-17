@@ -90,6 +90,9 @@ type Service struct {
 	// EmailGate: whether adding outside attendees needs a confirmed address (ADR-0023,
 	// EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
 	EmailGate auth.EmailGate
+	// CommentLimit: per-user budget of comment writes (ADR-0104), apart from the meeting
+	// writes so a discussion does not eat the budget of editing; nil = unlimited.
+	CommentLimit *redisx.RateLimiter
 }
 
 // IdentityGate is the background side of the identity policy (identitypolicy.Delivery).
@@ -112,6 +115,10 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("PATCH /api/events/{id}", wrap(httpx.HandlerFunc(s.update)))
 	mux.Handle("DELETE /api/events/{id}", wrap(httpx.HandlerFunc(s.remove)))
 	mux.Handle("PUT /api/events/{id}/rsvp", wrap(httpx.HandlerFunc(s.rsvp)))
+	mux.Handle("GET /api/events/{id}/comments", wrap(httpx.HandlerFunc(s.listComments)))
+	mux.Handle("POST /api/events/{id}/comments", wrap(httpx.HandlerFunc(s.createComment)))
+	mux.Handle("PATCH /api/events/{id}/comments/{comment_id}", wrap(httpx.HandlerFunc(s.updateComment)))
+	mux.Handle("DELETE /api/events/{id}/comments/{comment_id}", wrap(httpx.HandlerFunc(s.deleteComment)))
 	mux.Handle("GET /api/me/events/today", wrap(httpx.HandlerFunc(s.today)))
 	mux.Handle("GET /api/workspaces/{id}/freebusy", wrap(httpx.HandlerFunc(s.freeBusy)))
 	mux.Handle("POST /api/workspaces/{id}/freebusy/suggest", wrap(httpx.HandlerFunc(s.suggest)))
@@ -127,6 +134,8 @@ type bundle struct {
 	series Series
 	att    []sqlc.EventAttendee
 	recs   map[int64]uuid.UUID // occurrence start (Unix s) → recording
+	// comments: how many comments the event has (ADR-0104).
+	comments int32
 }
 
 func loadZone(tz string) *time.Location {
@@ -176,6 +185,14 @@ func load(ctx context.Context, q *sqlc.Queries, evs []sqlc.Event) ([]*bundle, er
 	if err != nil {
 		return nil, err
 	}
+	ncom, err := q.CountEventComments(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byCom := make(map[uuid.UUID]int32, len(ncom))
+	for _, c := range ncom {
+		byCom[c.EventID] = c.N
+	}
 	byAtt := map[uuid.UUID][]sqlc.EventAttendee{}
 	for _, a := range att {
 		byAtt[a.EventID] = append(byAtt[a.EventID], a)
@@ -193,7 +210,7 @@ func load(ctx context.Context, q *sqlc.Queries, evs []sqlc.Event) ([]*bundle, er
 	}
 	out := make([]*bundle, len(evs))
 	for i, e := range evs {
-		out[i] = &bundle{ev: e, series: seriesOf(e, byExc[e.ID]), att: byAtt[e.ID], recs: byRec[e.ID]}
+		out[i] = &bundle{ev: e, series: seriesOf(e, byExc[e.ID]), att: byAtt[e.ID], recs: byRec[e.ID], comments: byCom[e.ID]}
 	}
 	return out, nil
 }
@@ -338,6 +355,13 @@ func attendeeProto(a sqlc.EventAttendee) *v1.CalendarEventAttendee {
 	return out
 }
 
+// counts of the answers and the comments (ADR-0104).
+func (b *bundle) counts() *v1.CalendarEventCounts {
+	c := counts(b.att)
+	c.Comments = uint32(max(b.comments, 0)) //nolint:gosec // non-negative count
+	return c
+}
+
 func counts(att []sqlc.EventAttendee) *v1.CalendarEventCounts {
 	c := &v1.CalendarEventCounts{}
 	for _, a := range att {
@@ -363,7 +387,7 @@ func (b *bundle) proto(occ *Occurrence, v *viewer) *v1.CalendarEvent {
 		Id: e.ID.String(), WorkspaceId: e.WorkspaceID.String(), Title: e.Title, Description: e.Description,
 		StartsAt: timestamppb.New(e.StartsAt), EndsAt: timestamppb.New(e.EndsAt), AllDay: e.AllDay, Tz: e.Tz,
 		OrganizerId: e.OrganizerID.String(), Record: e.Record, Repeat: b.series.Rule.Repeat,
-		Counts: counts(b.att), CreatedAt: timestamppb.New(e.CreatedAt), UpdatedAt: timestamppb.New(e.UpdatedAt),
+		Counts: b.counts(), CreatedAt: timestamppb.New(e.CreatedAt), UpdatedAt: timestamppb.New(e.UpdatedAt),
 		Sequence: uint32(max(e.Sequence, 0)), //nolint:gosec // non-negative counter
 	}
 	if e.RoomID != nil {

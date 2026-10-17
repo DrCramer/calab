@@ -35,6 +35,13 @@ export interface FilterState {
   any: boolean;
 }
 
+/**
+ * Client-only ASSIGNEE value «бывшие участники» (ADR-0097 §4): matches a task that has an assignee
+ * who is no longer a member (`MatchCtx.gone`). The server knows no such id, so a condition that
+ * carries it is never sent (`toTaskFilter`).
+ */
+export const FORMER = '@former';
+
 export const EMPTY_FILTER: FilterState = { conds: [], any: false };
 
 /** A condition is complete (applies) when its op needs no value or it has one. */
@@ -64,7 +71,9 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The wire form: instants (created / updated) as from / to; ESTIMATE GT / LT as `number`. */
 export function toTaskFilter(f: FilterState): TaskFilter {
-  const conditions = activeConds(f).map((c) => {
+  const conditions = activeConds(f)
+    .filter((c) => !c.values.includes(FORMER))
+    .map((c) => {
     const def = fieldDef(c.field);
     if (def?.kind === 'datetime') {
       const [a = '', b = ''] = c.values;
@@ -132,14 +141,11 @@ export function toggleValue(c: Cond, value: string): Cond {
 
 // ------------------------------------------------------------------ quick chips
 
-export type QuickChip = 'mine' | 'overdue' | 'unassigned' | 'approval';
+export type QuickChip = 'approval';
 
 const QUICK: Record<QuickChip, Cond> = {
-  mine: { field: TaskField.ASSIGNEE, op: TaskOp.IS, values: ['me'] },
-  // «Ждут моего согласования» (ADR-0049): my vote is still pending.
+  // «Ждут моего согласования» (ADR-0049): my vote is still pending. A toggle in the filter menu.
   approval: { field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['me'] },
-  overdue: { field: TaskField.DUE_ON, op: TaskOp.BEFORE, values: ['today'] },
-  unassigned: { field: TaskField.ASSIGNEE, op: TaskOp.EMPTY, values: [] },
 };
 
 const sameCond = (a: Cond, b: Cond): boolean => a.field === b.field && a.op === b.op && a.values.join('\u0000') === b.values.join('\u0000');
@@ -148,12 +154,10 @@ export function quickOn(f: FilterState, chip: QuickChip): boolean {
   return f.conds.some((c) => sameCond(c, QUICK[chip]));
 }
 
-/** Toggles a quick chip: adds its condition, or removes it (mine / unassigned exclude each other). */
+/** Toggles a quick condition: adds it, or removes it. */
 export function toggleQuick(f: FilterState, chip: QuickChip): FilterState {
   if (quickOn(f, chip)) return { ...f, conds: f.conds.filter((c) => !sameCond(c, QUICK[chip])) };
-  const other: QuickChip | null = chip === 'mine' ? 'unassigned' : chip === 'unassigned' ? 'mine' : null;
-  const conds = other ? f.conds.filter((c) => !sameCond(c, QUICK[other])) : f.conds;
-  return { ...f, conds: [...conds, { ...QUICK[chip], values: [...QUICK[chip].values] }] };
+  return { ...f, conds: [...f.conds, { ...QUICK[chip], values: [...QUICK[chip].values] }] };
 }
 
 // ------------------------------------------------------------------ dates
@@ -189,6 +193,8 @@ export interface MatchCtx {
   statuses: Readonly<Record<string, Pick<BoardStatus, 'type'>>>;
   /** Today's key in the viewer's zone ("YYYY-MM-DD"). */
   today: string;
+  /** Not a member of the workspace any more (ADR-0097); absent = nobody is. */
+  gone?: (userId: string) => boolean;
 }
 
 const TYPE_TOKEN: Record<number, string> = {
@@ -267,6 +273,16 @@ function boolMatch(v: boolean, c: Cond): boolean {
   return (c.values[0] ?? 'true') === 'true' ? v : !v;
 }
 
+/** setMatch() that also understands the FORMER token (an assignee who left). */
+function assigneeMatch(have: readonly string[], c: Cond, ctx: MatchCtx): boolean {
+  if (!c.values.includes(FORMER)) return setMatch(have, c, ctx);
+  const rest = { ...c, values: c.values.filter((v) => v !== FORMER) };
+  const former = !!ctx.gone && have.some((id) => ctx.gone?.(id));
+  const other = rest.values.length > 0 && setMatch(have, rest, ctx);
+  if (c.op === TaskOp.IS_NOT || c.op === TaskOp.NONE_OF) return !former && (rest.values.length === 0 || setMatch(have, rest, ctx));
+  return former || other;
+}
+
 export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
   switch (c.field) {
     case TaskField.STATUS:
@@ -274,7 +290,7 @@ export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
     case TaskField.STATUS_TYPE:
       return setMatch([TYPE_TOKEN[ctx.statuses[t.statusId]?.type ?? 0] ?? ''], c, ctx);
     case TaskField.ASSIGNEE:
-      return setMatch(
+      return assigneeMatch(
         t.assignees.map((a) => a.userId),
         c,
         ctx,

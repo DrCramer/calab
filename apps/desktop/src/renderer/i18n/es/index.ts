@@ -13,15 +13,25 @@ import { esMail } from './mail';
 import { esRecording } from './recording';
 import { esAnnot } from './annot';
 import { esPeople } from './people';
+import { esFormer } from './former';
+import { esPrivacy } from './privacy';
 import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
+import { esMailbox } from './mailbox';
+import { esDisk } from './disk';
+import { esWiki } from './wiki';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
+import { esHistory } from './history';
 import { esMilestones } from './milestones';
+import { esTaskNotify } from './taskNotify';
 import { esAutomations } from './automations';
 import { esPlan } from './plan';
+import { esBilling } from './billing';
+import { esTransitions } from './transitions';
+import { esCustomPlan } from './customPlan';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
@@ -59,6 +69,11 @@ export const es: Dict = {
   ...esMusic,
   ...esMedia,
   ...esPlan,
+  ...esBilling,
+  ...esTransitions,
+  ...esCustomPlan,
+  ...esFormer,
+  ...esPrivacy,
   ...esModeration,
   ...esMail,
   ...esRecording,
@@ -66,9 +81,14 @@ export const es: Dict = {
   ...esPicker,
   ...esRoles,
   ...esCalendar,
+  ...esMailbox,
+  ...esDisk,
+  ...esWiki,
   ...esBoards,
   ...esBoards2,
+  ...esHistory,
   ...esMilestones,
+  ...esTaskNotify,
   ...esAutomations,
   'voice.pendingMember': 'Conectando…',
   // common
@@ -169,6 +189,7 @@ export const es: Dict = {
   'ws.leaveConfirm': '¿Abandonar «{name}»? Solo podrás volver con una invitación.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voz y pantalla compartida',
+  'ws.tabRooms': 'Salas',
   'ws.tabLibrary': 'Biblioteca',
   'ws.tabInvites': 'Invitaciones',
   'ws.tabDanger': 'Eliminar',
@@ -245,10 +266,16 @@ export const es: Dict = {
   'room.name': 'Nombre',
   'room.topic': 'Tema',
   'room.private': 'Sala privada',
-  'room.privateHint': 'Visible solo para administradores y quienes tú autorices en los permisos',
+  'room.picture': 'Imagen',
+  'room.pictureHint': 'Se muestra en la lista de salas y en el encabezado en lugar del icono',
+  'room.pictureUpload': 'Subir imagen',
+  'room.iconChanged': '{name} cambió la imagen de la sala',
+  'room.iconRemoved': '{name} quitó la imagen de la sala',
+  'room.iconPreview': 'cambió la imagen de la sala',
+  'room.iconRemovedPreview': 'quitó la imagen de la sala',
+  'room.iconOpen': 'Abrir la imagen de la sala',
   'room.accessCard': 'Acceso',
   'room.whoSees': 'Quién la ve',
-  'room.whoSeesOwner': 'propietario, siempre',
   'room.whoSeesEmpty': 'Aún no hay nadie en la lista',
   'room.whoSeesAdd': 'Añadir',
   'room.whoSeesRemove': 'Quitar de la lista: {name}',
@@ -259,6 +286,9 @@ export const es: Dict = {
   'room.tabPerms': 'Permisos',
   'room.mediaText': '«Predeterminado del espacio» usa el ajuste del espacio.',
   'room.markRead': 'Marcar como leído',
+  'room.swipeRead': 'Leído',
+  'room.swipeMute': 'Silenciar',
+  'room.swipeUnmute': 'Con sonido',
   'room.delete': 'Eliminar sala',
   'room.deleteConfirm': 'Los mensajes y archivos de «{name}» se eliminarán. Esto no se puede deshacer.',
 
@@ -389,6 +419,19 @@ export const es: Dict = {
     'Bloq Mayús funciona como interruptor: púlsalo una vez para activar el micrófono, otra vez para desactivarlo. Para mantenerlo pulsado, permite «Monitoreo de entrada» o activa «Bloq Mayús no cambia mayúsculas».',
   'voice.pttToggleNote': 'Modo interruptor: púlsalo una vez para activar el micrófono, otra vez para desactivarlo.',
   'voice.pttRelease': 'Retardo al soltar',
+  'autoMute.label': 'Silenciar el micrófono si no hablo',
+  'autoMute.menu': 'Silenciar si no hablo',
+  'autoMute.hint': 'Para quien olvida apagar el micrófono: tras una pausa se silencia, como con el botón. Solo con activación por voz.',
+  'autoMute.off': 'Desactivado',
+  'autoMute.s30': '30 s',
+  'autoMute.m1': '1 min',
+  'autoMute.m5': '5 min',
+  'autoMute.m10': '10 min',
+  'autoMute.toast30': 'Micrófono silenciado: no hablaste durante 30 segundos',
+  'autoMute.toast60': 'Micrófono silenciado: no hablaste durante 1 minuto',
+  'autoMute.toast300': 'Micrófono silenciado: no hablaste durante 5 minutos',
+  'autoMute.toast600': 'Micrófono silenciado: no hablaste durante 10 minutos',
+  'autoMute.unmute': 'Activar',
   'voice.pttReleaseHint': 'Cuánto tiempo sigue activo el micrófono después de soltar la tecla.',
   'voice.pttReleaseToggle': 'No se usa en modo interruptor: el micrófono se apaga en cuanto vuelves a pulsar la tecla.',
   'voice.pttLastKey': 'Última tecla: {key} {dir} ({source}; código {code}, raw {raw})',
@@ -462,6 +505,8 @@ export const es: Dict = {
   'settings.general': 'General',
   'settings.logout': 'Cerrar sesión',
   'settings.theme': 'Tema',
+  'settings.haptics': 'Respuesta háptica',
+  'settings.hapticsHint': 'Una vibración ligera al tocar, cambiar interruptores, deslizar y mantener pulsado',
   'theme.dark': 'Oscuro',
   'theme.light': 'Claro',
   'theme.system': 'Sistema',
@@ -753,4 +798,6 @@ export const es: Dict = {
   'main.webAppOpenLink': 'Abrir enlace en el navegador',
   'main.webAppCopyLink': 'Copiar dirección del enlace',
   'main.webAppOpenPage': 'Abrir página en el navegador',
+  'main.checkoutTitle': 'Pago',
+  'main.checkoutCancel': 'Cancelar',
 };

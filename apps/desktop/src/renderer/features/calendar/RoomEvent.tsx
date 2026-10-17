@@ -89,6 +89,7 @@ export function MeetingRecordPrompt(): ReactNode {
       <div className="flex gap-2">
         <Button
           size="sm"
+          variant="record"
           onClick={() => {
             markPrompted(key);
             void startRecording(roomId, workspaceId);

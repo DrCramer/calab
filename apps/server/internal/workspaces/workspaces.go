@@ -18,6 +18,8 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
+	billingcore "github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/calendar"
@@ -32,6 +34,7 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
+	"github.com/calaba/calaba/server/internal/wsaudit"
 )
 
 const (
@@ -95,6 +98,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	handle("GET /api/workspaces/discover", h.discover)
 	handle("GET /api/workspaces/{id}", h.get)
 	handle("PATCH /api/workspaces/{id}", h.update)
+	handle("GET /api/workspaces/{id}/audit", h.audit)
 	handle("DELETE /api/workspaces/{id}", h.delete)
 	handle("POST /api/workspaces/{id}/join", h.joinOpen)
 	handle("PUT /api/workspaces/{id}/notifications", h.setNotifications)
@@ -116,6 +120,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	h.badgeRoutes(handle)
 	h.backgroundRoutes(handle)
 	h.appRoutes(handle)
+	h.formerRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -172,6 +177,30 @@ func requireInvite(r *http.Request) (uuid.UUID, perm.Role, error) {
 		return uuid.Nil, "", httpx.Forbidden("INVITE_MEMBERS required")
 	}
 	return wsID, role, nil
+}
+
+// BillingStub is a workspace closed for unpaid billing as its members still see it (ADR-0080
+// §8): who it is (id, slug, name, icon, owner, visibility, created), the plan and
+// Workspace.billing with state SUSPENDED — no amounts, no settings, no content. The owner opens
+// the paywall from it (GET …/billing stays open to the owner), other members a notice. Only for
+// a caller whose access was denied with identitypolicy.BillingSuspended: that check comes after
+// membership, so the stub reveals nothing to a non-member.
+func BillingStub(ctx context.Context, pl *plans.Service, ws sqlc.Workspace) (*v1.Workspace, error) {
+	full := pbconv.Workspace(ws)
+	out := &v1.Workspace{
+		Id: full.GetId(), Slug: full.GetSlug(), Name: full.GetName(), IconFileId: full.GetIconFileId(),
+		Visibility: full.GetVisibility(), OwnerId: full.GetOwnerId(), CreatedAt: full.GetCreatedAt(),
+	}
+	if err := pl.Fill(ctx, out); err != nil {
+		return nil, err
+	}
+	// The plan cache may still hold the state before the suspension (invalidation in flight):
+	// the denial is the source of truth here.
+	if out.Billing == nil {
+		out.Billing = &v1.WorkspaceBillingStatus{Source: v1.PlanSource_PLAN_SOURCE_BILLING}
+	}
+	out.Billing.State = v1.BillingState_BILLING_STATE_SUSPENDED
+	return out, nil
 }
 
 // Snapshot builds the workspace state as seen by userID (rooms filtered by VIEW_ROOM), with
@@ -438,9 +467,12 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	filtered := rows[:0]
+	var stubs []sqlc.Workspace // closed for unpaid billing: listed as stubs (BillingStub)
 	for _, row := range rows {
 		if err := perm.CheckAccess(r.Context(), row.ID, uid(r)); err == nil {
 			filtered = append(filtered, row)
+		} else if errors.Is(err, billing.ErrWorkspaceBillingSuspended) {
+			stubs = append(stubs, row)
 		} else if httpx.AsError(err).Status >= 500 {
 			return err
 		}
@@ -448,6 +480,13 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	list := workspaceList(filtered)
 	if err := h.limits.Plans.FillAll(r.Context(), list); err != nil {
 		return err
+	}
+	for _, row := range stubs {
+		stub, err := BillingStub(r.Context(), h.limits.Plans, row)
+		if err != nil {
+			return err
+		}
+		list = append(list, stub)
 	}
 	for i, ws := range list { // the suspension reason is for the owner / admins only
 		if ws.GetSuspension() == nil {
@@ -498,7 +537,7 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, role, err := requireManage(r)
 	if err != nil {
 		return err
 	}
@@ -588,7 +627,42 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.TimeFormat = &f
 	}
-	ws, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
+	if req.TempArchiveDays != nil {
+		switch d := req.GetTempArchiveDays(); d {
+		case 1, 7, 30, 90, 365:
+			v := int32(d) //nolint:gosec // validated
+			p.TempArchiveDays = &v
+		default:
+			return httpx.Validation("tempArchiveDays", "archive retention must be 1, 7, 30, 90 or 365 days")
+		}
+	}
+	var ws sqlc.Workspace
+	if req.OwnerSeesPrivate != nil {
+		// «Владелец видит приватное» (addendum 2026-10-14): the workspace owner's own decision, not
+		// delegable by roles; every change goes to the workspace journal.
+		if role != perm.RoleOwner {
+			return httpx.Forbidden("only the workspace owner changes who sees private items").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
+		}
+		err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+			n, err := q.SetOwnerSeesPrivate(r.Context(), sqlc.SetOwnerSeesPrivateParams{ID: wsID, On: req.GetOwnerSeesPrivate()})
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				if err := wsaudit.Toggle(r.Context(), q, wsID, uid(r), req.GetOwnerSeesPrivate()); err != nil {
+					return err
+				}
+			}
+			ws, err = q.UpdateWorkspace(r.Context(), p)
+			return err
+		})
+	} else {
+		ws, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
+	}
+	if err == nil && req.OwnerSeesPrivate != nil {
+		// Who sees private rooms and boards changed for the owner: resolvers cached per request.
+		perm.FromContext(r.Context()).Invalidate()
+	}
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")
 	}
@@ -651,6 +725,11 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		if keys, err = q.ListWorkspaceFileKeys(r.Context(), &wsID); err != nil {
 			return err
 		}
+		// The billing account closes with the workspace (no further charges, auto-topup
+		// consent revoked); its money history stays (ADR-0080).
+		if err = billingcore.CloseWorkspaceAccount(r.Context(), q, wsID); err != nil {
+			return err
+		}
 		_, err = q.DeleteWorkspace(r.Context(), wsID)
 		return err
 	})
@@ -681,7 +760,14 @@ func join(ctx context.Context, q *sqlc.Queries, pl *plans.Service, wsID, userID 
 		m, err = q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
 		return m, false, err
 	}
-	return m, err == nil, err
+	if err != nil {
+		return m, false, err
+	}
+	// The paid seat (ADR-0080) in the same transaction: refused, the join rolls back.
+	if err = pl.AdmitSeat(ctx, q, wsID, userID, userID, m.Role); err != nil {
+		return m, false, err
+	}
+	return m, true, nil
 }
 
 func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc.WorkspaceMember) (*v1.JoinWorkspaceResponse, error) {
@@ -875,8 +961,16 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 			m, err = q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: ws.ID, UserID: uid(r)})
 			return err
 		}
-		added = err == nil
-		return err
+		if err != nil {
+			return err
+		}
+		// The paid seat (ADR-0080) in the same transaction: refused, the join (and the use
+		// of the link) rolls back.
+		if err := h.limits.Plans.AdmitSeat(r.Context(), q, ws.ID, uid(r), uid(r), m.Role); err != nil {
+			return err
+		}
+		added = true
+		return nil
 	})
 	if err != nil {
 		return err
@@ -1141,7 +1235,23 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 		s := string(newRole)
 		p.Role = &s
 	}
-	m, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) { return guarded.UpdateMember(r.Context(), p) })
+	var m sqlc.WorkspaceMember
+	if p.Role != nil && *p.Role != cur.Role {
+		// A member demoted to a guest frees a paid seat (ADR-0080 §4.1): role and seat in one
+		// transaction.
+		err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+			before, err := q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target})
+			if err != nil {
+				return err
+			}
+			if m, err = q.UpdateMember(r.Context(), p); err != nil {
+				return err
+			}
+			return h.limits.Plans.SeatRoleChanged(r.Context(), q, wsID, target, uid(r), before.Role, m.Role)
+		})
+	} else {
+		m, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) { return guarded.UpdateMember(r.Context(), p) })
+	}
 	if err != nil {
 		return err
 	}
@@ -1195,27 +1305,30 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	actor := uid(r)
+	reason, by := ReasonRemoved, &actor
+	if target == actor {
+		reason, by = ReasonLeft, nil
+	}
+	var (
+		former  sqlc.WorkspaceFormerMember
+		removed bool
+	)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		actor := uid(r)
 		if err := auth.InvalidateIdentity(r.Context(), q, wsID, &target, &actor, "member_removed"); err != nil {
 			return err
 		}
-		if _, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
-			return err
-		}
-		return q.DeleteUserOverridesInWorkspace(r.Context(), sqlc.DeleteUserOverridesInWorkspaceParams{WorkspaceID: wsID, UserID: target.String()})
+		var err error
+		former, removed, err = RemoveMembership(r.Context(), q, h.limits.Plans, wsID, target, reason, by)
+		return err
 	})
 	if err != nil {
 		return err
 	}
 	perm.FromContext(r.Context()).Invalidate()
-	// LiveKit participants of the removed user are disconnected by rtc.SyncPublisher.
-	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
-		WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: wsID.String(), UserId: target.String()},
-	}})
-	h.events.User(r.Context(), target, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{
-		WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: wsID.String()},
-	}})
+	if removed {
+		PublishRemoved(r.Context(), h.events, former)
+	}
 	httpx.NoContent(w)
 	return nil
 }
@@ -1243,6 +1356,10 @@ func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
 			return httpx.NotFound("guest")
 		}
 		if err != nil {
+			return err
+		}
+		// A guest takes no paid seat, a member does (ADR-0080 §4.1).
+		if err := h.limits.Plans.PromoteSeat(r.Context(), q, wsID, target, uid(r), m.Role); err != nil {
 			return err
 		}
 		return q.ClearGuestExpiry(r.Context(), target)

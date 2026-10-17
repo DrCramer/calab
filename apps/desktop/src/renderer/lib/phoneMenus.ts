@@ -13,7 +13,13 @@ import { MOBILE_QUERY } from './phone';
  *  - a tap on a card under the top one returns to it (the levels above close), and is not an item
  *    tap (the scrim itself is the bottom card's wrapper, so a tap on it never reaches the app);
  *  - a sub-menu opens only by a tap: a hovering mouse (Chrome's device emulation, a trackpad on a
- *    tablet) never opens it or moves the highlight.
+ *    tablet) never opens it or moves the highlight;
+ *  - a card that opens while a finger is still held down (a long press: Radix ContextMenu's 700 ms
+ *    on touch, Android's contextmenu) calls `onLongPressOpen` once — the haptic «impact» — and
+ *    ends that press for the app: a `pointercancel` on the window. The finger's own pointer-up lands
+ *    on the scrim and is swallowed (lib/mobile installSheetGuard), so press trackers on the window
+ *    (kanban and board-list drags, the calendar's tap / drag) would otherwise stay armed and take
+ *    the next tap in the menu for a drag or a tap on what is under it.
  * Events only (portals added / removed, a card's `data-state`): nothing runs while no menu is open.
  * Logic: lib/menuStack.ts (unit-tested). Returns the uninstall function.
  */
@@ -94,12 +100,25 @@ function ensureHeader(card: HTMLElement): void {
 }
 
 let poseObserver: MutationObserver | null = null;
+/** A press shorter than this that opens a card is a tap (a «…» button), not a long press. */
+const LONG_PRESS_MIN_MS = 400;
+/** The touch press in progress (its start), if any. */
+let touchPress: { at: number; id: number } | null = null;
+let openCount = 0;
+let onLongPressOpen: (() => void) | undefined;
 /** «Назад» in the app's language (given by main.tsx: this module stays free of the i18n / platform chain). */
 let backLabel = (): string => 'Back';
 
 function relayout(): void {
   const mobile = isMobileNow();
   const cards = mobile ? openCards() : [];
+  if (cards.length > openCount && touchPress && performance.now() - touchPress.at >= LONG_PRESS_MIN_MS) {
+    const { id } = touchPress;
+    touchPress = null;
+    onLongPressOpen?.();
+    window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch', isPrimary: true }));
+  }
+  openCount = cards.length;
   const poses = stackPoses(cards.map(({ card }): StackCard => ({ sub: isSubMenu(card) })));
   const live = new Set<Element>();
   cards.forEach(({ wrap, card }, i) => {
@@ -127,8 +146,9 @@ function relayout(): void {
   }
 }
 
-export function installPhoneMenus(opts: { backLabel: () => string }): () => void {
+export function installPhoneMenus(opts: { backLabel: () => string; onLongPressOpen?: () => void }): () => void {
   backLabel = opts.backLabel;
+  onLongPressOpen = opts.onLongPressOpen;
   let scheduled = false;
   const schedule = (): void => {
     if (scheduled) return;
@@ -163,16 +183,67 @@ export function installPhoneMenus(opts: { backLabel: () => string }): () => void
     if (!(e.target instanceof Element) || !e.target.closest(WRAP) || !isMobileNow()) return;
     e.stopPropagation();
   };
+  // A menu button opens on the tap's release, not on touch-down (owner 14.10: «⋯» fired by a stray
+  // touch, a scroll that began on it). Radix DropdownMenu.Trigger toggles on `pointerdown`; for a
+  // finger / pen that press is held back here (nothing else on the page sees it either: no outside-
+  // press logic is involved while the menu is shut) and replayed as a mouse press on `click`, which
+  // the browser never fires after a scroll or a cancelled touch.
+  let held: Element | null = null;
+  let replaying = false;
+  const triggerOf = (t: EventTarget | null): HTMLElement | null => {
+    const el = t instanceof Element ? t.closest('[aria-haspopup="menu"]') : null;
+    return el instanceof HTMLElement && !(el.getAttribute('role') ?? '').startsWith('menuitem') ? el : null;
+  };
+  const holdOpen = (e: PointerEvent): void => {
+    held = null;
+    if (replaying || e.pointerType === 'mouse' || !isMobileNow()) return;
+    const trg = triggerOf(e.target);
+    if (!trg || (trg as HTMLButtonElement).disabled || trg.getAttribute('aria-expanded') === 'true') return;
+    held = trg;
+    e.stopPropagation();
+  };
+  const replayOpen = (e: MouseEvent): void => {
+    const trg = held;
+    held = null;
+    if (!trg || !trg.contains(e.target as Node)) return;
+    replaying = true;
+    try {
+      trg.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse', isPrimary: true }));
+    } finally {
+      replaying = false;
+    }
+  };
+  const dropHeld = (): void => {
+    held = null;
+  };
+  document.addEventListener('pointerdown', holdOpen, true);
+  document.addEventListener('click', replayOpen, true);
+  document.addEventListener('pointercancel', dropHeld, true);
   const HOVER = ['pointermove', 'pointerover', 'pointerout'] as const;
+  const onTouchDown = (e: PointerEvent): void => {
+    touchPress = e.pointerType === 'touch' && e.isPrimary ? { at: e.timeStamp, id: e.pointerId } : null;
+  };
+  const onTouchEnd = (): void => {
+    touchPress = null;
+  };
+  window.addEventListener('pointerdown', onTouchDown, true);
+  window.addEventListener('pointerup', onTouchEnd, true);
+  window.addEventListener('pointercancel', onTouchEnd, true);
   window.addEventListener('pointerdown', onDown, true);
   for (const type of HOVER) window.addEventListener(type, hover, true);
   const mq = window.matchMedia(MOBILE_QUERY);
   mq.addEventListener('change', schedule);
   return () => {
+    document.removeEventListener('pointerdown', holdOpen, true);
+    document.removeEventListener('click', replayOpen, true);
+    document.removeEventListener('pointercancel', dropHeld, true);
     portals.disconnect();
     poseObserver?.disconnect();
     poseObserver = null;
     window.removeEventListener('pointerdown', onDown, true);
+    window.removeEventListener('pointerdown', onTouchDown, true);
+    window.removeEventListener('pointerup', onTouchEnd, true);
+    window.removeEventListener('pointercancel', onTouchEnd, true);
     for (const type of HOVER) window.removeEventListener(type, hover, true);
     mq.removeEventListener('change', schedule);
   };

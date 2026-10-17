@@ -27,8 +27,8 @@ import {
   type TaskPriority,
   type TaskRelationKind,
   type UpdateTaskRequestSchema,
-  type TaskActivity,
   type TaskResponse,
+  type TaskNotice,
   type TaskUpdate,
   type WorkspaceSnapshot,
 } from '@calaba/protocol';
@@ -37,6 +37,8 @@ import { ApiError } from '../lib/api/client';
 import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boards/approvals';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toggleWatcher } from '../lib/boards/watchers';
+import { editedKey } from '../lib/boards/taskNotify';
+import { PRIORITY_LABEL, formatDue } from '../features/boards/visuals';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
 import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/checklists';
@@ -48,7 +50,7 @@ import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useAutomations } from '../stores/automations';
-import { checklistsOf, useBoards, workspaceBoards, workspaceCategories } from '../stores/boards';
+import { checklistsOf, unreadIds, useBoards, workspaceBoards, workspaceCategories, type LastNotice } from '../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
@@ -58,6 +60,7 @@ import { useUi } from '../stores/ui';
 import { memberName } from '../stores/workspaces';
 import { create } from 'zustand';
 import { boardsApi, type TaskScope } from './boardsApi';
+import { historyPage, type HistoryPage } from '../lib/boards/history';
 
 /**
  * Task boards (ADR-0042): READY / gateway events 75–81 into stores/boards.ts, loading a board's
@@ -176,7 +179,10 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       return true;
     case 'taskUpdate':
       if (ev.value.task) onTask(ev.value.task);
-      if (ev.value.notice) notifyTask(ev.value);
+      if (ev.value.notice) {
+        rememberNotice(ev.value);
+        notifyTask(ev.value);
+      }
       return true;
     case 'taskDelete': {
       // Purged, or a scoped viewer lost the card (ADR-0059: TASK_DELETE without `purged` = the card is gone for him).
@@ -186,7 +192,7 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       return true;
     }
     case 'taskActivity':
-      if (ev.value.activity) s.appendActivity(ev.value.activity);
+      s.appendActivity(ev.value.activity, ev.value.replacedId, ev.value.taskId);
       return true;
     case 'boardCategoryCreate':
     case 'boardCategoryUpdate':
@@ -211,13 +217,61 @@ function onTask(task: Task): void {
   const s = useBoards.getState();
   // Tasks of boards not loaded are kept only when something shows them (panel, my tasks, a
   // subtask list): otherwise the store would grow with every event of every board.
-  if (s.load[task.boardId] !== 'ready' && !s.tasks[task.id]) {
+  // An unread task is kept: «Непрочитанное» shows it (the store grows by the unread set only).
+  if (s.load[task.boardId] !== 'ready' && !s.tasks[task.id] && !(task.viewerState && countsUnread(task))) {
     const ids = Object.entries(s.unread).filter(([, ws]) => ws === task.workspaceId).map(([id]) => id);
     if (task.viewerState && countsUnread(task)) s.setUnread(task.workspaceId, [...ids, task.id]);
     else if (task.completedAt && s.unread[task.id]) s.setUnread(task.workspaceId, ids.filter((id) => id !== task.id));
     return;
   }
   s.upsertTask(task);
+}
+
+/** The task's last notice (not my own action): why «Непрочитанное» lists it. */
+function rememberNotice(u: TaskUpdate): void {
+  const task = u.task;
+  const n = u.notice;
+  if (!task || !n || n.actorId === myUserId()) return;
+  useBoards.getState().setNotice(task.id, { kind: n.kind, actorId: n.actorId, text: n.text, reRequested: n.reRequested, dueOn: n.dueOn, daysLeft: n.daysLeft, at: Date.now() });
+}
+
+/**
+ * «Непрочитанное»'s reason line: the text of the task's last notice this session; '' when none
+ * arrived live (READY carries only the ids — the row falls back to «Есть новое»). A primitive.
+ */
+export function unreadReason(s: { tasks: Readonly<Record<string, Task>>; notices: Readonly<Record<string, LastNotice>> }, taskId: string): string {
+  const task = s.tasks[taskId];
+  const n = s.notices[taskId];
+  return task && n ? noticeText(task, n) : '';
+}
+
+const unreadInflight = new Set<string>();
+
+/**
+ * «Непрочитанное»: the unread tasks not in the store yet (READY gives only their ids) come one by
+ * one (GET /tasks/{id}, 4 at a time, ≤ 100) — no board is loaded for them. Gone ones (404) leave
+ * the unread set.
+ */
+export async function ensureUnreadTasks(workspaceId: string): Promise<void> {
+  const s = useBoards.getState();
+  const missing = unreadIds(s, workspaceId).filter((id) => !s.tasks[id] && !unreadInflight.has(id)).slice(0, 100);
+  for (const id of missing) unreadInflight.add(id);
+  const next = async (): Promise<void> => {
+    for (let id = missing.shift(); id; id = missing.shift()) {
+      try {
+        const r = await boardsApi.tasks.get(id);
+        if (r.task) useBoards.getState().upsertTask(r.task);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+          const st = useBoards.getState();
+          st.setUnread(workspaceId, unreadIds(st, workspaceId).filter((x) => x !== id));
+        } else log.warn('unread task failed', e);
+      } finally {
+        unreadInflight.delete(id);
+      }
+    }
+  };
+  await Promise.all([next(), next(), next(), next()]);
 }
 
 /** A task notification (TaskUpdate.notice): a system notification unless I am looking at it. */
@@ -228,7 +282,7 @@ function notifyTask(u: TaskUpdate): void {
   if (prefs().presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
   if (visible) return;
-  const what = noticeText(task, n.kind, n.actorId, n.text);
+  const what = noticeText(task, n);
   try {
     const note = new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = () => {
@@ -242,10 +296,17 @@ function notifyTask(u: TaskUpdate): void {
 }
 
 /**
- * The text of a task notice (system notification). Approvals (ADR-0049 §5) are mandatory: the
- * server sends them past the task level and «Отписаться»; the reminder has no actor.
+ * The text of a task notice (system notification; the title carries the task). Approvals
+ * (ADR-0049 §5) are mandatory: the server sends them past the task level and «Отписаться»; the
+ * reminder has no actor; a re-request (the task changed, ADR-0082) has its own text. The
+ * triggers of ADR-0089 carry their details (due_on, days_left, text); the due sweep has no
+ * actor. A kind this client does not know: «Задача обновлена».
  */
-export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string, text = ''): string {
+export function noticeText(
+  task: Pick<Task, 'workspaceId' | 'approvers' | 'priority'>,
+  n: Pick<TaskNotice, 'kind' | 'actorId' | 'text' | 'reRequested' | 'dueOn' | 'daysLeft'>,
+): string {
+  const { kind, actorId, text } = n;
   const actor = actorId ? memberName(task.workspaceId, actorId) : '';
   switch (kind) {
     case TaskNoticeKind.ASSIGNED:
@@ -254,7 +315,11 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
       return t('boards.notice.mentioned', { name: actor });
     case TaskNoticeKind.COMMENT:
       return t('boards.notice.comment', { name: actor });
+    case TaskNoticeKind.STATUS:
+      return t('boards.notice.status', { name: actor });
     case TaskNoticeKind.APPROVAL_REQUESTED:
+      // ADR-0082: the task changed and the recipient's decided vote was reset.
+      if (n.reRequested) return t('boards.notice.approvalReRequested');
       return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
     case TaskNoticeKind.APPROVED:
       return t('boards.notice.approved');
@@ -266,9 +331,39 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
       const name = memberName(task.workspaceId, who?.userId ?? actorId);
       return who?.comment ? t('boards.notice.rejectedWhy', { name, comment: who.comment }) : t('boards.notice.rejected', { name });
     }
+    // ADR-0089.
+    case TaskNoticeKind.UNASSIGNED:
+      return actor ? t('boards.notice.unassigned', { name: actor }) : t('boards.notice.unassignedAuto');
+    case TaskNoticeKind.WATCHER_ADDED:
+      return t('boards.notice.watcherAdded', { name: actor });
+    case TaskNoticeKind.DUE_SOON:
+      return n.daysLeft > 0 ? t('boards.notice.dueTomorrow') : t('boards.notice.dueToday');
+    case TaskNoticeKind.OVERDUE:
+      return t('boards.notice.overdue', { date: noticeDay(n.dueOn) });
+    case TaskNoticeKind.DUE_CHANGED:
+      return n.dueOn ? t('boards.notice.dueChanged', { date: noticeDay(n.dueOn) }) : t('boards.notice.dueRemoved');
+    case TaskNoticeKind.PRIORITY:
+      return t('boards.notice.priority', { value: t(PRIORITY_LABEL[task.priority] ?? 'boards.prio.none') });
+    case TaskNoticeKind.MILESTONE:
+      return text ? t('boards.notice.milestone', { value: text }) : t('boards.notice.milestoneRemoved');
+    case TaskNoticeKind.MOVED:
+      return text ? t('boards.notice.moved', { value: text }) : t('boards.notice.movedNoName');
+    case TaskNoticeKind.EDITED:
+      return t(editedKey(text));
+    case TaskNoticeKind.ATTACHMENT:
+      return t('boards.notice.attachment', { value: text });
+    case TaskNoticeKind.ARCHIVED:
+      return t('boards.notice.archived');
     default:
-      return t('boards.notice.status', { name: actor });
+      return t('boards.notice.updated');
   }
+}
+
+/** «14 окт.» (with the year when not this year) of a notice's "YYYY-MM-DD". */
+function noticeDay(day: string): string {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return formatDue(day, today);
 }
 
 // ------------------------------------------------------------------ loading
@@ -363,12 +458,17 @@ async function markTaskRead(task: Task): Promise<void> {
   }
 }
 
-/** «Мои задачи» (GET /me/tasks). */
-export async function loadMyTasks(workspaceId: string, scope: TaskScope): Promise<void> {
-  const key = `${workspaceId}|${scope}`;
+/** The «Мои задачи» list key: workspace, scope and whether closed tasks are fetched too. */
+export function myTasksKey(workspaceId: string, scope: TaskScope, open: boolean): string {
+  return `${workspaceId}|${scope}${open ? '' : '|all'}`;
+}
+
+/** «Мои задачи» (GET /me/tasks); `open` false also brings the completed / cancelled ones. */
+export async function loadMyTasks(workspaceId: string, scope: TaskScope, open = true): Promise<void> {
+  const key = myTasksKey(workspaceId, scope, open);
   useTaskDetails.setState((s) => ({ mine: { ...s.mine, [key]: { ids: s.mine[key]?.ids ?? [], loading: true } } }));
   try {
-    const r = await boardsApi.tasks.mine(workspaceId, scope, true);
+    const r = await boardsApi.tasks.mine(workspaceId, scope, open);
     useBoards.getState().upsertTasks(r.tasks);
     useTaskDetails.setState((s) => ({ mine: { ...s.mine, [key]: { ids: r.tasks.map((x) => x.id), loading: false } } }));
   } catch (e) {
@@ -796,14 +896,18 @@ export async function setTaskAttachments(taskId: string, ids: string[]): Promise
   }
 }
 
-/** The journal of the task (the panel's activity rows): the newest page, oldest first. */
-export async function loadActivity(taskId: string): Promise<TaskActivity[]> {
+/**
+ * The task history, a page of 100 before `before` (newest first). `only=journal`; a server that
+ * does not know it sends comments too — they are dropped here, the cursor still moves past them.
+ * null on failure.
+ */
+export async function loadHistory(taskId: string, before = ''): Promise<HistoryPage | null> {
   try {
-    const r = await boardsApi.tasks.activity(taskId, { limit: 100 });
-    return r.items.flatMap((i) => (i.item.case === 'activity' ? [i.item.value] : [])).reverse();
+    const r = await boardsApi.tasks.activity(taskId, { limit: 100, only: 'journal', ...(before ? { before } : {}) });
+    return historyPage(r.items, r.hasMore);
   } catch (e) {
-    log.warn('task activity failed', e);
-    return [];
+    log.warn('task history failed', e);
+    return null;
   }
 }
 

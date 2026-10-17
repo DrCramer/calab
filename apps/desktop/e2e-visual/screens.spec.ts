@@ -1,9 +1,9 @@
 import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
-import { PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
+import { FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
-import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
+import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
@@ -112,6 +112,9 @@ const KEY = new Set([
   'update-bar',
   'room-settings-1',
   'room-settings-restricted',
+  'room-settings-picture',
+  'chat-room-icon-system',
+  'sidebar-room-picture',
   'i18n-en-main-chat',
   'settings-plan',
   'settings-gptunnel',
@@ -123,6 +126,10 @@ const KEY = new Set([
   'admin-plan',
   'admin-suspend',
   'settings-bans',
+  // Former members (ADR-0097).
+  'former-tab',
+  'former-chip',
+  'former-task',
   'workspace-suspended',
   'chat-sticker',
   'sticker-picker',
@@ -161,9 +168,15 @@ const KEY = new Set([
   // Task boards (ADR-0042 §5).
   'boards-kanban',
   'boards-task',
+  // «Комментарии | История» of the task panel (ADR-0091).
+  'boards-task-comments',
+  'boards-task-history',
   'boards-list',
   'boards-filter',
   'boards-settings',
+  // Status colour and icon pickers (ADR-0093).
+  'boards-settings-color',
+  'boards-settings-icon',
   // Timeline and task cards in chat (ADR-0042 §5, 1.1.0).
   'boards-timeline',
   'chat-task-card',
@@ -1413,6 +1426,24 @@ test('workspace-menu', async ({ open, win, mock, shot }) => {
 });
 
 /** «+» in the room column header (owner, 28.09): «Создать комнату» / «Создать категорию». */
+// ADR-0092: pictures loaded with the app (READY snapshot) — a text room, an unread text room,
+// a private one (lock badge), an empty voice room and the voice room with people (green ring).
+test('sidebar-room-picture', async ({ open, win, mock, shot }) => {
+  await open();
+  const by = IDS.users.anna;
+  mock.setRoomPicture(IDS.rooms.general, { photo: [[255, 170, 110], [70, 60, 170]] }, by);
+  mock.setRoomPicture(IDS.rooms.dev, { photo: [[120, 200, 255], [30, 70, 160]] }, by);
+  mock.setRoomPicture(IDS.rooms.longPrivate, { photo: [[255, 120, 160], [90, 40, 120]] }, by);
+  mock.setRoomPicture(IDS.rooms.call, { photo: [[150, 230, 170], [20, 110, 90]] }, by);
+  mock.setRoomPicture(IDS.rooms.meeting, { photo: [[255, 210, 120], [180, 60, 50]] }, by);
+  // A reload: the pictures come in the READY snapshot, not in live events.
+  await win.reload();
+  await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });
+  await mainWindow(win, mock);
+  await expect(win.locator('aside [data-room-icon="picture"] img')).toHaveCount(5);
+  await checkpoint(shot, 'sidebar-room-picture');
+});
+
 test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -1658,6 +1689,12 @@ test('settings-role-edit', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('role-perm-MANAGE_ROLES')).not.toBeChecked();
   await expect(dialog.getByTestId('role-member')).toHaveCount(2);
   await checkpoint(shot, 'settings-role-edit');
+  // ADR-0087: the «Биллинг» group closes the matrix — the owner's toggles with «что даёт».
+  const billing = dialog.getByTestId('role-billing-group');
+  await billing.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(billing.getByTestId('role-perm-BILLING_MANAGE')).toBeEnabled();
+  await expect(billing.getByTestId('role-perm-BILLING_VIEW')).not.toBeChecked();
+  await checkpoint(shot, 'settings-role-edit-billing');
 });
 
 /** ADR-0048: «Создать роль» → the draft with «Шаблон» «Менеджер отдела» applied and the preview. */
@@ -1797,6 +1834,57 @@ test('settings-bans', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'settings-bans');
 });
 
+/** Вера left the main workspace (ADR-0097): she keeps her messages, tasks and comments, but is no member. */
+async function veraLeaves(win: Page, mock: MockServer): Promise<void> {
+  const ws = IDS.workspaces.main;
+  mock.state.members = mock.state.members.filter((m) => !(m.workspaceId === ws && (m.userId === IDS.users.vera || m.userId === IDS.users.dina)));
+  mock.state.formerMembers.set(ws, [
+    { userId: IDS.users.vera, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.REMOVED, leftAt: ts('2026-01-14T09:00:00Z'), removedBy: IDS.users.anna, openTasks: 2 },
+    { userId: IDS.users.dina, role: WorkspaceRole.MEMBER, reason: FormerMemberReason.LEFT, leftAt: ts('2026-01-05T09:00:00Z'), openTasks: 0 },
+  ]);
+  // The app learns it from a fresh snapshot, as after a restart.
+  await win.reload();
+  await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });
+}
+
+/** Settings → «Участники» → «Бывшие» (ADR-0097 §3): who left, why, when, by whom; open tasks; «Пригласить снова». */
+test('former-tab', async ({ open, win, mock, shot }) => {
+  await open();
+  await veraLeaves(win, mock);
+  await mainWindow(win, mock);
+  await win.getByTestId('titlebar-title').click();
+  await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
+  await win.getByRole('dialog').getByRole('tab', { name: 'Бывшие' }).click();
+  await expect(win.getByTestId('ws-former-row')).toHaveCount(2);
+  await checkpoint(shot, 'former-tab');
+});
+
+/** The feed with a message of someone who left: grey avatar, «бывший» next to the name (ADR-0097 §4). */
+test('former-chip', async ({ open, win, mock, shot }) => {
+  await open();
+  await veraLeaves(win, mock);
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: 'Передаю дела, всё описано в задачах' });
+  await expect(win.locator('[data-message-id] [data-former-chip]').last()).toBeVisible();
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'former-chip');
+});
+
+/** A task of someone who left: chip, grey avatar and «Переназначить» on the assignee row. */
+test('former-task', async ({ open, win, mock, shot }) => {
+  await open();
+  await veraLeaves(win, mock);
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'Тёмная тема' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-reassign')).toBeVisible();
+  await checkpoint(shot, 'former-task');
+});
+
 /** A suspended workspace as its owner sees it: the bar with the reason and «Связаться», the read-only composer. */
 test('workspace-suspended', async ({ open, win, mock, shot }) => {
   await open();
@@ -1839,6 +1927,18 @@ test('room-settings-restricted', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('room-who-sees-row')).toHaveCount(1);
   await win.getByTestId('room-who-sees').scrollIntoViewIfNeeded();
   await checkpoint(shot, 'room-settings-restricted');
+});
+
+// ADR-0092: «Основное» of the room settings with a picture — the 44 px preview, «Загрузить картинку» and «Убрать».
+test('room-settings-picture', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setRoomPicture(IDS.rooms.general, { bg: [52, 120, 246], fg: [255, 255, 255] }, IDS.users.anna);
+  await openSettingsTab(win, () => win.getByRole('button', { name: 'Настройки комнаты' }).click(), 1);
+  const row = win.getByTestId('room-picture');
+  await expect(row.locator('[data-room-icon="picture"] img')).toBeVisible();
+  await expect(win.getByTestId('room-picture-remove')).toBeVisible();
+  await checkpoint(shot, 'room-settings-picture');
 });
 
 test('confirm-delete-room', async ({ open, win, mock, shot }) => {
@@ -2233,6 +2333,19 @@ test('main-members-birthday', async ({ open, win, mock, shot }) => {
 
 // docs/09 #76: Борис's birthday is today (the page clock: 15 January) — the server's card in
 // «общий» and 🎂 after his name in the members column; «15 января · 36 лет» in his profile card.
+// ADR-0092: Борис changes the picture of «общий» — the service line with the 40 px picture in the
+// feed, the picture in the room list and in the header instead of «#».
+test('chat-room-icon-system', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setRoomPicture(IDS.rooms.general, { bg: [233, 120, 40], fg: [255, 255, 255] }, IDS.users.boris);
+  const line = win.getByTestId('room-icon-line');
+  await expect(line).toContainText('Борис Петров изменил(а) картинку комнаты');
+  await expect(line.locator('img')).toBeVisible();
+  await expect(win.locator('aside [data-room-icon="picture"] img').first()).toBeVisible();
+  await checkpoint(shot, 'chat-room-icon-system');
+});
+
 test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -3575,11 +3688,13 @@ function externalEvent(mock: MockServer): void {
 }
 
 /** The calendar screens: a full day of meetings (calendarWeb.seedDay), the mock's clock at NOW. */
-async function calendarDay(win: Page, mock: MockServer): Promise<void> {
+/** Seeds the day (seedDay) and opens the calendar; returns the id of «Планёрка». */
+async function calendarDay(win: Page, mock: MockServer): Promise<string> {
   mock.setClock(NOW.getTime());
-  seedDay(mock);
+  const planerka = seedDay(mock);
   await win.getByTestId('section-calendar').click();
   await expect(win.getByTestId('mini-calendar')).toBeVisible();
+  return planerka;
 }
 
 /** The header icon with today's count: today's day view at once, the mini month under the header (ADR-0041 §3). */
@@ -3593,12 +3708,17 @@ test('calendar-mini', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'calendar-mini');
 });
 
-/** The day view with the red «now» line, overlapping blocks, the all-day row and the selected meeting's card. */
+/**
+ * The day view with the red «now» line, overlapping blocks, the all-day row and the selected meeting's
+ * card; then the card's comments (ADR-0104): the thread, a comment of mine sent from the field.
+ */
 test('calendar-day', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   externalEvent(mock);
-  await calendarDay(win, mock);
+  const planerka = await calendarDay(win, mock);
+  mock.addEventComment(planerka, IDS.users.boris, 'Повестка: релиз 1.0 и **ретро** спринта. Ссылки — в описании.', NOW.getTime() - 3 * 3_600_000);
+  mock.addEventComment(planerka, IDS.users.vera, 'Опоздаю минут на пять', NOW.getTime() - 20 * 60_000);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
   await expect(win.getByTestId('day-view')).toBeVisible();
   await expect(win.getByTestId('now-line')).toBeVisible();
@@ -3609,6 +3729,18 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   // My external calendar's event (ADR-0045 §3): a dashed card with its title and place.
   await expect(win.getByTestId('external-block')).toContainText('Созвон с подрядчиком');
   await checkpoint(shot, 'calendar-day');
+
+  const comments = card.getByTestId('event-comments');
+  await comments.scrollIntoViewIfNeeded();
+  await expect(comments.getByTestId('event-comment')).toHaveCount(2);
+  await comments.getByTestId('event-comment-input').fill('Подготовлю демо');
+  await comments.getByTestId('event-comment-input').press('Enter');
+  await expect(comments.getByTestId('event-comment')).toHaveCount(3);
+  await expect(comments.getByRole('heading')).toHaveText('Комментарии — 3');
+  await expect(comments.getByTestId('event-comment-input')).toBeInViewport();
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await comments.getByTestId('event-comment').last().hover();
+  await checkpoint(shot, 'calendar-comments', { keepPointer: true });
 });
 
 /**
@@ -3740,7 +3872,7 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'boards-kanban');
 });
 
-/** The task panel over the board (960: floating): properties, two assignees, relations, comments. */
+/** The task full screen over the board: properties, two assignees, relations, comments. */
 test('boards-task', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -3750,6 +3882,60 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await expect(panel.locator('[data-message-id]')).toHaveCount(2);
   await checkpoint(shot, 'boards-task');
+
+  // ADR-0103 (owner 15.10: a click on a task attachment did nothing): attach a PDF, click its
+  // chip — the PDF viewer, not a dead link; Esc brings the task back.
+  const upload = win.waitForResponse((r) => r.request().method() === 'PATCH' && /\/api\/tasks\/[^/]+$/.test(r.url()));
+  await panel.locator('input[type=file]').first().setInputFiles({ name: 'load-test-report.pdf', mimeType: 'application/pdf', buffer: mockPdf(245_760) });
+  expect((await upload).ok()).toBe(true);
+  await panel.getByTestId('task-attachment-open').filter({ hasText: 'load-test-report.pdf' }).click();
+  const viewer = win.getByTestId('pdf-viewer');
+  await expect(viewer).toHaveAttribute('data-state', 'ready');
+  await expect(viewer.getByRole('heading', { name: 'load-test-report.pdf' })).toBeVisible();
+  // Chromium's viewer paints in its own process: give it a moment past the frame's load.
+  await viewer.getByTestId('pdf-frame').evaluate((f) => new Promise<void>((done) => ((f as HTMLIFrameElement).contentDocument?.readyState === 'complete' ? done() : f.addEventListener('load', () => done(), { once: true }))));
+  await win.waitForTimeout(1500);
+  await checkpoint(shot, 'boards-task-pdf');
+  await win.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+  await expect(panel).toBeVisible();
+});
+
+/** CAL-3's panel at its lower section: the «Комментарии» tab (the default) with the composer. */
+test('boards-task-comments', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  const section = panel.getByTestId('task-activity');
+  await expect(section).toHaveAttribute('data-tab', 'comments');
+  await expect(panel.locator('[data-message-id]')).toHaveCount(2);
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(shot, 'boards-task-comments');
+});
+
+/**
+ * «История» (ADR-0091 §2): newest first, «Сегодня» / «Вчера», a bot and a rule among the actors;
+ * the newest row (the description edit) opened — its word diff.
+ */
+test('boards-task-history', async ({ open, win, mock, shot }) => {
+  mock.seedBots();
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  const section = panel.getByTestId('task-activity');
+  await section.getByRole('radio', { name: 'История' }).click();
+  await expect(section).toHaveAttribute('data-tab', 'history');
+  const rows = section.getByTestId('history-row');
+  await expect(rows.first()).toHaveAttribute('data-kind', 'description');
+  await expect(section.getByTestId('history-day')).toHaveCount(2);
+  await rows.first().getByTestId('history-toggle').click();
+  await expect(section.getByTestId('history-diff')).toBeVisible();
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(shot, 'boards-task-history');
 });
 
 /** The list grouped by status, two rows selected: the bulk actions bar. */
@@ -3765,17 +3951,16 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'boards-list');
 });
 
-/** «Фильтр» open over a filtered board: the «Мои» chip on, a label condition, the field list. */
+/** «Фильтр» open over a filtered board: a label condition, the field list. */
 test('boards-filter', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await boardsMode(win, mock);
-  await win.getByTestId('quick-mine').click();
   await win.getByTestId('filter-button').click();
   await win.getByTestId('filter-fields').getByRole('option', { name: 'Лейблы' }).click();
   await win.getByTestId('filter-values').getByRole('option', { name: /Фича/ }).click();
   await win.keyboard.press('Escape');
-  await expect(win.getByTestId('filter-chip')).toHaveCount(2);
+  await expect(win.getByTestId('filter-chip')).toHaveCount(1);
   await win.getByTestId('filter-button').click();
   await expect(win.getByTestId('filter-fields')).toBeVisible();
   await checkpoint(shot, 'boards-filter');
@@ -3791,6 +3976,40 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');
+});
+
+/** Board settings → «Статусы», the colour picker of the first status open (ADR-0093): a 6-wide grid over the rows. */
+test('boards-settings-color', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Статусы' }).click();
+  await win.getByTestId('statuses-editor').locator('[data-settings-row]').first().getByRole('button', { name: /^Цвет/ }).click();
+  const grid = win.getByTestId('status-color-picker');
+  await expect(grid.getByRole('radio')).toHaveCount(12);
+  await expect(grid.getByRole('radio', { name: 'Серый', exact: true })).toBeFocused();
+  await checkpoint(shot, 'boards-settings-color');
+});
+
+/** Board settings → «Статусы»: «Три четверти» picked for Backlog, the icon grid reopened (ADR-0093). */
+test('boards-settings-icon', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Статусы' }).click();
+  const row = win.getByTestId('statuses-editor').locator('[data-settings-row]').first();
+  await row.getByRole('button', { name: /^Иконка/ }).click();
+  const grid = win.getByTestId('status-icon-picker');
+  await expect(grid.getByRole('radio')).toHaveCount(19);
+  await grid.getByRole('radio', { name: 'Три четверти' }).click();
+  await expect(row.locator('[data-status-icon="three-quarters"]')).toBeVisible();
+  await row.getByRole('button', { name: /^Иконка/ }).click();
+  await expect(grid.getByRole('radio', { name: 'Три четверти' })).toHaveAttribute('aria-checked', 'true');
+  await checkpoint(shot, 'boards-settings-icon');
 });
 
 /** Board settings, the features tab (owner 07.10): every optional feature has a switch, 16 in all. */

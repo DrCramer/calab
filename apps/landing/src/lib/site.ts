@@ -18,6 +18,5 @@ export const REPO_URL = 'https://github.com/itrcz/calab';
 export const repoFile = (path: string): string => `${REPO_URL}/blob/main/${path}`;
 export const repoTree = (path: string): string => `${REPO_URL}/tree/main/${path}`;
 // Bot API (ADR-0031): the public docs live in the repository, in Russian and English.
-export const botDocs = (russian: boolean): string => repoFile(russian ? 'docs/19-bot-api.md' : 'docs/19-bot-api.en.md');
 export const BOT_EXAMPLES_URL = repoTree('examples/bots');
 export const BOT_SDK_URL = repoTree('packages/bot-sdk');

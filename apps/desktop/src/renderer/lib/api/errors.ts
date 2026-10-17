@@ -122,6 +122,39 @@ function stickerField(field: string, message: string): HumanError | null {
   return { text: t(key), field: name, ...(i !== undefined ? { index: Number(i) } : {}), retry: false, generic: false };
 }
 
+/**
+ * OAuth client validation (ADR-0102): the server's stable messages of validateClient
+ * (apps/server/internal/oauthprovider/clients.go, validation.go) → the texts of the form's
+ * own pre-validation (features/identity/oauthClientForm.ts). `name` uses FIELD.
+ */
+const OAUTH_RULE: Record<string, MessageKey> = {
+  'unknown client type': 'identity.err.type',
+  'at least one redirect URI is required': 'identity.err.redirectRequired',
+  'at most 10 redirect URIs': 'identity.err.redirectMax',
+  'redirect URI is not a valid absolute URL': 'identity.err.redirectInvalid',
+  'redirect URI must not contain spaces, # or *': 'identity.err.redirectChars',
+  'redirect URI must use https (http only for localhost, 127.0.0.1 or [::1])': 'identity.err.redirectScheme',
+  'custom scheme redirect URIs are only for native clients': 'identity.err.redirectNative',
+  'duplicate redirect URI': 'identity.err.redirectDuplicate',
+  'allowed origins are only for SPA clients': 'identity.err.originsSpaOnly',
+  'at most 10 allowed origins': 'identity.err.originMax',
+  'origin must be https://host[:port] without a path': 'identity.err.origin',
+  'duplicate origin': 'identity.err.originDuplicate',
+  'scopes must include openid and only openid, profile, email': 'identity.err.scopes',
+};
+const OAUTH_FIELDS = new Set(['type', 'redirectUris', 'allowedOrigins', 'scopes']);
+
+/**
+ * 409 CONFLICT reason PLAN_LIMIT of the workspace OAuth provider and identity routes: a count
+ * or a missing Business/Enterprise, never «changed by someone else» (ADR-0102). The server
+ * messages: oauthprovider/http.go writeAPIError and apiIdentityError, auth/identity.go.
+ */
+const IDENTITY_LIMIT: ReadonlyArray<readonly [RegExp, MessageKey]> = [
+  [/^OAuth client limit reached$/, 'identity.oauthClientLimit'],
+  [/^OAuth secret limit reached$/, 'identity.oauthSecretLimit'],
+  [/^(Business or Enterprise is required|identity entitlement required)$/, 'identity.plan'],
+];
+
 const generic = (): HumanError => ({ text: t('err.generic'), retry: true, generic: true });
 
 function fromStatus(status: number): HumanError {
@@ -164,12 +197,21 @@ export function recentAuthRequired(e: unknown): boolean {
 export function describeError(e: unknown): HumanError {
   if (e instanceof ApiError) {
     if (identityNotConfigured(e)) return { text: t('identity.notConfigured'), retry: false, generic: false };
+    // The restricted mode «тариф не активен» (ADR-0086 amendment): one plain reason everywhere.
+    if (e.reason === 'WORKSPACE_PLAN_INACTIVE')
+      return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), retry: false, generic: false };
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
       const sticker = e.field ? stickerField(e.field, e.message) : null;
       if (sticker) return sticker;
+      const oauth = e.field && OAUTH_FIELDS.has(e.field) ? OAUTH_RULE[e.message] : undefined;
+      if (e.field && oauth) return { text: t(oauth), field: e.field, retry: false, generic: false };
       const key = e.field ? FIELD[e.field] : undefined;
       return { text: t(key ?? 'err.validation'), ...(e.field ? { field: e.field } : {}), retry: false, generic: false };
+    }
+    if (e.code === 'ERROR_CODE_CONFLICT' && e.reason === 'PLAN_LIMIT') {
+      const limit = IDENTITY_LIMIT.find(([re]) => re.test(e.message))?.[1];
+      if (limit) return { text: t(limit), retry: false, generic: false };
     }
     const c = CODE[e.code];
     if (c) return { text: t(c.key), retry: c.retry ?? false, generic: false };

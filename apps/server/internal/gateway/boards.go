@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 
 	"github.com/google/uuid"
@@ -222,7 +223,7 @@ func (s *wsState) boardBits(boardID, userID uuid.UUID) perm.Bits {
 	if !ok || b == nil {
 		return 0
 	}
-	return perm.ComputeBoardIn(m, b.GetIsPrivate(), b.GetRestricted(), s.btargets[boardID])
+	return perm.ComputeBoardIn(m, pbconv.BoardFlags(b), s.btargets[boardID])
 }
 
 // boardView is how a member sees a live board: their bits, or task-scoped (ADR-0059).
@@ -325,8 +326,9 @@ func boardTransition(before, after boardView, board *v1.Board, wid uuid.UUID, ch
 func taskOfEvent(ev *v1.DispatchEvent) (task, board uuid.UUID) {
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_TaskActivity:
-		a := e.TaskActivity.GetActivity()
-		return parseID(a.GetTaskId()), parseID(a.GetBoardId())
+		// The event's own ids: a removed entry (ADR-0081) has no activity.
+		x, a := e.TaskActivity, e.TaskActivity.GetActivity()
+		return parseID(cmp.Or(x.GetTaskId(), a.GetTaskId())), parseID(cmp.Or(x.GetBoardId(), a.GetBoardId()))
 	case *v1.DispatchEvent_TaskChecklistUpdate:
 		return parseID(e.TaskChecklistUpdate.GetTaskId()), parseID(e.TaskChecklistUpdate.GetBoardId())
 	case *v1.DispatchEvent_TaskChecklistDelete:

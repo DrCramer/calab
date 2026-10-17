@@ -1,23 +1,27 @@
-import { WorkspaceRole, type Role, type Room } from '@calaba/protocol';
-import { ChevronDown, Hash, Lock, Plus, Timer, Volume2 } from 'lucide-react';
-import { memo, useMemo, useState, type ReactNode } from 'react';
-import { useShallow } from 'zustand/react/shallow';
-import { Avatar } from '../../components/Avatar';
+import { NotificationLevel, WorkspaceRole, type Role, type Room } from '@calaba/protocol';
+import { Bell, BellOff, CheckCheck, ChevronDown, Plus, Volume2 } from 'lucide-react';
+import { memo, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { RoomIcon } from '../../components/RoomIcon';
 import { Button, CountBadge, Empty, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
 import { mayArrangeRooms, mayInviteMembers, mayManageRoomWith, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { useRowSwipe } from '../../lib/rowSwipe';
 import { sortTempRooms } from '../../lib/tempRooms';
+import { markRead } from '../../services/chat';
+import { setRoomNotifications } from '../../services/mentions';
 import { useRoomPreview } from '../../stores/roomPreviews';
-import { groupRooms, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms } from '../../stores/rooms';
+import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { KnockBadge } from '../guests/KnockBadge';
 import { CallTimer, CategoryDialog, PeoplePill, RoomMenu, WorkspaceHeader } from './Sidebar';
+import { SpeakingStack, VoicePeoplePopover, useRoomPeople } from './VoicePeopleCard';
 
 /**
  * «Команда» on a phone (ADR-0073 §3): the workspace header (name and menu, «+»; the boards are the «Доски» tab) and
@@ -54,6 +58,8 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
   const manageRooms = mayArrangeRooms(role);
   const admin = mayInviteMembers(role);
   const open = useUi((s) => s.openDialog);
+  const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
+  const archiveN = useArchiveCount(workspaceId, !guest);
   const { groups, temps } = useMemo(() => {
     let rooms = roomsOfWorkspace(roomsById, workspaceId);
     // «Скрыть заглушённые»: my voice room stays.
@@ -65,7 +71,7 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
 
   return (
     <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-4" data-testid="room-list">
-      {groups.length === 0 && temps.length === 0 ? (
+      {groups.length === 0 && temps.length === 0 && archiveN === 0 ? (
         <Empty
           action={
             manageRooms ? (
@@ -89,8 +95,8 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
           </ul>
         ),
       )}
-      {temps.length ? (
-        <Section id={`temp:${workspaceId}`} title={t('temp.group')} keep={voiceRoom}>
+      {temps.length || archiveN > 0 ? (
+        <Section id={`temp:${workspaceId}`} title={t('temp.group')} keep={voiceRoom} footer={archiveN > 0 ? <TempArchiveButton workspaceId={workspaceId} n={archiveN} /> : null}>
           {temps.map(row)}
         </Section>
       ) : null}
@@ -99,7 +105,7 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
 }
 
 /** A collapsible category (the desktop's collapse state): collapsed, only my voice room stays. */
-function Section({ id, title, keep, children }: { id: string; title: string; keep: string | null; children: ReactNode[] }): ReactNode {
+function Section({ id, title, keep, footer, children }: { id: string; title: string; keep: string | null; footer?: ReactNode; children: ReactNode[] }): ReactNode {
   const collapsed = useUi((s) => !!s.collapsed[id]);
   const toggle = useUi((s) => s.toggleCategory);
   const visible = collapsed ? children.filter((c) => (c as { key?: string | null }).key === keep) : children;
@@ -116,27 +122,10 @@ function Section({ id, title, keep, children }: { id: string; title: string; kee
         <span className="truncate">{title}</span>
       </button>
       {visible.length ? <ul className="flex flex-col">{visible}</ul> : null}
+      {footer}
     </section>
   );
 }
-
-/** Voice participants of a room (server states + me while I connect to it), by join time. */
-export function useRoomPeople(workspaceId: string, roomId: string): string[] {
-  const server = useWorkspaces(
-    useShallow((s) => {
-      const voice = roomId ? s.byId[workspaceId]?.voice : undefined;
-      if (!voice) return NONE;
-      return Object.values(voice)
-        .filter((v) => v.roomId === roomId)
-        .sort((a, b) => Number(a.joinedAt?.seconds ?? 0n) - Number(b.joinedAt?.seconds ?? 0n) || a.userId.localeCompare(b.userId))
-        .map((v) => v.userId);
-    }),
-  );
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const joining = useVoice((s) => (s.joining?.roomId ?? (s.phase === 'connecting' ? s.roomId : null)) === roomId);
-  return useMemo(() => (joining && me && !server.includes(me) ? [...server, me] : server), [server, joining, me]);
-}
-const NONE: string[] = [];
 
 /**
  * One room (ADR-0073 §3): 44 px icon · name (bold when unread) and the last message's time ·
@@ -171,8 +160,19 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
   const label = [room.name, mentions > 0 ? plural('shell.unreadMentions', mentions) : unread ? t('ws.unread') : '', live ? t('shell.peopleIn', { n: people.length }) : '']
     .filter(Boolean)
     .join(', ');
+  // A left swipe reveals «Прочитано» · «Тихо / Звук» (docs/08 «Свайпы и долгое нажатие»).
+  const swipe = useRowSwipe(true, 2);
+  const shifted = swipe.offset !== 0;
+  // A tap on the avatar stack opens «В голосе» (docs/08 «Кто в голосе»); the rest of the row opens the room.
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const onTap = (e: MouseEvent<HTMLButtonElement>): void => {
+    if (shifted) swipe.close();
+    else if (live && onStack(e)) setPeopleOpen(true);
+    else openRoom(workspaceId, room.id);
+  };
   return (
-    <li>
+    <li className="relative flex" {...swipe.handlers}>
+      {shifted ? <RoomSwipeActions roomId={room.id} width={Math.min(-swipe.offset, swipe.width)} close={swipe.close} /> : null}
       <RoomMenu
         room={room}
         canManage={mayManageRoomWith(perms, role, me, room)}
@@ -183,13 +183,17 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
       >
         <button
           type="button"
-          onClick={() => openRoom(workspaceId, room.id)}
+          onClick={onTap}
           aria-label={label}
           data-testid="phone-room-row"
           data-room={room.id}
-          className="flex h-[68px] w-full min-w-0 select-none items-center gap-3 px-3 text-left transition-colors duration-[var(--motion-fast)] active:bg-hover"
+          style={shifted ? { marginRight: -swipe.offset } : undefined}
+          className={cx(
+            'flex h-[68px] min-w-0 flex-1 select-none items-center gap-3 px-3 text-left duration-[var(--motion-fast)] active:bg-hover',
+            swipe.dragging ? 'transition-colors' : 'transition-[margin,background-color]',
+          )}
         >
-          <RoomIcon room={room} live={live || inRoom} />
+          <RoomIcon roomId={room.id} size={44} live={live || inRoom} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5 border-b border-line py-2.5 [li:last-child_&]:border-b-0">
             <span className="flex h-5 min-w-0 items-center gap-2">
               <span className={cx('min-w-0 flex-1 truncate text-list leading-5', unread ? 'font-semibold text-fg' : 'text-fg')}>{room.name}</span>
@@ -197,7 +201,11 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
             </span>
             <span className="flex h-5 min-w-0 items-center gap-2">
               {live ? <VoiceLine workspaceId={workspaceId} people={people} /> : <PreviewLine workspaceId={workspaceId} room={room} me={me} unread={unread} />}
-              {live ? <AvatarStack workspaceId={workspaceId} people={people} /> : null}
+              {live ? (
+                <span className="flex shrink-0" data-voice-stack>
+                  <SpeakingStack workspaceId={workspaceId} people={people} />
+                </span>
+              ) : null}
               {live ? <PeoplePill n={people.length} max={room.userLimit} /> : null}
               <KnockBadge roomId={room.id} />
               <Counter mentions={mentions} unread={unread} />
@@ -205,21 +213,66 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
           </span>
         </button>
       </RoomMenu>
+      {live ? (
+        <VoicePeoplePopover workspaceId={workspaceId} room={room} perms={perms} open={peopleOpen} onOpenChange={setPeopleOpen}>
+          <span aria-hidden className="pointer-events-none absolute right-3 top-1/2 size-px" />
+        </VoicePeoplePopover>
+      ) : null}
     </li>
   );
 });
 
-function RoomIcon({ room, live }: { room: Room; live: boolean }): ReactNode {
-  const Icon = room.expiresAt ? Timer : isVoice(room) ? Volume2 : Hash;
+/** The stack's touch zone in a room row: its box grown to 44 px tall and 8 px on each side (a pointer tap; a keyboard click opens the room). */
+function onStack(e: MouseEvent<HTMLElement>): boolean {
+  if (e.detail === 0) return false;
+  const stack = e.currentTarget.querySelector('[data-voice-stack]');
+  if (!stack) return false;
+  const r = stack.getBoundingClientRect();
+  const cy = r.top + r.height / 2;
+  return e.clientX >= r.left - 8 && e.clientX <= r.right + 8 && Math.abs(e.clientY - cy) <= 22;
+}
+
+/**
+ * The actions under a swiped room row: «Прочитано» (the menu's «Отметить прочитанным») and
+ * «Тихо» / «Звук» — the room's notifications «Ничего» ↔ «Как в пространстве» (the menu's
+ * «Уведомления ›»). Mounted only while the row is open; a tap closes the row.
+ */
+function RoomSwipeActions({ roomId, width, close }: { roomId: string; width: number; close: () => void }): ReactNode {
+  const unread = useRooms((s) => isUnread(roomId, s));
+  const quiet = useRooms((s) => {
+    const n = roomNotify(s.notify[roomId]);
+    return n.mutedUntil !== null || n.level === NotificationLevel.NONE;
+  });
+  const action = 'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 overflow-hidden px-1 text-center text-micro font-medium';
   return (
-    <span className={cx('relative grid size-11 shrink-0 place-items-center rounded-full', live ? 'bg-[color-mix(in_srgb,var(--color-ok)_18%,transparent)] text-ok' : 'bg-[var(--color-fill)] text-muted')}>
-      <Icon className="size-[22px]" aria-hidden />
-      {room.isPrivate ? (
-        <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-[18px] place-items-center rounded-full border-2 border-[var(--color-sidebar,var(--color-bg))] bg-[var(--color-fill-hover)]">
-          <Lock className="size-2.5 text-fg" aria-hidden />
-        </span>
-      ) : null}
-    </span>
+    <div className="absolute inset-y-0 right-0 flex overflow-hidden" style={{ width }} data-testid="room-swipe-action">
+      <button
+        type="button"
+        disabled={!unread}
+        onClick={() => {
+          close();
+          const last = useRooms.getState().lastMessage[roomId];
+          if (last) markRead(roomId, last);
+        }}
+        className={cx(action, 'bg-accent-strong text-accent-fg disabled:opacity-60')}
+        data-testid="room-swipe-read"
+      >
+        <CheckCheck className="size-4 shrink-0" aria-hidden />
+        <span className="line-clamp-2">{t('room.swipeRead')}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          close();
+          void setRoomNotifications(roomId, quiet ? NotificationLevel.INHERIT : NotificationLevel.NONE, null);
+        }}
+        className={cx(action, 'bg-attention text-attention-fg')}
+        data-testid="room-swipe-mute"
+      >
+        {quiet ? <Bell className="size-4 shrink-0" aria-hidden /> : <BellOff className="size-4 shrink-0" aria-hidden />}
+        <span className="line-clamp-2">{t(quiet ? 'room.swipeUnmute' : 'room.swipeMute')}</span>
+      </button>
+    </div>
   );
 }
 
@@ -258,28 +311,6 @@ function VoiceLine({ workspaceId, people }: { workspaceId: string; people: strin
     <span className="fade-end flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap text-caption font-medium leading-5 text-[var(--color-green-text)]" data-testid="room-voice-line">
       <Volume2 className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0">{names}</span>
-    </span>
-  );
-}
-
-/** Up to three avatars of the call, overlapping. */
-export function AvatarStack({ workspaceId, people, size = 20 }: { workspaceId: string; people: string[]; size?: number }): ReactNode {
-  const shown = people.slice(0, 3);
-  return (
-    <span className="flex shrink-0 items-center" aria-hidden>
-      {shown.map((id, i) => (
-        <StackAvatar key={id} workspaceId={workspaceId} userId={id} size={size} first={i === 0} />
-      ))}
-    </span>
-  );
-}
-
-function StackAvatar({ workspaceId, userId, size, first }: { workspaceId: string; userId: string; size: number; first: boolean }): ReactNode {
-  const fileId = useWorkspaces((s) => s.users[userId]?.avatarFileId ?? '');
-  const name = useWorkspaces(() => memberName(workspaceId, userId));
-  return (
-    <span className={cx('flex rounded-full ring-2 ring-[var(--color-sidebar,var(--color-bg))]', !first && '-ml-1.5')}>
-      <Avatar userId={userId} name={name} fileId={fileId || undefined} size={size} />
     </span>
   );
 }

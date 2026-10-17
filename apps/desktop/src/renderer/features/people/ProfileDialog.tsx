@@ -106,6 +106,7 @@ export function ProfileDialog({
   const banner = useBannerColor(userId, u?.avatarFileId || undefined);
   const content = useRef<HTMLDivElement>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   // The member left (or the workspace is gone) while the dialog was open.
   useEffect(() => {
     if (!m?.user) onClose();
@@ -132,7 +133,12 @@ export function ProfileDialog({
             // The dialog itself (Radix would focus the close box first and show its tooltip); the
             // note on «Добавить заметку» (read-only until loaded, but focusable).
             e.preventDefault();
-            (focusNote ? noteRef.current : content.current)?.focus();
+            if (focusNote) noteRef.current?.focus();
+            else {
+              // Opens at the banner: focusing must not scroll the body (docs/09, profile-dialog).
+              content.current?.focus({ preventScroll: true });
+              if (scroller.current) scroller.current.scrollTop = 0;
+            }
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-64px)] w-[calc(100vw-32px)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] text-body focus:outline-none',
@@ -142,7 +148,7 @@ export function ProfileDialog({
         >
           {/* Banner and body scroll together: the avatar overlaps the banner edge and must not be
               clipped by the scroll box. The close box stays on top, outside the scroller. */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             <div className="h-[88px]" style={{ background: banner }} data-testid="profile-banner" />
             <div className="px-5 pb-5">
               {/* Avatar 80 over the banner edge, ringed with the sheet colour (presence dot too). */}

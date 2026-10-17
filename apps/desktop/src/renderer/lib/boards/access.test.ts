@@ -2,8 +2,9 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { PERMISSION_BITS, TaskApproverSchema, TaskAssigneeSchema, TaskSchema, UserSchema, WorkspaceMemberSchema, WorkspaceRole, BoardSchema, type Board, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
+import { setOwnerSeesPrivate } from '../permissions';
 import { legacyRoles } from '../roles';
-import { accessChoice, boardScoped, boardVisible, pickerAccess, taskBits } from './access';
+import { accessChoice, boardScoped, boardVisible, mentionableOnBoard, pickerAccess, taskBits } from './access';
 
 // ADR-0059 §2 / §5, ADR-0076: the client mirrors taskPermissions; the picker follows computeMemberBoardPermissions.
 const VIEW = PERMISSION_BITS.VIEW_BOARD;
@@ -93,8 +94,16 @@ describe('pickerAccess / accessChoice (the assignee and approver pickers)', () =
     expect(accessChoice(a)).toEqual(accessChoice('card'));
     expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.MEMBER, true))).toBe('hidden');
   });
-  it('the owner sees a restricted board', () => {
-    expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.OWNER))).toBe('ok');
+  it('the owner sees a private board only with «Владелец видит приватное» (addendum 2026-10-14)', () => {
+    expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.OWNER))).toBe('card');
+    const wsBoard = { ...closedBoard, workspaceId: 'w-owner-sees' };
+    setOwnerSeesPrivate('w-owner-sees', true);
+    expect(pickerAccess(wsBoard, roles, member(WorkspaceRole.OWNER))).toBe('ok');
+    expect(pickerAccess(wsBoard, roles, member(WorkspaceRole.ADMIN))).toBe('card');
+    setOwnerSeesPrivate('w-owner-sees', false);
+  });
+  it('the creator of a private board sees it', () => {
+    expect(pickerAccess({ ...closedBoard, createdBy: 'u' }, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
   });
   it('guests are never listed; a bot only when it sees the board', () => {
     expect(pickerAccess(publicBoard, roles, member(WorkspaceRole.GUEST))).toBe('hidden');
@@ -109,5 +118,23 @@ describe('pickerAccess / accessChoice (the assignee and approver pickers)', () =
       expect(pickerAccess(b, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
     }
     expect(pickerAccess(board({ permissions: VIEW }), roles, member(WorkspaceRole.GUEST))).toBe('hidden');
+  });
+});
+
+describe('mentionableOnBoard (task comment @-mentions)', () => {
+  const roles = legacyRoles('w');
+  const member = (role: WorkspaceRole) => create(WorkspaceMemberSchema, { role, user: create(UserSchema, { id: 'u' }) });
+  const MANAGE = PERMISSION_BITS.MANAGE_BOARD;
+  it('board not loaded yet: everyone but guests', () => {
+    expect(mentionableOnBoard(undefined, roles, member(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mentionableOnBoard(undefined, roles, member(WorkspaceRole.GUEST))).toBe(false);
+  });
+  it('a manager sees the overrides: members of a public board yes, of a private board no', () => {
+    expect(mentionableOnBoard(board({ permissions: VIEW | MANAGE }), roles, member(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mentionableOnBoard(board({ permissions: VIEW | MANAGE, isPrivate: true }), roles, member(WorkspaceRole.MEMBER))).toBe(false);
+  });
+  it('without overrides (no MANAGE_BOARD) everyone but guests', () => {
+    expect(mentionableOnBoard(board({ permissions: VIEW }), roles, member(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mentionableOnBoard(board({ permissions: VIEW }), roles, member(WorkspaceRole.GUEST))).toBe(false);
   });
 });

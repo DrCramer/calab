@@ -1,11 +1,13 @@
 import { BoardForms } from './BoardForms';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, ArrowDownUp, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
+import { COMPLETIONS, type Completion } from '../../lib/boards/completion';
+import { CompletionSwitch } from './CompletionSwitch';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, IconButton, Input, Modal, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Field, IconButton, Input, Modal, Switch, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { groupOn, sortOn } from '../../lib/boards/features';
 import { filterKey, fromTaskFilter } from '../../lib/boards/filter';
@@ -14,7 +16,7 @@ import { useBoards } from '../../stores/boards';
 import { prefsOf, useBoardsUi, type BoardPrefs, type GroupBy, type SortBy, type ViewKind } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { FilterButton, QuickChips } from './FilterBar';
+import { FilterButton } from './FilterBar';
 import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
@@ -32,8 +34,9 @@ const KINDS: ReadonlyArray<{ kind: ViewKind; label: 'boards.view.kanban' | 'boar
 
 /**
  * The board header (ADR-0042 §5): emoji and name, saved views, `Канбан | Список | Таймлайн`,
- * «+ Задача» (C) and ⋯ (settings, access, link, CSV, archive); under it the filter row: «Фильтр»
- * (F), quick chips and «Отображение» (grouping, sort, «Показывать завершённые»).
+ * two header icons «Фильтр» (F) and «Отображение» (completion, grouping, sort, hidden columns),
+ * «+ Задача» (C) and ⋯ (settings, access, link, CSV, archive). Applied filters are chips under
+ * the header (FilterChips). The phone keeps the filter row (docs/08).
  */
 export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
   const name = useBoards((s) => s.boards[boardId]?.name ?? '');
@@ -60,7 +63,14 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         </span>
         {mobile ? null : <ViewsMenu boardId={boardId} />}
         {mobile ? null : <span className="flex-1" />}
-        {mobile ? null : <ViewSwitch boardId={boardId} />}
+        {mobile ? null : (
+          <>
+            <FilterButton boardId={boardId} workspaceId={workspaceId} bar />
+            <SortMenu boardId={boardId} />
+            <DisplayMenu boardId={boardId} />
+            <ViewSwitch boardId={boardId} />
+          </>
+        )}
         {/* Phone: «…» then the accent «+» in the corner (the universal CreateButton); desktop: «+ Задача», then «…». */}
         {mobile ? <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} onDisplay={() => setDisplayOpen(true)} /> : null}
         {hasBit(perms, CREATE_TASKS) ? (
@@ -84,24 +94,23 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
             <div className="flex h-12 min-w-0 items-center gap-1.5 overflow-x-auto pl-4 [scrollbar-width:none]" data-testid="filter-row">
               <FilterButton boardId={boardId} workspaceId={workspaceId} />
               <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
-              <QuickChips boardId={boardId} />
+              <BoardCompletion boardId={boardId} />
               {/* A real end gap: WebKit drops the padding at the end of a flex scroller. */}
               <span className="w-4 shrink-0" aria-hidden />
             </div>
             <span className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--color-bg)] to-transparent" aria-hidden />
           </div>
         </>
-      ) : (
-        <div className="flex h-10 min-w-0 items-center gap-1.5 overflow-x-auto px-3" data-testid="filter-row">
-          <FilterButton boardId={boardId} workspaceId={workspaceId} />
-          <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
-          <QuickChips boardId={boardId} />
-          <span className="flex-1" />
-          <DisplayMenu boardId={boardId} />
-        </div>
-      )}
+      ) : null}
     </div>
   );
+}
+
+/** «Незавершённые · Завершённые · Все» of the board (its prefs): the phone's filter row. */
+function BoardCompletion({ boardId }: { boardId: string }): ReactNode {
+  const value = useBoardsUi((s) => prefsOf(s, boardId).completion);
+  const onChange = useCallback((completion: Completion) => useBoardsUi.getState().setPrefs(boardId, { completion }), [boardId]);
+  return <CompletionSwitch value={value} onChange={onChange} />;
 }
 
 /** `Канбан | Список | Таймлайн` (1 / 2 / 3); on a phone icons only, in the filter row. */
@@ -266,37 +275,89 @@ const SORTS: ReadonlyArray<{ v: SortBy; label: 'boards.sort.manual' | 'boards.so
   { v: 'key', label: 'boards.sort.key' },
 ];
 
-/** «Отображение»: grouping and sort (the list), «Показывать завершённые». */
-/** Whether «Отображение» has anything to show on a phone (the list's grouping / sort, hidden columns). */
+/**
+ * «Сортировка» (desktop, list view only): a header icon with the same choices as «Отображение» →
+ * Сортировка, written to `prefs.sort`. Choices of a feature the board switched off are not offered
+ * (ADR-0058 §3); lit while the sort is not the board order.
+ */
+function SortMenu({ boardId }: { boardId: string }): ReactNode {
+  const kind = useViewKind(boardId);
+  const sort = useBoardsUi((s) => prefsOf(s, boardId).sort);
+  const disabled = useDisabledFeatures(boardId);
+  if (kind !== 'list') return null;
+  const current = sortOn(sort, disabled) ? sort : 'manual';
+  return (
+    <Dropdown.Root modal={false}>
+      <Dropdown.Trigger asChild>
+        <IconButton bar label={t('boards.sortBy')} active={current !== 'manual'} className="data-[state=open]:bg-active" data-testid="sort-menu">
+          <ArrowDownUp className="size-[18px]" aria-hidden />
+        </IconButton>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-52')} sideOffset={4} align="end">
+          {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
+            <Dropdown.Item key={g.v} className={menuItem} onSelect={() => useBoardsUi.getState().setPrefs(boardId, { sort: g.v })} data-testid={`sort-${g.v}`}>
+              <span className="flex-1">{t(g.label)}</span>
+              {current === g.v ? <Check className="size-4" aria-hidden /> : null}
+            </Dropdown.Item>
+          ))}
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
+
+/** Whether the phone's «…» offers «Отображение» (the list's grouping / sort, hidden columns). */
 function useHasDisplay(boardId: string): boolean {
   const hidden = useBoardsUi((s) => prefsOf(s, boardId).hidden.length);
   return useViewKind(boardId) === 'list' || hidden > 0;
 }
 
-/** `open` / `onOpenChange` (phone): opened from the «…» menu, anchored under the header instead of a trigger. */
+/**
+ * «Отображение» (desktop: a 32 px header icon): «Показывать» (completion), the list's grouping and
+ * sort, hidden columns. `open` / `onOpenChange` (phone): opened from the «…» menu, anchored under
+ * the header instead of a trigger; there the completion lives in the filter row.
+ */
 function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: boolean; onOpenChange?: (o: boolean) => void }): ReactNode {
   const prefs = useBoardsUi((s) => prefsOf(s, boardId));
   const kind = useViewKind(boardId);
   const disabled = useDisabledFeatures(boardId);
   const set = (p: Partial<BoardPrefs>): void => useBoardsUi.getState().setPrefs(boardId, p);
   const sel = 'h-7 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-control text-fg';
-  const mobile = useMobile();
-  // Phone: «Показывать завершённые» lives in «…»; the popover is for the list's grouping / sort and hidden columns only.
-  if (mobile && kind !== 'list' && !prefs.hidden.length) return null;
+  const phone = open !== undefined;
+  if (phone && kind !== 'list' && !prefs.hidden.length) return null;
   return (
     <Popover.Root modal={false} open={open} onOpenChange={onOpenChange}>
-      {open === undefined ? (
-        <Popover.Trigger asChild>
-          <button type="button" aria-label={t('boards.display')} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="display-menu">
-            <SlidersHorizontal className="size-3.5" aria-hidden />
-            <span>{t('boards.display')}</span>
-          </button>
-        </Popover.Trigger>
-      ) : (
+      {phone ? (
         <Popover.Anchor className="absolute right-3 top-12 size-0" />
+      ) : (
+        <Popover.Trigger asChild>
+          <IconButton bar label={t('boards.display')} className="data-[state=open]:bg-active" data-testid="display-menu">
+            <SlidersHorizontal className="size-[18px]" aria-hidden />
+          </IconButton>
+        </Popover.Trigger>
       )}
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={4} collisionPadding={8} className="mat-popover anim-in z-[var(--z-popover)] flex w-[280px] flex-col gap-3 rounded-[var(--radius-card)] p-3 text-body">
+        <Popover.Content align="end" sideOffset={4} collisionPadding={8} className="mat-popover anim-in z-[var(--z-popover)] flex w-[280px] flex-col gap-3 rounded-[var(--radius-card)] p-3 text-body" data-testid="display-popover">
+          {phone ? null : (
+            <div className="flex flex-col gap-1" role="radiogroup" aria-label={t('boards.completion.label')} data-testid="completion-switch" data-value={prefs.completion}>
+              <span className="text-caption text-muted">{t('boards.show')}</span>
+              {COMPLETIONS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="radio"
+                  aria-checked={prefs.completion === c}
+                  onClick={() => set({ completion: c })}
+                  className="flex h-8 items-center gap-2 rounded-[var(--radius-row)] px-2 text-left hover:bg-hover"
+                  data-testid={`completion-${c}`}
+                >
+                  <span className="flex-1">{t(`boards.completion.${c}` as 'boards.completion.open')}</span>
+                  {prefs.completion === c ? <Check className="size-4" aria-hidden /> : null}
+                </button>
+              ))}
+            </div>
+          )}
           {kind === 'list' ? (
             <>
               <label className="flex items-center justify-between gap-3">
@@ -321,12 +382,6 @@ function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: 
               </label>
             </>
           ) : null}
-          {mobile ? null : (
-            <div className="flex items-center justify-between gap-3">
-              <span>{t('boards.showCompleted')}</span>
-              <Toggle label={t('boards.showCompleted')} checked={prefs.showCompleted} onChange={(v) => set({ showCompleted: v })} />
-            </div>
-          )}
           {prefs.hidden.length ? (
             <button type="button" className="self-start text-caption text-accent-text hover:underline" onClick={() => set({ hidden: [] })}>
               {t('boards.showHidden', { n: prefs.hidden.length })}
@@ -344,7 +399,6 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
   const hasDisplay = useHasDisplay(boardId);
   const ctx = useMatchCtx(boardId);
   const mobile = useMobile();
-  const showCompleted = useBoardsUi((s) => prefsOf(s, boardId).showCompleted);
   const [forms, setForms] = useState(false);
   const formsOn = useFeatureOn(boardId, BoardFeature.FORMS);
   const archive = async (): Promise<void> => {
@@ -390,10 +444,6 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
                     <SlidersHorizontal className="size-4" aria-hidden /> {t('boards.display')}
                   </Dropdown.Item>
                 ) : null}
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.CheckboxItem className={menuItem} checked={showCompleted} onCheckedChange={(v) => useBoardsUi.getState().setPrefs(boardId, { showCompleted: v })} data-testid="show-completed">
-                  {showCompleted ? <Check className="size-4" aria-hidden /> : <span className="size-4" />} {t('boards.showCompleted')}
-                </Dropdown.CheckboxItem>
                 <Dropdown.Separator className={menuSeparator} />
               </>
             ) : null}

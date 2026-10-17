@@ -2,8 +2,8 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
 import { Bar, BAR_GROUP } from '../../components/Bar';
-import { PhoneBack } from '../../components/PhoneHeader';
-import { Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
+import { HeaderIcon, PhoneBack } from '../../components/PhoneHeader';
+import { CalendarDays, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
@@ -18,10 +18,12 @@ import { useCalendar } from '../../stores/calendar';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { FormerChip } from '../people/MemberBits';
 import { menuBox, menuItem } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
+import { EventComments } from './EventComments';
 
 const RecordingTranscript = lazy(() => import('../chat/RecordingTranscript'));
 
@@ -101,7 +103,8 @@ export function EventCard({
   const room = useRooms((s) => (ev.roomId ? s.byId[ev.roomId] : undefined));
   const guest = useWorkspaces((s) => s.byId[ev.workspaceId]?.role === WorkspaceRole.GUEST);
   const organizer = useMemberName(ev.workspaceId, ev.organizerId);
-  const organizerAvatar = useWorkspaces((s) => s.byId[ev.workspaceId]?.members[ev.organizerId]?.user?.avatarFileId ?? '');
+  const organizerAvatar = useWorkspaces((s) => s.byId[ev.workspaceId]?.members[ev.organizerId]?.user?.avatarFileId ?? s.users[ev.organizerId]?.avatarFileId ?? '');
+  const organizerFormer = !!useFormerInfo(ev.workspaceId, ev.organizerId);
   const editable = !guest && canEditEvent(ev);
   const mine = myStatusOf(ev, me);
   // RSVP only for an invitee (lib/calendar/events.ts isInvitee): a viewer of the room is not one.
@@ -132,8 +135,9 @@ export function EventCard({
   return (
     <div {...drop.props} className={cx('relative flex min-h-0 flex-1 flex-col', drop.over && 'outline outline-2 -outline-offset-2 outline-accent')} data-testid="event-card">
       {variant === 'page' ? (
-        <Bar>
+        <Bar className="mobile:gap-2.5">
           <PhoneBack />
+          <HeaderIcon icon={CalendarDays} />
           <span className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('cal.card')}</span>
           <div className={BAR_GROUP}>{tools}</div>
         </Bar>
@@ -168,8 +172,9 @@ export function EventCard({
         ) : null}
         <div className="mt-2 flex items-center gap-2">
           <ProfileTarget userId={ev.organizerId} name={organizer} workspaceId={ev.workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
-            <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} />
+            <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} former={organizerFormer} />
             <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal">{organizer}</span>
+            <FormerChip workspaceId={ev.workspaceId} userId={ev.organizerId} />
           </ProfileTarget>
           <span className="shrink-0 text-caption text-muted">{t('cal.organizer')}</span>
         </div>
@@ -196,6 +201,7 @@ export function EventCard({
 
         <Attendees ev={ev} guest={guest} />
         {ev.roomId && externals.length > 0 && !ev.guestLinks && !guest ? <p className="mt-2 text-caption text-muted">{t('cal.noGuestLinks')}</p> : null}
+        {guest ? null : <EventComments ev={ev} moderate={editable} />}
       </div>
       {editable ? (
         <div className={cx('flex shrink-0 flex-wrap items-center gap-2 border-t border-line mobile:grid mobile:grid-cols-2 mobile:pb-[calc(var(--safe-bottom)+12px)]', variant === 'popover' ? 'px-3 py-2' : 'px-4 py-3')}>
@@ -316,14 +322,16 @@ function Count({ status, n }: { status: AttendeeStatus; n: number }): ReactNode 
 
 function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: CalendarEventAttendee; organizer: boolean }): ReactNode {
   const name = useMemberName(workspaceId, a.userId);
-  const avatar = useWorkspaces((s) => (a.userId ? (s.byId[workspaceId]?.members[a.userId]?.user?.avatarFileId ?? '') : ''));
+  const avatar = useWorkspaces((s) => (a.userId ? (s.byId[workspaceId]?.members[a.userId]?.user?.avatarFileId ?? s.users[a.userId]?.avatarFileId ?? '') : ''));
+  const former = !!useFormerInfo(workspaceId, a.userId);
   return (
     <li className="flex h-8 items-center gap-2 mobile:h-auto mobile:tap-min-h mobile:py-1" data-testid="event-attendee">
       {a.userId ? (
         <ProfileTarget userId={a.userId} name={name} workspaceId={workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
-          <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
+          <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} former={former} />
           {/* phone: a long name wraps to two lines instead of an ellipsis */}
           <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal mobile:[overflow-wrap:anywhere]">{name}</span>
+          <FormerChip workspaceId={workspaceId} userId={a.userId} />
         </ProfileTarget>
       ) : (
         <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill)]" title={t('cal.external')}>

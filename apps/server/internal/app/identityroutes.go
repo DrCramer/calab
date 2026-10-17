@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/builtinstickers"
@@ -45,7 +47,23 @@ const (
 	scopeTaskMilestone
 	scopeRule
 	scopeAchievement
+	// scopeBilling: the owner money routes of /api/workspaces/{id}/billing. Resolved and checked
+	// like scopeWorkspace; a separate scope so billing suspension (ADR-0080 §12) can keep the
+	// owner's recovery scope open while it closes the rest of the workspace.
+	scopeBilling
+	// scopeDiskItem: /api/disk/items/{id} (ADR-0094), the item's workspace.
+	scopeDiskItem
+	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
+	scopeWikiPage
 )
+
+// billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
+// MANAGE holder, ADR-0087) keeps under a billing suspension (the paywall shows the workspace's
+// name and icon). Everyone else gets 403
+// WORKSPACE_SUSPENDED / WORKSPACE_BILLING_SUSPENDED there too.
+var billingRecoveryRoutes = map[string]bool{
+	"GET /api/workspaces/{id}": true,
+}
 
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
 // always requires an explicit authority and resource classification.
@@ -109,6 +127,7 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/bots/me/webhook":                                                       scopeMachine,
 	"DELETE /api/categories/{id}":                                                       scopeCategory,
 	"DELETE /api/events/{id}":                                                           scopeEvent,
+	"DELETE /api/events/{id}/comments/{comment_id}":                                     scopeEvent,
 	"DELETE /api/me/blocked-bots/{id}":                                                  scopeGlobal,
 	"DELETE /api/me/caldav":                                                             scopeGlobal,
 	"DELETE /api/me/external-events":                                                    scopeGlobal,
@@ -155,6 +174,8 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/forms/{code}/submissions":                                                scopeForm,
 	"GET /api/public/forms/{code}":                                                      scopePublic,
 	"POST /api/public/forms/{code}/submissions":                                         scopePublic,
+	"POST /api/forms/{code}/files":                                                      scopeForm,
+	"POST /api/public/forms/{code}/files":                                               scopePublic,
 
 	"GET /api/workspaces/{id}/achievements":                               scopeWorkspace,
 	"POST /api/workspaces/{id}/achievements":                              scopeWorkspace,
@@ -175,6 +196,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/dms/candidates":                                             scopeGlobal,
 	"GET /api/event-rsvp":                                                 scopeCapability,
 	"GET /api/events/{id}":                                                scopeEvent,
+	"GET /api/events/{id}/comments":                                       scopeEvent,
 	"GET /api/files/{id}":                                                 scopeFile,
 	"GET /api/files/{id}/thumbnail":                                       scopeFile,
 	"GET /api/invites/{code}":                                             scopeCapability,
@@ -218,6 +240,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/workspaces/{id}/boards":                                     scopeWorkspace,
 	"GET /api/workspaces/{id}/bots":                                       scopeWorkspace,
 	"GET /api/workspaces/{id}/calls":                                      scopeWorkspace,
+	"GET /api/workspaces/{id}/bot-contact-shares":                         scopeWorkspace,
 	"GET /api/workspaces/{id}/categories":                                 scopeWorkspace,
 	"GET /api/workspaces/{id}/events":                                     scopeWorkspace,
 	"GET /api/workspaces/{id}/freebusy":                                   scopeWorkspace,
@@ -227,6 +250,8 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/workspaces/{id}/members":                                    scopeWorkspace,
 	"GET /api/workspaces/{id}/members/birthdays":                          scopeWorkspace,
 	"GET /api/workspaces/{id}/members/{userId}":                           scopeWorkspace,
+	"GET /api/workspaces/{id}/users":                                      scopeWorkspace,
+	"GET /api/workspaces/{id}/former-members":                             scopeWorkspace,
 	"GET /api/workspaces/{id}/messages/search":                            scopeWorkspace,
 	"GET /api/workspaces/{id}/roles":                                      scopeWorkspace,
 	"GET /api/workspaces/{id}/rooms":                                      scopeWorkspace,
@@ -247,6 +272,7 @@ var identityRoutes = map[string]identityScope{
 	"PATCH /api/categories/{id}":                                          scopeCategory,
 	"PATCH /api/dms/{id}/state":                                           scopeGlobal,
 	"PATCH /api/events/{id}":                                              scopeEvent,
+	"PATCH /api/events/{id}/comments/{comment_id}":                        scopeEvent,
 	"PATCH /api/me":                                                       scopeGlobal,
 	"GET /api/usernames/{name}/available":                                 scopeGlobal,
 	"PATCH /api/me/caldav":                                                scopeGlobal,
@@ -295,12 +321,16 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/event-rsvp":                                                scopeCapability,
 	"POST /api/files/convert":                                             scopeGlobal,
 	"POST /api/invites/{code}/join":                                       scopeAdmission,
+	"POST /api/mailbox/hosting-check":                                     scopeMachine, // ADR-0101: bot asks, server checks
+	"POST /api/mailbox/password-reset":                                    scopeMachine, // ADR-0101: bot asks, server resets
+	"POST /api/mailbox/password/redeem":                                   scopePublic,  // ADR-0101: the one-time token is the credential
 	"POST /api/me/avatar":                                                 scopeGlobal,
 	"POST /api/me/blocked-bots/{id}":                                      scopeGlobal,
 	"POST /api/me/caldav":                                                 scopeGlobal,
 	"POST /api/me/caldav/sync":                                            scopeGlobal,
 	"POST /api/me/external-events/rsvp":                                   scopeGlobal,
 	"POST /api/messages/{id}/interactions":                                scopeMessage,
+	"POST /api/messages/{id}/buttons/{buttonId}/contact":                  scopeMessage,
 	"POST /api/notes":                                                     scopeGlobal,
 	"POST /api/room-invites/{code}/join":                                  scopeCapability,
 	"POST /api/rooms/{id}/admissions/{userId}":                            scopeRoom,
@@ -309,9 +339,12 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/rooms/{id}/camera/stop":                                    scopeRoom,
 	"POST /api/rooms/{id}/invites":                                        scopeRoom,
 	"POST /api/rooms/{id}/join":                                           scopeRoom,
+	"POST /api/rooms/{id}/make-permanent":                                 scopeRoom,
+	"POST /api/rooms/{id}/take-over":                                      scopeRoom,
 	"POST /api/rooms/{id}/messages":                                       scopeRoom,
 	"POST /api/rooms/{id}/messages/{mid}/forward":                         scopeRoom,
 	"POST /api/rooms/{id}/recording/start":                                scopeRoom,
+	"POST /api/rooms/{id}/restore":                                        scopeRoom,
 	"POST /api/rooms/{id}/recording/stop":                                 scopeRoom,
 	"POST /api/rooms/{id}/recordings/{rid}/recheck":                       scopeRoom,
 	"POST /api/rooms/{id}/recordings/{rid}/reupload":                      scopeRoom,
@@ -361,10 +394,12 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/admin/workspaces/{id}/plan":                                 scopeAdmin,
 	"PUT /api/admin/workspaces/{id}/suspension":                           scopeAdmin,
 	"PUT /api/boards/{id}/permissions":                                    scopeBoard,
+	"POST /api/boards/{id}/take-over":                                     scopeBoard,
 	"PUT /api/boards/{id}/position":                                       scopeBoard,
 	"PUT /api/bots/me/commands":                                           scopeMachine,
 	"PUT /api/bots/me/webhook":                                            scopeMachine,
 	"PUT /api/events/{id}/rsvp":                                           scopeEvent,
+	"POST /api/events/{id}/comments":                                      scopeEvent,
 	"PUT /api/me/caldav":                                                  scopeGlobal,
 	"PUT /api/me/sticker-packs/order":                                     scopeGlobal,
 	"PUT /api/me/sticker-packs/{id}":                                      scopeGlobal,
@@ -421,9 +456,122 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/boards/{id}/git":             scopeBoard,
 	"DELETE /api/boards/{id}/git":          scopeBoard,
 	"POST /api/git/boards/{id}/{provider}": scopePublic,
+	// Disk (ADR-0094 §7). The public link routes are anonymous like public forms; the handler
+	// applies auth.CheckPublicCapability of the link's workspace.
+	"GET /api/workspaces/{id}/disk/items":        scopeWorkspace,
+	"POST /api/workspaces/{id}/disk/folders":     scopeWorkspace,
+	"POST /api/workspaces/{id}/disk/upload":      scopeWorkspace,
+	"POST /api/workspaces/{id}/disk/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/disk/usage":        scopeWorkspace,
+	"GET /api/workspaces/{id}/disk/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/audit":             scopeWorkspace,
+	"GET /api/workspaces/{id}/disk/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/disk/settings":     scopeWorkspace,
+	"GET /api/disk/items/{id}":                   scopeDiskItem,
+	"PATCH /api/disk/items/{id}":                 scopeDiskItem,
+	"DELETE /api/disk/items/{id}":                scopeDiskItem,
+	"POST /api/disk/items/{id}/trash":            scopeDiskItem,
+	"POST /api/disk/items/{id}/restore":          scopeDiskItem,
+	"GET /api/disk/items/{id}/path":              scopeDiskItem,
+	"GET /api/disk/items/{id}/activity":          scopeDiskItem,
+	"GET /api/disk/items/{id}/permissions":       scopeDiskItem,
+	"PUT /api/disk/items/{id}/permissions":       scopeDiskItem,
+	"POST /api/disk/items/{id}/take-over":        scopeDiskItem,
+	"POST /api/disk/items/{id}/link":             scopeDiskItem,
+	"DELETE /api/disk/items/{id}/link":           scopeDiskItem,
+	"GET /api/public/disk/{code}":                scopePublic,
+	"GET /api/public/disk/{code}/content":        scopePublic,
+	"GET /api/public/disk/{code}/thumbnail":      scopePublic,
+	// Wiki (ADR-0096 §8). The sync socket authenticates in-band (the token frame, like the
+	// gateway) and applies the workspace policy itself (wiki.Authenticator); the public link
+	// routes are anonymous like the Disk's, with auth.CheckPublicCapability in the handler.
+	"GET /api/workspaces/{id}/wiki/pages":        scopeWorkspace,
+	"POST /api/workspaces/{id}/wiki/pages":       scopeWorkspace,
+	"POST /api/workspaces/{id}/wiki/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/wiki/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/wiki/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/wiki/settings":     scopeWorkspace,
+	"GET /api/wiki/pages/{id}":                   scopeWikiPage,
+	"PATCH /api/wiki/pages/{id}":                 scopeWikiPage,
+	"DELETE /api/wiki/pages/{id}":                scopeWikiPage,
+	"POST /api/wiki/pages/{id}/trash":            scopeWikiPage,
+	"POST /api/wiki/pages/{id}/restore":          scopeWikiPage,
+	"GET /api/wiki/pages/{id}/path":              scopeWikiPage,
+	"GET /api/wiki/pages/{id}/activity":          scopeWikiPage,
+	"GET /api/wiki/pages/{id}/permissions":       scopeWikiPage,
+	"PUT /api/wiki/pages/{id}/permissions":       scopeWikiPage,
+	"POST /api/wiki/pages/{id}/take-over":        scopeWikiPage,
+	"POST /api/wiki/pages/{id}/link":             scopeWikiPage,
+	"DELETE /api/wiki/pages/{id}/link":           scopeWikiPage,
+	"GET /api/wiki/pages/{id}/versions":          scopeWikiPage,
+	"GET /api/wiki/pages/{id}/versions/{vid}":    scopeWikiPage,
+	"POST /api/wiki/pages/{id}/files":            scopeWikiPage,
+	"GET /api/wiki/pages/{id}/sync":              scopePublic,
+	"GET /api/public/wiki/{code}":                scopePublic,
+	"GET /api/public/wiki/{code}/state":          scopePublic,
+	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
+	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
+	// (signed body, no session); the return page only redirects into the app.
+	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
+	"POST /api/workspaces/{id}/billing/quote":                                 scopeBilling,
+	"POST /api/workspaces/{id}/billing/activate":                              scopeBilling,
+	"POST /api/workspaces/{id}/billing/stop":                                  scopeBilling,
+	"POST /api/workspaces/{id}/billing/change-plan":                           scopeBilling,
+	"POST /api/workspaces/{id}/billing/resume":                                scopeBilling,
+	"GET /api/workspaces/{id}/billing/payer":                                  scopeBilling,
+	"PUT /api/workspaces/{id}/billing/payer":                                  scopeBilling,
+	"GET /api/workspaces/{id}/billing/payer-schema":                           scopeBilling,
+	"POST /api/workspaces/{id}/billing/topups":                                scopeBilling,
+	"GET /api/workspaces/{id}/billing/checkouts/{cid}":                        scopeBilling,
+	"GET /api/workspaces/{id}/billing/auto-topup":                             scopeBilling,
+	"PUT /api/workspaces/{id}/billing/auto-topup":                             scopeBilling,
+	"DELETE /api/workspaces/{id}/billing/auto-topup":                          scopeBilling,
+	"GET /api/workspaces/{id}/billing/payment-methods":                        scopeBilling,
+	"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}":              scopeBilling,
+	"POST /api/workspaces/{id}/billing/saved-method-topups":                   scopeBilling,
+	"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}":              scopeBilling,
+	"GET /api/workspaces/{id}/billing/ledger":                                 scopeBilling,
+	"GET /api/workspaces/{id}/billing/payments":                               scopeBilling,
+	"GET /api/admin/billing/accounts":                                         scopeAdmin,
+	"GET /api/admin/billing/accounts/{id}":                                    scopeAdmin,
+	"GET /api/admin/billing/accounts/{id}/ledger":                             scopeAdmin,
+	"GET /api/admin/billing/payments":                                         scopeAdmin,
+	"GET /api/admin/billing/refunds":                                          scopeAdmin,
+	"GET /api/admin/billing/disputes":                                         scopeAdmin,
+	"GET /api/admin/billing/events":                                           scopeAdmin,
+	"POST /api/admin/billing/workspaces/{id}/enable":                          scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/manual-credits":                    scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/manual-credits/{creditId}/reverse": scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/admin-debit":                       scopeAdmin,
+	"POST /api/admin/billing/payments/{id}/refunds":                           scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/hold":                              scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/reconcile":                         scopeAdmin,
+	"POST /api/admin/billing/auto-topup/reconcile":                            scopeAdmin,
+	"PUT /api/admin/billing/accounts/{id}/discount":                           scopeAdmin,
+	"PUT /api/admin/billing/accounts/{id}/custom-plan":                        scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/plan":                              scopeAdmin,
+	"GET /api/admin/billing/prices":                                           scopeAdmin,
+	"POST /api/admin/billing/prices":                                          scopeAdmin,
+	"POST /api/admin/billing/test-clock":                                      scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/market":                            scopeAdmin,
+	"GET /api/admin/billing/providers":                                        scopeAdmin,
+	"PUT /api/admin/billing/providers/{provider}":                             scopeAdmin,
+	"GET /api/admin/billing/issues":                                           scopeAdmin,
+	"POST /api/admin/billing/issues/{id}/import":                              scopeAdmin,
+	"POST /api/admin/billing/issues/{id}/dismiss":                             scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/charges/{attemptId}/check":         scopeAdmin,
+	"POST /api/admin/billing/payments/{id}/chargebacks":                       scopeAdmin,
+	"POST /api/admin/billing/disputes/{id}/close":                             scopeAdmin,
+	"POST /api/billing/stripe/webhook":                                        scopePublic,
+	"POST /api/billing/tochka/webhook":                                        scopePublic,
+	"POST /api/billing/tochkapay/webhook":                                     scopePublic,
+	"GET /api/billing/public/offers":                                          scopePublic,
+	"GET /api/billing/return":                                                 scopePublic,
 }
 
-func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Handler {
+// identityGate classifies and checks every private route. planActive refuses the routes of
+// planInactiveRoutes in a workspace in the restricted mode (plans.Service.CheckActive; nil: none).
+func identityGate(q *sqlc.Queries, a *auth.Service, planActive func(ctx context.Context, ws uuid.UUID, action string) error, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := auth.MustFromContext(r.Context())
 		scope, ok := identityRoutes[r.Pattern]
@@ -438,6 +586,14 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 		op := identitypolicy.WorkspaceWrite
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			op = identitypolicy.WorkspaceRead
+		}
+		if scope == scopeBilling || billingRecoveryRoutes[r.Pattern] {
+			// The recovery scope of the owner and of BILLING_TOPUP / MANAGE holders stays open under a
+			// billing suspension (ADR-0080 §12, ADR-0087).
+			op = identitypolicy.BillingWrite
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				op = identitypolicy.BillingRead
+			}
 		}
 		ctx := a.WithPolicy(r.Context(), id, op)
 		r = r.WithContext(ctx)
@@ -503,7 +659,8 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 			mutation.Workspace = ws
 			mutation.Global = ws == uuid.Nil
 			mutation.ExclusiveUser = ws == uuid.Nil
-			mutation.ExclusiveWorkspace = scope == scopeWorkspace
+			mutation.ExclusiveWorkspace = scope == scopeWorkspace || scope == scopeBilling
+			mutation.Billing = scope == scopeBilling
 			if strings.HasSuffix(r.Pattern, "/members/{userId}/birthday") {
 				mutation.TargetUser, err = httpx.PathUUID(r, "userId", "user")
 			}
@@ -522,6 +679,9 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 					err = a.CheckWorkspace(ctx, id, ws, op)
 				}
 			}
+		}
+		if action, ok := planInactiveRoutes[r.Pattern]; ok && err == nil && planActive != nil && mutation.Workspace != uuid.Nil {
+			err = planActive(ctx, mutation.Workspace, action) // the restricted mode (ADR-0086 amendment)
 		}
 		if err != nil {
 			httpx.WriteError(w, r, err)
@@ -552,7 +712,7 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return uuid.Nil, httpx.BadRequest("invalid resource id")
 	}
 	switch sc {
-	case scopeWorkspace:
+	case scopeWorkspace, scopeBilling:
 		return id, nil
 	case scopeRoom:
 		parent, err := q.GetIdentityRoomParent(ctx, id)
@@ -596,6 +756,12 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return q.GetBoardRuleWorkspace(ctx, id)
 	case scopeAchievement:
 		row, err := q.GetAchievement(ctx, id)
+		return row.WorkspaceID, err
+	case scopeDiskItem:
+		row, err := q.GetDiskItem(ctx, id)
+		return row.WorkspaceID, err
+	case scopeWikiPage:
+		row, err := q.GetWikiPage(ctx, id)
 		return row.WorkspaceID, err
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
@@ -683,7 +849,7 @@ func IdentityRouteClass(pattern string) string {
 		return "global"
 	case scopeAdmin:
 		return "admin"
-	case scopeWorkspace:
+	case scopeWorkspace, scopeBilling:
 		return "workspace"
 	case scopeRoom:
 		return "room"
@@ -719,6 +885,10 @@ func IdentityRouteClass(pattern string) string {
 		return "app"
 	case scopeAchievement:
 		return "achievement"
+	case scopeDiskItem:
+		return "disk_item"
+	case scopeWikiPage:
+		return "wiki_page"
 	default:
 		return "specialized"
 	}

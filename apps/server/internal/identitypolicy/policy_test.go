@@ -90,7 +90,25 @@ func TestPolicyDenials(t *testing.T) {
 		{"custom integration role", func(s *State) { s.BuiltinRole = "custom" }, ManageOAuth, RoleRequired},
 		{"admin cannot manage SSO", func(s *State) { s.BuiltinRole = "admin" }, ManageSSO, RoleRequired},
 		{"admin cannot manage directory", func(s *State) { s.BuiltinRole = "admin" }, ManageDirectory, RoleRequired},
-		{"stale local management", func(s *State) { s.Principal.LocalAuthenticatedAt = testNow.Add(-5 * time.Minute) }, ManageOAuth, RecentAuthRequired},
+		{"stale local SSO management", func(s *State) { s.Principal.LocalAuthenticatedAt = testNow.Add(-5 * time.Minute) }, ManageSSO, RecentAuthRequired},
+		{"stale local directory management", func(s *State) { s.Principal.LocalAuthenticatedAt = testNow.Add(-5 * time.Minute) }, ManageDirectory, RecentAuthRequired},
+		{"stale local bootstrap", func(s *State) { s.Principal.LocalAuthenticatedAt = testNow.Add(-5 * time.Minute) }, BootstrapLink, RecentAuthRequired},
+		{"scoped SSO management", func(s *State) {
+			s.Principal.Authority = WorkspaceSSO
+			s.Principal.WorkspaceID = s.WorkspaceID
+			s.Principal.ConnectionID = s.Connection.ID
+			s.Principal.LocalAuthenticatedAt = time.Time{}
+		}, ManageSSO, RecentAuthRequired},
+		{"guest OAuth management", func(s *State) { s.Policy.Mode = Optional; s.Principal.Guest = true }, ManageOAuth, ScopeDenied},
+		{"OAuth management without entitlement", func(s *State) { delete(s.Grants, OAuthProvider) }, ManageOAuth, EntitlementRequired},
+		{"scoped OAuth management without proof", func(s *State) {
+			s.Policy.Mode = Optional
+			s.Principal.Authority = WorkspaceSSO
+			s.Principal.WorkspaceID = s.WorkspaceID
+			s.Principal.ConnectionID = s.Connection.ID
+			s.Principal.LocalAuthenticatedAt = time.Time{}
+			s.Assurance = nil
+		}, ManageOAuth, SSORequired},
 		{"stale corporate management", func(s *State) {
 			s.Assurance.AuthenticatedAt = testNow.Add(-6 * time.Minute)
 			s.Assurance.ValidUntil = testNow.Add(54 * time.Minute)
@@ -118,6 +136,48 @@ func TestPolicyDenials(t *testing.T) {
 				t.Fatalf("%+v, want %s", d, tc.reason)
 			}
 		})
+	}
+}
+
+// TestManageOAuthWithoutRecentPassword pins ADR-0102: OAuth client management needs the
+// admin role, entitlement and (for scoped/enforced) the SSO proof, but no fresh password.
+func TestManageOAuthWithoutRecentPassword(t *testing.T) {
+	for _, mode := range []Mode{Off, Optional} {
+		s := validState()
+		s.Policy.Mode = mode
+		s.Assurance = nil
+		s.BuiltinRole = "admin"
+		s.Principal.LocalAuthenticatedAt = testNow.Add(-72 * time.Hour)
+		d := Evaluate(testNow, s, ManageOAuth)
+		if !d.Allowed || !d.ValidUntil.After(testNow.Add(ManagementMaxAge)) {
+			t.Fatalf("%s: stale local session denied or leased to the password window: %+v", mode, d)
+		}
+		s.Principal.LocalAuthenticatedAt = time.Time{}
+		if d := Evaluate(testNow, s, ManageOAuth); !d.Allowed {
+			t.Fatalf("%s: session without local timestamp denied: %+v", mode, d)
+		}
+		if d := Evaluate(testNow, s, ManageSSO); d.Allowed || d.Reason != RoleRequired {
+			t.Fatalf("%s: admin reached SSO management: %+v", mode, d)
+		}
+	}
+	// Enforced: a stale local password is fine, the fresh SSO proof is still required.
+	s := validState()
+	s.Principal.LocalAuthenticatedAt = testNow.Add(-time.Hour)
+	if d := Evaluate(testNow, s, ManageOAuth); !d.Allowed {
+		t.Fatalf("enforced with fresh proof denied: %+v", d)
+	}
+	// A workspace_sso session manages OAuth clients through its fresh proof.
+	s = validState()
+	s.Principal.Authority = WorkspaceSSO
+	s.Principal.WorkspaceID = s.WorkspaceID
+	s.Principal.ConnectionID = s.Connection.ID
+	s.Principal.LocalAuthenticatedAt = time.Time{}
+	if d := Evaluate(testNow, s, ManageOAuth); !d.Allowed {
+		t.Fatalf("scoped session with fresh proof denied: %+v", d)
+	}
+	s.Assurance.AuthenticatedAt = testNow.Add(-6 * time.Minute)
+	if d := Evaluate(testNow, s, ManageOAuth); d.Allowed || d.Reason != SSORequired {
+		t.Fatalf("scoped session with stale proof allowed: %+v", d)
 	}
 }
 func TestOptionalAndScopedAuthority(t *testing.T) {

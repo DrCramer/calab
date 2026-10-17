@@ -1,7 +1,7 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
-import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -16,7 +16,10 @@ import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
-import { createBottomPin, initialFeedLocation } from './lastRowPin';
+import { createBottomPin, initialFeedLocation, lastRowChange } from './lastRowPin';
+import { readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
+import { useUi } from '../../stores/ui';
+import { DisclosureScope } from '../../lib/disclosure';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
@@ -31,6 +34,8 @@ const START_INDEX = 1_000_000_000;
 /** Live messages may grow the open window this far past WINDOW_CAP before its top is cut. */
 const CAP_SLACK = 100;
 const HIGHLIGHT_MS = 1800;
+/** Rows above the first rendered one at which the next page of older history is requested. */
+const PREFETCH_ROWS = 20;
 /** The floating date fades out this long after scrolling stops (Telegram). */
 const STICKY_IDLE_MS = 1000;
 
@@ -142,24 +147,52 @@ const FEED_COMPONENTS = { Header: FeedHeader, Footer: FeedFooter };
 const INCREASE_VIEWPORT = { top: 800, bottom: 400 };
 const itemKey = (_i: number, c: ChatMessage): string => c.key;
 
-function feedRow(index: number, c: ChatMessage, x: FeedContext): ReactNode {
-  const meta = x.metas[index - x.firstIndex] ?? FALLBACK_META;
+/**
+ * One row, memoised on primitives: Virtuoso re-runs every mounted row's renderer whenever its
+ * rendered range changes (each row mounted or unmounted while scrolling); unchanged rows stop here.
+ */
+const FeedRow = memo(function FeedRow({
+  c,
+  meta,
+  own,
+  workspaceId,
+  roomId,
+  perms,
+  highlighted,
+}: {
+  c: ChatMessage;
+  meta: RowMeta;
+  own: boolean;
+  workspaceId: string;
+  roomId: string;
+  perms: PermissionBits;
+  highlighted: boolean;
+}): ReactNode {
   return (
     <RowBoundary id={c.key}>
-      {c.msg.kind === MessageKind.SYSTEM ? (
-        <SystemRow c={c} meta={meta} workspaceId={x.workspaceId} perms={x.perms} highlighted={x.highlight === c.key} />
-      ) : (
-        <MessageRow
-          c={c}
-          meta={meta}
-          own={c.msg.authorId === x.me}
-          workspaceId={x.workspaceId}
-          roomId={x.roomId}
-          perms={x.perms}
-          highlighted={x.highlight === c.key}
-        />
-      )}
+      {/* Disclosures in the row («Показать всё») outlive its unmount (lib/disclosure.ts). */}
+      <DisclosureScope.Provider value={c.key}>
+        {c.msg.kind === MessageKind.SYSTEM ? (
+          <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlighted} />
+        ) : (
+          <MessageRow c={c} meta={meta} own={own} workspaceId={workspaceId} roomId={roomId} perms={perms} highlighted={highlighted} />
+        )}
+      </DisclosureScope.Provider>
     </RowBoundary>
+  );
+});
+
+function feedRow(index: number, c: ChatMessage, x: FeedContext): ReactNode {
+  return (
+    <FeedRow
+      c={c}
+      meta={x.metas[index - x.firstIndex] ?? FALLBACK_META}
+      own={c.msg.authorId === x.me}
+      workspaceId={x.workspaceId}
+      roomId={x.roomId}
+      perms={x.perms}
+      highlighted={x.highlight === c.key}
+    />
   );
 }
 
@@ -189,7 +222,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // Opens at the first unread message (docs/09 #39), otherwise at the last row's bottom.
   // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
   // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
-  const [{ location: initialIndex, stuck: openStuck }] = useState(() => initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter));
+  // Back from a screen pushed over the room (phone: members, settings…): where the reader left it.
+  const [{ location: initialIndex, stuck: openStuck }] = useState(() => {
+    const pos = takeFeedPosition(roomId);
+    const at = pos ? keyIndex(items).get(pos.key) : undefined;
+    if (pos && at !== undefined) return { location: { index: at, align: 'start' as const, offset: -pos.offset }, stuck: false };
+    return initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter);
+  });
   const [bottomPin] = useState(() => createBottomPin(openStuck));
 
   const lastSentId = useMemo(() => lastSentOf(items), [items]);
@@ -256,10 +295,22 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const startReached = useCallback(() => {
     if (state.hasMoreBefore && !state.loading) void loadOlder(roomId);
   }, [roomId, state.hasMoreBefore, state.loading]);
+  // Older history is asked for while the reader is still PREFETCH_ROWS above its first row, not
+  // when that row is already on screen: the page lands (and its rows are measured) above the
+  // viewport instead of under the reader's finger at the very top of the window.
+  const rangeChanged = useCallback(
+    (r: ListRange) => {
+      if (r.startIndex - firstIndex < PREFETCH_ROWS) startReached();
+    },
+    [firstIndex, startReached],
+  );
   const endReached = useCallback(() => {
     if (state.hasMoreAfter) void loadNewer(roomId);
   }, [roomId, state.hasMoreAfter]);
 
+  // A new item: my own unsent row jumps to the bottom from anywhere ('auto'; it lands on Virtuoso's
+  // estimate of the row — the pin, stuck by the send, takes it to the real bottom); someone else's
+  // scrolls smoothly, only when the reader is at the bottom.
   const followOutput = useCallback(
     (isAtBottom: boolean) => {
       if (state.hasMoreAfter) return false;
@@ -272,11 +323,27 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // Layout effects: a window loaded away from the present must stop the pin before the next
   // ResizeObserver delivery (which precedes passive effects), or it would chase endReached.
   useLayoutEffect(() => bottomPin.setLive(!state.hasMoreAfter), [bottomPin, state.hasMoreAfter]);
-  const lastKey = items[items.length - 1]?.key ?? '';
+  // The last row, as primitives (lastRowChange): its key, whether it is my own unsent row, its nonce.
+  const last = items[items.length - 1];
+  const lastKey = last?.key ?? '';
+  const lastOwn = !!last && last.msg.authorId === me;
+  const lastPending = !!last && last.status !== 'sent';
+  const lastNonce = last?.msg.nonce ?? '';
+  // The last key the bottom pin's observer has accounted for: a different current key means a new
+  // last row whose first resize is left to followOutput (someone else's message, smooth follow).
   const lastKeyRef = useRef(lastKey);
+  const seenKeyRef = useRef(lastKey);
+  // Layout effect: decided before the ResizeObserver delivery that measures the new row.
   useLayoutEffect(() => {
+    const prev = lastKeyRef.current;
+    if (prev === lastKey) return;
     lastKeyRef.current = lastKey;
-  }, [lastKey]);
+    const change = lastRowChange(prev, { key: lastKey, own: lastOwn, pending: lastPending, nonce: lastNonce });
+    // My own send sticks the pin wherever the reader was, and neither it nor its server echo is
+    // «fresh»: the observer pins through the row's real height, not Virtuoso's estimate.
+    if (change === 'send') bottomPin.stick();
+    if (change !== 'fresh') seenKeyRef.current = lastKey;
+  }, [bottomPin, lastKey, lastOwn, lastPending, lastNonce]);
 
   // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
   const scroller = useRef<HTMLElement | null>(null);
@@ -287,14 +354,16 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // docs/09 #149: keep the bottom while stuck to it. One observer, no per-render or per-frame
   // work, on two elements: the scroller (its height — the composer growing, the window resizing)
   // and Virtuoso's item list (the rendered rows' height — any row changing size, the last one
-  // included). A new last message is left to followOutput, so incoming ones still scroll smoothly.
+  // included). Someone else's new last message is left to followOutput, so it still scrolls
+  // smoothly; my own just-sent row and its server echo are not (lastRowChange): a send sticks the
+  // pin, which then holds the bottom through the row's real height — several lines, a sticker or an
+  // image loading, upload → preview, the echo re-rendering it — and the composer shrinking.
   useEffect(() => {
     const root = scroller.current;
     if (!root || typeof ResizeObserver === 'undefined') return;
-    let seenKey = lastKeyRef.current;
     const ro = new ResizeObserver(() => {
-      const fresh = seenKey !== lastKeyRef.current;
-      seenKey = lastKeyRef.current;
+      const fresh = seenKeyRef.current !== lastKeyRef.current;
+      seenKeyRef.current = lastKeyRef.current;
       if (bottomPin.resized(root) && !fresh) root.scrollTop = root.scrollHeight;
     });
     ro.observe(root);
@@ -303,19 +372,44 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     return () => ro.disconnect();
   }, [bottomPin]);
 
-  const [sticky, setSticky] = useState<string | null>(null);
+  // Phone: the room screen unmounts under a pushed screen (ADR-0073) — keep the reader's place
+  // for its return, unless they sat at the bottom (then it opens there anyway). Layout cleanup:
+  // the rows are still in the document.
+  useLayoutEffect(
+    () => () => {
+      const el = scroller.current;
+      const covered = useUi.getState().phone.stack.some((x) => (x.kind === 'room' || x.kind === 'dm') && x.room === roomId);
+      saveFeedPosition(roomId, covered && el && !bottomPin.isStuck() ? readFeedPosition(el) : null);
+    },
+    [bottomPin, roomId],
+  );
+
+  // An unfold the reader clicked («Показать всё») grows its row down from where they read: the
+  // bottom pin lets go, or a last row unfolding at the bottom threw them to the end of its text.
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const onClick = (e: MouseEvent): void => {
+      if (e.target instanceof Element && e.target.closest('[data-feed-expand]')) bottomPin.release();
+    };
+    root.addEventListener('click', onClick, true);
+    return () => root.removeEventListener('click', onClick, true);
+  }, [bottomPin]);
+
+  // The floating date and the scrolling flag change while scrolling: only FeedOverlays reads them
+  // (a Feed render re-runs every mounted row's renderer).
+  const [view] = useState(createScrollView);
   const frame = useRef(0);
   // Telegram: the floating date shows while scrolling and fades out 1 s after it stops; the
   // overlay scrollbar (styles.css, non-mac) follows the same [data-scrolling] flag.
-  const [scrolling, setScrolling] = useState(false);
   const idle = useRef(0);
   const onScroll = useCallback(() => {
     if (scroller.current) bottomPin.scrolled(scroller.current);
-    setScrolling(true);
+    view.setScrolling(true);
     scroller.current?.setAttribute('data-scrolling', '');
     window.clearTimeout(idle.current);
     idle.current = window.setTimeout(() => {
-      setScrolling(false);
+      view.setScrolling(false);
       scroller.current?.removeAttribute('data-scrolling');
     }, STICKY_IDLE_MS);
     if (frame.current) return;
@@ -333,12 +427,12 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         const pillInView = row.dataset['dayStart'] === '1' && r.top >= top - 4;
         // The next day's pill is about to reach the top: let it take over (no two pills at once).
         const nextPillNear = list.slice(i + 1, i + 4).some((n) => n.dataset['dayStart'] === '1' && n.getBoundingClientRect().top < top + 72);
-        setSticky(pillInView || nextPillNear || el.scrollTop < 8 ? null : (row.dataset['messageId'] ?? null));
+        view.setSticky(pillInView || nextPillNear || el.scrollTop < 8 ? null : (row.dataset['messageId'] ?? null));
         return;
       }
-      setSticky(null);
+      view.setSticky(null);
     });
-  }, [bottomPin]);
+  }, [bottomPin, view]);
   useEffect(
     () => () => {
       cancelAnimationFrame(frame.current);
@@ -375,6 +469,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         firstItemIndex={firstIndex}
         initialTopMostItemIndex={initialIndex}
         startReached={startReached}
+        rangeChanged={rangeChanged}
         endReached={endReached}
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}
@@ -400,8 +495,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         hasMoreAfter={state.hasMoreAfter}
         atBottom={atBottom}
         mini={mini}
-        stickyKey={sticky}
-        scrolling={scrolling}
+        view={view}
         virtuoso={virtuoso}
       />
     </div>
@@ -423,8 +517,7 @@ const FeedOverlays = memo(function FeedOverlays({
   hasMoreAfter,
   atBottom,
   mini,
-  stickyKey,
-  scrolling,
+  view,
   virtuoso,
 }: {
   roomId: string;
@@ -436,10 +529,11 @@ const FeedOverlays = memo(function FeedOverlays({
   hasMoreAfter: boolean;
   atBottom: boolean;
   mini: boolean;
-  stickyKey: string | null;
-  scrolling: boolean;
+  view: ScrollView;
   virtuoso: RefObject<VirtuosoHandle | null>;
 }): ReactNode {
+  const stickyKey = useSyncExternalStore(view.subscribe, view.sticky);
+  const scrolling = useSyncExternalStore(view.subscribe, view.scrolling);
   const readMarker = useRooms((s) => s.readState[roomId] ?? '');
   const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
 
@@ -534,6 +628,40 @@ const FeedOverlays = memo(function FeedOverlays({
     </>
   );
 });
+
+/** The floating date's row and «scrolling now»: set from the feed's scroll handler, read by FeedOverlays only. */
+interface ScrollView {
+  sticky: () => string | null;
+  scrolling: () => boolean;
+  setSticky: (key: string | null) => void;
+  setScrolling: (v: boolean) => void;
+  subscribe: (f: () => void) => () => void;
+}
+
+function createScrollView(): ScrollView {
+  let sticky: string | null = null;
+  let scrolling = false;
+  const subs = new Set<() => void>();
+  const emit = (): void => subs.forEach((f) => f());
+  return {
+    sticky: () => sticky,
+    scrolling: () => scrolling,
+    setSticky: (key) => {
+      if (key === sticky) return;
+      sticky = key;
+      emit();
+    },
+    setScrolling: (v) => {
+      if (v === scrolling) return;
+      scrolling = v;
+      emit();
+    },
+    subscribe: (f) => {
+      subs.add(f);
+      return () => void subs.delete(f);
+    },
+  };
+}
 
 const FALLBACK_META: RowMeta = { day: false, isNew: false, first: true, last: true };
 

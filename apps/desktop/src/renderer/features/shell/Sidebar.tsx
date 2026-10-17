@@ -52,6 +52,7 @@ import {
 import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
+import { RoomIcon } from '../../components/RoomIcon';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { CreateButton, InlineAdd } from '../../components/CreateButton';
@@ -70,7 +71,7 @@ import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMe
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { Bar, BAR_GROUP } from '../../components/Bar';
-import { PhoneSearchButton } from '../../components/PhoneHeader';
+import { CreateSlot, PhoneSearchButton } from '../../components/PhoneHeader';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -114,7 +115,8 @@ import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
-import { RestrictedMark } from '../workspace/AccessLevel';
+import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
+import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 export { menuBox, menuItem };
 
@@ -178,6 +180,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   // Workspace invites (rows' «Пригласить»): INVITE_MEMBERS (ADR-0043), a custom role's included.
   const admin = mayInviteMembers(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
+  // «Архив · N» closes the «Временные» group (ADR-0044 addendum 14.10); guests have no archive.
+  const archiveN = useArchiveCount(workspaceId, !guest);
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
   const canDrag = manageRooms && !mobile;
@@ -192,7 +196,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   if (!entry) return null;
   // Calendar mode (owner, 02.10): the column is the header and the mini calendar only — no room list.
   const calList = calOpen && !guest && !boards;
-  const empty = groups.length === 0 && temps.length === 0;
+  const empty = groups.length === 0 && temps.length === 0 && archiveN === 0;
 
   return (
     <aside className="mat-sidebar mat-sidebar-window island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
@@ -257,8 +261,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
                 </CategoryGroup>
               );
             })}
-            {temps.length ? (
-              <TempGroup workspaceId={workspaceId}>
+            {temps.length || archiveN > 0 ? (
+              <TempGroup workspaceId={workspaceId} archiveN={archiveN}>
                 {temps.map((r) => (
                   <VoiceRoomRow
                     key={r.id}
@@ -363,10 +367,15 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
   if (mobile) {
     return (
       <Bar className="justify-between">
-        <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+        <div className="flex min-w-0 items-center gap-1">
+          <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+          {/* The plan badge (ADR-0080): nothing unless billing exists for this workspace. */}
+          <PlanBadge phone />
+        </div>
         <div className={BAR_GROUP}>
           <PhoneSearchButton />
-          {create}
+          {/* The «+» slot is kept when there is nothing to create (a guest): the magnifier does not move between sections. */}
+          {create ?? <CreateSlot />}
         </div>
       </Bar>
     );
@@ -1248,16 +1257,11 @@ const TextRoomRow = memo(function TextRoomRow({
             {/* A quiet «#» (owner, 07.10): same size, weight and colour as the voice rooms' speaker; a
                 private room shows the lock in that slot. */}
             <span className="grid w-[18px] shrink-0 place-items-center">
-              {room.isPrivate ? (
-                <Lock className="size-4 text-faint" strokeWidth={1.75} aria-label={t('room.private')} role="img" />
-              ) : (
-                <Hash className="size-4 text-faint" strokeWidth={1.75} aria-hidden />
-              )}
+              <RoomIcon roomId={room.id} size={16} pictureSize={20} />
             </span>
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
             </span>
-            {room.restricted ? <RestrictedMark /> : null}
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
             <KnockBadge roomId={room.id} />
@@ -1392,25 +1396,20 @@ function VoiceRoomRow({
                 )}
               >
                 <span className="relative grid w-[18px] shrink-0 place-items-center">
+                  {/* Private (Discord): a small lock badge on the speaker icon (RoomIcon), not a separate
+                      icon competing with the card actions for space on the right. A temporary room
+                      without a picture keeps its own timer (the attention colour near the end). */}
                   {connecting ? (
                     <Loader2 className="size-4 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
-                  ) : temp ? (
+                  ) : temp && !room.iconFileId ? (
                     <TempIcon expires={expires} inRoom={inRoom} />
                   ) : (
-                    <Volume2 className={cx('size-4', inRoom ? 'text-ok' : 'text-faint')} strokeWidth={1.75} aria-hidden />
+                    <RoomIcon roomId={room.id} size={16} pictureSize={20} live={inRoom} />
                   )}
-                  {/* Private (Discord): a small lock badge on the speaker icon, not a separate icon
-                      competing with the card actions for space on the right. */}
-                  {!connecting && room.isPrivate ? (
-                    <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-2.5 place-items-center rounded-full bg-[var(--color-fill-hover)]">
-                      <Lock className="size-1.5 text-fg" aria-hidden />
-                    </span>
-                  ) : null}
                 </span>
-                <span className={cx('min-w-0 truncate', !temp && !room.restricted && 'flex-1')} title={room.name}>
+                <span className={cx('min-w-0 truncate', !temp && 'flex-1')} title={room.name}>
                   {room.name}
                 </span>
-                {room.restricted ? <RestrictedMark className={temp ? undefined : 'mr-auto'} /> : null}
                 {temp ? <TempLeft expires={expires} /> : null}
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
@@ -1512,7 +1511,7 @@ const remainingUnits = {
  * «Временные» (ADR-0044): a virtual group under the categories — not a DB category, not dragged,
  * hidden when empty. Collapsible like a category (the open room and my voice room stay visible).
  */
-function TempGroup({ workspaceId, children }: { workspaceId: string; children: ReactNode[] }): ReactNode {
+function TempGroup({ workspaceId, archiveN, children }: { workspaceId: string; archiveN: number; children: ReactNode[] }): ReactNode {
   const key = `temp:${workspaceId}`;
   const collapsed = useUi((s) => !!s.collapsed[key]);
   const toggle = useUi((s) => s.toggleCategory);
@@ -1540,6 +1539,7 @@ function TempGroup({ workspaceId, children }: { workspaceId: string; children: R
         </button>
       </div>
       {visible.length ? <div className="flex flex-col gap-px">{visible}</div> : null}
+      {archiveN > 0 ? <TempArchiveButton workspaceId={workspaceId} n={archiveN} /> : null}
     </section>
   );
 }
@@ -1887,10 +1887,9 @@ function DragChip({ data }: { data: DragData }): ReactNode {
     );
   }
   if (data.type === 'room') {
-    const Icon = data.voice ? Volume2 : data.isPrivate ? Lock : Hash;
     return (
       <div className="mat-popover flex h-[34px] w-max max-w-[240px] items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-3 text-list text-fg">
-        <Icon className="size-[18px] shrink-0 text-muted" aria-hidden />
+        <RoomIcon roomId={data.roomId} size={20} />
         <span className="truncate">{data.name}</span>
       </div>
     );

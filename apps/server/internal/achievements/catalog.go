@@ -40,7 +40,7 @@ func sourceFile(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, ra
 		return f, err
 	}
 	switch {
-	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller:
+	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || (f.UploaderID == nil || *f.UploaderID != caller):
 		return f, bad
 	case f.Mime != "image/png" && f.Mime != "image/webp":
 		return f, bad
@@ -228,6 +228,11 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	var prep *files.PreparedFile
 	size := 0
 	if req.FileId != nil {
+		if s.Plans != nil {
+			if err := s.Plans.CheckActive(ctx, cur.WorkspaceID, "uploading files"); err != nil { // plans.RestrictedUpload
+				return err
+			}
+		}
 		if prep, size, err = s.prepare(r, cur.WorkspaceID, req.GetFileId()); err != nil {
 			return err
 		}

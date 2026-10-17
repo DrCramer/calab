@@ -1,12 +1,13 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceLock, LockedWorkspacePicker } from '../identity/WorkspaceLock';
 import { useIdentity } from '../../stores/identity';
-import { accessLocked, localAuthority } from '../identity/model';
+import { localAuthority, lockScreen } from '../identity/model';
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
 import { WorkspaceRole } from '@calaba/protocol';
-import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Button, Spinner, cx } from '../../components/ui';
+import { ResizeHandle } from '../../components/ResizeHandle';
 import { t } from '../../i18n';
 import { mayArrangeRooms } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
@@ -15,6 +16,7 @@ import { installHotkeys } from '../../services/hotkeys';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { BillingBanner, BillingPaywall, useBillingSuspended } from '../workspace/billing/BillingPaywall';
 import { UpdateBar } from './UpdateBar';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
@@ -36,6 +38,10 @@ import { DayView } from '../calendar/DayView';
 import { BoardsView } from '../boards/BoardsView';
 import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
+import { useDiskUi } from '../../stores/diskUi';
+import { DiskScreen } from '../disk/DiskScreen';
+import { useWikiUi } from '../../stores/wikiUi';
+import { WikiScreen } from '../wiki/WikiScreen';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
 import { WindowVibrancy } from './WindowVibrancy';
@@ -50,6 +56,8 @@ import { useOpenApp } from '../../stores/webApps';
 import { StreamPopout } from '../voice/StreamArea';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { useSearchPanel } from '../../stores/searchPanel';
+import { useMailUi } from '../../stores/mailUi';
+import { MAIL_ENABLED, MailScreenLazy, startMail } from '../mail/boot';
 
 export function AppShell(): ReactNode {
   return (
@@ -70,9 +78,11 @@ function ShellLayout(): ReactNode {
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
   const local = useSession((s) => localAuthority(s.authority));
-  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
+  const locked = useIdentity((s) => !!wsId && lockScreen(s.access[wsId]));
   const home = wsId === HOME && local;
   const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
+  // Balance billing (ADR-0080 §8): a workspace closed for unpaid billing shows the paywall.
+  const billingClosed = useBillingSuspended(home ? null : wsId);
   const roomId = useActiveRoom(home ? null : wsId);
   const dmId = useActiveDm();
   // ≥ 1200 px: a column next to the chat; narrower: a floating panel over it (docs/08, Layout).
@@ -88,6 +98,10 @@ function ShellLayout(): ReactNode {
   // Boards mode (ADR-0042 §5): the column lists boards, the centre shows one; guests have none.
   const guestWs = useWorkspaces((s) => (wsId ? s.byId[wsId]?.role === WorkspaceRole.GUEST : false));
   const boards = useBoardsUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Диск» (ADR-0094 §8): one panel in place of the column and the centre; guests have none.
+  const disk = useDiskUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Вики» (ADR-0096 §9): the same, exclusive with the Disk; guests have none.
+  const wiki = useWikiUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
   // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
@@ -95,6 +109,9 @@ function ShellLayout(): ReactNode {
   // «Результаты поиска» (ADR-0062 §4): the right panel in place of the members list.
   const searchOpen = useSearchPanel((s) => s.open);
   const searchSeq = useSearchPanel((s) => s.seq);
+  // «Почта» (ADR-0088 §8): personal and local — it covers the column and the centre whatever the
+  // workspace, and does not wait for the Calab server (the mail engine is on this computer).
+  const mailOn = useMailUi((s) => s.active) && MAIL_ENABLED;
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -107,6 +124,7 @@ function ShellLayout(): ReactNode {
   useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
   useEffect(() => installWebApps(), []);
+  useEffect(() => startMail(), []);
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   useEffect(() => (ready ? whenIdle(() => preloadWindows(superadmin)) : undefined), [ready, superadmin]);
 
@@ -136,6 +154,7 @@ function ShellLayout(): ReactNode {
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />
       <SuspendedBanner />
+      <BillingBanner />
       {showReconnect ? <ReconnectBanner /> : null}
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
@@ -145,7 +164,9 @@ function ShellLayout(): ReactNode {
           rail and the column. */}
       <div className="mat-rail relative flex min-h-0 flex-1">
         <SectionRail />
-        {!ready ? (
+        {mailOn ? (
+          <MailScreenLazy.Component />
+        ) : !ready ? (
           <div className="mat-content grid flex-1 place-items-center mobile:px-6">
             <div className="flex flex-col items-center gap-3 text-body text-muted">
               <Spinner className="size-6" />
@@ -154,11 +175,13 @@ function ShellLayout(): ReactNode {
           </div>
         ) : locked && wsId ? (
           <WorkspaceLock workspaceId={wsId} />
+        ) : billingClosed && hasWs && wsId ? (
+          <BillingPaywall workspaceId={wsId} />
         ) : home ? (
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DmSidebar />
-            <ResizeHandle />
+            <SidebarResize />
             <div className="mat-content relative flex min-w-0 flex-1">
               {dmId ? <ChatPane key={dmId} workspaceId="" roomId={dmId} /> : <DmPick />}
               {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
@@ -166,13 +189,25 @@ function ShellLayout(): ReactNode {
           </div>
         ) : hasWs && wsId && appId ? (
           <AppScreen key={appId} appId={appId} />
+        ) : hasWs && wsId && disk ? (
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <DiskScreen key={wsId} workspaceId={wsId} />
+          </div>
+        ) : hasWs && wsId && wiki ? (
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <WikiScreen key={wsId} workspaceId={wsId} />
+          </div>
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
-            <ResizeHandle />
+            <SidebarResize />
             <div className="mat-content relative flex min-w-0 flex-1">
               {boards ? (
-                <BoardsView workspaceId={wsId} wide={wide} />
+                // Task hits open here, the results stay beside the board (ADR-0105).
+                <>
+                  <BoardsView workspaceId={wsId} />
+                  {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
+                </>
               ) : calDay ? (
                 // Calendar (ADR-0038 §7): the day instead of the room, the selected meeting instead of the
                 // members (a column from 1200 px, floating below); no meeting selected — the members, so
@@ -208,7 +243,7 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
+        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
@@ -245,39 +280,14 @@ function useActiveRoom(wsId: string | null): string | undefined {
 }
 
 /** Drag the right edge of the room column (200–320 px). */
-function ResizeHandle(): ReactNode {
-  const setWidth = useUi((s) => s.setSidebarWidth);
-  const start = useRef<{ x: number; w: number } | null>(null);
-  const onDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    start.current = { x: e.clientX, w: useUi.getState().sidebarWidth };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (start.current) setWidth(start.current.w + e.clientX - start.current.x);
-  };
-  const onUp = (): void => {
-    start.current = null;
-  };
+function SidebarResize(): ReactNode {
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={t('shell.resize')}
-      aria-valuemin={200}
-      aria-valuemax={320}
-      aria-valuenow={useUi.getState().sidebarWidth}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        const w = useUi.getState().sidebarWidth;
-        if (e.key === 'ArrowLeft') setWidth(w - 8);
-        if (e.key === 'ArrowRight') setWidth(w + 8);
-      }}
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      // Zero layout width: the 6 px grab area overlaps both panes, so the column and the chat touch
-      // (a visible 3 px strip of the window layer showed between them otherwise).
-      className="relative z-[var(--z-sticky)] -ml-[3px] -mr-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-line hover:after:bg-accent focus-visible:after:bg-accent"
+    <ResizeHandle
+      width={() => useUi.getState().sidebarWidth}
+      min={200}
+      max={320}
+      label={t('shell.resize')}
+      onChange={(w) => useUi.getState().setSidebarWidth(w)}
     />
   );
 }

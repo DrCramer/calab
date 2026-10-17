@@ -871,8 +871,10 @@ const (
 	TaskNoticeKind_TASK_NOTICE_KIND_STATUS      TaskNoticeKind = 4 // the status of a task the recipient is subscribed to changed
 	// Approvals (ADR-0049 §5). Mandatory notices bypass the task level, a muted workspace and
 	// «Отписаться» (like a direct mention; only «Не беспокоить» silences them on the client).
-	// APPROVAL_REQUESTED (mandatory): the recipient became an approver, every vote was reset
-	// (the task changed), or a daily reminder of a vote pending for 24 h (≤ 3; actor_id empty).
+	// APPROVAL_REQUESTED (mandatory): the recipient became an approver, their decided vote was
+	// reset (the task changed; TaskNotice.re_requested), or a daily reminder of a vote pending for
+	// 24 h (≤ 3; actor_id empty). The first two wait the board's approval_notify_delay_seconds
+	// (ADR-0082).
 	TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED TaskNoticeKind = 5
 	// APPROVED: the quorum was reached; REJECTED: an approver rejected (the comment is in
 	// Task.approvers). Mandatory for the task's creator and lead assignee; other assignees and
@@ -882,20 +884,59 @@ const (
 	// RULE (ADR-0060): the «notify» action of an automation rule addressed the recipient (an
 	// assignee, the lead, the creator or an approver); by their task level like ASSIGNED.
 	TaskNoticeKind_TASK_NOTICE_KIND_RULE TaskNoticeKind = 8
+	// ADR-0089. Addressed to the recipient (with task level ALL and MENTIONS, no subscription
+	// needed) unless switched off in UserSettings.task_notify_off:
+	// UNASSIGNED: removed from the assignees or from the lead by someone else (or a rule).
+	TaskNoticeKind_TASK_NOTICE_KIND_UNASSIGNED TaskNoticeKind = 9
+	// WATCHER_ADDED: made a watcher by someone else (an @mention gives MENTIONED instead).
+	TaskNoticeKind_TASK_NOTICE_KIND_WATCHER_ADDED TaskNoticeKind = 10
+	// DUE_SOON: due tomorrow (days_left 1) or today (0), at 09:00 of TASKS_DUE_TZ, to the
+	// assignees and the lead; actor_id empty.
+	TaskNoticeKind_TASK_NOTICE_KIND_DUE_SOON TaskNoticeKind = 11
+	// OVERDUE: the day after the due date, once, to the assignees, the lead and the creator;
+	// actor_id empty.
+	TaskNoticeKind_TASK_NOTICE_KIND_OVERDUE TaskNoticeKind = 12
+	// ADR-0089. To subscribers who did not mute the task, with task level ALL only:
+	// DUE_CHANGED: the due date was set, moved or removed (due_on: the new one).
+	TaskNoticeKind_TASK_NOTICE_KIND_DUE_CHANGED TaskNoticeKind = 13
+	// PRIORITY: the priority changed (the new one is in the task).
+	TaskNoticeKind_TASK_NOTICE_KIND_PRIORITY TaskNoticeKind = 14
+	// MILESTONE: the milestone changed; text: the new milestone's name ("" = removed).
+	TaskNoticeKind_TASK_NOTICE_KIND_MILESTONE TaskNoticeKind = 15
+	// MOVED: the task was moved to another board; text: the new board's name.
+	TaskNoticeKind_TASK_NOTICE_KIND_MOVED TaskNoticeKind = 16
+	// EDITED: the title or the description changed; text: "title" or "description". Once per
+	// coalesced journal entry (ADR-0081): not when the entry is replaced.
+	TaskNoticeKind_TASK_NOTICE_KIND_EDITED TaskNoticeKind = 17
+	// ATTACHMENT: a file was attached; text: its name.
+	TaskNoticeKind_TASK_NOTICE_KIND_ATTACHMENT TaskNoticeKind = 18
+	// ARCHIVED: the task was archived.
+	TaskNoticeKind_TASK_NOTICE_KIND_ARCHIVED TaskNoticeKind = 19
 )
 
 // Enum value maps for TaskNoticeKind.
 var (
 	TaskNoticeKind_name = map[int32]string{
-		0: "TASK_NOTICE_KIND_UNSPECIFIED",
-		1: "TASK_NOTICE_KIND_ASSIGNED",
-		2: "TASK_NOTICE_KIND_MENTIONED",
-		3: "TASK_NOTICE_KIND_COMMENT",
-		4: "TASK_NOTICE_KIND_STATUS",
-		5: "TASK_NOTICE_KIND_APPROVAL_REQUESTED",
-		6: "TASK_NOTICE_KIND_APPROVED",
-		7: "TASK_NOTICE_KIND_REJECTED",
-		8: "TASK_NOTICE_KIND_RULE",
+		0:  "TASK_NOTICE_KIND_UNSPECIFIED",
+		1:  "TASK_NOTICE_KIND_ASSIGNED",
+		2:  "TASK_NOTICE_KIND_MENTIONED",
+		3:  "TASK_NOTICE_KIND_COMMENT",
+		4:  "TASK_NOTICE_KIND_STATUS",
+		5:  "TASK_NOTICE_KIND_APPROVAL_REQUESTED",
+		6:  "TASK_NOTICE_KIND_APPROVED",
+		7:  "TASK_NOTICE_KIND_REJECTED",
+		8:  "TASK_NOTICE_KIND_RULE",
+		9:  "TASK_NOTICE_KIND_UNASSIGNED",
+		10: "TASK_NOTICE_KIND_WATCHER_ADDED",
+		11: "TASK_NOTICE_KIND_DUE_SOON",
+		12: "TASK_NOTICE_KIND_OVERDUE",
+		13: "TASK_NOTICE_KIND_DUE_CHANGED",
+		14: "TASK_NOTICE_KIND_PRIORITY",
+		15: "TASK_NOTICE_KIND_MILESTONE",
+		16: "TASK_NOTICE_KIND_MOVED",
+		17: "TASK_NOTICE_KIND_EDITED",
+		18: "TASK_NOTICE_KIND_ATTACHMENT",
+		19: "TASK_NOTICE_KIND_ARCHIVED",
 	}
 	TaskNoticeKind_value = map[string]int32{
 		"TASK_NOTICE_KIND_UNSPECIFIED":        0,
@@ -907,6 +948,17 @@ var (
 		"TASK_NOTICE_KIND_APPROVED":           6,
 		"TASK_NOTICE_KIND_REJECTED":           7,
 		"TASK_NOTICE_KIND_RULE":               8,
+		"TASK_NOTICE_KIND_UNASSIGNED":         9,
+		"TASK_NOTICE_KIND_WATCHER_ADDED":      10,
+		"TASK_NOTICE_KIND_DUE_SOON":           11,
+		"TASK_NOTICE_KIND_OVERDUE":            12,
+		"TASK_NOTICE_KIND_DUE_CHANGED":        13,
+		"TASK_NOTICE_KIND_PRIORITY":           14,
+		"TASK_NOTICE_KIND_MILESTONE":          15,
+		"TASK_NOTICE_KIND_MOVED":              16,
+		"TASK_NOTICE_KIND_EDITED":             17,
+		"TASK_NOTICE_KIND_ATTACHMENT":         18,
+		"TASK_NOTICE_KIND_ARCHIVED":           19,
 	}
 )
 
@@ -1565,13 +1617,20 @@ func (x *TaskMilestoneProgress) GetTotal() uint32 {
 }
 
 type BoardStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // 1..32 characters
-	Type          BoardStatusType        `protobuf:"varint,3,opt,name=type,proto3,enum=calaba.v1.BoardStatusType" json:"type,omitempty"`
-	Color         uint32                 `protobuf:"varint,4,opt,name=color,proto3" json:"color,omitempty"`
-	Position      int32                  `protobuf:"varint,5,opt,name=position,proto3" json:"position,omitempty"`                    // column order, ascending
-	IsDefault     bool                   `protobuf:"varint,6,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"` // exactly one per board: new tasks without status_id get it
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // 1..32 characters
+	Type      BoardStatusType        `protobuf:"varint,3,opt,name=type,proto3,enum=calaba.v1.BoardStatusType" json:"type,omitempty"`
+	Color     uint32                 `protobuf:"varint,4,opt,name=color,proto3" json:"color,omitempty"`
+	Position  int32                  `protobuf:"varint,5,opt,name=position,proto3" json:"position,omitempty"`                    // column order, ascending
+	IsDefault bool                   `protobuf:"varint,6,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"` // exactly one per board: new tasks without status_id get it
+	// Icon token (ADR-0093); "" = the icon of the type (backlog dashed, unstarted circle,
+	// started half, completed check, cancelled x). Tokens: dashed, circle, quarter, half,
+	// three-quarters, check, x, eye, shield-check, hourglass, pause, flag, star, bolt, rocket,
+	// bug, inbox, archive, lock. The list lives in packages/protocol STATUS_ICONS and Go
+	// boards.StatusIcons (shared vector proto/testdata/status_icons.json). Display only:
+	// the type keeps the semantics (finished / started) for filters and rules.
+	Icon          string `protobuf:"bytes,7,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1646,6 +1705,13 @@ func (x *BoardStatus) GetIsDefault() bool {
 		return x.IsDefault
 	}
 	return false
+}
+
+func (x *BoardStatus) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
 }
 
 type BoardLabel struct {
@@ -1936,9 +2002,11 @@ type Board struct {
 	PermissionOverrides []*RoomPermissionOverride `protobuf:"bytes,21,rep,name=permission_overrides,json=permissionOverrides,proto3" json:"permission_overrides,omitempty"`
 	KeyLocked           bool                      `protobuf:"varint,22,opt,name=key_locked,json=keyLocked,proto3" json:"key_locked,omitempty"`              // the key can no longer change: the board has had a task
 	DefaultViewId       string                    `protobuf:"bytes,23,opt,name=default_view_id,json=defaultViewId,proto3" json:"default_view_id,omitempty"` // a shared view opened by default; empty = kanban without filter
-	// Private boards only (ADR-0048): closed even to administrators. ADMINISTRATOR and
-	// workspace-level bits give no access; VIEW_BOARD comes only from an allow override on the
-	// board (by role or personally); the workspace owner always sees it. Strangers get 404.
+	// The pre-3.5 «закрытая» flag (ADR-0048). Since the ADR-0058 addendum 2026-10-14 every
+	// private board (is_private) is closed even to administrators and the owner — VIEW_BOARD only
+	// from an allow override on the board (by role or personally) or being its creator; the owner
+	// alone bypasses while Workspace.owner_sees_private is on. The server keeps restricted equal
+	// to is_private; clients read either as «private». Strangers get 404.
 	Restricted bool `protobuf:"varint,24,opt,name=restricted,proto3" json:"restricted,omitempty"`
 	// Board categories (ADR-0058 §1): the category the board is listed in; empty = none.
 	// position is the order within that container (a category or «без категории»).
@@ -1956,9 +2024,13 @@ type Board struct {
 	TaskScoped bool `protobuf:"varint,28,opt,name=task_scoped,json=taskScoped,proto3" json:"task_scoped,omitempty"`
 	// Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
 	// created or deleted).
-	RulesCount    uint32 `protobuf:"varint,29,opt,name=rules_count,json=rulesCount,proto3" json:"rules_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RulesCount uint32 `protobuf:"varint,29,opt,name=rules_count,json=rulesCount,proto3" json:"rules_count,omitempty"`
+	// Approvals (ADR-0082): seconds after an approver is added (or their decided vote is reset by
+	// a change of the task) before the APPROVAL_REQUESTED notice goes out; one of 0 (immediately),
+	// 60, 300, 900, 1800, 3600. An approver removed or a vote cast meanwhile cancels the notice.
+	ApprovalNotifyDelaySeconds uint32 `protobuf:"varint,30,opt,name=approval_notify_delay_seconds,json=approvalNotifyDelaySeconds,proto3" json:"approval_notify_delay_seconds,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *Board) Reset() {
@@ -2190,6 +2262,13 @@ func (x *Board) GetTaskScoped() bool {
 func (x *Board) GetRulesCount() uint32 {
 	if x != nil {
 		return x.RulesCount
+	}
+	return 0
+}
+
+func (x *Board) GetApprovalNotifyDelaySeconds() uint32 {
+	if x != nil {
+		return x.ApprovalNotifyDelaySeconds
 	}
 	return 0
 }
@@ -2928,6 +3007,17 @@ func (x *Task) GetWatcherIds() []string {
 // the RuleGitEvent name without its prefix, "kind": "branch" | "pr" | "commit", "provider",
 // "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push};
 // before {"state", "title"} of a pull request that changed.
+// Snapshots (ADR-0091): "description" — {"length", "text"} before and after; "attachments" —
+// {"file_ids", "files": [{"file_id", "name", "size", "mime"}]}; "labels" — {"label_ids",
+// "labels": [{"id", "name", "color"}]}; "milestone" — {"milestone_id", "name"}; "parent" —
+// {"parent_id", "key", "title"}; "relation" — {"kind", "related_id", "key", "title"} (entries
+// written before carry only the ids; key and title only for a task the reader sees, ADR-0059 —
+// the live TASK_ACTIVITY and the webhook changes have the id alone).
+// Comments (ADR-0091): "comment" — a comment was posted (actor = its author): after
+// {"message_id", "text", "attachments": [{"file_id", "name", "size", "mime"}], "reply_to_id"?,
+// "forwarded"}; "comment_edit" — before / after {"message_id", "text", "attachments"} (edits of
+// one comment by one person within 5 minutes merge, ADR-0081); "comment_delete" — before
+// {"message_id", "author_id", "text", "attachments"}, after empty (actor = who deleted it).
 // Automations (ADR-0060): a change made by a rule has actor_id empty and rule_id set; the client
 // shows «Автоматизация: <rule name>» (names from the board's rules / BOARD_RULE_UPDATE).
 type TaskActivity struct {
@@ -3308,14 +3398,19 @@ func (x *ListBoardsResponse) GetBoards() []*Board {
 // user override with every board bit. ≤ 50 boards per workspace and the plan's max_boards
 // (409 CONFLICT, reason "PLAN_LIMIT" / "BOARD_LIMIT").
 type CreateBoardRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"` // empty = derived from the name
-	Emoji         string                 `protobuf:"bytes,3,opt,name=emoji,proto3" json:"emoji,omitempty"`
-	IsPrivate     bool                   `protobuf:"varint,4,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
-	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
-	Template      BoardTemplate          `protobuf:"varint,6,opt,name=template,proto3,enum=calaba.v1.BoardTemplate" json:"template,omitempty"`
-	IconFileId    string                 `protobuf:"bytes,7,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Key         string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"` // empty = derived from the name
+	Emoji       string                 `protobuf:"bytes,3,opt,name=emoji,proto3" json:"emoji,omitempty"`
+	IsPrivate   bool                   `protobuf:"varint,4,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
+	Description string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	Template    BoardTemplate          `protobuf:"varint,6,opt,name=template,proto3,enum=calaba.v1.BoardTemplate" json:"template,omitempty"`
+	IconFileId  string                 `protobuf:"bytes,7,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
+	// Private boards only (ADR-0058 addendum 2026-10-14; 422 on a public one): who is added —
+	// members of the workspace (422 otherwise) get a personal allow VIEW_BOARD | CREATE_TASKS,
+	// roles of the workspace (not owner / admin / guest built-ins) a role allow of the same.
+	MemberIds     []string `protobuf:"bytes,8,rep,name=member_ids,json=memberIds,proto3" json:"member_ids,omitempty"`
+	RoleIds       []string `protobuf:"bytes,9,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3399,6 +3494,20 @@ func (x *CreateBoardRequest) GetIconFileId() string {
 	return ""
 }
 
+func (x *CreateBoardRequest) GetMemberIds() []string {
+	if x != nil {
+		return x.MemberIds
+	}
+	return nil
+}
+
+func (x *CreateBoardRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
+}
+
 // Answer of every board route that changes the board (statuses, labels, milestones,
 // permissions, position): the board as the caller sees it. BOARD_UPDATE goes to its viewers.
 type BoardResponse struct {
@@ -3457,17 +3566,20 @@ type UpdateBoardRequest struct {
 	IsPrivate       *bool                  `protobuf:"varint,6,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
 	AutoArchiveDays *uint32                `protobuf:"varint,7,opt,name=auto_archive_days,json=autoArchiveDays,proto3,oneof" json:"auto_archive_days,omitempty"` // 0..3650
 	DefaultViewId   *string                `protobuf:"bytes,8,opt,name=default_view_id,json=defaultViewId,proto3,oneof" json:"default_view_id,omitempty"`        // a shared view of the board; "" = none
-	// Private boards only (ADR-0048; 422 otherwise, and is_private false is refused while set).
-	// MANAGE_BOARD on the board; the owner may always lift it. Switching it on gives the caller
-	// (unless the owner) a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
+	// Deprecated alias of is_private (ADR-0058 addendum 2026-10-14): true = private, false =
+	// public; with is_private both must agree (422 otherwise). Switching a board to private gives
+	// the caller a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
 	Restricted *bool `protobuf:"varint,9,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
 	// Board features (ADR-0058 §3): set_disabled_features replaces the disabled set with
 	// disabled_features (UNSPECIFIED and unknown values are 422); estimate_scale UNSPECIFIED is 422.
 	SetDisabledFeatures bool           `protobuf:"varint,10,opt,name=set_disabled_features,json=setDisabledFeatures,proto3" json:"set_disabled_features,omitempty"`
 	DisabledFeatures    []BoardFeature `protobuf:"varint,11,rep,packed,name=disabled_features,json=disabledFeatures,proto3,enum=calaba.v1.BoardFeature" json:"disabled_features,omitempty"`
 	EstimateScale       *EstimateScale `protobuf:"varint,12,opt,name=estimate_scale,json=estimateScale,proto3,enum=calaba.v1.EstimateScale,oneof" json:"estimate_scale,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// ADR-0082: one of 0, 60, 300, 900, 1800, 3600 (422 otherwise). Notices already scheduled
+	// keep their time.
+	ApprovalNotifyDelaySeconds *uint32 `protobuf:"varint,13,opt,name=approval_notify_delay_seconds,json=approvalNotifyDelaySeconds,proto3,oneof" json:"approval_notify_delay_seconds,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *UpdateBoardRequest) Reset() {
@@ -3582,6 +3694,13 @@ func (x *UpdateBoardRequest) GetEstimateScale() EstimateScale {
 		return *x.EstimateScale
 	}
 	return EstimateScale_ESTIMATE_SCALE_UNSPECIFIED
+}
+
+func (x *UpdateBoardRequest) GetApprovalNotifyDelaySeconds() uint32 {
+	if x != nil && x.ApprovalNotifyDelaySeconds != nil {
+		return *x.ApprovalNotifyDelaySeconds
+	}
+	return 0
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -3756,6 +3875,7 @@ type CreateBoardStatusRequest struct {
 	Color         uint32                 `protobuf:"varint,3,opt,name=color,proto3" json:"color,omitempty"`
 	Position      *int32                 `protobuf:"varint,4,opt,name=position,proto3,oneof" json:"position,omitempty"` // unset = last
 	IsDefault     bool                   `protobuf:"varint,5,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	Icon          *string                `protobuf:"bytes,6,opt,name=icon,proto3,oneof" json:"icon,omitempty"` // BoardStatus.icon token; unset or "" = by type; unknown = 422 icon
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3825,6 +3945,13 @@ func (x *CreateBoardStatusRequest) GetIsDefault() bool {
 	return false
 }
 
+func (x *CreateBoardStatusRequest) GetIcon() string {
+	if x != nil && x.Icon != nil {
+		return *x.Icon
+	}
+	return ""
+}
+
 // PATCH /api/boards/{id}/statuses/{sid} → BoardResponse. DELETE …/{sid}?move_to=<sid> moves its
 // tasks (archived ones too) to move_to; the default status cannot be deleted (make another the
 // default first).
@@ -3835,6 +3962,7 @@ type UpdateBoardStatusRequest struct {
 	Color         *uint32                `protobuf:"varint,3,opt,name=color,proto3,oneof" json:"color,omitempty"`
 	Position      *int32                 `protobuf:"varint,4,opt,name=position,proto3,oneof" json:"position,omitempty"`                    // new index; others shift
 	IsDefault     *bool                  `protobuf:"varint,5,opt,name=is_default,json=isDefault,proto3,oneof" json:"is_default,omitempty"` // only true: the previous default loses it
+	Icon          *string                `protobuf:"bytes,6,opt,name=icon,proto3,oneof" json:"icon,omitempty"`                             // BoardStatus.icon token; "" resets to the type icon; unknown = 422 icon
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3902,6 +4030,13 @@ func (x *UpdateBoardStatusRequest) GetIsDefault() bool {
 		return *x.IsDefault
 	}
 	return false
+}
+
+func (x *UpdateBoardStatusRequest) GetIcon() string {
+	if x != nil && x.Icon != nil {
+		return *x.Icon
+	}
+	return ""
 }
 
 // POST /api/boards/{id}/labels (MANAGE_BOARD, ≤ 50) → BoardResponse. CREATE_TASKS may create a
@@ -4958,8 +5093,11 @@ func (x *SetTaskSubscriptionRequest) GetMuted() bool {
 	return false
 }
 
-// GET /api/tasks/{id}/activity?before=<id>&limit= (≤ 100, default 50): comments and journal
-// entries, newest first; before = the id of the oldest item seen (message or activity id).
+// GET /api/tasks/{id}/activity?before=<id>&limit=&only= (≤ 100, default 50): comments and
+// journal entries, newest first; before = the id of the oldest item seen (message or activity
+// id). only=journal: only journal entries, the "comment*" kinds included (ADR-0091, the
+// «История» tab); only=comments: only messages (the «Комментарии» tab); without it both, the
+// journal without its "comment" entries (each comment is there as its message).
 type TaskActivityPage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*TaskActivityItem    `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
@@ -7018,22 +7156,128 @@ func (x *TaskUpdate) GetNotice() *TaskNotice {
 	return nil
 }
 
+// TASK_NOTICE (ADR-0090): a task notice of user_id relayed to a bot the user chose
+// (UserSettings.task_notify_bots), on the bot's user channel and webhook. Sent whenever the
+// user gets a TASK_UPDATE with a notice, while the bot is a member of the task's workspace,
+// regardless of the bot's own VIEW_BOARD (the user entrusted their notices to it). task is the
+// task as the user sees it, without the viewer's state (subscribed, muted, unread and
+// viewer_state are false); task_url opens it in the app.
+type TaskNoticeRelay struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Task          *Task                  `protobuf:"bytes,3,opt,name=task,proto3" json:"task,omitempty"`
+	Notice        *TaskNotice            `protobuf:"bytes,4,opt,name=notice,proto3" json:"notice,omitempty"`
+	TaskUrl       string                 `protobuf:"bytes,5,opt,name=task_url,json=taskUrl,proto3" json:"task_url,omitempty"`
+	BoardKey      string                 `protobuf:"bytes,6,opt,name=board_key,json=boardKey,proto3" json:"board_key,omitempty"`
+	BoardName     string                 `protobuf:"bytes,7,opt,name=board_name,json=boardName,proto3" json:"board_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskNoticeRelay) Reset() {
+	*x = TaskNoticeRelay{}
+	mi := &file_calaba_v1_boards_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskNoticeRelay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskNoticeRelay) ProtoMessage() {}
+
+func (x *TaskNoticeRelay) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_boards_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskNoticeRelay.ProtoReflect.Descriptor instead.
+func (*TaskNoticeRelay) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *TaskNoticeRelay) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *TaskNoticeRelay) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *TaskNoticeRelay) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *TaskNoticeRelay) GetNotice() *TaskNotice {
+	if x != nil {
+		return x.Notice
+	}
+	return nil
+}
+
+func (x *TaskNoticeRelay) GetTaskUrl() string {
+	if x != nil {
+		return x.TaskUrl
+	}
+	return ""
+}
+
+func (x *TaskNoticeRelay) GetBoardKey() string {
+	if x != nil {
+		return x.BoardKey
+	}
+	return ""
+}
+
+func (x *TaskNoticeRelay) GetBoardName() string {
+	if x != nil {
+		return x.BoardName
+	}
+	return ""
+}
+
 // Why a task notifies its recipient: the client shows a system notification.
 type TaskNotice struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          TaskNoticeKind         `protobuf:"varint,1,opt,name=kind,proto3,enum=calaba.v1.TaskNoticeKind" json:"kind,omitempty"`
-	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	MessageId     string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"` // COMMENT / MENTIONED in a comment
-	ActivityId    string                 `protobuf:"bytes,4,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
-	Text          string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`                   // RULE: the rule's rendered message (≤ 2000 characters)
-	RuleId        string                 `protobuf:"bytes,6,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // RULE: the rule that sent it
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Kind       TaskNoticeKind         `protobuf:"varint,1,opt,name=kind,proto3,enum=calaba.v1.TaskNoticeKind" json:"kind,omitempty"`
+	ActorId    string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	MessageId  string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"` // COMMENT / MENTIONED in a comment
+	ActivityId string                 `protobuf:"bytes,4,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
+	Text       string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`                   // RULE: the rule's rendered message (≤ 2000 characters)
+	RuleId     string                 `protobuf:"bytes,6,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // RULE: the rule that sent it
+	// APPROVAL_REQUESTED (ADR-0082): the task changed and the recipient's decided vote was reset
+	// - «Задача изменена - нужно согласовать повторно». Older clients show the plain request.
+	ReRequested bool `protobuf:"varint,7,opt,name=re_requested,json=reRequested,proto3" json:"re_requested,omitempty"`
+	// DUE_SOON / OVERDUE: the due date the notice is about; DUE_CHANGED: the new due date ("" =
+	// removed). "YYYY-MM-DD" (ADR-0089).
+	DueOn string `protobuf:"bytes,8,opt,name=due_on,json=dueOn,proto3" json:"due_on,omitempty"`
+	// DUE_SOON: 1 = due tomorrow, 0 = due today; OVERDUE: the days past due, negative (-1).
+	DaysLeft      int32 `protobuf:"varint,9,opt,name=days_left,json=daysLeft,proto3" json:"days_left,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskNotice) Reset() {
 	*x = TaskNotice{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[75]
+	mi := &file_calaba_v1_boards_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7045,7 +7289,7 @@ func (x *TaskNotice) String() string {
 func (*TaskNotice) ProtoMessage() {}
 
 func (x *TaskNotice) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[75]
+	mi := &file_calaba_v1_boards_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7058,7 +7302,7 @@ func (x *TaskNotice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskNotice.ProtoReflect.Descriptor instead.
 func (*TaskNotice) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{75}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *TaskNotice) GetKind() TaskNoticeKind {
@@ -7103,6 +7347,27 @@ func (x *TaskNotice) GetRuleId() string {
 	return ""
 }
 
+func (x *TaskNotice) GetReRequested() bool {
+	if x != nil {
+		return x.ReRequested
+	}
+	return false
+}
+
+func (x *TaskNotice) GetDueOn() string {
+	if x != nil {
+		return x.DueOn
+	}
+	return ""
+}
+
+func (x *TaskNotice) GetDaysLeft() int32 {
+	if x != nil {
+		return x.DaysLeft
+	}
+	return 0
+}
+
 // The task was archived (purged false) or deleted with its board.
 type TaskDelete struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -7116,7 +7381,7 @@ type TaskDelete struct {
 
 func (x *TaskDelete) Reset() {
 	*x = TaskDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[76]
+	mi := &file_calaba_v1_boards_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7128,7 +7393,7 @@ func (x *TaskDelete) String() string {
 func (*TaskDelete) ProtoMessage() {}
 
 func (x *TaskDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[76]
+	mi := &file_calaba_v1_boards_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7141,7 +7406,7 @@ func (x *TaskDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskDelete.ProtoReflect.Descriptor instead.
 func (*TaskDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{76}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *TaskDelete) GetWorkspaceId() string {
@@ -7172,18 +7437,26 @@ func (x *TaskDelete) GetPurged() bool {
 	return false
 }
 
-// One new journal entry (TASK_ACTIVITY).
+// One new journal entry (TASK_ACTIVITY). A repeated change of the same field by the same user
+// within a few minutes is merged into one entry (ADR-0081): the merged entry gets a new id and
+// replaced_id names the entry it supersedes, which the client drops; activity empty with
+// replaced_id set = the entry is gone (the field came back to its value, net no-op).
 type TaskActivityAppend struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Activity      *TaskActivity          `protobuf:"bytes,2,opt,name=activity,proto3" json:"activity,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Activity    *TaskActivity          `protobuf:"bytes,2,opt,name=activity,proto3" json:"activity,omitempty"`
+	ReplacedId  string                 `protobuf:"bytes,3,opt,name=replaced_id,json=replacedId,proto3" json:"replaced_id,omitempty"`
+	// The task and board of the entry, also when activity is empty: the gateway routes the event
+	// by them (who sees the task).
+	TaskId        string `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	BoardId       string `protobuf:"bytes,5,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskActivityAppend) Reset() {
 	*x = TaskActivityAppend{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[77]
+	mi := &file_calaba_v1_boards_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7195,7 +7468,7 @@ func (x *TaskActivityAppend) String() string {
 func (*TaskActivityAppend) ProtoMessage() {}
 
 func (x *TaskActivityAppend) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[77]
+	mi := &file_calaba_v1_boards_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7208,7 +7481,7 @@ func (x *TaskActivityAppend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskActivityAppend.ProtoReflect.Descriptor instead.
 func (*TaskActivityAppend) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{77}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *TaskActivityAppend) GetWorkspaceId() string {
@@ -7225,6 +7498,27 @@ func (x *TaskActivityAppend) GetActivity() *TaskActivity {
 	return nil
 }
 
+func (x *TaskActivityAppend) GetReplacedId() string {
+	if x != nil {
+		return x.ReplacedId
+	}
+	return ""
+}
+
+func (x *TaskActivityAppend) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskActivityAppend) GetBoardId() string {
+	if x != nil {
+		return x.BoardId
+	}
+	return ""
+}
+
 // Board categories (ADR-0058 §1): to every member of the workspace except guests.
 type BoardCategoryCreate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -7235,7 +7529,7 @@ type BoardCategoryCreate struct {
 
 func (x *BoardCategoryCreate) Reset() {
 	*x = BoardCategoryCreate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[78]
+	mi := &file_calaba_v1_boards_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7247,7 +7541,7 @@ func (x *BoardCategoryCreate) String() string {
 func (*BoardCategoryCreate) ProtoMessage() {}
 
 func (x *BoardCategoryCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[78]
+	mi := &file_calaba_v1_boards_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7260,7 +7554,7 @@ func (x *BoardCategoryCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryCreate.ProtoReflect.Descriptor instead.
 func (*BoardCategoryCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{78}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *BoardCategoryCreate) GetCategory() *BoardCategory {
@@ -7279,7 +7573,7 @@ type BoardCategoryUpdate struct {
 
 func (x *BoardCategoryUpdate) Reset() {
 	*x = BoardCategoryUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[79]
+	mi := &file_calaba_v1_boards_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7291,7 +7585,7 @@ func (x *BoardCategoryUpdate) String() string {
 func (*BoardCategoryUpdate) ProtoMessage() {}
 
 func (x *BoardCategoryUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[79]
+	mi := &file_calaba_v1_boards_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7304,7 +7598,7 @@ func (x *BoardCategoryUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryUpdate.ProtoReflect.Descriptor instead.
 func (*BoardCategoryUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{79}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *BoardCategoryUpdate) GetCategory() *BoardCategory {
@@ -7325,7 +7619,7 @@ type BoardCategoryDelete struct {
 
 func (x *BoardCategoryDelete) Reset() {
 	*x = BoardCategoryDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[80]
+	mi := &file_calaba_v1_boards_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7337,7 +7631,7 @@ func (x *BoardCategoryDelete) String() string {
 func (*BoardCategoryDelete) ProtoMessage() {}
 
 func (x *BoardCategoryDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[80]
+	mi := &file_calaba_v1_boards_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7350,7 +7644,7 @@ func (x *BoardCategoryDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryDelete.ProtoReflect.Descriptor instead.
 func (*BoardCategoryDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{80}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *BoardCategoryDelete) GetWorkspaceId() string {
@@ -7383,7 +7677,7 @@ type TaskChecklistUpdate struct {
 
 func (x *TaskChecklistUpdate) Reset() {
 	*x = TaskChecklistUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[81]
+	mi := &file_calaba_v1_boards_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7395,7 +7689,7 @@ func (x *TaskChecklistUpdate) String() string {
 func (*TaskChecklistUpdate) ProtoMessage() {}
 
 func (x *TaskChecklistUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[81]
+	mi := &file_calaba_v1_boards_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7408,7 +7702,7 @@ func (x *TaskChecklistUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskChecklistUpdate.ProtoReflect.Descriptor instead.
 func (*TaskChecklistUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{81}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *TaskChecklistUpdate) GetWorkspaceId() string {
@@ -7468,7 +7762,7 @@ type TaskChecklistDelete struct {
 
 func (x *TaskChecklistDelete) Reset() {
 	*x = TaskChecklistDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[82]
+	mi := &file_calaba_v1_boards_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7480,7 +7774,7 @@ func (x *TaskChecklistDelete) String() string {
 func (*TaskChecklistDelete) ProtoMessage() {}
 
 func (x *TaskChecklistDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[82]
+	mi := &file_calaba_v1_boards_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7493,7 +7787,7 @@ func (x *TaskChecklistDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskChecklistDelete.ProtoReflect.Descriptor instead.
 func (*TaskChecklistDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{82}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *TaskChecklistDelete) GetWorkspaceId() string {
@@ -7561,7 +7855,7 @@ type TaskGitLink struct {
 
 func (x *TaskGitLink) Reset() {
 	*x = TaskGitLink{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[83]
+	mi := &file_calaba_v1_boards_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7573,7 +7867,7 @@ func (x *TaskGitLink) String() string {
 func (*TaskGitLink) ProtoMessage() {}
 
 func (x *TaskGitLink) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[83]
+	mi := &file_calaba_v1_boards_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7586,7 +7880,7 @@ func (x *TaskGitLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGitLink.ProtoReflect.Descriptor instead.
 func (*TaskGitLink) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{83}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *TaskGitLink) GetId() string {
@@ -7689,7 +7983,7 @@ type TaskGitLinksUpdate struct {
 
 func (x *TaskGitLinksUpdate) Reset() {
 	*x = TaskGitLinksUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[84]
+	mi := &file_calaba_v1_boards_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7701,7 +7995,7 @@ func (x *TaskGitLinksUpdate) String() string {
 func (*TaskGitLinksUpdate) ProtoMessage() {}
 
 func (x *TaskGitLinksUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[84]
+	mi := &file_calaba_v1_boards_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7714,7 +8008,7 @@ func (x *TaskGitLinksUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGitLinksUpdate.ProtoReflect.Descriptor instead.
 func (*TaskGitLinksUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{84}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *TaskGitLinksUpdate) GetWorkspaceId() string {
@@ -7763,7 +8057,7 @@ type SetBoardOrderRequest_BoardPosition struct {
 
 func (x *SetBoardOrderRequest_BoardPosition) Reset() {
 	*x = SetBoardOrderRequest_BoardPosition{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[85]
+	mi := &file_calaba_v1_boards_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7775,7 +8069,7 @@ func (x *SetBoardOrderRequest_BoardPosition) String() string {
 func (*SetBoardOrderRequest_BoardPosition) ProtoMessage() {}
 
 func (x *SetBoardOrderRequest_BoardPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[85]
+	mi := &file_calaba_v1_boards_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7822,7 +8116,7 @@ type SetBoardOrderRequest_CategoryPosition struct {
 
 func (x *SetBoardOrderRequest_CategoryPosition) Reset() {
 	*x = SetBoardOrderRequest_CategoryPosition{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[86]
+	mi := &file_calaba_v1_boards_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7834,7 +8128,7 @@ func (x *SetBoardOrderRequest_CategoryPosition) String() string {
 func (*SetBoardOrderRequest_CategoryPosition) ProtoMessage() {}
 
 func (x *SetBoardOrderRequest_CategoryPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[86]
+	mi := &file_calaba_v1_boards_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7876,7 +8170,7 @@ type BoardWebhookEvent_BoardRef struct {
 
 func (x *BoardWebhookEvent_BoardRef) Reset() {
 	*x = BoardWebhookEvent_BoardRef{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[87]
+	mi := &file_calaba_v1_boards_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7888,7 +8182,7 @@ func (x *BoardWebhookEvent_BoardRef) String() string {
 func (*BoardWebhookEvent_BoardRef) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_BoardRef) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[87]
+	mi := &file_calaba_v1_boards_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7938,7 +8232,7 @@ type BoardWebhookEvent_Actor struct {
 
 func (x *BoardWebhookEvent_Actor) Reset() {
 	*x = BoardWebhookEvent_Actor{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[88]
+	mi := &file_calaba_v1_boards_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7950,7 +8244,7 @@ func (x *BoardWebhookEvent_Actor) String() string {
 func (*BoardWebhookEvent_Actor) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[88]
+	mi := &file_calaba_v1_boards_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7999,7 +8293,7 @@ type BoardWebhookEvent_Change struct {
 
 func (x *BoardWebhookEvent_Change) Reset() {
 	*x = BoardWebhookEvent_Change{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[89]
+	mi := &file_calaba_v1_boards_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8011,7 +8305,7 @@ func (x *BoardWebhookEvent_Change) String() string {
 func (*BoardWebhookEvent_Change) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Change) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[89]
+	mi := &file_calaba_v1_boards_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8059,7 +8353,7 @@ type BoardWebhookEvent_CommentAttachment struct {
 
 func (x *BoardWebhookEvent_CommentAttachment) Reset() {
 	*x = BoardWebhookEvent_CommentAttachment{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[90]
+	mi := &file_calaba_v1_boards_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8071,7 +8365,7 @@ func (x *BoardWebhookEvent_CommentAttachment) String() string {
 func (*BoardWebhookEvent_CommentAttachment) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_CommentAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[90]
+	mi := &file_calaba_v1_boards_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8123,7 +8417,7 @@ type BoardWebhookEvent_Comment struct {
 
 func (x *BoardWebhookEvent_Comment) Reset() {
 	*x = BoardWebhookEvent_Comment{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[91]
+	mi := &file_calaba_v1_boards_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8135,7 +8429,7 @@ func (x *BoardWebhookEvent_Comment) String() string {
 func (*BoardWebhookEvent_Comment) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Comment) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[91]
+	mi := &file_calaba_v1_boards_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8204,7 +8498,7 @@ type BoardWebhookEvent_Rule struct {
 
 func (x *BoardWebhookEvent_Rule) Reset() {
 	*x = BoardWebhookEvent_Rule{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[92]
+	mi := &file_calaba_v1_boards_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8216,7 +8510,7 @@ func (x *BoardWebhookEvent_Rule) String() string {
 func (*BoardWebhookEvent_Rule) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Rule) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[92]
+	mi := &file_calaba_v1_boards_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8299,7 +8593,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"A\n" +
 	"\x15TaskMilestoneProgress\x12\x12\n" +
 	"\x04done\x18\x01 \x01(\rR\x04done\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\rR\x05total\"\xb2\x01\n" +
+	"\x05total\x18\x02 \x01(\rR\x05total\"\xc6\x01\n" +
 	"\vBoardStatus\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12.\n" +
@@ -8307,7 +8601,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x05color\x18\x04 \x01(\rR\x05color\x12\x1a\n" +
 	"\bposition\x18\x05 \x01(\x05R\bposition\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x06 \x01(\bR\tisDefault\"b\n" +
+	"is_default\x18\x06 \x01(\bR\tisDefault\x12\x12\n" +
+	"\x04icon\x18\a \x01(\tR\x04icon\"b\n" +
 	"\n" +
 	"BoardLabel\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -8331,7 +8626,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x12\x1a\n" +
 	"\bposition\x18\t \x01(\x05R\bposition\x12\x19\n" +
 	"\bboard_id\x18\n" +
-	" \x01(\tR\aboardId\"\x8e\t\n" +
+	" \x01(\tR\aboardId\"\xd1\t\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -8376,7 +8671,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vtask_scoped\x18\x1c \x01(\bR\n" +
 	"taskScoped\x12\x1f\n" +
 	"\vrules_count\x18\x1d \x01(\rR\n" +
-	"rulesCount\"\xb2\x01\n" +
+	"rulesCount\x12A\n" +
+	"\x1dapproval_notify_delay_seconds\x18\x1e \x01(\rR\x1aapprovalNotifyDelaySeconds\"\xb2\x01\n" +
 	"\fTaskAssignee\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +
@@ -8492,7 +8788,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"conditions\x12\x10\n" +
 	"\x03any\x18\x02 \x01(\bR\x03any\">\n" +
 	"\x12ListBoardsResponse\x12(\n" +
-	"\x06boards\x18\x01 \x03(\v2\x10.calaba.v1.BoardR\x06boards\"\xe9\x01\n" +
+	"\x06boards\x18\x01 \x03(\v2\x10.calaba.v1.BoardR\x06boards\"\xa3\x02\n" +
 	"\x12CreateBoardRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x14\n" +
@@ -8502,9 +8798,12 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x124\n" +
 	"\btemplate\x18\x06 \x01(\x0e2\x18.calaba.v1.BoardTemplateR\btemplate\x12 \n" +
 	"\ficon_file_id\x18\a \x01(\tR\n" +
-	"iconFileId\"7\n" +
+	"iconFileId\x12\x1d\n" +
+	"\n" +
+	"member_ids\x18\b \x03(\tR\tmemberIds\x12\x19\n" +
+	"\brole_ids\x18\t \x03(\tR\aroleIds\"7\n" +
 	"\rBoardResponse\x12&\n" +
-	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\xab\x05\n" +
+	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\x95\x06\n" +
 	"\x12UpdateBoardRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x15\n" +
 	"\x03key\x18\x02 \x01(\tH\x01R\x03key\x88\x01\x01\x12\x19\n" +
@@ -8522,7 +8821,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x15set_disabled_features\x18\n" +
 	" \x01(\bR\x13setDisabledFeatures\x12D\n" +
 	"\x11disabled_features\x18\v \x03(\x0e2\x17.calaba.v1.BoardFeatureR\x10disabledFeatures\x12D\n" +
-	"\x0eestimate_scale\x18\f \x01(\x0e2\x18.calaba.v1.EstimateScaleH\tR\restimateScale\x88\x01\x01B\a\n" +
+	"\x0eestimate_scale\x18\f \x01(\x0e2\x18.calaba.v1.EstimateScaleH\tR\restimateScale\x88\x01\x01\x12F\n" +
+	"\x1dapproval_notify_delay_seconds\x18\r \x01(\rH\n" +
+	"R\x1aapprovalNotifyDelaySeconds\x88\x01\x01B\a\n" +
 	"\x05_nameB\x06\n" +
 	"\x04_keyB\b\n" +
 	"\x06_emojiB\x0f\n" +
@@ -8532,7 +8833,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x12_auto_archive_daysB\x12\n" +
 	"\x10_default_view_idB\r\n" +
 	"\v_restrictedB\x11\n" +
-	"\x0f_estimate_scale\"k\n" +
+	"\x0f_estimate_scaleB \n" +
+	"\x1e_approval_notify_delay_seconds\"k\n" +
 	"\x17SetBoardPositionRequest\x12\x1a\n" +
 	"\bposition\x18\x01 \x01(\x05R\bposition\x12$\n" +
 	"\vcategory_id\x18\x02 \x01(\tH\x00R\n" +
@@ -8543,27 +8845,31 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x18BoardPermissionsResponse\x12?\n" +
 	"\toverrides\x18\x01 \x03(\v2!.calaba.v1.RoomPermissionOverrideR\toverrides\x12&\n" +
 	"\x05board\x18\x02 \x01(\v2\x10.calaba.v1.BoardR\x05board\x12*\n" +
-	"\x11task_scoped_count\x18\x03 \x01(\rR\x0ftaskScopedCount\"\xc1\x01\n" +
+	"\x11task_scoped_count\x18\x03 \x01(\rR\x0ftaskScopedCount\"\xe3\x01\n" +
 	"\x18CreateBoardStatusRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x1a.calaba.v1.BoardStatusTypeR\x04type\x12\x14\n" +
 	"\x05color\x18\x03 \x01(\rR\x05color\x12\x1f\n" +
 	"\bposition\x18\x04 \x01(\x05H\x00R\bposition\x88\x01\x01\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x05 \x01(\bR\tisDefaultB\v\n" +
-	"\t_position\"\x80\x02\n" +
+	"is_default\x18\x05 \x01(\bR\tisDefault\x12\x17\n" +
+	"\x04icon\x18\x06 \x01(\tH\x01R\x04icon\x88\x01\x01B\v\n" +
+	"\t_positionB\a\n" +
+	"\x05_icon\"\xa2\x02\n" +
 	"\x18UpdateBoardStatusRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x123\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x1a.calaba.v1.BoardStatusTypeH\x01R\x04type\x88\x01\x01\x12\x19\n" +
 	"\x05color\x18\x03 \x01(\rH\x02R\x05color\x88\x01\x01\x12\x1f\n" +
 	"\bposition\x18\x04 \x01(\x05H\x03R\bposition\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"is_default\x18\x05 \x01(\bH\x04R\tisDefault\x88\x01\x01B\a\n" +
+	"is_default\x18\x05 \x01(\bH\x04R\tisDefault\x88\x01\x01\x12\x17\n" +
+	"\x04icon\x18\x06 \x01(\tH\x05R\x04icon\x88\x01\x01B\a\n" +
 	"\x05_nameB\a\n" +
 	"\x05_typeB\b\n" +
 	"\x06_colorB\v\n" +
 	"\t_positionB\r\n" +
-	"\v_is_default\"q\n" +
+	"\v_is_defaultB\a\n" +
+	"\x05_icon\"q\n" +
 	"\x17CreateBoardLabelRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05color\x18\x02 \x01(\rR\x05color\x12\x1f\n" +
@@ -8881,7 +9187,16 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\n" +
 	"TaskUpdate\x12#\n" +
 	"\x04task\x18\x01 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12-\n" +
-	"\x06notice\x18\x02 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\"\xc3\x01\n" +
+	"\x06notice\x18\x02 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\"\xf8\x01\n" +
+	"\x0fTaskNoticeRelay\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12#\n" +
+	"\x04task\x18\x03 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12-\n" +
+	"\x06notice\x18\x04 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\x12\x19\n" +
+	"\btask_url\x18\x05 \x01(\tR\ataskUrl\x12\x1b\n" +
+	"\tboard_key\x18\x06 \x01(\tR\bboardKey\x12\x1d\n" +
+	"\n" +
+	"board_name\x18\a \x01(\tR\tboardName\"\x9a\x02\n" +
 	"\n" +
 	"TaskNotice\x12-\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x19.calaba.v1.TaskNoticeKindR\x04kind\x12\x19\n" +
@@ -8891,16 +9206,23 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vactivity_id\x18\x04 \x01(\tR\n" +
 	"activityId\x12\x12\n" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x17\n" +
-	"\arule_id\x18\x06 \x01(\tR\x06ruleId\"{\n" +
+	"\arule_id\x18\x06 \x01(\tR\x06ruleId\x12!\n" +
+	"\fre_requested\x18\a \x01(\bR\vreRequested\x12\x15\n" +
+	"\x06due_on\x18\b \x01(\tR\x05dueOn\x12\x1b\n" +
+	"\tdays_left\x18\t \x01(\x05R\bdaysLeft\"{\n" +
 	"\n" +
 	"TaskDelete\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
 	"\bboard_id\x18\x02 \x01(\tR\aboardId\x12\x17\n" +
 	"\atask_id\x18\x03 \x01(\tR\x06taskId\x12\x16\n" +
-	"\x06purged\x18\x04 \x01(\bR\x06purged\"l\n" +
+	"\x06purged\x18\x04 \x01(\bR\x06purged\"\xc1\x01\n" +
 	"\x12TaskActivityAppend\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x123\n" +
-	"\bactivity\x18\x02 \x01(\v2\x17.calaba.v1.TaskActivityR\bactivity\"K\n" +
+	"\bactivity\x18\x02 \x01(\v2\x17.calaba.v1.TaskActivityR\bactivity\x12\x1f\n" +
+	"\vreplaced_id\x18\x03 \x01(\tR\n" +
+	"replacedId\x12\x17\n" +
+	"\atask_id\x18\x04 \x01(\tR\x06taskId\x12\x19\n" +
+	"\bboard_id\x18\x05 \x01(\tR\aboardId\"K\n" +
 	"\x13BoardCategoryCreate\x124\n" +
 	"\bcategory\x18\x01 \x01(\v2\x18.calaba.v1.BoardCategoryR\bcategory\"K\n" +
 	"\x13BoardCategoryUpdate\x124\n" +
@@ -9058,7 +9380,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x1fTASK_APPROVAL_DECISION_WITHDRAW\x10\x03*j\n" +
 	"\x17BoardWebhookPauseReason\x12*\n" +
 	"&BOARD_WEBHOOK_PAUSE_REASON_UNSPECIFIED\x10\x00\x12#\n" +
-	"\x1fBOARD_WEBHOOK_PAUSE_REASON_PLAN\x10\x01*\xae\x02\n" +
+	"\x1fBOARD_WEBHOOK_PAUSE_REASON_PLAN\x10\x01*\x8a\x05\n" +
 	"\x0eTaskNoticeKind\x12 \n" +
 	"\x1cTASK_NOTICE_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_ASSIGNED\x10\x01\x12\x1e\n" +
@@ -9068,7 +9390,19 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"#TASK_NOTICE_KIND_APPROVAL_REQUESTED\x10\x05\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_APPROVED\x10\x06\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_REJECTED\x10\a\x12\x19\n" +
-	"\x15TASK_NOTICE_KIND_RULE\x10\b*u\n" +
+	"\x15TASK_NOTICE_KIND_RULE\x10\b\x12\x1f\n" +
+	"\x1bTASK_NOTICE_KIND_UNASSIGNED\x10\t\x12\"\n" +
+	"\x1eTASK_NOTICE_KIND_WATCHER_ADDED\x10\n" +
+	"\x12\x1d\n" +
+	"\x19TASK_NOTICE_KIND_DUE_SOON\x10\v\x12\x1c\n" +
+	"\x18TASK_NOTICE_KIND_OVERDUE\x10\f\x12 \n" +
+	"\x1cTASK_NOTICE_KIND_DUE_CHANGED\x10\r\x12\x1d\n" +
+	"\x19TASK_NOTICE_KIND_PRIORITY\x10\x0e\x12\x1e\n" +
+	"\x1aTASK_NOTICE_KIND_MILESTONE\x10\x0f\x12\x1a\n" +
+	"\x16TASK_NOTICE_KIND_MOVED\x10\x10\x12\x1b\n" +
+	"\x17TASK_NOTICE_KIND_EDITED\x10\x11\x12\x1f\n" +
+	"\x1bTASK_NOTICE_KIND_ATTACHMENT\x10\x12\x12\x1d\n" +
+	"\x19TASK_NOTICE_KIND_ARCHIVED\x10\x13*u\n" +
 	"\vGitProvider\x12\x1c\n" +
 	"\x18GIT_PROVIDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13GIT_PROVIDER_GITHUB\x10\x01\x12\x17\n" +
@@ -9100,7 +9434,7 @@ func file_calaba_v1_boards_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_boards_proto_enumTypes = make([]protoimpl.EnumInfo, 17)
-var file_calaba_v1_boards_proto_msgTypes = make([]protoimpl.MessageInfo, 93)
+var file_calaba_v1_boards_proto_msgTypes = make([]protoimpl.MessageInfo, 94)
 var file_calaba_v1_boards_proto_goTypes = []any{
 	(BoardStatusType)(0),                          // 0: calaba.v1.BoardStatusType
 	(TaskPriority)(0),                             // 1: calaba.v1.TaskPriority
@@ -9194,88 +9528,89 @@ var file_calaba_v1_boards_proto_goTypes = []any{
 	(*BoardDelete)(nil),                           // 89: calaba.v1.BoardDelete
 	(*TaskCreate)(nil),                            // 90: calaba.v1.TaskCreate
 	(*TaskUpdate)(nil),                            // 91: calaba.v1.TaskUpdate
-	(*TaskNotice)(nil),                            // 92: calaba.v1.TaskNotice
-	(*TaskDelete)(nil),                            // 93: calaba.v1.TaskDelete
-	(*TaskActivityAppend)(nil),                    // 94: calaba.v1.TaskActivityAppend
-	(*BoardCategoryCreate)(nil),                   // 95: calaba.v1.BoardCategoryCreate
-	(*BoardCategoryUpdate)(nil),                   // 96: calaba.v1.BoardCategoryUpdate
-	(*BoardCategoryDelete)(nil),                   // 97: calaba.v1.BoardCategoryDelete
-	(*TaskChecklistUpdate)(nil),                   // 98: calaba.v1.TaskChecklistUpdate
-	(*TaskChecklistDelete)(nil),                   // 99: calaba.v1.TaskChecklistDelete
-	(*TaskGitLink)(nil),                           // 100: calaba.v1.TaskGitLink
-	(*TaskGitLinksUpdate)(nil),                    // 101: calaba.v1.TaskGitLinksUpdate
-	(*SetBoardOrderRequest_BoardPosition)(nil),    // 102: calaba.v1.SetBoardOrderRequest.BoardPosition
-	(*SetBoardOrderRequest_CategoryPosition)(nil), // 103: calaba.v1.SetBoardOrderRequest.CategoryPosition
-	(*BoardWebhookEvent_BoardRef)(nil),            // 104: calaba.v1.BoardWebhookEvent.BoardRef
-	(*BoardWebhookEvent_Actor)(nil),               // 105: calaba.v1.BoardWebhookEvent.Actor
-	(*BoardWebhookEvent_Change)(nil),              // 106: calaba.v1.BoardWebhookEvent.Change
-	(*BoardWebhookEvent_CommentAttachment)(nil),   // 107: calaba.v1.BoardWebhookEvent.CommentAttachment
-	(*BoardWebhookEvent_Comment)(nil),             // 108: calaba.v1.BoardWebhookEvent.Comment
-	(*BoardWebhookEvent_Rule)(nil),                // 109: calaba.v1.BoardWebhookEvent.Rule
-	(*timestamppb.Timestamp)(nil),                 // 110: google.protobuf.Timestamp
-	(*RoomPermissionOverride)(nil),                // 111: calaba.v1.RoomPermissionOverride
-	(*FileMeta)(nil),                              // 112: calaba.v1.FileMeta
-	(*structpb.Struct)(nil),                       // 113: google.protobuf.Struct
-	(*Message)(nil),                               // 114: calaba.v1.Message
-	(*Room)(nil),                                  // 115: calaba.v1.Room
+	(*TaskNoticeRelay)(nil),                       // 92: calaba.v1.TaskNoticeRelay
+	(*TaskNotice)(nil),                            // 93: calaba.v1.TaskNotice
+	(*TaskDelete)(nil),                            // 94: calaba.v1.TaskDelete
+	(*TaskActivityAppend)(nil),                    // 95: calaba.v1.TaskActivityAppend
+	(*BoardCategoryCreate)(nil),                   // 96: calaba.v1.BoardCategoryCreate
+	(*BoardCategoryUpdate)(nil),                   // 97: calaba.v1.BoardCategoryUpdate
+	(*BoardCategoryDelete)(nil),                   // 98: calaba.v1.BoardCategoryDelete
+	(*TaskChecklistUpdate)(nil),                   // 99: calaba.v1.TaskChecklistUpdate
+	(*TaskChecklistDelete)(nil),                   // 100: calaba.v1.TaskChecklistDelete
+	(*TaskGitLink)(nil),                           // 101: calaba.v1.TaskGitLink
+	(*TaskGitLinksUpdate)(nil),                    // 102: calaba.v1.TaskGitLinksUpdate
+	(*SetBoardOrderRequest_BoardPosition)(nil),    // 103: calaba.v1.SetBoardOrderRequest.BoardPosition
+	(*SetBoardOrderRequest_CategoryPosition)(nil), // 104: calaba.v1.SetBoardOrderRequest.CategoryPosition
+	(*BoardWebhookEvent_BoardRef)(nil),            // 105: calaba.v1.BoardWebhookEvent.BoardRef
+	(*BoardWebhookEvent_Actor)(nil),               // 106: calaba.v1.BoardWebhookEvent.Actor
+	(*BoardWebhookEvent_Change)(nil),              // 107: calaba.v1.BoardWebhookEvent.Change
+	(*BoardWebhookEvent_CommentAttachment)(nil),   // 108: calaba.v1.BoardWebhookEvent.CommentAttachment
+	(*BoardWebhookEvent_Comment)(nil),             // 109: calaba.v1.BoardWebhookEvent.Comment
+	(*BoardWebhookEvent_Rule)(nil),                // 110: calaba.v1.BoardWebhookEvent.Rule
+	(*timestamppb.Timestamp)(nil),                 // 111: google.protobuf.Timestamp
+	(*RoomPermissionOverride)(nil),                // 112: calaba.v1.RoomPermissionOverride
+	(*FileMeta)(nil),                              // 113: calaba.v1.FileMeta
+	(*structpb.Struct)(nil),                       // 114: google.protobuf.Struct
+	(*Message)(nil),                               // 115: calaba.v1.Message
+	(*Room)(nil),                                  // 116: calaba.v1.Room
 }
 var file_calaba_v1_boards_proto_depIdxs = []int32{
-	110, // 0: calaba.v1.TaskChecklistItem.done_at:type_name -> google.protobuf.Timestamp
-	110, // 1: calaba.v1.TaskChecklistItem.created_at:type_name -> google.protobuf.Timestamp
+	111, // 0: calaba.v1.TaskChecklistItem.done_at:type_name -> google.protobuf.Timestamp
+	111, // 1: calaba.v1.TaskChecklistItem.created_at:type_name -> google.protobuf.Timestamp
 	18,  // 2: calaba.v1.TaskChecklist.items:type_name -> calaba.v1.TaskChecklistItem
-	110, // 3: calaba.v1.TaskChecklist.created_at:type_name -> google.protobuf.Timestamp
-	110, // 4: calaba.v1.TaskMilestone.completed_at:type_name -> google.protobuf.Timestamp
-	110, // 5: calaba.v1.TaskMilestone.created_at:type_name -> google.protobuf.Timestamp
-	110, // 6: calaba.v1.TaskMilestone.updated_at:type_name -> google.protobuf.Timestamp
+	111, // 3: calaba.v1.TaskChecklist.created_at:type_name -> google.protobuf.Timestamp
+	111, // 4: calaba.v1.TaskMilestone.completed_at:type_name -> google.protobuf.Timestamp
+	111, // 5: calaba.v1.TaskMilestone.created_at:type_name -> google.protobuf.Timestamp
+	111, // 6: calaba.v1.TaskMilestone.updated_at:type_name -> google.protobuf.Timestamp
 	0,   // 7: calaba.v1.BoardStatus.type:type_name -> calaba.v1.BoardStatusType
 	2,   // 8: calaba.v1.BoardView.kind:type_name -> calaba.v1.BoardViewKind
 	35,  // 9: calaba.v1.BoardView.filter:type_name -> calaba.v1.TaskFilter
-	110, // 10: calaba.v1.Board.created_at:type_name -> google.protobuf.Timestamp
-	110, // 11: calaba.v1.Board.archived_at:type_name -> google.protobuf.Timestamp
+	111, // 10: calaba.v1.Board.created_at:type_name -> google.protobuf.Timestamp
+	111, // 11: calaba.v1.Board.archived_at:type_name -> google.protobuf.Timestamp
 	22,  // 12: calaba.v1.Board.statuses:type_name -> calaba.v1.BoardStatus
 	23,  // 13: calaba.v1.Board.labels:type_name -> calaba.v1.BoardLabel
 	24,  // 14: calaba.v1.Board.milestones:type_name -> calaba.v1.BoardMilestone
 	25,  // 15: calaba.v1.Board.views:type_name -> calaba.v1.BoardView
-	111, // 16: calaba.v1.Board.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
+	112, // 16: calaba.v1.Board.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
 	5,   // 17: calaba.v1.Board.disabled_features:type_name -> calaba.v1.BoardFeature
 	6,   // 18: calaba.v1.Board.estimate_scale:type_name -> calaba.v1.EstimateScale
-	110, // 19: calaba.v1.TaskAssignee.assigned_at:type_name -> google.protobuf.Timestamp
+	111, // 19: calaba.v1.TaskAssignee.assigned_at:type_name -> google.protobuf.Timestamp
 	8,   // 20: calaba.v1.TaskApprover.state:type_name -> calaba.v1.ApproverState
-	110, // 21: calaba.v1.TaskApprover.decided_at:type_name -> google.protobuf.Timestamp
-	110, // 22: calaba.v1.TaskApprover.added_at:type_name -> google.protobuf.Timestamp
+	111, // 21: calaba.v1.TaskApprover.decided_at:type_name -> google.protobuf.Timestamp
+	111, // 22: calaba.v1.TaskApprover.added_at:type_name -> google.protobuf.Timestamp
 	3,   // 23: calaba.v1.TaskRelation.kind:type_name -> calaba.v1.TaskRelationKind
 	1,   // 24: calaba.v1.Task.priority:type_name -> calaba.v1.TaskPriority
 	27,  // 25: calaba.v1.Task.assignees:type_name -> calaba.v1.TaskAssignee
 	30,  // 26: calaba.v1.Task.relations:type_name -> calaba.v1.TaskRelation
-	110, // 27: calaba.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	110, // 28: calaba.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	110, // 29: calaba.v1.Task.started_at:type_name -> google.protobuf.Timestamp
-	110, // 30: calaba.v1.Task.completed_at:type_name -> google.protobuf.Timestamp
-	110, // 31: calaba.v1.Task.archived_at:type_name -> google.protobuf.Timestamp
-	112, // 32: calaba.v1.Task.attachments:type_name -> calaba.v1.FileMeta
+	111, // 27: calaba.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	111, // 28: calaba.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	111, // 29: calaba.v1.Task.started_at:type_name -> google.protobuf.Timestamp
+	111, // 30: calaba.v1.Task.completed_at:type_name -> google.protobuf.Timestamp
+	111, // 31: calaba.v1.Task.archived_at:type_name -> google.protobuf.Timestamp
+	113, // 32: calaba.v1.Task.attachments:type_name -> calaba.v1.FileMeta
 	29,  // 33: calaba.v1.Task.approvers:type_name -> calaba.v1.TaskApprover
 	7,   // 34: calaba.v1.Task.approval_state:type_name -> calaba.v1.TaskApprovalState
 	19,  // 35: calaba.v1.Task.checklists:type_name -> calaba.v1.TaskChecklist
-	100, // 36: calaba.v1.Task.git_links:type_name -> calaba.v1.TaskGitLink
+	101, // 36: calaba.v1.Task.git_links:type_name -> calaba.v1.TaskGitLink
 	20,  // 37: calaba.v1.Task.milestones:type_name -> calaba.v1.TaskMilestone
 	21,  // 38: calaba.v1.Task.milestone_progress:type_name -> calaba.v1.TaskMilestoneProgress
-	113, // 39: calaba.v1.TaskActivity.before:type_name -> google.protobuf.Struct
-	113, // 40: calaba.v1.TaskActivity.after:type_name -> google.protobuf.Struct
-	110, // 41: calaba.v1.TaskActivity.created_at:type_name -> google.protobuf.Timestamp
-	114, // 42: calaba.v1.TaskActivityItem.message:type_name -> calaba.v1.Message
+	114, // 39: calaba.v1.TaskActivity.before:type_name -> google.protobuf.Struct
+	114, // 40: calaba.v1.TaskActivity.after:type_name -> google.protobuf.Struct
+	111, // 41: calaba.v1.TaskActivity.created_at:type_name -> google.protobuf.Timestamp
+	115, // 42: calaba.v1.TaskActivityItem.message:type_name -> calaba.v1.Message
 	32,  // 43: calaba.v1.TaskActivityItem.activity:type_name -> calaba.v1.TaskActivity
 	9,   // 44: calaba.v1.TaskCondition.field:type_name -> calaba.v1.TaskField
 	10,  // 45: calaba.v1.TaskCondition.op:type_name -> calaba.v1.TaskOp
-	110, // 46: calaba.v1.TaskCondition.from:type_name -> google.protobuf.Timestamp
-	110, // 47: calaba.v1.TaskCondition.to:type_name -> google.protobuf.Timestamp
+	111, // 46: calaba.v1.TaskCondition.from:type_name -> google.protobuf.Timestamp
+	111, // 47: calaba.v1.TaskCondition.to:type_name -> google.protobuf.Timestamp
 	34,  // 48: calaba.v1.TaskFilter.conditions:type_name -> calaba.v1.TaskCondition
 	26,  // 49: calaba.v1.ListBoardsResponse.boards:type_name -> calaba.v1.Board
 	4,   // 50: calaba.v1.CreateBoardRequest.template:type_name -> calaba.v1.BoardTemplate
 	26,  // 51: calaba.v1.BoardResponse.board:type_name -> calaba.v1.Board
 	5,   // 52: calaba.v1.UpdateBoardRequest.disabled_features:type_name -> calaba.v1.BoardFeature
 	6,   // 53: calaba.v1.UpdateBoardRequest.estimate_scale:type_name -> calaba.v1.EstimateScale
-	111, // 54: calaba.v1.SetBoardPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
-	111, // 55: calaba.v1.BoardPermissionsResponse.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	112, // 54: calaba.v1.SetBoardPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	112, // 55: calaba.v1.BoardPermissionsResponse.overrides:type_name -> calaba.v1.RoomPermissionOverride
 	26,  // 56: calaba.v1.BoardPermissionsResponse.board:type_name -> calaba.v1.Board
 	0,   // 57: calaba.v1.CreateBoardStatusRequest.type:type_name -> calaba.v1.BoardStatusType
 	0,   // 58: calaba.v1.UpdateBoardStatusRequest.type:type_name -> calaba.v1.BoardStatusType
@@ -9287,7 +9622,7 @@ var file_calaba_v1_boards_proto_depIdxs = []int32{
 	31,  // 64: calaba.v1.TaskResponse.related:type_name -> calaba.v1.Task
 	31,  // 65: calaba.v1.TaskResponse.parent:type_name -> calaba.v1.Task
 	26,  // 66: calaba.v1.TaskResponse.board:type_name -> calaba.v1.Board
-	115, // 67: calaba.v1.TaskResponse.room:type_name -> calaba.v1.Room
+	116, // 67: calaba.v1.TaskResponse.room:type_name -> calaba.v1.Room
 	1,   // 68: calaba.v1.UpdateTaskRequest.priority:type_name -> calaba.v1.TaskPriority
 	28,  // 69: calaba.v1.SetAssigneesRequest.assignees:type_name -> calaba.v1.TaskAssigneeInput
 	11,  // 70: calaba.v1.TaskApprovalRequest.decision:type_name -> calaba.v1.TaskApprovalDecision
@@ -9304,8 +9639,8 @@ var file_calaba_v1_boards_proto_depIdxs = []int32{
 	25,  // 81: calaba.v1.BoardViewResponse.view:type_name -> calaba.v1.BoardView
 	17,  // 82: calaba.v1.ListBoardCategoriesResponse.categories:type_name -> calaba.v1.BoardCategory
 	17,  // 83: calaba.v1.BoardCategoryResponse.category:type_name -> calaba.v1.BoardCategory
-	102, // 84: calaba.v1.SetBoardOrderRequest.boards:type_name -> calaba.v1.SetBoardOrderRequest.BoardPosition
-	103, // 85: calaba.v1.SetBoardOrderRequest.categories:type_name -> calaba.v1.SetBoardOrderRequest.CategoryPosition
+	103, // 84: calaba.v1.SetBoardOrderRequest.boards:type_name -> calaba.v1.SetBoardOrderRequest.BoardPosition
+	104, // 85: calaba.v1.SetBoardOrderRequest.categories:type_name -> calaba.v1.SetBoardOrderRequest.CategoryPosition
 	26,  // 86: calaba.v1.SetBoardOrderResponse.boards:type_name -> calaba.v1.Board
 	17,  // 87: calaba.v1.SetBoardOrderResponse.categories:type_name -> calaba.v1.BoardCategory
 	19,  // 88: calaba.v1.TaskChecklistResponse.checklist:type_name -> calaba.v1.TaskChecklist
@@ -9313,46 +9648,48 @@ var file_calaba_v1_boards_proto_depIdxs = []int32{
 	19,  // 90: calaba.v1.ConvertChecklistItemResponse.checklist:type_name -> calaba.v1.TaskChecklist
 	20,  // 91: calaba.v1.TaskMilestoneResponse.milestone:type_name -> calaba.v1.TaskMilestone
 	31,  // 92: calaba.v1.TaskMilestoneResponse.task:type_name -> calaba.v1.Task
-	110, // 93: calaba.v1.BoardWebhook.disabled_at:type_name -> google.protobuf.Timestamp
-	110, // 94: calaba.v1.BoardWebhook.failing_since:type_name -> google.protobuf.Timestamp
-	110, // 95: calaba.v1.BoardWebhook.last_ok_at:type_name -> google.protobuf.Timestamp
-	110, // 96: calaba.v1.BoardWebhook.created_at:type_name -> google.protobuf.Timestamp
-	110, // 97: calaba.v1.BoardWebhook.updated_at:type_name -> google.protobuf.Timestamp
+	111, // 93: calaba.v1.BoardWebhook.disabled_at:type_name -> google.protobuf.Timestamp
+	111, // 94: calaba.v1.BoardWebhook.failing_since:type_name -> google.protobuf.Timestamp
+	111, // 95: calaba.v1.BoardWebhook.last_ok_at:type_name -> google.protobuf.Timestamp
+	111, // 96: calaba.v1.BoardWebhook.created_at:type_name -> google.protobuf.Timestamp
+	111, // 97: calaba.v1.BoardWebhook.updated_at:type_name -> google.protobuf.Timestamp
 	12,  // 98: calaba.v1.BoardWebhook.paused_reason:type_name -> calaba.v1.BoardWebhookPauseReason
 	82,  // 99: calaba.v1.BoardWebhookResponse.webhook:type_name -> calaba.v1.BoardWebhook
-	110, // 100: calaba.v1.BoardWebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	104, // 101: calaba.v1.BoardWebhookEvent.board:type_name -> calaba.v1.BoardWebhookEvent.BoardRef
-	105, // 102: calaba.v1.BoardWebhookEvent.actor:type_name -> calaba.v1.BoardWebhookEvent.Actor
+	111, // 100: calaba.v1.BoardWebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	105, // 101: calaba.v1.BoardWebhookEvent.board:type_name -> calaba.v1.BoardWebhookEvent.BoardRef
+	106, // 102: calaba.v1.BoardWebhookEvent.actor:type_name -> calaba.v1.BoardWebhookEvent.Actor
 	31,  // 103: calaba.v1.BoardWebhookEvent.task:type_name -> calaba.v1.Task
-	106, // 104: calaba.v1.BoardWebhookEvent.changes:type_name -> calaba.v1.BoardWebhookEvent.Change
-	108, // 105: calaba.v1.BoardWebhookEvent.comment:type_name -> calaba.v1.BoardWebhookEvent.Comment
-	109, // 106: calaba.v1.BoardWebhookEvent.rule:type_name -> calaba.v1.BoardWebhookEvent.Rule
+	107, // 104: calaba.v1.BoardWebhookEvent.changes:type_name -> calaba.v1.BoardWebhookEvent.Change
+	109, // 105: calaba.v1.BoardWebhookEvent.comment:type_name -> calaba.v1.BoardWebhookEvent.Comment
+	110, // 106: calaba.v1.BoardWebhookEvent.rule:type_name -> calaba.v1.BoardWebhookEvent.Rule
 	26,  // 107: calaba.v1.BoardCreate.board:type_name -> calaba.v1.Board
 	26,  // 108: calaba.v1.BoardUpdate.board:type_name -> calaba.v1.Board
 	31,  // 109: calaba.v1.TaskCreate.task:type_name -> calaba.v1.Task
 	31,  // 110: calaba.v1.TaskUpdate.task:type_name -> calaba.v1.Task
-	92,  // 111: calaba.v1.TaskUpdate.notice:type_name -> calaba.v1.TaskNotice
-	13,  // 112: calaba.v1.TaskNotice.kind:type_name -> calaba.v1.TaskNoticeKind
-	32,  // 113: calaba.v1.TaskActivityAppend.activity:type_name -> calaba.v1.TaskActivity
-	17,  // 114: calaba.v1.BoardCategoryCreate.category:type_name -> calaba.v1.BoardCategory
-	17,  // 115: calaba.v1.BoardCategoryUpdate.category:type_name -> calaba.v1.BoardCategory
-	19,  // 116: calaba.v1.TaskChecklistUpdate.checklist:type_name -> calaba.v1.TaskChecklist
-	15,  // 117: calaba.v1.TaskGitLink.kind:type_name -> calaba.v1.TaskGitLinkKind
-	14,  // 118: calaba.v1.TaskGitLink.provider:type_name -> calaba.v1.GitProvider
-	16,  // 119: calaba.v1.TaskGitLink.state:type_name -> calaba.v1.TaskGitLinkState
-	110, // 120: calaba.v1.TaskGitLink.created_at:type_name -> google.protobuf.Timestamp
-	110, // 121: calaba.v1.TaskGitLink.updated_at:type_name -> google.protobuf.Timestamp
-	100, // 122: calaba.v1.TaskGitLinksUpdate.links:type_name -> calaba.v1.TaskGitLink
-	113, // 123: calaba.v1.BoardWebhookEvent.Change.before:type_name -> google.protobuf.Struct
-	113, // 124: calaba.v1.BoardWebhookEvent.Change.after:type_name -> google.protobuf.Struct
-	107, // 125: calaba.v1.BoardWebhookEvent.Comment.attachments:type_name -> calaba.v1.BoardWebhookEvent.CommentAttachment
-	110, // 126: calaba.v1.BoardWebhookEvent.Comment.created_at:type_name -> google.protobuf.Timestamp
-	110, // 127: calaba.v1.BoardWebhookEvent.Comment.edited_at:type_name -> google.protobuf.Timestamp
-	128, // [128:128] is the sub-list for method output_type
-	128, // [128:128] is the sub-list for method input_type
-	128, // [128:128] is the sub-list for extension type_name
-	128, // [128:128] is the sub-list for extension extendee
-	0,   // [0:128] is the sub-list for field type_name
+	93,  // 111: calaba.v1.TaskUpdate.notice:type_name -> calaba.v1.TaskNotice
+	31,  // 112: calaba.v1.TaskNoticeRelay.task:type_name -> calaba.v1.Task
+	93,  // 113: calaba.v1.TaskNoticeRelay.notice:type_name -> calaba.v1.TaskNotice
+	13,  // 114: calaba.v1.TaskNotice.kind:type_name -> calaba.v1.TaskNoticeKind
+	32,  // 115: calaba.v1.TaskActivityAppend.activity:type_name -> calaba.v1.TaskActivity
+	17,  // 116: calaba.v1.BoardCategoryCreate.category:type_name -> calaba.v1.BoardCategory
+	17,  // 117: calaba.v1.BoardCategoryUpdate.category:type_name -> calaba.v1.BoardCategory
+	19,  // 118: calaba.v1.TaskChecklistUpdate.checklist:type_name -> calaba.v1.TaskChecklist
+	15,  // 119: calaba.v1.TaskGitLink.kind:type_name -> calaba.v1.TaskGitLinkKind
+	14,  // 120: calaba.v1.TaskGitLink.provider:type_name -> calaba.v1.GitProvider
+	16,  // 121: calaba.v1.TaskGitLink.state:type_name -> calaba.v1.TaskGitLinkState
+	111, // 122: calaba.v1.TaskGitLink.created_at:type_name -> google.protobuf.Timestamp
+	111, // 123: calaba.v1.TaskGitLink.updated_at:type_name -> google.protobuf.Timestamp
+	101, // 124: calaba.v1.TaskGitLinksUpdate.links:type_name -> calaba.v1.TaskGitLink
+	114, // 125: calaba.v1.BoardWebhookEvent.Change.before:type_name -> google.protobuf.Struct
+	114, // 126: calaba.v1.BoardWebhookEvent.Change.after:type_name -> google.protobuf.Struct
+	108, // 127: calaba.v1.BoardWebhookEvent.Comment.attachments:type_name -> calaba.v1.BoardWebhookEvent.CommentAttachment
+	111, // 128: calaba.v1.BoardWebhookEvent.Comment.created_at:type_name -> google.protobuf.Timestamp
+	111, // 129: calaba.v1.BoardWebhookEvent.Comment.edited_at:type_name -> google.protobuf.Timestamp
+	130, // [130:130] is the sub-list for method output_type
+	130, // [130:130] is the sub-list for method input_type
+	130, // [130:130] is the sub-list for extension type_name
+	130, // [130:130] is the sub-list for extension extendee
+	0,   // [0:130] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_boards_proto_init() }
@@ -9392,7 +9729,7 @@ func file_calaba_v1_boards_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_boards_proto_rawDesc), len(file_calaba_v1_boards_proto_rawDesc)),
 			NumEnums:      17,
-			NumMessages:   93,
+			NumMessages:   94,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { BoardFeature, type BoardMilestone, type TaskMilestone } from '@calaba/protocol';
 import { Button, Segmented, cx } from '../../components/ui';
+import { Choice } from '../../components/Choice';
 import { t, useLocale } from '../../i18n';
 import { useMobile } from '../../lib/mobile';
 import { milestoneHint, milestoneState } from '../../lib/boards/milestones';
@@ -205,7 +206,7 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
     setDrag(d);
   };
   const onBarDown = useCallback((e: ReactPointerEvent, id: string, mode: DragMode) => {
-    if (e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return; // touch scrolls the timeline (owner 14.10)
     e.preventDefault();
     e.stopPropagation();
     const d: Drag = { kind: 'bar', id, mode, x: e.clientX, delta: 0, moved: false };
@@ -213,14 +214,14 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
     setDrag(d);
   }, []);
   const onMsDown = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     e.preventDefault();
     const d: Drag = { kind: 'ms', id, x: e.clientX, delta: 0, moved: false };
     dragRef.current = d;
     setDrag(d);
   }, []);
   const onPlaceDown = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     e.preventDefault();
     const d: Drag = { kind: 'place', id, x: e.clientX, y: e.clientY, moved: false };
     dragRef.current = d;
@@ -313,8 +314,8 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
   };
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid="timeline">
-      <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 scrollbar-none">
-        <Segmented value={zoom} options={ZOOMS.map((z) => ({ value: z, label: t(`boards.tl.${z}`) }))} onChange={(z) => useBoardsUi.getState().setPrefs(boardId, { zoom: z })} label={t('boards.tl.zoom')} />
+      <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 scrollbar-none mobile:overflow-visible">
+        <Choice phone="picker" value={zoom} options={ZOOMS.map((z) => ({ value: z, label: t(`boards.tl.${z}`) }))} onChange={(z) => useBoardsUi.getState().setPrefs(boardId, { zoom: z })} label={t('boards.tl.zoom')} />
         {mobile ? null : (
           <Segmented
             value={group}
@@ -639,7 +640,7 @@ const TimelineRow = memo(function TimelineRow({
         className={cx('sticky left-0 z-[1] flex h-full items-center gap-2 border-r border-line px-3 text-left text-control hover:bg-hover', open ? 'bg-active' : 'bg-[var(--color-bg)]')}
         style={{ width: left }}
       >
-        <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
+        <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
         <span className="shrink-0 text-caption tabular-nums text-muted">{task.key}</span>
         <span className="min-w-0 truncate text-fg">{task.title}</span>
       </button>
@@ -775,7 +776,7 @@ const UndatedChip = memo(function UndatedChip({ id, boardId, readOnly, dragging,
       className={cx('inline-flex h-7 max-w-64 items-center gap-1.5 rounded-full border border-line px-2.5 text-control hover:bg-hover', editable && 'cursor-grab', dragging && 'opacity-40')}
       data-testid="undated-task"
     >
-      <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
+      <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
       <span className="shrink-0 text-caption tabular-nums text-muted">{task.key}</span>
       <span className="min-w-0 truncate">{task.title}</span>
     </button>

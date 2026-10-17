@@ -77,7 +77,27 @@ message SystemMessage {
     CallCard call = 3;           // a DM call log line (ADR-0034)
     AchievementCard achievement = 4; // ADR-0061
     AutomationCard automation = 5; // a message of a board automation rule (ADR-0060)
+    RoomIconCard room_icon = 6;    // the room's picture was changed (ADR-0092)
+    ContactSharedCard contact_shared = 7; // a person shared their contact with a bot (ADR-0100)
   }
+}
+
+// "You shared your contact with @bot: phone, email": posted by the server into the DM of a person
+// and a bot when the person confirms a REQUEST_CONTACT button (ADR-0100); the author is the
+// person. Seen by both; carries the field names only, never the values. No notification. Clients
+// also use it to show the button as «Отправлено».
+message ContactSharedCard {
+  string bot_user_id = 1;
+  repeated ContactField fields = 2; // what was shared, in the order PHONE, EMAIL
+  string message_id = 3;            // the bot message with the button
+  string button_id = 4;
+}
+
+// "<author> changed the room picture": posted by the server into the room when PATCH
+// /api/rooms/{id} changes icon_file_id; the author is who changed it. No notification or sound.
+// The file stays readable to those who see the room while the message lives.
+message RoomIconCard {
+  string file_id = 1; // the new picture; empty = the picture was removed
 }
 
 // «Автоматизация»: a board automation rule posted into a text room or into the task's comments
@@ -211,6 +231,28 @@ message InlineButton {
   string label = 2; // 1..80 characters
   string data = 3; // opaque public metadata, at most 512 bytes
   bool disabled = 4;
+  // What pressing the button does (ADR-0100); unset = a callback button (BOT_CALLBACK).
+  InlineButtonKind kind = 5;
+  // REQUEST_CONTACT only: the contact fields the bot asks for, one or both, no repeats.
+  repeated ContactField fields = 6;
+  // REQUEST_CONTACT only: why the bot asks, shown to the person; at most 120 characters.
+  string reason = 7;
+}
+
+enum InlineButtonKind {
+  INLINE_BUTTON_KIND_UNSPECIFIED = 0; // a callback button: POST /api/messages/{id}/interactions
+  // "Share contact" (ADR-0100): only in a DM of the bot with a person, otherwise sending or
+  // editing the message is 400 BAD_REQUEST, reason BOT_CONTACT_REQUEST_DM_ONLY. The person
+  // confirms on their client; the server then sends the contact from the profile
+  // (POST /api/messages/{id}/buttons/{buttonId}/contact). Pressing it through /interactions is
+  // 409 BUTTON_UNAVAILABLE.
+  INLINE_BUTTON_KIND_REQUEST_CONTACT = 1;
+}
+
+enum ContactField {
+  CONTACT_FIELD_UNSPECIFIED = 0;
+  CONTACT_FIELD_PHONE = 1;
+  CONTACT_FIELD_EMAIL = 2;
 }
 
 // POST /api/messages/{id}/interactions (people only; VIEW_ROOM and SEND_MESSAGES).
@@ -237,4 +279,58 @@ message BotCallback {
   string data = 8; // loaded from the saved keyboard
   uint64 keyboard_revision = 9;
   google.protobuf.Timestamp created_at = 10;
+}
+
+// POST /api/messages/{id}/buttons/{buttonId}/contact (people only, no body; ADR-0100): the
+// caller confirms the REQUEST_CONTACT button {buttonId} of the bot message {id} in their DM with
+// the bot. The server composes the contact from the caller's profile (the client sends no
+// values): the requested fields that are set. Errors: 404 the message (deleted, hidden, cleared
+// part of the DM); 403 bots, a blocked or unavailable bot, not the DM's person; 400 reason
+// BOT_CONTACT_REQUEST_DM_ONLY outside a DM; 409 BUTTON_UNAVAILABLE (no such REQUEST_CONTACT
+// button, disabled, another user's keyboard), CONTACT_ALREADY_SHARED (at most one share per
+// button per person); 422 VALIDATION reason CONTACT_EMPTY (none of the requested fields is set);
+// 429 reason CONTACT_SHARE_LIMIT (at most 10 shares per person per hour). On success: CONTACT_SHARED
+// to that bot only (gateway and webhook), a ContactSharedCard system message in the DM
+// (MESSAGE_CREATE to both) and a journal entry without the values.
+message ShareContactResponse {
+  string share_id = 1;              // ContactShared.id
+  repeated ContactField fields = 2; // what was shared
+  Message message = 3;              // the system message posted into the DM
+}
+
+// A person's contact shared with a bot (ADR-0100). Private to that bot, over gateway
+// (CONTACT_SHARED) and its webhook. Only the requested fields that are set in the profile are
+// filled; a field not shared is empty / false.
+message ContactShared {
+  string id = 1; // stable across transports and webhook retries; dedupe by it
+  string bot_user_id = 2;
+  string user_id = 3; // the person, from the authentication, never from the client
+  string display_name = 4;
+  string phone = 5; // E.164 as in the profile; empty = not shared
+  // Always false for now: the product has no phone verification yet (ADR-0100 §5).
+  bool phone_verified = 6;
+  string email = 7; // empty = not shared
+  bool email_verified = 8; // the address was confirmed with a code (ADR-0065)
+  google.protobuf.Timestamp shared_at = 9;
+  string room_id = 10;    // the DM
+  string message_id = 11; // the bot message with the button
+  string button_id = 12;
+  string data = 13; // the button's data, as saved
+  repeated ContactField fields = 14; // what was shared, in the order PHONE, EMAIL
+}
+
+// GET /api/workspaces/{id}/bot-contact-shares?before=&limit= (VIEW_JOURNALS; people only;
+// ADR-0100): the journal of contacts shared with the workspace's bots, newest first, without
+// the values. `before` is the id of the last entry of the previous page; limit 1..100, default 50.
+message ListBotContactSharesResponse {
+  repeated BotContactShareEntry entries = 1;
+  bool has_more = 2;
+}
+
+message BotContactShareEntry {
+  string id = 1;
+  string bot_user_id = 2;
+  string user_id = 3;
+  repeated ContactField fields = 4;
+  google.protobuf.Timestamp shared_at = 5;
 }

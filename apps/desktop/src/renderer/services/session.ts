@@ -12,6 +12,7 @@ import { useRoomPreviews } from '../stores/roomPreviews';
 import { useStickers } from '../stores/stickers';
 import { useBots } from '../stores/bots';
 import { useCalendar } from '../stores/calendar';
+import { useEventComments } from '../stores/eventComments';
 import { useFreeBusy } from '../stores/freebusy';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
@@ -224,6 +225,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useStickers.getState().reset();
   useBots.getState().reset();
   useCalendar.getState().reset();
+  useEventComments.getState().reset();
   useFreeBusy.getState().reset();
   useUi.getState().closeCalendar();
   resetBoards();
@@ -246,6 +248,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
       loggedOutReason: reason,
       emailVerificationOptional: false,
       emailInvitePending: false,
+      billingSelfServe: false,
     });
   const notice = logoutToastKey(reason);
   if (notice) toast.info(t(notice));

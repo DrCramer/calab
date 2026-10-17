@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
-import { Check, ChevronLeft, ChevronRight, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
+import { Check, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
@@ -8,7 +8,7 @@ import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup, PickerItem } from '../../components/picker/pickerModel';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { addDays, addMonths, dayKey, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
+import { addDays, dayKey, monthOf } from '../../lib/calendar/time';
 import { MAX_APPROVERS } from '../../lib/boards/approvals';
 import { MAX_WATCHERS } from '../../lib/boards/watchers';
 import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
@@ -17,8 +17,9 @@ import { createLabel } from '../../services/boards';
 import { accessChoice, pickerAccess, type PickerAccess } from '../../lib/boards/access';
 import { useBoards } from '../../stores/boards';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
+import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
 import { doneType } from './model';
 import { Dot, PALETTE, PRIORITIES, PRIORITY_LABEL, PriorityIcon, StatusIcon, colorCss, formatDue } from './visuals';
@@ -173,7 +174,7 @@ export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuSh
           .sort((a, b) => a.position - b.position)
           .map((s): Choice => {
             const off = !!blocked?.has(s.id);
-            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
+            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
           }),
       },
     ],
@@ -526,8 +527,6 @@ export function DateMenu({ value, onPick, title, ...shell }: MenuShell & { value
       setFocus(value || today);
     }
   }
-  const first = weekStart();
-  const grid = useMemo(() => monthGrid(month, first), [month, first]);
   const pick = (d: string): void => {
     onPick(d);
     setOpen(false);
@@ -579,47 +578,7 @@ export function DateMenu({ value, onPick, title, ...shell }: MenuShell & { value
               </button>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 pb-1">
-            <span className="flex-1 pl-1 text-control font-semibold">{formatMonth(month)}</span>
-            <button type="button" aria-label={t('cal.prevMonth')} onClick={() => setMonth(addMonths(month, -1))} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg">
-              <ChevronLeft className="size-4" aria-hidden />
-            </button>
-            <button type="button" aria-label={t('cal.nextMonth')} onClick={() => setMonth(addMonths(month, 1))} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg">
-              <ChevronRight className="size-4" aria-hidden />
-            </button>
-          </div>
-          <div className="grid grid-cols-7 text-center text-micro text-faint">
-            {weekdayNames(first).map((d, i) => (
-              <span key={i} className="py-1">
-                {d}
-              </span>
-            ))}
-          </div>
-          <div className="grid grid-cols-7" role="grid" aria-label={formatMonth(month)}>
-            {grid.map((d) => {
-              const other = monthOf(d) !== month;
-              const sel = d === value;
-              const isToday = d === today;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  tabIndex={-1}
-                  onClick={() => pick(d)}
-                  aria-pressed={sel}
-                  data-day={d}
-                  className={cx(
-                    'mx-auto grid size-8 place-items-center rounded-full text-control tabular-nums',
-                    sel ? 'bg-accent-strong text-accent-fg' : isToday ? 'font-semibold text-accent-text' : other ? 'text-faint' : 'text-fg',
-                    !sel && 'hover:bg-hover',
-                    d === focus && !sel && 'ring-1 ring-accent',
-                  )}
-                >
-                  {Number(d.slice(8))}
-                </button>
-              );
-            })}
-          </div>
+          <MonthPicker month={month} onMonth={setMonth} value={value} today={today} focus={focus} onPick={pick} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -632,8 +591,13 @@ export { useToday, dayKey };
 /** A 20 px avatar of a member (cards, rows, chips). */
 export function MemberAvatar({ workspaceId, userId, size = 20 }: { workspaceId: string; userId: string; size?: number }): ReactNode {
   const m = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]);
-  const name = m ? nameOf(m) : '';
-  return m ? <Avatar userId={userId} name={name} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={size} /> : <UserRound className="shrink-0 text-muted" style={{ width: size, height: size }} aria-hidden />;
+  // Someone who left (ADR-0097): the profile comes by id, the picture is grey with the «left» glyph.
+  const u = useWorkspaces((s) => (m ? undefined : s.users[userId]));
+  const former = !!useFormerInfo(workspaceId, userId);
+  useResolveUnknown(workspaceId, userId);
+  if (m) return <Avatar userId={userId} name={nameOf(m)} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={size} />;
+  if (u) return <Avatar userId={userId} name={u.displayName} {...(u.avatarFileId ? { fileId: u.avatarFileId } : {})} size={size} former={former} />;
+  return <UserRound className="shrink-0 text-muted" style={{ width: size, height: size }} aria-hidden />;
 }
 
 export { colorCss };

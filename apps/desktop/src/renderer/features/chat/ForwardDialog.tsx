@@ -1,8 +1,9 @@
 import { WorkspaceRole, type User } from '@calaba/protocol';
-import { Check, Hash, Lock, NotebookText, Volume2, X } from 'lucide-react';
+import { Check, Lock, NotebookText, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PickerPanel } from '../../components/picker/Picker';
-import { Button, CLOSE_HIT, Modal, cx } from '../../components/ui';
+import { Button, CLOSE_HIT, Input, Modal, cx } from '../../components/ui';
+import { RoomIcon } from '../../components/RoomIcon';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
@@ -36,8 +37,28 @@ function sharedRole(userId: string): WorkspaceRole | undefined {
  * (the source room's workspace; from a DM — every workspace). Picking toggles a target (chips
  * above the list, Telegram); «Переслать» sends to them one by one and reports in a toast. From a
  * room «только по списку» (ADR-0029) a note warns that the recipients will see the content.
+ *
+ * `onSend` replaces the chat forward with another sender over the same picker (a mail message
+ * «Отправить в чат…», ADR-0088; a wiki page, owner 14.10); then `roomId` is '' (every workspace's rooms) and `title` / `description` name it.
+ * `comment` adds an optional comment field under the list; its text goes to `onSend`.
  */
-export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; messageId: string; onClose: () => void }): ReactNode {
+export function ForwardDialog({
+  roomId,
+  messageId,
+  onClose,
+  onSend,
+  title,
+  description,
+  comment = false,
+}: {
+  roomId: string;
+  messageId: string;
+  onClose: () => void;
+  onSend?: (targets: readonly ForwardItem[], comment: string) => Promise<void>;
+  title?: string;
+  description?: string;
+  comment?: boolean;
+}): ReactNode {
   const src = useRooms((s) => s.byId[roomId]);
   const byId = useRooms((s) => s.byId);
   const workspaces = useWorkspaces((s) => s.byId);
@@ -49,6 +70,7 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
   const [found, setFound] = useState<{ q: string; users: User[] } | null>(null);
   const [selected, setSelected] = useState<ForwardItem[]>([]);
   const [sending, setSending] = useState(false);
+  const [note, setNote] = useState('');
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -98,6 +120,12 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
   const send = async (): Promise<void> => {
     if (!selected.length || sending) return;
     setSending(true);
+    if (onSend) {
+      await onSend(selected, note);
+      setSending(false);
+      onClose();
+      return;
+    }
     const r = await forwardMessage(roomId, messageId, selected);
     setSending(false);
     reportForward(r);
@@ -108,8 +136,8 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
     <Modal
       open
       onClose={onClose}
-      title={t('chat.fwd.title')}
-      description={t('chat.fwd.hint')}
+      title={title ?? t('chat.fwd.title')}
+      description={description ?? t('chat.fwd.hint')}
       initialFocus={input}
       fill
       footer={
@@ -172,17 +200,27 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
             }}
           />
         </div>
+        {comment ? (
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={2000}
+            placeholder={t('wiki.send.comment')}
+            aria-label={t('wiki.send.comment')}
+            className="shrink-0"
+            data-testid="forward-comment"
+          />
+        ) : null}
       </div>
     </Modal>
   );
 }
 
 function RoomRow({ item, active, trailing }: { item: RoomPickItem; active: boolean; trailing: ReactNode }): ReactNode {
-  const Icon = item.notes ? NotebookText : item.voice ? Volume2 : Hash;
   return (
     <>
       <span className={cx('grid size-6 shrink-0 place-items-center leading-none', active ? '' : 'text-muted')} aria-hidden>
-        {item.emoji ? <span className="text-[16px]">{item.emoji}</span> : <Icon className="size-4" />}
+        {item.emoji ? <span className="text-[16px]">{item.emoji}</span> : item.notes ? <NotebookText className="size-4" /> : <RoomIcon roomId={item.roomId} size={16} />}
       </span>
       <span className="min-w-0 flex-1 truncate font-medium" title={item.name}>
         {item.name}

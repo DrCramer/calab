@@ -22,7 +22,7 @@ import type { Message as Message$1 } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/message.proto.
  */
 export const file_calaba_v1_message: GenFile = /*@__PURE__*/
-  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIo0FCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlchIqCgdjb21tYW5kGB4gASgLMhkuY2FsYWJhLnYxLk1lc3NhZ2VDb21tYW5kEiMKB2ZvcndhcmQYESABKAsyEi5jYWxhYmEudjEuRm9yd2FyZBIyCg9pbmxpbmVfa2V5Ym9hcmQYEiABKAsyGS5jYWxhYmEudjEuSW5saW5lS2V5Ym9hcmQSGQoRa2V5Ym9hcmRfcmV2aXNpb24YEyABKAQibgoHRm9yd2FyZBIRCglhdXRob3JfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRISCgptZXNzYWdlX2lkGAMgASgJEisKB3NlbnRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkEKDk1lc3NhZ2VDb21tYW5kEhMKC2JvdF91c2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEYXJncxgDIAEoCSL/AQoNU3lzdGVtTWVzc2FnZRItCglyZWNvcmRpbmcYASABKAsyGC5jYWxhYmEudjEuUmVjb3JkaW5nQ2FyZEgAEisKCGJpcnRoZGF5GAIgASgLMhcuY2FsYWJhLnYxLkJpcnRoZGF5Q2FyZEgAEiMKBGNhbGwYAyABKAsyEy5jYWxhYmEudjEuQ2FsbENhcmRIABIxCgthY2hpZXZlbWVudBgEIAEoCzIaLmNhbGFiYS52MS5BY2hpZXZlbWVudENhcmRIABIvCgphdXRvbWF0aW9uGAUgASgLMhkuY2FsYWJhLnYxLkF1dG9tYXRpb25DYXJkSABCCQoHcGF5bG9hZCJlCg5BdXRvbWF0aW9uQ2FyZBIQCghib2FyZF9pZBgBIAEoCRIPCgd0YXNrX2lkGAIgASgJEg8KB3J1bGVfaWQYAyABKAkSEQoJcnVsZV9uYW1lGAQgASgJEgwKBHRleHQYBSABKAkiKgoMQmlydGhkYXlDYXJkEgsKA2RheRgBIAEoDRINCgVtb250aBgCIAEoDSJdCg9BY2hpZXZlbWVudENhcmQSFgoOYWNoaWV2ZW1lbnRfaWQYASABKAkSEAoIZ3JhbnRfaWQYAiABKAkSDAoEbm90ZRgDIAEoCRISCgpncmFudGVkX2J5GAQgASgJIjQKCFJlYWN0aW9uEg0KBWVtb2ppGAEgASgJEg0KBWNvdW50GAIgASgNEgoKAm1lGAMgASgIIk0KGUxpc3RSZWFjdGlvblVzZXJzUmVzcG9uc2USHgoFdXNlcnMYASADKAsyDy5jYWxhYmEudjEuVXNlchIQCghoYXNfbW9yZRgCIAEoCCJOChRMaXN0TWVzc2FnZXNSZXNwb25zZRIkCghtZXNzYWdlcxgBIAMoCzISLmNhbGFiYS52MS5NZXNzYWdlEhAKCGhhc19tb3JlGAIgASgIIqsBChRDcmVhdGVNZXNzYWdlUmVxdWVzdBIPCgdjb250ZW50GAEgASgJEhYKDmF0dGFjaG1lbnRfaWRzGAIgAygJEhMKC3JlcGx5X3RvX2lkGAMgASgJEg0KBW5vbmNlGAQgASgJEhIKCnN0aWNrZXJfaWQYBSABKAkSMgoPaW5saW5lX2tleWJvYXJkGAYgASgLMhkuY2FsYWJhLnYxLklubGluZUtleWJvYXJkIjwKFUNyZWF0ZU1lc3NhZ2VSZXNwb25zZRIjCgdtZXNzYWdlGAEgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UidQoUVXBkYXRlTWVzc2FnZVJlcXVlc3QSDwoHY29udGVudBgBIAEoCRIyCg9pbmxpbmVfa2V5Ym9hcmQYAiABKAsyGS5jYWxhYmEudjEuSW5saW5lS2V5Ym9hcmQSGAoQcHJlc2VydmVfY29udGVudBgDIAEoCCI8ChVVcGRhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIisKFUZvcndhcmRNZXNzYWdlUmVxdWVzdBISCgp0b19yb29tX2lkGAEgASgJIj0KFkZvcndhcmRNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIigKFlNldEVtYmVkc0hpZGRlblJlcXVlc3QSDgoGaGlkZGVuGAEgASgIIiwKFlVwZGF0ZVJlYWRTdGF0ZVJlcXVlc3QSEgoKbWVzc2FnZV9pZBgBIAEoCSJWCg5JbmxpbmVLZXlib2FyZBIqCgRyb3dzGAEgAygLMhwuY2FsYWJhLnYxLklubGluZUtleWJvYXJkUm93EhgKEGFsbG93ZWRfdXNlcl9pZHMYAiADKAkiPQoRSW5saW5lS2V5Ym9hcmRSb3cSKAoHYnV0dG9ucxgBIAMoCzIXLmNhbGFiYS52MS5JbmxpbmVCdXR0b24iSQoMSW5saW5lQnV0dG9uEgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEgwKBGRhdGEYAyABKAkSEAoIZGlzYWJsZWQYBCABKAgiXgofQ3JlYXRlTWVzc2FnZUludGVyYWN0aW9uUmVxdWVzdBIRCglidXR0b25faWQYASABKAkSGQoRa2V5Ym9hcmRfcmV2aXNpb24YAiABKAQSDQoFbm9uY2UYAyABKAkiOgogQ3JlYXRlTWVzc2FnZUludGVyYWN0aW9uUmVzcG9uc2USFgoOaW50ZXJhY3Rpb25faWQYASABKAki5gEKC0JvdENhbGxiYWNrEgoKAmlkGAEgASgJEhMKC2JvdF91c2VyX2lkGAIgASgJEg8KB3VzZXJfaWQYAyABKAkSFAoMd29ya3NwYWNlX2lkGAQgASgJEg8KB3Jvb21faWQYBSABKAkSEgoKbWVzc2FnZV9pZBgGIAEoCRIRCglidXR0b25faWQYByABKAkSDAoEZGF0YRgIIAEoCRIZChFrZXlib2FyZF9yZXZpc2lvbhgJIAEoBBIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCpECgtNZXNzYWdlS2luZBIcChhNRVNTQUdFX0tJTkRfVU5TUEVDSUZJRUQQABIXChNNRVNTQUdFX0tJTkRfU1lTVEVNEAFCmgEKDWNvbS5jYWxhYmEudjFCDE1lc3NhZ2VQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_call, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker, file_calaba_v1_user]);
+  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIo0FCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlchIqCgdjb21tYW5kGB4gASgLMhkuY2FsYWJhLnYxLk1lc3NhZ2VDb21tYW5kEiMKB2ZvcndhcmQYESABKAsyEi5jYWxhYmEudjEuRm9yd2FyZBIyCg9pbmxpbmVfa2V5Ym9hcmQYEiABKAsyGS5jYWxhYmEudjEuSW5saW5lS2V5Ym9hcmQSGQoRa2V5Ym9hcmRfcmV2aXNpb24YEyABKAQibgoHRm9yd2FyZBIRCglhdXRob3JfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRISCgptZXNzYWdlX2lkGAMgASgJEisKB3NlbnRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkEKDk1lc3NhZ2VDb21tYW5kEhMKC2JvdF91c2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEYXJncxgDIAEoCSLlAgoNU3lzdGVtTWVzc2FnZRItCglyZWNvcmRpbmcYASABKAsyGC5jYWxhYmEudjEuUmVjb3JkaW5nQ2FyZEgAEisKCGJpcnRoZGF5GAIgASgLMhcuY2FsYWJhLnYxLkJpcnRoZGF5Q2FyZEgAEiMKBGNhbGwYAyABKAsyEy5jYWxhYmEudjEuQ2FsbENhcmRIABIxCgthY2hpZXZlbWVudBgEIAEoCzIaLmNhbGFiYS52MS5BY2hpZXZlbWVudENhcmRIABIvCgphdXRvbWF0aW9uGAUgASgLMhkuY2FsYWJhLnYxLkF1dG9tYXRpb25DYXJkSAASLAoJcm9vbV9pY29uGAYgASgLMhcuY2FsYWJhLnYxLlJvb21JY29uQ2FyZEgAEjYKDmNvbnRhY3Rfc2hhcmVkGAcgASgLMhwuY2FsYWJhLnYxLkNvbnRhY3RTaGFyZWRDYXJkSABCCQoHcGF5bG9hZCJ4ChFDb250YWN0U2hhcmVkQ2FyZBITCgtib3RfdXNlcl9pZBgBIAEoCRInCgZmaWVsZHMYAiADKA4yFy5jYWxhYmEudjEuQ29udGFjdEZpZWxkEhIKCm1lc3NhZ2VfaWQYAyABKAkSEQoJYnV0dG9uX2lkGAQgASgJIh8KDFJvb21JY29uQ2FyZBIPCgdmaWxlX2lkGAEgASgJImUKDkF1dG9tYXRpb25DYXJkEhAKCGJvYXJkX2lkGAEgASgJEg8KB3Rhc2tfaWQYAiABKAkSDwoHcnVsZV9pZBgDIAEoCRIRCglydWxlX25hbWUYBCABKAkSDAoEdGV4dBgFIAEoCSIqCgxCaXJ0aGRheUNhcmQSCwoDZGF5GAEgASgNEg0KBW1vbnRoGAIgASgNIl0KD0FjaGlldmVtZW50Q2FyZBIWCg5hY2hpZXZlbWVudF9pZBgBIAEoCRIQCghncmFudF9pZBgCIAEoCRIMCgRub3RlGAMgASgJEhIKCmdyYW50ZWRfYnkYBCABKAkiNAoIUmVhY3Rpb24SDQoFZW1vamkYASABKAkSDQoFY291bnQYAiABKA0SCgoCbWUYAyABKAgiTQoZTGlzdFJlYWN0aW9uVXNlcnNSZXNwb25zZRIeCgV1c2VycxgBIAMoCzIPLmNhbGFiYS52MS5Vc2VyEhAKCGhhc19tb3JlGAIgASgIIk4KFExpc3RNZXNzYWdlc1Jlc3BvbnNlEiQKCG1lc3NhZ2VzGAEgAygLMhIuY2FsYWJhLnYxLk1lc3NhZ2USEAoIaGFzX21vcmUYAiABKAgiqwEKFENyZWF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkSFgoOYXR0YWNobWVudF9pZHMYAiADKAkSEwoLcmVwbHlfdG9faWQYAyABKAkSDQoFbm9uY2UYBCABKAkSEgoKc3RpY2tlcl9pZBgFIAEoCRIyCg9pbmxpbmVfa2V5Ym9hcmQYBiABKAsyGS5jYWxhYmEudjEuSW5saW5lS2V5Ym9hcmQiPAoVQ3JlYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSJ1ChRVcGRhdGVNZXNzYWdlUmVxdWVzdBIPCgdjb250ZW50GAEgASgJEjIKD2lubGluZV9rZXlib2FyZBgCIAEoCzIZLmNhbGFiYS52MS5JbmxpbmVLZXlib2FyZBIYChBwcmVzZXJ2ZV9jb250ZW50GAMgASgIIjwKFVVwZGF0ZU1lc3NhZ2VSZXNwb25zZRIjCgdtZXNzYWdlGAEgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiKwoVRm9yd2FyZE1lc3NhZ2VSZXF1ZXN0EhIKCnRvX3Jvb21faWQYASABKAkiPQoWRm9yd2FyZE1lc3NhZ2VSZXNwb25zZRIjCgdtZXNzYWdlGAEgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiKAoWU2V0RW1iZWRzSGlkZGVuUmVxdWVzdBIOCgZoaWRkZW4YASABKAgiLAoWVXBkYXRlUmVhZFN0YXRlUmVxdWVzdBISCgptZXNzYWdlX2lkGAEgASgJIlYKDklubGluZUtleWJvYXJkEioKBHJvd3MYASADKAsyHC5jYWxhYmEudjEuSW5saW5lS2V5Ym9hcmRSb3cSGAoQYWxsb3dlZF91c2VyX2lkcxgCIAMoCSI9ChFJbmxpbmVLZXlib2FyZFJvdxIoCgdidXR0b25zGAEgAygLMhcuY2FsYWJhLnYxLklubGluZUJ1dHRvbiKtAQoMSW5saW5lQnV0dG9uEgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEgwKBGRhdGEYAyABKAkSEAoIZGlzYWJsZWQYBCABKAgSKQoEa2luZBgFIAEoDjIbLmNhbGFiYS52MS5JbmxpbmVCdXR0b25LaW5kEicKBmZpZWxkcxgGIAMoDjIXLmNhbGFiYS52MS5Db250YWN0RmllbGQSDgoGcmVhc29uGAcgASgJIl4KH0NyZWF0ZU1lc3NhZ2VJbnRlcmFjdGlvblJlcXVlc3QSEQoJYnV0dG9uX2lkGAEgASgJEhkKEWtleWJvYXJkX3JldmlzaW9uGAIgASgEEg0KBW5vbmNlGAMgASgJIjoKIENyZWF0ZU1lc3NhZ2VJbnRlcmFjdGlvblJlc3BvbnNlEhYKDmludGVyYWN0aW9uX2lkGAEgASgJIuYBCgtCb3RDYWxsYmFjaxIKCgJpZBgBIAEoCRITCgtib3RfdXNlcl9pZBgCIAEoCRIPCgd1c2VyX2lkGAMgASgJEhQKDHdvcmtzcGFjZV9pZBgEIAEoCRIPCgdyb29tX2lkGAUgASgJEhIKCm1lc3NhZ2VfaWQYBiABKAkSEQoJYnV0dG9uX2lkGAcgASgJEgwKBGRhdGEYCCABKAkSGQoRa2V5Ym9hcmRfcmV2aXNpb24YCSABKAQSLgoKY3JlYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAidgoUU2hhcmVDb250YWN0UmVzcG9uc2USEAoIc2hhcmVfaWQYASABKAkSJwoGZmllbGRzGAIgAygOMhcuY2FsYWJhLnYxLkNvbnRhY3RGaWVsZBIjCgdtZXNzYWdlGAMgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiwwIKDUNvbnRhY3RTaGFyZWQSCgoCaWQYASABKAkSEwoLYm90X3VzZXJfaWQYAiABKAkSDwoHdXNlcl9pZBgDIAEoCRIUCgxkaXNwbGF5X25hbWUYBCABKAkSDQoFcGhvbmUYBSABKAkSFgoOcGhvbmVfdmVyaWZpZWQYBiABKAgSDQoFZW1haWwYByABKAkSFgoOZW1haWxfdmVyaWZpZWQYCCABKAgSLQoJc2hhcmVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdyb29tX2lkGAogASgJEhIKCm1lc3NhZ2VfaWQYCyABKAkSEQoJYnV0dG9uX2lkGAwgASgJEgwKBGRhdGEYDSABKAkSJwoGZmllbGRzGA4gAygOMhcuY2FsYWJhLnYxLkNvbnRhY3RGaWVsZCJiChxMaXN0Qm90Q29udGFjdFNoYXJlc1Jlc3BvbnNlEjAKB2VudHJpZXMYASADKAsyHy5jYWxhYmEudjEuQm90Q29udGFjdFNoYXJlRW50cnkSEAoIaGFzX21vcmUYAiABKAgioAEKFEJvdENvbnRhY3RTaGFyZUVudHJ5EgoKAmlkGAEgASgJEhMKC2JvdF91c2VyX2lkGAIgASgJEg8KB3VzZXJfaWQYAyABKAkSJwoGZmllbGRzGAQgAygOMhcuY2FsYWJhLnYxLkNvbnRhY3RGaWVsZBItCglzaGFyZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wKkQKC01lc3NhZ2VLaW5kEhwKGE1FU1NBR0VfS0lORF9VTlNQRUNJRklFRBAAEhcKE01FU1NBR0VfS0lORF9TWVNURU0QASpeChBJbmxpbmVCdXR0b25LaW5kEiIKHklOTElORV9CVVRUT05fS0lORF9VTlNQRUNJRklFRBAAEiYKIklOTElORV9CVVRUT05fS0lORF9SRVFVRVNUX0NPTlRBQ1QQASpfCgxDb250YWN0RmllbGQSHQoZQ09OVEFDVF9GSUVMRF9VTlNQRUNJRklFRBAAEhcKE0NPTlRBQ1RfRklFTERfUEhPTkUQARIXChNDT05UQUNUX0ZJRUxEX0VNQUlMEAJCmgEKDWNvbS5jYWxhYmEudjFCDE1lc3NhZ2VQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_call, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker, file_calaba_v1_user]);
 
 /**
  * @generated from message calaba.v1.Message
@@ -299,6 +299,22 @@ export type SystemMessage = Message$1<"calaba.v1.SystemMessage"> & {
      */
     value: AutomationCard;
     case: "automation";
+  } | {
+    /**
+     * the room's picture was changed (ADR-0092)
+     *
+     * @generated from field: calaba.v1.RoomIconCard room_icon = 6;
+     */
+    value: RoomIconCard;
+    case: "roomIcon";
+  } | {
+    /**
+     * a person shared their contact with a bot (ADR-0100)
+     *
+     * @generated from field: calaba.v1.ContactSharedCard contact_shared = 7;
+     */
+    value: ContactSharedCard;
+    case: "contactShared";
   } | { case: undefined; value?: undefined };
 };
 
@@ -308,6 +324,70 @@ export type SystemMessage = Message$1<"calaba.v1.SystemMessage"> & {
  */
 export const SystemMessageSchema: GenMessage<SystemMessage> = /*@__PURE__*/
   messageDesc(file_calaba_v1_message, 3);
+
+/**
+ * "You shared your contact with @bot: phone, email": posted by the server into the DM of a person
+ * and a bot when the person confirms a REQUEST_CONTACT button (ADR-0100); the author is the
+ * person. Seen by both; carries the field names only, never the values. No notification. Clients
+ * also use it to show the button as «Отправлено».
+ *
+ * @generated from message calaba.v1.ContactSharedCard
+ */
+export type ContactSharedCard = Message$1<"calaba.v1.ContactSharedCard"> & {
+  /**
+   * @generated from field: string bot_user_id = 1;
+   */
+  botUserId: string;
+
+  /**
+   * what was shared, in the order PHONE, EMAIL
+   *
+   * @generated from field: repeated calaba.v1.ContactField fields = 2;
+   */
+  fields: ContactField[];
+
+  /**
+   * the bot message with the button
+   *
+   * @generated from field: string message_id = 3;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string button_id = 4;
+   */
+  buttonId: string;
+};
+
+/**
+ * Describes the message calaba.v1.ContactSharedCard.
+ * Use `create(ContactSharedCardSchema)` to create a new message.
+ */
+export const ContactSharedCardSchema: GenMessage<ContactSharedCard> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 4);
+
+/**
+ * "<author> changed the room picture": posted by the server into the room when PATCH
+ * /api/rooms/{id} changes icon_file_id; the author is who changed it. No notification or sound.
+ * The file stays readable to those who see the room while the message lives.
+ *
+ * @generated from message calaba.v1.RoomIconCard
+ */
+export type RoomIconCard = Message$1<"calaba.v1.RoomIconCard"> & {
+  /**
+   * the new picture; empty = the picture was removed
+   *
+   * @generated from field: string file_id = 1;
+   */
+  fileId: string;
+};
+
+/**
+ * Describes the message calaba.v1.RoomIconCard.
+ * Use `create(RoomIconCardSchema)` to create a new message.
+ */
+export const RoomIconCardSchema: GenMessage<RoomIconCard> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 5);
 
 /**
  * «Автоматизация»: a board automation rule posted into a text room or into the task's comments
@@ -350,7 +430,7 @@ export type AutomationCard = Message$1<"calaba.v1.AutomationCard"> & {
  * Use `create(AutomationCardSchema)` to create a new message.
  */
 export const AutomationCardSchema: GenMessage<AutomationCard> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 4);
+  messageDesc(file_calaba_v1_message, 6);
 
 /**
  * "Today is <author>'s birthday!": posted once a day per workspace by the server at 09:00 of
@@ -375,7 +455,7 @@ export type BirthdayCard = Message$1<"calaba.v1.BirthdayCard"> & {
  * Use `create(BirthdayCardSchema)` to create a new message.
  */
 export const BirthdayCardSchema: GenMessage<BirthdayCard> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 5);
+  messageDesc(file_calaba_v1_message, 7);
 
 /**
  * "<author> receives an achievement": posted by the server when an achievement is granted with
@@ -419,7 +499,7 @@ export type AchievementCard = Message$1<"calaba.v1.AchievementCard"> & {
  * Use `create(AchievementCardSchema)` to create a new message.
  */
 export const AchievementCardSchema: GenMessage<AchievementCard> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 6);
+  messageDesc(file_calaba_v1_message, 8);
 
 /**
  * @generated from message calaba.v1.Reaction
@@ -448,7 +528,7 @@ export type Reaction = Message$1<"calaba.v1.Reaction"> & {
  * Use `create(ReactionSchema)` to create a new message.
  */
 export const ReactionSchema: GenMessage<Reaction> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 7);
+  messageDesc(file_calaba_v1_message, 9);
 
 /**
  * GET /api/messages/{id}/reactions/{emoji}?after=&limit= (VIEW_ROOM): the public profiles of
@@ -476,7 +556,7 @@ export type ListReactionUsersResponse = Message$1<"calaba.v1.ListReactionUsersRe
  * Use `create(ListReactionUsersResponseSchema)` to create a new message.
  */
 export const ListReactionUsersResponseSchema: GenMessage<ListReactionUsersResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 8);
+  messageDesc(file_calaba_v1_message, 10);
 
 /**
  * GET /api/rooms/{id}/messages?before=&after=&limit= (VIEW_ROOM). Newest first for `before`.
@@ -502,7 +582,7 @@ export type ListMessagesResponse = Message$1<"calaba.v1.ListMessagesResponse"> &
  * Use `create(ListMessagesResponseSchema)` to create a new message.
  */
 export const ListMessagesResponseSchema: GenMessage<ListMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 9);
+  messageDesc(file_calaba_v1_message, 11);
 
 /**
  * POST /api/rooms/{id}/messages (SEND_MESSAGES; ATTACH_FILES if attachments).
@@ -553,7 +633,7 @@ export type CreateMessageRequest = Message$1<"calaba.v1.CreateMessageRequest"> &
  * Use `create(CreateMessageRequestSchema)` to create a new message.
  */
 export const CreateMessageRequestSchema: GenMessage<CreateMessageRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 10);
+  messageDesc(file_calaba_v1_message, 12);
 
 /**
  * @generated from message calaba.v1.CreateMessageResponse
@@ -570,7 +650,7 @@ export type CreateMessageResponse = Message$1<"calaba.v1.CreateMessageResponse">
  * Use `create(CreateMessageResponseSchema)` to create a new message.
  */
 export const CreateMessageResponseSchema: GenMessage<CreateMessageResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 11);
+  messageDesc(file_calaba_v1_message, 13);
 
 /**
  * PATCH /api/messages/{id} (author only; not a sticker message; not a forwarded copy: 422
@@ -606,7 +686,7 @@ export type UpdateMessageRequest = Message$1<"calaba.v1.UpdateMessageRequest"> &
  * Use `create(UpdateMessageRequestSchema)` to create a new message.
  */
 export const UpdateMessageRequestSchema: GenMessage<UpdateMessageRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 12);
+  messageDesc(file_calaba_v1_message, 14);
 
 /**
  * @generated from message calaba.v1.UpdateMessageResponse
@@ -623,7 +703,7 @@ export type UpdateMessageResponse = Message$1<"calaba.v1.UpdateMessageResponse">
  * Use `create(UpdateMessageResponseSchema)` to create a new message.
  */
 export const UpdateMessageResponseSchema: GenMessage<UpdateMessageResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 13);
+  messageDesc(file_calaba_v1_message, 15);
 
 /**
  * POST /api/rooms/{id}/messages/{mid}/forward (ADR-0033): copies the message {mid} of the room
@@ -648,7 +728,7 @@ export type ForwardMessageRequest = Message$1<"calaba.v1.ForwardMessageRequest">
  * Use `create(ForwardMessageRequestSchema)` to create a new message.
  */
 export const ForwardMessageRequestSchema: GenMessage<ForwardMessageRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 14);
+  messageDesc(file_calaba_v1_message, 16);
 
 /**
  * @generated from message calaba.v1.ForwardMessageResponse
@@ -665,7 +745,7 @@ export type ForwardMessageResponse = Message$1<"calaba.v1.ForwardMessageResponse
  * Use `create(ForwardMessageResponseSchema)` to create a new message.
  */
 export const ForwardMessageResponseSchema: GenMessage<ForwardMessageResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 15);
+  messageDesc(file_calaba_v1_message, 17);
 
 /**
  * PUT /api/messages/{id}/embeds-hidden (author, or MANAGE_MESSAGES) → UpdateMessageResponse;
@@ -685,7 +765,7 @@ export type SetEmbedsHiddenRequest = Message$1<"calaba.v1.SetEmbedsHiddenRequest
  * Use `create(SetEmbedsHiddenRequestSchema)` to create a new message.
  */
 export const SetEmbedsHiddenRequestSchema: GenMessage<SetEmbedsHiddenRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 16);
+  messageDesc(file_calaba_v1_message, 18);
 
 /**
  * PUT /api/rooms/{id}/read (VIEW_ROOM). Moves the read marker forward only; 204.
@@ -704,7 +784,7 @@ export type UpdateReadStateRequest = Message$1<"calaba.v1.UpdateReadStateRequest
  * Use `create(UpdateReadStateRequestSchema)` to create a new message.
  */
 export const UpdateReadStateRequestSchema: GenMessage<UpdateReadStateRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 17);
+  messageDesc(file_calaba_v1_message, 19);
 
 /**
  * Callback metadata is public to everyone who can read the message. Never put secrets here.
@@ -731,7 +811,7 @@ export type InlineKeyboard = Message$1<"calaba.v1.InlineKeyboard"> & {
  * Use `create(InlineKeyboardSchema)` to create a new message.
  */
 export const InlineKeyboardSchema: GenMessage<InlineKeyboard> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 18);
+  messageDesc(file_calaba_v1_message, 20);
 
 /**
  * @generated from message calaba.v1.InlineKeyboardRow
@@ -748,7 +828,7 @@ export type InlineKeyboardRow = Message$1<"calaba.v1.InlineKeyboardRow"> & {
  * Use `create(InlineKeyboardRowSchema)` to create a new message.
  */
 export const InlineKeyboardRowSchema: GenMessage<InlineKeyboardRow> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 19);
+  messageDesc(file_calaba_v1_message, 21);
 
 /**
  * @generated from message calaba.v1.InlineButton
@@ -779,6 +859,27 @@ export type InlineButton = Message$1<"calaba.v1.InlineButton"> & {
    * @generated from field: bool disabled = 4;
    */
   disabled: boolean;
+
+  /**
+   * What pressing the button does (ADR-0100); unset = a callback button (BOT_CALLBACK).
+   *
+   * @generated from field: calaba.v1.InlineButtonKind kind = 5;
+   */
+  kind: InlineButtonKind;
+
+  /**
+   * REQUEST_CONTACT only: the contact fields the bot asks for, one or both, no repeats.
+   *
+   * @generated from field: repeated calaba.v1.ContactField fields = 6;
+   */
+  fields: ContactField[];
+
+  /**
+   * REQUEST_CONTACT only: why the bot asks, shown to the person; at most 120 characters.
+   *
+   * @generated from field: string reason = 7;
+   */
+  reason: string;
 };
 
 /**
@@ -786,7 +887,7 @@ export type InlineButton = Message$1<"calaba.v1.InlineButton"> & {
  * Use `create(InlineButtonSchema)` to create a new message.
  */
 export const InlineButtonSchema: GenMessage<InlineButton> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 20);
+  messageDesc(file_calaba_v1_message, 22);
 
 /**
  * POST /api/messages/{id}/interactions (people only; VIEW_ROOM and SEND_MESSAGES).
@@ -818,7 +919,7 @@ export type CreateMessageInteractionRequest = Message$1<"calaba.v1.CreateMessage
  * Use `create(CreateMessageInteractionRequestSchema)` to create a new message.
  */
 export const CreateMessageInteractionRequestSchema: GenMessage<CreateMessageInteractionRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 21);
+  messageDesc(file_calaba_v1_message, 23);
 
 /**
  * @generated from message calaba.v1.CreateMessageInteractionResponse
@@ -837,7 +938,7 @@ export type CreateMessageInteractionResponse = Message$1<"calaba.v1.CreateMessag
  * Use `create(CreateMessageInteractionResponseSchema)` to create a new message.
  */
 export const CreateMessageInteractionResponseSchema: GenMessage<CreateMessageInteractionResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 22);
+  messageDesc(file_calaba_v1_message, 24);
 
 /**
  * Private to the message's author bot, over gateway and configured webhook.
@@ -909,7 +1010,221 @@ export type BotCallback = Message$1<"calaba.v1.BotCallback"> & {
  * Use `create(BotCallbackSchema)` to create a new message.
  */
 export const BotCallbackSchema: GenMessage<BotCallback> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 23);
+  messageDesc(file_calaba_v1_message, 25);
+
+/**
+ * POST /api/messages/{id}/buttons/{buttonId}/contact (people only, no body; ADR-0100): the
+ * caller confirms the REQUEST_CONTACT button {buttonId} of the bot message {id} in their DM with
+ * the bot. The server composes the contact from the caller's profile (the client sends no
+ * values): the requested fields that are set. Errors: 404 the message (deleted, hidden, cleared
+ * part of the DM); 403 bots, a blocked or unavailable bot, not the DM's person; 400 reason
+ * BOT_CONTACT_REQUEST_DM_ONLY outside a DM; 409 BUTTON_UNAVAILABLE (no such REQUEST_CONTACT
+ * button, disabled, another user's keyboard), CONTACT_ALREADY_SHARED (at most one share per
+ * button per person); 422 VALIDATION reason CONTACT_EMPTY (none of the requested fields is set);
+ * 429 reason CONTACT_SHARE_LIMIT (at most 10 shares per person per hour). On success: CONTACT_SHARED
+ * to that bot only (gateway and webhook), a ContactSharedCard system message in the DM
+ * (MESSAGE_CREATE to both) and a journal entry without the values.
+ *
+ * @generated from message calaba.v1.ShareContactResponse
+ */
+export type ShareContactResponse = Message$1<"calaba.v1.ShareContactResponse"> & {
+  /**
+   * ContactShared.id
+   *
+   * @generated from field: string share_id = 1;
+   */
+  shareId: string;
+
+  /**
+   * what was shared
+   *
+   * @generated from field: repeated calaba.v1.ContactField fields = 2;
+   */
+  fields: ContactField[];
+
+  /**
+   * the system message posted into the DM
+   *
+   * @generated from field: calaba.v1.Message message = 3;
+   */
+  message?: Message | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.ShareContactResponse.
+ * Use `create(ShareContactResponseSchema)` to create a new message.
+ */
+export const ShareContactResponseSchema: GenMessage<ShareContactResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 26);
+
+/**
+ * A person's contact shared with a bot (ADR-0100). Private to that bot, over gateway
+ * (CONTACT_SHARED) and its webhook. Only the requested fields that are set in the profile are
+ * filled; a field not shared is empty / false.
+ *
+ * @generated from message calaba.v1.ContactShared
+ */
+export type ContactShared = Message$1<"calaba.v1.ContactShared"> & {
+  /**
+   * stable across transports and webhook retries; dedupe by it
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string bot_user_id = 2;
+   */
+  botUserId: string;
+
+  /**
+   * the person, from the authentication, never from the client
+   *
+   * @generated from field: string user_id = 3;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string display_name = 4;
+   */
+  displayName: string;
+
+  /**
+   * E.164 as in the profile; empty = not shared
+   *
+   * @generated from field: string phone = 5;
+   */
+  phone: string;
+
+  /**
+   * Always false for now: the product has no phone verification yet (ADR-0100 §5).
+   *
+   * @generated from field: bool phone_verified = 6;
+   */
+  phoneVerified: boolean;
+
+  /**
+   * empty = not shared
+   *
+   * @generated from field: string email = 7;
+   */
+  email: string;
+
+  /**
+   * the address was confirmed with a code (ADR-0065)
+   *
+   * @generated from field: bool email_verified = 8;
+   */
+  emailVerified: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp shared_at = 9;
+   */
+  sharedAt?: Timestamp | undefined;
+
+  /**
+   * the DM
+   *
+   * @generated from field: string room_id = 10;
+   */
+  roomId: string;
+
+  /**
+   * the bot message with the button
+   *
+   * @generated from field: string message_id = 11;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string button_id = 12;
+   */
+  buttonId: string;
+
+  /**
+   * the button's data, as saved
+   *
+   * @generated from field: string data = 13;
+   */
+  data: string;
+
+  /**
+   * what was shared, in the order PHONE, EMAIL
+   *
+   * @generated from field: repeated calaba.v1.ContactField fields = 14;
+   */
+  fields: ContactField[];
+};
+
+/**
+ * Describes the message calaba.v1.ContactShared.
+ * Use `create(ContactSharedSchema)` to create a new message.
+ */
+export const ContactSharedSchema: GenMessage<ContactShared> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 27);
+
+/**
+ * GET /api/workspaces/{id}/bot-contact-shares?before=&limit= (VIEW_JOURNALS; people only;
+ * ADR-0100): the journal of contacts shared with the workspace's bots, newest first, without
+ * the values. `before` is the id of the last entry of the previous page; limit 1..100, default 50.
+ *
+ * @generated from message calaba.v1.ListBotContactSharesResponse
+ */
+export type ListBotContactSharesResponse = Message$1<"calaba.v1.ListBotContactSharesResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.BotContactShareEntry entries = 1;
+   */
+  entries: BotContactShareEntry[];
+
+  /**
+   * @generated from field: bool has_more = 2;
+   */
+  hasMore: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.ListBotContactSharesResponse.
+ * Use `create(ListBotContactSharesResponseSchema)` to create a new message.
+ */
+export const ListBotContactSharesResponseSchema: GenMessage<ListBotContactSharesResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 28);
+
+/**
+ * @generated from message calaba.v1.BotContactShareEntry
+ */
+export type BotContactShareEntry = Message$1<"calaba.v1.BotContactShareEntry"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string bot_user_id = 2;
+   */
+  botUserId: string;
+
+  /**
+   * @generated from field: string user_id = 3;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: repeated calaba.v1.ContactField fields = 4;
+   */
+  fields: ContactField[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp shared_at = 5;
+   */
+  sharedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.BotContactShareEntry.
+ * Use `create(BotContactShareEntrySchema)` to create a new message.
+ */
+export const BotContactShareEntrySchema: GenMessage<BotContactShareEntry> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 29);
 
 /**
  * @generated from enum calaba.v1.MessageKind
@@ -933,4 +1248,59 @@ export enum MessageKind {
  */
 export const MessageKindSchema: GenEnum<MessageKind> = /*@__PURE__*/
   enumDesc(file_calaba_v1_message, 0);
+
+/**
+ * @generated from enum calaba.v1.InlineButtonKind
+ */
+export enum InlineButtonKind {
+  /**
+   * a callback button: POST /api/messages/{id}/interactions
+   *
+   * @generated from enum value: INLINE_BUTTON_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * "Share contact" (ADR-0100): only in a DM of the bot with a person, otherwise sending or
+   * editing the message is 400 BAD_REQUEST, reason BOT_CONTACT_REQUEST_DM_ONLY. The person
+   * confirms on their client; the server then sends the contact from the profile
+   * (POST /api/messages/{id}/buttons/{buttonId}/contact). Pressing it through /interactions is
+   * 409 BUTTON_UNAVAILABLE.
+   *
+   * @generated from enum value: INLINE_BUTTON_KIND_REQUEST_CONTACT = 1;
+   */
+  REQUEST_CONTACT = 1,
+}
+
+/**
+ * Describes the enum calaba.v1.InlineButtonKind.
+ */
+export const InlineButtonKindSchema: GenEnum<InlineButtonKind> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_message, 1);
+
+/**
+ * @generated from enum calaba.v1.ContactField
+ */
+export enum ContactField {
+  /**
+   * @generated from enum value: CONTACT_FIELD_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CONTACT_FIELD_PHONE = 1;
+   */
+  PHONE = 1,
+
+  /**
+   * @generated from enum value: CONTACT_FIELD_EMAIL = 2;
+   */
+  EMAIL = 2,
+}
+
+/**
+ * Describes the enum calaba.v1.ContactField.
+ */
+export const ContactFieldSchema: GenEnum<ContactField> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_message, 2);
 

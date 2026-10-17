@@ -232,7 +232,7 @@ func TestAchievementsMigration(t *testing.T) {
 			t.Fatalf("%s without a picture", k)
 		}
 		f, err := d.Q.GetFile(ctx, *r.file)
-		if err != nil || f.WorkspaceID == nil || *f.WorkspaceID != r.ws || f.UploaderID != owner || f.Mime != "image/webp" {
+		if err != nil || f.WorkspaceID == nil || *f.WorkspaceID != r.ws || f.UploaderID == nil || *f.UploaderID != owner || f.Mime != "image/webp" {
 			t.Fatalf("%s file: %+v %v", k, f, err)
 		}
 		rc, _, err := testStore.Get(ctx, f.Key)

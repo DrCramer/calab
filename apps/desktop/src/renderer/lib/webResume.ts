@@ -9,7 +9,7 @@ import { parseResumeVoice, type ResumeVoice, type ResumeVoiceSeat } from '../../
  * guarded (private mode, blocked site data, a full quota) — a failure means «nothing stored».
  */
 
-/** One-shot seat written right before the update reload («Обновить страницу»). */
+/** One-shot seat written as the page goes away (any reload, issue #209) and before the update reload. */
 export const WEB_RESUME_KEY = 'calab-resume-voice';
 /** The mic / deafen state written when the page goes away (any reload). */
 export const WEB_SELF_KEY = 'calab-voice-self';
@@ -47,6 +47,17 @@ export function saveWebResume(store: KV | null, seat: ResumeVoiceSeat | null, se
   write(store, WEB_RESUME_KEY, rec);
 }
 
+/**
+ * The seat any reload of the tab keeps (issue #209; written on `pagehide`, null clears): a room
+ * seat; a 1:1 call only when it is kept through the exit (keepCallOnExit — otherwise the page
+ * going away hangs it up). Not in voice — left, kicked, banned, the room deleted — keeps nothing,
+ * so an older record of this tab is cleared too.
+ */
+export function reloadSeat(seat: ResumeVoiceSeat | null, callKept: boolean): ResumeVoiceSeat | null {
+  if (!seat) return null;
+  return seat.kind === 'dm-call' && !callKept ? null : seat;
+}
+
 /** The seat left by the update reload, once (removed on read); null when absent, malformed or stale. */
 export function takeWebResume(store: KV | null, now: number): ResumeVoice | null {
   const rec = parseResumeVoice(read(store, WEB_RESUME_KEY));
@@ -77,6 +88,19 @@ export function takeVoiceSelf(store: KV | null, userId: string): VoiceSelf | nul
   if (r['userId'] !== userId) return null;
   const deafened = r['deafened'] === true;
   return { userId, muted: r['muted'] === true || deafened, deafened, mutedBeforeDeafen: deafened && r['mutedBeforeDeafen'] === true };
+}
+
+/**
+ * This page was loaded by a reload (F5, location.reload, webContents.reload) — not a fresh start.
+ * The desktop takes a renderer reload's seat only then: an app restart stays as it was.
+ */
+export function pageWasReloaded(perf: Pick<Performance, 'getEntriesByType'> = globalThis.performance): boolean {
+  try {
+    const nav = perf.getEntriesByType('navigation')[0] as { type?: unknown } | undefined;
+    return nav?.type === 'reload';
+  } catch {
+    return false;
+  }
 }
 
 /** The session's tab storage, or null where the accessor throws (blocked site data). */

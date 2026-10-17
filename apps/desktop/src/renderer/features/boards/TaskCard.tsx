@@ -2,7 +2,7 @@ import * as ContextMenu from '@radix-ui/react-context-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
 import { CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
-import { cx } from '../../components/ui';
+import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
@@ -14,7 +14,7 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
-import { ApprovalBadge } from './Approvals';
+import { ApprovalTag } from './Approvals';
 import { GitBadge } from './GitLinks';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
@@ -58,11 +58,13 @@ export const TaskCard = memo(function TaskCard({
   const scoped = useBoardScoped(boardId);
   const statusType = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.type : undefined));
   const statusColor = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.color ?? 0) : 0));
+  const statusIcon = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.icon ?? '') : ''));
   const blocked = useBlockedStatuses(task, boardId);
   const focused = useBoardsUi((s) => s.focused === id);
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const open = useBoardsUi((s) => s.taskId === id);
-  const menuReq = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu : null));
+  // A hotkey menu (S, A, P…) goes to the open task's view, not to its card underneath.
+  const menuReq = useBoardsUi((s) => (s.menu?.taskId === id && !s.taskId ? s.menu : null));
   const today = useToday();
   // Board features (ADR-0058 §3): the board's array, stable until BOARD_UPDATE.
   const disabled = useDisabledFeatures(boardId);
@@ -179,7 +181,7 @@ export const TaskCard = memo(function TaskCard({
       <div className="flex min-w-0 items-start gap-2">
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...menuOpen('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.status')} className="mt-[3px] shrink-0 rounded-full disabled:cursor-default" data-testid="card-status">
-            <StatusIcon type={statusType ?? 0} color={statusColor} />
+            <StatusIcon type={statusType ?? 0} color={statusColor} icon={statusIcon} />
           </button>
         </StatusMenu>
         <span className={cx('line-clamp-2 min-w-0 flex-1 break-words text-control font-medium', done ? 'text-muted' : 'text-fg')} data-testid="card-title">
@@ -203,7 +205,7 @@ export const TaskCard = memo(function TaskCard({
             </button>
           </DateMenu>
         ) : null}
-        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} /> : null}
+        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} /> : null}
         {on(BoardFeature.SUBTASKS) && task.subtaskCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.subtasks')}>
             <GitFork className="size-3" aria-hidden />
@@ -231,15 +233,19 @@ export const TaskCard = memo(function TaskCard({
  * The card's checklist progress «3/7» (ADR-0058 §2, always shown when the task has items): a leaf
  * subscribed to the counters only — a tick in the panel re-renders this chip, not the card.
  */
-export const ChecklistBadge = memo(function ChecklistBadge({ id }: { id: string }): ReactNode {
+export const ChecklistBadge = memo(function ChecklistBadge({ id, slot }: { id: string; slot?: string }): ReactNode {
   const text = useBoards((s) => checklistProgress(s, id));
-  if (!text) return null;
-  return (
-    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.cl.title')} data-testid="card-checklist">
-      <ListChecks className="size-3" aria-hidden />
-      {text}
-    </span>
-  );
+  const [done, total] = text.split('/');
+  const badge = text ? (
+    <Tip label={t('boards.cl.tip', { done: done ?? '', total: total ?? '' })}>
+      <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" data-testid="card-checklist">
+        <ListChecks className="size-3" aria-hidden />
+        {text}
+      </span>
+    </Tip>
+  ) : null;
+  // `slot`: a fixed-width column cell (the list row) that stays, empty, when there are no items.
+  return slot !== undefined ? <span className={slot}>{badge}</span> : badge;
 });
 
 /**
@@ -251,10 +257,12 @@ export const MilestoneBadge = memo(function MilestoneBadge({ id }: { id: string 
   if (!text) return null;
   const [done, total] = text.split('/');
   return (
-    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.ms.chip', { done: done ?? '', total: total ?? '' })} data-testid="card-milestones">
-      <Diamond className="size-3" aria-hidden />
-      {text}
-    </span>
+    <Tip label={t('boards.ms.chip', { done: done ?? '', total: total ?? '' })}>
+      <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" data-testid="card-milestones">
+        <Diamond className="size-3" aria-hidden />
+        {text}
+      </span>
+    </Tip>
   );
 });
 
@@ -300,7 +308,8 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
   const priority = useFeatureOn(task.boardId, BoardFeature.PRIORITY);
   const scoped = useBoardScoped(task.boardId);
   const me = myUserId();
-  const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf(id)}</span>;
+  // Key hints are for a keyboard: not on a phone (the long-press menu there).
+  const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf(id)}</span>;
   const item = cx(menuItem, 'group');
   const sub = cx(menuItem, 'group data-[state=open]:not-data-[highlighted]:bg-hover');
   return (
@@ -317,9 +326,9 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={sub}>
-                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} /> {t('boards.f.status')}
-                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('status')}</span>
-                  <ChevronRight className="size-4" aria-hidden />
+                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} icon={statuses?.find((s) => s.id === task.statusId)?.icon} /> {t('boards.f.status')}
+                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('status')}</span>
+                  <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                 </ContextMenu.SubTrigger>
                 <ContextMenu.Portal>
                   <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>
@@ -327,7 +336,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                       .sort((a, b) => a.position - b.position)
                       .map((s) => (
                         <ContextMenu.Item key={s.id} className={item} disabled={blocked?.has(s.id)} onSelect={() => s.id !== task.statusId && void updateTask(task.id, { statusId: s.id })}>
-                          <StatusIcon type={s.type} color={s.color} /> {s.name}
+                          <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
                           {blocked?.has(s.id) ? <span className="ml-auto pl-3 text-caption text-muted">{t('boards.gate.hint')}</span> : null}
                         </ContextMenu.Item>
                       ))}
@@ -338,8 +347,8 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                 <ContextMenu.Sub>
                   <ContextMenu.SubTrigger className={sub}>
                     <PriorityIcon priority={task.priority} /> {t('boards.f.priority')}
-                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('priority')}</span>
-                    <ChevronRight className="size-4" aria-hidden />
+                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('priority')}</span>
+                    <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
                     <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>

@@ -47,6 +47,8 @@ func apiErrOf(t *testing.T, c *client, want int, method, path string, in any) (v
 		st = c.do(method, path, m, nil)
 	case *v1.JoinRoomInviteRequest:
 		st = c.do(method, path, m, nil)
+	case *v1.UpdateWorkspaceRequest:
+		st = c.do(method, path, m, nil)
 	default:
 		t.Fatalf("unexpected body %T", in)
 	}
@@ -184,7 +186,8 @@ func TestTempRooms(t *testing.T) {
 	sqlExec(t, "UPDATE rooms SET created_by = $1 WHERE id = $2", bob.id, cr.GetRoom().GetId())
 	apiErrOf(t, bob.client, 403, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{Name: &name})
 	apiErrOf(t, bob.client, 403, "DELETE", "/api/rooms/"+cr.GetRoom().GetId(), nil)
-	apiErrOf(t, o.client, 422, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IsPrivate: &tr})
+	// ADR-0078 addendum 2026-10-14: a permanent room switches private / public too.
+	o.must(200, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IsPrivate: &tr}, nil)
 
 	// Limits: 5 live per creator, 20 per workspace.
 	for i := range 3 {
@@ -284,7 +287,15 @@ func TestTempRooms(t *testing.T) {
 		arch.GetRooms()[0].GetArchivedAt() == nil || arch.GetRooms()[0].GetCreatedBy() != bob.id {
 		t.Fatalf("archive: %v", arch.GetRooms())
 	}
-	apiErrOf(t, bob.client, 403, "GET", "/api/workspaces/"+wid+"/rooms?archived=1", nil)
+	// the creator sees their own archive (14.10); a member who never had access sees none
+	bob.must(200, "GET", "/api/workspaces/"+wid+"/rooms?archived=1", nil, &arch)
+	if len(arch.GetRooms()) != 1 || arch.GetRooms()[0].GetId() != rp.GetId() {
+		t.Fatalf("creator archive: %v", arch.GetRooms())
+	}
+	dave.must(200, "GET", "/api/workspaces/"+wid+"/rooms?archived=1", nil, &arch)
+	if len(arch.GetRooms()) != 0 {
+		t.Fatalf("a stranger sees an archive: %v", arch.GetRooms())
+	}
 
 	// The sweeper archives an expired room (links revoked, LiveKit room closed, ROOM_DELETE).
 	sqlExec(t, "UPDATE rooms SET expires_at = now() - interval '1 second' WHERE id = $1", pr.GetId())
@@ -304,9 +315,9 @@ func TestTempRooms(t *testing.T) {
 	}
 	apiErrOf(t, carol.client, 410, "POST", "/api/rooms/"+pr.GetId()+"/messages", &v1.CreateMessageRequest{Content: "x"})
 
-	// Retention: archived temp rooms older than TEMP_ROOM_RETENTION_DAYS go with their history.
+	// Retention: archived temp rooms older than the workspace's temp_archive_days go with their history.
 	sqlExec(t, "UPDATE rooms SET archived_at = now() - interval '91 days' WHERE id = $1", rp.GetId())
-	if _, err := testApp.Rooms.PurgeTempRooms(context.Background(), time.Now().Add(-90*24*time.Hour)); err != nil {
+	if _, err := testApp.Rooms.PurgeTempRooms(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	var left int

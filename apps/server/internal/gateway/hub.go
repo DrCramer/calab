@@ -21,6 +21,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -42,6 +43,7 @@ type Config struct {
 	AllowedOrigins     []string       // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
 	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
 	PlanContact        string         // Ready.plan_contact
+	BillingSelfServe   bool           // Ready.billing_self_serve (BILLING_ENABLED && BILLING_SELF_SERVE)
 }
 
 // Hub owns this instance's gateway sessions.
@@ -427,7 +429,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			defer h.syncGuestMembers(st, wid, guestBefore, subject)
 		}
 	}
-	if h.routeBoards(st, wid, id, sessions, ev) {
+	if h.routeBoards(st, wid, id, sessions, ev) || h.routeDisk(st, wid, id, sessions, ev) || h.routeWiki(st, wid, id, sessions, ev) {
 		return
 	}
 	switch e := ev.GetEvent().(type) {
@@ -589,7 +591,20 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 		st.delMember(uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
-		st.ws = e.WorkspaceUpdate.GetWorkspace()
+		next := e.WorkspaceUpdate.GetWorkspace()
+		if next.GetOwnerSeesPrivate() != st.ws.GetOwnerSeesPrivate() {
+			// «Владелец видит приватное» flipped (addendum 2026-10-14): the owner's sessions gain or
+			// lose the private rooms and boards (ROOM_CREATE / ROOM_DELETE, BOARD_CREATE /
+			// BOARD_DELETE), everyone else sees nothing change.
+			owner := func(u uuid.UUID) bool { return st.role(u) == perm.RoleOwner }
+			h.reviewRooms(st, wid, sessions, owner, func() {
+				h.reviewBoards(st, wid, sessions, owner, func() {
+					st.ws = next
+					st.rebuild() // Member.OwnerSeesPrivate
+				})
+			})
+		}
+		st.ws = next
 		// The suspension reason is for the owner / admins only (item 32).
 		var hidden *encEvent
 		for _, s := range sessions {
@@ -637,6 +652,8 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
 		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
 		h.routeCalendar(st, sessions, view, id, ev)
+	case *v1.DispatchEvent_EventCommentUpsert, *v1.DispatchEvent_EventCommentDelete:
+		h.routeEventComment(st, sessions, view, id, ev)
 	case *v1.DispatchEvent_RoomAdmissionRequest:
 		// A knock (ADR-0040 §3, amendment 2026-10-06): only to the author of the link the guest
 		// came by and to deciders (INVITE_GUESTS there, not guests) who are in the room's voice
@@ -904,6 +921,15 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		filtered := make([]*Session, 0, len(sessions))
 		for _, s := range sessions {
 			if !s.bot {
+				filtered = append(filtered, s)
+			}
+		}
+		sessions = filtered
+	}
+	if ev.GetContactShared() != nil { // a person's contact: bot sessions only (ADR-0100)
+		filtered := make([]*Session, 0, len(sessions))
+		for _, s := range sessions {
+			if s.bot {
 				filtered = append(filtered, s)
 			}
 		}
@@ -1272,6 +1298,28 @@ func (h *Hub) Statuses(ctx context.Context, users []uuid.UUID) (map[uuid.UUID]v1
 		out[u] = p.GetStatus()
 	}
 	return out, nil
+}
+
+// Present says whether the user has a live gateway session (any status, invisible
+// included) or is in a call right now: the guest inactivity sweep (ADR-0098) skips such users.
+func (h *Hub) Present(ctx context.Context, user uuid.UUID) (bool, error) {
+	return present(ctx, h.redis, user)
+}
+
+func present(ctx context.Context, c rueidis.Client, user uuid.UUID) (bool, error) {
+	// HVALS like presenceStore.get: fields past their HEXPIRE are never returned.
+	res := c.DoMulti(ctx,
+		c.B().Hvals().Key(presKey(user)).Build(),
+		c.B().Exists().Key(calls.OnCallKey(user)).Build())
+	vals, err := res[0].AsStrSlice()
+	if err != nil && !rueidis.IsRedisNil(err) {
+		return false, err
+	}
+	n, err := res[1].AsInt64()
+	if err != nil {
+		return false, err
+	}
+	return len(vals) > 0 || n > 0, nil
 }
 
 // StatusChanged announces a custom status change (PATCH /api/me/status) even if the

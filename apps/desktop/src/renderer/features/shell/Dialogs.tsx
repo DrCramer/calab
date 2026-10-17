@@ -3,16 +3,20 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { openMessage } from '../../services/searchNav';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
+import { PdfViewer } from '../chat/PdfViewer';
 import { useUi } from '../../stores/ui';
 import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
+import { sendPageToChats } from '../../services/wiki';
+import { t } from '../../i18n';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
-import { ProfileDialog } from '../people/ProfileDialog';
+import { ProfileRoute } from '../people/FormerProfile';
 import { AchievementLayers } from '../people/AchievementLayers';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
+import { TempArchiveDialog } from '../workspace/TempArchive';
 import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
@@ -20,6 +24,7 @@ import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
 import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
+import { PlansDialog } from '../workspace/billing/PlansDialog';
 
 const RecordingResult = lazy(() => import('../chat/RecordingResult'));
 
@@ -41,13 +46,17 @@ export function Dialogs(): ReactNode {
         node = <JoinWorkspaceDialog onClose={close} initialCode={d.code ?? ''} />;
         break;
       case 'workspace-settings':
-        node = <WorkspaceSettingsWindow.Component onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
+        // Keyed by the tab: a deep link to another tab while it is open (a plan violation «К ботам») opens it.
+        node = <WorkspaceSettingsWindow.Component key={`${d.workspaceId}:${d.tab ?? ''}`} onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
         break;
       case 'room-create':
         node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;
         break;
       case 'temp-room-create':
         node = <TempRoomDialog onClose={close} workspaceId={d.workspaceId} />;
+        break;
+      case 'temp-archive':
+        node = <TempArchiveDialog onClose={close} workspaceId={d.workspaceId} />;
         break;
       case 'temp-room-extend':
         node = <TempExtendDialog onClose={close} roomId={d.roomId} />;
@@ -73,11 +82,24 @@ export function Dialogs(): ReactNode {
       case 'forward':
         node = <ForwardDialog roomId={d.roomId} messageId={d.messageId} onClose={close} />;
         break;
+      case 'wiki-send':
+        node = (
+          <ForwardDialog
+            roomId=""
+            messageId=""
+            onClose={close}
+            title={t('wiki.send.title')}
+            description={t('wiki.send.hint')}
+            comment
+            onSend={(targets, comment) => sendPageToChats(d.pageId, targets, comment)}
+          />
+        );
+        break;
       case 'room-invite':
         node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;
         break;
       case 'profile':
-        node = <ProfileDialog key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
+        node = <ProfileRoute key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
         break;
       case 'admin':
         // Only for superadmins (the server answers 404 to anyone else anyway).
@@ -96,6 +118,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'web-app':
         node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;
+        break;
+      case 'billing-plans':
+        node = <PlansDialog key={d.workspaceId} workspaceId={d.workspaceId} welcome={d.welcome ?? false} onClose={close} />;
         break;
       case 'image': {
         const inChat = d.inChat;
@@ -116,6 +141,9 @@ export function Dialogs(): ReactNode {
         );
         break;
       }
+      case 'pdf':
+        node = <PdfViewer key={d.file.id} file={d.file} onClose={close} />;
+        break;
       case 'transcript':
         node = (
           <Suspense fallback={null}>

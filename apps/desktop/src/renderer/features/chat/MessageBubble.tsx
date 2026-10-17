@@ -20,11 +20,12 @@ import { useReadReceipt } from '../../stores/readReceipts';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
+import { WikiLinkCard, firstWikiPage } from '../wiki/WikiLinkCard';
 import { MessageActions, hasMessageActions } from './MessageActions';
 import { createHoverIntent, placeActionBar } from './hoverIntent';
 import { previewPartsOf, useMentionLabel } from './mentionText';
@@ -33,11 +34,14 @@ import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
 import { ProfileTarget } from '../../components/ProfileTarget';
-import { automationCardOf, birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { automationCardOf, birthdayCardOf, recordingCardOf, roomIconCardOf, systemPreview } from '../../lib/recording';
 import { AutomationCardView } from '../boards/AutomationCard';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
 import { AchievementCardView } from './AchievementCard';
+import { RoomIconLine } from './RoomIconLine';
+import { ContactSharedLine } from './ContactSharedLine';
+import { contactSharedCardOf } from '../../lib/contactRequest';
 import { achievementCardOf } from '../../lib/achievements';
 import { CallLogRow } from '../call/CallBits';
 import { callCardOf } from '../../lib/callModel';
@@ -47,9 +51,10 @@ import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
 import { isVoice } from '../../lib/voiceNote';
 import { useMobile } from '../../lib/mobile';
+import { ReplySwipeIcon, useReplySwipe } from './replySwipe';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
-import { BotBadge } from '../people/MemberBits';
+import { BotBadge, FormerChip } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 import { InlineKeyboardView } from './InlineKeyboard';
@@ -65,12 +70,17 @@ const IMAGE_MAX_VH = 60;
 function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; own: boolean }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const label = useMentionLabel(workspaceId, v);
-  const mine = !own && (v === me || v === 'everyone' || v === 'here');
+  const special = v === 'everyone' || v === 'here';
+  useResolveUnknown(workspaceId, special ? '' : v);
+  // A mention of someone who left (ADR-0097 §4): no notification tint, the «бывший» chip after it.
+  const former = !!useFormerInfo(workspaceId, v);
+  const mine = !own && !former && (v === me || special);
   return (
     <ProfileTarget userId={v} name={label} workspaceId={workspaceId} className="inline text-left align-baseline">
-      <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : 'bg-accent/15 text-accent-text')} data-mention={v}>
+      <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : former ? 'bg-[var(--color-fill)] text-muted' : 'bg-accent/15 text-accent-text')} data-mention={v}>
         {label}
       </span>
+      {former ? <FormerChip workspaceId={workspaceId} userId={v} className="ml-1 align-[1px]" /> : null}
     </ProfileTarget>
   );
 }
@@ -95,6 +105,12 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);
+  useResolveUnknown(workspaceId, m.authorId); // an author who left: the profile comes by id (ADR-0097)
+  const former = !!useFormerInfo(workspaceId, m.authorId);
+  // Phone: a left swipe replies (Telegram iOS) — whoever may reply from the menu.
+  const mobile = useMobile();
+  const reply = useCallback(() => useUi.getState().setReply(roomId, m.id), [roomId, m.id]);
+  const { ref: swipeRef, icon: swipeIcon, active: swiping, handlers: swipeHandlers } = useReplySwipe(mobile && c.status === 'sent' && can(perms, 'SEND_MESSAGES'), reply);
   return (
     // overflow-x-clip: nothing in a row widens the feed (no horizontal scroll, docs/09 #74); clip,
     // not hidden, so the action bar over a bubble's top edge still shows above the row.
@@ -102,8 +118,12 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
       {meta.day ? <DatePill date={toDate(m.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       <div
+        ref={swipeRef}
+        {...swipeHandlers}
         className={cx(
-          'flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          'relative flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          // the browser never pans the feed sideways: a horizontal move is the reply swipe's
+          mobile && 'touch-pan-y',
           // Telegram tints the message whose menu is open (Radix marks the trigger data-state=open).
           'has-[>[data-state=open]]:bg-[var(--color-bubble-highlight)] has-[>[data-state=open]]:shadow-[0_0_0_4px_var(--color-bubble-highlight)]',
           own ? 'justify-end' : 'justify-start',
@@ -116,12 +136,13 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
           <div className={cx('w-9 shrink-0 self-end', !!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}>
             {meta.last ? (
               <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
-                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} />
+                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} former={former} />
               </AuthorTarget>
             ) : null}
           </div>
         ) : null}
         <Bubble c={c} meta={meta} own={own} name={name} workspaceId={workspaceId} roomId={roomId} perms={perms} />
+        {swiping ? <ReplySwipeIcon icon={swipeIcon} /> : null}
       </div>
       {c.status === 'failed' ? <FailedLine c={c} workspaceId={workspaceId} roomId={roomId} /> : null}
     </div>
@@ -142,8 +163,12 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   const call = callCardOf(c.msg);
   // A board automation's message (ADR-0060): a room (notify_room) or the task's comments.
   const auto = automationCardOf(c.msg);
+  // The room picture changed (ADR-0092): a centred service line with the new picture.
+  const icon = roomIconCardOf(c.msg);
+  // A contact shared with a bot (ADR-0100): a centred service line in the DM.
+  const contact = contactSharedCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon || contact ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -168,6 +193,14 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       ) : auto ? (
         <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <AutomationCardView card={auto} workspaceId={workspaceId} roomId={c.msg.roomId} />
+        </div>
+      ) : icon ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <RoomIconLine card={icon} authorId={c.msg.authorId} workspaceId={workspaceId} />
+        </div>
+      ) : contact ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <ContactSharedLine card={contact} authorId={c.msg.authorId} workspaceId={workspaceId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />
@@ -263,6 +296,8 @@ function Bubble({
   const highlight = useMemo(() => (hit && words?.length ? { words, current: hit === 2 } : undefined), [hit, words]);
   // Hidden previews (Message.embeds_hidden) are not rendered at all, for everyone.
   const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
+  // A wiki page link of this server (owner 14.10): the page card in place of the web preview.
+  const wikiPage = useMemo(() => (link ? firstWikiPage(nodes) : null), [link, nodes]);
   const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
@@ -346,7 +381,7 @@ function Bubble({
   ) : (
     // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
-      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 70 % lane, #9).
+      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 85 % lane, owner 14.10).
       className="relative max-w-full bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
       style={{ ...radius, ...(width ? { width } : {}) }}
       data-focus-shape
@@ -359,6 +394,7 @@ function Bubble({
               {name}
             </AuthorTarget>
             <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
+            <FormerChip workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 align-[1px]" />
             {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
           </div>
         ) : null}
@@ -396,7 +432,7 @@ function Bubble({
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />
+            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
           </div>
         ) : null}
         {rows.length ? (
@@ -433,7 +469,7 @@ function Bubble({
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
           className={cx(
-            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)]',
+            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)] mobile:max-w-[85%]',
             own ? 'bubble-out' : 'bubble-in',
             c.status === 'pending' && 'opacity-80',
           )}
@@ -449,7 +485,7 @@ function Bubble({
         >
           {body}
           {m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' ? (
-            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
+            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} botId={m.authorId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
           ) : null}
           {bar.visible ? (
             <ActionBarSlot own={own}>

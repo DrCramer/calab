@@ -31,7 +31,7 @@ func (s *Service) StoreSystemFile(ctx context.Context, wsID, uploader uuid.UUID,
 	if err != nil {
 		return sqlc.File{}, err
 	}
-	quota, planQuota, err := s.quota(ctx, ws)
+	quota, planQuota, err := s.quota(ctx, s.db.Q, ws)
 	if err != nil {
 		return sqlc.File{}, err
 	}
@@ -56,7 +56,7 @@ func (s *Service) StoreSystemFile(ctx context.Context, wsID, uploader uuid.UUID,
 			return err
 		}
 		f, err = q.InsertFile(ctx, sqlc.InsertFileParams{
-			ID: id, WorkspaceID: &wsID, UploaderID: uploader, Key: key, Name: SanitizeName(name), Mime: mimeType,
+			ID: id, WorkspaceID: &wsID, UploaderID: &uploader, Key: key, Name: SanitizeName(name), Mime: mimeType,
 			Size: size, Sha256: hex.EncodeToString(h.Sum(nil)),
 		})
 		return err

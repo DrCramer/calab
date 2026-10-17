@@ -108,3 +108,32 @@ describe('identity states (2.0.1)', () => {
     expect(describeError(e).text).not.toContain('ERROR_CODE');
   });
 });
+
+describe('OAuth clients (ADR-0102)', () => {
+  const limit = (message: string, extra: { reason?: string; used?: number; limit?: number }) => new ApiError('ERROR_CODE_CONFLICT', message, 409, undefined, extra);
+  it('a 409 PLAN_LIMIT names the limit, never «changed by someone else»', () => {
+    expect(describeError(limit('OAuth client limit reached', { reason: 'PLAN_LIMIT', used: 20, limit: 20 })).text).toBe(
+      'В пространстве может быть не больше 20 приложений — удалите ненужное',
+    );
+    expect(describeError(limit('OAuth secret limit reached', { reason: 'PLAN_LIMIT', used: 2, limit: 2 })).text).toMatch(/^Уже действуют два секрета/);
+    expect(describeError(limit('Business or Enterprise is required', { reason: 'PLAN_LIMIT' })).text).toMatch(/Business или Enterprise/);
+    expect(describeError(limit('identity entitlement required', { reason: 'PLAN_LIMIT' })).text).toMatch(/Business или Enterprise/);
+    // A real concurrent edit keeps its text; an unknown plan limit is not guessed at.
+    expect(describeError(api('ERROR_CODE_CONFLICT', 409)).text).toMatch(/^Уже изменено/);
+    expect(describeError(limit('OAuth client limit reached', {})).text).toMatch(/^Уже изменено/);
+  });
+  it('maps the server validation messages under their field', () => {
+    const v = (field: string, message: string) => describeError(new ApiError('ERROR_CODE_VALIDATION', message, 422, field));
+    expect(v('redirectUris', 'redirect URI must use https (http only for localhost, 127.0.0.1 or [::1])')).toEqual({
+      text: 'Адрес должен начинаться с https:// (для разработки допускается http://localhost или http://127.0.0.1)',
+      field: 'redirectUris',
+      retry: false,
+      generic: false,
+    });
+    expect(v('allowedOrigins', 'allowed origins are only for SPA clients').text).toMatch(/только браузерному приложению/);
+    expect(v('redirectUris', 'duplicate redirect URI').text).toBe('Этот адрес указан дважды');
+    expect(v('name', 'name must be 1 to 100 characters').text).toBe('Название: от 1 до 100 символов');
+    // An unknown message keeps the field, with the generic text.
+    expect(v('redirectUris', 'something new')).toMatchObject({ field: 'redirectUris', text: 'Проверьте введённые данные' });
+  });
+});

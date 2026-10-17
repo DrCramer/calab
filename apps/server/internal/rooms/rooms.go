@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -19,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/iconfile"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -39,6 +41,15 @@ type Handlers struct {
 	// EmailGate: whether a guest link of a temporary room needs a confirmed address
 	// (ADR-0023, EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
 	EmailGate auth.EmailGate
+	// System publishes the system message room_icon a picture change writes (ADR-0092); nil =
+	// the message is still written, only not published (tests).
+	System SystemCreated
+}
+
+// SystemCreated publishes MESSAGE_CREATE for a system message inserted in a transaction
+// (messages.System; an interface because messages imports rooms).
+type SystemCreated interface {
+	Created(ctx context.Context, workspaceID uuid.UUID, m sqlc.Message) error
 }
 
 // NewHandlers creates the room handlers.
@@ -60,8 +71,11 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("POST /api/workspaces/{id}/rooms", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("GET /api/workspaces/{id}/rooms", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("POST /api/workspaces/{id}/rooms/temp", wrap(httpx.HandlerFunc(h.createTemp)))
+	mux.Handle("POST /api/rooms/{id}/restore", wrap(httpx.HandlerFunc(h.restoreTemp)))
+	mux.Handle("POST /api/rooms/{id}/make-permanent", wrap(httpx.HandlerFunc(h.makePermanent)))
 	mux.Handle("GET /api/rooms/{id}", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/rooms/{id}", wrap(httpx.HandlerFunc(h.update)))
+	mux.Handle("POST /api/rooms/{id}/take-over", wrap(httpx.HandlerFunc(h.takeOver)))
 	mux.Handle("DELETE /api/rooms/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/permissions", wrap(httpx.HandlerFunc(h.setPermissions)))
 	mux.Handle("PUT /api/rooms/{id}/notifications", wrap(httpx.HandlerFunc(h.setNotifications)))
@@ -82,7 +96,7 @@ func lastMessage(l sqlc.LastMessagesRow) *v1.DmLastMessage {
 	return &v1.DmLastMessage{
 		Id: l.ID.String(), AuthorId: l.AuthorID.String(), Content: l.Preview,
 		AttachmentCount: uint32(max(l.Attachments, 0)), CreatedAt: timestamppb.New(l.CreatedAt), //nolint:gosec // 0..20
-		StickerEmoji: l.StickerEmoji,
+		StickerEmoji: l.StickerEmoji, System: pbconv.SystemPayload(l.SystemPayload),
 	}
 }
 
@@ -363,6 +377,13 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err := validLimit(req.GetUserLimit(), typ); err != nil {
 		return err
 	}
+	if !req.GetIsPrivate() && (len(req.GetMemberIds()) > 0 || len(req.GetRoleIds()) > 0) {
+		return httpx.Validation("memberIds", "only a private room has invited members or roles")
+	}
+	invited, err := invitees(r.Context(), h.db.Q, wsID, req.GetMemberIds(), req.GetRoleIds())
+	if err != nil {
+		return err
+	}
 
 	var (
 		room sqlc.Room
@@ -394,6 +415,16 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		if room.IsPrivate {
 			if err := setPrivate(r.Context(), q, wsID, room.ID, true); err != nil {
+				return err
+			}
+			// ADR-0078 addendum 2026-10-14: the creator keeps in the room what a public one would
+			// give them (their workspace bits within RoomOnly, MANAGE_ROOM at least: it is theirs to
+			// create it) as a personal allow; the invited see it.
+			me := auth.MustFromContext(r.Context()).UserID
+			if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{RoomID: room.ID, UserID: me.String(), Allow: int64(perm.ViewRoom | perm.ManageRoom | bits&perm.RoomOnly)}); err != nil { //nolint:gosec // bit mask
+				return err
+			}
+			if err := invited.grant(r.Context(), q, room.ID); err != nil {
 				return err
 			}
 		}
@@ -525,17 +556,22 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		p.UserLimit = &v
 	}
 	if req.AllowRecording != nil {
-		// Recording consent is the workspace's call (ADR-0025): MANAGE_RECORDINGS (ADR-0048).
-		if !acc.Member.Workspace().Has(perm.ManageRecordings) || acc.Role == perm.RoleGuest {
+		// Recording consent is the workspace's call (ADR-0025): MANAGE_RECORDINGS (ADR-0048). In
+		// a private room ADMINISTRATOR does not reach in (ADR-0078 addendum): the roles' own bit.
+		ws := acc.Member.Workspace()
+		if acc.NoBypass() {
+			ws = acc.Member.Raw()
+		}
+		if !ws.Has(perm.ManageRecordings) || acc.Role == perm.RoleGuest {
 			return httpx.Forbidden("MANAGE_RECORDINGS required to change allow_recording")
 		}
 		p.AllowRecording = req.AllowRecording
 	}
-	if req.Restricted != nil {
-		// A closed room (ADR-0048, was owner-only in ADR-0029): MANAGE_ROOM in the room (h.manage;
-		// the creator of a temporary room too). In a closed room only the owner and those let in
-		// by an override have it, so the owner can always open it again.
-		p.Restricted = req.Restricted
+	// Private or public (ADR-0078 addendum 2026-10-14): is_private, restricted its alias; any
+	// text / voice room, MANAGE_ROOM in the room (h.manage; the creator of a temporary room too).
+	private, err := privacyPatch(&req)
+	if err != nil {
+		return err
 	}
 	if req.GuestApproval != nil && !acc.Bits.Has(perm.ManageRoom) && !acc.Bits.Has(perm.InviteGuests) {
 		// The creator of a temporary room (ADR-0044) decides how guests enter only with INVITE_GUESTS.
@@ -569,11 +605,20 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
+	p.SetIcon = req.IconFileId != nil
+	me := auth.MustFromContext(r.Context()).UserID
 	var pb *v1.Room
 	var publishMeetings func(context.Context)
-	restrictedChanged := false // who sees the room changed (restricted or is_private)
+	var iconMsg *sqlc.Message  // the system message room_icon of a picture change (ADR-0092)
+	restrictedChanged := false // who sees the room changed (is_private)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if p.Restricted != nil || tp.any() {
+		var iconChanged bool
+		if p.SetIcon {
+			if iconChanged, err = roomIcon(r.Context(), q, roomID, acc.WorkspaceID, me, req.GetIconFileId(), &p); err != nil {
+				return err
+			}
+		}
+		if private != nil || tp.any() {
 			cur, err := q.GetRoomForUpdate(r.Context(), roomID)
 			if db.IsNotFound(err) {
 				return httpx.NotFound("room")
@@ -581,31 +626,12 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			private := cur.IsPrivate
-			if tp.private != nil {
-				private = *tp.private
-			}
-			restricted := cur.Restricted
-			if p.Restricted != nil {
-				restricted = *p.Restricted
-			}
-			if p.Restricted != nil && *p.Restricted && !private {
-				return httpx.Validation("restricted", "only private rooms can be restricted")
-			}
-			if restricted && !private {
-				return httpx.Validation("isPrivate", "a restricted room stays private")
-			}
-			restrictedChanged = cur.Restricted != restricted || cur.IsPrivate != private
 			if publishMeetings, err = h.applyTempPatch(r.Context(), q, cur, tp); err != nil {
 				return err
 			}
-			if restricted && !cur.Restricted && acc.Role != perm.RoleOwner {
-				// Whoever closes the room keeps it (ADR-0048): a personal VIEW_ROOM, plus MANAGE_ROOM
-				// when they had it — the creator of a temporary room manages it as its creator, and
-				// closing must not hand them MANAGE_ROOM (make_permanent, wider overrides).
-				if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{
-					RoomID: roomID, UserID: auth.MustFromContext(r.Context()).UserID.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.ManageRoom), //nolint:gosec // bit mask
-				}); err != nil {
+			if private != nil && *private != (cur.IsPrivate || cur.Restricted) {
+				restrictedChanged = true
+				if err := applyPrivate(r.Context(), q, cur, *private, me, acc); err != nil {
 					return err
 				}
 			}
@@ -614,8 +640,16 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if db.IsNotFound(err) {
 			return httpx.NotFound("room")
 		}
+		if db.IsForeignKeyViolation(err) && p.SetIcon {
+			return httpx.Validation("iconFileId", "file not found")
+		}
 		if err != nil {
 			return err
+		}
+		if iconChanged {
+			if iconMsg, err = insertIconMessage(r.Context(), q, roomID, me, p.IconFileID); err != nil {
+				return err
+			}
 		}
 		if room.Type != "voice" && room.UserLimit > 0 {
 			return httpx.Validation("userLimit", "user limit applies to voice rooms only")
@@ -644,8 +678,57 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if publishMeetings != nil {
 		publishMeetings(r.Context())
 	}
+	if iconMsg != nil && h.System != nil {
+		if err := h.System.Created(r.Context(), acc.WorkspaceID, *iconMsg); err != nil {
+			return err
+		}
+	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateRoomResponse{Room: pb})
 	return nil
+}
+
+// roomIcon checks a new picture of the room (ADR-0092; text and voice rooms only) under the
+// room's row lock, sets it into p and reports whether it differs from the current one.
+func roomIcon(ctx context.Context, q *sqlc.Queries, roomID, wsID, me uuid.UUID, raw string, p *sqlc.UpdateRoomParams) (bool, error) {
+	cur, err := q.GetRoomForUpdate(ctx, roomID)
+	if db.IsNotFound(err) {
+		return false, httpx.NotFound("room")
+	}
+	if err != nil {
+		return false, err
+	}
+	if cur.Type != "text" && cur.Type != "voice" {
+		return false, httpx.Validation("iconFileId", "only text and voice rooms have a picture")
+	}
+	if p.IconFileID, err = iconfile.Own(ctx, q, wsID, me, cur.IconFileID, raw); err != nil {
+		return false, err
+	}
+	old, next := "", ""
+	if cur.IconFileID != nil {
+		old = cur.IconFileID.String()
+	}
+	if p.IconFileID != nil {
+		next = p.IconFileID.String()
+	}
+	return old != next, nil
+}
+
+// insertIconMessage writes the system message room_icon (ADR-0092) from the caller: no
+// mentions, no notification (push skips it); the caller publishes it after the commit.
+func insertIconMessage(ctx context.Context, q *sqlc.Queries, roomID, me uuid.UUID, icon *uuid.UUID) (*sqlc.Message, error) {
+	card := &v1.RoomIconCard{}
+	if icon != nil {
+		card.FileId = icon.String()
+	}
+	raw, err := protojson.Marshal(&v1.SystemMessage{Payload: &v1.SystemMessage_RoomIcon{RoomIcon: card}})
+	if err != nil {
+		return nil, err
+	}
+	m, err := q.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: roomID, AuthorID: me, Payload: raw})
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // ReasonOwnerOnly (ApiError.reason, 403): only the workspace owner may do this (ADR-0029).
@@ -810,6 +893,7 @@ func (h *Handlers) setPermissions(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
+		params = keepOwn(params, existing, acc, auth.MustFromContext(r.Context()).UserID)
 		room, err := q.GetRoom(r.Context(), roomID)
 		if db.IsNotFound(err) {
 			return httpx.NotFound("room")

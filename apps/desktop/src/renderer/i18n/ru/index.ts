@@ -12,15 +12,25 @@ import { ruMail } from './mail';
 import { ruRecording } from './recording';
 import { ruAnnot } from './annot';
 import { ruPeople } from './people';
+import { ruFormer } from './former';
+import { ruPrivacy } from './privacy';
 import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
+import { ruMailbox } from './mailbox';
+import { ruDisk } from './disk';
+import { ruWiki } from './wiki';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
+import { ruHistory } from './history';
 import { ruMilestones } from './milestones';
+import { ruTaskNotify } from './taskNotify';
 import { ruAutomations } from './automations';
 import { ruPlan } from './plan';
+import { ruBilling } from './billing';
+import { ruTransitions } from './transitions';
+import { ruCustomPlan } from './customPlan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
@@ -58,6 +68,11 @@ export const ru = {
   ...ruMusic,
   ...ruMedia,
   ...ruPlan,
+  ...ruBilling,
+  ...ruTransitions,
+  ...ruCustomPlan,
+  ...ruFormer,
+  ...ruPrivacy,
   ...ruModeration,
   ...ruMail,
   ...ruRecording,
@@ -65,9 +80,14 @@ export const ru = {
   ...ruPicker,
   ...ruRoles,
   ...ruCalendar,
+  ...ruMailbox,
+  ...ruDisk,
+  ...ruWiki,
   ...ruBoards,
   ...ruBoards2,
+  ...ruHistory,
   ...ruMilestones,
+  ...ruTaskNotify,
   ...ruAutomations,
   // common
   'common.cancel': 'Отмена',
@@ -167,6 +187,7 @@ export const ru = {
   'ws.leaveConfirm': 'Покинуть «{name}»? Вернуться можно будет только по приглашению.',
   'ws.tabGeneral': 'Общие',
   'ws.tabMedia': 'Голос и стрим',
+  'ws.tabRooms': 'Комнаты',
   'ws.tabLibrary': 'Библиотека',
   'ws.tabInvites': 'Приглашения',
   'ws.tabDanger': 'Удаление',
@@ -243,10 +264,16 @@ export const ru = {
   'room.name': 'Название',
   'room.topic': 'Тема',
   'room.private': 'Приватная комната',
-  'room.privateHint': 'Видят только администраторы и те, кому вы дадите доступ в правах',
+  'room.picture': 'Картинка',
+  'room.pictureHint': 'Видна в списке комнат и в шапке вместо значка',
+  'room.pictureUpload': 'Загрузить картинку',
+  'room.iconChanged': '{name} изменил(а) картинку комнаты',
+  'room.iconRemoved': '{name} убрал(а) картинку комнаты',
+  'room.iconPreview': 'изменил(а) картинку комнаты',
+  'room.iconRemovedPreview': 'убрал(а) картинку комнаты',
+  'room.iconOpen': 'Открыть картинку комнаты',
   'room.accessCard': 'Доступ',
   'room.whoSees': 'Кто видит',
-  'room.whoSeesOwner': 'владелец, всегда',
   'room.whoSeesEmpty': 'В списке пока никого',
   'room.whoSeesAdd': 'Добавить',
   'room.whoSeesRemove': 'Убрать из списка: {name}',
@@ -257,6 +284,9 @@ export const ru = {
   'room.tabPerms': 'Права',
   'room.mediaText': '«Как в пространстве» — действует настройка пространства.',
   'room.markRead': 'Отметить прочитанным',
+  'room.swipeRead': 'Прочитано',
+  'room.swipeMute': 'Тихо',
+  'room.swipeUnmute': 'Звук',
   'room.delete': 'Удалить комнату',
   'room.deleteConfirm': 'Сообщения и файлы комнаты «{name}» будут удалены. Это действие нельзя отменить.',
 
@@ -386,6 +416,19 @@ export const ru = {
   'voice.pttCapsToggle': 'Caps Lock работает в режиме переключения: нажали — микрофон включён, нажали ещё раз — выключен. Для удержания разрешите «Мониторинг ввода» или включите «Caps Lock не меняет регистр».',
   'voice.pttToggleNote': 'Режим переключения: нажали — микрофон включён, нажали ещё раз — выключен.',
   'voice.pttRelease': 'Задержка отпускания',
+  'autoMute.label': 'Выключать микрофон, если я молчу',
+  'autoMute.menu': 'Выключать, если я молчу',
+  'autoMute.hint': 'Для тех, кто забывает выключить микрофон: после паузы он выключится, как кнопкой. Только в режиме активации голосом.',
+  'autoMute.off': 'Выкл.',
+  'autoMute.s30': '30 с',
+  'autoMute.m1': '1 мин',
+  'autoMute.m5': '5 мин',
+  'autoMute.m10': '10 мин',
+  'autoMute.toast30': 'Микрофон выключен: вы молчали 30 секунд',
+  'autoMute.toast60': 'Микрофон выключен: вы молчали 1 минуту',
+  'autoMute.toast300': 'Микрофон выключен: вы молчали 5 минут',
+  'autoMute.toast600': 'Микрофон выключен: вы молчали 10 минут',
+  'autoMute.unmute': 'Включить',
   'voice.pttReleaseHint': 'Сколько микрофон остаётся включённым после отпускания клавиши.',
   'voice.pttReleaseToggle': 'В режиме переключения не используется: микрофон выключается сразу при повторном нажатии.',
   'voice.pttLastKey': 'Последняя нажатая клавиша: {key} {dir} ({source}; код {code}, raw {raw})',
@@ -456,6 +499,8 @@ export const ru = {
   'settings.general': 'Основное',
   'settings.logout': 'Выйти',
   'settings.theme': 'Тема',
+  'settings.haptics': 'Виброотклик',
+  'settings.hapticsHint': 'Лёгкая вибрация при касаниях, переключателях, свайпах и долгом нажатии',
   'theme.dark': 'Тёмная',
   'theme.light': 'Светлая',
   'theme.system': 'Как в системе',
@@ -745,4 +790,6 @@ export const ru = {
   'main.webAppOpenLink': 'Открыть ссылку в браузере',
   'main.webAppCopyLink': 'Копировать адрес ссылки',
   'main.webAppOpenPage': 'Открыть страницу в браузере',
+  'main.checkoutTitle': 'Оплата',
+  'main.checkoutCancel': 'Отмена',
 } as const;

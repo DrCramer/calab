@@ -11,6 +11,7 @@ import (
 	"net/http"
 	netmail "net/mail"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -60,6 +61,7 @@ type Service struct {
 	emailGate    EmailGate
 	refresh      time.Duration
 	accessTL     time.Duration
+	guestIdle    time.Duration
 	now          func() time.Time
 	used         usedGens
 
@@ -82,11 +84,17 @@ type Service struct {
 	// has no seat left (ADR-0024, plans.Check); called inside the registration transaction.
 	// Optional.
 	CheckSeat func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error
+	// AdmitSeat is the billing hook of that join (ADR-0080, plans.Service.AdmitSeat): called in
+	// the same transaction after the membership row is written. Optional.
+	AdmitSeat func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error
+
+	// billingEnforced: BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED (billing suspension).
+	billingEnforced atomic.Bool
 }
 
 // NewService wires the auth service.
 func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publisher) *Service {
-	return &Service{
+	s := &Service{
 		db:           d,
 		redis:        r,
 		tokens:       NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
@@ -95,10 +103,16 @@ func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publis
 		emailGate:    NewEmailGate(cfg.EmailVerification),
 		refresh:      cfg.RefreshTokenTTL,
 		accessTL:     cfg.AccessTokenTTL,
+		guestIdle:    cfg.GuestInactivity,
 		now:          time.Now,
 		Policy:       &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(d.Q, cfg.IdentityEntitlements())},
 		entitlements: cfg.IdentityEntitlements(),
 	}
+	if s.guestIdle <= 0 {
+		s.guestIdle = DefaultGuestInactivity
+	}
+	s.billingEnforced.Store(s.entitlements.BillingEnforcement)
+	return s
 }
 
 // EmailGate is the configured EMAIL_VERIFICATION policy for actions (ADR-0065).
@@ -190,11 +204,15 @@ func ErrInviteInvalid() error { return errInviteInvalid }
 func ErrInviteEmailMismatch() error { return errInviteEmail }
 
 // Guest accounts (ADR-0016): short sessions renewed by activity; the account is removed
-// (anonymised) after GuestInactivity without a refresh.
+// (anonymised) after GuestInactivity (GUEST_INACTIVITY, ADR-0098) without a refresh.
 const (
 	GuestSessionTTL = 24 * time.Hour
-	GuestInactivity = 7 * 24 * time.Hour
+	// DefaultGuestInactivity applies when the config leaves GUEST_INACTIVITY zero.
+	DefaultGuestInactivity = 48 * time.Hour
 )
+
+// GuestInactivity is how long a guest (account or guest membership) lives without activity.
+func (s *Service) GuestInactivity() time.Duration { return s.guestIdle }
 
 // NewGuest creates a guest account named name and its first session inside q.
 func (s *Service) NewGuest(ctx context.Context, q *sqlc.Queries, name string, c Client) (sqlc.User, *v1.AuthTokens, error) {
@@ -202,7 +220,7 @@ func (s *Service) NewGuest(ctx context.Context, q *sqlc.Queries, name string, c 
 	if err != nil {
 		return sqlc.User{}, nil, err
 	}
-	exp := s.now().Add(GuestInactivity)
+	exp := s.now().Add(s.guestIdle)
 	u, err := q.CreateGuestUser(ctx, sqlc.CreateGuestUserParams{DisplayName: name, Settings: settings, GuestExpiresAt: &exp})
 	if err != nil {
 		return u, nil, err
@@ -402,6 +420,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			if err := moderation.CheckSuspended(ctx, q, *gate); err != nil {
 				return err
 			}
+			if err := s.CheckBillingOpen(ctx, q, *gate); err != nil {
+				return err
+			}
 			if err := moderation.CheckBan(ctx, q, *gate, user.ID, &email); err != nil {
 				return err
 			}
@@ -415,6 +436,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err
+			}
+			if s.AdmitSeat != nil {
+				if err := s.AdmitSeat(ctx, q, inv.WorkspaceID, user.ID, m.Role); err != nil {
+					return err
+				}
 			}
 			joined = &m
 		}
@@ -634,8 +660,8 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		}
 		ttl := s.refresh
 		if user.IsGuest && user.GuestExpiresAt != nil { // promoted guests get normal sessions
-			ttl = GuestSessionTTL // renewed by activity; the account itself lives 7 days past the last refresh
-			if err := q.TouchGuest(ctx, sqlc.TouchGuestParams{ID: user.ID, GuestExpiresAt: ptrTime(now.Add(GuestInactivity))}); err != nil {
+			ttl = GuestSessionTTL // renewed by activity; the account itself lives GuestInactivity past the last refresh
+			if err := q.TouchGuest(ctx, sqlc.TouchGuestParams{ID: user.ID, GuestExpiresAt: ptrTime(now.Add(s.guestIdle))}); err != nil {
 				return err
 			}
 		}

@@ -5,8 +5,75 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'profile';
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'profile'];
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile';
+/** Default order of all sections (rail order without mail, ADR-0095 addendum 2026-10-14). */
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile'];
+
+/** How many tabs sit on the bar itself; the rest live behind «Ещё» (ADR-0095). */
+export const PINNED_COUNT = 4;
+/** Candidates for the pinned set, in the order they top up a short list. */
+export const DEFAULT_PINNED: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar'];
+
+/**
+ * Pin toggle (addendum 2026-10-14): only changes the set, never the order. Pinning with the bar
+ * full is refused (`full`, the card disables the pin with a hint); unpinning is always possible.
+ */
+export function togglePin(pinned: readonly PhoneTab[], tab: PhoneTab): { pinned: PhoneTab[]; full?: boolean } {
+  if (pinned.includes(tab)) return { pinned: pinned.filter((x) => x !== tab) };
+  if (pinned.length >= PINNED_COUNT) return { pinned: [...pinned], full: true };
+  return { pinned: [...pinned, tab] };
+}
+
+const known = (v: unknown): PhoneTab[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is PhoneTab => PHONE_TABS.includes(x as PhoneTab)))] : []);
+
+/** A stored pinned set is valid when it holds distinct known tabs, at most `PINNED_COUNT` (fewer is fine: the user unpinned). Not an array = default. */
+export function normalizePinned(v: unknown): PhoneTab[] {
+  return Array.isArray(v) ? known(v).slice(0, PINNED_COUNT) : [...DEFAULT_PINNED];
+}
+
+/** Migration from the three-cell bar (prefs v5): a full old list of 3 gets the next default appended. */
+export function migratePinned(v: unknown): PhoneTab[] {
+  const out = normalizePinned(v);
+  if (out.length === PINNED_COUNT - 1) {
+    const next = DEFAULT_PINNED.find((x) => !out.includes(x));
+    if (next) out.push(next);
+  }
+  return out.length === 0 ? [...DEFAULT_PINNED] : out;
+}
+
+/**
+ * The full order of the sections (pinned and not): stored ids first, the missing ones after in the
+ * default order. Migration passes the old pinned list as `lead` so the bar keeps its order.
+ */
+export function normalizeOrder(v: unknown, lead: readonly PhoneTab[] = []): PhoneTab[] {
+  const out = [...new Set([...lead, ...known(v)])];
+  for (const t of PHONE_TABS) if (!out.includes(t)) out.push(t);
+  return out;
+}
+
+/** Moves `from` onto the place of `to` (drag and drop of a card row). */
+export function moveTab(order: readonly PhoneTab[], from: PhoneTab, to: PhoneTab): PhoneTab[] {
+  const a = order.indexOf(from);
+  const b = order.indexOf(to);
+  if (a < 0 || b < 0 || a === b) return [...order];
+  const out = [...order];
+  out.splice(a, 1);
+  out.splice(b, 0, from);
+  return out;
+}
+
+/**
+ * The tabs shown on the bar for an account: pinned and available, in the `order`, topped up from
+ * the available ones in that order (a guest has few sections): at most `PINNED_COUNT`. `more` =
+ * something is hidden, so «Ещё» is shown.
+ */
+export function barTabs(pinned: readonly PhoneTab[], available: readonly PhoneTab[], order: readonly PhoneTab[] = PHONE_TABS): { bar: PhoneTab[]; more: boolean } {
+  const ordered = order.filter((t) => available.includes(t));
+  const bar = ordered.filter((t) => pinned.includes(t)).slice(0, PINNED_COUNT);
+  for (const t of ordered) if (bar.length < PINNED_COUNT && !bar.includes(t)) bar.push(t);
+  const sorted = ordered.filter((t) => bar.includes(t));
+  return { bar: sorted, more: available.some((t) => !sorted.includes(t)) };
+}
 
 /**
  * A pushed screen. Chats carry their ids (back from room B shows room A again); the other kinds
@@ -22,6 +89,10 @@ export type PhoneScreen =
   | { kind: 'board'; ws: string }
   | { kind: 'task'; id: string }
   | { kind: 'archived'; room: string }
+  /** A folder of «Диск» (ADR-0094 §8) or, with `trash`, its trash; the workspace is the open one. */
+  | { kind: 'disk'; folderId: string; trash?: boolean }
+  /** A page of «Вики» (ADR-0096 §7), or with `trash` its trash (pageId ''); the workspace is the open one. */
+  | { kind: 'wiki'; pageId: string; trash?: boolean }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
    * as a screen: `section` null = the list of sections (also the search), else that section.
@@ -71,6 +142,10 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.id === (b as typeof a).id;
     case 'settings':
       return a.section === (b as typeof a).section;
+    case 'disk':
+      return a.folderId === (b as typeof a).folderId && !!a.trash === !!(b as typeof a).trash;
+    case 'wiki':
+      return a.pageId === (b as typeof a).pageId && !!a.trash === !!(b as typeof a).trash;
     case 'search':
     case 'findTime':
       return true;

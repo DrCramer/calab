@@ -13,20 +13,24 @@ import {
   type BoardStatus,
   type BoardWebhook,
   type Role,
+  STATUS_ICONS,
+  resolveStatusIcon,
+  type StatusIconToken,
 } from '@calaba/protocol';
-import { Archive, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Archive, Check, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ColorPicker, GridPicker } from '../../components/ColorPicker';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { useUi } from '../../stores/ui';
-import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
-import { accessLevelOf, accessSteps, compactDrafts, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { accessLevelOf, accessSteps, compactDrafts, isPrivateObject, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { planHas } from '../../lib/plan';
 import { isFullRole } from '../../lib/roles';
 import {
@@ -63,12 +67,13 @@ import { MemberPicker } from '../people/MemberPicker';
 import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { CommitInput } from '../settings/CommitInput';
 import { AccessLevelPicker } from '../workspace/AccessLevel';
+import { ChosenList, PrivateFixedRows, TakeOverButton, chosenIds, useOwnerSeesPrivate, type Chosen } from '../people/PrivateAccess';
 import { TriToggle } from '../workspace/RoomDialogs';
 import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
 import { RulesTab } from './Rules';
 import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, sortedStatuses } from './model';
-import { Dot, PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss } from './visuals';
+import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /**
  * Board settings (ADR-0042 §5): «Основное» (name, key — locked after the first task, emoji,
@@ -175,6 +180,7 @@ function FeaturesTab({ board }: { board: Board }): ReactNode {
           ))}
         </div>
       </Card>
+      {featureOn(disabled, BoardFeature.APPROVALS) && <ApprovalNotifyCard boardId={board.id} delay={board.approvalNotifyDelaySeconds} />}
       <Card title={t('boards.scale.card')} footer={t('boards.scale.footer')}>
         <Row label={t('boards.scale.label')}>
           <Select value={String(scale)} onChange={(e) => void setEstimateScale(board.id, Number(e.target.value))} aria-label={t('boards.scale.label')} data-testid="estimate-scale">
@@ -189,6 +195,34 @@ function FeaturesTab({ board }: { board: Board }): ReactNode {
     </>
   );
 }
+
+/** The delays of the approval notice (ADR-0082), seconds; the server refuses others. */
+const APPROVAL_NOTIFY_DELAYS = [0, 60, 300, 900, 1800, 3600] as const;
+
+const delayLabel = (secs: number): string =>
+  secs === 0 ? t('boards.approvalNotify.now') : secs === 3600 ? t('boards.approvalNotify.hour') : t('boards.approvalNotify.min', { n: secs / 60 });
+
+/** «Уведомлять согласующих» (ADR-0082): shown while APPROVALS is on; one PATCH per change. */
+const ApprovalNotifyCard = memo(function ApprovalNotifyCard({ boardId, delay }: { boardId: string; delay: number }): ReactNode {
+  return (
+    <Card title={t('boards.approvalNotify.card')} footer={t('boards.approvalNotify.hint')}>
+      <Row label={t('boards.approvalNotify.label')}>
+        <Select
+          value={String(delay)}
+          onChange={(e) => void patch(boardId, { approvalNotifyDelaySeconds: Number(e.target.value) })}
+          aria-label={t('boards.approvalNotify.label')}
+          data-testid="approval-notify-delay"
+        >
+          {APPROVAL_NOTIFY_DELAYS.map((d) => (
+            <option key={d} value={d}>
+              {delayLabel(d)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+    </Card>
+  );
+});
 
 // ------------------------------------------------------------------ webhook (ADR-0058 §4)
 
@@ -320,31 +354,45 @@ function WebhookStatus({ hook, board }: { hook: BoardWebhook; board: Board }): R
   );
 }
 
-function ColorDot({ color, onPick }: { color: number; onPick: (c: number) => void }): ReactNode {
-  const [open, setOpen] = useState(false);
+function ColorDot({ color, onPick, testId }: { color: number; onPick: (c: number) => void; testId?: string }): ReactNode {
+  return <ColorPicker value={color} palette={PALETTE} onPick={onPick} label={t('boards.color')} colorName={colorName} colorCss={colorCss} testId={testId} />;
+}
+
+/** The icon of a status (ADR-0093): a grid of the tokens, six in a row, and «По типу» (''). */
+function StatusIconPicker({ status, onPick, testId }: { status: BoardStatus; onPick: (icon: string) => void; testId?: string }): ReactNode {
+  const own = (STATUS_ICONS as readonly string[]).includes(status.icon) ? (status.icon as StatusIconToken) : undefined;
+  const name = (tok: StatusIconToken): string => t(`boards.icon.${tok}`);
   return (
-    <span className="relative">
-      <button type="button" aria-label={t('boards.color')} onClick={() => setOpen(!open)} className="grid size-6 place-items-center rounded-full hover:bg-hover">
-        <Dot color={color} size={12} />
-      </button>
-      {open ? (
-        <div className="mat-popover absolute left-0 top-7 z-[var(--z-modal-popover)] grid grid-cols-6 gap-1.5 rounded-[var(--radius-card)] p-2">
-          {PALETTE.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-label={colorCss(c)}
-              onClick={() => {
-                setOpen(false);
-                onPick(c);
-              }}
-              className={cx('size-6 rounded-full', c === color && 'ring-2 ring-fg ring-offset-2 ring-offset-[var(--color-popover)]')}
-              style={{ background: colorCss(c) }}
-            />
-          ))}
-        </div>
-      ) : null}
-    </span>
+    <GridPicker<StatusIconToken>
+      items={STATUS_ICONS}
+      value={own}
+      cell={32}
+      label={t('boards.icon')}
+      itemLabel={name}
+      renderItem={(tok) => <StatusIcon type={status.type} color={status.color} icon={tok} size={16} />}
+      onPick={(tok) => tok !== status.icon && onPick(tok)}
+      testId={testId}
+      trigger={
+        <button type="button" aria-label={`${t('boards.icon')}: ${name(resolveStatusIcon(status.icon, status.type))}`} className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-hover data-[state=open]:bg-active">
+          <StatusIcon type={status.type} color={status.color} icon={status.icon} />
+        </button>
+      }
+      footer={(close) => (
+        <button
+          type="button"
+          aria-pressed={!status.icon}
+          onClick={() => {
+            close();
+            if (status.icon) onPick('');
+          }}
+          className={cx('mt-2 flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-body outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent', !status.icon ? 'text-fg' : 'text-muted')}
+        >
+          <StatusIcon type={status.type} color={status.color} />
+          <span className="flex-1 text-start">{t('boards.icon.byType')}</span>
+          {!status.icon ? <Check className="size-4" aria-hidden /> : null}
+        </button>
+      )}
+    />
   );
 }
 
@@ -355,11 +403,13 @@ function StatusesTab({ board }: { board: Board }): ReactNode {
     <Card title={t('boards.set.statuses')} footer={t('boards.set.statusesHint')}>
       <div className="flex flex-col" data-testid="statuses-editor">
         {list.map((s, i) => (
-          <div key={s.id} className="flex h-11 items-center gap-2 border-b border-[var(--color-card-line)] px-3 last:border-b-0" data-settings-row>
-            <ColorDot color={s.color} onPick={(color) => void updateStatus(board.id, s.id, { color })} />
-            <StatusIcon type={s.type} color={s.color} />
-            <CommitInput className="w-44" label={t('boards.set.name')} value={s.name} maxLength={32} onCommit={(v) => (v ? updateStatus(board.id, s.id, { name: v }).then(() => undefined) : undefined)} />
-            <Select className="w-36" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
+          // A phone has no room for one line: the name takes the first, the type and actions the second.
+          <div key={s.id} className="flex h-11 items-center gap-2 border-b border-[var(--color-card-line)] px-3 last:border-b-0 mobile:h-auto mobile:flex-wrap mobile:gap-y-1 mobile:py-1.5" data-settings-row>
+            <ColorDot color={s.color} onPick={(color) => void updateStatus(board.id, s.id, { color })} testId={i === 0 ? 'status-color-picker' : undefined} />
+            <StatusIconPicker status={s} onPick={(icon) => void updateStatus(board.id, s.id, { icon })} testId={i === 0 ? 'status-icon-picker' : undefined} />
+            <CommitInput className="w-44 mobile:w-auto mobile:min-w-0 mobile:flex-1" label={t('boards.set.name')} value={s.name} maxLength={32} onCommit={(v) => (v ? updateStatus(board.id, s.id, { name: v }).then(() => undefined) : undefined)} />
+            <span className="hidden mobile:block mobile:basis-full" aria-hidden />
+            <Select className="w-36 mobile:w-auto mobile:min-w-32" value={String(s.type)} onChange={(e) => void updateStatus(board.id, s.id, { type: Number(e.target.value) })} aria-label={t('boards.statusType')}>
               {STATUS_TYPES.map((ty) => (
                 <option key={ty} value={ty}>
                   {t(STATUS_TYPE_LABEL[ty] ?? 'boards.type.unstarted')}
@@ -525,9 +575,14 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   const [selected, setSelected] = useState(`${PermissionTargetType.ROLE}:${memberRole}`);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
-  // A restricted board (ADR-0048): admins are plain members there — their role becomes a target; only the owner is fixed.
-  const restricted = board.restricted;
-  const targetable = useCallback((r: Pick<Role, 'builtin'>): boolean => (restricted ? r.builtin !== WorkspaceRole.OWNER : !isFullRole(r)), [restricted]);
+  // A private board (ADR-0058 addendum 2026-10-14): admins and the owner are plain members there —
+  // their roles become targets; the owner is fixed only while «Владелец видит приватное» is on.
+  const restricted = isPrivateObject(board);
+  const ownerFixed = useOwnerSeesPrivate(board.workspaceId);
+  const targetable = useCallback(
+    (r: Pick<Role, 'builtin'>): boolean => (restricted ? !(ownerFixed && r.builtin === WorkspaceRole.OWNER) : !isFullRole(r)),
+    [ownerFixed, restricted],
+  );
   const targets = useMemo(() => {
     const rs = roles.filter((r) => targetable(r) && r.builtin !== WorkspaceRole.GUEST).map((r) => ({ key: `${PermissionTargetType.ROLE}:${r.id}`, type: PermissionTargetType.ROLE, id: r.id, label: `@${roleName(r)}`, role: r }));
     const us = drafts.filter((d) => d.targetType === PermissionTargetType.USER).map((d) => ({ key: key(d), type: d.targetType, id: d.targetId, label: memberName(board.workspaceId, d.targetId), role: undefined }));
@@ -591,13 +646,26 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   }, [drafts, members, roles, targetable]);
   return (
     <>
-      {/* ADR-0048: Все участники / По списку / По списку, без администраторов (this tab is MANAGE_BOARD's). */}
-      <Card title={t('boards.access')} footer={board.isPrivate ? t('boards.set.privateHint') : undefined}>
-        <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} />
-        {restricted ? <TaskScopedCount boardId={board.id} /> : null}
+      {/* ADR-0058 addendum 2026-10-14: «Для всех» / «Только выбранные» (this tab is MANAGE_BOARD's). */}
+      <Card title={t('boards.access')} footer={restricted ? t('boards.set.privateHint') : undefined}>
+        <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} kind="board" workspaceId={board.workspaceId} />
+        {restricted ? (
+          <div className="flex flex-col gap-1 px-3 pb-2" data-testid="board-access-fixed">
+            <PrivateFixedRows workspaceId={board.workspaceId} creatorId={board.createdBy} isPrivate />
+            <TaskScopedCount boardId={board.id} />
+            <TakeOverButton
+              workspaceId={board.workspaceId}
+              itemOwnerId={board.createdBy}
+              isPrivate
+              name={board.name}
+              run={() => boardsApi.takeOver(board.id).then((r) => r.board && useBoards.getState().upsertBoard(r.board))}
+              testId="board-take-over"
+            />
+          </div>
+        ) : null}
       </Card>
-      <div className="flex gap-4" data-testid="board-access">
-        <div className="flex w-52 shrink-0 flex-col gap-0.5">
+      <div className="flex gap-4 mobile:flex-col" data-testid="board-access">
+        <div className="flex w-52 shrink-0 flex-col gap-0.5 mobile:w-full">
           {targets.map((x) => {
             const on = current?.key === x.key;
             const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
@@ -746,13 +814,22 @@ export function CreateBoardDialog({ workspaceId, onClose }: { workspaceId: strin
   const [name, setName] = useState('');
   const [boardKey, setKey] = useState('');
   const [emoji, setEmoji] = useState('📋');
-  const [priv, setPriv] = useState(false);
+  const [level, setLevel] = useState<AccessLevel>('all');
+  const [chosen, setChosen] = useState<Chosen[]>([]);
+  const priv = level === 'private';
   const [tpl, setTpl] = useState<BoardTemplate>(BoardTemplate.SIMPLE);
   const [busy, setBusy] = useState(false);
   const submit = (): void => {
     if (!name.trim()) return;
     setBusy(true);
-    void createBoard(workspaceId, { name: name.trim(), key: boardKey.trim().toUpperCase(), emoji, isPrivate: priv, template: tpl }).then((b) => {
+    void createBoard(workspaceId, {
+      name: name.trim(),
+      key: boardKey.trim().toUpperCase(),
+      emoji,
+      isPrivate: priv,
+      template: tpl,
+      ...(priv ? chosenIds(chosen) : {}),
+    }).then((b) => {
       setBusy(false);
       if (!b) return;
       onClose();
@@ -812,7 +889,15 @@ export function CreateBoardDialog({ workspaceId, onClose }: { workspaceId: strin
             </label>
           ))}
         </fieldset>
-        <Switch checked={priv} onChange={setPriv} label={t('boards.set.private')} hint={t('boards.set.privateHint')} />
+        {/* Two levels (ADR-0058 addendum 2026-10-14): «Для всех» / «Только выбранные» with the people and roles to add. */}
+        <div className="flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]">
+          <AccessLevelPicker value={level} onChange={setLevel} disabled={busy} kind="board" workspaceId={workspaceId} />
+          {priv ? (
+            <div className="px-3 pb-3">
+              <ChosenList workspaceId={workspaceId} value={chosen} onChange={setChosen} noGuests testId="board-create-chosen" />
+            </div>
+          ) : null}
+        </div>
       </form>
     </Modal>
   );

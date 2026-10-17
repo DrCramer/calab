@@ -204,6 +204,8 @@ interface FakePipeline {
   setDuck: ReturnType<typeof vi.fn>;
   setDenoise: ReturnType<typeof vi.fn>;
   onEnded?: () => void;
+  /** The worklet's 20 ms level / VAD reports (tests feed speech and silence through it). */
+  onReport?: (r: { rms: number; vad: number }) => void;
 }
 /** Device ids that are unplugged (getUserMedia with {exact} fails). */
 const gone = new Set<string>();
@@ -211,7 +213,7 @@ const pipelines: FakePipeline[] = [];
 let gate: Promise<void> | null = null; // when set, MicPipeline.start waits for it
 vi.mock('../lib/media/micPipeline', () => ({
   MicPipeline: {
-    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; musician?: boolean; duckable?: boolean; onEnded?: () => void }) => {
+    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; musician?: boolean; duckable?: boolean; onEnded?: () => void; onReport?: (r: { rms: number; vad: number }) => void }) => {
       if (gate) await gate;
       if (opts.deviceId && gone.has(opts.deviceId)) throw Object.assign(new Error('gone'), { name: 'OverconstrainedError' });
       const track = new FakeTrack();
@@ -228,6 +230,7 @@ vi.mock('../lib/media/micPipeline', () => ({
         setDenoise: vi.fn(),
         stop: vi.fn(() => track.stop()),
         ...(opts.onEnded ? { onEnded: opts.onEnded } : {}),
+        ...(opts.onReport ? { onReport: opts.onReport } : {}),
       };
       pipelines.push(p);
       return p;
@@ -252,6 +255,8 @@ vi.mock('../lib/media/opusTierPublish', () => ({
   applyMicTier: (r: unknown, s: unknown, t: { kbps: number; dtx?: boolean; stereo?: boolean }) => applyMicTier(r, s, t),
 }));
 const playSound = vi.fn((_name: string) => undefined);
+const phone = vi.hoisted(() => ({ on: false }));
+vi.mock('../lib/mobile', () => ({ isMobileNow: () => phone.on }));
 vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
 const pushToast = vi.hoisted(() => vi.fn());
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() }, useToasts: { getState: () => ({ push: pushToast }) } }));
@@ -437,6 +442,17 @@ describe('VoiceEngine', () => {
     expect(useUi.getState().lastRoom['ws']).toBe('A');
     await voice.join('dm', '', { call: true });
     expect(useUi.getState().lastRoom['ws']).toBe('A');
+  });
+
+  it('a join with the boards open keeps them and only remembers the room (issue #127)', async () => {
+    const { useUi } = await import('../stores/ui');
+    const { useBoardsUi } = await import('../stores/boardsUi');
+    useUi.getState().openRoom('ws', 'chat');
+    useBoardsUi.getState().setActive(true);
+    await voice.join('A', 'ws');
+    expect(useBoardsUi.getState().active).toBe(true);
+    expect(useUi.getState().lastRoom['ws']).toBe('A');
+    useBoardsUi.getState().setActive(false);
   });
 
   it('optimistic join rolled back: a failed /join takes me out of the room with a toast', async () => {
@@ -1335,6 +1351,20 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       expect(removed).toHaveBeenCalled();
     });
 
+    it('no PTT cue on the phone, whatever the setting', async () => {
+      usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: 0, pttBinding: { kind: 'key', code: 66, label: 'F8', mode: 'hold' } });
+      await voice.join('A', 'ws');
+      await settle();
+      const hold = (down: boolean): void => (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down });
+      phone.on = true;
+      playSound.mockClear();
+      hold(true);
+      hold(false);
+      phone.on = false;
+      expect(playSound).not.toHaveBeenCalled();
+      usePrefs.getState().setPrefs({ micMode: 'voice' });
+    });
+
     it('PTT while deafened: nothing on air, no activation sound (#12)', async () => {
       usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: 0, pttBinding: { kind: 'key', code: 66, label: 'F8', mode: 'hold' } });
       await voice.join('A', 'ws');
@@ -2171,5 +2201,115 @@ describe('tabs of one browser share the voice seat (#40)', () => {
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
     expect(leaveVoice).not.toHaveBeenCalled();
     expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('auto-mute after silence («Выключать микрофон, если я молчу»)', () => {
+  /** 20 ms worklet frames: speech opens the VAD gate (2 frames), silence closes it after the 400 ms hangover. */
+  const speak = (): void => {
+    for (let i = 0; i < 3; i++) pipelines.at(-1)?.onReport?.({ rms: 0.5, vad: -1 });
+  };
+  const hush = (): void => {
+    for (let i = 0; i < 25; i++) pipelines.at(-1)?.onReport?.({ rms: 0, vad: -1 });
+  };
+  const running = (): boolean => (voice as unknown as { autoMute: { running: boolean } }).autoMute.running;
+  const join = async (): Promise<void> => {
+    await voice.join('A', 'ws');
+    await vi.waitFor(() => expect(FakeRoom.all.at(-1)?.published.length).toBe(1));
+  };
+
+  it('off by default: no timer in voice', async () => {
+    await join();
+    expect(running()).toBe(false);
+    await voice.leave();
+  });
+
+  it('mutes like the button after the period of silence, once, with an undo toast', async () => {
+    usePrefs.getState().setPrefs({ autoMuteSec: 30 });
+    await join();
+    expect(running()).toBe(true);
+    updateSelf.mockClear();
+    playSound.mockClear();
+    pushToast.mockClear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(useVoice.getState().muted).toBe(true);
+    expect(playSound).toHaveBeenCalledWith('mute');
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
+    expect(running()).toBe(false);
+    const [kind, text, action] = pushToast.mock.calls.at(-1) as [string, string, { run: () => void }];
+    expect(kind).toBe('info');
+    expect(text).toBe('Микрофон выключен: вы молчали 30 секунд');
+    // Speech does not turn the mic back on; «Включить» does.
+    speak();
+    expect(useVoice.getState().muted).toBe(true);
+    action.run();
+    expect(useVoice.getState().muted).toBe(false);
+    expect(running()).toBe(false); // the gate is still open from that speech: on air
+    hush();
+    expect(running()).toBe(true); // armed again for the next silence
+    await voice.leave();
+  });
+
+  it('speech resets the countdown; silence starts it from the full period', async () => {
+    usePrefs.getState().setPrefs({ autoMuteSec: 30 });
+    await join();
+    await vi.advanceTimersByTimeAsync(25_000);
+    speak();
+    expect(running()).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000); // a long talk: never muted
+    hush();
+    expect(running()).toBe(true);
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(useVoice.getState().muted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(useVoice.getState().muted).toBe(true);
+    await voice.leave();
+  });
+
+  it('not armed in push-to-talk, while muted or deafened; cancelled on leave and when turned off', async () => {
+    usePrefs.getState().setPrefs({ autoMuteSec: 30, micMode: 'ptt' });
+    await join();
+    expect(running()).toBe(false);
+    usePrefs.getState().setPrefs({ micMode: 'voice' });
+    expect(running()).toBe(true);
+    voice.toggleMute();
+    expect(running()).toBe(false);
+    voice.toggleMute();
+    expect(running()).toBe(true);
+    voice.toggleDeafen();
+    expect(running()).toBe(false);
+    voice.toggleDeafen();
+    expect(running()).toBe(true);
+    usePrefs.getState().setPrefs({ autoMuteSec: 0 });
+    expect(running()).toBe(false);
+    usePrefs.getState().setPrefs({ autoMuteSec: 60 });
+    expect(running()).toBe(true);
+    await voice.leave();
+    expect(running()).toBe(false);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(useVoice.getState().muted).toBe(false);
+  });
+
+  it('a VAD edge touches only the speaking / on-air keys: no prefs change, no new voice keys', async () => {
+    usePrefs.getState().setPrefs({ autoMuteSec: 300 });
+    await join();
+    const changed = new Set<string>();
+    const unsubVoice = useVoice.subscribe((s, p) => {
+      for (const k of Object.keys(s) as (keyof typeof s)[]) if (s[k] !== p[k]) changed.add(k);
+    });
+    let prefsChanges = 0;
+    const unsubPrefs = usePrefs.subscribe(() => {
+      prefsChanges++;
+    });
+    speak();
+    hush();
+    speak();
+    hush();
+    await vi.advanceTimersByTimeAsync(100); // the speaking ring's hold + batch
+    unsubVoice();
+    unsubPrefs();
+    expect(prefsChanges).toBe(0);
+    expect([...changed].every((k) => ['transmitting', 'speaking', 'gateOpen'].includes(k))).toBe(true);
+    await voice.leave();
   });
 });

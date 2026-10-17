@@ -27,7 +27,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { confirmDeleteDm } from './dmActions';
 import { BotBadge } from '../people/MemberBits';
-import { SWIPE_ACTION_PX, useRowSwipe } from './rowSwipe';
+import { SWIPE_ACTION_PX, useRowSwipe } from '../../lib/rowSwipe';
 
 /**
  * «Личные» column (ADR-0020, Discord Home): «Найти или начать беседу» on top, then the DMs by
@@ -64,11 +64,11 @@ export function DmSidebar(): ReactNode {
           <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />
         </ColumnHeader>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-1 mobile:pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-1 mobile:px-0 mobile:pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
         {guest ? null : <NotesSection />}
         <div className="group/cat flex h-9 items-center pr-1 pt-2 mobile:h-11 mobile:pr-0 mobile:pt-0">
-          <h2 className={cx('min-w-0 flex-1 truncate pl-2', GROUP_LABEL)}>{t('dm.list')}</h2>
+          <h2 className={cx('min-w-0 flex-1 truncate pl-2 mobile:pl-3', GROUP_LABEL)}>{t('dm.list')}</h2>
         </div>
         {list.length === 0 && archived.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-body text-muted" data-testid="dm-empty">
@@ -79,7 +79,7 @@ export function DmSidebar(): ReactNode {
             </Button>
           </div>
         ) : (
-          <ul className="mt-0.5 flex flex-col gap-px" data-testid="dm-list">
+          <ul className="mt-0.5 flex flex-col gap-px mobile:mt-0 mobile:gap-0" data-testid="dm-list">
             {list.map((e) => (
               <DmRow key={e.roomId} entry={e} />
             ))}
@@ -104,7 +104,7 @@ function ArchiveSection({ list }: { list: DmEntry[] }): ReactNode {
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           className={cx(
-            'flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-11 mobile:pl-1.5',
+            'flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-11 mobile:pl-3',
             GROUP_LABEL,
           )}
         >
@@ -116,7 +116,7 @@ function ArchiveSection({ list }: { list: DmEntry[] }): ReactNode {
         </button>
       </div>
       {expanded ? (
-        <ul className="mt-0.5 flex flex-col gap-px" data-testid="dm-archive-list">
+        <ul className="mt-0.5 flex flex-col gap-px mobile:mt-0 mobile:gap-0" data-testid="dm-archive-list">
           {list.map((e) => (
             <DmRow key={e.roomId} entry={e} />
           ))}
@@ -169,14 +169,15 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
       <li
         className={cx(
           'group/row relative flex items-center transition-colors duration-[var(--motion-fast)]',
-          // Desktop (owner, 07.10): 48 px, radius 8, the column's row plates; the phone keeps its row.
-          phone ? 'h-[46px] rounded-[var(--radius-row)]' : 'h-12 rounded-[var(--radius-card)]',
+          // Desktop (owner, 07.10): 48 px, radius 8, the column's row plates. Phone (owner, 13.10): the
+          // room row's 68 px chat-list geometry (ADR-0073 §3), full width, no plate.
+          phone ? 'h-[68px]' : 'h-12 rounded-[var(--radius-card)]',
           over
             ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
             : active
               ? ROW_SELECTED
               : phone
-                ? 'hover:bg-hover'
+                ? 'active:bg-hover'
                 : ROW_HOVER,
         )}
         data-testid="dm-row"
@@ -191,7 +192,7 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
               swipe.close();
               void setDmArchived(roomId, !archived);
             }}
-            className="absolute inset-y-0 right-0 flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-r-[var(--radius-row)] bg-accent-strong px-1 text-center text-micro font-medium text-accent-fg"
+            className="absolute inset-y-0 right-0 flex flex-col items-center justify-center gap-0.5 overflow-hidden bg-accent-strong px-1 text-center text-micro font-medium text-accent-fg"
             style={{ width: Math.min(-swipe.offset, SWIPE_ACTION_PX) }}
             data-testid="dm-swipe-action"
           >
@@ -206,14 +207,22 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
           aria-label={[name, count > 0 ? plural('shell.unreadMentions', count) : unread ? t('ws.unread') : ''].filter(Boolean).join(', ')}
           style={shifted ? { marginRight: -swipe.offset } : undefined}
           className={cx(
-            'flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-[var(--radius-row)] pl-2 pr-2 text-left',
+            'flex h-full min-w-0 flex-1 items-center text-left',
+            phone ? 'select-none gap-3 px-3' : 'gap-2.5 rounded-[var(--radius-row)] pl-2 pr-2',
             !swipe.dragging && 'transition-[margin] duration-[var(--motion-fast)]',
           )}
         >
-          <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={32} presence />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span className={cx('min-w-0 truncate text-list leading-5', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
+          <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={phone ? 44 : 32} presence />
+          <span className={cx('flex min-w-0 flex-1 flex-col', phone && 'gap-0.5 border-b border-line py-2.5 [li:last-child_&]:border-b-0')}>
+            <span className={cx('flex min-w-0 gap-2', phone ? 'h-5 items-center' : 'items-baseline')}>
+              <span
+                className={cx(
+                  'min-w-0 truncate text-list leading-5',
+                  phone ? 'text-fg' : bright ? 'text-fg' : 'text-muted group-hover/row:text-fg',
+                  unread && !active && 'font-semibold',
+                )}
+                title={name}
+              >
                 {name}
               </span>
               {/* grow + shrink-0: the badge / status keeps its width and the name truncates; with min-w-0
@@ -228,10 +237,10 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
                   <StatusEmoji userId={peerId} />
                 </span>
               )}
-              <span className="shrink-0 text-micro text-faint">{time}</span>
+              <span className={cx('shrink-0 text-micro', phone ? cx('tabular-nums', unread ? 'text-fg' : 'text-faint') : 'text-faint')}>{time}</span>
             </span>
-            <span className="flex min-w-0 items-center gap-2">
-              <span className={cx('min-w-0 flex-1 truncate text-caption leading-4', unread && !active ? 'text-fg' : 'text-muted')}>{line}</span>
+            <span className={cx('flex min-w-0 items-center gap-2', phone && 'h-5')}>
+              <span className={cx('min-w-0 flex-1 truncate text-caption', phone ? 'leading-5' : 'leading-4', unread && !active ? 'text-fg' : 'text-muted')}>{line}</span>
               {count > 0 ? <CountBadge count={count} aria-hidden /> : null}
             </span>
           </span>

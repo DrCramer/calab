@@ -4,9 +4,11 @@ package calaba.v1;
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/achievement.proto";
 import "calaba/v1/automations.proto";
+import "calaba/v1/billing.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
+import "calaba/v1/disk.proto";
 import "calaba/v1/event.proto";
 import "calaba/v1/invite.proto";
 import "calaba/v1/identity.proto";
@@ -19,6 +21,7 @@ import "calaba/v1/room.proto";
 import "calaba/v1/sound.proto";
 import "calaba/v1/sticker.proto";
 import "calaba/v1/user.proto";
+import "calaba/v1/wiki.proto";
 import "calaba/v1/workspace.proto";
 
 // Gateway opcodes (docs/05-realtime-protocol.md). DISPATCH is 8 (not 0 as in Discord):
@@ -280,13 +283,34 @@ message DispatchEvent {
     TaskGitLinksUpdate task_git_links_update = 94;
     // The workspace's achievement catalog changed (ADR-0061, amendment 1); to every member.
     WorkspaceAchievementsUpdate workspace_achievements_update = 95;
+    // Balance billing (ADR-0080): the owner's billing data changed; to the workspace owner's
+    // user channel only (members see Workspace.billing through WORKSPACE_UPDATE).
+    BillingUpdate billing_update = 96;
+    // A user's task notice relayed to a bot they chose (ADR-0090): to that bot's user channel
+    // (gateway) and webhook only.
+    TaskNoticeRelay task_notice = 97;
+    // Disk (ADR-0094 §7): workspace channel, routed per recipient like boards (DISK_VIEW on the
+    // item); the client refetches the open folder and the trash.
+    DiskItemUpsert disk_item_upsert = 98;
+    DiskItemRemove disk_item_remove = 99;
+    // Wiki (ADR-0096 §8): workspace channel, routed per recipient like the Disk (WIKI_VIEW on
+    // the page); the tree structure only, the content goes through the page's /sync socket.
+    WikiPageUpsert wiki_page_upsert = 100;
+    WikiPageRemove wiki_page_remove = 101;
+    // A person shared their contact with a bot (ADR-0100): to that bot's user channel (gateway)
+    // and webhook only.
+    ContactShared contact_shared = 102;
+    // Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
+    CalendarEventCommentUpsert event_comment_upsert = 103;
+    CalendarEventCommentDelete event_comment_delete = 104;
   }
 }
 
 // Body of a bot webhook delivery (ADR-0031), JSON (protojson): POST to the bot's webhook URL
 // with X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)> and X-Calab-Delivery: <id>.
 // Delivered events: MESSAGE_CREATE / UPDATE / DELETE and MESSAGE_REACTION_ADD / REMOVE of
-// rooms the bot can view and of its DMs, plus private BOT_CALLBACK (ADR-0047).
+// rooms the bot can view and of its DMs, plus private BOT_CALLBACK (ADR-0047), TASK_NOTICE of
+// the users who chose the bot (ADR-0090) and CONTACT_SHARED (ADR-0100).
 // A delivery may repeat (retries): dedupe by id.
 message BotWebhookUpdate {
   string id = 1;
@@ -442,6 +466,10 @@ message Ready {
   // only after the confirmation (ADR-0027), so the client asks for it even when
   // email_verification_optional. Set only when email_verification_optional.
   bool email_invite_pending = 16;
+  // ADR-0080: owners may start billing themselves here (BILLING_ENABLED and
+  // BILLING_SELF_SERVE): the client asks GET /api/workspaces/{id}/billing for a workspace
+  // without Workspace.billing only when set, so a server with billing off sees no extra request.
+  bool billing_self_serve = 17;
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.
@@ -513,6 +541,9 @@ message DmLastMessage {
   uint32 attachment_count = 4;
   google.protobuf.Timestamp created_at = 5;
   string sticker_emoji = 6; // set for a sticker message (ADR-0030): its emoji
+  // Set for a system message (Message.system) in the room list previews (rooms only, not DMs or
+  // notes): clients preview its one line, e.g. «changed the room picture» (ADR-0092).
+  SystemMessage system = 7;
 }
 
 message CategoryCreate {
@@ -706,6 +737,10 @@ message SoundPlay {
 message WorkspaceMemberRemove {
   string workspace_id = 1;
   string user_id = 2;
+  // Set when a former member record was kept (ADR-0097): keep the profile, marked as former;
+  // a WORKSPACE_MEMBER_ADD of the user clears the mark. Unset for a bot leaving or a guest
+  // whose knock was declined: drop the profile as before.
+  FormerMemberInfo former = 3;
 }
 
 message WorkspaceBanAdd {

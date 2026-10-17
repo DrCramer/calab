@@ -292,8 +292,9 @@ body с единственным значением каждого параме�
 
 Client types `confidential_web|public_native|public_spa`, immutable after creation;
 workspace immutable. HTTPS exact registered redirects; no wildcards, fragments,
-userinfo, prefix match. Для native loopback только 127.0.0.1 или [::1], переменный port
-по RFC8252, фактическая полная строка привязана к code/token; private scheme reverse-domain
+userinfo, prefix match. Plain-http loopback (`localhost`, 127.0.0.1, [::1]) допустим для
+всех типов, точным совпадением (ADR-0102); переменный port по RFC8252 — только native и
+только 127.0.0.1/[::1], фактическая полная строка привязана к code/token; private scheme reverse-domain
 допускается административной регистрацией + PKCE, не как доказательство OS ownership.
 SPA CORS только registered exact origins, no credentials/wildcard. Для публичных
 discovery/JWKS допускается Origin действующего `public_spa` клиента этого workspace;
@@ -338,7 +339,8 @@ ban, session revoke, stale directory, plan expiry и policy version mismatch п�
 ## 8. Management API и ключи
 
 SSO/Directory/recovery — owner + recent **local** reauth, fresh SSO где требуется.
-OAuth client CRUD — builtin owner/admin + recent local reauth + required assurance;
+OAuth client CRUD — builtin owner/admin + required assurance, без recent local reauth
+(ADR-0102: bearer-сессии достаточно; workspace_sso — через свежий SSO proof; recovery — нет);
 кастомного MANAGE_INTEGRATIONS недостаточно, новый permission bit в v1 не вводится.
 Role resolution использует существующую модель прав, не claims токена.
 
@@ -599,7 +601,9 @@ Management/consent/обычный API по-прежнему требуют beare
 
 Electron main выставляет доверенный Origin сохранённого HTTPS server только для
 известных first-party identity маршрутов (SSO, local reauth, identity management,
-OAuth clients/consent/grants). Renderer не задаёт этот Origin. Остальные API-потоки
+OAuth clients/consent/grants). Renderer не задаёт этот Origin. Bearer-маршруты управления
+OAuth clients принимают и origin-ы приложения из `PUBLIC_APP_URL*` (ADR-0102); consent
+bind/decision — только точный `IDENTITY_PUBLIC_ORIGIN`. Остальные API-потоки
 не получают глобальной переписи заголовка; native begin/exchange соблюдают то же правило.
 
 ### Часы и границы уже открытого приложения

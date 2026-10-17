@@ -11,15 +11,33 @@ import {
   type Role,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
+import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { AvatarButtons } from '../../components/AvatarPicker';
+import { RoomIcon } from '../../components/RoomIcon';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
-import { api } from '../../lib/api/endpoints';
-import { isAdminRole, mayAllowRecording, mayInviteGuestsIn, mayManageRoom, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { api, uploadFile, uploadPath } from '../../lib/api/endpoints';
+import {
+  isAdminRole,
+  isPrivateObject,
+  mayAllowRecording,
+  mayInviteGuestsIn,
+  mayManageRoom,
+  ROOM_EDITABLE,
+  compactDrafts,
+  toDrafts,
+  triOf,
+  withTri,
+  type AccessLevel,
+  type OverrideDraft,
+  type Tri,
+} from '../../lib/permissions';
+import { AccessLevelPicker } from './AccessLevel';
+import { ChosenList, chosenIds, useOwnerSeesPrivate, type Chosen } from '../people/PrivateAccess';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -58,10 +76,13 @@ export function RoomCreateDialog({
   const [type, setType] = useState(voice ? RoomType.VOICE : RoomType.TEXT);
   const [name, setName] = useState('');
   const [topic, setTopic] = useState('');
-  const [isPrivate, setPrivate] = useState(false);
+  const [level, setLevel] = useState<AccessLevel>('all');
+  const [chosen, setChosen] = useState<Chosen[]>([]);
+  const isPrivate = level === 'private';
   const openRoom = useUi((s) => s.openRoom);
   const m = useMutation({
-    mutationFn: () => api.rooms.create(workspaceId, { type, name: name.trim(), topic: topic.trim(), isPrivate, categoryId }),
+    mutationFn: () =>
+      api.rooms.create(workspaceId, { type, name: name.trim(), topic: topic.trim(), isPrivate, categoryId, ...(isPrivate ? chosenIds(chosen) : {}) }),
     onSuccess: (r) => {
       if (r.room) {
         useRooms.getState().upsert(r.room);
@@ -99,7 +120,15 @@ export function RoomCreateDialog({
         <Field label={t('room.topic')}>
           <Input value={topic} maxLength={1024} onChange={(e) => setTopic(e.target.value)} />
         </Field>
-        <Switch checked={isPrivate} onChange={setPrivate} label={t('room.private')} hint={t('room.privateHint')} />
+        {/* Two levels (ADR-0078 addendum 2026-10-14): «Для всех» / «Только приглашённые» with the people and roles to invite. */}
+        <div className="flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]">
+          <AccessLevelPicker value={level} onChange={setLevel} disabled={m.isPending} kind="room" workspaceId={workspaceId} />
+          {isPrivate ? (
+            <div className="px-3 pb-3">
+              <ChosenList workspaceId={workspaceId} value={chosen} onChange={setChosen} testId="room-create-chosen" />
+            </div>
+          ) : null}
+        </div>
       </div>
     </Modal>
   );
@@ -167,11 +196,10 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
     ...(guests ? [{ id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} /> }] : []),
   ];
   if (sections.length === 0) return null;
-  const Glyph = room.expiresAt ? Timer : voice ? Volume2 : Hash;
   return (
     <SettingsWindow
       title={room.name}
-      titleIcon={<Glyph className="size-4 shrink-0 text-muted" aria-hidden />}
+      titleIcon={<RoomIcon roomId={room.id} size={16} />}
       sections={sections}
       initial={tab}
       fallback={sections[0]?.id ?? 'general'}
@@ -195,9 +223,29 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
     },
   });
   if (!room) return null;
+  const textOrVoice = room.type === RoomType.TEXT || room.type === RoomType.VOICE;
   return (
     <>
       <Card title={t('card.basics')}>
+        {/* The room's picture (ADR-0092): shown instead of the type glyph everywhere; a change posts a line in the chat. */}
+        {textOrVoice ? (
+          <Row label={t('room.picture')} hint={t('room.pictureHint')}>
+            <div className="flex items-center gap-3" data-testid="room-picture">
+              <RoomIcon roomId={roomId} size={44} ring="var(--color-card)" />
+              <AvatarButtons
+                hasAvatar={!!room.iconFileId}
+                uploadLabel={t('room.pictureUpload')}
+                size="sm"
+                testId="room-picture"
+                onUpload={async (file) => {
+                  const meta = await uploadFile(uploadPath(room.workspaceId, ''), file, file.name, () => undefined).promise;
+                  await patchRoom(roomId, { iconFileId: meta.id });
+                }}
+                onRemove={() => patchRoom(roomId, { iconFileId: '' })}
+              />
+            </div>
+          </Row>
+        ) : null}
         <Row label={t('room.name')}>
           <CommitInput label={t('room.name')} value={room.name} maxLength={100} onCommit={(v) => (v ? patchRoom(roomId, { name: v }) : undefined)} />
         </Row>
@@ -205,9 +253,9 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
           <CommitInput label={t('room.topic')} value={room.topic} maxLength={1024} onCommit={(v) => patchRoom(roomId, { topic: v })} />
         </Row>
       </Card>
-      {/* ADR-0048: the access level — a private room, or a temporary one (its privacy can change);
+      {/* ADR-0078 addendum 2026-10-14: «Для всех» / «Только приглашённые» of any text / voice room;
           this tab is only for whoever manages the room. */}
-      {room.isPrivate || room.expiresAt ? <RoomAccessCard room={room} manage /> : null}
+      {textOrVoice ? <RoomAccessCard room={room} manage /> : null}
       <Card title={t('card.danger')} footer={del.error ? err(del.error) : undefined}>
         <Row label={t('room.delete')}>
           <Button
@@ -450,9 +498,14 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   const members = entry?.members;
   // Targets are the workspace roles by id (ADR-0026); owner / admin are fixed rows (full access).
   const wsRoles = useMemo(() => entry?.roles ?? [], [entry?.roles]);
-  // A restricted room (ADR-0029): admins count as members here — only the owner stays fixed.
-  const restricted = room?.restricted ?? false;
-  const isFixed = useCallback((r: Pick<Role, 'builtin'>): boolean => (restricted ? r.builtin === WorkspaceRole.OWNER : isFullRole(r)), [restricted]);
+  // A private room (ADR-0078 addendum 2026-10-14): admins and the owner count as members here —
+  // only the owner stays fixed, and only while «Владелец видит приватное» is on.
+  const restricted = isPrivateObject(room);
+  const ownerFixed = useOwnerSeesPrivate(room?.workspaceId);
+  const isFixed = useCallback(
+    (r: Pick<Role, 'builtin'>): boolean => (restricted ? ownerFixed && r.builtin === WorkspaceRole.OWNER : isFullRole(r)),
+    [ownerFixed, restricted],
+  );
   const fixedRoles = wsRoles.filter(isFixed);
   const memberRoleId = wsRoles.find((r) => r.builtin === WorkspaceRole.MEMBER)?.id ?? 'member';
   const [drafts, setDrafts] = useState<OverrideDraft[]>(() => toDrafts(room?.permissionOverrides ?? []));
@@ -538,7 +591,12 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     }));
     const people = memberItems(Object.values(members ?? {}), {
       roles: wsRoles,
-      decorate: (m) => ((restricted ? m.role === WorkspaceRole.OWNER : isAdminRole(m.role)) ? { note: full, disabled: true } : listed.has(m.user?.id ?? '') ? { note: t('picker.listed') } : undefined),
+      decorate: (m) =>
+        (restricted ? ownerFixed && m.role === WorkspaceRole.OWNER : isAdminRole(m.role))
+          ? { note: full, disabled: true }
+          : listed.has(m.user?.id ?? '')
+            ? { note: t('picker.listed') }
+            : undefined,
     });
     // Guest accounts (ADR-0040) sit apart in a collapsed group; a search still finds them.
     const { members: permanent, guests } = splitGuests(people);
@@ -547,7 +605,7 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
       { id: 'members', label: t('picker.members'), items: permanent },
       ...(guests.length > 0 ? [{ id: 'guests', label: t('picker.guests', { n: guests.length }), items: guests, collapsible: true }] : []),
     ];
-  }, [drafts, isFixed, members, restricted, wsRoles]);
+  }, [drafts, isFixed, members, ownerFixed, restricted, wsRoles]);
   const pick = (item: PeoplePickItem): void => {
     if (item.kind === 'role') setSelected(`${PermissionTargetType.ROLE}:${item.roleId}`);
     else addUser(item.userId);
@@ -606,8 +664,8 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   };
 
   return (
-    <div className="flex gap-4">
-      <div className="flex w-56 shrink-0 flex-col gap-0.5" data-testid="perm-targets">
+    <div className="flex gap-4 mobile:flex-col">
+      <div className="flex w-56 shrink-0 flex-col gap-0.5 mobile:w-full" data-testid="perm-targets">
         {fixedRoles.map((r) => (
           // Fixed rows (docs/04: ADMINISTRATOR ignores room overrides) — shown, never edited.
           <div key={r.id} className="flex shrink-0 flex-col justify-center px-2 py-1" data-testid="perm-fixed-role" title={t('picker.alwaysFull')}>

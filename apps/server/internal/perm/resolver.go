@@ -49,12 +49,11 @@ type RoomAccess struct {
 	Members []uuid.UUID
 	// Suspended: the workspace is suspended by a superadmin (read-only; item 32).
 	Suspended bool
-	// Restricted: the room is restricted (ADR-0029): ADMINISTRATOR gives no bypass in it.
-	Restricted bool
-	// PrivateTemp: a private temporary room (ADR-0078): nobody bypasses it — workspace-level
-	// rights (ADMINISTRATOR, the owner, MANAGE_ROOM / MUTE_MEMBERS / MOVE_MEMBERS of the roles)
-	// never reach into it; only Bits do.
-	PrivateTemp bool
+	// Private: a private room (ADR-0078 and its addendum 2026-10-14, temporary or permanent):
+	// nobody bypasses it — workspace-level rights (ADMINISTRATOR, the owner, MANAGE_ROOM /
+	// MUTE_MEMBERS / MOVE_MEMBERS / MANAGE_RECORDINGS of the roles) never reach into it; only
+	// Bits do. NoBypass tells the callers.
+	Private bool
 	// Task: the hidden comment room of a task (ADR-0042); Bits come from the board
 	// (TaskRoom), room overrides do not apply. TaskID / BoardID name them.
 	Task    bool
@@ -66,6 +65,10 @@ type RoomAccess struct {
 	CreatedBy uuid.UUID
 	Archived  bool
 }
+
+// NoBypass reports whether workspace-level rights stay outside the room: a private room, unless
+// the member is the workspace owner with «Владелец видит приватное» on (Member.SeesPrivate).
+func (a RoomAccess) NoBypass() bool { return a.Private && !a.Member.SeesPrivate() }
 
 // Creator reports whether userID created this temporary room (ADR-0044: the creator manages
 // it without MANAGE_ROOM). Never true for a permanent room, a guest or an unknown creator.
@@ -121,6 +124,7 @@ func (r *Resolver) Member(ctx context.Context, workspaceID, userID uuid.UUID) (M
 			return Member{}, fmt.Errorf("perm: load member: %w", err)
 		default:
 			m = NewMember(userID.String(), Role(row.Role), RoleList(row.RoleIds, row.RolePositions, row.RolePermissions))
+			m.OwnerSeesPrivate = row.OwnerSeesPrivate
 		}
 		r.mu.Lock()
 		r.members[k] = m
@@ -130,6 +134,24 @@ func (r *Resolver) Member(ctx context.Context, workspaceID, userID uuid.UUID) (M
 		return Member{}, ErrNotMember
 	}
 	return m, nil
+}
+
+// MemberStore reads one member's roles.
+type MemberStore interface {
+	GetMemberAccess(ctx context.Context, arg sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error)
+}
+
+// LoadMember reads a member's roles straight from s, without the request's access policy (system
+// paths: the trash sweeper, detaching a private subtree); ok is false for a non-member.
+func LoadMember(ctx context.Context, s MemberStore, workspaceID, userID uuid.UUID) (m Member, ok bool, err error) {
+	row, err := s.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: workspaceID, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Member{}, false, nil
+	}
+	if err != nil {
+		return Member{}, false, fmt.Errorf("perm: load member: %w", err)
+	}
+	return NewMember(userID.String(), Role(row.Role), RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)), true, nil
 }
 
 // Role returns the user's highest built-in role in the workspace, or ErrNotMember.
@@ -240,20 +262,20 @@ func (r *Resolver) cacheRoom(ctx context.Context, roomID, userID uuid.UUID, row 
 	case row.WorkspaceID != nil && row.Role != nil:
 		// The query returns the roles lowest position first, each with its override
 		// in this room (0/0 = none, which changes nothing).
-		m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)}
+		m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions), OwnerSeesPrivate: row.OwnerSeesPrivate}
 		n := min(len(row.RoleAllows), len(row.RoleDenies))
 		ovs := make([]Override, n)
 		for i := range n {
 			ovs[i] = Override{Allow: Bits(uint64(row.RoleAllows[i])), Deny: Bits(uint64(row.RoleDenies[i]))} //nolint:gosec // bit mask round-trip
 		}
+		flags := Flags(row.Restricted, row.IsPrivate, row.Temp, row.CreatedBy)
 		acc = RoomAccess{
 			WorkspaceID: *row.WorkspaceID,
 			Role:        m.Role,
 			Member:      m,
-			Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, Flags(row.Restricted, row.IsPrivate, row.Temp, row.CreatedBy)), ovs, override(row.UserAllow, row.UserDeny)),
+			Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, flags), ovs, override(row.UserAllow, row.UserDeny)),
 			Suspended:   row.Suspended,
-			Restricted:  row.Restricted,
-			PrivateTemp: row.IsPrivate && row.Temp,
+			Private:     flags.Private,
 			Temp:        row.Temp,
 			Archived:    row.Archived,
 		}

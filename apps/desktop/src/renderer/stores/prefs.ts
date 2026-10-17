@@ -9,12 +9,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
 import { PTT_RELEASE_DEFAULT_MS } from '../lib/pttRelease';
+import { AUTO_MUTE_DEFAULT, normalizeAutoMute, type AutoMuteSec } from '../lib/autoMute';
 import type { EchoMode } from '../lib/media/echo';
 import type { CodecPref } from '../lib/media/codecSelect';
 import type { CameraPreset } from '../lib/plan';
 import { NO_BACKGROUND, SEG_FPS, normalizeSegFps, type CameraBackground, type SegFpsOption } from '../lib/media/background/logic';
 import { DEFAULT_CAMERA_EFFECTS, type CameraEffects } from '../lib/media/background/effects';
 import type { LocalePref } from '../i18n/types';
+import { DEFAULT_PINNED, migratePinned, normalizeOrder, normalizePinned, type PhoneTab } from '../lib/phoneNav';
+import { isDiskSort, isDiskView, type DiskSort, type DiskView } from '../lib/disk';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
@@ -64,6 +67,8 @@ export interface Prefs {
   pttBinding: PttBinding | null;
   /** PTT «Задержка отпускания» (lib/pttRelease.ts): the mic stays on this long after a hold key-up. */
   pttReleaseMs: number;
+  /** «Выключать микрофон, если я молчу» (lib/autoMute.ts): seconds of silence, 0 = off. Per device. */
+  autoMuteSec: AutoMuteSec;
   rnnoise: boolean;
   red: boolean;
   /** «Как вы слушаете» (docs/02 «Эхо: колонки»): per device — a laptop on speakers, a desk with headphones. */
@@ -126,6 +131,22 @@ export interface Prefs {
   soundboardUsage: Record<string, number>;
   /** The update bar's «Позже» / «×» (features/shell/updateBarModel.ts, docs/09 #125); null = never pressed. */
   updateNag: UpdateNag | null;
+  /**
+   * userId → the market the owner chose on the plan screen («Россия, ₽ | Global, $», ADR-0083): the
+   * preselect of the next visit while both markets are open. A hint only — the server decides.
+   */
+  billingMarket: Record<string, 'global' | 'ru'>;
+  /** «Гости · N» in the members column, per workspace: the viewer's choice; unset = open up to 5 guests (ADR-0098 §3). */
+  guestsOpen: Record<string, boolean>;
+  /** «Виброотклик» (phone only, lib/haptics.ts): ticks on taps, toggles, swipe thresholds, long-press menus. */
+  haptics: boolean;
+  /** The four pinned tabs on the phone's bar, the rest behind «Ещё» (ADR-0095). */
+  phonePinnedTabs: PhoneTab[];
+  /** Order of all sections in the «Ещё» card = left-to-right order of the pinned tabs. */
+  phoneTabOrder: PhoneTab[];
+  /** «Диск» (ADR-0094 §8): «Плитки | Список» and the sort, per device. */
+  diskView: DiskView;
+  diskSort: DiskSort;
 }
 
 const DEFAULTS: Prefs = {
@@ -149,6 +170,7 @@ const DEFAULTS: Prefs = {
   thresholdDb: -50,
   pttBinding: null,
   pttReleaseMs: PTT_RELEASE_DEFAULT_MS,
+  autoMuteSec: AUTO_MUTE_DEFAULT,
   rnnoise: false, // off by default (owner, 27.09): Chromium's noiseSuppression is on instead, RNNoise costs CPU
   red: false,
   echoMode: 'headphones',
@@ -182,6 +204,13 @@ const DEFAULTS: Prefs = {
   soundboardFavorites: [],
   soundboardUsage: {},
   updateNag: null,
+  billingMarket: {},
+  guestsOpen: {},
+  haptics: true,
+  phonePinnedTabs: [...DEFAULT_PINNED],
+  phoneTabOrder: normalizeOrder(undefined, DEFAULT_PINNED),
+  diskView: 'tiles',
+  diskSort: 'name',
 };
 
 interface PrefsState extends Prefs {
@@ -191,20 +220,34 @@ interface PrefsState extends Prefs {
 export const usePrefs = create<PrefsState>()(
   persist((set) => ({ ...DEFAULTS, setPrefs: (p) => set(p) }), {
     name: 'calaba-prefs',
-    version: 4,
+    version: 6,
     // v2: statuses moved to the server — a status chosen on this device before is sent once.
     // v3: RNNoise off for everyone (it was on by default and costs CPU); re-enable in settings.
     migrate: (state, version) => {
       let s = state as Partial<Prefs>;
       if (version < 2) s = { ...s, presenceSynced: (s.presence ?? PresenceStatus.ONLINE) === PresenceStatus.ONLINE };
       if (version < 3) s = { ...s, rnnoise: false };
-      // v4: cameraBgFps; anything outside 8/16/20/25 is the default.
-      return { ...s, cameraBgFps: normalizeSegFps(s.cameraBgFps) };
+      // v4: cameraBgFps; anything outside 8/16/20/25 is the default. v5: phonePinnedTabs (ADR-0095), default three.
+      // v6: four cells + phoneTabOrder (ADR-0095 addendum): the old three keep their order, the next default joins them.
+      if (version < 6) {
+        const pinned = migratePinned(s.phonePinnedTabs);
+        s = { ...s, phonePinnedTabs: pinned, phoneTabOrder: normalizeOrder(undefined, pinned) };
+      }
+      return { ...s, cameraBgFps: normalizeSegFps(s.cameraBgFps), autoMuteSec: normalizeAutoMute(s.autoMuteSec) };
     },
-    // Whatever the stored value, the rate is one of the options.
+    // Whatever the stored value, the rate and the auto-mute period are one of the options.
     merge: (persisted, current) => {
       const p = (persisted ?? {}) as Partial<Prefs>;
-      return { ...current, ...p, cameraBgFps: normalizeSegFps(p.cameraBgFps) };
+      return {
+        ...current,
+        ...p,
+        cameraBgFps: normalizeSegFps(p.cameraBgFps),
+        autoMuteSec: normalizeAutoMute(p.autoMuteSec),
+        phonePinnedTabs: normalizePinned(p.phonePinnedTabs),
+        phoneTabOrder: normalizeOrder(p.phoneTabOrder),
+        diskView: isDiskView(p.diskView) ? p.diskView : current.diskView,
+        diskSort: isDiskSort(p.diskSort) ? p.diskSort : current.diskSort,
+      };
     },
     // Musician mode is never stored on (ADR-0052: it lasts until I leave voice).
     partialize: ({ setPrefs: _s, ...rest }) => ({ ...rest, musicianMode: false }),

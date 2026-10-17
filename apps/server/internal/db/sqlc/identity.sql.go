@@ -1141,6 +1141,8 @@ const getIdentityGateState = `-- name: GetIdentityGateState :one
 SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
 (u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+EXISTS(SELECT FROM billing_accounts ba WHERE ba.workspace_id=w.id AND ba.status='suspended')::boolean AS billing_suspended,
+EXISTS(SELECT FROM member_roles mr JOIN workspace_roles wr ON wr.id=mr.role_id WHERE mr.workspace_id=w.id AND mr.user_id=u.id AND (wr.permissions & 25769803776::bigint)<>0)::boolean AS billing_payer,
 (m.user_id IS NOT NULL)::boolean AS member,
 COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
 (COALESCE(x.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
@@ -1200,6 +1202,8 @@ type GetIdentityGateStateRow struct {
 	UserDisabled                bool
 	WorkspaceID                 uuid.UUID
 	WorkspaceSuspended          bool
+	BillingSuspended            bool
+	BillingPayer                bool
 	Member                      bool
 	BuiltinRole                 string
 	Suspended                   bool
@@ -1254,6 +1258,7 @@ type GetIdentityGateStateRow struct {
 }
 
 // A single MVCC snapshot; transaction-sensitive callers use Queries.WithTx and locks.
+// ADR-0087: a holder of BILLING_TOPUP / BILLING_MANAGE (bits 33, 34) keeps the billing scope under a billing suspension.
 func (q *Queries) GetIdentityGateState(ctx context.Context, arg GetIdentityGateStateParams) (GetIdentityGateStateRow, error) {
 	row := q.db.QueryRow(ctx, getIdentityGateState, arg.WorkspaceID, arg.SessionID, arg.UserID)
 	var i GetIdentityGateStateRow
@@ -1285,6 +1290,8 @@ func (q *Queries) GetIdentityGateState(ctx context.Context, arg GetIdentityGateS
 		&i.UserDisabled,
 		&i.WorkspaceID,
 		&i.WorkspaceSuspended,
+		&i.BillingSuspended,
+		&i.BillingPayer,
 		&i.Member,
 		&i.BuiltinRole,
 		&i.Suspended,
@@ -1344,6 +1351,8 @@ const getIdentityGateStates = `-- name: GetIdentityGateStates :many
 SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
 (u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+EXISTS(SELECT FROM billing_accounts ba WHERE ba.workspace_id=w.id AND ba.status='suspended')::boolean AS billing_suspended,
+EXISTS(SELECT FROM member_roles mr JOIN workspace_roles wr ON wr.id=mr.role_id WHERE mr.workspace_id=w.id AND mr.user_id=u.id AND (wr.permissions & 25769803776::bigint)<>0)::boolean AS billing_payer,
 (m.user_id IS NOT NULL)::boolean AS member,
 COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
 (COALESCE(x.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
@@ -1406,6 +1415,8 @@ type GetIdentityGateStatesRow struct {
 	UserDisabled                bool
 	WorkspaceID                 uuid.UUID
 	WorkspaceSuspended          bool
+	BillingSuspended            bool
+	BillingPayer                bool
 	Member                      bool
 	BuiltinRole                 string
 	Suspended                   bool
@@ -1463,6 +1474,7 @@ type GetIdentityGateStatesRow struct {
 // (the RTC identity sweep checks a room in one call): the same columns; a pair without a live
 // session row is absent. Keep the two in step; identitypolicy converts these rows to
 // GetIdentityGateStateRow.
+// ADR-0087: a holder of BILLING_TOPUP / BILLING_MANAGE (bits 33, 34) keeps the billing scope under a billing suspension.
 func (q *Queries) GetIdentityGateStates(ctx context.Context, arg GetIdentityGateStatesParams) ([]GetIdentityGateStatesRow, error) {
 	rows, err := q.db.Query(ctx, getIdentityGateStates, arg.SessionIds, arg.UserIds, arg.WorkspaceID)
 	if err != nil {
@@ -1500,6 +1512,8 @@ func (q *Queries) GetIdentityGateStates(ctx context.Context, arg GetIdentityGate
 			&i.UserDisabled,
 			&i.WorkspaceID,
 			&i.WorkspaceSuspended,
+			&i.BillingSuspended,
+			&i.BillingPayer,
 			&i.Member,
 			&i.BuiltinRole,
 			&i.Suspended,
@@ -1923,7 +1937,7 @@ func (q *Queries) GetRecentIdentityConnectionTest(ctx context.Context, arg GetRe
 }
 
 const getSSOWorkspaceBySlug = `-- name: GetSSOWorkspaceBySlug :one
-SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled FROM workspaces WHERE slug=$1
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private FROM workspaces WHERE slug=$1
 `
 
 func (q *Queries) GetSSOWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error) {
@@ -1949,6 +1963,10 @@ func (q *Queries) GetSSOWorkspaceBySlug(ctx context.Context, slug string) (Works
 		&i.SuspendedBy,
 		&i.TimeFormat,
 		&i.SipEnabled,
+		&i.DiskTrashDays,
+		&i.WikiTrashDays,
+		&i.TempArchiveDays,
+		&i.OwnerSeesPrivate,
 	)
 	return i, err
 }

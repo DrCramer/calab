@@ -1,5 +1,9 @@
 import { formPageCode } from '../services/boardForms';
+import { mailResetToken } from '../services/mailReset';
+import { MailResetPage } from '../features/mail/MailResetPage';
 import { FormPublicPage } from '../features/boards/FormPublicPage';
+import { WikiPublicPage } from '../features/wiki/PublicPage';
+import { wikiPageCode } from '../services/wikiPublic';
 import { OAuthConsent } from '../features/identity/OAuth';
 import { SsoComplete } from '../features/identity/SignIn';
 import { consentHandle } from '../features/identity/model';
@@ -82,6 +86,7 @@ export function App(): ReactNode {
   const landing = useLinkLanding((s) => s.link);
   const eventPage = useEventPage((s) => s.page);
   const formCode = formPageCode();
+  const wikiCode = wikiPageCode();
   // A guest's knock on a room (ADR-0040): the waiting screen in place of the app.
   const waiting = useWaiting();
   let screen: ReactNode;
@@ -97,7 +102,12 @@ export function App(): ReactNode {
     const handle = consentHandle(location.href);
     screen = handle ? <OAuthConsent handle={handle} /> : <div className="mat-content grid h-full place-items-center p-6" role="alert">{t('identity.changed')}</div>;
   } else if (formCode) screen = <FormPublicPage code={formCode} />;
+  // Web /w/<code>: a shared wiki page, read-only, signed in or not (ADR-0096 §6).
+  else if (wikiCode) screen = <WikiPublicPage code={wikiCode} />;
   else if (eventPage) screen = <EventPublicPage page={eventPage} />;
+  // Web /mail-reset/<token>: the one-time mailbox password of a bot reset (ADR-0101). The
+  // check runs once; the page owns its token.
+  else if (platform.kind === 'web' && mailResetToken()) screen = <MailResetPage token={mailResetToken() as string} />;
   // Web /join/<code>, /r/<code>: the link card first, signed in or not (docs/09 #53).
   else if (landing) screen = <LinkLandingScreen link={landing} />;
   else if (status === 'anon') screen = <AuthScreen />;

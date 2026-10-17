@@ -43,9 +43,13 @@ UPDATE workspace_roles SET position = $3 WHERE id = $1 AND workspace_id = $2 RET
 DELETE FROM workspace_roles WHERE id = $1 AND workspace_id = $2 AND builtin IS NULL;
 
 -- name: DeleteRoleOverrides :many
--- The deleted role's room and board overrides; returns the affected rooms.
+-- The deleted role's room, board, disk and wiki overrides; returns the affected rooms.
 WITH boards_gone AS (
     DELETE FROM board_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
+), disk_gone AS (
+    DELETE FROM disk_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
+), wiki_gone AS (
+    DELETE FROM wiki_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 )
 DELETE FROM room_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 RETURNING room_id;
@@ -76,12 +80,15 @@ JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1;
 
 -- name: GetMemberAccess :one
--- A member's built-in role and roles (lowest position first) for perm.Resolver.
+-- A member's built-in role and roles (lowest position first) for perm.Resolver, and the
+-- workspace's «Владелец видит приватное».
 SELECT m.role,
        coalesce(r.ids, '{}')::uuid[] AS role_ids,
        coalesce(r.positions, '{}')::integer[] AS role_positions,
-       coalesce(r.perms, '{}')::bigint[] AS role_permissions
+       coalesce(r.perms, '{}')::bigint[] AS role_permissions,
+       w.owner_sees_private
 FROM workspace_members m
+JOIN workspaces w ON w.id = m.workspace_id
 LEFT JOIN LATERAL (
     SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
            array_agg(wr.position ORDER BY wr.position) AS positions,

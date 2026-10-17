@@ -1,6 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { MessageSchema, RoomType, WorkspaceSnapshotSchema } from '@calaba/protocol';
+import { MessageSchema, RoomType, SystemMessageSchema, WorkspaceSnapshotSchema } from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useRoomPreviews } from './roomPreviews';
 
@@ -34,6 +34,17 @@ describe('room previews store', () => {
     // A later READY replaces everything (a room gone from it is no longer known).
     st().setAll([snap('w1', ['a'], {})]);
     expect(st().preview).toEqual({ a: null });
+  });
+
+  it('a system card in the snapshot (DmLastMessage.system) previews as its line: the room picture (ADR-0092)', () => {
+    const s = snap('w1', ['a', 'b'], { a: { n: 5, text: '' }, b: { n: 6, text: '' } });
+    const [a, b] = [s.roomLastMessages['a'], s.roomLastMessages['b']];
+    if (!a || !b) throw new Error('no previews');
+    a.system = create(SystemMessageSchema, { payload: { case: 'roomIcon', value: { fileId: 'f' } } });
+    b.system = create(SystemMessageSchema, { payload: { case: 'roomIcon', value: { fileId: '' } } });
+    st().setAll([s]);
+    expect(st().preview['a']?.content).toBe('изменил(а) картинку комнаты');
+    expect(st().preview['b']?.content).toBe('убрал(а) картинку комнаты');
   });
 
   it('a live message becomes the preview; an older or replayed one is ignored without a notification', () => {

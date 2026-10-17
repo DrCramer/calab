@@ -13,6 +13,9 @@ import {
   UpdateNotesResponseSchema,
   GetVersionResponseSchema,
   CalendarEventResponseSchema,
+  CalendarEventCommentRequestSchema,
+  CalendarEventCommentResponseSchema,
+  ListCalendarEventCommentsResponseSchema,
   CreateCalendarEventRequestSchema,
   EventRsvpTokenRequestSchema,
   EventRsvpTokenResponseSchema,
@@ -36,6 +39,8 @@ import {
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
+  ListFormerMembersResponseSchema,
+  ListWorkspaceUsersResponseSchema,
   RequestCameraRequestSchema,
   RequestCameraResponseSchema,
   PutUserNoteRequestSchema,
@@ -66,6 +71,8 @@ import {
   CreateRoomResponseSchema,
   CreateTempRoomRequestSchema,
   TempRoomResponseSchema,
+  RestoreTempRoomResponseSchema,
+  MakeRoomPermanentResponseSchema,
   ListRoomsResponseSchema,
   SetRoomOrderRequestSchema,
   SetRoomOrderResponseSchema,
@@ -138,6 +145,7 @@ import {
   MessageSchema,
   CreateMessageInteractionRequestSchema,
   CreateMessageInteractionResponseSchema,
+  ShareContactResponseSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
   ForwardMessageRequestSchema,
@@ -154,6 +162,7 @@ import {
   UpdateVoiceStatusRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
+  ListWorkspaceAuditResponseSchema,
   UploadFileResponseSchema,
   VerifyEmailRequestSchema,
   VerifyEmailResponseSchema,
@@ -199,7 +208,7 @@ import {
   type ScreenSharePreset,
   type WorkspaceRole,
 } from '@calaba/protocol';
-import type { MessageInitShape } from '@bufbuild/protobuf';
+import type { DescMessage, MessageInitShape, MessageShape } from '@bufbuild/protobuf';
 import { platform } from '../../platform';
 import { ApiError, apiUrl, body, call, callEmpty, qs, toApiError } from './client';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
@@ -262,6 +271,9 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateWorkspaceRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}`, UpdateWorkspaceResponseSchema, body(UpdateWorkspaceRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/workspaces/${id}`),
+    /** The journal of private-access decisions (addendum 2026-10-14): the owner or VIEW_JOURNALS; newest first. */
+    audit: (id: string, before = '', signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${id}/audit${before ? `?before=${encodeURIComponent(before)}` : ''}`, ListWorkspaceAuditResponseSchema, undefined, signal),
     joinOpen: (id: string) => call('POST', `/api/workspaces/${id}/join`, JoinWorkspaceResponseSchema),
     /** My notification settings of the workspace; replaces them (MENTIONS without mutedUntil = default). */
     setNotifications: (id: string, init: MessageInitShape<typeof UpdateWorkspaceNotificationSettingsRequestSchema>) =>
@@ -307,6 +319,18 @@ export const api = {
     revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
     /** Bans (docs/09 #32; MANAGE_WORKSPACE): newest first. */
     bans: (id: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${id}/bans`, ListBansResponseSchema, undefined, signal),
+    /** Profiles by id for any past or present member (ADR-0097 §2): ≤ 100 ids. */
+    users: (id: string, ids: readonly string[], signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${id}/users?ids=${ids.map(encodeURIComponent).join(',')}`, ListWorkspaceUsersResponseSchema, undefined, signal),
+    /** Former members (ADR-0097 §3; MANAGE_MEMBERS): newest first, 50 per page. */
+    formerMembers: (id: string, o: { guests: boolean; q: string; cursor?: string }, signal?: AbortSignal) => {
+      const qs = new URLSearchParams();
+      if (o.guests) qs.set('guests', '1');
+      if (o.q) qs.set('q', o.q);
+      if (o.cursor) qs.set('cursor', o.cursor);
+      const s = qs.toString();
+      return call('GET', `/api/workspaces/${id}/former-members${s ? `?${s}` : ''}`, ListFormerMembersResponseSchema, undefined, signal);
+    },
     /** 201: removes the member (if one) and keeps them out (403 BANNED on every way back). */
     ban: (id: string, userId: string, reason: string) =>
       call('POST', `/api/workspaces/${id}/bans`, CreateBanResponseSchema, body(CreateBanRequestSchema, { userId, reason })),
@@ -406,6 +430,17 @@ export const api = {
     cancel: (id: string, occurrence?: Date) => callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString() })}`),
     rsvp: (id: string, status: AttendeeStatus) =>
       call('PUT', `/api/events/${id}/rsvp`, CalendarEventResponseSchema, body(RsvpCalendarEventRequestSchema, { status })),
+    /** Comments on a meeting (ADR-0104): the newest `limit` before `before`, oldest first; 404 hidden, 403 guest. */
+    comments: (id: string, before?: string, signal?: AbortSignal) =>
+      call('GET', `/api/events/${id}/comments${qs({ before })}`, ListCalendarEventCommentsResponseSchema, undefined, signal),
+    /** 201 → EVENT_COMMENT_UPSERT; 404 for a cancelled meeting; 422 body 1..4000. */
+    addComment: (id: string, text: string) =>
+      call('POST', `/api/events/${id}/comments`, CalendarEventCommentResponseSchema, body(CalendarEventCommentRequestSchema, { body: text })),
+    /** The author only (403 otherwise). */
+    editComment: (id: string, commentId: string, text: string) =>
+      call('PATCH', `/api/events/${id}/comments/${commentId}`, CalendarEventCommentResponseSchema, body(CalendarEventCommentRequestSchema, { body: text })),
+    /** 204; the author or whoever may edit the meeting. */
+    deleteComment: (id: string, commentId: string) => callEmpty('DELETE', `/api/events/${id}/comments/${commentId}`),
     /** My upcoming meetings of today in `tz`, across workspaces (the calendar icon's number). */
     today: (tz: string) => call('GET', `/api/me/events/today${qs({ tz })}`, TodayCalendarEventsResponseSchema),
     /** External attendee's answer page (public, no login): preview and answer by the signed token. */
@@ -472,7 +507,11 @@ export const api = {
      */
     createTemp: (workspaceId: string, init: MessageInitShape<typeof CreateTempRoomRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/rooms/temp`, TempRoomResponseSchema, body(CreateTempRoomRequestSchema, init)),
-    /** Closed temporary rooms (ADR-0044), newest first: MANAGE_ROOM at workspace level. */
+    /** An archived temporary room goes live again for its original lifetime (ADR-0044 addendum 14.10): the creator / MANAGE_ROOM; 409 TEMP_ROOM_LIMIT. */
+    restoreTemp: (id: string) => call('POST', `/api/rooms/${id}/restore`, RestoreTempRoomResponseSchema),
+    /** A temporary room (archived or live) becomes a regular one: workspace MANAGE_ROOM (the right to create rooms). */
+    makePermanent: (id: string) => call('POST', `/api/rooms/${id}/make-permanent`, MakeRoomPermanentResponseSchema),
+    /** Closed temporary rooms (ADR-0044), newest first: the ones I may manage (MANAGE_ROOM there or I created them). */
     archived: (workspaceId: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/rooms?archived=1`, ListRoomsResponseSchema, undefined, signal),
     get: (id: string) => call('GET', `/api/rooms/${id}`, GetRoomResponseSchema),
@@ -482,6 +521,8 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateRoomRequestSchema>) =>
       call('PATCH', `/api/rooms/${id}`, UpdateRoomResponseSchema, body(UpdateRoomRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/rooms/${id}`),
+    /** «Сделать меня владельцем» of a former member's private room: the owner with «Владелец видит приватное» (403 / 409 otherwise). */
+    takeOver: (id: string) => call('POST', `/api/rooms/${id}/take-over`, UpdateRoomResponseSchema),
     /** Voice rooms: the status line of the current call (≤ 60 chars; '' clears); everyone gets ROOM_UPDATE. */
     setVoiceStatus: (id: string, status: string) =>
       call('PATCH', `/api/rooms/${id}/voice-status`, UpdateRoomResponseSchema, body(UpdateVoiceStatusRequestSchema, { status })),
@@ -557,6 +598,9 @@ export const api = {
     get: (roomId: string, id: string) => call('GET', `/api/rooms/${roomId}/messages/${id}`, MessageSchema),
     interact: (id: string, p: MessageInitShape<typeof CreateMessageInteractionRequestSchema>) =>
       call('POST', `/api/messages/${id}/interactions`, CreateMessageInteractionResponseSchema, body(CreateMessageInteractionRequestSchema, p)),
+    /** Confirms a REQUEST_CONTACT button (ADR-0100): the server sends my contact from the profile. */
+    shareContact: (id: string, buttonId: string) =>
+      call('POST', `/api/messages/${id}/buttons/${encodeURIComponent(buttonId)}/contact`, ShareContactResponseSchema),
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
       call('GET', `/api/rooms/${roomId}/messages${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
     create: (roomId: string, init: MessageInitShape<typeof CreateMessageRequestSchema>) =>
@@ -738,8 +782,24 @@ export function uploadPath(workspaceId: string, roomId: string): string {
  * (`uploadPath()`: `POST /api/workspaces/{id}/files` or `/api/dms/{id}/files`).
  */
 export function uploadFile(path: string, file: Blob, name: string, onProgress: (fraction: number) => void): UploadHandle {
+  return uploadInto(path, UploadFileResponseSchema, (r) => r.file, file, name, onProgress);
+}
+
+/**
+ * The multipart upload with progress behind uploadFile, for any route whose answer is a message
+ * (`schema`) carrying the result (`pick`; undefined = a bad answer): the Disk's
+ * `POST …/disk/upload?parent=` answers DiskItemResponse (ADR-0094 §7).
+ */
+export function uploadInto<S extends DescMessage, R>(
+  path: string,
+  schema: S,
+  pick: (res: MessageShape<S>) => R | undefined,
+  file: Blob,
+  name: string,
+  onProgress: (fraction: number) => void,
+): { promise: Promise<R>; abort(): void } {
   const xhr = new XMLHttpRequest();
-  const promise = new Promise<FileMeta>((resolve, reject) => {
+  const promise = new Promise<R>((resolve, reject) => {
     xhr.open('POST', apiUrl(path));
     xhr.responseType = 'text';
     xhr.upload.onprogress = (e) => {
@@ -749,13 +809,13 @@ export function uploadFile(path: string, file: Blob, name: string, onProgress: (
       const res = new Response(xhr.responseText, { status: xhr.status });
       if (xhr.status >= 200 && xhr.status < 300) {
         // A throw inside onload would leave the promise (and the message) pending forever (review L6).
-        let file: FileMeta | undefined;
+        let out: R | undefined;
         try {
-          file = fromJson(UploadFileResponseSchema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }).file;
+          out = pick(fromJson(schema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }));
         } catch {
-          file = undefined;
+          out = undefined;
         }
-        if (file) resolve(file);
+        if (out !== undefined) resolve(out);
         else reject(new ApiError('ERROR_CODE_INTERNAL', 'bad upload response', xhr.status));
       } else {
         toApiError(res).then(reject, () => reject(new ApiError('ERROR_CODE_INTERNAL', `HTTP ${xhr.status}`, xhr.status)));

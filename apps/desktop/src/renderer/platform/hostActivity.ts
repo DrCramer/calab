@@ -4,7 +4,7 @@ import { parseNotificationState, parseNotificationTestResult, type HostNotificat
 
 export interface HostActivityBridge {
   mediaPermissionsVersion?: number;
-  version: number; host: number; document: string; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
+  version: number; host: number; document: string; platform?: string; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }

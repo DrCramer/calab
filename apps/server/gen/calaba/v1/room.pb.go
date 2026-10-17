@@ -335,7 +335,11 @@ type Room struct {
 	Name        string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Topic       string                 `protobuf:"bytes,5,opt,name=topic,proto3" json:"topic,omitempty"`
 	Position    int32                  `protobuf:"varint,6,opt,name=position,proto3" json:"position,omitempty"`
-	// Informational: private rooms get `deny VIEW_ROOM` for role member on creation.
+	// A private room (ADR-0078 and its addendum 2026-10-14; «Только приглашённые»): only its
+	// creator (created_by) and those let in by an allow override on the room (a role's or a
+	// person's) see it. ADMINISTRATOR, the workspace owner and workspace-level MANAGE_ROOM give no
+	// bypass; the owner alone does while Workspace.owner_sees_private is on. The member role also
+	// gets `deny VIEW_ROOM` on creation. Strangers get 404 for the room everywhere.
 	IsPrivate bool `protobuf:"varint,7,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
 	// Effective settings (override merged over workspace defaults). Clients apply these.
 	Media *RoomMediaSettings `protobuf:"bytes,8,opt,name=media,proto3" json:"media,omitempty"`
@@ -360,10 +364,9 @@ type Room struct {
 	// Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
 	// PATCH /api/rooms/{id} allow_recording, which needs MANAGE_RECORDINGS (ADR-0048).
 	AllowRecording bool `protobuf:"varint,18,opt,name=allow_recording,json=allowRecording,proto3" json:"allow_recording,omitempty"`
-	// Private rooms only (ADR-0029, ADR-0048): closed even to administrators. ADMINISTRATOR gives
-	// no bypass and VIEW_ROOM comes only from an allow override on the room (by role or
-	// personally); the workspace owner always sees it. Changed with PATCH /api/rooms/{id}
-	// restricted. Strangers get 404 for the room everywhere.
+	// The pre-3.5 «закрытая» flag (ADR-0029, ADR-0048). Since the ADR-0078 addendum 2026-10-14
+	// every private room is closed even to administrators and the owner: the server keeps
+	// restricted equal to is_private; clients read either as «private».
 	Restricted bool `protobuf:"varint,19,opt,name=restricted,proto3" json:"restricted,omitempty"`
 	// Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
 	// override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
@@ -378,8 +381,12 @@ type Room struct {
 	// = MANAGE_ROOM in the room || (expires_at set && created_by == me && not a guest).
 	CreatedBy string `protobuf:"bytes,22,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	// Set only in the archive listing (GET /api/workspaces/{id}/rooms?archived=1).
-	ArchivedAt    *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=archived_at,json=archivedAt,proto3" json:"archived_at,omitempty"`
-	MessageCount  uint32                 `protobuf:"varint,24,opt,name=message_count,json=messageCount,proto3" json:"message_count,omitempty"` // the archive listing only: live messages of the room
+	ArchivedAt   *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=archived_at,json=archivedAt,proto3" json:"archived_at,omitempty"`
+	MessageCount uint32                 `protobuf:"varint,24,opt,name=message_count,json=messageCount,proto3" json:"message_count,omitempty"` // the archive listing only: live messages of the room
+	// The room's picture (ADR-0092): an image file of the workspace, shown instead of the glyph of
+	// the room type; empty = the glyph. Clients load it as /api/files/{id} (readable by everyone who
+	// sees the room). Changed with PATCH /api/rooms/{id} icon_file_id; a deleted file clears it.
+	IconFileId    string `protobuf:"bytes,25,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -580,6 +587,13 @@ func (x *Room) GetMessageCount() uint32 {
 		return x.MessageCount
 	}
 	return 0
+}
+
+func (x *Room) GetIconFileId() string {
+	if x != nil {
+		return x.IconFileId
+	}
+	return ""
 }
 
 // The caller's notification settings for one room. Rooms without a stored row use the
@@ -1351,6 +1365,12 @@ type CreateRoomRequest struct {
 	Position      *int32                 `protobuf:"varint,6,opt,name=position,proto3,oneof" json:"position,omitempty"`                // default: after the last room
 	CategoryId    string                 `protobuf:"bytes,7,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"` // optional category of the same workspace
 	UserLimit     uint32                 `protobuf:"varint,8,opt,name=user_limit,json=userLimit,proto3" json:"user_limit,omitempty"`   // voice rooms only, 0..99
+	// Private rooms only (ADR-0078 addendum 2026-10-14; 422 on a public one): who is invited —
+	// members of the workspace (422 otherwise) get a personal allow VIEW_ROOM, roles of the
+	// workspace (not owner / admin / guest built-ins) a role allow VIEW_ROOM. The creator always
+	// sees the room (and gets a personal allow of their room-level bits).
+	MemberIds     []string `protobuf:"bytes,9,rep,name=member_ids,json=memberIds,proto3" json:"member_ids,omitempty"`
+	RoleIds       []string `protobuf:"bytes,10,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1439,6 +1459,20 @@ func (x *CreateRoomRequest) GetUserLimit() uint32 {
 		return x.UserLimit
 	}
 	return 0
+}
+
+func (x *CreateRoomRequest) GetMemberIds() []string {
+	if x != nil {
+		return x.MemberIds
+	}
+	return nil
+}
+
+func (x *CreateRoomRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
 }
 
 type CreateRoomResponse struct {
@@ -1603,9 +1637,8 @@ type UpdateRoomRequest struct {
 	// Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_RECORDINGS (ADR-0048) besides
 	// MANAGE_ROOM; switching it off stops a running recording.
 	AllowRecording *bool `protobuf:"varint,7,opt,name=allow_recording,json=allowRecording,proto3,oneof" json:"allow_recording,omitempty"`
-	// Private rooms only (ADR-0029, 422 on a public one). MANAGE_ROOM in the room (ADR-0048; the
-	// creator of a temporary room too); the owner may always lift it. Switching it on gives the
-	// caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM so they keep access.
+	// Deprecated alias of is_private (ADR-0078 addendum 2026-10-14): true = private, false =
+	// public; with is_private both must agree (422 otherwise).
 	Restricted    *bool `protobuf:"varint,8,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
 	GuestApproval *bool `protobuf:"varint,9,opt,name=guest_approval,json=guestApproval,proto3,oneof" json:"guest_approval,omitempty"` // ADR-0040
 	// Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at
@@ -1615,11 +1648,17 @@ type UpdateRoomRequest struct {
 	// Temporary rooms only: true makes the room permanent (expires_at cleared). Needs real
 	// MANAGE_ROOM in the room (the creator's implicit right is not enough: 403).
 	MakePermanent bool `protobuf:"varint,11,opt,name=make_permanent,json=makePermanent,proto3" json:"make_permanent,omitempty"`
-	// Temporary rooms only (ADR-0044, «Доступ»): private = the member role loses VIEW_ROOM (a
-	// deny override, as a private room at creation); public = that deny is removed. Personal
-	// overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
-	// edits the overrides with PUT /api/rooms/{id}/permissions).
-	IsPrivate     *bool `protobuf:"varint,12,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
+	// «Доступ» (ADR-0044, ADR-0078 addendum 2026-10-14), any text / voice room: private = the
+	// member role loses VIEW_ROOM (a deny override, as a private room at creation) and the room
+	// is hidden from admins and the owner; public = that deny is removed. Personal overrides
+	// stay. MANAGE_ROOM or the creator of a temporary room. Switching to private gives the caller
+	// a personal allow of their room-level bits (VIEW_ROOM included) so they keep access.
+	IsPrivate *bool `protobuf:"varint,12,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
+	// The room's picture (ADR-0092), text and voice rooms only (422 otherwise). "" removes it. Same
+	// right as the name (MANAGE_ROOM or the creator of a temporary room). An image the caller
+	// uploaded to this workspace (422 iconFileId otherwise). A change posts a system message
+	// room_icon (SystemMessage.room_icon) into the room from the caller.
+	IconFileId    *string `protobuf:"bytes,13,opt,name=icon_file_id,json=iconFileId,proto3,oneof" json:"icon_file_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1736,6 +1775,13 @@ func (x *UpdateRoomRequest) GetIsPrivate() bool {
 		return *x.IsPrivate
 	}
 	return false
+}
+
+func (x *UpdateRoomRequest) GetIconFileId() string {
+	if x != nil && x.IconFileId != nil {
+		return *x.IconFileId
+	}
+	return ""
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or
@@ -2016,6 +2062,103 @@ func (x *CreateTempRoomRequest) GetMemberIds() []string {
 	return nil
 }
 
+// POST /api/rooms/{id}/restore (ADR-0044 addendum): an archived temporary room becomes live
+// again with a new end, now + its original lifetime (expires_at - created_at, clamped to
+// 15 min .. 7 days; 1 day when that is not usable). MANAGE_ROOM in the room or its creator;
+// the live caps of CreateTempRoomRequest apply (409 TEMP_ROOM_LIMIT). A fresh members-only
+// link is made. Everyone who sees the room gets ROOM_CREATE. Not archived: 409.
+type RestoreTempRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Room          *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreTempRoomResponse) Reset() {
+	*x = RestoreTempRoomResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreTempRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreTempRoomResponse) ProtoMessage() {}
+
+func (x *RestoreTempRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreTempRoomResponse.ProtoReflect.Descriptor instead.
+func (*RestoreTempRoomResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RestoreTempRoomResponse) GetRoom() *Room {
+	if x != nil {
+		return x.Room
+	}
+	return nil
+}
+
+// POST /api/rooms/{id}/make-permanent (ADR-0044 addendum): a temporary room, archived or
+// live, becomes a regular room (no end, no category, after the last room; history, members
+// and settings stay). Needs MANAGE_ROOM at workspace level (the right to create regular
+// rooms) and sight of the room; 403 otherwise. Archived: ROOM_CREATE, live: ROOM_UPDATE.
+type MakeRoomPermanentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Room          *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MakeRoomPermanentResponse) Reset() {
+	*x = MakeRoomPermanentResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MakeRoomPermanentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MakeRoomPermanentResponse) ProtoMessage() {}
+
+func (x *MakeRoomPermanentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MakeRoomPermanentResponse.ProtoReflect.Descriptor instead.
+func (*MakeRoomPermanentResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *MakeRoomPermanentResponse) GetRoom() *Room {
+	if x != nil {
+		return x.Room
+	}
+	return nil
+}
+
 type TempRoomResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Room  *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
@@ -2032,7 +2175,7 @@ type TempRoomResponse struct {
 
 func (x *TempRoomResponse) Reset() {
 	*x = TempRoomResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	mi := &file_calaba_v1_room_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2044,7 +2187,7 @@ func (x *TempRoomResponse) String() string {
 func (*TempRoomResponse) ProtoMessage() {}
 
 func (x *TempRoomResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[27]
+	mi := &file_calaba_v1_room_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2057,7 +2200,7 @@ func (x *TempRoomResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TempRoomResponse.ProtoReflect.Descriptor instead.
 func (*TempRoomResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TempRoomResponse) GetRoom() *Room {
@@ -2099,7 +2242,7 @@ type SetRoomOrderRequest_RoomPosition struct {
 
 func (x *SetRoomOrderRequest_RoomPosition) Reset() {
 	*x = SetRoomOrderRequest_RoomPosition{}
-	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	mi := &file_calaba_v1_room_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2111,7 +2254,7 @@ func (x *SetRoomOrderRequest_RoomPosition) String() string {
 func (*SetRoomOrderRequest_RoomPosition) ProtoMessage() {}
 
 func (x *SetRoomOrderRequest_RoomPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[28]
+	mi := &file_calaba_v1_room_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2158,7 +2301,7 @@ type SetRoomOrderRequest_CategoryPosition struct {
 
 func (x *SetRoomOrderRequest_CategoryPosition) Reset() {
 	*x = SetRoomOrderRequest_CategoryPosition{}
-	mi := &file_calaba_v1_room_proto_msgTypes[29]
+	mi := &file_calaba_v1_room_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2170,7 +2313,7 @@ func (x *SetRoomOrderRequest_CategoryPosition) String() string {
 func (*SetRoomOrderRequest_CategoryPosition) ProtoMessage() {}
 
 func (x *SetRoomOrderRequest_CategoryPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[29]
+	mi := &file_calaba_v1_room_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2220,7 +2363,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
 	"\f_max_streamsB\x0f\n" +
-	"\r_camera_limit\"\x92\b\n" +
+	"\r_camera_limit\"\xb4\b\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -2255,7 +2398,9 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"created_by\x18\x16 \x01(\tR\tcreatedBy\x12;\n" +
 	"\varchived_at\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"archivedAt\x12#\n" +
-	"\rmessage_count\x18\x18 \x01(\rR\fmessageCount\"\xa4\x01\n" +
+	"\rmessage_count\x18\x18 \x01(\rR\fmessageCount\x12 \n" +
+	"\ficon_file_id\x18\x19 \x01(\tR\n" +
+	"iconFileId\"\xa4\x01\n" +
 	"\x18RoomNotificationSettings\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x122\n" +
 	"\x05level\x18\x02 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\x05level\x12;\n" +
@@ -2323,7 +2468,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\x127\n" +
 	"\n" +
 	"categories\x18\x02 \x03(\v2\x17.calaba.v1.RoomCategoryR\n" +
-	"categories\"\xb8\x02\n" +
+	"categories\"\xf2\x02\n" +
 	"\x11CreateRoomRequest\x12'\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x13.calaba.v1.RoomTypeR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -2335,7 +2480,11 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\vcategory_id\x18\a \x01(\tR\n" +
 	"categoryId\x12\x1d\n" +
 	"\n" +
-	"user_limit\x18\b \x01(\rR\tuserLimitB\v\n" +
+	"user_limit\x18\b \x01(\rR\tuserLimit\x12\x1d\n" +
+	"\n" +
+	"member_ids\x18\t \x03(\tR\tmemberIds\x12\x19\n" +
+	"\brole_ids\x18\n" +
+	" \x03(\tR\aroleIdsB\v\n" +
 	"\t_position\"9\n" +
 	"\x12CreateRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\":\n" +
@@ -2343,7 +2492,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\"X\n" +
 	"\x0fGetRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12 \n" +
-	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\x98\x05\n" +
+	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\xd0\x05\n" +
 	"\x11UpdateRoomRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
 	"\x05topic\x18\x02 \x01(\tH\x01R\x05topic\x88\x01\x01\x12\x1f\n" +
@@ -2363,7 +2512,10 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12%\n" +
 	"\x0emake_permanent\x18\v \x01(\bR\rmakePermanent\x12\"\n" +
 	"\n" +
-	"is_private\x18\f \x01(\bH\tR\tisPrivate\x88\x01\x01B\a\n" +
+	"is_private\x18\f \x01(\bH\tR\tisPrivate\x88\x01\x01\x12%\n" +
+	"\ficon_file_id\x18\r \x01(\tH\n" +
+	"R\n" +
+	"iconFileId\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_topicB\v\n" +
 	"\t_positionB\x11\n" +
@@ -2373,7 +2525,8 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x10_allow_recordingB\r\n" +
 	"\v_restrictedB\x11\n" +
 	"\x0f_guest_approvalB\r\n" +
-	"\v_is_private\"2\n" +
+	"\v_is_privateB\x0f\n" +
+	"\r_icon_file_id\"2\n" +
 	"\x18UpdateVoiceStatusRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"9\n" +
 	"\x12UpdateRoomResponse\x12#\n" +
@@ -2392,7 +2545,11 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\aprivate\x18\x05 \x01(\bR\aprivate\x12\x1d\n" +
 	"\n" +
 	"member_ids\x18\x06 \x03(\tR\tmemberIdsB\t\n" +
-	"\a_guests\"\xa7\x01\n" +
+	"\a_guests\">\n" +
+	"\x17RestoreTempRoomResponse\x12#\n" +
+	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"@\n" +
+	"\x19MakeRoomPermanentResponse\x12#\n" +
+	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\xa7\x01\n" +
 	"\x10TempRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12\x1d\n" +
 	"\n" +
@@ -2433,7 +2590,7 @@ func file_calaba_v1_room_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_room_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_calaba_v1_room_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_calaba_v1_room_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_calaba_v1_room_proto_goTypes = []any{
 	(RoomType)(0),                                       // 0: calaba.v1.RoomType
 	(PermissionTargetType)(0),                           // 1: calaba.v1.PermissionTargetType
@@ -2465,43 +2622,45 @@ var file_calaba_v1_room_proto_goTypes = []any{
 	(*SetRoomPermissionsRequest)(nil),                   // 27: calaba.v1.SetRoomPermissionsRequest
 	(*SetRoomPermissionsResponse)(nil),                  // 28: calaba.v1.SetRoomPermissionsResponse
 	(*CreateTempRoomRequest)(nil),                       // 29: calaba.v1.CreateTempRoomRequest
-	(*TempRoomResponse)(nil),                            // 30: calaba.v1.TempRoomResponse
-	(*SetRoomOrderRequest_RoomPosition)(nil),            // 31: calaba.v1.SetRoomOrderRequest.RoomPosition
-	(*SetRoomOrderRequest_CategoryPosition)(nil),        // 32: calaba.v1.SetRoomOrderRequest.CategoryPosition
-	(ScreenSharePreset)(0),                              // 33: calaba.v1.ScreenSharePreset
-	(*RoomMediaSettings)(nil),                           // 34: calaba.v1.RoomMediaSettings
-	(*timestamppb.Timestamp)(nil),                       // 35: google.protobuf.Timestamp
-	(*CalendarEvent)(nil),                               // 36: calaba.v1.CalendarEvent
+	(*RestoreTempRoomResponse)(nil),                     // 30: calaba.v1.RestoreTempRoomResponse
+	(*MakeRoomPermanentResponse)(nil),                   // 31: calaba.v1.MakeRoomPermanentResponse
+	(*TempRoomResponse)(nil),                            // 32: calaba.v1.TempRoomResponse
+	(*SetRoomOrderRequest_RoomPosition)(nil),            // 33: calaba.v1.SetRoomOrderRequest.RoomPosition
+	(*SetRoomOrderRequest_CategoryPosition)(nil),        // 34: calaba.v1.SetRoomOrderRequest.CategoryPosition
+	(ScreenSharePreset)(0),                              // 35: calaba.v1.ScreenSharePreset
+	(*RoomMediaSettings)(nil),                           // 36: calaba.v1.RoomMediaSettings
+	(*timestamppb.Timestamp)(nil),                       // 37: google.protobuf.Timestamp
+	(*CalendarEvent)(nil),                               // 38: calaba.v1.CalendarEvent
 }
 var file_calaba_v1_room_proto_depIdxs = []int32{
 	1,  // 0: calaba.v1.RoomPermissionOverride.target_type:type_name -> calaba.v1.PermissionTargetType
-	33, // 1: calaba.v1.RoomMediaOverride.max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	35, // 1: calaba.v1.RoomMediaOverride.max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	0,  // 2: calaba.v1.Room.type:type_name -> calaba.v1.RoomType
-	34, // 3: calaba.v1.Room.media:type_name -> calaba.v1.RoomMediaSettings
+	36, // 3: calaba.v1.Room.media:type_name -> calaba.v1.RoomMediaSettings
 	4,  // 4: calaba.v1.Room.media_override:type_name -> calaba.v1.RoomMediaOverride
 	3,  // 5: calaba.v1.Room.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
-	35, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
-	35, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
-	35, // 8: calaba.v1.Room.voice_started_at:type_name -> google.protobuf.Timestamp
-	35, // 9: calaba.v1.Room.expires_at:type_name -> google.protobuf.Timestamp
-	35, // 10: calaba.v1.Room.archived_at:type_name -> google.protobuf.Timestamp
+	37, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
+	37, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
+	37, // 8: calaba.v1.Room.voice_started_at:type_name -> google.protobuf.Timestamp
+	37, // 9: calaba.v1.Room.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 10: calaba.v1.Room.archived_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: calaba.v1.RoomNotificationSettings.level:type_name -> calaba.v1.NotificationLevel
-	35, // 12: calaba.v1.RoomNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 12: calaba.v1.RoomNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
 	2,  // 13: calaba.v1.UpdateRoomNotificationSettingsRequest.level:type_name -> calaba.v1.NotificationLevel
-	35, // 14: calaba.v1.UpdateRoomNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 14: calaba.v1.UpdateRoomNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
 	6,  // 15: calaba.v1.UpdateRoomNotificationSettingsResponse.settings:type_name -> calaba.v1.RoomNotificationSettings
 	2,  // 16: calaba.v1.WorkspaceNotificationSettings.level:type_name -> calaba.v1.NotificationLevel
-	35, // 17: calaba.v1.WorkspaceNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 17: calaba.v1.WorkspaceNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
 	2,  // 18: calaba.v1.WorkspaceNotificationSettings.task_level:type_name -> calaba.v1.NotificationLevel
 	2,  // 19: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.level:type_name -> calaba.v1.NotificationLevel
-	35, // 20: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
+	37, // 20: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
 	2,  // 21: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.task_level:type_name -> calaba.v1.NotificationLevel
 	9,  // 22: calaba.v1.UpdateWorkspaceNotificationSettingsResponse.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
 	12, // 23: calaba.v1.CreateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
 	12, // 24: calaba.v1.ListCategoriesResponse.categories:type_name -> calaba.v1.RoomCategory
 	12, // 25: calaba.v1.UpdateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
-	31, // 26: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
-	32, // 27: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
+	33, // 26: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
+	34, // 27: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
 	5,  // 28: calaba.v1.SetRoomOrderResponse.rooms:type_name -> calaba.v1.Room
 	12, // 29: calaba.v1.SetRoomOrderResponse.categories:type_name -> calaba.v1.RoomCategory
 	0,  // 30: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
@@ -2510,17 +2669,19 @@ var file_calaba_v1_room_proto_depIdxs = []int32{
 	5,  // 33: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
 	5,  // 34: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
 	4,  // 35: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	35, // 36: calaba.v1.UpdateRoomRequest.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 36: calaba.v1.UpdateRoomRequest.expires_at:type_name -> google.protobuf.Timestamp
 	5,  // 37: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
 	3,  // 38: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
 	5,  // 39: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
-	5,  // 40: calaba.v1.TempRoomResponse.room:type_name -> calaba.v1.Room
-	36, // 41: calaba.v1.TempRoomResponse.event:type_name -> calaba.v1.CalendarEvent
-	42, // [42:42] is the sub-list for method output_type
-	42, // [42:42] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	5,  // 40: calaba.v1.RestoreTempRoomResponse.room:type_name -> calaba.v1.Room
+	5,  // 41: calaba.v1.MakeRoomPermanentResponse.room:type_name -> calaba.v1.Room
+	5,  // 42: calaba.v1.TempRoomResponse.room:type_name -> calaba.v1.Room
+	38, // 43: calaba.v1.TempRoomResponse.event:type_name -> calaba.v1.CalendarEvent
+	44, // [44:44] is the sub-list for method output_type
+	44, // [44:44] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_room_proto_init() }
@@ -2543,7 +2704,7 @@ func file_calaba_v1_room_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_room_proto_rawDesc), len(file_calaba_v1_room_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

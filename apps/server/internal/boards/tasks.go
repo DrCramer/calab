@@ -28,7 +28,10 @@ import (
 
 // change collects what a task mutation produced, published after the commit.
 type change struct {
+	// acts: the changes as made (rules, webhooks, notifications); journal: what they did to the
+	// stored entries (TASK_ACTIVITY) — a merged entry differs from its change (ADR-0081).
 	acts    []sqlc.TaskActivity
+	journal []journalEntry
 	notices []notice
 	tasks   []uuid.UUID // other tasks whose TASK_UPDATE must go out (moved subtasks, relations)
 	// before: events to send first (TASK_DELETE to the old board of a moved task); moved: the
@@ -37,8 +40,6 @@ type change struct {
 	moved  bool
 	// rule: the entries are made by this automation rule (ADR-0060): actor_id NULL, rule_id set.
 	rule *ruleRef
-	// extra: rule triggers that are not journal entries (a comment was posted).
-	extra []ruleEvent
 	// auto: what automation rules did in the transaction, published after the commit (taskTx).
 	auto *autoEffects
 }
@@ -73,13 +74,34 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 	if c.rule != nil {
 		rule = &c.rule.id
 	}
-	a, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
-		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: enc(before), After: enc(after), RuleID: rule,
+	b, a := enc(before), enc(after)
+	// A repeated change of the field by the same user merges into his recent entry (ADR-0081):
+	// the journal keeps the first before and the last after; c.acts — rules, webhooks,
+	// notifications — still gets this change as it is.
+	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, kind, after)
+	if err != nil {
+		return err
+	}
+	stored := b
+	if merged {
+		stored = first
+		if noOp(kind, first, a) { // back to where it was: no entry at all
+			c.journal = append(c.journal, journalEntry{task: t.ID, board: t.BoardID, replaced: replaced})
+			c.acts = append(c.acts, sqlc.TaskActivity{ID: replaced, TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind,
+				Before: b, After: a, CreatedAt: time.Now()})
+			return nil
+		}
+	}
+	row, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
+		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: stored, After: a, RuleID: rule,
 	})
 	if err != nil {
 		return err
 	}
-	c.acts = append(c.acts, a)
+	c.journal = append(c.journal, journalEntry{task: t.ID, board: t.BoardID, row: &row, replaced: replaced})
+	act := row
+	act.Before = b
+	c.acts = append(c.acts, act)
 	return nil
 }
 
@@ -95,24 +117,22 @@ func (s *Service) publish(ctx context.Context, taskID uuid.UUID, c *change, crea
 			s.publishTaskEvent(ctx, id, false)
 		}
 	}
-	for _, a := range c.acts {
-		if wsID, err := s.workspaceOf(ctx, a.BoardID); err == nil {
-			s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: wsID.String(), Activity: activity(a)}}})
+	s.publishJournal(ctx, c.journal)
+	s.sendNotices(ctx, taskID, c.notices)
+}
+
+// publishJournal sends TASK_ACTIVITY of the stored journal entries.
+func (s *Service) publishJournal(ctx context.Context, js []journalEntry) {
+	for _, j := range js {
+		if wsID, err := s.workspaceOf(ctx, j.board); err == nil {
+			s.ev.Workspace(ctx, wsID, j.event(wsID))
 		}
 	}
-	s.sendNotices(ctx, taskID, c.notices)
 }
 
 func (s *Service) workspaceOf(ctx context.Context, boardID uuid.UUID) (uuid.UUID, error) {
 	b, err := s.db.Q.GetBoard(ctx, boardID)
 	return b.WorkspaceID, err
-}
-
-// publishTask is publish without journal entries (moves of a deleted status, sweeper).
-func (s *Service) publishTask(ctx context.Context, taskID uuid.UUID, notices []notice) {
-	s.publishTaskEvent(ctx, taskID, false)
-	s.sendNotices(ctx, taskID, notices)
 }
 
 func (s *Service) publishTaskEvent(ctx context.Context, taskID uuid.UUID, created bool) {
@@ -1066,7 +1086,7 @@ func attach(ctx context.Context, q *sqlc.Queries, t taskRow, ids []uuid.UUID, me
 			}
 		}
 		if len(check) > 0 {
-			ok, err := q.FilesAttachable(ctx, sqlc.FilesAttachableParams{Ids: check, UserID: me, WorkspaceID: t.WorkspaceID, TaskID: t.ID})
+			ok, err := q.FilesAttachable(ctx, sqlc.FilesAttachableParams{Ids: check, UserID: &me, WorkspaceID: t.WorkspaceID, TaskID: t.ID})
 			if err != nil {
 				return err
 			}
@@ -1415,8 +1435,15 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 		if err := updateRow(r.Context(), q, t); err != nil {
 			return err
 		}
+		journalFrom := len(c.journal)
 		if err := s.recordFields(r.Context(), q, old, t, from, to, me, &c); err != nil {
 			return err
+		}
+		// The due sweep's notices are about the old date or a live task (ADR-0089).
+		if dateAny(old.DueOn) != dateAny(t.DueOn) || (t.StatusID != old.StatusID && Finished(to.Type)) {
+			if err := q.DeleteTaskDueNotices(r.Context(), t.ID); err != nil {
+				return err
+			}
 		}
 		if req.GetSetLabels() {
 			labels, err := it.labelIDs(req.GetLabelIds())
@@ -1443,7 +1470,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 						return err
 					}
 				}
-				if err := c.record(r.Context(), q, t, me, "labels", map[string]any{"label_ids": idsJSON(was)}, map[string]any{"label_ids": idsJSON(labels)}); err != nil {
+				if err := c.record(r.Context(), q, t, me, "labels", labelsEntry(it, was), labelsEntry(it, labels)); err != nil {
 					return err
 				}
 			}
@@ -1452,7 +1479,15 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			if err := attach(r.Context(), q, t, attIDs, me); err != nil {
 				return err
 			}
-			if err := c.record(r.Context(), q, t, me, "attachments", map[string]any{"file_ids": idsJSON(attWas)}, map[string]any{"file_ids": idsJSON(attIDs)}); err != nil {
+			before, err := attachmentsEntry(r.Context(), q, attWas)
+			if err != nil {
+				return err
+			}
+			after, err := attachmentsEntry(r.Context(), q, attIDs)
+			if err != nil {
+				return err
+			}
+			if err := c.record(r.Context(), q, t, me, "attachments", before, after); err != nil {
 				return err
 			}
 		}
@@ -1493,13 +1528,69 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		return nil
+		return s.notifyFields(r.Context(), q, old, t, me, c.journal[journalFrom:], attWas, attIDs, &c)
 	})
 	if err != nil {
 		return err
 	}
 	s.publish(r.Context(), taskID, &c, false)
 	return s.respondTask(w, r, taskID, http.StatusOK, false)
+}
+
+// notifyFields notifies the subscribers of the changed fields (ADR-0089 §4): the due date, the
+// priority, the milestone, the title / description and new attachments. The priority and the
+// text notify only with a new journal entry, not when a repeated change replaces it (ADR-0081).
+func (s *Service) notifyFields(ctx context.Context, q *sqlc.Queries, old, t taskRow, me uuid.UUID, journal []journalEntry, attWas, attIDs []uuid.UUID, c *change) error {
+	fresh := func(kind string) bool {
+		return slices.ContainsFunc(journal, func(j journalEntry) bool { return j.row != nil && j.replaced == uuid.Nil && j.row.Kind == kind })
+	}
+	if dateAny(old.DueOn) != dateAny(t.DueOn) {
+		due := DateString(t.DueOn)
+		if err := s.notifyChange(ctx, q, t, me, notifications.TaskDueChanged, func(n *notice) { n.dueOn = due }, c); err != nil {
+			return err
+		}
+	}
+	if old.Priority != t.Priority && fresh("priority") {
+		if err := s.notifyChange(ctx, q, t, me, notifications.TaskPriority, nil, c); err != nil {
+			return err
+		}
+	}
+	if !eqID(old.MilestoneID, t.MilestoneID) {
+		name := ""
+		if t.MilestoneID != nil {
+			ms, err := q.ListBoardMilestones(ctx, []uuid.UUID{t.BoardID})
+			if err != nil {
+				return err
+			}
+			for _, m := range ms {
+				if m.ID == *t.MilestoneID {
+					name = m.Name
+				}
+			}
+		}
+		if err := s.notifyChange(ctx, q, t, me, notifications.TaskMilestone, func(n *notice) { n.text = name }, c); err != nil {
+			return err
+		}
+	}
+	for _, f := range []string{"title", "description"} {
+		if fresh(f) {
+			if err := s.notifyChange(ctx, q, t, me, notifications.TaskEdited, func(n *notice) { n.text = f }, c); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	for _, id := range attIDs {
+		if slices.Contains(attWas, id) {
+			continue
+		}
+		f, err := q.GetFile(ctx, id)
+		if err != nil {
+			return err
+		}
+		return s.notifyChange(ctx, q, t, me, notifications.TaskAttachment, func(n *notice) { n.text = f.Name }, c)
+	}
+	return nil
 }
 
 func eqID(a, b *uuid.UUID) bool {
@@ -1548,15 +1639,36 @@ func (s *Service) recordFields(ctx context.Context, q *sqlc.Queries, old, t task
 		}
 		return int(*e)
 	}
+	// Snapshots of the parent (key, title) and the milestone (name), ADR-0091 §3.
+	parentBefore, parentAfter := map[string]any{"parent_id": idAny(old.ParentID)}, map[string]any{"parent_id": idAny(t.ParentID)}
+	if !eqID(old.ParentID, t.ParentID) {
+		refs, err := taskRefs(ctx, q, old.ParentID, t.ParentID)
+		if err != nil {
+			return err
+		}
+		withRef(parentBefore, refs, old.ParentID)
+		withRef(parentAfter, refs, t.ParentID)
+	}
+	msBefore, msAfter := map[string]any{"milestone_id": idAny(old.MilestoneID)}, map[string]any{"milestone_id": idAny(t.MilestoneID)}
+	if !eqID(old.MilestoneID, t.MilestoneID) {
+		names, err := milestoneNames(ctx, q, t.BoardID)
+		if err != nil {
+			return err
+		}
+		withMilestone(msBefore, names, old.MilestoneID)
+		withMilestone(msAfter, names, t.MilestoneID)
+	}
 	entries := []entry{
 		{"title", map[string]any{"title": old.Title}, map[string]any{"title": t.Title}, old.Title != t.Title},
-		{"description", map[string]any{"length": utf8.RuneCountInString(old.Description)}, map[string]any{"length": utf8.RuneCountInString(t.Description)}, old.Description != t.Description},
+		// The text itself too (ADR-0091 §3): the history shows what changed.
+		{"description", map[string]any{"length": utf8.RuneCountInString(old.Description), "text": old.Description},
+			map[string]any{"length": utf8.RuneCountInString(t.Description), "text": t.Description}, old.Description != t.Description},
 		{"priority", map[string]any{"priority": int(old.Priority)}, map[string]any{"priority": int(t.Priority)}, old.Priority != t.Priority},
 		{"estimate", map[string]any{"estimate": est(old.Estimate)}, map[string]any{"estimate": est(t.Estimate)}, est(old.Estimate) != est(t.Estimate)},
 		{"dates", map[string]any{"start_on": dateAny(old.StartOn), "due_on": dateAny(old.DueOn)}, map[string]any{"start_on": dateAny(t.StartOn), "due_on": dateAny(t.DueOn)},
 			dateAny(old.StartOn) != dateAny(t.StartOn) || dateAny(old.DueOn) != dateAny(t.DueOn)},
-		{"parent", map[string]any{"parent_id": idAny(old.ParentID)}, map[string]any{"parent_id": idAny(t.ParentID)}, !eqID(old.ParentID, t.ParentID)},
-		{"milestone", map[string]any{"milestone_id": idAny(old.MilestoneID)}, map[string]any{"milestone_id": idAny(t.MilestoneID)}, !eqID(old.MilestoneID, t.MilestoneID)},
+		{"parent", parentBefore, parentAfter, !eqID(old.ParentID, t.ParentID)},
+		{"milestone", msBefore, msAfter, !eqID(old.MilestoneID, t.MilestoneID)},
 		{"status", map[string]any{"status_id": old.StatusID.String(), "status_type": from.Type, "position": old.Position},
 			map[string]any{"status_id": t.StatusID.String(), "status_type": to.Type, "position": t.Position}, old.StatusID != t.StatusID},
 	}
@@ -1704,6 +1816,10 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 		map[string]any{"board_id": dstID.String(), "key": TaskKey(b.Key, number), "status_id": to.ID.String()}); err != nil {
 		return err
 	}
+	// Its subscribers who see the new board (ADR-0089 MOVED).
+	if err := s.notifyChange(r.Context(), q, moved, me, notifications.TaskMoved, func(n *notice) { n.text = b.Name }, c); err != nil {
+		return err
+	}
 	// The old board's viewers lose the task; the new board's get it as TASK_CREATE.
 	c.before = append(c.before, wsEvent{src.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskDelete{TaskDelete: &v1.TaskDelete{
 		WorkspaceId: src.WorkspaceID.String(), BoardId: oldBoard.String(), TaskId: t.ID.String()}}}})
@@ -1751,7 +1867,20 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 		if t.ParentID != nil {
 			c.tasks = append(c.tasks, *t.ParentID)
 		}
-		return c.record(r.Context(), q, t, me, kind, nil, nil)
+		if err := c.record(r.Context(), q, t, me, kind, nil, nil); err != nil {
+			return err
+		}
+		if !archived {
+			return nil
+		}
+		// ADR-0089: no due notices for an archived task; ARCHIVED to its subscribers who
+		// still see it.
+		if err := q.DeleteTaskDueNotices(r.Context(), t.ID); err != nil {
+			return err
+		}
+		at, now := t, s.Now()
+		at.ArchivedAt = &now
+		return s.notifyChange(r.Context(), q, at, me, notifications.TaskArchived, nil, &c)
 	})
 	if err != nil {
 		return err
@@ -1759,13 +1888,13 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 	if archived {
 		s.ev.Workspace(r.Context(), t.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskDelete{TaskDelete: &v1.TaskDelete{
 			WorkspaceId: t.WorkspaceID.String(), BoardId: t.BoardID.String(), TaskId: t.ID.String()}}})
-		for _, a := range c.acts {
-			s.ev.Workspace(r.Context(), t.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: t.WorkspaceID.String(), Activity: activity(a)}}})
+		for _, j := range c.journal {
+			s.ev.Workspace(r.Context(), t.WorkspaceID, j.event(t.WorkspaceID))
 		}
 		for _, id := range c.tasks {
 			s.publishTaskEvent(r.Context(), id, false)
 		}
+		s.sendNotices(r.Context(), t.ID, c.notices)
 	} else {
 		s.publish(r.Context(), t.ID, &c, true)
 	}
@@ -1806,7 +1935,10 @@ func (s *Service) setAssignees(w http.ResponseWriter, r *http.Request) error {
 		if err := c.record(r.Context(), q, t, me, "assignees", map[string]any{"assignees": assigneesJSON(old)}, map[string]any{"assignees": inputsJSON(in)}); err != nil {
 			return err
 		}
-		return s.notifyDirect(r.Context(), q, t, me, fresh, nil, uuid.Nil, &c)
+		if err := s.notifyDirect(r.Context(), q, t, me, fresh, nil, uuid.Nil, &c); err != nil {
+			return err
+		}
+		return s.notifyAddressed(r.Context(), q, t, me, notifications.TaskUnassigned, unassigned(old, in), nil, &c)
 	})
 	if err != nil {
 		return err
@@ -1894,7 +2026,8 @@ func (s *Service) relation(w http.ResponseWriter, r *http.Request, other uuid.UU
 			return err
 		}
 		c.tasks = append(c.tasks, other)
-		rel := map[string]any{"related_id": other.String(), "kind": kind}
+		// The related task's key and title (ADR-0091 §3): the history names it after it is gone.
+		rel := map[string]any{"related_id": other.String(), "kind": kind, "key": TaskKey(o.BoardKey, o.Number), "title": o.Title}
 		if add {
 			return c.record(r.Context(), q, t, me, "relation", nil, rel)
 		}

@@ -1,6 +1,6 @@
 import { EventRepeat } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { addEmail, addMember, draftDirty, fieldOf, newDraft, toCreate, toUpdate, validateDraft, type EventDraft } from './draft';
+import { addEmail, addMember, addMembers, draftDirty, fieldOf, newDraft, toCreate, toUpdate, validateDraft, type EventDraft } from './draft';
 import { atMinutes } from './time';
 
 /** The meeting dialog's model (ADR-0038 §7, docs/20 C.1): checks, the requests it makes. Local times. */
@@ -29,6 +29,14 @@ describe('meeting dialog model', () => {
     expect(addEmail(r.list, 'ext@example.com')).toEqual({ error: 'cal.err.emailDup' });
     expect(addMember(r.list, 'u1')).toEqual([...r.list, { userId: 'u1', email: '', required: true }]);
     expect(addMember(addMember([], 'u1'), 'u1')).toHaveLength(1);
+  });
+
+  it('@all adds every member once, keeps the listed ones as they are; 100 with the organizer at most', () => {
+    const list = [{ userId: 'u1', email: '', required: false }, { userId: '', email: 'x@example.com', required: false }];
+    expect(addMembers(list, ['u1', 'u2', 'u2', '', 'u3'])).toEqual([...list, { userId: 'u2', email: '', required: true }, { userId: 'u3', email: '', required: true }]);
+    const ids = Array.from({ length: 100 }, (_, i) => `u${i}`);
+    expect(validateDraft({ ...base(), attendees: addMembers([], ids.slice(0, 99)) })).toEqual({});
+    expect(validateDraft({ ...base(), attendees: addMembers([], ids) })).toEqual({ attendees: 'cal.err.attendeesMax' });
   });
 
   it('create: times as instants, the viewer’s zone, attendees as typed', () => {

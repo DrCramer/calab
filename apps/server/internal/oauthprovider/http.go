@@ -167,6 +167,22 @@ func pathWorkspace(r *http.Request) (uuid.UUID, error) {
 	}
 	return id, nil
 }
+
+// appOrigin guards bearer-authenticated management routes: the Origin must be the
+// configured PublicOrigin or one of the app origins the rest of the API accepts
+// (Config.AppOrigins, httpx.SameOrigin), and the browser must not call it a
+// cross-site request.
+func (s *Service) appOrigin(r *http.Request) bool {
+	return httpx.SameOrigin(r, s.appOrigins) && r.Header.Get("Sec-Fetch-Site") != "cross-site"
+}
+func truncate(v string, n int) string {
+	if len(v) > n {
+		return v[:n]
+	}
+	return v
+}
+
+// sameOrigin is the strict check of the cookie-bound consent routes.
 func (s *Service) sameOrigin(r *http.Request) bool {
 	return r.Header.Get("Origin") == s.c.PublicOrigin && r.Header.Get("Sec-Fetch-Site") != "cross-site"
 }
@@ -332,7 +348,7 @@ func apiIdentityError(st identitypolicy.State, d identitypolicy.Decision, err er
 		code = v1.ErrorCode_ERROR_CODE_DIRECTORY_ACCESS_DENIED
 	case identitypolicy.EntitlementRequired:
 		return httpx.Conflict("Business or Enterprise is required").WithDetails(httpx.ReasonPlanLimit, 0, 0)
-	case identitypolicy.WorkspaceSuspended:
+	case identitypolicy.WorkspaceSuspended, identitypolicy.BillingSuspended:
 		code = v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED
 	}
 	if st.Principal.Authority == identitypolicy.Recovery {

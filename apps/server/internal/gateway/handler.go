@@ -336,6 +336,13 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		}
 	}
 	_ = h.pres.set(ctx, s.user, s.id, s.status, s.client)
+	// Connecting is activity of the user's guest memberships (ADR-0098); best effort, the
+	// live presence alone keeps them from the sweep meanwhile.
+	if !id.IsBot {
+		if err := h.db.Q.TouchGuestMemberships(ctx, id.UserID); err != nil {
+			slog.WarnContext(ctx, "gateway: guest activity touch", "err", err)
+		}
+	}
 	ready, err := h.buildReady(ctx, s, id.UserID)
 	if err != nil {
 		slog.Error("gateway: build READY", "err", err)
@@ -385,7 +392,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err != nil {
 		return nil, err
 	}
-	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact}
+	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact, BillingSelfServe: h.cfg.BillingSelfServe}
 	if s.principal.Authority == identitypolicy.WorkspaceSSO {
 		ready.Me = pbconv.ScopedMe(u)
 	}
@@ -404,6 +411,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			ready.Call = c.Proto()
 		}
 	}
+	var stubs []*v1.WorkspaceSnapshot // closed for unpaid billing: appended after every fill below
 	for _, w := range wss {
 		var access *v1.WorkspaceIdentityAccess
 		if !s.bot {
@@ -429,6 +437,14 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
 			}
 			ready.IdentityAccess = append(ready.IdentityAccess, access)
+			if billingDenied(decision, err) && s.billingStubAllows(w.ID) {
+				stub, err := h.billingStub(ctx, w, uid)
+				if err != nil {
+					return nil, err
+				}
+				stubs = append(stubs, stub)
+				continue
+			}
 			if !decision.Allowed || err != nil {
 				continue
 			}
@@ -533,7 +549,27 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		}
 		ready.WorkspaceNotificationSettings = append(ready.WorkspaceNotificationSettings, pbconv.WorkspaceNotificationSettings(n))
 	}
+	// Billing stubs last, so none of the fills above (admissions, meetings, read states) adds
+	// anything to them: only the workspace and the recipient's role (isBillingStub).
+	ready.Workspaces = append(ready.Workspaces, stubs...)
 	return ready, nil
+}
+
+// billingStub is the READY snapshot of a workspace closed for unpaid billing (ADR-0080 §8):
+// workspaces.BillingStub and the recipient's role, nothing else. The caller's decision was a
+// billing suspension, which comes after the membership check.
+func (h *Hub) billingStub(ctx context.Context, w sqlc.Workspace, uid uuid.UUID) (*v1.WorkspaceSnapshot, error) {
+	ws, err := workspaces.BillingStub(ctx, h.cfg.Plans, w)
+	if err != nil {
+		return nil, err
+	}
+	snap := &v1.WorkspaceSnapshot{Workspace: ws}
+	if m, err := h.db.Q.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: w.ID, UserID: uid}); err == nil {
+		snap.Role = perm.Role(m.Role).Proto()
+	} else if !db.IsNotFound(err) {
+		return nil, err
+	}
+	return snap, nil
 }
 
 func (h *Hub) invalid(c *conn) {

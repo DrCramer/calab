@@ -6,14 +6,15 @@ import { t } from '../i18n';
 import { peerOf } from '../lib/callModel';
 import { log } from '../lib/log';
 import { decideResume, type ResumeContext } from '../lib/resumeVoice';
-import { canAutoplayAudio, saveVoiceSelf, tabStorage, takeVoiceSelf } from '../lib/webResume';
+import { activateWebUpdate, browserUpdateEnv } from '../lib/webUpdate';
+import { canAutoplayAudio, pageWasReloaded, reloadSeat, saveVoiceSelf, saveWebResume, tabStorage, takeVoiceSelf, takeWebResume } from '../lib/webResume';
 import { isWeb, platform } from '../platform';
 import { useRooms } from '../stores/rooms';
 import { myUserId, useSession } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
 import { setVoice, useVoice } from '../stores/voice';
 import { memberName, useWorkspaces } from '../stores/workspaces';
-import { keepCallOnExit, resumeCall } from './call';
+import { callKeptOnExit, keepCallOnExit, resumeCall } from './call';
 import { voice } from './voice';
 
 /**
@@ -33,6 +34,14 @@ import { voice } from './voice';
  * the page may play sound (canAutoplayAudio): refused → the mic / deafen state is restored and a
  * toast offers «Вернуться» (the click unlocks the sound). Any reload of the tab also keeps the
  * mic / deafen state (written on `pagehide`, restored on the first READY): never back unmuted.
+ *
+ * Any reload (issue #209: F5 dropped the user out of the room): `pagehide` writes the seat into
+ * the tab's sessionStorage too (lib/webResume.reloadSeat), so the reloaded page rejoins the same
+ * room through the same path — within WEB_RESUME_WINDOW_MS, the same user and server, never over
+ * another device. sessionStorage is per tab: another tab never rejoins, a closed tab forgets it,
+ * and a duplicated tab copies nothing (the record exists only between `pagehide` and READY). The
+ * desktop renderer reloaded in place (navigation type «reload») takes the same record when main
+ * has none; an app restart is not a reload, so it is unchanged.
  */
 
 /** How long a call's rejoin may take before its toast is given up (the join reports failures itself). */
@@ -70,9 +79,19 @@ export function installResumeVoice(): void {
   installed = true;
   // Any reload of the tab (F5 included): the mic / deafen state comes back with it. An event, not a timer.
   if (typeof window !== 'undefined') {
+    // LiveKit leaves the room on `beforeunload` already (disconnectOnPageLeave): the seat is read
+    // there first — these listeners are registered at startup, ahead of any Room's own.
+    let unloadSeat: ResumeVoiceSeat | null = null;
+    window.addEventListener('beforeunload', () => {
+      unloadSeat = currentSeat();
+    });
     window.addEventListener('pagehide', () => {
       const v = useVoice.getState();
-      saveVoiceSelf(tabStorage(), { userId: myUserId(), muted: v.muted, deafened: v.deafened, mutedBeforeDeafen: v.mutedBeforeDeafen });
+      const store = tabStorage();
+      saveVoiceSelf(store, { userId: myUserId(), muted: v.muted, deafened: v.deafened, mutedBeforeDeafen: v.mutedBeforeDeafen });
+      const seat = currentSeat() ?? unloadSeat;
+      unloadSeat = null;
+      saveWebResume(store, reloadSeat(seat, callKeptOnExit()), useSession.getState().serverUrl, Date.now());
     });
   }
   platform.app.onPrepareRestart(() => {
@@ -93,6 +112,7 @@ export async function reloadForUpdate(): Promise<void> {
   if (seat?.kind === 'dm-call') keepCallOnExit();
   log.info(`update reload: voice seat ${seat ? `${seat.kind} ${seat.roomId}` : 'none'}`);
   await platform.app.setResumeVoice(seat).catch((e: unknown) => log.warn('resume voice: store failed', e));
+  await activateWebUpdate(browserUpdateEnv());
   window.location.reload();
 }
 
@@ -113,6 +133,12 @@ export function resumeVoiceAfterReady(readyCall: Call | undefined): void {
   // Never throws into the READY dispatch.
   void Promise.resolve()
     .then(() => platform.app.takeResumeVoice())
+    // Desktop: a renderer reloaded in place left its seat in the tab storage (web: the same record).
+    .then((rec) => {
+      if (isWeb) return rec;
+      const tab = takeWebResume(tabStorage(), Date.now()); // taken either way: one use per reload
+      return rec ?? (pageWasReloaded() ? tab : null);
+    })
     .then((rec) => (rec ? resume(rec, readyCall ?? null) : undefined))
     .catch((e: unknown) => log.warn('resume voice failed', e));
 }

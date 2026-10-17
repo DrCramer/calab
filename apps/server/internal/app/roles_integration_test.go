@@ -87,7 +87,7 @@ func TestRolesCRUD(t *testing.T) {
 		"control char":  {Name: "a\nb"},
 		"color":         {Name: "c", Color: 0x1000000},
 		"administrator": {Name: "a", Permissions: uint64(perm.Administrator)},
-		"unknown bit":   {Name: "u", Permissions: 1 << 40},
+		"unknown bit":   {Name: "u", Permissions: 1 << 41},
 	} {
 		if st := o.do("POST", base, req, nil); st != 422 {
 			t.Errorf("%s: status %d, want 422", name, st)
@@ -284,7 +284,8 @@ func TestRoleRoomMatrix(t *testing.T) {
 	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: "p", IsPrivate: true}, &cr)
 	rid := cr.GetRoom().GetId()
 	member := builtinRole(t, o, wid, v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER)
-	if ovs := cr.GetRoom().GetPermissionOverrides(); len(ovs) != 1 || ovs[0].GetTargetId() != member.GetId() {
+	// The member role's deny and the creator's personal allow (ADR-0078 addendum 2026-10-14).
+	if ovs := cr.GetRoom().GetPermissionOverrides(); len(ovs) != 2 || ovs[0].GetTargetId() != member.GetId() || ovs[1].GetTargetId() != o.id {
 		t.Fatalf("private room override targets the member role id: %v", ovs)
 	}
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
@@ -319,7 +320,9 @@ func TestRoleRoomMatrix(t *testing.T) {
 		{"low + high: high wins the conflicts", ab, (m | perm.MuteMembers) &^ perm.Speak},
 		{"no custom role: private", none, 0},
 		{"guest with low", g, perm.Connect | perm.Speak | perm.ViewRoom | perm.MentionEveryone},
-		{"owner", o, perm.All},
+		// The creator, no bypass (ADR-0078 addendum): their personal allow of the room bits, kept
+		// over the PUT that left it out.
+		{"owner", o, m | perm.RoomOnly},
 	} {
 		bits, st := roomPerms(t, c.u, rid)
 		if perm.Bits(bits) != c.bits || (c.bits == 0) != (st == 404) {

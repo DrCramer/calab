@@ -90,8 +90,13 @@ test('boards: kanban → create → drag → assignees → comment → filter �
   const react = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/reactions/'));
   await comment.getByRole('button', { name: /Реакция 👍/ }).click();
   expect((await react).ok()).toBe(true);
-  await expect(panel.getByTestId('activity-row').first()).toBeVisible();
-  await panel.getByRole('button', { name: 'Закрыть' }).click();
+  // «История» (ADR-0091): the assignee changes, newest first; back to «Комментарии».
+  await panel.getByTestId('task-activity').getByRole('radio', { name: 'История' }).click();
+  await expect(panel.getByTestId('history-row').first()).toHaveAttribute('data-kind', 'assignees');
+  await panel.getByTestId('task-activity').getByRole('radio', { name: 'Комментарии' }).click();
+  await expect(comment).toBeVisible();
+  // Esc closes the full-screen task: the board is back as it was.
+  await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 
   // Filter by a label (F → Лейблы → Баг): only CAL-3 stays.

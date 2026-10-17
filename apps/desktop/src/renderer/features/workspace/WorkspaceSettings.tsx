@@ -4,10 +4,12 @@ import { identityApi } from '../identity/api';
 import { localAuthority } from '../identity/model';
 import { IdentityAbout, IdentityNotConfigured } from '../identity/IdentityGate';
 import { PlanLock } from '../../components/PlanLock';
-import { audioTierKbps, type ConcreteScreenSharePreset, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
+import { DiskSettingsTab } from '../disk/DiskSettings';
+import { WikiSettingsTab } from '../wiki/WikiSettings';
+import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -21,8 +23,9 @@ import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoi
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
-import { can, mayArrangeRooms, settingsAccess, workspacePerms } from '../../lib/permissions';
+import { can, settingsAccess, workspacePerms } from '../../lib/permissions';
 import { TempRoomsCards } from './TempRoomsCards';
+import { PrivacyCard } from './PrivacyCard';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -39,17 +42,20 @@ import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { TelephonyTab } from './TelephonyTab';
-import { PLAN_LABEL, capMax, clampToCap, planHasIdentity, planKind } from '../../lib/plan';
+import { capMax, clampToCap, planHasIdentity, workspacePlanName } from '../../lib/plan';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
+import { FormerTab } from './FormerTab';
+import { loadedOpenTasksOf } from '../../services/formerTasks';
 import { RolesTab } from './RolesTab';
 import { LibraryTab, SEGMENT_LABEL } from './LibraryTab';
 import { LIBRARY_TAB, librarySegments, resolveSettingsTab } from './library';
 import { BotsTab } from './BotsTab';
 import { UpcomingBirthdays } from './UpcomingBirthdays';
+import { Choice } from '../../components/Choice';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -100,6 +106,8 @@ export function WorkspaceSettingsDialog({
   const manageRoles = access.roles;
   const inviter = access.invites;
   const library = librarySegments(access);
+  const diskManage = (diskPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & DISK_BITS.MANAGE) !== 0n;
+  const wikiManage = (wikiPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & WIKI_BITS.MANAGE) !== 0n;
   const requested = resolveSettingsTab(tab);
   const identityPanel = (feature: IdentityFeature, about: ReactNode, content: ReactNode): ReactNode =>
     identityStatus.isPending ? (
@@ -125,9 +133,17 @@ export function WorkspaceSettingsDialog({
             id: 'general',
             label: t('ws.tabGeneral'),
             icon: Settings2,
-            content: <GeneralTab workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={mayArrangeRooms(myRoles)} />,
+            content: <GeneralTab workspaceId={workspaceId} />,
           },
           { id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab workspaceId={workspaceId} /> },
+          // Temporary rooms (ADR-0044): the members' right (MANAGE_ROLES) and the archive retention.
+          {
+            id: 'rooms',
+            label: t('ws.tabRooms'),
+            icon: DoorOpen,
+            keywords: t('temp.allowAll'),
+            content: <TempRoomsCards workspaceId={workspaceId} manageRoles={manageRoles} />,
+          },
         ]
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
@@ -147,6 +163,10 @@ export function WorkspaceSettingsDialog({
       : []),
     // «Боты» (ADR-0031): MANAGE_BOTS (ADR-0048), like the server's bot management.
     ...(access.bots ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
+    // «Диск» (ADR-0094 §1): the trash retention — DISK_MANAGE (ADMINISTRATOR includes it).
+    ...(diskManage ? [{ id: 'disk', label: t('disk.section'), icon: HardDrive, keywords: t('disk.settings.trash'), content: <DiskSettingsTab workspaceId={workspaceId} /> }] : []),
+    // «Вики» (ADR-0096 §1): the trash retention — WIKI_MANAGE (ADMINISTRATOR includes it).
+    ...(wikiManage ? [{ id: 'wiki', label: t('wiki.section'), icon: BookOpen, keywords: t('wiki.settings.trash'), content: <WikiSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
     // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).
@@ -183,6 +203,8 @@ export function WorkspaceSettingsDialog({
       : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_MEMBERS, ADR-0048).
+    // «Бывшие» (ADR-0097 §3): the same right as «Забаненные».
+    ...(access.members ? [{ id: 'former', label: t('former.tab'), icon: UserMinus, content: <FormerTab workspaceId={workspaceId} /> }] : []),
     ...(access.members ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
@@ -213,15 +235,7 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({
-  workspaceId,
-  manageRoles,
-  manageRooms,
-}: {
-  workspaceId: string;
-  manageRoles: boolean;
-  manageRooms: boolean;
-}): ReactNode {
+function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -294,8 +308,7 @@ function GeneralTab({
           />
         </Row>
       </Card>
-      {/* Temporary rooms (ADR-0044): the members' right (MANAGE_ROLES) and the archive (MANAGE_ROOM). */}
-      <TempRoomsCards workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={manageRooms} />
+      <PrivacyCard workspaceId={workspaceId} />
     </>
   );
 }
@@ -423,7 +436,10 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
     }
   };
   const kick = async (userId: string, name: string): Promise<void> => {
-    if (!(await confirmAction(t('ws.kick'), t('ws.kickConfirm', { name }), t('ws.kick')))) return;
+    // ADR-0097 §4: what stays on the person's name (loaded boards only; omitted when none).
+    const open = loadedOpenTasksOf(workspaceId, userId);
+    const body = open > 0 ? `${t('ws.kickConfirm', { name })} ${t('former.openTasks', { n: open })}` : t('ws.kickConfirm', { name });
+    if (!(await confirmAction(t('ws.kick'), body, t('ws.kick')))) return;
     try {
       await api.workspaces.removeMember(workspaceId, userId);
       useWorkspaces.getState().removeMember(workspaceId, userId);
@@ -439,13 +455,18 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <label className="flex min-w-48 flex-1 items-center">
           <Input aria-label={t('common.search')} placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} icon={<Search className="size-3.5" />} />
         </label>
-        <Segmented label={t('ws.filter.label')} value={filter} onChange={setFilter} options={ROLE_FILTERS.map((f) => ({ value: f.value, label: t(f.key) }))} />
+        <Choice label={t('ws.filter.label')} value={filter} onChange={setFilter} options={ROLE_FILTERS.map((f) => ({ value: f.value, label: t(f.key) }))} />
         {manageBirthdays ? (
           <Button variant="secondary" onClick={() => setView('birthdays')} data-testid="open-birthdays-table">
             <Cake className="size-4" aria-hidden /> {t('birthday.tableTitle')}
           </Button>
         ) : null}
       </div>
+      {filter === 'guest' ? (
+        <p className="text-caption text-muted" data-testid="guest-expiry-hint">
+          {t('former.guestsHint')}
+        </p>
+      ) : null}
       {members.length === 0 ? (
         <Empty>{t('ws.filter.none')}</Empty>
       ) : (
@@ -540,7 +561,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
       {cap.full ? (
         <PlanFullNote
-          text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })}
+          text={t('plan.membersFull', { plan: workspacePlanName(workspacePlan(workspaceId)), n: cap.limit })}
           testId="invite-plan-full"
         />
       ) : null}

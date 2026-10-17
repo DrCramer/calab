@@ -1,6 +1,7 @@
 import { Copy } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Tip } from '../../components/ui';
+import { useDisclosure } from '../disclosure';
 import { plural, t } from '../../i18n';
 import { toast } from '../../stores/toasts';
 import { clipLines } from './parse';
@@ -28,7 +29,8 @@ function runs(nodes: HlNode[], key: string): ReactNode[] {
  * virtualized feed never jumps. Memoized by content.
  */
 export const CodeBlock = memo(function CodeBlock({ code, lang }: { code: string; lang: string }): ReactNode {
-  const [expanded, setExpanded] = useState(false);
+  // Kept by message in the virtualised feed (lib/disclosure.ts): back open, at its cached height.
+  const [expanded, setExpanded] = useDisclosure(`code:${code.length}:${code.slice(0, 64)}`);
   const { lines, head } = useMemo(() => clipLines(code, MAX_LINES), [code]);
   const collapsed = lines > MAX_LINES && !expanded;
   const shown = collapsed ? head : code;
@@ -81,6 +83,8 @@ export const CodeBlock = memo(function CodeBlock({ code, lang }: { code: string;
         <button
           type="button"
           onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          data-feed-expand=""
           className="flex h-8 w-full items-center justify-center border-t border-line text-body font-medium text-accent-text hover:bg-hover"
         >
           {plural('chat.code.showAll', lines, { n: lines })}

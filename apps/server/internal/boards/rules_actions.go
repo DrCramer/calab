@@ -238,7 +238,10 @@ func (a *actx) setAssignees(x *v1.RuleAction_SetAssignees) error {
 	if err := a.c.record(ctx, a.q, a.t, uuid.Nil, "assignees", map[string]any{"assignees": assigneesJSON(old)}, map[string]any{"assignees": inputsJSON(in)}); err != nil {
 		return err
 	}
-	return a.e.s.notifyDirect(ctx, a.q, a.t, uuid.Nil, fresh, nil, uuid.Nil, a.c)
+	if err := a.e.s.notifyDirect(ctx, a.q, a.t, uuid.Nil, fresh, nil, uuid.Nil, a.c); err != nil {
+		return err
+	}
+	return a.e.s.notifyAddressed(ctx, a.q, a.t, uuid.Nil, notifications.TaskUnassigned, unassigned(old, in), nil, a.c)
 }
 
 func (a *actx) setLabels(x *v1.RuleAction_SetLabels) error {
@@ -292,7 +295,7 @@ func (a *actx) setLabels(x *v1.RuleAction_SetLabels) error {
 	if err := a.q.TouchTask(ctx, a.t.ID); err != nil {
 		return err
 	}
-	return a.c.record(ctx, a.q, a.t, uuid.Nil, "labels", map[string]any{"label_ids": idsJSON(was)}, map[string]any{"label_ids": idsJSON(next)})
+	return a.c.record(ctx, a.q, a.t, uuid.Nil, "labels", labelsEntry(it, was), labelsEntry(it, next))
 }
 
 // writeFields stores changed fields of the task and journals them (priority, dates).

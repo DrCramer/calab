@@ -1,8 +1,9 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Popover from '@radix-ui/react-popover';
 import { CalendarDays, CalendarPlus, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Link2, Pencil, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -14,7 +15,9 @@ import { layoutDay } from '../../lib/calendar/layout';
 import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatTime, monthOf } from '../../lib/calendar/time';
 import { dateTimeFormat } from '../../lib/format';
 import { addPeople, personColor } from '../../lib/calendar/people';
+import { haptics } from '../../lib/haptics';
 import { useMobile } from '../../lib/mobile';
+import { daySwipeStep, lockAxis, type AxisGesture } from '../../lib/swipeGestures';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
 import { busySignature, ensureBusy, ensureExternal, loadCalDav, parseBusySignature } from '../../services/freebusy';
@@ -25,19 +28,22 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { Bar } from '../../components/Bar';
-import { NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
+import { CreateSlot, NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { useDayDrag } from './dragState';
 import { useToday } from './MiniCalendar';
 import { FindTimePane } from './FindTime';
 import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, PX_PER_MIN } from './gridParts';
+import { MonthPicker } from './MonthPicker';
 import { PeopleBar } from './PeopleBar';
 
 export { HOUR_PX };
 /** Hold near the grid's left / right edge this long while dragging → previous / next day. */
 const EDGE_DWELL_MS = 700;
 const EDGE_PX = 24;
+/** A day swipe never starts this close to the screen's left edge (the shell's / Safari's «back»). */
+const SWIPE_EDGE_PX = 28;
 
 /**
  * Day view (ADR-0038 §7, Apple Calendar): the day in the centre pane instead of the room — hour
@@ -157,6 +163,7 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [day]);
 
   const drag = useDragController({ workspaceId, day, grid, scroller, creatable, mobile });
+  const swipe = useDaySwipe(mobile, day);
 
   useDayKeys(workspaceId, day, creatable);
 
@@ -165,7 +172,7 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
       <DayHeader workspaceId={workspaceId} day={day} today={today} creatable={creatable} mobile={mobile} people={people.length} />
       {mobile ? null : <FilterRow workspaceId={workspaceId} people={people} />}
       <AllDayRow workspaceId={workspaceId} keys={allDay} day={day} onDown={drag.onBlockDown} />
-      <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="day-scroller">
+      <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="day-scroller" {...swipe}>
         <div className="relative flex" style={{ height: 24 * HOUR_PX + 16 }}>
           <HourScale />
           <div
@@ -206,22 +213,73 @@ function DropCursor(): ReactNode {
   return locked ? <div className="fixed inset-0 z-[var(--z-popover)] cursor-not-allowed" aria-hidden /> : null;
 }
 
+/** Phone: the header's date is a button; a tap opens a centred month card to jump to a day. */
+function DatePickCard({ day, today, title, onPick }: { day: string; today: string; title: string; onPick: (day: string) => void }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(monthOf(day));
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (o) setMonth(monthOf(day));
+        setOpen(o);
+      }}
+      modal={false}
+    >
+      <h1 className="flex">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={`${title}. ${t('cal.pickDate')}`}
+            aria-haspopup="dialog"
+            className="relative h-9 min-w-[64px] truncate rounded-[var(--radius-icon)] px-2 text-center text-list font-semibold first-letter:uppercase before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
+            data-testid="day-date"
+          >
+            <span aria-live="polite">{title}</span>
+          </button>
+        </Popover.Trigger>
+      </h1>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="center"
+          sideOffset={4}
+          collisionPadding={8}
+          aria-label={t('cal.pickDate')}
+          data-testid="day-date-card"
+          className="mat-popover anim-in z-[var(--z-modal-popover)] w-[300px] rounded-[var(--radius-card)] p-2 text-body"
+        >
+          <MonthPicker
+            month={month}
+            onMonth={setMonth}
+            value={day}
+            today={today}
+            onPick={(d) => {
+              haptics.select();
+              setOpen(false);
+              onPick(d);
+            }}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
   const [sheet, setSheet] = useState(false);
   if (mobile) {
-    // Phone: a compact «‹ 15 янв. ›» group, «+» as a plain header icon, the rest («Сегодня», «Люди»,
+    // Phone: a compact «‹ ср, 14 окт ›» group (the date opens a month card), «+» as a plain header icon, the rest («Сегодня», «Люди»,
     // «Подобрать время») behind «…» — the header keeps room for the shell's nav button.
-    const title = dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day));
+    const title = dateTimeFormat({ weekday: 'short', day: 'numeric', month: 'short' }).format(dayStart(day));
     return (
       <Bar>
         <NavButton />
         <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))}>
           <ChevronLeft className="size-[18px]" />
         </IconButton>
-        <h1 className="min-w-[64px] truncate text-center text-list font-semibold first-letter:uppercase" aria-live="polite">
-          {title}
-        </h1>
+        <DatePickCard day={day} today={today} title={title} onPick={open} />
         <IconButton label={t('cal.nextDay')} tip={false} onClick={() => open(addDays(day, 1))}>
           <ChevronRight className="size-[18px]" />
         </IconButton>
@@ -255,7 +313,7 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
           </Dropdown.Portal>
         </Dropdown.Root>
         <PhoneSearchButton />
-        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : null}
+        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : <CreateSlot />}
         {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
       </Bar>
     );
@@ -726,6 +784,42 @@ const DragGhost = memo(function DragGhost(): ReactNode {
     </div>
   );
 });
+
+// ---------------------------------------------------------------- day swipe
+
+/**
+ * Phone (docs/08 «Свайпы и долгое нажатие»): a horizontal swipe over the day (≥ 60 px) opens the
+ * next (left) or previous (right) day, as ‹ ›; a vertical one scrolls the hours. No state, no
+ * render: a gesture is a ref until its release.
+ */
+function useDaySwipe(enabled: boolean, day: string): { onTouchStart: (e: TouchEvent) => void; onTouchMove: (e: TouchEvent) => void; onTouchEnd: (e: TouchEvent) => void } | undefined {
+  const gesture = useRef<AxisGesture | null>(null);
+  if (!enabled) return undefined;
+  return {
+    onTouchStart: (e) => {
+      const p = e.touches[0];
+      gesture.current = p && e.touches.length === 1 && p.clientX > SWIPE_EDGE_PX ? { x: p.clientX, y: p.clientY, axis: null } : null;
+    },
+    onTouchMove: (e) => {
+      const g = gesture.current;
+      const p = e.touches[0];
+      if (!g || !p) return;
+      if (lockAxis(g, p.clientX, p.clientY) === 'y') gesture.current = null;
+      else if (g.axis === 'x') e.stopPropagation();
+    },
+    onTouchEnd: (e) => {
+      const g = gesture.current;
+      const p = e.changedTouches[0];
+      gesture.current = null;
+      if (!g || !p) return;
+      const step = daySwipeStep(g, p.clientX, p.clientY);
+      if (!step) return;
+      e.stopPropagation();
+      haptics.select();
+      useUi.getState().openCalendarDay(addDays(day, step));
+    },
+  };
+}
 
 // ---------------------------------------------------------------- drag controller
 

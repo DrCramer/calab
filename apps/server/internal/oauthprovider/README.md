@@ -52,6 +52,17 @@ handler uses cookie credentials at token/revoke/UserInfo or interprets a provide
 token as a Calaba API token. End-to-end Calaba API/WS/RTC rejection is integrator
 acceptance work, not proven by the isolated provider tests.
 
+Client management (list/get/create/update/delete/rotate) needs the builtin
+owner/admin role, the entitlement and, for workspace_sso sessions or enforced SSO,
+a fresh SSO proof, but no recent local password (ADR-0102); recovery sessions are
+denied. Writes require an Origin that is `PublicOrigin` or one of `Config.AppOrigins`
+(the API's `PUBLIC_APP_URL*` origins) and not `Sec-Fetch-Site: cross-site`; a refusal
+is 403 FORBIDDEN with an info log naming the Origin and route. Validation failures
+are 422 with the field (`name`, `type`, `redirectUris`, `allowedOrigins`, `scopes`)
+and a stable message. Redirects are exact https URIs or plain-http loopback
+(`localhost`, 127.0.0.1, [::1]) for every type; only native clients may use a
+reverse-domain scheme or vary the port of a loopback IP literal.
+
 Client mutation routes accept generated management DTOs; the path identifies the
 public client ID or returned record ID. PATCH takes the complete editable snapshot
 and expected security version. Name-only updates preserve that version. Security
@@ -59,8 +70,7 @@ updates and secret rotation revoke families and invalidate pending requests/code
 Only two unexpired secrets are accepted during the bounded ten-minute overlap;
 `revoke_old` closes it immediately. Secret responses and all protocol credentials
 are no-store and secrets are shown once. First-party errors carry the generated
-identity error code (including recent authentication, recovery-only, and dependency
-failures); external OIDC errors retain the RFC form and snake_case JSON contract.
+identity error code (including SSO proof, recovery-only, and dependency failures); external OIDC errors retain the RFC form and snake_case JSON contract.
 
 Transactions lock workspace/policy before client/grant and the matching identity
 boundary, then load policy state. Post-lock checks use fresh application and DB

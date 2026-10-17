@@ -91,6 +91,8 @@ export function validateDraft(d: EventDraft): DraftErrors {
   if (!title || Array.from(title).length > MAX_TITLE) e.title = 'cal.err.title';
   if (!d.allDay && d.end <= d.start) e.end = 'cal.err.end';
   if (d.attendees.filter((a) => !a.userId).length > MAX_EXTERNALS) e.attendees = 'cal.err.externals';
+  // The organizer takes a place too (calendar/input.go checkAttendees).
+  else if (d.attendees.length + 1 > MAX_ATTENDEES) e.attendees = 'cal.err.attendeesMax';
   if (d.repeat !== EventRepeat.UNSPECIFIED && d.until && d.until < d.day) e.until = 'cal.err.end';
   return e;
 }
@@ -108,6 +110,21 @@ export function addEmail(list: readonly DraftAttendee[], raw: string): { list: D
 export function addMember(list: readonly DraftAttendee[], userId: string): DraftAttendee[] {
   if (!userId || list.some((a) => a.userId === userId)) return [...list];
   return [...list, { userId, email: '', required: true }];
+}
+
+/**
+ * «@all»: every given member added as required, those already listed kept as they are (their
+ * required / optional choice too). The caller passes the workspace's members, not guests or bots.
+ */
+export function addMembers(list: readonly DraftAttendee[], userIds: readonly string[]): DraftAttendee[] {
+  const have = new Set(list.map((a) => a.userId).filter(Boolean));
+  const out = [...list];
+  for (const id of userIds) {
+    if (!id || have.has(id)) continue;
+    have.add(id);
+    out.push({ userId: id, email: '', required: true });
+  }
+  return out;
 }
 
 const untilTs = (d: EventDraft): number | null => (d.repeat !== EventRepeat.UNSPECIFIED && d.until ? dayEnd(d.until) - 1 : null);

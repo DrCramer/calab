@@ -9,9 +9,11 @@ import { echoFeatures } from './echoFeatures';
 import { cleanupDragOut } from './dragOut';
 import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink';
 import { registerIpc } from './ipc';
+import { installMailGuards, shutdownMail, startMail } from './mail';
 import { initLogging, log } from './logging';
 import { recoverCapsRemap } from './capsRemap';
 import { installRendererCsp } from './csp';
+import { installDownloadHandler } from './downloads';
 import { applyDevDockIcon } from './icons';
 import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
@@ -95,6 +97,7 @@ setMainWindowHooks({
 // Every webContents (main window, stream pop-outs, anything created later) gets the same
 // navigation / window.open / <webview> guards (review L12).
 installWebContentsGuards();
+installMailGuards(); // mail bodies: links → browser / compose, attachment downloads (ADR-0088 §10)
 // Workspace web apps (ADR-0050 §4): their views and popups get their own guard set; the end of
 // the Calab session clears every app's site data on this device.
 installWebAppGuards();
@@ -112,6 +115,8 @@ function lockDownSession(): void {
   );
   installDisplayMediaHandler(ses);
   installRendererCsp();
+  // Every download, ours or the PDF viewer's own (ADR-0103), gets quarantine / Mark-of-the-Web.
+  installDownloadHandler(ses);
 }
 
 function forwardPower(ev: PowerEvent): void {
@@ -126,6 +131,7 @@ void app.whenReady().then(() => {
   // before the renderer re-applies it for a binding that still wants it.
   void recoverCapsRemap();
   handleApiScheme();
+  startMail();
   // The voice seat left by a restart for an update (docs/09 #126): read and deleted now, so only
   // this launch sees it.
   loadResumeVoice();
@@ -169,4 +175,5 @@ void app.whenReady().then(() => {
 app.on('will-quit', () => {
   shutdownPtt();
   cleanupDragOut();
+  shutdownMail();
 });

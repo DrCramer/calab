@@ -70,6 +70,9 @@ func (s *Service) allowedPolicy(ctx context.Context, q *sqlc.Queries, u sqlc.Use
 			if card := system.GetCall(); card != nil && card.Outcome != v1.CallOutcome_CALL_OUTCOME_MISSED {
 				return false, false, nil
 			}
+			if system.GetRoomIcon() != nil || system.GetContactShared() != nil { // a room picture change is silent (ADR-0092), so is a contact share (ADR-0100)
+				return false, false, nil
+			}
 		}
 		workspace, err := q.GetIdentityRoomParent(ctx, msg.RoomID)
 		if err != nil {

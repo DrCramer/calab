@@ -8,6 +8,10 @@ import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
 import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
+import { leaveMail, useMailUi } from './mailUi';
+import { leaveDisk, useDiskUi } from './diskUi';
+import { leaveWiki, useWikiUi } from './wikiUi';
+import { chatFollow, followTarget, type FollowEvent } from '../lib/chatFollow';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -19,12 +23,16 @@ export type Dialog =
   | { kind: 'temp-room-create'; workspaceId: string }
   /** «Продлить › До даты…» of a temporary room. */
   | { kind: 'temp-room-extend'; roomId: string }
+  /** The archive of temporary rooms (ADR-0044 addendum 14.10): a dialog on the desktop, a pushed screen on the phone. */
+  | { kind: 'temp-archive'; workspaceId: string }
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
   | { kind: 'camera-preview' }
   /** The image viewer; `images` are the message's images (←/→), `index` the one opened; `inChat`: «Показать в чате». */
   | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string } }
+  /** The PDF viewer of an API file (ADR-0103): Chromium's built-in viewer in a blob: frame, «Скачать». */
+  | { kind: 'pdf'; file: { id: string; name: string; size: bigint } }
   /**
    * A meeting recording opened from a search hit at a segment (ADR-0062 §4): the player and the
    * summary from its card message (messageId, '' = gone), the transcript.
@@ -36,6 +44,8 @@ export type Dialog =
   | { kind: 'new-dm' }
   /** «Переслать…» (ADR-0033): pick people / rooms to copy the message `messageId` of `roomId` into. */
   | { kind: 'forward'; roomId: string; messageId: string }
+  /** «Отправить в чат…» of a wiki page (owner 14.10): the forward picker sends the page's address (+ a comment). */
+  | { kind: 'wiki-send'; pageId: string }
   /** «Пригласить в комнату»: pick members to invite by DM, or copy the room link (docs/09 #33). */
   | { kind: 'room-invite'; roomId: string }
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */
@@ -48,7 +58,12 @@ export type Dialog =
    */
   | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit }
   /** Add (no `appId`) / edit a web app of the workspace (ADR-0050 §3). */
-  | { kind: 'web-app'; workspaceId: string; appId?: string };
+  | { kind: 'web-app'; workspaceId: string; appId?: string }
+  /**
+   * «Тариф и оплата» (ADR-0080): the plans side by side and the one pay path; `welcome` — the step
+   * right after creating the workspace («Начать бесплатно» first).
+   */
+  | { kind: 'billing-plans'; workspaceId: string; welcome?: boolean };
 
 /** Prefill of the meeting dialog (features/calendar/EventDialog.tsx). */
 export interface EventDraftInit {
@@ -168,6 +183,9 @@ export const useUi = create<UiState>()(
       openCalendarDay: (day, eventKey) =>
         set((s) => {
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          leaveMail();
+          leaveDisk();
+          leaveWiki();
           return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
@@ -176,6 +194,7 @@ export const useUi = create<UiState>()(
         set((s) => {
           // A click on a workspace (the open one too) leads back to its rooms (ADR-0050 §3).
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          leaveMail();
           return {
           calDay: null,
           calEvent: null,
@@ -189,6 +208,9 @@ export const useUi = create<UiState>()(
           // a web app (ADR-0050).
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          leaveMail();
+          leaveDisk();
+          leaveWiki();
           return {
           calDay: null,
           calEvent: null,
@@ -259,6 +281,9 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   const r = step(s.history, here(s), dir, reachable);
   if (!r) return {};
   if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+  leaveMail();
+  leaveDisk();
+  leaveWiki();
   const { ws, room } = r.to;
   return {
     calDay: null,
@@ -279,4 +304,33 @@ export function activeRoomId(): string | null {
   const s = useUi.getState();
   if (s.phone.on) return visibleRoom(s.phone);
   return s.activeWorkspaceId ? (s.lastRoom[s.activeWorkspaceId] ?? null) : null;
+}
+
+/**
+ * Another view covers the room column: the boards (an open task), mail, disk, wiki, a web app,
+ * the calendar day, or the DM list «Личные».
+ */
+function roomColumnCovered(s: UiState): boolean {
+  return (
+    s.activeWorkspaceId === HOME ||
+    s.calDay !== null ||
+    useBoardsUi.getState().active ||
+    useMailUi.getState().active ||
+    useDiskUi.getState().active ||
+    useWikiUi.getState().active ||
+    useWebApps.getState().open !== null
+  );
+}
+
+/** The chat follows my own voice join / move (issue #127; lib/chatFollow.ts decides). */
+export function followVoiceChat(ev: FollowEvent): void {
+  const s = useUi.getState();
+  const d = chatFollow(ev, {
+    phone: s.phone.on,
+    shownRoomId: activeRoomId(),
+    rememberedRoomId: s.lastRoom[ev.workspaceId] ?? null,
+    covered: roomColumnCovered(s),
+  });
+  if (d === 'open') s.openRoom(ev.workspaceId, followTarget(ev));
+  else if (d === 'remember') s.selectDefaultRoom(ev.workspaceId, followTarget(ev));
 }

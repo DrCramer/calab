@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
+import { usePrefs } from '../../stores/prefs';
 import { type MessageKey, t, useLocale } from '../../i18n';
 import { greetingRoomId, useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
@@ -18,6 +19,7 @@ import { MutedByMe } from '../../components/SpeakerIdentity';
 import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
+import { useMobile } from '../../lib/mobile';
 import { customStatusLine, groupMembers, memberActivity, memberSecondLine, nameOf } from '../people/members';
 import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
@@ -68,11 +70,11 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
 
   const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
-      <section aria-labelledby={`members-${key}`} className="mt-4 flex flex-col first:mt-0">
-        <h3 id={`members-${key}`} className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
+      <section aria-labelledby={`members-${key}`} className="mt-4 flex flex-col first:mt-0 mobile:mt-0">
+        <h3 id={`members-${key}`} className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint mobile:flex mobile:h-11 mobile:items-center mobile:px-1 mobile:pb-0">
           {title} — {list.length}
         </h3>
-        <ul className="flex flex-col gap-px">
+        <ul className="flex flex-col gap-px mobile:gap-0">
           {list.map((m) => (
             <li key={m.user?.id}>
               <MemberRow
@@ -93,7 +95,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       className={
         drawer
           ? // phone layout (ADR-0021): fills the right drawer (MobileShell)
-            'min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(var(--safe-bottom,0px)+16px)] pt-4'
+            'min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(var(--safe-bottom,0px)+16px)] pt-1'
           : floating
           ? 'mat-popover dense anim-in absolute bottom-[calc(var(--composer-height,64px)+8px)] right-3 top-[60px] z-[var(--z-popover)] w-60 overflow-y-auto rounded-[var(--radius-panel)] px-2 py-3'
           : 'mat-sidebar w-60 shrink-0 overflow-y-auto border-l border-line px-2 pb-4 pt-4'
@@ -106,10 +108,62 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}
       {section('bots', t('bots.section'), groups.bots)}
-      {groups.online.length + groups.offline.length + groups.bots.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
+      <GuestsSection workspaceId={workspaceId} guests={groups.guests} online={groups.guestsOnline} profile={profile} onOpenProfile={openProfile} />
+      {groups.online.length + groups.offline.length + groups.bots.length + groups.guests.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
     </aside>
   );
 }
+
+/** More guests than this and the group starts collapsed (ADR-0098 §3). */
+const GUESTS_OPEN_MAX = 5;
+
+/**
+ * «Гости · N» (ADR-0098 §3): guests expire after 48 h without activity, but a crowd of them can
+ * still fill the column, so they are one collapsible group; collapsed by default above 5, the
+ * choice is kept per workspace in prefs. Rows are the usual MemberRow (presence is the second line:
+ * the member record carries no last-activity time).
+ */
+const GuestsSection = memo(function GuestsSection({
+  workspaceId,
+  guests,
+  online,
+  profile,
+  onOpenProfile,
+}: {
+  workspaceId: string;
+  guests: WorkspaceMember[];
+  online: ReadonlySet<string>;
+  profile: string | null;
+  onOpenProfile: (userId: string | null, open: boolean) => void;
+}): ReactNode {
+  const chosen = usePrefs((s) => s.guestsOpen[workspaceId]);
+  if (guests.length === 0) return null;
+  const open = chosen ?? guests.length <= GUESTS_OPEN_MAX;
+  return (
+    <section aria-labelledby="members-guests" className="mt-4 flex flex-col first:mt-0 mobile:mt-0" data-testid="members-guests">
+      <h3 id="members-guests" className="text-micro font-semibold uppercase tracking-wide text-faint">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => usePrefs.getState().setPrefs({ guestsOpen: { ...usePrefs.getState().guestsOpen, [workspaceId]: !open } })}
+          className="flex w-full items-center gap-1 rounded-[var(--radius-control)] px-2 pb-1 text-left uppercase hover:text-fg mobile:h-11 mobile:px-1 mobile:pb-0"
+        >
+          <ChevronRight className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', open && 'rotate-90')} aria-hidden />
+          {t('former.guestsGroup', { n: guests.length })}
+        </button>
+      </h3>
+      {open ? (
+        <ul className="flex flex-col gap-px mobile:gap-0">
+          {guests.map((m) => (
+            <li key={m.user?.id}>
+              <MemberRow workspaceId={workspaceId} member={m} offline={!online.has(m.user?.id ?? '')} open={profile === m.user?.id} onOpenProfile={onOpenProfile} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+});
 
 /**
  * Phone layout (ADR-0021): «Позвонить на номер» on top of the members drawer for the room of my
@@ -291,7 +345,7 @@ function CardHint({ workspaceId, userId, day, month }: { workspaceId: string; us
 
 const NONE: never[] = [];
 
-/** One 42 px row; memoised so presence changes re-render only that row. */
+/** One 42 px row (the phone's «Участники»: 56 px, avatar 40, name 15 / status 13 — owner 13.10); memoised so presence changes re-render only that row. */
 const MemberRow = memo(function MemberRow({
   workspaceId,
   member: m,
@@ -307,6 +361,7 @@ const MemberRow = memo(function MemberRow({
 }): ReactNode {
   // Memo row: re-render on a language switch too (ADR-0022).
   useLocale();
+  const phone = useMobile();
   const u = m.user;
   const userId = u?.id ?? '';
   const onOpenChange = useCallback((o: boolean) => onOpenProfile(u?.id ?? null, o), [onOpenProfile, u?.id]);
@@ -402,14 +457,16 @@ const MemberRow = memo(function MemberRow({
             aria-label={t('people.openProfile', { name })}
             data-member-row={userId}
             // A member dragged onto a meeting (the dialog's attendees, the card — ADR-0038, owner 29.09).
-            draggable={!u.isBot && !isGuest(m)}
+            // Not on a phone: there a long press opens the member menu (a native drag would take it).
+            draggable={!phone && !u.isBot && !isGuest(m)}
             onDragStart={(e) => {
               e.dataTransfer.setData(DRAG_USER, userId);
               e.dataTransfer.effectAllowed = 'copy';
             }}
             title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
-              'relative flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              'relative flex w-full items-center gap-3 rounded-[var(--radius-row)] text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              phone ? 'h-14 px-1 active:bg-hover' : 'h-[42px] px-2',
               open && 'bg-active',
             )}
           >
@@ -417,12 +474,12 @@ const MemberRow = memo(function MemberRow({
             {v?.roomId ? <JustJoinedDot joinedAt={joinedAtMs(v.joinedAt)} className="absolute left-0 top-1/2 -translate-y-1/2" /> : null}
             {/* Offline: grey, faded avatar + secondary text — never opacity on text (≥ 4.5:1). */}
             <span className={cx('flex shrink-0', offline && 'opacity-60 grayscale')}>
-              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence connecting={connectingRing} />
+              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={phone ? 40 : 32} presence connecting={connectingRing} />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">
                 <span
-                  className={cx('truncate text-body font-medium leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role', look))}
+                  className={cx('truncate font-medium', phone ? 'text-list leading-5' : 'text-body leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role', look))}
                   style={roleTextStyle(m.role, offline ? 'muted' : 'role', look)}
                 >
                   {name}
@@ -435,7 +492,7 @@ const MemberRow = memo(function MemberRow({
                 <MutedByMe userId={userId} className="size-3.5" />
               </span>
               {second ? (
-                <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={secondTitle}>
+                <span className={cx('flex min-w-0 items-center gap-1 text-caption text-muted', phone ? 'leading-5' : 'leading-4')} title={secondTitle}>
                   {second}
                 </span>
               ) : null}

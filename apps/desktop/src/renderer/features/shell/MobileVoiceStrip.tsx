@@ -1,10 +1,10 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, Ellipsis, Headphones, HeadphoneOff, Loader2, Mic, MicOff, Music, Phone, Radio, Settings, SwitchCamera, Video, VideoOff } from 'lucide-react';
+import { Check, Ellipsis, Headphones, HeadphoneOff, Loader2, Mic, MicOff, Music, Phone, Settings, SwitchCamera, Video, VideoOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { haptic } from '../../lib/mobile';
+import { haptics } from '../../lib/haptics';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
@@ -17,6 +17,7 @@ import { useMemberName } from '../../stores/workspaces';
 import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
+import { AutoMuteSubmenu } from './AutoMuteMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
 import { SoundboardAnchored } from '../voice/Soundboard';
 import { useCanFlipCamera } from '../voice/useCanFlipCamera';
@@ -31,14 +32,13 @@ const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-da
 /**
  * Phone voice strip (ADR-0021, Discord mobile): one 56 px solid bar at the bottom of the screen
  * while in voice — «Голос подключён · Комната» (tap = open the voice room), mute, deafen, the
- * push-to-talk hold button (PTT mic mode), the camera, «Ещё» (soundboard, mic mode switch) and
- * hang up. Devices are on the «Я» tab (ADR-0073). On a tab root it sits above the tab bar
+ * the camera, «Ещё» (soundboard, mic mode switch) and hang up. In PTT mic mode a 64 px hold
+ * button sits above the bar (`PttHoldButton`; hidden with the keyboard). Devices are on the «Я» tab (ADR-0073). On a tab root it sits above the tab bar
  * (`aboveTabs`: no home-indicator inset of its own), on a pushed screen at the bottom.
  * 16 px from the screen edges; the status may take two lines next to a 28 px avatar (hyphenated if one
  * word doesn't fit), so «Переподключение…» is never cut to «Переподк…».
  * Room for five 40 px buttons next to the avatar and the status text: the camera takes the place
- * of the soundboard button (now «Ещё → Звуки»); in push-to-talk mode (the PTT button is the fifth)
- * the camera is «Ещё → Камера» too.
+ * of the soundboard button (now «Ещё → Звуки»).
  */
 export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean }): ReactNode {
   const roomId = useVoice((s) => s.roomId);
@@ -69,6 +69,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
   const phaseText = connected && ptt && onAir ? t('mobile.pttOn') : connected ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : phase === 'blocked' ? t('voice.blocked') : t('voice.connecting');
   return (
     <div className={cx('shrink-0 px-4 pt-1 [.kb-open_&]:hidden', aboveTabs ? 'pb-2' : 'pb-[calc(var(--safe-bottom,0px)+8px)]')} data-testid="mobile-voice-strip">
+      {/* Push-to-talk: a big hold button above the island, in the flow — the feed and the composer above it shrink by its height. */}
+      {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
       <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1 rounded-[var(--radius-panel)] pl-2 pr-1.5 shadow-[var(--shadow-island)]">
         {me ? (
           <span
@@ -109,7 +111,10 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
           type="button"
           aria-label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
           aria-pressed={muted}
-          onClick={() => voice.toggleMute()}
+          onClick={() => {
+            haptics.toggle(muted);
+            voice.toggleMute();
+          }}
           className={cx(round, muted ? off : idle)}
         >
           {muted ? <MicOff className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
@@ -118,19 +123,22 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
           type="button"
           aria-label={deafened ? t('voice.undeafen') : t('voice.deafen')}
           aria-pressed={deafened}
-          onClick={() => voice.toggleDeafen()}
+          onClick={() => {
+            haptics.toggle(deafened);
+            voice.toggleDeafen();
+          }}
           className={cx(round, deafened ? off : idle)}
         >
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
-        {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : <StripCamera roomId={roomId} />}
+        <StripCamera roomId={roomId} />
         {/* Soundboard (ADR-0036): the island's panel as a bottom sheet, «Ещё → Звуки». */}
         {call ? (
-          <MoreMenu roomId={roomId} cameraItem={ptt} />
+          <MoreMenu roomId={roomId} cameraItem={false} />
         ) : (
           <SoundboardAnchored open={sounds} onOpenChange={setSounds}>
             <span className="flex shrink-0">
-              <MoreMenu roomId={roomId} cameraItem={ptt} onSounds={connected ? openSounds : undefined} />
+              <MoreMenu roomId={roomId} cameraItem={false} onSounds={connected ? openSounds : undefined} />
             </span>
           </SoundboardAnchored>
         )}
@@ -236,6 +244,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
               {t('voice.modePtt')}
             </Dropdown.RadioItem>
           </Dropdown.RadioGroup>
+          {micMode === 'voice' ? <AutoMuteSubmenu touch /> : null}
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Item className={cx(menuItem, 'h-11')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
             <Settings className="size-4" aria-hidden /> {t('shell.voiceSettings')}
@@ -247,7 +256,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
 }
 
 /**
- * Push-to-talk on a touch screen: held = on air. Pointer capture keeps the press while the finger
+ * Push-to-talk on a touch screen (a large button above the strip): held = on air. Pointer capture keeps the press while the finger
  * slides off the button; release, cancel (the system takes the gesture), a lost capture, the page
  * going to the background or the button unmounting all end it — it can never stay stuck on.
  * Space / Enter hold it from a keyboard. A short vibration marks press and release where the
@@ -261,7 +270,7 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
     heldRef.current = down;
     setHeld(down);
     voice.pttHold(down);
-    haptic(down ? 12 : 6);
+    haptics.toggle(down);
   }, []);
   useEffect(() => {
     const release = (): void => press(false);
@@ -300,6 +309,7 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
       aria-pressed={held}
       aria-disabled={disabled || undefined}
       data-testid="ptt-hold"
+      data-no-press
       onPointerDown={onDown}
       onPointerUp={onUp}
       onPointerCancel={onUp}
@@ -308,12 +318,13 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
       onKeyUp={(e) => onKey(e, false)}
       onContextMenu={(e) => e.preventDefault()}
       className={cx(
-        'grid size-11 shrink-0 touch-none select-none place-items-center rounded-full transition-colors duration-[var(--motion-fast)]',
-        held ? 'bg-ok-fill text-white' : 'bg-accent-strong text-accent-fg',
+        'mb-2 flex h-16 w-full touch-none select-none flex-col items-center justify-center rounded-[var(--radius-panel)] transition-colors duration-[var(--motion-fast)]',
+        held ? 'bg-ok-fill text-white ring-4 ring-[color-mix(in_srgb,var(--color-ok-fill)_35%,transparent)]' : 'bg-accent-strong text-accent-fg',
         disabled && 'opacity-40',
       )}
     >
-      <Radio className="size-5" aria-hidden />
+      <span className="text-[17px] font-semibold leading-[22px]">{held ? t('mobile.pttHeld') : t('mobile.pttHold')}</span>
+      <span className="text-[13px] leading-4 opacity-80">{t('mobile.pttHoldHint')}</span>
     </button>
   );
 }

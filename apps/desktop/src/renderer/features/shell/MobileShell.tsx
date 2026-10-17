@@ -1,19 +1,18 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
-import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
-import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
+import { CircleUserRound, MessageCircle, SquareKanban, Users } from 'lucide-react';
+import { useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
 import { Bar } from '../../components/Bar';
-import { PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
-import { CountBadge, Spinner, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { CreateSlot, HeaderIcon, PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
+import { Spinner } from '../../components/ui';
+import { t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
 import { isStandalone } from '../../lib/mobile';
 import { installPhoneNav, openTab, phoneBack } from '../../services/phoneNav';
 import { useArchiveView } from '../../stores/archiveView';
-import { unreadCount, useBoards } from '../../stores/boards';
-import { HOME, isDm } from '../../stores/dms';
-import { showsUnread, useRooms } from '../../stores/rooms';
+import { HOME } from '../../stores/dms';
+import { useRooms } from '../../stores/rooms';
 import { useSearchPanel } from '../../stores/searchPanel';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
@@ -22,10 +21,13 @@ import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { mayCreateBoards } from '../../lib/permissions';
 import { useIdentity } from '../../stores/identity';
-import { accessLocked } from '../identity/model';
+import { lockScreen } from '../identity/model';
 import { WorkspaceLock } from '../identity/WorkspaceLock';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { BillingBanner, BillingPaywall, useBillingSuspended } from '../workspace/billing/BillingPaywall';
+import { PlanBadge } from '../workspace/billing/PlanBadge';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ChatPane } from '../chat/ChatPane';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { DmSidebar } from '../dm/DmSidebar';
@@ -33,10 +35,13 @@ import { DayView } from '../calendar/DayView';
 import { EventPanel } from '../calendar/EventCard';
 import { BoardsList } from '../boards/BoardsList';
 import { BoardsView } from '../boards/BoardsView';
+import { PhoneDisk } from '../disk/PhoneDisk';
+import { PhoneWiki, PhoneWikiPage, PhoneWikiTrash } from '../wiki/PhoneWiki';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
-import { PhoneProfile, ProfileTabIcon } from './PhoneProfile';
+import { PhoneProfile } from './PhoneProfile';
+import { TabBar } from './PhoneTabBar';
 import { ScreenTransition } from './ScreenTransition';
 import { SettingsScreen } from './SettingsScreen';
 import { PhoneRoomList } from './PhoneRoomList';
@@ -89,6 +94,7 @@ export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean
       <UpdateBar />
       <VerifyBanner />
       <SuspendedBanner />
+      <BillingBanner />
       <main className="mat-content relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <ScreenTransition depth={depth}>
           {!on ? null : !ready ? (
@@ -132,25 +138,48 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <BoardsRoot welcome={welcome} />;
     case 'calendar':
       return <CalendarRoot welcome={welcome} />;
+    case 'disk':
+      return <DiskRoot welcome={welcome} />;
+    case 'wiki':
+      return <WikiRoot welcome={welcome} />;
     case 'profile':
       return <ProfileRoot />;
   }
 }
 
 /** The workspace on «Команда» / «Календарь»: the open one, unless it is «Личные». */
-function useRootWorkspace(): { ws: string | null; locked: boolean } {
+function useRootWorkspace(): { ws: string | null; locked: boolean; billing: boolean } {
   const wsId = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
   const has = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
-  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
-  return { ws: wsId && (has || locked) ? wsId : null, locked };
+  const locked = useIdentity((s) => !!wsId && lockScreen(s.access[wsId]));
+  // Closed for unpaid billing (ADR-0080 §8): the paywall (owner) / the notice instead of the content.
+  const billing = useBillingSuspended(wsId) && has;
+  return { ws: wsId && (has || locked) ? wsId : null, locked: locked || billing, billing };
 }
 
 /** «Команда»: the room list at full width; the workspace is picked in its header (the switcher, ADR-0074). */
 function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
-  const { ws, locked } = useRootWorkspace();
+  const { ws, locked, billing } = useRootWorkspace();
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-chats">
-      {locked && ws ? <WorkspaceLock workspaceId={ws} /> : ws ? <PhoneRoomList workspaceId={ws} /> : welcome}
+      {billing && ws ? (
+        <>
+          {/* The paywall replaces the room list and its header: keep the switcher and the plan badge (a way to another workspace / «Тариф и оплата»). */}
+          <Bar className="justify-between">
+            <div className="flex min-w-0 items-center gap-1">
+              <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+              <PlanBadge phone />
+            </div>
+          </Bar>
+          <BillingPaywall workspaceId={ws} />
+        </>
+      ) : locked && ws ? (
+        <WorkspaceLock workspaceId={ws} />
+      ) : ws ? (
+        <PhoneRoomList workspaceId={ws} />
+      ) : (
+        welcome
+      )}
     </div>
   );
 }
@@ -165,7 +194,7 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
-      <RootTitle title={t('shell.modeBoards')} search>
+      <RootTitle title={t('shell.modeBoards')} icon={<HeaderIcon icon={SquareKanban} />} search>
         {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
       </RootTitle>
       <BoardsList workspaceId={ws} />
@@ -179,7 +208,7 @@ function DmsRoot(): ReactNode {
   const guest = useSession((s) => !!s.me?.user?.isGuest);
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
-      <RootTitle title={t('dm.home')} search>
+      <RootTitle title={t('dm.home')} icon={<HeaderIcon icon={MessageCircle} />} search>
         {guest ? null : <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />}
       </RootTitle>
       <div className="flex min-h-0 flex-1">
@@ -191,7 +220,8 @@ function DmsRoot(): ReactNode {
 
 /** «Календарь»: the day of the open workspace (guests have none: no tab). */
 function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
-  const { ws } = useRootWorkspace();
+  const { ws: open, locked } = useRootWorkspace();
+  const ws = locked ? null : open;
   const day = useUi((s) => s.calDay);
   useEffect(() => {
     // The tab without a day (a stale state): today.
@@ -201,23 +231,47 @@ function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return day ? <DayView workspaceId={ws} /> : <div className="flex-1" />;
 }
 
+/** «Диск» (ADR-0094 §8): the root folder of the open workspace; folders and the trash are pushed screens (guests have no tab). */
+function DiskRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneDisk workspaceId={ws} folderId="" trash={false} root />;
+}
+
+/** «Вики» (ADR-0096 §7): the top-level pages of the open workspace; a page and the trash are pushed screens (guests have no tab). */
+function WikiRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneWiki workspaceId={ws} />;
+}
+
 /** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
 function ProfileRoot(): ReactNode {
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="profile-page">
-      <RootTitle title={t('mobile.profile')} />
+      <RootTitle title={t('mobile.profile')} icon={<HeaderIcon icon={CircleUserRound} />} />
       <PhoneProfile />
     </section>
   );
 }
 
 /** The title of a tab root without its own header (iOS large-title look, one line). */
-export function RootTitle({ title, search = false, children }: { title: string; search?: boolean; children?: ReactNode }): ReactNode {
+export function RootTitle({ title, icon, search = false, children }: { title: string; icon?: ReactNode; search?: boolean; children?: ReactNode }): ReactNode {
   return (
     <Bar>
+      {icon}
       <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{title}</h1>
-      {search ? <PhoneSearchButton /> : null}
-      {children}
+      {search ? (
+        // One right-hand group, [search][+] (docs/08): «+» keeps its slot when there is no create action, so the magnifier stays put.
+        <>
+          <PhoneSearchButton />
+          {children ?? <CreateSlot />}
+        </>
+      ) : (
+        children
+      )}
     </Bar>
   );
 }
@@ -239,13 +293,17 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
     case 'findTime':
       return <ActiveWorkspace>{(ws) => <DayView workspaceId={ws} />}</ActiveWorkspace>;
     case 'board':
-      return <BoardsView workspaceId={screen.ws} wide={false} mobile />;
+      return <BoardsView workspaceId={screen.ws} mobile />;
     case 'task':
-      return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} wide={false} mobile />}</ActiveWorkspace>;
+      return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} mobile />}</ActiveWorkspace>;
     case 'archived':
       return <ArchivedScreen />;
     case 'settings':
       return <SettingsScreen section={screen.section} />;
+    case 'disk':
+      return <ActiveWorkspace>{(ws) => <PhoneDisk key={`${screen.folderId}|${screen.trash ? 't' : ''}`} workspaceId={ws} folderId={screen.folderId} trash={!!screen.trash} root={false} />}</ActiveWorkspace>;
+    case 'wiki':
+      return <ActiveWorkspace>{(ws) => (screen.trash ? <PhoneWikiTrash workspaceId={ws} /> : <PhoneWikiPage key={screen.pageId} workspaceId={ws} pageId={screen.pageId} />)}</ActiveWorkspace>;
   }
 }
 
@@ -271,96 +329,10 @@ function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: str
   const roomName = useRooms((s) => s.byId[roomId]?.name ?? '');
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="members-page">
-      <PhoneHeader title={t('shell.members')} subtitle={roomName} />
+      <PhoneHeader title={t('shell.members')} subtitle={roomName} icon={<HeaderIcon icon={Users} />} />
       <MembersPanel workspaceId={workspaceId} drawer />
     </section>
   );
-}
-
-// ---------------------------------------------------------------- tab bar
-
-/**
- * The bottom tab bar (ADR-0073 §1): «Чаты · Личные · Доски · Календарь · Профиль» (my avatar), 56 px targets over the home
- * indicator, the unread count of rooms (mentions) on «Команда», of DMs on «Личные» and of tasks on
- * «Доски» (the open workspace's, as the old «Голос · Доски» switch showed). «Личные» only for
- * accounts with DMs, «Календарь» not for guests; «Профиль» for everyone (a guest signs out there).
- */
-function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
-  const dms = useSession((s) => !s.me?.user?.isGuest);
-  const calendar = useWorkspaces((s) => s.order.some((id) => s.byId[id] && s.byId[id].role !== WorkspaceRole.GUEST));
-  return (
-    <nav
-      aria-label={t('mobile.tabs')}
-      data-testid="phone-tabbar"
-      className="mat-toolbar flex shrink-0 border-t border-line pb-[var(--safe-bottom,0px)] [.kb-open_&]:hidden"
-    >
-      <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={tab === 'chats' ? <TeamActiveIcon className="size-7" /> : <TeamIdleIcon className="size-7" />} badge={<ChatsBadge />} />
-      {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={tab === 'dms' ? <PersonalActiveIcon className="size-7" /> : <PersonalIdleIcon className="size-7" />} badge={<DmsBadge />} /> : null}
-      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={tab === 'boards' ? <BoardsActiveIcon className="size-7" /> : <BoardsIdleIcon className="size-7" />} badge={<BoardsBadge />} />
-      {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={tab === 'calendar' ? <CalendarActiveIcon className="size-7" /> : <CalendarIdleIcon className="size-7" />} /> : null}
-      <TabButton tab="profile" active={tab === 'profile'} label={t('mobile.profile')} icon={<ProfileTabIcon active={tab === 'profile'} />} />
-    </nav>
-  );
-}
-
-const TabButton = memo(function TabButton({ tab, active, label, icon, badge }: { tab: PhoneTab; active: boolean; label: string; icon: ReactNode; badge?: ReactNode }): ReactNode {
-  return (
-    <button
-      type="button"
-      onClick={() => openTab(tab)}
-      aria-current={active ? 'page' : undefined}
-      data-testid={`phone-tab-${tab}`}
-      className={cx('relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-micro font-medium', active ? 'text-fg' : 'text-muted')}
-    >
-      <span className="relative flex">
-        {icon}
-        {badge}
-      </span>
-      <span className="max-w-full truncate px-1">{label}</span>
-    </button>
-  );
-});
-
-function TabBadge({ count, dot, label }: { count: number; dot: boolean; label: string }): ReactNode {
-  if (count <= 0 && !dot) return null;
-  return count > 0 ? (
-    <CountBadge count={count} phone ring="var(--color-toolbar,var(--color-bg))" role="img" aria-label={label} className="absolute -top-2 left-full -ml-2.5" />
-  ) : (
-    <span role="img" aria-label={label} className="absolute -right-1 -top-0.5 size-2.5 rounded-full border-2 border-[var(--color-toolbar,var(--color-bg))] bg-fg" />
-  );
-}
-
-/** Mentions across the workspaces' rooms (primitive selectors: re-renders only on a change). */
-function ChatsBadge(): ReactNode {
-  const count = useRooms((s) => {
-    let n = 0;
-    for (const id in s.mentions) {
-      const r = s.byId[id];
-      if (r && !isDm(r) && r.workspaceId !== '') n += s.mentions[id] ?? 0;
-    }
-    return n;
-  });
-  const dot = useRooms((s) => count === 0 && Object.values(s.byId).some((r) => r.workspaceId !== '' && !isDm(r) && showsUnread(r.id, s)));
-  return <TabBadge count={count} dot={dot} label={count > 0 ? plural('shell.unreadMentions', count) : t('ws.unread')} />;
-}
-
-/** Unread tasks of the open workspace (the number the boards icon of the old switch showed). */
-function BoardsBadge(): ReactNode {
-  const open = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
-  const first = useWorkspaces((s) => s.order[0] ?? null);
-  const wsId = open ?? first;
-  const count = useBoards((s) => (wsId ? unreadCount(s, wsId) : 0));
-  return <TabBadge count={count} dot={false} label={plural('boards.unreadCount', count)} />;
-}
-
-/** Unread DM messages: every one counts (docs/05), as on the rail's «Личные». */
-function DmsBadge(): ReactNode {
-  const count = useRooms((s) => {
-    let n = 0;
-    for (const id in s.mentions) if (isDm(s.byId[id])) n += s.mentions[id] ?? 0;
-    return n;
-  });
-  return <TabBadge count={count} dot={false} label={t('dm.homeUnread', { n: count })} />;
 }
 
 // ---------------------------------------------------------------- swipe

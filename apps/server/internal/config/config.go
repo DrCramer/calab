@@ -8,9 +8,12 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // TASKS_DUE_TZ is validated here; the distroless image has no zoneinfo
 
 	"github.com/caarlos0/env/v11"
 )
@@ -56,7 +59,10 @@ type Config struct {
 	// CSRF / gateway Origin checks accept these plus PUBLIC_APP_URL and PUBLIC_APP_URL_ALT;
 	// PUBLIC_APP_URL stays the primary one (links).
 	PublicAppURLs []string `env:"PUBLIC_APP_URLS" envSeparator:","`
-	LogLevel      string   `env:"LOG_LEVEL" envDefault:"info"`
+	// Origins of the marketing landing (comma-separated): only GET /api/billing/public/offers
+	// answers them with CORS (ADR-0083). Empty: same-origin only.
+	PublicLandingURLs []string `env:"PUBLIC_LANDING_URLS" envSeparator:","`
+	LogLevel          string   `env:"LOG_LEVEL" envDefault:"info"`
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
@@ -71,6 +77,9 @@ type Config struct {
 	// recheck, auth/sessioncheck.go). Self-hosted installs may tighten both.
 	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
 	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"8760h"`
+	// GuestInactivity: guests (guest accounts and registered users' guest memberships) are
+	// removed after this long without activity (ADR-0098). 0 in a Config built in code = 48h.
+	GuestInactivity time.Duration `env:"GUEST_INACTIVITY" envDefault:"48h"`
 
 	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
 	// Whether an unconfirmed address blocks actions (ADR-0065). Without SMTP addresses count
@@ -165,6 +174,14 @@ type Config struct {
 	SMTPUser     string `env:"SMTP_USER"`                      // empty = no AUTH
 	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
 	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.io>"
+	// Mail hosting (ADR-0101): bot-driven password recovery for mailboxes on our hosting.
+	// MAILHOST_ADMIN_URL empty = the feature is off (the /api/mailbox/* routes answer 404).
+	// The admin token and the hosted domain list are required together with the URL.
+	// MAILHOST_RESET_BOTS: the only bot usernames allowed to reset (empty = nobody).
+	MailHostAdminURL   string   `env:"MAILHOST_ADMIN_URL"`
+	MailHostAdminToken string   `env:"MAILHOST_ADMIN_TOKEN"`
+	MailHostDomains    []string `env:"MAILHOST_DOMAINS" envSeparator:","`
+	MailHostResetBots  []string `env:"MAILHOST_RESET_BOTS" envSeparator:","`
 	// Meeting recording (ADR-0025). Needs LiveKit and the egress service; the recordings
 	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container. With
 	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
@@ -173,9 +190,8 @@ type Config struct {
 	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
 	GPTunnelWebURL    string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
-	// TEMP_ROOM_RETENTION_DAYS (ADR-0044): archived temporary rooms are deleted with their
-	// history this many days after they closed.
-	TempRoomRetentionDays  int    `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
+	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
+	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
@@ -190,6 +206,9 @@ type Config struct {
 	// messages per minute. 0 = the default.
 	BotRatePerSec     int `env:"BOT_RATE_PER_SEC" envDefault:"30"`
 	BotMessagesPerMin int `env:"BOT_MESSAGES_PER_MIN" envDefault:"20"`
+
+	// Balance billing (ADR-0080 v5): BILLING_* and STRIPE_* (config/billing.go).
+	Billing Billing
 }
 
 // BotLimits returns the effective bot limits (defaults for 0).
@@ -251,6 +270,9 @@ func (c *Config) Validate() error {
 	if c.AccessTokenTTL < time.Minute || c.RefreshTokenTTL < c.AccessTokenTTL {
 		errs = append(errs, errors.New("ACCESS_TOKEN_TTL must be >= 1m and REFRESH_TOKEN_TTL >= ACCESS_TOKEN_TTL"))
 	}
+	if c.GuestInactivity < 0 || (c.GuestInactivity > 0 && c.GuestInactivity < time.Hour) {
+		errs = append(errs, errors.New("GUEST_INACTIVITY must be >= 1h"))
+	}
 	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
 		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
 	}
@@ -280,6 +302,11 @@ func (c *Config) Validate() error {
 	for _, u := range c.PublicAppURLs {
 		if strings.TrimSpace(u) != "" && Origin(u) == "" {
 			errs = append(errs, fmt.Errorf("PUBLIC_APP_URLS: %q is not an absolute http(s) URL", u))
+		}
+	}
+	for _, u := range c.PublicLandingURLs {
+		if strings.TrimSpace(u) != "" && Origin(u) == "" {
+			errs = append(errs, fmt.Errorf("PUBLIC_LANDING_URLS: %q is not an absolute http(s) URL", u))
 		}
 	}
 	switch c.StorageDriver {
@@ -331,6 +358,27 @@ func (c *Config) Validate() error {
 			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR, MAIL_EVENTS_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
 		}
 	}
+	// Mail hosting (ADR-0101): all-or-nothing, domains lowercased and checked here once.
+	if c.MailHostAdminURL != "" {
+		if Origin(c.MailHostAdminURL) == "" {
+			errs = append(errs, fmt.Errorf("MAILHOST_ADMIN_URL must be an absolute http(s) URL, got %q", c.MailHostAdminURL))
+		}
+		if strings.TrimSpace(c.MailHostAdminToken) == "" || len(c.MailHostDomains) == 0 {
+			errs = append(errs, errors.New("MAILHOST_ADMIN_TOKEN and MAILHOST_DOMAINS are required when MAILHOST_ADMIN_URL is set"))
+		}
+	}
+	c.MailHostDomains = normalizeDomains(c.MailHostDomains)
+	for _, d := range c.MailHostDomains {
+		if !validMailHostDomain(d) {
+			errs = append(errs, fmt.Errorf("MAILHOST_DOMAINS: %q is not a domain name", d))
+		}
+	}
+	c.MailHostResetBots = normalizeDomains(c.MailHostResetBots)
+	for _, b := range c.MailHostResetBots {
+		if !usernameRe.MatchString(b) {
+			errs = append(errs, fmt.Errorf("MAILHOST_RESET_BOTS: %q is not a bot username (3..32 of a-z, 0-9, _, starting with a letter)", b))
+		}
+	}
 	if Origin(c.GPTunnelAPIURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
 	}
@@ -343,8 +391,10 @@ func (c *Config) Validate() error {
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
 	}
-	if c.TempRoomRetentionDays < 1 || c.TempRoomRetentionDays > 3650 {
-		errs = append(errs, errors.New("TEMP_ROOM_RETENTION_DAYS must be 1..3650"))
+	if c.TasksDueTZ != "" {
+		if _, err := time.LoadLocation(c.TasksDueTZ); err != nil || c.TasksDueTZ == "Local" {
+			errs = append(errs, fmt.Errorf("TASKS_DUE_TZ must be an IANA zone name, got %q", c.TasksDueTZ))
+		}
 	}
 	if c.RecordingMaxConcurrent < 1 {
 		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1"))
@@ -352,6 +402,9 @@ func (c *Config) Validate() error {
 	// The recordings volume shared with the egress; with s3 recordings go to the files bucket.
 	if c.StorageDriver != "s3" && (c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/")) {
 		errs = append(errs, errors.New("RECORDINGS_PATH must be set and RECORDING_EGRESS_DIR an absolute path (STORAGE_DRIVER=fs)"))
+	}
+	if err := c.Billing.validate(); err != nil {
+		errs = append(errs, err)
 	}
 	if c.BotRatePerSec < 0 || c.BotRatePerSec > 10000 || c.BotMessagesPerMin < 0 || c.BotMessagesPerMin > 100000 {
 		errs = append(errs, errors.New("BOT_RATE_PER_SEC must be 0..10000 and BOT_MESSAGES_PER_MIN 0..100000 (0 = default)"))
@@ -361,6 +414,25 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// usernameRe: a Calab username (users/contacts.go validates user input with the same shape;
+// here it only checks the MAILHOST_RESET_BOTS allowlist).
+var usernameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{2,31}$`)
+
+// normalizeDomains trims, drops empties and lowercases a comma-separated env list.
+func normalizeDomains(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, d := range in {
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+var mailHostDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+func validMailHostDomain(d string) bool { return len(d) <= 253 && mailHostDomainRe.MatchString(d) }
 
 // validKeyPrefix: REDIS_KEY_PREFIX is empty or a plain name ending with ':'. No glob characters
 // (the gateway PSUBSCRIBEs to "<prefix>*", the ACL user gets ~<prefix>*), and the final ':'
@@ -397,6 +469,17 @@ func (c *Config) AllowedOrigins() []string {
 	return out
 }
 
+// LandingOrigins returns the normalized origins of PUBLIC_LANDING_URLS.
+func (c *Config) LandingOrigins() []string {
+	var out []string
+	for _, u := range c.PublicLandingURLs {
+		if o := Origin(u); o != "" && !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // Origin normalizes a URL to its origin; "" if it is not an absolute http(s) URL.
 func Origin(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
@@ -408,6 +491,9 @@ func Origin(raw string) string {
 
 // MailEnabled reports whether SMTP is configured.
 func (c *Config) MailEnabled() bool { return c.SMTPHost != "" }
+
+// MailHostEnabled reports whether the mail-hosting password recovery is configured (ADR-0101).
+func (c *Config) MailHostEnabled() bool { return c.MailHostAdminURL != "" }
 
 // LiveKitEnabled reports whether voice is configured.
 func (c *Config) LiveKitEnabled() bool { return c.LiveKitAPIKey != "" }

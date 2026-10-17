@@ -1,7 +1,8 @@
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { MessageKind, RecordingStatus, RoomRecordingState, type AutomationCard, type BirthdayCard, type Message, type RecordingCard, type RoomRecording } from '@calaba/protocol';
+import { MessageKind, RecordingStatus, RoomRecordingState, type AutomationCard, type BirthdayCard, type Message, type RecordingCard, type RoomIconCard, type RoomRecording } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { stickerPreview } from './stickers';
+import { contactSharedCardOf } from './contactRequest';
 import { callCardOf, callLogLine } from './callModel';
 import { myUserId } from '../stores/session';
 import { achievementCardOf } from './achievements';
@@ -109,6 +110,8 @@ export function stopReasonKey(reason: string): MessageKey {
       return 'rec.stop.empty';
     case 'max_duration':
       return 'rec.stop.maxDuration';
+    case 'plan_inactive':
+      return 'rec.stop.planInactive';
     case 'disabled':
       return 'rec.stop.disabled';
     case 'egress':
@@ -127,6 +130,13 @@ export function birthdayCardOf(m: Pick<Message, 'kind' | 'system'>): BirthdayCar
   if (m.kind !== MessageKind.SYSTEM) return null;
   const p = m.system?.payload;
   return p?.case === 'birthday' ? p.value : null;
+}
+
+/** The room picture card of a system message (ADR-0092), if it is one. */
+export function roomIconCardOf(m: Pick<Message, 'kind' | 'system'>): RoomIconCard | null {
+  if (m.kind !== MessageKind.SYSTEM) return null;
+  const p = m.system?.payload;
+  return p?.case === 'roomIcon' ? p.value : null;
 }
 
 /** The automation card of a system message (ADR-0060), if it is one. */
@@ -246,6 +256,14 @@ export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: 
   // A board automation (ADR-0060): «Автоматизация: <text>».
   const auto = automationCardOf(m);
   if (auto) return t('rules.cardPreview', { text: auto.text || auto.ruleName });
+  // The room picture (ADR-0092): «изменил(а) картинку комнаты» (after «Анна: » in the list).
+  const icon = roomIconCardOf(m);
+  if (icon) {
+    if (authorName) return t(icon.fileId ? 'room.iconChanged' : 'room.iconRemoved', { name: authorName });
+    return t(icon.fileId ? 'room.iconPreview' : 'room.iconRemovedPreview');
+  }
+  // A contact shared with a bot (ADR-0100): «Контакт отправлен боту».
+  if (contactSharedCardOf(m)) return t('contact.preview');
   // A DM call log line (ADR-0034): «Исходящий звонок · 5:12», «Пропущенный звонок»…
   const call = callCardOf(m);
   if (call) return callLogLine(call, myUserId()).text;

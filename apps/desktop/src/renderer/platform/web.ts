@@ -459,16 +459,19 @@ function info(): AppInfo {
   };
 }
 
-const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
+const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', updateChannel: 'github', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
- * (room link, ADR-0016), https://<domain>/dm/<id> (a DM, ADR-0020), https://<domain>/e/<id> (a meeting, ADR-0038) — the same URLs the app shares. Handed on as the https link; the address
+ * (room link, ADR-0016), https://<domain>/dm/<id> (a DM, ADR-0020), https://<domain>/e/<id> (a meeting, ADR-0038), https://<domain>/wiki/<id> (a wiki page) — the same URLs the app shares. Handed on as the https link; the address
  * bar keeps the path while the link card is shown (docs/09 #53, services/linkLanding.ts).
  */
 function takeDeepLink(): Promise<string | null> {
   const msg = /^\/m\/([0-9a-fA-F-]{36})\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (msg?.[1] && msg[2]) return Promise.resolve(`${location.origin}/m/${msg[1]}/${msg[2]}`);
+  // A wiki page (owner 14.10): /wiki/<page id>.
+  const wiki = /^\/wiki\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
+  if (wiki?.[1]) return Promise.resolve(`${location.origin}/wiki/${wiki[1]}`);
   const m = /^\/(join|r|dm|e|b|t)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);
@@ -495,6 +498,8 @@ export function createWebPlatform(): Platform {
     guestJoin,
     clearProtectedMedia: clearMediaCache,
     finishSso: finishWebSso,
+    // No mail section on the web / phone (ADR-0088 §1): the browser cannot speak IMAP.
+    mail: undefined,
     auth: {
       clearProtectedCache: () => {
         clearMediaCache();
@@ -652,6 +657,13 @@ export function createWebPlatform(): Platform {
         // mailto: (the plan contact, ADR-0024) hands over to the mail client, the page stays.
         else if (/^mailto:[^\s/]+@/i.test(url)) location.href = url;
         return Promise.resolve();
+      },
+      // ADR-0084: the web keeps the hosted checkout in a new tab (the phone host hands that to the
+      // system browser); the dialog's poll notices the payment.
+      openCheckout: (raw) => {
+        const url = raw.trim();
+        if (/^https:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+        return Promise.resolve('external');
       },
       attention: () => undefined,
       // Installed PWA: the app icon badge (Badging API, where supported).

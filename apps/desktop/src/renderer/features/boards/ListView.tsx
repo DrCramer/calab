@@ -1,10 +1,11 @@
+import { statusShown } from '../../lib/boards/completion';
 import { BoardFeature, TaskPriority, type Board, type Task } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { Archive, CalendarClock, Check, ChevronDown, CircleSlash, Tag, UserRound, X } from 'lucide-react';
 import { memo, useCallback, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, cx } from '../../components/ui';
+import { Button, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { matchTask, type MatchCtx } from '../../lib/boards/filter';
@@ -15,12 +16,25 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
-import { ApprovalBadge } from './Approvals';
+import { ApprovalTag } from './Approvals';
 import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
 import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { UpdatedAge } from './UpdatedAge';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
+
+/**
+ * Fixed meta columns of a row (right-aligned, an empty cell when the value is absent) so approvals,
+ * checklist, age, date and assignees line up across rows. Narrow windows drop the low-priority ones
+ * (no wrapping); the phone layout has its own flow (auto width, empty cells hidden).
+ */
+const COL = 'flex shrink-0 items-center justify-end mobile:w-auto mobile:justify-start mobile:empty:hidden';
+const COL_APPROVALS = cx(COL, 'w-[52px]');
+const COL_CHECKLIST = cx(COL, 'w-[48px] min-[769px]:max-[1000px]:hidden');
+const COL_UPDATED = cx(COL, 'w-[40px] text-micro min-[769px]:max-[1100px]:hidden');
+const COL_DUE = cx(COL, 'w-[76px]');
+const COL_ASSIGNEE = cx(COL, 'w-[44px] order-last mobile:order-none');
 
 type Item = { kind: 'group'; key: string; label: ReactNode; count: number } | { kind: 'row'; id: string };
 
@@ -60,7 +74,7 @@ export function listItems(tasks: Task[], b: Board, prefs: BoardPrefs, workspaceI
         push(
           s.id,
           <>
-            <StatusIcon type={s.type} color={s.color} /> {s.name}
+            <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
           </>,
           tasks.filter((x) => x.statusId === s.id),
         );
@@ -168,7 +182,7 @@ export function useListIds(boardId: string, workspaceId: string): { items: Item[
 function visibleOf(s: ReturnType<typeof useBoards.getState>, b: Board, prefs: BoardPrefs, ctx: MatchCtx): Task[] {
   const out: Task[] = [];
   for (const st of b.statuses) {
-    if (!prefs.showCompleted && doneType(st.type)) continue;
+    if (!statusShown(prefs.completion, st.type)) continue;
     for (const id of s.columns[b.id]?.[st.id] ?? []) {
       const x = s.tasks[id];
       if (x && matchTask(x, prefs.filter, ctx)) out.push(x);
@@ -240,7 +254,7 @@ export function EmptyBoard(): ReactNode {
   return <div className="grid flex-1 place-items-center p-8 text-center text-body text-muted" data-testid="board-empty">{t('boards.empty')}</div>;
 }
 
-export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick, selecting }: { id: string; boardId: string; workspaceId: string; onClick: (id: string, e: MouseEvent) => void; selecting: boolean }): ReactNode {
+export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspaceId, onClick, selecting }: { id: string; boardId: string; boardLabel?: string; workspaceId: string; onClick: (id: string, e: MouseEvent) => void; selecting: boolean }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
   const perms = useTaskPerms(task);
   const scoped = useBoardScoped(boardId);
@@ -249,7 +263,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
   const blocked = useBlockedStatuses(task, boardId);
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const focused = useBoardsUi((s) => s.focused === id || s.taskId === id);
-  const menu = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu.kind : null));
+  const menu = useBoardsUi((s) => (s.menu?.taskId === id && !s.taskId ? s.menu.kind : null));
   const disabled = useDisabledFeatures(boardId);
   const today = useToday();
   const me = myUserId();
@@ -259,6 +273,9 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
   const done = doneType(status?.type);
   const stop = (e: MouseEvent): void => e.stopPropagation();
   const req = (k: string): { open?: boolean; onOpenChange?: (v: boolean) => void } => (menu === k ? { open: true, onOpenChange: (v) => !v && useBoardsUi.getState().closeMenu() } : {});
+  const names = task.assignees.map((a) => memberName(workspaceId, a.userId)).join(', ');
+  const assigneeTip = names ? t('boards.tip.assignees', { names }) : t('boards.tip.noAssignee');
+  const dueTip = task.dueOn ? t(isOverdue(task.dueOn, today, done) ? 'boards.tip.dueOverdue' : 'boards.tip.due', { date: formatDue(task.dueOn, today) }) : t('boards.f.dueOn');
   const mine = (labels ?? []).filter((l) => task.labelIds.includes(l.id));
   const cell = 'grid shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover disabled:hover:bg-transparent';
   return (
@@ -270,7 +287,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         data-key={task.key}
         onClick={(e) => onClick(id, e)}
         className={cx(
-          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control mobile:h-auto mobile:min-h-14 mobile:flex-wrap mobile:content-center mobile:gap-y-0 mobile:py-2',
+          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control mobile:h-auto mobile:select-none mobile:min-h-14 mobile:flex-wrap mobile:content-center mobile:gap-y-0 mobile:py-2',
           selected ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)]' : focused ? 'bg-active' : 'hover:bg-[color-mix(in_srgb,var(--color-fill)_50%,transparent)]',
         )}
       >
@@ -298,11 +315,13 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
-            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
+            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
           </button>
         </StatusMenu>
         <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
         {/* Placed here for the phone (end of the title line); `order-last` keeps it rightmost on desktop. */}
+        <Tip label={assigneeTip}>
+        <span className={COL_ASSIGNEE}>
         <AssigneeMenu
           workspaceId={workspaceId}
           boardId={boardId}
@@ -312,16 +331,23 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
           align="end"
           {...req('assignee')}
         >
-          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent order-last mobile:order-none" aria-label={t('boards.f.assignee')}>
+          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:pointer-events-none disabled:hover:bg-transparent" aria-label={t('boards.f.assignee')}>
             {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
             {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
           </button>
         </AssigneeMenu>
+        </span>
+        </Tip>
         {/* phone: the meta (badges, date) wraps under the title, aligned with it */}
         <span className="hidden h-0 basis-full mobile:block" aria-hidden />
         <span className="hidden w-[56px] shrink-0 mobile:block" aria-hidden />
-        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} compact /> : null}
-        {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {boardLabel ? (
+          <span className="max-w-[150px] shrink truncate text-micro text-muted" data-testid="row-board">
+            {boardLabel}
+          </span>
+        ) : null}
+        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} compact slot={COL_APPROVALS} /> : null}
+        {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} slot={COL_CHECKLIST} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
         {on(BoardFeature.LABELS) && (mine.length || menu === 'label') ? (
           <LabelMenu
@@ -343,19 +369,24 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             </button>
           </LabelMenu>
         ) : null}
+        <UpdatedAge id={id} slot={COL_UPDATED} />
         {on(BoardFeature.DUE_DATE) ? (
+          <Tip label={dueTip}>
+          <span className={COL_DUE}>
           <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} align="end" {...req('due')}>
             <button
               type="button"
               onClick={stop}
               disabled={!canEdit}
-              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover mobile:w-auto mobile:justify-start', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
+              className={cx('inline-flex h-6 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover disabled:pointer-events-none mobile:justify-start', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
               aria-label={t('boards.f.dueOn')}
             >
               <CalendarClock className="size-3 shrink-0" aria-hidden />
               {task.dueOn ? formatDue(task.dueOn, today) : ''}
             </button>
           </DateMenu>
+          </span>
+          </Tip>
         ) : null}
       </div>
     </TaskContextMenu>

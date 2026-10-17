@@ -133,18 +133,18 @@ func (s *Service) automationsAllowed(ctx context.Context, wsID uuid.UUID) (bool,
 	return !l.AutomationsDisabled, err
 }
 
-// runRules runs the automation rules on the journal entries (and extra events) of change c in
+// runRules runs the automation rules on the journal entries of change c (a posted comment too:
+// its "comment" entry, ADR-0091) in
 // its transaction; what they did lands in c.auto. A failure of the engine itself is logged and
 // rolled back to its savepoint: the user's change never fails because of rules.
 func (s *Service) runRules(ctx context.Context, q *sqlc.Queries, tx pgx.Tx, c *change) error {
-	if len(c.acts) == 0 && len(c.extra) == 0 {
+	if len(c.acts) == 0 {
 		return nil
 	}
-	events := make([]ruleEvent, 0, len(c.acts)+len(c.extra))
+	events := make([]ruleEvent, 0, len(c.acts))
 	for _, a := range c.acts {
 		events = append(events, eventOf(a))
 	}
-	events = append(events, c.extra...)
 	// One index probe per board (ADR-0060 §5): a change on boards without rules costs nothing more.
 	probed := map[uuid.UUID][]sqlc.BoardRule{}
 	found := false
@@ -510,7 +510,7 @@ func (s *Service) publishAuto(ctx context.Context, a *autoEffects) {
 	for _, x := range a.acts {
 		if wsID, err := s.workspaceOf(ctx, x.BoardID); err == nil {
 			s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: wsID.String(), Activity: activity(x)}}})
+				WorkspaceId: wsID.String(), TaskId: x.TaskID.String(), BoardId: x.BoardID.String(), Activity: activity(x)}}})
 		}
 	}
 	for task, ns := range a.notices {

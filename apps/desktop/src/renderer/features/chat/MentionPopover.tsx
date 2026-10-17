@@ -1,12 +1,14 @@
-import type { Role, Room, WorkspaceRole } from '@calaba/protocol';
+import { RoomType, type Role, type Room, type WorkspaceRole } from '@calaba/protocol';
 import { AtSign } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
+import { mentionableOnBoard } from '../../lib/boards/access';
 import { can, roomPerms } from '../../lib/permissions';
 import { customLook, rolesOfMember } from '../../lib/roles';
+import { useBoards } from '../../stores/boards';
 import { isGuest, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 
@@ -29,6 +31,10 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
   // Members and roles, not the whole entry: that one changes on every voice state.
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const wsRoles = useWorkspaces((s) => s.byId[workspaceId]?.roles);
+  // A task's comment room is hidden and its access derives from the board (ADR-0042): the
+  // board object (stable between edits) decides, not the room's own overrides.
+  const isTask = room.type === RoomType.TASK;
+  const board = useBoards((s) => (isTask ? s.boards[s.tasks[s.roomTask[room.id] ?? '']?.boardId ?? ''] : undefined));
   return useMemo(() => {
     const out: Mentionables = { candidates: [], guests: new Set(), roles: new Map(), all: [] };
     for (const m of Object.values(members ?? {})) {
@@ -37,13 +43,15 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
       const name = m.nickname || u.displayName;
       out.all.push({ id: u.id, name });
       const roles = wsRoles ? rolesOfMember(wsRoles, m) : [];
-      if (u.id === me || !can(roomPerms(roles, u.id, room), 'VIEW_ROOM')) continue;
+      if (u.id === me) continue;
+      const sees = isTask ? mentionableOnBoard(board, wsRoles ?? [], m) : can(roomPerms(roles, u.id, room), 'VIEW_ROOM');
+      if (!sees) continue;
       if (isGuest(m)) out.guests.add(u.id);
       out.roles.set(u.id, { role: m.role, custom: customLook(roles) });
       out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [], ...(u.username ? { nick: u.username } : {}) });
     }
     return out;
-  }, [members, wsRoles, me, room]);
+  }, [members, wsRoles, me, room, isTask, board]);
 }
 
 /**

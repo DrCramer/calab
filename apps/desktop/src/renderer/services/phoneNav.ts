@@ -149,6 +149,8 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
       break;
     case 'room':
     case 'dm':
+    case 'disk':
+    case 'wiki':
       break;
   }
   // Back to a chat below: it is the open room again (the list's highlight, read state, links).
@@ -163,7 +165,7 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
   }
 }
 
-const SETTINGS_DIALOGS = ['settings', 'workspace-settings', 'room-settings'];
+const SETTINGS_DIALOGS = ['settings', 'workspace-settings', 'room-settings', 'temp-archive'];
 /** Identity of the open settings window (its kind and target), null when none: a change replaces the screens. */
 function settingsKey(dialog: ReturnType<typeof useUi.getState>['dialog'], board: ReturnType<typeof useBoardsUi.getState>['settingsFor']): string | null {
   if (dialog && SETTINGS_DIALOGS.includes(dialog.kind)) {

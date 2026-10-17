@@ -69,3 +69,70 @@ export function BoardsIdleIcon({ className }: IconProps): ReactNode {
     </svg>
   );
 }
+
+// «Почта» (ADR-0088 §8): drawn to match the set — the same 3…41 frame with radius 6 and 2-unit
+// lines as «Доски»; idle = outline envelope, active = filled with the flap cut out.
+export function MailIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <rect x="4" y="9" width="36" height="26" rx="5" />
+      <path d="M6.5 12.5L20.1 22.6C21.23 23.44 22.77 23.44 23.9 22.6L37.5 12.5" />
+    </svg>
+  );
+}
+
+export function MailActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path
+        fillRule="evenodd"
+        d="M9 8C5.69 8 3 10.69 3 14V30C3 33.31 5.69 36 9 36H35C38.31 36 41 33.31 41 30V14C41 10.69 38.31 8 35 8H9ZM7.7 12.2C7.04 11.71 6.11 11.85 5.62 12.51C5.13 13.18 5.27 14.11 5.94 14.6L19.21 24.45C20.87 25.68 23.13 25.68 24.79 24.45L38.06 14.6C38.73 14.11 38.87 13.18 38.38 12.51C37.89 11.85 36.96 11.71 36.3 12.2L23.02 22.04C22.42 22.49 21.58 22.49 20.98 22.04L7.7 12.2Z"
+      />
+    </svg>
+  );
+}
+
+// «Диск» (ADR-0094 §8): a folder drawn to match the set — the same 3…41 frame, radius 5 and
+// 2-unit lines as «Почта»; idle = outline with the tab, active = filled with the tab's seam cut out.
+export function DiskIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d="M4 13C4 10.24 6.24 8 9 8H16.34C17.67 8 18.94 8.53 19.88 9.46L22.41 12H35C37.76 12 40 14.24 40 17V31C40 33.76 37.76 36 35 36H9C6.24 36 4 33.76 4 31V13Z" />
+      <path d="M4 18H40" />
+    </svg>
+  );
+}
+
+/** «Вики» (ADR-0096 §9): a book — the cover with a page edge and a title line; outline at rest. */
+export function WikiIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d="M8 34V10C8 6.69 10.69 4 14 4H34C35.1 4 36 4.9 36 6V36C36 37.1 35.1 38 34 38H14" />
+      <path d="M36 30H14C10.69 30 8 32.69 8 36C8 38.21 9.79 40 12 40H36" />
+      <path d="M16 12H28" />
+      <path d="M16 18H24" />
+    </svg>
+  );
+}
+
+/** «Вики», filled: the cover solid with the title lines cut out, the page edge below. */
+export function WikiActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path
+        fillRule="evenodd"
+        d="M14 3C10.13 3 7 6.13 7 10V31.1C8.83 29.8 11.07 29 13.5 29H37V6C37 4.34 35.66 3 34 3H14ZM16 11C15.45 11 15 11.45 15 12C15 12.55 15.45 13 16 13H28C28.55 13 29 12.55 29 12C29 11.45 28.55 11 28 11H16ZM16 17C15.45 17 15 17.45 15 18C15 18.55 15.45 19 16 19H24C24.55 19 25 18.55 25 18C25 17.45 24.55 17 24 17H16Z"
+      />
+      <path d="M13.5 32C11.01 32 9 33.79 9 36C9 38.21 11.01 40 13.5 40H36C36.55 40 37 39.55 37 39V32H13.5Z" />
+    </svg>
+  );
+}
+
+export function DiskActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path d="M3 13C3 9.69 5.69 7 9 7H16.34C17.93 7 19.46 7.63 20.59 8.76L22.83 11H35C38.31 11 41 13.69 41 17H3V13Z" />
+      <path d="M3 19H41V31C41 34.31 38.31 37 35 37H9C5.69 37 3 34.31 3 31V19Z" />
+    </svg>
+  );
+}

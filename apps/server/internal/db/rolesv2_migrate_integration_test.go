@@ -89,17 +89,19 @@ func TestRolesV2Migration(t *testing.T) {
 	if got := perms(other); got != 256 {
 		t.Fatalf("a role without MANAGE_WORKSPACE: %d", got)
 	}
-	if got := perms(memberRole); got != memberBefore {
+	// Only 00088 (ADR-0094) adds DISK_VIEW | DISK_WRITE and 00090 (ADR-0096) WIKI_VIEW |
+	// WIKI_WRITE to the member role.
+	if got := perms(memberRole); got != memberBefore|3<<35|3<<38 {
 		t.Fatalf("member role changed: %d → %d", memberBefore, got)
 	}
 	if got := perms(guestRole); got&v2 != 0 {
 		t.Fatalf("guest role got the new bits: %d", got)
 	}
+	// 00097 aligns restricted with is_private, so the private board is restricted now.
 	var restricted bool
-	if err := d.Pool.QueryRow(ctx, `SELECT restricted FROM boards WHERE id = $1`, board).Scan(&restricted); err != nil || restricted {
-		t.Fatalf("boards.restricted default: %v %v", restricted, err)
+	if err := d.Pool.QueryRow(ctx, `SELECT restricted FROM boards WHERE id = $1`, board).Scan(&restricted); err != nil || !restricted {
+		t.Fatalf("boards.restricted after 00097: %v %v", restricted, err)
 	}
-	must(`UPDATE boards SET restricted = true WHERE id = $1`, board)
 	if err := exec(`UPDATE boards SET is_private = false WHERE id = $1`, board); err == nil {
 		t.Fatal("a closed board became public")
 	}

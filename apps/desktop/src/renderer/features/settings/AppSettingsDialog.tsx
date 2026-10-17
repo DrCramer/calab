@@ -5,9 +5,10 @@ import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
+import type { UpdateChannel } from '../../../shared/updateFeed';
 import { Avatar } from '../../components/Avatar';
 import { AvatarButtons } from '../../components/AvatarPicker';
 import { confirmAction } from '../../components/Confirm';
@@ -21,6 +22,7 @@ import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { CHECK_IDS, runConnectionCheck, voiceProbeLine, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
+import { useMobile } from '../../lib/mobile';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { outputLabel } from '../../lib/media/outputKind';
 import { musicianWarning, useMusicianAllowed } from '../../services/musician';
@@ -47,6 +49,7 @@ import { MicMeter } from './MicMeter';
 import { BoardHotkeysList } from '../boards/HotkeysSheet';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
+import { AutoMuteSelect } from '../shell/AutoMuteMenu';
 import { AboutUpdateRow } from './AboutUpdateRow';
 import { WebUpdateRow } from './WebUpdateRow';
 import { deviceLabel, osLabel, voicePathLabel } from './format';
@@ -60,6 +63,9 @@ import { MyStickersCard } from './MyStickersCard';
 import { BirthdaySettings } from './BirthdaySettings';
 import { RemindersCard } from '../calendar/RemindersCard';
 import { CalendarTab } from './CalendarSettings';
+import { MailTab } from './MailSettings';
+import { MAIL_ENABLED } from '../mail/boot';
+import { TaskNotifyCard } from './TaskNotifyCard';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -78,6 +84,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     // Settings → Календарь (ADR-0041): work hours, the external CalDAV calendar; not for guests.
     ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
+    // Settings → Почта (ADR-0088 §8): the local mail client — desktop app only.
+    ...(MAIL_ENABLED ? [{ id: 'mail', label: t('mbox.section'), icon: Mail, content: <MailTab />, keywords: t('mbox.settings.keywords') }] : []),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
     // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).
@@ -446,6 +454,11 @@ function VoiceTab(): ReactNode {
             <Slider label={t('voice.thresholdLabel')} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
             <span className="text-caption text-faint">{t('voice.thresholdHint')}</span>
           </div>
+        ) : null}
+        {p.micMode === 'voice' ? (
+          <Row label={t('autoMute.label')} hint={t('autoMute.hint')} htmlFor="auto-mute">
+            <AutoMuteSelect id="auto-mute" />
+          </Row>
         ) : (
           <>
             <PttBinder />
@@ -629,6 +642,7 @@ function NotificationsTab(): ReactNode {
         </Row>
       </Card>
       <PushPrivacyCard />
+      <TaskNotifyCard />
       <RemindersCard />
       <SoundSettings />
     </>
@@ -928,7 +942,21 @@ function ThemeCard(): ReactNode {
           ]}
         />
       </Row>
+      <HapticsRow />
     </Card>
+  );
+}
+
+/** «Виброотклик» (lib/haptics.ts): phone only — the desktop has nothing to vibrate. */
+function HapticsRow(): ReactNode {
+  const mobile = useMobile();
+  const on = usePrefs((s) => s.haptics);
+  const set = usePrefs((s) => s.setPrefs);
+  if (!mobile) return null;
+  return (
+    <Row label={t('settings.haptics')} hint={t('settings.hapticsHint')}>
+      <Toggle label={t('settings.haptics')} checked={on} onChange={(v) => set({ haptics: v })} />
+    </Row>
   );
 }
 
@@ -999,6 +1027,18 @@ function DesktopAppCards({
             label={t('app.autoUpdate')}
             checked={settings?.autoUpdate ?? true}
             onChange={(v) => void save({ autoUpdate: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+          />
+        </Row>
+        {/* Both sources are pinned at build time (shared/updateFeed.ts); a change re-checks in main. */}
+        <Row label={t('app.updateChannel')} hint={t('app.updateChannelHint')}>
+          <Segmented<UpdateChannel>
+            label={t('app.updateChannel')}
+            value={settings?.updateChannel ?? 'github'}
+            options={[
+              { value: 'github', label: t('app.updateChannelGithub') },
+              { value: 's3', label: t('app.updateChannelS3') },
+            ]}
+            onChange={(v) => void save({ updateChannel: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
           />
         </Row>
       </Card>

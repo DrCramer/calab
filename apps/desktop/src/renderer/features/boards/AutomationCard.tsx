@@ -35,7 +35,7 @@ export const AutomationCardView = memo(function AutomationCardView({ card, works
           style={{ borderLeftColor: status ? colorCss(status.color) : 'var(--color-accent)' }}
           data-testid="automation-task"
         >
-          {status ? <StatusIcon type={status.type} color={status.color} className="mt-[3px]" /> : null}
+          {status ? <StatusIcon type={status.type} color={status.color} icon={status.icon} className="mt-[3px]" /> : null}
           <span className="line-clamp-2 min-w-0 text-body font-semibold leading-5 text-fg">
             {task ? <span className="mr-1.5 font-normal tabular-nums text-muted">{task.key}</span> : null}
             {task?.title ?? t('boards.task')}

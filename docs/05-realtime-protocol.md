@@ -114,6 +114,8 @@ EVENT_DELETE                  { event } — встреча отменена (can
                                 (другая комната, удалён из участников; cancelled_at пуст — за ним EVENT_UPDATE тем, кто её видит)
 EVENT_RSVP                    { workspace_id, event_id, attendee, counts, event } — участник ответил
 EVENT_REMINDER                { event (вхождение), occurrence_at, minutes } — напоминание, в user:<id>
+EVENT_COMMENT_UPSERT          { workspace_id, event_id, comment, comments } — комментарий к встрече добавлен/изменён (ADR-0104); кому EVENT_UPDATE, без гостей и ботов
+EVENT_COMMENT_DELETE          { workspace_id, event_id, comment_id, comments } — комментарий удалён
 ROOM_EVENT_ACTIVE             { workspace_id, room_id, event (вхождение) } — за 15 мин до начала и до конца: значок встречи у комнаты
 ROOM_EVENT_ENDED              { workspace_id, room_id, event_id, occurrence_at } — вхождение закончилось, отменено или перенесено
 ROOM_ADMISSION_REQUEST        { admission: RoomAdmission } — гость стучится в комнату (ADR-0040), решающим
@@ -122,6 +124,20 @@ ROOM_ADMISSION_DECIDED        { admission } — ADMITTED | DECLINED (no_answer �
 BOARD_CREATE / BOARD_UPDATE   { board } — доска (ADR-0042) с Board.permissions получателя; UPDATE — и статусы, лейблы, вехи, общие виды, доступ
 BOARD_DELETE                  { workspace_id, board_id, purged } — в архив (purged false) или удалена; или доска перестала быть видна
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
+                              notice.kind (ADR-0089) += UNASSIGNED, WATCHER_ADDED, DUE_SOON, OVERDUE (адресные; actor_id пуст у DUE_SOON / OVERDUE),
+                              DUE_CHANGED, PRIORITY, MILESTONE, MOVED, EDITED, ATTACHMENT, ARCHIVED (подписчикам); notice.due_on "YYYY-MM-DD"
+                              (DUE_SOON / OVERDUE / DUE_CHANGED, "" = срок снят), notice.days_left (DUE_SOON 1 / 0, OVERDUE −1), notice.text —
+                              детали (MILESTONE — имя вехи, MOVED — имя доски, EDITED — title | description, ATTACHMENT — имя файла).
+                              Неизвестный клиенту вид показывается как «Задача обновлена».
+TASK_NOTICE                   { workspace_id, user_id, task, notice, task_url, board_key, board_name } — (97, ADR-0090) уведомление
+                              человека о задаче, переданное выбранному им боту (UserSettings.task_notify_bots): только в user:<bot> и
+                              в вебхук бота, если бот — участник пространства задачи; task — без состояния смотрящего. Людям не приходит
+CONTACT_SHARED                { id, bot_user_id, user_id, display_name, phone, phone_verified, email, email_verified, shared_at,
+                              room_id, message_id, button_id, data, fields } — (102, ADR-0100) человек подтвердил кнопку
+                              REQUEST_CONTACT в DM с ботом: только в user:<bot> (сессиям людей gateway его не отдаёт) и в вебхук
+                              этого бота (outbox в той же транзакции, что и отдача; id = id доставки). Значения собирает сервер из
+                              профиля: только запрошенные и непустые поля; email_verified — адрес подтверждён кодом (ADR-0065),
+                              phone_verified пока всегда false. В DM одновременно — системное сообщение ContactSharedCard (без значений)
 TASK_DELETE                   { workspace_id, board_id, task_id, purged } — архив задачи (или переезд на другую доску)
 TASK_ACTIVITY                 { workspace_id, activity } — одна запись журнала задачи
 BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (ADR-0058; 87/88), всем участникам пространства, кроме гостей; в READY — `WorkspaceSnapshot.board_categories`; перенос — UPDATE каждой сдвинутой
@@ -243,6 +259,8 @@ GET    /api/events/{id}                        серия (отменённая 
 PATCH  /api/events/{id}                        UpdateCalendarEventRequest → CalendarEventResponse (организатор / MANAGE_ROOM / MANAGE_WORKSPACE)
 DELETE /api/events/{id}[?occurrence=<RFC 3339>] 204: отмена встречи (письмо CANCEL) или одного вхождения серии (EVENT_UPDATE, письмо с EXDATE)
 PUT    /api/events/{id}/rsvp                   { status: ACCEPTED | DECLINED | MAYBE } → CalendarEventResponse (только участник)
+GET    /api/events/{id}/comments?before=&limit= комментарии к встрече (ADR-0104), новейшие ≤ 100 по возрастанию → { comments, has_more }; видящие встречу, гость — 403, бот — 403
+POST   /api/events/{id}/comments               { body } → 201 { comment }; PATCH …/comments/{comment_id} — автор; DELETE — автор или canEdit встречи → 204
 GET    /api/me/events/today?tz=                сегодняшние предстоящие встречи (не отклонённые) во всех пространствах → { count, events }
 GET    /api/event-rsvp?t=                      публично: встреча по view- или answer-токену внешнего участника → EventRsvpTokenResponse (описание, комната, my_status, три answer-токена, guest_url + окно, повтор, почта организатора; без других участников)
 POST   /api/event-rsvp { token }               публично: сохранить ответ answer-токена (идемпотентно); view-токен — 400; после конца — 410 EVENT_OVER; битая — 404
@@ -301,7 +319,7 @@ PATCH · DELETE /api/checklist-items/{id}             {text?, done?, position?, 
 POST   /api/checklist-items/{id}/convert             → 201 ConvertChecklistItemResponse {task, checklist, счётчики}: подзадача с текстом пункта, пункт удалён (фича SUBTASKS; задача сама не подзадача)
 PUT    /api/tasks/{id}/watchers {user_id}            наблюдатель (ADR-0076): редактор задачи; DELETE …/watchers?user_id= — редактор или сам
 PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read — снять «непрочитано»
-GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
+GET    /api/tasks/{id}/activity?before&limit&only    лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7); only=journal — только журнал (с comment*), only=comments — только сообщения (ADR-0091)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
 GET    /api/me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1&cursor
 GET    /api/workspaces/{id}/tasks/search?q&limit     ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062)
@@ -345,6 +363,37 @@ GET    /api/me/blocked-bots                      ListBlockedBotsResponse; POST /
 - **Команды.** Сообщение, начинающееся с `/name` или `/name@username` (имя `[A-Za-z0-9_]{1,32}`, дальше пробел или конец), всем приходит обычным, а `MESSAGE_CREATE` адресованному боту (gateway и webhook) несёт `Message.command {bot_user_id, name (нижний регистр), args}`. `/name@username` — этому боту, если он видит комнату (команда не обязана быть зарегистрирована); `/name` — единственному боту комнаты с такой зарегистрированной командой (несколько — не команда). В REST-ответах и истории `command` нет; сообщения ботов командами не считаются.
 - **DM.** Бот пишет участникам общих пространств (`POST /api/dms`, как человек). Человек блокирует бота — боту `403 BOT_BLOCKED` на новый DM и на сообщения в DM с ним; человек может писать боту.
 - **Webhook.** Боту с webhook в очередь `bot_webhook_deliveries` ставятся `MESSAGE_CREATE/UPDATE/DELETE` и `MESSAGE_REACTION_ADD/REMOVE` комнат, которые он видит, и его DM (кроме своих сообщений и реакций). `POST <url>`, тело — `BotWebhookUpdate {id, botUserId, createdAt, event}` (protojson), заголовки `X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, тело)>`, `X-Calab-Delivery: <id>`; успех — любой 2xx за 10 с, редиректы не выполняются. Адрес — только https и публичный (фильтр SSRF как у превью ссылок). Ретраи 1 мин → 1 ч; доставка живёт сутки; webhook, падающий сутки подряд, отключается (`webhook.disabledAt`, очередь сброшена, `BOT_UPDATE` владельцу и управляющим); `PUT` включает снова. Порядок доставок не гарантирован — дедуплицировать по `id`. Воркер один на кластер (Valkey `bots:webhook:worker`).
+
+## Вики: сокет синхронизации (ADR-0096 §4)
+
+Содержимое страницы вики (Yjs) идёт не через шлюз, а через свой WebSocket `GET /api/wiki/pages/{id}/sync` (`internal/wiki/sync.go`; клиент — `lib/wikiSync.ts`, кадры — `lib/wiki/frames.ts`). Сервер Yjs не исполняет: хранит и ретранслирует байты.
+- **Вход.** Origin — как у шлюза. Первое сообщение клиента — **текстовый** кадр с access-токеном человека или токеном бота (за 10 с); бот — такой же участник: права по его ролям и переопределениям, те же лимиты. Токен бота (строки сессии нет) каждые 30 с проверяется заново: заменённый или отозванный — закрытие `4010`; вход бота не трогает сессии и `last_active_at`. Нужен `WIKI_VIEW` и политика доступа пространства (как у REST); без `WIKI_WRITE` (или при запрете записи политикой / приостановке) сокет только принимает. Доступ и сессия перепроверяются раз в 30 с и сразу при корзине/смене доступа страницы.
+- **Кадры** — бинарные, первый байт — тип, целые — big-endian:
+
+| Тип | Направление | Раскладка |
+|---|---|---|
+| 0 `SNAPSHOT` | сервер → клиент | `u8 0 \| u64 through_seq \| state` |
+| 1 `UPDATE` | оба | `u8 1 \| u64 seq \| update` (от клиента `seq = 0`, сервер присваивает) |
+| 2 `AWARENESS` | оба | `u8 2 \| awareness update` (не хранится) |
+| 3 `COMPACT_REQUEST` | сервер → клиент | `u8 3` |
+| 4 `SNAPSHOT_POST` | клиент → сервер | `u8 4 \| u64 through_seq \| u32 meta_len \| meta (UTF-8 JSON {plain_text, title, preview, broadcast?}) \| state` |
+
+- **Поток.** Сокет сначала подписывается на `wiki:<pageId>` (ждёт подтверждения SUBSCRIBE, ≤ 5 с, иначе 4000), затем читает снимок и обновления из БД — кадр, опубликованный между ними, не теряется (дубликаты отбрасываются по `seq`; после переподписки все сокеты страницы добирают из БД). При подключении сервер всегда шлёт один `SNAPSHOT` (без снимка — `through_seq 0` и пустой документ `0x00 0x00`), затем каждый `UPDATE` после него. `UPDATE` клиента записывается под следующий `seq` страницы (≤ 64 КиБ данных), возвращается отправителю с этим `seq` и рассылается остальным сокетам страницы на всех экземплярах (Valkey `wiki:<pageId>`). `seq` страницы непрерывны: пропуск (потерянный кадр) сервер добирает из БД, дубликаты отбрасывает. `AWARENESS` — только пишущим, ≤ 10/с (лишнее отбрасывается), рассылается остальным.
+- **Компакция.** Когда после снимка > 500 обновлений или > 1 МиБ, писавшему последним приходит `COMPACT_REQUEST` (не чаще раза в 10 с на страницу). `SNAPSHOT_POST` (state ≤ 2 МиБ, ≤ 2 сразу, затем 1 раз в 2 с на сокет — сверх закрытие 4008; клиент сам выдерживает 2 с между снимками, кроме закрытия страницы): принимается, если `through_seq` ≥ сохранённого и ≤ последнего выданного `seq`, иначе молча игнорируется; удаляет обновления ≤ `through_seq`, обновляет текст (≤ 256 КиБ, поиск), превью, размер, непустой `title` (пустой — заголовок не трогает; смена → `WIKI_PAGE_UPSERT`), раз в ≥ 5 мин при изменении текста/заголовка пишет версию. Обычный снимок — тихая компакция: никому ничего не шлётся (подтверждение клиенту не нужно). Только снимок с `"broadcast": true` в meta — клиент ставит его, когда снимок несёт правку, не ушедшую `UPDATE` (транзакция больше кадра), — рассылается **остальным** сокетам страницы как `SNAPSHOT` с новым `through_seq`; устаревший broadcast-снимок не сохраняется, но рассылается с `through_seq 0` (ничью позицию не двигает), а отправителю приходит `COMPACT_REQUEST`.
+- **Лимиты и закрытие.** Лимит входящего сообщения — 64 КиБ + 16 для читающих, 2 МиБ + 1 МиБ meta для пишущих; размеры по типам проверяются отдельно. ≤ 20 `UPDATE`/с на сокет, ≤ 10 сокетов на страницу у человека (Valkey), ping раз в 25 с, без pong — закрытие.
+
+| Код | Значение |
+|---|---|
+| 4000 | сбой зависимости — переподключиться |
+| 4002 | плохой или неожиданный кадр |
+| 4003 | нет `WIKI_VIEW` (или не участник), бот, политика доступа, запись без `WIKI_WRITE` |
+| 4004 | токен неверен или истёк — обновить токен |
+| 4008 | лимит частоты или сокетов |
+| 4009 | нет pong |
+| 4010 | сессия отозвана |
+| 4404 | страницы нет или она в корзине |
+
+Публичное чтение без сокета: `GET /api/public/wiki/{code}/state[?page=]` — тело `application/octet-stream` из записей `u32 BE длина | кадр`: сначала `SNAPSHOT`, затем `UPDATE` после него (снимок и обновления читаются в одной repeatable-read транзакции).
 
 ## REST
 
@@ -621,7 +670,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 `POST /api/rooms/:id/messages` идемпотентен по `nonce`: `id` генерирует Postgres (`uuidv7()`), а повтор с уже использованным `(author_id, nonce)` возвращает существующее сообщение (`200` вместо `201`) без повторного `MESSAGE_CREATE`.
 
 Тарифы (ADR-0024):
-- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`.
+- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`. `READY.billing_self_serve` (ADR-0080) — `BILLING_ENABLED` и `BILLING_SELF_SERVE`: только тогда клиент спрашивает `GET …/billing` для пространства без `Workspace.billing` (шильдик тарифа, выбор тарифа после создания); при выключенной оплате — ни одного лишнего запроса.
 - `Workspace.plan {plan, limits, valid_until, expired}` — в READY / `WORKSPACE_CREATE` / `WORKSPACE_UPDATE` и REST пространства (не в discover и превью инвайта).
 - `POST /api/rooms/{id}/join` → `media` урезан планом (`max_stream_preset`, `max_streams`), `plan_limits`. Места в комнате: pending считается; упор в план → `409 ROOM_FULL` с `reason: "PLAN_LIMIT"`, `used`, `limit`.
 - `POST …/stream/request {preset, fps?}` → `{preset, fps}` фактические (1080p на free → `H720` / 15). `POST …/camera/request {preset?, fps?}` → `200 {preset, fps}` (раньше 204): `min(запрошенное, план)`; `UNSPECIFIED`/0 = без ограничения.

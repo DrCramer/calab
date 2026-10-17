@@ -4,7 +4,8 @@ import {
   RoomType,
   computeMemberRoomPermissions,
   computePermissions,
-  tempRoomScope,
+  planInactivePermissions,
+  roomScope,
   WorkspaceRole,
   has,
   workspacePermissions,
@@ -21,13 +22,45 @@ import {
  * stores/workspaces). The client only hides UI; every action is checked by the server (CLAUDE.md).
  */
 
+/*
+ * «Владелец видит приватное» (Workspace.ownerSeesPrivate, addenda 2026-10-14) per workspace, kept
+ * in step by stores/workspaces (snapshot, WORKSPACE_UPDATE). A plain registry rather than a
+ * parameter: the room / board rules below are called from dozens of places that already re-render
+ * when the workspace's rooms change (the server re-sends them when the setting flips).
+ */
+const seesPrivate = new Set<string>();
+
+export function setOwnerSeesPrivate(workspaceId: string, on: boolean): void {
+  if (on) seesPrivate.add(workspaceId);
+  else seesPrivate.delete(workspaceId);
+}
+
+/** Whether the workspace has «Владелец видит приватное» on (as far as the client knows). */
+export function ownerSeesPrivate(workspaceId: string | null | undefined): boolean {
+  return !!workspaceId && seesPrivate.has(workspaceId);
+}
+
+/** A private room or board (isPrivate, or the pre-3.5 restricted flag): «Только приглашённые / выбранные». */
+export function isPrivateObject(o: { isPrivate: boolean; restricted: boolean } | undefined): boolean {
+  return !!o && (o.isPrivate || o.restricted);
+}
+
 export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): PermissionBits {
   // A DM (ADR-0020) or my notes shelf (ADR-0039): the fixed set; the client only knows its own.
   if (room?.type === RoomType.DM || room?.type === RoomType.NOTES) return computePermissions({ dm: { participant: true } });
   if (!room || !roles || roles.length === 0) return 0n;
-  // ADR-0029: in a restricted room admins count as members; the owner (built-in owner role) has all.
-  // ADR-0078: a private temporary room has no bypass at all (not even the owner).
-  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted, undefined, tempRoomScope(room));
+  // ADR-0078 and its addendum: a private room has no bypass (admins and the owner count as
+  // members, its creator always sees it) unless the owner turned «Владелец видит приватное» on.
+  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted, undefined, roomScope(room), ownerSeesPrivate(room.workspaceId));
+}
+
+/**
+ * The restricted mode «тариф не активен» (ADR-0086 amendment) on top of computed bits: no writing,
+ * attaching, video, invitations or new rooms / boards / tasks (planInactivePermissions). `lapsed`
+ * comes from Workspace.billing (isLapsed); DMs and notes have no workspace and are never lapsed.
+ */
+export function restrictedPerms(perms: PermissionBits, lapsed: boolean): PermissionBits {
+  return lapsed ? planInactivePermissions(perms) : perms;
 }
 
 /** Workspace-level permissions (no room overrides): the OR of the member's roles. */
@@ -138,34 +171,34 @@ export function mayAllowRecording(roles: readonly RoleBits[] | undefined, userId
 }
 
 /**
- * Access level of a private room / board (ADR-0048 §2, «По списку, без администраторов»): whoever
- * manages the object (`manage`: MANAGE_ROOM / MANAGE_BOARD there) switches it; the owner may always
- * lift it. Turning it on needs the object to be private (the server: 422 restricted).
+ * The two access levels of a room / board (ADR-0058 / ADR-0078 addenda 2026-10-14; owner, 14.10:
+ * «публичная — для всех в пространстве, или приватная — видна только автору и тем, кого добавили»).
+ * Private hides it from admins and the owner too (unless «Владелец видит приватное»).
  */
-export function mayChangeRestricted(manage: boolean, owner: boolean, restricted: boolean): boolean {
-  return manage || (owner && restricted);
-}
-
-/** The three access levels of a room / board (ADR-0048 «Третий уровень доступа»). */
-export type AccessLevel = 'all' | 'list' | 'restricted';
+export type AccessLevel = 'all' | 'private';
 
 export function accessLevelOf(o: { isPrivate: boolean; restricted: boolean }): AccessLevel {
-  return o.restricted ? 'restricted' : o.isPrivate ? 'list' : 'all';
+  return isPrivateObject(o) ? 'private' : 'all';
+}
+
+/** The PATCH body that moves an object from one level to another (the server keeps restricted in step). */
+export function accessSteps(from: AccessLevel, to: AccessLevel): Array<{ isPrivate: boolean }> {
+  return from === to ? [] : [{ isPrivate: to === 'private' }];
 }
 
 /**
- * PATCH bodies that move an object from one level to another, in order: `restricted` needs a
- * private object (422 restricted) and a restricted one cannot go public (422 isPrivate), so
- * «all → restricted» makes it private first and «restricted → all» lifts `restricted` first.
+ * «Сделать меня владельцем» (addenda 2026-10-14): the workspace owner with «Владелец видит
+ * приватное» on, for a private item whose owner (`itemOwnerId`: createdBy / ownerId) is no longer a
+ * member of the workspace (or unknown). The server checks the same (409 / 403 otherwise).
  */
-export function accessSteps(from: AccessLevel, to: AccessLevel): Array<{ isPrivate?: boolean; restricted?: boolean }> {
-  if (from === to) return [];
-  const steps: Array<{ isPrivate?: boolean; restricted?: boolean }> = [];
-  if (from === 'restricted') steps.push({ restricted: false });
-  if (from === 'all') steps.push({ isPrivate: true });
-  if (to === 'all') steps.push({ isPrivate: false });
-  if (to === 'restricted') steps.push({ restricted: true });
-  return steps;
+export function mayTakeOver(o: {
+  isOwner: boolean;
+  seesPrivate: boolean;
+  isPrivate: boolean;
+  itemOwnerId: string;
+  members: Readonly<Record<string, unknown>> | undefined;
+}): boolean {
+  return o.isOwner && o.seesPrivate && o.isPrivate && (o.itemOwnerId === '' || !o.members?.[o.itemOwnerId]);
 }
 
 /**

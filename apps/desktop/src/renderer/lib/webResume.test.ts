@@ -5,6 +5,8 @@ import {
   WEB_RESUME_WINDOW_MS,
   WEB_SELF_KEY,
   canAutoplayAudio,
+  pageWasReloaded,
+  reloadSeat,
   saveVoiceSelf,
   saveWebResume,
   takeVoiceSelf,
@@ -82,6 +84,46 @@ describe('web resume seat (update reload)', () => {
     expect(() => saveWebResume(broken, seat(), 'https://x', AT)).not.toThrow();
     expect(takeWebResume(broken, AT)).toBeNull();
     expect(takeWebResume(null, AT)).toBeNull();
+  });
+});
+
+describe('reload seat (any reload, issue #209)', () => {
+  it('a room seat is kept; a 1:1 call only when it is kept through the exit', () => {
+    expect(reloadSeat(seat(), false)).toEqual(seat());
+    const call = seat({ kind: 'dm-call', roomId: 'dm1', workspaceId: '' });
+    expect(reloadSeat(call, false)).toBeNull();
+    expect(reloadSeat(call, true)).toEqual(call);
+  });
+
+  it('not in voice at pagehide (left / kicked / banned / room gone) clears an older record of the tab', () => {
+    const s = mem();
+    saveWebResume(s, reloadSeat(seat(), false), 'https://app.calab.io', AT);
+    saveWebResume(s, reloadSeat(null, false), 'https://app.calab.io', AT + 60_000);
+    expect(s.data.has(WEB_RESUME_KEY)).toBe(false);
+    expect(takeWebResume(s, AT + 61_000)).toBeNull();
+  });
+
+  it('another tab has its own storage: nothing to rejoin there', () => {
+    const a = mem();
+    const b = mem();
+    saveWebResume(a, reloadSeat(seat(), false), 'https://app.calab.io', AT);
+    expect(takeWebResume(b, AT + 1_000)).toBeNull();
+    expect(takeWebResume(a, AT + 1_000)?.roomId).toBe('r1');
+  });
+
+  it('pageWasReloaded: only the navigation type «reload»; no API / a throw → false', () => {
+    const perf = (type: string | null): Pick<Performance, 'getEntriesByType'> =>
+      ({ getEntriesByType: () => (type ? [{ type }] : []) }) as unknown as Pick<Performance, 'getEntriesByType'>;
+    expect(pageWasReloaded(perf('reload'))).toBe(true);
+    expect(pageWasReloaded(perf('navigate'))).toBe(false);
+    expect(pageWasReloaded(perf('back_forward'))).toBe(false);
+    expect(pageWasReloaded(perf(null))).toBe(false);
+    const throws = {
+      getEntriesByType: () => {
+        throw new Error('nope');
+      },
+    } as unknown as Pick<Performance, 'getEntriesByType'>;
+    expect(pageWasReloaded(throws)).toBe(false);
   });
 });
 

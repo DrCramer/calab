@@ -57,11 +57,13 @@ import {
   type Message,
   type Role,
   type RoomPermissionOverride,
+  type FileMeta,
   type Task,
   type TaskActivity,
   type TaskAssigneeInput,
   type TaskCondition,
   type TaskFilter,
+  STATUS_ICONS,
 } from '@calaba/protocol';
 import type { JsonObject } from '@bufbuild/protobuf';
 import { IDS, ts, type MemberRec, type MockState } from './fixtures';
@@ -608,6 +610,7 @@ export class BoardsMock {
       isPrivate: req.isPrivate,
       position: live.filter((r) => !r.board.archivedAt).length,
       autoArchiveDays: 30,
+      approvalNotifyDelaySeconds: 60,
       createdBy: userId,
       createdAt: this.host.tick(),
       statuses,
@@ -641,6 +644,7 @@ export class BoardsMock {
       setDisabledFeatures?: boolean;
       disabledFeatures?: readonly BoardFeature[];
       estimateScale?: EstimateScale | undefined;
+      approvalNotifyDelaySeconds?: number | undefined;
     },
   ): Board {
     const rec = this.boardFor(id, userId);
@@ -664,6 +668,11 @@ export class BoardsMock {
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
+    // ADR-0082: the approval notice delay (the mock sends notices at once whatever it is).
+    if (req.approvalNotifyDelaySeconds !== undefined) {
+      if (![0, 60, 300, 900, 1800, 3600].includes(req.approvalNotifyDelaySeconds)) throw invalid('approvalNotifyDelaySeconds', 'bad delay');
+      b.approvalNotifyDelaySeconds = req.approvalNotifyDelaySeconds;
+    }
     // ADR-0058 §3: the disabled features (ascending, unique) and the estimate scale.
     if (req.setDisabledFeatures) {
       const list = [...new Set(req.disabledFeatures ?? [])].sort((x, y) => x - y);
@@ -783,14 +792,16 @@ export class BoardsMock {
     list.sort((a, b) => a.position - b.position);
   }
 
-  createStatus(id: string, userId: string, req: { name: string; type: BoardStatusType; color: number; position?: number | undefined; isDefault: boolean }): Board {
+  createStatus(id: string, userId: string, req: { name: string; type: BoardStatusType; color: number; position?: number | undefined; isDefault: boolean; icon?: string | undefined }): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
     const b = rec.board;
     const name = req.name.trim();
     if (!name || chars(name) > 32) throw invalid('name', 'name must be 1..32 characters');
     if (b.statuses.length >= 20) throw conflict('at most 20 statuses', '', 'STATUS_LIMIT');
-    const s = create(BoardStatusSchema, { id: this.id('status'), name, type: req.type || BoardStatusType.UNSTARTED, color: req.color, position: b.statuses.length });
+    const icon = req.icon ?? '';
+    if (icon && !(STATUS_ICONS as readonly string[]).includes(icon)) throw invalid('icon', 'unknown status icon');
+    const s = create(BoardStatusSchema, { id: this.id('status'), name, type: req.type || BoardStatusType.UNSTARTED, color: req.color, position: b.statuses.length, icon });
     b.statuses.push(s);
     if (req.position !== undefined) this.reorder(b.statuses, s.id, req.position);
     if (req.isDefault) for (const x of b.statuses) x.isDefault = x.id === s.id;
@@ -798,7 +809,12 @@ export class BoardsMock {
     return this.boardOut(rec, userId, { personal: true });
   }
 
-  updateStatus(id: string, userId: string, sid: string, req: { name?: string | undefined; type?: BoardStatusType | undefined; color?: number | undefined; position?: number | undefined; isDefault?: boolean | undefined }): Board {
+  updateStatus(
+    id: string,
+    userId: string,
+    sid: string,
+    req: { name?: string | undefined; type?: BoardStatusType | undefined; color?: number | undefined; position?: number | undefined; isDefault?: boolean | undefined; icon?: string | undefined },
+  ): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
     const s = rec.board.statuses.find((x) => x.id === sid);
@@ -810,6 +826,10 @@ export class BoardsMock {
     }
     if (req.type !== undefined) s.type = req.type;
     if (req.color !== undefined) s.color = req.color;
+    if (req.icon !== undefined) {
+      if (req.icon && !(STATUS_ICONS as readonly string[]).includes(req.icon)) throw invalid('icon', 'unknown status icon');
+      s.icon = req.icon;
+    }
     if (req.position !== undefined) this.reorder(rec.board.statuses, sid, req.position);
     if (req.isDefault) for (const x of rec.board.statuses) x.isDefault = x.id === sid;
     this.emitBoard(rec, 'boardUpdate');
@@ -1174,6 +1194,9 @@ export class BoardsMock {
       afterTaskId?: string;
       beforeTaskId?: string;
       boardId?: string | undefined;
+      /** set_attachments (ADR-0042): the description's files, already resolved by the route. */
+      setAttachments?: boolean;
+      attachments?: readonly FileMeta[];
     },
   ): TaskRec {
     const { t, b, p } = this.taskFor(id, userId);
@@ -1195,6 +1218,13 @@ export class BoardsMock {
       log.push(['description', {}, {}]);
       this.resetVotes(t, userId);
       task.description = req.description.slice(0, 20000);
+    }
+    if (req.setAttachments) {
+      const files = (f: readonly FileMeta[]): JsonObject => ({ file_ids: f.map((x) => x.id), files: f.map((x) => ({ file_id: x.id, name: x.name, size: Number(x.size), mime: x.mime })) });
+      log.push(['attachments', files(task.attachments), files(req.attachments ?? [])]);
+      this.resetVotes(t, userId);
+      task.attachments = [...(req.attachments ?? [])];
+      task.attachmentCount = task.attachments.length;
     }
     if (req.priority !== undefined && req.priority !== task.priority) {
       log.push(['priority', { priority: task.priority }, { priority: req.priority }]);
@@ -1505,11 +1535,12 @@ export class BoardsMock {
     this.emitTask(t, 'taskUpdate');
   }
 
-  /** GET /tasks/{id}/activity: comments and journal rows, newest first. */
-  feed(id: string, userId: string, before: string, limit: number): { items: Array<{ message?: Message; activity?: TaskActivity }>; hasMore: boolean } {
+  /** GET /tasks/{id}/activity: comments and journal rows, newest first (`only`: one of them). */
+  feed(id: string, userId: string, before: string, limit: number, only = ''): { items: Array<{ message?: Message; activity?: TaskActivity }>; hasMore: boolean } {
     const { t } = this.taskFor(id, userId);
-    const msgs = (this.host.state.messages.get(t.task.roomId) ?? []).map((m) => ({ at: m.createdAt ? timestampMs(m.createdAt) : 0, id: m.id, message: m }));
-    const acts = this.activity.filter((a) => a.taskId === id).map((a) => ({ at: a.createdAt ? timestampMs(a.createdAt) : 0, id: a.id, activity: a }));
+    // ADR-0091 §3: only=journal / only=comments.
+    const msgs = only === 'journal' ? [] : (this.host.state.messages.get(t.task.roomId) ?? []).map((m) => ({ at: m.createdAt ? timestampMs(m.createdAt) : 0, id: m.id, message: m }));
+    const acts = only === 'comments' ? [] : this.activity.filter((a) => a.taskId === id).map((a) => ({ at: a.createdAt ? timestampMs(a.createdAt) : 0, id: a.id, activity: a }));
     const all = [...msgs, ...acts].sort((a, b) => b.at - a.at || b.id.localeCompare(a.id));
     const start = before ? all.findIndex((x) => x.id === before) + 1 : 0;
     const n = Math.max(1, Math.min(100, limit || 50));
@@ -1637,10 +1668,55 @@ export class BoardsMock {
       this.updateChecklistItem(first, boris, { done: true });
       const promo = this.createCategory(ws, anna, { name: 'Продвижение' });
       this.setOrder(ws, anna, { boards: [{ boardId: mk.board.id, categoryId: promo.id, position: 0 }], categories: [] });
+      // ADR-0091 (last, so the ids above stay): CAL-3's history over two days — every kind of
+      // the timeline, with the snapshots of ADR-0091 §3.
+      this.seedHistory(t3, host, { bug: lb('Баг'), feature: lb('Фича') });
     } finally {
       host.fanout = quiet;
       host.tick = clock;
     }
+  }
+
+  /**
+   * CAL-3's history (ADR-0091, «История» in the panel): comments (one by a bot, one edited, one
+   * deleted by Анна), description / title diffs, labels, files, dates, priority, estimate,
+   * assignees, watchers, an approval and an automation rule — on 14 and 15 January (the visual
+   * clock is 15 January 13:30 MSK). The newest is the description edit.
+   */
+  private seedHistory(t3: TaskRec, host: { tick: BoardsHost['tick'] }, labels: { bug: string; feature: string }): void {
+    const { anna, boris, vera, grigory } = IDS.users;
+    const st = (name: string): string => this.boards.get(t3.task.boardId)?.board.statuses.find((x) => x.name === name)?.id ?? '';
+    const at = (iso: string): void => {
+      host.tick = () => timestampFromMs(Date.parse(iso));
+    };
+    const log = (iso: string, actor: string, kind: string, before: JsonObject, after: JsonObject): TaskActivity => {
+      at(iso);
+      return this.journal(t3, actor, kind, before, after);
+    };
+    const file = (n: number, name: string, size: number, mime: string): JsonObject => ({ file_id: `00000000-0000-7000-8000-0000000f${String(n).padStart(4, '0')}`, name, size, mime });
+    const msg = (n: number): string => `00000000-0000-7000-8000-0000000e${String(n).padStart(4, '0')}`;
+    const lbl = (id: string, name: string, color: number): JsonObject => ({ id, name, color });
+    // 14 January.
+    log('2026-01-14T09:10:00Z', boris, 'comment', {}, { message_id: msg(1), text: 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~5 секунд после входа.', attachments: [] });
+    log('2026-01-14T09:25:00Z', anna, 'comment', {}, { message_id: msg(2), text: 'Проверю на Mac со встроенными динамиками сегодня.', attachments: [] });
+    log('2026-01-14T10:05:00Z', boris, 'labels', { label_ids: [labels.bug, labels.feature], labels: [lbl(labels.bug, 'Баг', 0xff453a), lbl(labels.feature, 'Фича', 0xbf5af2)] }, { label_ids: [labels.bug], labels: [lbl(labels.bug, 'Баг', 0xff453a)] });
+    log('2026-01-14T10:40:00Z', anna, 'watchers', { user_ids: [] }, { user_ids: [vera, grigory] });
+    log('2026-01-14T11:15:00Z', anna, 'attachments', { file_ids: [], files: [] }, { file_ids: [file(1, 'echo-log.txt', 18_432, 'text/plain').file_id as string], files: [file(1, 'echo-log.txt', 18_432, 'text/plain')] });
+    log('2026-01-14T12:30:00Z', grigory, 'comment', {}, { message_id: msg(3), text: 'Это не баг, а настройки драйвера Realtek.', attachments: [] });
+    log('2026-01-14T13:00:00Z', anna, 'comment_delete', { message_id: msg(3), author_id: grigory, text: 'Это не баг, а настройки драйвера Realtek.', attachments: [] }, {});
+    log('2026-01-14T14:20:00Z', vera, 'comment', {}, { message_id: msg(4), text: 'Запись эха с колонок — во вложении.', attachments: [file(2, 'запись-эха.m4a', 482_000, 'audio/mp4')] });
+    const rule = log('2026-01-14T15:00:00Z', '', 'status', { status_id: st('Todo') }, { status_id: st('В работе') });
+    rule.ruleId = '00000000-0000-7000-8000-0000000a0001';
+    log('2026-01-14T16:45:00Z', IDS.bots.deploy, 'comment', {}, { message_id: msg(5), text: 'Сборка 3.2.1 с фиксом эхоподавления выложена на стенд.', attachments: [] });
+    // 15 January (today on the visual clock).
+    log('2026-01-15T06:10:00Z', boris, 'comment_edit', { message_id: msg(1), text: 'Воспроизвёл: Windows 11, колонки Logitech, эхо через ~5 секунд.', attachments: [] }, { message_id: msg(1), text: 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~5 секунд после входа.', attachments: [file(3, 'screenshot.png', 120_000, 'image/png')] });
+    log('2026-01-15T06:30:00Z', anna, 'dates', { start_on: '2026-01-12', due_on: '2026-01-20' }, { start_on: '2026-01-12', due_on: '2026-01-14' });
+    log('2026-01-15T07:00:00Z', anna, 'priority', { priority: TaskPriority.HIGH }, { priority: TaskPriority.URGENT });
+    log('2026-01-15T07:20:00Z', boris, 'estimate', { estimate: 2 }, { estimate: 3 });
+    log('2026-01-15T07:45:00Z', anna, 'assignees', { assignees: [{ user_id: boris, is_lead: true, note: 'Аудиопайплайн' }] }, { assignees: [{ user_id: boris, is_lead: true, note: 'Аудиопайплайн' }, { user_id: anna, is_lead: false, note: 'Проверка на Mac' }] });
+    log('2026-01-15T08:10:00Z', grigory, 'approval', { user_id: grigory, state: 'pending', comment: '' }, { user_id: grigory, state: 'approved', comment: 'Логи чистые, можно выкатывать.' });
+    log('2026-01-15T09:00:00Z', anna, 'title', { title: 'Эхо при колонках' }, { title: t3.task.title });
+    log('2026-01-15T09:40:00Z', anna, 'description', { length: 49, text: 'Повторяется на Windows с колонками Logitech.\nШаги — в комментариях.' }, { length: t3.task.description.length, text: t3.task.description });
   }
 
   /** The seeded CAL-3 (comments fixture): its task and room ids. */

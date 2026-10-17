@@ -12,6 +12,7 @@ export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Lo
     { href: `${home}#features`, label: t.nav.features },
     { href: `${home}#pricing`, label: t.nav.pricing },
     { href: localePath(locale, 'bots/'), label: t.nav.bots },
+    { href: localePath(locale, 'docs/'), label: t.nav.docs },
     { href: `${home}#download`, label: t.nav.download },
   ];
   return (

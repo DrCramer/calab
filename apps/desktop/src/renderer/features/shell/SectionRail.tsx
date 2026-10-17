@@ -6,10 +6,16 @@ import {
   BoardsIdleIcon,
   CalendarActiveIcon,
   CalendarIdleIcon,
+  DiskActiveIcon,
+  DiskIdleIcon,
+  MailActiveIcon,
+  MailIdleIcon,
   PersonalActiveIcon,
   PersonalIdleIcon,
   TeamActiveIcon,
   TeamIdleIcon,
+  WikiActiveIcon,
+  WikiIdleIcon,
 } from '../../assets/nav/icons';
 import { CountBadge, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -18,6 +24,8 @@ import { currentSection, dmBadge, UNREAD_DOT, workspaceBadge, type Badge, type S
 import { unreadCount, useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useCalendar } from '../../stores/calendar';
+import { useDiskUi } from '../../stores/diskUi';
+import { useWikiUi } from '../../stores/wikiUi';
 import { HOME } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
 import { useContextWorkspace } from '../../stores/sections';
@@ -25,6 +33,9 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useOpenApp } from '../../stores/webApps';
+import { inboxUnread, useMail } from '../../stores/mail';
+import { useMailUi } from '../../stores/mailUi';
+import { mailAvailable } from '../mail/api';
 import { useWorkspaces } from '../../stores/workspaces';
 import { useHomeDrop } from '../notes/HomeDrop';
 import { WorkspaceAppsColumn } from '../webapps/AppRail';
@@ -62,6 +73,12 @@ export function SectionRail(): ReactNode {
         {local ? <DmsTile active={section === 'dms'} /> : null}
         {ws && !guestWs ? <CalendarTile active={section === 'calendar'} /> : null}
         {ws && !guestWs ? <BoardsTile ws={ws} active={section === 'boards'} /> : null}
+        {/* «Почта» (ADR-0088 §8): personal, desktop app only — after «Доски», with or without a workspace. */}
+        {MAIL ? <MailTile active={section === 'mail'} /> : null}
+        {/* «Вики» (ADR-0096 §9): after «Почта» (ADR-0095 addendum 2026-10-14); guests have none (their access is per page). */}
+        {ws && !guestWs ? <WikiTile active={section === 'wiki'} /> : null}
+        {/* «Диск» (ADR-0094 §8): last; guests have none (their access is per item, v1 keeps it simple). */}
+        {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
       </nav>
@@ -74,9 +91,15 @@ function useSection(ws: string | null): Section | null {
   const home = useUi((s) => s.activeWorkspaceId === HOME);
   const calendar = useUi((s) => s.calDay !== null);
   const boards = useBoardsUi((s) => s.active);
+  const mail = useMailUi((s) => s.active);
+  const disk = useDiskUi((s) => s.active);
+  const wiki = useWikiUi((s) => s.active);
   const app = useOpenApp(home ? null : ws) !== null;
-  return currentSection({ home, boards, calendar, app });
+  return currentSection({ home, boards, calendar, app, mail, disk, wiki });
 }
+
+/** Resolved once per page load (the API never appears later). */
+const MAIL = mailAvailable();
 
 /** The hairline above the web apps: drawn by the apps column, only when it has something to show. */
 const APPS_LINE = <div className="my-1 h-px w-8 shrink-0 bg-line" aria-hidden />;
@@ -89,6 +112,9 @@ const TEAM: NavIcons = [TeamIdleIcon, TeamActiveIcon];
 const PERSONAL: NavIcons = [PersonalIdleIcon, PersonalActiveIcon];
 const CALENDAR: NavIcons = [CalendarIdleIcon, CalendarActiveIcon];
 const BOARDS: NavIcons = [BoardsIdleIcon, BoardsActiveIcon];
+const MAIL_ICONS: NavIcons = [MailIdleIcon, MailActiveIcon];
+const DISK: NavIcons = [DiskIdleIcon, DiskActiveIcon];
+const WIKI: NavIcons = [WikiIdleIcon, WikiActiveIcon];
 
 function NavIcon({ icons, active, className }: { icons: NavIcons; active: boolean; className: string }): ReactNode {
   const Icon = icons[active ? 1 : 0];
@@ -251,6 +277,46 @@ const BoardsTile = memo(function BoardsTile({ ws, active }: { ws: string; active
     <Slot active={active}>
       <Tip label={label} side="right">
         <TileButton section="boards" icons={BOARDS} name={unread > 0 ? plural('boards.unreadCount', unread) : label} active={active} count={unread} tone="accent" testId="section-boards" />
+      </Tip>
+    </Slot>
+  );
+});
+
+/** «Диск» (ADR-0094 §8): folders and files of the context workspace; no counter. */
+const DiskTile = memo(function DiskTile({ active }: { active: boolean }): ReactNode {
+  useLocale();
+  const label = t('disk.section');
+  return (
+    <Slot active={active}>
+      <Tip label={label} side="right">
+        <TileButton section="disk" icons={DISK} name={label} active={active} testId="section-disk" />
+      </Tip>
+    </Slot>
+  );
+});
+
+/** «Вики» (ADR-0096 §9): the pages of the context workspace; no counter. */
+const WikiTile = memo(function WikiTile({ active }: { active: boolean }): ReactNode {
+  useLocale();
+  const label = t('wiki.section');
+  return (
+    <Slot active={active}>
+      <Tip label={label} side="right">
+        <TileButton section="wiki" icons={WIKI} name={label} active={active} testId="section-wiki" />
+      </Tip>
+    </Slot>
+  );
+});
+
+/** «Почта» (ADR-0088 §8): the red count is the unread mail in the inboxes of every account (one number). */
+const MailTile = memo(function MailTile({ active }: { active: boolean }): ReactNode {
+  useLocale();
+  const unread = useMail(inboxUnread);
+  const label = t('mbox.section');
+  return (
+    <Slot active={active}>
+      <Tip label={label} side="right">
+        <TileButton section="mail" icons={MAIL_ICONS} name={unread > 0 ? plural('mbox.unreadCount', unread) : label} active={active} count={unread} testId="section-mail" />
       </Tip>
     </Slot>
   );

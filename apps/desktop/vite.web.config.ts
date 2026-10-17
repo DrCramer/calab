@@ -41,6 +41,9 @@ function stripMetaCsp(): Plugin {
  */
 const SERVICE_WORKER = `// Calab — install-only service worker (ADR-0021): no fetch handler, no cache.
 self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 `;
 const WEB_THEME = '#1c1c1e'; // --color-bg (dark), the app opens dark by default
@@ -67,7 +70,7 @@ function webIcons(): Plugin {
     transformIndexHtml: () => [
       {
         tag: 'meta',
-        attrs: { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
+        attrs: { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content' },
         injectTo: 'head',
       },
       { tag: 'meta', attrs: { name: 'mobile-web-app-capable', content: 'yes' }, injectTo: 'head' },
@@ -102,7 +105,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '');
   const target = env['CALABA_WEB_PROXY'] ?? process.env['CALABA_WEB_PROXY'] ?? 'http://127.0.0.1:3000';
   const proxy = {
-    '/api': { target, changeOrigin: false },
+    // ws: the wiki sync socket lives under /api (GET /api/wiki/pages/{id}/sync).
+    '/api': { target, ws: true, changeOrigin: false },
     '/gateway': { target, ws: true, changeOrigin: false },
   };
   return {

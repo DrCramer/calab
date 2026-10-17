@@ -3,7 +3,7 @@ import { ApproverState, BoardStatusType, TaskApprovalState, TaskAssigneeSchema, 
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { describe, expect, it } from 'vitest';
 import { FILTER_FIELDS, fieldDef, opLabel } from './filterFields';
-import { EMPTY_FILTER, addCond, complete, filterKey, fromTaskFilter, matchTask, quickOn, resolveDay, toTaskFilter, toggleQuick, toggleValue, type FilterState } from './filter';
+import { EMPTY_FILTER, FORMER, addCond, complete, filterKey, fromTaskFilter, matchTask, quickOn, resolveDay, toTaskFilter, toggleQuick, toggleValue, type FilterState } from './filter';
 
 const ctx = { me: 'u-me', today: '2026-01-15', statuses: { s1: { type: BoardStatusType.UNSTARTED }, s2: { type: BoardStatusType.STARTED }, s3: { type: BoardStatusType.COMPLETED } } };
 
@@ -55,19 +55,15 @@ describe('TaskFilter round trip', () => {
     expect(fromTaskFilter(unknown).conds).toHaveLength(0);
   });
 
-  it('toggles values and quick chips (mine / unassigned exclude each other)', () => {
+  it('toggles values and the approval toggle', () => {
     const c = toggleValue({ field: TaskField.LABEL, op: TaskOp.ANY_OF, values: ['a'] }, 'b');
     expect(c.values).toEqual(['a', 'b']);
     expect(toggleValue(c, 'a').values).toEqual(['b']);
     expect(toggleValue({ field: TaskField.TEXT, op: TaskOp.CONTAINS, values: ['x'] }, 'y').values).toEqual(['y']);
-    let f = toggleQuick(EMPTY_FILTER, 'mine');
-    expect(quickOn(f, 'mine')).toBe(true);
-    f = toggleQuick(f, 'unassigned');
-    expect(quickOn(f, 'mine')).toBe(false);
-    expect(quickOn(f, 'unassigned')).toBe(true);
-    f = toggleQuick(f, 'unassigned');
-    expect(f.conds).toHaveLength(0);
-    expect(filterKey(toggleQuick(EMPTY_FILTER, 'overdue'))).not.toBe(filterKey(EMPTY_FILTER));
+    const f = toggleQuick(EMPTY_FILTER, 'approval');
+    expect(quickOn(f, 'approval')).toBe(true);
+    expect(filterKey(f)).not.toBe(filterKey(EMPTY_FILTER));
+    expect(toggleQuick(f, 'approval').conds).toHaveLength(0);
   });
 });
 
@@ -156,5 +152,24 @@ describe('approval filters (ADR-0049)', () => {
     expect(fieldDef(TaskField.APPROVAL_STATE)).toMatchObject({ kind: 'approval' });
     expect(fieldDef(TaskField.APPROVAL_STATE)?.hidden).toBeFalsy();
     expect(fieldDef(TaskField.APPROVER_PENDING)?.hidden).toBeFalsy();
+  });
+});
+
+describe('assignee «бывшие участники» (ADR-0097 §4)', () => {
+  const gone = { ...ctx, gone: (id: string) => id === 'ex' };
+  const f: FilterState = { any: false, conds: [{ field: TaskField.ASSIGNEE, op: TaskOp.IS, values: [FORMER] }] };
+  const assigned = (...ids: string[]) => task({ assignees: ids.map((userId, i) => create(TaskAssigneeSchema, { userId, isLead: i === 0 })) });
+
+  it('matches a task with an assignee who is not a member, not one with only members or nobody', () => {
+    expect(matchTask(assigned('ex'), f, gone)).toBe(true);
+    expect(matchTask(assigned('u-me', 'ex'), f, gone)).toBe(true);
+    expect(matchTask(assigned('u-me'), f, gone)).toBe(false);
+    expect(matchTask(assigned(), f, gone)).toBe(false);
+  });
+
+  it('is never sent to the server and is not «Без исполнителя»', () => {
+    expect(toTaskFilter(f).conditions).toHaveLength(0);
+    const none: FilterState = { any: false, conds: [{ field: TaskField.ASSIGNEE, op: TaskOp.EMPTY, values: [] }] };
+    expect(matchTask(assigned('ex'), none, gone)).toBe(false);
   });
 });

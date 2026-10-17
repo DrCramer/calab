@@ -7,9 +7,21 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const boardFormPendingBytes = `-- name: BoardFormPendingBytes :one
+SELECT coalesce(sum(size), 0)::bigint FROM board_form_uploads WHERE form_id = $1
+`
+
+func (q *Queries) BoardFormPendingBytes(ctx context.Context, formID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, boardFormPendingBytes, formID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
 
 const countBoardForms = `-- name: CountBoardForms :one
 SELECT count(*) FROM board_forms WHERE board_id = $1
@@ -39,8 +51,45 @@ func (q *Queries) DeleteBoardForm(ctx context.Context, arg DeleteBoardFormParams
 	return result.RowsAffected(), nil
 }
 
+const deleteBoardFormUploads = `-- name: DeleteBoardFormUploads :exec
+DELETE FROM board_form_uploads WHERE file_id = ANY($1::uuid[])
+`
+
+func (q *Queries) DeleteBoardFormUploads(ctx context.Context, ids []uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBoardFormUploads, ids)
+	return err
+}
+
+const deleteExpiredBoardFormUploads = `-- name: DeleteExpiredBoardFormUploads :many
+DELETE FROM board_form_uploads WHERE file_id IN (
+    SELECT x.file_id FROM board_form_uploads x WHERE x.created_at < $1 ORDER BY x.created_at LIMIT 500)
+RETURNING file_id
+`
+
+// Staged uploads never submitted (ADR-0064 v2). A row a submission holds (FOR UPDATE) is
+// re-checked after it commits and skipped when the submission took it.
+func (q *Queries) DeleteExpiredBoardFormUploads(ctx context.Context, createdAt time.Time) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteExpiredBoardFormUploads, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var file_id uuid.UUID
+		if err := rows.Scan(&file_id); err != nil {
+			return nil, err
+		}
+		items = append(items, file_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBoardForm = `-- name: GetBoardForm :one
-SELECT id, board_id, code, definition, revision, created_by, created_at, updated_at FROM board_forms WHERE id = $1 AND board_id = $2
+SELECT id, board_id, code, definition, revision, created_by, created_at, updated_at, updated_by FROM board_forms WHERE id = $1 AND board_id = $2
 `
 
 type GetBoardFormParams struct {
@@ -60,12 +109,13 @@ func (q *Queries) GetBoardForm(ctx context.Context, arg GetBoardFormParams) (Boa
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UpdatedBy,
 	)
 	return i, err
 }
 
 const getBoardFormByCode = `-- name: GetBoardFormByCode :one
-SELECT id, board_id, code, definition, revision, created_by, created_at, updated_at FROM board_forms WHERE code = $1
+SELECT id, board_id, code, definition, revision, created_by, created_at, updated_at, updated_by FROM board_forms WHERE code = $1
 `
 
 func (q *Queries) GetBoardFormByCode(ctx context.Context, code string) (BoardForm, error) {
@@ -80,6 +130,7 @@ func (q *Queries) GetBoardFormByCode(ctx context.Context, code string) (BoardFor
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UpdatedBy,
 	)
 	return i, err
 }
@@ -108,6 +159,52 @@ func (q *Queries) GetBoardFormSubmission(ctx context.Context, arg GetBoardFormSu
 	return i, err
 }
 
+const getBoardFormUploads = `-- name: GetBoardFormUploads :many
+SELECT u.file_id, u.form_id, u.field_id, u.token_hash, u.actor_id, u.size, u.created_at, f.name AS file_name FROM board_form_uploads u JOIN files f ON f.id = u.file_id
+WHERE u.token_hash = ANY($1::bytea[]) FOR UPDATE OF u
+`
+
+type GetBoardFormUploadsRow struct {
+	FileID    uuid.UUID
+	FormID    uuid.UUID
+	FieldID   uuid.UUID
+	TokenHash []byte
+	ActorID   *uuid.UUID
+	Size      int64
+	CreatedAt time.Time
+	FileName  string
+}
+
+// Staged uploads by token hash, locked until the submission commits.
+func (q *Queries) GetBoardFormUploads(ctx context.Context, hashes [][]byte) ([]GetBoardFormUploadsRow, error) {
+	rows, err := q.db.Query(ctx, getBoardFormUploads, hashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetBoardFormUploadsRow{}
+	for rows.Next() {
+		var i GetBoardFormUploadsRow
+		if err := rows.Scan(
+			&i.FileID,
+			&i.FormID,
+			&i.FieldID,
+			&i.TokenHash,
+			&i.ActorID,
+			&i.Size,
+			&i.CreatedAt,
+			&i.FileName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBoardFormWorkspace = `-- name: GetBoardFormWorkspace :one
 SELECT b.workspace_id FROM board_forms f JOIN boards b ON b.id = f.board_id WHERE f.code = $1
 `
@@ -120,7 +217,7 @@ func (q *Queries) GetBoardFormWorkspace(ctx context.Context, code string) (uuid.
 }
 
 const insertBoardForm = `-- name: InsertBoardForm :one
-INSERT INTO board_forms (board_id, code, definition, created_by) VALUES ($1, $2, $3, $4) RETURNING id, board_id, code, definition, revision, created_by, created_at, updated_at
+INSERT INTO board_forms (board_id, code, definition, created_by, updated_by) VALUES ($1, $2, $3, $4, $4) RETURNING id, board_id, code, definition, revision, created_by, created_at, updated_at, updated_by
 `
 
 type InsertBoardFormParams struct {
@@ -147,6 +244,7 @@ func (q *Queries) InsertBoardForm(ctx context.Context, arg InsertBoardFormParams
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UpdatedBy,
 	)
 	return i, err
 }
@@ -185,8 +283,34 @@ func (q *Queries) InsertBoardFormSubmission(ctx context.Context, arg InsertBoard
 	return i, err
 }
 
+const insertBoardFormUpload = `-- name: InsertBoardFormUpload :exec
+INSERT INTO board_form_uploads (file_id, form_id, field_id, token_hash, actor_id, size)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertBoardFormUploadParams struct {
+	FileID    uuid.UUID
+	FormID    uuid.UUID
+	FieldID   uuid.UUID
+	TokenHash []byte
+	ActorID   *uuid.UUID
+	Size      int64
+}
+
+func (q *Queries) InsertBoardFormUpload(ctx context.Context, arg InsertBoardFormUploadParams) error {
+	_, err := q.db.Exec(ctx, insertBoardFormUpload,
+		arg.FileID,
+		arg.FormID,
+		arg.FieldID,
+		arg.TokenHash,
+		arg.ActorID,
+		arg.Size,
+	)
+	return err
+}
+
 const listBoardForms = `-- name: ListBoardForms :many
-SELECT id, board_id, code, definition, revision, created_by, created_at, updated_at FROM board_forms WHERE board_id = $1 ORDER BY created_at, id
+SELECT id, board_id, code, definition, revision, created_by, created_at, updated_at, updated_by FROM board_forms WHERE board_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListBoardForms(ctx context.Context, boardID uuid.UUID) ([]BoardForm, error) {
@@ -207,6 +331,7 @@ func (q *Queries) ListBoardForms(ctx context.Context, boardID uuid.UUID) ([]Boar
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UpdatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -219,8 +344,8 @@ func (q *Queries) ListBoardForms(ctx context.Context, boardID uuid.UUID) ([]Boar
 }
 
 const updateBoardForm = `-- name: UpdateBoardForm :one
-UPDATE board_forms SET definition = $3, revision = revision + 1, updated_at = now()
-WHERE id = $1 AND board_id = $2 AND revision = $4 RETURNING id, board_id, code, definition, revision, created_by, created_at, updated_at
+UPDATE board_forms SET definition = $3, revision = revision + 1, updated_at = now(), updated_by = $5
+WHERE id = $1 AND board_id = $2 AND revision = $4 RETURNING id, board_id, code, definition, revision, created_by, created_at, updated_at, updated_by
 `
 
 type UpdateBoardFormParams struct {
@@ -228,6 +353,7 @@ type UpdateBoardFormParams struct {
 	BoardID    uuid.UUID
 	Definition []byte
 	Revision   int32
+	UpdatedBy  *uuid.UUID
 }
 
 func (q *Queries) UpdateBoardForm(ctx context.Context, arg UpdateBoardFormParams) (BoardForm, error) {
@@ -236,6 +362,7 @@ func (q *Queries) UpdateBoardForm(ctx context.Context, arg UpdateBoardFormParams
 		arg.BoardID,
 		arg.Definition,
 		arg.Revision,
+		arg.UpdatedBy,
 	)
 	var i BoardForm
 	err := row.Scan(
@@ -247,6 +374,7 @@ func (q *Queries) UpdateBoardForm(ctx context.Context, arg UpdateBoardFormParams
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UpdatedBy,
 	)
 	return i, err
 }

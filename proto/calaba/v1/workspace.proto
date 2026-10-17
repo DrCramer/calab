@@ -1,6 +1,7 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/billing.proto";
 import "calaba/v1/identity.proto";
 
 import "google/protobuf/timestamp.proto";
@@ -50,6 +51,17 @@ message Workspace {
   // PLACE_CALLS in a voice room they are in may call phone numbers from it.
   WorkspaceIdentityAccess identity_access = 16;
   bool sip_enabled = 15;
+  // Balance billing (ADR-0080): state without amounts, for every member; unset = no billing
+  // account. The owner reads the money through GET /api/workspaces/{id}/billing.
+  WorkspaceBillingStatus billing = 17;
+  // How many days a closed temporary room stays in the archive before it is deleted with its
+  // history (ADR-0044 addendum): 1 | 7 | 30 | 90 | 365; new workspaces start with 30.
+  uint32 temp_archive_days = 18;
+  // «Владелец видит приватное» (addenda 2026-10-14 to ADR-0058, ADR-0078, ADR-0094 §2, ADR-0096
+  // §2): while on, the workspace owner — and nobody else — has every bit on private rooms,
+  // boards, Disk items and Wiki pages (to manage what a former member left behind). Off by
+  // default; only the owner changes it (UpdateWorkspaceRequest.owner_sees_private).
+  bool owner_sees_private = 19;
 }
 
 message WorkspaceSuspension {
@@ -156,7 +168,50 @@ message UpdateWorkspaceRequest {
   optional bool allow_self_nickname = 8;
   optional uint32 default_camera_limit = 9; // 0..25 (0 = cameras off)
   optional TimeFormat time_format = 10; // AUTO|H24|H12 (UNSPECIFIED is 422)
+  optional uint32 temp_archive_days = 11; // 1|7|30|90|365 (MANAGE_WORKSPACE; else 422)
+  // Workspace.owner_sees_private: the workspace owner only (403 OWNER_ONLY for anyone else, not
+  // delegable by roles). A change writes a workspace journal entry (WorkspaceAuditEntry).
+  optional bool owner_sees_private = 12;
 }
+
+// The workspace journal of private-access decisions (addendum 2026-10-14): the owner switching
+// «Владелец видит приватное» and taking over a former member's private item. Ids only — no
+// names of private items.
+enum WorkspaceAuditKind {
+  WORKSPACE_AUDIT_KIND_UNSPECIFIED = 0;
+  WORKSPACE_AUDIT_KIND_OWNER_SEES_PRIVATE_ON = 1;
+  WORKSPACE_AUDIT_KIND_OWNER_SEES_PRIVATE_OFF = 2;
+  // «Сделать меня владельцем»: subject_type / subject_id name the item, previous_owner_id the
+  // former member who owned it.
+  WORKSPACE_AUDIT_KIND_TAKE_OVER = 3;
+}
+
+message WorkspaceAuditEntry {
+  string id = 1;
+  string actor_id = 2; // empty = account deleted
+  WorkspaceAuditKind kind = 3;
+  string subject_type = 4; // "room" | "board" | "disk_item" | "wiki_page"; empty for the toggle
+  string subject_id = 5;
+  string previous_owner_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// GET /api/workspaces/{id}/audit?before=<id>&limit=<1..100, default 50>: the workspace owner or
+// VIEW_JOURNALS (403 otherwise); newest first.
+message ListWorkspaceAuditResponse {
+  repeated WorkspaceAuditEntry entries = 1;
+}
+
+// «Сделать меня владельцем» (addendum 2026-10-14): POST /api/rooms/{id}/take-over,
+// POST /api/boards/{id}/take-over, POST /api/disk/items/{id}/take-over,
+// POST /api/wiki/pages/{id}/take-over — no body. The workspace owner while
+// owner_sees_private is on, on a private item (a restricted Disk item / Wiki page) whose owner
+// (rooms, boards: created_by; Disk, Wiki: owner_id) is not a member of the workspace any more
+// (or unknown): 403 OWNER_ONLY / 409 CONFLICT otherwise. The caller becomes its owner (rooms:
+// created_by and a personal allow of every room bit; boards: created_by and a personal
+// allow of every board bit; Disk / Wiki: owner_id) and a TAKE_OVER journal entry is written. The
+// answer is the item as GET returns it (UpdateRoomResponse, BoardResponse, DiskItemResponse,
+// WikiPageResponse).
 
 message UpdateWorkspaceResponse {
   Workspace workspace = 1;
@@ -313,6 +368,62 @@ message CreateBanResponse {
 // 204 (WORKSPACE_BAN_REMOVE to the owner / admins); the user may be invited again.
 message ListBansResponse {
   repeated WorkspaceBan bans = 1;
+}
+
+// ---- Former members (ADR-0097). ----
+
+// Why a user is no longer a member of the workspace.
+enum FormerMemberReason {
+  FORMER_MEMBER_REASON_UNSPECIFIED = 0;
+  FORMER_MEMBER_REASON_LEFT = 1;               // left by themself
+  FORMER_MEMBER_REASON_REMOVED = 2;            // removed by a manager (or backfilled, ADR-0097 §6)
+  FORMER_MEMBER_REASON_BANNED = 3;
+  FORMER_MEMBER_REASON_GUEST_EXPIRED = 4;      // a guest inactive for GUEST_INACTIVITY (ADR-0098)
+  FORMER_MEMBER_REASON_DIRECTORY_DISABLED = 5; // disabled in the workspace directory
+}
+
+// When and why a member left (WORKSPACE_MEMBER_REMOVE.former, UserRef).
+message FormerMemberInfo {
+  google.protobuf.Timestamp left_at = 1;
+  FormerMemberReason reason = 2;
+}
+
+// A user as seen in one workspace: a member or a former member (ADR-0097 §2). The profile is
+// the live one while the account exists; an anonymised guest account shows the name it had
+// when it left. Public fields only (no contacts).
+message UserRef {
+  string user_id = 1;
+  string display_name = 2;
+  string avatar_file_id = 3; // empty = no avatar
+  string username = 4;
+  bool former = 5; // not a member any more: show the "former" chip
+  google.protobuf.Timestamp left_at = 6; // set when former
+  FormerMemberReason reason = 7;         // set when former
+  bool is_guest = 8; // a guest account (ADR-0016)
+  bool is_bot = 9;
+}
+
+// GET /api/workspaces/{id}/users?ids=a,b,… (any member; at most 100 ids) → the users among the
+// ids who are or were members of this workspace; any other id is left out silently.
+message ListWorkspaceUsersResponse {
+  repeated UserRef users = 1;
+}
+
+// A row of the former members list.
+message FormerMember {
+  UserRef user = 1;
+  WorkspaceRole role = 2; // the highest built-in role when they left
+  string nickname = 3;    // the workspace nickname when they left
+  google.protobuf.Timestamp joined_at = 4;
+  string removed_by = 5; // user id; empty = themself, the server or a deleted account
+  int32 open_tasks = 6;  // open tasks of this workspace where they are the assignee
+}
+
+// GET /api/workspaces/{id}/former-members?guests=0|1&q=&cursor= (MANAGE_MEMBERS) → newest first,
+// 50 per page. guests=0 (default) hides former guests; q filters by name or username.
+message ListFormerMembersResponse {
+  repeated FormerMember members = 1;
+  string next_cursor = 2; // empty = no more
 }
 
 // ---- Roles (ADR-0026). Mutations need MANAGE_ROLES (admins have it) and act only on roles
