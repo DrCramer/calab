@@ -16,9 +16,11 @@ describe('presetText / presetDetail', () => {
   it('keeps select labels short and never repeats the resolution', () => {
     expect(presetText(ScreenSharePreset.H1080)).toBe('1080p · 15 fps');
     expect(presetText(ScreenSharePreset.ECONOMY)).toBe('Экономия · 5 fps');
-    expect(presetText(ScreenSharePreset.ORIGINAL)).toBe('Максимум · 30 fps');
-    for (const p of [ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL] as const) {
-      expect(presetText(p).length).toBeLessThanOrEqual(18);
+    expect(presetText(ScreenSharePreset.ORIGINAL)).toBe('Исходное · 30 fps');
+    expect(presetText(ScreenSharePreset.H1080_60)).toBe('1080p · 60 fps');
+    expect(presetText(ScreenSharePreset.ORIGINAL_60)).toBe('Исходное · 60 fps');
+    for (const p of [ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL, ScreenSharePreset.H2160_60] as const) {
+      expect(presetText(p).length).toBeLessThanOrEqual(24);
     }
   });
   it('puts the parameters in the detail line', () => {
@@ -30,14 +32,17 @@ describe('presetText / presetDetail', () => {
 describe('presetOptions', () => {
   it('disables presets above the room limit with the reason', () => {
     const o = presetOptions(ScreenSharePreset.H1080);
-    expect(o.map((x) => x.label)).toEqual(['Экономия', '720p', '1080p', 'Макс.']);
-    expect(o.map((x) => x.disabledReason !== null)).toEqual([false, false, false, true]);
-    expect(o[3]?.disabledReason).toBe('Недоступно: в этой комнате качество не выше «1080p»');
-    expect(presetOptions(ScreenSharePreset.ORIGINAL).every((x) => x.disabledReason === null)).toBe(true);
+    expect(o).toHaveLength(12);
+    expect(o.map((x) => x.label)).toContain('2160p · 60 fps');
+    expect(o.find((x) => x.preset === ScreenSharePreset.ORIGINAL)?.label).toBe('Исходное · 30 fps');
+    expect(o.find((x) => x.preset === ScreenSharePreset.H1080_30)?.disabledReason).toBe('Недоступно: в этой комнате качество не выше «1080p · 15 fps»');
+    expect(presetOptions(ScreenSharePreset.ORIGINAL).find((x) => x.preset === ScreenSharePreset.H720_30)?.lock).toBeNull();
+    expect(presetOptions(ScreenSharePreset.ORIGINAL).find((x) => x.preset === ScreenSharePreset.H1080_30)?.lock).toBe('room');
     // The plan's cap (ADR-0024): a lock with «Доступно на тарифе Team»; the room's reason wins above both.
     const free = presetOptions(ScreenSharePreset.H1080, ScreenSharePreset.H720);
-    expect(free.map((x) => x.lock)).toEqual([null, null, 'plan', 'room']);
-    expect(free[2]?.disabledReason).toBe('Доступно на тарифе Team');
+    expect(free.find((x) => x.preset === ScreenSharePreset.H1080)?.lock).toBe('plan');
+    expect(free.find((x) => x.preset === ScreenSharePreset.H1080_30)?.lock).toBe('room');
+    expect(free.find((x) => x.preset === ScreenSharePreset.H1080)?.disabledReason).toBe('Доступно на тарифе Team');
   });
 });
 

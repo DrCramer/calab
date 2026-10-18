@@ -61,7 +61,7 @@ const (
 )
 
 // uploadDeadline replaces the server's ReadTimeout for upload requests.
-const uploadDeadline = 15 * time.Minute
+const uploadDeadline = 60 * time.Minute
 
 // Service handles file storage.
 type Service struct {
@@ -476,7 +476,7 @@ func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.U
 	if err != nil {
 		return sqlc.File{}, err
 	}
-	if pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
+	if attach == nil && pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
 		return sqlc.File{}, httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
 			"too many uploaded files are not attached to messages yet")
 	}

@@ -54,7 +54,7 @@ func dmGrant() Permission { return Grant(dmBits, true, true) }
 func dmMedia() *v1.RoomMediaSettings {
 	return &v1.RoomMediaSettings{
 		AudioBitrateKbps: 48,
-		MaxStreamPreset:  v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080,
+		MaxStreamPreset:  v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60,
 		MaxStreams:       4,
 		CameraLimit:      4,
 	}
@@ -283,7 +283,7 @@ func (s *Service) requestDMMedia(w http.ResponseWriter, r *http.Request, roomID 
 		return err
 	}
 	preset := req.GetPreset()
-	if preset == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || preset > v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080 {
+	if preset == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || !plans.IsCameraPreset(preset) || preset == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL {
 		preset = v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720
 	}
 	httpx.Write(w, http.StatusOK, &v1.RequestCameraResponse{Preset: preset, Fps: req.GetFps()})

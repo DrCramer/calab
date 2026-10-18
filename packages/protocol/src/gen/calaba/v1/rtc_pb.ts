@@ -187,8 +187,7 @@ export type RequestStreamResponse = Message<"calaba.v1.RequestStreamResponse"> &
   preset: ScreenSharePreset;
 
   /**
-   * Granted frame rate: min(wanted, the preset's own — ECONOMY 5, H720 / H1080 15,
-   * ORIGINAL 30 — and plan stream_max_fps).
+   * Granted frame rate: min(wanted, the preset's own and plan stream_max_fps).
    *
    * @generated from field: uint32 fps = 2;
    */

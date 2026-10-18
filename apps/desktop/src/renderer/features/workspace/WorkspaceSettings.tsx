@@ -6,7 +6,7 @@ import { IdentityAbout, IdentityNotConfigured } from '../identity/IdentityGate';
 import { PlanLock } from '../../components/PlanLock';
 import { DiskSettingsTab } from '../disk/DiskSettings';
 import { WikiSettingsTab } from '../wiki/WikiSettings';
-import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
+import { audioTierKbps, compareScreenSharePresets, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
@@ -354,7 +354,7 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           onChange={(e) => apply({ defaultMaxStreamPreset: Number(e.target.value) })}
         >
           {PRESETS.map((p) => (
-            <option key={p} value={p} title={presetDetail(p)} disabled={presetCap > 0 && p > presetCap}>
+            <option key={p} value={p} title={presetDetail(p)} disabled={presetCap > 0 && compareScreenSharePresets(p, presetCap) > 0}>
               {presetText(p)}
             </option>
           ))}

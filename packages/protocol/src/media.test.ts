@@ -7,9 +7,17 @@ describe('clampStreamPreset', () => {
     expect(clampStreamPreset(ScreenSharePreset.H720, ScreenSharePreset.H1080)).toBe(ScreenSharePreset.H720);
     expect(clampStreamPreset(ScreenSharePreset.ORIGINAL, ScreenSharePreset.H720)).toBe(ScreenSharePreset.H720);
     expect(clampStreamPreset(ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.ORIGINAL)).toBe(ScreenSharePreset.H1080);
+    expect(clampStreamPreset(ScreenSharePreset.H1080_30, ScreenSharePreset.ORIGINAL)).toBe(ScreenSharePreset.ORIGINAL);
+    expect(clampStreamPreset(ScreenSharePreset.H2160_60, ScreenSharePreset.H2160_30)).toBe(ScreenSharePreset.H2160_30);
   });
   it('has a config for every concrete preset', () => {
-    expect(Object.keys(SCREEN_SHARE_PRESETS)).toHaveLength(4);
+    expect(Object.keys(SCREEN_SHARE_PRESETS)).toHaveLength(12);
+    expect(SCREEN_SHARE_PRESETS[ScreenSharePreset.H1080_60]).toMatchObject({ width: 1920, height: 1080, fps: 60, maxBitrate: 10_000_000 });
+    expect(SCREEN_SHARE_PRESETS[ScreenSharePreset.H2160_60].maxBitrate).toBe(30_000_000);
+    expect(ScreenSharePreset.ECONOMY).toBe(1);
+    expect(ScreenSharePreset.H720).toBe(2);
+    expect(ScreenSharePreset.H1080).toBe(3);
+    expect(ScreenSharePreset.ORIGINAL).toBe(4);
   });
 });
 

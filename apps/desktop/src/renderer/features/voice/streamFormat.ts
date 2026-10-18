@@ -1,4 +1,4 @@
-import { SCREEN_SHARE_PRESETS, ScreenSharePreset, type ConcreteScreenSharePreset, type ScreenShareContentHint } from '@calaba/protocol';
+import { SCREEN_SHARE_PRESETS, SCREEN_SHARE_PRESET_DISPLAY_ORDER, SCREEN_SHARE_PRESET_ORDER, ScreenSharePreset, type ConcreteScreenSharePreset, type ScreenShareContentHint } from '@calaba/protocol';
 import type { CaptureSource } from '../../../shared/ipc';
 import { plural, t, type MessageKey } from '../../i18n';
 import { streamPresetLock, type PresetLock } from '../../lib/plan';
@@ -11,9 +11,17 @@ export const PRESET_LABEL: Record<ConcreteScreenSharePreset, MessageKey> = {
   [ScreenSharePreset.H720]: 'preset.h720',
   [ScreenSharePreset.H1080]: 'preset.h1080',
   [ScreenSharePreset.ORIGINAL]: 'preset.original',
+  [ScreenSharePreset.H720_30]: 'preset.h72030',
+  [ScreenSharePreset.H1080_30]: 'preset.h108030',
+  [ScreenSharePreset.H1080_60]: 'preset.h108060',
+  [ScreenSharePreset.H1440_30]: 'preset.h144030',
+  [ScreenSharePreset.H1440_60]: 'preset.h144060',
+  [ScreenSharePreset.H2160_30]: 'preset.h216030',
+  [ScreenSharePreset.H2160_60]: 'preset.h216060',
+  [ScreenSharePreset.ORIGINAL_60]: 'preset.original60',
 };
 
-export const PRESETS = [ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL] as ConcreteScreenSharePreset[];
+export const PRESETS = [...SCREEN_SHARE_PRESET_ORDER];
 
 /** Resolution in words: «1080p» or «исходное разрешение». */
 function presetRes(p: ConcreteScreenSharePreset): string {
@@ -26,7 +34,7 @@ function presetRes(p: ConcreteScreenSharePreset): string {
  * «Экономия · 5 fps» — never repeats the resolution. The rest goes to presetDetail (hint / title).
  */
 export function presetText(p: ConcreteScreenSharePreset): string {
-  return `${t(PRESET_LABEL[p])} · ${SCREEN_SHARE_PRESETS[p].fps} fps`;
+  return t(PRESET_LABEL[p]);
 }
 
 /** The full parameters for a row hint or an option title: «1080p, 15 fps, до 2,0 Мбит/с». */
@@ -51,11 +59,11 @@ export function presetOptions(
   max: ConcreteScreenSharePreset,
   planMax?: ScreenSharePreset,
 ): Array<{ preset: ConcreteScreenSharePreset; label: string; lock: PresetLock; disabledReason: string | null }> {
-  return PRESETS.map((p) => {
+  return SCREEN_SHARE_PRESET_DISPLAY_ORDER.map((p) => {
     const lock = streamPresetLock(p, max, planMax);
     return {
       preset: p,
-      label: p === ScreenSharePreset.ORIGINAL ? t('preset.originalShort') : t(PRESET_LABEL[p]),
+      label: t(PRESET_LABEL[p]),
       lock,
       disabledReason: lock === 'room' ? t('streamPick.qualityLimited', { max: t(PRESET_LABEL[max]) }) : lock === 'plan' ? t('plan.lockTip') : null,
     };

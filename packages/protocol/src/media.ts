@@ -15,7 +15,56 @@ export const SCREEN_SHARE_PRESETS: Record<
   [ScreenSharePreset.H720]: { width: 1280, height: 720, fps: 15, maxBitrate: 1_000_000 },
   [ScreenSharePreset.H1080]: { width: 1920, height: 1080, fps: 15, maxBitrate: 2_000_000 },
   [ScreenSharePreset.ORIGINAL]: { width: 0, height: 0, fps: 30, maxBitrate: 4_000_000 },
+  [ScreenSharePreset.H720_30]: { width: 1280, height: 720, fps: 30, maxBitrate: 2_500_000 },
+  [ScreenSharePreset.H1080_30]: { width: 1920, height: 1080, fps: 30, maxBitrate: 5_000_000 },
+  [ScreenSharePreset.H1080_60]: { width: 1920, height: 1080, fps: 60, maxBitrate: 10_000_000 },
+  [ScreenSharePreset.H1440_30]: { width: 2560, height: 1440, fps: 30, maxBitrate: 10_000_000 },
+  [ScreenSharePreset.H1440_60]: { width: 2560, height: 1440, fps: 60, maxBitrate: 16_000_000 },
+  [ScreenSharePreset.H2160_30]: { width: 3840, height: 2160, fps: 30, maxBitrate: 18_000_000 },
+  [ScreenSharePreset.H2160_60]: { width: 3840, height: 2160, fps: 60, maxBitrate: 30_000_000 },
+  [ScreenSharePreset.ORIGINAL_60]: { width: 0, height: 0, fps: 60, maxBitrate: 30_000_000 },
 };
+
+/** Preset order by increasing recommended bitrate; existing limits keep their old ceiling. */
+export const SCREEN_SHARE_PRESET_ORDER: readonly ConcreteScreenSharePreset[] = [
+  ScreenSharePreset.ECONOMY,
+  ScreenSharePreset.H720,
+  ScreenSharePreset.H1080,
+  ScreenSharePreset.H720_30,
+  ScreenSharePreset.ORIGINAL,
+  ScreenSharePreset.H1080_30,
+  ScreenSharePreset.H1080_60,
+  ScreenSharePreset.H1440_30,
+  ScreenSharePreset.H1440_60,
+  ScreenSharePreset.H2160_30,
+  ScreenSharePreset.H2160_60,
+  ScreenSharePreset.ORIGINAL_60,
+];
+
+/** Display order for selectors, arranged by resolution and frame rate rather than cap rank. */
+export const SCREEN_SHARE_PRESET_DISPLAY_ORDER: readonly ConcreteScreenSharePreset[] = [
+  ScreenSharePreset.ECONOMY,
+  ScreenSharePreset.H720,
+  ScreenSharePreset.H720_30,
+  ScreenSharePreset.H1080,
+  ScreenSharePreset.H1080_30,
+  ScreenSharePreset.H1080_60,
+  ScreenSharePreset.H1440_30,
+  ScreenSharePreset.H1440_60,
+  ScreenSharePreset.H2160_30,
+  ScreenSharePreset.H2160_60,
+  ScreenSharePreset.ORIGINAL,
+  ScreenSharePreset.ORIGINAL_60,
+];
+
+const SCREEN_SHARE_PRESET_RANK = new Map(SCREEN_SHARE_PRESET_ORDER.map((preset, index) => [preset, index]));
+
+/** Compare quality presets without depending on their stable protobuf enum numbers. */
+export function compareScreenSharePresets(a: ScreenSharePreset, b: ScreenSharePreset): number {
+  const rank = (preset: ScreenSharePreset): number =>
+    preset === ScreenSharePreset.UNSPECIFIED ? -1 : (SCREEN_SHARE_PRESET_RANK.get(preset as ConcreteScreenSharePreset) ?? Number.MAX_SAFE_INTEGER);
+  return rank(a) - rank(b);
+}
 
 export const DEFAULT_SCREEN_SHARE_PRESET: ConcreteScreenSharePreset = ScreenSharePreset.H1080;
 
@@ -94,7 +143,8 @@ export type ScreenShareContentHint = 'detail' | 'motion';
 
 /**
  * Preset not above the room maximum (`room.media.maxStreamPreset`).
- * Enum values are ordered by quality. UNSPECIFIED is treated as the default preset.
+ * Presets are compared by SCREEN_SHARE_PRESET_ORDER, never by protobuf enum number.
+ * UNSPECIFIED is treated as the default preset.
  */
 export function clampStreamPreset(
   wanted: ScreenSharePreset,
@@ -102,7 +152,7 @@ export function clampStreamPreset(
 ): ConcreteScreenSharePreset {
   const w = wanted === ScreenSharePreset.UNSPECIFIED ? DEFAULT_SCREEN_SHARE_PRESET : wanted;
   const m = max === ScreenSharePreset.UNSPECIFIED ? DEFAULT_SCREEN_SHARE_PRESET : max;
-  return (w <= m ? w : m) as ConcreteScreenSharePreset;
+  return (compareScreenSharePresets(w, m) <= 0 ? w : m) as ConcreteScreenSharePreset;
 }
 
 export const MAX_STREAMS_PER_ROOM_DEFAULT = 3;

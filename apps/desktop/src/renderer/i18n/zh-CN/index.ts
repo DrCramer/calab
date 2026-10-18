@@ -486,11 +486,18 @@ export const zhCN: Dict = {
   'stream.returnHere': '收回到此处',
 
   // presets
-  'preset.economy': '省流量',
-  'preset.h720': '720p',
-  'preset.h1080': '1080p',
-  'preset.original': '最高',
-  'preset.originalShort': '最高',
+  'preset.economy': '省流量 · 5 fps',
+  'preset.h720': '720p · 15 fps',
+  'preset.h1080': '1080p · 15 fps',
+  'preset.original': '原始分辨率 · 30 fps',
+  'preset.h72030': '720p · 30 fps',
+  'preset.h108030': '1080p · 30 fps',
+  'preset.h108060': '1080p · 60 fps',
+  'preset.h144030': '1440p · 30 fps',
+  'preset.h144060': '1440p · 60 fps',
+  'preset.h216030': '2160p · 30 fps',
+  'preset.h216060': '2160p · 60 fps',
+  'preset.original60': '原始分辨率 · 60 fps',
   'preset.native': '原始分辨率',
   'preset.detail': '{res}，{fps} fps，最高 {mbps} Mbps',
 

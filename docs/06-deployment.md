@@ -162,6 +162,22 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 
 ### Релизы десктопа: сборка
 
+#### Windows-клиент self-host форка
+
+Форк `DrCramer/calab` собирает только Windows-клиент в `.github/workflows/windows-selfhost-release.yml`.
+Сборка запускается тегом `win-vX.Y.Z` (например, `win-v3.7.1`) или вручную через Actions с версией.
+Workflow проверяет native-модуль и update manifest, затем создаёт черновик GitHub Release с тегом
+`vX.Y.Z`. После Windows smoke-проверки опубликовать релиз:
+
+```bash
+gh release edit vX.Y.Z --repo DrCramer/calab --draft=false --latest
+```
+
+В клиент вшиты `MAIN_VITE_UPDATE_GITHUB=DrCramer/calab`, generic fallback на GitHub `latest/download`
+и адрес self-host API. В `%AppData%` менять `updateUrl` для автообновления не требуется: источник
+обновлений закреплён в приложении во время сборки (ADR-0108). Публикуемые релизы должны быть
+публичными; черновики updater не видит.
+
 Все три ОС собираются с одного Mac (Apple Silicon): `apps/desktop/scripts/build-release.sh [mac] [linux] [win]` (без аргументов — все). На Apple Silicon Linux/Windows собираются на x86_64-хосте: `BUILD_DOCKER_HOST=ssh://root@141.105.69.177` (стенд, согласовано; без эмуляции, в разы быстрее и не забивает диск мака образом 4.7 GB).
 
 - **Источник** — чистый `git archive` коммита `SRC_REF` (по умолчанию `HEAD`) во временном каталоге (`WORK_DIR`, по умолчанию `$TMPDIR/calaba-release`): незакоммиченные правки в релиз не попадают, рабочее дерево и `node_modules` разработчика не трогаются. Требование: коммит должен ставиться `pnpm install --frozen-lockfile` (lockfile в синхроне с `package.json`). Версия — из `apps/desktop/package.json`; `VERSION=1.2.3` переопределяет её только в экспорте (`npm version --no-git-tag-version`).
