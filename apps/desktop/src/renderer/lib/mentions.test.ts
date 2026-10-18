@@ -186,12 +186,39 @@ describe('layout tolerance', () => {
     expect(filterCandidates('Фтт', list).map((c) => c.id)).toEqual([BORIS]);
   });
   it('plain queries still work; raw ranks above swapped; no duplicates', () => {
-    expect(filterCandidates('анн', list).map((c) => c.id)).toEqual([ANNA]);
+    // «Ann» is found by transliteration, after the real match.
+    expect(filterCandidates('анн', list).map((c) => c.id)).toEqual([ANNA, BORIS]);
     const both = [
       { id: ANNA, name: 'Ann', alt: [] },
       { id: BORIS, name: 'Фтт', alt: [] },
     ];
     expect(filterCandidates('ann', both).map((c) => c.id)).toEqual([ANNA, BORIS]);
     expect(new Set(filterCandidates('a', list).map((c) => c.id)).size).toBe(filterCandidates('a', list).length);
+  });
+});
+
+describe('transliteration', () => {
+  const c = (id: string, name: string) => ({ id, name, alt: [] as string[] });
+  const cases: Array<[string, string, string]> = [
+    ['ruslan', 'Руслан', 'r'],
+    ['руслан', 'Ruslan', 'r'],
+    ['shchukin', 'Щукин', 's'],
+    ['schukin', 'Щукин', 's'],
+    ['yuliya', 'Юлия', 'y'],
+    ['iuliia', 'Юлия', 'y'],
+    ['kovalev', 'Ковалёв', 'k'],
+    ['kovalyov', 'Ковалёв', 'k'],
+    ['даниел', 'Daniel', 'd'],
+    ['dmitrii', 'Дмитрий', 'd'],
+    ['khariton', 'Харитон', 'h'],
+    ['tsvetkov', 'Цветков', 't'],
+  ];
+  it.each(cases)('%s finds %s', (q, name) => {
+    expect(filterCandidates(q, [c('x', name), c('z', 'Борис')]).map((m) => m.id)).toEqual(['x']);
+  });
+  it('ranks the real name over wrong layout over transliteration', () => {
+    const list = [c('tr', 'Руслан'), c('lay', 'Яна'), c('real', 'Ruslan Иванов')];
+    expect(filterCandidates('rus', list).map((m) => m.id)).toEqual(['real', 'tr']);
+    expect(filterCandidates('zyf', list).map((m) => m.id)).toEqual(['lay']);
   });
 });

@@ -2,8 +2,10 @@ package boards
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -262,4 +264,61 @@ func taskScopedCount(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID) (u
 		}
 	}
 	return n, nil
+}
+
+// maxMentionAccessIDs bounds one mention-access query.
+const maxMentionAccessIDs = 200
+
+// mentionAccess: GET /api/tasks/{id}/mention-access?user_ids=a,b,c — for anyone who sees the
+// task (a board viewer or a task-scoped member). Answers, for the given workspace members, who
+// sees the board (perm.Resolver: roles, overrides, privacy) and who would get only this card if
+// @mentioned (mayMention, ADR-0076 §5). Members in neither list cannot be called. The same facts
+// the assignee picker implies; the commenters' mention list needs them without MANAGE_BOARD.
+func (s *Service) mentionAccess(w http.ResponseWriter, r *http.Request) error {
+	t, _, err := s.loadTask(r, s.db.Pool, false)
+	if err != nil {
+		return err
+	}
+	var ids []uuid.UUID
+	for _, p := range strings.Split(r.URL.Query().Get("user_ids"), ",") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		u, err := uuid.Parse(p)
+		if err != nil {
+			return httpx.Validation("userIds", "invalid user id")
+		}
+		ids = append(ids, u)
+	}
+	if len(ids) > maxMentionAccessIDs {
+		return httpx.Validation("userIds", "too many ids")
+	}
+	q := s.db.Q
+	res := perm.NewResolver(q)
+	out := &v1.TaskMentionAccessResponse{SeeIds: []string{}, CardIds: []string{}}
+	for _, u := range ids {
+		acc, err := res.Board(r.Context(), t.BoardID, u)
+		if errors.Is(err, perm.ErrNoBoard) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if acc.Role == perm.RoleGuest || acc.Role == "" {
+			continue
+		}
+		if acc.Bits.Has(perm.ViewBoard) && !acc.Archived {
+			out.SeeIds = append(out.SeeIds, u.String())
+			continue
+		}
+		yes, err := mayMention(r.Context(), q, res, t.BoardID, u)
+		if err != nil {
+			return err
+		}
+		if yes {
+			out.CardIds = append(out.CardIds, u.String())
+		}
+	}
+	httpx.Write(w, http.StatusOK, out)
+	return nil
 }

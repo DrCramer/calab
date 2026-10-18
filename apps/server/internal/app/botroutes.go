@@ -500,6 +500,7 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/tasks/{id}/watchers":            botAllow,
 	"PUT /api/tasks/{id}/read":                   botAllow,
 	"GET /api/tasks/{id}/activity":               botAllow,
+	"GET /api/tasks/{id}/mention-access":         botAllow,
 	"GET /api/t/{key}":                           botAllow,
 	// Boards 2.0 (ADR-0058): categories, checklists and features by the same bits as people;
 	// the board webhook carries a secret and exports data — people only.

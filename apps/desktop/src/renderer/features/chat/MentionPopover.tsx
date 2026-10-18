@@ -1,11 +1,12 @@
 import { RoomType, type Role, type Room, type WorkspaceRole } from '@calaba/protocol';
 import { AtSign, EyeOff } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
 import { mentionableOnBoard, pickerAccess } from '../../lib/boards/access';
+import { cachedMentionAccess, loadMentionAccess, type MentionAccess } from '../../lib/boards/mentionAccess';
 import { mayEditTask } from '../boards/model';
 import { taskPermsOf } from '../../stores/boards';
 import { myUserId } from '../../stores/session';
@@ -35,7 +36,7 @@ export interface Mentionables {
 }
 
 /** Members of the workspace for the composer: names are nickname-aware (like memberName()). */
-export function useMentionables(workspaceId: string, room: Room, me: string): Mentionables {
+export function useMentionables(workspaceId: string, room: Room, me: string, active = false): Mentionables {
   // Members and roles, not the whole entry: that one changes on every voice state.
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const wsRoles = useWorkspaces((s) => s.byId[workspaceId]?.roles);
@@ -48,6 +49,23 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
     const task = isTask ? s.tasks[s.roomTask[room.id] ?? ''] : undefined;
     return task ? mayEditTask(task, taskPermsOf(s, task, myUserId()), myUserId()) : false;
   });
+  // A commenter without MANAGE_BOARD never receives the board's overrides, so the server tells who
+  // sees the board (ADR-0076 §5): asked once per open popover (cached), the local guess meanwhile.
+  const taskId = useBoards((s) => (isTask ? (s.roomTask[room.id] ?? '') : ''));
+  const [fetched, setFetched] = useState<{ taskId: string; v: MentionAccess } | null>(null);
+  useEffect(() => {
+    if (!active || !taskId) return;
+    if (cachedMentionAccess(taskId)) return;
+    let live = true;
+    const ids = Object.values(members ?? {}).flatMap((m) => (m.user && m.user.id !== me ? [m.user.id] : []));
+    void loadMentionAccess(taskId, ids).then((v) => {
+      if (live && v) setFetched({ taskId, v });
+    });
+    return () => {
+      live = false;
+    };
+  }, [active, taskId, members, me]);
+  const acc = (fetched && fetched.taskId === taskId ? fetched.v : undefined) ?? (active && taskId ? cachedMentionAccess(taskId) : undefined);
   return useMemo(() => {
     const out: Mentionables = { candidates: [], guests: new Set(), outsiders: new Map(), roles: new Map(), all: [] };
     for (const m of Object.values(members ?? {})) {
@@ -57,11 +75,14 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
       out.all.push({ id: u.id, name });
       const roles = wsRoles ? rolesOfMember(wsRoles, m) : [];
       if (u.id === me) continue;
-      const sees = isTask ? mentionableOnBoard(board, wsRoles ?? [], m) : can(roomPerms(roles, u.id, room), 'VIEW_ROOM');
+      // The server's answer wins for the members it was asked about (guests keep the local rule).
+      const known = isTask && acc && acc.asked.has(u.id) && !isGuest(m);
+      if (known && !acc.see.has(u.id) && !acc.card.has(u.id)) continue;
+      const sees = known ? acc.see.has(u.id) : isTask ? mentionableOnBoard(board, wsRoles ?? [], m) : can(roomPerms(roles, u.id, room), 'VIEW_ROOM');
       if (!sees) {
         // A task comment may call a workspace member without board access: the card opens to them
         // (ADR-0076 §5). Guests and bots without access are not offered.
-        if (!isTask || isGuest(m) || pickerAccess(board, wsRoles ?? [], m) !== 'card') continue;
+        if (!isTask || isGuest(m) || (!known && pickerAccess(board, wsRoles ?? [], m) !== 'card')) continue;
         out.outsiders.set(u.id, canEdit ? 'card' : 'locked');
       }
       if (isGuest(m)) out.guests.add(u.id);
@@ -69,7 +90,7 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
       out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [], ...(u.username ? { nick: u.username } : {}) });
     }
     return out;
-  }, [members, wsRoles, me, room, isTask, board, canEdit]);
+  }, [members, wsRoles, me, room, isTask, board, canEdit, acc]);
 }
 
 /**
@@ -135,10 +156,7 @@ export function MentionPopover({
                   {/* The nickname (ADR-0077): found by it, the name is what gets inserted. */}
                   {o.c.nick ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>@{o.c.nick}</span> : null}
                   {o.outsider ? (
-                    <span
-                      className={cx('ml-auto flex min-w-0 max-w-[58%] shrink items-center gap-1 text-micro', active ? 'text-accent-fg' : 'text-muted')}
-                      title={t(o.outsider === 'card' ? 'chat.mentionOutsiderHint' : 'chat.mentionOutsiderLocked')}
-                    >
+                    <span className={cx('ml-auto flex min-w-0 max-w-[58%] shrink items-center gap-1 text-micro', active ? 'text-accent-fg' : 'text-muted')}>
                       <EyeOff className="size-3 shrink-0" aria-hidden />
                       <span className="truncate">{t(o.outsider === 'card' ? 'chat.mentionOutsider' : 'chat.mentionOutsiderLocked')}</span>
                     </span>

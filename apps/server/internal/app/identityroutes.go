@@ -225,6 +225,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/t/{key}":                                                    scopeAggregate,
 	"GET /api/tasks/{id}":                                                 scopeTask,
 	"GET /api/tasks/{id}/activity":                                        scopeTask,
+	"GET /api/tasks/{id}/mention-access":                                  scopeTask,
 	"GET /api/unfurl":                                                     scopeGlobal,
 	"GET /api/unfurl/image":                                               scopeGlobal,
 	"GET /api/users/{id}/note":                                            scopeGlobal,

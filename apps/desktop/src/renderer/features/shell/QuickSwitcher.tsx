@@ -8,6 +8,7 @@ import { Button, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
+import { translitIncludes } from '../../lib/mentions';
 import { voice } from '../../services/voice';
 import { can, isOwnerRoles, roomPerms } from '../../lib/permissions';
 import { joinOutcome } from '../../lib/voiceEntry';
@@ -122,7 +123,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     if (!needle || author || !activeWs) return [];
     const ms = Object.values(workspaces[activeWs]?.members ?? {});
     return ms
-      .filter((m) => [m.nickname, m.user?.displayName ?? ''].some((n) => n.toLowerCase().includes(needle)))
+      .filter((m) => [m.nickname, m.user?.displayName ?? ''].some((n) => n.toLowerCase().includes(needle)) || translitIncludes([m.nickname, m.user?.displayName ?? ''], needle))
       .slice(0, MAX_MEMBERS);
   }, [needle, author, activeWs, workspaces]);
 

@@ -585,6 +585,14 @@ message SetBoardPermissionsRequest {
   repeated RoomPermissionOverride overrides = 1;
 }
 
+// GET /api/tasks/{id}/mention-access?user_ids=a,b,c (any viewer of the task, ≤ 200 ids) -
+// who of the given members sees the board and who would only get this card if @mentioned
+// (ADR-0076 section 5). Members in neither list cannot be called (guests, bots without access).
+message TaskMentionAccessResponse {
+  repeated string see_ids = 1;
+  repeated string card_ids = 2;
+}
+
 message BoardPermissionsResponse {
   repeated RoomPermissionOverride overrides = 1;
   Board board = 2;

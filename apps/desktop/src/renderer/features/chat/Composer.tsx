@@ -132,11 +132,12 @@ export function Composer({
 
   // ---- mention autocomplete (docs/05, «Упоминания»)
   const listId = useId();
-  const mentionables = useMentionables(workspaceId, room, me);
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [sel, setSel] = useState(0);
   const mq = mentionQuery(text, caret);
+  // The popover is open (an @query under the caret): the task rooms ask the server who sees the board.
+  const mentionables = useMentionables(workspaceId, room, me, mq !== null);
   const options: MentionOption[] =
     mq && mq.start !== dismissed
       ? [

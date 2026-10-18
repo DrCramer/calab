@@ -2268,3 +2268,4 @@ are not current phone evidence. Visual suites remain disabled.
 3. Pick B, send: the mention chip renders as usual; the task's «Наблюдатели» gains B, B gets «вас упомянули» and sees the card.
 4. As a user who cannot edit the task: B is dimmed with «Позвать может тот, кто правит задачу», and Enter/click does not insert.
 5. Guests and bots without access are not listed; ordinary chats and DMs are unchanged.
+6. A commenter without board-management rights sees the same marks (the server answers who sees the board); typing @ruslan finds «Руслан», @shchukin finds «Щукин», in chats, DMs, tasks and ⌘K people.

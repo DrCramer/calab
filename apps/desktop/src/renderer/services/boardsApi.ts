@@ -42,6 +42,7 @@ import {
   TaskApprovalRequestSchema,
   TaskFilterSchema,
   TaskResponseSchema,
+  TaskMentionAccessResponseSchema,
   UpdateBoardLabelRequestSchema,
   UpdateBoardMilestoneRequestSchema,
   UpdateBoardRequestSchema,
@@ -187,6 +188,9 @@ export const boardsApi = {
     /** ADR-0076: remove a watcher (an editor, or the watcher themselves — «Перестать наблюдать»). */
     removeWatcher: (taskId: string, userId: string) =>
       call('DELETE', `/api/tasks/${taskId}/watchers${qs({ user_id: userId })}`, TaskResponseSchema),
+    /** ADR-0076 §5: which of the members see the board / would get only this card if @mentioned (any viewer of the task). */
+    mentionAccess: (taskId: string, userIds: string[]) =>
+      call('GET', `/api/tasks/${taskId}/mention-access${qs({ user_ids: userIds.join(',') })}`, TaskMentionAccessResponseSchema),
     /** muted false = subscribed with notifications, true = «Отписаться». */
     setSubscription: (taskId: string, muted: boolean) =>
       call('PUT', `/api/tasks/${taskId}/subscription`, TaskResponseSchema, body(SetTaskSubscriptionRequestSchema, { muted })),

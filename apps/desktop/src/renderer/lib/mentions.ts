@@ -173,13 +173,17 @@ export function layoutSwap(query: string): string {
 export function filterCandidates(query: string, list: readonly MentionCandidate[], limit = 8): MentionCandidate[] {
   const q = query.trim().toLowerCase();
   const swapped = q ? layoutSwap(q) : q;
+  const skel = q ? skeleton(q) : '';
   const score = (c: MentionCandidate): number => {
     const names = [c.name, ...c.alt, ...(c.nick ? [c.nick] : [])].map((n) => n.toLowerCase());
     if (!q) return 1;
     const by = (x: string): number => (names.some((n) => n.startsWith(x)) ? 2 : names.some((n) => n.split(/[\s._-]+/).some((w) => w.startsWith(x))) ? 1 : 0);
     const raw = by(q);
     if (raw) return raw + 2;
-    return swapped !== q ? by(swapped) : 0;
+    const lay = swapped !== q ? by(swapped) : 0;
+    if (lay) return lay;
+    // Transliteration comes last: «ruslan» → «Руслан» (keys are cached per name).
+    return skel && translitKeys(names).some((k) => k.startsWith(skel)) ? 0.5 : 0;
   };
   return list
     .map((c) => ({ c, s: score(c) }))
@@ -187,6 +191,58 @@ export function filterCandidates(query: string, list: readonly MentionCandidate[
     .sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name, getLocale()))
     .slice(0, limit)
     .map((x) => x.c);
+}
+
+const CYR_TO_LAT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+  с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+};
+
+/**
+ * A script-independent key for a name or a query (RU ↔ Latin transliteration, GOST/ICAO-like and
+ * tolerant): Cyrillic goes to Latin, then the spellings of one sound are folded together
+ * (й y/i/j, х h/kh, ц c/ts, ч ch, ш sh, щ sch/shch, ж zh, ю yu/iu, я ya/ia, ё/е e; ь ъ dropped),
+ * so «Юлия» = yuliya = iuliia and «Ruslan» = руслан. Lower-case.
+ */
+export function skeleton(text: string): string {
+  let s = '';
+  for (const ch of text.toLowerCase()) s += CYR_TO_LAT[ch] ?? ch;
+  return s
+    .replace(/['’`]/g, '')
+    .replace(/j/g, 'y')
+    .replace(/shch|sch|shh/g, '1')
+    .replace(/zh/g, '2')
+    .replace(/kh/g, 'h')
+    .replace(/ch/g, '3')
+    .replace(/sh/g, '4')
+    .replace(/ts|tc/g, 'c')
+    .replace(/yu|iu/g, '5')
+    .replace(/ya|ia/g, '6')
+    .replace(/yo|ye/g, 'e')
+    .replace(/y/g, 'i')
+    .replace(/i+/g, 'i');
+}
+
+const KEY_CACHE = new Map<string, string[]>();
+/** Skeletons of the whole name and of each of its words, cached per name (no per-keystroke work). */
+function translitKeys(names: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const n of names) {
+    let ks = KEY_CACHE.get(n);
+    if (!ks) {
+      ks = [...new Set([skeleton(n), ...n.split(/[\s._-]+/).filter(Boolean).map(skeleton)])];
+      if (KEY_CACHE.size > 4000) KEY_CACHE.clear();
+      KEY_CACHE.set(n, ks);
+    }
+    out.push(...ks);
+  }
+  return out;
+}
+
+/** Whether `needle` (any script) is found inside one of the names by transliteration (⌘K member search). */
+export function translitIncludes(names: readonly string[], needle: string): boolean {
+  const k = needle.trim() ? skeleton(needle.trim()) : '';
+  return !!k && translitKeys(names.map((n) => n.toLowerCase())).some((x) => x.includes(k));
 }
 
 /** `@everyone` / `@here` entries matching the query (also by Russian words «все», «здесь»). */
