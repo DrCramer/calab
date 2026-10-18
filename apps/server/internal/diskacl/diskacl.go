@@ -6,6 +6,7 @@ package diskacl
 
 import (
 	"context"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -35,6 +36,7 @@ func Load(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) (*Chains, error
 		c.items[r.DiskItem.ID] = r.DiskItem
 		c.paths[r.Leaf] = append(c.paths[r.Leaf], r.DiskItem.ID)
 	}
+	c.ancestors()
 	all := make([]uuid.UUID, 0, len(c.items))
 	for id := range c.items {
 		all = append(all, id)
@@ -43,6 +45,23 @@ func Load(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) (*Chains, error
 		return nil, err
 	}
 	return c, nil
+}
+
+// ancestors gives every ancestor of a loaded leaf its own chain (a prefix of the leaf's), so that
+// Bits and Nodes work for it too — a path (breadcrumbs, a search hit's folders) asks for each
+// level's bits, and an ancestor without a chain would get the top level's bits.
+func (c *Chains) ancestors() {
+	leaves := make([][]uuid.UUID, 0, len(c.paths))
+	for _, p := range c.paths {
+		leaves = append(leaves, p)
+	}
+	for _, p := range leaves {
+		for i, id := range p[:len(p)-1] {
+			if _, ok := c.paths[id]; !ok {
+				c.paths[id] = slices.Clone(p[:i+1])
+			}
+		}
+	}
 }
 
 func (c *Chains) loadOverrides(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) error {
