@@ -2,6 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
 import {
   Archive,
+  ArchiveRestore,
   Bell,
   BellOff,
   ChevronRight,
@@ -15,6 +16,8 @@ import {
   Plus,
   X,
 } from 'lucide-react';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import { fmt } from '../../lib/format';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
 import { Bar } from '../../components/Bar';
@@ -38,6 +41,7 @@ import {
   duplicateTask,
   loadTask,
   moveTaskToBoard,
+  restoreTask,
   setAssignees,
   setRelation,
   setSubscription,
@@ -70,7 +74,7 @@ import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
-import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { doneType, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
@@ -130,6 +134,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }): Reac
   return (
     <>
       <PanelHeader task={task} boardName={boardName} perms={perms} scoped={scoped} onClose={onClose} />
+      <ArchivedBanner task={task} />
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto" data-testid="task-scroll">
         <div className="flex flex-col gap-5 px-5 pb-6 pt-4">
           <TitleEditor task={task} canEdit={canEdit} />
@@ -192,10 +197,47 @@ export function useMoveTargets(task: Pick<Task, 'workspaceId' | 'boardId'>): str
   return useBoards(useShallow((s) => workspaceBoards(s.boards, task.workspaceId).filter((b) => b.id !== task.boardId && hasBit(b.permissions, MANAGE_BOARD)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
 }
 
+/**
+ * «Задача в архиве» (the task view and the phone panel): the task is read-only; «Восстановить»
+ * returns it to the board for those the server allows (EDIT_TASKS, or the author).
+ */
+export const ArchivedBanner = memo(function ArchivedBanner({ task }: { task: Task }): ReactNode {
+  const perms = useTaskPerms(task);
+  const can = mayRestoreTask(task, perms, myUserId());
+  const [busy, setBusy] = useState(false);
+  if (!task.archivedAt) return null;
+  const when = fmt.dateTime(new Date(timestampMs(task.archivedAt)), 'short');
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-b border-line bg-hover px-4 py-2 text-control mobile:flex-wrap" role="status" data-testid="archived-banner">
+      <Archive className="size-4 shrink-0 text-muted" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="font-medium text-fg">{t('boards.archiveBanner')}</span>
+        <span className="text-muted"> · {t('boards.archivedOn', { when })}</span>
+      </span>
+      {can ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          busy={busy}
+          onClick={() => {
+            setBusy(true);
+            void restoreTask(task.id).finally(() => setBusy(false));
+          }}
+          data-testid="archived-restore"
+        >
+          <ArchiveRestore className="size-4" aria-hidden /> {t('boards.restore')}
+        </Button>
+      ) : null}
+    </div>
+  );
+});
+
 /** The task's «⋯»: duplicate, move to a board, archive. */
 export function TaskMoreMenu({ task, perms, scoped }: { task: Task; perms: bigint | undefined; scoped: boolean }): ReactNode {
   const boards = useMoveTargets(task);
   const me = myUserId();
+  // An archived task is read-only: «Восстановить» (the banner) is its one action.
+  if (task.archivedAt) return null;
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>

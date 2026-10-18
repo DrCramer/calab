@@ -17,7 +17,7 @@ import { Checklists } from './Checklists';
 import { GitSection } from './GitLinks';
 import { MemberAvatar } from './menus';
 import { hasBit, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
-import { Activity, CommentBox, DescriptionEditor, Prop, Properties, Relations, Subtasks, TaskMoreMenu, TitleEditor, useMoveTargets, valueBtn } from './TaskPanel';
+import { Activity, ArchivedBanner, CommentBox, DescriptionEditor, Prop, Properties, Relations, Subtasks, TaskMoreMenu, TitleEditor, useMoveTargets, valueBtn } from './TaskPanel';
 import { TaskMilestones } from './TaskMilestones';
 import { boardOrder, keepOrder, positionOf, stepTask, taskNav } from './taskOrder';
 import { useDisabledFeatures, useMatchCtx, useViewKind } from './useBoardView';
@@ -77,6 +77,7 @@ export function TaskView({ taskId, boardId, workspaceId, boardRef }: { taskId: s
       {task ? (
         <>
           <TaskBar task={task} boardId={boardId} workspaceId={workspaceId} order={order} />
+          <ArchivedBanner task={task} />
           <TaskBody task={task} />
         </>
       ) : (

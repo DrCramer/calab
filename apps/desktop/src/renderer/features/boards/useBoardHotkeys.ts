@@ -82,6 +82,7 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
         else if (step === 'closeTask') ui.openTask(null);
         else if (step === 'clearSelection') ui.clearSelection();
         else if (step === 'unfocus') ui.setFocused(null);
+        else if (ui.archiveOf) ui.setArchiveOf(null); // Esc leaves the task archive first
         else ui.setActive(false);
         return;
       }

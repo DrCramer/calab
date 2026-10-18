@@ -54,6 +54,9 @@ interface BoardsUiState {
   boardOf: Record<string, string>;
   /** The open task: full screen over the board on the desktop (owner 14.10, Linear), a pushed screen on the phone. */
   taskId: string | null;
+  /** The board whose task archive is shown in place of the board (not persisted). */
+  archiveOf: string | null;
+  setArchiveOf: (boardId: string | null) => void;
   prefs: Record<string, BoardPrefs>;
   /** Keyboard focus of the board (a card / row), multi-selection (X, Shift/⌘-click). */
   focused: string | null;
@@ -126,6 +129,8 @@ export const useBoardsUi = create<BoardsUiState>()(
       active: false,
       boardOf: {},
       taskId: null,
+      archiveOf: null,
+      setArchiveOf: (archiveOf) => set((s) => (s.archiveOf === archiveOf ? {} : { archiveOf, selected: {}, filterOpen: false })),
       prefs: {},
       focused: null,
       selected: {},
@@ -163,7 +168,7 @@ export const useBoardsUi = create<BoardsUiState>()(
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
       toggle: () => set((s) => (s.active ? { active: false, filterOpen: false, helpOpen: false, menu: null } : { active: true })),
       openBoard: (wsId, boardId) =>
-        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, selected: {}, focused: null, filterOpen: false })),
+        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, archiveOf: s.archiveOf === boardId ? s.archiveOf : null, selected: {}, focused: null, filterOpen: false })),
       openTask: (taskId) => set((s) => (s.taskId === taskId ? {} : { taskId })),
       setPrefs: (boardId, patch) => set((s) => ({ prefs: { ...s.prefs, [boardId]: { ...DEFAULT_PREFS, ...s.prefs[boardId], ...patch } } })),
       setFocused: (focused) => set((s) => (s.focused === focused ? {} : { focused })),

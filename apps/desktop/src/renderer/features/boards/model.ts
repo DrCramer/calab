@@ -24,8 +24,13 @@ export function mayEditTask(t: Pick<Task, 'createdBy' | 'assignees' | 'archivedA
   return hasBit(perms, CREATE_TASKS) && (t.createdBy === me || t.assignees.some((a) => a.userId === me));
 }
 
-export function mayArchiveTask(t: Pick<Task, 'createdBy'>, perms: bigint | undefined, me: string): boolean {
+/** EDIT_TASKS, or the author with CREATE_TASKS — the server's rule for both archive and restore. */
+export function mayRestoreTask(t: Pick<Task, 'createdBy'>, perms: bigint | undefined, me: string): boolean {
   return hasBit(perms, EDIT_TASKS) || (hasBit(perms, CREATE_TASKS) && t.createdBy === me);
+}
+
+export function mayArchiveTask(t: Pick<Task, 'createdBy' | 'archivedAt'>, perms: bigint | undefined, me: string): boolean {
+  return !t.archivedAt && mayRestoreTask(t, perms, me);
 }
 
 export const sortedStatuses = (b: Pick<Board, 'statuses'> | undefined): BoardStatus[] => [...(b?.statuses ?? [])].sort((x, y) => x.position - y.position);

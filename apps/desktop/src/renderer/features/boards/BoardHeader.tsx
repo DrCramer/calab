@@ -1,7 +1,7 @@
 import { BoardForms } from './BoardForms';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Archive, ArrowDownUp, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDownUp, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
 import { useCallback, useState, type ReactNode } from 'react';
 import { COMPLETIONS, type Completion } from '../../lib/boards/completion';
@@ -401,6 +401,8 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
   const mobile = useMobile();
   const [forms, setForms] = useState(false);
   const formsOn = useFeatureOn(boardId, BoardFeature.FORMS);
+  // A board seen only through cards has no archive view (the server lists none to it).
+  const scoped = useBoardScoped(boardId);
   const archive = async (): Promise<void> => {
     const b = useBoards.getState().boards[boardId];
     if (!b) return;
@@ -453,6 +455,11 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
             <Dropdown.Item className={menuItem} onSelect={() => exportCsv(boardId, ctx)}>
               <Download className="size-4" aria-hidden /> {t('boards.exportCsv')}
             </Dropdown.Item>
+            {scoped ? null : (
+              <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().setArchiveOf(boardId)} data-testid="board-archive-open">
+                <ArchiveRestore className="size-4" aria-hidden /> {t('boards.archiveView')}
+              </Dropdown.Item>
+            )}
             {manage ? (
               <>
                 {formsOn ? (

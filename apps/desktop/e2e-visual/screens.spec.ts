@@ -3949,6 +3949,30 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await rows.filter({ hasText: 'CAL-4' }).getByTestId('row-select').click();
   await expect(win.getByTestId('bulk-bar')).toBeVisible();
   await checkpoint(shot, 'boards-list');
+  // «Архив задач» (owner 18.10): archive the two selected tasks, open the board's archive, then a task in it.
+  await win.getByTestId('bulk-bar').getByRole('button', { name: 'Архивировать' }).click();
+  await expect(rows.filter({ hasText: 'CAL-2' })).toHaveCount(0);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-archive-open').click();
+  const archived = win.getByTestId('archive-row');
+  await expect(archived).toHaveCount(2);
+  await expect(win.getByTestId('archive-title')).toHaveText('Архив · 2');
+  await win.mouse.move(0, 0);
+  await archived.first().hover();
+  await checkpoint(shot, 'boards-archive');
+  await archived.filter({ hasText: 'CAL-2' }).click();
+  await expect(win.getByTestId('archived-banner')).toBeVisible();
+  await checkpoint(shot, 'boards-archive-task');
+  // Restore from the banner: the task leaves the archive list; the other row restores in place.
+  await win.getByTestId('archived-restore').click();
+  await expect(win.getByTestId('archived-banner')).toHaveCount(0);
+  await win.getByTestId('panel-crumb-board').click();
+  await expect(archived).toHaveCount(1);
+  await archived.first().hover();
+  await archived.first().getByTestId('archive-restore').click();
+  await expect(win.getByTestId('archive-empty')).toBeVisible();
+  await win.getByTestId('archive-back').click();
+  await expect(rows.filter({ hasText: 'CAL-2' })).toHaveCount(1);
 });
 
 /** «Фильтр» open over a filtered board: a label condition, the field list. */

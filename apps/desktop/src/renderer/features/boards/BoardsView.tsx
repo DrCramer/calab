@@ -21,6 +21,7 @@ import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
+import { BoardArchive } from './BoardArchive';
 import { BoardHeader } from './BoardHeader';
 import { BoardSettingsHost } from './BoardSettings';
 import { FilterChips } from './FilterBar';
@@ -84,6 +85,8 @@ export function BoardsView({ workspaceId, mobile = false }: { workspaceId: strin
 function Board({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
   const kind = useViewKind(boardId);
   const load = useBoards((s) => s.load[boardId]);
+  const archive = useBoardsUi((s) => s.archiveOf === boardId);
+  if (archive) return <BoardArchive boardId={boardId} />;
   return (
     <>
       <BoardHeader boardId={boardId} workspaceId={workspaceId} />

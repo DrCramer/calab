@@ -151,10 +151,10 @@ export const boardsApi = {
 
   tasks: {
     /** One page (≤ 500, by status then position); the client loads a board page by page. */
-    list: (boardId: string, p: { filter?: TaskFilter; cursor?: string; archived?: boolean } = {}, signal?: AbortSignal) =>
+    list: (boardId: string, p: { filter?: TaskFilter; cursor?: string; archived?: boolean; limit?: number } = {}, signal?: AbortSignal) =>
       call(
         'GET',
-        `/api/boards/${boardId}/tasks${qs({ filter: filterParam(p.filter), cursor: p.cursor, archived: p.archived ? 1 : undefined })}`,
+        `/api/boards/${boardId}/tasks${qs({ filter: filterParam(p.filter), cursor: p.cursor, archived: p.archived ? 1 : undefined, limit: p.limit })}`,
         ListTasksResponseSchema,
         undefined,
         signal,

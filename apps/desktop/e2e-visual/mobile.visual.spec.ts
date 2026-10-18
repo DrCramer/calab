@@ -962,6 +962,18 @@ test('m-boards-list', async ({ page }) => {
   await expect(page.getByTestId('task-context-menu')).toBeVisible();
   await expectMenuCard(page, 'm-task-menu', true);
   await expect(page.getByTestId('task-panel')).toHaveCount(0);
+  // «Архив задач» (owner 18.10): archive two tasks from this menu, then the board's «…» → the archive.
+  await page.getByTestId('task-context-menu').getByRole('menuitem', { name: 'Архивировать' }).tap();
+  await longPress(page.getByTestId('list-row').filter({ hasText: 'CAL-2' }));
+  await page.getByTestId('task-context-menu').getByRole('menuitem', { name: 'Архивировать' }).tap();
+  await expect(page.getByTestId('list-row').filter({ hasText: 'CAL-2' })).toHaveCount(0);
+  await page.getByTestId('board-more').tap();
+  await page.getByTestId('board-archive-open').tap();
+  await expect(page.getByTestId('archive-row')).toHaveCount(2);
+  await checkpoint(page, 'm-boards-archive');
+  await page.getByTestId('archive-row').first().tap();
+  await expect(page.getByTestId('archived-banner')).toBeVisible();
+  await checkpoint(page, 'm-boards-archive-task');
 });
 
 // Owner 07.10: the create dialog has the start date (when the board's dates are on).

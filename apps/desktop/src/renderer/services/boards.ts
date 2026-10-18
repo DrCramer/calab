@@ -795,12 +795,14 @@ export async function archiveTask(taskId: string): Promise<void> {
   }
 }
 
-export async function restoreTask(taskId: string): Promise<void> {
+export async function restoreTask(taskId: string): Promise<boolean> {
   try {
     const r = await boardsApi.tasks.restore(taskId);
     if (r.task) useBoards.getState().upsertTask(r.task);
+    return true;
   } catch (e) {
     fail(e);
+    return false;
   }
 }
 

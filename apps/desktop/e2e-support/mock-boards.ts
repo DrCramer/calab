@@ -1014,7 +1014,12 @@ export class BoardsMock {
     const ctx = { me: userId, statusType: this.statusType(rec), nowMs: o.nowMs };
     const all = [...this.tasks.values()]
       .filter((t) => t.task.boardId === boardId && (archivedFilter || !!t.task.archivedAt === o.archived) && matchFilter(t, o.filter, ctx))
-      .sort((a, b) => (order.get(a.task.statusId) ?? 0) - (order.get(b.task.statusId) ?? 0) || a.task.position - b.task.position || a.task.id.localeCompare(b.task.id));
+      .sort((a, b) =>
+        o.archived
+          ? // the archive: newest archived first (the server's order, with an opaque cursor)
+            archivedMs(b.task) - archivedMs(a.task) || b.task.number - a.task.number
+          : (order.get(a.task.statusId) ?? 0) - (order.get(b.task.statusId) ?? 0) || a.task.position - b.task.position || a.task.id.localeCompare(b.task.id),
+      );
     const start = o.cursor ? Number(o.cursor) || 0 : 0;
     const limit = Math.max(1, Math.min(500, o.limit || 500));
     const page = all.slice(start, start + limit);
@@ -2101,3 +2106,5 @@ export class BoardsMock {
     return timestampFromMs(Date.parse(iso));
   }
 }
+
+const archivedMs = (t: Pick<Task, 'archivedAt'>): number => (t.archivedAt ? Number(t.archivedAt.seconds) * 1000 + t.archivedAt.nanos / 1e6 : 0);
