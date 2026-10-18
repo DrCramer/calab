@@ -489,7 +489,7 @@ func (q *Queries) SetSipLastError(ctx context.Context, arg SetSipLastErrorParams
 }
 
 const setWorkspaceSipEnabled = `-- name: SetWorkspaceSipEnabled :one
-UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private
+UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, owner_sees_private, temp_archive_days
 `
 
 type SetWorkspaceSipEnabledParams struct {
@@ -522,8 +522,8 @@ func (q *Queries) SetWorkspaceSipEnabled(ctx context.Context, arg SetWorkspaceSi
 		&i.SipEnabled,
 		&i.DiskTrashDays,
 		&i.WikiTrashDays,
-		&i.TempArchiveDays,
 		&i.OwnerSeesPrivate,
+		&i.TempArchiveDays,
 	)
 	return i, err
 }
