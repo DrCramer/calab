@@ -2,7 +2,9 @@ import type { Task } from '@calaba/protocol';
 import { t } from '../i18n';
 import { archiveFilter } from '../lib/boards/archive';
 import { log } from '../lib/log';
+import { useBoardsUi } from '../stores/boardsUi';
 import { useBoardArchive } from '../stores/boardArchive';
+import { useBoards } from '../stores/boards';
 import { useToasts } from '../stores/toasts';
 import { boardsApi } from './boardsApi';
 import { restoreTask } from './boards';
@@ -45,4 +47,15 @@ export async function restoreFromArchive(task: Pick<Task, 'id' | 'key'>): Promis
   if (!(await restoreTask(task.id))) return;
   useBoardArchive.getState().drop(task.id);
   useToasts.getState().push('info', t('boards.restoredToast', { key: task.key }));
+}
+
+/**
+ * Open an archived task from the list: it enters the boards store only now, as a known archived
+ * task (never in a column; the reducers keep it out of every list), so the task view shows it at
+ * once while loadTask brings the full detail.
+ */
+export function openArchived(task: Task): void {
+  useBoards.setState((d) => (d.tasks[task.id] ? {} : { tasks: { ...d.tasks, [task.id]: task } }));
+  useBoardsUi.getState().setFocused(task.id);
+  useBoardsUi.getState().openTask(task.id);
 }

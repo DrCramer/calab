@@ -3957,7 +3957,8 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   const archived = win.getByTestId('archive-row');
   await expect(archived).toHaveCount(2);
   await expect(win.getByTestId('archive-title')).toHaveText('Архив · 2');
-  await win.mouse.move(0, 0);
+  // The «в архиве» toasts (with «Отменить») stay: close them.
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   await archived.first().hover();
   await checkpoint(shot, 'boards-archive');
   await archived.filter({ hasText: 'CAL-2' }).click();

@@ -147,7 +147,7 @@ export const ruBoards2 = {
   'boards.archiveEmpty': 'В архиве пока нет задач',
   'boards.archiveNoMatch': 'В архиве ничего не нашлось',
   'boards.archiveMore': 'Показать ещё',
-  'boards.archivedOn': 'В архиве с {when}',
+  'boards.archivedOn': 'с {when}',
   'boards.archiveBanner': 'Задача в архиве',
   'boards.restore': 'Восстановить',
   'boards.restoredToast': 'Задача {key} вернулась на доску',

@@ -7,7 +7,7 @@ import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { useMobile } from '../../lib/mobile';
-import { loadMoreArchive, openArchiveList, restoreFromArchive } from '../../services/boardArchive';
+import { loadMoreArchive, openArchived, openArchiveList, restoreFromArchive } from '../../services/boardArchive';
 import { useBoardArchive } from '../../stores/boardArchive';
 import { useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -52,10 +52,9 @@ export function BoardArchive({ boardId }: { boardId: string }): ReactNode {
   );
   const back = useCallback(() => useBoardsUi.getState().setArchiveOf(null), []);
   const open = useCallback((id: string, e: MouseEvent) => {
-    const ui = useBoardsUi.getState();
     if (e.metaKey || e.ctrlKey) return;
-    ui.setFocused(id);
-    ui.openTask(id);
+    const task = useBoardArchive.getState().tasks[id];
+    if (task) openArchived(task);
   }, []);
   const mobile = useMobile();
   const field = (

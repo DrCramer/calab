@@ -142,7 +142,7 @@ export const enBoards2: DictShape<typeof ruBoards2> = {
   'boards.archiveEmpty': 'No archived tasks yet',
   'boards.archiveNoMatch': 'Nothing found in the archive',
   'boards.archiveMore': 'Show more',
-  'boards.archivedOn': 'Archived {when}',
+  'boards.archivedOn': 'since {when}',
   'boards.archiveBanner': 'This task is archived',
   'boards.restore': 'Restore',
   'boards.restoredToast': '{key} is back on the board',

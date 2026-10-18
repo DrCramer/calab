@@ -174,7 +174,8 @@ export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
   const counts = countsUnread(next);
   if ((task.viewerState || next.completedAt) && !!d.unread[task.id] !== counts) out.unread = counts ? { ...d.unread, [task.id]: next.workspaceId } : without(d.unread, task.id);
   const cols = d.columns[next.boardId];
-  const moved = !prev || prev.statusId !== next.statusId || prev.position !== next.position || prev.boardId !== next.boardId;
+  // A task back from the archive (known archived, now live) re-enters its column.
+  const moved = !prev || !!prev.archivedAt || prev.statusId !== next.statusId || prev.position !== next.position || prev.boardId !== next.boardId;
   if (moved) {
     const columns: Record<string, Readonly<Record<string, readonly string[]>>> = { ...d.columns };
     // Left its old column (another status or another board).

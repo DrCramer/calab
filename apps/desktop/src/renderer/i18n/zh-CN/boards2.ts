@@ -142,7 +142,7 @@ export const zhBoards2: DictShape<typeof ruBoards2> = {
   'boards.archiveEmpty': '还没有已归档的任务',
   'boards.archiveNoMatch': '归档中没有找到内容',
   'boards.archiveMore': '显示更多',
-  'boards.archivedOn': '归档于 {when}',
+  'boards.archivedOn': '自 {when}',
   'boards.archiveBanner': '此任务已归档',
   'boards.restore': '恢复',
   'boards.restoredToast': '{key} 已回到看板',

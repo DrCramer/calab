@@ -40,6 +40,9 @@ describe('board reducers', () => {
     const arch = { ...d, ...upsertTask(d, { ...(d.tasks['a'] as Task), archivedAt: timestampFromMs(1) }) };
     expect(arch.columns['b1']?.['s1']).toEqual(['b']);
     expect(arch.tasks['a']).toBeDefined();
+    // Restored from the archive: the known archived task is live again and re-enters its column.
+    const back = { ...arch, ...upsertTask(arch, { ...(arch.tasks['a'] as Task), archivedAt: undefined }) };
+    expect(back.columns['b1']?.['s1']).toContain('a');
     const gone = { ...d, ...removeTask(d, 'c') };
     expect(gone.columns['b1']?.['s2']).toEqual([]);
     expect(gone.tasks['c']).toBeUndefined();
