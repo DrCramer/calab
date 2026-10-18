@@ -243,7 +243,7 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
         edge="left"
         width={() => useBoardsUi.getState().propsWidth}
         min={PROPS_MIN}
-        max={() => Math.min(PROPS_MAX, (root.current?.clientWidth ?? Infinity) - MAIN_MIN)}
+        max={() => Math.min(PROPS_MAX, Math.max(PROPS_MIN, (root.current?.clientWidth ?? Infinity) - MAIN_MIN))}
         label={t('boards.propsResize')}
         onChange={(w, final) => {
           if (column.current) column.current.style.width = `${w}px`;
@@ -255,7 +255,7 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
         }}
         testId="task-props-resize"
       />
-      <aside ref={column} style={{ width: propsWidth }} className="scrollbar-thin flex max-w-[calc(100%-480px)] shrink-0 flex-col gap-3 overflow-y-auto px-3 pb-6 pt-2 [&_[data-prop-label]]:w-[88px]" aria-label={t('boards.properties')} data-testid="task-props-column">
+      <aside ref={column} style={{ width: propsWidth }} className="scrollbar-thin flex max-w-[max(240px,calc(100%-480px))] shrink-0 flex-col gap-3 overflow-y-auto px-3 pb-6 pt-2 [&_[data-prop-label]]:w-[88px]" aria-label={t('boards.properties')} data-testid="task-props-column">
         <div className="flex items-center justify-end gap-0.5">
           <IconButton size="sm" label={t('boards.copyKey')} onClick={() => copyTaskKey(task.key)} data-testid="task-copy-key">
             <Hash className="size-3.5" aria-hidden />
