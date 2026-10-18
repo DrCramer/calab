@@ -79,7 +79,9 @@ log "export $SRC_REF → $SRC"
 rm -rf "$SRC"; mkdir -p "$SRC" "$OUT"
 if [[ "$SRC_REF" == WORKTREE ]]; then
   # local checks only (e.g. SIGN=1 verification): tracked + untracked files, .gitignore respected; never publish
-  (cd "$ROOT" && git ls-files -z -co --exclude-standard | xargs -0 tar -cf - 2>/dev/null) | tar -x -C "$SRC"
+  # Keep the worktree in one archive. xargs may split a large file list across several `tar -c`
+  # invocations; concatenated archives make the single downstream `tar -x` exit early with SIGPIPE.
+  (cd "$ROOT" && git ls-files -z -co --exclude-standard | tar --null -T - -cf -) | tar -x -C "$SRC"
   COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)-worktree"
 else
   git -C "$ROOT" archive "$SRC_REF" | tar -x -C "$SRC"

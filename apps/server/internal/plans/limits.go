@@ -101,11 +101,80 @@ const (
 var audioTiers = map[uint32]bool{0: true, 8: true, 16: true, 32: true, 64: true}
 
 var presetNames = map[string]v1.ScreenSharePreset{
-	"":         v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED,
-	"economy":  v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY,
-	"h720":     v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720,
-	"h1080":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080,
-	"original": v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL,
+	"":            v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED,
+	"economy":     v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY,
+	"h720":        v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720,
+	"h1080":       v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080,
+	"original":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL,
+	"h720_30":     v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720_30,
+	"h1080_30":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_30,
+	"h1080_60":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60,
+	"h1440_30":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_30,
+	"h1440_60":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_60,
+	"h2160_30":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_30,
+	"h2160_60":    v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60,
+	"original_60": v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60,
+}
+
+// Preset quality follows the recommended bitrate ladder, not protobuf numbers. The first four
+// positions preserve all existing plan and room ceilings; new options require a new ceiling.
+var presetRank = map[v1.ScreenSharePreset]int{
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY:     0,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720:        1,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080:       2,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720_30:     3,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL:    4,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_30:    5,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60:    6,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_30:    7,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_60:    8,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_30:    9,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60:    10,
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60: 11,
+}
+
+// ComparePresets compares capabilities using the explicit bitrate ladder, not enum numbers.
+func ComparePresets(a, b v1.ScreenSharePreset) int {
+	ra, oka := presetRank[a]
+	rb, okb := presetRank[b]
+	if a == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
+		ra, oka = -1, true
+	}
+	if b == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
+		rb, okb = -1, true
+	}
+	if !oka {
+		ra = len(presetRank)
+	}
+	if !okb {
+		rb = len(presetRank)
+	}
+	if ra < rb {
+		return -1
+	}
+	if ra > rb {
+		return 1
+	}
+	return 0
+}
+
+// IsStreamPreset reports whether p is one of the configured screen-share modes.
+func IsStreamPreset(p v1.ScreenSharePreset) bool {
+	_, ok := presetRank[p]
+	return ok
+}
+
+// IsCameraPreset reports the legacy webcam modes; screen-share-only modes are not webcam presets.
+func IsCameraPreset(p v1.ScreenSharePreset) bool {
+	switch p {
+	case v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL:
+		return true
+	default:
+		return false
+	}
 }
 
 func presetName(p v1.ScreenSharePreset) string {
@@ -117,8 +186,8 @@ func presetName(p v1.ScreenSharePreset) string {
 	return ""
 }
 
-// limitsJSON is the JSON form of Limits (env and workspace_plans.limits). Presets are
-// "economy" | "h720" | "h1080" | "original" | "" (no limit); numbers 0 = no limit.
+// limitsJSON is the JSON form of Limits (env and workspace_plans.limits). Preset names are the
+// lowercase enum identifiers; numbers 0 / empty = no limit.
 type limitsJSON struct {
 	BoardFormsDisabled *bool   `json:"board_forms_disabled,omitempty"`
 	BoardFormsPerBoard *uint32 `json:"board_forms_per_board,omitempty"`
@@ -214,7 +283,7 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 		}
 		v, ok := presetNames[strings.ToLower(strings.TrimSpace(*p.v))]
 		if !ok {
-			return Limits{}, fmt.Errorf("plan limits: %s must be economy, h720, h1080, original or empty, got %q", p.name, *p.v)
+			return Limits{}, fmt.Errorf("plan limits: %s has an unknown preset %q", p.name, *p.v)
 		}
 		*p.dst = v
 	}
@@ -263,10 +332,19 @@ func (l Limits) Validate() error {
 	if !audioTiers[l.AudioMaxKbps] {
 		errs = append(errs, fmt.Errorf("plan limits: audio_tier_max_kbps must be 0, 8, 16, 32 or %d", maxAudioKbps))
 	}
-	for name, p := range map[string]v1.ScreenSharePreset{"stream_max_preset": l.StreamMaxPreset, "camera_max_preset": l.CameraMaxPreset} {
-		if p < v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || p > v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL {
-			errs = append(errs, fmt.Errorf("plan limits: invalid %s", name))
+	if l.StreamMaxPreset != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
+		if _, ok := presetRank[l.StreamMaxPreset]; !ok {
+			errs = append(errs, errors.New("plan limits: invalid stream_max_preset"))
 		}
+	}
+	switch l.CameraMaxPreset {
+	case v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL:
+	default:
+		errs = append(errs, errors.New("plan limits: invalid camera_max_preset"))
 	}
 	return errors.Join(errs...)
 }
@@ -311,15 +389,25 @@ func presetFPS(p v1.ScreenSharePreset) uint32 {
 	switch p {
 	case v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY:
 		return 5
-	case v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL:
+	case v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720_30,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_30,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_30,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_30:
 		return 30
+	case v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_60,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60:
+		return 60
+	default:
+		return 15
 	}
-	return 15
 }
 
 // CapPreset lowers p to limit (UNSPECIFIED limit = none). p must be concrete.
 func CapPreset(p, limit v1.ScreenSharePreset) v1.ScreenSharePreset {
-	if limit != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED && p > limit {
+	if limit != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED && ComparePresets(p, limit) > 0 {
 		return limit
 	}
 	return p
@@ -345,7 +433,7 @@ func (l Limits) StreamFPS(preset v1.ScreenSharePreset, wanted uint32) uint32 {
 // UNSPECIFIED / 0 wanted means "the best allowed" (the plan cap, or none).
 func (l Limits) Camera(wanted v1.ScreenSharePreset, wantedFPS uint32) (v1.ScreenSharePreset, uint32) {
 	p := wanted
-	if p == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || p > v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL {
+	if p == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || !IsCameraPreset(p) {
 		p = l.CameraMaxPreset
 	} else {
 		p = CapPreset(p, l.CameraMaxPreset)

@@ -45,6 +45,9 @@ func TestParseLimitsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if parsed, err := ParseLimits(`{"stream_max_preset":"h2160_60"}`, Limits{}); err != nil || parsed.StreamMaxPreset != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60 {
+		t.Fatalf("new preset limit: %+v %v", parsed, err)
+	}
 	want := DefaultFree
 	want.RoomMembers, want.StreamMaxPreset, want.CameraMaxFPS, want.StorageMB = 8, h1080, 0, 0
 	if l != want {
@@ -111,6 +114,14 @@ func TestMediaCaps(t *testing.T) {
 	}
 	if f := (Limits{}).StreamFPS(orig, 10); f != 10 {
 		t.Fatalf("wanted fps %d", f)
+	}
+	h2160_60 := v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60
+	h1080_60 := v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60
+	if CapPreset(h2160_60, orig) != orig || CapPreset(h2160_60, h1080_60) != h1080_60 {
+		t.Fatal("preset caps must use the explicit quality order and keep legacy ceilings")
+	}
+	if f := (Limits{}).StreamFPS(h2160_60, 0); f != 60 {
+		t.Fatalf("2160p60 fps %d", f)
 	}
 	if p, f := free.Camera(h1080, 30); p != h720 || f != 15 {
 		t.Fatalf("camera 1080/30 on free: %v/%d", p, f)

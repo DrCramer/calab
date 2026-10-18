@@ -61,8 +61,7 @@ message RequestStreamRequest {
 message RequestStreamResponse {
   // Granted preset: ≤ room max_stream_preset and ≤ plan stream_max_preset (ADR-0024).
   ScreenSharePreset preset = 1;
-  // Granted frame rate: min(wanted, the preset's own — ECONOMY 5, H720 / H1080 15,
-  // ORIGINAL 30 — and plan stream_max_fps).
+  // Granted frame rate: min(wanted, the preset's own and plan stream_max_fps).
   uint32 fps = 2;
 }
 

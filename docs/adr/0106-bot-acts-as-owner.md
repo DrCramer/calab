@@ -16,7 +16,7 @@ API, доступный ботам** (не узкий список разреш�
 
 ### 1. Настройка
 - `bots.acts_as_owner boolean NOT NULL DEFAULT false`, `bots.acts_as_owner_since timestamptz` (миграция
-  `00101`). Протокол: `Bot.acts_as_owner`, `Bot.acts_as_owner_since` — видны тем же, кому `webhook`: самому
+  `00105`). Протокол: `Bot.acts_as_owner`, `Bot.acts_as_owner_since` — видны тем же, кому `webhook`: самому
   боту, его владельцу и `MANAGE_BOTS` домашнего пространства; в публичной карточке `GET /api/bots/{ref}`
   владелец бота получает `owner_user_id` (свой), `workspace_id` и `acts_as_owner`, остальные — как раньше.
 - `PATCH /api/workspaces/{id}/bots/{botId}` `UpdateBotRequest { optional bool acts_as_owner }` → `UpdateBotResponse
@@ -95,7 +95,7 @@ API, доступный ботам** (не узкий список разреш�
 все вызовы с заголовком. docs/19 — раздел с примером `curl`.
 
 ## Последствия
-- Миграция `00101`, протокол (`Bot`, `UpdateBotRequest/Response`, `Message.via_bot_id`, `TaskActivity.via_bot_id`),
+- Миграция `00105`, протокол (`Bot`, `UpdateBotRequest/Response`, `Message.via_bot_id`, `TaskActivity.via_bot_id`),
   `make gen`. `auth`: `Identity.ViaBot`/`Machine()`, заголовок в `Require`, ветка в `CheckWorkspace`,
   `CheckGlobal`, `WithPolicy`, `WithMutation`. `app/botroutes.go`: `onBehalfRoutes`, `botGate`.
 - Безопасность: **утечка токена такого бота = действия от имени владельца** в пространствах, где есть и бот,

@@ -481,11 +481,18 @@ export const ru = {
   'stream.returnHere': 'Вернуть сюда',
 
   // presets
-  'preset.economy': 'Экономия',
-  'preset.h720': '720p',
-  'preset.h1080': '1080p',
-  'preset.original': 'Максимум',
-  'preset.originalShort': 'Макс.',
+  'preset.economy': 'Экономия · 5 fps',
+  'preset.h720': '720p · 15 fps',
+  'preset.h1080': '1080p · 15 fps',
+  'preset.original': 'Исходное · 30 fps',
+  'preset.h72030': '720p · 30 fps',
+  'preset.h108030': '1080p · 30 fps',
+  'preset.h108060': '1080p · 60 fps',
+  'preset.h144030': '1440p · 30 fps',
+  'preset.h144060': '1440p · 60 fps',
+  'preset.h216030': '2160p · 30 fps',
+  'preset.h216060': '2160p · 60 fps',
+  'preset.original60': 'Исходное · 60 fps',
   'preset.native': 'исходное разрешение',
   'preset.detail': '{res}, {fps} fps, до {mbps} Мбит/с',
 

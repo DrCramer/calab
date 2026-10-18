@@ -54,6 +54,10 @@ func TestClampPreset(t *testing.T) {
 			t.Errorf("clamp(%v, %v) = %v, want %v", c[0], c[1], got, c[2])
 		}
 	}
+	h2160_60 := v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60
+	if got := ClampPreset(h2160_60, orig); got != orig {
+		t.Errorf("legacy ORIGINAL ceiling admitted a new mode: %v", got)
+	}
 }
 
 func TestJoinToken(t *testing.T) {

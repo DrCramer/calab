@@ -4,6 +4,7 @@ dist/
 out/
 .env
 .env.*
+backups/
 !apps/desktop/.env.production
 !apps/desktop/.env.web
 !.env.example

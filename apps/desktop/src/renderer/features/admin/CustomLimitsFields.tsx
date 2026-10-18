@@ -11,7 +11,7 @@ import { AUDIO_CAP_OPTIONS, type LimitsField, type LimitsForm } from '../../lib/
  * Rows only — the caller puts them in a card or a dialog. 0 / empty = no limit.
  */
 
-const STREAM_PRESETS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL];
+const STREAM_PRESETS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.H720_30, ScreenSharePreset.ORIGINAL, ScreenSharePreset.H1080_30, ScreenSharePreset.H1080_60, ScreenSharePreset.H1440_30, ScreenSharePreset.H1440_60, ScreenSharePreset.H2160_30, ScreenSharePreset.H2160_60, ScreenSharePreset.ORIGINAL_60];
 const CAMERA_PRESET_OPTIONS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.H720, ScreenSharePreset.H1080];
 const PRESET_NAME: Record<ScreenSharePreset, MessageKey> = {
   [ScreenSharePreset.UNSPECIFIED]: 'plan.unlimited',
@@ -19,6 +19,14 @@ const PRESET_NAME: Record<ScreenSharePreset, MessageKey> = {
   [ScreenSharePreset.H720]: 'preset.h720',
   [ScreenSharePreset.H1080]: 'preset.h1080',
   [ScreenSharePreset.ORIGINAL]: 'preset.original',
+  [ScreenSharePreset.H720_30]: 'preset.h72030',
+  [ScreenSharePreset.H1080_30]: 'preset.h108030',
+  [ScreenSharePreset.H1080_60]: 'preset.h108060',
+  [ScreenSharePreset.H1440_30]: 'preset.h144030',
+  [ScreenSharePreset.H1440_60]: 'preset.h144060',
+  [ScreenSharePreset.H2160_30]: 'preset.h216030',
+  [ScreenSharePreset.H2160_60]: 'preset.h216060',
+  [ScreenSharePreset.ORIGINAL_60]: 'preset.original60',
 };
 
 /** The label of a numeric field (also names the invalid one in an error). */
