@@ -19,6 +19,7 @@ import { useBots } from '../../stores/bots';
 import { toast } from '../../stores/toasts';
 import { useWorkspaces } from '../../stores/workspaces';
 import { BotBadge } from '../people/MemberBits';
+import { BotActsAsOwner } from '../people/BotActsAsOwner';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 
 /*
@@ -298,6 +299,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
           {byline}
         </div>
         {home ? <BotStatus bot={bot} revoked={revoked} /> : null}
+        {home ? <BotActsAsOwner bot={bot} className="mt-1" /> : null}
       </div>
       <Dropdown.Root modal={false}>
         <Tip label={t('bots.actions', { name })}>

@@ -62,4 +62,13 @@ export const zhBots = {
   'bots.block': '屏蔽机器人',
   'bots.unblock': '取消屏蔽',
   'bots.commandList': '机器人命令',
+  // ADR-0106: a bot acting on behalf of its owner
+  'bots.via': '通过机器人 {bot}',
+  'bots.viaUnknown': '通过机器人',
+  'bots.actsAsOwner': '以我的身份操作',
+  'bots.actsAsOwnerHint': '机器人可以做你能做的事：发消息、修改任务、参与审批投票。令牌泄露即等于以你的身份操作。所有操作都会标注“通过机器人”。',
+  'bots.actsAsOwnerOn': '以所有者身份操作',
+  'bots.actsAsOwnerConfirmTitle': '允许“{name}”以你的身份操作？',
+  'bots.actsAsOwnerWarning': '机器人将在你们共同所在的空间中获得你的权限。持有其令牌的人可以以你的身份操作——请像保管密码一样保管令牌。每个此类操作都会标注“通过机器人”。你可以随时关闭。',
+  'bots.actsAsOwnerConfirm': '允许',
 } as const;

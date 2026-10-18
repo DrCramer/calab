@@ -3,6 +3,7 @@ import { Crown, ShieldCheck } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
+import { viaBotSuffix, viaBotText } from '../../lib/bots';
 import { roleColorCss } from '../../lib/roles';
 import { useFormerInfo, useWorkspaces } from '../../stores/workspaces';
 
@@ -30,6 +31,20 @@ export function FormerChipView({ leftAt, className }: { leftAt: number; classNam
       className={cx('inline-flex h-4 shrink-0 items-center rounded-[4px] border border-line px-1 text-[11px] font-medium leading-none text-muted', className)}
     >
       {t('former.chip')}
+    </span>
+  );
+}
+
+/**
+ * «(через бота X)» after an author's name (ADR-0106): the owner's message or task change made by
+ * their bot. A small muted suffix in the caller's text style; `bare` drops the parentheses (a
+ * line of its own, e.g. above my own bubble). Subscribes to the bot's name only.
+ */
+export function ViaBot({ botId, bare = false, className }: { botId: string; bare?: boolean; className?: string }): ReactNode {
+  const name = useWorkspaces((s) => s.users[botId]?.displayName ?? '');
+  return (
+    <span data-via-bot className={cx('font-normal', className)} data-testid="via-bot">
+      {bare ? viaBotText(name) : viaBotSuffix(name)}
     </span>
   );
 }

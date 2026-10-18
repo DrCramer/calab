@@ -47,7 +47,14 @@ const idOf = (b: Bot): string => b.user?.id ?? '';
  */
 function mergeCard(prev: Bot | undefined, next: Bot): Bot {
   if (!prev) return next;
-  return { ...next, ownerUserId: next.ownerUserId || prev.ownerUserId, workspaceId: next.workspaceId || prev.workspaceId };
+  const merged = { ...next, ownerUserId: next.ownerUserId || prev.ownerUserId, workspaceId: next.workspaceId || prev.workspaceId };
+  // acts_as_owner (ADR-0106) comes only with the owner's / the managers' copies: a public one
+  // (no owner) does not switch it off.
+  if (!next.ownerUserId) {
+    merged.actsAsOwner = prev.actsAsOwner;
+    if (prev.actsAsOwnerSince) merged.actsAsOwnerSince = prev.actsAsOwnerSince;
+  }
+  return merged;
 }
 
 export const useBots = create<BotsState>()((set) => ({

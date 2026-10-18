@@ -62,4 +62,13 @@ export const enBots = {
   'bots.block': 'Block bot',
   'bots.unblock': 'Unblock',
   'bots.commandList': 'Bot commands',
+  // ADR-0106: a bot acting on behalf of its owner
+  'bots.via': 'via bot {bot}',
+  'bots.viaUnknown': 'via a bot',
+  'bots.actsAsOwner': 'Act on my behalf',
+  'bots.actsAsOwnerHint': 'The bot can do what you can: write, change tasks, vote in approvals. A leaked token acts as you. Everything is marked “via bot”.',
+  'bots.actsAsOwnerOn': 'Acts on behalf of its owner',
+  'bots.actsAsOwnerConfirmTitle': 'Let “{name}” act on your behalf?',
+  'bots.actsAsOwnerWarning': 'The bot gets your rights in the workspaces you share. Whoever holds its token can act as you — keep the token like a password. Every such action is marked “via bot”. You can turn this off at any time.',
+  'bots.actsAsOwnerConfirm': 'Allow',
 } as const;

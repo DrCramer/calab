@@ -62,4 +62,13 @@ export const esBots = {
   'bots.block': 'Bloquear bot',
   'bots.unblock': 'Desbloquear',
   'bots.commandList': 'Comandos de bots',
+  // ADR-0106: a bot acting on behalf of its owner
+  'bots.via': 'a través del bot {bot}',
+  'bots.viaUnknown': 'a través de un bot',
+  'bots.actsAsOwner': 'Actuar en mi nombre',
+  'bots.actsAsOwnerHint': 'El bot podrá hacer lo mismo que tú: escribir, cambiar tareas, votar en aprobaciones. Si se filtra el token, actuará como tú. Todo se marca «a través del bot».',
+  'bots.actsAsOwnerOn': 'Actúa en nombre de su propietario',
+  'bots.actsAsOwnerConfirmTitle': '¿Permitir que «{name}» actúe en tu nombre?',
+  'bots.actsAsOwnerWarning': 'El bot obtendrá tus permisos en los espacios que compartís. Quien tenga su token podrá actuar como tú: guárdalo como una contraseña. Cada una de esas acciones se marca «a través del bot». Puedes desactivarlo en cualquier momento.',
+  'bots.actsAsOwnerConfirm': 'Permitir',
 } as const;

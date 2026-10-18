@@ -23,6 +23,13 @@ describe('grouping (Telegram: same author within 5 min)', () => {
     expect(items.map((_, i) => flags(rowMeta(items, i, '02', 'me')))).toEqual(['DF', 'L', 'NFL', 'DFL']);
   });
 
+  it('a message the author’s bot wrote on their behalf (ADR-0106) opens its own group', () => {
+    const via = m('02', 'a', at(1));
+    via.msg.viaBotId = 'bot';
+    const items = [m('01', 'a', at(0)), via, m('03', 'a', at(2))];
+    expect(items.map((_, i) => flags(rowMeta(items, i, '', 'me')))).toEqual(['DFL', 'FL', 'FL']);
+  });
+
   it('a system card (ADR-0025) breaks the group of its author', () => {
     const sys = m('02', 'a', at(1));
     sys.msg.kind = MessageKind.SYSTEM;

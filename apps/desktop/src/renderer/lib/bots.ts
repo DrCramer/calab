@@ -1,5 +1,6 @@
 import type { BotWebhook } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
+import { t } from '../i18n';
 
 /*
  * Bots on the client (ADR-0031), pure: username rules as the server checks them, the plan's
@@ -43,3 +44,15 @@ export function webhookState(w: BotWebhook | undefined): WebhookState {
   if (w.failingSince) return { kind: 'failing', since: timestampDate(w.failingSince), error: w.lastError, pending: w.pending };
   return { kind: 'ok', lastOk: w.lastOkAt ? timestampDate(w.lastOkAt) : null, pending: w.pending };
 }
+
+/**
+ * The mark of an owner's action made by their bot (ADR-0106, `via_bot_id`): «через бота X», or
+ * «через бота» while the bot's name is unknown. `viaBotSuffix` — the same in parentheses, after
+ * the author's name («Анна (через бота X)»).
+ */
+export function viaBotText(botName: string): string {
+  const name = botName.trim();
+  return name ? t('bots.via', { bot: name }) : t('bots.viaUnknown');
+}
+
+export const viaBotSuffix = (botName: string): string => `(${viaBotText(botName)})`;

@@ -200,6 +200,8 @@ import {
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
+  UpdateBotRequestSchema,
+  UpdateBotResponseSchema,
   SetBotAvatarResponseSchema,
   SearchResponseSchema,
   type StickerPackResponse,
@@ -571,6 +573,9 @@ export const api = {
     /** 201 {bot}; 404 no such bot; 409 already a member or PLAN_LIMIT. */
     add: (workspaceId: string, ref: { botUserId?: string; username?: string }) =>
       call('POST', `/api/workspaces/${workspaceId}/bots/add`, AddBotResponseSchema, body(AddBotRequestSchema, ref)),
+    /** {bot}: its home workspace; acts_as_owner (ADR-0106) — the bot's owner only (403 ON_BEHALF_OWNER_ONLY). */
+    update: (workspaceId: string, botUserId: string, init: MessageInitShape<typeof UpdateBotRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/bots/${botUserId}`, UpdateBotResponseSchema, body(UpdateBotRequestSchema, init)),
     /** 204: at home the bot is deleted; elsewhere it only leaves the workspace. */
     remove: (workspaceId: string, botUserId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}`),
     /** {bot, token}: the old token stops working at once. */
@@ -585,7 +590,7 @@ export const api = {
       }),
     /** {bot} without the avatar. */
     clearAvatar: (workspaceId: string, botUserId: string) => call('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}/avatar`, SetBotAvatarResponseSchema),
-    /** The public card by id or username (no owner / home workspace). */
+    /** The public card by id or username (no owner / home workspace; to its owner — those and acts_as_owner). */
     get: (ref: string, signal?: AbortSignal) => call('GET', `/api/bots/${encodeURIComponent(ref)}`, GetBotMeResponseSchema, undefined, signal),
     /** Commands of the bots that can view the room (composer hints). */
     roomCommands: (roomId: string, signal?: AbortSignal) =>

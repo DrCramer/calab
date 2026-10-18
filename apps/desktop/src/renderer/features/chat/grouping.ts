@@ -44,6 +44,9 @@ export function startsNew(c: ChatMessage, prev: ChatMessage | undefined, newMark
 /** Whether `c` continues the group of `prev`. */
 export function continues(c: ChatMessage, prev: ChatMessage | undefined, newMarker: string, me: string): boolean {
   if (!prev || prev.msg.authorId !== c.msg.authorId) return false;
+  // A message the author's bot wrote on their behalf (ADR-0106) opens its own group: its header
+  // carries «(через бота X)».
+  if (prev.msg.viaBotId !== c.msg.viaBotId) return false;
   // A system card (ADR-0025) stands alone: it neither joins nor continues a group of bubbles.
   if (prev.msg.kind === MessageKind.SYSTEM || c.msg.kind === MessageKind.SYSTEM) return false;
   if (dayKey(prev) !== dayKey(c) || startsNew(c, prev, newMarker, me)) return false;

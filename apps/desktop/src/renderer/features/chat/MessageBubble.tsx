@@ -54,7 +54,7 @@ import { useMobile } from '../../lib/mobile';
 import { ReplySwipeIcon, useReplySwipe } from './replySwipe';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
-import { BotBadge, FormerChip } from '../people/MemberBits';
+import { BotBadge, FormerChip, ViaBot } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 import { InlineKeyboardView } from './InlineKeyboard';
@@ -330,7 +330,10 @@ function Bubble({
   // A forwarded copy (ADR-0033) keeps its bubble: the «Переслано от» line needs one.
   const fwd = m.forward;
   const sticker = hasText && !fwd && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
-  const showName = !own && meta.first && !sticker;
+  // ADR-0106: a message the author's bot wrote on their behalf keeps its header in my own
+  // bubbles too, as «через бота X» alone.
+  const via = m.viaBotId;
+  const showName = (!own || !!via) && meta.first && !sticker;
   const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !fwd && !m.reactions.length;
   // A lone voice message carries the time in its own last line (Telegram).
   const voiceOnly = rows.length === 1 && !!rows[0] && isVoice(rows[0]) && c.status === 'sent' && !hasText && !images.length && !videos.length && !m.reactions.length;
@@ -388,7 +391,11 @@ function Bubble({
     >
       {tail ? <Tail own={own} /> : null}
       <div className="overflow-hidden" style={radius}>
-        {showName ? (
+        {showName && own ? (
+          <div className="truncate px-3 pt-1.5 text-caption leading-[18px] text-[color:var(--bubble-meta)]">
+            <ViaBot botId={via} bare />
+          </div>
+        ) : showName ? (
           <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(m.authorId) + 1})` }} title={name}>
             <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="max-w-full truncate hover:underline">
               {name}
@@ -396,6 +403,7 @@ function Bubble({
             <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
             <FormerChip workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 align-[1px]" />
             {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
+            {via ? <ViaBot botId={via} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
           </div>
         ) : null}
         {fwd ? (
