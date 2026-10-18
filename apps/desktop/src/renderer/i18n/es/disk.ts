@@ -150,6 +150,7 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.err.empty': 'No se pudo vaciar la papelera',
   'disk.err.access': 'No se pudo cambiar el acceso',
   'disk.err.link': 'No se pudo cambiar el enlace',
+  'disk.err.gone': 'El archivo ya no está disponible',
   'disk.err.history': 'No se pudo cargar el historial',
   'disk.err.settings': 'No se pudo guardar el ajuste',
 };

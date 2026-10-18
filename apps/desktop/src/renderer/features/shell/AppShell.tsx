@@ -190,12 +190,16 @@ function ShellLayout(): ReactNode {
         ) : hasWs && wsId && appId ? (
           <AppScreen key={appId} appId={appId} />
         ) : hasWs && wsId && disk ? (
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+          <div className="relative flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DiskScreen key={wsId} workspaceId={wsId} />
+            {/* A Disk / wiki hit opens here, the results stay beside it (ADR-0105). */}
+            {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
           </div>
         ) : hasWs && wsId && wiki ? (
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+          <div className="relative flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <WikiScreen key={wsId} workspaceId={wsId} />
+            {/* A Disk / wiki hit opens here, the results stay beside it (ADR-0105). */}
+            {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
           </div>
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">

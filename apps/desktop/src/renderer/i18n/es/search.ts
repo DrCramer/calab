@@ -10,6 +10,8 @@ export const esSearch: DictShape<typeof ruSearch> = {
   'search.sec.files': 'Archivos',
   'search.sec.notes': 'Notas',
   'search.sec.transcripts': 'Transcripciones',
+  'search.sec.wiki': 'Wiki',
+  'search.sec.disk': 'Disco',
   'search.byKey': 'Tarea por clave',
   'search.all': 'Todos: {n}',
   'search.allResults': 'Todos los resultados',

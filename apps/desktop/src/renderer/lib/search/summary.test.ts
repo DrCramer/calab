@@ -52,6 +52,17 @@ describe('⌘K summary rows', () => {
     expect(rows.filter((x) => x.kind === 'hit').map((x) => x.id)).toEqual(['h-message:1', 'h-t:FNG-120']);
   });
 
+  it('wiki pages and Disk items are sections of their own (the server sends them in its order)', () => {
+    const r = create(SearchResponseSchema, {
+      sections: [
+        { type: SearchType.FILES, items: [{ title: 'a.pdf', ref: { case: 'file', value: { fileId: 'f1', messageId: 'm1' } } }], totalEstimate: 1 },
+        { type: SearchType.WIKI, items: [{ title: 'Онбординг', ref: { case: 'wiki', value: { pageId: 'p1' } } }], totalEstimate: 1 },
+        { type: SearchType.DISK, items: [{ title: 'План.xlsx', ref: { case: 'disk', value: { itemId: 'd1' } } }], totalEstimate: 3 },
+      ],
+    });
+    expect(summaryRows(r).rows.map((x) => x.id)).toEqual(['h-w:p1', 'a-wiki', 'h-f:f1:m1', 'a-files', 'h-d:d1', 'a-disk']);
+  });
+
   it('the section of a lone key match keeps no «Все» row of its own', () => {
     const r = create(SearchResponseSchema, { sections: [{ type: SearchType.TASKS, items: [task('FNG-12', true)], totalEstimate: 1 }] });
     expect(summaryRows(r)).toMatchObject({ byKey: [{ id: 'k-t:FNG-12' }], rows: [] });

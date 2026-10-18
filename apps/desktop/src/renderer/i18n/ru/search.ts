@@ -10,6 +10,8 @@ export const ruSearch = {
   'search.sec.files': 'Файлы',
   'search.sec.notes': 'Заметки',
   'search.sec.transcripts': 'Расшифровки',
+  'search.sec.wiki': 'Вики',
+  'search.sec.disk': 'Диск',
   'search.byKey': 'Задача по ключу',
   'search.all': 'Все: {n}',
   'search.allResults': 'Все результаты',

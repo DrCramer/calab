@@ -244,7 +244,7 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
           aria-label={t('search.panel.query')}
           data-testid="search-panel-query"
         />
-        {/* Seven sections fit in two rows of pills: every one stays in sight (no hidden scroll). */}
+        {/* Nine sections fit in two or three rows of pills: every one stays in sight (no hidden scroll). */}
         <div role="tablist" aria-label={t('search.panel.tabs')} className="flex flex-wrap gap-1" data-testid="search-tabs">
           {tabs.map((s) => {
             const n = counts[s];
@@ -344,7 +344,8 @@ function Filters({
   const boardList = useBoards(useShallow((s) => (boards && ws ? workspaceBoards(s.boards, ws).map((b) => `${b.id}\u0000${b.name}`) : [])));
   const placeList = boards ? boardList : places;
   // Comments: the room is the task's own — no place filter there (the task key is in each row).
-  const showPlace = tab !== 'task_comments' && placeList.length > 0;
+  // Wiki pages and Disk items have no room: no place filter (the scope picks the workspace).
+  const showPlace = tab !== 'task_comments' && tab !== 'wiki' && tab !== 'disk' && placeList.length > 0;
   const periods: Array<{ value: Period; key: Parameters<typeof t>[0] }> = [
     { value: 'any', key: 'search.period.any' },
     { value: 'today', key: 'search.period.today' },

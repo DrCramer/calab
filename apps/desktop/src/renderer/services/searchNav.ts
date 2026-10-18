@@ -9,13 +9,17 @@ import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { loadTask, openTaskAnywhere } from './boards';
 import { openEventOccurrence } from './calendar';
+import { openDiskHit } from './disk';
+import { openWikiHit } from './wiki';
 
 /**
  * Where a search hit leads (ADR-0062 §4): a message — its room, scrolled to it; a task comment —
  * the task's panel scrolled to the comment; a task — its panel; an event — its card on the
  * matched occurrence; a file — the image viewer with «Показать в чате» (other files: the message
  * carrying it); a note — the shelf, scrolled to it; a transcript — the recording's transcript at
- * the segment. Nothing here writes a feed store: the target view loads what it needs.
+ * the segment; a wiki page — the wiki on that page; a Disk item — the Disk at its folder with it
+ * selected (services/disk.ts openDiskHit). Nothing here writes a feed store: the target view
+ * loads what it needs.
  */
 export function openHit(h: SearchHit): void {
   const r = h.ref;
@@ -38,6 +42,12 @@ export function openHit(h: SearchHit): void {
       return;
     case 'transcript':
       openTranscript(r.value, h.at ? timestampMs(h.at) : Date.now());
+      return;
+    case 'wiki':
+      openWikiHit(h.workspaceId, r.value.pageId);
+      return;
+    case 'disk':
+      void openDiskHit(h.workspaceId, r.value);
       return;
   }
 }

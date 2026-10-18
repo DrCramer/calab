@@ -1,10 +1,10 @@
 import { SearchType, type SearchHit, type SearchResponse, type SearchSection } from '@calaba/protocol';
 
 /** Query-string names of the sections (ADR-0062 §1). */
-export type SectionName = 'messages' | 'task_comments' | 'tasks' | 'events' | 'files' | 'notes' | 'transcripts';
+export type SectionName = 'messages' | 'task_comments' | 'tasks' | 'events' | 'files' | 'notes' | 'transcripts' | 'wiki' | 'disk';
 
 /** The order of the sections in ⌘K and of the panel's tabs (ADR-0062 §4). */
-export const SECTION_ORDER: readonly SectionName[] = ['messages', 'tasks', 'task_comments', 'events', 'files', 'notes', 'transcripts'];
+export const SECTION_ORDER: readonly SectionName[] = ['messages', 'tasks', 'task_comments', 'events', 'wiki', 'files', 'disk', 'notes', 'transcripts'];
 
 const BY_TYPE: Readonly<Record<number, SectionName>> = {
   [SearchType.MESSAGES]: 'messages',
@@ -14,6 +14,8 @@ const BY_TYPE: Readonly<Record<number, SectionName>> = {
   [SearchType.FILES]: 'files',
   [SearchType.NOTES]: 'notes',
   [SearchType.TRANSCRIPTS]: 'transcripts',
+  [SearchType.WIKI]: 'wiki',
+  [SearchType.DISK]: 'disk',
 };
 
 export function sectionName(t: SearchType): SectionName | null {
@@ -59,6 +61,10 @@ export function hitId(h: SearchHit): string {
       return `f:${r.value.fileId}:${r.value.messageId}`;
     case 'transcript':
       return `r:${r.value.recordingId}`;
+    case 'wiki':
+      return `w:${r.value.pageId}`;
+    case 'disk':
+      return `d:${r.value.itemId}`;
     default:
       return `?:${h.snippet}`;
   }

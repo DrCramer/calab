@@ -150,6 +150,7 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.err.empty': '无法清空回收站',
   'disk.err.access': '无法更改访问权限',
   'disk.err.link': '无法更改链接',
+  'disk.err.gone': '该文件已不可用',
   'disk.err.history': '无法加载历史',
   'disk.err.settings': '无法保存设置',
 };

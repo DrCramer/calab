@@ -158,6 +158,7 @@ export const ruDisk = {
   'disk.err.empty': 'Не удалось очистить корзину',
   'disk.err.access': 'Не удалось изменить доступ',
   'disk.err.link': 'Не удалось изменить ссылку',
+  'disk.err.gone': 'Файл больше недоступен',
   'disk.err.history': 'Не удалось загрузить историю',
   'disk.err.settings': 'Не удалось сохранить настройку',
 };

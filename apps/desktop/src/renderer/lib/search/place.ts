@@ -10,6 +10,8 @@ import type { SearchHit } from '@calaba/protocol';
  *   file         «#общий · 1,2 МБ · 3 окт.»
  *   note         «📝 Идеи · 3 окт.»
  *   transcript   «#Созвон · 12:34 · 3 окт.»
+ *   wiki page    «Инженерия / Бэкенд · 3 окт.» (the pages above it the caller sees)
+ *   Disk item    «Диск / Отчёты / 2026 · 1,2 МБ · 3 окт.» (the folders above it the caller sees)
  * plus the workspace's name when it is not the open one («Везде»). Pure: names and formats come
  * from the caller.
  */
@@ -27,6 +29,8 @@ export interface PlaceCtx {
   /** An offset in a recording («12:34»). */
   offset: (ms: number) => string;
   size: (bytes: number) => string;
+  /** The Disk's name: the place of an item at the root (or under folders hidden from the caller). */
+  diskRoot: string;
 }
 
 export function placeParts(h: SearchHit, c: PlaceCtx): string[] {
@@ -58,6 +62,12 @@ export function placeParts(h: SearchHit, c: PlaceCtx): string[] {
       break;
     case 'transcript':
       parts = [c.room(r.value.roomId), c.offset(Number(r.value.offsetMs)), date];
+      break;
+    case 'wiki':
+      parts = [r.value.path.join(' / '), date];
+      break;
+    case 'disk':
+      parts = [[c.diskRoot, ...r.value.path].join(' / '), !r.value.folder && r.value.size > 0n ? c.size(Number(r.value.size)) : '', date];
       break;
     default:
       parts = [date];

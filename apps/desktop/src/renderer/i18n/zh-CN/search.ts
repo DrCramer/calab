@@ -10,6 +10,8 @@ export const zhSearch: DictShape<typeof ruSearch> = {
   'search.sec.files': '文件',
   'search.sec.notes': '笔记',
   'search.sec.transcripts': '转写',
+  'search.sec.wiki': 'Wiki',
+  'search.sec.disk': '网盘',
   'search.byKey': '按编号找到的任务',
   'search.all': '全部：{n}',
   'search.allResults': '全部结果',

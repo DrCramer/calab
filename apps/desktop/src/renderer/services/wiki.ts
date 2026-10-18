@@ -561,6 +561,22 @@ async function goToPage(id: string): Promise<void> {
   else useWikiUi.getState().setUnavailable(id);
 }
 
+/**
+ * A wiki hit of the global search (ADR-0062, section «Вики»): the page's workspace, the section, the
+ * page (the hit names the workspace, so nothing is resolved first; a page gone meanwhile closes as
+ * in loadPage). The results panel stays beside the wiki (AppShell).
+ */
+export function openWikiHit(ws: string, id: string): void {
+  if (!ws) {
+    openWikiLink(id);
+    return;
+  }
+  const ui = useUi.getState();
+  if (ui.activeWorkspaceId !== ws) ui.setWorkspace(ws);
+  if (!ui.phone.on) showMode('wiki');
+  openWikiPage(ws, id);
+}
+
 /** «Скопировать ссылку»: the page's address on this server. */
 export function copyPageLink(id: string): void {
   const url = wikiPageUrl(id);

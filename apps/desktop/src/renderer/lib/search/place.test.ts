@@ -15,6 +15,7 @@ const ctx: PlaceCtx = {
   when: () => 'пт, 3 окт., 10:00',
   offset: (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`,
   size: (n) => `${n} Б`,
+  diskRoot: 'Диск',
 };
 
 const hit = (init: MessageInitShape<typeof SearchHitSchema>) => create(SearchHitSchema, { at: timestampFromMs(AT), workspaceId: 'w1', authorId: 'u1', ...init });
@@ -48,5 +49,13 @@ describe('placeLine', () => {
   it('another workspace («Везде») is named at the end; unknown parts are skipped', () => {
     expect(placeLine(hit({ workspaceId: 'w2', ref: { case: 'message', value: { messageId: 'm', roomId: 'r1' } } }), ctx)).toBe('#разработка · Борис · 3 окт. · Дизайн');
     expect(placeLine(hit({ authorId: '', ref: { case: 'message', value: { messageId: 'm', roomId: 'gone' } } }), ctx)).toBe('3 окт.');
+  });
+  it('wiki page: the pages above it · date', () => {
+    expect(placeLine(hit({ ref: { case: 'wiki', value: { pageId: 'p', icon: '', path: ['Инженерия', 'Бэкенд'] } } }), ctx)).toBe('Инженерия / Бэкенд · 3 окт.');
+    expect(placeLine(hit({ ref: { case: 'wiki', value: { pageId: 'p', icon: '' } } }), ctx)).toBe('3 окт.');
+  });
+  it('Disk file: Disk / folders · size · date; a folder has no size', () => {
+    expect(placeLine(hit({ ref: { case: 'disk', value: { itemId: 'i', fileId: 'f', size: 1200n, path: ['Отчёты', '2026'] } } }), ctx)).toBe('Диск / Отчёты / 2026 · 1200 Б · 3 окт.');
+    expect(placeLine(hit({ workspaceId: 'w2', ref: { case: 'disk', value: { itemId: 'i', folder: true } } }), ctx)).toBe('Диск · 3 окт. · Дизайн');
   });
 });

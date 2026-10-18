@@ -66,8 +66,8 @@ function groupOf(it: Item): string {
 /**
  * ⌘/Ctrl+K — global search (docs/09 #3, ADR-0062 §4). Instant local results — notes shelves
  * (ADR-0039), DMs by the peer's name (ADR-0020), rooms of every workspace, members of the active
- * one — and one debounced GET /api/search: messages, tasks, comments, events, files, notes and
- * transcripts, ≤ 4 each with «Все: N →» to the results panel. «Это пространство | Везде» is
+ * one — and one debounced GET /api/search: messages, tasks, comments, events, wiki pages, files,
+ * Disk items, notes and transcripts, ≤ 4 each with «Все: N →» to the results panel. «Это пространство | Везде» is
  * remembered. Choosing a member filters messages by that author (the workspace message search).
  */
 export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => void; initialQuery?: string }): ReactNode {

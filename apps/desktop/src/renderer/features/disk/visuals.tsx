@@ -37,6 +37,14 @@ const KIND: Record<FileKind, { icon: LucideIcon; tone: string }> = {
   other: { icon: File, tone: 'text-muted' },
 };
 
+/** The glyph of a Disk item's kind (a folder, or the file kind's), untinted: search rows. */
+export function DiskKindGlyph({ folder, mime, name, className }: { folder: boolean; mime: string; name: string; className: string }): ReactNode {
+  if (folder) return <Folder className={className} strokeWidth={1.75} aria-hidden />;
+  const k = KIND[fileKind({ mime, name })];
+  const Icon = k.icon;
+  return <Icon className={className} strokeWidth={1.75} aria-hidden />;
+}
+
 /** The item's glyph: a filled accent folder, or the file kind's icon. */
 export function ItemGlyph({ item, className }: { item: DiskItem; className: string }): ReactNode {
   if (isFolder(item)) return <Folder className={cx(className, 'fill-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] text-accent')} strokeWidth={1.5} aria-hidden />;

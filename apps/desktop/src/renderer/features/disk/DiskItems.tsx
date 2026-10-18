@@ -127,20 +127,27 @@ export function Center({ children, testId }: { children: ReactNode; testId?: str
  * Selection, open, keyboard and drag wiring of a tile / row. Dragging needs WRITE on the item
  * (the server checks the target too); a folder is also a drop target for items and system files.
  */
-function useItemDnd(item: DiskItem | undefined, renaming: boolean) {
+function useItemDnd(item: DiskItem | undefined, renaming: boolean, selected: boolean) {
   const id = item?.id ?? '';
   const folder = !!item && isFolder(item) && !item.trashedAt;
   const { setNodeRef: setDragNode, listeners, isDragging } = useDraggable({ id, disabled: !item || !!item.trashedAt || renaming || !canWrite(item.myBits), data: { name: item?.name ?? '' } });
   const { setNodeRef: setDropNode, isOver } = useDroppable({ id: `folder:${id}`, disabled: !folder, data: { folderId: id } });
   const dropTargetRef = useContext(DropTarget);
   const [fileOver, setFileOver] = useState(false);
+  const node = useRef<HTMLElement | null>(null);
   const setRef = useCallback(
     (el: HTMLElement | null) => {
+      node.current = el;
       setDragNode(el);
       setDropNode(el);
     },
     [setDragNode, setDropNode],
   );
+  // A selected item is brought into view (a search hit opens its folder with it selected; a click
+  // on a visible item does not scroll).
+  useEffect(() => {
+    if (selected) node.current?.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
   const fileHandlers = folder
     ? {
         onDragEnter: (e: DragEvent) => {
@@ -235,7 +242,7 @@ const Tile = memo(function Tile({ id }: { id: string }): ReactNode {
   const item = useDisk((s) => s.items[id]);
   const selected = useDiskUi((s) => s.selected === id);
   const renaming = useDiskUi((s) => s.renaming === id);
-  const { setRef, listeners, isDragging, over, fileHandlers } = useItemDnd(item, renaming);
+  const { setRef, listeners, isDragging, over, fileHandlers } = useItemDnd(item, renaming, selected);
   const actions = useItemActions(id);
   if (!item) return null;
   return (
@@ -308,7 +315,7 @@ const Row = memo(function Row({ id }: { id: string }): ReactNode {
   const selected = useDiskUi((s) => s.selected === id);
   const renaming = useDiskUi((s) => s.renaming === id);
   const owner = useMemberName(item?.workspaceId ?? null, item?.ownerId ?? '');
-  const { setRef, listeners, isDragging, over, fileHandlers } = useItemDnd(item, renaming);
+  const { setRef, listeners, isDragging, over, fileHandlers } = useItemDnd(item, renaming, selected);
   const actions = useItemActions(id);
   if (!item) return null;
   return (

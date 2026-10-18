@@ -1,7 +1,8 @@
 import { RoomType, type SearchHit } from '@calaba/protocol';
-import { AudioLines, CalendarDays, FileText, Hash, Image, MessageSquareText, NotebookText, Paperclip, SquareCheckBig } from 'lucide-react';
+import { AudioLines, BookOpen, CalendarDays, FileText, Folder, Hash, Image, MessageSquareText, NotebookText, Paperclip, SquareCheckBig } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { RoomIcon } from '../../components/RoomIcon';
+import { cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
@@ -15,6 +16,7 @@ import { useNotes } from '../../stores/notes';
 import { useRooms } from '../../stores/rooms';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { roomLabel } from '../chat/roomLabel';
+import { DiskKindGlyph } from '../disk/visuals';
 
 /** Section titles (⌘K headers, the panel's tabs). */
 export const SECTION_LABEL: Readonly<Record<SectionName, MessageKey>> = {
@@ -25,6 +27,8 @@ export const SECTION_LABEL: Readonly<Record<SectionName, MessageKey>> = {
   files: 'search.sec.files',
   notes: 'search.sec.notes',
   transcripts: 'search.sec.transcripts',
+  wiki: 'search.sec.wiki',
+  disk: 'search.sec.disk',
 };
 
 const MARK = 'bg-transparent font-semibold text-accent-text';
@@ -48,6 +52,16 @@ export function Words({ text, q }: { text: string; q: string }): ReactNode {
 export function HitIcon({ section, hit, className }: { section: SectionName; hit: SearchHit; className: string }): ReactNode {
   const p = { className, strokeWidth: 1.75, 'aria-hidden': true } as const;
   if (hit.ref.case === 'file') return /^image\//.test(hit.ref.value.mime) ? <Image {...p} /> : <FileText {...p} />;
+  // A wiki page: its emoji, as in the tree.
+  if (hit.ref.case === 'wiki' && hit.ref.value.icon) {
+    return (
+      <span className={cx(className, 'grid place-items-center text-[14px] leading-none')} aria-hidden>
+        {hit.ref.value.icon}
+      </span>
+    );
+  }
+  // A Disk item: the Disk's glyph of its kind (folder, picture, sheet…), in the row's tone.
+  if (hit.ref.case === 'disk') return <DiskKindGlyph folder={hit.ref.value.folder} mime={hit.ref.value.mime} name={hit.title} className={className} />;
   if (hit.ref.case === 'message' && useRooms.getState().byId[hit.ref.value.roomId]?.type === RoomType.DM) return <MessageSquareText {...p} />;
   // A message of a workspace room: the room's picture or glyph (ADR-0092).
   if (hit.ref.case === 'message' && section === 'messages' && useRooms.getState().byId[hit.ref.value.roomId]) {
@@ -68,6 +82,10 @@ export function HitIcon({ section, hit, className }: { section: SectionName; hit
       return <NotebookText {...p} />;
     case 'transcripts':
       return <AudioLines {...p} />;
+    case 'wiki':
+      return <BookOpen {...p} />;
+    case 'disk':
+      return <Folder {...p} />;
   }
 }
 
@@ -103,6 +121,7 @@ export function placeCtx(activeWorkspaceId: string | null): PlaceCtx {
     when: (ms) => fmt.occurrence(new Date(ms)),
     offset: (ms) => stamp(ms),
     size: (n) => fmt.size(n),
+    diskRoot: t('disk.section'),
   };
 }
 

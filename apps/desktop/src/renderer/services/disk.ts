@@ -21,8 +21,11 @@ import {
   type DiskLinkResponse,
   type DiskPermissionsResponse,
   type DiskUsage,
+  type SearchDiskRef,
+  WorkspaceRole,
 } from '@calaba/protocol';
 import { confirmAction } from '../components/Confirm';
+import { showMode } from '../features/shell/sectionNav';
 import { t } from '../i18n';
 import { ApiError, body, call, callEmpty, qs } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
@@ -38,6 +41,7 @@ import { folderOf, useDiskUi } from '../stores/diskUi';
 import { prefs } from '../stores/prefs';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
+import { useWorkspaces } from '../stores/workspaces';
 
 /**
  * Disk REST (ADR-0094 §7, proto/calaba/v1/disk.proto) and the section's actions: the one module
@@ -66,6 +70,7 @@ const MAX_PAGES = 25;
 export const diskApi = {
   list: (ws: string, p: { parent?: string; trashed?: boolean; cursor?: string; sort?: DiskSort }) =>
     call('GET', `${W(ws)}/items${qs({ parent: p.parent || undefined, trashed: p.trashed ? 1 : undefined, cursor: p.cursor, sort: p.sort })}`, ListDiskItemsResponseSchema),
+  get: (id: string) => call('GET', I(id), DiskItemResponseSchema),
   createFolder: (ws: string, parentId: string, name: string) => call('POST', `${W(ws)}/folders`, DiskItemResponseSchema, body(CreateDiskFolderRequestSchema, { parentId, name })),
   update: (id: string, init: MessageInitShape<typeof UpdateDiskItemRequestSchema>) => call('PATCH', I(id), DiskItemResponseSchema, body(UpdateDiskItemRequestSchema, init)),
   trash: (id: string) => call('POST', `${I(id)}/trash`, DiskItemResponseSchema),
@@ -468,4 +473,51 @@ export async function copyItemLink(id: string): Promise<void> {
 /** Pushes a disk screen (a folder or the trash) over the phone's «Диск» tab. */
 export function openPhoneDisk(screen: Extract<PhoneScreen, { kind: 'disk' }>): void {
   useUi.getState().setPhone((n) => pushOnTab(n, 'disk', screen));
+}
+
+/** The viewer of a file that has one in the app: a picture, a video, a PDF (as «Открыть»). */
+function hasViewer(item: DiskItem): boolean {
+  return !!previewable(item.file) || (!!item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf');
+}
+
+/**
+ * A Disk hit of the global search (ADR-0062, section «Диск»). A picture, a video or a PDF opens its
+ * viewer in place (the results stay on screen); a folder opens in the Disk; any other file opens
+ * the Disk at its folder with the file selected — a search click never starts a download. A guest
+ * has no Disk screen: their files open in the viewer or are saved. The phone pushes the folder over
+ * its «Диск» tab. The item is read by id: its folder may be hidden from the caller.
+ */
+export async function openDiskHit(ws: string, ref: Pick<SearchDiskRef, 'itemId' | 'parentId' | 'folder'>): Promise<void> {
+  if (!ws) return;
+  let item: DiskItem | undefined;
+  try {
+    item = (await diskApi.get(ref.itemId)).item;
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 404)) {
+      fail(e, t('disk.err.load'));
+      return;
+    }
+  }
+  if (!item || item.trashedAt) {
+    toast.info(t('disk.err.gone'));
+    return;
+  }
+  useDisk.getState().upsert(item);
+  if (!isFolder(item) && hasViewer(item)) {
+    openItem(item, [item.id]);
+    return;
+  }
+  if (useWorkspaces.getState().byId[ws]?.role === WorkspaceRole.GUEST) {
+    if (!isFolder(item)) downloadItem(item);
+    return;
+  }
+  const ui = useUi.getState();
+  if (ui.activeWorkspaceId !== ws) ui.setWorkspace(ws);
+  const folder = isFolder(item) ? item.id : item.parentId;
+  if (ui.phone.on) openPhoneDisk({ kind: 'disk', folderId: folder });
+  else {
+    showMode('disk');
+    useDiskUi.getState().openFolder(ws, folder);
+  }
+  if (!isFolder(item)) useDiskUi.getState().select(item.id);
 }

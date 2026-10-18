@@ -150,6 +150,7 @@ export const enDisk: DictShape<typeof ruDisk> = {
   'disk.err.empty': 'Couldn’t empty the Trash',
   'disk.err.access': 'Couldn’t change access',
   'disk.err.link': 'Couldn’t change the link',
+  'disk.err.gone': 'The file is no longer available',
   'disk.err.history': 'Couldn’t load the history',
   'disk.err.settings': 'Couldn’t save the setting',
 };
