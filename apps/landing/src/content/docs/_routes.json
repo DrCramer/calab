@@ -129,6 +129,7 @@
 {"method":"POST","path":"/api/tasks/{id}/archive","decision":"allow","group":"boards"},
 {"method":"PUT","path":"/api/tasks/{id}/assignees","decision":"allow","group":"boards"},
 {"method":"POST","path":"/api/tasks/{id}/checklists","decision":"allow","group":"boards"},
+{"method":"GET","path":"/api/tasks/{id}/mention-access","decision":"allow","group":"boards"},
 {"method":"POST","path":"/api/tasks/{id}/milestones","decision":"allow","group":"boards"},
 {"method":"PUT","path":"/api/tasks/{id}/read","decision":"allow","group":"boards"},
 {"method":"PUT","path":"/api/tasks/{id}/relations","decision":"allow","group":"boards"},
