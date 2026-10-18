@@ -70,6 +70,8 @@ import {
   ListTasksResponseSchema,
   SearchTasksResponseSchema,
   SetAssigneesRequestSchema,
+  TaskApprovalDecision,
+  TaskApprovalRequestSchema,
   TaskFilterSchema,
   TaskResponseSchema,
   UpdateTaskRequestSchema,
@@ -163,6 +165,11 @@ export interface BotOptions {
   sleep?: RestOptions['sleep'];
   /** The wiki sync socket (page content): socket factory (default `ws`), catch-up settle time, timeouts. */
   wikiSync?: WikiSyncOptions;
+  /**
+   * Every REST call on behalf of the bot's owner (ADR-0106); usually through `bot.asOwner()`.
+   * Such a client is REST only: `start()` refuses (the realtime stream keeps the bot's own rights).
+   */
+  onBehalfOfOwner?: boolean;
 }
 
 /** A file to attach: bytes and a name (the server sniffs the type; `type` is a hint). */
@@ -313,6 +320,12 @@ interface RoomInfo {
 
 const MAX_SEEN_DELIVERIES = 2048;
 
+const VOTES = {
+  approve: TaskApprovalDecision.APPROVE,
+  reject: TaskApprovalDecision.REJECT,
+  withdraw: TaskApprovalDecision.WITHDRAW,
+} as const;
+
 /**
  * A Calab bot: REST client + realtime gateway (or webhook) with typed events.
  *
@@ -344,6 +357,7 @@ export class Bot extends Emitter<BotEvents> {
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
       ...(options.sleep ? { sleep: options.sleep } : {}),
+      ...(options.onBehalfOfOwner ? { onBehalfOfOwner: true } : {}),
     });
     this.token = token;
     this.disk = createDiskApi(this.rest);
@@ -365,8 +379,24 @@ export class Bot extends Emitter<BotEvents> {
 
   // ---- lifecycle ----
 
+  /**
+   * The same bot acting on behalf of its owner (ADR-0106): every REST call carries
+   * `Calab-On-Behalf: owner`, so it runs with the owner's rights and is stored as the owner's,
+   * marked «via bot». The owner turns this on in the bot's settings («Act on my behalf»); until
+   * then calls fail with 403 ON_BEHALF_DISABLED. REST only: keep events on this bot (`start()`).
+   *
+   * ```ts
+   * await bot.asOwner().tasks.vote(taskId, 'approve');
+   * ```
+   */
+  asOwner(): Bot {
+    if (this.opts.onBehalfOfOwner) return this;
+    return new Bot(this.token, { ...this.opts, onBehalfOfOwner: true });
+  }
+
   /** Connects the gateway; resolves with READY. Rejects if the token is refused. */
   start(): Promise<Ready> {
+    if (this.opts.onBehalfOfOwner) throw new Error('on behalf of the owner is REST only: start() the bot itself (ADR-0106)');
     if (this.gateway) throw new Error('bot already started');
     const g = this.opts.gateway ?? {};
     return new Promise<Ready>((resolve, reject) => {
@@ -797,6 +827,17 @@ export class Bot extends Emitter<BotEvents> {
       (
         await this.rest.call(TaskResponseSchema, 'PUT', `/api/tasks/${enc(taskId)}/assignees`, {
           json: Rest.body(SetAssigneesRequestSchema, { assignees }),
+        })
+      ).task ?? fail('task'),
+    /**
+     * The owner's vote in the task's approval (ADR-0049): only on behalf of the owner
+     * (`bot.asOwner().tasks.vote(…)`, ADR-0106) — a bot never votes for itself (403
+     * BOT_NOT_ALLOWED). `reject` needs a comment (≤ 500).
+     */
+    vote: async (taskId: string, decision: 'approve' | 'reject' | 'withdraw', comment = ''): Promise<Task> =>
+      (
+        await this.rest.call(TaskResponseSchema, 'POST', `/api/tasks/${enc(taskId)}/approval`, {
+          json: Rest.body(TaskApprovalRequestSchema, { decision: VOTES[decision], comment }),
         })
       ).task ?? fail('task'),
     /**

@@ -143,6 +143,27 @@ describe('rest', () => {
     expect(b?.json).toMatchObject({ content: 'pong', replyToId: 'orig' });
   });
 
+  it('acts on behalf of the owner per call or through asOwner() (ADR-0106)', async () => {
+    srv.route(`POST /api/rooms/${TEXT_ROOM}/messages`, (r) => ({ status: 201, json: messageJson('new', (r.json as { content: string }).content) }));
+    srv.route('POST /api/tasks/t1/approval', () => ({ json: { task: { id: 't1' } } }));
+    srv.route('GET /api/me', () => ({ json: {} }));
+    const bot = newBot();
+    await bot.send(TEXT_ROOM, 'as myself');
+    const owner = bot.asOwner();
+    expect(owner.asOwner()).toBe(owner);
+    await owner.send(TEXT_ROOM, 'as the owner');
+    expect((await owner.tasks.vote('t1', 'approve')).id).toBe('t1');
+    await bot.rest.request('GET', '/api/me', { onBehalfOfOwner: true });
+    const [self, mine, vote, raw] = srv.requests;
+    expect(self?.headers['calab-on-behalf']).toBeUndefined();
+    expect(mine?.headers['calab-on-behalf']).toBe('owner');
+    expect(mine?.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(vote?.headers['calab-on-behalf']).toBe('owner');
+    expect(vote?.json).toMatchObject({ decision: 'TASK_APPROVAL_DECISION_APPROVE' });
+    expect(raw?.headers['calab-on-behalf']).toBe('owner');
+    expect(() => owner.start()).toThrow(/REST only/);
+  });
+
   it('forwards a message into another room (ADR-0033)', async () => {
     srv.route(`POST /api/rooms/${TEXT_ROOM}/messages/m-1/forward`, { status: 201, json: { message: { id: 'copy', roomId: 'r-2', forward: { authorId: 'u-1', messageId: 'm-1' } } } });
     const bot = newBot();

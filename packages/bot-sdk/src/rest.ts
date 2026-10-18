@@ -15,7 +15,17 @@ export interface RestOptions {
   /** Sleep used between retries (tests). */
   sleep?: (ms: number) => Promise<void>;
   userAgent?: string;
+  /**
+   * Every request on behalf of the bot's owner (ADR-0106): the header `Calab-On-Behalf: owner`.
+   * The owner must have turned «Act on my behalf» on for the bot; otherwise the server answers
+   * 403 ON_BEHALF_DISABLED (never a silent fallback to the bot).
+   */
+  onBehalfOfOwner?: boolean;
 }
+
+/** The header of a request on behalf of the bot's owner (ADR-0106) and its only value. */
+export const ON_BEHALF_HEADER = 'Calab-On-Behalf';
+export const ON_BEHALF_OWNER = 'owner';
 
 export type Query = Record<string, string | number | boolean | undefined>;
 
@@ -25,6 +35,8 @@ export interface RequestInit {
   json?: unknown;
   /** Multipart body (files, stickers). Rebuilt on retry by the factory. */
   form?: () => FormData;
+  /** This request on behalf of the bot's owner (ADR-0106); default: the client's `onBehalfOfOwner`. */
+  onBehalfOfOwner?: boolean;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -59,8 +71,13 @@ export class Rest {
   private readonly maxRetryAfterMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly userAgent: string;
+  /** Requests go on behalf of the bot's owner by default (ADR-0106). */
+  readonly onBehalfOfOwner: boolean;
+  private readonly options: RestOptions;
 
   constructor(o: RestOptions) {
+    this.options = o;
+    this.onBehalfOfOwner = o.onBehalfOfOwner ?? false;
     this.server = o.server.replace(/\/+$/, '');
     this.token = o.token;
     this.fetchFn = o.fetch ?? ((input, init) => fetch(input, init));
@@ -68,6 +85,11 @@ export class Rest {
     this.maxRetryAfterMs = o.maxRetryAfterMs ?? 60_000;
     this.sleep = o.sleep ?? defaultSleep;
     this.userAgent = o.userAgent ?? 'calab-bot-sdk/0.1';
+  }
+
+  /** The same client with every request on behalf of the bot's owner (ADR-0106). */
+  asOwner(): Rest {
+    return this.onBehalfOfOwner ? this : new Rest({ ...this.options, onBehalfOfOwner: true });
   }
 
   url(path: string, query?: Query): string {
@@ -89,6 +111,7 @@ export class Rest {
   async response(method: string, path: string, init: RequestInit = {}): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       const headers: Record<string, string> = { Authorization: `Bearer ${this.token}`, Accept: 'application/json', 'User-Agent': this.userAgent };
+      if (init.onBehalfOfOwner ?? this.onBehalfOfOwner) headers[ON_BEHALF_HEADER] = ON_BEHALF_OWNER;
       let body: string | FormData | undefined;
       if (init.form) body = init.form();
       else if (init.json !== undefined) {

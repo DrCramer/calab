@@ -21,7 +21,7 @@ export type { DiskApi, DiskDownload, DiskListOptions, DiskUploadData } from './d
 export type { WikiApi, WikiListOptions, WikiPageContent, WikiPageHandle, WikiWriteOptions } from './wiki.js';
 export { WikiSyncError, WikiSyncSession, wikiSyncUrl, type SyncSocket, type WikiSyncOptions } from './wikiSync.js';
 export { Gateway, gatewayUrl, type GatewayOptions, type GatewayStatus, type SocketLike } from './gateway.js';
-export { Rest, parseRetryAfter, type RestOptions } from './rest.js';
+export { ON_BEHALF_HEADER, ON_BEHALF_OWNER, Rest, parseRetryAfter, type RestOptions } from './rest.js';
 export {
   BOARD_WEBHOOK_TOLERANCE_SECONDS,
   DELIVERY_HEADER,
