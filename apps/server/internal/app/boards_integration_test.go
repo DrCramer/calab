@@ -385,6 +385,19 @@ func TestTaskLifecycle(t *testing.T) {
 		t.Fatalf("archive list %v", arch.GetTasks())
 	}
 	o.must(403, "POST", "/api/rooms/"+t3.GetRoomId()+"/messages", &v1.CreateMessageRequest{Content: "x", Nonce: uniq("a")}, nil)
+	// The archive pages newest archived first by an opaque cursor, and takes a TEXT filter.
+	o.must(200, "POST", "/api/tasks/"+t1.GetId()+"/archive", nil, nil)
+	var pg1, pg2 v1.ListTasksResponse
+	o.must(200, "GET", "/api/boards/"+b.GetId()+"/tasks?archived=1&limit=1", nil, &pg1)
+	if len(pg1.GetTasks()) != 1 || pg1.GetTasks()[0].GetKey() != "OPS-1" || pg1.GetNextCursor() == "" {
+		t.Fatalf("archive page 1 %v next %q", pg1.GetTasks(), pg1.GetNextCursor())
+	}
+	o.must(200, "GET", "/api/boards/"+b.GetId()+"/tasks?archived=1&limit=1&cursor="+url.QueryEscape(pg1.GetNextCursor()), nil, &pg2)
+	if len(pg2.GetTasks()) != 1 || pg2.GetTasks()[0].GetKey() != "OPS-3" || pg2.GetNextCursor() != "" {
+		t.Fatalf("archive page 2 %v next %q", pg2.GetTasks(), pg2.GetNextCursor())
+	}
+	o.must(400, "GET", "/api/boards/"+b.GetId()+"/tasks?archived=1&cursor=zzz", nil, nil)
+	o.must(200, "POST", "/api/tasks/"+t1.GetId()+"/restore", nil, nil)
 	o.must(200, "POST", "/api/tasks/"+t3.GetId()+"/restore", nil, nil)
 	kinds = strings.Join(activityKinds(t, o, t3.GetId()), ",")
 	if !strings.Contains(kinds, "archived") || !strings.Contains(kinds, "restored") {

@@ -673,21 +673,43 @@ func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
 	where = append(where, cond)
 	// The cursor is the number of the last task of the previous page; pages are by number
 	// (stable while tasks move); clients order by status and position themselves.
-	if c := qs.Get("cursor"); c != "" {
-		n, err := strconv.Atoi(c)
-		if err != nil || n < 0 {
-			return httpx.BadRequest("invalid cursor")
-		}
-		where = append(where, "t.number > "+a.Add(n))
+	// The archive (archived=1) is paged newest-archived first: the cursor is "<archived_at in
+	// Unix microseconds>:<number>" of the last task of the previous page.
+	archive := qs.Get("archived") == "1"
+	order := "t.number"
+	if archive {
+		order = "t.archived_at DESC, t.number DESC"
 	}
-	rows, err := queryTasks(r.Context(), s.db.Pool, "WHERE "+strings.Join(where, " AND ")+" ORDER BY t.number LIMIT "+strconv.Itoa(limit+1), a.Values()...)
+	if c := qs.Get("cursor"); c != "" {
+		if archive {
+			us, num, ok := strings.Cut(c, ":")
+			m, err1 := strconv.ParseInt(us, 10, 64)
+			n, err2 := strconv.Atoi(num)
+			if !ok || err1 != nil || err2 != nil || n < 0 {
+				return httpx.BadRequest("invalid cursor")
+			}
+			where = append(where, "(t.archived_at, t.number) < ("+a.Add(time.UnixMicro(m).UTC())+", "+a.Add(n)+")")
+		} else {
+			n, err := strconv.Atoi(c)
+			if err != nil || n < 0 {
+				return httpx.BadRequest("invalid cursor")
+			}
+			where = append(where, "t.number > "+a.Add(n))
+		}
+	}
+	rows, err := queryTasks(r.Context(), s.db.Pool, "WHERE "+strings.Join(where, " AND ")+" ORDER BY "+order+" LIMIT "+strconv.Itoa(limit+1), a.Values()...)
 	if err != nil {
 		return err
 	}
 	next := ""
 	if len(rows) > limit {
 		rows = rows[:limit]
-		next = strconv.Itoa(int(rows[len(rows)-1].Number))
+		last := rows[len(rows)-1]
+		if archive && last.ArchivedAt != nil {
+			next = strconv.FormatInt(last.ArchivedAt.UnixMicro(), 10) + ":" + strconv.Itoa(int(last.Number))
+		} else {
+			next = strconv.Itoa(int(last.Number))
+		}
 	}
 	out, err := tasksProto(r.Context(), s.db.Q, rows, uid(r))
 	if err != nil {

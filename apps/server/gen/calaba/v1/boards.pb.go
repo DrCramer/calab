@@ -4349,6 +4349,7 @@ func (x *UpdateBoardMilestoneRequest) GetPosition() int32 {
 // GET /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after=<RFC 3339>&
 // cursor=&limit= — ≤ 500 per page (default 500), by status then position; next_cursor empty =
 // the last page. Archived tasks only with archived=1 (then only them) or an ARCHIVED condition.
+// With archived=1 the order is newest archived first and the cursor is opaque (limit applies).
 type ListTasksResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tasks         []*Task                `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`

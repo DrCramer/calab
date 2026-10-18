@@ -1917,6 +1917,7 @@ export const UpdateBoardMilestoneRequestSchema: GenMessage<UpdateBoardMilestoneR
  * GET /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after=<RFC 3339>&
  * cursor=&limit= — ≤ 500 per page (default 500), by status then position; next_cursor empty =
  * the last page. Archived tasks only with archived=1 (then only them) or an ARCHIVED condition.
+ * With archived=1 the order is newest archived first and the cursor is opaque (limit applies).
  *
  * @generated from message calaba.v1.ListTasksResponse
  */
