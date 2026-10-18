@@ -1,0 +1,75 @@
+name: self-hosted Windows smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Draft or published self-hosted Windows release (for example 3.7.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  install-and-start:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download installer from this repository
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version: $env:VERSION" }
+          $installer = Join-Path $env:RUNNER_TEMP "Calab-Setup-$env:VERSION-x64.exe"
+          gh release download "v$env:VERSION" --repo $env:GITHUB_REPOSITORY --pattern "Calab-Setup-$env:VERSION-x64.exe" --dir $env:RUNNER_TEMP --clobber
+          if (-not (Test-Path $installer)) { throw "Installer was not downloaded: $installer" }
+          "INSTALLER=$installer" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Install, launch, and verify self-host defaults
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $summary = Join-Path $env:RUNNER_TEMP 'windows-smoke-summary.txt'
+          $install = Start-Process -FilePath $env:INSTALLER -ArgumentList '/S' -Wait -PassThru
+          "installer_exit=$($install.ExitCode)" | Tee-Object -FilePath $summary
+          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)" }
+
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Calab\Calab.exe'
+          if (-not (Test-Path $exe)) { throw "Installed executable is missing: $exe" }
+          $actualVersion = (Get-Item $exe).VersionInfo.ProductVersion
+          "product_version=$actualVersion" | Tee-Object -Append -FilePath $summary
+          if ($actualVersion -notlike "$($env:VERSION)*") { throw "Expected version $env:VERSION, got $actualVersion" }
+
+          $settingsPath = Join-Path $env:APPDATA 'Calaba\settings.json'
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 30
+          $running = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+          "main_process_alive=$([bool]$running)" | Tee-Object -Append -FilePath $summary
+          if (-not $running) { throw 'Calab exited during the startup smoke check' }
+
+          if (-not (Test-Path $settingsPath)) { throw "First-run settings file is missing: $settingsPath" }
+          $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+          "server_url=$($settings.serverUrl)" | Tee-Object -Append -FilePath $summary
+          "update_url=$($settings.updateUrl)" | Tee-Object -Append -FilePath $summary
+          if ($settings.serverUrl -ne 'https://calab.cramerstation.ru') { throw "Unexpected serverUrl: $($settings.serverUrl)" }
+          if ($settings.updateUrl -ne 'https://github.com/DrCramer/calab/releases/latest/download/') { throw "Unexpected updateUrl: $($settings.updateUrl)" }
+          foreach ($key in 'autostart', 'autoUpdate', 'autoCheckUpdates', 'closeToTray', 'trayHintShown') {
+            if ($settings.$key -ne $true) { throw "Expected $key=true in first-run settings" }
+          }
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          "settings_path=$settingsPath" | Tee-Object -Append -FilePath $summary
+          Get-Content $summary
+
+      - name: Upload smoke summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: selfhost-windows-smoke-${{ inputs.version }}
+          path: ${{ runner.temp }}/windows-smoke-summary.txt
+          if-no-files-found: warn
