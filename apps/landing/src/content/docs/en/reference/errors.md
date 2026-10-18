@@ -73,6 +73,7 @@ OAuth protocol errors (`invalid_grant`, `invalid_client` and others) use the RFC
 | `reason` | With `code` | Meaning |
 |---|---|---|
 | `BOT_NOT_ALLOWED` | `FORBIDDEN` | a route for people only |
+| `ON_BEHALF_*` | `FORBIDDEN`, `BAD_REQUEST` | a request on behalf of the owner was refused — see [Token and permissions](../bots/auth#on-behalf-of-the-owner) |
 | `PLAN_LIMIT` | `CONFLICT`, `ROOM_FULL`, `FILE_QUOTA_EXCEEDED` | a plan limit; `used` / `limit` |
 | `PLAN_LIMITS_EXCEEDED` | `CONFLICT` | a plan change was refused: the workspace uses more than the new plan allows |
 | `REACTION_LIMIT` | `CONFLICT` | at most 3 different reactions per member per message |

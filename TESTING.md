@@ -2129,6 +2129,16 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
 
+## Бот от имени владельца (ADR-0106)
+1. Авто: `cd apps/server && go test ./internal/app -run TestOnBehalfRouteTable` и `go test -tags integration -count=1 ./internal/app -run 'TestOnBehalf|TestBotLifecycle'`; `pnpm -F @calaba/bot-sdk test`.
+2. Боб (админ) создаёт бота Ассистент (`TOKEN`). Владелец пространства в «Настройках → Боты» видит у бота только строку при включении, тумблера нет.
+3. Без тумблера: `curl $CALAB/api/workspaces/$WS -H "Authorization: Bearer $TOKEN" -H 'Calab-On-Behalf: owner'` → 403 `ON_BEHALF_DISABLED`.
+4. Боб: «Действовать от моего имени» → подтверждение с предупреждением → включено; владелец пространства видит «Действует от имени владельца».
+5. Задача с согласующим Бобом: `curl -X POST $CALAB/api/tasks/$T/approval -H "Authorization: Bearer $TOKEN" -H 'Calab-On-Behalf: owner' -H 'Content-Type: application/json' -d '{"decision":"TASK_APPROVAL_DECISION_APPROVE"}'` → 200; в «Истории» — «Боб (через бота Ассистент) согласовал»; без заголовка → 403 `BOT_NOT_ALLOWED`.
+6. Сообщение с заголовком: у других — «Боб (через бота Ассистент)», у Боба — строка «через бота Ассистент» в пузыре; телефон — так же.
+7. `PATCH /api/me`, `POST …/rooms/$R/join`, `PATCH …/bots/$BOT` с заголовком → 403 `ON_BEHALF_ROUTE`; в логе — `bot action … on_behalf=true owner_id=…`.
+8. Выключить тумблер → шаг 5 сразу 403 `ON_BEHALF_DISABLED`; отозвать токен → 401.
+
 ## iOS shared-web incoming calls (ADR-0071)
 
 1. Сценарий реального устройства: [incoming-calls-testing](docs/mobile/incoming-calls-testing.md); APNs/cold locked answer пока не проверены.

@@ -150,6 +150,7 @@
 {"method":"DELETE","path":"/api/me/blocked-bots/{id}","decision":"deny","group":"bots"},
 {"method":"GET","path":"/api/workspaces/{id}/bots","decision":"deny","group":"bots"},
 {"method":"POST","path":"/api/workspaces/{id}/bots","decision":"deny","group":"bots"},
+{"method":"PATCH","path":"/api/workspaces/{id}/bots/{botId}","decision":"deny","group":"bots"},
 {"method":"DELETE","path":"/api/workspaces/{id}/bots/{botId}","decision":"deny","group":"bots"},
 {"method":"POST","path":"/api/workspaces/{id}/bots/{botId}/avatar","decision":"deny","group":"bots"},
 {"method":"DELETE","path":"/api/workspaces/{id}/bots/{botId}/avatar","decision":"deny","group":"bots"},

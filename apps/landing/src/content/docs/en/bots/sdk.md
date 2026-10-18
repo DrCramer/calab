@@ -87,8 +87,9 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `invites.list` · `create` · `delete` · `email(wsId, address)` · `listEmail` · `deleteEmail` | invites |
 | `badges.list` · `create` · `update` · `delete` · `set(wsId, userId, badgeId)` | badges |
 | `recording.start(roomId)` · `recording.stop(roomId)` | meeting recording |
+| `asOwner()` · `tasks.vote(taskId, 'approve' \| 'reject' \| 'withdraw', comment?)` | the same bot [on behalf of its owner](./auth#on-behalf-of-the-owner) (REST only) · the owner's approval vote |
 | `fetchMe()` · `updateProfile({ displayName?, description? })` | the bot's profile |
-| `rest.request(method, path, { json?, query?, form? })` · `rest.call(Schema, …)` | any other allowed route |
+| `rest.request(method, path, { json?, query?, form?, onBehalfOfOwner? })` · `rest.call(Schema, …)` | any other allowed route |
 
 Details for each group are in the REST chapters: [messages](./rest-messages), [boards](./rest-boards), [calendar](./rest-calendar) and the rest.
 

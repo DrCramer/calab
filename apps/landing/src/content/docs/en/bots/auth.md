@@ -93,12 +93,49 @@ These routes answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"` �
 | Voice | one-to-one calls (call, accept, decline) |
 | Notes | notes shelves entirely |
 | Push | device registration and everything push |
-| Tasks | voting in approvals, board access, purging a board, the board webhook, changing automations, Git links |
+| Tasks | voting in approvals (only [on behalf of the owner](#on-behalf-of-the-owner)), board access, purging a board, the board webhook, changing automations, Git links |
 | Messages | pressing buttons under messages (that is a person's action) |
 | Calendar | answering invitations (RSVP), “today”, CalDAV and external calendars |
 | Other | Disk, camera backgrounds, workspace web apps, telephony settings and journal, recording transcription settings, granting achievements, the birthday table and setting birthdays, deleting and re-uploading recordings, link previews, superadmin |
 
 The exact route list is in [Bot routes](../reference/routes).
+
+## On behalf of the owner
+
+The bot's owner can let the bot act **on their behalf**: Workspace settings → Bots (or the bot's profile) → “Act on my behalf”. Only the bot's owner turns it on and off — admins with `MANAGE_BOTS` only see the line “Acts on behalf of its owner”.
+
+A request on behalf of the owner is an ordinary REST request with the bot token and the header `Calab-On-Behalf: owner`:
+
+```sh
+# The owner's vote in a task approval — a bot never votes for itself
+curl -s -X POST https://app.example.com/api/tasks/$TASK/approval \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Calab-On-Behalf: owner" \
+  -H "Content-Type: application/json" \
+  -d '{"decision":"TASK_APPROVAL_DECISION_APPROVE"}'
+```
+
+- Such a request runs **with the owner's permissions** and is stored as the owner's action: the message author, the vote, the task journal entry are the owner, marked with `viaBotId` (the app shows “Name (via bot X)”).
+- Everything open to bots is available, **plus** the vote in task approvals. Closed even on behalf of the owner: the owner's account (profile, password, email, sessions), bot management (this switch included), billing, workspace deletion, superadmin, voice and calls, recording.
+- The bot must be a member of the workspace and the owner an active member there. Workspaces with enforced SSO refuse on-behalf requests.
+- The gateway and the webhook do not change: the bot receives events with its own permissions.
+- On-behalf requests count against the bot's limits.
+- Without the header the bot acts as itself. With the header but without permission the request is refused, never silently downgraded:
+
+| Answer | `reason` | Why |
+|---|---|---|
+| `400` | `ON_BEHALF_INVALID` | the header value is not `owner` |
+| `401` | — | the token was revoked or reissued |
+| `403` | `ON_BEHALF_DISABLED` | the owner has not turned on “Act on my behalf” |
+| `403` | `ON_BEHALF_OWNER_INACTIVE` | the owner's account is disabled |
+| `403` | `ON_BEHALF_OWNER_NOT_MEMBER` | the owner is not a member of this workspace (left, removed, banned) |
+| `403` | `ON_BEHALF_IDENTITY_POLICY` | the workspace requires the person's own sign-in (SSO) |
+| `403` | `ON_BEHALF_ROUTE` | the route is closed on behalf of the owner too |
+
+> [!WARNING]
+> The token of such a bot acts as its owner. Keep it like a password; if it may have leaked, reissue the token or turn the switch off — it takes effect at once.
+
+In the SDK: `bot.asOwner()` — the same bot with the header on every call (`await bot.asOwner().tasks.vote(taskId, 'approve')`), or `{ onBehalfOfOwner: true }` on a single `bot.rest.request`.
 
 ## Good practice
 

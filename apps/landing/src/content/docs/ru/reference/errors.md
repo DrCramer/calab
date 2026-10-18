@@ -73,6 +73,7 @@ order: 3
 | `reason` | С каким `code` | Значение |
 |---|---|---|
 | `BOT_NOT_ALLOWED` | `FORBIDDEN` | маршрут только для людей |
+| `ON_BEHALF_*` | `FORBIDDEN`, `BAD_REQUEST` | запрос от имени владельца отклонён — см. [Токен и права](../bots/auth#от-имени-владельца) |
 | `PLAN_LIMIT` | `CONFLICT`, `ROOM_FULL`, `FILE_QUOTA_EXCEEDED` | лимит тарифа; `used` / `limit` |
 | `PLAN_LIMITS_EXCEEDED` | `CONFLICT` | смена тарифа отклонена: пространство использует больше, чем позволяет новый тариф |
 | `REACTION_LIMIT` | `CONFLICT` | не больше 3 разных реакций одного участника на сообщение |
