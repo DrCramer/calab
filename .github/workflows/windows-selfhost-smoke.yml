@@ -7,25 +7,32 @@ on:
         description: 'Draft or published self-hosted Windows release (for example 3.7.1)'
         required: true
         type: string
+      run_id:
+        description: 'Actions run ID that built this version (used to fetch the artifact before publishing)'
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   install-and-start:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - name: Download installer from this repository
+      - name: Download installer from the Windows build artifact
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
+          RUN_ID: ${{ inputs.run_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:VERSION -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version: $env:VERSION" }
+          if ($env:RUN_ID -notmatch '^\d+$') { throw "Invalid Actions run ID: $env:RUN_ID" }
           $installer = Join-Path $env:RUNNER_TEMP "Calab-Setup-$env:VERSION-x64.exe"
-          gh release download "v$env:VERSION" --repo $env:GITHUB_REPOSITORY --pattern "Calab-Setup-$env:VERSION-x64.exe" --dir $env:RUNNER_TEMP --clobber
+          gh run download $env:RUN_ID --repo $env:GITHUB_REPOSITORY --name "selfhost-windows-$env:VERSION" --dir $env:RUNNER_TEMP
           if (-not (Test-Path $installer)) { throw "Installer was not downloaded: $installer" }
           "INSTALLER=$installer" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
