@@ -23,7 +23,8 @@ const (
 )
 
 // The kind of a section and of its hits. In the query string a type is written in lower case
-// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki.
+// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki,
+// disk.
 type SearchType int32
 
 const (
@@ -36,6 +37,7 @@ const (
 	SearchType_SEARCH_TYPE_NOTES         SearchType = 6 // the caller's own notes shelves (scope=all or types=notes)
 	SearchType_SEARCH_TYPE_TRANSCRIPTS   SearchType = 7 // transcripts of visible recordings with a ready result, newest first
 	SearchType_SEARCH_TYPE_WIKI          SearchType = 8 // live wiki pages the caller sees (WIKI_VIEW), by title and text
+	SearchType_SEARCH_TYPE_DISK          SearchType = 9 // live Disk folders and files the caller sees (DISK_VIEW), by name
 )
 
 // Enum value maps for SearchType.
@@ -50,6 +52,7 @@ var (
 		6: "SEARCH_TYPE_NOTES",
 		7: "SEARCH_TYPE_TRANSCRIPTS",
 		8: "SEARCH_TYPE_WIKI",
+		9: "SEARCH_TYPE_DISK",
 	}
 	SearchType_value = map[string]int32{
 		"SEARCH_TYPE_UNSPECIFIED":   0,
@@ -61,6 +64,7 @@ var (
 		"SEARCH_TYPE_NOTES":         6,
 		"SEARCH_TYPE_TRANSCRIPTS":   7,
 		"SEARCH_TYPE_WIKI":          8,
+		"SEARCH_TYPE_DISK":          9,
 	}
 )
 
@@ -97,7 +101,7 @@ type SearchSort int32
 const (
 	SearchSort_SEARCH_SORT_UNSPECIFIED SearchSort = 0 // = RELEVANCE
 	SearchSort_SEARCH_SORT_RELEVANCE   SearchSort = 1 // ts_rank_cd / trigram similarity × freshness 1 / (1 + days / 30)
-	SearchSort_SEARCH_SORT_NEW         SearchSort = 2 // newest first (by creation: message, task, event, file)
+	SearchSort_SEARCH_SORT_NEW         SearchSort = 2 // newest first (by creation: message, task, event, file, page, Disk item)
 )
 
 // Enum value maps for SearchSort.
@@ -145,13 +149,13 @@ func (SearchSort) EnumDescriptor() ([]byte, []int) {
 // query string; this message documents them (the endpoint has no body).
 // Rate limit per user (30 at once, one per second): 429 RATE_LIMITED.
 // Bots: allowed by the same rules, never the notes section. Guests: what their roles show (no
-// boards, no calendar).
+// boards, no calendar; wiki pages and Disk items only where they were given access).
 type SearchRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 1..200 characters. Words are matched by stem (russian) and as written (simple); the last
 	// word of 2+ characters also as a prefix («рел» finds «релиз»); "quoted phrase", -excluded and
 	// OR work as in websearch_to_tsquery. Short fields (task and event titles, file names) also
-	// match with typos and inside words (pg_trgm). A task key (ABC-12) finds that task first.
+	// match with typos and inside words (pg_trgm); Disk items match by name only. A task key (ABC-12) finds that task first.
 	// A query with no word left after removing punctuation: 422 VALIDATION_FAILED (field q).
 	Q string `protobuf:"bytes,1,opt,name=q,proto3" json:"q,omitempty"`
 	// A workspace id (the caller must be a member: else 404), or "all": every workspace of the
@@ -384,18 +388,21 @@ func (x *SearchSection) GetTimedOut() bool {
 type SearchHit struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The highlighted fragment: of the message text, the task description (or title), the event
-	// description (or title), the file name, the transcript segment.
+	// description (or title), the file name, the transcript segment, the page's text (or title),
+	// the Disk item's name.
 	Snippet string `protobuf:"bytes,1,opt,name=snippet,proto3" json:"snippet,omitempty"`
-	// The object's name: task title, event title, file name; empty for messages, notes and
-	// transcripts (the client names the room itself).
+	// The object's name: task title, event title, file name, page title, Disk item name; empty
+	// for messages, notes and transcripts (the client names the room itself).
 	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	// The hit's workspace; empty for DMs and notes shelves (and files / transcripts found there).
 	WorkspaceId string `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	// When: the message's creation, the task's last update, the event occurrence's start (see
-	// SearchEventRef), the file's upload, the recording's start.
+	// SearchEventRef), the file's upload, the recording's start, the page's or Disk item's last
+	// change.
 	At *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=at,proto3" json:"at,omitempty"`
 	// Author: of the message (the attachment's message, the comment), the task's creator, the
-	// event's organizer, who started the recording. Empty when unknown.
+	// event's organizer, who started the recording, the page's last editor, the Disk item's owner.
+	// Empty when unknown.
 	AuthorId string `protobuf:"bytes,5,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
 	// Types that are valid to be assigned to Ref:
 	//
@@ -407,6 +414,7 @@ type SearchHit struct {
 	//	*SearchHit_Note
 	//	*SearchHit_Transcript
 	//	*SearchHit_Wiki
+	//	*SearchHit_Disk
 	Ref           isSearchHit_Ref `protobuf_oneof:"ref"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -556,6 +564,15 @@ func (x *SearchHit) GetWiki() *SearchWikiRef {
 	return nil
 }
 
+func (x *SearchHit) GetDisk() *SearchDiskRef {
+	if x != nil {
+		if x, ok := x.Ref.(*SearchHit_Disk); ok {
+			return x.Disk
+		}
+	}
+	return nil
+}
+
 type isSearchHit_Ref interface {
 	isSearchHit_Ref()
 }
@@ -592,6 +609,10 @@ type SearchHit_Wiki struct {
 	Wiki *SearchWikiRef `protobuf:"bytes,17,opt,name=wiki,proto3,oneof"`
 }
 
+type SearchHit_Disk struct {
+	Disk *SearchDiskRef `protobuf:"bytes,18,opt,name=disk,proto3,oneof"`
+}
+
 func (*SearchHit_Message) isSearchHit_Ref() {}
 
 func (*SearchHit_TaskComment) isSearchHit_Ref() {}
@@ -607,6 +628,8 @@ func (*SearchHit_Note) isSearchHit_Ref() {}
 func (*SearchHit_Transcript) isSearchHit_Ref() {}
 
 func (*SearchHit_Wiki) isSearchHit_Ref() {}
+
+func (*SearchHit_Disk) isSearchHit_Ref() {}
 
 // A message of a room, a DM or (note) a notes shelf: jump to it in the room's history.
 type SearchMessageRef struct {
@@ -1046,9 +1069,13 @@ func (x *SearchTranscriptRef) GetMessageId() string {
 // A wiki page (ADR-0096 §7): open it; the snippet is of its text (or title), title is the
 // page's title.
 type SearchWikiRef struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PageId        string                 `protobuf:"bytes,1,opt,name=page_id,json=pageId,proto3" json:"page_id,omitempty"`
-	Icon          string                 `protobuf:"bytes,2,opt,name=icon,proto3" json:"icon,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	PageId string                 `protobuf:"bytes,1,opt,name=page_id,json=pageId,proto3" json:"page_id,omitempty"`
+	Icon   string                 `protobuf:"bytes,2,opt,name=icon,proto3" json:"icon,omitempty"`
+	// The titles of the pages above it that the caller sees, the topmost first (like
+	// GET /api/wiki/pages/{id}/path: above a page they do not see, nothing is named). Empty = a
+	// top-level page (or one under pages hidden from the caller).
+	Path          []string `protobuf:"bytes,3,rep,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1097,6 +1124,110 @@ func (x *SearchWikiRef) GetIcon() string {
 	return ""
 }
 
+func (x *SearchWikiRef) GetPath() []string {
+	if x != nil {
+		return x.Path
+	}
+	return nil
+}
+
+// A Disk folder or file (ADR-0094): open Disk at parent_id ("" = the root) with the item
+// selected; a file can also be previewed or downloaded through GET /api/files/{file_id}.
+type SearchDiskRef struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	ItemId   string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ParentId string                 `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	Folder   bool                   `protobuf:"varint,3,opt,name=folder,proto3" json:"folder,omitempty"`
+	FileId   string                 `protobuf:"bytes,4,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"` // files only
+	Mime     string                 `protobuf:"bytes,5,opt,name=mime,proto3" json:"mime,omitempty"`                   // files only
+	Size     int64                  `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`                  // files only
+	// The names of the folders above the item that the caller sees, the topmost first (like
+	// GET /api/disk/items/{id}/path: above a folder they do not see, nothing is named). Empty =
+	// the item lies at the root (or under folders hidden from the caller).
+	Path          []string `protobuf:"bytes,7,rep,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchDiskRef) Reset() {
+	*x = SearchDiskRef{}
+	mi := &file_calaba_v1_search_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchDiskRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchDiskRef) ProtoMessage() {}
+
+func (x *SearchDiskRef) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_search_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchDiskRef.ProtoReflect.Descriptor instead.
+func (*SearchDiskRef) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_search_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SearchDiskRef) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *SearchDiskRef) GetParentId() string {
+	if x != nil {
+		return x.ParentId
+	}
+	return ""
+}
+
+func (x *SearchDiskRef) GetFolder() bool {
+	if x != nil {
+		return x.Folder
+	}
+	return false
+}
+
+func (x *SearchDiskRef) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *SearchDiskRef) GetMime() string {
+	if x != nil {
+		return x.Mime
+	}
+	return ""
+}
+
+func (x *SearchDiskRef) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *SearchDiskRef) GetPath() []string {
+	if x != nil {
+		return x.Path
+	}
+	return nil
+}
+
 var File_calaba_v1_search_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_search_proto_rawDesc = "" +
@@ -1118,7 +1249,7 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\x0etotal_estimate\x18\x03 \x01(\rR\rtotalEstimate\x12\x1f\n" +
 	"\vnext_cursor\x18\x04 \x01(\tR\n" +
 	"nextCursor\x12\x1b\n" +
-	"\ttimed_out\x18\x05 \x01(\bR\btimedOut\"\xe5\x04\n" +
+	"\ttimed_out\x18\x05 \x01(\bR\btimedOut\"\x95\x05\n" +
 	"\tSearchHit\x12\x18\n" +
 	"\asnippet\x18\x01 \x01(\tR\asnippet\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12!\n" +
@@ -1135,7 +1266,8 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\n" +
 	"transcript\x18\x10 \x01(\v2\x1e.calaba.v1.SearchTranscriptRefH\x00R\n" +
 	"transcript\x12.\n" +
-	"\x04wiki\x18\x11 \x01(\v2\x18.calaba.v1.SearchWikiRefH\x00R\x04wikiB\x05\n" +
+	"\x04wiki\x18\x11 \x01(\v2\x18.calaba.v1.SearchWikiRefH\x00R\x04wiki\x12.\n" +
+	"\x04disk\x18\x12 \x01(\v2\x18.calaba.v1.SearchDiskRefH\x00R\x04diskB\x05\n" +
 	"\x03ref\"J\n" +
 	"\x10SearchMessageRef\x12\x1d\n" +
 	"\n" +
@@ -1174,10 +1306,19 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\toffset_ms\x18\x03 \x01(\x03R\boffsetMs\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x04 \x01(\tR\tmessageId\"<\n" +
+	"message_id\x18\x04 \x01(\tR\tmessageId\"P\n" +
 	"\rSearchWikiRef\x12\x17\n" +
 	"\apage_id\x18\x01 \x01(\tR\x06pageId\x12\x12\n" +
-	"\x04icon\x18\x02 \x01(\tR\x04icon*\xf2\x01\n" +
+	"\x04icon\x18\x02 \x01(\tR\x04icon\x12\x12\n" +
+	"\x04path\x18\x03 \x03(\tR\x04path\"\xb2\x01\n" +
+	"\rSearchDiskRef\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1b\n" +
+	"\tparent_id\x18\x02 \x01(\tR\bparentId\x12\x16\n" +
+	"\x06folder\x18\x03 \x01(\bR\x06folder\x12\x17\n" +
+	"\afile_id\x18\x04 \x01(\tR\x06fileId\x12\x12\n" +
+	"\x04mime\x18\x05 \x01(\tR\x04mime\x12\x12\n" +
+	"\x04size\x18\x06 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04path\x18\a \x03(\tR\x04path*\x88\x02\n" +
 	"\n" +
 	"SearchType\x12\x1b\n" +
 	"\x17SEARCH_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -1188,7 +1329,8 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"\x11SEARCH_TYPE_FILES\x10\x05\x12\x15\n" +
 	"\x11SEARCH_TYPE_NOTES\x10\x06\x12\x1b\n" +
 	"\x17SEARCH_TYPE_TRANSCRIPTS\x10\a\x12\x14\n" +
-	"\x10SEARCH_TYPE_WIKI\x10\b*Y\n" +
+	"\x10SEARCH_TYPE_WIKI\x10\b\x12\x14\n" +
+	"\x10SEARCH_TYPE_DISK\x10\t*Y\n" +
 	"\n" +
 	"SearchSort\x12\x1b\n" +
 	"\x17SEARCH_SORT_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -1210,7 +1352,7 @@ func file_calaba_v1_search_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_search_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_search_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_calaba_v1_search_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_calaba_v1_search_proto_goTypes = []any{
 	(SearchType)(0),               // 0: calaba.v1.SearchType
 	(SearchSort)(0),               // 1: calaba.v1.SearchSort
@@ -1225,8 +1367,9 @@ var file_calaba_v1_search_proto_goTypes = []any{
 	(*SearchFileRef)(nil),         // 10: calaba.v1.SearchFileRef
 	(*SearchTranscriptRef)(nil),   // 11: calaba.v1.SearchTranscriptRef
 	(*SearchWikiRef)(nil),         // 12: calaba.v1.SearchWikiRef
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
-	(BoardStatusType)(0),          // 14: calaba.v1.BoardStatusType
+	(*SearchDiskRef)(nil),         // 13: calaba.v1.SearchDiskRef
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(BoardStatusType)(0),          // 15: calaba.v1.BoardStatusType
 }
 var file_calaba_v1_search_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.SearchRequest.types:type_name -> calaba.v1.SearchType
@@ -1235,7 +1378,7 @@ var file_calaba_v1_search_proto_depIdxs = []int32{
 	4,  // 3: calaba.v1.SearchResponse.sections:type_name -> calaba.v1.SearchSection
 	0,  // 4: calaba.v1.SearchSection.type:type_name -> calaba.v1.SearchType
 	5,  // 5: calaba.v1.SearchSection.items:type_name -> calaba.v1.SearchHit
-	13, // 6: calaba.v1.SearchHit.at:type_name -> google.protobuf.Timestamp
+	14, // 6: calaba.v1.SearchHit.at:type_name -> google.protobuf.Timestamp
 	6,  // 7: calaba.v1.SearchHit.message:type_name -> calaba.v1.SearchMessageRef
 	7,  // 8: calaba.v1.SearchHit.task_comment:type_name -> calaba.v1.SearchTaskCommentRef
 	8,  // 9: calaba.v1.SearchHit.task:type_name -> calaba.v1.SearchTaskRef
@@ -1244,14 +1387,15 @@ var file_calaba_v1_search_proto_depIdxs = []int32{
 	6,  // 12: calaba.v1.SearchHit.note:type_name -> calaba.v1.SearchMessageRef
 	11, // 13: calaba.v1.SearchHit.transcript:type_name -> calaba.v1.SearchTranscriptRef
 	12, // 14: calaba.v1.SearchHit.wiki:type_name -> calaba.v1.SearchWikiRef
-	14, // 15: calaba.v1.SearchTaskRef.status_type:type_name -> calaba.v1.BoardStatusType
-	13, // 16: calaba.v1.SearchEventRef.occurrence_start:type_name -> google.protobuf.Timestamp
-	13, // 17: calaba.v1.SearchEventRef.occurrence_end:type_name -> google.protobuf.Timestamp
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	13, // 15: calaba.v1.SearchHit.disk:type_name -> calaba.v1.SearchDiskRef
+	15, // 16: calaba.v1.SearchTaskRef.status_type:type_name -> calaba.v1.BoardStatusType
+	14, // 17: calaba.v1.SearchEventRef.occurrence_start:type_name -> google.protobuf.Timestamp
+	14, // 18: calaba.v1.SearchEventRef.occurrence_end:type_name -> google.protobuf.Timestamp
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_search_proto_init() }
@@ -1269,6 +1413,7 @@ func file_calaba_v1_search_proto_init() {
 		(*SearchHit_Note)(nil),
 		(*SearchHit_Transcript)(nil),
 		(*SearchHit_Wiki)(nil),
+		(*SearchHit_Disk)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1276,7 +1421,7 @@ func file_calaba_v1_search_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_search_proto_rawDesc), len(file_calaba_v1_search_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

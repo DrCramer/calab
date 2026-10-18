@@ -1,7 +1,8 @@
 // Package search serves GET /api/search (ADR-0062): one query over messages, task comments,
-// tasks, events, files, the caller's notes and meeting transcripts. Each section is a small
-// adapter over the existing visibility functions (rooms.VisibleBits, boards.VisibleBoards,
-// the calendar's viewer, recording.VisibleSQL) — search adds no permission rule of its own.
+// tasks, events, files, the caller's notes, meeting transcripts, wiki pages and Disk items. Each
+// section is a small adapter over the existing visibility functions (rooms.VisibleBits,
+// boards.VisibleBoards, the calendar's viewer, recording.VisibleSQL, wikiacl, diskacl) — search
+// adds no permission rule of its own.
 // Sections run in parallel, each in its own read-only transaction with a statement timeout: a
 // slow section comes back empty with timed_out, the others are not held up.
 package search
@@ -107,6 +108,8 @@ func (s *Service) sectionFn(t v1.SearchType) sectionFn {
 		return s.transcripts
 	case v1.SearchType_SEARCH_TYPE_WIKI:
 		return s.wiki
+	case v1.SearchType_SEARCH_TYPE_DISK:
+		return s.disk
 	}
 	return s.messages // messages, task comments, notes
 }

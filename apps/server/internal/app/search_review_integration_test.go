@@ -31,7 +31,7 @@ func searchCount(t *testing.T, u musty, qs string, typ v1.SearchType) [3][2]int 
 	for _, n := range []struct {
 		s string
 		t v1.SearchType
-	}{{"messages", stMessages}, {"task_comments", stTaskComments}, {"tasks", stTasks}, {"events", stEvents}, {"files", stFiles}, {"notes", stNotes}, {"transcripts", stTranscripts}} {
+	}{{"messages", stMessages}, {"task_comments", stTaskComments}, {"tasks", stTasks}, {"events", stEvents}, {"files", stFiles}, {"notes", stNotes}, {"transcripts", stTranscripts}, {"wiki", stWiki}, {"disk", stDisk}} {
 		if n.t == typ {
 			name = n.s
 		}

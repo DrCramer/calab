@@ -106,6 +106,9 @@ func TestSearchPerf(t *testing.T) {
 	explain("files", stFiles, q("отчёт")+scope)
 	explain("files typo", stFiles, q("отчт")+scope)
 	explain("transcripts", stTranscripts, q("бюджет")+scope)
+	explain("disk", stDisk, q("отчёт")+scope)
+	explain("disk typo", stDisk, q("отчт")+scope)
+	explain("disk feed new", stDisk, q("отчёт")+scope+"&type=disk&sort=new")
 
 	// The plan before ADR-0062 (ORDER BY id DESC LIMIT with the tsvector filter), for comparison.
 	rooms := mustRooms(ctx, t, d, ws)
@@ -151,6 +154,7 @@ const (
 	stEvents       = v1.SearchType_SEARCH_TYPE_EVENTS
 	stFiles        = v1.SearchType_SEARCH_TYPE_FILES
 	stTranscripts  = v1.SearchType_SEARCH_TYPE_TRANSCRIPTS
+	stDisk         = v1.SearchType_SEARCH_TYPE_DISK
 )
 
 func mustRooms(ctx context.Context, t *testing.T, d *db.DB, ws uuid.UUID) []uuid.UUID {
@@ -222,6 +226,14 @@ func seedPerf(ctx context.Context, t *testing.T, d *db.DB, big int) (ws, user uu
 		                CASE WHEN k = 150 AND g % 3 = 0 THEN 'обсуждаем бюджет' ELSE 'реплика ' || k || ' о проекте и планах команды' END))
 		         FROM generate_series(1, 300) k WHERE g > 0)
 		 FROM perf p, generate_series(1, 300) g`,
+		// Disk: 500 folders at the root, 50000 files in them (every 50th an «Отчёт»).
+		`INSERT INTO disk_items (workspace_id, kind, name, owner_id) SELECT p.ws, 'folder', 'Папка ' || g, p.u FROM perf p, generate_series(1, 500) g`,
+		`INSERT INTO files (workspace_id, uploader_id, key, name, mime, size, sha256)
+		 SELECT p.ws, p.u, 'd/' || g, CASE WHEN g % 50 = 0 THEN 'Отчёт ' || g || '.pdf' ELSE 'disk_' || g || '.png' END, 'application/pdf', 1000, '' FROM perf p, generate_series(1, 50000) g`,
+		`WITH fo AS (SELECT di.id, row_number() OVER (ORDER BY di.id) - 1 AS rn FROM disk_items di, perf p WHERE di.workspace_id = p.ws AND di.kind = 'folder'),
+		      df AS (SELECT f.id, f.name, row_number() OVER (ORDER BY f.id) AS rn FROM files f, perf p WHERE f.workspace_id = p.ws AND f.key LIKE 'd/%%')
+		 INSERT INTO disk_items (workspace_id, parent_id, kind, name, file_id, owner_id)
+		 SELECT p.ws, fo.id, 'file', df.name, df.id, p.u FROM df JOIN fo ON fo.rn = df.rn % 500, perf p`,
 		`UPDATE workspaces SET slug = 'search-perf' WHERE slug = 'search-perf-seeding'`,
 		`ANALYZE`,
 	}

@@ -5,12 +5,14 @@ import "google/protobuf/timestamp.proto";
 import "calaba/v1/boards.proto";
 
 // Unified search (ADR-0062): one endpoint over messages, task comments, tasks, events, files,
-// the caller's notes and meeting transcripts. Every section uses the visibility rules of its
-// objects (rooms.VisibleIDs, boards.VisibleBoards / perm.TaskBits, the calendar's viewer, the
-// recording card rule); nothing is found that the caller cannot open.
+// the caller's notes, meeting transcripts, wiki pages and Disk items. Every section uses the
+// visibility rules of its objects (rooms.VisibleIDs, boards.VisibleBoards / perm.TaskBits, the
+// calendar's viewer, the recording card rule, the wiki page and Disk item rules); nothing is
+// found that the caller cannot open.
 
 // The kind of a section and of its hits. In the query string a type is written in lower case
-// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki.
+// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki,
+// disk.
 enum SearchType {
   SEARCH_TYPE_UNSPECIFIED = 0;
   SEARCH_TYPE_MESSAGES = 1;      // messages of rooms and (scope=all) the caller's DMs
@@ -21,25 +23,26 @@ enum SearchType {
   SEARCH_TYPE_NOTES = 6;         // the caller's own notes shelves (scope=all or types=notes)
   SEARCH_TYPE_TRANSCRIPTS = 7;   // transcripts of visible recordings with a ready result, newest first
   SEARCH_TYPE_WIKI = 8;          // live wiki pages the caller sees (WIKI_VIEW), by title and text
+  SEARCH_TYPE_DISK = 9;          // live Disk folders and files the caller sees (DISK_VIEW), by name
 }
 
 // Order inside a section feed (type=…). The summary (no type) always uses its defaults.
 enum SearchSort {
   SEARCH_SORT_UNSPECIFIED = 0; // = RELEVANCE
   SEARCH_SORT_RELEVANCE = 1;   // ts_rank_cd / trigram similarity × freshness 1 / (1 + days / 30)
-  SEARCH_SORT_NEW = 2;         // newest first (by creation: message, task, event, file)
+  SEARCH_SORT_NEW = 2;         // newest first (by creation: message, task, event, file, page, Disk item)
 }
 
 // GET /api/search?q=&scope=&types=&type=&limit=&cursor=&sort= — the parameters travel in the
 // query string; this message documents them (the endpoint has no body).
 // Rate limit per user (30 at once, one per second): 429 RATE_LIMITED.
 // Bots: allowed by the same rules, never the notes section. Guests: what their roles show (no
-// boards, no calendar).
+// boards, no calendar; wiki pages and Disk items only where they were given access).
 message SearchRequest {
   // 1..200 characters. Words are matched by stem (russian) and as written (simple); the last
   // word of 2+ characters also as a prefix («рел» finds «релиз»); "quoted phrase", -excluded and
   // OR work as in websearch_to_tsquery. Short fields (task and event titles, file names) also
-  // match with typos and inside words (pg_trgm). A task key (ABC-12) finds that task first.
+  // match with typos and inside words (pg_trgm); Disk items match by name only. A task key (ABC-12) finds that task first.
   // A query with no word left after removing punctuation: 422 VALIDATION_FAILED (field q).
   string q = 1;
   // A workspace id (the caller must be a member: else 404), or "all": every workspace of the
@@ -82,18 +85,21 @@ message SearchSection {
 // never contain these characters (they are stripped before highlighting).
 message SearchHit {
   // The highlighted fragment: of the message text, the task description (or title), the event
-  // description (or title), the file name, the transcript segment.
+  // description (or title), the file name, the transcript segment, the page's text (or title),
+  // the Disk item's name.
   string snippet = 1;
-  // The object's name: task title, event title, file name; empty for messages, notes and
-  // transcripts (the client names the room itself).
+  // The object's name: task title, event title, file name, page title, Disk item name; empty
+  // for messages, notes and transcripts (the client names the room itself).
   string title = 2;
   // The hit's workspace; empty for DMs and notes shelves (and files / transcripts found there).
   string workspace_id = 3;
   // When: the message's creation, the task's last update, the event occurrence's start (see
-  // SearchEventRef), the file's upload, the recording's start.
+  // SearchEventRef), the file's upload, the recording's start, the page's or Disk item's last
+  // change.
   google.protobuf.Timestamp at = 4;
   // Author: of the message (the attachment's message, the comment), the task's creator, the
-  // event's organizer, who started the recording. Empty when unknown.
+  // event's organizer, who started the recording, the page's last editor, the Disk item's owner.
+  // Empty when unknown.
   string author_id = 5;
   oneof ref {
     SearchMessageRef message = 10;
@@ -104,6 +110,7 @@ message SearchHit {
     SearchMessageRef note = 15;
     SearchTranscriptRef transcript = 16;
     SearchWikiRef wiki = 17;
+    SearchDiskRef disk = 18;
   }
 }
 
@@ -167,4 +174,23 @@ message SearchTranscriptRef {
 message SearchWikiRef {
   string page_id = 1;
   string icon = 2;
+  // The titles of the pages above it that the caller sees, the topmost first (like
+  // GET /api/wiki/pages/{id}/path: above a page they do not see, nothing is named). Empty = a
+  // top-level page (or one under pages hidden from the caller).
+  repeated string path = 3;
+}
+
+// A Disk folder or file (ADR-0094): open Disk at parent_id ("" = the root) with the item
+// selected; a file can also be previewed or downloaded through GET /api/files/{file_id}.
+message SearchDiskRef {
+  string item_id = 1;
+  string parent_id = 2;
+  bool folder = 3;
+  string file_id = 4; // files only
+  string mime = 5;    // files only
+  int64 size = 6;     // files only
+  // The names of the folders above the item that the caller sees, the topmost first (like
+  // GET /api/disk/items/{id}/path: above a folder they do not see, nothing is named). Empty =
+  // the item lies at the root (or under folders hidden from the caller).
+  repeated string path = 7;
 }

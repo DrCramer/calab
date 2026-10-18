@@ -16,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/diskacl"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/recording"
 	"github.com/calaba/calaba/server/internal/searchq"
@@ -660,7 +661,141 @@ func (s *Service) wiki(ctx context.Context, tx pgx.Tx, req *request, sc *scope, 
 			icon = *r.Icon
 		}
 		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: snippets[r.ID], Title: r.Title, WorkspaceId: r.WorkspaceID.String(), At: ts(r.UpdatedAt),
-			AuthorId: str(r.UpdatedBy), Ref: &v1.SearchHit_Wiki{Wiki: &v1.SearchWikiRef{PageId: r.ID.String(), Icon: icon}}})
+			AuthorId: str(r.UpdatedBy), Ref: &v1.SearchHit_Wiki{Wiki: &v1.SearchWikiRef{PageId: r.ID.String(), Icon: icon, Path: wikiPath(ch, members[r.WorkspaceID], r.ID)}}})
 	}
 	return nil
+}
+
+// wikiPath names the pages above id that m sees, the topmost first — the rule of the page's
+// breadcrumbs: above a page they do not see, nothing is named.
+func wikiPath(ch *wikiacl.Chains, m perm.Member, id uuid.UUID) []string {
+	chain := ch.Path(id)
+	if len(chain) < 2 {
+		return nil
+	}
+	chain = chain[:len(chain)-1]
+	start := 0
+	for i, p := range chain {
+		if !ch.Bits(m, &p.ID).Has(perm.WikiView) {
+			start = i + 1
+		}
+	}
+	out := make([]string, 0, len(chain)-start)
+	for _, p := range chain[start:] {
+		out = append(out, p.Title)
+	}
+	return out
+}
+
+// ---- disk ----
+
+type diskRow struct {
+	id, ws       uuid.UUID
+	parent, file *uuid.UUID
+	owner        *uuid.UUID
+	kind, name   string
+	mime         string
+	size         int64
+	at           time.Time
+	score        float64
+}
+
+// disk is the section of Disk folders and files (ADR-0094): live items of the caller's
+// workspaces whose name matches like a file name (trigram / substring per word, over
+// disk_items_name_trgm_idx), ranked like files (whole phrase in the name, else word similarity,
+// × freshness of updated_at) or newest first (id: uuidv7, creation). The access filter is the
+// Disk rule itself (perm.ComputeDiskItemIn over the candidates' chains, diskacl): an item the
+// caller has no DISK_VIEW on — another member's private folder and everything in it — is never
+// returned, nor counted.
+func (s *Service) disk(ctx context.Context, tx pgx.Tx, req *request, sc *scope, sec *v1.SearchSection) error {
+	if len(sc.wss) == 0 {
+		return nil
+	}
+	members := make(map[uuid.UUID]perm.Member, len(sc.wss))
+	for _, sp := range sc.wss {
+		members[sp.id] = sp.m
+	}
+	rel := req.relevance(sec.Type)
+	var a boards.Args
+	score, first := "0::float8", "di.id DESC"
+	if rel {
+		score = "((CASE WHEN di.name ILIKE " + a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) +
+			"::text, di.name) END) * " + fresh("di.updated_at", a.Add(req.now)) + ")::float8"
+		first = "score DESC, di.id DESC"
+	}
+	sql := "SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, coalesce(f.mime, ''), coalesce(f.size, 0)::bigint, di.updated_at, " +
+		score + " AS score FROM disk_items di LEFT JOIN files f ON f.id = di.file_id" +
+		" WHERE di.workspace_id = ANY(" + a.Add(sc.workspaceIDs()) + "::uuid[]) AND di.trashed_at IS NULL AND " +
+		searchq.TitleMatch("di.name", req.q, a.Add) + newer("di.id", rel, req, &a) +
+		" ORDER BY " + first + " LIMIT " + strconv.Itoa(candidateCap)
+	rows, err := tx.Query(ctx, sql, a.Values()...)
+	if err != nil {
+		return err
+	}
+	cands, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (diskRow, error) {
+		var x diskRow
+		err := r.Scan(&x.id, &x.ws, &x.parent, &x.kind, &x.name, &x.file, &x.owner, &x.mime, &x.size, &x.at, &x.score)
+		return x, err
+	})
+	if err != nil || len(cands) == 0 {
+		return err
+	}
+	ids := make([]uuid.UUID, len(cands))
+	for i, x := range cands {
+		ids[i] = x.id
+	}
+	ch, err := diskacl.Load(ctx, s.db.Q.WithTx(tx), ids)
+	if err != nil {
+		return err
+	}
+	visible := cands[:0]
+	for _, x := range cands {
+		if ch.Has(x.id) && ch.Bits(members[x.ws], &x.id).Has(perm.DiskView) {
+			visible = append(visible, x)
+		}
+	}
+	total(req, sec, int64(len(visible)))
+	if rel && req.cur != nil { // newest first is paged by the SQL above (newer)
+		cid := req.cur.id()
+		after := visible[:0]
+		for _, x := range visible {
+			if x.score < req.cur.R || (x.score == req.cur.R && bytes.Compare(x.id[:], cid[:]) < 0) {
+				after = append(after, x)
+			}
+		}
+		visible = after
+	}
+	if len(visible) > req.limit+1 {
+		visible = visible[:req.limit+1]
+	}
+	for _, x := range page(req, sec, visible, func(x diskRow) (float64, uuid.UUID) { return x.score, x.id }) {
+		ref := &v1.SearchDiskRef{ItemId: x.id.String(), ParentId: str(x.parent), Folder: x.kind == "folder", Path: diskPath(ch, members[x.ws], x.id)}
+		if x.file != nil {
+			ref.FileId, ref.Mime, ref.Size = x.file.String(), x.mime, x.size
+		}
+		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: markWords(x.name, req.q.Words), Title: x.name, WorkspaceId: x.ws.String(),
+			At: ts(x.at), AuthorId: str(x.owner), Ref: &v1.SearchHit_Disk{Disk: ref}})
+	}
+	return nil
+}
+
+// diskPath names the folders above id that m sees, the topmost first — the breadcrumbs rule of
+// GET /api/disk/items/{id}/path: above a folder they do not see, nothing is named.
+func diskPath(ch *diskacl.Chains, m perm.Member, id uuid.UUID) []string {
+	chain := ch.Path(id)
+	if len(chain) < 2 {
+		return nil
+	}
+	chain = chain[:len(chain)-1]
+	start := 0
+	for i, it := range chain {
+		if !ch.Bits(m, &it.ID).Has(perm.DiskView) {
+			start = i + 1
+		}
+	}
+	out := make([]string, 0, len(chain)-start)
+	for _, it := range chain[start:] {
+		out = append(out, it.Name)
+	}
+	return out
 }

@@ -14,14 +14,14 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/search.proto.
  */
 export const file_calaba_v1_search: GenFile = /*@__PURE__*/
-  fileDesc("ChZjYWxhYmEvdjEvc2VhcmNoLnByb3RvEgljYWxhYmEudjEiuAEKDVNlYXJjaFJlcXVlc3QSCQoBcRgBIAEoCRINCgVzY29wZRgCIAEoCRIkCgV0eXBlcxgDIAMoDjIVLmNhbGFiYS52MS5TZWFyY2hUeXBlEg0KBWxpbWl0GAQgASgNEiMKBHR5cGUYBSABKA4yFS5jYWxhYmEudjEuU2VhcmNoVHlwZRIOCgZjdXJzb3IYBiABKAkSIwoEc29ydBgHIAEoDjIVLmNhbGFiYS52MS5TZWFyY2hTb3J0IjwKDlNlYXJjaFJlc3BvbnNlEioKCHNlY3Rpb25zGAEgAygLMhguY2FsYWJhLnYxLlNlYXJjaFNlY3Rpb24imQEKDVNlYXJjaFNlY3Rpb24SIwoEdHlwZRgBIAEoDjIVLmNhbGFiYS52MS5TZWFyY2hUeXBlEiMKBWl0ZW1zGAIgAygLMhQuY2FsYWJhLnYxLlNlYXJjaEhpdBIWCg50b3RhbF9lc3RpbWF0ZRgDIAEoDRITCgtuZXh0X2N1cnNvchgEIAEoCRIRCgl0aW1lZF9vdXQYBSABKAgi+QMKCVNlYXJjaEhpdBIPCgdzbmlwcGV0GAEgASgJEg0KBXRpdGxlGAIgASgJEhQKDHdvcmtzcGFjZV9pZBgDIAEoCRImCgJhdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJYXV0aG9yX2lkGAUgASgJEi4KB21lc3NhZ2UYCiABKAsyGy5jYWxhYmEudjEuU2VhcmNoTWVzc2FnZVJlZkgAEjcKDHRhc2tfY29tbWVudBgLIAEoCzIfLmNhbGFiYS52MS5TZWFyY2hUYXNrQ29tbWVudFJlZkgAEigKBHRhc2sYDCABKAsyGC5jYWxhYmEudjEuU2VhcmNoVGFza1JlZkgAEioKBWV2ZW50GA0gASgLMhkuY2FsYWJhLnYxLlNlYXJjaEV2ZW50UmVmSAASKAoEZmlsZRgOIAEoCzIYLmNhbGFiYS52MS5TZWFyY2hGaWxlUmVmSAASKwoEbm90ZRgPIAEoCzIbLmNhbGFiYS52MS5TZWFyY2hNZXNzYWdlUmVmSAASNAoKdHJhbnNjcmlwdBgQIAEoCzIeLmNhbGFiYS52MS5TZWFyY2hUcmFuc2NyaXB0UmVmSAASKAoEd2lraRgRIAEoCzIYLmNhbGFiYS52MS5TZWFyY2hXaWtpUmVmSABCBQoDcmVmIjcKEFNlYXJjaE1lc3NhZ2VSZWYSEgoKbWVzc2FnZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJInIKFFNlYXJjaFRhc2tDb21tZW50UmVmEhIKCm1lc3NhZ2VfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRIPCgd0YXNrX2lkGAMgASgJEhAKCHRhc2tfa2V5GAQgASgJEhIKCnRhc2tfdGl0bGUYBSABKAkigwEKDVNlYXJjaFRhc2tSZWYSDwoHdGFza19pZBgBIAEoCRIQCghib2FyZF9pZBgCIAEoCRILCgNrZXkYAyABKAkSLwoLc3RhdHVzX3R5cGUYBCABKA4yGi5jYWxhYmEudjEuQm9hcmRTdGF0dXNUeXBlEhEKCWtleV9tYXRjaBgFIAEoCCKwAQoOU2VhcmNoRXZlbnRSZWYSEAoIZXZlbnRfaWQYASABKAkSNAoQb2NjdXJyZW5jZV9zdGFydBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoOb2NjdXJyZW5jZV9lbmQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3Jvb21faWQYBCABKAkSEQoJcmVjdXJyaW5nGAUgASgIImEKDVNlYXJjaEZpbGVSZWYSDwoHZmlsZV9pZBgBIAEoCRISCgptZXNzYWdlX2lkGAIgASgJEg8KB3Jvb21faWQYAyABKAkSDAoEbWltZRgEIAEoCRIMCgRzaXplGAUgASgDImMKE1NlYXJjaFRyYW5zY3JpcHRSZWYSFAoMcmVjb3JkaW5nX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJb2Zmc2V0X21zGAMgASgDEhIKCm1lc3NhZ2VfaWQYBCABKAkiLgoNU2VhcmNoV2lraVJlZhIPCgdwYWdlX2lkGAEgASgJEgwKBGljb24YAiABKAkq8gEKClNlYXJjaFR5cGUSGwoXU0VBUkNIX1RZUEVfVU5TUEVDSUZJRUQQABIYChRTRUFSQ0hfVFlQRV9NRVNTQUdFUxABEh0KGVNFQVJDSF9UWVBFX1RBU0tfQ09NTUVOVFMQAhIVChFTRUFSQ0hfVFlQRV9UQVNLUxADEhYKElNFQVJDSF9UWVBFX0VWRU5UUxAEEhUKEVNFQVJDSF9UWVBFX0ZJTEVTEAUSFQoRU0VBUkNIX1RZUEVfTk9URVMQBhIbChdTRUFSQ0hfVFlQRV9UUkFOU0NSSVBUUxAHEhQKEFNFQVJDSF9UWVBFX1dJS0kQCCpZCgpTZWFyY2hTb3J0EhsKF1NFQVJDSF9TT1JUX1VOU1BFQ0lGSUVEEAASGQoVU0VBUkNIX1NPUlRfUkVMRVZBTkNFEAESEwoPU0VBUkNIX1NPUlRfTkVXEAJCmQEKDWNvbS5jYWxhYmEudjFCC1NlYXJjaFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_boards]);
+  fileDesc("ChZjYWxhYmEvdjEvc2VhcmNoLnByb3RvEgljYWxhYmEudjEiuAEKDVNlYXJjaFJlcXVlc3QSCQoBcRgBIAEoCRINCgVzY29wZRgCIAEoCRIkCgV0eXBlcxgDIAMoDjIVLmNhbGFiYS52MS5TZWFyY2hUeXBlEg0KBWxpbWl0GAQgASgNEiMKBHR5cGUYBSABKA4yFS5jYWxhYmEudjEuU2VhcmNoVHlwZRIOCgZjdXJzb3IYBiABKAkSIwoEc29ydBgHIAEoDjIVLmNhbGFiYS52MS5TZWFyY2hTb3J0IjwKDlNlYXJjaFJlc3BvbnNlEioKCHNlY3Rpb25zGAEgAygLMhguY2FsYWJhLnYxLlNlYXJjaFNlY3Rpb24imQEKDVNlYXJjaFNlY3Rpb24SIwoEdHlwZRgBIAEoDjIVLmNhbGFiYS52MS5TZWFyY2hUeXBlEiMKBWl0ZW1zGAIgAygLMhQuY2FsYWJhLnYxLlNlYXJjaEhpdBIWCg50b3RhbF9lc3RpbWF0ZRgDIAEoDRITCgtuZXh0X2N1cnNvchgEIAEoCRIRCgl0aW1lZF9vdXQYBSABKAgiowQKCVNlYXJjaEhpdBIPCgdzbmlwcGV0GAEgASgJEg0KBXRpdGxlGAIgASgJEhQKDHdvcmtzcGFjZV9pZBgDIAEoCRImCgJhdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJYXV0aG9yX2lkGAUgASgJEi4KB21lc3NhZ2UYCiABKAsyGy5jYWxhYmEudjEuU2VhcmNoTWVzc2FnZVJlZkgAEjcKDHRhc2tfY29tbWVudBgLIAEoCzIfLmNhbGFiYS52MS5TZWFyY2hUYXNrQ29tbWVudFJlZkgAEigKBHRhc2sYDCABKAsyGC5jYWxhYmEudjEuU2VhcmNoVGFza1JlZkgAEioKBWV2ZW50GA0gASgLMhkuY2FsYWJhLnYxLlNlYXJjaEV2ZW50UmVmSAASKAoEZmlsZRgOIAEoCzIYLmNhbGFiYS52MS5TZWFyY2hGaWxlUmVmSAASKwoEbm90ZRgPIAEoCzIbLmNhbGFiYS52MS5TZWFyY2hNZXNzYWdlUmVmSAASNAoKdHJhbnNjcmlwdBgQIAEoCzIeLmNhbGFiYS52MS5TZWFyY2hUcmFuc2NyaXB0UmVmSAASKAoEd2lraRgRIAEoCzIYLmNhbGFiYS52MS5TZWFyY2hXaWtpUmVmSAASKAoEZGlzaxgSIAEoCzIYLmNhbGFiYS52MS5TZWFyY2hEaXNrUmVmSABCBQoDcmVmIjcKEFNlYXJjaE1lc3NhZ2VSZWYSEgoKbWVzc2FnZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJInIKFFNlYXJjaFRhc2tDb21tZW50UmVmEhIKCm1lc3NhZ2VfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRIPCgd0YXNrX2lkGAMgASgJEhAKCHRhc2tfa2V5GAQgASgJEhIKCnRhc2tfdGl0bGUYBSABKAkigwEKDVNlYXJjaFRhc2tSZWYSDwoHdGFza19pZBgBIAEoCRIQCghib2FyZF9pZBgCIAEoCRILCgNrZXkYAyABKAkSLwoLc3RhdHVzX3R5cGUYBCABKA4yGi5jYWxhYmEudjEuQm9hcmRTdGF0dXNUeXBlEhEKCWtleV9tYXRjaBgFIAEoCCKwAQoOU2VhcmNoRXZlbnRSZWYSEAoIZXZlbnRfaWQYASABKAkSNAoQb2NjdXJyZW5jZV9zdGFydBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoOb2NjdXJyZW5jZV9lbmQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3Jvb21faWQYBCABKAkSEQoJcmVjdXJyaW5nGAUgASgIImEKDVNlYXJjaEZpbGVSZWYSDwoHZmlsZV9pZBgBIAEoCRISCgptZXNzYWdlX2lkGAIgASgJEg8KB3Jvb21faWQYAyABKAkSDAoEbWltZRgEIAEoCRIMCgRzaXplGAUgASgDImMKE1NlYXJjaFRyYW5zY3JpcHRSZWYSFAoMcmVjb3JkaW5nX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJb2Zmc2V0X21zGAMgASgDEhIKCm1lc3NhZ2VfaWQYBCABKAkiPAoNU2VhcmNoV2lraVJlZhIPCgdwYWdlX2lkGAEgASgJEgwKBGljb24YAiABKAkSDAoEcGF0aBgDIAMoCSJ+Cg1TZWFyY2hEaXNrUmVmEg8KB2l0ZW1faWQYASABKAkSEQoJcGFyZW50X2lkGAIgASgJEg4KBmZvbGRlchgDIAEoCBIPCgdmaWxlX2lkGAQgASgJEgwKBG1pbWUYBSABKAkSDAoEc2l6ZRgGIAEoAxIMCgRwYXRoGAcgAygJKogCCgpTZWFyY2hUeXBlEhsKF1NFQVJDSF9UWVBFX1VOU1BFQ0lGSUVEEAASGAoUU0VBUkNIX1RZUEVfTUVTU0FHRVMQARIdChlTRUFSQ0hfVFlQRV9UQVNLX0NPTU1FTlRTEAISFQoRU0VBUkNIX1RZUEVfVEFTS1MQAxIWChJTRUFSQ0hfVFlQRV9FVkVOVFMQBBIVChFTRUFSQ0hfVFlQRV9GSUxFUxAFEhUKEVNFQVJDSF9UWVBFX05PVEVTEAYSGwoXU0VBUkNIX1RZUEVfVFJBTlNDUklQVFMQBxIUChBTRUFSQ0hfVFlQRV9XSUtJEAgSFAoQU0VBUkNIX1RZUEVfRElTSxAJKlkKClNlYXJjaFNvcnQSGwoXU0VBUkNIX1NPUlRfVU5TUEVDSUZJRUQQABIZChVTRUFSQ0hfU09SVF9SRUxFVkFOQ0UQARITCg9TRUFSQ0hfU09SVF9ORVcQAkKZAQoNY29tLmNhbGFiYS52MUILU2VhcmNoUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_boards]);
 
 /**
  * GET /api/search?q=&scope=&types=&type=&limit=&cursor=&sort= — the parameters travel in the
  * query string; this message documents them (the endpoint has no body).
  * Rate limit per user (30 at once, one per second): 429 RATE_LIMITED.
  * Bots: allowed by the same rules, never the notes section. Guests: what their roles show (no
- * boards, no calendar).
+ * boards, no calendar; wiki pages and Disk items only where they were given access).
  *
  * @generated from message calaba.v1.SearchRequest
  */
@@ -30,7 +30,7 @@ export type SearchRequest = Message<"calaba.v1.SearchRequest"> & {
    * 1..200 characters. Words are matched by stem (russian) and as written (simple); the last
    * word of 2+ characters also as a prefix («рел» finds «релиз»); "quoted phrase", -excluded and
    * OR work as in websearch_to_tsquery. Short fields (task and event titles, file names) also
-   * match with typos and inside words (pg_trgm). A task key (ABC-12) finds that task first.
+   * match with typos and inside words (pg_trgm); Disk items match by name only. A task key (ABC-12) finds that task first.
    * A query with no word left after removing punctuation: 422 VALIDATION_FAILED (field q).
    *
    * @generated from field: string q = 1;
@@ -164,15 +164,16 @@ export const SearchSectionSchema: GenMessage<SearchSection> = /*@__PURE__*/
 export type SearchHit = Message<"calaba.v1.SearchHit"> & {
   /**
    * The highlighted fragment: of the message text, the task description (or title), the event
-   * description (or title), the file name, the transcript segment.
+   * description (or title), the file name, the transcript segment, the page's text (or title),
+   * the Disk item's name.
    *
    * @generated from field: string snippet = 1;
    */
   snippet: string;
 
   /**
-   * The object's name: task title, event title, file name; empty for messages, notes and
-   * transcripts (the client names the room itself).
+   * The object's name: task title, event title, file name, page title, Disk item name; empty
+   * for messages, notes and transcripts (the client names the room itself).
    *
    * @generated from field: string title = 2;
    */
@@ -187,7 +188,8 @@ export type SearchHit = Message<"calaba.v1.SearchHit"> & {
 
   /**
    * When: the message's creation, the task's last update, the event occurrence's start (see
-   * SearchEventRef), the file's upload, the recording's start.
+   * SearchEventRef), the file's upload, the recording's start, the page's or Disk item's last
+   * change.
    *
    * @generated from field: google.protobuf.Timestamp at = 4;
    */
@@ -195,7 +197,8 @@ export type SearchHit = Message<"calaba.v1.SearchHit"> & {
 
   /**
    * Author: of the message (the attachment's message, the comment), the task's creator, the
-   * event's organizer, who started the recording. Empty when unknown.
+   * event's organizer, who started the recording, the page's last editor, the Disk item's owner.
+   * Empty when unknown.
    *
    * @generated from field: string author_id = 5;
    */
@@ -252,6 +255,12 @@ export type SearchHit = Message<"calaba.v1.SearchHit"> & {
      */
     value: SearchWikiRef;
     case: "wiki";
+  } | {
+    /**
+     * @generated from field: calaba.v1.SearchDiskRef disk = 18;
+     */
+    value: SearchDiskRef;
+    case: "disk";
   } | { case: undefined; value?: undefined };
 };
 
@@ -505,6 +514,15 @@ export type SearchWikiRef = Message<"calaba.v1.SearchWikiRef"> & {
    * @generated from field: string icon = 2;
    */
   icon: string;
+
+  /**
+   * The titles of the pages above it that the caller sees, the topmost first (like
+   * GET /api/wiki/pages/{id}/path: above a page they do not see, nothing is named). Empty = a
+   * top-level page (or one under pages hidden from the caller).
+   *
+   * @generated from field: repeated string path = 3;
+   */
+  path: string[];
 };
 
 /**
@@ -515,8 +533,69 @@ export const SearchWikiRefSchema: GenMessage<SearchWikiRef> = /*@__PURE__*/
   messageDesc(file_calaba_v1_search, 10);
 
 /**
+ * A Disk folder or file (ADR-0094): open Disk at parent_id ("" = the root) with the item
+ * selected; a file can also be previewed or downloaded through GET /api/files/{file_id}.
+ *
+ * @generated from message calaba.v1.SearchDiskRef
+ */
+export type SearchDiskRef = Message<"calaba.v1.SearchDiskRef"> & {
+  /**
+   * @generated from field: string item_id = 1;
+   */
+  itemId: string;
+
+  /**
+   * @generated from field: string parent_id = 2;
+   */
+  parentId: string;
+
+  /**
+   * @generated from field: bool folder = 3;
+   */
+  folder: boolean;
+
+  /**
+   * files only
+   *
+   * @generated from field: string file_id = 4;
+   */
+  fileId: string;
+
+  /**
+   * files only
+   *
+   * @generated from field: string mime = 5;
+   */
+  mime: string;
+
+  /**
+   * files only
+   *
+   * @generated from field: int64 size = 6;
+   */
+  size: bigint;
+
+  /**
+   * The names of the folders above the item that the caller sees, the topmost first (like
+   * GET /api/disk/items/{id}/path: above a folder they do not see, nothing is named). Empty =
+   * the item lies at the root (or under folders hidden from the caller).
+   *
+   * @generated from field: repeated string path = 7;
+   */
+  path: string[];
+};
+
+/**
+ * Describes the message calaba.v1.SearchDiskRef.
+ * Use `create(SearchDiskRefSchema)` to create a new message.
+ */
+export const SearchDiskRefSchema: GenMessage<SearchDiskRef> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_search, 11);
+
+/**
  * The kind of a section and of its hits. In the query string a type is written in lower case
- * without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki.
+ * without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki,
+ * disk.
  *
  * @generated from enum calaba.v1.SearchType
  */
@@ -581,6 +660,13 @@ export enum SearchType {
    * @generated from enum value: SEARCH_TYPE_WIKI = 8;
    */
   WIKI = 8,
+
+  /**
+   * live Disk folders and files the caller sees (DISK_VIEW), by name
+   *
+   * @generated from enum value: SEARCH_TYPE_DISK = 9;
+   */
+  DISK = 9,
 }
 
 /**
@@ -610,7 +696,7 @@ export enum SearchSort {
   RELEVANCE = 1,
 
   /**
-   * newest first (by creation: message, task, event, file)
+   * newest first (by creation: message, task, event, file, page, Disk item)
    *
    * @generated from enum value: SEARCH_SORT_NEW = 2;
    */
