@@ -11,6 +11,7 @@ package bots
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -94,6 +95,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	handle("POST /api/workspaces/{id}/bots", s.create)
 	handle("GET /api/workspaces/{id}/bots", s.list)
 	handle("POST /api/workspaces/{id}/bots/add", s.add)
+	handle("PATCH /api/workspaces/{id}/bots/{botId}", s.update)
 	handle("DELETE /api/workspaces/{id}/bots/{botId}", s.remove)
 	handle("POST /api/workspaces/{id}/bots/{botId}/token", s.reissue)
 	handle("DELETE /api/workspaces/{id}/bots/{botId}/token", s.revoke)
@@ -135,6 +137,10 @@ func BotPB(b sqlc.Bot, u sqlc.User, cmds []sqlc.BotCommand, manage bool) *v1.Bot
 	}
 	if manage {
 		out.Webhook = webhookPB(b)
+		out.ActsAsOwner = b.ActsAsOwner // ADR-0106: seen like the webhook
+		if b.ActsAsOwnerSince != nil {
+			out.ActsAsOwnerSince = timestamppb.New(*b.ActsAsOwnerSince)
+		}
 	}
 	return out
 }
@@ -403,6 +409,41 @@ func (s *Service) homeBot(r *http.Request) (sqlc.Bot, error) {
 		return b, httpx.Forbidden("the bot is managed in the workspace where it was created")
 	}
 	return b, nil
+}
+
+// update: PATCH /api/workspaces/{id}/bots/{botId} (ADR-0106), homeBot rules. acts_as_owner is
+// the owner's own decision: a MANAGE_BOTS member who is not the owner gets 403
+// ON_BEHALF_OWNER_ONLY (bots never get here: the route is botDeny, and closed on behalf).
+func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
+	b, err := s.homeBot(r)
+	if err != nil {
+		return err
+	}
+	var req v1.UpdateBotRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	me := identity(r)
+	if req.ActsAsOwner != nil {
+		if me.Machine() || b.OwnerUserID != me.UserID {
+			return auth.ErrOnBehalfOwnerOnly
+		}
+		on := req.GetActsAsOwner()
+		_, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Bot, error) {
+			return guarded.SetBotActsAsOwner(r.Context(), sqlc.SetBotActsAsOwnerParams{UserID: b.UserID, On: on})
+		})
+		if err != nil {
+			return err
+		}
+		slog.InfoContext(r.Context(), "bot acts_as_owner", "bot_id", b.UserID, "owner_id", me.UserID, "on", on)
+		s.announce(r.Context(), b.UserID)
+	}
+	pb, err := s.pb(r.Context(), b.UserID, true)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.UpdateBotResponse{Bot: pb})
+	return nil
 }
 
 func (s *Service) reissue(w http.ResponseWriter, r *http.Request) error {
@@ -675,8 +716,16 @@ func (s *Service) profile(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// The card does not reveal where the bot lives. Its owner learns it is theirs and whether
+	// it acts on their behalf (ADR-0106: the switch is in the card).
 	pb := BotPB(b, u, cmds, false)
-	pb.OwnerUserId, pb.WorkspaceId = "", "" // the card does not reveal where the bot lives
+	pb.OwnerUserId, pb.WorkspaceId = "", ""
+	if me := identity(r); b.OwnerUserID == me.UserID && !me.Machine() {
+		pb.OwnerUserId, pb.ActsAsOwner = me.UserID.String(), b.ActsAsOwner
+		if b.ActsAsOwnerSince != nil {
+			pb.ActsAsOwnerSince = timestamppb.New(*b.ActsAsOwnerSince)
+		}
+	}
 	httpx.Write(w, http.StatusOK, &v1.GetBotMeResponse{Bot: pb})
 	return nil
 }

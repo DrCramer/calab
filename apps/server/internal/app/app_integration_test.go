@@ -240,6 +240,8 @@ type client struct {
 	token string
 	ip    string // sent as X-Forwarded-For (the test server trusts loopback)
 	lang  string // Accept-Language, if set
+	// header: extra request headers (e.g. Calab-On-Behalf, ADR-0106).
+	header http.Header
 	// lastBody is the raw body of the last response (error bodies: see apiErr).
 	lastBody []byte
 }
@@ -263,6 +265,9 @@ func (c *client) do(method, path string, in, out proto.Message) int {
 	}
 	if c.lang != "" {
 		req.Header.Set("Accept-Language", c.lang)
+	}
+	for k, v := range c.header {
+		req.Header[k] = v
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

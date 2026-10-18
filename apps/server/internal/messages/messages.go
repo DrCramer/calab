@@ -464,6 +464,10 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	via := auth.ViaBot(r.Context()) // ADR-0106: the owner's message, on the bot's message limit
+	if err := h.botOnBehalf(r.Context(), via); err != nil {
+		return err
+	}
 	content := req.GetContent()
 	if sticker == nil {
 		if content, err = resolveNicks(r.Context(), h.db.Q, content, acc, uid(r)); err != nil { // ADR-0077
@@ -516,6 +520,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		var err error
 		params := sqlc.InsertMessageParams{
 			RoomID: roomID, AuthorID: uid(r), Content: content, ReplyToID: replyTo, Nonce: nonce, InlineKeyboard: keyboard,
+			ViaBotID: via,
 		}
 		if sticker != nil {
 			params.StickerID = &sticker.Sticker.ID

@@ -96,6 +96,10 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	via := auth.ViaBot(ctx) // ADR-0106
+	if err := h.botOnBehalf(ctx, via); err != nil {
+		return err
+	}
 
 	// A copy of a copy points at the original (one level), keeping its author and time.
 	origin, author, sentAt := &m.ID, &m.AuthorID, &m.CreatedAt
@@ -117,6 +121,7 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 		msg, err = q.InsertForwardedMessage(ctx, sqlc.InsertForwardedMessageParams{
 			RoomID: toID, AuthorID: me, Content: m.Content, StickerID: m.StickerID, EmbedsHidden: m.EmbedsHidden,
 			Kind: m.Kind, Payload: m.Payload, ForwardedFrom: origin, ForwardAuthorID: author, ForwardSentAt: sentAt,
+			ViaBotID: via,
 		})
 		if err != nil {
 			return err
@@ -189,6 +194,15 @@ func (h *Handlers) forwardable(ctx context.Context, m sqlc.Message, src perm.Roo
 
 // botSend applies the limits of a bot's message (ADR-0031): a person may block it in a DM,
 // and BOT_MESSAGES_PER_MIN.
+// botOnBehalf charges a message written on behalf of a bot's owner (via non-nil) to the bot's
+// message limit (ADR-0106 §6); the owner's own limits apply as to any message of theirs.
+func (h *Handlers) botOnBehalf(ctx context.Context, via *uuid.UUID) error {
+	if via == nil || h.BotLimiter == nil {
+		return nil
+	}
+	return h.BotLimiter.Take(ctx, via.String())
+}
+
 func (h *Handlers) botSend(ctx context.Context, bot uuid.UUID, acc perm.RoomAccess) error {
 	if acc.DM {
 		for _, u := range acc.Members {

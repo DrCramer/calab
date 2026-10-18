@@ -152,6 +152,7 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/workspaces/{id}/backgrounds/{bgId}":                                    scopeWorkspace,
 	"DELETE /api/workspaces/{id}/badges/{badgeId}":                                      scopeWorkspace,
 	"DELETE /api/workspaces/{id}/bans/{userId}":                                         scopeWorkspace,
+	"PATCH /api/workspaces/{id}/bots/{botId}":                                           scopeWorkspace, // ADR-0106
 	"DELETE /api/workspaces/{id}/bots/{botId}":                                          scopeWorkspace,
 	"DELETE /api/workspaces/{id}/bots/{botId}/avatar":                                   scopeWorkspace,
 	"DELETE /api/workspaces/{id}/bots/{botId}/token":                                    scopeWorkspace,

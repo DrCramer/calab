@@ -17,8 +17,8 @@ API, доступный ботам** (не узкий список разреш�
 ### 1. Настройка
 - `bots.acts_as_owner boolean NOT NULL DEFAULT false`, `bots.acts_as_owner_since timestamptz` (миграция
   `00100`). Протокол: `Bot.acts_as_owner`, `Bot.acts_as_owner_since` — видны тем же, кому `webhook`: самому
-  боту, его владельцу и `MANAGE_BOTS` домашнего пространства (в публичной карточке `GET /api/bots/{ref}` —
-  только владельцу).
+  боту, его владельцу и `MANAGE_BOTS` домашнего пространства; в публичной карточке `GET /api/bots/{ref}`
+  владелец бота получает `owner_user_id` (свой) и `acts_as_owner`, остальные — как раньше.
 - `PATCH /api/workspaces/{id}/bots/{botId}` `UpdateBotRequest { optional bool acts_as_owner }` → `UpdateBotResponse
   { bot }`, домашнее пространство бота. Поле меняет **только `owner_user_id`**; администратор с `MANAGE_BOTS`
   получает `403` `reason: ON_BEHALF_OWNER_ONLY`. Сам бот (и запрос «от имени») маршрут не вызывает — он
@@ -28,7 +28,7 @@ API, доступный ботам** (не узкий список разреш�
 
 ### 2. Запрос «от имени»
 - REST-запрос с токеном бота и заголовком `Calab-On-Behalf: owner`. Значение — только `owner` (иначе `400
-  VALIDATION`, `field: Calab-On-Behalf`). Без заголовка ничего не меняется: бот действует сам за себя.
+  ON_BEHALF_INVALID`). Без заголовка ничего не меняется: бот действует сам за себя.
 - `auth.Require` проверяет токен бота как обычно (отозванный/заменённый — `401`), затем: бот жив и
   `acts_as_owner` (иначе `403 ON_BEHALF_DISABLED`); владелец — живой человек, не отключён, не гость
   (иначе `403 ON_BEHALF_OWNER_INACTIVE`). Человеческий токен с заголовком — `403 ON_BEHALF_NOT_BOT`.

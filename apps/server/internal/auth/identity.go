@@ -118,6 +118,9 @@ func IdentityError(p identitypolicy.Principal, d identitypolicy.Decision, err er
 
 // CheckWorkspace supplements resource permissions with fresh database policy state.
 func (s *Service) CheckWorkspace(ctx context.Context, id Identity, ws uuid.UUID, op identitypolicy.Operation) error {
+	if id.OnBehalf() {
+		return s.checkOnBehalfWorkspace(ctx, s.db.Q, id, ws) // ADR-0106: a machine, the owner's membership
+	}
 	if id.IsBot {
 		suspended, err := s.db.Q.WorkspaceSuspended(ctx, ws)
 		if err != nil {
@@ -141,6 +144,14 @@ func (s *Service) CheckWorkspace(ctx context.Context, id Identity, ws uuid.UUID,
 func (s *Service) CheckGlobal(ctx context.Context, id Identity, op identitypolicy.Operation) error {
 	if id.IsBot {
 		return ErrBotNotAllowed
+	}
+	if id.OnBehalf() {
+		// ADR-0106: the owner's account-wide reads and writes (DMs, personal sticker packs) are
+		// open; account management, linking and product administration need the person.
+		if op == identitypolicy.GlobalRead || op == identitypolicy.GlobalWrite {
+			return nil
+		}
+		return ErrOnBehalfRoute
 	}
 	p := id.Principal
 	if p.SessionID == uuid.Nil {
@@ -257,6 +268,9 @@ func (s *Service) LocalReauthenticate(ctx context.Context, id Identity, password
 // CheckAdmission protects the narrow membership bootstrap. It never mints assurance and
 // refuses legacy admission capabilities when SSO is required.
 func (s *Service) CheckAdmission(ctx context.Context, id Identity, ws uuid.UUID) error {
+	if id.OnBehalf() {
+		return ErrOnBehalfRoute // joining a workspace is the person's own consent (ADR-0106)
+	}
 	if err := s.CheckGlobal(ctx, id, identitypolicy.GlobalWrite); err != nil {
 		return err
 	}

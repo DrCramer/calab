@@ -109,7 +109,8 @@ message AddBotResponse {
 }
 
 // GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
-// public card (no owner, home workspace, token prefix or webhook).
+// public card (no owner, home workspace, token prefix or webhook; the bot's owner gets
+// owner_user_id and acts_as_owner, ADR-0106).
 message GetBotMeResponse {
   Bot bot = 1;
 }

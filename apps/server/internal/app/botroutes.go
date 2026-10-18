@@ -6,6 +6,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/httpx"
 )
 
 // botAccess says whether a bot token (ADR-0031) may call a route.
@@ -349,6 +350,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/bots":                  botDeny,
 	"GET /api/workspaces/{id}/bots":                   botDeny,
 	"POST /api/workspaces/{id}/bots/add":              botDeny,
+	"PATCH /api/workspaces/{id}/bots/{botId}":         botDeny, // ADR-0106: the owner's acts_as_owner switch
 	"DELETE /api/workspaces/{id}/bots/{botId}":        botDeny,
 	"POST /api/workspaces/{id}/bots/{botId}/token":    botDeny,
 	"DELETE /api/workspaces/{id}/bots/{botId}/token":  botDeny,
@@ -598,16 +600,101 @@ var botAudited = map[string]bool{
 	"DELETE /api/rooms/{id}":                               true,
 }
 
-// botGate lets bot identities through only on botAllow routes (by the matched pattern).
-// It runs inside auth.Require. Bot calls of botAudited routes are logged with the bot's owner.
+// onBehalfAccess classifies a route for a bot acting on behalf of its owner (ADR-0106).
+type onBehalfAccess int
+
+const (
+	// onBehalfOpen: a botDeny route that ADR-0051 §5 closed only because the decision is a
+	// person's; the owner's bot makes it on the owner's behalf.
+	onBehalfOpen onBehalfAccess = iota + 1
+	// onBehalfClosed: a botAllow route that stays closed on behalf of the owner: the person's
+	// account, the bot's own settings, voice and calls.
+	onBehalfClosed
+)
+
+// onBehalfRoutes is the route tag of requests on behalf of the owner (ADR-0106 §3): such a
+// request may call every botAllow route except onBehalfClosed ones, and the onBehalfOpen ones.
+// Everything else (botDeny, botPublic, unlisted) is 403 ON_BEHALF_ROUTE: the account (password,
+// email, sessions, devices, OAuth, profile), bot management (acts_as_owner included: no
+// self-escalation), billing, workspace deletion and ownership, superadmin. TestOnBehalfRouteTable
+// keeps the table consistent with botRoutes.
+var onBehalfRoutes = map[string]onBehalfAccess{
+	// a person's decision (ADR-0049, ADR-0051 §5)
+	"POST /api/tasks/{id}/approval": onBehalfOpen,
+	// the owner's account: the profile and its picture are the person's
+	"PATCH /api/me":       onBehalfClosed,
+	"POST /api/me/avatar": onBehalfClosed,
+	// the bot's own routes: it calls them as itself
+	"GET /api/bots/me":            onBehalfClosed,
+	"PATCH /api/bots/me":          onBehalfClosed,
+	"PUT /api/bots/me/commands":   onBehalfClosed,
+	"GET /api/bots/me/webhook":    onBehalfClosed,
+	"PUT /api/bots/me/webhook":    onBehalfClosed,
+	"DELETE /api/bots/me/webhook": onBehalfClosed,
+	// mailbox hosting (ADR-0101): an allowlisted bot's own job
+	"POST /api/mailbox/hosting-check":  onBehalfClosed,
+	"POST /api/mailbox/password-reset": onBehalfClosed,
+	// voice and calls: a LiveKit participant "as the owner" would fake the person's voice and
+	// session; recording keeps MANAGE_RECORDINGS of the bot (ADR-0051 §4)
+	"POST /api/rooms/{id}/join":                        onBehalfClosed,
+	"POST /api/rooms/{id}/voice/leave":                 onBehalfClosed,
+	"POST /api/rooms/{id}/stream/request":              onBehalfClosed,
+	"POST /api/rooms/{id}/camera/request":              onBehalfClosed,
+	"POST /api/rooms/{id}/camera/stop":                 onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/stop-camera":  onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/allow-camera": onBehalfClosed,
+	"PATCH /api/voice/self":                            onBehalfClosed,
+	"PATCH /api/rooms/{id}/voice-status":               onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/mute":         onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/unmute":       onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/disconnect":   onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/stop-stream":  onBehalfClosed,
+	"POST /api/rooms/{id}/voice/{userId}/move":         onBehalfClosed,
+	"POST /api/rooms/{id}/sounds/play":                 onBehalfClosed,
+	"POST /api/rooms/{id}/calls":                       onBehalfClosed,
+	"DELETE /api/rooms/{id}/calls/{cid}":               onBehalfClosed,
+	"POST /api/rooms/{id}/recording/start":             onBehalfClosed,
+	"POST /api/rooms/{id}/recording/stop":              onBehalfClosed,
+}
+
+// onBehalfAllowed reports whether a request on behalf of the owner may call the route.
+func onBehalfAllowed(pattern string) bool {
+	switch onBehalfRoutes[pattern] {
+	case onBehalfOpen:
+		return true
+	case onBehalfClosed:
+		return false
+	}
+	return botRoutes[pattern] == botAllow
+}
+
+// botGate lets bot identities through only on botAllow routes (by the matched pattern), and
+// requests on behalf of a bot's owner only on the routes onBehalfAllowed gives (ADR-0106).
+// It runs inside auth.Require. Bot calls of botAudited routes and every mutating call on
+// behalf of an owner are logged as "bot action" with the bot's owner.
 func botGate(q *sqlc.Queries, next http.Handler) http.Handler {
 	deny := auth.NoBots(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := auth.FromContext(r.Context())
+		if ok && id.OnBehalf() {
+			if !onBehalfAllowed(r.Pattern) {
+				httpx.WriteError(w, r, auth.ErrOnBehalfRoute)
+				return
+			}
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				next.ServeHTTP(w, r)
+				return
+			}
+			sw := &auditWriter{ResponseWriter: w}
+			next.ServeHTTP(sw, r)
+			slog.InfoContext(r.Context(), "bot action", "route", r.Pattern, "path", r.URL.Path, "status", sw.code(),
+				"bot_id", id.ViaBot, "bot_owner", id.UserID, "on_behalf", true, "owner_id", id.UserID)
+			return
+		}
 		if botRoutes[r.Pattern] != botAllow {
 			deny.ServeHTTP(w, r)
 			return
 		}
-		id, ok := auth.FromContext(r.Context())
 		if !ok || !id.IsBot || !botAudited[r.Pattern] {
 			next.ServeHTTP(w, r)
 			return
@@ -619,7 +706,7 @@ func botGate(q *sqlc.Queries, next http.Handler) http.Handler {
 			owner = b.OwnerUserID.String()
 		}
 		slog.InfoContext(r.Context(), "bot action", "route", r.Pattern, "path", r.URL.Path, "status", sw.code(),
-			"bot_id", id.UserID, "bot_owner", owner)
+			"bot_id", id.UserID, "bot_owner", owner, "on_behalf", false)
 	})
 }
 
@@ -684,6 +771,31 @@ func BotRouteAccess(pattern string) string {
 		return "deny"
 	}
 	return ""
+}
+
+// OnBehalfRouteAccess reports how a request on behalf of a bot's owner may use a route (ADR-0106):
+// "open" (a botDeny route opened on behalf), "closed" (a botAllow route closed on behalf), or ""
+// (as for bots: allowed iff BotRouteAccess is "allow"). OnBehalfAllowed is the decision.
+func OnBehalfRouteAccess(pattern string) string {
+	switch onBehalfRoutes[pattern] {
+	case onBehalfOpen:
+		return "open"
+	case onBehalfClosed:
+		return "closed"
+	}
+	return ""
+}
+
+// OnBehalfAllowed reports whether a request on behalf of a bot's owner may call the route.
+func OnBehalfAllowed(pattern string) bool { return onBehalfAllowed(pattern) }
+
+// OnBehalfRoutePatterns lists the patterns of the on-behalf table (tests).
+func OnBehalfRoutePatterns() []string {
+	out := make([]string, 0, len(onBehalfRoutes))
+	for p := range onBehalfRoutes {
+		out = append(out, p)
+	}
+	return out
 }
 
 // BotAuditedPatterns lists the routes whose bot calls are logged with the bot's owner (tests:

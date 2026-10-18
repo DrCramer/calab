@@ -153,7 +153,9 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
 
-func isBot(r *http.Request) bool { return auth.MustFromContext(r.Context()).IsBot }
+// isBot: a bot, or a bot on behalf of its owner (ADR-0106): the people-only checks of the handlers
+// (the final delete, access, webhooks, take-over) stay closed to both.
+func isBot(r *http.Request) bool { return auth.MustFromContext(r.Context()).Machine() }
 
 // take spends one unit of a per-user budget (nil = unlimited).
 func take(r *http.Request, l Limiter) error {

@@ -37,12 +37,16 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 // sessions and tokens (Valkey marker + a periodic DB recheck, sessioncheck.go). With Valkey
 // down the DB decides; with both down it fails closed (503): a revoked session must not slip
 // through. Bot identities (ADR-0031) pass here; whether a route admits them is decided by
-// the route table of the app (NoBots). Bots are rate limited per bot (BotLimiter).
+// the route table of the app (NoBots). Bots are rate limited per bot (BotLimiter). A bot
+// request with Calab-On-Behalf runs as the bot's owner or is refused (ADR-0106, onbehalf.go).
 func (s *Service) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := s.authenticate(r)
 		if err == nil && id.IsBot {
-			err = s.botRequest(r.Context(), id)
+			err = s.botRequest(r.Context(), id) // on behalf of the owner too: the bot's limits (ADR-0106)
+		}
+		if err == nil {
+			id, err = s.onBehalf(r, id)
 		}
 		if err != nil {
 			httpx.WriteError(w, r, err)

@@ -76,9 +76,21 @@ type Identity struct {
 	// IsBot: authenticated with a bot token (ADR-0031); routes decide whether bots may call
 	// them (app route table, NoBots).
 	IsBot bool
+	// ViaBot: a bot's request on behalf of its owner (ADR-0106, header Calab-On-Behalf): UserID
+	// is the owner (rights, authorship), IsBot is false, SessionID is the bot's current token
+	// id, Principal is zero. The identity policy treats it as a machine (Machine), never as a
+	// session of the owner.
+	ViaBot uuid.UUID
 	// RefreshGen: the refresh generation the access token was minted for (0 = unknown / bot).
 	RefreshGen int64
 }
+
+// OnBehalf reports a bot's request on behalf of its owner (ADR-0106).
+func (id Identity) OnBehalf() bool { return id.ViaBot != uuid.Nil }
+
+// Machine reports an identity without a person's session: a bot, or a bot on behalf of its
+// owner. The identity policy (SSO proofs, sessions) never evaluates it as a session.
+func (id Identity) Machine() bool { return id.IsBot || id.OnBehalf() }
 
 // ErrInvalidToken covers every access-token failure (bad signature, expired, malformed).
 var ErrInvalidToken = errors.New("auth: invalid access token")

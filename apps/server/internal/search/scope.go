@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -115,7 +116,7 @@ func (s *Service) buildScope(ctx context.Context, req *request, user uuid.UUID, 
 		}
 		sc.wss = append(sc.wss, sp)
 	}
-	notes := req.notesAllowed(bot)
+	notes := req.notesAllowed(bot || auth.ViaBot(ctx) != nil) // notes are never searched by a bot, on behalf included (ADR-0106)
 	if !req.all && !notes {
 		return sc, nil
 	}

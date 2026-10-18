@@ -114,7 +114,13 @@ func (s *Service) WithMutation(ctx context.Context, id Identity, opt MutationOpt
 				return release, mutationSourceError(err)
 			}
 		}
-		if !id.IsBot {
+		if id.OnBehalf() {
+			// ADR-0106: the bot's row decides (the same token, the switch still on, the same
+			// owner), so turning it off or revoking the token stops a request already admitted.
+			if err := s.lockDelegation(ctx, q, id, opt.Global); err != nil {
+				return release, err
+			}
+		} else if !id.IsBot {
 			var err error
 			if opt.Global || opt.ExclusiveWorkspace {
 				_, err = q.LockIdentitySessionExclusive(ctx, sqlc.LockIdentitySessionExclusiveParams{ID: id.SessionID, UserID: id.UserID})
@@ -150,6 +156,9 @@ func (s *Service) WithMutation(ctx context.Context, id Identity, opt MutationOpt
 			}
 		}
 		for _, ws := range workspaces {
+			if opt.Admission && id.OnBehalf() {
+				return release, ErrOnBehalfRoute
+			}
 			if opt.Admission {
 				u, err := q.GetUser(ctx, id.UserID)
 				if err != nil {
@@ -168,7 +177,11 @@ func (s *Service) WithMutation(ctx context.Context, id Identity, opt MutationOpt
 				}
 				continue
 			}
-			if id.IsBot {
+			if id.OnBehalf() {
+				if err := s.checkOnBehalfWorkspace(ctx, q, id, ws); err != nil {
+					return release, err
+				}
+			} else if id.IsBot {
 				u, err := q.GetUser(ctx, id.UserID)
 				if err != nil {
 					return release, mutationSourceError(err)
@@ -223,6 +236,15 @@ func (s *Service) checkMutationGlobal(ctx context.Context, q *sqlc.Queries, id I
 		}
 		return nil
 	}
+	if id.OnBehalf() { // ADR-0106: a person's account, never product administration
+		if u.IsBot || u.IsGuest {
+			return ErrOnBehalfOwnerInactive
+		}
+		if admin {
+			return ErrOnBehalfRoute
+		}
+		return nil
+	}
 	row, err := q.GetSession(ctx, id.SessionID)
 	if err != nil {
 		return mutationSourceError(err)
@@ -260,4 +282,28 @@ func (s *Service) checkMutationGlobal(ctx context.Context, q *sqlc.Queries, id I
 		return err
 	}
 	return nil
+}
+
+// lockDelegation locks the bot of a request on behalf of its owner (exclusively for a global
+// mutation, like a bot's own) and checks the delegation again inside the transaction.
+func (s *Service) lockDelegation(ctx context.Context, q *sqlc.Queries, id Identity, global bool) error {
+	var bot sqlc.Bot
+	var err error
+	if global {
+		bot, err = q.GetBotForUpdate(ctx, id.ViaBot)
+	} else {
+		bot, err = q.LockIdentityBotShared(ctx, id.ViaBot)
+	}
+	if err != nil {
+		return mutationSourceError(err)
+	}
+	if bot.OwnerUserID != id.UserID {
+		return httpx.Unauthenticated("session revoked")
+	}
+	d, err := q.GetOnBehalfDelegation(ctx, id.ViaBot)
+	if err != nil {
+		return mutationSourceError(err)
+	}
+	return checkDelegation(bot.ActsAsOwner, bot.RevokedAt != nil, d.BotDisabled, d.OwnerActive, bot.TokenID,
+		Identity{UserID: id.ViaBot, SessionID: id.SessionID, IsBot: true})
 }

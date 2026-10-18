@@ -674,6 +674,7 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 	}
 	out.PinnedAt, out.PinnedBy = tsp(m.PinnedAt), idp(m.PinnedBy)
 	out.EmbedsHidden = m.EmbedsHidden
+	out.ViaBotId = idp(m.ViaBotID) // ADR-0106
 	if m.Kind == MessageKindSystem {
 		out.Kind = v1.MessageKind_MESSAGE_KIND_SYSTEM
 		out.System = &v1.SystemMessage{}
