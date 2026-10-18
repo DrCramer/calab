@@ -127,6 +127,9 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.mentionEveryone': '通知房间内所有人',
   'chat.mentionHere': '通知所有在线成员',
   'chat.mentionGuest': '访客',
+  'chat.mentionOutsider': '无权访问——将向其开放此卡片',
+  'chat.mentionOutsiderHint': '无权查看此看板：@提及将向其开放此卡片',
+  'chat.mentionOutsiderLocked': '只有可编辑任务的人才能@此人',
   'chat.mentionList': '提及',
   // mentions inbox (title bar)
   'chat.inboxLoadMore': '显示更多',

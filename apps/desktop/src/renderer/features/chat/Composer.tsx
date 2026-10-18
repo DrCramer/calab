@@ -6,7 +6,7 @@ import { CLOSE_HIT, CloseButton, IconButton, Tip, cx } from '../../components/ui
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { MENTION_EVENT, takeMention, type MentionRequest } from './mentionRequest';
-import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
+import { type MentionCandidate, applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
 import { systemPreview } from '../../lib/recording';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
@@ -41,6 +41,12 @@ import { namedHeif } from '../../lib/image/decode';
 import { voiceSupported, type VoiceResult } from '../../services/voiceRecorder';
 
 import { loadDraft, saveDraft } from './drafts';
+/** Task rooms: members without board access go after those with it (stable), then the usual cap of 8. */
+function rankOutsidersLast(list: MentionCandidate[], outsiders: ReadonlyMap<string, unknown>): MentionCandidate[] {
+  if (outsiders.size === 0) return list;
+  return [...list.filter((c) => !outsiders.has(c.id)), ...list.filter((c) => outsiders.has(c.id))].slice(0, 8);
+}
+
 const NO_MENTIONS: ReadonlyMap<string, string> = new Map();
 /** Field grows up to 6 lines (15 px text on a 20 px line — integer line boxes keep layout pixel-exact). */
 const MAX_FIELD_H = 6 * 20 + 16;
@@ -134,7 +140,7 @@ export function Composer({
   const options: MentionOption[] =
     mq && mq.start !== dismissed
       ? [
-          ...filterCandidates(mq.query, mentionables.candidates).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id), role: mentionables.roles.get(c.id)?.role, custom: mentionables.roles.get(c.id)?.custom })),
+          ...rankOutsidersLast(filterCandidates(mq.query, mentionables.candidates, mentionables.outsiders.size ? 100 : 8), mentionables.outsiders).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id), outsider: mentionables.outsiders.get(c.id), role: mentionables.roles.get(c.id)?.role, custom: mentionables.roles.get(c.id)?.custom })),
           // @everyone / @here only with MENTION_EVERYONE in this room (guests never have it, ADR-0016).
           ...(!can(perms, 'MENTION_EVERYONE') ? [] : filterSpecial(mq.query).map((v): MentionOption => ({ kind: 'special', v }))),
         ]
@@ -178,6 +184,7 @@ export function Composer({
 
   const pick = (o: MentionOption): void => {
     if (!mq) return;
+    if (o.kind === 'member' && o.outsider === 'locked') return;
     const name = o.kind === 'member' ? o.c.name : o.v;
     const next = applyMention(text, mq.start, caret, name);
     setText(next.text);

@@ -125,6 +125,9 @@ export const ruChat = {
   'chat.mentionEveryone': 'Уведомить всех в комнате',
   'chat.mentionHere': 'Уведомить всех, кто в сети',
   'chat.mentionGuest': 'Гость',
+  'chat.mentionOutsider': 'Нет доступа — откроем эту карточку',
+  'chat.mentionOutsiderHint': 'Не видит эту доску: упоминание откроет ему эту карточку',
+  'chat.mentionOutsiderLocked': 'Позвать может тот, кто правит задачу',
   'chat.mentionList': 'Упомянуть',
   // mentions inbox (title bar)
   'chat.inboxLoadMore': 'Показать ещё',

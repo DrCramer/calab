@@ -2260,3 +2260,11 @@ are not current phone evidence. Visual suites remain disabled.
 5. During a call, visiting permission settings must not interrupt two-way audio; a status check must not activate capture.
 6. Cross-origin pages/iframes cannot request native authorization or reuse Calab's WebKit grant. Browser/old-host behavior is unchanged.
 7. Source/mock/unsigned-build results do not replace these real-device gates; visual regression suites remain disabled.
+
+## Calling people without board access from a task chat (ADR-0076 §5)
+
+1. Task on a board where member B has no access; you can edit the task. Type `@` in the task comment field.
+2. B is listed after members with access, with an eye-off icon and «Нет доступа — откроем эту карточку»; at 390 px the caption truncates, the row stays one line.
+3. Pick B, send: the mention chip renders as usual; the task's «Наблюдатели» gains B, B gets «вас упомянули» and sees the card.
+4. As a user who cannot edit the task: B is dimmed with «Позвать может тот, кто правит задачу», and Enter/click does not insert.
+5. Guests and bots without access are not listed; ordinary chats and DMs are unchanged.
