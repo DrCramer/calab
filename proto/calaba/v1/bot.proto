@@ -43,6 +43,11 @@ message Bot {
   google.protobuf.Timestamp revoked_at = 9;
   // Set for the bot itself, its owner and MANAGE_BOTS members of its home workspace.
   BotWebhook webhook = 10;
+  // ADR-0106: the bot may act on behalf of its owner (REST requests with the header
+  // "Calab-On-Behalf: owner"); since = when the owner turned it on. Seen like webhook (the bot,
+  // its owner, MANAGE_BOTS of the home workspace); the public card shows it to the owner only.
+  bool acts_as_owner = 11;
+  google.protobuf.Timestamp acts_as_owner_since = 12;
 }
 
 // POST /api/workspaces/{id}/bots (MANAGE_BOTS, ADR-0048; plan limit `bots`, 409
@@ -78,6 +83,17 @@ message ReissueBotTokenResponse {
 // (403 elsewhere, 404 when the bot is not a member of {id}). Members see USER_UPDATE, the
 // managers BOT_UPDATE (docs/09 #87).
 message SetBotAvatarResponse {
+  Bot bot = 1;
+}
+
+// PATCH /api/workspaces/{id}/bots/{botId} (ADR-0106), the bot's home workspace: unset fields
+// stay. acts_as_owner is changed by the bot's owner only: anyone else (MANAGE_BOTS included)
+// gets 403 FORBIDDEN reason ON_BEHALF_OWNER_ONLY. Bots (on behalf or not) get 403.
+message UpdateBotRequest {
+  optional bool acts_as_owner = 1;
+}
+
+message UpdateBotResponse {
   Bot bot = 1;
 }
 

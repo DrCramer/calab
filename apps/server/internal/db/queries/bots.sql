@@ -202,3 +202,42 @@ SELECT EXISTS (SELECT 1 FROM bot_blocks WHERE user_id = $1 AND bot_user_id = $2)
 
 -- name: ListBlockedBots :many
 SELECT bot_user_id FROM bot_blocks WHERE user_id = $1 ORDER BY created_at;
+
+-- name: SetBotActsAsOwner :one
+-- ADR-0106: the owner's switch; since = when it was turned on (kept while it stays on).
+UPDATE bots SET acts_as_owner = sqlc.arg('on')::boolean,
+    acts_as_owner_since = CASE WHEN NOT sqlc.arg('on')::boolean THEN NULL
+        WHEN acts_as_owner THEN acts_as_owner_since ELSE now() END
+WHERE user_id = sqlc.arg('user_id')
+RETURNING *;
+
+-- name: GetOnBehalfDelegation :one
+-- ADR-0106: what a request "on behalf of the owner" is checked against: the bot's switch and
+-- current token, and whether its owner is a live person.
+SELECT b.acts_as_owner, b.owner_user_id, b.token_id, (b.revoked_at IS NOT NULL)::boolean AS revoked,
+    (bu.disabled_at IS NOT NULL)::boolean AS bot_disabled,
+    (o.disabled_at IS NULL AND NOT o.is_bot AND NOT o.is_guest)::boolean AS owner_active
+FROM bots b JOIN users bu ON bu.id = b.user_id JOIN users o ON o.id = b.owner_user_id
+WHERE b.user_id = sqlc.arg('bot_id');
+
+-- name: GetOnBehalfWorkspaceState :one
+-- ADR-0106: one snapshot of a workspace for a request of bot_id on behalf of owner_id: the
+-- bot's and the owner's membership, the owner's ban / directory suspension, the workspace's
+-- suspension and the identity policy a bot cannot satisfy for a person.
+SELECT (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+    EXISTS(SELECT FROM workspace_members bm WHERE bm.workspace_id = w.id AND bm.user_id = sqlc.arg('bot_id'))::boolean AS bot_member,
+    (m.user_id IS NOT NULL)::boolean AS owner_member,
+    (COALESCE(x.status = 'suspended', false) OR EXISTS(SELECT FROM workspace_bans wb
+        WHERE wb.workspace_id = w.id AND (wb.user_id = u.id OR wb.email = u.email)))::boolean AS owner_suspended,
+    COALESCE(p.mode, 'off')::text AS policy_mode,
+    (o.user_id IS NOT NULL)::boolean AS directory_required,
+    COALESCE(o.status = 'active', false)::boolean AS directory_active,
+    COALESCE(d.disabled_at IS NULL AND d.last_success_at IS NOT NULL
+        AND d.last_success_at + make_interval(secs => d.max_staleness_seconds) > clock_timestamp(), false)::boolean AS directory_fresh
+FROM workspaces w JOIN users u ON u.id = sqlc.arg('owner_id')
+LEFT JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = u.id
+LEFT JOIN workspace_identity_access x ON x.workspace_id = w.id AND x.user_id = u.id
+LEFT JOIN workspace_identity_policies p ON p.workspace_id = w.id
+LEFT JOIN workspace_directories d ON d.workspace_id = w.id
+LEFT JOIN directory_objects o ON o.workspace_id = w.id AND o.directory_id = d.id AND o.user_id = u.id
+WHERE w.id = sqlc.arg('workspace_id');

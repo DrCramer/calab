@@ -573,6 +573,8 @@ type Bot struct {
 	WebhookLastError    string
 	CreatedAt           time.Time
 	RevokedAt           *time.Time
+	ActsAsOwner         bool
+	ActsAsOwnerSince    *time.Time
 }
 
 type BotBlock struct {
@@ -970,6 +972,7 @@ type Message struct {
 	ForwardSentAt    *time.Time
 	InlineKeyboard   []byte
 	KeyboardRevision int64
+	ViaBotID         *uuid.UUID
 }
 
 type MessageAttachment struct {
@@ -1470,6 +1473,7 @@ type TaskActivity struct {
 	After     []byte
 	CreatedAt time.Time
 	RuleID    *uuid.UUID
+	ViaBotID  *uuid.UUID
 }
 
 type TaskApprover struct {

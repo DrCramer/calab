@@ -1,7 +1,8 @@
 -- name: InsertMessage :one
 -- Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision)
-VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END)
+-- via_bot_id: the bot that wrote it on behalf of its owner, the author (ADR-0106).
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END, sqlc.narg('via_bot_id'))
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
 RETURNING *;
 
@@ -226,11 +227,12 @@ RETURNING *;
 
 -- name: InsertForwardedMessage :one
 -- A forwarded copy (ADR-0033): no nonce, reply or mentions; kind/payload copy a recording card.
+-- via_bot_id: forwarded by a bot on behalf of its owner (ADR-0106).
 INSERT INTO messages (room_id, author_id, content, sticker_id, embeds_hidden, kind, payload,
-    forwarded_from, forward_author_id, forward_sent_at)
+    forwarded_from, forward_author_id, forward_sent_at, via_bot_id)
 VALUES (sqlc.arg('room_id'), sqlc.arg('author_id'), sqlc.arg('content'), sqlc.narg('sticker_id'),
     sqlc.arg('embeds_hidden'), sqlc.arg('kind'), sqlc.narg('payload'),
-    sqlc.narg('forwarded_from'), sqlc.narg('forward_author_id'), sqlc.narg('forward_sent_at'))
+    sqlc.narg('forwarded_from'), sqlc.narg('forward_author_id'), sqlc.narg('forward_sent_at'), sqlc.narg('via_bot_id'))
 RETURNING *;
 
 -- name: GetMessageShared :one

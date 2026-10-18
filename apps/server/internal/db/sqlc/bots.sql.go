@@ -30,7 +30,7 @@ func (q *Queries) BlockBot(ctx context.Context, arg BlockBotParams) error {
 const botWebhookFailing = `-- name: BotWebhookFailing :one
 UPDATE bots SET webhook_failing_since = coalesce(webhook_failing_since, now()), webhook_last_error = $2
 WHERE user_id = $1
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 type BotWebhookFailingParams struct {
@@ -58,6 +58,8 @@ func (q *Queries) BotWebhookFailing(ctx context.Context, arg BotWebhookFailingPa
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -124,7 +126,7 @@ const clearBotWebhook = `-- name: ClearBotWebhook :one
 UPDATE bots SET webhook_url = NULL, webhook_secret_enc = NULL, webhook_disabled_at = NULL,
     webhook_failing_since = NULL, webhook_last_error = ''
 WHERE user_id = $1
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 func (q *Queries) ClearBotWebhook(ctx context.Context, userID uuid.UUID) (Bot, error) {
@@ -147,6 +149,8 @@ func (q *Queries) ClearBotWebhook(ctx context.Context, userID uuid.UUID) (Bot, e
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -188,7 +192,7 @@ func (q *Queries) CountWorkspaceBots(ctx context.Context, workspaceID uuid.UUID)
 const createBot = `-- name: CreateBot :one
 INSERT INTO bots (user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 type CreateBotParams struct {
@@ -231,6 +235,8 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -336,7 +342,7 @@ func (q *Queries) DeleteUserOverridesEverywhere(ctx context.Context, userID stri
 
 const disableBotWebhook = `-- name: DisableBotWebhook :one
 UPDATE bots SET webhook_disabled_at = now() WHERE user_id = $1 AND webhook_disabled_at IS NULL
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 func (q *Queries) DisableBotWebhook(ctx context.Context, userID uuid.UUID) (Bot, error) {
@@ -359,6 +365,8 @@ func (q *Queries) DisableBotWebhook(ctx context.Context, userID uuid.UUID) (Bot,
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -405,7 +413,7 @@ func (q *Queries) FailPendingWebhookDeliveries(ctx context.Context, arg FailPend
 }
 
 const getBot = `-- name: GetBot :one
-SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at FROM bots WHERE user_id = $1
+SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since FROM bots WHERE user_id = $1
 `
 
 func (q *Queries) GetBot(ctx context.Context, userID uuid.UUID) (Bot, error) {
@@ -428,6 +436,8 @@ func (q *Queries) GetBot(ctx context.Context, userID uuid.UUID) (Bot, error) {
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -451,7 +461,7 @@ func (q *Queries) GetBotAuth(ctx context.Context, userID uuid.UUID) (GetBotAuthR
 }
 
 const getBotByUsername = `-- name: GetBotByUsername :one
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM bots b JOIN users u ON u.id = b.user_id WHERE b.username = $1
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, b.acts_as_owner, b.acts_as_owner_since, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM bots b JOIN users u ON u.id = b.user_id WHERE b.username = $1
 `
 
 type GetBotByUsernameRow struct {
@@ -479,6 +489,8 @@ func (q *Queries) GetBotByUsername(ctx context.Context, username string) (GetBot
 		&i.Bot.WebhookLastError,
 		&i.Bot.CreatedAt,
 		&i.Bot.RevokedAt,
+		&i.Bot.ActsAsOwner,
+		&i.Bot.ActsAsOwnerSince,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,
@@ -519,7 +531,7 @@ func (q *Queries) GetBotByUsername(ctx context.Context, username string) (GetBot
 }
 
 const getBotForUpdate = `-- name: GetBotForUpdate :one
-SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at FROM bots WHERE user_id = $1 FOR UPDATE
+SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since FROM bots WHERE user_id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBotForUpdate(ctx context.Context, userID uuid.UUID) (Bot, error) {
@@ -542,12 +554,14 @@ func (q *Queries) GetBotForUpdate(ctx context.Context, userID uuid.UUID) (Bot, e
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
 
 const getBotWithUser = `-- name: GetBotWithUser :one
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = $1
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, b.acts_as_owner, b.acts_as_owner_since, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = $1
 `
 
 type GetBotWithUserRow struct {
@@ -575,6 +589,8 @@ func (q *Queries) GetBotWithUser(ctx context.Context, userID uuid.UUID) (GetBotW
 		&i.Bot.WebhookLastError,
 		&i.Bot.CreatedAt,
 		&i.Bot.RevokedAt,
+		&i.Bot.ActsAsOwner,
+		&i.Bot.ActsAsOwnerSince,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,
@@ -610,6 +626,95 @@ func (q *Queries) GetBotWithUser(ctx context.Context, userID uuid.UUID) (GetBotW
 		&i.User.Phone,
 		&i.User.TaskNotifyOff,
 		&i.User.TaskNotifyBots,
+	)
+	return i, err
+}
+
+const getOnBehalfDelegation = `-- name: GetOnBehalfDelegation :one
+SELECT b.acts_as_owner, b.owner_user_id, b.token_id, (b.revoked_at IS NOT NULL)::boolean AS revoked,
+    (bu.disabled_at IS NOT NULL)::boolean AS bot_disabled,
+    (o.disabled_at IS NULL AND NOT o.is_bot AND NOT o.is_guest)::boolean AS owner_active
+FROM bots b JOIN users bu ON bu.id = b.user_id JOIN users o ON o.id = b.owner_user_id
+WHERE b.user_id = $1
+`
+
+type GetOnBehalfDelegationRow struct {
+	ActsAsOwner bool
+	OwnerUserID uuid.UUID
+	TokenID     *uuid.UUID
+	Revoked     bool
+	BotDisabled bool
+	OwnerActive bool
+}
+
+// ADR-0106: what a request "on behalf of the owner" is checked against: the bot's switch and
+// current token, and whether its owner is a live person.
+func (q *Queries) GetOnBehalfDelegation(ctx context.Context, botID uuid.UUID) (GetOnBehalfDelegationRow, error) {
+	row := q.db.QueryRow(ctx, getOnBehalfDelegation, botID)
+	var i GetOnBehalfDelegationRow
+	err := row.Scan(
+		&i.ActsAsOwner,
+		&i.OwnerUserID,
+		&i.TokenID,
+		&i.Revoked,
+		&i.BotDisabled,
+		&i.OwnerActive,
+	)
+	return i, err
+}
+
+const getOnBehalfWorkspaceState = `-- name: GetOnBehalfWorkspaceState :one
+SELECT (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+    EXISTS(SELECT FROM workspace_members bm WHERE bm.workspace_id = w.id AND bm.user_id = $1)::boolean AS bot_member,
+    (m.user_id IS NOT NULL)::boolean AS owner_member,
+    (COALESCE(x.status = 'suspended', false) OR EXISTS(SELECT FROM workspace_bans wb
+        WHERE wb.workspace_id = w.id AND (wb.user_id = u.id OR wb.email = u.email)))::boolean AS owner_suspended,
+    COALESCE(p.mode, 'off')::text AS policy_mode,
+    (o.user_id IS NOT NULL)::boolean AS directory_required,
+    COALESCE(o.status = 'active', false)::boolean AS directory_active,
+    COALESCE(d.disabled_at IS NULL AND d.last_success_at IS NOT NULL
+        AND d.last_success_at + make_interval(secs => d.max_staleness_seconds) > clock_timestamp(), false)::boolean AS directory_fresh
+FROM workspaces w JOIN users u ON u.id = $2
+LEFT JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = u.id
+LEFT JOIN workspace_identity_access x ON x.workspace_id = w.id AND x.user_id = u.id
+LEFT JOIN workspace_identity_policies p ON p.workspace_id = w.id
+LEFT JOIN workspace_directories d ON d.workspace_id = w.id
+LEFT JOIN directory_objects o ON o.workspace_id = w.id AND o.directory_id = d.id AND o.user_id = u.id
+WHERE w.id = $3
+`
+
+type GetOnBehalfWorkspaceStateParams struct {
+	BotID       uuid.UUID
+	OwnerID     uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+type GetOnBehalfWorkspaceStateRow struct {
+	WorkspaceSuspended bool
+	BotMember          bool
+	OwnerMember        bool
+	OwnerSuspended     bool
+	PolicyMode         string
+	DirectoryRequired  bool
+	DirectoryActive    bool
+	DirectoryFresh     bool
+}
+
+// ADR-0106: one snapshot of a workspace for a request of bot_id on behalf of owner_id: the
+// bot's and the owner's membership, the owner's ban / directory suspension, the workspace's
+// suspension and the identity policy a bot cannot satisfy for a person.
+func (q *Queries) GetOnBehalfWorkspaceState(ctx context.Context, arg GetOnBehalfWorkspaceStateParams) (GetOnBehalfWorkspaceStateRow, error) {
+	row := q.db.QueryRow(ctx, getOnBehalfWorkspaceState, arg.BotID, arg.OwnerID, arg.WorkspaceID)
+	var i GetOnBehalfWorkspaceStateRow
+	err := row.Scan(
+		&i.WorkspaceSuspended,
+		&i.BotMember,
+		&i.OwnerMember,
+		&i.OwnerSuspended,
+		&i.PolicyMode,
+		&i.DirectoryRequired,
+		&i.DirectoryActive,
+		&i.DirectoryFresh,
 	)
 	return i, err
 }
@@ -801,7 +906,7 @@ func (q *Queries) ListWorkspaceBotIDs(ctx context.Context, workspaceID uuid.UUID
 }
 
 const listWorkspaceBots = `-- name: ListWorkspaceBots :many
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM workspace_members m
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, b.acts_as_owner, b.acts_as_owner_since, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM workspace_members m
 JOIN bots b ON b.user_id = m.user_id
 JOIN users u ON u.id = b.user_id
 WHERE m.workspace_id = $1
@@ -840,6 +945,8 @@ func (q *Queries) ListWorkspaceBots(ctx context.Context, workspaceID uuid.UUID) 
 			&i.Bot.WebhookLastError,
 			&i.Bot.CreatedAt,
 			&i.Bot.RevokedAt,
+			&i.Bot.ActsAsOwner,
+			&i.Bot.ActsAsOwnerSince,
 			&i.User.ID,
 			&i.User.Email,
 			&i.User.PasswordHash,
@@ -976,7 +1083,7 @@ func (q *Queries) RemoveUserEverywhere(ctx context.Context, userID uuid.UUID) ([
 const revokeBotToken = `-- name: RevokeBotToken :one
 UPDATE bots SET token_id = NULL, token_hash = NULL, token_prefix = '', revoked_at = now()
 WHERE user_id = $1
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 func (q *Queries) RevokeBotToken(ctx context.Context, userID uuid.UUID) (Bot, error) {
@@ -999,6 +1106,48 @@ func (q *Queries) RevokeBotToken(ctx context.Context, userID uuid.UUID) (Bot, er
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
+	)
+	return i, err
+}
+
+const setBotActsAsOwner = `-- name: SetBotActsAsOwner :one
+UPDATE bots SET acts_as_owner = $1::boolean,
+    acts_as_owner_since = CASE WHEN NOT $1::boolean THEN NULL
+        WHEN acts_as_owner THEN acts_as_owner_since ELSE now() END
+WHERE user_id = $2
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
+`
+
+type SetBotActsAsOwnerParams struct {
+	On     bool
+	UserID uuid.UUID
+}
+
+// ADR-0106: the owner's switch; since = when it was turned on (kept while it stays on).
+func (q *Queries) SetBotActsAsOwner(ctx context.Context, arg SetBotActsAsOwnerParams) (Bot, error) {
+	row := q.db.QueryRow(ctx, setBotActsAsOwner, arg.On, arg.UserID)
+	var i Bot
+	err := row.Scan(
+		&i.UserID,
+		&i.OwnerUserID,
+		&i.WorkspaceID,
+		&i.Username,
+		&i.Description,
+		&i.TokenID,
+		&i.TokenHash,
+		&i.TokenPrefix,
+		&i.WebhookUrl,
+		&i.WebhookSecretEnc,
+		&i.WebhookDisabledAt,
+		&i.WebhookFailingSince,
+		&i.WebhookLastOkAt,
+		&i.WebhookLastError,
+		&i.CreatedAt,
+		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -1006,7 +1155,7 @@ func (q *Queries) RevokeBotToken(ctx context.Context, userID uuid.UUID) (Bot, er
 const setBotToken = `-- name: SetBotToken :one
 UPDATE bots SET token_id = $2, token_hash = $3, token_prefix = $4, revoked_at = NULL
 WHERE user_id = $1
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 type SetBotTokenParams struct {
@@ -1041,6 +1190,8 @@ func (q *Queries) SetBotToken(ctx context.Context, arg SetBotTokenParams) (Bot, 
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -1049,7 +1200,7 @@ const setBotWebhook = `-- name: SetBotWebhook :one
 UPDATE bots SET webhook_url = $2, webhook_secret_enc = $3, webhook_disabled_at = NULL,
     webhook_failing_since = NULL, webhook_last_error = ''
 WHERE user_id = $1
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 type SetBotWebhookParams struct {
@@ -1078,6 +1229,8 @@ func (q *Queries) SetBotWebhook(ctx context.Context, arg SetBotWebhookParams) (B
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
@@ -1136,7 +1289,7 @@ func (q *Queries) UnblockBot(ctx context.Context, arg UnblockBotParams) error {
 
 const updateBotDescription = `-- name: UpdateBotDescription :one
 UPDATE bots SET description = $2 WHERE user_id = $1
-RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at
+RETURNING user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since
 `
 
 type UpdateBotDescriptionParams struct {
@@ -1164,6 +1317,8 @@ func (q *Queries) UpdateBotDescription(ctx context.Context, arg UpdateBotDescrip
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }

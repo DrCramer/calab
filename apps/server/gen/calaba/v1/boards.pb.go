@@ -3021,16 +3021,18 @@ func (x *Task) GetWatcherIds() []string {
 // Automations (ADR-0060): a change made by a rule has actor_id empty and rule_id set; the client
 // shows «Автоматизация: <rule name>» (names from the board's rules / BOARD_RULE_UPDATE).
 type TaskActivity struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TaskId        string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	ActorId       string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"` // a user or a bot
-	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
-	Before        *structpb.Struct       `protobuf:"bytes,5,opt,name=before,proto3" json:"before,omitempty"`
-	After         *structpb.Struct       `protobuf:"bytes,6,opt,name=after,proto3" json:"after,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	BoardId       string                 `protobuf:"bytes,8,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
-	RuleId        string                 `protobuf:"bytes,9,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // the automation rule that made the change (ADR-0060); empty otherwise
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TaskId    string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	ActorId   string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"` // a user or a bot
+	Kind      string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	Before    *structpb.Struct       `protobuf:"bytes,5,opt,name=before,proto3" json:"before,omitempty"`
+	After     *structpb.Struct       `protobuf:"bytes,6,opt,name=after,proto3" json:"after,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	BoardId   string                 `protobuf:"bytes,8,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
+	RuleId    string                 `protobuf:"bytes,9,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // the automation rule that made the change (ADR-0060); empty otherwise
+	// ADR-0106: the bot that made the change on behalf of actor_id (its owner); empty otherwise.
+	ViaBotId      string `protobuf:"bytes,10,opt,name=via_bot_id,json=viaBotId,proto3" json:"via_bot_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3124,6 +3126,13 @@ func (x *TaskActivity) GetBoardId() string {
 func (x *TaskActivity) GetRuleId() string {
 	if x != nil {
 		return x.RuleId
+	}
+	return ""
+}
+
+func (x *TaskActivity) GetViaBotId() string {
+	if x != nil {
+		return x.ViaBotId
 	}
 	return ""
 }
@@ -8813,7 +8822,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x12milestone_progress\x18- \x01(\v2 .calaba.v1.TaskMilestoneProgressR\x11milestoneProgress\x12*\n" +
 	"\x11task_milestone_id\x18. \x01(\tR\x0ftaskMilestoneId\x12\x1f\n" +
 	"\vwatcher_ids\x18/ \x03(\tR\n" +
-	"watcherIds\"\xb5\x02\n" +
+	"watcherIds\"\xd3\x02\n" +
 	"\fTaskActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x19\n" +
@@ -8824,7 +8833,10 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x19\n" +
 	"\bboard_id\x18\b \x01(\tR\aboardId\x12\x17\n" +
-	"\arule_id\x18\t \x01(\tR\x06ruleId\"\x81\x01\n" +
+	"\arule_id\x18\t \x01(\tR\x06ruleId\x12\x1c\n" +
+	"\n" +
+	"via_bot_id\x18\n" +
+	" \x01(\tR\bviaBotId\"\x81\x01\n" +
 	"\x10TaskActivityItem\x12.\n" +
 	"\amessage\x18\x01 \x01(\v2\x12.calaba.v1.MessageH\x00R\amessage\x125\n" +
 	"\bactivity\x18\x02 \x01(\v2\x17.calaba.v1.TaskActivityH\x00R\bactivityB\x06\n" +

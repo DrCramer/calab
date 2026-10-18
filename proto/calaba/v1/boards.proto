@@ -429,6 +429,8 @@ message TaskActivity {
   google.protobuf.Timestamp created_at = 7;
   string board_id = 8;
   string rule_id = 9; // the automation rule that made the change (ADR-0060); empty otherwise
+  // ADR-0106: the bot that made the change on behalf of actor_id (its owner); empty otherwise.
+  string via_bot_id = 10;
 }
 
 // The task feed: comments (messages of the task room) and journal entries in one timeline.

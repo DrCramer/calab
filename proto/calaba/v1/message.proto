@@ -45,6 +45,9 @@ message Message {
   Forward forward = 17;
   InlineKeyboard inline_keyboard = 18; // bot-authored ordinary messages only
   uint64 keyboard_revision = 19; // server-owned; changes on text or keyboard edits
+  // ADR-0106: the bot that wrote the message on behalf of its owner, the author (author_id);
+  // clients show «Name (via bot X)». Empty for everything else.
+  string via_bot_id = 20;
 }
 
 // Where a forwarded message comes from (ADR-0033). A copy of a copy points at the original.

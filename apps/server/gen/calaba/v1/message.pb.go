@@ -206,8 +206,11 @@ type Message struct {
 	Forward          *Forward        `protobuf:"bytes,17,opt,name=forward,proto3" json:"forward,omitempty"`
 	InlineKeyboard   *InlineKeyboard `protobuf:"bytes,18,opt,name=inline_keyboard,json=inlineKeyboard,proto3" json:"inline_keyboard,omitempty"`        // bot-authored ordinary messages only
 	KeyboardRevision uint64          `protobuf:"varint,19,opt,name=keyboard_revision,json=keyboardRevision,proto3" json:"keyboard_revision,omitempty"` // server-owned; changes on text or keyboard edits
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// ADR-0106: the bot that wrote the message on behalf of its owner, the author (author_id);
+	// clients show «Name (via bot X)». Empty for everything else.
+	ViaBotId      string `protobuf:"bytes,20,opt,name=via_bot_id,json=viaBotId,proto3" json:"via_bot_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Message) Reset() {
@@ -378,6 +381,13 @@ func (x *Message) GetKeyboardRevision() uint64 {
 		return x.KeyboardRevision
 	}
 	return 0
+}
+
+func (x *Message) GetViaBotId() string {
+	if x != nil {
+		return x.ViaBotId
+	}
+	return ""
 }
 
 // Where a forwarded message comes from (ADR-0033). A copy of a copy points at the original.
@@ -2369,7 +2379,7 @@ var File_calaba_v1_message_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/call.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\x1a\x14calaba/v1/user.proto\"\xd8\x06\n" +
+	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/call.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\x1a\x14calaba/v1/user.proto\"\xf6\x06\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -2392,7 +2402,9 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\acommand\x18\x1e \x01(\v2\x19.calaba.v1.MessageCommandR\acommand\x12,\n" +
 	"\aforward\x18\x11 \x01(\v2\x12.calaba.v1.ForwardR\aforward\x12B\n" +
 	"\x0finline_keyboard\x18\x12 \x01(\v2\x19.calaba.v1.InlineKeyboardR\x0einlineKeyboard\x12+\n" +
-	"\x11keyboard_revision\x18\x13 \x01(\x04R\x10keyboardRevision\"\x93\x01\n" +
+	"\x11keyboard_revision\x18\x13 \x01(\x04R\x10keyboardRevision\x12\x1c\n" +
+	"\n" +
+	"via_bot_id\x18\x14 \x01(\tR\bviaBotId\"\x93\x01\n" +
 	"\aForward\x12\x1b\n" +
 	"\tauthor_id\x18\x01 \x01(\tR\bauthorId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1d\n" +

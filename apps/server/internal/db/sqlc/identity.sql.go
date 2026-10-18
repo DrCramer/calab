@@ -2186,7 +2186,7 @@ func (q *Queries) ListIdentityInvalidationsForUpdate(ctx context.Context, limit 
 }
 
 const lockIdentityBotShared = `-- name: LockIdentityBotShared :one
-SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at FROM bots WHERE user_id=$1 FOR SHARE
+SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at, acts_as_owner, acts_as_owner_since FROM bots WHERE user_id=$1 FOR SHARE
 `
 
 func (q *Queries) LockIdentityBotShared(ctx context.Context, userID uuid.UUID) (Bot, error) {
@@ -2209,6 +2209,8 @@ func (q *Queries) LockIdentityBotShared(ctx context.Context, userID uuid.UUID) (
 		&i.WebhookLastError,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ActsAsOwner,
+		&i.ActsAsOwnerSince,
 	)
 	return i, err
 }
