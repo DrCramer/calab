@@ -1768,8 +1768,8 @@ type Workspace struct {
 	SipEnabled              bool
 	DiskTrashDays           *int32
 	WikiTrashDays           *int32
-	OwnerSeesPrivate        bool
 	TempArchiveDays         int32
+	OwnerSeesPrivate        bool
 }
 
 type WorkspaceAdminLog struct {
