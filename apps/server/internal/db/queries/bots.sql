@@ -213,10 +213,13 @@ RETURNING *;
 
 -- name: GetOnBehalfDelegation :one
 -- ADR-0106: what a request "on behalf of the owner" is checked against: the bot's switch and
--- current token, and whether its owner is a live person.
+-- current token, and whether its owner is a live person who is still a member of the bot's
+-- home workspace (where only they can turn the switch off: an owner who left or was removed
+-- from it no longer controls the bot, so it no longer acts as them).
 SELECT b.acts_as_owner, b.owner_user_id, b.token_id, (b.revoked_at IS NOT NULL)::boolean AS revoked,
     (bu.disabled_at IS NOT NULL)::boolean AS bot_disabled,
-    (o.disabled_at IS NULL AND NOT o.is_bot AND NOT o.is_guest)::boolean AS owner_active
+    (o.disabled_at IS NULL AND NOT o.is_bot AND NOT o.is_guest
+        AND EXISTS(SELECT FROM workspace_members hm WHERE hm.workspace_id = b.workspace_id AND hm.user_id = o.id))::boolean AS owner_active
 FROM bots b JOIN users bu ON bu.id = b.user_id JOIN users o ON o.id = b.owner_user_id
 WHERE b.user_id = sqlc.arg('bot_id');
 

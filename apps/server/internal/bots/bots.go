@@ -457,13 +457,22 @@ func (s *Service) reissue(w http.ResponseWriter, r *http.Request) error {
 	}
 	tid := uuid.New()
 	var old *uuid.UUID
+	// ADR-0106: a token issued to anyone but the owner (a MANAGE_BOTS member of the home
+	// workspace) must not act as the owner: the switch goes off with it.
+	me := identity(r)
+	byOwner := !me.Machine() && b.OwnerUserID == me.UserID
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		cur, err := q.GetBotForUpdate(r.Context(), b.UserID)
 		if err != nil {
 			return err
 		}
 		old = cur.TokenID
-		_, err = q.SetBotToken(r.Context(), sqlc.SetBotTokenParams{UserID: b.UserID, TokenID: &tid, TokenHash: hash, TokenPrefix: prefix})
+		if _, err = q.SetBotToken(r.Context(), sqlc.SetBotTokenParams{UserID: b.UserID, TokenID: &tid, TokenHash: hash, TokenPrefix: prefix}); err != nil {
+			return err
+		}
+		if cur.ActsAsOwner && !byOwner {
+			_, err = q.SetBotActsAsOwner(r.Context(), sqlc.SetBotActsAsOwnerParams{UserID: b.UserID, On: false})
+		}
 		return err
 	})
 	if err != nil {

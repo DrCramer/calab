@@ -120,6 +120,7 @@ curl -s -X POST https://app.example.com/api/tasks/$TASK/approval \
 - The bot must be a member of the workspace and the owner an active member there. Workspaces with enforced SSO refuse on-behalf requests.
 - The gateway and the webhook do not change: the bot receives events with its own permissions.
 - On-behalf requests count against the bot's limits.
+- If anyone but the owner (a `MANAGE_BOTS` admin) reissues the token, the switch turns off.
 - Without the header the bot acts as itself. With the header but without permission the request is refused, never silently downgraded:
 
 | Answer | `reason` | Why |
@@ -127,7 +128,7 @@ curl -s -X POST https://app.example.com/api/tasks/$TASK/approval \
 | `400` | `ON_BEHALF_INVALID` | the header value is not `owner` |
 | `401` | — | the token was revoked or reissued |
 | `403` | `ON_BEHALF_DISABLED` | the owner has not turned on “Act on my behalf” |
-| `403` | `ON_BEHALF_OWNER_INACTIVE` | the owner's account is disabled |
+| `403` | `ON_BEHALF_OWNER_INACTIVE` | the owner's account is disabled, or the owner is no longer a member of the bot's home workspace |
 | `403` | `ON_BEHALF_OWNER_NOT_MEMBER` | the owner is not a member of this workspace (left, removed, banned) |
 | `403` | `ON_BEHALF_IDENTITY_POLICY` | the workspace requires the person's own sign-in (SSO) |
 | `403` | `ON_BEHALF_ROUTE` | the route is closed on behalf of the owner too |

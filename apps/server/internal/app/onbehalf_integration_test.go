@@ -189,7 +189,35 @@ func TestOnBehalfOfOwner(t *testing.T) {
 		t.Fatalf("on again: %d", st)
 	}
 	ob.must(200, "GET", "/api/workspaces/"+wid, nil, nil)
-	bob.must(204, "DELETE", "/api/workspaces/"+wid+"/bots/"+bt.id+"/token", nil, nil)
+
+	// A token reissued by a manager who is not the owner never acts as the owner: the switch
+	// goes off with it. The owner's own reissue keeps it.
+	var re v1.ReissueBotTokenResponse
+	o.must(200, "POST", "/api/workspaces/"+wid+"/bots/"+bt.id+"/token", nil, &re)
+	if re.GetBot().GetActsAsOwner() {
+		t.Fatalf("a manager's reissue kept acts_as_owner: %v", re.GetBot())
+	}
+	ob = &client{t: t, token: re.GetToken(), header: http.Header{"Calab-On-Behalf": {"owner"}}}
+	wantReason(t, ob, ob.do("GET", "/api/workspaces/"+wid, nil, nil), 403, "ON_BEHALF_DISABLED")
+	if st, _ := setActsAsOwner(bob, wid, bt.id, true); st != 200 {
+		t.Fatalf("on again: %d", st)
+	}
+	bob.must(200, "POST", "/api/workspaces/"+wid+"/bots/"+bt.id+"/token", nil, &re)
+	if !re.GetBot().GetActsAsOwner() {
+		t.Fatalf("the owner's reissue dropped acts_as_owner: %v", re.GetBot())
+	}
+	ob = &client{t: t, token: re.GetToken(), header: http.Header{"Calab-On-Behalf": {"owner"}}}
+	ob.must(200, "GET", "/api/workspaces/"+wid, nil, nil)
+
+	// The owner out of the bot's home workspace (where only they turn it off): the bot no
+	// longer acts as them anywhere, a shared workspace included.
+	bob.must(200, "POST", "/api/invites/"+invite(t, o, ws2)+"/join", nil, &j)
+	ob.must(200, "GET", "/api/workspaces/"+ws2+"/rooms", nil, nil)
+	o.must(204, "DELETE", "/api/workspaces/"+wid+"/members/"+bob.id, nil, nil)
+	wantReason(t, ob, ob.do("GET", "/api/workspaces/"+ws2+"/rooms", nil, nil), 403, "ON_BEHALF_OWNER_INACTIVE")
+
+	// A revoked token is 401 (the home workspace's manager revokes it now).
+	o.must(204, "DELETE", "/api/workspaces/"+wid+"/bots/"+bt.id+"/token", nil, nil)
 	ob.must(401, "GET", "/api/workspaces/"+wid, nil, nil)
 }
 
