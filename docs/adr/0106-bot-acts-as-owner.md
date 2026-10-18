@@ -18,7 +18,7 @@ API, доступный ботам** (не узкий список разреш�
 - `bots.acts_as_owner boolean NOT NULL DEFAULT false`, `bots.acts_as_owner_since timestamptz` (миграция
   `00100`). Протокол: `Bot.acts_as_owner`, `Bot.acts_as_owner_since` — видны тем же, кому `webhook`: самому
   боту, его владельцу и `MANAGE_BOTS` домашнего пространства; в публичной карточке `GET /api/bots/{ref}`
-  владелец бота получает `owner_user_id` (свой) и `acts_as_owner`, остальные — как раньше.
+  владелец бота получает `owner_user_id` (свой), `workspace_id` и `acts_as_owner`, остальные — как раньше.
 - `PATCH /api/workspaces/{id}/bots/{botId}` `UpdateBotRequest { optional bool acts_as_owner }` → `UpdateBotResponse
   { bot }`, домашнее пространство бота. Поле меняет **только `owner_user_id`**; администратор с `MANAGE_BOTS`
   получает `403` `reason: ON_BEHALF_OWNER_ONLY`. Сам бот (и запрос «от имени») маршрут не вызывает — он

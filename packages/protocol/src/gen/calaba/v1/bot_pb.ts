@@ -404,7 +404,7 @@ export const AddBotResponseSchema: GenMessage<AddBotResponse> = /*@__PURE__*/
 /**
  * GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
  * public card (no owner, home workspace, token prefix or webhook; the bot's owner gets
- * owner_user_id and acts_as_owner, ADR-0106).
+ * owner_user_id, workspace_id and acts_as_owner, ADR-0106).
  *
  * @generated from message calaba.v1.GetBotMeResponse
  */

@@ -224,12 +224,12 @@ func TestBotLifecycle(t *testing.T) {
 	var prof v1.GetBotMeResponse
 	o.must(200, "GET", "/api/bots/"+b.username, nil, &prof)
 	if prof.GetBot().GetUser().GetId() != b.id || prof.GetBot().GetWebhook() != nil || prof.GetBot().GetTokenPrefix() != "" ||
-		prof.GetBot().GetOwnerUserId() != o.id || prof.GetBot().GetWorkspaceId() != "" { // ADR-0106: the owner learns it is theirs
+		prof.GetBot().GetOwnerUserId() != o.id || prof.GetBot().GetWorkspaceId() != ws.GetId() { // ADR-0106: the owner learns it is theirs
 		t.Fatalf("public bot card: %v", prof.GetBot())
 	}
 	var foreign v1.GetBotMeResponse
 	bob.must(200, "GET", "/api/bots/"+b.username, nil, &foreign)
-	if foreign.GetBot().GetOwnerUserId() != "" || foreign.GetBot().GetActsAsOwner() || foreign.GetBot().GetTokenPrefix() != "" {
+	if foreign.GetBot().GetOwnerUserId() != "" || foreign.GetBot().GetWorkspaceId() != "" || foreign.GetBot().GetActsAsOwner() || foreign.GetBot().GetTokenPrefix() != "" {
 		t.Fatalf("public bot card of someone else's bot: %v", foreign.GetBot())
 	}
 	var added v1.AddBotResponse

@@ -763,7 +763,7 @@ func (x *AddBotResponse) GetBot() *Bot {
 
 // GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
 // public card (no owner, home workspace, token prefix or webhook; the bot's owner gets
-// owner_user_id and acts_as_owner, ADR-0106).
+// owner_user_id, workspace_id and acts_as_owner, ADR-0106).
 type GetBotMeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bot           *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`

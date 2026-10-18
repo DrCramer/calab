@@ -716,12 +716,12 @@ func (s *Service) profile(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// The card does not reveal where the bot lives. Its owner learns it is theirs and whether
-	// it acts on their behalf (ADR-0106: the switch is in the card).
+	// The card does not reveal where the bot lives. Its owner learns it is theirs, its home
+	// workspace and whether it acts on their behalf (ADR-0106: the switch is in the card).
 	pb := BotPB(b, u, cmds, false)
 	pb.OwnerUserId, pb.WorkspaceId = "", ""
 	if me := identity(r); b.OwnerUserID == me.UserID && !me.Machine() {
-		pb.OwnerUserId, pb.ActsAsOwner = me.UserID.String(), b.ActsAsOwner
+		pb.OwnerUserId, pb.WorkspaceId, pb.ActsAsOwner = me.UserID.String(), b.WorkspaceID.String(), b.ActsAsOwner
 		if b.ActsAsOwnerSince != nil {
 			pb.ActsAsOwnerSince = timestamppb.New(*b.ActsAsOwnerSince)
 		}
