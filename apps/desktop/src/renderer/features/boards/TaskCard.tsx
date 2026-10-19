@@ -22,6 +22,7 @@ import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PR
 import { chordLabel, BOARD_HOTKEYS, type BoardHotkeyId } from './hotkeys';
 import { IS_MAC } from '../../services/hotkeys';
 import { useDisabledFeatures, useFeatureOn } from './useBoardView';
+import { UnreadDot } from './UnreadDot';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 
 /** A label dragged onto a card (from the panel / settings): the card gets it. */
@@ -154,6 +155,7 @@ export const TaskCard = memo(function TaskCard({
         >
           {task.key}
         </button>
+        <UnreadDot id={id} />
         <span className="flex-1" />
         <AssigneeMenu
           workspaceId={workspaceId}
@@ -222,7 +224,6 @@ export const TaskCard = memo(function TaskCard({
             {task.commentCount}
           </span>
         ) : null}
-        {task.unread ? <span role="img" className="ml-auto size-2 rounded-full bg-accent" aria-label={t('boards.unread')} /> : null}
       </div>
     </article>
   );

@@ -41,6 +41,8 @@ export function cx(...c: Array<string | false | null | undefined>): string {
 const BADGE_TONE = {
   danger: 'bg-danger-fill text-white',
   accent: 'bg-accent-strong text-accent-fg',
+  /** A count that is information, not a call to look (the archive, my open tasks with nothing new). */
+  neutral: 'bg-hover text-muted',
 } as const;
 
 export function CountBadge({

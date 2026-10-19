@@ -27,7 +27,7 @@ import {
 } from '../../services/boards';
 import { DeleteBoardDialog } from './BoardSettings';
 import { BoardForms } from './BoardForms';
-import { unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
+import { boardHasUnread, unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
@@ -402,6 +402,8 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   // One kind of private board (ADR-0058 addendum 2026-10-14): isPrivate or the pre-3.5 restricted flag.
   const priv = useBoards((s) => !!(s.boards[id]?.isPrivate || s.boards[id]?.restricted));
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
+  // Grey by default; accent only while a task of this board has something unseen.
+  const fresh = useBoards((s) => boardHasUnread(s, id));
   const perms = useBoards((s) => s.boards[id]?.permissions);
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
@@ -442,7 +444,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           ) : (
             <span className="min-w-0 flex-1 truncate">{name}</span>
           )}
-          {mine > 0 ? <CountBadge count={mine} tone="accent" title={t('boards.myOpen')} /> : null}
+          {mine > 0 ? <CountBadge count={mine} tone={fresh ? 'accent' : 'neutral'} title={t('boards.myOpen')} /> : null}
         </button>
         <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
           <Dropdown.Trigger asChild>

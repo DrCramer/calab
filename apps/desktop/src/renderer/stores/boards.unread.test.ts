@@ -4,7 +4,7 @@ import { ApproverState, BoardSchema, TaskApprovalState, TaskApproverSchema, Task
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { approvalTagKey } from '../lib/boards/approvals';
 import { unreadReason } from '../services/boards';
-import { unreadCount, unreadIds, unreadOrdered, useBoards } from './boards';
+import { boardHasUnread, unreadCount, unreadIds, unreadOrdered, useBoards } from './boards';
 
 vi.mock('../platform', () => ({ platform: { kind: 'web', apiBase: '', apiFetch: vi.fn() } }));
 
@@ -108,5 +108,17 @@ describe('re-renders of one TASK_UPDATE', () => {
     const s = useBoards.getState();
     s.upsertTask({ ...(s.tasks['t3'] as Task), approvers: [ap('a', ApproverState.APPROVED), ap('b', ApproverState.APPROVED)], approvalState: TaskApprovalState.APPROVED });
     expect(changed(before, snapshot()).sort()).toEqual(['card t3', 'tag t3']);
+  });
+});
+
+describe('boardHasUnread (sidebar count tone)', () => {
+  beforeEach(seed);
+
+  it('is true only for the board that owns an unread task, and follows read / completed', () => {
+    const s = useBoards.getState();
+    expect(boardHasUnread(s, 'b1')).toBe(true);
+    expect(boardHasUnread(s, 'b2')).toBe(false);
+    s.setUnread('w1', []);
+    expect(boardHasUnread(useBoards.getState(), 'b1')).toBe(false);
   });
 });

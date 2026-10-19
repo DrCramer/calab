@@ -21,6 +21,7 @@ import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
 import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { UnreadDot } from './UnreadDot';
 import { UpdatedAge } from './UpdatedAge';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
@@ -319,6 +320,7 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
           </button>
         </StatusMenu>
+        <UnreadDot id={id} />
         <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
         {/* Placed here for the phone (end of the title line); `order-last` keeps it rightmost on desktop. */}
         <Tip label={assigneeTip}>
