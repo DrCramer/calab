@@ -18,13 +18,15 @@ export function useSyncStatus(sync: CanvasSync | null): CanvasSyncStatus {
  * it shows), «Только просмотр» (no CANVAS_WRITE) and the newer-schema notice. Primitives only.
  */
 export const StatusBanner = memo(function StatusBanner({
-  engine, sync, canWrite, gone, onRetry,
+  engine, sync, canWrite, gone, onRetry, phone = false,
 }: {
   engine: CanvasEngine;
   sync: CanvasSync;
   canWrite: boolean;
   gone: boolean;
   onRetry: () => void;
+  /** The phone viewer: view only is the rule there (its own note says so), no «Только просмотр» chip. */
+  phone?: boolean;
 }): ReactNode {
   useLocale();
   const status = useSyncStatus(sync);
@@ -52,10 +54,10 @@ export const StatusBanner = memo(function StatusBanner({
         <div role="status" className={cx(PANEL, chip)} data-testid={offline ? 'canvas-offline' : 'canvas-connecting'}>
           {offline ? <WifiOff className="size-4 text-muted" aria-hidden /> : <Loader2 className="size-4 animate-spin text-muted" aria-hidden />}
           <span>{offline ? t('canvasBoard.status.offline') : t('canvasBoard.status.connecting')}</span>
-          {offline ? <span className="text-muted">{t('canvasBoard.status.offlineHint')}</span> : null}
+          {offline && !phone ? <span className="text-muted">{t('canvasBoard.status.offlineHint')}</span> : null}
         </div>
       ) : null}
-      {!canWrite ? (
+      {phone ? null : !canWrite ? (
         <div role="status" className={cx(PANEL, chip)} title={t('canvasBoard.status.viewOnlyHint')} data-testid="canvas-view-only">
           <Eye className="size-4 text-muted" aria-hidden />
           <span>{t('canvasBoard.status.viewOnly')}</span>

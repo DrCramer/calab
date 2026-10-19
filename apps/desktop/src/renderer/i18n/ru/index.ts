@@ -23,6 +23,7 @@ import { ruDisk } from './disk';
 import { ruWiki } from './wiki';
 import { ruCanvas } from './canvas';
 import { ruCanvasBoard } from './canvasBoard';
+import { ruCanvasPhone } from './canvasPhone';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
 import { ruHistory } from './history';
@@ -87,6 +88,7 @@ export const ru = {
   ...ruWiki,
   ...ruCanvas,
   ...ruCanvasBoard,
+  ...ruCanvasPhone,
   ...ruBoards,
   ...ruBoards2,
   ...ruHistory,
