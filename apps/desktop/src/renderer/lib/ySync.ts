@@ -95,6 +95,12 @@ export interface YSyncDeps {
   meta: () => SnapshotMeta;
   /** Minimum gap between two awareness frames; default AWARENESS_MIN_GAP_MS. */
   awarenessMinGapMs?: number;
+  /**
+   * Quiet time after our last edit before the idle snapshot (compaction), by the size of the stored state in
+   * bytes; default IDLE_SNAPSHOT_MS. A big document (a canvas of thousands of objects is ≈ 200 bytes each)
+   * would otherwise be re-uploaded whole after every pause of 3 s.
+   */
+  idleSnapshotMs?: (stateBytes: number) => number;
   /** Largest snapshot state the server takes; default MAX_STATE (canvases: 4 MiB, ADR-0107 §3). */
   maxState?: number;
   /** The Yjs state outgrew maxState: the server will not take a snapshot; the UI warns. */
@@ -147,6 +153,8 @@ export class YSyncProvider {
   private posting = false;
   /** Edited since our last snapshot. */
   private dirty = false;
+  /** Size of the last state we know the server holds (its snapshot, or the one we posted). */
+  private stateBytes = 0;
   /**
    * Edited during this or the last session: the next SNAPSHOT is followed by a replay (frames sent
    * just before a drop may be lost; no acks in the protocol). A full diff also carries the whole
@@ -351,6 +359,7 @@ export class YSyncProvider {
   }
 
   private onSynced(snapshotState: Uint8Array): void {
+    this.stateBytes = snapshotState.length;
     const first = !this.synced;
     this.synced = true;
     this.attempt = 0;
@@ -433,7 +442,7 @@ export class YSyncProvider {
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
       if (this.dirty) this.postSnapshot();
-    }, IDLE_SNAPSHOT_MS);
+    }, this.deps.idleSnapshotMs?.(this.stateBytes) ?? IDLE_SNAPSHOT_MS);
   }
 
   /**
@@ -486,6 +495,7 @@ export class YSyncProvider {
     const meta = this.deps.meta();
     this.send(encodeSnapshotPost(this.lastSeq, meta, state, broadcast));
     this.lastPostAt = Date.now();
+    this.stateBytes = state.length;
     this.dirty = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;

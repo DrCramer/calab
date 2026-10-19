@@ -117,6 +117,9 @@ export class CanvasEngine implements Core {
   private localTimer: ReturnType<typeof setTimeout> | null = null;
   private localAt = 0;
   private awarenessTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the armed `awarenessTimer` fires (engine clock). */
+  private awarenessDue = 0;
+  private active = true;
   private readOnlyFlag: boolean;
   private lowPower: boolean;
   private reducedMotion: boolean;
@@ -417,9 +420,12 @@ export class CanvasEngine implements Core {
     this.reducedMotion = on;
   }
 
-  /** The window/tab is hidden: stop drawing (and sending awareness) until shown. */
+  /** The window/tab is hidden: stop drawing (and sending awareness) until shown; no cursor-fade timer either. */
   setActive(on: boolean): void {
+    this.active = on;
     this.renderer.setActive(on);
+    if (on) this.scheduleAwarenessStep();
+    else this.clearAwarenessStep();
   }
 
   // ── camera commands ─────────────────────────────────────────────────────────
@@ -719,11 +725,28 @@ export class CanvasEngine implements Core {
     this.scheduleAwarenessStep();
   }
 
-  private scheduleAwarenessStep(): void {
+  private clearAwarenessStep(): void {
     if (this.awarenessTimer) clearTimeout(this.awarenessTimer);
     this.awarenessTimer = null;
-    const d = this.awareness.nextStepIn(this.now());
-    if (d === null) return;
+  }
+
+  /**
+   * One timer to the next cursor visibility step; none while hidden (nothing is drawn, `setActive(true)` re-arms).
+   * An armed timer that fires no later than needed stays: a cursor that keeps moving would otherwise re-arm it on
+   * every awareness frame. Firing early costs one overlay frame and a re-arm.
+   */
+  private scheduleAwarenessStep(): void {
+    if (!this.active) return;
+    const t = this.now();
+    const d = this.awareness.nextStepIn(t);
+    if (d === null) {
+      this.clearAwarenessStep();
+      return;
+    }
+    const due = t + d;
+    if (this.awarenessTimer && this.awarenessDue <= due) return;
+    this.clearAwarenessStep();
+    this.awarenessDue = due;
     this.awarenessTimer = setTimeout(() => {
       this.awarenessTimer = null;
       this.renderer.requestFrame();

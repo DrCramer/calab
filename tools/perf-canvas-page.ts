@@ -67,13 +67,20 @@ const sync = (c: HTMLCanvasElement): void => {
   c.getContext('2d')?.getImageData(0, 0, 1, 1);
 };
 
-const heap = (): number => (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0;
+
+declare global {
+  interface Window {
+    __mark?(name: string): Promise<void>;
+  }
+}
+const mark = (name: string): Promise<void> => window.__mark?.(name) ?? Promise.resolve();
 
 export interface BenchResult {
   objects: number;
   dpr: number;
   stateBytes: number;
-  heapMB: number;
+  /** Text layout cache over the whole run: hits, misses, entries. */
+  textCache: { hits: number; misses: number; entries: number };
   canvasLayersMB: number;
   buildDocMs: number;
   loadFromUpdateMs: number;
@@ -89,6 +96,7 @@ export interface BenchResult {
 }
 
 export async function run(n: number, dprLabel: number): Promise<BenchResult> {
+  await mark('gc:start');
   const canvas = document.getElementById('c') as HTMLCanvasElement;
   const W = canvas.clientWidth;
   const H = canvas.clientHeight;
@@ -111,7 +119,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
   const sceneBuildMs = performance.now() - t;
   scene.destroy();
 
-  const heap0 = heap();
+  await mark('gc:engine-before');
   t = performance.now();
   const engine = new CanvasEngine({ canvas, doc: ydoc, palette: defaultPalette('dark'), reducedMotion: true });
   const engineCreateMs = performance.now() - t;
@@ -134,6 +142,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
   sync(canvas);
   const firstFrameMs = performance.now() - t;
 
+  await mark('gc:engine-after');
   const bounds = engine.scene.bounds() ?? { x: 0, y: 0, w: 1, h: 1 };
   const cx = bounds.x + bounds.w / 2;
   const cy = bounds.y + bounds.h / 2;
@@ -168,7 +177,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
     engine.renderer.invalidateAll();
     frame();
     sync(canvas);
-    for (let k = 0; k < 120; k++) {
+    for (let k = 0; k < 200; k++) {
       engine.setCamera({ ...engine.camera, tx: engine.camera.tx - 14, ty: engine.camera.ty - 5 });
       rec.push(recordOnly());
       sync(canvas);
@@ -261,7 +270,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
   const dpr = engine.renderer.devicePixelRatio;
   const result: BenchResult = {
     objects: n, dpr: dprLabel, stateBytes: state.length,
-    heapMB: round((heap() - heap0) / 1048576),
+    textCache: { hits: engine.scene.text.hits, misses: engine.scene.text.misses, entries: engine.scene.text.size },
     canvasLayersMB: round((2 * W * H * dpr * dpr * 4) / 1048576),
     buildDocMs: round(buildDocMs), loadFromUpdateMs: round(loadFromUpdateMs), sceneBuildMs: round(sceneBuildMs),
     engineCreateMs: round(engineCreateMs), firstFrameMs: round(firstFrameMs),

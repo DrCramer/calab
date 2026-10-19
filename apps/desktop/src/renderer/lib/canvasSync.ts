@@ -4,7 +4,8 @@
  *
  * - Updates are batched for 200 ms, an update above 64 KiB goes up as a snapshot (ySync).
  * - Awareness (cursor, selection): ≤ 20 frames/s, nothing while the window is hidden.
- * - Compaction (SNAPSHOT_POST) on COMPACT_REQUEST, 3 s after our last edit and on destroy, with
+ * - Compaction (SNAPSHOT_POST) on COMPACT_REQUEST, after our last edit (3 s; longer for a big document,
+ *   canvasIdleSnapshotMs) and on destroy, with
  *   `{plain_text, title, preview}`: `plain_text` is the glued texts of all objects (canvasPlainText).
  * - Reconnect (backoff 1 s → 30 s): the server sends the snapshot and the updates after it again, and
  *   whatever this doc has beyond them goes up as one update.
@@ -17,7 +18,7 @@ import type { Awareness } from "y-protocols/awareness";
 import { canvasPlainText } from "./canvas/plainText";
 import type { SnapshotMeta } from "./wiki/frames";
 import { previewOf } from "./wiki/plainText";
-import { YSyncProvider, type Visibility, type YSyncStatus } from "./ySync";
+import { IDLE_SNAPSHOT_MS, YSyncProvider, type Visibility, type YSyncStatus } from "./ySync";
 import type { SocketLike } from "./gateway/client";
 
 export type CanvasSyncStatus = "connecting" | "synced" | "readonly" | "offline";
@@ -26,6 +27,15 @@ export type CanvasSyncStatus = "connecting" | "synced" | "readonly" | "offline";
 export const CANVAS_AWARENESS_MIN_GAP_MS = 50;
 /** Largest snapshot state of a canvas (ADR-0107 §3). */
 export const CANVAS_MAX_STATE = 4 * 1024 * 1024;
+
+/**
+ * Idle compaction delay by state size: 3 s up to ≈ 60 KB, then ≈ 20 KB of state per second of quiet (400 KB → 20 s,
+ * 1 MB → 52 s), at most a minute. A sparse editor of a 5000-object canvas (a move every 5 s) used to re-upload
+ * ≈ 1 MB after each one; destroy and the server's COMPACT_REQUEST still compact at once.
+ */
+export function canvasIdleSnapshotMs(stateBytes: number): number {
+  return Math.min(60_000, Math.max(IDLE_SNAPSHOT_MS, Math.round(stateBytes / 20)));
+}
 
 export interface CanvasSyncDeps {
   /** `wss://…/api/canvas/items/{id}/sync`, built per attempt (canvasSyncUrl). */
@@ -87,6 +97,7 @@ export class CanvasSync {
       meta: () => canvasMeta(doc, deps.title?.() ?? ""),
       awarenessMinGapMs: CANVAS_AWARENESS_MIN_GAP_MS,
       maxState: CANVAS_MAX_STATE,
+      idleSnapshotMs: canvasIdleSnapshotMs,
       onTooLarge: deps.onTooLarge,
       onFatal: deps.onFatal,
       random: deps.random,

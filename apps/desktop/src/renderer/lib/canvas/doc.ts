@@ -181,6 +181,9 @@ export class CanvasDoc {
   private readonly makeId: () => string;
   private gesture = 0;
   private static readonly CAPTURE_MS = 500;
+  /** Rough encoded size of an object without its text (measured ≈ 230 bytes for a sticky) and the per-transaction budget. */
+  private static readonly OBJECT_BYTES = 260;
+  private static readonly CHUNK_BYTES = 40_000;
 
   constructor(ydoc: Y.Doc, opts: CanvasDocOptions = {}) {
     this.ydoc = ydoc;
@@ -262,27 +265,57 @@ export class CanvasDoc {
     return best;
   }
 
-  /** Creates objects on top, in order. All-or-nothing against the object limit. Returns the new ids ([] if refused). */
+  /**
+   * Creates objects on top, in order. All-or-nothing against the object limit. Returns the new ids ([] if refused).
+   * A big batch is written as several transactions of ≲ CHUNK_BYTES each (one undo step): the sync provider sends a
+   * transaction above its 64 KiB frame as a snapshot of the whole document, to everyone — 500 stickies already
+   * exceed it — while smaller updates travel as plain UPDATE frames.
+   */
   createMany(items: readonly { id?: string; init: ObjectInit }[]): string[] {
     if (items.length === 0 || this.objects.size + items.length > MAX_OBJECTS) return [];
-    return this.transact(() => {
-      const ids: string[] = [];
-      let z = this.maxZ();
-      for (const item of items) {
-        let id = item.id ?? this.makeId();
-        while (this.objects.has(id)) id = this.makeId();
-        z = after(z, this.rng);
-        const { fields, text } = initFields(item.init);
-        const m = new Y.Map<unknown>();
-        this.objects.set(id, m);
-        m.set('kind', item.init.kind);
-        m.set('z', z);
-        for (const [k, v] of Object.entries(fields)) m.set(k, v);
-        if (text !== null) m.set('text', new Y.Text(text));
-        ids.push(id);
+    const ids: string[] = [];
+    let z = this.maxZ();
+    const prepared = items.map((item) => ({ item, ...initFields(item.init) }));
+    const chunks: (typeof prepared)[] = [];
+    let cur: typeof prepared = [];
+    let bytes = 0;
+    for (const p of prepared) {
+      const est = CanvasDoc.OBJECT_BYTES + (p.text?.length ?? 0) * 3;
+      if (cur.length > 0 && bytes + est > CanvasDoc.CHUNK_BYTES) {
+        chunks.push(cur);
+        cur = [];
+        bytes = 0;
       }
-      return ids;
-    });
+      cur.push(p);
+      bytes += est;
+    }
+    chunks.push(cur);
+    const write = (chunk: typeof prepared): void => {
+      this.transact(() => {
+        for (const { item, fields, text } of chunk) {
+          let id = item.id ?? this.makeId();
+          while (this.objects.has(id)) id = this.makeId();
+          z = after(z, this.rng);
+          const m = new Y.Map<unknown>();
+          this.objects.set(id, m);
+          m.set('kind', item.init.kind);
+          m.set('z', z);
+          for (const [k, v] of Object.entries(fields)) m.set(k, v);
+          if (text !== null) m.set('text', new Y.Text(text));
+          ids.push(id);
+        }
+      });
+    };
+    if (chunks.length === 1) write(cur);
+    else {
+      this.beginGesture();
+      try {
+        for (const c of chunks) write(c);
+      } finally {
+        this.endGesture();
+      }
+    }
+    return ids;
   }
 
   create(init: ObjectInit, id?: string): string | null {

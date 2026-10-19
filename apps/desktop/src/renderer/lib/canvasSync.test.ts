@@ -7,6 +7,7 @@ import { ids, seededRng } from "./canvas/testing";
 import {
   canvasSyncUrl,
   CANVAS_AWARENESS_MIN_GAP_MS,
+  canvasIdleSnapshotMs,
   CanvasSync,
   type CanvasSyncDeps,
   type CanvasSyncStatus,
@@ -188,12 +189,28 @@ describe("CanvasSync", () => {
     c.sync.destroy();
   });
 
-  it("sends one transaction above 64 KiB as a broadcast snapshot", async () => {
+  it("a big paste (createMany) goes out as several UPDATE frames, not as a snapshot of the whole document", async () => {
     const relay = new MockRelay();
     const a = client(relay);
     const b = client(relay);
     await settle();
     a.doc.createMany(Array.from({ length: 20 }, (_, i) => ({ init: sticky(i, noise(4500, i)) })));
+    vi.advanceTimersByTime(BATCH_MS);
+    expect(frames(a, FRAME_UPDATE).length).toBeGreaterThan(1);
+    expect(relay.posts).toHaveLength(0);
+    expect(relay.violations).toEqual([]);
+    expect(b.ydoc.getMap("objects").size).toBe(20);
+    a.sync.destroy();
+    b.sync.destroy();
+  });
+
+  it("sends one transaction above 64 KiB as a broadcast snapshot", async () => {
+    const relay = new MockRelay();
+    const a = client(relay);
+    const b = client(relay);
+    await settle();
+    const items = Array.from({ length: 20 }, (_, i) => ({ init: sticky(i, noise(4500, i)) }));
+    a.doc.transact(() => a.doc.createMany(items)); // one transaction, however the batch is chunked
     vi.advanceTimersByTime(BATCH_MS);
     expect(frames(a, FRAME_UPDATE)).toHaveLength(0);
     const posts = relay.posts;
@@ -340,6 +357,32 @@ describe("CanvasSync", () => {
       expect(relay.posts[0]?.meta.plain_text).toBe("one\ntwo");
       vi.advanceTimersByTime(60_000); // nothing more to compact
       expect(relay.posts).toHaveLength(1);
+      c.sync.destroy();
+    });
+
+    it("a big document waits longer for its idle snapshot, so a sparse editor does not re-upload it after every pause", async () => {
+      expect(canvasIdleSnapshotMs(0)).toBe(IDLE_SNAPSHOT_MS);
+      expect(canvasIdleSnapshotMs(60_000)).toBe(IDLE_SNAPSHOT_MS);
+      expect(canvasIdleSnapshotMs(400_000)).toBe(20_000);
+      expect(canvasIdleSnapshotMs(10_000_000)).toBe(60_000);
+      const relay = new MockRelay();
+      const seed = new CanvasDoc(relay.doc, { rng: seededRng(5), makeId: ids("s") });
+      seed.createMany(Array.from({ length: 2000 }, (_, i) => ({ init: sticky(i, `note ${i}`) })));
+      const stored = Y.encodeStateAsUpdate(relay.doc).length;
+      const wait = canvasIdleSnapshotMs(stored);
+      expect(wait).toBeGreaterThan(IDLE_SNAPSHOT_MS * 3);
+      const c = client(relay);
+      await settle();
+      const id = [...c.doc.objects.keys()][0] as string;
+      // a move every 5 s: before, each one was followed by a full upload
+      for (let i = 0; i < 4; i++) {
+        c.doc.patch(id, { x: 100 + i });
+        vi.advanceTimersByTime(5000);
+      }
+      expect(relay.posts).toHaveLength(0);
+      vi.advanceTimersByTime(wait);
+      expect(relay.posts).toHaveLength(1);
+      expect(relay.posts[0]?.state.length).toBeGreaterThan(300_000);
       c.sync.destroy();
     });
 

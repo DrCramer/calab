@@ -730,6 +730,40 @@ describe('remote awareness', () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(r.raf.pending).toBe(0);
   });
+  it('a moving cursor keeps one timer instead of re-arming it on every awareness frame', () => {
+    vi.useFakeTimers();
+    const r = rig();
+    const set = vi.spyOn(globalThis, 'setTimeout');
+    for (let i = 0; i < 100; i++) {
+      r.engine.setPeers([{ id: 'p1', name: 'Анна', color: '#e11', cursor: { x: 10 + i, y: 10 } }]);
+      r.clock.t += 20;
+      vi.advanceTimersByTime(20);
+    }
+    expect(vi.getTimerCount()).toBe(1);
+    expect(set.mock.calls.length).toBeLessThanOrEqual(2); // armed once; the 2 s of motion never fires it
+    set.mockRestore();
+    // the cursor stops: the armed timer still ends in the dim step and then nothing is left
+    r.clock.t += 2600;
+    vi.advanceTimersByTime(2600);
+    r.raf.flush();
+    r.clock.t += 4000;
+    vi.advanceTimersByTime(4000);
+    r.raf.flush();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('hidden: no cursor-fade timer, no frame; shown again: the timer and a frame come back', () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.raf.flush();
+    r.engine.setActive(false);
+    r.engine.setPeers([{ id: 'p1', name: 'Анна', color: '#e11', cursor: { x: 10, y: 10 } }]);
+    r.engine.setPeers([{ id: 'p1', name: 'Анна', color: '#e11', cursor: { x: 20, y: 10 } }]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(r.raf.pending).toBe(0);
+    r.engine.setActive(true);
+    expect(vi.getTimerCount()).toBe(1);
+    expect(r.raf.pending).toBe(1);
+  });
   it('an identical peer snapshot costs no frame', () => {
     const r = rig();
     r.raf.flush();
