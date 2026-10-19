@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
@@ -109,4 +110,33 @@ func TestCanvasSyncOriginAndSuspended(t *testing.T) {
 		t.Fatalf("a write into a suspended workspace: %d %v", n, err)
 	}
 	e.must(403, e.alice, "POST", "/api/workspaces/"+e.ws.String()+"/canvas/items", &v1.CreateCanvasItemRequest{Kind: board, Name: "x"}, nil)
+}
+
+// A guest gets a socket only through an explicit override of the canvas (or a folder above): VIEW
+// reads, VIEW | WRITE edits, and taking the override away closes the socket.
+func TestCanvasSyncGuestOverride(t *testing.T) {
+	e := newEnv(t, ysync.Config{})
+	f := e.mkdir(e.alice, "", "Shared")
+	p := e.create(e.alice, f.GetId(), "Board")
+	e.dial(e.guest, p.GetId()).closed(ysync.CloseForbidden)
+	set := func(allow perm.Bits) {
+		t.Helper()
+		var entries []*v1.CanvasPermissionEntry
+		if allow != 0 {
+			entries = []*v1.CanvasPermissionEntry{{TargetType: user, TargetId: e.guest.String(), Allow: uint64(allow)}}
+		}
+		e.must(200, e.alice, "PUT", item(f.GetId())+"/permissions", &v1.UpdateCanvasPermissionsRequest{Entries: entries}, nil)
+	}
+	set(perm.CanvasView)
+	ro := e.dial(e.guest, p.GetId())
+	ro.next(frameSnapshot)
+	ro.send(updateFrame(0, []byte("x")))
+	ro.closed(ysync.CloseForbidden)
+	set(perm.CanvasView | perm.CanvasWrite)
+	rw := e.dial(e.guest, p.GetId())
+	rw.next(frameSnapshot)
+	rw.send(updateFrame(0, []byte("y")))
+	rw.next(frameUpdate)
+	set(0)
+	rw.closed(ysync.CloseForbidden)
 }
