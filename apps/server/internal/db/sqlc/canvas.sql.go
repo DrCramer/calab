@@ -162,6 +162,46 @@ func (q *Queries) CanvasItemPaths(ctx context.Context, ids []uuid.UUID) ([]Canva
 	return items, nil
 }
 
+const canvasSearchHeadlines = `-- name: CanvasSearchHeadlines :many
+SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.name),
+    to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text),
+    $2::text)::text AS snippet
+FROM canvas_items w WHERE w.id = ANY($3::uuid[])
+`
+
+type CanvasSearchHeadlinesParams struct {
+	Tsq     string
+	Options string
+	Ids     []uuid.UUID
+}
+
+type CanvasSearchHeadlinesRow struct {
+	ID      uuid.UUID
+	Snippet string
+}
+
+// The highlighted fragments of a page of search hits: of the text on the canvas, else of the name
+// (searchq.HeadlineOptions).
+func (q *Queries) CanvasSearchHeadlines(ctx context.Context, arg CanvasSearchHeadlinesParams) ([]CanvasSearchHeadlinesRow, error) {
+	rows, err := q.db.Query(ctx, canvasSearchHeadlines, arg.Tsq, arg.Options, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CanvasSearchHeadlinesRow{}
+	for rows.Next() {
+		var i CanvasSearchHeadlinesRow
+		if err := rows.Scan(&i.ID, &i.Snippet); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const canvasUpdatesSince = `-- name: CanvasUpdatesSince :one
 SELECT count(*)::int AS updates, coalesce(sum(octet_length(data)), 0)::bigint AS bytes,
     coalesce(array_agg(DISTINCT author_id) FILTER (WHERE author_id IS NOT NULL), '{}')::uuid[] AS authors
@@ -1577,6 +1617,89 @@ type RetimeCanvasTrashParams struct {
 func (q *Queries) RetimeCanvasTrash(ctx context.Context, arg RetimeCanvasTrashParams) error {
 	_, err := q.db.Exec(ctx, retimeCanvasTrash, arg.TrashedAt, arg.ID)
 	return err
+}
+
+const searchCanvasItems = `-- name: SearchCanvasItems :many
+
+SELECT w.id, w.workspace_id, w.parent_id, w.kind, w.name, w.updated_at, w.updated_by,
+    ((greatest(
+        ts_rank_cd(to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text),
+                   to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text)),
+        word_similarity($2::text, w.name)))
+     * (1.0 / (1.0 + greatest(0, extract(epoch FROM ($3::timestamptz - w.updated_at)))::float8 / 2592000.0)))::float8 AS score
+FROM canvas_items w
+WHERE w.workspace_id = ANY($4::uuid[]) AND w.trashed_at IS NULL
+  AND ((to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text))
+          @@ (to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text))
+       OR $2::text <% w.name
+       OR w.name ILIKE $5::text)
+ORDER BY score DESC, w.id DESC
+LIMIT $6
+`
+
+type SearchCanvasItemsParams struct {
+	Tsq          string
+	Words        string
+	Now          time.Time
+	WorkspaceIds []uuid.UUID
+	Phrase       string
+	Lim          int32
+}
+
+type SearchCanvasItemsRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	UpdatedAt   time.Time
+	UpdatedBy   *uuid.UUID
+	Score       float64
+}
+
+// ---- search ----
+// Search candidates (ADR-0107 §6, the shape of SearchWikiPages): live canvases and folders of the
+// given workspaces matching the full-text query (tsq: searchq.Query.TS, over
+// canvas_items_search_idx; the expression is search.CanvasVector) or, by name, the words with
+// typos or as substrings (words: searchq.Query.Text, phrase: searchq.Like(Query.Text), over
+// canvas_items_name_trgm_idx). Ranked by greatest(ts_rank_cd, word_similarity) × freshness
+// 1 / (1 + days / 30) of updated_at at now, then id; at most lim (the candidate cap). The access
+// filter (perm.ComputeCanvasItemIn over CanvasItemPaths) and the keyset page are applied by the
+// caller; the snippets come from CanvasSearchHeadlines.
+func (q *Queries) SearchCanvasItems(ctx context.Context, arg SearchCanvasItemsParams) ([]SearchCanvasItemsRow, error) {
+	rows, err := q.db.Query(ctx, searchCanvasItems,
+		arg.Tsq,
+		arg.Words,
+		arg.Now,
+		arg.WorkspaceIds,
+		arg.Phrase,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchCanvasItemsRow{}
+	for rows.Next() {
+		var i SearchCanvasItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ParentID,
+			&i.Kind,
+			&i.Name,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setCanvasContent = `-- name: SetCanvasContent :one

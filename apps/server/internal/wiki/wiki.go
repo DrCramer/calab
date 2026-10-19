@@ -38,6 +38,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/wikiacl"
+	"github.com/calaba/calaba/server/internal/ysync"
 )
 
 // MaxDepth is how deep the tree may go (ADR-0096 §1): a top-level page has depth 1.
@@ -65,7 +66,7 @@ type Service struct {
 	// Now is the clock (tests move it).
 	Now func() time.Time
 
-	sync *syncHub
+	sync *ysync.Hub
 }
 
 // New creates the service; p may be nil (no plan limits). Call EnableSync before Routes to
@@ -81,7 +82,7 @@ func New(d *db.DB, ev events.Publisher, f *files.Service, p *plans.Service) *Ser
 // wiki:<pageId>), a authenticates the socket's first frame like the gateway's IDENTIFY, origin
 // decides the WebSocket upgrade (gateway.OriginAllowed with the web client's origins).
 func (s *Service) EnableSync(rc rueidis.Client, a Authenticator, origin func(origin string, hasCookie bool) bool, cfg SyncConfig) {
-	s.sync = newSyncHub(s, rc, a, origin, cfg)
+	s.sync = ysync.NewHub(wikiBackend{s: s, auth: a}, ysync.Options{DB: s.db, Redis: rc, Auth: a, Origin: origin, Config: cfg})
 }
 
 // Routes registers the routes; wrap applies auth + the permission resolver. The public link
@@ -112,7 +113,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/wiki/pages/{id}/versions/{vid}", s.version)
 	h("POST /api/wiki/pages/{id}/files", s.upload)
 	if s.sync != nil {
-		mux.Handle("GET /api/wiki/pages/{id}/sync", http.HandlerFunc(s.sync.serve))
+		mux.Handle("GET /api/wiki/pages/{id}/sync", http.HandlerFunc(s.sync.Serve))
 	}
 	mux.Handle("GET /api/public/wiki/{code}", httpx.HandlerFunc(s.publicPage))
 	mux.Handle("GET /api/public/wiki/{code}/state", httpx.HandlerFunc(s.publicState))
