@@ -8,7 +8,7 @@ import { showsUnread } from '../stores/rooms';
  * in «Ещё») and the desktop-only «Почта» (ADR-0088 §8, Electron only, no phone tab). Pure helpers: which section is on screen, the section remembered per
  * workspace, the workspace the sections work in, and the rail / switcher badges.
  */
-export type Section = Exclude<PhoneTab, 'profile'> | 'mail' | 'wiki';
+export type Section = Exclude<PhoneTab, 'profile'> | 'mail' | 'wiki' | 'canvas';
 /**
  * Sections that live inside a workspace («Личные» is the HOME pseudo-workspace; «Почта» is personal
  * and not remembered per workspace, like «Личные»).
@@ -21,7 +21,7 @@ export type WsSection = Exclude<Section, 'dms' | 'mail'>;
  * centre does), else the rooms. `app`: a web app of the workspace fills the screen — no section is
  * selected (its icon carries the mark).
  */
-export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean; disk?: boolean; wiki?: boolean }): Section | null {
+export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean; disk?: boolean; wiki?: boolean; canvas?: boolean }): Section | null {
   if (s.mail) return 'mail';
   if (s.home) return 'dms';
   if (s.app) return null;
@@ -29,6 +29,8 @@ export function currentSection(s: { home: boolean; boards: boolean; calendar: bo
   if (s.disk) return 'disk';
   // «Вики» (ADR-0096 §9): exclusive the same way (stores/wikiUi.ts).
   if (s.wiki) return 'wiki';
+  // «Холст» (ADR-0107 §5): exclusive the same way (stores/canvasUi.ts).
+  if (s.canvas) return 'canvas';
   return s.boards ? 'boards' : s.calendar ? 'calendar' : 'chats';
 }
 
@@ -37,7 +39,7 @@ export function rememberSection(map: Readonly<Record<string, WsSection>>, wsId: 
   return map[wsId] === section ? map : { ...map, [wsId]: section };
 }
 
-/** The section a workspace opens on: the remembered one; guests have rooms only (no calendar, boards, disk or wiki). */
+/** The section a workspace opens on: the remembered one; guests have rooms only (no calendar, boards, disk, wiki or canvas). */
 export function sectionFor(map: Readonly<Record<string, WsSection>>, wsId: string, guest: boolean): WsSection {
   const s = map[wsId] ?? 'chats';
   return guest ? 'chats' : s;

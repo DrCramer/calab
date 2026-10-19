@@ -22,6 +22,7 @@ import { enCalendar } from './calendar';
 import { enMailbox } from './mailbox';
 import { enDisk } from './disk';
 import { enWiki } from './wiki';
+import { enCanvas } from './canvas';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
 import { enHistory } from './history';
@@ -84,6 +85,7 @@ export const en: Dict = {
   ...enMailbox,
   ...enDisk,
   ...enWiki,
+  ...enCanvas,
   ...enBoards,
   ...enBoards2,
   ...enHistory,
