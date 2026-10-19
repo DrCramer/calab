@@ -132,6 +132,21 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+describe('touch and trackpad gestures belong to the canvas, not the page', () => {
+  it('the canvas takes every touch; panels over it keep only panning; a pinch on a panel is kept from the page', async () => {
+    const m = await mount();
+    expect((m.q('canvas-surface') as HTMLElement).style.touchAction).toBe('none');
+    const view = m.q('canvas-view') as HTMLElement;
+    expect(view.style.touchAction).toBe('pan-x pan-y');
+    const tool = m.q('canvas-tool-sticky') as HTMLElement;
+    for (const type of ['gesturestart', 'gesturechange']) {
+      const e = new Event(type, { bubbles: true, cancelable: true });
+      tool.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(true);
+    }
+  });
+});
+
 describe('toolbar and hotkeys', () => {
   it('shows the five tools with «Выбор» active, and the hotkeys switch the tool', async () => {
     const m = await mount();

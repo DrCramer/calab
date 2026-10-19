@@ -368,6 +368,53 @@ func TestCanvasVersionEvery(t *testing.T) {
 	}
 }
 
+// meta.objects: a snapshot of a document the client reports empty (objects 0) is stored but starts
+// no history; with objects ≥ 1 the version rules apply; without the field (an older client) the
+// behaviour is what it was.
+func TestCanvasEmptyDocumentNoVersion(t *testing.T) {
+	e := newEnv(t, ysync.Config{VersionEvery: time.Millisecond, SnapshotEvery: time.Microsecond})
+	ctx := context.Background()
+	p := e.create(e.alice, "", "Blank")
+	a := e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	versions := func() int {
+		var vs v1.CanvasVersionsResponse
+		e.must(200, e.alice, "GET", item(p.GetId())+"/versions", nil, &vs)
+		return len(vs.GetVersions())
+	}
+	obj := func(n int) *int { return &n }
+	step := func(seq int64, meta snapshotMeta, state []byte) {
+		a.send(updateFrame(0, []byte{byte(seq)})) //nolint:gosec // seq ≤ 4
+		a.next(frameUpdate)
+		a.send(post(seq, meta, state))
+		e.waitSnapshot(p.GetId(), seq)
+	}
+	// An empty Yjs document of the client is 26 bytes, not the 2-byte empty update.
+	blank := bytes.Repeat([]byte{0}, 26)
+	step(1, snapshotMeta{Objects: obj(0)}, blank)
+	if it, err := e.d.Q.GetCanvasItemText(ctx, uuid.MustParse(p.GetId())); err != nil || it.DocSize != 26 {
+		t.Fatalf("the empty snapshot is not kept: %+v %v", it, err)
+	}
+	if n := versions(); n != 0 {
+		t.Fatalf("a version of an empty document: %d", n)
+	}
+	// Objects on the canvas: the first version.
+	step(2, snapshotMeta{PlainText: "a", Objects: obj(1)}, []byte("one"))
+	if n := versions(); n != 1 {
+		t.Fatalf("versions with an object: %d", n)
+	}
+	// Emptied again: stored, no version (a changed state, the window long over).
+	step(3, snapshotMeta{Objects: obj(0)}, blank)
+	if n := versions(); n != 1 {
+		t.Fatalf("a version of the emptied document: %d", n)
+	}
+	// An older client sends no count: a changed state is a version as before.
+	step(4, snapshotMeta{PlainText: "b"}, []byte("two"))
+	if n := versions(); n != 2 {
+		t.Fatalf("versions without the field: %d", n)
+	}
+}
+
 // Two server instances (one database, one Valkey): sockets on different instances get each
 // other's updates and awareness through canvas:<id>.
 func TestCanvasSyncAcrossInstances(t *testing.T) {
