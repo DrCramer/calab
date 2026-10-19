@@ -5,9 +5,9 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile';
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'profile';
 /** Default order of all sections (rail order without mail, ADR-0095 addendum 2026-10-14). */
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile'];
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'profile'];
 
 /** How many tabs sit on the bar itself; the rest live behind «Ещё» (ADR-0095). */
 export const PINNED_COUNT = 4;
@@ -93,6 +93,8 @@ export type PhoneScreen =
   | { kind: 'disk'; folderId: string; trash?: boolean }
   /** A page of «Вики» (ADR-0096 §7), or with `trash` its trash (pageId ''); the workspace is the open one. */
   | { kind: 'wiki'; pageId: string; trash?: boolean }
+  /** A folder or a canvas of «Холст» (ADR-0107 §5, view only on the phone); the workspace is the open one. */
+  | { kind: 'canvas'; itemId: string }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
    * as a screen: `section` null = the list of sections (also the search), else that section.
@@ -146,6 +148,8 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.folderId === (b as typeof a).folderId && !!a.trash === !!(b as typeof a).trash;
     case 'wiki':
       return a.pageId === (b as typeof a).pageId && !!a.trash === !!(b as typeof a).trash;
+    case 'canvas':
+      return a.itemId === (b as typeof a).itemId;
     case 'search':
     case 'findTime':
       return true;

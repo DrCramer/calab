@@ -79,7 +79,7 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'profile'): Promise<void> {
   await toRoot(page);
   const pinned = page.getByTestId(`phone-tab-${name}`);
   if ((await pinned.count()) > 0) {
@@ -1816,6 +1816,85 @@ test('m-wiki-trash', async ({ page }) => {
   const trash = page.getByTestId('phone-wiki-trash');
   await expect(trash.getByTestId('phone-wiki-trash-row')).toHaveCount(2);
   await checkpoint(page, 'm-wiki-trash', { snapshot: false });
+});
+
+// ADR-0107 §5: «Холст» on the phone is view only — the section behind «Ещё», the tree as 56 px rows, a
+// folder and a canvas as pushed screens; the canvas pans with a finger, pinches, has the zoom bar and
+// a one-time note, no tools or panels.
+test('m-canvas-root', async ({ page }) => {
+  await signedIn(page);
+  await toRoot(page);
+  // Behind «Ещё» by default (ADR-0095): the card lists the section.
+  await page.getByTestId('phone-tab-more').tap();
+  await expect(page.getByTestId('more-row-canvas')).toBeVisible();
+  await checkpoint(page, 'm-canvas-more', { snapshot: false });
+  await page.getByTestId('more-row-canvas').tap();
+  const root = page.getByTestId('phone-canvas');
+  await expect(root.getByTestId('phone-canvas-row')).toHaveCount(4);
+  await expect(root.getByTestId('phone-canvas-row').first()).toContainText('Продукт');
+  await expect(root.getByTestId('phone-tabbar')).toHaveCount(0);
+  await checkpoint(page, 'm-canvas-root');
+  // The magnifier filters by name; nothing to create or to trash on the phone.
+  await root.getByTestId('phone-search').tap();
+  await root.getByTestId('phone-canvas-search-field').fill('спринт');
+  await expect(root.getByTestId('phone-canvas-row')).toHaveCount(1);
+  await checkpoint(page, 'm-canvas-search', { snapshot: false });
+});
+
+test('m-canvas-folder', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'canvas');
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Продукт' }).getByRole('button').tap();
+  const folder = page.getByTestId('phone-canvas-folder');
+  await expect(folder.getByTestId('phone-header')).toContainText('Продукт');
+  await expect(folder.getByTestId('phone-canvas-row')).toHaveCount(2);
+  await checkpoint(page, 'm-canvas-folder');
+});
+
+test('m-canvas-view', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'canvas');
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Продукт' }).getByRole('button').tap();
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Дорожная карта Q1' }).getByRole('button').tap();
+  const screen = page.getByTestId('phone-canvas-screen');
+  await expect(screen.getByTestId('phone-header')).toContainText('Дорожная карта Q1');
+  const view = screen.getByTestId('canvas-view');
+  await expect(view.getByTestId('canvas-zoom')).toBeVisible();
+  // View only whatever the grant (the owner can write on the desktop): no tools, no panels, no help, no chip.
+  for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-props', 'canvas-help', 'canvas-presence', 'canvas-view-only']) await expect(view.getByTestId(id)).toHaveCount(0);
+  await expectNoFieldFocus(page, 'canvas view');
+  // The one-time note.
+  await expect(view.getByTestId('canvas-phone-note')).toBeVisible();
+  await view.getByTestId('canvas-fit-all').tap();
+  await checkpoint(page, 'm-canvas-view');
+  await view.getByTestId('canvas-phone-note-close').tap();
+  await expect(view.getByTestId('canvas-phone-note')).toHaveCount(0);
+  await checkpoint(page, 'm-canvas-view-clean', { snapshot: false });
+
+  // Pinch: two touch pointers moving apart zoom in; one finger pans (synthetic pointer events: Playwright has no multi-touch gesture).
+  const pct = async (): Promise<number> => Number(/\d+/.exec((await view.getByTestId('canvas-zoom-pct').textContent()) ?? '')?.[0]);
+  const before = await pct();
+  await view.getByTestId('canvas-surface').evaluate((el) => {
+    const fire = (type: string, id: number, x: number, y: number): void => {
+      el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: 0, bubbles: true, cancelable: true }));
+    };
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    fire('pointerdown', 1, cx - 40, cy);
+    fire('pointerdown', 2, cx + 40, cy);
+    for (let i = 1; i <= 5; i++) {
+      fire('pointermove', 1, cx - 40 - i * 15, cy);
+      fire('pointermove', 2, cx + 40 + i * 15, cy);
+    }
+    fire('pointerup', 2, cx + 115, cy);
+    fire('pointerup', 1, cx - 115, cy);
+  });
+  await expect.poll(pct, 'pinch out zooms in').toBeGreaterThan(before);
+  // The zoom bar's «100 %» resets; nothing was edited on the way (the canvas has no tools to edit with).
+  await view.getByTestId('canvas-zoom-pct').tap();
+  await expect.poll(pct).toBe(100);
+  await checkpoint(page, 'm-canvas-view-zoom', { snapshot: false });
 });
 
 // /w/{code} at 390 px: the outline is a «Содержание» disclosure above the text.
