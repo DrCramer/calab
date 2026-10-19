@@ -484,7 +484,11 @@ type CalendarEvent struct {
 	// says so («гостевая ссылка недоступна»).
 	GuestLinks bool `protobuf:"varint,24,opt,name=guest_links,json=guestLinks,proto3" json:"guest_links,omitempty"`
 	// The client's rights on this event (computed for the caller; false in gateway events).
-	CanEdit       bool `protobuf:"varint,25,opt,name=can_edit,json=canEdit,proto3" json:"can_edit,omitempty"`
+	CanEdit bool `protobuf:"varint,25,opt,name=can_edit,json=canEdit,proto3" json:"can_edit,omitempty"`
+	// The meeting has its own temporary room (ADR-0112): with room_id empty the server creates it
+	// 1 h before the start on behalf of the organizer; with room_id set that room is the
+	// meeting's own (its end follows the meeting: end + 1 h). One-off meetings only.
+	TempRoom      bool `protobuf:"varint,26,opt,name=temp_room,json=tempRoom,proto3" json:"temp_room,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -694,6 +698,13 @@ func (x *CalendarEvent) GetCanEdit() bool {
 	return false
 }
 
+func (x *CalendarEvent) GetTempRoom() bool {
+	if x != nil {
+		return x.TempRoom
+	}
+	return false
+}
+
 // Attendee as sent by the client: a member (user_id) or an external address (email).
 type CalendarEventAttendeeInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -806,18 +817,22 @@ func (x *ListCalendarEventsResponse) GetEvents() []*CalendarEvent {
 // or guests; the organizer is always an attendee (accepted) and need not be listed, except a
 // bot organizer (ADR-0051), which never attends: mail goes out on its behalf, no guest links.
 type CreateCalendarEventRequest struct {
-	state         protoimpl.MessageState        `protogen:"open.v1"`
-	RoomId        string                        `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"` // a voice room of the workspace the caller can see; empty = none
-	Title         string                        `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                        `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	StartsAt      *timestamppb.Timestamp        `protobuf:"bytes,4,opt,name=starts_at,json=startsAt,proto3" json:"starts_at,omitempty"`
-	EndsAt        *timestamppb.Timestamp        `protobuf:"bytes,5,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`  // > starts_at, at most 7 days later
-	AllDay        bool                          `protobuf:"varint,6,opt,name=all_day,json=allDay,proto3" json:"all_day,omitempty"` // starts_at / ends_at are rounded to midnight of tz
-	Tz            string                        `protobuf:"bytes,7,opt,name=tz,proto3" json:"tz,omitempty"`                        // IANA zone; empty = the caller's profile zone, else UTC
-	Record        bool                          `protobuf:"varint,8,opt,name=record,proto3" json:"record,omitempty"`
-	Repeat        EventRepeat                   `protobuf:"varint,9,opt,name=repeat,proto3,enum=calaba.v1.EventRepeat" json:"repeat,omitempty"`
-	RepeatUntil   *timestamppb.Timestamp        `protobuf:"bytes,10,opt,name=repeat_until,json=repeatUntil,proto3" json:"repeat_until,omitempty"`
-	Attendees     []*CalendarEventAttendeeInput `protobuf:"bytes,11,rep,name=attendees,proto3" json:"attendees,omitempty"`
+	state       protoimpl.MessageState        `protogen:"open.v1"`
+	RoomId      string                        `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"` // a voice room of the workspace the caller can see; empty = none
+	Title       string                        `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description string                        `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	StartsAt    *timestamppb.Timestamp        `protobuf:"bytes,4,opt,name=starts_at,json=startsAt,proto3" json:"starts_at,omitempty"`
+	EndsAt      *timestamppb.Timestamp        `protobuf:"bytes,5,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`  // > starts_at, at most 7 days later
+	AllDay      bool                          `protobuf:"varint,6,opt,name=all_day,json=allDay,proto3" json:"all_day,omitempty"` // starts_at / ends_at are rounded to midnight of tz
+	Tz          string                        `protobuf:"bytes,7,opt,name=tz,proto3" json:"tz,omitempty"`                        // IANA zone; empty = the caller's profile zone, else UTC
+	Record      bool                          `protobuf:"varint,8,opt,name=record,proto3" json:"record,omitempty"`
+	Repeat      EventRepeat                   `protobuf:"varint,9,opt,name=repeat,proto3,enum=calaba.v1.EventRepeat" json:"repeat,omitempty"`
+	RepeatUntil *timestamppb.Timestamp        `protobuf:"bytes,10,opt,name=repeat_until,json=repeatUntil,proto3" json:"repeat_until,omitempty"`
+	Attendees   []*CalendarEventAttendeeInput `protobuf:"bytes,11,rep,name=attendees,proto3" json:"attendees,omitempty"`
+	// Ask for the meeting's own temporary room (ADR-0112): excludes room_id and repeat; the
+	// organizer needs CREATE_TEMP_ROOMS (403), not a bot. A meeting starting within 1 h gets the
+	// room at once (the answer carries room_id; 409 TEMP_ROOM_LIMIT refuses the meeting).
+	TempRoom      bool `protobuf:"varint,12,opt,name=temp_room,json=tempRoom,proto3" json:"temp_room,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -929,6 +944,13 @@ func (x *CreateCalendarEventRequest) GetAttendees() []*CalendarEventAttendeeInpu
 	return nil
 }
 
+func (x *CreateCalendarEventRequest) GetTempRoom() bool {
+	if x != nil {
+		return x.TempRoom
+	}
+	return false
+}
+
 // PATCH /api/events/{id} → CalendarEventResponse. Unset fields are unchanged; `attendees`,
 // when `set_attendees` is true, replaces the list (kept answers of those who stay). A change
 // of time, room, title, description or repeat mails the attendees again (SEQUENCE + 1).
@@ -948,8 +970,12 @@ type UpdateCalendarEventRequest struct {
 	ClearRepeatUntil bool                          `protobuf:"varint,11,opt,name=clear_repeat_until,json=clearRepeatUntil,proto3" json:"clear_repeat_until,omitempty"`
 	SetAttendees     bool                          `protobuf:"varint,12,opt,name=set_attendees,json=setAttendees,proto3" json:"set_attendees,omitempty"`
 	Attendees        []*CalendarEventAttendeeInput `protobuf:"bytes,13,rep,name=attendees,proto3" json:"attendees,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// ADR-0112: true asks for the meeting's own temporary room (the organizer only, as on create;
+	// a room chosen in room_id wins over it); false drops the request, a room already created
+	// stays the meeting's room as an ordinary one.
+	TempRoom      *bool `protobuf:"varint,14,opt,name=temp_room,json=tempRoom,proto3,oneof" json:"temp_room,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateCalendarEventRequest) Reset() {
@@ -1071,6 +1097,13 @@ func (x *UpdateCalendarEventRequest) GetAttendees() []*CalendarEventAttendeeInpu
 		return x.Attendees
 	}
 	return nil
+}
+
+func (x *UpdateCalendarEventRequest) GetTempRoom() bool {
+	if x != nil && x.TempRoom != nil {
+		return *x.TempRoom
+	}
+	return false
 }
 
 // POST, GET /api/events/{id}, PATCH. A guest of the workspace (ADR-0016) gets GET only for
@@ -3567,7 +3600,7 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\bdeclined\x18\x02 \x01(\rR\bdeclined\x12\x14\n" +
 	"\x05maybe\x18\x03 \x01(\rR\x05maybe\x12\x18\n" +
 	"\apending\x18\x04 \x01(\rR\apending\x12\x1a\n" +
-	"\bcomments\x18\x05 \x01(\rR\bcomments\"\xc6\b\n" +
+	"\bcomments\x18\x05 \x01(\rR\bcomments\"\xe3\b\n" +
 	"\rCalendarEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -3597,13 +3630,14 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\bsequence\x18\x17 \x01(\rR\bsequence\x12\x1f\n" +
 	"\vguest_links\x18\x18 \x01(\bR\n" +
 	"guestLinks\x12\x19\n" +
-	"\bcan_edit\x18\x19 \x01(\bR\acanEdit\"g\n" +
+	"\bcan_edit\x18\x19 \x01(\bR\acanEdit\x12\x1b\n" +
+	"\ttemp_room\x18\x1a \x01(\bR\btempRoom\"g\n" +
 	"\x1aCalendarEventAttendeeInput\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x1a\n" +
 	"\brequired\x18\x03 \x01(\bR\brequired\"N\n" +
 	"\x1aListCalendarEventsResponse\x120\n" +
-	"\x06events\x18\x01 \x03(\v2\x18.calaba.v1.CalendarEventR\x06events\"\xd0\x03\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.calaba.v1.CalendarEventR\x06events\"\xed\x03\n" +
 	"\x1aCreateCalendarEventRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -3616,7 +3650,8 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x06repeat\x18\t \x01(\x0e2\x16.calaba.v1.EventRepeatR\x06repeat\x12=\n" +
 	"\frepeat_until\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\vrepeatUntil\x12C\n" +
-	"\tattendees\x18\v \x03(\v2%.calaba.v1.CalendarEventAttendeeInputR\tattendees\"\x95\x05\n" +
+	"\tattendees\x18\v \x03(\v2%.calaba.v1.CalendarEventAttendeeInputR\tattendees\x12\x1b\n" +
+	"\ttemp_room\x18\f \x01(\bR\btempRoom\"\xc5\x05\n" +
 	"\x1aUpdateCalendarEventRequest\x12\x1c\n" +
 	"\aroom_id\x18\x01 \x01(\tH\x00R\x06roomId\x88\x01\x01\x12\x19\n" +
 	"\x05title\x18\x02 \x01(\tH\x01R\x05title\x88\x01\x01\x12%\n" +
@@ -3631,7 +3666,8 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\vrepeatUntil\x12,\n" +
 	"\x12clear_repeat_until\x18\v \x01(\bR\x10clearRepeatUntil\x12#\n" +
 	"\rset_attendees\x18\f \x01(\bR\fsetAttendees\x12C\n" +
-	"\tattendees\x18\r \x03(\v2%.calaba.v1.CalendarEventAttendeeInputR\tattendeesB\n" +
+	"\tattendees\x18\r \x03(\v2%.calaba.v1.CalendarEventAttendeeInputR\tattendees\x12 \n" +
+	"\ttemp_room\x18\x0e \x01(\bH\aR\btempRoom\x88\x01\x01B\n" +
 	"\n" +
 	"\b_room_idB\b\n" +
 	"\x06_titleB\x0e\n" +
@@ -3640,7 +3676,9 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\b_all_dayB\x05\n" +
 	"\x03_tzB\t\n" +
 	"\a_recordB\t\n" +
-	"\a_repeat\"G\n" +
+	"\a_repeatB\f\n" +
+	"\n" +
+	"_temp_room\"G\n" +
 	"\x15CalendarEventResponse\x12.\n" +
 	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"M\n" +
 	"\x18RsvpCalendarEventRequest\x121\n" +

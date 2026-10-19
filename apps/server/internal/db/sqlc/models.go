@@ -798,6 +798,7 @@ type Event struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	CancelledAt *time.Time
+	TempRoom    bool
 }
 
 type EventAttendee struct {

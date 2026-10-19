@@ -100,6 +100,10 @@ message CalendarEvent {
   bool guest_links = 24;
   // The client's rights on this event (computed for the caller; false in gateway events).
   bool can_edit = 25;
+  // The meeting has its own temporary room (ADR-0112): with room_id empty the server creates it
+  // 1 h before the start on behalf of the organizer; with room_id set that room is the
+  // meeting's own (its end follows the meeting: end + 1 h). One-off meetings only.
+  bool temp_room = 26;
 }
 
 // Attendee as sent by the client: a member (user_id) or an external address (email).
@@ -131,6 +135,10 @@ message CreateCalendarEventRequest {
   EventRepeat repeat = 9;
   google.protobuf.Timestamp repeat_until = 10;
   repeated CalendarEventAttendeeInput attendees = 11;
+  // Ask for the meeting's own temporary room (ADR-0112): excludes room_id and repeat; the
+  // organizer needs CREATE_TEMP_ROOMS (403), not a bot. A meeting starting within 1 h gets the
+  // room at once (the answer carries room_id; 409 TEMP_ROOM_LIMIT refuses the meeting).
+  bool temp_room = 12;
 }
 
 // PATCH /api/events/{id} → CalendarEventResponse. Unset fields are unchanged; `attendees`,
@@ -151,6 +159,10 @@ message UpdateCalendarEventRequest {
   bool clear_repeat_until = 11;
   bool set_attendees = 12;
   repeated CalendarEventAttendeeInput attendees = 13;
+  // ADR-0112: true asks for the meeting's own temporary room (the organizer only, as on create;
+  // a room chosen in room_id wins over it); false drops the request, a room already created
+  // stays the meeting's room as an ordinary one.
+  optional bool temp_room = 14;
 }
 
 // POST, GET /api/events/{id}, PATCH. A guest of the workspace (ADR-0016) gets GET only for
