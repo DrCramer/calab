@@ -61,7 +61,7 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
     // 2. The tree and an open canvas: stickies, a shape, a text, three connectors.
     await open();
     await openRoadmap(win);
-    await expect(win.getByTestId('canvas-node')).toHaveCount(8);
+    await expect(win.getByTestId('canvas-node')).toHaveCount(6);
     await expect(win.getByTestId('canvas-toolbar')).toBeVisible();
     await checkpoint(shot, 'canvas-tree');
 

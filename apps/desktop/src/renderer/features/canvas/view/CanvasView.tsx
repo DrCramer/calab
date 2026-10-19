@@ -14,6 +14,7 @@ import * as ContextMenu from '@radix-ui/react-context-menu';
 import { CANVAS_BITS } from '@calaba/protocol';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from 'react';
 import { t, useLocale } from '../../../i18n';
+import { fitRect } from '../../../lib/canvas/camera';
 import { canvasDocHandle, setCanvasDocHandle } from '../../../lib/canvas/docHandle';
 import { restoreCanvasState } from '../../../lib/canvas/restore';
 import { toast } from '../../../stores/toasts';
@@ -185,6 +186,30 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   }, [session]);
   useImperativeHandle(ref, () => handle as CanvasViewHandle, [handle]);
   useEffect(() => (handle ? registerCanvasViewHandle(canvasId, handle) : undefined), [canvasId, handle]);
+
+  // A canvas opens showing all of its content, once, as soon as the document has arrived (the camera starts
+  // at the world origin otherwise and the objects sit cut off in a corner). Instant, no animation; later
+  // reconnects and the person's own panning are left alone.
+  useEffect(() => {
+    if (!session) return undefined;
+    const { sync, engine } = session;
+    let done = false;
+    let off: (() => void) | null = null;
+    const fit = (): void => {
+      const st = sync.getStatus();
+      if (done || (st !== 'synced' && st !== 'readonly')) return;
+      done = true;
+      off?.();
+      const b = engine.scene.bounds();
+      if (b) engine.setCamera(fitRect(b, engine.viewport));
+    };
+    off = sync.subscribe(fit);
+    fit();
+    return () => {
+      done = true;
+      off?.();
+    };
+  }, [session]);
 
   // «Восстановить версию» (history dialog, main chunk) reaches the live document through this handle. The
   // canvas is never in the trash while this view is mounted (the section shows a banner instead).
