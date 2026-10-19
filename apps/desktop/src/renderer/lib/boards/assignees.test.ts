@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ASSIGNEES, MAX_NOTE, addAssignee, draftsOf, normalize, only, removeAssignee, setLead, setNote, toggleAssignee, type AssigneeDraft } from './assignees';
+import { MAX_ASSIGNEES, MAX_NOTE, addAssignee, draftsOf, meFirst, normalize, only, removeAssignee, setLead, setNote, toggleAssignee, type AssigneeDraft } from './assignees';
 
 const leads = (l: AssigneeDraft[]): string[] => l.filter((a) => a.isLead).map((a) => a.userId);
 
@@ -33,5 +33,18 @@ describe('assignees: exactly one lead when not empty, lead first', () => {
     // A lead flag on someone else's list entry that is not there changes nothing.
     expect(setLead([{ userId: 'a', isLead: true, note: '' }], 'nobody')).toEqual([{ userId: 'a', isLead: true, note: '' }]);
     expect(draftsOf([{ userId: 'b', isLead: false, note: '' }, { userId: 'a', isLead: true, note: 'n' }]).map((x) => x.userId)).toEqual(['a', 'b']);
+  });
+});
+
+describe('meFirst (people pickers offer the viewer on top)', () => {
+  const ppl = [{ id: 'anna' }, { id: 'boris' }, { id: 'olga' }, { id: 'zoya' }];
+  const id = (p: { id: string }): string => p.id;
+  it('moves the viewer to the top, keeps the rest in order', () => {
+    expect(meFirst(ppl, 'olga', id).map(id)).toEqual(['olga', 'anna', 'boris', 'zoya']);
+  });
+  it('already first, absent or unknown viewer: an unchanged copy', () => {
+    expect(meFirst(ppl, 'anna', id).map(id)).toEqual(['anna', 'boris', 'olga', 'zoya']);
+    expect(meFirst(ppl, 'nobody', id).map(id)).toEqual(['anna', 'boris', 'olga', 'zoya']);
+    expect(meFirst(ppl, '', id)).not.toBe(ppl);
   });
 });

@@ -15,7 +15,9 @@ import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
 import { accessChoice, pickerAccess, type PickerAccess } from '../../lib/boards/access';
+import { meFirst } from '../../lib/boards/assignees';
 import { useBoards } from '../../stores/boards';
+import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
@@ -241,20 +243,24 @@ export function AssigneeMenu({
       access.set(m.user.id, a);
       return a !== 'hidden' || value.includes(m.user.id);
     });
+    const me = myUserId();
     const person = (id: string, name: string, fileId: string): Choice => ({
       id,
-      search: [name],
+      search: id === me ? [name, t('people.you'), t('boards.me')] : [name],
       label: name,
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
       note: String(counts[id] ?? 0),
       ...accessChoice(access.get(id)),
+      // «вы» marks the viewer (task #1: she looked for herself in the list); an access caption wins.
+      ...(id === me && access.get(id) !== 'card' ? { caption: t('people.you') } : {}),
     });
     const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
-    const others = list
-      .filter((m) => !value.includes(m.user?.id ?? ''))
-      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
-      .map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    const others = meFirst(
+      list.filter((m) => !value.includes(m.user?.id ?? '')).sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
+      me,
+      (m) => m.user?.id ?? '',
+    ).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
     return [
       { id: 'none', label: '', items: [{ id: '__none', search: [t('boards.noAssignee')], label: t('boards.noAssignee'), icon: <CircleSlash className="size-4 text-muted" />, checked: value.length === 0, note: '' }] },
       { id: 'chosen', label: '', items: chosen },
