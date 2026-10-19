@@ -194,5 +194,27 @@ func (s *Service) kick(ctx context.Context, items []uuid.UUID) {
 	s.sync.Kick(ctx, items)
 }
 
-// recheck is kick of one item.
-func (s *Service) recheck(ctx context.Context, item uuid.UUID) { s.kick(ctx, []uuid.UUID{item}) }
+// maxKicked bounds the canvases one structural change makes recheck at once (one Redis pipeline);
+// the rest is caught by the periodic recheck of every socket.
+const maxKicked = 2000
+
+// recheckBelow makes the sockets of item and of every live canvas below it check access now: the access of a canvas is the
+// chain of its folders, so a change of restricted, of the overrides or a move of a folder
+// changes it for the sockets of the canvases inside, which are keyed by the canvas (a folder has
+// none).
+func (s *Service) recheckBelow(ctx context.Context, item uuid.UUID) {
+	if s.sync == nil {
+		return
+	}
+	ids := []uuid.UUID{item}
+	rows, err := s.db.Q.ListCanvasSubtree(ctx, item)
+	if err != nil {
+		slog.WarnContext(ctx, "canvas: recheck subtree", "item_id", item, "err", err)
+	}
+	for _, r := range rows {
+		if r.CanvasItemHead.Kind == kindCanvas && r.CanvasItemHead.TrashedAt == nil && len(ids) < maxKicked {
+			ids = append(ids, r.CanvasItemHead.ID)
+		}
+	}
+	s.kick(ctx, ids)
+}

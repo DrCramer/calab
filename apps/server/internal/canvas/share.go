@@ -174,7 +174,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.upserted(ctx, id, before)
-	s.recheck(ctx, id)
+	s.recheckBelow(ctx, id)
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }
