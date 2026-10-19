@@ -96,7 +96,7 @@ function Rooms({ workspaceId }: { workspaceId: string }): ReactNode {
         ),
       )}
       {temps.length || archiveN > 0 ? (
-        <Section id={`temp:${workspaceId}`} title={t('temp.group')} keep={voiceRoom} footer={archiveN > 0 ? <TempArchiveButton workspaceId={workspaceId} n={archiveN} /> : null}>
+        <Section id={`temp:${workspaceId}`} title={t('temp.group')} keep={voiceRoom} footer={archiveN > 0 ? <TempArchiveButton workspaceId={workspaceId} n={archiveN} phone /> : null}>
           {temps.map(row)}
         </Section>
       ) : null}

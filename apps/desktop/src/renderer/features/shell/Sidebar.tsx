@@ -119,6 +119,7 @@ import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
+import { ROOM_ROW_BOX, ROOM_ROW_BUTTON } from './roomRowStyle';
 import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 export { menuBox, menuItem };
@@ -762,7 +763,7 @@ export function CategoryDialog({ workspaceId, onClose }: { workspaceId: string; 
  * grey plate when selected and a fainter one on hover; unread is the bold name (+ the mention badge),
  * no pills or borders; hover actions.
  */
-const rowBox = 'group/row relative flex h-9 items-center rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]';
+const rowBox = ROOM_ROW_BOX;
 
 /**
  * Text room hover actions (invite, settings — no «chat»: the row itself opens it). Same 18 px
@@ -1273,7 +1274,7 @@ const TextRoomRow = memo(function TextRoomRow({
             onClick={() => openRoom(workspaceId, room.id)}
             aria-current={active ? 'page' : undefined}
             className={cx(
-              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-1 text-left text-list leading-5',
+              ROOM_ROW_BUTTON,
               bright ? 'text-fg' : 'text-muted group-hover/row:text-fg',
               unread && !active && 'font-semibold',
             )}

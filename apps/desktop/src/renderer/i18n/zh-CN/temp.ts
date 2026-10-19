@@ -71,6 +71,7 @@ export const zhTemp = {
   'temp.memberPick': '成员',
   'temp.archiveMessages': { other: '{n} 条消息' },
   'temp.archiveButton': '归档 · {n}',
+  'temp.archiveName': '归档',
   'temp.archiveDeletes': '将于 {date} 删除',
   'temp.restore': '恢复',
   'temp.restored': '房间「{name}」已重新开放',

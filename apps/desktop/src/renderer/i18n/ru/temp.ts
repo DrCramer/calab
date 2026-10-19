@@ -71,6 +71,7 @@ export const ruTemp = {
   'temp.memberPick': 'Люди',
   'temp.archiveMessages': { one: '{n} сообщение', few: '{n} сообщения', many: '{n} сообщений', other: '{n} сообщения' },
   'temp.archiveButton': 'Архив · {n}',
+  'temp.archiveName': 'Архив',
   'temp.archiveDeletes': 'Удалится {date}',
   'temp.restore': 'Вернуть',
   'temp.restored': 'Комната «{name}» снова открыта',

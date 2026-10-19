@@ -71,6 +71,7 @@ export const enTemp = {
   'temp.memberPick': 'People',
   'temp.archiveMessages': { one: '{n} message', other: '{n} messages' },
   'temp.archiveButton': 'Archive · {n}',
+  'temp.archiveName': 'Archive',
   'temp.archiveDeletes': 'Deleted on {date}',
   'temp.restore': 'Restore',
   'temp.restored': 'Room «{name}» is open again',

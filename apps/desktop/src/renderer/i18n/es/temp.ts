@@ -71,6 +71,7 @@ export const esTemp = {
   'temp.memberPick': 'Personas',
   'temp.archiveMessages': { one: '{n} mensaje', many: '{n} mensajes', other: '{n} mensajes' },
   'temp.archiveButton': 'Archivo · {n}',
+  'temp.archiveName': 'Archivo',
   'temp.archiveDeletes': 'Se eliminará el {date}',
   'temp.restore': 'Restaurar',
   'temp.restored': 'La sala «{name}» está abierta de nuevo',
