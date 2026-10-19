@@ -111,6 +111,8 @@ async function main(): Promise<void> {
           heapMountedMB: probe.heapMB('gc:mounted'),
           heapClientMB: Math.round((probe.heapMB('gc:mounted') - probe.heapMB('gc:doc-only')) * 100) / 100,
           rendererRssMB: probe.rssMB('gc:mounted'),
+          /** Renderer RSS with the open canvas minus the same renderer with an empty page: what the screen adds (JS heap, bitmaps, scene). */
+          rssDeltaMB: Math.round((probe.rssMB('gc:mounted') - probe.rssMB('blank-end')) * 10) / 10,
         };
         runs.push({ ...res, cpu, memory });
         await probe.close();
