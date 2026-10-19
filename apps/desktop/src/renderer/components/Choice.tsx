@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from './radix/dropdown-menu';
 import { Check, ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMobile } from '../lib/mobile';

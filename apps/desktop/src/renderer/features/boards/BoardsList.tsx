@@ -1,5 +1,5 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardFeature, type Board } from '@calaba/protocol';
 import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';

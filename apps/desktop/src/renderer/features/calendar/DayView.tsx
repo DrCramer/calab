@@ -1,5 +1,5 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
 import { CalendarDays, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';

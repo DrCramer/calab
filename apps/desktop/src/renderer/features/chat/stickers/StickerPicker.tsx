@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../../components/radix/popover';
 import { type Sticker, type StickerPack } from '@calaba/protocol';
 import { Clock3, Search, Sticker as StickerIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';

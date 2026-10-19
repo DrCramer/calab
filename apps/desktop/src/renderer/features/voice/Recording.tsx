@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { CircleStop } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';

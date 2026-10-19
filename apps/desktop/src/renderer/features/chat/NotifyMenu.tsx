@@ -1,6 +1,6 @@
 import { NotificationLevel } from '@calaba/protocol';
-import * as ContextMenu from '@radix-ui/react-context-menu';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Bell, Check } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { t, type MessageKey } from '../../i18n';

@@ -1,6 +1,6 @@
 import { BoardForms } from './BoardForms';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
 import { Archive, ArchiveRestore, ArrowDownUp, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
 import { useCallback, useState, type ReactNode } from 'react';

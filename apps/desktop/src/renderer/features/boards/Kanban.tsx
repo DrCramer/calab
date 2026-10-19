@@ -1,5 +1,5 @@
 import { statusShown } from '../../lib/boards/completion';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardStatusType, type BoardStatus } from '@calaba/protocol';
 import { ChevronDown, ChevronRight, Ellipsis, EyeOff, Palette, Plus, Star, Trash2, Eye, Shapes } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';

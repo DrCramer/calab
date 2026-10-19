@@ -1,4 +1,4 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
 import { ArrowRightLeft, AtSign, Award, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, KeyRound, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';

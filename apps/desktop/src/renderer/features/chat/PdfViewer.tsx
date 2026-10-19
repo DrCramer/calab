@@ -1,4 +1,4 @@
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from '../../components/radix/dialog';
 import { Download } from 'lucide-react';
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { IconButton, Spinner } from '../../components/ui';

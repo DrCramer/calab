@@ -1,6 +1,6 @@
 import { Plan, type AdminWorkspace, type PlanLogEntry } from '@calaba/protocol';
 import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from '../../components/radix/dialog';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';

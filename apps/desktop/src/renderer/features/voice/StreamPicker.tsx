@@ -1,5 +1,5 @@
 import { ScreenSharePreset, clampStreamPreset, type ConcreteScreenSharePreset } from '@calaba/protocol';
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from '../../components/radix/dialog';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { AppWindow, Lock, Monitor, MonitorUp, Settings2, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';

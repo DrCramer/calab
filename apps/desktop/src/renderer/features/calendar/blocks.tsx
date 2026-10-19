@@ -1,4 +1,4 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
 import { Copy, Link2, Pencil, Repeat, Trash2, Video } from 'lucide-react';
 import { memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';

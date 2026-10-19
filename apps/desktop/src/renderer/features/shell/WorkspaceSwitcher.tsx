@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { WorkspaceRole } from '@calaba/protocol';
 import { Check, ChevronDown, Compass, LockKeyhole, Plus, Volume2 } from 'lucide-react';
 import { memo, type ReactNode } from 'react';

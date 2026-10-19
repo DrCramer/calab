@@ -1,5 +1,5 @@
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors, type DragMoveEvent, type DragStartEvent } from '@dnd-kit/core';
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { ExternalLink, Pencil, Plus, RotateCw, Trash2 } from 'lucide-react';
 import { memo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';

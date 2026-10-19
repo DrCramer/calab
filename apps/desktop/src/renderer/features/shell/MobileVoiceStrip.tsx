@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Check, Ellipsis, Headphones, HeadphoneOff, Loader2, Mic, MicOff, Music, Phone, Settings, SwitchCamera, Video, VideoOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

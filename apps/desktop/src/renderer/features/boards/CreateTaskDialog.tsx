@@ -1,5 +1,5 @@
 import { BoardFeature, TaskPriority } from '@calaba/protocol';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BadgeCheck, CalendarClock, CalendarPlus, Check, Diamond, Paperclip, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';

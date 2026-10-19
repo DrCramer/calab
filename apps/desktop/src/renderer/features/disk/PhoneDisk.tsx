@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, diskPermissions, WorkspaceRole, type DiskItem } from '@calaba/protocol';
 import { Check, Ellipsis, Gauge, History, Search, Trash2, Users } from 'lucide-react';

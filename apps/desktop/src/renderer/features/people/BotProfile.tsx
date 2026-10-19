@@ -1,5 +1,5 @@
 import type { Bot } from '@calaba/protocol';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Ban, Plus, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { AvatarButtons } from '../../components/AvatarPicker';

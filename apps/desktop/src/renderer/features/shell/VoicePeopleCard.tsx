@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { WorkspaceRole, type PermissionBits, type Room } from '@calaba/protocol';
 import { LogOut, MonitorUp, Phone, Video, Volume2 } from 'lucide-react';
 import { memo, useMemo, useRef, type ReactElement, type ReactNode, type SyntheticEvent } from 'react';

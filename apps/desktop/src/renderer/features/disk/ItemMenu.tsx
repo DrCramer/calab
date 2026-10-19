@@ -1,5 +1,5 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Download, Ellipsis, FolderInput, FolderOpen, History, Link2, Pencil, RotateCcw, Trash2, Users } from 'lucide-react';
 import { useState, type ComponentType, type ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';

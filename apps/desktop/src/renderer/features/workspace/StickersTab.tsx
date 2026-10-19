@@ -1,5 +1,5 @@
 import type { Sticker, StickerPack } from '@calaba/protocol';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { ChevronLeft, ChevronRight, Ellipsis, ImageUp, Plus, SmilePlus, Star, Trash2, Upload, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react';
 import { confirmAction } from '../../components/Confirm';

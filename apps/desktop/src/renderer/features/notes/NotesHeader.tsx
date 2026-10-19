@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import type { Room } from '@calaba/protocol';
 import { Ellipsis, Lock, NotebookText, Pencil, Search, Smile, Trash2 } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';

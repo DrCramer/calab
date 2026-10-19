@@ -1,4 +1,4 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
 import { CheckCheck, LogOut, Settings, UserPlus, Users } from 'lucide-react';
 import type { ReactNode } from 'react';

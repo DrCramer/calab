@@ -1,4 +1,4 @@
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from '../../components/radix/dialog';
 import { MessageSquare, X } from 'lucide-react';
 import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useMediaUrl } from '../../components/MediaImg';

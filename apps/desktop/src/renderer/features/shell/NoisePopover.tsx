@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { AudioLines } from 'lucide-react';
 import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import { Button, Tip, Toggle, cx } from '../../components/ui';

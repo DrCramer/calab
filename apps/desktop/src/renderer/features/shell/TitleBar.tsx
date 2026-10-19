@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { CircleHelp, Search, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';

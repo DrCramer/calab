@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { AtSign, Hash, Inbox, Volume2 } from 'lucide-react';
 import type { Message } from '@calaba/protocol';
 import { memo, useCallback, useEffect, type ReactNode } from 'react';

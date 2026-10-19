@@ -1,6 +1,6 @@
 import type { Bot } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { CircleAlert, CircleCheck, CircleSlash, Copy, Ellipsis, ImageMinus, KeyRound, Plus, RefreshCw, Trash2, ShieldCheck, TriangleAlert, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

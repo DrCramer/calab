@@ -1,7 +1,7 @@
 import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { Bell, BellOff, BellRing, Ellipsis, Phone, Pin, PinOff, Search, SlidersHorizontal, Users, Video } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

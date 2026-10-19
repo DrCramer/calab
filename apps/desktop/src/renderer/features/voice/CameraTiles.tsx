@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Check, ChevronLeft, ChevronRight, Ellipsis, Maximize2, MessageCircle, Mic, MicOff, Pin, PinOff, VideoOff } from 'lucide-react';
 import {
   forwardRef,

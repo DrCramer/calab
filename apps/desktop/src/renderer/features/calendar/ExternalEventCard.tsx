@@ -1,5 +1,5 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
 import { AttendeeStatus, WorkspaceRole } from '@calaba/protocol';
 import { CalendarPlus, CalendarSync, Clock, ExternalLink, Mail, MapPin, Trash2, Video } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';

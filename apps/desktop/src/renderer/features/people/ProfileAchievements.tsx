@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { WorkspaceRole, type ListMemberAchievementsResponse } from '@calaba/protocol';
 import { useQuery } from '@tanstack/react-query';
 import { Award, Ellipsis, Undo2 } from 'lucide-react';

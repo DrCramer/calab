@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { WorkspaceRole, type UpcomingBirthday, type WorkspaceMember } from '@calaba/protocol';
 import { ChevronRight, MonitorUp, Phone, Video, Volume2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';

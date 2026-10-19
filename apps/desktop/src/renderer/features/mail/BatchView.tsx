@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Archive, Flag, FolderInput, Mail, MailOpen, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
