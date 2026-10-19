@@ -26,6 +26,7 @@ import {
   isPrivateObject,
   mayAllowRecording,
   mayInviteGuestsIn,
+  mayManageRoomLinks,
   mayManageRoom,
   ROOM_EDITABLE,
   compactDrafts,
@@ -185,6 +186,8 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
   // A temporary room's creator manages it too (ADR-0044, the server's rooms.MayManage).
   const manage = mayManageRoom(roles, me, room);
   const guests = mayInviteGuestsIn(roles, me, room);
+  // Without INVITE_GUESTS: members-only links (INVITE_MEMBERS, or the temporary room's creator).
+  const links = mayManageRoomLinks(roles, me, room);
   const sections: SettingsSection[] = [
     ...(manage
       ? [
@@ -193,7 +196,9 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
           { id: 'perms', label: t('room.tabPerms'), icon: ShieldCheck, content: <PermissionsTab roomId={roomId} /> },
         ]
       : []),
-    ...(guests ? [{ id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} /> }] : []),
+    ...(links
+      ? [{ id: 'guests', label: guests ? t('people.link.tab') : t('people.link.tabMembers'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} guests={guests} /> }]
+      : []),
   ];
   if (sections.length === 0) return null;
   return (

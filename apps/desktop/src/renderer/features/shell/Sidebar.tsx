@@ -33,6 +33,8 @@ import {
   FolderInput,
   FolderPlus,
   Hash,
+  Infinity as InfinityIcon,
+  Link,
   ListPlus,
   Loader2,
   Lock,
@@ -61,14 +63,14 @@ import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isOwnerRoles, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { expiresMs, extendTo, formatRemaining, isExpiring, sortTempRooms } from '../../lib/tempRooms';
-import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom } from '../../services/tempRooms';
+import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom, makeTempRoomPermanent } from '../../services/tempRooms';
 import { useCalendar } from '../../stores/calendar';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications } from '../../services/mentions';
 import { KnockBadge } from '../guests/KnockBadge';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { Bar, BAR_GROUP } from '../../components/Bar';
 import { CreateSlot, PhoneSearchButton } from '../../components/PhoneHeader';
@@ -852,6 +854,11 @@ export function RoomMenu({
   const open = useUi((s) => s.openDialog);
   const openRoom = useUi((s) => s.openRoom);
   const temp = !!room.expiresAt;
+  // «Сделать постоянной» (ADR-0044 addendum 14.10): the right to create regular rooms — workspace
+  // MANAGE_ROOM, as the server checks; a primitive, permanent rooms answer false at once.
+  const permanent = useWorkspaces((s) => temp && mayArrangeRooms(rolesOf(s.byId[room.workspaceId], myUserId())));
+  // «Ссылки…» (ADR-0107): an invite right in the room, or its creator (members-only links).
+  const manageLinks = inviteRoom || (temp && !guest && !!room.createdBy && room.createdBy === myUserId());
   // «Добавить встречу» only while the temporary room has no meeting (ADR-0044); a primitive, and
   // permanent rooms answer false at once.
   const hasEvent = useCalendar((s) => temp && (!!s.active[room.id]?.length || Object.values(s.occ).some((e) => e.roomId === room.id)));
@@ -877,6 +884,8 @@ export function RoomMenu({
     hasCategories: canOrder && workspaceCategories(room.workspaceId).length > 0,
     temp,
     hasEvent,
+    manageLinks,
+    makePermanent: permanent,
   });
   const item = (id: RoomMenuItem): ReactNode => {
     switch (id) {
@@ -963,6 +972,18 @@ export function RoomMenu({
         return (
           <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-copy-link" onSelect={() => void copyTempRoomLink(room)}>
             <Link2 className="size-4" /> {t('temp.copyLink')}
+          </ContextMenu.Item>
+        );
+      case 'links':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-links" onSelect={() => open({ kind: 'room-settings', roomId: room.id, tab: 'guests' })}>
+            <Link className="size-4" /> {t('temp.links')}
+          </ContextMenu.Item>
+        );
+      case 'makePermanent':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-permanent" onSelect={() => void makeTempRoomPermanent(room)}>
+            <InfinityIcon className="size-4" /> {t('temp.permanent')}
           </ContextMenu.Item>
         );
       case 'extend':

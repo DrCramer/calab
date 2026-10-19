@@ -8,7 +8,8 @@
  *   · Настройки комнаты | Прочитано · Уведомления › | Вверх · Вниз · В категорию ›
  *
  * A temporary room (ADR-0044) managed by me (MANAGE_ROOM or its creator) adds
- *   | Скопировать ссылку · Продлить › · Добавить встречу (no meeting yet) … | Удалить комнату
+ *   | Скопировать ссылку · Ссылки… (I manage its links, ADR-0107) · Продлить › · Добавить встречу
+ *   (no meeting yet) … | Сделать постоянной (workspace MANAGE_ROOM) · Удалить комнату
  * and has no reorder items (the «Временные» group is sorted by expiry, not dragged).
  */
 export type RoomMenuItem =
@@ -23,6 +24,8 @@ export type RoomMenuItem =
   | 'moveDown'
   | 'toCategory'
   | 'copyLink'
+  | 'links'
+  | 'makePermanent'
   | 'extend'
   | 'addMeeting'
   | 'deleteRoom';
@@ -50,6 +53,10 @@ export interface RoomMenuInput {
   temp?: boolean;
   /** The temporary room already has a meeting in the calendar. */
   hasEvent?: boolean;
+  /** I manage the room's links (an invite right there, or its creator): «Ссылки…» of a temporary room. */
+  manageLinks?: boolean;
+  /** Workspace MANAGE_ROOM (the right to create regular rooms): «Сделать постоянной» of a temporary room. */
+  makePermanent?: boolean;
 }
 
 export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
@@ -64,10 +71,13 @@ export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
   if (i.canManage) head.push('settings');
   const groups: RoomMenuGroup[] = [head];
   const temp = !!i.temp && i.canManage;
-  if (temp) groups.push(i.hasEvent || i.guest ? ['copyLink', 'extend'] : ['copyLink', 'extend', 'addMeeting']);
+  if (temp) {
+    const g: RoomMenuItem[] = i.manageLinks && !i.guest ? ['copyLink', 'links', 'extend'] : ['copyLink', 'extend'];
+    groups.push(i.hasEvent || i.guest ? g : [...g, 'addMeeting']);
+  }
   groups.push(['markRead', 'notify']);
   if (i.canOrder && !i.temp) groups.push(i.hasCategories ? ['moveUp', 'moveDown', 'toCategory'] : ['moveUp', 'moveDown']);
-  if (temp) groups.push(['deleteRoom']);
+  if (temp) groups.push(i.makePermanent && !i.guest ? ['makePermanent', 'deleteRoom'] : ['deleteRoom']);
   return groups.filter((g) => g.length > 0);
 }
 

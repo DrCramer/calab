@@ -52,6 +52,8 @@ import {
   CreateInviteRequestSchema,
   CreateRoomInviteRequestSchema,
   CreateRoomInviteResponseSchema,
+  UpdateRoomInviteRequestSchema,
+  UpdateRoomInviteResponseSchema,
   GetRoomInviteResponseSchema,
   JoinRoomInviteRequestSchema,
   JoinRoomInviteResponseSchema,
@@ -490,6 +492,9 @@ export const api = {
     create: (roomId: string, init: MessageInitShape<typeof CreateRoomInviteRequestSchema>) =>
       call('POST', `/api/rooms/${roomId}/invites`, CreateRoomInviteResponseSchema, body(CreateRoomInviteRequestSchema, init)),
     revoke: (roomId: string, inviteId: string) => callEmpty('DELETE', `/api/rooms/${roomId}/invites/${inviteId}`),
+    /** Expiry, uses, rights (ADR-0107); the approval has admissionApi.setLinkApproval. */
+    update: (roomId: string, inviteId: string, init: MessageInitShape<typeof UpdateRoomInviteRequestSchema>) =>
+      call('PATCH', `/api/rooms/${roomId}/invites/${inviteId}`, UpdateRoomInviteResponseSchema, body(UpdateRoomInviteRequestSchema, init)),
     /** Public preview (no auth needed). */
     get: (code: string) => call('GET', `/api/room-invites/${encodeURIComponent(code)}`, GetRoomInviteResponseSchema),
     /** Signed in: joins as the current user (becomes a guest of the workspace if not a member). */

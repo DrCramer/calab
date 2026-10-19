@@ -251,6 +251,15 @@ function isTempCreator(roles: readonly RoleBits[] | undefined, userId: string, r
   return !!room.expiresAt && !!userId && room.createdBy === userId && !isGuestOnly(roles);
 }
 
+/**
+ * Managing the room's links (room settings → links, ADR-0043 / ADR-0107): either invite right
+ * there, or — a temporary room — being its creator (members-only links, ADR-0044; the server's
+ * guests.linkAccess).
+ */
+export function mayManageRoomLinks(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return mayInviteToRoom(roles, userId, room) || (!!room && isTempCreator(roles, userId, room));
+}
+
 /** A room invite right in already computed room bits (rows that have them): either bit. */
 export function mayRoomInvite(perms: PermissionBits): boolean {
   return can(perms, 'INVITE_GUESTS') || can(perms, 'INVITE_MEMBERS');

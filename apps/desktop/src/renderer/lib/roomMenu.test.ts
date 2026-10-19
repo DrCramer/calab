@@ -48,6 +48,18 @@ describe('roomMenuGroups', () => {
     ]);
   });
 
+  it('a temporary room: «Ссылки…» for who manages its links, «Сделать постоянной» with workspace MANAGE_ROOM (ADR-0107)', () => {
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, manageLinks: true, makePermanent: true })).toEqual([
+      ['record', 'settings'],
+      ['copyLink', 'links', 'extend', 'addMeeting'],
+      ['markRead', 'notify'],
+      ['makePermanent', 'deleteRoom'],
+    ]);
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, guest: true, manageLinks: true, makePermanent: true })[1]).toEqual(['copyLink', 'extend']);
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, guest: true, makePermanent: true }).at(-1)).toEqual(['deleteRoom']);
+    expect(roomMenuGroups({ ...base, canManage: false, temp: true, manageLinks: true, makePermanent: true })).toEqual([['record'], ['markRead', 'notify']]);
+  });
+
   it('a temporary room with a meeting already: no «Добавить встречу»', () => {
     expect(roomMenuGroups({ ...base, canManage: true, temp: true, hasEvent: true })[1]).toEqual(['copyLink', 'extend']);
   });
