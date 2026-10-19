@@ -19,17 +19,21 @@
  * it moves *up* and lands exactly on the bottom; the reader arrives at the bottom moving down.
  *
  * One exception, by intent (owner, 15.10, «sent a text / sticker / image — the feed is not at the
- * bottom»): sending my own message sticks the pin (`stick()`), wherever the reader was. Virtuoso's
- * followOutput lands on the bottom computed from the new row's *estimated* height and follows size
- * increases only for 100 ms; the row's real height (several lines, a sticker or an image loading,
- * upload → preview, the server echo re-rendering it) comes later and often lands more than STICK_PX
- * short, so a pin that waited for a scroll event never stuck. A send is the reader's own action,
+ * bottom»): sending my own message sticks the pin (`stick()`), wherever the reader was, and the pin
+ * takes the feed to the bottom and holds it through the row's real height (several lines, a sticker
+ * or an image loading, upload → preview, the server echo re-rendering it). A send is the reader's own action,
  * never a clamp, so it cannot reintroduce the 2.4.1 flicker; it is undone, like any stick, by the
  * reader scrolling up. Sent from a window away from the present (`setLive(false)` until the present
  * loads), the intent survives until the window is live again, then pins to the new bottom.
  *
- * Which row change is a send, an echo of it or someone else's message is `lastRowChange` below —
- * the caller skips the first resize after a *new* row of someone else (left to the smooth follow).
+ * The pin is the feed's only writer of «scroll to the bottom» (CBF-13, ADR-0110): every geometry
+ * change while stuck — someone's new message appended, a row growing, the scroller shrinking — is
+ * pinned at once, the same way. Earlier the first resize after someone else's new row was left to
+ * Virtuoso's followOutput ('smooth'), which scrolls to the bottom computed from the row's
+ * *estimated* height: a row taller than the estimate (several lines, a link preview, a meeting
+ * card) ended under the composer, and no later resize came to fix it — the bug of CBF-13. With two
+ * writers, a smooth scroll still on its way to a stale target could also move the reader up.
+ * Which new last row is my own send is `isOwnSend` below.
  *
  * Stateless about the DOM (like hoverIntent.ts): the caller feeds geometry from scroll events and
  * ResizeObserver callbacks and does the actual scrolling. No timers, no frame loops.
@@ -86,7 +90,7 @@ export function createBottomPin(stuck = false): BottomPin {
         if (d > EPS) stuck = sent = false;
         return;
       }
-      // Down or in place, at the bottom: the reader arrived (or our pin / followOutput landed).
+      // Down or in place, at the bottom: the reader arrived (or our pin landed).
       if (d <= STICK_PX) stuck = true;
     },
     resized(g) {
@@ -119,19 +123,11 @@ export function createBottomPin(stuck = false): BottomPin {
   };
 }
 
-/** What a change of the last row's key means to the bottom pin:
- * - `send` — my own optimistic row (`local:<nonce>`, not yet sent) became the last one: stick, and
- *   pin through its first measurement (followOutput lands on an estimate);
- * - `echo` — the server echo replaced my optimistic last row (`local:<nonce>` → its id, the item
- *   count unchanged, so followOutput is not called): an ordinary resize — pinned only while stuck;
- * - `fresh` — anything else (someone's new message): its first resize is left to followOutput, so
- *   an incoming message scrolls smoothly instead of being snapped instantly by the pin. */
-export type LastRowChange = 'send' | 'echo' | 'fresh';
-
-export function lastRowChange(prevKey: string, last: { key: string; own: boolean; pending: boolean; nonce: string }): LastRowChange {
-  if (last.own && last.pending && last.key.startsWith('local:')) return 'send';
-  if (last.nonce !== '' && prevKey === `local:${last.nonce}`) return 'echo';
-  return 'fresh';
+/** A new last row that is my own optimistic one (`local:<nonce>`, not yet sent): a send, which
+ * sticks the pin from anywhere (see stick()). Someone else's message, the server echo of mine or my
+ * message from another device change nothing: they are pinned while stuck, like any growth. */
+export function isOwnSend(last: { key: string; own: boolean; pending: boolean }): boolean {
+  return last.own && last.pending && last.key.startsWith('local:');
 }
 
 /** Where the feed opens: at the first unread row (docs/09 #39, `firstNew` ≥ 0), else at the
