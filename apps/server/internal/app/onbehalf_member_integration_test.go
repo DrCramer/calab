@@ -3,10 +3,15 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"slices"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
@@ -44,6 +49,34 @@ func inviteMessage(t *testing.T, u *user, botID string) *v1.Message {
 		t.Fatalf("newest DM message %v is not the bot's", m)
 	}
 	return m
+}
+
+// uploadOnBehalf uploads a small file with the bot's token on behalf of member (multipart).
+func uploadOnBehalf(t *testing.T, b *bot, member, path string) *v1.FileMeta {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "scan.txt")
+	_, _ = fw.Write([]byte("invoice 42"))
+	_ = mw.Close()
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", srv.URL+path, &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+b.token)
+	req.Header.Set("Calab-On-Behalf", member)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 201 && resp.StatusCode != 200 {
+		t.Fatalf("upload on behalf: %d %s", resp.StatusCode, raw)
+	}
+	var r v1.UploadFileResponse
+	if err := protojson.Unmarshal(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	return r.GetFile()
 }
 
 func press(u *user, m *v1.Message, button, nonce string) int {
@@ -138,6 +171,12 @@ func TestOnBehalfOfMember(t *testing.T) {
 	oc.must(201, "POST", "/api/rooms/"+task.GetRoomId()+"/messages", &v1.CreateMessageRequest{Content: "скан во вложении"}, &cm)
 	if cm.GetMessage().GetAuthorId() != carol.id || cm.GetMessage().GetViaBotId() != bt.id {
 		t.Fatalf("comment on behalf %v", cm.GetMessage())
+	}
+	// An attachment: her upload in the workspace, on her comment.
+	file := uploadOnBehalf(t, bt, carol.id, "/api/workspaces/"+wid+"/files")
+	oc.must(201, "POST", "/api/rooms/"+task.GetRoomId()+"/messages", &v1.CreateMessageRequest{AttachmentIds: []string{file.GetId()}}, &cm)
+	if cm.GetMessage().GetAuthorId() != carol.id || len(cm.GetMessage().GetAttachments()) != 1 {
+		t.Fatalf("attachment on behalf %v", cm.GetMessage())
 	}
 	oc.must(200, "PUT", "/api/tasks/"+task.GetId()+"/watchers", &v1.SetTaskWatcherRequest{UserId: bob.id}, nil)
 
