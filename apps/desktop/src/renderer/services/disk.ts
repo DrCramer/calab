@@ -33,7 +33,7 @@ import { fmt } from '../lib/format';
 import { filePreview } from '../lib/filePreview';
 import { pushOnTab, type PhoneScreen } from '../lib/phoneNav';
 import { uploadInto } from '../lib/api/endpoints';
-import { folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
+import { columnFolders, folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
 import { getLocale } from '../i18n';
 import { platform } from '../platform';
 import { useDisk, useDiskUploads } from '../stores/disk';
@@ -150,16 +150,25 @@ export async function loadUsage(ws: string): Promise<void> {
  * Refetches what the disk screen shows for `ws` — the open listing, the trash when it was
  * loaded, the usage — once per synchronous burst of events (a trashed subtree sends many).
  */
-const queued = new Set<string>();
-export function refreshDisk(ws: string): void {
-  if (queued.has(ws)) return;
-  queued.add(ws);
+const queued = new Map<string, Set<string>>();
+export function refreshDisk(ws: string, parents: readonly string[] = []): void {
+  const pending = queued.get(ws);
+  if (pending) {
+    for (const p of parents) pending.add(p);
+    return;
+  }
+  queued.set(ws, new Set(parents));
   queueMicrotask(() => {
+    const touched = queued.get(ws) ?? new Set<string>();
     queued.delete(ws);
     const ui = useDiskUi.getState();
     const trash = !!ui.trashOf[ws];
     const folder = folderOf(ui, ws);
     void loadListing(ws, folder, trash);
+    // The columns view shows the ancestors too: reload those an event touched (CBF-21).
+    if (!trash && prefs().diskView === 'columns') {
+      for (const f of columnFolders(folder, useDisk.getState().paths[folder])) if (f !== folder && touched.has(f)) void loadListing(ws, f, false);
+    }
     if (!trash && useDisk.getState().lists[trashKey(ws)]) void loadListing(ws, ROOT, true);
     void loadUsage(ws);
   });
@@ -203,18 +212,21 @@ export function onDiskItemUpsert(e: DiskItemUpsert): void {
     useDisk.getState().forgetLists(e.workspaceId);
     return;
   }
+  // A move touches the old parent too.
+  const before = useDisk.getState().items[e.item.id]?.parentId;
   useDisk.getState().upsert(e.item, true);
-  refreshDisk(e.workspaceId);
+  refreshDisk(e.workspaceId, before === undefined ? [e.item.parentId] : [e.item.parentId, before]);
 }
 
 /** DISK_ITEM_REMOVE: deleted forever or my access is gone; the open folder inside it falls back to the root. */
 export function onDiskItemRemove(e: DiskItemRemove): void {
   const st = useDisk.getState();
+  const parent = st.items[e.itemId]?.parentId;
   st.remove(e.itemId);
   const ui = useDiskUi.getState();
   const open = folderOf(ui, e.workspaceId);
   if (open === e.itemId || (open && st.paths[open]?.some((p) => p.id === e.itemId))) ui.openFolder(e.workspaceId, ROOT);
-  if (onScreen(e.workspaceId)) refreshDisk(e.workspaceId);
+  if (onScreen(e.workspaceId)) refreshDisk(e.workspaceId, parent === undefined ? [] : [parent]);
   else useDisk.getState().forgetLists(e.workspaceId);
 }
 
