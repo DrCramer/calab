@@ -22,6 +22,7 @@ import { ruMailbox } from './mailbox';
 import { ruDisk } from './disk';
 import { ruWiki } from './wiki';
 import { ruCanvas } from './canvas';
+import { ruCanvasBoard } from './canvasBoard';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
 import { ruHistory } from './history';
@@ -85,6 +86,7 @@ export const ru = {
   ...ruDisk,
   ...ruWiki,
   ...ruCanvas,
+  ...ruCanvasBoard,
   ...ruBoards,
   ...ruBoards2,
   ...ruHistory,

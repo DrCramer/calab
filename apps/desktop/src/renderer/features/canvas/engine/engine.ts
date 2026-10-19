@@ -112,6 +112,7 @@ export class CanvasEngine implements Core {
   private readonly listeners = new Set<() => void>();
   private readonly selListeners = new Set<(objs: readonly ObjectRec[]) => void>();
   private readonly localListeners = new Set<(a: LocalAwareness) => void>();
+  private readonly viewListeners = new Set<() => void>();
   private localCursor: Point | null = null;
   private localTimer: ReturnType<typeof setTimeout> | null = null;
   private localAt = 0;
@@ -203,6 +204,20 @@ export class CanvasEngine implements Core {
     return () => this.selListeners.delete(fn);
   }
 
+  /**
+   * Camera moved or a gesture started/ended — for UI pinned to the content (the floating properties panel).
+   * Called synchronously and rarely more than once per input event; the listener must be cheap and must
+   * not set React state per call.
+   */
+  subscribeView(fn: () => void): () => void {
+    this.viewListeners.add(fn);
+    return () => this.viewListeners.delete(fn);
+  }
+
+  private emitView(): void {
+    for (const fn of this.viewListeners) fn();
+  }
+
   /** Local cursor + selection for the sync layer, throttled to 20/s (trailing edge kept). */
   onLocalAwareness(fn: (a: LocalAwareness) => void): () => void {
     this.localListeners.add(fn);
@@ -269,7 +284,9 @@ export class CanvasEngine implements Core {
   }
 
   set activeGesture(g: Gesture | null) {
+    if (g === this.gesture) return;
     this.gesture = g;
+    this.emitView();
   }
 
   px(n: number): number {
@@ -282,6 +299,7 @@ export class CanvasEngine implements Core {
     this.cam = next;
     this.renderer.requestFrame();
     this.sync();
+    this.emitView();
   }
 
   setOverlay(p: Partial<OverlayState>): void {
@@ -736,12 +754,15 @@ export class CanvasEngine implements Core {
 
   // ── export ──────────────────────────────────────────────────────────────────
 
-  /** Paints the whole canvas (or just the selection) into a new canvas element; null if empty. */
-  exportToCanvas(opts: { selectionOnly?: boolean; pxPerUnit?: number } = {}): HTMLCanvasElement | null {
-    const b = opts.selectionOnly && this.sel.size > 0 ? this.scene.bounds(this.sel) : this.scene.bounds();
+  /**
+   * Paints the whole canvas, just the selection or an explicit world `rect` (the visible area) into a new
+   * canvas element; null if there is nothing to paint. `pad` is the world margin around the content.
+   */
+  exportToCanvas(opts: { selectionOnly?: boolean; pxPerUnit?: number; rect?: Rect; pad?: number } = {}): HTMLCanvasElement | null {
+    const b = opts.rect ?? (opts.selectionOnly && this.sel.size > 0 ? this.scene.bounds(this.sel) : this.scene.bounds());
     if (!b) return null;
     const c = document.createElement('canvas');
-    renderSceneTo(c, this.scene, this.palette, b, opts.pxPerUnit ?? 1);
+    renderSceneTo(c, this.scene, this.palette, b, opts.pxPerUnit ?? 1, opts.pad);
     return c;
   }
 
@@ -783,6 +804,7 @@ export class CanvasEngine implements Core {
     this.listeners.clear();
     this.selListeners.clear();
     this.localListeners.clear();
+    this.viewListeners.clear();
   }
 }
 
