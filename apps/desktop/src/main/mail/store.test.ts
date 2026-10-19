@@ -57,6 +57,22 @@ describe('migrations', () => {
     expect(() => migrate(db, ['CREATE TABLE a (x INTEGER); CREATE TABLE a (x INTEGER);'])).toThrow();
     expect(db.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE name = 'a'").get()?.['c']).toBe(0);
   });
+  it('repairs cached mojibake snippets once on open, search index included', () => {
+    const s = store();
+    const dir = s.dir;
+    const inbox = s.upsertFolder({ path: 'INBOX', name: 'INBOX', delimiter: '/', parentPath: '', role: 'inbox', specialUse: null });
+    const bad = new TextDecoder('windows-1251').decode(Buffer.from('Счет на оплату HOSTKEY', 'utf8'));
+    s.insertMessage(msg(inbox, { subject: 'Invoice', snippet: bad }));
+    s.insertMessage(msg(inbox, { subject: 'Real', snippet: 'Счёт на оплату' }));
+    s.setMeta('snippet_version', '1');
+    s.close();
+    const again = new MailStore(dir, ACC);
+    const snippets = (): string[] => again.listThreads({ kind: 'all', exclude: [] }, { limit: 10 }).map((r) => `${r.subject}:${r.snippet}`).sort();
+    expect(snippets()).toEqual(['Invoice:Счет на оплату HOSTKEY', 'Real:Счёт на оплату']);
+    expect(again.listThreads({ kind: 'all', exclude: [] }, { limit: 10, match: ftsQuery('счет на') ?? '' }).map((r) => r.subject)).toEqual(['Invoice']);
+    expect(again.getMeta('snippet_version')).toBe('2');
+    again.close();
+  });
   it('a store reopens its database without re-running steps', () => {
     const s = store();
     const dir = s.dir;

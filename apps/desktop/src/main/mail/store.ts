@@ -9,6 +9,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqlite';
 import type { MailAddress, MailAttachment, MailCursor, MailFlags, MailFolderRole, MailHeader, MailThreadRow } from '../../shared/mail';
+import { repairUtf8AsCp1251 } from './charset';
 import { folderId, messageId } from './ids';
 
 type Row = Record<string, SQLOutputValue>;
@@ -134,6 +135,9 @@ export function openDb(file: string): DatabaseSync {
 
 // ---------------------------------------------------------------- subjects & threading
 
+/** Bumped when stored snippets need a one-off repair pass (see MailStore.repairSnippets). */
+const SNIPPET_VERSION = '2';
+
 const PREFIX = /^\s*((re|fwd?|aw|wg|sv|vs|tr|rif|antw|odp|ответ|отв|пересл|fw)\s*(\[\d+\]|\(\d+\))?\s*[:：]\s*)+/i;
 
 /** Lower-cased subject without reply / forward prefixes (incl. Russian) and extra spaces. */
@@ -249,6 +253,28 @@ export class MailStore {
     mkdirSync(this.blobDir, { recursive: true });
     this.db = openDb(join(dir, 'mail.sqlite'));
     migrate(this.db);
+    this.repairSnippets();
+  }
+
+  /**
+   * One-off pass per snippet version: list snippets cached before 3.7.2 could hold utf-8 read
+   * as windows-1251 (a partial fetch cut mid-letter defeated the sniffer). Repairs them in
+   * place, search index included; headers are never re-fetched, so this is the only way back.
+   */
+  private repairSnippets(): void {
+    if (this.getMeta('snippet_version') === SNIPPET_VERSION) return;
+    this.tx(() => {
+      const rows = this.db.prepare("SELECT rid, snippet FROM messages WHERE instr(snippet, 'Р') > 0 OR instr(snippet, 'С') > 0").all();
+      const upd = this.db.prepare('UPDATE messages SET snippet = ? WHERE rid = ?');
+      const fts = this.db.prepare('UPDATE fts SET snippet = ? WHERE rowid = ?');
+      for (const r of rows) {
+        const fixed = repairUtf8AsCp1251(str(r['snippet']));
+        if (fixed === null) continue;
+        upd.run(fixed, r['rid'] ?? null);
+        fts.run(fixed, r['rid'] ?? null);
+      }
+      this.setMeta('snippet_version', SNIPPET_VERSION);
+    });
   }
 
   close(): void {

@@ -4,8 +4,8 @@
  * through real mailparser on hand-built .eml sources.
  */
 import { describe, expect, it } from 'vitest';
-import { sniffCharset, SniffingIconv } from './charset';
-import { decodeCharset, decodePart, parseBody } from './mime';
+import { repairUtf8AsCp1251, sniffCharset, SniffingIconv, trimUtf8Tail } from './charset';
+import { decodeCharset, decodePart, htmlMetaCharset, parseBody, SNIPPET_FETCH, snippetFrom, snippetPart } from './mime';
 
 const TEXT = 'Привет! Это письмо в однобайтовой кодировке, проверяем отображение русского текста в почтовом клиенте. С уважением, банк.';
 const TEXT_EMOJI = 'Сообщение с эмодзи 🎉 и русский текст utf-8';
@@ -78,6 +78,69 @@ describe('decodeCharset', () => {
   it('feeds the snippet path: quoted-printable cp1251 part decodes to text', () => {
     const qp = [...CP1251].map((b) => (b > 0x7f || b === 0x3d ? `=${b.toString(16).toUpperCase().padStart(2, '0')}` : String.fromCharCode(b))).join('');
     expect(decodePart(Buffer.from(qp, 'latin1'), 'quoted-printable', 'utf-8')).toBe(TEXT);
+  });
+});
+
+describe('list snippets (partial part fetch)', () => {
+  const HOSTKEY = 'Подтверждение оплаты счета 1171131 в Telegram-боте HOSTKEY';
+  const b64 = (b: Uint8Array | number[]): Buffer => Buffer.from(Buffer.from(b).toString('base64').replace(/(.{76})/g, '$1\r\n'), 'latin1');
+  const qpOf = (a: number[]): Buffer => Buffer.from(a.map((b) => (b > 0x7f || b === 0x3d ? `=${b.toString(16).toUpperCase().padStart(2, '0')}` : String.fromCharCode(b))).join(''), 'latin1');
+  const html = (meta: string, body: string): string => `<html><head>${meta}<style>p{color:red}</style></head><body><p>${body}</p>${'<p>Уважаемый клиент, спасибо за оплату.</p>'.repeat(80)}</body></html>`;
+
+  it('utf-8 base64 html cut at any byte of the fetch window reads as cyrillic (task #3)', () => {
+    const raw = b64(Buffer.from(html('', HOSTKEY), 'utf8'));
+    expect(raw.length).toBeGreaterThan(SNIPPET_FETCH + 8);
+    for (let cut = SNIPPET_FETCH - 8; cut <= SNIPPET_FETCH; cut++) {
+      for (const charset of ['utf-8', '']) {
+        const s = snippetFrom(raw.subarray(0, cut), { type: 'text/html', encoding: 'base64', charset });
+        expect(s.startsWith(HOSTKEY), `${String(cut)} ${charset}`).toBe(true);
+        expect(s).not.toMatch(/[�Џ]/);
+      }
+    }
+  });
+
+  it('utf-8 html behind a windows-1251 header label (mostly markup) is still utf-8', () => {
+    const raw = b64(Buffer.from(html('', HOSTKEY), 'utf8')).subarray(0, SNIPPET_FETCH);
+    expect(snippetFrom(raw, { type: 'text/html', encoding: 'base64', charset: 'windows-1251' }).startsWith(HOSTKEY)).toBe(true);
+  });
+
+  it('an html part without a charset parameter uses its <meta> charset', () => {
+    const meta = '<meta http-equiv="Content-Type" content="text/html; charset=koi8-r">';
+    const raw = Buffer.concat([Buffer.from(`<html><head>${meta}</head><body><p>`, 'latin1'), Buffer.from(KOI8), Buffer.from('</p></body></html>', 'latin1')]);
+    expect(htmlMetaCharset(raw)).toBe('koi8-r');
+    expect(htmlMetaCharset(Buffer.from('<meta charset="UTF-8">', 'latin1'))).toBe('UTF-8');
+    const part = snippetPart({ type: 'multipart/alternative', childNodes: [{ part: '1', type: 'text/html', encoding: '8bit' }] });
+    expect(part).toEqual({ part: '1', type: 'text/html', encoding: '8bit', charset: '' });
+    expect(snippetFrom(raw, part ?? { type: '', encoding: '', charset: '' })).toBe(TEXT);
+  });
+
+  it('windows-1251 quoted-printable and koi8-r 8bit text parts', () => {
+    expect(snippetFrom(qpOf(CP1251), { type: 'text/plain', encoding: 'quoted-printable', charset: 'windows-1251' })).toBe(TEXT);
+    expect(snippetFrom(Buffer.from(KOI8), { type: 'text/plain', encoding: '8bit', charset: 'koi8-r' })).toBe(TEXT);
+    expect(snippetFrom(b64(KOI8), { type: 'text/plain', encoding: 'base64', charset: 'KOI8-R' })).toBe(TEXT);
+  });
+
+  it('trimUtf8Tail drops only an incomplete trailing sequence', () => {
+    const full = Buffer.from('ab Пр', 'utf8');
+    expect(trimUtf8Tail(full)).toBe(full);
+    expect([...trimUtf8Tail(full.subarray(0, full.length - 1))]).toEqual([...Buffer.from('ab П', 'utf8')]);
+    const emoji = Buffer.from('x🎉', 'utf8');
+    expect([...trimUtf8Tail(emoji.subarray(0, 3))]).toEqual([0x78]);
+  });
+});
+
+describe('repairUtf8AsCp1251 (cached snippets)', () => {
+  it('restores the mojibake of the bug report, cut tail and ellipsis included', () => {
+    const mojibake = new TextDecoder('windows-1251').decode(Buffer.from('Подтверждение оплаты счета в Telegram-боте HOSTKEY Р', 'utf8')).replace(/\s+/g, ' ');
+    expect(mojibake.startsWith('РџРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ')).toBe(true);
+    expect(repairUtf8AsCp1251(mojibake)).toBe('Подтверждение оплаты счета в Telegram-боте HOSTKEY Р');
+    expect(repairUtf8AsCp1251(`${mojibake.slice(0, 40)}…`)).toBe('Подтверждение оплаты…');
+  });
+
+  it('leaves real Russian and ascii text alone', () => {
+    expect(repairUtf8AsCp1251(TEXT)).toBeNull();
+    expect(repairUtf8AsCp1251('Счёт на оплату № 28 — Р/С 40702')).toBeNull();
+    expect(repairUtf8AsCp1251(ASCII)).toBeNull();
   });
 });
 
