@@ -29,6 +29,8 @@
 -- canvas_item_heads    canvas_items without plain_text (a view): what listings, paths and access
 --                      checks read.
 -- workspaces.canvas_trash_days the trash retention in days; NULL = never (default).
+-- workspace_audit.subject_type admits 'canvas_item' («Сделать меня владельцем» of a private canvas
+-- or folder, like the Disk and the Wiki).
 -- Built-in member role: + CANVAS_VIEW | CANVAS_WRITE (6597069766656), existing roles and new
 -- workspaces (workspace_builtin_roles). CANVAS_MANAGE (1 << 43) is in ADMINISTRATOR.
 --
@@ -139,6 +141,10 @@ CREATE VIEW canvas_item_heads AS
            updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
     FROM canvas_items;
 
+ALTER TABLE workspace_audit DROP CONSTRAINT workspace_audit_subject_type_check;
+ALTER TABLE workspace_audit ADD CONSTRAINT workspace_audit_subject_type_check
+    CHECK (subject_type IN ('room', 'board', 'disk_item', 'wiki_page', 'canvas_item'));
+
 UPDATE workspace_roles SET permissions = permissions | 6597069766656 WHERE builtin = 'member';
 
 -- +goose StatementBegin
@@ -169,6 +175,10 @@ END
 $$;
 -- +goose StatementEnd
 UPDATE workspace_roles SET permissions = permissions & ~15393162788864::bigint WHERE permissions & 15393162788864 <> 0;
+DELETE FROM workspace_audit WHERE subject_type = 'canvas_item';
+ALTER TABLE workspace_audit DROP CONSTRAINT workspace_audit_subject_type_check;
+ALTER TABLE workspace_audit ADD CONSTRAINT workspace_audit_subject_type_check
+    CHECK (subject_type IN ('room', 'board', 'disk_item', 'wiki_page'));
 DROP VIEW canvas_item_heads;
 DROP TABLE canvas_activity;
 DROP TABLE canvas_permissions;

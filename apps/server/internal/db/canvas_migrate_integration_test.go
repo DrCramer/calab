@@ -55,6 +55,7 @@ func TestCanvasMigration(t *testing.T) {
 	if got := perms(ws, "guest"); got != 48 {
 		t.Fatalf("guest role changed: %d", got)
 	}
+	must(`INSERT INTO workspace_audit (workspace_id, actor_id, kind, subject_type, subject_id) VALUES ($1, $2, 'take_over', 'canvas_item', $3)`, ws, owner, uuid.New())
 	ws2 := uuid.New()
 	must(`INSERT INTO workspaces (id, slug, name, owner_id) VALUES ($1, 'canvas-mig2', 'W', $2)`, ws2, owner)
 	if got := perms(ws2, "member"); got != memberBefore|3<<41 {
@@ -74,6 +75,10 @@ func TestCanvasMigration(t *testing.T) {
 	var custom int64
 	if err := d.Pool.QueryRow(ctx, `SELECT permissions FROM workspace_roles WHERE workspace_id = $1 AND name = 'x'`, ws).Scan(&custom); err != nil || custom != 1 {
 		t.Fatalf("custom role after down: %d %v", custom, err)
+	}
+	var audit int
+	if err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM workspace_audit WHERE subject_type = 'canvas_item'`).Scan(&audit); err != nil || audit != 0 {
+		t.Fatalf("canvas audit rows after down: %d %v", audit, err)
 	}
 	var tables int
 	if err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'canvas\_%'`).Scan(&tables); err != nil || tables != 0 {
