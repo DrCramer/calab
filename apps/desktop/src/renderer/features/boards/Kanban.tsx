@@ -68,7 +68,9 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
   const sort = sortOn(prefs.sort, disabled) ? prefs.sort : 'manual';
   const sorted = sort !== 'manual';
   const sortedRef = useRef(sorted);
-  sortedRef.current = sorted;
+  useEffect(() => {
+    sortedRef.current = sorted;
+  }, [sorted]);
   const cols = useMemo(() => columnsOf({ statuses } as never, prefs), [statuses, prefs]);
   const manage = hasBit(perms, MANAGE_BOARD);
   const canCreate = hasBit(perms, CREATE_TASKS);
