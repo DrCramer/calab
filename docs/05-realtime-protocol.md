@@ -535,7 +535,7 @@ POST   /api/rooms/{id}/invites                 CreateRoomInviteRequest → 201 R
 GET    /api/rooms/{id}/invites                 активные ссылки;  DELETE /api/rooms/{id}/invites/{inviteId} — отзыв
 GET    /api/room-invites/{code}                превью для страницы /r/<code> (без auth)
 POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me][, admission]}
-PATCH  /api/rooms/{id}/invites/{inviteId}      UpdateRoomInviteRequest{requireApproval | inheritApproval} → {invite}   (MANAGE_ROOM)
+PATCH  /api/rooms/{id}/invites/{inviteId}      UpdateRoomInviteRequest{requireApproval | inheritApproval, expiresInSeconds?, maxUses?, allow*?} → {invite}   (одобрение — INVITE_GUESTS; срок/лимит/права — права создания такой ссылки, ADR-0107)
 GET    /api/rooms/{id}/admissions              ожидающие стуки (ADR-0040): MANAGE_ROOM — все, автор ссылки — по своим ссылкам
 POST   /api/rooms/{id}/admissions/{userId}     DecideRoomAdmissionRequest{status ADMITTED|DECLINED, displayName?, badgeId?} → {admission}
 DELETE /api/rooms/{id}/admissions/me           гость отменяет ожидание → 204
