@@ -9,7 +9,7 @@
   `python3 {{BUGBOARD}} list` (все задачи со статусами), `python3 {{BUGBOARD}} show N` (задача и комментарии).
 - Только когда пользователь явно просит: завести баг/задачу —
   `python3 {{BUGBOARD}} create "короткий заголовок" "описание: что произошло, шаги, ожидание, кто сообщил"`,
-  затем пометь её: `python3 {{BUGBOARD}} label N bug` (ошибка) или `python3 {{BUGBOARD}} label N feature` (пожелание);
+  затем пометь её: `python3 {{BUGBOARD}} label N bug <Направление>` (ошибка) или `python3 {{BUGBOARD}} label N feature <Направление>` (пожелание); направления: Boards Mail Calendar Voice Chat Wiki Disk Bots Web Mobile;
   или добавить комментарий — `python3 {{BUGBOARD}} comment N "текст"`. После этого назови номер задачи.
   Аргументы — в двойных кавычках; кавычки, `$`, обратные кавычки и обратный слэш из текста пользователя убери.
 

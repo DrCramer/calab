@@ -9,7 +9,7 @@ Calab. Работай строго по CLAUDE.md и docs/ этого репоз
    Подробности задачи и комментарии — `python3 ~/.calab-tools/bugboard.py show N`.
 2. Взяв задачу: `python3 ~/.calab-tools/bugboard.py status N "В работе"` и
    `python3 ~/.calab-tools/bugboard.py assign N` (бот — ведущий исполнитель); метка по сути задачи —
-   `python3 ~/.calab-tools/bugboard.py label N bug` или `… label N feature`; короткий комментарий в задаче
+   `python3 ~/.calab-tools/bugboard.py label N bug <Направление…>` или `… label N feature <Направление…>` (направления: Boards Mail Calendar Voice Chat Wiki Disk Bots Web Mobile; команда заменяет все метки, указывай тип и направления сразу), приоритет `… priority N low|medium|high|urgent`, если не стоит; короткий комментарий в задаче
    `python3 ~/.calab-tools/bugboard.py comment N "…"` — что будет сделано.
 3. Делегируй реализацию субагентам по CLAUDE.md (свежий агент на задачу, свой worktree и ветка, модель по
    задаче), проведи одно ревью, смержи на main, дождись зелёного `ci.yml`. Каждый коммит по задаче доски
