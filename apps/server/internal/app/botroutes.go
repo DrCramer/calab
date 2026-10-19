@@ -556,6 +556,15 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/me/blocked-bots/{id}",
 		"DELETE /api/me/blocked-bots/{id}",
 	}},
+	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision; suggesting it to others is a person's request too", routes: []string{
+		"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
+		"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
+		"POST /api/workspaces/{id}/bots/{botId}/delegation-invites",
+		"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}",
+	}},
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0111: the bot reads whom it may act for (members of the workspace read it too; another bot gets 403); closed on behalf", routes: []string{
+		"GET /api/workspaces/{id}/bots/{botId}",
+	}},
 	{access: botDeny, why: "a person's decision (ADR-0049, ADR-0051 §5, ADR-0100, ADR-0108): the approval vote, pressing a button, sharing one's contact, answering an invitation", routes: []string{
 		"POST /api/tasks/{id}/approval",
 		"POST /api/messages/{id}/interactions",
@@ -791,6 +800,11 @@ func botGate(q *sqlc.Queries, next http.Handler) http.Handler {
 			}
 			sw := &auditWriter{ResponseWriter: w}
 			next.ServeHTTP(sw, r)
+			if id.ForMember { // ADR-0111: a member who consented, not the owner
+				slog.InfoContext(r.Context(), "bot action", "route", r.Pattern, "path", r.URL.Path, "status", sw.code(),
+					"bot_id", id.ViaBot, "on_behalf", true, "member_id", id.UserID)
+				return
+			}
 			slog.InfoContext(r.Context(), "bot action", "route", r.Pattern, "path", r.URL.Path, "status", sw.code(),
 				"bot_id", id.ViaBot, "bot_owner", id.UserID, "on_behalf", true, "owner_id", id.UserID)
 			return

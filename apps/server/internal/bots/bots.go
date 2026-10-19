@@ -112,6 +112,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	handle("GET /api/me/blocked-bots", s.listBlocked)
 	handle("POST /api/me/blocked-bots/{id}", s.block)
 	handle("DELETE /api/me/blocked-bots/{id}", s.unblock)
+	s.delegationRoutes(handle) // ADR-0111
 }
 
 func identity(r *http.Request) auth.Identity { return auth.MustFromContext(r.Context()) }

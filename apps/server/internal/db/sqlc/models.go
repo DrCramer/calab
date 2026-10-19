@@ -602,6 +602,23 @@ type BotContactShare struct {
 	CreatedAt   time.Time
 }
 
+type BotDelegation struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+	Since       time.Time
+}
+
+type BotDelegationInvite struct {
+	WorkspaceID      uuid.UUID
+	BotID            uuid.UUID
+	UserID           uuid.UUID
+	InvitedBy        uuid.UUID
+	MessageID        *uuid.UUID
+	KeyboardRevision int64
+	CreatedAt        time.Time
+}
+
 type BotWebhookDelivery struct {
 	ID          uuid.UUID
 	BotUserID   uuid.UUID

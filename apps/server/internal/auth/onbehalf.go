@@ -13,11 +13,14 @@ import (
 
 // A bot acts on behalf of its owner (ADR-0106): a REST request with a bot token and the header
 // "Calab-On-Behalf: owner", when the owner turned bots.acts_as_owner on, runs as the owner
-// (Identity.ViaBot = the bot). Any refusal is an error: never a silent fallback to the bot.
+// (Identity.ViaBot = the bot). "Calab-On-Behalf: <user id>" runs as a member who consented
+// themselves (ADR-0111, bot_delegations; Identity.ForMember). Any refusal is an error: never a
+// silent fallback to the bot.
 const (
-	// OnBehalfHeader asks for the request to run on behalf of the bot's owner.
+	// OnBehalfHeader asks for the request to run on behalf of the bot's owner or of a member.
 	OnBehalfHeader = "Calab-On-Behalf"
-	// OnBehalfOwner is the only value of OnBehalfHeader.
+	// OnBehalfOwner is the value of OnBehalfHeader for the bot's owner; any other value is a
+	// member's user id.
 	OnBehalfOwner = "owner"
 )
 
@@ -31,11 +34,14 @@ const (
 	ReasonOnBehalfIdentity       = "ON_BEHALF_IDENTITY_POLICY"
 	ReasonOnBehalfRoute          = "ON_BEHALF_ROUTE"
 	ReasonOnBehalfOwnerOnly      = "ON_BEHALF_OWNER_ONLY"
+	// ADR-0111: the member has no consent for this bot (here); a consent is the member's own.
+	ReasonOnBehalfNoConsent = "ON_BEHALF_NO_CONSENT"
+	ReasonOnBehalfSelfOnly  = "ON_BEHALF_SELF_ONLY"
 )
 
 // Errors of requests on behalf of the owner (ADR-0106).
 var (
-	ErrOnBehalfInvalid        = httpx.BadRequest(OnBehalfHeader+` must be "owner"`).WithDetails(ReasonOnBehalfInvalid, 0, 0)
+	ErrOnBehalfInvalid        = httpx.BadRequest(OnBehalfHeader+` must be "owner" or a member's user id`).WithDetails(ReasonOnBehalfInvalid, 0, 0)
 	ErrOnBehalfNotBot         = httpx.Forbidden(OnBehalfHeader+" needs a bot token").WithDetails(ReasonOnBehalfNotBot, 0, 0)
 	ErrOnBehalfDisabled       = httpx.Forbidden("the bot may not act on behalf of its owner").WithDetails(ReasonOnBehalfDisabled, 0, 0)
 	ErrOnBehalfOwnerInactive  = httpx.Forbidden("the bot's owner cannot act").WithDetails(ReasonOnBehalfOwnerInactive, 0, 0)
@@ -44,6 +50,11 @@ var (
 	ErrOnBehalfRoute          = httpx.Forbidden("not available on behalf of the owner").WithDetails(ReasonOnBehalfRoute, 0, 0)
 	// ErrOnBehalfOwnerOnly: only the bot's owner turns acts_as_owner on or off.
 	ErrOnBehalfOwnerOnly = httpx.Forbidden("only the bot's owner changes this").WithDetails(ReasonOnBehalfOwnerOnly, 0, 0)
+	// ErrOnBehalfNoConsent (ADR-0111): the member has not allowed this bot to act for them (in
+	// this workspace), or revoked it, or may not consent (a guest, a bot, a disabled account).
+	ErrOnBehalfNoConsent = httpx.Forbidden("the member has not allowed this bot to act on their behalf").WithDetails(ReasonOnBehalfNoConsent, 0, 0)
+	// ErrOnBehalfSelfOnly (ADR-0111): a consent is given and revoked only by the member.
+	ErrOnBehalfSelfOnly = httpx.Forbidden("only the member gives or revokes their consent").WithDetails(ReasonOnBehalfSelfOnly, 0, 0)
 )
 
 // onBehalf turns the authenticated bot identity of r into its owner's when r asks for it
@@ -53,13 +64,46 @@ func (s *Service) onBehalf(r *http.Request, id Identity) (Identity, error) {
 	if len(vals) == 0 {
 		return id, nil
 	}
-	if len(vals) != 1 || vals[0] != OnBehalfOwner {
+	if len(vals) != 1 {
 		return Identity{}, ErrOnBehalfInvalid
+	}
+	var member uuid.UUID
+	if vals[0] != OnBehalfOwner {
+		var err error
+		if member, err = uuid.Parse(vals[0]); err != nil || member == uuid.Nil || member.String() != vals[0] {
+			return Identity{}, ErrOnBehalfInvalid
+		}
 	}
 	if !id.IsBot {
 		return Identity{}, ErrOnBehalfNotBot
 	}
+	if member != uuid.Nil {
+		if member == id.UserID {
+			return Identity{}, ErrOnBehalfInvalid
+		}
+		return s.delegateMember(r.Context(), s.db.Q, id, member)
+	}
 	return s.delegate(r.Context(), s.db.Q, id)
+}
+
+// delegateMember checks that bot may act on behalf of member now (ADR-0111): the bot's token is
+// the current one, member is a live person with a counting consent for it in some workspace
+// (each workspace the request touches is checked again, checkOnBehalfWorkspace).
+func (s *Service) delegateMember(ctx context.Context, q *sqlc.Queries, bot Identity, member uuid.UUID) (Identity, error) {
+	d, err := q.GetMemberDelegation(ctx, sqlc.GetMemberDelegationParams{UserID: member, BotID: bot.UserID})
+	if db.IsNotFound(err) {
+		return Identity{}, httpx.Unauthenticated("session revoked")
+	}
+	if err != nil {
+		return Identity{}, httpx.Unavailable(err)
+	}
+	if d.Revoked || d.BotDisabled || d.TokenID == nil || *d.TokenID != bot.SessionID {
+		return Identity{}, httpx.Unauthenticated("session revoked")
+	}
+	if !d.MemberActive || !d.Consented {
+		return Identity{}, ErrOnBehalfNoConsent
+	}
+	return Identity{UserID: member, SessionID: bot.SessionID, ViaBot: bot.UserID, ForMember: true}, nil
 }
 
 // delegate checks that bot may act on behalf of its owner now and returns the owner's identity.
@@ -120,6 +164,15 @@ func (s *Service) checkOnBehalfWorkspace(ctx context.Context, q *sqlc.Queries, i
 	}
 	if st.PolicyMode == "enforced" || (st.DirectoryRequired && (!st.DirectoryActive || !st.DirectoryFresh)) {
 		return ErrOnBehalfIdentity
+	}
+	if id.ForMember { // ADR-0111: the member's own consent for this bot in this very workspace
+		ok, err := q.BotDelegationCounts(ctx, sqlc.BotDelegationCountsParams{WorkspaceID: ws, BotID: id.ViaBot, UserID: id.UserID})
+		if err != nil {
+			return httpx.Unavailable(err)
+		}
+		if !ok {
+			return ErrOnBehalfNoConsent
+		}
 	}
 	return nil
 }
