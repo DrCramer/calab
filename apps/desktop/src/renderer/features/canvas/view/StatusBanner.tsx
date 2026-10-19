@@ -1,6 +1,6 @@
 import { Eye, Loader2, WifiOff } from 'lucide-react';
 import { memo, useSyncExternalStore, type ReactNode } from 'react';
-import { cx } from '../../../components/ui';
+import { Button, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { CanvasSync, CanvasSyncStatus } from '../../../lib/canvasSync';
 import type { CanvasEngine } from '../engine';
@@ -18,12 +18,13 @@ export function useSyncStatus(sync: CanvasSync | null): CanvasSyncStatus {
  * it shows), «Только просмотр» (no CANVAS_WRITE) and the newer-schema notice. Primitives only.
  */
 export const StatusBanner = memo(function StatusBanner({
-  engine, sync, canWrite, gone,
+  engine, sync, canWrite, gone, onRetry,
 }: {
   engine: CanvasEngine;
   sync: CanvasSync;
   canWrite: boolean;
   gone: boolean;
+  onRetry: () => void;
 }): ReactNode {
   useLocale();
   const status = useSyncStatus(sync);
@@ -35,7 +36,12 @@ export const StatusBanner = memo(function StatusBanner({
   if (gone) {
     return (
       <div role="alert" data-testid="canvas-gone" className="absolute inset-0 z-20 grid place-items-center bg-main/80 text-body text-muted">
-        <span className={cx(PANEL, 'px-4 py-3')}>{t('canvasBoard.status.gone')}</span>
+        <div className={cx(PANEL, 'flex flex-col items-center gap-2 px-4 py-3')}>
+          <span>{t('canvasBoard.status.gone')}</span>
+          <Button variant="secondary" size="sm" onClick={onRetry} data-testid="canvas-retry">
+            {t('canvasBoard.status.retry')}
+          </Button>
+        </div>
       </div>
     );
   }

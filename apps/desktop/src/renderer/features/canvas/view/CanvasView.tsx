@@ -39,6 +39,8 @@ export interface CanvasViewProps {
   onShare: () => void;
   /** The canvas' name, for the snapshot meta (search) and the PNG file name. Optional; read at call time. */
   name?: string;
+  /** The server closed the socket for good: 4003 (access changed) or 4404 (gone). The shell may reload the item's rights. */
+  onFatal?: (code: number) => void;
   /** Receives the handle (export, fit) once the canvas is open; `getCanvasViewHandle(canvasId)` is the same. */
   ref?: Ref<CanvasViewHandle>;
   /** Test seam: connection details instead of the app's. */
@@ -57,7 +59,7 @@ function readEnv(): Env {
   };
 }
 
-export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, ref, deps: depsProp }: CanvasViewProps): ReactNode {
+export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
   useLocale();
   const canWrite = (bits & CANVAS_BITS.WRITE) !== 0n;
   const stage = useRef<HTMLDivElement>(null);
@@ -65,15 +67,16 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   const [session, setSession] = useState<CanvasSession | null>(null);
   const [palette, setPalette] = useState<CanvasPalette>(() => readCanvasPalette(currentTheme()));
   const [gone, setGone] = useState(false);
+  const [epoch, setEpoch] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
   const [menuMode, setMenuMode] = useState<MenuMode>('empty');
   const presence = useMemo(() => new PresenceStore(), []);
   const deps = useMemo(() => depsProp ?? appDeps(workspaceId), [depsProp, workspaceId]);
 
   // Values the long-lived session reads at call time, so changing them does not reopen the socket.
-  const live = useRef({ name: name ?? '', canWrite, deps, palette });
+  const live = useRef({ name: name ?? '', canWrite, deps, palette, onFatal });
   useLayoutEffect(() => {
-    live.current = { name: name ?? '', canWrite, deps, palette };
+    live.current = { name: name ?? '', canWrite, deps, palette, onFatal };
   });
 
   const focusCanvas = useCallback((): void => {
@@ -100,14 +103,17 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       color: (id) => cursorColor(id),
       title: () => live.current.name,
       onTooLarge: () => toast.error(t('canvasBoard.tooLarge')),
-      onFatal: () => setGone(true),
+      onFatal: (code) => {
+        setGone(true);
+        live.current.onFatal?.(code);
+      },
     });
     setSession(s);
     return () => {
       setSession(null);
       s.destroy();
     };
-  }, [canvasId, presence]);
+  }, [canvasId, presence, epoch]);
 
   // Grant changes while open (CANVAS_WRITE given or taken away).
   useEffect(() => {
@@ -183,8 +189,9 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
     const cv = canvas.current;
     if (!session || !cv) return;
     if (e.target !== cv) {
-      // The text editor's own textarea keeps the browser's menu (copy / paste / spelling).
+      // The text editor's own textarea keeps the browser's menu (copy / paste / spelling); panels have none.
       e.stopPropagation();
+      if (!(e.target instanceof HTMLTextAreaElement)) e.preventDefault();
       return;
     }
     const { engine } = session;
@@ -226,6 +233,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
               palette={palette}
               canWrite={canWrite}
               gone={gone}
+              onRetry={() => setEpoch((e) => e + 1)}
               presence={presence}
               focusCanvas={focusCanvas}
               helpOpen={helpOpen}
@@ -243,12 +251,13 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
 
 /** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
 function Chrome({
-  session, palette, canWrite, gone, presence, focusCanvas, helpOpen, onHelpOpenChange,
+  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange,
 }: {
   session: CanvasSession;
   palette: CanvasPalette;
   canWrite: boolean;
   gone: boolean;
+  onRetry: () => void;
   presence: PresenceStore;
   focusCanvas: () => void;
   helpOpen: boolean;
@@ -267,7 +276,7 @@ function Chrome({
       ) : null}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
       <Presence store={presence} />
-      <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} />
+      <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} onRetry={onRetry} />
     </>
   );
 }

@@ -283,14 +283,23 @@ describe('connection banners', () => {
     expect(m.q('canvas-offline')).toBeNull();
   });
 
-  it('shows the gone notice when the server says the canvas is gone (4404)', async () => {
+  it('shows the gone notice when the server closes for good (4404), tells the shell, and reopens on request', async () => {
     const relay = new MockRelay({ accept: () => true });
-    const m = await mount({ relay });
+    const codes: number[] = [];
+    const m = await mount({ relay, props: { onFatal: (c) => void codes.push(c) } });
+    await settle(50);
     await act(async () => {
       relay.dropAll(4404);
       await vi.advanceTimersByTimeAsync(10);
     });
     expect(m.q('canvas-gone')).not.toBeNull();
+    expect(codes).toEqual([4404]);
+    await act(async () => {
+      m.q('canvas-retry')?.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(m.q('canvas-gone')).toBeNull();
+    expect(relay.size).toBe(1);
   });
 });
 
