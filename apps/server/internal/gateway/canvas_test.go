@@ -6,8 +6,8 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
-	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/canvasacl"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // ADR-0107 §6: CANVAS_ITEM_* reach only members who see the item; the access chains are stripped;

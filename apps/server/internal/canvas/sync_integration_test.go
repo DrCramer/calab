@@ -249,7 +249,7 @@ func TestCanvasSyncCompaction(t *testing.T) {
 	}
 	var vs v1.CanvasVersionsResponse
 	e.must(200, e.bob, "GET", item(p.GetId())+"/versions", nil, &vs)
-	if len(vs.GetVersions()) != 1 || len(vs.GetVersions()[0].GetAuthorIds()) != 1 || vs.GetVersions()[0].GetSize() != uint32(len(state)) {
+	if len(vs.GetVersions()) != 1 || len(vs.GetVersions()[0].GetAuthorIds()) != 1 || vs.GetVersions()[0].GetSize() != uint32(len(state)) { //nolint:gosec // 7 bytes
 		t.Fatalf("versions: %v", &vs)
 	}
 	w := e.call(e.bob, "GET", item(p.GetId())+"/versions/"+vs.GetVersions()[0].GetId(), nil)
@@ -315,7 +315,7 @@ func TestCanvasSyncCompaction(t *testing.T) {
 	b.next(frameUpdate)
 	a.send(post(7, snapshotMeta{PlainText: "three"}, three))
 	b.quiet(a)
-	if it, _ := e.d.Q.GetCanvasItemText(ctx, uuid.MustParse(p.GetId())); it.DocSize != int32(len(three)) {
+	if it, _ := e.d.Q.GetCanvasItemText(ctx, uuid.MustParse(p.GetId())); it.DocSize != int32(len(three)) { //nolint:gosec // 3 MiB
 		t.Fatalf("a 3 MiB snapshot: size %d", it.DocSize)
 	}
 	a.send(post(7, snapshotMeta{PlainText: "huge"}, make([]byte, MaxState+1)))

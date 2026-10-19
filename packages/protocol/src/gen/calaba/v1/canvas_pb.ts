@@ -192,7 +192,7 @@ export const CanvasPermissionEntrySchema: GenMessage<CanvasPermissionEntry> = /*
 /**
  * A saved version of a canvas (canvas_versions, ADR-0107 §1): at most one per 10 minutes, only
  * when the content changed; ≤ 50 per canvas. The Yjs state is not here:
- * GET /api/canvas/{id}/versions/{vid} returns it (application/octet-stream).
+ * GET /api/canvas/items/{id}/versions/{vid} returns it (application/octet-stream).
  *
  * @generated from message calaba.v1.CanvasVersion
  */

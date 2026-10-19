@@ -7,7 +7,7 @@ import "calaba/v1/room.proto";
 
 // Canvas (ADR-0107, docs/04 «Холст»): a tree of folders and canvases of a workspace, per-item
 // access, trash, version history and a journal. The content of a canvas is a Yjs document: it
-// never travels in these messages, only through GET /api/canvas/{id}/sync (binary frames, the
+// never travels in these messages, only through GET /api/canvas/items/{id}/sync (binary frames, the
 // same 0-4 as the Wiki, docs/05) and the version state route. There are no public links and no
 // files in v1.
 //
@@ -60,7 +60,7 @@ message CanvasPermissionEntry {
 
 // A saved version of a canvas (canvas_versions, ADR-0107 §1): at most one per 10 minutes, only
 // when the content changed; ≤ 50 per canvas. The Yjs state is not here:
-// GET /api/canvas/{id}/versions/{vid} returns it (application/octet-stream).
+// GET /api/canvas/items/{id}/versions/{vid} returns it (application/octet-stream).
 message CanvasVersion {
   string id = 1;
   string canvas_id = 2;
