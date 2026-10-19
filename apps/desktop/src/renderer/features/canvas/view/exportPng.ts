@@ -15,8 +15,9 @@ export const EXPORT_PAD = 24;
 export function exportScale(worldW: number, worldH: number, want: number): number {
   const w = Math.max(1, worldW);
   const h = Math.max(1, worldH);
-  const bySide = MAX_EXPORT_SIDE / Math.max(w, h);
-  const byArea = Math.sqrt(MAX_EXPORT_PIXELS / (w * h));
+  // The engine rounds each side up to a whole pixel: leave one pixel / 0.1 % of room.
+  const bySide = (MAX_EXPORT_SIDE - 1) / Math.max(w, h);
+  const byArea = Math.sqrt((MAX_EXPORT_PIXELS * 0.999) / (w * h));
   return Math.max(0.001, Math.min(want, bySide, byArea));
 }
 
