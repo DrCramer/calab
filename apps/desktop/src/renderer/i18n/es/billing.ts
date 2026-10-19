@@ -303,7 +303,7 @@ export const esBilling: DictShape<typeof ruBilling> = {
   'billing.err.quoteExpired': 'El cálculo caducó: mostramos uno nuevo.',
   'billing.err.revision': 'La cuenta cambió: mostramos un cálculo nuevo.',
   'billing.err.reconciling': 'Se están conciliando los pagos. Inténtalo en un minuto.',
-  'billing.err.pending': 'Hay un pago en curso. Espera su resultado.',
+  'billing.err.pending': 'El cargo anterior aún se está procesando. Espera un minuto y vuelve a intentarlo.',
   'billing.err.unknown': 'Aún no se conoce el resultado del último pago. Inténtalo más tarde.',
   'billing.err.incompatible': 'Ahora no es posible. Primero paga la deuda.',
   'billing.err.priceConfirm': 'El precio cambió: hay que confirmar el nuevo.',

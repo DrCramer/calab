@@ -29,9 +29,9 @@ import (
 //  1. the method is re-validated against the capability matrix for the account and payer
 //     (422 BILLING_METHOD_UNAVAILABLE), the amount against its limits (422) and currency;
 //  2. under the account lock the checkout row is written first (request_id + body hash: the
-//     same request returns the same checkout, another body 409 BILLING_REQUEST_REUSED; one
-//     open checkout per account: the same body reuses it, another one is 409
-//     BILLING_PAYMENT_PENDING);
+//     same request returns the same checkout, another body 409 BILLING_REQUEST_REUSED); open
+//     checkouts of the account never block a new one (owner 2026-10-19: every start is a new
+//     checkout, each credited by its own payment);
 //  3. outside any transaction: the provider customer (created once, billing_customers) and
 //     the session with idempotency key checkout:{id} (a retry after a lost answer gets the
 //     same session);
@@ -155,22 +155,10 @@ func (s *Service) openCheckout(ctx context.Context, c caller, reqID uuid.UUID, h
 		} else if !db.IsNotFound(err) {
 			return err
 		}
-		if open, err := q.GetOpenBillingCheckout(ctx, c.acc.ID); err == nil {
-			switch {
-			case open.ExpiresAt != nil && !now.Before(*open.ExpiresAt):
-				// Past its expiry: the provider cannot take money on it any more.
-				if _, err := q.SetBillingCheckoutStatus(ctx, sqlc.SetBillingCheckoutStatusParams{Status: inbox.CheckoutExpired, Now: now, ID: open.ID}); err != nil {
-					return err
-				}
-			case bytes.Equal(open.BodyHash, hash):
-				co = open // the same top-up asked again with a new request id
-				return nil
-			default:
-				return billing.ErrPaymentPending
-			}
-		} else if !db.IsNotFound(err) {
-			return err
-		}
+		// Open checkouts of the account do not block a new one (owner 2026-10-19, migration
+		// 00102): each keeps its provider session and is credited by its own payment; the older
+		// ones are left to expire at the provider (never canceled there: a payer may be on the
+		// page) and to the reconciliation.
 		snap := []byte("{}")
 		if payer.AccountID != uuid.Nil {
 			snap = payerSnapshot(payer)
@@ -180,9 +168,6 @@ func (s *Service) openCheckout(ctx context.Context, c caller, reqID uuid.UUID, h
 			AccountID: c.acc.ID, RequestID: reqID, BodyHash: hash, Purpose: "topup", MethodID: opt.ID, Provider: string(opt.Provider),
 			AmountMinor: amount, Currency: c.acc.Currency, SaveMethod: save, PayerSnapshot: snap, CreatedBy: &c.user, ExpiresAt: &exp,
 		})
-		if db.UniqueViolation(err) == "billing_checkouts_one_open_idx" {
-			return billing.ErrPaymentPending
-		}
 		return err
 	})
 	return co, err
@@ -206,7 +191,7 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	payer sqlc.BillingPayer) (provider.CheckoutSession, error) {
 	cust, err := s.ensureCustomer(ctx, c, p, payer, co.ID)
 	if errors.Is(err, billing.ErrProviderAccountChanged) {
-		// A definite refusal until an operator decides: free the open slot (the next try answers the same).
+		// A definite refusal until an operator decides: close the checkout (the next try answers the same).
 		s.failCheckout(ctx, co.ID)
 	}
 	if err != nil {
@@ -232,7 +217,7 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	})
 	if err != nil {
 		if !errors.Is(err, provider.ErrUnknownOutcome) {
-			// A definite refusal: free the open slot so the owner can try again.
+			// A definite refusal: close the checkout (the owner tries again with a new one).
 			slog.ErrorContext(ctx, "billing: create checkout refused", "checkout", co.ID, "err", err)
 			s.failCheckout(ctx, co.ID)
 		} else {
@@ -245,7 +230,10 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 		return q.SetBillingCheckoutSession(ctx, sqlc.SetBillingCheckoutSessionParams{SessionID: &sid, Url: &u, ExpiresAt: co.ExpiresAt, Now: s.now(ctx), ID: co.ID})
 	})
 	if db.IsNotFound(err) {
-		return sess, billing.ErrPaymentPending // the checkout left 'open' meanwhile (expired / reconciled)
+		// The checkout left 'open' meanwhile (expired / failed by a concurrent pass): the next
+		// try (a new request id) opens a new one.
+		slog.WarnContext(ctx, "billing: checkout closed before its session was stored", "checkout", co.ID)
+		return sess, billing.ErrProviderUnavailable
 	}
 	if err == nil {
 		s.inbox.SchedulePoll(ctx, p, co.ID) // providers without failure / expiry webhooks (ADR-0083)
@@ -253,7 +241,7 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	return sess, err
 }
 
-// failCheckout marks an open checkout failed after a definite refusal (frees the open slot).
+// failCheckout marks an open checkout failed after a definite refusal.
 func (s *Service) failCheckout(ctx context.Context, id uuid.UUID) {
 	if _, e := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.BillingCheckout, error) {
 		return q.SetBillingCheckoutStatus(ctx, sqlc.SetBillingCheckoutStatusParams{Status: inbox.CheckoutFailed, Now: s.now(ctx), ID: id})

@@ -279,8 +279,9 @@ func TestOneClickDisputeHold(t *testing.T) {
 	}
 }
 
-// 3-D Secure: the answer carries the provider's page; while it waits, no other charge (one-click
-// or auto) starts; after confirmation the GET credits it.
+// 3-D Secure: the answer carries the provider's page; while it waits auto-topup does not
+// start, but another one-click charge does (owner 2026-10-19: a payment waiting at the bank never
+// blocks a new one); after confirmation the GET credits it. Each charge is credited once.
 func TestOneClickThreeDS(t *testing.T) {
 	e := newEnv(t, opts{})
 	e.fake.Queue(fake.OpCharge, fake.RequiresAction)
@@ -291,17 +292,20 @@ func TestOneClickThreeDS(t *testing.T) {
 	if out.GetState() != v1.SavedMethodTopupState_SAVED_METHOD_TOPUP_STATE_REQUIRES_ACTION || out.GetActionUrl() == "" {
 		t.Fatalf("%+v", &out)
 	}
-	if st, r := e.savedTopup(uuid.NewString(), 3000, nil); st != http.StatusConflict || r != "BILLING_PAYMENT_PENDING" {
-		t.Fatalf("second charge: %d %s", st, r)
-	}
+	pays := e.fake.Payments()
+	threeDS := pays[len(pays)-1].ID
 	e.tick(0) // auto-topup waits for the open charge
+	var next v1.SavedMethodTopup
+	if st, r := e.savedTopup(uuid.NewString(), 3000, &next); st != 200 || next.GetId() == out.GetId() ||
+		next.GetState() != v1.SavedMethodTopupState_SAVED_METHOD_TOPUP_STATE_SUCCEEDED {
+		t.Fatalf("second charge: %d %s %+v", st, r, &next)
+	}
 	var sum v1.GetBillingResponse
 	e.do(e.owner, "GET", e.base(), nil, &sum)
 	if p := sum.GetSummary().GetPendingSavedTopup(); p.GetId() != out.GetId() {
 		t.Fatalf("pending %+v", p)
 	}
-	pays := e.fake.Payments()
-	if err := e.fake.SettlePayment(pays[len(pays)-1].ID, fake.Succeed); err != nil {
+	if err := e.fake.SettlePayment(threeDS, fake.Succeed); err != nil {
 		t.Fatal(err)
 	}
 	var got v1.SavedMethodTopup
@@ -310,9 +314,28 @@ func TestOneClickThreeDS(t *testing.T) {
 		t.Fatalf("after 3ds %d %+v", st, &got)
 	}
 	e.webhooks()
-	e.wantBalance(2000)
-	if e.savedPayments() != 1 {
-		t.Fatal("one payment")
+	e.webhooks()
+	e.wantBalance(5000)
+	if e.savedPayments() != 2 {
+		t.Fatal("two payments")
+	}
+}
+
+// A charge whose outcome is not known yet is in flight: a second one-click charge is 409
+// BILLING_PAYMENT_PENDING (it could be a duplicate), never a second provider call.
+func TestOneClickInFlightBlocksSecond(t *testing.T) {
+	e := newEnv(t, opts{noConsent: true})
+	e.fake.Queue(fake.OpCharge, fake.Unknown, fake.Unknown, fake.Unknown)
+	e.savedTopup(uuid.NewString(), 2000, nil)
+	if n := e.count(`SELECT count(*) FROM billing_autotopup_attempts WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'unknown')`, e.acc); n != 1 {
+		t.Fatalf("in flight %d (attempts %+v)", n, e.attempts())
+	}
+	calls := e.fake.Calls("ChargeOffSession")
+	if st, r := e.savedTopup(uuid.NewString(), 3000, nil); st != http.StatusConflict || r != "BILLING_PAYMENT_PENDING" {
+		t.Fatalf("second charge: %d %s", st, r)
+	}
+	if e.fake.Calls("ChargeOffSession") != calls {
+		t.Fatal("second provider call while one is in flight")
 	}
 }
 

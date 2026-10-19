@@ -16,7 +16,7 @@ import (
 // One-click top-up (ADR-0083 phase 2, owner 2026-10-10: «если человек вручную пополняет с уже
 // привязанной картой — после подтверждения спишем, не открывая платёжную страницу»). A manual
 // charge is an attempt of kind manual in the same table and through the same dispatcher as
-// auto-topup, so the one-open-charge-per-account index serializes both kinds; it differs in:
+// auto-topup, so the one-charge-in-flight-per-account index serializes both kinds; it differs in:
 //   - it starts from the owner's request (request_id + body hash: a retry returns the same
 //     charge, another body is 409), not from the need, and touches neither the consent nor
 //     not_before;
@@ -71,7 +71,7 @@ func (j *Job) checkManual(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 
 // StartManual records the owner's one-click top-up and sends it (or returns the charge of the
 // same request). Errors: billing.ErrRequestReused, billing.ErrDisputeHold, billing.ErrPaymentPending (another charge of
-// a saved card in flight), billing.ErrAccountNotFound, billing.ErrMethodUnavailable.
+// a saved card in flight: sent, outcome not known yet), billing.ErrAccountNotFound, billing.ErrMethodUnavailable.
 func (j *Job) StartManual(ctx context.Context, r ManualRequest) (sqlc.BillingAutotopupAttempt, error) {
 	var att sqlc.BillingAutotopupAttempt
 	err := j.db.Tx(ctx, func(q *sqlc.Queries) error {
@@ -101,7 +101,10 @@ func (j *Job) StartManual(ctx context.Context, r ManualRequest) (sqlc.BillingAut
 		if !v.ok() {
 			return billing.ErrMethodUnavailable
 		}
-		if _, err := q.GetOpenBillingAutoTopupAttempt(ctx, acc.ID); err == nil {
+		// Only a charge in flight blocks (its outcome is not known: a second one could be a
+		// duplicate, and a Tochka charge is attributed by reading the subscription's operations).
+		// A charge waiting for the payer's 3-D Secure does not (owner 2026-10-19, migration 00102).
+		if _, err := q.GetInFlightBillingAutoTopupAttempt(ctx, acc.ID); err == nil {
 			return billing.ErrPaymentPending
 		} else if !db.IsNotFound(err) {
 			return err
