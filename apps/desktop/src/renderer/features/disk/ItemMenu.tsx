@@ -1,11 +1,11 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Download, Ellipsis, FolderInput, FolderOpen, History, Link2, Pencil, RotateCcw, Trash2, Users } from 'lucide-react';
+import { Download, Ellipsis, FolderInput, FolderOpen, History, Link2, Pencil, RotateCcw, Send, Trash2, Users } from 'lucide-react';
 import { useState, type ComponentType, type ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { canShare, canWrite, isFolder } from '../../lib/disk';
-import { copyItemLink, deleteForever, downloadItem, openItem, restoreItems, trashItems } from '../../services/disk';
+import { copyItemLink, deleteForever, downloadItem, openItem, openSendToChat, restoreItems, trashItems } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { useDiskUi } from '../../stores/diskUi';
 import { myUserId } from '../../stores/session';
@@ -64,6 +64,7 @@ function Entries({ id, parts }: { id: string; parts: Parts }): ReactNode {
       {title}
       {row(ic(FolderOpen), t('disk.open'), () => openItem(item), { testId: 'disk-menu-open' })}
       {!folder ? row(ic(Download), t('disk.download'), () => downloadItem(item), { testId: 'disk-menu-download' }) : null}
+      {!folder ? row(ic(Send), t('disk.sendToChat'), () => openSendToChat(id), { testId: 'disk-menu-send' }) : null}
       {write ? row(ic(Pencil), t('disk.rename'), () => ui.setRenaming(id), { testId: 'disk-menu-rename' }) : null}
       {write ? row(ic(FolderInput), t('disk.moveTo'), () => ui.openDialog({ kind: 'move', itemIds: [id] }), { testId: 'disk-menu-move' }) : null}
       <Separator className={menuSeparator} />

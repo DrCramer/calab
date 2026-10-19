@@ -1,5 +1,5 @@
 import * as DialogP from '../../components/radix/dialog';
-import { Download } from 'lucide-react';
+import { Download, Send } from 'lucide-react';
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { IconButton, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
@@ -48,7 +48,16 @@ function usePdfBlob(fileId: string): PdfState {
  * the document in Chromium's built-in viewer (pages, zoom, search, print). A click outside the
  * document or Esc closes; unmounting drops the frame and the blob, nothing keeps running.
  */
-export function PdfViewer({ file, onClose }: { file: { id: string; name: string; size: bigint }; onClose: () => void }): ReactNode {
+export function PdfViewer({
+  file,
+  onClose,
+  onSendToChat,
+}: {
+  file: { id: string; name: string; size: bigint };
+  onClose: () => void;
+  /** Opened from the Disk (CBF-20): «Отправить в чат». */
+  onSendToChat?: () => void;
+}): ReactNode {
   const state = usePdfBlob(file.id);
   const closeOnBackdrop = (e: MouseEvent): void => {
     if (e.target === e.currentTarget) onClose();
@@ -69,6 +78,11 @@ export function PdfViewer({ file, onClose }: { file: { id: string; name: string;
           }}
         >
           <ViewerBar title={file.name} meta={fmt.size(file.size)}>
+            {onSendToChat ? (
+              <IconButton label={t('disk.sendToChat')} onClick={onSendToChat} className={onDark} data-testid="pdf-send">
+                <Send className="size-5" />
+              </IconButton>
+            ) : null}
             <IconButton label={t('lightbox.download')} onClick={() => downloadFile(file)} className={onDark} data-testid="pdf-download">
               <Download className="size-5" />
             </IconButton>

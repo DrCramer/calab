@@ -164,13 +164,36 @@ export function ownWikiPageId(href: string): string | null {
 }
 
 /**
- * A link clicked in a message: our own /m/, /t/, /b/, /wiki/ links (this server) open in the app instead
+ * Disk item links (CBF-20): `https://<server>/disk/<item id>` and `calab://disk/<item id>` — the
+ * Disk opens at the item's folder with its card; no access → «Файл больше недоступен».
+ */
+export function parseDiskLink(input: string): string | null {
+  const s = input.trim();
+  const ID = '([0-9a-fA-F-]{36})';
+  const m = new RegExp(`^${SCHEME}://disk/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/disk/${ID}/?(?:[?#].*)?$`).exec(s);
+  return m?.[1]?.toLowerCase() ?? null;
+}
+
+/** The shareable address of a Disk item on this server (null: no server known). */
+export function diskItemUrl(itemId: string): string | null {
+  const origin = shareOrigin('');
+  return origin ? `${origin}/disk/${itemId}` : null;
+}
+
+/** A Disk item link of this server (the chat's chip); null for any other URL. */
+export function ownDiskItemId(href: string): string | null {
+  const origin = shareOrigin('');
+  return origin && href.startsWith(`${origin}/`) ? parseDiskLink(href) : null;
+}
+
+/**
+ * A link clicked in a message: our own /m/, /t/, /b/, /wiki/, /disk/ links (this server) open in the app instead
  * of the browser. False = not ours (the caller opens it outside).
  */
 export function openOwnLink(href: string): boolean {
   const origin = shareOrigin('');
   if (!origin || !href.startsWith(`${origin}/`)) return false;
-  if (!parseMessageLink(href) && !parseBoardLink(href) && !parseWikiLink(href)) return false;
+  if (!parseMessageLink(href) && !parseBoardLink(href) && !parseWikiLink(href) && !parseDiskLink(href)) return false;
   handleDeepLink(href);
   return true;
 }
@@ -186,6 +209,12 @@ export function handleDeepLink(url: string): void {
   const msg = parseMessageLink(url);
   if (msg) {
     void import('./messageLink').then((m) => m.openMessageLink(msg.roomId, msg.messageId)).catch(() => undefined);
+    return;
+  }
+  const disk = parseDiskLink(url);
+  if (disk) {
+    // Loaded lazily, like the wiki: links.ts stays free of the API / platform graph.
+    void import('./diskLink').then((m) => m.openDiskLink(disk)).catch(() => undefined);
     return;
   }
   const wiki = parseWikiLink(url);

@@ -56,4 +56,13 @@ test('disk-share', async ({ open, win, shot }) => {
   await expect(dialog.getByTestId('disk-access-row')).toHaveCount(2);
   await expect(dialog.getByRole('switch', { name: 'Только выбранные' })).toBeChecked();
   await checkpoint(shot, 'disk-share');
+  // CBF-20: a file without a viewer opens its card (no download), «Отправить в чат» opens the picker.
+  await win.keyboard.press('Escape');
+  await win.getByTestId('disk-tile').filter({ hasText: 'Бюджет 2026.xlsx' }).click({ button: 'right' });
+  await win.getByTestId('disk-menu-open').click();
+  await expect(win.getByTestId('disk-file-card')).toBeVisible();
+  await checkpoint(shot, 'disk-file-card');
+  await win.getByTestId('disk-card-send').click();
+  await expect(win.getByTestId('forward-dialog')).toBeVisible();
+  await checkpoint(shot, 'disk-send-to-chat');
 });

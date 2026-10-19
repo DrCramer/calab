@@ -30,9 +30,9 @@ export type Dialog =
   | { kind: 'stream-picker' }
   | { kind: 'camera-preview' }
   /** The image viewer; `images` are the message's images (←/→), `index` the one opened; `inChat`: «Показать в чате». */
-  | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string } }
+  | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string }; diskItemIds?: string[] }
   /** The PDF viewer of an API file (ADR-0103): Chromium's built-in viewer in a blob: frame, «Скачать». */
-  | { kind: 'pdf'; file: { id: string; name: string; size: bigint } }
+  | { kind: 'pdf'; file: { id: string; name: string; size: bigint }; diskItemId?: string }
   /**
    * A meeting recording opened from a search hit at a segment (ADR-0062 §4): the player and the
    * summary from its card message (messageId, '' = gone), the transcript.
@@ -46,6 +46,10 @@ export type Dialog =
   | { kind: 'forward'; roomId: string; messageId: string }
   /** «Отправить в чат…» of a wiki page (owner 14.10): the forward picker sends the page's address (+ a comment). */
   | { kind: 'wiki-send'; pageId: string }
+  /** The Disk file card (CBF-20): details and actions of a file; on every surface (also from a chat link). */
+  | { kind: 'disk-file'; itemId: string }
+  /** «Отправить в чат…» of a Disk file (CBF-20): the forward picker sends the item's link (+ a comment). */
+  | { kind: 'disk-send'; itemId: string }
   /** «Пригласить в комнату»: pick members to invite by DM, or copy the room link (docs/09 #33). */
   | { kind: 'room-invite'; roomId: string }
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */

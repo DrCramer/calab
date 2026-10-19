@@ -1,5 +1,5 @@
 import * as DialogP from '../../components/radix/dialog';
-import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, MessageSquare, Send } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { useMediaUrl } from '../../components/MediaImg';
 import { CloseButton, IconButton, Spinner, cx } from '../../components/ui';
@@ -63,7 +63,20 @@ export function ViewerBar({ title, meta, children }: { title: string; meta?: str
  * Name + download + close; ←/→ step through the images of the message; a click outside, a click on
  * the image itself (not the end of a drag, docs/09 #132) or Esc closes.
  */
-export function Lightbox({ images, index: start, onClose, onShowInChat }: { images: LightboxImage[]; index: number; onClose: () => void; onShowInChat?: () => void }): ReactNode {
+export function Lightbox({
+  images,
+  index: start,
+  onClose,
+  onShowInChat,
+  onSendToChat,
+}: {
+  images: LightboxImage[];
+  index: number;
+  onClose: () => void;
+  onShowInChat?: () => void;
+  /** Opened from the Disk (CBF-20): «Отправить в чат» for the picture shown (its index). */
+  onSendToChat?: (index: number) => void;
+}): ReactNode {
   const [index, setIndex] = useState(start);
   // Where the press began: a drag from the image released over the backdrop is not a backdrop click
   // (the click then targets their common ancestor).
@@ -115,6 +128,11 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
             {onShowInChat ? (
               <IconButton label={t('search.showInChat')} onClick={onShowInChat} className={onDark}>
                 <MessageSquare className="size-5" />
+              </IconButton>
+            ) : null}
+            {onSendToChat ? (
+              <IconButton label={t('disk.sendToChat')} onClick={() => onSendToChat(index)} className={onDark} data-testid="lightbox-send">
+                <Send className="size-5" />
               </IconButton>
             ) : null}
             <IconButton label={t('lightbox.download')} onClick={download} className={onDark}>

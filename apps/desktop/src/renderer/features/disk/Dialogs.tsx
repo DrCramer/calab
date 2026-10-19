@@ -1,13 +1,13 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, type DiskActivity, type DiskItem } from '@calaba/protocol';
-import { ChevronRight, Copy, Folder } from 'lucide-react';
+import { ChevronRight, Folder, Send } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, Input, Modal, Select, Spinner, Switch, cx } from '../../components/ui';
+import { Button, Modal, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { activityDays, canMoveInto, describeActivity, folderKey, isFolder, ROOT, visibleIds } from '../../lib/disk';
 import { fmt } from '../../lib/format';
-import { collator, diskApi, loadListing, loadPath, moveItems, refreshDisk } from '../../services/disk';
+import { collator, diskApi, loadListing, loadPath, moveItems, openSendToChat, refreshDisk } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { useDiskUi, type DiskDialog } from '../../stores/diskUi';
 import { toast } from '../../stores/toasts';
@@ -15,6 +15,7 @@ import { useMemberName } from '../../stores/workspaces';
 import { VideoAttachment } from '../chat/MediaPlayer';
 import { MemberAvatar } from '../boards/menus';
 import { entryOf, TreeAccessEditor, useTreeAccess } from '../people/TreeAccess';
+import { LinkPanel } from './LinkPanel';
 import { openBuyStorage, UsageMeter } from './UsageMeter';
 
 /**
@@ -120,103 +121,13 @@ function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void
 
 // ---------------------------------------------------------------- «Ссылка»
 
-const EXPIRY_DAYS = [0, 1, 7, 30] as const;
-type Expiry = (typeof EXPIRY_DAYS)[number];
-
-/**
- * «Ссылка» (ADR-0094 §3): the switch «Доступ по ссылке» (anyone with it downloads the file without
- * signing in), the address with «Скопировать», the term chosen before switching on (changing it
- * means a new link), the download counter.
- */
+/** «Ссылка» (ADR-0094 §3): the public link panel in a sheet. */
 function LinkDialog({ itemId, onClose }: { itemId: string; onClose: () => void }): ReactNode {
-  const item = useDisk((s) => s.items[itemId]);
-  const on = !!item?.link;
-  const [url, setUrl] = useState('');
-  const [expiry, setExpiry] = useState<Expiry>(0);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!on || url) return;
-    let live = true;
-    // The live link is returned as is: the way to read its address.
-    diskApi.createLink(itemId).then(
-      (r) => live && setUrl(r.url),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [on, url, itemId]);
-  if (!item) return null;
-  const toggle = (v: boolean): void => {
-    setBusy(true);
-    const done = (): void => setBusy(false);
-    if (v) {
-      diskApi.createLink(itemId, expiry ? Date.now() + expiry * 86_400_000 : undefined).then((r) => {
-        setUrl(r.url);
-        const cur = useDisk.getState().items[itemId];
-        if (cur && r.link) useDisk.getState().upsert({ ...cur, link: r.link });
-        done();
-      }, (e: unknown) => {
-        toast.fail(e, t('disk.err.link'));
-        done();
-      });
-    } else {
-      diskApi.deleteLink(itemId).then(() => {
-        setUrl('');
-        const cur = useDisk.getState().items[itemId];
-        if (cur) useDisk.getState().upsert({ ...cur, link: undefined });
-        done();
-      }, (e: unknown) => {
-        toast.fail(e, t('disk.err.link'));
-        done();
-      });
-    }
-  };
-  const until = item.link?.expiresAt ? timestampDate(item.link.expiresAt) : null;
+  const name = useDisk((s) => s.items[itemId]?.name);
+  if (name === undefined) return null;
   return (
-    <Modal open onClose={onClose} medium initialFocus="body" title={t('disk.linkTitle', { name: item.name })}>
-      <div className="flex flex-col gap-4" data-testid="disk-link">
-        <Switch checked={on} onChange={toggle} label={t('disk.link.on')} hint={t('disk.link.hint')} disabled={busy} />
-        {on ? (
-          <>
-            <div className="flex items-center gap-2">
-              <Input readOnly value={url} aria-label={t('disk.link.address')} className="font-mono text-caption" onFocus={(e) => e.currentTarget.select()} data-testid="disk-link-url" />
-              <Button
-                variant="secondary"
-                disabled={!url}
-                onClick={() =>
-                  void navigator.clipboard.writeText(url).then(
-                    () => toast.success(t('disk.link.copied')),
-                    (e: unknown) => toast.fail(e),
-                  )
-                }
-                data-testid="disk-link-copy"
-              >
-                <Copy className="size-3.5" aria-hidden />
-                {t('disk.link.copyShort')}
-              </Button>
-            </div>
-            <p className="text-caption text-muted">
-              {until ? t('disk.link.until', { date: fmt.stamp(until) }) : t('disk.link.forever')}
-              {' · '}
-              {t('disk.link.downloads', { n: item.link?.downloads ?? 0 })}
-            </p>
-          </>
-        ) : (
-          <label className="flex items-center justify-between gap-4 text-body">
-            <span>{t('disk.link.expiry')}</span>
-            <span className="w-40">
-              <Select value={String(expiry)} onChange={(e) => setExpiry(Number(e.target.value) as Expiry)} data-testid="disk-link-expiry">
-                {EXPIRY_DAYS.map((d) => (
-                  <option key={d} value={d}>
-                    {d === 0 ? t('disk.link.never') : t('disk.link.days', { n: d })}
-                  </option>
-                ))}
-              </Select>
-            </span>
-          </label>
-        )}
-      </div>
+    <Modal open onClose={onClose} medium initialFocus="body" title={t('disk.linkTitle', { name })}>
+      <LinkPanel itemId={itemId} />
     </Modal>
   );
 }
@@ -444,7 +355,26 @@ function PreviewDialog({ itemId, onClose }: { itemId: string; onClose: () => voi
   const item = useDisk((s) => s.items[itemId]);
   if (!item?.file) return null;
   return (
-    <Modal open onClose={onClose} wide initialFocus="body" title={item.name}>
+    <Modal
+      open
+      onClose={onClose}
+      wide
+      initialFocus="body"
+      title={item.name}
+      footer={
+        <Button
+          variant="secondary"
+          onClick={() => {
+            onClose();
+            openSendToChat(itemId);
+          }}
+          data-testid="disk-preview-send"
+        >
+          <Send className="size-4" aria-hidden />
+          {t('disk.sendToChat')}
+        </Button>
+      }
+    >
       <div className="flex justify-center pb-1">
         <VideoAttachment f={item.file} />
       </div>

@@ -11,8 +11,10 @@ const openEventLink = vi.hoisted(() => vi.fn());
 vi.mock('./calendar', () => ({ openEventLink }));
 const openWikiLink = vi.hoisted(() => vi.fn());
 vi.mock('./wiki', () => ({ openWikiLink }));
+const openDiskLink = vi.hoisted(() => vi.fn());
+vi.mock('./diskLink', () => ({ openDiskLink }));
 
-const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, openOwnLink, ownWikiPageId, parseBoardLink, parseDmLink, parseEventLink, parseInviteCode, parseMessageLink, parseRoomInviteCode, parseWikiLink, roomInviteUrl, wikiPageUrl } = await import('./links');
+const { INVITE_EXAMPLE_CODE, diskItemUrl, handleDeepLink, inviteUrl, joinPlaceholder, openOwnLink, ownDiskItemId, ownWikiPageId, parseBoardLink, parseDiskLink, parseDmLink, parseEventLink, parseInviteCode, parseMessageLink, parseRoomInviteCode, parseWikiLink, roomInviteUrl, wikiPageUrl } = await import('./links');
 
 describe('DM links (ADR-0020)', () => {
   const ID = '00000000-0000-7000-8003-000000000021';
@@ -192,5 +194,27 @@ describe('wiki page links (owner 14.10)', () => {
     expect(openOwnLink(`https://app.calab.io/wiki/${P}`)).toBe(true);
     await vi.waitFor(() => expect(openWikiLink).toHaveBeenCalledWith(P));
     expect(openOwnLink(`https://other.test/wiki/${P}`)).toBe(false);
+  });
+});
+
+describe('disk item links (CBF-20)', () => {
+  const D = '0190a0b0-0000-7000-80c1-0000000000d1';
+  afterEach(() => {
+    session.settings = null;
+  });
+  it('parses https://<server>/disk/<id> and calab://disk/<id>, nothing else', () => {
+    expect(parseDiskLink(`https://app.calab.io/disk/${D}`)).toBe(D);
+    expect(parseDiskLink(`calab://disk/${D.toUpperCase()}/`)).toBe(D);
+    expect(parseDiskLink(`/disk/${D}`)).toBeNull();
+    expect(parseDiskLink('https://app.calab.io/disk/abc')).toBeNull();
+  });
+  it('builds the address on this server and opens it in the app', async () => {
+    session.settings = { serverUrl: 'https://app.calab.io/' };
+    expect(diskItemUrl(D)).toBe(`https://app.calab.io/disk/${D}`);
+    expect(ownDiskItemId(`https://app.calab.io/disk/${D}`)).toBe(D);
+    expect(ownDiskItemId(`https://other.test/disk/${D}`)).toBeNull();
+    expect(openOwnLink(`https://app.calab.io/disk/${D}`)).toBe(true);
+    await vi.waitFor(() => expect(openDiskLink).toHaveBeenCalledWith(D));
+    expect(openOwnLink(`https://other.test/disk/${D}`)).toBe(false);
   });
 });

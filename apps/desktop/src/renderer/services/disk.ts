@@ -421,7 +421,8 @@ export function downloadItem(item: DiskItem): void {
 
 /**
  * «Открыть»: a folder opens, a picture goes to the Lightbox with the other pictures of the
- * listing (←/→), a video to the player card, a PDF to the PDF viewer, anything else is downloaded.
+ * listing (←/→), a video to the player card, a PDF to the PDF viewer, anything else opens the
+ * file card (CBF-20: download / send to a chat / links) — a click never starts a download.
  */
 export function openItem(item: DiskItem, siblings: readonly string[] = []): void {
   if (isFolder(item)) {
@@ -440,6 +441,7 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
       kind: 'image',
       images: pics.map((x) => ({ fileId: x.file?.id ?? '', name: x.name, mime: x.file?.mime ?? '', width: x.file?.width ?? 0, height: x.file?.height ?? 0 })),
       index,
+      diskItemIds: pics.map((x) => x.id),
     });
     return;
   }
@@ -447,12 +449,22 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
     useDiskUi.getState().openDialog({ kind: 'preview', itemId: item.id });
     return;
   }
-  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment; the rest is saved.
+  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment; the rest gets its card.
   if (item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf') {
-    useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size } });
+    useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size }, diskItemId: item.id });
     return;
   }
-  downloadItem(item);
+  openFileCard(item.id);
+}
+
+/** The file card (CBF-20): details, «Скачать», «Отправить в чат», the links. Works on every surface. */
+export function openFileCard(itemId: string): void {
+  useUi.getState().openDialog({ kind: 'disk-file', itemId });
+}
+
+/** «Отправить в чат…» of a Disk file: the room / people picker, then the item's link goes as a message. */
+export function openSendToChat(itemId: string): void {
+  useUi.getState().openDialog({ kind: 'disk-send', itemId });
 }
 
 /** The link's page URL to the clipboard (POST returns the live link as is). */
@@ -507,8 +519,20 @@ export async function openDiskHit(ws: string, ref: Pick<SearchDiskRef, 'itemId' 
     openItem(item, [item.id]);
     return;
   }
+  revealDiskItem(item, false);
+}
+
+/**
+ * The Disk at the item's folder with the item selected (a folder opens itself); `card` also opens
+ * the file card on top (a chat link, CBF-20). A guest has no Disk screen: a file goes to the card
+ * (or is saved by a search hit). The phone pushes the folder over its «Диск» tab.
+ */
+export function revealDiskItem(item: DiskItem, card: boolean): void {
+  const ws = item.workspaceId;
   if (useWorkspaces.getState().byId[ws]?.role === WorkspaceRole.GUEST) {
-    if (!isFolder(item)) downloadItem(item);
+    if (isFolder(item)) return;
+    if (card) openFileCard(item.id);
+    else downloadItem(item);
     return;
   }
   const ui = useUi.getState();
@@ -520,4 +544,5 @@ export async function openDiskHit(ws: string, ref: Pick<SearchDiskRef, 'itemId' 
     useDiskUi.getState().openFolder(ws, folder);
   }
   if (!isFolder(item)) useDiskUi.getState().select(item.id);
+  if (card && !isFolder(item)) openFileCard(item.id);
 }

@@ -472,6 +472,9 @@ function takeDeepLink(): Promise<string | null> {
   // A wiki page (owner 14.10): /wiki/<page id>.
   const wiki = /^\/wiki\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (wiki?.[1]) return Promise.resolve(`${location.origin}/wiki/${wiki[1]}`);
+  // A Disk item (CBF-20): /disk/<item id>.
+  const disk = /^\/disk\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
+  if (disk?.[1]) return Promise.resolve(`${location.origin}/disk/${disk[1]}`);
   const m = /^\/(join|r|dm|e|b|t)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);
