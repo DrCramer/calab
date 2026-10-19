@@ -19,7 +19,8 @@ const item = (id: string, extra: Omit<Partial<CanvasItem>, '$typeName' | '$unkno
 let root: Root;
 let host: HTMLElement;
 let unregister: (() => void) | null = null;
-const handle = (): CanvasViewHandle => ({ exportPng: vi.fn(() => Promise.resolve(true)), fitAll: vi.fn() });
+const exportPng = vi.fn((_opts?: { area?: 'visible' | 'all'; name?: string }) => Promise.resolve(true));
+const handle = (): CanvasViewHandle => ({ exportPng, fitAll: () => undefined });
 
 function menu(id: string, withExport: boolean): ReactNode {
   return createElement(
@@ -56,14 +57,14 @@ afterEach(() => {
 describe('«Экспорт PNG» in the header menu', () => {
   it('is offered for the open canvas whose view is mounted; both entries call the handle with the canvas name', () => {
     useCanvas.getState().put([item('c')]);
-    const h = handle();
-    unregister = registerCanvasViewHandle('c', h);
+    exportPng.mockClear();
+    unregister = registerCanvasViewHandle('c', handle());
     show('c', true);
     act(() => q('canvas-menu-export')?.click());
-    expect(h.exportPng).toHaveBeenLastCalledWith({ area: 'all', name: 'Roadmap' });
+    expect(exportPng).toHaveBeenLastCalledWith({ area: 'all', name: 'Roadmap' });
     show('c', true);
     act(() => q('canvas-menu-export-visible')?.click());
-    expect(h.exportPng).toHaveBeenLastCalledWith({ area: 'visible', name: 'Roadmap' });
+    expect(exportPng).toHaveBeenLastCalledWith({ area: 'visible', name: 'Roadmap' });
   });
 
   it('is absent without a mounted view, for tree rows, folders and canvases in the trash', () => {
