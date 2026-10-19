@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: install.sh replaces __HOME__, __NODE__ and __ENV_FILE__ and writes it to ~/Library/LaunchAgents. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.calab.claude-bot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__HOME__/.calab-claude-bot/app/daemon.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__HOME__/.calab-claude-bot</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/go/bin</string>
+    <key>CLAUDE_BOT_ENV_FILE</key>
+    <string>__ENV_FILE__</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Restart whenever it exits; launchd waits ThrottleInterval seconds between starts (backoff). -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/calab-claude-bot/daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/calab-claude-bot/daemon.log</string>
+</dict>
+</plist>
