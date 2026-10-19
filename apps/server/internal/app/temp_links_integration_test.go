@@ -194,4 +194,35 @@ func TestRoomLinkEdit(t *testing.T) {
 	c2 := &client{t: t, ip: fmt.Sprintf("10.142.1.%d", admissionIP%250+1)}
 	c2.must(201, "POST", "/api/room-invites/"+two.GetCode()+"/join", &v1.JoinRoomInviteRequest{Nickname: "Гость 2"}, nil)
 	o.must(422, "PATCH", "/api/rooms/"+rid+"/invites/"+two.GetId(), &v1.UpdateRoomInviteRequest{MaxUses: u32(1)}, nil)
+
+	// Editing the rights keeps the bits a PATCH does not name (VIDEO of a temporary room's link).
+	var bits int64
+	if err := testDB.Pool.QueryRow(context.Background(), "SELECT allow_bits FROM room_invites WHERE id = $1", own.GetId()).Scan(&bits); err != nil {
+		t.Fatal(err)
+	}
+	if !perm.Bits(uint64(bits)).Has(perm.Video) { //nolint:gosec // bit mask
+		t.Fatalf("a temporary room's link keeps VIDEO after a rights edit: %b", bits)
+	}
+
+	// No escalation through an edit: erin may invite guests but not stream in this room; she may
+	// not extend the owner's streaming link unless she also takes STREAM off it.
+	erin := register(t, invite(t, o, wid))
+	if st, _ := setMemberRoles(o, wid, erin.id, newRole(t, o, wid, "Inviter", perm.InviteGuests).GetId()); st != 200 {
+		t.Fatalf("erin's role: %d", st)
+	}
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: "no-stream"}, &cr)
+	vid := cr.GetRoom().GetId()
+	o.must(200, "PUT", "/api/rooms/"+vid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: erin.id, Deny: uint64(perm.Stream)},
+	}}, nil)
+	broad := roomLink(t, o, vid, &v1.CreateRoomInviteRequest{AllowStream: &yes})
+	bpath := "/api/rooms/" + vid + "/invites/" + broad.GetId()
+	erin.must(403, "PATCH", bpath, &v1.UpdateRoomInviteRequest{ExpiresInSeconds: u32(0)}, nil)
+	erin.must(403, "PATCH", bpath, &v1.UpdateRoomInviteRequest{MaxUses: u32(100)}, nil)
+	erin.must(200, "PATCH", bpath, &v1.UpdateRoomInviteRequest{RequireApproval: &yes}, nil) // approval only: as before
+	erin.must(200, "PATCH", bpath, &v1.UpdateRoomInviteRequest{AllowStream: &no, ExpiresInSeconds: u32(3600)}, &ur)
+	if ur.GetInvite().GetAllowStream() {
+		t.Fatalf("stream taken off: %v", ur.GetInvite())
+	}
 }

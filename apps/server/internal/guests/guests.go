@@ -279,10 +279,22 @@ func editOf(req *v1.UpdateRoomInviteRequest, now time.Time) (linkEdit, error) {
 	return e, nil
 }
 
-// editBits applies the allow_* of a PATCH to the link's current bits.
+// editBits applies the allow_* of a PATCH to the link's current bits; the bits a PATCH does not
+// name (VIEW_ROOM, CONNECT, VIDEO of a temporary room's link) stay as they are.
 func editBits(req *v1.UpdateRoomInviteRequest, cur perm.Bits) perm.Bits {
-	return AllowBits(orDefault(req.AllowSpeak, cur.Has(perm.Speak)), orDefault(req.AllowMessages, cur.Has(perm.SendMessages)),
-		orDefault(req.AllowFiles, cur.Has(perm.AttachFiles)), orDefault(req.AllowStream, cur.Has(perm.Stream)))
+	set := func(b perm.Bits, v *bool, bit perm.Bits) perm.Bits {
+		switch {
+		case v == nil:
+			return b
+		case *v:
+			return b | bit
+		}
+		return b &^ bit
+	}
+	b := set(cur, req.AllowSpeak, perm.Speak)
+	b = set(b, req.AllowMessages, perm.SendMessages)
+	b = set(b, req.AllowFiles, perm.AttachFiles)
+	return set(b, req.AllowStream, perm.Stream)
 }
 
 // update: PATCH /api/rooms/{id}/invites/{inviteId} — the link's approval setting (ADR-0040), its
@@ -345,11 +357,13 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		if edit.maxUses != nil && *edit.maxUses != 0 && *edit.maxUses <= cur.Uses {
 			return httpx.Validation("maxUses", "maxUses must be above the uses so far")
 		}
+		// No escalation through links: the edited link carries only rights the caller holds — also
+		// when only its end or uses change (extending a broader link hands it out anew, ADR-0107).
+		bits := editBits(&req, perm.Bits(uint64(cur.AllowBits))) //nolint:gosec // bit mask
+		if edit.any() && !acc.Bits.Has(perm.Administrator) && bits&^acc.Bits != 0 {
+			return httpx.Forbidden("cannot grant permissions you do not have")
+		}
 		if edit.rights {
-			bits := editBits(&req, perm.Bits(uint64(cur.AllowBits))) //nolint:gosec // bit mask
-			if !acc.Bits.Has(perm.Administrator) && bits&^acc.Bits != 0 {
-				return httpx.Forbidden("cannot grant permissions you do not have") // no escalation through links
-			}
 			b := int64(bits) //nolint:gosec // bit mask
 			p.AllowBits = &b
 		}

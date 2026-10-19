@@ -85,7 +85,9 @@ func reviveLinks(ctx context.Context, q *sqlc.Queries, roomID uuid.UUID, oldEnd 
 }
 
 // unboundLinks: a live temporary room made permanent — its links bound to its end never expire
-// (guest-capable ones only when the caller may invite guests; the others keep their end).
+// (guest-capable ones only when the caller may invite guests, and only links with rights the
+// caller holds, as for reviving; the others keep their end).
 func unboundLinks(ctx context.Context, q *sqlc.Queries, roomID uuid.UUID, oldEnd time.Time, p linkPolicy) error {
-	return q.UnboundRoomInvites(ctx, sqlc.UnboundRoomInvitesParams{RoomID: roomID, OldExpiresAt: &oldEnd, GuestLinks: p.guests})
+	return q.UnboundRoomInvites(ctx, sqlc.UnboundRoomInvitesParams{RoomID: roomID, OldExpiresAt: &oldEnd, GuestLinks: p.guests,
+		Admin: p.admin, CallerBits: int64(p.bits)}) //nolint:gosec // bit mask
 }

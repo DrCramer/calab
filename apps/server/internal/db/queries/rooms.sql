@@ -302,10 +302,12 @@ UPDATE room_invites SET archive_revoked = false WHERE room_id = $1 AND archive_r
 
 -- name: UnboundRoomInvites :exec
 -- A temporary room made permanent: its live links bound to its end never expire (ADR-0107);
--- guest-capable ones only when guest_links (the caller may invite guests). Not meeting links.
+-- guest-capable ones only when guest_links (the caller may invite guests), and only links whose
+-- rights the caller holds (admin, or allow_bits within caller_bits). Not meeting links.
 UPDATE room_invites SET expires_at = NULL
 WHERE room_id = sqlc.arg('room_id') AND revoked_at IS NULL AND event_id IS NULL
-  AND expires_at = sqlc.arg('old_expires_at') AND (sqlc.arg('guest_links')::boolean OR members_only);
+  AND expires_at = sqlc.arg('old_expires_at') AND (sqlc.arg('guest_links')::boolean OR members_only)
+  AND (sqlc.arg('admin')::boolean OR allow_bits & ~sqlc.arg('caller_bits')::bigint = 0);
 
 -- name: ArchiveTempRoom :one
 -- Archives a live temporary room: now (DELETE), or only when it has expired (the sweeper; a

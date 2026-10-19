@@ -1513,18 +1513,28 @@ const unboundRoomInvites = `-- name: UnboundRoomInvites :exec
 UPDATE room_invites SET expires_at = NULL
 WHERE room_id = $1 AND revoked_at IS NULL AND event_id IS NULL
   AND expires_at = $2 AND ($3::boolean OR members_only)
+  AND ($4::boolean OR allow_bits & ~$5::bigint = 0)
 `
 
 type UnboundRoomInvitesParams struct {
 	RoomID       uuid.UUID
 	OldExpiresAt *time.Time
 	GuestLinks   bool
+	Admin        bool
+	CallerBits   int64
 }
 
 // A temporary room made permanent: its live links bound to its end never expire (ADR-0107);
-// guest-capable ones only when guest_links (the caller may invite guests). Not meeting links.
+// guest-capable ones only when guest_links (the caller may invite guests), and only links whose
+// rights the caller holds (admin, or allow_bits within caller_bits). Not meeting links.
 func (q *Queries) UnboundRoomInvites(ctx context.Context, arg UnboundRoomInvitesParams) error {
-	_, err := q.db.Exec(ctx, unboundRoomInvites, arg.RoomID, arg.OldExpiresAt, arg.GuestLinks)
+	_, err := q.db.Exec(ctx, unboundRoomInvites,
+		arg.RoomID,
+		arg.OldExpiresAt,
+		arg.GuestLinks,
+		arg.Admin,
+		arg.CallerBits,
+	)
 	return err
 }
 
