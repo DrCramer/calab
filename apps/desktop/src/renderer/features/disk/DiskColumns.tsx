@@ -12,6 +12,7 @@ import { usePrefs } from '../../stores/prefs';
 import { FileCardPanel } from './FileCard';
 import { RenameField, useItemDnd } from './DiskItems';
 import { ItemContextMenu } from './ItemMenu';
+import { useQuickLook } from './useQuickLook';
 import { ItemBadges, ItemGlyph } from './visuals';
 
 /**
@@ -58,6 +59,15 @@ export function DiskColumns({ workspaceId, folderId }: { workspaceId: string; fo
     return it && !isFolder(it) && !it.trashedAt && it.parentId === folderId ? it.id : null;
   });
   const strip = useRef<HTMLDivElement>(null);
+  // Quick Look (CBF-22): Space previews the selected file; ←/→ in the viewer step through the active (last) column.
+  const sort = usePrefs((s) => s.diskSort);
+  const query = useDiskUi((s) => s.query);
+  const shownIds = useDisk(useShallow((s) => visibleIds(s.lists[folderKey(workspaceId, folderId)], s.items, sort, query, collator())));
+  const shown = useRef<readonly string[]>(shownIds);
+  useEffect(() => {
+    shown.current = shownIds;
+  }, [shownIds]);
+  useQuickLook(shown);
   const wantFocus = useRef<string | null>(null);
 
   // The newest column comes into view (instant: no animation).
