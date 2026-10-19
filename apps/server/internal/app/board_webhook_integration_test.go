@@ -107,7 +107,8 @@ func TestBoardWebhook(t *testing.T) {
 	wantPlanLimit(t, "webhook on Team", st, e, 0, 0)
 	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
 
-	// Rights: MANAGE_BOARD alone sees it but cannot change it (MANAGE_INTEGRATIONS); bots never.
+	// Rights: MANAGE_BOARD alone sees it but cannot change it (MANAGE_INTEGRATIONS); bots by the
+	// same bits (ADR-0109) — this one has none.
 	bob.must(403, "PUT", path, &v1.SetBoardWebhookRequest{Url: recv.srv.URL}, nil)
 	setBoardPerms(o, b.GetId(), 200, userOv(bob.id, perm.ManageBoard, 0))
 	bob.must(403, "PUT", path, &v1.SetBoardWebhookRequest{Url: recv.srv.URL}, nil)

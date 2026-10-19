@@ -12,7 +12,7 @@ import "google/protobuf/timestamp.proto";
 // guests, and only while the caller is in that room's call. Workspace.sip_enabled says whether
 // telephony is on (the client shows the «call a number» button when it is set and the caller
 // has PLACE_CALLS in the room). Settings and the connection test need MANAGE_INTEGRATIONS, the
-// journal VIEW_JOURNALS (ADR-0048); they are for people only (bots: 403 BOT_NOT_ALLOWED); bots
+// journal VIEW_JOURNALS (ADR-0048), bots by the same bits (ADR-0109); bots
 // may place and end calls like people.
 
 enum SipTransport {

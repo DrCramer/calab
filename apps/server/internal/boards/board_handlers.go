@@ -704,10 +704,8 @@ func writePermissions(w http.ResponseWriter, r *http.Request, q *sqlc.Queries, i
 	return nil
 }
 
+// setPermissions: PUT /api/boards/{id}/permissions — MANAGE_BOARD, bots too (ADR-0109).
 func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
-	if isBot(r) {
-		return auth.ErrBotNotAllowed
-	}
 	id, acc, err := manageBoard(r, false)
 	if err != nil {
 		return err

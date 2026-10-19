@@ -47,8 +47,8 @@ func webpSize(t *testing.T, u *user, path string) (int, int) {
 // TestBackgroundsLibrary (ADR-0035, «фоны пространства»): create / rename / delete with
 // MANAGE_WORKSPACE, the picture rules (the caller's own image of this workspace), the server-made
 // 1280×720 WebP with a 320×180 thumbnail, at most 20, events and READY; the picture is readable by
-// members and guests, not by outsiders; members, guests and bots cannot manage; deleting removes
-// the row only.
+// members and guests, not by outsiders; members and guests cannot manage, a bot with the bit can
+// (ADR-0109); deleting removes the row only.
 func TestBackgroundsLibrary(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
 	wid := ws.GetId()
@@ -70,7 +70,7 @@ func TestBackgroundsLibrary(t *testing.T) {
 	o.must(422, "POST", base, &v1.CreateBackgroundRequest{Name: "   ", FileId: src}, nil)
 	o.must(422, "POST", base, &v1.CreateBackgroundRequest{Name: strings.Repeat("x", 41), FileId: src}, nil)
 
-	// Rights: a member, a guest and a bot (even with MANAGE_WORKSPACE) cannot manage.
+	// Rights: a member and a guest cannot manage.
 	bob.must(403, "POST", base, &v1.CreateBackgroundRequest{Name: "Office", FileId: bobPic}, nil)
 	g := register(t, invite(t, o, wid))
 	guest := v1.WorkspaceRole_WORKSPACE_ROLE_GUEST
@@ -81,8 +81,12 @@ func TestBackgroundsLibrary(t *testing.T) {
 	if st, _ := setMemberRoles(o, wid, b.id, manage.GetId()); st != 200 {
 		t.Fatalf("bot role: %d", st)
 	}
-	b.must(403, "POST", base, &v1.CreateBackgroundRequest{Name: "Office", FileId: src}, nil)
-	b.must(403, "GET", base, nil, nil)
+	// A bot with MANAGE_WORKSPACE manages like a person (ADR-0109): its own picture only.
+	b.must(422, "POST", base, &v1.CreateBackgroundRequest{Name: "Office", FileId: src}, nil)
+	b.must(200, "GET", base, nil, nil)
+	var bb v1.CreateBackgroundResponse
+	b.must(201, "POST", base, &v1.CreateBackgroundRequest{Name: "Bot", FileId: bgUpload(t, &user{client: b.client, id: b.id}, wid, pngBytes(64, 36))}, &bb)
+	b.must(204, "DELETE", base+"/"+bb.GetBackground().GetId(), nil, nil)
 
 	bg := dialGW(t)
 	bg.identify(bob.token)

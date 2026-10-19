@@ -59,7 +59,7 @@ func TestBoardGit(t *testing.T) {
 	done := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED)
 	setup := "/api/boards/" + b.GetId() + "/git"
 
-	// Setup: MANAGE_BOARD and MANAGE_INTEGRATIONS, people only; the secret is returned once.
+	// Setup: MANAGE_BOARD and MANAGE_INTEGRATIONS (bots too, ADR-0109); the secret is returned once.
 	bob.must(403, "PUT", setup, &v1.SetBoardGitRequest{Provider: v1.GitProvider_GIT_PROVIDER_GITHUB}, nil)
 	setBoardPerms(o, b.GetId(), 200, userOv(bob.id, perm.ManageBoard, 0), userOv(carol.id, 0, perm.ViewBoard))
 	bob.must(403, "PUT", setup, &v1.SetBoardGitRequest{Provider: v1.GitProvider_GIT_PROVIDER_GITHUB}, nil)

@@ -79,17 +79,28 @@ order: 7
 | `DELETE` | `/api/task-milestones/{id}` | Удалить веху задачи |
 | `GET` | `/api/boards/{id}/rules` | Правила автоматизации доски (`VIEW_BOARD`) |
 | `GET` | `/api/rules/{id}/runs` | Журнал запусков правила (`MANAGE_BOARD`) |
+| `PUT` | `/api/boards/{id}/permissions` | Переопределения прав доски целиком (`MANAGE_BOARD`; выдать можно только свои биты) |
+| `POST` | `/api/boards/{id}/rules` | Создать правило автоматизации (`MANAGE_BOARD`, тариф Team+) |
+| `PATCH` | `/api/rules/{id}` | Изменить, включить или выключить правило (`MANAGE_BOARD`) |
+| `DELETE` | `/api/rules/{id}` | Удалить правило (`MANAGE_BOARD`) |
+| `POST` | `/api/rules/{id}/test` | Сухой прогон правила на задаче `{taskId}` → `{matches, actions}` (`MANAGE_BOARD`) |
+| `GET` | `/api/boards/{id}/git` | Git-связь доски, без секрета (`MANAGE_BOARD` + `MANAGE_INTEGRATIONS`) |
+| `PUT` | `/api/boards/{id}/git` | Подключить репозиторий `{provider, secret?}` → секрет один раз |
+| `DELETE` | `/api/boards/{id}/git` | Отключить репозиторий |
+| `GET` | `/api/boards/{id}/webhook` | Вебхук доски (`MANAGE_BOARD`), см. [Вебхуки](./webhooks) |
+| `PUT` | `/api/boards/{id}/webhook` | Создать или заменить вебхук доски (+ `MANAGE_INTEGRATIONS`) |
+| `DELETE` | `/api/boards/{id}/webhook` | Удалить вебхук доски |
+| `POST` | `/api/boards/{id}/webhook/ping` | Проверить вебхук доски |
 <!-- /routes -->
 
 ### Недоступно ботам
 
 На эти маршруты бот получает `403 BOT_NOT_ALLOWED`, даже с подходящими правами:
 
-- доступ к доске `PUT /api/boards/{id}/permissions` и окончательное удаление `DELETE /api/boards/{id}?purge=1`;
-- голосование в согласовании `POST /api/tasks/{id}/approval` — бот не согласует задачи;
-- вебхук доски `/api/boards/{id}/webhook…` — он хранит секрет и выгружает данные (настраивают люди, см. [Вебхуки](./webhooks));
-- создание, изменение, удаление и тест правил автоматизации: `POST /api/boards/{id}/rules`, `PATCH · DELETE /api/rules/{id}`, `POST /api/rules/{id}/test`;
-- подключение Git-репозитория к доске `/api/boards/{id}/git`.
+- окончательное удаление `DELETE /api/boards/{id}?purge=1` и «забрать себе» `POST /api/boards/{id}/take-over`;
+- голосование в согласовании `POST /api/tasks/{id}/approval` — бот не согласует задачи (только [от имени владельца](./auth#от-имени-владельца)).
+
+Всё остальное — по правам: автоматизации, Git, вебхук и доступ доски бот настраивает так же, как человек с `MANAGE_BOARD` (а для Git и вебхука — ещё и `MANAGE_INTEGRATIONS` пространства). Без права — обычный `403` с названием права. Секрет Git и вебхука сервер показывает один раз тому, кто его задал, — храните его как пароль.
 
 ## Создать задачу
 
@@ -214,7 +225,7 @@ await bot.boards.setOrder(wsId, { boards: [{ boardId, categoryId: cat.id, positi
 
 ## Автоматизации
 
-Бот **читает** правила доски (`GET /api/boards/{id}/rules`) и журнал их запусков (`GET /api/rules/{id}/runs`). Изменения задач, которые делает бот, запускают правила доски так же, как изменения людей. Изменения, сделанные правилами, попадают в журнал с пустым `actorId` и заполненным `ruleId`.
+Бот читает правила доски (`GET /api/boards/{id}/rules`) и журнал их запусков (`GET /api/rules/{id}/runs`), а с `MANAGE_BOARD` — создаёт, меняет, проверяет сухим прогоном и удаляет их, как человек. Правило действует от имени доски, а не автора: удалите правило, если бот больше не должен его вести. Изменения задач, которые делает бот, запускают правила доски так же, как изменения людей. Изменения, сделанные правилами, попадают в журнал с пустым `actorId` и заполненным `ruleId`.
 
 ## Подводные камни
 

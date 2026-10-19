@@ -593,7 +593,7 @@ message SetBoardPositionRequest {
   optional string category_id = 2;
 }
 
-// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; PUT: people only). Like room overrides:
+// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; bots too, ADR-0109). Like room overrides:
 // ≤ 100 targets, only board bits (VIEW_BOARD, CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD), a
 // non-administrator may only grant / remove bits they hold on the board.
 message SetBoardPermissionsRequest {
@@ -1031,7 +1031,7 @@ message TaskMilestoneResponse {
 }
 
 // ---- board webhook (ADR-0058 §4) ----
-// MANAGE_BOARD on the board and MANAGE_INTEGRATIONS of the workspace; people only (bots: 403).
+// MANAGE_BOARD on the board and MANAGE_INTEGRATIONS of the workspace; bots by the same bits (ADR-0109).
 // Business plan only (PlanLimits.board_webhooks_disabled: PUT / ping are 409 PLAN_LIMIT).
 
 // Why deliveries are paused while the webhook stays configured.

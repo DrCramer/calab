@@ -132,7 +132,7 @@ createServer((req, res) => {
 A board POSTs JSON to your HTTPS address whenever its tasks change. It is not the bot webhook: one webhook per board, every task change, no event filter. It fits syncing with trackers, BI and CRMs.
 
 > [!NOTE]
-> The board webhook is set up **by people only**: it holds a secret and exports the board's data. A bot gets `403 BOT_NOT_ALLOWED`. It needs `MANAGE_BOARD` on the board and `MANAGE_INTEGRATIONS` in the workspace, on the Business plan or above (below it: `409 CONFLICT`, `reason: "PLAN_LIMIT"`). The webhook belongs to the board, not its creator: anyone with `MANAGE_BOARD` sees and changes it.
+> The board webhook holds a secret and exports the board's data — a bot sets it up like a person with the same permissions. It needs `MANAGE_BOARD` on the board and `MANAGE_INTEGRATIONS` in the workspace, on the Business plan or above (below it: `409 CONFLICT`, `reason: "PLAN_LIMIT"`). The webhook belongs to the board, not its creator: anyone with `MANAGE_BOARD` sees and changes it.
 
 ### Routes
 

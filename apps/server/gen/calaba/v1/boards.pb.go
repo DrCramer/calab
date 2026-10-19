@@ -3799,7 +3799,7 @@ func (x *SetBoardPositionRequest) GetCategoryId() string {
 	return ""
 }
 
-// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; PUT: people only). Like room overrides:
+// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; bots too, ADR-0109). Like room overrides:
 // ≤ 100 targets, only board bits (VIEW_BOARD, CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD), a
 // non-administrator may only grant / remove bits they hold on the board.
 type SetBoardPermissionsRequest struct {

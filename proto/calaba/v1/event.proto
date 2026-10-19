@@ -450,7 +450,7 @@ message RespondExternalEventRequest {
 //
 // Comments belong to the event (the series as a whole, not one occurrence). Whoever sees the
 // event (see «Visibility» above: the organizer, the attendees, the viewers of its room) reads
-// and writes them; guests and bots do not (403), others get 404 as for the event. Busy-only
+// and writes them, bots too (ADR-0109); guests do not (403), others get 404 as for the event. Busy-only
 // viewers (free / busy, ADR-0041) see no event and so no comments. The author edits their
 // comment; the author or whoever may edit the event (CalendarEvent.can_edit) deletes it.
 // A cancelled event keeps its comments readable; new ones and edits → 404.

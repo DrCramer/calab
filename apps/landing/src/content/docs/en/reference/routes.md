@@ -88,6 +88,11 @@ Details: [Rooms and voice](../bots/rest-rooms).
 | `POST` | `/api/workspaces/{id}/sounds` | logged as a bot action |
 | `DELETE` | `/api/workspaces/{id}/sounds/{soundId}` | logged as a bot action |
 | `PATCH` | `/api/workspaces/{id}/sounds/{soundId}` | logged as a bot action |
+| `POST` | `/api/rooms/{id}/make-permanent` | by role permissions |
+| `DELETE` | `/api/rooms/{id}/recordings/{rid}` | by role permissions |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | by role permissions |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | by role permissions |
+| `GET` | `/api/workspaces/{id}/calls` | by role permissions |
 <!-- /routes -->
 
 ### Workspace and members
@@ -128,6 +133,11 @@ Details: [Workspace and members](../bots/rest-members).
 | `DELETE` | `/api/workspaces/{id}/roles/{roleId}` | logged as a bot action |
 | `PATCH` | `/api/workspaces/{id}/roles/{roleId}` | logged as a bot action |
 | `PUT` | `/api/workspaces/{id}/roles/order` | logged as a bot action |
+| `PATCH` | `/api/achievements/{id}` | by role permissions |
+| `DELETE` | `/api/achievements/{id}` | by role permissions |
+| `POST` | `/api/workspaces/{id}/achievements` | by role permissions |
+| `POST` | `/api/workspaces/{id}/members/{userId}/achievements` | by role permissions |
+| `DELETE` | `/api/workspaces/{id}/members/{userId}/achievements/{grantId}` | by role permissions |
 <!-- /routes -->
 
 ### Boards and tasks
@@ -195,6 +205,18 @@ Details: [Boards and tasks](../bots/rest-boards).
 | `POST` | `/api/workspaces/{id}/boards` | by role permissions |
 | `PUT` | `/api/workspaces/{id}/boards/order` | by role permissions |
 | `GET` | `/api/workspaces/{id}/tasks/search` | by role permissions |
+| `GET` | `/api/boards/{id}/git` | by role permissions |
+| `PUT` | `/api/boards/{id}/git` | by role permissions |
+| `DELETE` | `/api/boards/{id}/git` | by role permissions |
+| `PUT` | `/api/boards/{id}/permissions` | by role permissions |
+| `POST` | `/api/boards/{id}/rules` | by role permissions |
+| `GET` | `/api/boards/{id}/webhook` | by role permissions |
+| `PUT` | `/api/boards/{id}/webhook` | by role permissions |
+| `DELETE` | `/api/boards/{id}/webhook` | by role permissions |
+| `POST` | `/api/boards/{id}/webhook/ping` | by role permissions |
+| `PATCH` | `/api/rules/{id}` | by role permissions |
+| `DELETE` | `/api/rules/{id}` | by role permissions |
+| `POST` | `/api/rules/{id}/test` | by role permissions |
 <!-- /routes -->
 
 ### Board forms
@@ -227,6 +249,10 @@ Details: [Calendar](../bots/rest-calendar).
 | `POST` | `/api/workspaces/{id}/events` | logged as a bot action |
 | `GET` | `/api/workspaces/{id}/freebusy` | by role permissions |
 | `POST` | `/api/workspaces/{id}/freebusy/suggest` | by role permissions |
+| `GET` | `/api/events/{id}/comments` | by role permissions |
+| `POST` | `/api/events/{id}/comments` | by role permissions |
+| `PATCH` | `/api/events/{id}/comments/{comment_id}` | by role permissions |
+| `DELETE` | `/api/events/{id}/comments/{comment_id}` | by role permissions |
 <!-- /routes -->
 
 ### Direct messages
@@ -316,6 +342,34 @@ Details: [Mailbox](../bots/rest-mailbox).
 |---|---|---|
 | `POST` | `/api/mailbox/hosting-check` | operator-listed bots only |
 | `POST` | `/api/mailbox/password-reset` | operator-listed bots only |
+<!-- /routes -->
+
+
+### Integrations and workspace settings
+
+Web apps, camera backgrounds, GPTunneL, telephony, the journal and former members — by the bits of the bot's roles (ADR-0109). Details: [Members](../bots/rest-members).
+
+<!-- routes:allow:workspaces -->
+| Method | Path | What it does |
+|---|---|---|
+| `PATCH` | `/api/workspace-apps/{appId}` | by role permissions |
+| `DELETE` | `/api/workspace-apps/{appId}` | by role permissions |
+| `PUT` | `/api/workspace-apps/{appId}/position` | by role permissions |
+| `GET` | `/api/workspaces/{id}/apps` | by role permissions |
+| `POST` | `/api/workspaces/{id}/apps` | by role permissions |
+| `GET` | `/api/workspaces/{id}/audit` | by role permissions |
+| `GET` | `/api/workspaces/{id}/backgrounds` | by role permissions |
+| `POST` | `/api/workspaces/{id}/backgrounds` | by role permissions |
+| `PATCH` | `/api/workspaces/{id}/backgrounds/{bgId}` | by role permissions |
+| `DELETE` | `/api/workspaces/{id}/backgrounds/{bgId}` | by role permissions |
+| `GET` | `/api/workspaces/{id}/former-members` | by role permissions |
+| `GET` | `/api/workspaces/{id}/integrations/gptunnel` | by role permissions |
+| `POST` | `/api/workspaces/{id}/integrations/gptunnel` | by role permissions |
+| `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | by role permissions |
+| `GET` | `/api/workspaces/{id}/sip` | by role permissions |
+| `PUT` | `/api/workspaces/{id}/sip` | by role permissions |
+| `POST` | `/api/workspaces/{id}/sip/test` | by role permissions |
+| `GET` | `/api/workspaces/{id}/users` | by role permissions |
 <!-- /routes -->
 
 
@@ -431,18 +485,6 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `GET` | `/api/workspaces/{id}/billing/saved-method-topups/{tid}` | Billing |
 | `POST` | `/api/workspaces/{id}/billing/stop` | Billing |
 | `POST` | `/api/workspaces/{id}/billing/topups` | Billing |
-| `DELETE` | `/api/boards/{id}/git` | Boards and tasks |
-| `GET` | `/api/boards/{id}/git` | Boards and tasks |
-| `PUT` | `/api/boards/{id}/git` | Boards and tasks |
-| `PUT` | `/api/boards/{id}/permissions` | Boards and tasks |
-| `POST` | `/api/boards/{id}/rules` | Boards and tasks |
-| `DELETE` | `/api/boards/{id}/webhook` | Boards and tasks |
-| `GET` | `/api/boards/{id}/webhook` | Boards and tasks |
-| `PUT` | `/api/boards/{id}/webhook` | Boards and tasks |
-| `POST` | `/api/boards/{id}/webhook/ping` | Boards and tasks |
-| `DELETE` | `/api/rules/{id}` | Boards and tasks |
-| `PATCH` | `/api/rules/{id}` | Boards and tasks |
-| `POST` | `/api/rules/{id}/test` | Boards and tasks |
 | `POST` | `/api/tasks/{id}/approval` | Boards and tasks |
 | `GET` | `/api/bots/{ref}` | Bot management |
 | `GET` | `/api/workspaces/{id}/bots` | Bot management |
@@ -526,11 +568,6 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `POST` | `/oidc/workspaces/{workspace}/token` | Identity |
 | `GET` | `/oidc/workspaces/{workspace}/userinfo` | Identity |
 | `POST` | `/oidc/workspaces/{workspace}/userinfo` | Identity |
-| `DELETE` | `/api/achievements/{id}` | Members |
-| `PATCH` | `/api/achievements/{id}` | Members |
-| `POST` | `/api/workspaces/{id}/achievements` | Members |
-| `POST` | `/api/workspaces/{id}/members/{userId}/achievements` | Members |
-| `DELETE` | `/api/workspaces/{id}/members/{userId}/achievements/{grantId}` | Members |
 | `PATCH` | `/api/workspaces/{id}/members/{userId}/birthday` | Members |
 | `GET` | `/api/workspaces/{id}/members/birthdays` | Members |
 | `POST` | `/api/files/convert` | Messages and files |
@@ -564,26 +601,7 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `PUT` | `/api/admin/workspaces/{id}/plan` | Superadmin |
 | `GET` | `/api/admin/workspaces/{id}/plan/log` | Superadmin |
 | `PUT` | `/api/admin/workspaces/{id}/suspension` | Superadmin |
-| `DELETE` | `/api/rooms/{id}/recordings/{rid}` | Telephony and recordings |
-| `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | Telephony and recordings |
-| `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | Telephony and recordings |
-| `GET` | `/api/workspaces/{id}/calls` | Telephony and recordings |
 | `GET` | `/api/workspaces/{id}/bot-contact-shares` | Journals |
-| `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | Telephony and recordings |
-| `GET` | `/api/workspaces/{id}/integrations/gptunnel` | Telephony and recordings |
-| `POST` | `/api/workspaces/{id}/integrations/gptunnel` | Telephony and recordings |
-| `GET` | `/api/workspaces/{id}/sip` | Telephony and recordings |
-| `PUT` | `/api/workspaces/{id}/sip` | Telephony and recordings |
-| `POST` | `/api/workspaces/{id}/sip/test` | Telephony and recordings |
-| `DELETE` | `/api/workspace-apps/{appId}` | Web apps and backgrounds |
-| `PATCH` | `/api/workspace-apps/{appId}` | Web apps and backgrounds |
-| `PUT` | `/api/workspace-apps/{appId}/position` | Web apps and backgrounds |
-| `GET` | `/api/workspaces/{id}/apps` | Web apps and backgrounds |
-| `POST` | `/api/workspaces/{id}/apps` | Web apps and backgrounds |
-| `GET` | `/api/workspaces/{id}/backgrounds` | Web apps and backgrounds |
-| `POST` | `/api/workspaces/{id}/backgrounds` | Web apps and backgrounds |
-| `DELETE` | `/api/workspaces/{id}/backgrounds/{bgId}` | Web apps and backgrounds |
-| `PATCH` | `/api/workspaces/{id}/backgrounds/{bgId}` | Web apps and backgrounds |
 | `POST` | `/api/invites/{code}/join` | Workspaces and invites |
 | `POST` | `/api/workspaces` | Workspaces and invites |
 | `DELETE` | `/api/workspaces/{id}` | Workspaces and invites |
