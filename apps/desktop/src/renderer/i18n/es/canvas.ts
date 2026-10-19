@@ -68,6 +68,7 @@ export const esCanvas: DictShape<typeof ruCanvas> = {
   'canvas.settings.trash': 'Papelera de lienzos',
   'canvas.settings.trashHint': 'Los lienzos y carpetas más antiguos que este plazo se eliminan de la papelera para siempre.',
   'canvas.err.create': 'No se pudo crear el lienzo',
+  'canvas.err.gone': 'El lienzo se eliminó o no está disponible',
   'canvas.err.createFolder': 'No se pudo crear la carpeta',
   'canvas.err.rename': 'No se pudo renombrar',
   'canvas.err.move': 'No se pudo mover',

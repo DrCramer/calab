@@ -4,22 +4,26 @@ import {
   CanvasItemKind,
   CanvasItemResponseSchema,
   CanvasItemSchema,
+  CanvasPathResponseSchema,
   EmptyCanvasTrashResponseSchema,
   ListCanvasItemsResponseSchema,
   type CanvasItem,
 } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../lib/api/client';
 import { childKey, trashKey } from '../lib/canvas/tree';
 import { setCanvasDocHandle } from '../lib/canvas/docHandle';
 import { useCanvas } from '../stores/canvas';
 import { useCanvasUi } from '../stores/canvasUi';
 import { useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
-import { canvasApi, createItem, deleteForever, emptyTrash, loadChildren, loadTrash, moveItem, onCanvasItemRemove, onCanvasItemUpsert, openCanvasSection, renameItem, restoreItem, restoreVersion, trashItem } from './canvas';
+import { canvasApi, createItem, deleteForever, emptyTrash, loadChildren, loadTrash, moveItem, onCanvasItemRemove, onCanvasItemUpsert, openCanvasHit, openCanvasSection, renameItem, restoreItem, restoreVersion, trashItem } from './canvas';
 
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock('../components/Confirm', () => ({ confirmAction: confirm }));
+const showMode = vi.hoisted(() => vi.fn());
+vi.mock('../features/shell/sectionNav', () => ({ showMode }));
 
 const W = 'w';
 const item = (id: string, parentId = '', extra: Omit<Partial<CanvasItem>, '$typeName' | '$unknown'> = {}): CanvasItem =>
@@ -33,6 +37,7 @@ function reset(): void {
   useToasts.setState({ items: [] });
   setCanvasDocHandle(null);
   confirm.mockReset();
+  showMode.mockReset();
 }
 
 describe('canvas listing', () => {
@@ -228,5 +233,47 @@ describe('restoring a version', () => {
     vi.spyOn(canvasApi, 'versionState').mockResolvedValue(Uint8Array.of(9));
     setCanvasDocHandle({ canvasId: 'c', restore: () => false, writable: () => true });
     expect(await restoreVersion('c', 'v')).toBe(false);
+  });
+});
+
+describe('opening a search hit', () => {
+  beforeEach(reset);
+  afterEach(() => vi.restoreAllMocks());
+
+  const answer = (items: CanvasItem[], path: CanvasItem[] = []): void => {
+    vi.spyOn(canvasApi, 'get').mockImplementation((id) => {
+      const it = items.find((i) => i.id === id);
+      return it ? Promise.resolve(create(CanvasItemResponseSchema, { item: it })) : Promise.reject(new ApiError('NOT_FOUND', 'gone', 404));
+    });
+    vi.spyOn(canvasApi, 'path').mockResolvedValue(create(CanvasPathResponseSchema, { items: path }));
+  };
+
+  it('a canvas: the section, the canvas open, the folders above it expanded', async () => {
+    answer([item('c', 'f')], [folder('f')]);
+    useCanvasUi.setState({ trashOf: { [W]: true } });
+    await openCanvasHit(W, { itemId: 'c', folder: false });
+    expect(showMode).toHaveBeenCalledWith('canvas');
+    expect(useCanvasUi.getState().itemOf[W]).toBe('c');
+    expect(useCanvasUi.getState().trashOf[W]).toBeUndefined();
+    expect(useCanvasUi.getState().expanded['f']).toBe(true);
+  });
+
+  it('a folder: opened and expanded in the tree, the open canvas stays', async () => {
+    answer([folder('f', 'g')], [folder('g')]);
+    useCanvasUi.setState({ itemOf: { [W]: 'keep' } });
+    vi.spyOn(canvasApi, 'list').mockResolvedValue(create(ListCanvasItemsResponseSchema, { items: [] }));
+    await openCanvasHit(W, { itemId: 'f', folder: true });
+    expect(showMode).toHaveBeenCalledWith('canvas');
+    expect(useCanvasUi.getState().itemOf[W]).toBe('keep');
+    expect(useCanvasUi.getState().expanded).toMatchObject({ f: true, g: true });
+  });
+
+  it('a canvas that is gone or in the trash says so and opens nothing', async () => {
+    answer([item('t', '', { trashedAt: timestampFromMs(1) })]);
+    await openCanvasHit(W, { itemId: 'nope', folder: false });
+    await openCanvasHit(W, { itemId: 't', folder: false });
+    expect(showMode).not.toHaveBeenCalled();
+    expect(useCanvasUi.getState().itemOf[W]).toBeUndefined();
+    expect(useToasts.getState().items).toHaveLength(1); // the same notice is not stacked
   });
 });

@@ -69,6 +69,7 @@ export const ruCanvas = {
   'canvas.settings.trash': 'Корзина холстов',
   'canvas.settings.trashHint': 'Холсты и папки старше этого срока удаляются из корзины навсегда.',
   'canvas.err.create': 'Не удалось создать холст',
+  'canvas.err.gone': 'Холст удалён или недоступен',
   'canvas.err.createFolder': 'Не удалось создать папку',
   'canvas.err.rename': 'Не удалось переименовать',
   'canvas.err.move': 'Не удалось переместить',

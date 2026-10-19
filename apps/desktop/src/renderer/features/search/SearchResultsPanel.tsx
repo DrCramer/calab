@@ -344,8 +344,8 @@ function Filters({
   const boardList = useBoards(useShallow((s) => (boards && ws ? workspaceBoards(s.boards, ws).map((b) => `${b.id}\u0000${b.name}`) : [])));
   const placeList = boards ? boardList : places;
   // Comments: the room is the task's own — no place filter there (the task key is in each row).
-  // Wiki pages and Disk items have no room: no place filter (the scope picks the workspace).
-  const showPlace = tab !== 'task_comments' && tab !== 'wiki' && tab !== 'disk' && placeList.length > 0;
+  // Wiki pages, canvases and Disk items have no room: no place filter (the scope picks the workspace).
+  const showPlace = tab !== 'task_comments' && tab !== 'wiki' && tab !== 'canvas' && tab !== 'disk' && placeList.length > 0;
   const periods: Array<{ value: Period; key: Parameters<typeof t>[0] }> = [
     { value: 'any', key: 'search.period.any' },
     { value: 'today', key: 'search.period.today' },
