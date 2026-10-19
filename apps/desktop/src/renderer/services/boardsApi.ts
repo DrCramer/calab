@@ -175,9 +175,12 @@ export const boardsApi = {
     /** ADR-0049: the full approver list (order kept) and the quorum (0 = all). */
     setApprovers: (taskId: string, userIds: string[], required: number) =>
       call('PUT', `/api/tasks/${taskId}/approvers`, TaskResponseSchema, body(SetTaskApproversRequestSchema, { userIds, required })),
-    /** ADR-0049: my own vote; REJECT needs a comment (≤ 500), WITHDRAW clears it. */
-    approval: (taskId: string, decision: TaskApprovalDecision, comment = '') =>
-      call('POST', `/api/tasks/${taskId}/approval`, TaskResponseSchema, body(TaskApprovalRequestSchema, { decision, comment })),
+    /**
+     * ADR-0049: my own vote; REJECT needs a comment (≤ 500), WITHDRAW clears it. ADR-0108:
+     * `onBehalfOf` — a board manager's APPROVE / WITHDRAW for that approver.
+     */
+    approval: (taskId: string, decision: TaskApprovalDecision, comment = '', onBehalfOf = '') =>
+      call('POST', `/api/tasks/${taskId}/approval`, TaskResponseSchema, body(TaskApprovalRequestSchema, { decision, comment, onBehalfOf })),
     setRelation: (taskId: string, relatedId: string, kind: TaskRelationKind) =>
       call('PUT', `/api/tasks/${taskId}/relations`, TaskResponseSchema, body(SetTaskRelationRequestSchema, { relatedId, kind })),
     removeRelation: (taskId: string, relatedId: string, kind: TaskRelationKind) =>

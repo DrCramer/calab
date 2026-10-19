@@ -70,6 +70,7 @@ bot.on('taskNotice', async (n) => {
 | `TASK_NOTICE_KIND_COMMENT` | комментарий в задаче, на которую он подписан |
 | `TASK_NOTICE_KIND_STATUS` | смена статуса задачи, на которую он подписан |
 | `TASK_NOTICE_KIND_WATCHER_ADDED` | его добавили в наблюдатели |
+| `TASK_NOTICE_KIND_APPROVED_ON_BEHALF` | руководитель доски согласовал задачу за него (приходит всегда) |
 | `TASK_NOTICE_KIND_APPROVAL_REQUESTED` | нужно его согласование (обязательное) |
 | `TASK_NOTICE_KIND_APPROVED` · `…_REJECTED` | согласовано · отклонено |
 | `TASK_NOTICE_KIND_RULE` | действие «уведомить» правила автоматизации; текст — в `notice.text` |

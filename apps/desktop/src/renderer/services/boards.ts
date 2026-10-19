@@ -35,7 +35,8 @@ import {
 } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
-import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boards/approvals';
+import { approvedCount, blockedStatusIds, quorumOf, rejecters, statusPick } from '../lib/boards/approvals';
+import { confirmAction } from '../components/Confirm';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toggleWatcher } from '../lib/boards/watchers';
 import { editedKey } from '../lib/boards/taskNotify';
@@ -324,6 +325,9 @@ export function noticeText(
       return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
     case TaskNoticeKind.APPROVED:
       return t('boards.notice.approved');
+    // ADR-0108: a board manager recorded an approval on the recipient's behalf.
+    case TaskNoticeKind.APPROVED_ON_BEHALF:
+      return t('boards.notice.approvedOnBehalf', { name: actor });
     // ADR-0060: the «notify» action of an automation rule — its rendered text.
     case TaskNoticeKind.RULE:
       return text ? t('boards.notice.rule', { text }) : t('rules.noticeDefault');
@@ -646,21 +650,45 @@ function gated(task: Task, statusId: string): boolean {
   return true;
 }
 
-/** Optimistic PATCH: the card changes at once, the answer replaces it, a refusal rolls back. */
-export async function updateTask(taskId: string, patch: TaskPatch): Promise<void> {
+/**
+ * Optimistic PATCH: the card changes at once, the answer replaces it, a refusal rolls back.
+ * `overrideApproval` (ADR-0108, a board manager after the confirmation): the gate does not stop it.
+ */
+export async function updateTask(taskId: string, patch: TaskPatch, overrideApproval = false): Promise<void> {
   const s = useBoards.getState();
   const prev = s.tasks[taskId];
   if (!prev) return;
-  if (patch.statusId !== undefined && gated(prev, patch.statusId)) return;
+  if (patch.statusId !== undefined && !overrideApproval && gated(prev, patch.statusId)) return;
   s.upsertTask({ ...prev, ...patch });
   try {
-    const r = await boardsApi.tasks.update(taskId, wireOf(patch));
+    const r = await boardsApi.tasks.update(taskId, { ...wireOf(patch), ...(overrideApproval ? { overrideApproval } : {}) });
     if (r.task) useBoards.getState().upsertTask(r.task);
   } catch (e) {
     const cur = useBoards.getState().tasks[taskId];
     if (cur) useBoards.getState().upsertTask({ ...cur, ...pick(prev, Object.keys(patch) as (keyof TaskPatch)[]) });
     fail(e, cur ?? prev);
   }
+}
+
+/**
+ * A status picked in a status menu (ADR-0108): a move the approval gate holds asks a board
+ * manager (`manage` = MANAGE_BOARD) «Согласование не завершено — перевести вручную?» and is sent
+ * with `overrideApproval`; anyone else gets the gate's toast. The server decides again.
+ */
+export async function pickStatus(taskId: string, statusId: string, manage: boolean): Promise<void> {
+  const s = useBoards.getState();
+  const task = s.tasks[taskId];
+  if (!task) return;
+  const statuses = s.boards[task.boardId]?.statuses ?? [];
+  const how = statusPick(task, statuses, statusId, manage);
+  if (how === 'same') return;
+  if (how !== 'override') return updateTask(taskId, { statusId });
+  const to = statuses.find((x) => x.id === statusId)?.name ?? '';
+  const vetoed = rejecters(task);
+  const text = vetoed.length
+    ? t('boards.override.textRejected', { name: vetoed.map((u) => memberName(task.workspaceId, u)).join(', '), to })
+    : t('boards.override.text', { n: approvedCount(task), m: quorumOf(task), to });
+  if (await confirmAction(t('boards.override.title'), text, t('boards.override.action'), 'primary')) await updateTask(taskId, { statusId }, true);
 }
 
 function pick(t: Task, keys: (keyof TaskPatch)[]): Partial<Task> {
@@ -748,14 +776,19 @@ export async function setApprovers(taskId: string, userIds: string[], required: 
   }
 }
 
-/** My vote (APPROVE / REJECT with a comment / WITHDRAW). Resolves true when the server took it. */
-export async function voteApproval(taskId: string, decision: TaskApprovalDecision, comment = ''): Promise<boolean> {
+/**
+ * My vote (APPROVE / REJECT with a comment / WITHDRAW), or with `onBehalfOf` a board manager's
+ * APPROVE / WITHDRAW for that approver (ADR-0108). Resolves true when the server took it.
+ */
+export async function voteApproval(taskId: string, decision: TaskApprovalDecision, comment = '', onBehalfOf = ''): Promise<boolean> {
   try {
-    const r = await boardsApi.tasks.approval(taskId, decision, comment);
+    const r = await boardsApi.tasks.approval(taskId, decision, comment, onBehalfOf);
     if (r.task) useBoards.getState().upsertTask(r.task);
     return true;
   } catch (e) {
-    if (e instanceof ApiError && e.status === 422) toast.error(t('boards.err.rejectComment'));
+    if (e instanceof ApiError && e.reason === 'APPROVER_DECIDED') toast.error(t('boards.err.approverDecided'));
+    else if (onBehalfOf && e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+    else if (e instanceof ApiError && e.status === 422) toast.error(t('boards.err.rejectComment'));
     else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.notApprover'));
     else if (e instanceof ApiError && e.status === 404) toast.error(t('boards.err.notFound'));
     else fail(e);

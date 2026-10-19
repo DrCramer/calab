@@ -163,9 +163,17 @@ export function ChoiceMenu({
 
 /**
  * `blocked`: statuses the task may not go to now (ADR-0049: not approved yet) — shown disabled
- * with the hint «нужно согласование».
+ * with the hint «нужно согласование». `overridable` (ADR-0108, MANAGE_BOARD): they keep the hint
+ * but stay selectable — the pick asks for a confirmation.
  */
-export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined }): ReactNode {
+export function StatusMenu({
+  boardId,
+  value,
+  onPick,
+  blocked,
+  overridable = false,
+  ...shell
+}: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined; overridable?: boolean }): ReactNode {
   const statuses = useBoards(useShallow((s) => s.boards[boardId]?.statuses ?? NO_STATUSES));
   const groups = useMemo(
     () => [
@@ -176,11 +184,18 @@ export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuSh
           .sort((a, b) => a.position - b.position)
           .map((s): Choice => {
             const off = !!blocked?.has(s.id);
-            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
+            return {
+              id: s.id,
+              search: [s.name],
+              label: s.name,
+              icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />,
+              checked: s.id === value,
+              ...(off ? { disabled: !overridable, note: t('boards.gate.hint') } : {}),
+            };
           }),
       },
     ],
-    [statuses, value, blocked],
+    [statuses, value, blocked, overridable],
   );
   return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(c.id)} placeholder={t('boards.menu.status')} label={t('boards.f.status')} digits testId="status-menu" />;
 }

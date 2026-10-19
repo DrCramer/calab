@@ -6,7 +6,7 @@ import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
-import { archiveTask, copyTaskKey, copyTaskLink, duplicateTask, setAssignees, updateTask } from '../../services/boards';
+import { archiveTask, copyTaskKey, copyTaskLink, duplicateTask, pickStatus, setAssignees, updateTask } from '../../services/boards';
 import { featureOn } from '../../lib/boards/features';
 import { checklistProgress, milestoneChipOf, useBoards } from '../../stores/boards';
 import { useBoardsUi, type CardMenu } from '../../stores/boardsUi';
@@ -91,6 +91,7 @@ export const TaskCard = memo(function TaskCard({
   if (!task) return null;
   const on = (f: BoardFeature): boolean => featureOn(disabled, f);
   const canEdit = mayEditTask(task, perms, me);
+  const manage = !scoped && hasBit(perms, MANAGE_BOARD); // ADR-0108: may move past an incomplete approval
   const done = doneType(statusType);
   const overdue = isOverdue(task.dueOn, today, done);
 
@@ -179,7 +180,7 @@ export const TaskCard = memo(function TaskCard({
         </AssigneeMenu>
       </div>
       <div className="flex min-w-0 items-start gap-2">
-        <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...menuOpen('status')}>
+        <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} overridable={manage} onPick={(s) => void pickStatus(id, s, manage)} {...menuOpen('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.status')} className="mt-[3px] shrink-0 rounded-full disabled:cursor-default" data-testid="card-status">
             <StatusIcon type={statusType ?? 0} color={statusColor} icon={statusIcon} />
           </button>
@@ -307,6 +308,9 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
   const blocked = useBlockedStatuses(task, task.boardId);
   const priority = useFeatureOn(task.boardId, BoardFeature.PRIORITY);
   const scoped = useBoardScoped(task.boardId);
+  // ADR-0108: MANAGE_BOARD picks a status the approval gate holds, after a confirmation.
+  const perms = useTaskPerms(task);
+  const override = !scoped && hasBit(perms, MANAGE_BOARD);
   const me = myUserId();
   // Key hints are for a keyboard: not on a phone (the long-press menu there).
   const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf(id)}</span>;
@@ -335,7 +339,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                     {[...(statuses ?? [])]
                       .sort((a, b) => a.position - b.position)
                       .map((s) => (
-                        <ContextMenu.Item key={s.id} className={item} disabled={blocked?.has(s.id)} onSelect={() => s.id !== task.statusId && void updateTask(task.id, { statusId: s.id })}>
+                        <ContextMenu.Item key={s.id} className={item} disabled={!override && blocked?.has(s.id)} onSelect={() => void pickStatus(task.id, s.id, override)}>
                           <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
                           {blocked?.has(s.id) ? <span className="ml-auto pl-3 text-caption text-muted">{t('boards.gate.hint')}</span> : null}
                         </ContextMenu.Item>
