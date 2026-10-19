@@ -384,7 +384,7 @@ func TestCanvasEmptyDocumentNoVersion(t *testing.T) {
 	}
 	obj := func(n int) *int { return &n }
 	step := func(seq int64, meta snapshotMeta, state []byte) {
-		a.send(updateFrame(0, []byte{byte(seq)}))
+		a.send(updateFrame(0, []byte{byte(seq)})) //nolint:gosec // seq ≤ 4
 		a.next(frameUpdate)
 		a.send(post(seq, meta, state))
 		e.waitSnapshot(p.GetId(), seq)
