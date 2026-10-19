@@ -515,5 +515,11 @@
   {"name": "task rejected mandatory mentions subscribed muted off ws-muted", "task": {"kind": "rejected", "level": "mentions", "subscribed": true, "muted": true, "workspaceMuted": true, "mandatory": true, "off": true}, "notifies": true},
   {"name": "task rejected mandatory none subscribed off", "task": {"kind": "rejected", "level": "none", "subscribed": true, "muted": false, "workspaceMuted": false, "mandatory": true, "off": true}, "notifies": true},
   {"name": "task rejected mandatory none subscribed muted off ws-muted", "task": {"kind": "rejected", "level": "none", "subscribed": true, "muted": true, "workspaceMuted": true, "mandatory": true, "off": true}, "notifies": true},
-  {"name": "task approval_requested none unsubscribed off ws-muted", "task": {"kind": "approval_requested", "level": "none", "subscribed": false, "muted": false, "workspaceMuted": true, "off": true}, "notifies": true}
+  {"name": "task approval_requested none unsubscribed off ws-muted", "task": {"kind": "approval_requested", "level": "none", "subscribed": false, "muted": false, "workspaceMuted": true, "off": true}, "notifies": true},
+  {"name": "task approved_on_behalf all subscribed", "task": {"kind": "approved_on_behalf", "level": "all", "subscribed": true, "muted": false, "workspaceMuted": false}, "notifies": true},
+  {"name": "task approved_on_behalf all unsubscribed muted ws-muted", "task": {"kind": "approved_on_behalf", "level": "all", "subscribed": false, "muted": true, "workspaceMuted": true}, "notifies": true},
+  {"name": "task approved_on_behalf all subscribed muted ws-muted off", "task": {"kind": "approved_on_behalf", "level": "all", "subscribed": true, "muted": true, "workspaceMuted": true, "off": true}, "notifies": true},
+  {"name": "task approved_on_behalf none subscribed", "task": {"kind": "approved_on_behalf", "level": "none", "subscribed": true, "muted": false, "workspaceMuted": false}, "notifies": true},
+  {"name": "task approved_on_behalf none unsubscribed muted ws-muted", "task": {"kind": "approved_on_behalf", "level": "none", "subscribed": false, "muted": true, "workspaceMuted": true}, "notifies": true},
+  {"name": "task approved_on_behalf none subscribed muted ws-muted off", "task": {"kind": "approved_on_behalf", "level": "none", "subscribed": true, "muted": true, "workspaceMuted": true, "off": true}, "notifies": true}
 ]

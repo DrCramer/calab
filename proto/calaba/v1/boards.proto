@@ -310,6 +310,10 @@ message TaskApprover {
   google.protobuf.Timestamp decided_at = 4; // unset while PENDING
   string added_by = 5;
   google.protobuf.Timestamp added_at = 6;
+  // ADR-0108: a board manager (MANAGE_BOARD) recorded this approval on the approver's behalf;
+  // empty = the approver's own vote. Only with state APPROVED; cleared by any later change of
+  // the vote (the approver's own vote, a withdrawal, a reset).
+  string recorded_by = 7;
 }
 
 message TaskRelation {
@@ -402,7 +406,12 @@ message Task {
 // "approved" | "rejected", "comment"}; "approvals_reset" — the title / description / its
 // attachments changed and every vote went back to pending: before {"approved": n,
 // "rejected": n}. A vote or a change of approvers that decides the task also carries
-// after.approval_state "approved" | "rejected" (ADR-0060). "git" (ADR-0060 §4): after {"event":
+// after.approval_state "approved" | "rejected" (ADR-0060). ADR-0108: an "approval" a board
+// manager recorded or withdrew for the approver (user_id) has actor = the manager and
+// after.on_behalf true; before.recorded_by names who recorded the approval it replaces;
+// "approval_override" — a status moved forward past an incomplete approval: after
+// {"from_status_id", "status_id", "approved", "quorum", "rejected"} (the "status" entry is
+// written as well). "git" (ADR-0060 §4): after {"event":
 // the RuleGitEvent name without its prefix, "kind": "branch" | "pr" | "commit", "provider",
 // "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push};
 // before {"state", "title"} of a pull request that changed.
@@ -729,6 +738,12 @@ message UpdateTaskRequest {
   // A subtask's milestone (ADR-0063): one of its parent's (422 "taskMilestoneId" otherwise);
   // "" = none. MILESTONES off: a new value is 409 FEATURE_DISABLED.
   optional string task_milestone_id = 17;
+  // ADR-0108: move the status forward although the approval is not complete (the gate of
+  // ADR-0049 §2 would answer 409 TASK_APPROVAL_REQUIRED). Only for MANAGE_BOARD on the task's
+  // board and a human (403 APPROVAL_OVERRIDE_DENIED otherwise, BOT_NOT_ALLOWED for a bot and a
+  // bot on behalf of its owner); journal "approval_override". Ignored when the gate does not
+  // hold the move; never applies to a move to another board (board_id).
+  bool override_approval = 18;
 }
 
 // PUT /api/tasks/{id}/assignees (the full list, ≤ 10; exactly one is_lead when not empty) →
@@ -764,6 +779,13 @@ enum TaskApprovalDecision {
 message TaskApprovalRequest {
   TaskApprovalDecision decision = 1;
   string comment = 2;
+  // ADR-0108: an approver of the task the vote is recorded for, by a board manager
+  // (MANAGE_BOARD, a human: 403 APPROVAL_ON_BEHALF_DENIED / BOT_NOT_ALLOWED otherwise). APPROVE
+  // only over a PENDING vote (409 APPROVER_DECIDED over the approver's own decision); WITHDRAW
+  // only of an approval recorded on behalf (409 APPROVER_DECIDED); REJECT is personal (422
+  // "decision"). Not an approver: 422 "onBehalfOf". The caller's own id = their own vote.
+  // Journal "approval" with on_behalf; the approver gets APPROVED_ON_BEHALF.
+  string on_behalf_of = 3;
 }
 
 // PUT /api/tasks/{id}/relations → TaskResponse; DELETE /api/tasks/{id}/relations?related_id=
@@ -1236,6 +1258,9 @@ enum TaskNoticeKind {
   TASK_NOTICE_KIND_ATTACHMENT = 18;
   // ARCHIVED: the task was archived.
   TASK_NOTICE_KIND_ARCHIVED = 19;
+  // ADR-0108 (mandatory, like the approval notices): a board manager recorded an approval on
+  // the recipient's behalf (actor_id: the manager).
+  TASK_NOTICE_KIND_APPROVED_ON_BEHALF = 20;
 }
 
 // The task was archived (purged false) or deleted with its board.

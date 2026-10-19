@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -32,7 +33,19 @@ const (
 	ReasonTaskApprovalRequired = "TASK_APPROVAL_REQUIRED"
 	// MaxApprovalReminders: daily reminders of a pending vote (ADR-0049 §5).
 	MaxApprovalReminders = 3
+	// ReasonApprovalOverrideDenied: 403 of UpdateTaskRequest.override_approval without
+	// MANAGE_BOARD on the task's board (ADR-0108).
+	ReasonApprovalOverrideDenied = "APPROVAL_OVERRIDE_DENIED"
+	// ReasonApprovalOnBehalfDenied: 403 of TaskApprovalRequest.on_behalf_of without
+	// MANAGE_BOARD on the task's board (ADR-0108).
+	ReasonApprovalOnBehalfDenied = "APPROVAL_ON_BEHALF_DENIED"
+	// ReasonApproverDecided: 409 of an on-behalf vote over the approver's own decision
+	// (ADR-0108): a manager never changes a personal vote.
+	ReasonApproverDecided = "APPROVER_DECIDED"
 )
+
+// Journal kind of a status moved forward past an incomplete approval (ADR-0108).
+const kindApprovalOverride = "approval_override"
 
 // Why an approver is asked (task_approvers.notify_reason, ADR-0082).
 const (
@@ -182,7 +195,39 @@ func taskTally(ctx context.Context, q *sqlc.Queries, t taskRow) (Tally, error) {
 
 func approverProto(a sqlc.TaskApprover) *v1.TaskApprover {
 	return &v1.TaskApprover{UserId: a.UserID.String(), State: approverStates[a.State], Comment: a.Comment,
-		DecidedAt: tsp(a.DecidedAt), AddedBy: idp(a.AddedBy), AddedAt: timestamppb.New(a.AddedAt)}
+		DecidedAt: tsp(a.DecidedAt), AddedBy: idp(a.AddedBy), AddedAt: timestamppb.New(a.AddedAt),
+		RecordedBy: idp(a.RecordedBy)}
+}
+
+// mayManageApprovals is the power of ADR-0108 (a status override, a vote on behalf): a human
+// (not a bot, not a bot on behalf of its owner — the decision is a person's, ADR-0051 §5) with
+// MANAGE_BOARD on the task's board, in a workspace that is not suspended. TaskBits never
+// carry MANAGE_BOARD, so a task-scoped member never has it. reason: the 403's ApiError.reason.
+func mayManageApprovals(r *http.Request, acc perm.BoardAccess, reason string) error {
+	if isBot(r) {
+		return auth.ErrBotNotAllowed
+	}
+	if err := writable(acc); err != nil {
+		return err
+	}
+	if !acc.Bits.Has(perm.ManageBoard) {
+		return httpx.Forbidden("MANAGE_BOARD required").WithDetails(reason, 0, 0)
+	}
+	return nil
+}
+
+// mayOverrideApproval: UpdateTaskRequest.override_approval when the gate holds the move.
+func mayOverrideApproval(r *http.Request, acc perm.BoardAccess) error {
+	return mayManageApprovals(r, acc, ReasonApprovalOverrideDenied)
+}
+
+// recordOverride journals a status moved forward past an incomplete approval (ADR-0108):
+// "approval_override" with the statuses and the tally at that moment; never coalesced.
+func recordOverride(ctx context.Context, q *sqlc.Queries, t taskRow, me uuid.UUID, tl Tally, from, to sqlc.BoardStatus, c *change) error {
+	return c.record(ctx, q, t, me, kindApprovalOverride, nil, map[string]any{
+		"from_status_id": from.ID.String(), "status_id": to.ID.String(),
+		"approved": tl.Approved, "quorum": tl.Quorum, "rejected": tl.Rejected,
+	})
 }
 
 // approversIn validates a requested approver list (ADR-0049 §1, ADR-0059, ADR-0076): ≤ 10
@@ -482,7 +527,8 @@ var decisionStates = map[v1.TaskApprovalDecision]string{
 	v1.TaskApprovalDecision_TASK_APPROVAL_DECISION_WITHDRAW: votePending,
 }
 
-// vote: POST /api/tasks/{id}/approval — the caller's own vote (ADR-0049 §3).
+// vote: POST /api/tasks/{id}/approval — the caller's own vote (ADR-0049 §3), or with
+// on_behalf_of a manager's approval for an approver / its withdrawal (ADR-0108).
 func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 	var req v1.TaskApprovalRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
@@ -503,6 +549,18 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		comment = ""
 	}
 	me := uid(r)
+	// ADR-0108: a manager records an approval for an approver, or withdraws one so recorded.
+	target, onBehalf := me, false
+	if raw := strings.TrimSpace(req.GetOnBehalfOf()); raw != "" {
+		u, err := uuid.Parse(raw)
+		if err != nil {
+			return httpx.Validation("onBehalfOf", "invalid user id")
+		}
+		target, onBehalf = u, u != me
+	}
+	if onBehalf && state == voteRejected {
+		return httpx.Validation("decision", "a rejection is the approver's own decision")
+	}
 	var c change
 	var taskID uuid.UUID
 	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
@@ -514,6 +572,11 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		if err := writable(acc); err != nil {
 			return err
 		}
+		if onBehalf {
+			if err := mayManageApprovals(r, acc, ReasonApprovalOnBehalfDenied); err != nil {
+				return err
+			}
+		}
 		if t.ArchivedAt != nil {
 			return httpx.Conflict("the task is archived; restore it first")
 		}
@@ -521,12 +584,30 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		i := slices.IndexFunc(aps, func(a sqlc.TaskApprover) bool { return a.UserID == me })
+		i := slices.IndexFunc(aps, func(a sqlc.TaskApprover) bool { return a.UserID == target })
 		if i < 0 {
+			if onBehalf {
+				return httpx.Validation("onBehalfOf", "not an approver of the task")
+			}
 			return httpx.Forbidden("only an approver of the task may vote")
 		}
 		mine := aps[i]
-		if mine.State == state && mine.Comment == comment {
+		var recordedBy *uuid.UUID
+		if onBehalf {
+			// A manager never changes the approver's own decision: approve over a pending vote,
+			// withdraw only an approval recorded on behalf.
+			switch {
+			case state == voteApproved && mine.State == voteApproved && mine.RecordedBy != nil,
+				state == votePending && mine.State == votePending:
+				return nil
+			case state == voteApproved && mine.State != votePending,
+				state == votePending && mine.RecordedBy == nil:
+				return httpx.Conflict("the approver decided themselves").WithDetails(ReasonApproverDecided, 0, 0)
+			}
+			if state == voteApproved {
+				recordedBy = &me
+			}
+		} else if mine.State == state && mine.Comment == comment && mine.RecordedBy == nil {
 			return nil
 		}
 		// APPROVALS off (ADR-0058 §3): no new decisions; withdrawing one stays allowed.
@@ -534,7 +615,8 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		before := TallyOf(voteStates(aps), int(t.ApprovalRequired))
-		if err := q.SetApproverVote(r.Context(), sqlc.SetApproverVoteParams{State: state, Comment: comment, TaskID: t.ID, UserID: me}); err != nil {
+		if err := q.SetApproverVote(r.Context(), sqlc.SetApproverVoteParams{State: state, Comment: comment, RecordedBy: recordedBy,
+			TaskID: t.ID, UserID: target}); err != nil {
 			return err
 		}
 		aps[i].State = state
@@ -550,16 +632,30 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		case after.State() == v1.TaskApprovalState_TASK_APPROVAL_STATE_APPROVED && before.State() != after.State():
 			outcome = voteApproved
 		}
-		entry := map[string]any{"user_id": me.String(), "state": state, "comment": comment}
+		// The entry's actor is who acted; user_id is whose vote changed. on_behalf marks a vote
+		// a manager recorded or withdrew for the approver (ADR-0108), recorded_by in before an
+		// approval that was so recorded.
+		entry := map[string]any{"user_id": target.String(), "state": state, "comment": comment}
 		if outcome != "" {
 			entry["approval_state"] = outcome
 		}
-		if err := c.record(r.Context(), q, t, me, "approval",
-			map[string]any{"user_id": me.String(), "state": mine.State, "comment": mine.Comment}, entry); err != nil {
+		if onBehalf {
+			entry["on_behalf"] = true
+		}
+		prev := map[string]any{"user_id": target.String(), "state": mine.State, "comment": mine.Comment}
+		if mine.RecordedBy != nil {
+			prev["recorded_by"] = mine.RecordedBy.String()
+		}
+		if err := c.record(r.Context(), q, t, me, "approval", prev, entry); err != nil {
 			return err
 		}
 		if err := q.Subscribe(r.Context(), sqlc.SubscribeParams{TaskID: t.ID, UserIds: []uuid.UUID{me}}); err != nil {
 			return err
+		}
+		if onBehalf && state == voteApproved {
+			if err := s.notifyAddressed(r.Context(), q, t, me, notifications.TaskApprovedOnBehalf, []uuid.UUID{target}, nil, &c); err != nil {
+				return err
+			}
 		}
 		switch outcome {
 		case voteRejected:
