@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CanvasSyncStatus } from '../lib/canvasSync';
 import { useBoardsUi } from './boardsUi';
 import { useDiskUi } from './diskUi';
 import { useWikiUi } from './wikiUi';
@@ -8,9 +7,8 @@ import { useWikiUi } from './wikiUi';
 /**
  * The «Холст» section's UI state (ADR-0107 §5): whether the section covers the column and the
  * centre, the open item of each workspace, the trash view, the expanded tree nodes, the tree
- * column's width (persisted), the tree's name filter, the dialog on top, and what the open canvas
- * reports to the header: its sync status and who else is on it (written by the lazy canvas view,
- * read by the header's pill and avatars; both reset when the canvas closes).
+ * column's width (persisted), the tree's name filter and the dialog on top. The open canvas's own
+ * chrome (connection notices, who else is on it) belongs to the lazy canvas view, not to this store.
  *
  * Exclusive with the other workspace modes like the Wiki: the boards, the Disk or the Wiki turned
  * on anywhere turn it off (below); a room, a day or history travel turn it off in stores/ui.ts
@@ -49,26 +47,18 @@ interface CanvasUiState {
   setRenaming: (id: string | null) => void;
   dialog: CanvasDialog | null;
   openDialog: (d: CanvasDialog | null) => void;
-  /** The open canvas's sync status (written by the canvas view; 'synced' while nothing is open). */
-  sync: CanvasSyncStatus;
-  setSync: (s: CanvasSyncStatus) => void;
-  /** The other people on the open canvas (user ids, awareness; the header's avatars). */
-  online: readonly string[];
-  setOnline: (ids: readonly string[]) => void;
 }
-
-const same = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
 export const useCanvasUi = create<CanvasUiState>()(
   persist(
     (set) => ({
       active: false,
-      setActive: (active) => set((s) => (s.active === active ? s : active ? { active } : { active, query: '', dialog: null, online: [], sync: 'synced' })),
+      setActive: (active) => set((s) => (s.active === active ? s : active ? { active } : { active, query: '', dialog: null })),
       itemOf: {},
       openItem: (wsId, itemId) =>
         set((s) => {
           if (s.itemOf[wsId] === itemId && !s.trashOf[wsId]) return s;
-          return { itemOf: { ...s.itemOf, [wsId]: itemId }, dialog: null, online: [], sync: 'synced' };
+          return { itemOf: { ...s.itemOf, [wsId]: itemId }, dialog: null };
         }),
       trashOf: {},
       openTrash: (wsId, on) =>
@@ -95,10 +85,6 @@ export const useCanvasUi = create<CanvasUiState>()(
       setRenaming: (renaming) => set((s) => (s.renaming === renaming ? s : { renaming })),
       dialog: null,
       openDialog: (dialog) => set({ dialog }),
-      sync: 'synced',
-      setSync: (sync) => set((s) => (s.sync === sync ? s : { sync })),
-      online: [],
-      setOnline: (online) => set((s) => (same(s.online, online) ? s : { online })),
     }),
     {
       name: 'calaba-canvas-ui',

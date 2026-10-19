@@ -13,6 +13,8 @@ export interface CanvasViewProps {
   bits: bigint;
   onOpenHistory: () => void;
   onShare: () => void;
+  /** The canvas's name (snapshot meta, PNG file name); optional, as in the real view. */
+  name?: string;
 }
 
 export function CanvasView({ canvasId }: CanvasViewProps): ReactNode {

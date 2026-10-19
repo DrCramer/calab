@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { CanvasItemKind } from '@calaba/protocol';
-import { ChevronRight, CloudOff, Ellipsis, Eye, Shapes, Share2, Trash2 } from 'lucide-react';
+import { ChevronRight, Ellipsis, Shapes, Share2, Trash2 } from 'lucide-react';
 import { memo, Suspense, useCallback, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar, BAR_GROUP } from '../../components/Bar';
@@ -11,15 +11,15 @@ import { createItem, deleteForever, restoreItem } from '../../services/canvas';
 import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { myUserId, useSession } from '../../stores/session';
-import { MemberAvatar } from '../boards/menus';
 import { menuBox } from '../shell/menu';
 import { DROP, ItemMenuEntries } from './ItemMenu';
 import { CanvasViewLazy } from './lazy';
 
 /**
- * The right side of «Холст» (ADR-0107 §5, docs/08): the header (crumbs · who is on the canvas ·
- * sync pill · «Поделиться» · «⋯») and the open canvas — `CanvasView` (features/canvas/view, its own
- * lazy chunk: the engine, Yjs and the socket). Only the open canvas mounts a document. A canvas in
+ * The right side of «Холст» (ADR-0107 §5, docs/08): the header (crumbs · «Поделиться» · «⋯») and
+ * the open canvas — `CanvasView` (features/canvas/view, its own
+ * lazy chunk: the engine, Yjs and the socket; it draws its own presence and connection notices). Only the open
+ * canvas mounts a document. A canvas in
  * the trash shows a restore banner instead of the view.
  */
 export function CanvasMain({ workspaceId, canCreate }: { workspaceId: string; canCreate: boolean }): ReactNode {
@@ -61,6 +61,7 @@ function NoCanvas({ workspaceId, canCreate }: { workspaceId: string; canCreate: 
 function OpenCanvas({ workspaceId, itemId }: { workspaceId: string; itemId: string }): ReactNode {
   const trashed = useCanvas((s) => !!s.items[itemId]?.trashedAt);
   const bits = useCanvas((s) => s.items[itemId]?.myBits ?? 0n);
+  const name = useCanvas((s) => s.items[itemId]?.name ?? '');
   const onOpenHistory = useCallback(() => useCanvasUi.getState().openDialog({ kind: 'versions', itemId }), [itemId]);
   const onShare = useCallback(() => useCanvasUi.getState().openDialog({ kind: 'share', itemId }), [itemId]);
   if (trashed) return <TrashedBanner itemId={itemId} />;
@@ -72,7 +73,7 @@ function OpenCanvas({ workspaceId, itemId }: { workspaceId: string; itemId: stri
         </div>
       }
     >
-      <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} onOpenHistory={onOpenHistory} onShare={onShare} />
+      <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} onOpenHistory={onOpenHistory} onShare={onShare} />
     </Suspense>
   );
 }
@@ -111,21 +112,12 @@ function CanvasBar({ workspaceId, itemId }: { workspaceId: string; itemId: strin
     return !!i && canStructure(i, myUserId());
   });
   const trashed = useCanvas((s) => !!s.items[itemId]?.trashedAt);
-  const sync = useCanvasUi((s) => s.sync);
-  // The global «Нет соединения» pill floats over the middle of this bar: keep the crumbs left of it and don't repeat the message.
+  // The global «Нет соединения» pill floats over the middle of this bar: keep the crumbs left of it.
   const reconnecting = useSession((s) => s.ready && s.reconnectBanner);
-  const showSync = !!itemId && !trashed && !(reconnecting && sync === 'offline') && (sync === 'offline' || sync === 'readonly');
   return (
     <Bar plain className="gap-2 pl-3 pr-3" data-testid="canvas-bar">
       {itemId ? <Crumbs workspaceId={workspaceId} itemId={itemId} clear={reconnecting} /> : <h1 className="px-1.5 text-headline font-semibold">{t('canvas.section')}</h1>}
       <span className="flex-1" />
-      {itemId && !trashed ? <OnlineAvatars workspaceId={workspaceId} /> : null}
-      {showSync ? (
-        <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-fill)] px-2.5 text-caption text-muted" role="status" data-testid="canvas-sync-pill">
-          {sync === 'offline' ? <CloudOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
-          {sync === 'offline' ? t('canvas.sync.offline') : t('canvas.sync.readonly')}
-        </span>
-      ) : null}
       {itemId ? (
         <span className={BAR_GROUP}>
           {structure && !trashed ? (
@@ -184,30 +176,6 @@ function CrumbTitle({ id }: { id: string }): ReactNode {
     </h1>
   );
 }
-
-const MAX_AVATARS = 4;
-
-/** Who else is on the open canvas (awareness, written to the store by the view). A leaf: it re-renders on its own input only. */
-const OnlineAvatars = memo(function OnlineAvatars({ workspaceId }: { workspaceId: string }): ReactNode {
-  useLocale();
-  const ids = useCanvasUi(useShallow((s) => s.online.slice(0, MAX_AVATARS)));
-  const more = useCanvasUi((s) => Math.max(0, s.online.length - MAX_AVATARS));
-  if (!ids.length) return null;
-  return (
-    <span className="flex shrink-0 items-center -space-x-1.5" role="group" aria-label={t('canvas.online')} data-testid="canvas-online">
-      {ids.map((id) => (
-        <span key={id} className="rounded-full ring-2 ring-[var(--color-bg)]">
-          <MemberAvatar workspaceId={workspaceId} userId={id} size={24} />
-        </span>
-      ))}
-      {more > 0 ? (
-        <span className="z-[1] grid h-6 min-w-6 place-items-center rounded-full bg-[var(--color-fill)] px-1 text-caption text-muted ring-2 ring-[var(--color-bg)]" title={t('canvas.onlineMore', { n: more })}>
-          +{more}
-        </span>
-      ) : null}
-    </span>
-  );
-});
 
 /** The header's «⋯»: the same menu as the tree rows' (ItemMenu.tsx); the canvas is open already, so no «Открыть». */
 function MoreMenu({ itemId }: { itemId: string }): ReactNode {
