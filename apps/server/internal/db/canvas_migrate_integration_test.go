@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestCanvasMigration: 00102 (ADR-0107) adds CANVAS_VIEW | CANVAS_WRITE to the member roles that
+// TestCanvasMigration: 00103 (ADR-0107) adds CANVAS_VIEW | CANVAS_WRITE to the member roles that
 // exist, nothing to the others, and for new workspaces through the trigger; going down removes
 // the bits and the tables again (bits 41-43 from every role), and up works once more.
 func TestCanvasMigration(t *testing.T) {
