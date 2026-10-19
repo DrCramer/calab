@@ -165,8 +165,9 @@ func (canvasBackend) DecodeMeta(raw []byte) (any, bool, error) {
 func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Result, error) {
 	s, uid, id, state := b.s, p.By, p.Doc, p.State
 	meta := p.Meta.(snapshotMeta)
-	text := clipBytes(meta.PlainText, MaxText)
-	preview := clip(strings.Join(strings.Fields(meta.Preview), " "), 200)
+	// Postgres text holds no NUL: one in a pasted text would fail every compaction of the canvas.
+	text := clipBytes(noNUL(meta.PlainText), MaxText)
+	preview := clip(strings.Join(strings.Fields(noNUL(meta.Preview)), " "), 200)
 	stored, previewChanged := false, false
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		cur, err := q.GetCanvasItemForUpdate(ctx, id)
@@ -239,6 +240,8 @@ func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Pos
 	_, err = q.PruneCanvasVersions(ctx, p.Doc)
 	return err
 }
+
+func noNUL(s string) string { return strings.ReplaceAll(s, "\x00", "") }
 
 func containsID(ids []uuid.UUID, id uuid.UUID) bool {
 	for _, x := range ids {
