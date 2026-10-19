@@ -1,4 +1,4 @@
-import { clampScale, type Camera } from '../../../lib/canvas/camera';
+import { pinchStep, type Camera } from '../../../lib/canvas/camera';
 import { duplicate } from '../../../lib/canvas/clipboard';
 import type { CanvasDoc } from '../../../lib/canvas/doc';
 import {
@@ -26,11 +26,16 @@ export interface Core {
   readonly doc: CanvasDoc;
   readonly scene: Scene;
   readonly camera: Camera;
+  /** The camera including queued gesture input; continuous gestures (pan, pinch) build on it. */
+  readonly liveCamera: Camera;
   readonly selection: ReadonlySet<string>;
   readonly shapeKind: ShapeKind;
   readonly connectorRoute: RouteKind;
   readonly gridSize: number;
   setCamera(c: Camera): void;
+  /** Queues the next camera of a continuous gesture (applied once per frame). */
+  steerCamera(c: Camera): void;
+  flushCamera(): void;
   setSelection(ids: Iterable<string>): void;
   setOverlay(p: Partial<OverlayState>): void;
   /** px on screen → world units at the current zoom. */
@@ -67,12 +72,14 @@ export class PanGesture implements Gesture {
   readonly kind = 'pan';
   private readonly start: Camera;
   constructor(private readonly core: Core, private readonly from: Point) {
-    this.start = core.camera;
+    this.start = core.liveCamera;
   }
   move(_w: Point, s: Point): void {
-    this.core.setCamera({ ...this.start, tx: this.start.tx + (s.x - this.from.x), ty: this.start.ty + (s.y - this.from.y) });
+    this.core.steerCamera({ ...this.start, tx: this.start.tx + (s.x - this.from.x), ty: this.start.ty + (s.y - this.from.y) });
   }
-  end(): void {}
+  end(): void {
+    this.core.flushCamera();
+  }
   cancel(): void {
     this.core.setCamera(this.start);
   }
@@ -80,27 +87,32 @@ export class PanGesture implements Gesture {
 
 // ── pinch ───────────────────────────────────────────────────────────────────
 
+/**
+ * Two fingers: zoom around their midpoint and follow it (pan + zoom in one gesture). Every step is relative
+ * to the previous finger positions, so a scale held at a limit does not stick and a change of fingers
+ * (`rebase`) continues from the new positions without a jump.
+ */
 export class PinchGesture implements Gesture {
   readonly kind = 'pinch';
-  private readonly start: Camera;
-  private readonly startDist: number;
-  private readonly startMid: Point;
-  constructor(private readonly core: Core, a: Point, b: Point) {
-    this.start = core.camera;
-    this.startDist = Math.max(1, dist(a, b));
-    this.startMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  }
+  constructor(private readonly core: Core, private a: Point, private b: Point) {}
   /** Screen points of the two fingers. */
   update(a: Point, b: Point): void {
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    const scale = clampScale(this.start.scale * (dist(a, b) / this.startDist));
-    const wx = (this.startMid.x - this.start.tx) / this.start.scale;
-    const wy = (this.startMid.y - this.start.ty) / this.start.scale;
-    this.core.setCamera({ scale, tx: mid.x - wx * scale, ty: mid.y - wy * scale });
+    this.core.steerCamera(pinchStep(this.core.liveCamera, this.a, this.b, a, b));
+    this.a = a;
+    this.b = b;
+  }
+  /** A different pair of fingers took over: measure from them now. */
+  rebase(a: Point, b: Point): void {
+    this.a = a;
+    this.b = b;
   }
   move(): void {}
-  end(): void {}
-  cancel(): void {}
+  end(): void {
+    this.core.flushCamera();
+  }
+  cancel(): void {
+    this.core.flushCamera();
+  }
 }
 
 // ── move (+ Alt-duplicate) ──────────────────────────────────────────────────

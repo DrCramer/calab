@@ -71,6 +71,7 @@ function readEnv(): Env {
 export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, phone = false, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
   useLocale();
   const canWrite = !phone && (bits & CANVAS_BITS.WRITE) !== 0n;
+  const root = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [session, setSession] = useState<CanvasSession | null>(null);
@@ -90,6 +91,21 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
 
   const focusCanvas = useCallback((): void => {
     canvas.current?.focus({ preventScroll: true });
+  }, []);
+
+  // iOS / Safari zoom the page on a pinch that starts on a panel or toolbar over the canvas (touch-action
+  // below covers the modern engines; the gesture events are the fallback and the macOS trackpad). The
+  // canvas itself handles them in the engine (input.ts); here they are only kept from the page.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return undefined;
+    const stop = (e: Event): void => e.preventDefault();
+    el.addEventListener('gesturestart', stop);
+    el.addEventListener('gesturechange', stop);
+    return () => {
+      el.removeEventListener('gesturestart', stop);
+      el.removeEventListener('gesturechange', stop);
+    };
   }, []);
 
   // One session per open canvas.
@@ -267,6 +283,9 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild disabled={phone}>
         <div
+          ref={root}
+          // Panning and scrolling panels are the browser's; pinch and double-tap zoom of the page are not.
+          style={{ touchAction: 'pan-x pan-y' }}
           className="relative size-full min-h-0 min-w-0 select-none overflow-hidden bg-main"
           data-testid="canvas-view"
           data-canvas-id={canvasId}

@@ -34,6 +34,23 @@ export function zoomAt(c: Camera, factor: number, at: Point): Camera {
   return { scale, tx: at.x - (at.x - c.tx) * k, ty: at.y - (at.y - c.ty) * k };
 }
 
+/**
+ * One step of a two-finger gesture: the camera that keeps the world point that was under the previous
+ * midpoint under the new one, scaled by the change of the finger distance. Incremental (from the previous
+ * finger positions, not from the gesture start) so a scale held at a limit cannot "stick" — pinching back
+ * responds at once — and re-pairing fingers only needs new previous positions.
+ */
+export function pinchStep(c: Camera, prevA: Point, prevB: Point, a: Point, b: Point): Camera {
+  const d0 = Math.hypot(prevB.x - prevA.x, prevB.y - prevA.y);
+  const d1 = Math.hypot(b.x - a.x, b.y - a.y);
+  // Fingers closer than a few pixels give a meaningless ratio (and a jump): treat as a pure pan.
+  const ratio = d0 < 8 || d1 < 8 ? 1 : d1 / d0;
+  const m0 = { x: (prevA.x + prevB.x) / 2, y: (prevA.y + prevB.y) / 2 };
+  const m1 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const z = zoomAt(c, ratio, m0);
+  return { scale: z.scale, tx: z.tx + (m1.x - m0.x), ty: z.ty + (m1.y - m0.y) };
+}
+
 /** Set an absolute scale around a screen point. */
 export const zoomTo = (c: Camera, scale: number, at: Point): Camera => zoomAt(c, clampScale(scale) / c.scale, at);
 
