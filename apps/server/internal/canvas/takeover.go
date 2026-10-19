@@ -58,7 +58,7 @@ func (s *Service) takeOver(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.upserted(ctx, id, before)
-	s.recheck(ctx, id)
+	s.recheckBelow(ctx, id)
 	a, err := s.pathItem(r)
 	if err != nil {
 		return err

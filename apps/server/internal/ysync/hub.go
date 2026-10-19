@@ -172,10 +172,10 @@ func (h *Hub) onRelay(r *room, msg []byte) {
 	}
 }
 
-// broadcast sends frame to the other sockets of the document here and, through Redis, on the
-// other instances (after the commit of what it carries).
-func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []byte) {
+// deliver hands frame to the sockets of the document on this instance, except from.
+func (h *Hub) deliver(doc uuid.UUID, from *conn, frame []byte) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	if r := h.rooms[doc]; r != nil {
 		for c := range r.conns {
 			if c != from {
@@ -187,22 +187,46 @@ func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []
 			}
 		}
 	}
-	h.mu.Unlock()
+}
+
+// relayCmd is the Redis command that carries frame to the other instances.
+func (h *Hub) relayCmd(doc uuid.UUID, frame []byte) rueidis.Completed {
 	msg := make([]byte, 16+len(frame))
 	copy(msg, h.instance[:])
 	copy(msg[16:], frame)
+	return h.rc.B().Publish().Channel(h.channel(doc)).Message(rueidis.BinaryString(msg)).Build()
+}
+
+// broadcast sends frame to the other sockets of the document here and, through Redis, on the
+// other instances (after the commit of what it carries).
+func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []byte) {
+	h.deliver(doc, from, frame)
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	if err := h.rc.Do(pctx, h.rc.B().Publish().Channel(h.channel(doc)).Message(rueidis.BinaryString(msg)).Build()).Error(); err != nil {
+	if err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error(); err != nil {
 		slog.Warn(h.b.Name()+" sync: publish", "doc_id", doc, "err", err)
 	}
 }
 
 // Kick makes every socket of the documents (on every instance) check its access now: after a
-// trash, a change of overrides or of restricted.
+// trash, a change of overrides or of restricted. The Redis messages of many documents go in one
+// pipeline.
 func (h *Hub) Kick(ctx context.Context, docs []uuid.UUID) {
-	for _, d := range docs {
-		h.broadcast(ctx, d, nil, []byte{ctlRecheck})
+	if len(docs) == 0 {
+		return
+	}
+	cmds := make(rueidis.Commands, len(docs))
+	for i, d := range docs {
+		h.deliver(d, nil, []byte{ctlRecheck})
+		cmds[i] = h.relayCmd(d, []byte{ctlRecheck})
+	}
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	for _, r := range h.rc.DoMulti(pctx, cmds...) {
+		if err := r.Error(); err != nil {
+			slog.Warn(h.b.Name()+" sync: publish", "err", err)
+			return
+		}
 	}
 }
 

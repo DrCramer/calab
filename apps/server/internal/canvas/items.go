@@ -415,7 +415,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	s.announceMoved(ctx, det)
 	if changed {
 		s.upserted(ctx, id, before)
-		s.recheck(ctx, id) // the sync sockets of the item: restricted or a move may have closed it
+		s.recheckBelow(ctx, id) // the sync sockets of the item and of the canvases below it: restricted or a move may have closed them
 	}
 	ch, err := canvasacl.Load(ctx, s.db.Q, []uuid.UUID{id})
 	if err != nil {
