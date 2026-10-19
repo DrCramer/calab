@@ -39,10 +39,16 @@ export function rememberSection(map: Readonly<Record<string, WsSection>>, wsId: 
   return map[wsId] === section ? map : { ...map, [wsId]: section };
 }
 
-/** The section a workspace opens on: the remembered one; guests have rooms only (no calendar, boards, disk, wiki or canvas). */
+const WS_SECTIONS: readonly string[] = ['chats', 'calendar', 'boards', 'disk', 'wiki', 'canvas'];
+
+/**
+ * The section a workspace opens on: the remembered one; guests have rooms only (no calendar,
+ * boards, disk, wiki or canvas); a value this build does not know (an older or newer storage) is
+ * «Команда», never an empty screen.
+ */
 export function sectionFor(map: Readonly<Record<string, WsSection>>, wsId: string, guest: boolean): WsSection {
-  const s = map[wsId] ?? 'chats';
-  return guest ? 'chats' : s;
+  const s = map[wsId];
+  return guest || s === undefined || !WS_SECTIONS.includes(s) ? 'chats' : s;
 }
 
 /**

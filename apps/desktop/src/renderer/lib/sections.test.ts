@@ -53,6 +53,9 @@ describe('section memory', () => {
     expect(sectionFor(m, 'b', false)).toBe('chats');
     expect(sectionFor(m, 'a', true)).toBe('chats');
   });
+  it('a value this build does not know is «Команда»', () => {
+    expect(sectionFor({ a: 'holodeck' as never }, 'a', false)).toBe('chats');
+  });
   it('a remembered «Холст» comes back, except for guests (no canvas for them)', () => {
     const m = { a: 'canvas' as const };
     expect(sectionFor(m, 'a', false)).toBe('canvas');

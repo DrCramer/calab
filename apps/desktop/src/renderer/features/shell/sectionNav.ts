@@ -1,4 +1,4 @@
-import { WorkspaceRole } from '@calaba/protocol';
+import { BillingState, WorkspaceRole } from '@calaba/protocol';
 import { dayKey } from '../../lib/calendar/time';
 import { MOBILE_QUERY } from '../../lib/phone';
 import { sectionFor, type Section, type WsSection } from '../../lib/sections';
@@ -57,7 +57,7 @@ export function showMode(mode: Mode): void {
 }
 
 /** The phone layout (the web build at ≤ 768 px) — lib/mobile.ts without the platform import (unit tests run in Node). */
-const onPhone = (): boolean => typeof window !== 'undefined' && document.documentElement.classList.contains('web') && window.matchMedia(MOBILE_QUERY).matches;
+const onPhone = (): boolean => typeof window !== 'undefined' && typeof document !== 'undefined' && document.documentElement?.classList.contains('web') === true && window.matchMedia(MOBILE_QUERY).matches;
 
 const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards', disk: 'disk', wiki: 'wiki', canvas: 'canvas' };
 
@@ -105,4 +105,30 @@ export function openWorkspace(id: string): void {
   const target = sectionFor(useSections.getState().of, id, isGuest(id));
   useUi.getState().setWorkspace(id);
   showMode(MODE[target]);
+}
+
+let restored = false;
+
+/**
+ * After a page load (the first READY) the app opens on the section the open workspace was left on —
+ * the memory is persisted (stores/sections.ts) but, like every mode flag, the section itself starts
+ * off, so without this the app always came back on «Команда». Once per page: a reconnect's READY
+ * must not pull the user out of where they are. Falls back to the rooms when the workspace is gone
+ * or closed for billing (its paywall covers the sections), for a guest and on the phone (its tabs
+ * have their own memory, ADR-0073); a link opened at start (a board, a day) wins as it runs after.
+ */
+export function restoreSectionOnBoot(): void {
+  if (restored) return;
+  restored = true;
+  const ws = useUi.getState().activeWorkspaceId;
+  const entry = ws && ws !== HOME ? useWorkspaces.getState().byId[ws] : undefined;
+  if (!ws || !entry || onPhone() || entry.ws.billing?.state === BillingState.SUSPENDED) return;
+  if (useMailUi.getState().active || useWebApps.getState().open) return;
+  const target = sectionFor(useSections.getState().of, ws, isGuest(ws));
+  if (target !== 'chats') showMode(MODE[target]);
+}
+
+/** Tests: the next READY counts as a page load again. */
+export function resetRestoreForTests(): void {
+  restored = false;
 }
