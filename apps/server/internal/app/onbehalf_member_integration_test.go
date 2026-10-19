@@ -14,9 +14,17 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // A bot acts on behalf of a member who consented (ADR-0111).
+
+// resetBotLimit empties the bot's request bucket (BOT_RATE_PER_SEC, 30 at once): the on-behalf
+// tests make more requests with one token than a burst allows on a fast machine.
+func resetBotLimit(t *testing.T, botID string) {
+	t.Helper()
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:bot:req:"+botID)).Build()).Error()
+}
 
 // asMember is the bot's client with "Calab-On-Behalf: <user id>".
 func asMember(b *bot, userID string) *client {
@@ -191,10 +199,17 @@ func TestOnBehalfOfMember(t *testing.T) {
 		{"PUT", grantPath},
 		{"POST", "/api/workspaces/" + wid + "/bots/" + bt.id + "/token"},
 		{"GET", "/api/workspaces/" + wid + "/billing"},
+		// The workspace's access control (ADR-0111 §3): no roles, bans or invitations that would
+		// outlive the consent, even for an admin's consent.
+		{"PUT", "/api/workspaces/" + wid + "/members/" + bt.id + "/roles"},
+		{"POST", "/api/workspaces/" + wid + "/invites"},
+		{"POST", "/api/workspaces/" + wid + "/bans"},
+		{"PATCH", "/api/workspaces/" + wid},
 	} {
 		wantReason(t, oc, oc.do(r[0], r[1], nil, nil), 403, "ON_BEHALF_ROUTE")
 	}
 
+	resetBotLimit(t, bt.id)
 	// Revocation is immediate; she may give it again herself.
 	carol.must(200, "DELETE", grantPath, nil, nil)
 	wantReason(t, oc, oc.do("POST", tasksPath, newTask, nil), 403, "ON_BEHALF_NO_CONSENT")
@@ -234,4 +249,28 @@ func TestOnBehalfOfMember(t *testing.T) {
 		ON CONFLICT (workspace_id) DO UPDATE SET mode = 'enforced'`, wid)
 	wantReason(t, oc, oc.do("POST", tasksPath, newTask, nil), 403, "ON_BEHALF_IDENTITY_POLICY")
 	exec(`UPDATE workspace_identity_policies SET mode = 'off' WHERE workspace_id = $1`, wid)
+
+	resetBotLimit(t, bt.id)
+	// A consent is per workspace: another workspace shared by carol and the bot stays closed
+	// until she consents there too, and the bot reads each workspace's own list.
+	ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	var j v1.JoinWorkspaceResponse
+	carol.must(200, "POST", "/api/invites/"+invite(t, o, ws2)+"/join", nil, &j)
+	o.must(201, "POST", "/api/workspaces/"+ws2+"/bots/add", &v1.AddBotRequest{BotUserId: bt.id}, nil)
+	wantReason(t, oc, oc.do("GET", "/api/workspaces/"+ws2+"/rooms", nil, nil), 403, "ON_BEHALF_NO_CONSENT")
+	if got := botState(t, bt, ws2, bt.id).GetOnBehalfUserIds(); len(got) != 0 {
+		t.Fatalf("the bot reads the consents of its home workspace in another one: %v", got)
+	}
+	carol.must(200, "PUT", "/api/workspaces/"+ws2+"/bots/"+bt.id+"/delegations/"+carol.id, nil, nil)
+	oc.must(200, "GET", "/api/workspaces/"+ws2+"/rooms", nil, nil)
+	if got := botState(t, bt, ws2, bt.id).GetOnBehalfUserIds(); !slices.Equal(got, []string{carol.id}) {
+		t.Fatalf("consents in the second workspace: %v", got)
+	}
+	// Leaving a workspace ends the consent there for good (coming back does not revive it);
+	// the other workspace's consent is untouched.
+	o.must(204, "DELETE", "/api/workspaces/"+ws2+"/members/"+carol.id, nil, nil)
+	wantReason(t, oc, oc.do("GET", "/api/workspaces/"+ws2+"/rooms", nil, nil), 403, "ON_BEHALF_OWNER_NOT_MEMBER")
+	carol.must(200, "POST", "/api/invites/"+invite(t, o, ws2)+"/join", nil, &j)
+	wantReason(t, oc, oc.do("GET", "/api/workspaces/"+ws2+"/rooms", nil, nil), 403, "ON_BEHALF_NO_CONSENT")
+	createTask(t, oc, board.GetId(), newTask, 201)
 }

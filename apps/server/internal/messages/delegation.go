@@ -2,6 +2,7 @@ package messages
 
 import (
 	"context"
+	"log/slog"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -155,10 +156,13 @@ func delegationClick(ctx context.Context, q *sqlc.Queries, m sqlc.Message, inv s
 			return sqlc.Message{}, err
 		}
 		outcome = delegation.Accepted
+		// The same audit line as PUT …/delegations/{userId} (bots.grant), marked as the click.
+		slog.InfoContext(ctx, "bot delegation", "workspace_id", inv.WorkspaceID, "bot_id", inv.BotID, "member_id", user, "on", true, "via", "invite", "invited_by", inv.InvitedBy)
 	case delegation.ButtonDecline:
 		if _, err := delegation.DropInvite(ctx, q, inv.WorkspaceID, inv.BotID, user); err != nil {
 			return sqlc.Message{}, err
 		}
+		slog.InfoContext(ctx, "bot delegation invite declined", "workspace_id", inv.WorkspaceID, "bot_id", inv.BotID, "member_id", user, "invited_by", inv.InvitedBy)
 	default:
 		return sqlc.Message{}, httpx.Conflict("button is unavailable").WithDetails("BUTTON_UNAVAILABLE", 0, 0)
 	}

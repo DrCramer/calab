@@ -46,19 +46,21 @@ func (s *Service) delegationCaller(r *http.Request, write bool) (uuid.UUID, sqlc
 	if err != nil {
 		return uuid.Nil, b, false, err
 	}
+	wsID, err := httpx.PathUUID(r, "id", "workspace")
+	if err != nil {
+		return uuid.Nil, b, false, err
+	}
 	me := identity(r)
 	if me.IsBot {
 		if write || me.UserID != b.UserID {
 			return uuid.Nil, b, false, auth.ErrBotNotAllowed
 		}
-		return b.WorkspaceID, b, true, nil
+		// The workspace of the path (botInPath: the bot is a member there), not its home: a
+		// consent is per workspace, and a bot added elsewhere reads whom it may act for there.
+		return wsID, b, true, nil
 	}
 	if me.OnBehalf() { // the routes are closed on behalf (botroutes.go); never a consent by a bot
 		return uuid.Nil, b, false, auth.ErrOnBehalfRoute
-	}
-	wsID, err := httpx.PathUUID(r, "id", "workspace")
-	if err != nil {
-		return uuid.Nil, b, false, err
 	}
 	bits, role, err := perm.FromContext(r.Context()).Workspace(r.Context(), wsID, me.UserID)
 	if errors.Is(err, perm.ErrNotMember) {

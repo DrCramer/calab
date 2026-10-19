@@ -770,6 +770,41 @@ func withGroupOnBehalf(m map[string]onBehalfAccess, groups []botRouteGroup) map[
 	return m
 }
 
+// memberClosed: routes open on behalf of the owner (ADR-0106) but closed on behalf of a member
+// who consented (ADR-0111 §3): the workspace's access control — its settings, who is in it,
+// roles, bans, invitations, permission overrides. The token is the bot owner's, not the
+// member's: a consenting admin must not hand the bot (or its owner) roles or access that
+// outlive the revocation of the consent.
+var memberClosed = map[string]bool{
+	"PATCH /api/workspaces/{id}":                           true,
+	"PATCH /api/workspaces/{id}/members/{userId}":          true,
+	"DELETE /api/workspaces/{id}/members/{userId}":         true,
+	"POST /api/workspaces/{id}/members/{userId}/promote":   true,
+	"PUT /api/workspaces/{id}/members/{userId}/roles":      true,
+	"POST /api/workspaces/{id}/roles":                      true,
+	"PATCH /api/workspaces/{id}/roles/{roleId}":            true,
+	"DELETE /api/workspaces/{id}/roles/{roleId}":           true,
+	"PUT /api/workspaces/{id}/roles/order":                 true,
+	"POST /api/workspaces/{id}/bans":                       true,
+	"DELETE /api/workspaces/{id}/bans/{userId}":            true,
+	"POST /api/workspaces/{id}/invites":                    true,
+	"DELETE /api/workspaces/{id}/invites/{inviteId}":       true,
+	"POST /api/workspaces/{id}/invites/email":              true,
+	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": true,
+	"POST /api/rooms/{id}/admissions/{userId}":             true,
+	"PUT /api/rooms/{id}/permissions":                      true,
+	"PUT /api/wiki/pages/{id}/permissions":                 true,
+	"PUT /api/disk/items/{id}/permissions":                 true,
+	"PUT /api/workspaces/{id}/disk/settings":               true,
+	"PUT /api/workspaces/{id}/wiki/settings":               true,
+}
+
+// onBehalfAllowedFor is onBehalfAllowed for id: a member's consent (ADR-0111) also closes
+// memberClosed.
+func onBehalfAllowedFor(id auth.Identity, pattern string) bool {
+	return onBehalfAllowed(pattern) && (!id.ForMember || !memberClosed[pattern])
+}
+
 // onBehalfAllowed reports whether a request on behalf of the owner may call the route.
 func onBehalfAllowed(pattern string) bool {
 	switch onBehalfRoutes[pattern] {
@@ -790,7 +825,7 @@ func botGate(q *sqlc.Queries, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := auth.FromContext(r.Context())
 		if ok && id.OnBehalf() {
-			if !onBehalfAllowed(r.Pattern) {
+			if !onBehalfAllowedFor(id, r.Pattern) {
 				httpx.WriteError(w, r, auth.ErrOnBehalfRoute)
 				return
 			}
