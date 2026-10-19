@@ -7551,10 +7551,10 @@ class MockImpl {
     const ws = IDS.workspaces.main;
     const U = IDS.users;
     const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
-    const file = (name: string, mime: string, size: bigint, pic?: { w: number; h: number; bg: [number, number, number]; fg: [number, number, number] }): FileMeta => {
+    const file = (name: string, mime: string, size: bigint, pic?: { w: number; h: number; bg: [number, number, number]; fg: [number, number, number] }, content?: string): FileMeta => {
       const id = nextId(this.state, 'file');
-      const bytes = pic ? encodePng(pic.w, pic.h, cardPicture(pic.bg, [255, 255, 255], pic.fg, pic.w / pic.h)) : Buffer.from(`mock ${name}`);
-      const meta = create(FileMetaSchema, { ...fileMeta(id, ws, U.anna, name, mime, bytes, at('2026-01-10T10:00:00Z'), pic ? { width: pic.w, height: pic.h } : null), size });
+      const bytes = pic ? encodePng(pic.w, pic.h, cardPicture(pic.bg, [255, 255, 255], pic.fg, pic.w / pic.h)) : Buffer.from(content ?? `mock ${name}`);
+      const meta = create(FileMetaSchema, { ...fileMeta(id, ws, U.anna, name, mime, bytes, at('2026-01-10T10:00:00Z'), pic ? { width: pic.w, height: pic.h } : null), size: content !== undefined ? BigInt(bytes.length) : size });
       this.state.files.set(id, { meta, bytes, ...(pic ? { thumbnail: { bytes, mime } } : {}) });
       return meta;
     };
@@ -7562,7 +7562,15 @@ class MockImpl {
     const F = DiskItemKind.FOLDER;
     const FI = DiskItemKind.FILE;
     const projects = d.put({ workspaceId: ws, kind: F, name: 'Проекты', ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z') });
-    d.put({ workspaceId: ws, kind: F, name: 'Q4', parentId: projects.id, ownerId: U.anna, createdAt: at('2026-01-06T09:00:00Z') });
+    const q4 = d.put({ workspaceId: ws, kind: F, name: 'Q4', parentId: projects.id, ownerId: U.anna, createdAt: at('2026-01-06T09:00:00Z') });
+    // Previews (CBF-22): text-like files and a sound in «Проекты / Q4» (the root's item count is pinned by the specs).
+    const inQ4 = (name: string, mime: string, content: string, iso: string): void => {
+      d.put({ workspaceId: ws, kind: FI, name, parentId: q4.id, ownerId: U.anna, file: file(name, mime, 0n, undefined, content), updatedAt: at(iso) });
+    };
+    inQ4('План релиза.md', 'text/markdown', '# План релиза\n\nИтоги **квартала** и ближайшие шаги:\n\n- собрать *сборку* 3.1\n- проверить [сайт](https://calab.io)\n- [x] обновить документацию\n\n> Дата выхода — в пятницу.\n\n```go\nfmt.Println("release")\n```\n\n| Этап | Срок |\n| --- | --- |\n| QA | 12 янв |\n| Выпуск | 16 янв |\n', '2026-01-14T10:00:00Z');
+    inQ4('Выгрузка продаж.csv', 'text/csv', 'Менеджер,Регион,Сумма\nАнна,Москва,120000\nБорис,"Санкт-Петербург, центр",98500\nВера,Казань,43200\n', '2026-01-13T10:00:00Z');
+    inQ4('server.go', 'text/x-go', 'package main\n\nimport "net/http"\n\nfunc main() {\n\thttp.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {\n\t\tw.Write([]byte("ok"))\n\t})\n\thttp.ListenAndServe(":8080", nil)\n}\n', '2026-01-12T10:00:00Z');
+    inQ4('Подкаст — выпуск 12.mp3', 'audio/mpeg', 'ID3 mock audio', '2026-01-11T10:00:00Z');
     d.put({ workspaceId: ws, kind: F, name: 'Дизайн', ownerId: U.vera, createdAt: at('2026-01-07T11:00:00Z'), updatedAt: at('2026-01-13T12:10:00Z') });
     const contracts = d.put({ workspaceId: ws, kind: F, name: 'Договоры', ownerId: U.anna, restricted: true, createdAt: at('2026-01-08T10:00:00Z'), updatedAt: at('2026-01-12T10:00:00Z') });
     d.perms.set(contracts.id, [

@@ -163,4 +163,8 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.chip.label': 'Archivo en el Disco',
   'disk.err.history': 'No se pudo cargar el historial',
   'disk.err.settings': 'No se pudo guardar el ajuste',
+  'disk.view.tooLarge': 'Demasiado grande para la vista previa',
+  'disk.view.failed': 'No se pudo abrir el archivo',
+  'disk.view.empty': 'El archivo está vacío',
+  'disk.view.rowsCapped': 'Se muestran las primeras {n} filas. El resto, en el archivo descargado.',
 };

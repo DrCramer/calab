@@ -163,4 +163,8 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.chip.label': '磁盘中的文件',
   'disk.err.history': '无法加载历史',
   'disk.err.settings': '无法保存设置',
+  'disk.view.tooLarge': '文件过大，无法预览',
+  'disk.view.failed': '无法打开文件',
+  'disk.view.empty': '文件为空',
+  'disk.view.rowsCapped': '仅显示前 {n} 行，其余请下载文件查看。',
 };

@@ -163,4 +163,8 @@ export const enDisk: DictShape<typeof ruDisk> = {
   'disk.chip.label': 'File on the Disk',
   'disk.err.history': 'Couldn’t load the history',
   'disk.err.settings': 'Couldn’t save the setting',
+  'disk.view.tooLarge': 'Too large to preview',
+  'disk.view.failed': 'Couldn’t open the file',
+  'disk.view.empty': 'The file is empty',
+  'disk.view.rowsCapped': 'The first {n} rows are shown. Download the file for the rest.',
 };

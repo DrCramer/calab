@@ -13,6 +13,7 @@ import { ForwardDialog } from '../chat/ForwardDialog';
 import { sendPageToChats } from '../../services/wiki';
 import { sendDiskItemToChats } from '../../services/diskLink';
 import { openSendToChat } from '../../services/disk';
+import { DiskViewDialog } from '../disk/DiskViewer';
 import { DiskFileDialog } from '../disk/FileCard';
 import { t } from '../../i18n';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
@@ -153,6 +154,9 @@ export function Dialogs(): ReactNode {
       }
       case 'disk-file':
         node = <DiskFileDialog itemId={d.itemId} onClose={close} />;
+        break;
+      case 'disk-view':
+        node = <DiskViewDialog itemId={d.itemId} siblings={d.siblings} onClose={close} />;
         break;
       case 'disk-send':
         node = (

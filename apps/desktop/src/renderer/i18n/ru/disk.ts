@@ -171,4 +171,8 @@ export const ruDisk = {
   'disk.chip.label': 'Файл на Диске',
   'disk.err.history': 'Не удалось загрузить историю',
   'disk.err.settings': 'Не удалось сохранить настройку',
+  'disk.view.tooLarge': 'Слишком большой для просмотра',
+  'disk.view.failed': 'Не удалось открыть файл',
+  'disk.view.empty': 'Файл пустой',
+  'disk.view.rowsCapped': 'Показаны первые {n} строк. Остальное — в скачанном файле.',
 };

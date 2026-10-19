@@ -31,6 +31,7 @@ import { ApiError, body, call, callEmpty, qs } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { fmt } from '../lib/format';
 import { filePreview } from '../lib/filePreview';
+import { previewKind } from '../lib/diskPreview';
 import { pushOnTab, type PhoneScreen } from '../lib/phoneNav';
 import { uploadInto } from '../lib/api/endpoints';
 import { columnFolders, folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
@@ -461,9 +462,21 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
     useDiskUi.getState().openDialog({ kind: 'preview', itemId: item.id });
     return;
   }
-  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment; the rest gets its card.
+  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment.
   if (item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf') {
     useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size }, diskItemId: item.id });
+    return;
+  }
+  // Audio (the chat's player) and text-like files (read-only viewer, CBF-22): ←/→ among such siblings.
+  const phone = useUi.getState().phone.on;
+  if (previewKind(item.file, phone) === 'audio' || previewKind(item.file, phone) === 'text') {
+    const { items, lists } = useDisk.getState();
+    const around = siblings.length ? siblings : visibleIds(lists[folderKey(item.workspaceId, item.parentId)], items, prefs().diskSort, '', collator());
+    const same = (around.length ? around : [item.id]).filter((id) => {
+      const k = previewKind(items[id]?.file, phone);
+      return id === item.id || k === 'audio' || k === 'text';
+    });
+    useUi.getState().openDialog({ kind: 'disk-view', itemId: item.id, siblings: same });
     return;
   }
   openFileCard(item.id);
@@ -501,7 +514,16 @@ export function openPhoneDisk(screen: Extract<PhoneScreen, { kind: 'disk' }>): v
 
 /** The viewer of a file that has one in the app: a picture, a video, a PDF (as «Открыть»). */
 function hasViewer(item: DiskItem): boolean {
-  return !!previewable(item.file) || (!!item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf');
+  return previewKind(item.file, useUi.getState().phone.on) !== 'card';
+}
+
+/**
+ * Quick Look (CBF-22): Space on a selected file opens its preview — picture, video, PDF, audio,
+ * text — or else the file card; a folder does nothing. `siblings` are the folder's visible ids (←/→).
+ */
+export function quickLook(item: DiskItem, siblings: readonly string[] = []): void {
+  if (isFolder(item) || item.trashedAt) return;
+  openItem(item, siblings);
 }
 
 /**

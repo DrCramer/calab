@@ -48,6 +48,8 @@ export type Dialog =
   | { kind: 'wiki-send'; pageId: string }
   /** The Disk file card (CBF-20): details and actions of a file; on every surface (also from a chat link). */
   | { kind: 'disk-file'; itemId: string }
+  /** The Disk viewer of an audio / text file (CBF-22): `siblings` are the folder's viewable ids (←/→). */
+  | { kind: 'disk-view'; itemId: string; siblings: string[] }
   /** «Отправить в чат…» of a Disk file (CBF-20): the forward picker sends the item's link (+ a comment). */
   | { kind: 'disk-send'; itemId: string }
   /** «Пригласить в комнату»: pick members to invite by DM, or copy the room link (docs/09 #33). */

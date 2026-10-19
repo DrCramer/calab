@@ -34,6 +34,30 @@ test('disk-list', async ({ open, win, shot, theme }) => {
   // A selected row (the «⋯» shows on it).
   await win.getByTestId('disk-row').filter({ hasText: 'Отчёт за квартал.pdf' }).click();
   await checkpoint(shot, 'disk-list');
+  // CBF-22: type plates in «Проекты / Q4» and the previews (Space = Quick Look, ←/→ among the viewable files).
+  await win.getByTestId('disk-row').filter({ hasText: 'Проекты' }).dblclick();
+  await win.getByTestId('disk-row').filter({ hasText: 'Q4' }).dblclick();
+  await expect(win.getByTestId('disk-row')).toHaveCount(4);
+  await checkpoint(shot, 'disk-type-icons');
+  await win.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).click();
+  await win.keyboard.press('Space');
+  await expect(win.getByTestId('disk-view-markdown')).toBeVisible();
+  await checkpoint(shot, 'disk-preview-markdown');
+  await win.getByTestId('disk-view-next').click();
+  await win.getByTestId('disk-view-prev').click();
+  await win.keyboard.press('Space');
+  await expect(win.getByTestId('disk-viewer')).toHaveCount(0);
+  await win.getByTestId('disk-row').filter({ hasText: 'Выгрузка продаж.csv' }).click();
+  await win.keyboard.press('Space');
+  await expect(win.getByTestId('disk-view-csv')).toBeVisible();
+  await checkpoint(shot, 'disk-preview-csv');
+  await win.keyboard.press('Escape');
+  await win.getByTestId('disk-row').filter({ hasText: 'Подкаст' }).click();
+  await win.keyboard.press('Space');
+  await expect(win.getByTestId('audio-player')).toBeVisible();
+  await checkpoint(shot, 'disk-preview-audio');
+  await win.getByTestId('disk-crumb').filter({ hasText: 'Диск' }).first().click();
+  await expect(win.getByTestId('disk-row')).toHaveCount(9);
   // CBF-21: «Колонки» — the root column, a folder opens the next one, a file adds the card column.
   await win.getByTestId('disk-view').getByRole('radio', { name: 'Колонки' }).click();
   await expect(win.getByTestId('disk-column')).toHaveCount(1);
