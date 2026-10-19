@@ -1,18 +1,42 @@
 import * as Popover from '@radix-ui/react-popover';
 import { ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Minus, SendToBack, Slash, Trash2 } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
-import { resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
+import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
-import { placePanel } from './layout';
+import { NO_INSETS, placePanel, type Insets } from './layout';
 import {
   ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS, TEXT_SIZES, nearestTextSize,
 } from './model';
 import { createSelectionModel } from './selectionModel';
 
 const ICON = 'size-4';
+
+/** The screen's floating panels, by test id, and the edge each one hangs from. */
+const CHROME: readonly { id: string; edge: keyof Insets }[] = [
+  { id: 'canvas-toolbar', edge: 'left' },
+  { id: 'canvas-history', edge: 'bottom' },
+  { id: 'canvas-zoom', edge: 'bottom' },
+  { id: 'canvas-presence', edge: 'top' },
+  { id: 'canvas-status', edge: 'top' },
+];
+
+/** How far the floating panels reach into the canvas (px from each edge of `host`). Reads layout: call on change, not per frame. */
+export function measureChrome(host: HTMLElement): Insets {
+  const box = host.getBoundingClientRect();
+  const out = { ...NO_INSETS };
+  for (const { id, edge } of CHROME) {
+    const el = host.querySelector(`[data-testid="${id}"]`);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const reach = edge === 'left' ? r.right - box.left : edge === 'top' ? r.bottom - box.top : box.bottom - r.top;
+    out[edge] = Math.max(out[edge], Math.ceil(reach));
+  }
+  return out;
+}
 
 type ColorKind = 'sticky' | 'ink' | 'fill';
 
@@ -35,6 +59,92 @@ function Swatch({ css, none, size = 18 }: { css: string | null; none?: boolean; 
     >
       {none || css === null ? <Slash className="size-3 text-muted" strokeWidth={2} /> : null}
     </span>
+  );
+}
+
+const GRID_COLS = 5;
+
+/**
+ * The swatch grid inside the popover: a radio group with roving focus (arrows move by cell, Home/End jump,
+ * Enter/Space pick, Esc is Radix's). Focus opens on the current color; the hovered/focused color's name is
+ * shown below so the color is never identified by its look alone.
+ */
+function SwatchGrid({
+  label, kind, tokens, value, palette, onPick, testId,
+}: {
+  label: string;
+  kind: ColorKind;
+  tokens: readonly string[];
+  value: string | undefined;
+  palette: CanvasPalette;
+  onPick: (token: string) => void;
+  testId: string;
+}): ReactNode {
+  const [hot, setHot] = useState<string | undefined>(value);
+  const start = Math.max(0, value === undefined ? 0 : tokens.indexOf(value));
+  const cells = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const move = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const at = cells.current.findIndex((c) => c === document.activeElement);
+    if (at < 0) return;
+    const last = tokens.length - 1;
+    const to: Record<string, number> = {
+      ArrowLeft: Math.max(at - 1, 0),
+      ArrowRight: Math.min(at + 1, last),
+      ArrowUp: at - GRID_COLS >= 0 ? at - GRID_COLS : at,
+      ArrowDown: at + GRID_COLS <= last ? at + GRID_COLS : at,
+      Home: 0,
+      End: last,
+    };
+    const next = to[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    cells.current[next]?.focus();
+  };
+
+  return (
+    <div>
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))` }}
+        onKeyDown={move}
+      >
+        {tokens.map((tok, i) => {
+          const css = swatchCss(palette, kind, tok);
+          const selected = tok === value;
+          return (
+            <Popover.Close asChild key={tok}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={colorLabel(tok)}
+                data-testid={`${testId}-${tok}`}
+                ref={(n) => {
+                  cells.current[i] = n;
+                }}
+                tabIndex={i === start ? 0 : -1}
+                onClick={() => onPick(tok)}
+                onMouseEnter={() => setHot(tok)}
+                onFocus={() => setHot(tok)}
+                className={cx(
+                  'grid size-8 place-items-center rounded-[var(--radius-icon)] outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]',
+                  selected && 'bg-active',
+                )}
+              >
+                <span className="relative grid place-items-center">
+                  <Swatch css={css} none={tok === 'none'} size={22} />
+                  {selected && css ? <Check className="absolute size-3" style={{ color: readableInk(css, '#ffffff') }} strokeWidth={3} aria-hidden /> : null}
+                </span>
+              </button>
+            </Popover.Close>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 truncate px-1 text-caption text-muted" aria-hidden>{hot === undefined ? '\u00a0' : colorLabel(hot)}</div>
+    </div>
   );
 }
 
@@ -64,32 +174,20 @@ function SwatchMenu({
           side="bottom"
           align="center"
           sideOffset={8}
-          className={cx(MENU_BOX, 'min-w-0 p-2')}
+          collisionPadding={8}
+          className={cx(MENU_BOX, 'w-auto min-w-0 p-2')}
+          onOpenAutoFocus={(e) => {
+            // Radix would focus the first tabbable; the grid focuses the current color itself.
+            e.preventDefault();
+            (e.currentTarget as HTMLElement).querySelector<HTMLElement>('[role="radio"][tabindex="0"]')?.focus();
+          }}
           onCloseAutoFocus={(e) => {
             e.preventDefault();
             focusCanvas();
           }}
           aria-label={label}
         >
-          <div className="grid grid-cols-5 gap-1.5" role="group">
-            {tokens.map((tok) => (
-              <Popover.Close asChild key={tok}>
-                <button
-                  type="button"
-                  aria-label={colorLabel(tok)}
-                  aria-pressed={tok === value}
-                  data-testid={`${testId}-${tok}`}
-                  onClick={() => onPick(tok)}
-                  className="grid size-7 place-items-center rounded-full hover:bg-hover"
-                >
-                  <span className="relative grid place-items-center">
-                    <Swatch css={swatchCss(palette, kind, tok)} none={tok === 'none'} size={20} />
-                    {tok === value ? <Check className="absolute size-3 text-fg mix-blend-difference" strokeWidth={3} aria-hidden /> : null}
-                  </span>
-                </button>
-              </Popover.Close>
-            ))}
-          </div>
+          <SwatchGrid label={label} kind={kind} tokens={tokens} value={value} palette={palette} onPick={onPick} testId={testId} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -170,8 +268,12 @@ export const PropsPanel = memo(function PropsPanel({
   useLocale();
   const store = useMemo(() => createSelectionModel(engine), [engine]);
   const m = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const present = m !== null;
   const el = useRef<HTMLDivElement>(null);
   const size = useRef({ w: 0, h: 0 });
+  const chrome = useRef<Insets>(NO_INSETS);
+  /** Chrome insets are re-read only when something could have moved them (selection, resize, becoming visible), never per frame. */
+  const stale = useRef(true);
   const shown = useRef<boolean | null>(null);
 
   const place = useCallback((): void => {
@@ -182,13 +284,18 @@ export const PropsPanel = memo(function PropsPanel({
     if (s.selectionCount > 0 && !s.editing && !s.readOnly && engine.activeGesture === null) {
       const b = engine.scene.bounds(engine.selection);
       if (b) {
-        const p = placePanel(b, engine.camera, engine.viewport, size.current);
+        if (stale.current && node.offsetParent instanceof HTMLElement) {
+          chrome.current = measureChrome(node.offsetParent);
+          stale.current = false;
+        }
+        const p = placePanel(b, engine.camera, engine.viewport, size.current, chrome.current);
         visible = p.visible;
         if (visible) node.style.transform = `translate(${p.x}px, ${p.y}px)`;
       }
     }
     if (shown.current !== visible) {
       shown.current = visible;
+      if (!visible) stale.current = true;
       node.style.visibility = visible ? 'visible' : 'hidden';
     }
   }, [engine]);
@@ -197,8 +304,19 @@ export const PropsPanel = memo(function PropsPanel({
   useLayoutEffect(() => {
     const node = el.current;
     if (node) size.current = { w: node.offsetWidth, h: node.offsetHeight };
+    stale.current = true;
     place();
   }, [m, place]);
+  useEffect(() => {
+    const host = el.current?.offsetParent;
+    if (!host || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      stale.current = true;
+      place();
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [place, present]);
   useEffect(() => {
     const offView = engine.subscribeView(place);
     const offSel = engine.subscribeSelection(place);
