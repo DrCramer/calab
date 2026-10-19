@@ -894,6 +894,39 @@ func (q *Queries) GetBillingRefundByProviderID(ctx context.Context, providerRefu
 	return i, err
 }
 
+const getInFlightBillingAutoTopupAttempt = `-- name: GetInFlightBillingAutoTopupAttempt :one
+SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
+WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'unknown')
+`
+
+// The charge of a saved card in flight: sent or being sent, outcome not known
+// (billing_autotopup_attempts_one_open_idx, at most one per account). A one-click charge
+// waiting for the payer's 3-D Secure is not in flight (migration 00102).
+func (q *Queries) GetInFlightBillingAutoTopupAttempt(ctx context.Context, accountID uuid.UUID) (BillingAutotopupAttempt, error) {
+	row := q.db.QueryRow(ctx, getInFlightBillingAutoTopupAttempt, accountID)
+	var i BillingAutotopupAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PmID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.ProviderPaymentID,
+		&i.FailureCode,
+		&i.CreatedAt,
+		&i.DispatchedAt,
+		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
+	)
+	return i, err
+}
+
 const getLastBillingAutoTopupAttempt = `-- name: GetLastBillingAutoTopupAttempt :one
 SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts WHERE account_id = $1 AND kind = 'auto' ORDER BY created_at DESC, id DESC LIMIT 1
 `
@@ -992,9 +1025,10 @@ func (q *Queries) GetNextBillingPriceAfter(ctx context.Context, arg GetNextBilli
 const getOpenBillingAutoTopupAttempt = `-- name: GetOpenBillingAutoTopupAttempt :one
 SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
 WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')
+ORDER BY id DESC LIMIT 1
 `
 
-// The charge of a saved card in flight (auto or one-click): at most one per account.
+// A charge of a saved card not final (auto or one-click), the newest: auto-topup waits for it.
 func (q *Queries) GetOpenBillingAutoTopupAttempt(ctx context.Context, accountID uuid.UUID) (BillingAutotopupAttempt, error) {
 	row := q.db.QueryRow(ctx, getOpenBillingAutoTopupAttempt, accountID)
 	var i BillingAutotopupAttempt
@@ -1021,9 +1055,10 @@ func (q *Queries) GetOpenBillingAutoTopupAttempt(ctx context.Context, accountID 
 }
 
 const getOpenBillingCheckout = `-- name: GetOpenBillingCheckout :one
-SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts WHERE account_id = $1 AND status = 'open'
+SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts WHERE account_id = $1 AND status = 'open' ORDER BY id DESC LIMIT 1
 `
 
+// The newest open checkout (the summary shows it; older open ones are still credited when paid).
 func (q *Queries) GetOpenBillingCheckout(ctx context.Context, accountID uuid.UUID) (BillingCheckout, error) {
 	row := q.db.QueryRow(ctx, getOpenBillingCheckout, accountID)
 	var i BillingCheckout
@@ -1320,8 +1355,8 @@ type InsertBillingCheckoutParams struct {
 }
 
 // No row = this request_id exists (GetBillingCheckoutByRequest: same body_hash → same result,
-// else 409). A second open checkout of the account raises unique_violation
-// (billing_checkouts_one_open_idx): answer 409 BILLING_PAYMENT_PENDING with the open one.
+// else 409). An account may have any number of open checkouts (migration 00102): each is
+// credited by its own payment.
 func (q *Queries) InsertBillingCheckout(ctx context.Context, arg InsertBillingCheckoutParams) (BillingCheckout, error) {
 	row := q.db.QueryRow(ctx, insertBillingCheckout,
 		arg.AccountID,

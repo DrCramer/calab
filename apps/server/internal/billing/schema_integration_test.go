@@ -205,7 +205,9 @@ func TestLedgerAppendOnly(t *testing.T) {
 	wantViolation(t, err, "23001", "")
 }
 
-func TestOneOpenCheckoutPerAccount(t *testing.T) {
+// Open checkouts of an account do not block a new one (migration 00102); a request_id is
+// still one checkout, and a final checkout stays final.
+func TestManyOpenCheckoutsPerAccount(t *testing.T) {
 	d := dbtest.Connect(t)
 	a, owner := account(t, d)
 	insert := func(req uuid.UUID, body string) (sqlc.BillingCheckout, error) {
@@ -225,10 +227,14 @@ func TestOneOpenCheckoutPerAccount(t *testing.T) {
 	if got, _ := d.Q.GetBillingCheckoutByRequest(ctx, sqlc.GetBillingCheckoutByRequestParams{AccountID: a.ID, RequestID: r1}); string(got.BodyHash) != string(hash("a")) {
 		t.Fatal("stored body hash")
 	}
-	// A second open checkout of the account is refused.
-	_, err = insert(uuid.New(), "c")
-	wantViolation(t, err, "23505", "billing_checkouts_one_open_idx")
-	// Once the first is final, a new one may open.
+	// A second open checkout of the account is accepted; the newest is the open one shown.
+	c2, err := insert(uuid.New(), "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := d.Q.GetOpenBillingCheckout(ctx, a.ID); err != nil || got.ID != c2.ID {
+		t.Fatalf("newest open checkout %v, want %s: %v", got.ID, c2.ID, err)
+	}
 	if _, err := d.Q.SetBillingCheckoutStatus(ctx, sqlc.SetBillingCheckoutStatusParams{ID: c1.ID, Status: "expired", Now: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
@@ -271,6 +277,19 @@ func TestOneOpenAutoTopupAttemptPerAccount(t *testing.T) {
 		}
 		_, err := attempt()
 		wantViolation(t, err, "23505", "billing_autotopup_attempts_one_open_idx")
+	}
+	// A one-click charge waiting for 3-D Secure is not in flight (migration 00102): another may start.
+	if _, err := d.Q.SetBillingAutoTopupAttemptStatus(ctx, sqlc.SetBillingAutoTopupAttemptStatusParams{ID: first.ID, Status: "requires_action", Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := attempt()
+	if err != nil {
+		t.Fatalf("attempt next to a 3-D Secure one: %v", err)
+	}
+	_, err = attempt()
+	wantViolation(t, err, "23505", "billing_autotopup_attempts_one_open_idx")
+	if _, err := d.Q.SetBillingAutoTopupAttemptStatus(ctx, sqlc.SetBillingAutoTopupAttemptStatusParams{ID: second.ID, Status: "failed", FailureCode: "card_declined", Now: now}); err != nil {
+		t.Fatal(err)
 	}
 	done, err := d.Q.SetBillingAutoTopupAttemptStatus(ctx, sqlc.SetBillingAutoTopupAttemptStatusParams{ID: first.ID, Status: "failed", FailureCode: "card_declined", Now: now})
 	if err != nil || done.FinishedAt == nil || done.DispatchedAt == nil {

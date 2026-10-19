@@ -21,8 +21,8 @@ import (
 )
 
 // request_id idempotency of top-ups: same id + same body = same checkout (one provider call),
-// same id + another body = 409, a second open checkout with another body = 409, the same
-// top-up with a new id reuses the open one.
+// same id + another body = 409. Open checkouts never block a new one (owner 2026-10-19): a new
+// id opens a new checkout whatever its body, and the summary shows the newest.
 func TestTopupIdempotency(t *testing.T) {
 	e := newEnv(t)
 	req := &v1.CreateTopupRequest{MethodId: "stripe:card", Amount: &v1.Money{Minor: 2000, Currency: "USD"}, RequestId: uuid.NewString()}
@@ -44,22 +44,80 @@ func TestTopupIdempotency(t *testing.T) {
 		t.Fatalf("reused id: %d %s", st, r)
 	}
 	other.RequestId = uuid.NewString()
-	if st, r := e.do(e.owner, "POST", e.base()+"/topups", other, nil); st != 409 || r != "BILLING_PAYMENT_PENDING" {
-		t.Fatalf("second open checkout: %d %s", st, r)
+	var o v1.CreateTopupResponse
+	if st, r := e.do(e.owner, "POST", e.base()+"/topups", other, &o); st != 200 || o.GetCheckoutId() == a.GetCheckoutId() || o.GetUrl() == a.GetUrl() {
+		t.Fatalf("second open checkout: %d %s %v", st, r, &o)
 	}
 	same := &v1.CreateTopupRequest{MethodId: "stripe:card", Amount: &v1.Money{Minor: 2000, Currency: "USD"}, RequestId: uuid.NewString()}
 	var c v1.CreateTopupResponse
-	if st, _ := e.do(e.owner, "POST", e.base()+"/topups", same, &c); st != 200 || c.GetCheckoutId() != a.GetCheckoutId() {
+	if st, _ := e.do(e.owner, "POST", e.base()+"/topups", same, &c); st != 200 || c.GetCheckoutId() == a.GetCheckoutId() || c.GetCheckoutId() == o.GetCheckoutId() {
 		t.Fatalf("same top-up, new id: %d %v", st, &c)
 	}
-	// The success / cancel URL carries our checkout id.
-	co, err := e.d.Q.GetBillingCheckout(e.t.Context(), uuid.MustParse(a.GetCheckoutId()))
-	if err != nil || co.Status != "open" || co.ProviderSessionID == nil {
-		t.Fatalf("%+v %v", co, err)
+	if n := e.fake.Calls("CreateCheckout"); n != 3 {
+		t.Fatalf("provider called %d times, want 3", n)
+	}
+	// Every checkout keeps its own open session; the success / cancel URL carries our checkout id.
+	for _, id := range []string{a.GetCheckoutId(), o.GetCheckoutId(), c.GetCheckoutId()} {
+		co, err := e.d.Q.GetBillingCheckout(e.t.Context(), uuid.MustParse(id))
+		if err != nil || co.Status != "open" || co.ProviderSessionID == nil {
+			t.Fatalf("%+v %v", co, err)
+		}
 	}
 	var sum v1.GetBillingResponse
-	if st, _ := e.do(e.owner, "GET", e.base(), nil, &sum); st != 200 || sum.GetSummary().GetOpenCheckoutId() != a.GetCheckoutId() {
-		t.Fatalf("summary open checkout: %v", &sum)
+	if st, _ := e.do(e.owner, "GET", e.base(), nil, &sum); st != 200 || sum.GetSummary().GetOpenCheckoutId() != c.GetCheckoutId() {
+		t.Fatalf("summary open checkout (want the newest): %v", &sum)
+	}
+}
+
+// Two hosted checkouts open at once, both paid (the older one last): each is credited once by
+// its own payment, the webhooks delivered twice credit nothing more.
+func TestManyOpenCheckoutsEachCreditedOnce(t *testing.T) {
+	e := newEnv(t)
+	c1, s1 := e.topup(2000, false)
+	c2, s2 := e.topup(3000, false)
+	if c1 == c2 || s1 == s2 {
+		t.Fatalf("one checkout for two starts: %s %s", c1, c2)
+	}
+	var hooks []fake.Webhook
+	for _, s := range []string{s2, s1} {
+		if _, err := e.fake.CompleteCheckout(s, fake.Succeed); err != nil {
+			t.Fatal(err)
+		}
+		hooks = append(hooks, e.fake.TakeWebhooks()...)
+	}
+	for range 2 {
+		for i, w := range hooks {
+			if st := e.webhook(w); st != http.StatusOK {
+				t.Fatalf("delivery %d: %d", i, st)
+			}
+		}
+		e.process()
+	}
+	if n := e.count(`SELECT count(*) FROM billing_provider_events WHERE provider_account = $1 AND (processed_at IS NULL OR error <> '')`, e.merchant); n != 0 {
+		t.Fatalf("%d events unprocessed or failed: %v", n, e.eventErrors())
+	}
+	if acc := e.account(); acc.BalanceMinor != 5000 || e.lots() != 2 {
+		t.Fatalf("balance %d lots %d, want 5000 / 2", acc.BalanceMinor, e.lots())
+	}
+	for _, c := range []struct {
+		id     uuid.UUID
+		amount int64
+	}{{c1, 2000}, {c2, 3000}} {
+		if n := e.count(`SELECT count(*) FROM billing_payments p JOIN billing_funding_lots l ON l.payment_id = p.id
+			WHERE p.checkout_id = $1 AND p.status = 'succeeded' AND p.amount_minor = $2 AND l.amount_minor = $2`, c.id, c.amount); n != 1 {
+			t.Fatalf("checkout %s: %d credited payments, want 1", c.id, n)
+		}
+		var st v1.CheckoutStatus
+		if code, _ := e.do(e.owner, "GET", e.base()+"/checkouts/"+c.id.String(), nil, &st); code != 200 || !st.GetCredited() ||
+			st.GetState() != v1.CheckoutState_CHECKOUT_STATE_COMPLETED {
+			t.Fatalf("checkout %s status %d %v", c.id, code, &st)
+		}
+	}
+	if n := e.count(`SELECT count(*) FROM billing_ledger WHERE account_id = $1 AND kind = 'topup'`, e.acc); n != 2 {
+		t.Fatalf("top-up entries %d, want 2", n)
+	}
+	if n := e.notifications("payment:"); n != 2 {
+		t.Fatalf("payment mails %d, want 2", n)
 	}
 }
 

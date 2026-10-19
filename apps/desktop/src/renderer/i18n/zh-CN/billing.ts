@@ -303,7 +303,7 @@ export const zhBilling: DictShape<typeof ruBilling> = {
   'billing.err.quoteExpired': '报价已过期——已显示新报价。',
   'billing.err.revision': '账户已变化——已显示新报价。',
   'billing.err.reconciling': '正在对账。请一分钟后再试。',
-  'billing.err.pending': '有一笔付款尚未完成。请等待结果。',
+  'billing.err.pending': '上一笔扣款仍在处理中。请稍等一分钟后重试。',
   'billing.err.unknown': '上一笔付款的结果尚不明确。请稍后再试。',
   'billing.err.incompatible': '目前无法操作。请先还清欠款。',
   'billing.err.priceConfirm': '价格已变——需确认新价格。',

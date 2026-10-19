@@ -4,7 +4,10 @@ import { Profiler, act, createElement, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { CanvasDoc } from '../../../lib/canvas/doc';
+import { canvasDocHandle } from '../../../lib/canvas/docHandle';
 import { MockRelay } from '../../../lib/ySyncMock';
+import { canvasApi, restoreVersion } from '../../../services/canvas';
 import { fakeCtx } from '../engine/testing';
 import { CanvasView, getCanvasViewHandle, type CanvasViewDeps } from './index';
 
@@ -413,6 +416,64 @@ describe('two clients on one document', () => {
     click.mockRestore();
     expect(viewer.q('canvas-toolbar')).toBeNull();
     expect(relay.violations).toEqual([]);
+  });
+});
+
+describe('version restore', () => {
+  const versionWith = (text: string): Uint8Array => {
+    const d = new CanvasDoc(new Y.Doc());
+    d.ensureSchema();
+    d.create({ kind: 'sticky', x: 0, y: 0, text });
+    return Y.encodeStateAsUpdate(d.ydoc);
+  };
+  const texts = (relay: MockRelay): string[] => {
+    const d = new CanvasDoc(relay.doc);
+    return d.orderedIds().map((id) => d.getText(id));
+  };
+
+  it('registers the live document while mounted; «Восстановить» replaces the objects in one step that my undo takes back', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    await settle(50);
+    expect(canvasDocHandle('c1')?.writable()).toBe(true);
+    m.key('s');
+    m.ptr('pointerdown', 200, 200);
+    m.ptr('pointerup', 200, 200);
+    escapeEditor(m);
+    await settle(400);
+    expect(texts(relay)).toEqual(['']);
+    const state = vi.spyOn(canvasApi, 'versionState').mockResolvedValue(versionWith('old version'));
+    await act(async () => {
+      expect(await restoreVersion('c1', 'v1')).toBe(true);
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(state).toHaveBeenCalledWith('c1', 'v1');
+    expect(texts(relay)).toEqual(['old version']);
+    // my undo (one step) brings the sticky I drew back
+    m.canvas.focus();
+    m.key('z', { ctrlKey: true, metaKey: true });
+    await settle(400);
+    expect(texts(relay)).toEqual(['']);
+    expect(relay.violations).toEqual([]);
+  });
+
+  it('is not writable without CANVAS_WRITE, and the registration goes away on unmount', async () => {
+    const m = await mount({ bits: VIEW });
+    await settle(50);
+    expect(canvasDocHandle('c1')?.writable()).toBe(false);
+    expect(await restoreVersion('c1', 'v1')).toBe(false);
+    m.unmount();
+    expect(canvasDocHandle('c1')).toBeNull();
+  });
+
+  it('is not writable while the connection is down', async () => {
+    const relay = new MockRelay();
+    await mount({ relay });
+    await settle(50);
+    expect(canvasDocHandle('c1')?.writable()).toBe(true);
+    act(() => relay.dropAll(1006));
+    await settle(0);
+    expect(canvasDocHandle('c1')?.writable()).toBe(false);
   });
 });
 

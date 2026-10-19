@@ -11,6 +11,7 @@ const REASON: Record<string, MessageKey> = {
   BILLING_QUOTE_EXPIRED: 'billing.err.quoteExpired',
   BILLING_REVISION_CONFLICT: 'billing.err.revision',
   BILLING_RECONCILING: 'billing.err.reconciling',
+  // Since 2026-10-19 only a saved-card charge in flight (hosted checkouts never block); older servers also for an open checkout.
   BILLING_PAYMENT_PENDING: 'billing.err.pending',
   BILLING_PAYMENT_UNKNOWN: 'billing.err.unknown',
   BILLING_CHANGE_INCOMPATIBLE: 'billing.err.incompatible',

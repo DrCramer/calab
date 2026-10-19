@@ -33,8 +33,9 @@ type Charger interface {
 //  1. the card must be a saved, attached card of this account whose provider charges saved
 //     cards; the amount is checked against the card's matrix row (same limits as a checkout);
 //  2. request_id + body hash: the same request answers the same charge, another body 409; one
-//     charge of a saved card in flight per account (409 BILLING_PAYMENT_PENDING, also while an
-//     auto-topup is in flight);
+//     charge of a saved card in flight per account (409 BILLING_PAYMENT_PENDING while a charge is
+//     sent and its outcome not known, also an auto-topup's; a charge waiting for 3-D Secure does
+//     not block, 2026-10-19);
 //  3. the charge is sent at once (Stripe on-session; a 3-D Secure card answers REQUIRES_ACTION
 //     with the page to open; Tochka Charge Subscription, attributed by reading the
 //     subscription's operations) and the answer is the charge's state. Money arrives through the

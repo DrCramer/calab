@@ -44,11 +44,18 @@ RETURNING *;
 
 -- name: SetBillingAutoTopupAttemptPayment :one
 -- The provider answered with a payment of an open attempt that is not final yet (processing):
--- keep its id; unknown / requires_action become dispatched again.
-UPDATE billing_autotopup_attempts SET provider_payment_id = sqlc.arg('provider_payment_id'),
-    status = CASE WHEN status IN ('unknown', 'requires_action') THEN 'dispatched' ELSE status END
-WHERE id = sqlc.arg('id') AND status IN ('dispatched', 'requires_action', 'unknown')
-RETURNING *;
+-- keep its id; unknown / requires_action become dispatched again. A 3-D Secure charge stays
+-- requires_action while another charge of the account is in flight (one in flight per account,
+-- migration 00102; the account is locked): the recovery re-reads it either way.
+UPDATE billing_autotopup_attempts a SET provider_payment_id = sqlc.arg('provider_payment_id'),
+    status = CASE
+        WHEN a.status = 'unknown' THEN 'dispatched'
+        WHEN a.status = 'requires_action' AND NOT EXISTS (
+            SELECT 1 FROM billing_autotopup_attempts o
+            WHERE o.account_id = a.account_id AND o.id <> a.id AND o.status IN ('prepared', 'dispatched', 'unknown')) THEN 'dispatched'
+        ELSE a.status END
+WHERE a.id = sqlc.arg('id') AND a.status IN ('dispatched', 'requires_action', 'unknown')
+RETURNING a.*;
 
 -- name: SetBillingAttemptRequiresAction :one
 -- A one-click charge waits for the payer's 3-D Secure: its payment and the confirmation page.
@@ -58,7 +65,7 @@ WHERE id = sqlc.arg('id') AND status IN ('dispatched', 'requires_action', 'unkno
 RETURNING *;
 
 -- name: InsertBillingManualCharge :one
--- The owner's one-click top-up (kind manual). A second open charge of the account raises
+-- The owner's one-click top-up (kind manual). A second charge in flight of the account raises
 -- unique_violation (billing_autotopup_attempts_one_open_idx), a reused request id
 -- billing_autotopup_attempts_request_idx.
 INSERT INTO billing_autotopup_attempts (account_id, pm_id, amount_minor, currency, kind, request_id, body_hash, created_by, created_at)
@@ -69,9 +76,10 @@ RETURNING *;
 SELECT * FROM billing_autotopup_attempts WHERE account_id = $1 AND request_id = $2;
 
 -- name: GetOpenBillingManualCharge :one
--- The one-click top-up in flight, if any (the owner's summary shows it).
+-- The newest one-click top-up not final, if any (the owner's summary shows it).
 SELECT * FROM billing_autotopup_attempts
-WHERE account_id = $1 AND kind = 'manual' AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown');
+WHERE account_id = $1 AND kind = 'manual' AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')
+ORDER BY id DESC LIMIT 1;
 
 -- name: SettleBillingAutoTopupAttemptPaid :one
 -- The attempt's payment was credited: succeeded, also after failed (a late success is never

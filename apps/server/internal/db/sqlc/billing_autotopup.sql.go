@@ -170,9 +170,10 @@ func (q *Queries) GetLastBillingChargeAttempt(ctx context.Context, accountID uui
 const getOpenBillingManualCharge = `-- name: GetOpenBillingManualCharge :one
 SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
 WHERE account_id = $1 AND kind = 'manual' AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')
+ORDER BY id DESC LIMIT 1
 `
 
-// The one-click top-up in flight, if any (the owner's summary shows it).
+// The newest one-click top-up not final, if any (the owner's summary shows it).
 func (q *Queries) GetOpenBillingManualCharge(ctx context.Context, accountID uuid.UUID) (BillingAutotopupAttempt, error) {
 	row := q.db.QueryRow(ctx, getOpenBillingManualCharge, accountID)
 	var i BillingAutotopupAttempt
@@ -215,7 +216,7 @@ type InsertBillingManualChargeParams struct {
 	Now         time.Time
 }
 
-// The owner's one-click top-up (kind manual). A second open charge of the account raises
+// The owner's one-click top-up (kind manual). A second charge in flight of the account raises
 // unique_violation (billing_autotopup_attempts_one_open_idx), a reused request id
 // billing_autotopup_attempts_request_idx.
 func (q *Queries) InsertBillingManualCharge(ctx context.Context, arg InsertBillingManualChargeParams) (BillingAutotopupAttempt, error) {
@@ -568,10 +569,15 @@ func (q *Queries) SetBillingAttemptRequiresAction(ctx context.Context, arg SetBi
 }
 
 const setBillingAutoTopupAttemptPayment = `-- name: SetBillingAutoTopupAttemptPayment :one
-UPDATE billing_autotopup_attempts SET provider_payment_id = $1,
-    status = CASE WHEN status IN ('unknown', 'requires_action') THEN 'dispatched' ELSE status END
-WHERE id = $2 AND status IN ('dispatched', 'requires_action', 'unknown')
-RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
+UPDATE billing_autotopup_attempts a SET provider_payment_id = $1,
+    status = CASE
+        WHEN a.status = 'unknown' THEN 'dispatched'
+        WHEN a.status = 'requires_action' AND NOT EXISTS (
+            SELECT 1 FROM billing_autotopup_attempts o
+            WHERE o.account_id = a.account_id AND o.id <> a.id AND o.status IN ('prepared', 'dispatched', 'unknown')) THEN 'dispatched'
+        ELSE a.status END
+WHERE a.id = $2 AND a.status IN ('dispatched', 'requires_action', 'unknown')
+RETURNING a.id, a.account_id, a.pm_id, a.amount_minor, a.currency, a.status, a.provider_payment_id, a.failure_code, a.created_at, a.dispatched_at, a.finished_at, a.kind, a.request_id, a.body_hash, a.created_by, a.action_url, a.order_snapshot
 `
 
 type SetBillingAutoTopupAttemptPaymentParams struct {
@@ -580,7 +586,9 @@ type SetBillingAutoTopupAttemptPaymentParams struct {
 }
 
 // The provider answered with a payment of an open attempt that is not final yet (processing):
-// keep its id; unknown / requires_action become dispatched again.
+// keep its id; unknown / requires_action become dispatched again. A 3-D Secure charge stays
+// requires_action while another charge of the account is in flight (one in flight per account,
+// migration 00102; the account is locked): the recovery re-reads it either way.
 func (q *Queries) SetBillingAutoTopupAttemptPayment(ctx context.Context, arg SetBillingAutoTopupAttemptPaymentParams) (BillingAutotopupAttempt, error) {
 	row := q.db.QueryRow(ctx, setBillingAutoTopupAttemptPayment, arg.ProviderPaymentID, arg.ID)
 	var i BillingAutotopupAttempt

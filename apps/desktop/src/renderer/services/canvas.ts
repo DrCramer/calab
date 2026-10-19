@@ -19,8 +19,11 @@ import {
   type CanvasItemUpsert,
   type CanvasPermissionsResponse,
   type CanvasVersionsResponse,
+  type SearchCanvasRef,
+  WorkspaceRole,
 } from '@calaba/protocol';
 import { confirmAction } from '../components/Confirm';
+import { showMode } from '../features/shell/sectionNav';
 import { t } from '../i18n';
 import { ApiError, body, call, callBytes, callEmpty, qs } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
@@ -30,6 +33,7 @@ import { useCanvas } from '../stores/canvas';
 import { itemOf, useCanvasUi } from '../stores/canvasUi';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
+import { useWorkspaces } from '../stores/workspaces';
 
 /**
  * Canvas REST (ADR-0107 §7, proto/calaba/v1/canvas.proto) and the section's actions: the one module
@@ -161,6 +165,31 @@ export function openCanvas(ws: string, id: string): void {
   ui.openTrash(ws, false);
   ui.openItem(ws, id);
   if (!useCanvas.getState().items[id]) void loadItem(ws, id);
+}
+
+/**
+ * A ⌘K hit (ADR-0107 §6): the Canvas section of the hit's workspace with the canvas open, or — for a
+ * folder — the tree with the folder and everything above it expanded. An item that is gone, trashed or
+ * hidden from me says so. Guests have no Canvas section: nothing to open. The phone has none yet (H6):
+ * the choice is remembered for when it opens.
+ */
+export async function openCanvasHit(ws: string, ref: Pick<SearchCanvasRef, 'itemId' | 'folder'>): Promise<void> {
+  if (!ws || useWorkspaces.getState().byId[ws]?.role === WorkspaceRole.GUEST) return;
+  await loadItem(ws, ref.itemId);
+  const item = useCanvas.getState().items[ref.itemId];
+  if (!item || item.trashedAt) {
+    toast.info(t('canvas.err.gone'));
+    return;
+  }
+  const ui = useUi.getState();
+  if (ui.activeWorkspaceId !== ws) ui.setWorkspace(ws);
+  if (!ui.phone.on) showMode('canvas');
+  const cui = useCanvasUi.getState();
+  cui.openTrash(ws, false);
+  if (ref.folder || isFolder(item)) {
+    cui.setExpanded(item.id, true);
+    void loadChildren(ws, item.id);
+  } else cui.openItem(ws, item.id);
 }
 
 // ---------------------------------------------------------------- gateway (CANVAS_ITEM_*)

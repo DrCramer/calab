@@ -213,8 +213,8 @@ SELECT * FROM billing_payers WHERE account_id = $1;
 
 -- name: InsertBillingCheckout :one
 -- No row = this request_id exists (GetBillingCheckoutByRequest: same body_hash → same result,
--- else 409). A second open checkout of the account raises unique_violation
--- (billing_checkouts_one_open_idx): answer 409 BILLING_PAYMENT_PENDING with the open one.
+-- else 409). An account may have any number of open checkouts (migration 00102): each is
+-- credited by its own payment.
 INSERT INTO billing_checkouts (account_id, request_id, body_hash, purpose, method_id, provider,
     amount_minor, currency, save_method, payer_snapshot, created_by, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -228,7 +228,8 @@ SELECT * FROM billing_checkouts WHERE id = $1;
 SELECT * FROM billing_checkouts WHERE account_id = $1 AND request_id = $2;
 
 -- name: GetOpenBillingCheckout :one
-SELECT * FROM billing_checkouts WHERE account_id = $1 AND status = 'open';
+-- The newest open checkout (the summary shows it; older open ones are still credited when paid).
+SELECT * FROM billing_checkouts WHERE account_id = $1 AND status = 'open' ORDER BY id DESC LIMIT 1;
 
 -- name: GetBillingCheckoutBySession :one
 SELECT * FROM billing_checkouts WHERE provider_session_id = $1;
@@ -419,9 +420,17 @@ VALUES ($1, $2, $3, $4, sqlc.arg('now')::timestamptz)
 RETURNING *;
 
 -- name: GetOpenBillingAutoTopupAttempt :one
--- The charge of a saved card in flight (auto or one-click): at most one per account.
+-- A charge of a saved card not final (auto or one-click), the newest: auto-topup waits for it.
 SELECT * FROM billing_autotopup_attempts
-WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown');
+WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')
+ORDER BY id DESC LIMIT 1;
+
+-- name: GetInFlightBillingAutoTopupAttempt :one
+-- The charge of a saved card in flight: sent or being sent, outcome not known
+-- (billing_autotopup_attempts_one_open_idx, at most one per account). A one-click charge
+-- waiting for the payer's 3-D Secure is not in flight (migration 00102).
+SELECT * FROM billing_autotopup_attempts
+WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'unknown');
 
 -- name: GetLastBillingAutoTopupAttempt :one
 SELECT * FROM billing_autotopup_attempts WHERE account_id = $1 AND kind = 'auto' ORDER BY created_at DESC, id DESC LIMIT 1;

@@ -63,6 +63,18 @@ describe('⌘K summary rows', () => {
     expect(summaryRows(r).rows.map((x) => x.id)).toEqual(['h-w:p1', 'a-wiki', 'h-f:f1:m1', 'a-files', 'h-d:d1', 'a-disk']);
   });
 
+  it('canvases are a section after the wiki (a folder hit too)', () => {
+    const r = create(SearchResponseSchema, {
+      sections: [
+        { type: SearchType.CANVAS, items: [{ title: 'Roadmap', ref: { case: 'canvas', value: { itemId: 'c1' } } }, { title: 'Планы', ref: { case: 'canvas', value: { itemId: 'c2', folder: true } } }], totalEstimate: 7 },
+        { type: SearchType.WIKI, items: [{ title: 'Онбординг', ref: { case: 'wiki', value: { pageId: 'p1' } } }], totalEstimate: 1 },
+      ],
+    });
+    const { rows } = summaryRows(r);
+    expect(rows.map((x) => x.id)).toEqual(['h-w:p1', 'a-wiki', 'h-v:c1', 'h-v:c2', 'a-canvas']);
+    expect(rows.at(-1)).toMatchObject({ kind: 'more', section: 'canvas', total: 7 });
+  });
+
   it('the section of a lone key match keeps no «Все» row of its own', () => {
     const r = create(SearchResponseSchema, { sections: [{ type: SearchType.TASKS, items: [task('FNG-12', true)], totalEstimate: 1 }] });
     expect(summaryRows(r)).toMatchObject({ byKey: [{ id: 'k-t:FNG-12' }], rows: [] });

@@ -12,6 +12,7 @@ export const ruSearch = {
   'search.sec.transcripts': 'Расшифровки',
   'search.sec.wiki': 'Вики',
   'search.sec.disk': 'Диск',
+  'search.sec.canvas': 'Холсты',
   'search.byKey': 'Задача по ключу',
   'search.all': 'Все: {n}',
   'search.allResults': 'Все результаты',
