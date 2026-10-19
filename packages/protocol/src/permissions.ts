@@ -3,6 +3,7 @@ import { PermissionTargetType, type RoomPermissionOverride } from './gen/calaba/
 import type { Board, Task } from './gen/calaba/v1/boards_pb.js';
 import type { DiskPermissionEntry } from './gen/calaba/v1/disk_pb.js';
 import type { WikiPermissionEntry } from './gen/calaba/v1/wiki_pb.js';
+import type { CanvasPermissionEntry } from './gen/calaba/v1/canvas_pb.js';
 
 /**
  * Permission bits as bigint (uint64 on the wire). Values come from the generated
@@ -87,7 +88,7 @@ export function billingPermissions(
 }
 
 /**
- * The three bits of one tree section (the Disk, the Wiki): the workspace-level VIEW / WRITE /
+ * The three bits of one tree section (the Disk, the Wiki, the Canvas): the workspace-level VIEW / WRITE /
  * MANAGE on roles, per-node overrides of VIEW and WRITE (Go: perm.TreeBits).
  */
 export interface TreeBits {
@@ -140,7 +141,7 @@ export interface TreeLevel {
 }
 
 /**
- * The one tree node rule shared by the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §2); Go:
+ * The one tree node rule shared by the Disk (ADR-0094 §2), the Wiki (ADR-0096 §2) and the Canvas (ADR-0107 §2); Go:
  * perm.ComputeTree. `chain` runs from the topmost ancestor down to the node (empty = the top of
  * the section). MANAGE or ADMINISTRATOR (the workspace owner too): all three bits outside any
  * restricted node. Otherwise — and for them as well once the chain has a restricted node
@@ -208,8 +209,11 @@ export function treeLevel(
   };
 }
 
-/** A stored override row of a tree node (DiskPermissionEntry, WikiPermissionEntry). */
-export type OverrideEntry = Pick<DiskPermissionEntry | WikiPermissionEntry, 'targetType' | 'targetId' | 'allow' | 'deny'>;
+/** A stored override row of a tree node (DiskPermissionEntry, WikiPermissionEntry, CanvasPermissionEntry). */
+export type OverrideEntry = Pick<
+  DiskPermissionEntry | WikiPermissionEntry | CanvasPermissionEntry,
+  'targetType' | 'targetId' | 'allow' | 'deny'
+>;
 
 /**
  * Disk bits (ADR-0094 §2), Go: perm.DiskView / DiskWrite / DiskManage. Like the billing bits they
@@ -314,6 +318,57 @@ export function wikiPagePermissions(
  */
 export function wikiStructureAllowed(bits: PermissionBits, owner: boolean): boolean {
   return (bits & WIKI_BITS.VIEW) !== 0n && (owner || (bits & WIKI_BITS.MANAGE) !== 0n);
+}
+
+/**
+ * Canvas bits (ADR-0107 §2), Go: perm.CanvasView / CanvasWrite / CanvasManage. The same rules as
+ * the wiki bits: outside ALL_PERMISSIONS, in ADMINISTRATOR, never for guests through roles,
+ * per-item overrides carry VIEW and WRITE only (CANVAS_OVERRIDE_PERMISSIONS). WRITE on a canvas
+ * edits its content and creates items in a folder; the structure needs the owner or MANAGE
+ * (canvasStructureAllowed).
+ */
+export const CANVAS_BITS = {
+  /** See the Canvas section and every item that is not restricted. Member default. */
+  VIEW: 1n << 41n,
+  /** Create folders and canvases; edit the content of any canvas one can write. Member default. */
+  WRITE: 1n << 42n,
+  /** The structure of any item, the trash retention, empty the whole trash. Implies VIEW + WRITE. */
+  MANAGE: 1n << 43n,
+} as const satisfies TreeBits;
+
+/** The three canvas bits (Go: perm.Canvas). */
+export const CANVAS_PERMISSIONS: PermissionBits = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE | CANVAS_BITS.MANAGE;
+
+/** Bits a canvas item override may allow or deny (Go: perm.CanvasOverride): «Просмотр» / «Правка». */
+export const CANVAS_OVERRIDE_PERMISSIONS: PermissionBits = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE;
+
+/** The workspace-level canvas rule (Go: perm.CanvasOf): treePermissions over CANVAS_BITS. */
+export function canvasPermissions(
+  roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
+  opts: { guest?: boolean | undefined } = {},
+): PermissionBits {
+  return treePermissions(CANVAS_BITS, roles, opts);
+}
+
+/**
+ * The one canvas item rule (ADR-0107 §2; Go: perm.ComputeCanvasItem): treeItemPermissions over
+ * CANVAS_BITS. `chain` runs from the top-level ancestor down to the item (empty = the top level).
+ */
+export function canvasItemPermissions(
+  roles: readonly RoleBits[],
+  chain: readonly TreeLevel[],
+  opts: TreeOptions = {},
+): PermissionBits {
+  return treeItemPermissions(CANVAS_BITS, roles, chain, opts);
+}
+
+/**
+ * The structural rule of a canvas item (ADR-0107 §2; Go: perm.CanvasStructureAllowed): rename,
+ * move, trash, restore, delete and access need VIEW on the item (`bits`, CanvasItem.myBits) and
+ * either its ownership or CANVAS_MANAGE. WRITE alone edits the content and creates items.
+ */
+export function canvasStructureAllowed(bits: PermissionBits, owner: boolean): boolean {
+  return (bits & CANVAS_BITS.VIEW) !== 0n && (owner || (bits & CANVAS_BITS.MANAGE) !== 0n);
 }
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -425,7 +480,10 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     DISK_BITS.WRITE |
     // ADR-0096: migration 00090.
     WIKI_BITS.VIEW |
-    WIKI_BITS.WRITE,
+    WIKI_BITS.WRITE |
+    // ADR-0107: migration 00102.
+    CANVAS_BITS.VIEW |
+    CANVAS_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };

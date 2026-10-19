@@ -94,8 +94,9 @@ var RoleDefaults = map[Role]Bits{
 	RoleOwner: Administrator,
 	RoleAdmin: Administrator,
 	// DiskView | DiskWrite (ADR-0094): migration 00088 gave them to the existing member roles;
-	// WikiView | WikiWrite (ADR-0096): migration 00090.
-	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite | WikiView | WikiWrite,
+	// WikiView | WikiWrite (ADR-0096): migration 00090; CanvasView | CanvasWrite (ADR-0107):
+	// migration 00102.
+	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite | WikiView | WikiWrite | CanvasView | CanvasWrite,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
 	RoleGuest: Connect | Speak,
 }
@@ -131,9 +132,9 @@ type Member struct {
 	OwnerSeesPrivate bool
 }
 
-// SeesPrivate reports whether the member bypasses every private room, board, Disk item and Wiki
-// page: the workspace owner while «Владелец видит приватное» is on — with every bit there, so the
-// owner can manage what a former member left behind. Nobody else ever does.
+// SeesPrivate reports whether the member bypasses every private room, board, Disk item, Wiki
+// page and canvas: the workspace owner while «Владелец видит приватное» is on — with every bit
+// there, so the owner can manage what a former member left behind. Nobody else ever does.
 func (m Member) SeesPrivate() bool { return m.Role == RoleOwner && m.OwnerSeesPrivate }
 
 // NewMember returns a Member with roles sorted by position (lowest first).
