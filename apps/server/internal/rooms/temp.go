@@ -276,9 +276,10 @@ func setPrivate(ctx context.Context, q *sqlc.Queries, wsID, roomID uuid.UUID, pr
 }
 
 // archiveTemp archives a live temporary room in one transaction — archived_at, every link
-// revoked, its meetings closed — then announces ROOM_DELETE (rtc.SyncPublisher closes the
-// LiveKit room: participants leave). onlyExpired: the sweeper's re-check (an extension that
-// raced it wins). Reports whether the room was archived.
+// revoked (the usable ones marked to come back on restore, ADR-0107), its meetings closed —
+// then announces ROOM_DELETE (rtc.SyncPublisher closes the LiveKit room: participants leave).
+// onlyExpired: the sweeper's re-check (an extension that raced it wins). Reports whether the
+// room was archived.
 func (h *Handlers) archiveTemp(ctx context.Context, roomID uuid.UUID, onlyExpired bool) (bool, error) {
 	var (
 		room    sqlc.Room
@@ -289,7 +290,7 @@ func (h *Handlers) archiveTemp(ctx context.Context, roomID uuid.UUID, onlyExpire
 		if room, err = q.ArchiveTempRoom(ctx, sqlc.ArchiveTempRoomParams{ID: roomID, OnlyExpired: onlyExpired}); err != nil {
 			return err
 		}
-		if err := q.RevokeAllRoomInvites(ctx, roomID); err != nil {
+		if err := q.ArchiveRoomInvites(ctx, roomID); err != nil {
 			return err
 		}
 		if h.Meetings != nil {

@@ -46,7 +46,8 @@ func archivedAccess(r *http.Request) (uuid.UUID, perm.RoomAccess, error) {
 	return roomID, acc, nil
 }
 
-// restoreTemp: POST /api/rooms/{id}/restore — an archived temporary room goes live again.
+// restoreTemp: POST /api/rooms/{id}/restore — an archived temporary room goes live again, with
+// the links its archive revoked (ADR-0107).
 func (h *Handlers) restoreTemp(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	roomID, acc, err := archivedAccess(r)
@@ -63,6 +64,7 @@ func (h *Handlers) restoreTemp(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Archived {
 		return httpx.Conflict("the room is not archived")
 	}
+	links := h.linkPolicyOf(r, acc)
 	code, err := NewLinkCode()
 	if err != nil {
 		return err
@@ -98,13 +100,19 @@ func (h *Handlers) restoreTemp(w http.ResponseWriter, r *http.Request) error {
 		if room, err = q.RestoreTempRoom(ctx, sqlc.RestoreTempRoomParams{ID: roomID, ExpiresAt: expires}); err != nil {
 			return err
 		}
-		// The archive revoked every link: a fresh one for the members (guests: a new link by hand).
-		allow := perm.ViewRoom | TempAllow&acc.Bits
-		if _, err := q.CreateRoomInvite(ctx, sqlc.CreateRoomInviteParams{
-			RoomID: roomID, Code: code, CreatedBy: me, ExpiresAt: &expires,
-			MembersOnly: true, AllowBits: int64(allow), //nolint:gosec // bit mask
-		}); err != nil {
+		// The links the archive revoked come back (ADR-0107); none → a fresh one for the members.
+		revived, err := reviveLinks(ctx, q, roomID, *cur.ExpiresAt, &expires, links)
+		if err != nil {
 			return err
+		}
+		if revived == 0 {
+			allow := perm.ViewRoom | TempAllow&acc.Bits
+			if _, err := q.CreateRoomInvite(ctx, sqlc.CreateRoomInviteParams{
+				RoomID: roomID, Code: code, CreatedBy: me, ExpiresAt: &expires,
+				MembersOnly: true, AllowBits: int64(allow), //nolint:gosec // bit mask
+			}); err != nil {
+				return err
+			}
 		}
 		if ws, err = q.GetWorkspace(ctx, wsID); err != nil {
 			return err
@@ -123,6 +131,7 @@ func (h *Handlers) restoreTemp(w http.ResponseWriter, r *http.Request) error {
 
 // makePermanent: POST /api/rooms/{id}/make-permanent — a temporary room (archived or live)
 // becomes a regular one; needs the right to create regular rooms (MANAGE_ROOM at workspace level).
+// Its links bound to its end never expire; an archived room's links come back first (ADR-0107).
 func (h *Handlers) makePermanent(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	roomID, acc, err := archivedAccess(r)
@@ -132,13 +141,30 @@ func (h *Handlers) makePermanent(w http.ResponseWriter, r *http.Request) error {
 	if acc.Role == perm.RoleGuest || !acc.Member.Workspace().Has(perm.ManageRoom) {
 		return httpx.Forbidden("MANAGE_ROOM required to make a temporary room permanent")
 	}
+	links := h.linkPolicyOf(r, acc)
 	var (
 		room sqlc.Room
 		ws   sqlc.Workspace
 		ovs  []sqlc.RoomPermission
 	)
 	err = h.db.Tx(ctx, func(q *sqlc.Queries) error {
-		var err error
+		cur, err := q.GetTempRoomForUpdate(ctx, roomID)
+		if err != nil {
+			return err
+		}
+		// Its links stop following an end (ADR-0107): an archived room's come back first. A
+		// suspended workspace hands out no link: they stay as they are.
+		switch {
+		case acc.Suspended:
+		case cur.ArchivedAt != nil:
+			if _, err := reviveLinks(ctx, q, roomID, *cur.ExpiresAt, nil, links); err != nil {
+				return err
+			}
+		default:
+			if err := unboundLinks(ctx, q, roomID, *cur.ExpiresAt, links); err != nil {
+				return err
+			}
+		}
 		if room, err = q.MakeRoomPermanent(ctx, roomID); err != nil {
 			return err
 		}

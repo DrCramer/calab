@@ -1278,6 +1278,7 @@ type RoomInvite struct {
 	EventID         *uuid.UUID
 	RequireApproval *bool
 	MembersOnly     bool
+	ArchiveRevoked  bool
 }
 
 type RoomNotificationSetting struct {
