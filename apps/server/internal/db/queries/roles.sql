@@ -43,13 +43,15 @@ UPDATE workspace_roles SET position = $3 WHERE id = $1 AND workspace_id = $2 RET
 DELETE FROM workspace_roles WHERE id = $1 AND workspace_id = $2 AND builtin IS NULL;
 
 -- name: DeleteRoleOverrides :many
--- The deleted role's room, board, disk and wiki overrides; returns the affected rooms.
+-- The deleted role's room, board, disk, wiki and canvas overrides; returns the affected rooms.
 WITH boards_gone AS (
     DELETE FROM board_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 ), disk_gone AS (
     DELETE FROM disk_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 ), wiki_gone AS (
     DELETE FROM wiki_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
+), canvas_gone AS (
+    DELETE FROM canvas_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 )
 DELETE FROM room_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 RETURNING room_id;
