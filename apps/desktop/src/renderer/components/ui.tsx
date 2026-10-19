@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useCallback, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useCallback, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
@@ -338,6 +338,26 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       </span>
       {field}
     </span>
+  );
+});
+
+/**
+ * Multiline field: `Input`'s border / fill / text / padding on the card radius (docs/08 — multiline
+ * fields are not pills). The border's focus colour comes from the global text-field rule in
+ * `styles.css`. Vertically resizable by default; `className` carries layout extras (`min-h-*`,
+ * `resize-none`, `font-mono`, ...).
+ */
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea({ className, autoFocus, ...rest }, ref) {
+  return (
+    <textarea
+      ref={ref}
+      autoFocus={autoFocus && autoFocusAllowed()}
+      className={cx(
+        'selectable block w-full min-w-0 resize-y rounded-[var(--radius-card)] border border-line bg-elev px-2.5 py-1.5 mobile:tap-min-h mobile:tap-px text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
+        className,
+      )}
+      {...rest}
+    />
   );
 });
 

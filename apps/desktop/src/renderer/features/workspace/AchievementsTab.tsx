@@ -2,7 +2,7 @@ import type { Achievement, ListAchievementsResponse } from '@calaba/protocol';
 import { Archive, ArchiveRestore, GripVertical, ImagePlus, Plus, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Empty, Field, Input, Spinner, Tip, cx } from '../../components/ui';
+import { Button, Card, Empty, Field, Input, Spinner, TextArea, Tip, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api, uploadFile, uploadPath } from '../../lib/api/endpoints';
@@ -347,12 +347,12 @@ function Fields({ title, description, onTitle, onDescription }: { title: string;
         <Input value={title} maxLength={TITLE_MAX} onChange={(e) => onTitle(e.target.value)} data-testid="ach-title" />
       </Field>
       <Field label={t('ach.cat.description')} hint={`${description.length}/${DESCRIPTION_MAX}`}>
-        <textarea
+        <TextArea
           value={description}
           maxLength={DESCRIPTION_MAX}
           rows={3}
           onChange={(e) => onDescription(e.target.value)}
-          className="selectable min-h-[72px] w-full resize-none rounded-[12px] bg-input px-3 py-2 text-body text-fg outline-none placeholder:text-faint focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-[72px] resize-none"
         />
       </Field>
     </>

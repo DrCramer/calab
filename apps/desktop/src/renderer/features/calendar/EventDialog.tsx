@@ -3,7 +3,7 @@ import { CalendarSearch, Mail, Plus, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Select, Switch, cx } from '../../components/ui';
+import { Button, Field, Input, Modal, Select, Switch, TextArea, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
@@ -254,13 +254,13 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
           </p>
         ) : null}
         <Field label={t('cal.f.description')} error={err('description')}>
-          <textarea
+          <TextArea
             value={d.description}
             maxLength={MAX_DESCRIPTION}
             rows={3}
             placeholder={t('cal.f.descriptionPh')}
             onChange={(e) => set({ description: e.target.value })}
-            className="min-h-[72px] w-full resize-y rounded-[12px] bg-input px-3 py-2 text-body text-fg outline-none placeholder:text-faint focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-[72px]"
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">

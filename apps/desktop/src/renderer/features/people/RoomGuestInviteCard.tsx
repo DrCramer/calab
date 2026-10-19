@@ -2,7 +2,7 @@ import { RoomType } from '@calaba/protocol';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Button, Card, Input, Spinner } from '../../components/ui';
+import { Button, Card, Input, Spinner, TextArea } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMobile } from '../../lib/mobile';
 import { api } from '../../lib/api/endpoints';
@@ -79,12 +79,12 @@ export function RoomGuestInviteCard({ roomId }: { roomId: string }): ReactNode {
           <>
             {phone ? (
               // Phone: the whole address, wrapped on any character (a one-line field cut it off).
-              <textarea
+              <TextArea
                 readOnly
                 rows={Math.min(4, Math.max(2, Math.ceil(link.length / 28)))}
                 value={link}
                 aria-label={t('guestInvite.link')}
-                className="selectable w-full resize-none break-all rounded-[14px] border border-line bg-elev px-3 py-2 font-mono text-[16px] leading-snug text-fg"
+                className="resize-none break-all py-2 font-mono text-[16px] leading-snug"
                 onFocus={(e) => e.currentTarget.select()}
               />
             ) : (

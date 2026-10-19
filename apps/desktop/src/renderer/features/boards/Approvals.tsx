@@ -2,7 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ApproverState, TaskApprovalDecision, type Task } from '@calaba/protocol';
 import { Check, ChevronDown, Clock3, Ellipsis, Plus, X } from 'lucide-react';
 import { memo, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { Button, Modal, Tip, cx } from '../../components/ui';
+import { Button, Modal, TextArea, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import {
   approvalBadge,
@@ -499,7 +499,7 @@ function RejectDialog({ task, onClose }: { task: Task; onClose: () => void }): R
         </>
       }
     >
-      <textarea
+      <TextArea
         ref={ref}
         value={v}
         rows={4}
@@ -514,7 +514,7 @@ function RejectDialog({ task, onClose }: { task: Task; onClose: () => void }): R
         }}
         placeholder={t('boards.rejectComment')}
         aria-label={t('boards.rejectComment')}
-        className="selectable min-h-24 w-full resize-y rounded-[var(--radius-card)] border border-line bg-elev p-2.5 text-body text-fg outline-none placeholder:text-faint focus-visible:border-accent"
+        className="min-h-24"
         data-testid="reject-comment"
       />
       <div className="pt-1 text-right text-caption tabular-nums text-faint">

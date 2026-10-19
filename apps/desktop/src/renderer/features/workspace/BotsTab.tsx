@@ -7,7 +7,7 @@ import { Avatar } from '../../components/Avatar';
 import { useImagePicker } from '../../components/AvatarPicker';
 import { avatarFile } from '../../lib/image';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Empty, IconButton, Input, Modal, Row, Spinner, Tip, cx } from '../../components/ui';
+import { Button, Card, Empty, IconButton, Input, Modal, Row, Spinner, TextArea, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
@@ -438,13 +438,13 @@ function TokenDialog({ issued, onClose }: { issued: Issued; onClose: () => void 
           <span>{t('bots.tokenOnce')}</span>
         </div>
         {/* The whole token, wrapped (a one-line field shows only a part of its ~90 characters). */}
-        <textarea
+        <TextArea
           readOnly
           rows={3}
           value={issued.token}
           aria-label={t('bots.token')}
           spellCheck={false}
-          className="selectable w-full resize-none break-all rounded-[var(--radius-card)] border border-line bg-[var(--color-code)] px-2.5 py-2 font-mono text-caption leading-[18px]"
+          className="resize-none break-all bg-[var(--color-code)] py-2 font-mono text-caption leading-[18px]"
           onFocus={(e) => e.currentTarget.select()}
           data-testid="bot-token"
         />
