@@ -118,7 +118,7 @@ export function htmlToText(html: string): string {
     .replace(/<!--[\s\S]*?(-->|$)/g, ' ')
     .replace(/<(head|style|script|title|noscript)\b[\s\S]*?(<\/\1\s*>|$)/gi, ' ')
     .replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d|table)\s*>/gi, '\n')
-    .replace(/<[!?\/]?[a-z][^>]*(>|$)|<![^>]*(>|$)|<\?[^>]*(>|$)/gi, ' ')
+    .replace(/<[!?/]?[a-z][^>]*(>|$)|<![^>]*(>|$)|<\?[^>]*(>|$)/gi, ' ')
     .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e: string) => {
       if (e.startsWith('#')) {
         const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
@@ -126,7 +126,7 @@ export function htmlToText(html: string): string {
       }
       return ENTITIES[e.toLowerCase()] ?? m;
     })
-    .replace(/[\u00a0\u200b-\u200f\u2060\ufeff\u034f]/g, ' ');
+    .replace(/[\u00a0\u200b-\u200f\u2060\ufeff]/g, ' ');
 }
 
 /** List preview: quoted lines dropped, whitespace collapsed, ≤ 200 chars. */

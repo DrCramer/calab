@@ -431,6 +431,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
             {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>
+          {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
           {scoped ? (
             <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
               <span className="w-full min-w-0 truncate">{name}</span>
@@ -441,21 +442,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           ) : (
             <span className="min-w-0 flex-1 truncate">{name}</span>
           )}
-          {priv && mine === 0 ? (
-            // Desktop: the lock sits in the menu button's slot and the «…» replaces it on hover / focus / open menu.
-            <span className="pointer-events-none absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center group-focus-within/board:opacity-0 group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:size-auto mobile:translate-y-0 mobile:opacity-100 mobile:group-hover/board:opacity-100">
-              <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} />
-            </span>
-          ) : null}
-          {priv && mine > 0 ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
-          {mine > 0 ? (
-            <span
-              className="pointer-events-none absolute right-1 top-1/2 grid h-6 min-w-6 -translate-y-1/2 place-items-center rounded-[var(--radius-icon)] bg-[var(--color-fill)] px-1.5 text-caption tabular-nums text-muted group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:h-[22px] mobile:min-w-[22px] mobile:translate-y-0 mobile:rounded-full mobile:px-1.5 mobile:text-fg mobile:group-hover/board:opacity-100"
-              title={t('boards.myOpen')}
-            >
-              {mine}
-            </span>
-          ) : null}
+          {mine > 0 ? <CountBadge count={mine} tone="accent" title={t('boards.myOpen')} /> : null}
         </button>
         <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
           <Dropdown.Trigger asChild>
