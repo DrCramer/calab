@@ -125,6 +125,7 @@ BOARD_CREATE / BOARD_UPDATE   { board } — доска (ADR-0042) с Board.permi
 BOARD_DELETE                  { workspace_id, board_id, purged } — в архив (purged false) или удалена; или доска перестала быть видна
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
                               notice.kind (ADR-0089) += UNASSIGNED, WATCHER_ADDED, DUE_SOON, OVERDUE (адресные; actor_id пуст у DUE_SOON / OVERDUE),
+                              APPROVED_ON_BEHALF (ADR-0108, обязательное: руководитель доски согласовал за получателя),
                               DUE_CHANGED, PRIORITY, MILESTONE, MOVED, EDITED, ATTACHMENT, ARCHIVED (подписчикам); notice.due_on "YYYY-MM-DD"
                               (DUE_SOON / OVERDUE / DUE_CHANGED, "" = срок снят), notice.days_left (DUE_SOON 1 / 0, OVERDUE −1), notice.text —
                               детали (MILESTONE — имя вехи, MOVED — имя доски, EDITED — title | description, ATTACHMENT — имя файла).
