@@ -1,18 +1,1 @@
-{
-  "item": {
-    "id": "0190a0b0-0000-7000-8000-000000000012",
-    "workspaceId": "0190a0b0-0000-7000-8000-000000000001",
-    "kind": "CANVAS_ITEM_KIND_CANVAS",
-    "name": "Дорожная карта Q1",
-    "ownerId": "0190a0b0-0000-7000-8000-0000000000a1",
-    "updatedAt": "2026-10-19T12:00:00Z",
-    "updatedBy": "0190a0b0-0000-7000-8000-0000000000a2",
-    "myBits": "6597069766656",
-    "createdAt": "2026-10-19T09:05:00Z",
-    "position": 0,
-    "docSize": 2048,
-    "preview": "Голос без эха Раздел «Холст»",
-    "shared": true,
-    "parentId": "0190a0b0-0000-7000-8000-000000000011"
-  }
-}
+{"item":{"id":"01a15525-e496-74e8-bbcc-956d108fb2d4","workspaceId":"01a15525-e410-7419-9832-52412336301f","parentId":"","kind":"CANVAS_ITEM_KIND_CANVAS","name":"Дорожная карта Q1","ownerId":"01a15525-e36f-7f4b-b473-940e8ddf8175","restricted":false,"shared":false,"updatedAt":"2026-10-19T17:11:49.331489Z","updatedBy":"01a15525-e36f-7f4b-b473-940e8ddf8175","myBits":"15393162788864","hasChildren":false,"createdAt":"2026-10-19T17:11:49.138060Z","position":0,"trashedBy":"","trashedRoot":false,"docSize":0,"preview":""}}

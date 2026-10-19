@@ -88,6 +88,21 @@ describe('canvas (ADR-0107)', () => {
     expect((await api(anna, `/api/canvas/items/${made.id}/restore`, { method: 'POST' })).status).toBe(200);
   });
 
+  it('answers as the live server does (H8 walk): a folder into its own subtree 409, a live item is not deletable 409, a hit has its path and a marked snippet', async () => {
+    const anna = await login('owner@calaba.test');
+    const post = (body: unknown) => api(anna, `${W}/items`, { method: 'POST', body });
+    const outer = ((await (await post({ kind: 'CANVAS_ITEM_KIND_FOLDER', name: 'Внешняя' })).json()) as { item: Item }).item;
+    const inner = ((await (await post({ kind: 'CANVAS_ITEM_KIND_FOLDER', parentId: outer.id, name: 'Внутренняя' })).json()) as { item: Item }).item;
+    expect((await api(anna, `/api/canvas/items/${outer.id}`, { method: 'PATCH', body: { parentId: inner.id } })).status).toBe(409);
+    expect((await api(anna, `/api/canvas/items/${outer.id}`, { method: 'DELETE' })).status).toBe(409);
+    await api(anna, `/api/canvas/items/${outer.id}/trash`, { method: 'POST' });
+    expect((await api(anna, `/api/canvas/items/${outer.id}`, { method: 'DELETE' })).status).toBe(204);
+    const res = await api(anna, `/api/search?type=canvas&scope=${IDS.workspaces.main}&q=${encodeURIComponent('карта')}`);
+    const hit = ((await res.json()) as { sections: Array<{ items: Array<{ snippet: string; canvas?: { path?: string[] } }> }> }).sections[0]?.items[0];
+    expect(hit?.canvas?.path).toEqual(['Продукт']);
+    expect(hit?.snippet).toContain('\u0002карта\u0003');
+  });
+
   it('search finds a canvas by its name or text and not a folder', async () => {
     const anna = await login('owner@calaba.test');
     const res = await api(anna, `/api/search?type=canvas&scope=${IDS.workspaces.main}&q=${encodeURIComponent('эха')}`);

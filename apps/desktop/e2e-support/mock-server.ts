@@ -1144,6 +1144,12 @@ function send(res: ServerResponse, status: number, body: string | Buffer, type: 
   res.end(body);
 }
 
+/** A search snippet as the server writes it (ADR-0062 §1): the first match of `q` wrapped in \u0002…\u0003. */
+function markHit(text: string, q: string): string {
+  const at = q.trim() ? text.toLowerCase().indexOf(q.trim().toLowerCase()) : -1;
+  return at < 0 ? text : `${text.slice(0, at)}\u0002${text.slice(at, at + q.trim().length)}\u0003${text.slice(at + q.trim().length)}`;
+}
+
 function sendMsg<S extends DescMessage>(res: ServerResponse, status: number, schema: S, init: MessageInitShape<S>): void {
   const json = toJson(schema, create(schema, init), JSON_WRITE);
   send(res, status, JSON.stringify(json), 'application/json');
@@ -7735,7 +7741,7 @@ class MockImpl {
       if (type === 'canvas') {
         const hits = this.canvas.search(q(c, 'scope'), me, q(c, 'q'), limit);
         sendMsg(c.res, 200, SearchResponseSchema, {
-          sections: [{ type: SearchType.CANVAS, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.preview || h.name, title: h.name, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'canvas' as const, value: { itemId: h.id, parentId: h.parentId, folder: h.kind === CanvasItemKind.FOLDER, path: [] } } })) }],
+          sections: [{ type: SearchType.CANVAS, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: markHit(h.preview || h.name, q(c, 'q')), title: h.name, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'canvas' as const, value: { itemId: h.id, parentId: h.parentId, folder: h.kind === CanvasItemKind.FOLDER, path: this.canvas.ancestorNames(h) } } })) }],
         });
         return;
       }

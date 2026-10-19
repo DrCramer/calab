@@ -1,4 +1,1 @@
-{
-  "code": "ERROR_CODE_NOT_FOUND",
-  "message": "canvas item not found"
-}
+{"code":"ERROR_CODE_NOT_FOUND","message":"resource not found","field":""}
