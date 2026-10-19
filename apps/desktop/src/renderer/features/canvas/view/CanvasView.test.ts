@@ -348,6 +348,31 @@ describe('lifecycle', () => {
     expect(getCanvasViewHandle('c1')).toBeNull();
   });
 
+  it('at rest: no frames, no React commits, one timer (the 15 s awareness heartbeat); hidden: no timer at all', async () => {
+    const m = await mount();
+    await settle(5000); // opening a new canvas writes its schema: the first compaction (3 s) has run
+    const commits = m.commits.n;
+    expect(vi.getTimerCount()).toBe(1);
+    let hidden = false;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    try {
+      await settle(15_000); // the heartbeat fires once: it keeps our presence alive, and nothing else wakes up
+      expect(m.commits.n).toBe(commits);
+      expect(vi.getTimerCount()).toBe(1);
+      hidden = true;
+      act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      await settle(0);
+      expect(vi.getTimerCount()).toBe(0);
+      await settle(60_000);
+      expect(m.commits.n).toBe(commits);
+      expect(vi.getTimerCount()).toBe(0);
+      const aw = m.relay.size; // still connected: only the cursor traffic stopped
+      expect(aw).toBe(1);
+    } finally {
+      Reflect.deleteProperty(document, 'hidden');
+    }
+  });
+
   it('leaves no timers or frames behind after unmount', async () => {
     const m = await mount();
     await settle(50);
