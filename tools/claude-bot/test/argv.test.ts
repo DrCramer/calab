@@ -47,7 +47,7 @@ describe('assistArgv', () => {
     expect(flag(a, '--tools')).toBe('Read,Grep,Glob,Bash');
   });
 
-  it('allows reads in docs/ and apps/ and only four board verbs', () => {
+  it('allows reads in docs/ and apps/ and only five board verbs', () => {
     const allowed = flagValues(a, '--allowedTools');
     expect(allowed).toEqual([
       'Read(./docs/**)',
@@ -60,8 +60,9 @@ describe('assistArgv', () => {
       `Bash(python3 ${BUGBOARD} show:*)`,
       `Bash(python3 ${BUGBOARD} comment:*)`,
       `Bash(python3 ${BUGBOARD} create:*)`,
+      `Bash(python3 ${BUGBOARD} label:*)`,
     ]);
-    expect(allowed.some((t) => /^Bash\((?!python3 \/Users\/mac\/\.calab-tools\/bugboard\.py (list|show|comment|create):\*\))/.test(t))).toBe(false);
+    expect(allowed.some((t) => /^Bash\((?!python3 \/Users\/mac\/\.calab-tools\/bugboard\.py (list|show|comment|create|label):\*\))/.test(t))).toBe(false);
     expect(allowed.some((t) => /^(Write|Edit|WebFetch|WebSearch)/.test(t))).toBe(false);
   });
 

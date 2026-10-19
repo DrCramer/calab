@@ -10,7 +10,7 @@ A small launchd daemon for the bot «Mr.Claude» (board «Calab bugs&features»)
 - **Chat**: a DM to the bot, or a message in a task chat that @mentions it, is answered by
   `claude -p --model sonnet` as a sandboxed assistant (`assistant-prompt.md`): the last 20 messages go on
   stdin as untrusted data; tools are only `Read/Grep/Glob` (docs/ and apps/ of its own checkout) and
-  `bugboard.py list|show|comment|create`; `dontAsk` refuses the rest, `.env*`, `~/.calab-tools`, `~/.claude`,
+  `bugboard.py list|show|comment|create|label`; `dontAsk` refuses the rest, `.env*`, `~/.calab-tools`, `~/.claude`,
   `~/.ssh`, `~/Library` and the owner's checkout are denied; no settings, MCP, skills or CLAUDE.md are
   loaded (`--safe-mode`, `--setting-sources=`, `--strict-mcp-config`). 10 messages / 10 min per user, one
   answer at a time per chat (a message arriving meanwhile is answered next with fresh context), answers

@@ -8,8 +8,8 @@ export function leadArgv(prompt: string): string[] {
 /** Read-only paths of the assistant's checkout (relative to its cwd). */
 export const ASSIST_READ_PATHS = ['./docs/**', './apps/**'] as const;
 
-/** Board commands the assistant may run (create a bug, comment, read); never `status`. */
-export const BUGBOARD_VERBS = ['list', 'show', 'comment', 'create'] as const;
+/** Board commands the assistant may run (create and label a bug, comment, read); never `status`. */
+export const BUGBOARD_VERBS = ['list', 'show', 'comment', 'create', 'label'] as const;
 
 export function assistAllowedTools(bugboard: string): string[] {
   return [
