@@ -9,12 +9,13 @@ import { t } from '../../i18n';
 import { hasFiles } from '../../lib/dropState';
 import { canWrite, folderKey, isFolder, trashKey, visibleIds } from '../../lib/disk';
 import { fmt } from '../../lib/format';
-import { collator, loadListing, openItem, quickLook, renameItem, restoreItems } from '../../services/disk';
+import { collator, loadListing, openItem, renameItem, restoreItems } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { useDiskUi } from '../../stores/diskUi';
 import { usePrefs } from '../../stores/prefs';
 import { useMemberName } from '../../stores/workspaces';
 import { ItemContextMenu, ItemMenuButton } from './ItemMenu';
+import { useQuickLook } from './useQuickLook';
 import { ItemBadges, ItemGlyph, ItemPicture } from './visuals';
 
 /**
@@ -45,6 +46,7 @@ export function DiskListing({ workspaceId, folderId, trash }: { workspaceId: str
   useEffect(() => {
     shownRef.current = ids;
   }, [ids]);
+  useQuickLook(shownRef, !trash);
 
   if (!loaded) {
     return load === 'error' ? (
@@ -177,11 +179,6 @@ function useItemActions(id: string) {
     if (e.key === 'Enter') {
       e.preventDefault();
       open();
-    } else if (e.key === ' ') {
-      // Quick Look (CBF-22): Space previews the selected file (Space inside the viewer closes it).
-      e.preventDefault();
-      const it = useDisk.getState().items[id];
-      if (it && !it.trashedAt) quickLook(it, shown.current);
     } else if (e.key === 'F2' || (e.key === 'Enter' && e.metaKey)) {
       const it = useDisk.getState().items[id];
       if (it && canWrite(it.myBits) && !it.trashedAt) useDiskUi.getState().setRenaming(id);

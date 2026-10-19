@@ -43,11 +43,14 @@ test('disk-list', async ({ open, win, shot, theme }) => {
   await win.keyboard.press('Space');
   await expect(win.getByTestId('disk-view-markdown')).toBeVisible();
   await checkpoint(shot, 'disk-preview-markdown');
-  await win.getByTestId('disk-view-next').click();
-  await win.getByTestId('disk-view-prev').click();
+  await win.keyboard.press('ArrowRight');
+  await expect(win.getByTestId('disk-viewer')).toHaveAttribute('data-kind', /./);
+  await win.keyboard.press('ArrowLeft');
+  await expect(win.getByTestId('disk-view-markdown')).toBeVisible();
   await win.keyboard.press('Space');
   await expect(win.getByTestId('disk-viewer')).toHaveCount(0);
   await win.getByTestId('disk-row').filter({ hasText: 'Выгрузка продаж.csv' }).click();
+  await expect(win.getByTestId('disk-row').filter({ hasText: 'Выгрузка продаж.csv' })).toHaveAttribute('data-selected', 'true');
   await win.keyboard.press('Space');
   await expect(win.getByTestId('disk-view-csv')).toBeVisible();
   await checkpoint(shot, 'disk-preview-csv');

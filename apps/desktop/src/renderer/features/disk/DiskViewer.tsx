@@ -59,11 +59,12 @@ function marked(node: PmNode, key: string): ReactNode {
           <a
             href={href}
             title={href}
+            data-inline-target
             onClick={(e) => {
               e.preventDefault();
               void platform.app.openExternal(href);
             }}
-            className="text-accent-text hover:underline"
+            className="text-accent-text underline underline-offset-2"
           >
             {out}
           </a>
@@ -101,13 +102,13 @@ function md(n: PmNode, key: string): ReactNode {
     case 'bulletList':
     case 'taskList':
       return (
-        <ul key={key} className="my-2 list-disc pl-6">
+        <ul key={key} className="my-2 list-disc pl-6 [&_li>p]:my-0">
           {children(n, key)}
         </ul>
       );
     case 'orderedList':
       return (
-        <ol key={key} start={Number(n.attrs?.['start'] ?? 1)} className="my-2 list-decimal pl-6">
+        <ol key={key} start={Number(n.attrs?.['start'] ?? 1)} className="my-2 list-decimal pl-6 [&_li>p]:my-0">
           {children(n, key)}
         </ol>
       );
@@ -138,7 +139,7 @@ function md(n: PmNode, key: string): ReactNode {
       return <hr key={key} className="my-3 border-line" />;
     case 'table':
       return (
-        <div key={key} className="my-2 overflow-x-auto">
+        <div key={key} className="my-2 overflow-x-auto [&_td>p]:my-0 [&_th>p]:my-0">
           <table className="border-collapse text-body">
             <tbody>{children(n, key)}</tbody>
           </table>
@@ -182,7 +183,7 @@ function CsvView({ text, delimiter }: { text: string; delimiter: string }): Reac
   const [head, ...body] = rows;
   return (
     <div className="flex flex-col gap-2" data-testid="disk-view-csv">
-      <div className="selectable overflow-auto rounded-[var(--radius-control)] border border-line">
+      <div className="selectable overflow-auto rounded-[8px] border border-line">
         <table className="w-full border-collapse text-caption">
           {head ? (
             <thead>
@@ -307,17 +308,6 @@ export function DiskViewDialog({ itemId, siblings, onClose }: { itemId: string; 
       title={item.name}
       footer={
         <>
-          {ids.length > 1 ? (
-            <div className="mr-auto flex items-center gap-1">
-              <Button variant="secondary" disabled={!prev} onClick={() => prev && setId(prev)} aria-label={t('lightbox.prev')} data-testid="disk-view-prev">
-                <ChevronLeft className="size-4" aria-hidden />
-              </Button>
-              <span className="min-w-12 text-center text-caption tabular-nums text-muted">{ids.indexOf(id) + 1} / {ids.length}</span>
-              <Button variant="secondary" disabled={!next} onClick={() => next && setId(next)} aria-label={t('lightbox.next')} data-testid="disk-view-next">
-                <ChevronRight className="size-4" aria-hidden />
-              </Button>
-            </div>
-          ) : null}
           <Button
             variant="secondary"
             onClick={() => {
@@ -326,19 +316,32 @@ export function DiskViewDialog({ itemId, siblings, onClose }: { itemId: string; 
             }}
             data-testid="disk-view-send"
           >
-            <Send className="size-4" aria-hidden />
+            <Send className="size-4 shrink-0" aria-hidden />
             {t('disk.sendToChat')}
           </Button>
           <Button variant="secondary" onClick={() => downloadItem(item)} data-testid="disk-view-download">
-            <Download className="size-4" aria-hidden />
+            <Download className="size-4 shrink-0" aria-hidden />
             {t('disk.download')}
           </Button>
         </>
       }
     >
-      <div data-testid="disk-viewer" data-kind={kind}>
+      <div className="py-2" data-testid="disk-viewer" data-kind={kind}>
+        {ids.length > 1 ? (
+          <div className="mb-2 flex items-center justify-end gap-1">
+            <Button variant="secondary" disabled={!prev} onClick={() => prev && setId(prev)} aria-label={t('lightbox.prev')} data-testid="disk-view-prev">
+              <ChevronLeft className="size-4" aria-hidden />
+            </Button>
+            <span className="min-w-12 text-center text-caption tabular-nums text-muted">
+              {ids.indexOf(id) + 1} / {ids.length}
+            </span>
+            <Button variant="secondary" disabled={!next} onClick={() => next && setId(next)} aria-label={t('lightbox.next')} data-testid="disk-view-next">
+              <ChevronRight className="size-4" aria-hidden />
+            </Button>
+          </div>
+        ) : null}
         {kind === 'audio' ? (
-          <div className="py-4">
+          <div className="rec-card py-3">
             <AudioAttachment key={file.id} f={file} messageId={`disk:${id}`} roomId="" label={item.name} className="w-full" />
           </div>
         ) : tk ? (

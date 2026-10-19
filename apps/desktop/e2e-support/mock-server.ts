@@ -7567,7 +7567,7 @@ class MockImpl {
     const inQ4 = (name: string, mime: string, content: string, iso: string): void => {
       d.put({ workspaceId: ws, kind: FI, name, parentId: q4.id, ownerId: U.anna, file: file(name, mime, 0n, undefined, content), updatedAt: at(iso) });
     };
-    inQ4('План релиза.md', 'text/markdown', '# План релиза\n\nИтоги **квартала** и ближайшие шаги:\n\n- собрать *сборку* 3.1\n- проверить [сайт](https://calab.io)\n- [x] обновить документацию\n\n> Дата выхода — в пятницу.\n\n```go\nfmt.Println("release")\n```\n\n| Этап | Срок |\n| --- | --- |\n| QA | 12 янв |\n| Выпуск | 16 янв |\n', '2026-01-14T10:00:00Z');
+    inQ4('План релиза.md', 'text/markdown', '# План релиза\n\nИтоги **квартала** и ближайшие шаги:\n\n- собрать *сборку* 3.1\n- проверить [сайт](https://calab.io)\n\n> Дата выхода — в пятницу.\n\n```go\nfmt.Println("release")\n```\n\n| Этап | Срок |\n| --- | --- |\n| QA | 12 янв |\n| Выпуск | 16 янв |\n', '2026-01-14T10:00:00Z');
     inQ4('Выгрузка продаж.csv', 'text/csv', 'Менеджер,Регион,Сумма\nАнна,Москва,120000\nБорис,"Санкт-Петербург, центр",98500\nВера,Казань,43200\n', '2026-01-13T10:00:00Z');
     inQ4('server.go', 'text/x-go', 'package main\n\nimport "net/http"\n\nfunc main() {\n\thttp.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {\n\t\tw.Write([]byte("ok"))\n\t})\n\thttp.ListenAndServe(":8080", nil)\n}\n', '2026-01-12T10:00:00Z');
     inQ4('Подкаст — выпуск 12.mp3', 'audio/mpeg', 'ID3 mock audio', '2026-01-11T10:00:00Z');

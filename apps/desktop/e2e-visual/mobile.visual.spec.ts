@@ -1714,6 +1714,15 @@ test('m-disk-folder', async ({ page }) => {
   await expect(folder.getByTestId('phone-header')).toContainText('Проекты');
   await expect(folder.getByTestId('disk-row')).toHaveCount(1);
   await checkpoint(page, 'm-disk-folder');
+  // CBF-22: a text file opens the read-only viewer (tap), the type plates read in the rows.
+  await folder.getByTestId('disk-row').getByTestId('disk-row-open').tap();
+  await expect(folder.getByTestId('disk-row')).toHaveCount(4);
+  await checkpoint(page, 'm-disk-type-icons');
+  await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-row-open').tap();
+  await expect(page.getByTestId('disk-view-markdown')).toBeVisible();
+  await checkpoint(page, 'm-disk-preview-text');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('phone-back').tap();
   await page.getByTestId('phone-back').tap();
   await expect(page.getByTestId('phone-disk')).toBeVisible();
 });
