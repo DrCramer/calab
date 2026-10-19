@@ -243,10 +243,7 @@ export function PhoneCanvasScreen({ workspaceId, itemId }: { workspaceId: string
   const [tried, setTried] = useState(false);
   const seen = useRef(false);
   useEffect(() => {
-    if (useCanvas.getState().items[itemId]) {
-      setTried(true);
-      return;
-    }
+    if (useCanvas.getState().items[itemId]) return undefined;
     let live = true;
     void loadItem(workspaceId, itemId).finally(() => live && setTried(true));
     return () => {

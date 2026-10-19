@@ -22,7 +22,9 @@ vi.mock('./lazy', async () => {
       view.props = p;
       useEffect(() => {
         view.mounts++;
-        return () => void view.unmounts++;
+        return () => {
+          view.unmounts++;
+        };
       }, []);
       return h('div', { 'data-testid': 'stub-view' });
     },
@@ -61,7 +63,7 @@ const flush = async (): Promise<void> => {
 };
 const q = (id: string): HTMLElement | null => host.querySelector(`[data-testid="${id}"]`);
 const all = (id: string): HTMLElement[] => [...host.querySelectorAll<HTMLElement>(`[data-testid="${id}"]`)];
-const names = (): string[] => all('phone-canvas-row').map((r) => r.textContent ?? '');
+const names = (): Array<string | null> => all('phone-canvas-row').map((r) => r.textContent);
 
 beforeEach(async () => {
   view.props = null;
@@ -79,7 +81,7 @@ beforeEach(async () => {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => {
+  act(() => {
     root.render(createElement(Shell));
   });
   await flush();
@@ -102,33 +104,33 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
   });
 
   it('a folder pushes a screen with its children; a canvas pushes the viewer; «←» walks back', async () => {
-    await act(async () => all('phone-canvas-row')[0]?.querySelector('button')?.click());
+    act(() => all('phone-canvas-row')[0]?.querySelector('button')?.click());
     await flush();
     expect(useUi.getState().phone.stack).toEqual([{ kind: 'canvas', itemId: 'f1' }]);
     expect(q('phone-canvas-folder')).not.toBeNull();
     expect(names().sort()).toEqual(['Дорожная карта Q1', 'Ретро-доска'].sort());
 
-    await act(async () => all('phone-canvas-row')[0]?.querySelector('button')?.click());
+    act(() => all('phone-canvas-row')[0]?.querySelector('button')?.click());
     await flush();
     expect(useUi.getState().phone.stack.map((s) => (s.kind === 'canvas' ? s.itemId : ''))).toEqual(['f1', 'c2']);
     expect(q('phone-canvas-screen')).not.toBeNull();
     expect(q('stub-view')).not.toBeNull();
     expect(q('phone-header')?.textContent).toContain('Дорожная карта Q1');
 
-    await act(async () => q('phone-back')?.click());
+    act(() => q('phone-back')?.click());
     await flush();
     expect(useUi.getState().phone.stack).toEqual([{ kind: 'canvas', itemId: 'f1' }]);
     expect(q('phone-canvas-folder')).not.toBeNull();
     expect(view.unmounts).toBe(1);
 
-    await act(async () => q('phone-back')?.click());
+    act(() => q('phone-back')?.click());
     await flush();
     expect(useUi.getState().phone.stack).toEqual([]);
     expect(q('phone-canvas')).not.toBeNull();
   });
 
   it('the viewer is always asked for view-only mode, whatever the grant says', async () => {
-    await act(async () => all('phone-canvas-row')[1]?.querySelector('button')?.click());
+    act(() => all('phone-canvas-row')[1]?.querySelector('button')?.click());
     await flush();
     expect(view.props).toMatchObject({ canvasId: 'c1', workspaceId: W, phone: true, name: 'Планирование спринта' });
     // The item carries write and manage bits; the phone flag, not the bits, makes the viewer read-only.
@@ -137,10 +139,10 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
 
   it('leaving a canvas unmounts the viewer (its socket closes); the section is «on screen» only while a screen is mounted', async () => {
     expect(useCanvasUi.getState().active).toBe(true);
-    await act(async () => all('phone-canvas-row')[1]?.querySelector('button')?.click());
+    act(() => all('phone-canvas-row')[1]?.querySelector('button')?.click());
     await flush();
     expect(view.mounts).toBe(1);
-    await act(async () => q('phone-back')?.click());
+    act(() => q('phone-back')?.click());
     await flush();
     expect(view.unmounts).toBe(1);
     act(() => root.unmount());
@@ -149,24 +151,24 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
   });
 
   it('a canvas opened by link (unknown to the stores) is fetched and shown', async () => {
-    await act(async () => useUi.getState().setPhone(() => ({ on: true, tab: 'canvas', stack: [{ kind: 'canvas', itemId: 'c3' }] })));
+    act(() => useUi.getState().setPhone(() => ({ on: true, tab: 'canvas', stack: [{ kind: 'canvas', itemId: 'c3' }] })));
     await flush();
     expect(canvasApi.get).toHaveBeenCalledWith('c3');
     expect(q('stub-view')).not.toBeNull();
   });
 
   it('a canvas that is gone says so instead of spinning forever', async () => {
-    await act(async () => useUi.getState().setPhone(() => ({ on: true, tab: 'canvas', stack: [{ kind: 'canvas', itemId: 'nope' }] })));
+    act(() => useUi.getState().setPhone(() => ({ on: true, tab: 'canvas', stack: [{ kind: 'canvas', itemId: 'nope' }] })));
     await flush();
     expect(q('phone-canvas-gone')).not.toBeNull();
     expect(q('stub-view')).toBeNull();
   });
 
   it('a canvas removed or trashed while open closes its screen', async () => {
-    await act(async () => all('phone-canvas-row')[1]?.querySelector('button')?.click());
+    act(() => all('phone-canvas-row')[1]?.querySelector('button')?.click());
     await flush();
     expect(q('stub-view')).not.toBeNull();
-    await act(async () => useCanvas.getState().remove('c1'));
+    act(() => useCanvas.getState().remove('c1'));
     await flush();
     expect(useUi.getState().phone.stack).toEqual([]);
   });
@@ -174,18 +176,18 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
   it('the magnifier filters by name, the server search adds what is not loaded', async () => {
     useCanvas.getState().put(Object.values(TREE).flat());
     const search = vi.spyOn(api, 'search').mockResolvedValue(create(SearchResponseSchema, {}));
-    await act(async () => q('phone-search')?.click());
+    act(() => q('phone-search')?.click());
     expect(q('phone-canvas-search-field')).not.toBeNull();
-    await act(async () => useCanvasUi.getState().setQuery('ретро'));
+    act(() => useCanvasUi.getState().setQuery('ретро'));
     expect(all('phone-canvas-row').map((r) => r.textContent)).toEqual([expect.stringContaining('Ретро-доска')]);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 300));
     });
     expect(search).toHaveBeenCalledWith(expect.objectContaining({ q: 'ретро', scope: W, type: 'canvas' }), expect.anything());
-    await act(async () => useCanvasUi.getState().setQuery('zzz'));
+    act(() => useCanvasUi.getState().setQuery('zzz'));
     expect(q('phone-canvas-search-results')?.textContent).toMatch(/Ничего не найдено|Nothing found/);
     // The magnifier again closes the filter and brings the list back.
-    await act(async () => q('phone-search')?.click());
+    act(() => q('phone-search')?.click());
     expect(useCanvasUi.getState().query).toBe('');
     expect(names()).toHaveLength(2);
   });

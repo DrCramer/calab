@@ -26,16 +26,16 @@ let root: Root;
 let host: HTMLElement;
 const q = (id: string): HTMLElement | null => document.querySelector(`[data-testid="${id}"]`);
 
-async function render(guest = false): Promise<void> {
+function render(guest = false): void {
   useSession.setState({ me: { user: { id: 'me', displayName: 'Me', isGuest: guest } } } as never);
   useWorkspaces.setState({ order: ['w'], byId: { w: { role: guest ? WorkspaceRole.GUEST : WorkspaceRole.MEMBER } } } as never);
-  await act(async () => {
+  act(() => {
     root.render(createElement(TabBar, { tab: 'chats' }));
   });
 }
 
-async function openMore(): Promise<void> {
-  await act(async () => {
+function openMore(): void {
+  act(() => {
     const e = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
     q('phone-tab-more')?.dispatchEvent(e);
   });
@@ -57,11 +57,11 @@ afterEach(() => {
 });
 
 describe('«Холст» in the phone «Ещё» card (ADR-0095)', () => {
-  it('is named «Холст», not pinned by default, and listed in the card with its icon and a pin', async () => {
+  it('is named «Холст», not pinned by default, and listed in the card with its icon and a pin', () => {
     expect(tabLabel('canvas')).toBe(tabLabel('canvas'));
-    await render();
+    render();
     expect(q('phone-tab-canvas')).toBeNull();
-    await openMore();
+    openMore();
     const row = q('more-row-canvas');
     expect(row).not.toBeNull();
     expect(row?.textContent).toMatch(/Холст|Canvas/);
@@ -69,28 +69,34 @@ describe('«Холст» in the phone «Ещё» card (ADR-0095)', () => {
     expect(q('more-pin-canvas')).not.toBeNull();
   });
 
-  it('a tap on the row opens the section on the phone', async () => {
-    await render();
-    await openMore();
-    await act(async () => q('more-row-canvas')?.click());
+  it('a tap on the row opens the section on the phone', () => {
+    render();
+    openMore();
+    act(() => {
+      q('more-row-canvas')?.click();
+    });
     expect(useUi.getState().phone).toMatchObject({ tab: 'canvas', stack: [] });
   });
 
-  it('with four tabs on the bar the pin is refused; moved up in the card it takes a cell of the bar', async () => {
-    await render();
-    await openMore();
+  it('with four tabs on the bar the pin is refused; moved up in the card it takes a cell of the bar', () => {
+    render();
+    openMore();
     expect(q('more-pin-canvas')?.hasAttribute('data-disabled')).toBe(true);
     expect(q('more-pin-hint')).not.toBeNull();
-    await act(async () => usePrefs.setState({ phonePinnedTabs: ['chats', 'dms', 'boards'], phoneTabOrder: ['chats', 'dms', 'boards', 'canvas', 'calendar', 'wiki', 'disk', 'profile'] }));
+    act(() => {
+      usePrefs.setState({ phonePinnedTabs: ['chats', 'dms', 'boards'], phoneTabOrder: ['chats', 'dms', 'boards', 'canvas', 'calendar', 'wiki', 'disk', 'profile'] });
+    });
     expect(q('phone-tab-canvas')?.getAttribute('aria-current')).toBeNull();
     expect(q('phone-tab-calendar')).toBeNull();
     expect(q('more-pin-canvas')?.getAttribute('aria-checked')).toBe('true');
-    await act(async () => q('more-pin-canvas')?.click());
+    act(() => {
+      q('more-pin-canvas')?.click();
+    });
     expect(usePrefs.getState().phonePinnedTabs).toEqual(['chats', 'dms', 'boards']);
   });
 
-  it('a guest has no Canvas, like the other workspace sections', async () => {
-    await render(true);
+  it('a guest has no Canvas, like the other workspace sections', () => {
+    render(true);
     expect(q('phone-tab-canvas')).toBeNull();
     expect(q('phone-tab-more')).toBeNull();
   });
