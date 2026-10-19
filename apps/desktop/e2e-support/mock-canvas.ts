@@ -218,6 +218,11 @@ export class CanvasMock {
       .map((x) => this.out(x, uid));
   }
 
+  /** The names of an item's ancestors, the top-level one first (a search hit's `path`; the item itself is not in it). */
+  ancestorNames(p: CanvasItem): string[] {
+    return this.chainOf(p).slice(0, -1).map((x) => x.name);
+  }
+
   get(id: string, uid: string): CanvasItem {
     return this.out(this.visible(id, uid), uid);
   }
@@ -244,7 +249,7 @@ export class CanvasMock {
       const parentId = b.parentId ?? p.parentId;
       if (parentId) {
         this.folder(parentId, p.workspaceId, uid);
-        if (this.chainOf(this.items.get(parentId) as CanvasItem).some((x) => x.id === id)) throw new CanvasError(422, ErrorCode.VALIDATION, 'an item cannot move into itself', 'parent_id');
+        if (this.chainOf(this.items.get(parentId) as CanvasItem).some((x) => x.id === id)) throw conflict('an item cannot move into itself'); // 409 on the server (H8 walk)
       }
       const sib = this.siblings(p.workspaceId, parentId, id);
       const at = Math.max(0, Math.min(sib.length, b.position ?? sib.length));
@@ -282,6 +287,7 @@ export class CanvasMock {
 
   remove(id: string, uid: string): void {
     const p = this.structural(id, uid);
+    if (!p.trashedAt) throw conflict('only an item in the trash can be deleted forever'); // 409 on the server (H8 walk)
     for (const x of this.subtree(id)) {
       this.items.delete(x.id);
       this.docs.delete(x.id);
