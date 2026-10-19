@@ -75,7 +75,7 @@ func (h *Webhooks) wake() {
 	}
 }
 
-// webhookRoutes registers the webhook routes (MANAGE_BOARD + MANAGE_INTEGRATIONS; bots never).
+// webhookRoutes registers the webhook routes (MANAGE_BOARD + MANAGE_INTEGRATIONS; bots by the same bits, ADR-0109).
 func (s *Service) webhookRoutes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	h := func(pattern string, f func(http.ResponseWriter, *http.Request) error) {
 		mux.Handle(pattern, wrap(httpx.HandlerFunc(f)))

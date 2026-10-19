@@ -672,6 +672,7 @@ var botAudited = map[string]bool{
 	"POST /api/workspaces/{id}/integrations/gptunnel":                     true,
 	"DELETE /api/workspaces/{id}/integrations/gptunnel":                   true,
 	"PUT /api/workspaces/{id}/sip":                                        true,
+	"POST /api/workspaces/{id}/sip/test":                                  true, // a real call billed to the workspace
 	"POST /api/workspaces/{id}/backgrounds":                               true,
 	"PATCH /api/workspaces/{id}/backgrounds/{bgId}":                       true,
 	"DELETE /api/workspaces/{id}/backgrounds/{bgId}":                      true,
