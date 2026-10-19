@@ -15,7 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/searchq"
 )
 
-// CanvasVector must stay the expression of canvas_items_search_idx (00103) over canvas_items w;
+// CanvasVector must stay the expression of canvas_items_search_idx (00104) over canvas_items w;
 // the sqlc query SearchCanvasItems (queries/canvas.sql) spells it out too.
 const CanvasVector = "(to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text))"
 

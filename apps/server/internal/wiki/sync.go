@@ -49,6 +49,7 @@ const (
 	closeIdle      = ysync.CloseIdle
 	closeRevoked   = ysync.CloseRevoked
 	closeNotFound  = ysync.CloseNotFound
+	closeCeiling   = ysync.CloseCeiling
 )
 
 var (

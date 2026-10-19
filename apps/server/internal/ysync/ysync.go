@@ -24,6 +24,12 @@
 // broadcast post is still relayed (through_seq 0, not stored) and the poster gets a
 // COMPACT_REQUEST to persist it with a newer through_seq.
 //
+// Hard ceiling: when the updates after the snapshot reach Config.CeilingUpdates (10 000) or
+// CeilingBytes (16 MiB) the server stops storing UPDATEs of the document (they are dropped, not
+// relayed) and sends COMPACT_REQUEST to every socket with WRITE; the first SNAPSHOT_POST that
+// absorbs enough of the updates lifts it. A socket that keeps sending for CeilingGrace (10 s) after
+// its first refused UPDATE is closed with 4012 (CloseCeiling).
+//
 // The client's first message is a text frame with its access token (like the gateway's
 // IDENTIFY) — a person's access token or a bot token. The server then sends one SNAPSHOT
 // (through_seq 0 and the empty Yjs update 0x00 0x00 for a document without one) and every
@@ -75,6 +81,7 @@ const (
 	CloseRate      = 4008 // too many frames, or > MaxConnsPerUser sockets on the document
 	CloseIdle      = 4009 // no pong
 	CloseRevoked   = 4010 // the session was revoked
+	CloseCeiling   = 4012 // kept sending UPDATEs past the document's ceiling without compacting it
 	CloseNotFound  = 4404 // no such document, or it is in the trash
 )
 
@@ -102,6 +109,9 @@ type Config struct {
 	CompactUpdates     int           // COMPACT_REQUEST when more updates follow the snapshot (500)
 	CompactBytes       int64         // … or more bytes (1 MiB)
 	CompactCooldown    time.Duration // at most one COMPACT_REQUEST per document per (10 s)
+	CeilingUpdates     int           // hard ceiling: updates stored after the snapshot (10 000)
+	CeilingBytes       int64         // … or their bytes (16 MiB): over it an UPDATE is refused (see conn.admitUpdate)
+	CeilingGrace       time.Duration // a socket still sending past the ceiling this long after its first refused UPDATE is closed 4012 (10 s)
 	CompactCheckEvery  time.Duration // the threshold query at most this often per document (2 s; < 0 = always)
 	VersionEvery       time.Duration // a version at most this often per document (the Backend's default if 0)
 	WriteTimeout       time.Duration // one frame to the client (10 s)
@@ -139,6 +149,13 @@ func (c Config) WithDefaults() Config {
 	if c.CompactBytes == 0 {
 		c.CompactBytes = 1 << 20
 	}
+	if c.CeilingUpdates == 0 {
+		c.CeilingUpdates = 10_000
+	}
+	if c.CeilingBytes == 0 {
+		c.CeilingBytes = 16 << 20
+	}
+	def(&c.CeilingGrace, 10*time.Second)
 	return c
 }
 

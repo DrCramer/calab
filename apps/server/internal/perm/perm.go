@@ -95,7 +95,7 @@ var RoleDefaults = map[Role]Bits{
 	RoleAdmin: Administrator,
 	// DiskView | DiskWrite (ADR-0094): migration 00088 gave them to the existing member roles;
 	// WikiView | WikiWrite (ADR-0096): migration 00090; CanvasView | CanvasWrite (ADR-0107):
-	// migration 00102.
+	// migration 00103.
 	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite | WikiView | WikiWrite | CanvasView | CanvasWrite,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
 	RoleGuest: Connect | Speak,

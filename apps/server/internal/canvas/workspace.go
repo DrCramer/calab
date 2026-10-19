@@ -15,7 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// MaxTrashDays bounds canvas_trash_days (the CHECK of migration 00102).
+// MaxTrashDays bounds canvas_trash_days (the CHECK of migration 00103).
 const MaxTrashDays = 3650
 
 // settings: GET /api/workspaces/{id}/canvas/settings (members).

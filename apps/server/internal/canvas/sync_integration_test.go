@@ -433,3 +433,113 @@ func (e *env) waitSnapshot(id string, through int64) {
 	}
 	e.t.Fatalf("snapshot through %d not stored", through)
 }
+
+// The hard ceiling of the updates after the snapshot (ysync Config.CeilingUpdates / CeilingBytes,
+// shared with the Wiki): at it an UPDATE is dropped (not stored, not relayed), every socket with
+// WRITE — not a view-only one — gets COMPACT_REQUEST once per cooldown, a snapshot lifts it, and a
+// socket that keeps sending past CeilingGrace is closed 4012.
+func TestCanvasSyncCeiling(t *testing.T) {
+	e := newEnv(t, ysync.Config{CeilingUpdates: 3, CeilingGrace: 400 * time.Millisecond, CompactCheckEvery: -1, SnapshotEvery: time.Microsecond})
+	ctx := context.Background()
+	p := e.create(e.alice, "", "Ceiling")
+	e.must(200, e.alice, "PUT", item(p.GetId())+"/permissions", &v1.UpdateCanvasPermissionsRequest{Entries: []*v1.CanvasPermissionEntry{
+		{TargetType: user, TargetId: e.bob.String(), Deny: uint64(perm.CanvasWrite)}}}, nil)
+	a, a2, ro := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
+	a.next(frameSnapshot)
+	a2.next(frameSnapshot)
+	ro.next(frameSnapshot)
+	count := func() int {
+		var n int
+		if err := e.d.Pool.QueryRow(ctx, `SELECT count(*) FROM canvas_updates WHERE canvas_id = $1`, p.GetId()).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for i := 1; i <= 3; i++ {
+		a.send(updateFrame(0, []byte{'u', byte(i)}))
+		a.next(frameUpdate)
+		a2.next(frameUpdate)
+		ro.next(frameUpdate)
+	}
+	// The 4th is over the ceiling: dropped, and both writers (not the view-only socket) are asked
+	// to compact.
+	a.send(updateFrame(0, []byte("u4")))
+	a.next(frameCompact)
+	a2.next(frameCompact)
+	ro.quiet(a2) // nothing of the 4th update, no COMPACT_REQUEST
+	if n := count(); n != 3 {
+		t.Fatalf("updates stored at the ceiling: %d", n)
+	}
+	// Within the cooldown no second request, and the update is still refused.
+	a.send(updateFrame(0, []byte("u5")))
+	a2.quiet(a)
+	ro.next(frameAwareness) // the probe reaches the view-only socket too
+	if n := count(); n != 3 {
+		t.Fatalf("updates stored at the ceiling: %d", n)
+	}
+	// Past the grace the socket that keeps sending is closed.
+	time.Sleep(500 * time.Millisecond)
+	a.send(updateFrame(0, []byte("u6")))
+	a.closed(ysync.CloseCeiling)
+	// A snapshot through 3 lifts the ceiling: the next update is stored under seq 4 and relayed.
+	a2.send(post(3, snapshotMeta{PlainText: "compacted"}, []byte("state")))
+	a2.send(updateFrame(0, []byte("u7")))
+	if f := a2.next(frameUpdate); frameSeq(f) != 4 || string(f[9:]) != "u7" {
+		t.Fatalf("update after the snapshot %x", f)
+	}
+	ro.next(frameUpdate)
+	if n := count(); n != 1 {
+		t.Fatalf("updates after the snapshot: %d", n)
+	}
+}
+
+// The byte ceiling: an update that would take the stored bytes past it is refused.
+func TestCanvasSyncCeilingBytes(t *testing.T) {
+	e := newEnv(t, ysync.Config{CeilingBytes: 10, CompactCheckEvery: -1})
+	p := e.create(e.alice, "", "Ceiling bytes")
+	a := e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	a.send(updateFrame(0, []byte("1234")))
+	a.next(frameUpdate)
+	a.send(updateFrame(0, []byte("1234")))
+	a.next(frameUpdate)
+	a.send(updateFrame(0, []byte("1234"))) // 12 > 10
+	a.next(frameCompact)
+	a.send(updateFrame(0, []byte("12"))) // 10 fits
+	if f := a.next(frameUpdate); frameSeq(f) != 3 {
+		t.Fatalf("update %x", f)
+	}
+}
+
+// The ceiling holds across instances: the count is the database's, and the COMPACT_REQUEST
+// reaches the writers on the other instance through Redis.
+func TestCanvasSyncCeilingAcrossInstances(t *testing.T) {
+	cfg := ysync.Config{CeilingUpdates: 2, CompactCheckEvery: -1}
+	e := newEnv(t, cfg)
+	p := e.create(e.alice, "", "Shared ceiling")
+	other := New(e.d, e.ev)
+	other.EnableSync(e.rc, fakeAuth{}, nil, cfg)
+	mux := http.NewServeMux()
+	other.Routes(mux, func(h http.Handler) http.Handler { return h })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	a := e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	b := e.dialToken(srv, e.bob.String(), p.GetId())
+	b.next(frameSnapshot)
+	a.send(updateFrame(0, []byte("x1")))
+	a.next(frameUpdate)
+	b.next(frameUpdate)
+	b.send(updateFrame(0, []byte("y1"))) // stored by the second instance
+	a.next(frameUpdate)
+	b.next(frameUpdate)
+	a.send(updateFrame(0, []byte("x2"))) // over the ceiling
+	a.next(frameCompact)
+	b.next(frameCompact)
+	b.send(updateFrame(0, []byte("y2")))
+	a.quiet(b)
+	var n int
+	if err := e.d.Pool.QueryRow(context.Background(), `SELECT count(*) FROM canvas_updates WHERE canvas_id = $1`, p.GetId()).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("updates stored: %d %v", n, err)
+	}
+}

@@ -48,6 +48,9 @@ type conn struct {
 
 	// Inbound budgets (reader goroutine only).
 	updates, awareness, snapshots bucket
+	// overSince is when this socket's first UPDATE was refused at the ceiling (zero: none since
+	// its last accepted one). Reader goroutine only.
+	overSince time.Time
 }
 
 // enqueue hands a frame to the writer without blocking. A full queue drops it: an awareness
@@ -397,6 +400,12 @@ func (c *conn) onUpdate(b []byte) bool {
 		c.close(CloseRate, "rate limited")
 		return false
 	}
+	switch c.admitUpdate(len(b) - headerSeq) {
+	case admitDrop:
+		return true
+	case admitClose:
+		return false
+	}
 	data := bytes.Clone(b[headerSeq:])
 	seq, err := db.GuardValue(c.ctx, c.h.db, func(q *sqlc.Queries) (int64, error) {
 		return c.h.b.AppendUpdate(c.ctx, q, c.doc, data, &c.id.UserID)
@@ -412,11 +421,50 @@ func (c *conn) onUpdate(b []byte) bool {
 		}
 		return false
 	}
+	c.h.noteStored(c.doc, len(data))
 	f := UpdateFrame(seq, data)
 	c.enqueue(f)
 	c.h.broadcast(c.ctx, c.doc, c, f)
 	c.maybeCompact()
 	return true
+}
+
+type admission int
+
+const (
+	admitStore admission = iota // below the ceiling: store it
+	admitDrop                   // at the ceiling: refused, the socket stays
+	admitClose                  // at the ceiling for CeilingGrace: the socket is closed 4012
+)
+
+// admitUpdate is the hard ceiling of the updates after the snapshot (Config.CeilingUpdates /
+// CeilingBytes). At it an UPDATE is neither stored nor relayed (the client still holds it and a
+// snapshot carries it), every socket with WRITE is asked to compact (COMPACT_REQUEST, at most
+// once per CompactCooldown per document across instances) and a socket still sending
+// CeilingGrace after its first refused UPDATE is closed 4012. The ceiling lifts by itself when a
+// snapshot removes enough updates (seen by the next database read of the room's count).
+func (c *conn) admitUpdate(size int) admission {
+	h := c.h
+	updates, total, err := h.docStats(c.ctx, c.doc)
+	if err != nil || (updates < int64(h.cfg.CeilingUpdates) && total+int64(size) <= h.cfg.CeilingBytes) {
+		// A failing count is not a reason to refuse: the append reports a database failure itself.
+		c.overSince = time.Time{}
+		return admitStore
+	}
+	now := time.Now()
+	if c.overSince.IsZero() {
+		c.overSince = now
+	} else if now.Sub(c.overSince) >= h.cfg.CeilingGrace {
+		c.close(CloseCeiling, "the document is over its update ceiling: compact it")
+		return admitClose
+	}
+	set, err := h.rc.Do(c.ctx, h.rc.B().Set().Key(redisx.Key(h.b.Name()+":ceiling:"+c.doc.String())).Value("1").Nx().
+		Px(h.cfg.CompactCooldown).Build()).AsBool()
+	if (err == nil || rueidis.IsRedisNil(err)) && set {
+		slog.Warn(h.b.Name()+" sync: update ceiling reached", "doc_id", c.doc, "updates", updates, "bytes", total, "user_id", c.id.UserID)
+		h.broadcast(c.ctx, c.doc, nil, []byte{FrameCompact})
+	}
+	return admitDrop
 }
 
 // maybeCompact asks the sender for a snapshot when the updates after the stored one exceed the
@@ -501,6 +549,9 @@ func (c *conn) onSnapshot(b []byte) bool {
 			c.close(CloseTryAgain, "try again")
 		}
 		return false
+	}
+	if res.Stored {
+		c.h.noteCompacted(c.doc)
 	}
 	switch {
 	case res.Stored && broadcast:
