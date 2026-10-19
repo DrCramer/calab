@@ -432,3 +432,37 @@ WITH RECURSIVE root AS (
     WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
 )
 UPDATE canvas_items w SET trashed_at = sqlc.arg('trashed_at')::timestamptz FROM sub WHERE w.id = sub.id;
+
+-- ---- search ----
+
+-- name: SearchCanvasItems :many
+-- Search candidates (ADR-0107 §6, the shape of SearchWikiPages): live canvases and folders of the
+-- given workspaces matching the full-text query (tsq: searchq.Query.TS, over
+-- canvas_items_search_idx; the expression is search.CanvasVector) or, by name, the words with
+-- typos or as substrings (words: searchq.Query.Text, phrase: searchq.Like(Query.Text), over
+-- canvas_items_name_trgm_idx). Ranked by greatest(ts_rank_cd, word_similarity) × freshness
+-- 1 / (1 + days / 30) of updated_at at now, then id; at most lim (the candidate cap). The access
+-- filter (perm.ComputeCanvasItemIn over CanvasItemPaths) and the keyset page are applied by the
+-- caller; the snippets come from CanvasSearchHeadlines.
+SELECT w.id, w.workspace_id, w.parent_id, w.kind, w.name, w.updated_at, w.updated_by,
+    ((greatest(
+        ts_rank_cd(to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text),
+                   to_tsquery('russian', sqlc.arg('tsq')::text) || to_tsquery('simple', sqlc.arg('tsq')::text)),
+        word_similarity(sqlc.arg('words')::text, w.name)))
+     * (1.0 / (1.0 + greatest(0, extract(epoch FROM (sqlc.arg('now')::timestamptz - w.updated_at)))::float8 / 2592000.0)))::float8 AS score
+FROM canvas_items w
+WHERE w.workspace_id = ANY(sqlc.arg('workspace_ids')::uuid[]) AND w.trashed_at IS NULL
+  AND ((to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text))
+          @@ (to_tsquery('russian', sqlc.arg('tsq')::text) || to_tsquery('simple', sqlc.arg('tsq')::text))
+       OR sqlc.arg('words')::text <% w.name
+       OR w.name ILIKE sqlc.arg('phrase')::text)
+ORDER BY score DESC, w.id DESC
+LIMIT sqlc.arg('lim');
+
+-- name: CanvasSearchHeadlines :many
+-- The highlighted fragments of a page of search hits: of the text on the canvas, else of the name
+-- (searchq.HeadlineOptions).
+SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.name),
+    to_tsquery('russian', sqlc.arg('tsq')::text) || to_tsquery('simple', sqlc.arg('tsq')::text),
+    sqlc.arg('options')::text)::text AS snippet
+FROM canvas_items w WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);

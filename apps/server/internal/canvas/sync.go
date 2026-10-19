@@ -214,7 +214,7 @@ func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Pos
 	last, err := q.LastCanvasVersion(ctx, p.Doc)
 	switch {
 	case db.IsNotFound(err):
-		if len(p.State) <= len(ysync.EmptyState) {
+		if bytes.Equal(p.State, ysync.EmptyState) {
 			return nil // an empty document is no history
 		}
 	case err != nil:
