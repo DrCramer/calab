@@ -188,7 +188,7 @@ function MoreMenu({ itemId }: { itemId: string }): ReactNode {
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="end" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="canvas-more-menu">
-          <ItemMenuEntries itemId={itemId} parts={DROP} hideOpen onRename={() => useCanvasUi.getState().setRenaming(itemId)} />
+          <ItemMenuEntries itemId={itemId} parts={DROP} hideOpen withExport onRename={() => useCanvasUi.getState().setRenaming(itemId)} />
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>

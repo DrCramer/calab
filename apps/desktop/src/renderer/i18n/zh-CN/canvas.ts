@@ -42,6 +42,8 @@ export const zhCanvas: DictShape<typeof ruCanvas> = {
   'canvas.move': '移动…',
   'canvas.access': '访问权限…',
   'canvas.versions': '版本历史',
+  'canvas.exportPng': '导出 PNG',
+  'canvas.exportPngVisible': '导出 PNG：仅可见区域',
   'canvas.toTrash': '移到回收站',
   'canvas.moreMenu': '更多',
   'canvas.share': '分享',

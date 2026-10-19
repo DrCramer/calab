@@ -42,6 +42,8 @@ export const enCanvas: DictShape<typeof ruCanvas> = {
   'canvas.move': 'Move…',
   'canvas.access': 'Access…',
   'canvas.versions': 'Version history',
+  'canvas.exportPng': 'Export PNG',
+  'canvas.exportPngVisible': 'Export PNG: visible area only',
   'canvas.toTrash': 'Move to trash',
   'canvas.moreMenu': 'More',
   'canvas.share': 'Share',

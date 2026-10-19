@@ -43,6 +43,8 @@ export const ruCanvas = {
   'canvas.move': 'Переместить…',
   'canvas.access': 'Доступ…',
   'canvas.versions': 'История версий',
+  'canvas.exportPng': 'Экспорт PNG',
+  'canvas.exportPngVisible': 'Экспорт PNG: только видимое',
   'canvas.toTrash': 'В корзину',
   'canvas.moreMenu': 'Ещё',
   'canvas.share': 'Поделиться',
