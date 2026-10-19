@@ -1490,6 +1490,7 @@ type TaskApprover struct {
 	RemindedAt   *time.Time
 	NotifyDueAt  *time.Time
 	NotifyReason string
+	OnBehalf     bool
 	RecordedBy   *uuid.UUID
 }
 

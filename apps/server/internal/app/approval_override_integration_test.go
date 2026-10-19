@@ -3,6 +3,7 @@
 package app_test
 
 import (
+	"context"
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -96,10 +97,10 @@ func TestApprovalManagerPowers(t *testing.T) {
 
 	// Approve on behalf of dave: stored with recorded_by, counted (2 of 3), journaled, notified.
 	got := voteFor(o, id, dave.id, 200, approve)
-	if a := approverOf(t, got, dave.id); a.GetState() != v1.ApproverState_APPROVER_STATE_APPROVED || a.GetRecordedBy() != o.id {
+	if a := approverOf(t, got, dave.id); a.GetState() != v1.ApproverState_APPROVER_STATE_APPROVED || a.GetRecordedBy() != o.id || !a.GetOnBehalf() {
 		t.Fatalf("on behalf: %v", a)
 	}
-	if a := approverOf(t, got, carol.id); a.GetRecordedBy() != "" {
+	if a := approverOf(t, got, carol.id); a.GetRecordedBy() != "" || a.GetOnBehalf() {
 		t.Fatalf("carol's own vote marked: %v", a)
 	}
 	if got.GetApprovalState() != v1.TaskApprovalState_TASK_APPROVAL_STATE_PENDING {
@@ -122,13 +123,13 @@ func TestApprovalManagerPowers(t *testing.T) {
 
 	// The approver withdraws it himself: pending, the mark gone.
 	got = voteTask(dave, id, 200, withdraw, "")
-	if a := approverOf(t, got, dave.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetRecordedBy() != "" {
+	if a := approverOf(t, got, dave.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetRecordedBy() != "" || a.GetOnBehalf() {
 		t.Fatalf("withdrawn by the approver: %v", a)
 	}
 	// Recorded again, then confirmed by the approver: his own vote now, the manager may not undo it.
 	voteFor(o, id, dave.id, 200, approve)
 	got = voteTask(dave, id, 200, approve, "")
-	if a := approverOf(t, got, dave.id); a.GetState() != v1.ApproverState_APPROVER_STATE_APPROVED || a.GetRecordedBy() != "" {
+	if a := approverOf(t, got, dave.id); a.GetState() != v1.ApproverState_APPROVER_STATE_APPROVED || a.GetRecordedBy() != "" || a.GetOnBehalf() {
 		t.Fatalf("confirmed by the approver: %v", a)
 	}
 	voteFor(o, id, dave.id, 409, withdraw)
@@ -160,7 +161,7 @@ func TestApprovalManagerPowers(t *testing.T) {
 	}
 	patchTask(t, bob, id, &v1.UpdateTaskRequest{StatusId: &doing}, 200)
 	got = voteFor(o, id, eve.id, 200, withdraw)
-	if a := approverOf(t, got, eve.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetRecordedBy() != "" ||
+	if a := approverOf(t, got, eve.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetRecordedBy() != "" || a.GetOnBehalf() ||
 		got.GetApprovalState() != v1.TaskApprovalState_TASK_APPROVAL_STATE_PENDING {
 		t.Fatalf("withdrawn by the manager: %v", got)
 	}
@@ -168,10 +169,50 @@ func TestApprovalManagerPowers(t *testing.T) {
 	voteFor(o, id, eve.id, 200, approve)
 	desc := "новое"
 	reset := patchTask(t, o, id, &v1.UpdateTaskRequest{Description: &desc}, 200)
-	if a := approverOf(t, reset, eve.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetRecordedBy() != "" {
+	if a := approverOf(t, reset, eve.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetRecordedBy() != "" || a.GetOnBehalf() {
 		t.Fatalf("reset: %v", a)
 	}
 	// COMPLETED is forward too: the override covers it.
 	patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &done}, 409)
 	patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &done, OverrideApproval: true}, 200)
+}
+
+// TestApprovalOnBehalfRecorderDeleted: a hard delete of the manager who recorded an approval
+// succeeds (recorded_by ON DELETE SET NULL) and the approval stays recorded on behalf — never
+// the approver's personal vote; the database refuses a mark on anything but an approval.
+func TestApprovalOnBehalfRecorderDeleted(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	mgr := register(t, invite(t, o, wid))
+	admin := v1.WorkspaceRole_WORKSPACE_ROLE_ADMIN
+	o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+mgr.id, &v1.UpdateMemberRequest{Role: &admin}, nil)
+	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Gone", Key: "GON"}, 201)
+	todo := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED)
+	task := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Акт", StatusId: todo, ApproverIds: []string{bob.id}}, 201)
+	id := task.GetId()
+	if a := approverOf(t, voteFor(mgr, id, bob.id, 200, approve), bob.id); a.GetRecordedBy() != mgr.id || !a.GetOnBehalf() {
+		t.Fatalf("recorded by the admin: %v", a)
+	}
+	ctx := context.Background()
+	if _, err := testDB.Pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, mgr.id); err != nil {
+		t.Fatalf("hard delete of the recorder: %v", err)
+	}
+	var got v1.TaskResponse
+	o.must(200, "GET", "/api/tasks/"+id, nil, &got)
+	if a := approverOf(t, got.GetTask(), bob.id); a.GetState() != v1.ApproverState_APPROVER_STATE_APPROVED || a.GetRecordedBy() != "" || !a.GetOnBehalf() {
+		t.Fatalf("after the recorder's deletion: %v", a)
+	}
+	// Still withdrawable on behalf by another manager; the approver's own vote stays personal.
+	if a := approverOf(t, voteFor(o, id, bob.id, 200, withdraw), bob.id); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetOnBehalf() {
+		t.Fatalf("withdrawn after the deletion: %v", a)
+	}
+	// The schema: a mark only on an approval, an author only with the mark.
+	for _, q := range []string{
+		`UPDATE task_approvers SET on_behalf = true WHERE task_id = $1 AND $2::uuid IS NOT NULL`,
+		`UPDATE task_approvers SET state = 'approved', recorded_by = (SELECT owner_id FROM workspaces WHERE id = $2) WHERE task_id = $1`,
+	} {
+		if _, err := testDB.Pool.Exec(ctx, q, id, wid); err == nil {
+			t.Fatalf("accepted: %s", q)
+		}
+	}
 }

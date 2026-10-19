@@ -183,7 +183,7 @@ export function ApprovalsBody({
         <span className="min-w-0 flex-1 truncate text-control font-semibold">{t('boards.approvalBand', { n: Math.min(approved, quorum), m: quorum })}</span>
         <span className="flex shrink-0 -space-x-1.5">
           {yes.map((a) => (
-            <BandAvatar key={a.userId} workspaceId={task.workspaceId} userId={a.userId} recordedBy={a.recordedBy} action={actionOf(a)} onBehalf={onBehalf} />
+            <BandAvatar key={a.userId} workspaceId={task.workspaceId} userId={a.userId} proxied={a.onBehalf} recordedBy={a.recordedBy} action={actionOf(a)} onBehalf={onBehalf} />
           ))}
         </span>
       </div>
@@ -196,6 +196,7 @@ export function ApprovalsBody({
       userId={a.userId}
       state={a.state}
       comment={state === 'rejected' ? '' : a.comment}
+      proxied={a.onBehalf}
       recordedBy={a.recordedBy}
       action={actionOf(a)}
       onBehalf={onBehalf}
@@ -229,10 +230,25 @@ export function ApprovalsBody({
 
 type OnBehalf = ((userId: string, action: 'approve' | 'withdraw') => void) | undefined;
 
-const BandAvatar = memo(function BandAvatar({ workspaceId, userId, recordedBy, action, onBehalf }: { workspaceId: string; userId: string; recordedBy: string; action: OnBehalfAction; onBehalf: OnBehalf }): ReactNode {
+const BandAvatar = memo(function BandAvatar({
+  workspaceId,
+  userId,
+  proxied,
+  recordedBy,
+  action,
+  onBehalf,
+}: {
+  workspaceId: string;
+  userId: string;
+  proxied: boolean;
+  recordedBy: string;
+  action: OnBehalfAction;
+  onBehalf: OnBehalf;
+}): ReactNode {
   const name = useMemberName(workspaceId, userId);
-  const actor = useMemberName(workspaceId, recordedBy || userId);
-  const tip = recordedBy ? t('boards.apvState.approvedFor', { name, actor }) : t('boards.apvState.approved', { name });
+  // '' (the recorder's account is gone) resolves to «unknown user», never to the approver.
+  const actor = useMemberName(workspaceId, recordedBy);
+  const tip = proxied ? t('boards.apvState.approvedFor', { name, actor }) : t('boards.apvState.approved', { name });
   const avatar = <MemberAvatar workspaceId={workspaceId} userId={userId} size={22} />;
   // ADR-0108: an approval a manager recorded can be withdrawn from the band too.
   if (action && onBehalf)
@@ -292,6 +308,7 @@ const ApproverRow = memo(function ApproverRow({
   userId,
   state,
   comment,
+  proxied: onBehalfVote,
   recordedBy,
   action,
   onBehalf,
@@ -301,15 +318,17 @@ const ApproverRow = memo(function ApproverRow({
   userId: string;
   state: ApproverState;
   comment: string;
-  /** ADR-0108: the manager who recorded this approval for the approver ('' = their own vote). */
+  /** ADR-0108: a manager recorded this approval for the approver (not their own vote). */
+  proxied: boolean;
+  /** ADR-0108: that manager ('' when their account is gone). */
   recordedBy: string;
   action: OnBehalfAction;
   onBehalf: OnBehalf;
   onRemove: ((userId: string) => void) | undefined;
 }): ReactNode {
   const name = useMemberName(workspaceId, userId);
-  const actor = useMemberName(workspaceId, recordedBy || userId);
-  const proxied = state === ApproverState.APPROVED && !!recordedBy;
+  const actor = useMemberName(workspaceId, recordedBy);
+  const proxied = state === ApproverState.APPROVED && onBehalfVote;
   const tip = proxied
     ? t('boards.apvState.approvedFor', { name, actor })
     : state === ApproverState.APPROVED

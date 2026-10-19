@@ -152,10 +152,10 @@ export function approvalControls(t: Pick<Task, 'approvers' | 'archivedAt'>, canE
  */
 export type OnBehalfAction = 'approve' | 'withdraw' | null;
 
-export function onBehalfAction(a: Pick<Task['approvers'][number], 'userId' | 'state' | 'recordedBy'>, me: string, forOthers: boolean): OnBehalfAction {
+export function onBehalfAction(a: Pick<Task['approvers'][number], 'userId' | 'state' | 'onBehalf'>, me: string, forOthers: boolean): OnBehalfAction {
   if (!forOthers || a.userId === me) return null;
   if (a.state === ApproverState.PENDING) return 'approve';
-  if (a.state === ApproverState.APPROVED && a.recordedBy) return 'withdraw';
+  if (a.state === ApproverState.APPROVED && a.onBehalf) return 'withdraw';
   return null;
 }
 

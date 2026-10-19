@@ -196,7 +196,7 @@ func taskTally(ctx context.Context, q *sqlc.Queries, t taskRow) (Tally, error) {
 func approverProto(a sqlc.TaskApprover) *v1.TaskApprover {
 	return &v1.TaskApprover{UserId: a.UserID.String(), State: approverStates[a.State], Comment: a.Comment,
 		DecidedAt: tsp(a.DecidedAt), AddedBy: idp(a.AddedBy), AddedAt: timestamppb.New(a.AddedAt),
-		RecordedBy: idp(a.RecordedBy)}
+		RecordedBy: idp(a.RecordedBy), OnBehalf: a.OnBehalf}
 }
 
 // mayManageApprovals is the power of ADR-0108 (a status override, a vote on behalf): a human
@@ -597,17 +597,17 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 			// A manager never changes the approver's own decision: approve over a pending vote,
 			// withdraw only an approval recorded on behalf.
 			switch {
-			case state == voteApproved && mine.State == voteApproved && mine.RecordedBy != nil,
+			case state == voteApproved && mine.State == voteApproved && mine.OnBehalf,
 				state == votePending && mine.State == votePending:
 				return nil
 			case state == voteApproved && mine.State != votePending,
-				state == votePending && mine.RecordedBy == nil:
+				state == votePending && !mine.OnBehalf:
 				return httpx.Conflict("the approver decided themselves").WithDetails(ReasonApproverDecided, 0, 0)
 			}
 			if state == voteApproved {
 				recordedBy = &me
 			}
-		} else if mine.State == state && mine.Comment == comment && mine.RecordedBy == nil {
+		} else if mine.State == state && mine.Comment == comment && !mine.OnBehalf {
 			return nil
 		}
 		// APPROVALS off (ADR-0058 §3): no new decisions; withdrawing one stays allowed.
@@ -615,7 +615,7 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		before := TallyOf(voteStates(aps), int(t.ApprovalRequired))
-		if err := q.SetApproverVote(r.Context(), sqlc.SetApproverVoteParams{State: state, Comment: comment, RecordedBy: recordedBy,
+		if err := q.SetApproverVote(r.Context(), sqlc.SetApproverVoteParams{State: state, Comment: comment, OnBehalf: recordedBy != nil, RecordedBy: recordedBy,
 			TaskID: t.ID, UserID: target}); err != nil {
 			return err
 		}
@@ -633,8 +633,8 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 			outcome = voteApproved
 		}
 		// The entry's actor is who acted; user_id is whose vote changed. on_behalf marks a vote
-		// a manager recorded or withdrew for the approver (ADR-0108), recorded_by in before an
-		// approval that was so recorded.
+		// a manager recorded or withdrew for the approver (ADR-0108); before.on_behalf (and
+		// recorded_by, unless that account is gone) an approval that was so recorded.
 		entry := map[string]any{"user_id": target.String(), "state": state, "comment": comment}
 		if outcome != "" {
 			entry["approval_state"] = outcome
@@ -643,8 +643,11 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 			entry["on_behalf"] = true
 		}
 		prev := map[string]any{"user_id": target.String(), "state": mine.State, "comment": mine.Comment}
-		if mine.RecordedBy != nil {
-			prev["recorded_by"] = mine.RecordedBy.String()
+		if mine.OnBehalf {
+			prev["on_behalf"] = true
+			if mine.RecordedBy != nil {
+				prev["recorded_by"] = mine.RecordedBy.String()
+			}
 		}
 		if err := c.record(r.Context(), q, t, me, "approval", prev, entry); err != nil {
 			return err

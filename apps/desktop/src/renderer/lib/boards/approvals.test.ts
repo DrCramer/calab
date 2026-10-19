@@ -116,10 +116,12 @@ describe('ADR-0108: a board manager over the gate and the votes', () => {
   });
 
   it('onBehalfAction: approve a pending vote, withdraw only one recorded for them, never a personal decision or my own row', () => {
-    const rec = (userId: string, state: ApproverState, recordedBy = '') => create(TaskApproverSchema, { userId, state, recordedBy });
+    const rec = (userId: string, state: ApproverState, recordedBy = '', onBehalf = !!recordedBy) => create(TaskApproverSchema, { userId, state, recordedBy, onBehalf });
     expect(onBehalfAction(rec('a', ApproverState.PENDING), 'me', true)).toBe('approve');
     expect(onBehalfAction(rec('a', ApproverState.APPROVED, 'boss'), 'me', true)).toBe('withdraw');
     expect(onBehalfAction(rec('a', ApproverState.APPROVED), 'me', true)).toBeNull();
+    // The recorder's account is gone: still recorded on behalf, still withdrawable.
+    expect(onBehalfAction(rec('a', ApproverState.APPROVED, '', true), 'me', true)).toBe('withdraw');
     expect(onBehalfAction(rec('a', ApproverState.REJECTED), 'me', true)).toBeNull();
     expect(onBehalfAction(rec('me', ApproverState.PENDING), 'me', true)).toBeNull();
     expect(onBehalfAction(rec('a', ApproverState.PENDING), 'me', false)).toBeNull();

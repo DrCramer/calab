@@ -2426,10 +2426,14 @@ type TaskApprover struct {
 	DecidedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"` // unset while PENDING
 	AddedBy   string                 `protobuf:"bytes,5,opt,name=added_by,json=addedBy,proto3" json:"added_by,omitempty"`
 	AddedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=added_at,json=addedAt,proto3" json:"added_at,omitempty"`
-	// ADR-0108: a board manager (MANAGE_BOARD) recorded this approval on the approver's behalf;
-	// empty = the approver's own vote. Only with state APPROVED; cleared by any later change of
-	// the vote (the approver's own vote, a withdrawal, a reset).
-	RecordedBy    string `protobuf:"bytes,7,opt,name=recorded_by,json=recordedBy,proto3" json:"recorded_by,omitempty"`
+	// ADR-0108: the board manager (MANAGE_BOARD) who recorded this approval on the approver's
+	// behalf; empty for the approver's own vote, and when that manager's account was deleted
+	// (on_behalf stays true). Cleared with on_behalf.
+	RecordedBy string `protobuf:"bytes,7,opt,name=recorded_by,json=recordedBy,proto3" json:"recorded_by,omitempty"`
+	// ADR-0108: this approval was recorded on the approver's behalf, not cast by them. Only with
+	// state APPROVED; cleared by any later change of the vote (the approver's own vote, a
+	// withdrawal, a reset).
+	OnBehalf      bool `protobuf:"varint,8,opt,name=on_behalf,json=onBehalf,proto3" json:"on_behalf,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2511,6 +2515,13 @@ func (x *TaskApprover) GetRecordedBy() string {
 		return x.RecordedBy
 	}
 	return ""
+}
+
+func (x *TaskApprover) GetOnBehalf() bool {
+	if x != nil {
+		return x.OnBehalf
+	}
+	return false
 }
 
 type TaskRelation struct {
@@ -3021,7 +3032,7 @@ func (x *Task) GetWatcherIds() []string {
 // "rejected": n}. A vote or a change of approvers that decides the task also carries
 // after.approval_state "approved" | "rejected" (ADR-0060). ADR-0108: an "approval" a board
 // manager recorded or withdrew for the approver (user_id) has actor = the manager and
-// after.on_behalf true; before.recorded_by names who recorded the approval it replaces;
+// after.on_behalf true; before.on_behalf (and recorded_by, its author) marks a replaced one;
 // "approval_override" — a status moved forward past an incomplete approval: after
 // {"from_status_id", "status_id", "approved", "quorum", "rejected"} (the "status" entry is
 // written as well). "git" (ADR-0060 §4): after {"event":
@@ -8797,7 +8808,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x11TaskAssigneeInput\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +
-	"\x04note\x18\x03 \x01(\tR\x04note\"\x9f\x02\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"\xbc\x02\n" +
 	"\fTaskApprover\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12.\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x18.calaba.v1.ApproverStateR\x05state\x12\x18\n" +
@@ -8807,7 +8818,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\badded_by\x18\x05 \x01(\tR\aaddedBy\x125\n" +
 	"\badded_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aaddedAt\x12\x1f\n" +
 	"\vrecorded_by\x18\a \x01(\tR\n" +
-	"recordedBy\"w\n" +
+	"recordedBy\x12\x1b\n" +
+	"\ton_behalf\x18\b \x01(\bR\bonBehalf\"w\n" +
 	"\fTaskRelation\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
 	"\n" +

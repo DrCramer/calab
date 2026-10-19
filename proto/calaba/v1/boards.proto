@@ -310,10 +310,14 @@ message TaskApprover {
   google.protobuf.Timestamp decided_at = 4; // unset while PENDING
   string added_by = 5;
   google.protobuf.Timestamp added_at = 6;
-  // ADR-0108: a board manager (MANAGE_BOARD) recorded this approval on the approver's behalf;
-  // empty = the approver's own vote. Only with state APPROVED; cleared by any later change of
-  // the vote (the approver's own vote, a withdrawal, a reset).
+  // ADR-0108: the board manager (MANAGE_BOARD) who recorded this approval on the approver's
+  // behalf; empty for the approver's own vote, and when that manager's account was deleted
+  // (on_behalf stays true). Cleared with on_behalf.
   string recorded_by = 7;
+  // ADR-0108: this approval was recorded on the approver's behalf, not cast by them. Only with
+  // state APPROVED; cleared by any later change of the vote (the approver's own vote, a
+  // withdrawal, a reset).
+  bool on_behalf = 8;
 }
 
 message TaskRelation {
@@ -408,7 +412,7 @@ message Task {
 // "rejected": n}. A vote or a change of approvers that decides the task also carries
 // after.approval_state "approved" | "rejected" (ADR-0060). ADR-0108: an "approval" a board
 // manager recorded or withdrew for the approver (user_id) has actor = the manager and
-// after.on_behalf true; before.recorded_by names who recorded the approval it replaces;
+// after.on_behalf true; before.on_behalf (and recorded_by, its author) marks a replaced one;
 // "approval_override" — a status moved forward past an incomplete approval: after
 // {"from_status_id", "status_id", "approved", "quorum", "rejected"} (the "status" entry is
 // written as well). "git" (ADR-0060 §4): after {"event":
