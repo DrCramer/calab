@@ -1,6 +1,6 @@
 /** Static tables of the Canvas screen: tools, hotkeys, swatches (ADR-0107 §5). No React. */
 import type { Arrow, RouteKind, ShapeKind } from '../../../lib/canvas/types';
-import type { Tool } from '../engine';
+import { HUE_IDS, INK_EXTRA_IDS, STICKY_IDS, type Tool } from '../engine';
 
 export interface ToolDef {
   tool: Tool;
@@ -37,10 +37,11 @@ export const ARROW_DEFS: readonly { arrow: Arrow; label: `canvasBoard.arrow.${Ar
 ];
 
 /** Palette token names (engine/palette.ts); the stored value is the token, the theme decides the look. */
-export const STICKY_COLORS: readonly string[] = ['yellow', 'green', 'blue', 'pink', 'orange', 'purple', 'gray'];
-export const INK_COLORS: readonly string[] = ['text', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
-export const STROKE_COLORS: readonly string[] = ['stroke', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
-export const FILL_COLORS: readonly string[] = ['none', 'white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
+export const STICKY_COLORS: readonly string[] = STICKY_IDS;
+/** Text / outline colors: the ink first, then the hues (no 'white': it would vanish on a light canvas). */
+export const INK_COLORS: readonly string[] = ['text', ...HUE_IDS, ...INK_EXTRA_IDS];
+export const STROKE_COLORS: readonly string[] = ['stroke', ...HUE_IDS, ...INK_EXTRA_IDS];
+export const FILL_COLORS: readonly string[] = ['none', 'white', ...HUE_IDS];
 
 export const TEXT_SIZES: readonly { size: number; label: `canvasBoard.size.${'s' | 'm' | 'l' | 'xl'}`; glyph: string }[] = [
   { size: 14, label: 'canvasBoard.size.s', glyph: 'S' },
