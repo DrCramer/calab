@@ -14,6 +14,8 @@ import * as ContextMenu from '@radix-ui/react-context-menu';
 import { CANVAS_BITS } from '@calaba/protocol';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from 'react';
 import { t, useLocale } from '../../../i18n';
+import { canvasDocHandle, setCanvasDocHandle } from '../../../lib/canvas/docHandle';
+import { restoreCanvasState } from '../../../lib/canvas/restore';
 import { toast } from '../../../stores/toasts';
 import type { CanvasPalette } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
@@ -74,9 +76,9 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   const deps = useMemo(() => depsProp ?? appDeps(workspaceId), [depsProp, workspaceId]);
 
   // Values the long-lived session reads at call time, so changing them does not reopen the socket.
-  const live = useRef({ name: name ?? '', canWrite, deps, palette, onFatal });
+  const live = useRef({ name: name ?? '', canWrite, deps, palette, onFatal, gone: false });
   useLayoutEffect(() => {
-    live.current = { name: name ?? '', canWrite, deps, palette, onFatal };
+    live.current = { name: name ?? '', canWrite, deps, palette, onFatal, gone };
   });
 
   const focusCanvas = useCallback((): void => {
@@ -183,6 +185,22 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   }, [session]);
   useImperativeHandle(ref, () => handle as CanvasViewHandle, [handle]);
   useEffect(() => (handle ? registerCanvasViewHandle(canvasId, handle) : undefined), [canvasId, handle]);
+
+  // «Восстановить версию» (history dialog, main chunk) reaches the live document through this handle. The
+  // canvas is never in the trash while this view is mounted (the section shows a banner instead).
+  useEffect(() => {
+    if (!session) return undefined;
+    const h = {
+      canvasId,
+      restore: (state: Uint8Array): boolean => restoreCanvasState(session.engine.doc, state),
+      writable: (): boolean => live.current.canWrite && !live.current.gone && session.sync.getStatus() === 'synced',
+    };
+    setCanvasDocHandle(h);
+    return () => {
+      // Another canvas may have registered its own already (switch): only clear what is ours.
+      if (canvasDocHandle(canvasId) === h) setCanvasDocHandle(null);
+    };
+  }, [session, canvasId]);
 
   // Right click: select what is under the pointer (or clear), then let the menu open for that.
   const onContextMenuCapture = (e: ReactMouseEvent): void => {
