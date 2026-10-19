@@ -13,7 +13,7 @@ import { isBusyKey, useCalendarDays, type DayData } from './calendarData';
 import { settleScroll, useCloseCardOutside, useDayKeys, useDragController } from './dayControls';
 import { useDayDrag } from './dragState';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
-import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine } from './gridParts';
+import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, WEEK_MIN_BLOCK_PX } from './gridParts';
 import { useToday } from './MiniCalendar';
 
 /*
@@ -276,11 +276,11 @@ const WeekColumn = memo(function WeekColumn({
     <div className={cx('relative h-full min-w-0 border-l border-line', isToday && TODAY_TINT)} data-grid-bg data-week-day={day} data-testid="week-column">
       {placed.map((p) =>
         isBusyKey(p.key) ? (
-          <BusyBlock key={p.key} workspaceId={workspaceId} busyKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} />
+          <BusyBlock key={p.key} workspaceId={workspaceId} busyKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} minPx={WEEK_MIN_BLOCK_PX} />
         ) : isExternalKey(p.key) ? (
-          <ExternalBlock key={p.key} workspaceId={workspaceId} day={day} extKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} />
+          <ExternalBlock key={p.key} workspaceId={workspaceId} day={day} extKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} minPx={WEEK_MIN_BLOCK_PX} />
         ) : (
-          <EventBlock key={p.key} occKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} onDown={onDown} />
+          <EventBlock key={p.key} occKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} onDown={onDown} minPx={WEEK_MIN_BLOCK_PX} />
         ),
       )}
       {isToday ? <NowLine day={day} /> : null}

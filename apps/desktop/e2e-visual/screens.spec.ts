@@ -3748,8 +3748,8 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
  * Week view (bug board #6, Yandex Calendar): «День / Неделя» in the header, Monday-first week of
  * 12–18 January with today (Thursday 15) in an accent circle and a shaded column, the «now» line in
  * it, the daily stand-up in every column from Tuesday, «Планёрка» and «Ревью дизайна» side by side,
- * «Релиз 1.0» in the «весь день» band, the ISO week number and the UTC offset; the selected
- * meeting's card on the right.
+ * «Релиз 1.0» in the «весь день» band, the ISO week number and the UTC offset (at 960 the narrow
+ * columns cascade the overlapping pair). Then a block opens its card; ‹ › step a week.
  */
 test('calendar-week', async ({ open, win, mock, shot }) => {
   await open();
@@ -3766,10 +3766,11 @@ test('calendar-week', async ({ open, win, mock, shot }) => {
   await expect(week.getByTestId('now-line')).toBeVisible();
   await expect(week.getByTestId('event-block').filter({ hasText: 'Стендап' })).toHaveCount(6);
   await expect(week.getByTestId('allday-row')).toContainText('Релиз 1.0');
-  await week.getByTestId('event-block').filter({ hasText: 'Планёрка' }).click();
-  await expect(win.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Планёрка');
   await checkpoint(shot, 'calendar-week');
-  // ‹ › step a week; the choice is kept for the next start (calaba-ui).
+  await week.getByTestId('event-block').filter({ hasText: 'Ревью дизайна' }).click();
+  await expect(win.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Ревью дизайна');
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('event-panel')).toHaveCount(0);
   await win.getByTestId('cal-next').click();
   await expect(week.getByTestId('cal-title')).toHaveText(/январь 2026/i);
   await expect(week.getByTestId('week-today')).toHaveCount(0);

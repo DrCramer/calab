@@ -19,7 +19,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
 import { parseBusyKey } from './calendarData';
 import { useDayDrag } from './dragState';
-import { PX_PER_MIN } from './gridParts';
+import { PX_PER_MIN, blockBox } from './gridParts';
 
 /*
  * The blocks of the calendar grid shared by the day and the week view (ADR-0038 §7): a meeting
@@ -53,6 +53,7 @@ export const EventBlock = memo(function EventBlock({
   col,
   cols,
   onDown,
+  minPx,
 }: {
   occKey: string;
   top: number;
@@ -60,6 +61,8 @@ export const EventBlock = memo(function EventBlock({
   col: number;
   cols: number;
   onDown: BlockDown;
+  /** The week view: the narrowest block (gridParts.blockBox). */
+  minPx?: number;
 }): ReactNode {
   const ev = useCalendar((s) => s.occ[occKey]);
   const roomName = useRooms((s) => (ev?.roomId ? (s.byId[ev.roomId]?.name ?? '') : ''));
@@ -94,14 +97,11 @@ export const EventBlock = memo(function EventBlock({
           'absolute z-[1] overflow-hidden rounded-[6px] border-l-[3px] px-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent',
           short ? 'py-0' : 'py-1',
           blockTone(status, selected),
+          // Cascaded over a neighbour (a narrow week column): a hairline of the page keeps them apart.
+          !!minPx && cols > 1 && 'shadow-[0_0_0_1px_var(--color-bg)]',
           lifted && 'opacity-40',
         )}
-        style={{
-          top: top * PX_PER_MIN + 1,
-          height: Math.max(18, px - 2),
-          left: `calc(${(col / cols) * 100}% + 2px)`,
-          width: `calc(${100 / cols}% - 4px)`,
-        }}
+        style={blockBox(top, height, col, cols, minPx)}
       >
         {short ? (
           <p className="truncate text-caption leading-4">
@@ -279,7 +279,23 @@ const busyStyle = (external: boolean): CSSProperties =>
     ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--color-label-tertiary) 35%, transparent) 6px 8px)' }
     : {};
 
-export const BusyBlock = memo(function BusyBlock({ workspaceId, busyKey, top, height, col, cols }: { workspaceId: string; busyKey: string; top: number; height: number; col: number; cols: number }): ReactNode {
+export const BusyBlock = memo(function BusyBlock({
+  workspaceId,
+  busyKey,
+  top,
+  height,
+  col,
+  cols,
+  minPx,
+}: {
+  workspaceId: string;
+  busyKey: string;
+  top: number;
+  height: number;
+  col: number;
+  cols: number;
+  minPx?: number;
+}): ReactNode {
   const { text, external } = useBusyLabel(workspaceId, busyKey);
   const { start, end } = parseBusyKey(busyKey);
   const px = height * PX_PER_MIN;
@@ -290,13 +306,7 @@ export const BusyBlock = memo(function BusyBlock({ workspaceId, busyKey, top, he
       title={text}
       data-testid="busy-block"
       className="pointer-events-none absolute z-[1] overflow-hidden rounded-[6px] border-l-[3px] border-[var(--color-label-tertiary)] bg-[var(--color-fill)] px-1.5 text-caption text-muted"
-      style={{
-        top: top * PX_PER_MIN + 1,
-        height: Math.max(18, px - 2),
-        left: `calc(${(col / cols) * 100}% + 2px)`,
-        width: `calc(${100 / cols}% - 4px)`,
-        ...busyStyle(external),
-      }}
+      style={{ ...blockBox(top, height, col, cols, minPx), ...busyStyle(external) }}
     >
       <p className={cx('truncate font-medium', px < 38 ? 'leading-4' : 'pt-1')}>{text}</p>
     </div>
