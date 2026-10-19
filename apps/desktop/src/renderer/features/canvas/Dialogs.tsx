@@ -34,7 +34,7 @@ function DialogBody({ dialog, workspaceId, onClose }: { dialog: CanvasDialog; wo
     case 'share':
       return <ShareDialog itemId={dialog.itemId} onClose={onClose} />;
     case 'versions':
-      return <VersionsDialog workspaceId={workspaceId} canvasId={dialog.itemId} onClose={onClose} />;
+      return <VersionsDialog key={dialog.itemId} workspaceId={workspaceId} canvasId={dialog.itemId} onClose={onClose} />;
     case 'move':
       return <MoveDialog workspaceId={workspaceId} itemId={dialog.itemId} onClose={onClose} />;
   }
@@ -152,13 +152,10 @@ export function VersionsDialog({ workspaceId, canvasId, onClose }: { workspaceId
     [canvasId],
   );
   useEffect(() => {
-    setList([]);
-    setCursor('');
-    setPicked(null);
-    setLoading(true);
+    const token = epoch;
     fetchPage('');
     return () => {
-      epoch.current++;
+      token.current++;
     };
   }, [fetchPage]);
   const version = list.find((v) => v.id === picked) ?? null;

@@ -31,7 +31,10 @@ afterEach(() => {
   root = host = null;
 });
 
-const flush = (): Promise<void> => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
+const flush = (): Promise<void> =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
 const rows = (): number => document.querySelectorAll('[data-testid="canvas-version-row"]').length;
 
 function mount(canvasId: string, strict: boolean): void {
@@ -70,7 +73,9 @@ describe('«История версий» loading', () => {
     expect(rows()).toBe(2);
     const more = [...document.querySelectorAll('button')].find((b) => b.textContent && b.className.includes('text-accent-text'));
     expect(more).toBeTruthy();
-    act(() => more?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => {
+      more?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     await flush();
     expect(versions).toHaveBeenLastCalledWith('c', 'cur');
     expect(rows()).toBe(3); // v3, v2 + v1 (v2 came again)

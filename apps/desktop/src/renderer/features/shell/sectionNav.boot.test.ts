@@ -49,7 +49,7 @@ describe('section memory after a reload (ADR-0074 §1)', () => {
   it('survives the storage round trip and opens the remembered section', async () => {
     openSection('canvas');
     await settle();
-    expect(JSON.parse(disk.get('calaba-sections') ?? '{}').state.of).toEqual({ a: 'canvas' });
+    expect((JSON.parse(disk.get('calaba-sections') ?? '{}') as { state: { of: unknown } }).state.of).toEqual({ a: 'canvas' });
     // the page is reloaded: the storage is what is left, every mode flag starts off
     const saved = disk.get('calaba-sections') ?? '';
     off();

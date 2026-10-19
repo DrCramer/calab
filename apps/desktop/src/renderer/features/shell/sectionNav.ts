@@ -57,7 +57,7 @@ export function showMode(mode: Mode): void {
 }
 
 /** The phone layout (the web build at ≤ 768 px) — lib/mobile.ts without the platform import (unit tests run in Node). */
-const onPhone = (): boolean => typeof window !== 'undefined' && typeof document !== 'undefined' && document.documentElement?.classList.contains('web') === true && window.matchMedia(MOBILE_QUERY).matches;
+const onPhone = (): boolean => typeof window !== 'undefined' && typeof document !== 'undefined' && (document.documentElement as HTMLElement | undefined)?.classList.contains('web') === true && window.matchMedia(MOBILE_QUERY).matches;
 
 const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards', disk: 'disk', wiki: 'wiki', canvas: 'canvas' };
 
