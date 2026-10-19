@@ -75,6 +75,8 @@ import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsRead
 import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
 import { useDisk } from '../stores/disk';
 import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
+import { onCanvasItemRemove, onCanvasItemUpsert } from './canvas';
+import { useCanvas } from '../stores/canvas';
 import { useWiki } from '../stores/wiki';
 import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
@@ -332,6 +334,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'wikiPageRemove':
       onWikiPageRemove(e.value);
       return;
+    // Canvas (ADR-0107 §6): the tree's structure follows; the content only through /sync.
+    case 'canvasItemUpsert':
+      onCanvasItemUpsert(e.value);
+      return;
+    case 'canvasItemRemove':
+      onCanvasItemRemove(e.value);
+      return;
     case 'billingUpdate':
       onBillingUpdate(e.value.workspaceId, e.value.revision);
       return;
@@ -348,6 +357,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       dropWorkspaceBoards(id);
       useDisk.getState().dropWorkspace(id);
       useWiki.getState().dropWorkspace(id);
+      useCanvas.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();

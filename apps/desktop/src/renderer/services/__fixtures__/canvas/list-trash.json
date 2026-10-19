@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "0190a0b0-0000-7000-8000-000000000015",
+      "workspaceId": "0190a0b0-0000-7000-8000-000000000001",
+      "kind": "CANVAS_ITEM_KIND_FOLDER",
+      "name": "Архив",
+      "ownerId": "0190a0b0-0000-7000-8000-0000000000a1",
+      "updatedAt": "2026-10-19T08:00:00Z",
+      "myBits": "15393162788864",
+      "createdAt": "2026-10-18T09:00:00Z",
+      "trashedAt": "2026-10-19T08:00:00Z",
+      "trashedBy": "0190a0b0-0000-7000-8000-0000000000a1",
+      "trashedRoot": true,
+      "hasChildren": true
+    }
+  ]
+}
