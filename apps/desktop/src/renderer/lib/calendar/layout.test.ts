@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutDay } from './layout';
+import { layoutAllDay, layoutDay } from './layout';
 
 const H = 3_600_000;
 const M = 60_000;
@@ -46,5 +46,37 @@ describe('day grid layout (overlaps)', () => {
     expect(r['b']).toMatchObject({ top: 1380, height: 60 });
     // 23:50–24:00 is 10 minutes: drawn 20 minutes tall, so it moves up to stay inside the grid.
     expect(r['c']).toMatchObject({ top: 1420, height: 20 });
+  });
+
+  it('the week view lays out every day with the same function (columns are independent)', () => {
+    const day2 = DAY + 24 * H;
+    const r = byKey(layoutDay([{ key: 'x', start: day2 + 600 * M, end: day2 + 660 * M }], day2, day2 + 24 * H));
+    expect(r['x']).toMatchObject({ top: 600, height: 60, col: 0, cols: 1 });
+  });
+});
+
+describe('week «весь день» band', () => {
+  it('a multi-day item is one bar over its days', () => {
+    expect(layoutAllDay([{ key: 'a', days: [2, 3, 4] }])).toEqual([{ key: 'a', col: 2, span: 3, lane: 0 }]);
+  });
+
+  it('bars sharing a day stack into lanes; a free lane is reused', () => {
+    const r = Object.fromEntries(
+      layoutAllDay([
+        { key: 'short', days: [1] },
+        { key: 'long', days: [0, 1, 2] },
+        { key: 'late', days: [4, 5] },
+        { key: 'mid', days: [2, 3] },
+      ]).map((p) => [p.key, p]),
+    );
+    expect(r['long']).toMatchObject({ col: 0, span: 3, lane: 0 });
+    expect(r['short']).toMatchObject({ col: 1, span: 1, lane: 1 });
+    // «mid» overlaps «long» on day 2 only; lane 1 is free on days 2–3.
+    expect(r['mid']).toMatchObject({ col: 2, span: 2, lane: 1 });
+    expect(r['late']).toMatchObject({ col: 4, span: 2, lane: 0 });
+  });
+
+  it('items without a day in the week are dropped', () => {
+    expect(layoutAllDay([{ key: 'x', days: [] }])).toEqual([]);
   });
 });

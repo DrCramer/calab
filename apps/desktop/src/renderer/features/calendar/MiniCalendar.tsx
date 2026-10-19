@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { busyDays } from '../../lib/calendar/events';
+import { usePageVisible } from '../../lib/pageVisible';
 import { addDays, addMonths, dayEnd, dayKey, dayStart, formatLongDay, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
 import { ensureMonth } from '../../services/calendar';
 import { ensureBusy } from '../../services/freebusy';
@@ -14,9 +15,12 @@ import { useUi } from '../../stores/ui';
 import { clockFor } from '../shell/voiceFormat';
 import { useDayDrag } from './dragState';
 
-/** Today's key, re-rendering only when the date changes (the minute ticker, compared as a string). */
+/**
+ * Today's key, re-rendering only when the date changes (the minute ticker, compared as a string);
+ * no ticker while the window is hidden — it is read again when the window shows.
+ */
 export function useToday(): string {
-  const tk = clockFor(60_000);
+  const tk = clockFor(usePageVisible() ? 60_000 : 0);
   return useSyncExternalStore(tk.subscribe, () => dayKey(Date.now()));
 }
 

@@ -2,6 +2,7 @@ import { memo, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { dayKey, dayStart, formatMinutes, formatTime } from '../../lib/calendar/time';
+import { usePageVisible } from '../../lib/pageVisible';
 import { useNow } from '../shell/voiceFormat';
 
 /*
@@ -39,10 +40,14 @@ export const HourLines = memo(function HourLines(): ReactNode {
   );
 });
 
-/** The red «now» line (Apple): its own minute ticker — the only thing re-rendered by time. */
+/**
+ * The red «now» line (Apple): its own minute ticker — the only thing re-rendered by time; no ticker
+ * while the window is hidden (docs/14), the line is placed again when it shows.
+ */
 export const NowLine = memo(function NowLine({ day }: { day: string }): ReactNode {
-  const now = useNow(60_000);
-  if (dayKey(now) !== day) return null;
+  const visible = usePageVisible();
+  const now = useNow(visible ? 60_000 : 0);
+  if (!visible || dayKey(now) !== day) return null;
   const min = (now - dayStart(day)) / 60_000;
   return (
     <div className="pointer-events-none absolute inset-x-0 z-[2]" style={{ top: min * PX_PER_MIN }} data-testid="now-line" aria-label={t('cal.now', { time: formatTime(now) })} role="img">

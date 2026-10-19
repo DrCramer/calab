@@ -142,7 +142,15 @@ interface UiState {
   openCalendarDay: (day: string, eventKey?: string | null) => void;
   selectCalEvent: (key: string | null) => void;
   closeCalendar: () => void;
+  /**
+   * «День / Неделя» of the desktop calendar (bug board #6, Yandex Calendar), persisted on this
+   * device; the phone always shows the day. `calDay` stays the anchor: the week is the one holding it.
+   */
+  calView: CalView;
+  setCalView: (view: CalView) => void;
 }
+
+export type CalView = 'day' | 'week';
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
 export const MEMBERS_COLUMN_MIN = 1200;
@@ -190,6 +198,8 @@ export const useUi = create<UiState>()(
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
       closeCalendar: () => set({ calDay: null, calEvent: null }),
+      calView: 'day',
+      setCalView: (calView) => set({ calView }),
       setWorkspace: (id) =>
         set((s) => {
           // A click on a workspace (the open one too) leads back to its rooms (ADR-0050 §3).
@@ -254,6 +264,7 @@ export const useUi = create<UiState>()(
         sidebarWidth: s.sidebarWidth,
         collapsed: s.collapsed,
         hideMuted: s.hideMuted,
+        calView: s.calView,
       }),
     },
   ),

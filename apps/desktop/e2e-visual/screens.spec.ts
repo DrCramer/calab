@@ -155,6 +155,7 @@ const KEY = new Set([
   // Calendar (ADR-0038 §7).
   'calendar-mini',
   'calendar-day',
+  'calendar-week',
   'calendar-dialog',
   // Free / busy, find a time, Settings → Календарь (ADR-0041).
   'calendar-filter',
@@ -3741,6 +3742,38 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await comments.getByTestId('event-comment').last().hover();
   await checkpoint(shot, 'calendar-comments', { keepPointer: true });
+});
+
+/**
+ * Week view (bug board #6, Yandex Calendar): «День / Неделя» in the header, Monday-first week of
+ * 12–18 January with today (Thursday 15) in an accent circle and a shaded column, the «now» line in
+ * it, the daily stand-up in every column from Tuesday, «Планёрка» and «Ревью дизайна» side by side,
+ * «Релиз 1.0» in the «весь день» band, the ISO week number and the UTC offset; the selected
+ * meeting's card on the right.
+ */
+test('calendar-week', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await calendarDay(win, mock);
+  await win.locator(`[data-cal-day="${DAY}"]`).click();
+  await win.getByTestId('cal-view').click();
+  await win.getByTestId('cal-view-week').click();
+  const week = win.getByTestId('week-view');
+  await expect(week).toBeVisible();
+  await expect(week.getByTestId('week-today')).toHaveText('15');
+  await expect(week.getByTestId('week-number')).toHaveText('3 нед.');
+  await expect(week.getByTestId('week-zone')).toHaveText('UTC+3');
+  await expect(week.getByTestId('now-line')).toBeVisible();
+  await expect(week.getByTestId('event-block').filter({ hasText: 'Стендап' })).toHaveCount(6);
+  await expect(week.getByTestId('allday-row')).toContainText('Релиз 1.0');
+  await week.getByTestId('event-block').filter({ hasText: 'Планёрка' }).click();
+  await expect(win.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Планёрка');
+  await checkpoint(shot, 'calendar-week');
+  // ‹ › step a week; the choice is kept for the next start (calaba-ui).
+  await win.getByTestId('cal-next').click();
+  await expect(week.getByTestId('cal-title')).toHaveText(/январь 2026/i);
+  await expect(week.getByTestId('week-today')).toHaveCount(0);
+  await expect(week.getByTestId('event-block').filter({ hasText: 'Ретро' })).toHaveCount(1);
 });
 
 /**
