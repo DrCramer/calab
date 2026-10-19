@@ -781,24 +781,25 @@ type EmailInvite struct {
 }
 
 type Event struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-	RoomID      *uuid.UUID
-	Title       string
-	Description string
-	StartsAt    time.Time
-	EndsAt      time.Time
-	AllDay      bool
-	Tz          string
-	OrganizerID uuid.UUID
-	Record      bool
-	Rrule       *string
-	UntilAt     *time.Time
-	Sequence    int32
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CancelledAt *time.Time
-	TempRoom    bool
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	RoomID          *uuid.UUID
+	Title           string
+	Description     string
+	StartsAt        time.Time
+	EndsAt          time.Time
+	AllDay          bool
+	Tz              string
+	OrganizerID     uuid.UUID
+	Record          bool
+	Rrule           *string
+	UntilAt         *time.Time
+	Sequence        int32
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	CancelledAt     *time.Time
+	TempRoom        bool
+	TempRoomRetryAt *time.Time
 }
 
 type EventAttendee struct {

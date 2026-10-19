@@ -28,6 +28,10 @@ const (
 	TempRoomAfter = guestLinkAfter
 	// tempRoomBatch bounds the rooms one sweep pass creates.
 	tempRoomBatch = 50
+	// tempRoomRetry is how long a request the sweep could not serve (rights, limits) waits for
+	// the next try: failing requests neither cost a transaction on every pass nor fill the
+	// batch ahead of the others (claims go by start).
+	tempRoomRetry = 5 * time.Minute
 )
 
 // TempRooms is what a meeting's own room needs from rooms (rooms.Handlers implements it; an
@@ -107,7 +111,7 @@ func (s *Service) attachTempRoom(ctx context.Context, q *sqlc.Queries, ev sqlc.E
 // MakeTempRooms creates the meetings' own rooms due at now and returns how many. Every
 // instance runs it: each meeting is claimed with FOR UPDATE SKIP LOCKED in the transaction
 // that creates its room. A meeting whose room cannot be made now (the organizer lost the right,
-// the limits) is retried by the next pass until the meeting ends.
+// the limits) is retried after tempRoomRetry until the meeting ends.
 func (s *Service) MakeTempRooms(ctx context.Context, now time.Time) (int, error) {
 	if s.TempRooms == nil {
 		return 0, nil
@@ -152,9 +156,13 @@ func (s *Service) MakeTempRooms(ctx context.Context, now time.Time) (int, error)
 		}
 		if err != nil {
 			skip = append(skip, *claimed)
+			if ctx.Err() == nil {
+				at := now.Add(tempRoomRetry)
+				logErr(ctx, "defer the meeting's temporary room", s.db.Q.DeferEventTempRoom(ctx, sqlc.DeferEventTempRoomParams{ID: *claimed, At: &at}))
+			}
 			level := slog.LevelWarn
 			if e := httpx.AsError(err); e != nil && e.Status < 500 {
-				level = slog.LevelDebug // no right / limits: retried by the next pass
+				level = slog.LevelDebug // no right / limits: retried after tempRoomRetry
 			}
 			slog.Log(ctx, level, "calendar: meeting's temporary room", "event", *claimed, "err", err)
 			continue

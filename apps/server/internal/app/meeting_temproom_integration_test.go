@@ -65,7 +65,11 @@ func TestMeetingOwnTempRoom(t *testing.T) {
 		t.Fatalf("sweep without the right: %d %v", n, err)
 	}
 	sqlExec(t, "UPDATE workspace_roles SET permissions = permissions | $2::bigint WHERE workspace_id = $1 AND builtin = 'member'", wsID, int64(perm.CreateTempRooms))
-	if n, err := testApp.Calendar.MakeTempRooms(ctx, start.Add(-30*time.Minute)); err != nil || n != 1 {
+	// A failed request waits 5 min instead of costing a try on every pass.
+	if n, err := testApp.Calendar.MakeTempRooms(ctx, start.Add(-29*time.Minute)); err != nil || n != 0 {
+		t.Fatalf("sweep within the back-off: %d %v", n, err)
+	}
+	if n, err := testApp.Calendar.MakeTempRooms(ctx, start.Add(-25*time.Minute)); err != nil || n != 1 {
 		t.Fatalf("due sweep: %d %v", n, err)
 	}
 	got := getEvent(t, c.carol, ev.GetId())
@@ -79,7 +83,7 @@ func TestMeetingOwnTempRoom(t *testing.T) {
 	if _, ok := visibleRooms(t, c.carol, wsID)[got.GetRoomId()]; !ok {
 		t.Fatal("an attendee sees the meeting's room")
 	}
-	if n, _ := testApp.Calendar.MakeTempRooms(ctx, start.Add(-29*time.Minute)); n != 0 {
+	if n, _ := testApp.Calendar.MakeTempRooms(ctx, start.Add(-24*time.Minute)); n != 0 {
 		t.Fatal("made twice")
 	}
 

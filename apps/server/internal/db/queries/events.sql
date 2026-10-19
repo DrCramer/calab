@@ -200,10 +200,11 @@ SELECT * FROM events WHERE id = ANY(sqlc.arg('ids')::uuid[]);
 -- name: ClaimEventTempRoom :one
 -- One meeting whose own temporary room is due (ADR-0112: starts within the lead, not ended),
 -- locked for the transaction that creates the room; instances skip each other's claims, `skip`
--- holds the meetings that failed earlier in this pass.
+-- holds the meetings that failed earlier in this pass, temp_room_retry_at defers a failed one.
 SELECT * FROM events
 WHERE temp_room AND room_id IS NULL AND cancelled_at IS NULL
   AND starts_at <= sqlc.arg('due') AND ends_at > sqlc.arg('now')
+  AND (temp_room_retry_at IS NULL OR temp_room_retry_at <= sqlc.arg('now'))
   AND NOT (id = ANY(sqlc.arg('skip')::uuid[]))
 ORDER BY starts_at, id
 LIMIT 1
@@ -214,3 +215,8 @@ FOR UPDATE SKIP LOCKED;
 UPDATE events SET room_id = sqlc.arg('room_id'), updated_at = now()
 WHERE id = sqlc.arg('id') AND temp_room AND room_id IS NULL AND cancelled_at IS NULL
 RETURNING *;
+
+-- name: DeferEventTempRoom :exec
+-- The sweep could not make the meeting's room (rights, limits): the next try waits until `at`.
+UPDATE events SET temp_room_retry_at = sqlc.arg('at')
+WHERE id = sqlc.arg('id') AND temp_room AND room_id IS NULL;

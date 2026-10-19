@@ -432,6 +432,12 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		// A room the request does not touch is the locked row's: the sweep may have attached
+		// the meeting's own room since `before` was read (ADR-0112); writing the stale empty
+		// room_id back would leave that room behind and let the sweep make a second one.
+		if req.RoomId == nil && before.ev.RoomID == nil && cur.TempRoom && cur.RoomID != nil {
+			f.room = cur.RoomID
+		}
 		var addWant []wantAttendee
 		if req.GetSetAttendees() {
 			keep := map[string]wantAttendee{}
@@ -664,9 +670,10 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	s.sendMails(ctx, after, mail.TemplateEventCancel, MethodCancel, after.att)
 	s.changed(ctx, after)
 	// ADR-0112: the room made for the meeting closes with it (archived, as its creator's
-	// DELETE would); a request not served yet just ends with the meeting.
-	if ownRoom(before.ev) && s.TempRooms != nil {
-		logErr(ctx, "close the meeting's temporary room", s.TempRooms.CloseMeetingRoom(ctx, *before.ev.RoomID, before.ev.OrganizerID))
+	// DELETE would); a request not served yet just ends with the meeting. The cancelled row,
+	// not `before`: the sweep may have made the room in between.
+	if ownRoom(after.ev) && s.TempRooms != nil {
+		logErr(ctx, "close the meeting's temporary room", s.TempRooms.CloseMeetingRoom(ctx, *after.ev.RoomID, after.ev.OrganizerID))
 	}
 	httpx.NoContent(w)
 	return nil
