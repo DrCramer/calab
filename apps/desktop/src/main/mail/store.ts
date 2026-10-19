@@ -11,6 +11,7 @@ import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqli
 import type { MailAddress, MailAttachment, MailCursor, MailFlags, MailFolderRole, MailHeader, MailThreadRow } from '../../shared/mail';
 import { repairUtf8AsCp1251 } from './charset';
 import { folderId, messageId } from './ids';
+import { htmlToText, makeSnippet } from './mime';
 
 type Row = Record<string, SQLOutputValue>;
 
@@ -136,7 +137,7 @@ export function openDb(file: string): DatabaseSync {
 // ---------------------------------------------------------------- subjects & threading
 
 /** Bumped when stored snippets need a one-off repair pass (see MailStore.repairSnippets). */
-const SNIPPET_VERSION = '2';
+const SNIPPET_VERSION = '3';
 
 const PREFIX = /^\s*((re|fwd?|aw|wg|sv|vs|tr|rif|antw|odp|ответ|отв|пересл|fw)\s*(\[\d+\]|\(\d+\))?\s*[:：]\s*)+/i;
 
@@ -264,12 +265,19 @@ export class MailStore {
   private repairSnippets(): void {
     if (this.getMeta('snippet_version') === SNIPPET_VERSION) return;
     this.tx(() => {
-      const rows = this.db.prepare("SELECT rid, snippet FROM messages WHERE instr(snippet, 'Р') > 0 OR instr(snippet, 'С') > 0").all();
+      const rows = this.db.prepare("SELECT rid, snippet FROM messages WHERE instr(snippet, 'Р') > 0 OR instr(snippet, 'С') > 0 OR instr(snippet, '<') > 0 OR instr(snippet, '&') > 0").all();
       const upd = this.db.prepare('UPDATE messages SET snippet = ? WHERE rid = ?');
       const fts = this.db.prepare('UPDATE fts SET snippet = ? WHERE rowid = ?');
       for (const r of rows) {
-        const fixed = repairUtf8AsCp1251(str(r['snippet']));
-        if (fixed === null) continue;
+        const cur = str(r['snippet']);
+        let fixed: string | null = repairUtf8AsCp1251(cur);
+        // 3.8.x: html kept as text; strip what is stored (empty → refilled when the body is opened).
+        const base = fixed ?? cur;
+        if (base.includes('<') || base.includes('&')) {
+          const stripped = makeSnippet(htmlToText(base));
+          if (stripped !== base) fixed = stripped;
+        }
+        if (fixed === null || fixed === cur) continue;
         upd.run(fixed, r['rid'] ?? null);
         fts.run(fixed, r['rid'] ?? null);
       }

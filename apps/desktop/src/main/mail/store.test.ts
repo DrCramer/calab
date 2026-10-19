@@ -70,7 +70,19 @@ describe('migrations', () => {
     const snippets = (): string[] => again.listThreads({ kind: 'all', exclude: [] }, { limit: 10 }).map((r) => `${r.subject}:${r.snippet}`).sort();
     expect(snippets()).toEqual(['Invoice:Счет на оплату HOSTKEY', 'Real:Счёт на оплату']);
     expect(again.listThreads({ kind: 'all', exclude: [] }, { limit: 10, match: ftsQuery('счет на') ?? '' }).map((r) => r.subject)).toEqual(['Invoice']);
-    expect(again.getMeta('snippet_version')).toBe('2');
+    expect(again.getMeta('snippet_version')).toBe('3');
+    again.close();
+  });
+  it('strips html left in cached snippets once on open (CBF-14)', () => {
+    const s = store();
+    const dir = s.dir;
+    const inbox = s.upsertFolder({ path: 'INBOX', name: 'INBOX', delimiter: '/', parentPath: '', role: 'inbox', specialUse: null });
+    s.insertMessage(msg(inbox, { subject: 'Html', snippet: '<table width="100%" style="background: #FFFFFF;"> <tr> <td height="48">Ваш счёт</td></tr>' }));
+    s.insertMessage(msg(inbox, { subject: 'Plain', snippet: 'Tom & Jerry' }));
+    s.setMeta('snippet_version', '2');
+    s.close();
+    const again = new MailStore(dir, ACC);
+    expect(again.listThreads({ kind: 'all', exclude: [] }, { limit: 10 }).map((r) => `${r.subject}:${r.snippet}`).sort()).toEqual(['Html:Ваш счёт', 'Plain:Tom & Jerry']);
     again.close();
   });
   it('a store reopens its database without re-running steps', () => {

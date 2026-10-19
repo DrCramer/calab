@@ -104,19 +104,29 @@ export function htmlMetaCharset(bytes: Uint8Array): string {
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', laquo: '«', raquo: '»', mdash: '—', ndash: '–', hellip: '…' };
 
-/** Crude HTML → text for snippets (not for display): drops head / style / script, tags, decodes entities. */
+/** True when `text` is markup rather than prose: starts with a doctype / comment / well-known html tag. */
+export function looksLikeHtml(text: string): boolean {
+  return /^\s*(?:\uFEFF)?<(?:!--|!doctype|\?xml|\/?(?:html|head|body|meta|style|table|tbody|tr|td|th|div|p|span|center|font|a|img|br|h[1-6]|ul|ol|li|section|article|header|footer|b|i|u|strong|em)\b)/i.test(text);
+}
+
+/**
+ * Crude HTML → text for snippets (not for display): drops comments / head / style / script / doctype,
+ * tags (also a tag cut at the end of the partial fetch), decodes entities, collapses whitespace.
+ */
 export function htmlToText(html: string): string {
   return html
-    .replace(/<(head|style|script|title)[\s\S]*?(<\/\1>|$)/gi, ' ')
-    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n')
-    .replace(/<[^>]*>?/g, ' ')
+    .replace(/<!--[\s\S]*?(-->|$)/g, ' ')
+    .replace(/<(head|style|script|title|noscript)\b[\s\S]*?(<\/\1\s*>|$)/gi, ' ')
+    .replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d|table)\s*>/gi, '\n')
+    .replace(/<[!?\/]?[a-z][^>]*(>|$)|<![^>]*(>|$)|<\?[^>]*(>|$)/gi, ' ')
     .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e: string) => {
       if (e.startsWith('#')) {
         const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
         return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : ' ';
       }
       return ENTITIES[e.toLowerCase()] ?? m;
-    });
+    })
+    .replace(/[\u00a0\u200b-\u200f\u2060\ufeff\u034f]/g, ' ');
 }
 
 /** List preview: quoted lines dropped, whitespace collapsed, ≤ 200 chars. */
@@ -134,7 +144,8 @@ export function snippetFrom(raw: Uint8Array, part: { type: string; encoding: str
   const bytes = transferDecode(raw, part.encoding);
   const charset = part.charset || (part.type === 'text/html' ? htmlMetaCharset(bytes) : '');
   const text = decodeCharset(bytes, charset);
-  return makeSnippet(part.type === 'text/html' ? htmlToText(text) : text);
+  // A text/plain part that is really markup (some bulk senders) is stripped like html.
+  return makeSnippet(part.type === 'text/html' || looksLikeHtml(text) ? htmlToText(text) : text);
 }
 
 /** `<a@b> <c@d>` → ['<a@b>', '<c@d>'] (Message-IDs keep their brackets, as in the headers). */

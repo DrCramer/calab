@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { repairUtf8AsCp1251, sniffCharset, SniffingIconv, trimUtf8Tail } from './charset';
-import { decodeCharset, decodePart, htmlMetaCharset, parseBody, SNIPPET_FETCH, snippetFrom, snippetPart } from './mime';
+import { decodeCharset, decodePart, htmlMetaCharset, htmlToText, looksLikeHtml, makeSnippet, parseBody, SNIPPET_FETCH, snippetFrom, snippetPart } from './mime';
 
 const TEXT = 'Привет! Это письмо в однобайтовой кодировке, проверяем отображение русского текста в почтовом клиенте. С уважением, банк.';
 const TEXT_EMOJI = 'Сообщение с эмодзи 🎉 и русский текст utf-8';
@@ -118,6 +118,23 @@ describe('list snippets (partial part fetch)', () => {
     expect(snippetFrom(qpOf(CP1251), { type: 'text/plain', encoding: 'quoted-printable', charset: 'windows-1251' })).toBe(TEXT);
     expect(snippetFrom(Buffer.from(KOI8), { type: 'text/plain', encoding: '8bit', charset: 'koi8-r' })).toBe(TEXT);
     expect(snippetFrom(b64(KOI8), { type: 'text/plain', encoding: 'base64', charset: 'KOI8-R' })).toBe(TEXT);
+  });
+
+  it('html snippets are text: layout tables, comments, entities, a tag cut at the fetch end (CBF-14)', () => {
+    const doc = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0//EN"><html><head><title>x</title><style>td{a:b}</style></head><body><!-- c --><table width="100%" style="background: #FFFFFF;"> <tr> <td height="48">&nbsp;</td></tr><tr><td>Здравствуйте,&nbsp;Иван! &amp; Ваш счёт &#8470;5</td></tr></table>';
+    for (const type of ['text/html', 'text/plain']) {
+      expect(snippetFrom(Buffer.from(doc, 'utf8'), { type, encoding: '8bit', charset: 'utf-8' })).toBe('Здравствуйте, Иван! & Ваш счёт №5');
+    }
+    expect(snippetFrom(Buffer.from('<table><tr><td>Привет</td></tr></table><table width="100%" sty', 'utf8'), { type: 'text/html', encoding: '8bit', charset: 'utf-8' })).toBe('Привет');
+    expect(snippetFrom(Buffer.from('<p>Привет</p><!-- unclosed', 'utf8'), { type: 'text/html', encoding: '8bit', charset: 'utf-8' })).toBe('Привет');
+    expect(makeSnippet(htmlToText('<table> <tr> <td height="48"></td></tr></table>'))).toBe('');
+  });
+
+  it('prose is not mistaken for markup', () => {
+    expect(looksLikeHtml('<table><tr>')).toBe(true);
+    expect(looksLikeHtml('  <!doctype html>')).toBe(true);
+    expect(looksLikeHtml('Привет, a < b and <3')).toBe(false);
+    expect(snippetFrom(Buffer.from('a < b & c', 'utf8'), { type: 'text/plain', encoding: '8bit', charset: 'utf-8' })).toBe('a < b & c');
   });
 
   it('trimUtf8Tail drops only an incomplete trailing sequence', () => {
