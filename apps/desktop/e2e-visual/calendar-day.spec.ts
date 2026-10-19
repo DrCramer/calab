@@ -18,7 +18,8 @@ test('create: the dialog → the meeting in the day view, selected, the count in
   await dialog.getByTestId('event-title-input').fill('Ревью дизайна');
   await dialog.getByTestId('event-start').selectOption({ label: '15:00' });
   await dialog.getByTestId('event-end').selectOption({ label: '16:00' });
-  await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });
+  await dialog.getByTestId('event-room').click(); // the room picker with a search (CBF-18)
+  await page.getByRole('option', { name: 'Переговорка' }).click();
   await dialog.getByTestId('event-add-people').click();
   await page.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
   await dialog.getByTestId('event-email').fill('ext@example.com');

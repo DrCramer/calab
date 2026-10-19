@@ -1,7 +1,10 @@
 import { EventRepeat, RoomType, WorkspaceRole } from '@calaba/protocol';
-import { CalendarSearch, Mail, Plus, X } from 'lucide-react';
+import { CalendarSearch, Check, Mail, Plus, Timer, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { PickerPopover } from '../../components/picker/Picker';
+import type { PickerGroup } from '../../components/picker/pickerModel';
+import { RoomIcon } from '../../components/RoomIcon';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Field, Input, Modal, Select, Switch, TextArea, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -28,13 +31,15 @@ import {
 } from '../../lib/calendar/draft';
 import { dayKey, dayStart, eventSpan, formatMinutes, viewerZone } from '../../lib/calendar/time';
 import { useMobile } from '../../lib/mobile';
+import { mayCreateTempRooms } from '../../lib/permissions';
 import { createEvent, eventOf, updateEvent } from '../../services/calendar';
 import { roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { MEMBERS_COLUMN_MIN, type EventDraftInit } from '../../stores/ui';
 import { useMediaQuery } from '../../lib/useMediaQuery';
-import { useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { rolesOf, useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { roomItems, type RoomPickItem } from '../chat/forwardModel';
 import { FormerChip } from '../people/MemberBits';
 import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
@@ -49,7 +54,8 @@ const STARTS = Array.from({ length: 96 }, (_, i) => i * 15);
 
 /**
  * Create / edit a meeting (ADR-0038 §7; docs/08 modal, a sheet on phones): title, date, start / end
- * in 15-minute steps (the viewer's zone, shown), «Весь день», room (voice rooms, or none),
+ * in 15-minute steps (the viewer's zone, shown), «Весь день», room (a searchable pick of the voice
+ * rooms, or none) or «Создать временную комнату» (ADR-0112, CREATE_TEMP_ROOMS, one-off meetings),
  * attendees (member chips, required / optional; external addresses), description, repeat with
  * «до», «Записывать встречу». Server errors show at their field. On the desktop the window stays
  * usable (no scrim): a member from the members list or a voice room from the room list can be
@@ -70,6 +76,11 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
   const [d, setD] = useState<EventDraft>(initial);
   const [finding, setFinding] = useState(false);
   const meId = myUserId();
+  // ADR-0112: the organizer with CREATE_TEMP_ROOMS asks for the meeting's own room (a one-off
+  // meeting); once the server made it, the room field shows it with a note instead.
+  const mayTemp = useWorkspaces((st) => mayCreateTempRooms(rolesOf(st.byId[workspaceId], meId)));
+  const ownRoom = initial.tempRoom && !!initial.roomId && d.tempRoom && d.roomId === initial.roomId;
+  const offerTemp = mayTemp && !ownRoom && d.repeat === EventRepeat.UNSPECIFIED && (!editing || editing.organizerId === meId);
   // Member attendees as a stable list (the availability strip's people).
   const memberKey = d.attendees.map((a) => a.userId).filter(Boolean).join(',');
   const memberIds = useMemo(() => (memberKey ? memberKey.split(',') : []), [memberKey]);
@@ -245,7 +256,23 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
             }}
           />
         ) : null}
-        <RoomField workspaceId={workspaceId} value={d.roomId} onChange={(roomId) => set({ roomId })} />
+        <RoomField
+          workspaceId={workspaceId}
+          value={d.roomId}
+          temp={d.tempRoom && !d.roomId}
+          hint={ownRoom ? t('cal.f.tempRoomOwn') : undefined}
+          // A room picked by hand replaces the meeting's own temporary room (ADR-0112).
+          onChange={(roomId) => set({ roomId, tempRoom: d.tempRoom && roomId !== '' && roomId === d.roomId })}
+        />
+        {offerTemp ? (
+          <Switch
+            label={t('cal.f.tempRoom')}
+            hint={t('cal.f.tempRoomHint')}
+            checked={d.tempRoom}
+            onChange={(tempRoom) => set(tempRoom ? { tempRoom, roomId: '' } : { tempRoom })}
+            data-testid="event-temp-room"
+          />
+        ) : null}
         <AttendeesField workspaceId={workspaceId} draft={d} onChange={(attendees) => set({ attendees })} error={err('attendees')} />
         {init?.outside?.length ? (
           // From an external event (ADR-0045 §3): who was there but is not a member here.
@@ -265,7 +292,15 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('cal.f.repeat')}>
-            <Select value={d.repeat} onChange={(e) => set({ repeat: Number(e.target.value) })} data-testid="event-repeat">
+            <Select
+              value={d.repeat}
+              onChange={(e) => {
+                const repeat: EventRepeat = Number(e.target.value);
+                // A series has no own temporary room (ADR-0112): a room made already stays as an ordinary one.
+                set(repeat === EventRepeat.UNSPECIFIED ? { repeat } : { repeat, tempRoom: false });
+              }}
+              data-testid="event-repeat"
+            >
               {REPEATS.map((r) => (
                 <option key={r} value={r}>
                   {t(REPEAT_LABEL[r])}
@@ -291,10 +326,30 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
   );
 }
 
-/** Voice rooms of the workspace (or none); a voice room row dragged from the room list lands here. */
-function RoomField({ workspaceId, value, onChange }: { workspaceId: string; value: string; onChange: (roomId: string) => void }): ReactNode {
+const NO_ROOM = 'none';
+
+/**
+ * The meeting's room: a select-looking button that opens the one list picker (docs/08 «Выбор
+ * участника», as the payer's country) over «Без комнаты» and the voice rooms of the workspace, with
+ * a search; a voice room row dragged from the room list lands here too. `temp`: the meeting asks for
+ * its own temporary room (ADR-0112) — the button names it.
+ */
+function RoomField({
+  workspaceId,
+  value,
+  temp,
+  hint,
+  onChange,
+}: {
+  workspaceId: string;
+  value: string;
+  temp: boolean;
+  hint: string | undefined;
+  onChange: (roomId: string) => void;
+}): ReactNode {
   const byId = useRooms((s) => s.byId);
   const rooms = useMemo(() => roomsOfWorkspace(byId, workspaceId).filter((r) => r.type === RoomType.VOICE), [byId, workspaceId]);
+  const [open, setOpen] = useState(false);
   const [native, setOver] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // The room list's own drag (not a native one) over the field: highlighted the same way.
@@ -314,6 +369,29 @@ function RoomField({ workspaceId, value, onChange }: { workspaceId: string; valu
     el.addEventListener('calab-drop-room', onRoom);
     return () => el.removeEventListener('calab-drop-room', onRoom);
   }, []);
+  const groups = useMemo<PickerGroup<RoomPickItem>[]>(() => {
+    const none: RoomPickItem = { kind: 'room', id: NO_ROOM, roomId: '', name: t('cal.f.noRoom'), voice: true, search: [t('cal.f.noRoom')] };
+    return [{ id: 'rooms', label: '', items: [none, ...roomItems(rooms, () => true, (r) => r.name)] }];
+  }, [rooms]);
+  const pick = useCallback(
+    (item: RoomPickItem) => {
+      onChange(item.roomId);
+      setOpen(false);
+    },
+    [onChange],
+  );
+  const renderItem = useCallback(
+    (item: RoomPickItem) => (
+      <>
+        <span className="grid size-4 shrink-0 place-items-center">{item.roomId ? <RoomIcon roomId={item.roomId} size={16} /> : null}</span>
+        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+        <Check className={cx('size-3.5 shrink-0', item.roomId === value ? null : 'invisible')} aria-hidden />
+      </>
+    ),
+    [value],
+  );
+  const name = value ? (byId[value]?.name ?? '') : '';
+  const label = temp ? t('temp.icon') : name || t('cal.f.noRoom');
   return (
     <div
       ref={ref}
@@ -334,15 +412,36 @@ function RoomField({ workspaceId, value, onChange }: { workspaceId: string; valu
       }}
       className={cx('rounded-[var(--radius-card)]', over && 'outline outline-2 outline-offset-2 outline-accent')}
     >
-      <Field label={t('cal.f.room')} hint={t('cal.f.roomHint')}>
-        <Select value={value} onChange={(e) => onChange(e.target.value)} data-testid="event-room">
-          <option value="">{t('cal.f.noRoom')}</option>
-          {rooms.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </Select>
+      <Field label={t('cal.f.room')} hint={hint ?? t('cal.f.roomHint')}>
+        <PickerPopover<RoomPickItem>
+          groups={groups}
+          renderItem={renderItem}
+          onSelect={pick}
+          placeholder={t('cal.f.roomSearch')}
+          label={t('cal.f.roomList')}
+          emptyText={t('cal.f.roomEmpty')}
+          open={open}
+          onOpenChange={setOpen}
+          testId="event-room-list"
+        >
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label={`${t('cal.f.room')}: ${label}`}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setOpen(true);
+              }
+            }}
+            className="select-chevron flex h-7 w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-left text-body shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] mobile:tap-h mobile:pl-3.5 mobile:pr-9"
+            data-testid="event-room"
+          >
+            {temp ? <Timer className="size-4 shrink-0 text-muted" aria-hidden /> : value ? <RoomIcon roomId={value} size={16} /> : null}
+            <span className={cx('min-w-0 flex-1 truncate', value || temp ? 'text-fg' : 'text-muted')}>{label}</span>
+          </button>
+        </PickerPopover>
       </Field>
     </div>
   );

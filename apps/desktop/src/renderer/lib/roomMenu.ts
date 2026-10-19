@@ -3,7 +3,8 @@
  * button and the right click / long press on any room row. Pure, so the item set per
  * permission / guest is unit-tested; Sidebar.tsx renders it.
  *
- *   [Открыть чат — phone, voice] · Пригласить в комнату · Запись встречи (voice, not guests)
+ *   [Открыть чат — phone, voice] · Пригласить в комнату · Запланировать встречу (a permanent voice
+ *   room, `schedule`: I may create meetings — CBF-18) · Запись встречи (voice, not guests)
  *   · Позвонить на номер (voice, `dial`: the telephony gate without «I am in the call», ADR-0046)
  *   · Настройки комнаты | Прочитано · Уведомления › | Вверх · Вниз · В категорию ›
  *
@@ -15,6 +16,7 @@
 export type RoomMenuItem =
   | 'openChat'
   | 'invite'
+  | 'schedule'
   | 'record'
   | 'dial'
   | 'settings'
@@ -57,6 +59,8 @@ export interface RoomMenuInput {
   manageLinks?: boolean;
   /** Workspace MANAGE_ROOM (the right to create regular rooms): «Сделать постоянной» of a temporary room. */
   makePermanent?: boolean;
+  /** I may create meetings (not a guest): «Запланировать встречу» in a permanent voice room. */
+  schedule?: boolean;
 }
 
 export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
@@ -65,6 +69,8 @@ export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
   // Voice: a room link (a room invite right, ADR-0016 / ADR-0043) or the workspace invite
   // (INVITE_MEMBERS); text: the latter.
   if (!i.guest && (i.admin || (i.voice && i.inviteRoom))) head.push('invite');
+  // A meeting booked into this room (CBF-18); a temporary room has its own «Добавить встречу».
+  if (i.voice && i.schedule && !i.guest && !i.temp) head.push('schedule');
   // Meeting recording (docs/09 #30): any member but a guest; start, or stop the running one (ADR-0025).
   if (i.voice && !i.guest) head.push('record');
   if (i.voice && i.dial && !i.guest) head.push('dial');

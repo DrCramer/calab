@@ -169,6 +169,12 @@ export function EventCard({
               {t('cal.go')}
             </Button>
           </Line>
+        ) : ev.tempRoom && !ev.roomId ? (
+          <Line icon={<Timer className="size-4" aria-label={t('temp.icon')} role="img" />}>
+            <span className="min-w-0 flex-1 text-muted" data-testid="event-temp-pending">
+              {t('cal.tempPending')}
+            </span>
+          </Line>
         ) : null}
         <div className="mt-2 flex items-center gap-2">
           <ProfileTarget userId={ev.organizerId} name={organizer} workspaceId={ev.workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">

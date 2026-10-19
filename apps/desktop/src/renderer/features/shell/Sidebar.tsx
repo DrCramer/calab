@@ -887,6 +887,7 @@ export function RoomMenu({
     hasEvent,
     manageLinks,
     makePermanent: permanent,
+    schedule: !guest, // every member but a guest creates meetings (ADR-0038 §2)
   });
   const item = (id: RoomMenuItem): ReactNode => {
     switch (id) {
@@ -906,6 +907,13 @@ export function RoomMenu({
             onSelect={() => (voiceRoom && inviteRoom ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
           >
             <UserPlus className="size-4" /> {t('shell.invite')}
+          </ContextMenu.Item>
+        );
+      case 'schedule':
+        // CBF-18: the new meeting dialog with this room chosen.
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-schedule" onSelect={() => newEvent(room.workspaceId, { ...nextQuarter(), roomId: room.id })}>
+            <CalendarPlus className="size-4" /> {t('cal.scheduleHere')}
           </ContextMenu.Item>
         );
       case 'record':

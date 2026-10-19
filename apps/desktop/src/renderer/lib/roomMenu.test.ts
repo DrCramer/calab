@@ -27,6 +27,13 @@ describe('roomMenuGroups', () => {
     expect(roomMenuGroups({ ...base, guest: true })).toEqual([['markRead', 'notify']]);
   });
 
+  it('«Запланировать встречу» (CBF-18): a permanent voice room, for who creates meetings', () => {
+    expect(roomMenuGroups({ ...base, schedule: true, inviteRoom: true })[0]).toEqual(['invite', 'schedule', 'record']);
+    expect(roomMenuGroups({ ...base, schedule: true, voice: false, admin: true })[0]).toEqual(['invite']);
+    expect(roomMenuGroups({ ...base, schedule: true, guest: true })[0]).toEqual(['markRead', 'notify']);
+    expect(roomMenuGroups({ ...base, schedule: true, temp: true, canManage: true })[0]).toEqual(['record', 'settings']);
+  });
+
   it('text room: no recording, no chat item', () => {
     expect(roomMenuGroups({ ...base, voice: false, mobile: true, admin: true })[0]).toEqual(['invite']);
   });

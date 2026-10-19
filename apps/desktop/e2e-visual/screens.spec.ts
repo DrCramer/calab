@@ -3885,7 +3885,8 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('n'); // the header has no «Встреча» (CBF-18)
   const dialog = win.getByTestId('event-dialog');
   await dialog.getByTestId('event-title-input').fill('Разбор релиза');
-  await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });
+  await dialog.getByTestId('event-room').click(); // the room picker with a search (CBF-18)
+  await win.getByRole('option', { name: 'Переговорка' }).click();
   await dialog.getByTestId('event-add-people').click();
   // The picker stays open for several people.
   await win.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
