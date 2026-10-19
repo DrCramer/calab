@@ -4,14 +4,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, X } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import type { PickerGroup } from '../../components/picker/pickerModel';
+import { confirmAction } from '../../components/Confirm';
 import { Button, IconButton, Modal } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
+import { useBots } from '../../stores/bots';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberAvatar } from '../boards/menus';
+import { useBotCard } from './BotProfile';
 import { MemberPicker } from './MemberPicker';
 import { memberItems, type PeoplePickItem } from './memberPickItems';
 
@@ -22,6 +25,10 @@ import { memberItems, type PeoplePickItem } from './memberPickItems';
  * it; the pending invitations (× for the inviter: cancel; for the invitee: decline). Inviting
  * makes the bot DM each member a suggestion naming me with «Принять» / «Отказаться». The server
  * decides everything (only the member's own request or click records a consent).
+ *
+ * For the bot's OWNER (at its home workspace) my own row is «Действовать от моего имени»
+ * (ADR-0106, CBF-17) instead of a consent: the switch moved here from the bot settings. Allowing
+ * asks once more (a leaked token then acts as the owner); the server accepts only the owner.
  */
 
 const queryKey = (ws: string, bot: string): string[] => ['botDelegations', ws, bot];
@@ -50,6 +57,21 @@ export function BotDelegationDialog({ workspaceId, botUserId, onClose }: { works
       },
     );
   };
+  const card = useBotCard(botUserId);
+  const ownerMode = !!card && me !== '' && card.ownerUserId === me && card.workspaceId === workspaceId;
+  const setActsAsOwner = async (on: boolean): Promise<void> => {
+    if (busy || !card) return;
+    if (on && !(await confirmAction(t('bots.actsAsOwnerConfirmTitle', { name: botName }), t('bots.actsAsOwnerWarning'), t('bots.actsAsOwnerConfirm'), 'primary'))) return;
+    setBusy(true);
+    try {
+      const r = await api.bots.update(workspaceId, botUserId, { actsAsOwner: on });
+      if (r.bot) useBots.getState().upsert(workspaceId, r.bot);
+    } catch (e) {
+      toast.fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   const data = state.data;
   const mine = data?.delegations.find((d) => d.userId === me);
   const others = data?.delegations.filter((d) => d.userId !== me) ?? [];
@@ -68,15 +90,32 @@ export function BotDelegationDialog({ workspaceId, botUserId, onClose }: { works
           <MemberAvatar workspaceId={workspaceId} userId={me} size={28} />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-body">{t('bots.delegate.you')}</span>
-            <span className="truncate text-caption text-muted">
-              {mine?.since
-                ? t('bots.delegate.allowedSince', {
-                    date: fmt.date(timestampDate(mine.since)),
-                  })
-                : t('bots.delegate.notAllowed')}
+            <span className="text-caption text-muted">
+              {ownerMode
+                ? card.actsAsOwner
+                  ? card.actsAsOwnerSince
+                    ? t('bots.delegate.allowedSince', { date: fmt.date(timestampDate(card.actsAsOwnerSince)) })
+                    : t('bots.actsAsOwnerOn')
+                  : t('bots.delegate.notAllowed')
+                : mine?.since
+                  ? t('bots.delegate.allowedSince', {
+                      date: fmt.date(timestampDate(mine.since)),
+                    })
+                  : t('bots.delegate.notAllowed')}
             </span>
+            {ownerMode ? <span className="text-caption text-muted">{t('bots.actsAsOwnerHint')}</span> : null}
           </span>
-          {mine ? (
+          {ownerMode ? (
+            card.actsAsOwner ? (
+              <Button variant="secondary" size="sm" busy={busy} onClick={() => void setActsAsOwner(false)} data-testid="bot-acts-as-owner-off">
+                {t('bots.delegate.revoke')}
+              </Button>
+            ) : (
+              <Button size="sm" busy={busy} onClick={() => void setActsAsOwner(true)} data-testid="bot-acts-as-owner-on">
+                {t('bots.delegate.allow')}
+              </Button>
+            )
+          ) : mine ? (
             <Button
               variant="secondary"
               size="sm"

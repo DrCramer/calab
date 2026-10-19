@@ -1,7 +1,7 @@
 import type { Bot } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { CircleAlert, CircleCheck, CircleSlash, Copy, Ellipsis, ImageMinus, KeyRound, Plus, RefreshCw, Trash2, TriangleAlert, Upload, UserPlus } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleSlash, Copy, Ellipsis, ImageMinus, KeyRound, Plus, RefreshCw, Trash2, ShieldCheck, TriangleAlert, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { useImagePicker } from '../../components/AvatarPicker';
@@ -18,8 +18,8 @@ import { openPlanContact, planContact, reportPlanError } from '../../services/pl
 import { useBots } from '../../stores/bots';
 import { toast } from '../../stores/toasts';
 import { useWorkspaces } from '../../stores/workspaces';
-import { BotBadge } from '../people/MemberBits';
-import { BotActsAsOwner } from '../people/BotActsAsOwner';
+import { BotDelegationDialog } from '../people/BotDelegationDialog';
+import { BotActsAsOwnerNote, BotBadge } from '../people/MemberBits';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 
 /*
@@ -221,6 +221,7 @@ function AddCard({ workspaceId, full }: { workspaceId: string; full: boolean }):
 
 function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot; onIssued: (i: Issued) => void }): ReactNode {
   const u = bot.user;
+  const [delegating, setDelegating] = useState(false);
   const owner = useWorkspaces((s) => (bot.ownerUserId ? (s.users[bot.ownerUserId]?.displayName ?? '') : ''));
   // The avatar (docs/09 #87): the own profile's picker. The users store is the truth (USER_UPDATE
   // also follows a bot's own POST /api/me/avatar, which sends no BOT_UPDATE).
@@ -299,7 +300,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
           {byline}
         </div>
         {home ? <BotStatus bot={bot} revoked={revoked} /> : null}
-        {home ? <BotActsAsOwner bot={bot} className="mt-1" /> : null}
+        {home ? <BotActsAsOwnerNote bot={bot} className="mt-1" /> : null}
       </div>
       <Dropdown.Root modal={false}>
         <Tip label={t('bots.actions', { name })}>
@@ -319,6 +320,9 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
                 <Dropdown.Item className={menuItem} disabled={revoked} onSelect={() => void revoke()}>
                   <KeyRound className="size-4" aria-hidden /> {t('bots.revoke')}
                 </Dropdown.Item>
+                <Dropdown.Item className={menuItem} onSelect={() => setDelegating(true)} data-testid="bot-delegate">
+                  <ShieldCheck className="size-4" aria-hidden /> {t('bots.delegate.menu')}
+                </Dropdown.Item>
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={menuItem} onSelect={picker.open} data-testid="bot-avatar-upload">
                   <Upload className="size-4" aria-hidden /> {t('profile.avatar')}
@@ -334,13 +338,20 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
                 </Dropdown.Item>
               </>
             ) : (
+              <>
+                <Dropdown.Item className={menuItem} onSelect={() => setDelegating(true)} data-testid="bot-delegate">
+                  <ShieldCheck className="size-4" aria-hidden /> {t('bots.delegate.menu')}
+                </Dropdown.Item>
+                <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
                 <Trash2 className="size-4" aria-hidden /> {t('bots.remove')}
               </Dropdown.Item>
+              </>
             )}
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
+      {delegating ? <BotDelegationDialog workspaceId={workspaceId} botUserId={u.id} onClose={() => setDelegating(false)} /> : null}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { rolesOf, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel } from '../shell/menu';
-import { BotActsAsOwner } from './BotActsAsOwner';
+import { BotActsAsOwnerNote } from './MemberBits';
 
 /*
  * A bot's profile (ADR-0031 §7, docs/08 «Боты»): its @username, description, «Команды» (what it
@@ -69,7 +69,7 @@ export function BotDetails({ botUserId, compact = false }: { botUserId: string; 
           <span className="min-w-0 truncate">{owner}</span>
         </section>
       ) : null}
-      <BotActsAsOwner bot={card} />
+      <BotActsAsOwnerNote bot={card} />
     </div>
   );
 }
