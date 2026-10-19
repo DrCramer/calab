@@ -6,7 +6,8 @@
  * - Awareness (cursor, selection): ≤ 20 frames/s, nothing while the window is hidden.
  * - Compaction (SNAPSHOT_POST) on COMPACT_REQUEST, after our last edit (3 s; longer for a big document,
  *   canvasIdleSnapshotMs) and on destroy, with
- *   `{plain_text, title, preview}`: `plain_text` is the glued texts of all objects (canvasPlainText).
+ *   `{plain_text, title, preview, objects}`: `plain_text` is the glued texts of all objects (canvasPlainText),
+ *   `objects` their number (0 = no version in the history).
  * - Reconnect (backoff 1 s → 30 s): the server sends the snapshot and the updates after it again, and
  *   whatever this doc has beyond them goes up as one update.
  * - Read-only (no CANVAS_WRITE, or a newer document schema): nothing is sent; setReadOnly flips it.
@@ -15,7 +16,7 @@
  */
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { canvasPlainText } from "./canvas/plainText";
+import { canvasObjectCount, canvasPlainText } from "./canvas/plainText";
 import type { SnapshotMeta } from "./wiki/frames";
 import { previewOf } from "./wiki/plainText";
 import { IDLE_SNAPSHOT_MS, YSyncProvider, type Visibility, type YSyncStatus } from "./ySync";
@@ -74,10 +75,10 @@ const STATUS: Record<YSyncStatus, CanvasSyncStatus> = {
   offline: "offline",
 };
 
-/** SNAPSHOT_POST meta of a canvas doc. */
+/** SNAPSHOT_POST meta of a canvas doc (`objects`: docs/05, an empty canvas gets no version). */
 export function canvasMeta(doc: Y.Doc, title = ""): SnapshotMeta {
   const plain = canvasPlainText(doc);
-  return { plain_text: plain, title, preview: previewOf(plain) };
+  return { plain_text: plain, title, preview: previewOf(plain), objects: canvasObjectCount(doc) };
 }
 
 export class CanvasSync {

@@ -40,6 +40,8 @@ export interface SnapshotMeta {
   plain_text: string;
   title: string;
   preview: string;
+  /** Canvas only: the number of objects (0 = the server keeps the snapshot but writes no version). The Wiki sends none. */
+  objects?: number;
 }
 
 export type Frame =
@@ -100,6 +102,8 @@ export function encodeSnapshotPost(
     title: meta.title,
     preview: meta.preview,
   };
+  if (meta.objects !== undefined && Number.isFinite(meta.objects) && meta.objects >= 0)
+    body["objects"] = Math.floor(meta.objects);
   if (broadcast) body["broadcast"] = true;
   const json = new TextEncoder().encode(JSON.stringify(body));
   const out = new Uint8Array(13 + json.length + state.length);
@@ -146,6 +150,7 @@ export function decodeFrame(data: Uint8Array): Frame | null {
           plain_text: s(m["plain_text"]),
           title: s(m["title"]),
           preview: s(m["preview"]),
+          ...(typeof m["objects"] === "number" ? { objects: m["objects"] } : {}),
         };
         broadcast = m["broadcast"] === true;
       } catch {

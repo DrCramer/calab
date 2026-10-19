@@ -29,3 +29,15 @@ export function canvasPlainText(doc: Y.Doc): string {
   }
   return out;
 }
+
+/**
+ * The number of objects of a canvas (SNAPSHOT_POST `objects`): the server does not parse Yjs, so it
+ * learns from this that a document is empty and keeps it out of the version history. Reads the
+ * Y.Doc directly like canvasPlainText.
+ */
+export function canvasObjectCount(doc: Y.Doc): number {
+  if (!doc.share.has('objects')) return 0;
+  let n = 0;
+  for (const m of doc.getMap<Y.Map<unknown>>('objects').values()) if (m instanceof Y.Map) n++;
+  return n;
+}

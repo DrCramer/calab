@@ -149,6 +149,10 @@ type snapshotMeta struct {
 	// the other sockets of the canvas get it as a SNAPSHOT. Otherwise the post is a silent
 	// compaction.
 	Broadcast bool `json:"broadcast,omitempty"`
+	// Objects is the number of objects in the document (the server does not parse Yjs). An
+	// explicit 0 stores the snapshot but writes no version: an empty canvas is no history. Absent
+	// (an older client): the version rule is the same as for any state.
+	Objects *int `json:"objects,omitempty"`
 }
 
 func (canvasBackend) DecodeMeta(raw []byte) (any, bool, error) {
@@ -204,9 +208,12 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 }
 
 // version writes a version of the canvas when due (ADR-0107 §1): at most one per VersionEvery,
-// only when the state changed since the last one (compared by its sha256); then thins the
-// history to MaxVersions.
+// only when the state changed since the last one (compared by its sha256) and the document has
+// objects (meta.objects ≠ 0); then thins the history to MaxVersions.
 func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Post, it sqlc.CanvasItemHead, authors []uuid.UUID) error {
+	if o := p.Meta.(snapshotMeta).Objects; o != nil && *o == 0 {
+		return nil // the client says the document is empty: no version (the snapshot itself is kept)
+	}
 	s, now := b.s, b.s.Now()
 	every := p.VersionEvery
 	if every == 0 {

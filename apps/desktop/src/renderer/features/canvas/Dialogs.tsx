@@ -1,13 +1,13 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { CanvasItemKind, CANVAS_BITS, type CanvasVersion } from '@calaba/protocol';
 import { ChevronRight, Folder } from 'lucide-react';
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { canvasDocHandle } from '../../lib/canvas/docHandle';
-import { ancestorsOf, childKey, isInSubtree, TOP } from '../../lib/canvas/tree';
+import { ancestorsOf, childKey, isInSubtree, mergeById, TOP } from '../../lib/canvas/tree';
 import { canvasApi, loadChildren, moveItem, restoreVersion } from '../../services/canvas';
 import { toast } from '../../stores/toasts';
 import { useCanvas } from '../../stores/canvas';
@@ -34,7 +34,7 @@ function DialogBody({ dialog, workspaceId, onClose }: { dialog: CanvasDialog; wo
     case 'share':
       return <ShareDialog itemId={dialog.itemId} onClose={onClose} />;
     case 'versions':
-      return <VersionsDialog workspaceId={workspaceId} canvasId={dialog.itemId} onClose={onClose} />;
+      return <VersionsDialog key={dialog.itemId} workspaceId={workspaceId} canvasId={dialog.itemId} onClose={onClose} />;
     case 'move':
       return <MoveDialog workspaceId={workspaceId} itemId={dialog.itemId} onClose={onClose} />;
   }
@@ -119,24 +119,30 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
  * into the live document as one edit (co-authors see it, my undo takes it back). The restore needs
  * the open canvas (its document handle, lib/canvas/docHandle.ts) and the right to write.
  */
-function VersionsDialog({ workspaceId, canvasId, onClose }: { workspaceId: string; canvasId: string; onClose: () => void }): ReactNode {
+export function VersionsDialog({ workspaceId, canvasId, onClose }: { workspaceId: string; canvasId: string; onClose: () => void }): ReactNode {
   useLocale();
   const name = useCanvas((s) => s.items[canvasId]?.name ?? '');
-  const [list, setList] = useState<CanvasVersion[]>([]);
+  const [list, setList] = useState<readonly CanvasVersion[]>([]);
   const [cursor, setCursor] = useState<string | null>('');
   const [loading, setLoading] = useState(true);
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // An answer counts only for the effect run that asked: StrictMode's double mount (and a change
+  // of canvas) must not add the first page twice or let a stale page move the cursor.
+  const epoch = useRef(0);
   const fetchPage = useCallback(
     (from: string) => {
+      const mine = epoch.current;
       canvasApi.versions(canvasId, from || undefined).then(
         (r) => {
-          setList((l) => [...l, ...r.versions]);
+          if (epoch.current !== mine) return;
+          setList((l) => mergeById(l, r.versions));
           setPicked((p) => p ?? r.versions[0]?.id ?? null);
           setCursor(r.nextCursor || null);
           setLoading(false);
         },
         (e: unknown) => {
+          if (epoch.current !== mine) return;
           toast.fail(e, t('canvas.err.versions'));
           setCursor(null);
           setLoading(false);
@@ -145,7 +151,13 @@ function VersionsDialog({ workspaceId, canvasId, onClose }: { workspaceId: strin
     },
     [canvasId],
   );
-  useEffect(() => fetchPage(''), [fetchPage]);
+  useEffect(() => {
+    const token = epoch;
+    fetchPage('');
+    return () => {
+      token.current++;
+    };
+  }, [fetchPage]);
   const version = list.find((v) => v.id === picked) ?? null;
   const writable = canvasDocHandle(canvasId)?.writable() ?? false;
   return (
