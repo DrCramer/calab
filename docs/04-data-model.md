@@ -136,6 +136,11 @@ bot_commands        bot_user_id, name ([a-z0-9_]{1,32}), description (≤ 256), 
 bot_webhook_deliveries id (uuidv7 приложения = id в теле), bot_user_id, payload? (JSON; NULL после завершения), attempts,
                     next_at, created_at, delivered_at?, failed_at?, error          — outbox webhook-ов ботов
 bot_blocks          user_id, bot_user_id, created_at   PK (user_id, bot_user_id) — человек заблокировал бота
+bot_delegations     workspace_id → workspaces CASCADE, bot_id → users, user_id → users, since   PK (workspace_id,
+                    bot_id, user_id) — участник сам разрешил боту действовать от своего имени в пространстве
+                    (ADR-0111, миграция 00105); действует, пока since новее обоих членств и роль не guest
+bot_delegation_invites workspace_id, bot_id, user_id, invited_by → users, message_id? (DM бота с кнопками),
+                    keyboard_revision, created_at   PK (workspace_id, bot_id, user_id) — ожидающее предложение
 bot_contact_shares  id (uuidv7), workspace_id → workspaces CASCADE («домашнее» пространство бота), bot_user_id (без FK),
                     user_id → users CASCADE, room_id (DM), message_id, button_id (без FK), fields text[] ('phone' | 'email',
                     1–2), created_at   UNIQUE (message_id, button_id, user_id) — контакт, отданный боту кнопкой

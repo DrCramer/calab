@@ -87,6 +87,7 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `invites.list` · `create` · `delete` · `email(wsId, address)` · `listEmail` · `deleteEmail` | invites |
 | `badges.list` · `create` · `update` · `delete` · `set(wsId, userId, badgeId)` | badges |
 | `recording.start(roomId)` · `recording.stop(roomId)` | meeting recording |
+| `asMember(userId)` | the same bot [on behalf of a member](./auth#on-behalf-of-a-member) who allowed it (REST only) |
 | `asOwner()` · `tasks.vote(taskId, 'approve' \| 'reject' \| 'withdraw', comment?)` | the same bot [on behalf of its owner](./auth#on-behalf-of-the-owner) (REST only) · the owner's approval vote |
 | `fetchMe()` · `updateProfile({ displayName?, description? })` | the bot's profile |
 | `rest.request(method, path, { json?, query?, form?, onBehalfOfOwner? })` · `rest.call(Schema, …)` | any other allowed route |

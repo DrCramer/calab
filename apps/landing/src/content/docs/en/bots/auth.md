@@ -136,6 +136,51 @@ curl -s -X POST https://app.example.com/api/tasks/$TASK/approval \
 
 In the SDK: `bot.asOwner()` — the same bot with the header on every call (`await bot.asOwner().tasks.vote(taskId, 'approve')`), or `{ onBehalfOfOwner: true }` on a single `bot.rest.request`.
 
+## On behalf of a member
+
+Any member of a workspace can let a bot act **on their behalf** in that workspace themselves: the bot's “⋯” menu (in the members column or the bot's profile) → “Delegate rights” → “Allow”. The same dialog suggests it to other members: the bot sends each of them a direct message — who suggests it and what the bot will be able to do — with the buttons “Accept” and “Decline”.
+
+- **Only the member** gives and revokes the permission: neither an admin, nor the bot's owner, nor whoever suggested it can do it for them. Only the recipient's own “Accept” counts; if the bot edits that message, its buttons stop working.
+- The permission is for one workspace. It stops when the member revokes it, leaves the workspace, becomes a guest, or the bot is removed from the workspace.
+- Not for guests, bots, or workspaces with mandatory SSO.
+
+The bot learns whom it may help right now:
+
+```sh
+curl -s https://app.example.com/api/workspaces/$WS/bots/$BOT_ID -H "Authorization: Bearer $TOKEN"
+# → {"bot": {…}, "onBehalfUserIds": ["…"], "delegations": [{"userId": "…", "since": "…"}], "invites": [...]}
+```
+
+A request on behalf of a member carries `Calab-On-Behalf` with their id:
+
+```sh
+# A card on the DOC board — the member is its author, not the bot
+curl -s -X POST https://app.example.com/api/boards/$BOARD/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Calab-On-Behalf: $USER_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Supplier invoice"}'
+```
+
+- The rights are the **member's**; the author and the journal are the member, marked `viaBotId` (“Name (via bot X)”): the card is in their “Mine”, notifications go as for their own action.
+- Routes are the same as [on behalf of the owner](#on-behalf-of-the-owner): tasks, comments, attachments, watchers, the approval vote and everything else open to bots; the account, bot management, billing, voice and calls are closed.
+- **Only inside the workspace of the permission**: the member's direct messages, their profile (`GET /api/me`) and summaries across workspaces (`/api/me/tasks`, mentions) are `403 ON_BEHALF_ROUTE`.
+- Revoking works at once, including for a request already running.
+- The gateway and the webhook do not change; the limits are the bot's.
+
+| Response | `reason` | Why |
+|---|---|---|
+| `400` | `ON_BEHALF_INVALID` | the value is neither `owner` nor a user id, or it is the bot's own id |
+| `403` | `ON_BEHALF_NO_CONSENT` | the member has not allowed this bot (in this workspace), revoked it, became a guest or cannot allow it |
+| `403` | `ON_BEHALF_OWNER_NOT_MEMBER` | the member is banned or suspended by the directory in this workspace |
+| `403` | `ON_BEHALF_IDENTITY_POLICY` | the workspace requires the person's own sign-in (SSO) |
+| `403` | `ON_BEHALF_ROUTE` | the route is closed on behalf, or it is outside the workspace |
+
+> [!WARNING]
+> A bot token with permissions acts as those members. The bot's owner holds it — so members should allow only bots they trust.
+
+In the SDK: `bot.asMember(userId)` — the same bot with every call on behalf of the member (`await bot.asMember(userId).tasks.create(boardId, { title })`), or `{ onBehalfOf: userId }` on a single `bot.rest.request`.
+
 ## Good practice
 
 - Keep the token in a secret store (Vault, CI environment variables), not in code.

@@ -21,9 +21,15 @@ export interface RestOptions {
    * 403 ON_BEHALF_DISABLED (never a silent fallback to the bot).
    */
   onBehalfOfOwner?: boolean;
+  /**
+   * Every request on behalf of a member who let the bot act for them (ADR-0111): the header
+   * `Calab-On-Behalf: <user id>`. Without the member's own consent in the workspace the server
+   * answers 403 ON_BEHALF_NO_CONSENT. Takes precedence over `onBehalfOfOwner`.
+   */
+  onBehalfOf?: string;
 }
 
-/** The header of a request on behalf of the bot's owner (ADR-0106) and its only value. */
+/** The header of a request on behalf of the bot's owner (ADR-0106) or of a member (ADR-0111, a user id). */
 export const ON_BEHALF_HEADER = 'Calab-On-Behalf';
 export const ON_BEHALF_OWNER = 'owner';
 
@@ -37,6 +43,8 @@ export interface RequestInit {
   form?: () => FormData;
   /** This request on behalf of the bot's owner (ADR-0106); default: the client's `onBehalfOfOwner`. */
   onBehalfOfOwner?: boolean;
+  /** This request on behalf of a member (ADR-0111, their user id); default: the client's `onBehalfOf`. */
+  onBehalfOf?: string;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -73,11 +81,14 @@ export class Rest {
   private readonly userAgent: string;
   /** Requests go on behalf of the bot's owner by default (ADR-0106). */
   readonly onBehalfOfOwner: boolean;
+  /** Requests go on behalf of this member by default (ADR-0111); '' = none. */
+  readonly onBehalfOf: string;
   private readonly options: RestOptions;
 
   constructor(o: RestOptions) {
     this.options = o;
     this.onBehalfOfOwner = o.onBehalfOfOwner ?? false;
+    this.onBehalfOf = o.onBehalfOf ?? '';
     this.server = o.server.replace(/\/+$/, '');
     this.token = o.token;
     this.fetchFn = o.fetch ?? ((input, init) => fetch(input, init));
@@ -89,7 +100,12 @@ export class Rest {
 
   /** The same client with every request on behalf of the bot's owner (ADR-0106). */
   asOwner(): Rest {
-    return this.onBehalfOfOwner ? this : new Rest({ ...this.options, onBehalfOfOwner: true });
+    return this.onBehalfOfOwner && !this.onBehalfOf ? this : new Rest({ ...this.options, onBehalfOfOwner: true, onBehalfOf: '' });
+  }
+
+  /** The same client with every request on behalf of a member who consented (ADR-0111). */
+  asMember(userId: string): Rest {
+    return this.onBehalfOf === userId ? this : new Rest({ ...this.options, onBehalfOfOwner: false, onBehalfOf: userId });
   }
 
   url(path: string, query?: Query): string {
@@ -111,7 +127,9 @@ export class Rest {
   async response(method: string, path: string, init: RequestInit = {}): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       const headers: Record<string, string> = { Authorization: `Bearer ${this.token}`, Accept: 'application/json', 'User-Agent': this.userAgent };
-      if (init.onBehalfOfOwner ?? this.onBehalfOfOwner) headers[ON_BEHALF_HEADER] = ON_BEHALF_OWNER;
+      const member = init.onBehalfOf ?? this.onBehalfOf;
+      if (member) headers[ON_BEHALF_HEADER] = member;
+      else if (init.onBehalfOfOwner ?? this.onBehalfOfOwner) headers[ON_BEHALF_HEADER] = ON_BEHALF_OWNER;
       let body: string | FormData | undefined;
       if (init.form) body = init.form();
       else if (init.json !== undefined) {
