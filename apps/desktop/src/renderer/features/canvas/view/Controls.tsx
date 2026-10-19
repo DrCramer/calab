@@ -80,15 +80,16 @@ function Help({ focusCanvas, canWrite, open, onOpenChange }: { focusCanvas: () =
   );
 }
 
-/** Zoom, fit and the shortcut help: bottom right. */
+/** Zoom, fit and the shortcut help: bottom right. `phone` (view only, no keyboard): zoom and «вписать всё» only. */
 export const ZoomBar = memo(function ZoomBar({
-  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange,
+  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false,
 }: {
   engine: CanvasEngine;
   focusCanvas: () => void;
   canWrite: boolean;
   helpOpen: boolean;
   onHelpOpenChange: (o: boolean) => void;
+  phone?: boolean;
 }): ReactNode {
   useLocale();
   const step = (dir: 1 | -1) => (): void => {
@@ -108,11 +109,15 @@ export const ZoomBar = memo(function ZoomBar({
       <IconButton label={t('canvasBoard.zoom.fitAll')} shortcut="⇧1" onMouseDown={keepFocus} onClick={() => { engine.fitAll(); focusCanvas(); }} data-testid="canvas-fit-all">
         <Maximize className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
-      <IconButton label={t('canvasBoard.zoom.fitSelection')} shortcut="⇧2" onMouseDown={keepFocus} onClick={() => { engine.fitSelection(); focusCanvas(); }} data-testid="canvas-fit-selection">
-        <Focus className={ICON} strokeWidth={1.75} aria-hidden />
-      </IconButton>
-      <div className={DIVIDER} aria-hidden />
-      <Help focusCanvas={focusCanvas} canWrite={canWrite} open={helpOpen} onOpenChange={onHelpOpenChange} />
+      {phone ? null : (
+        <>
+          <IconButton label={t('canvasBoard.zoom.fitSelection')} shortcut="⇧2" onMouseDown={keepFocus} onClick={() => { engine.fitSelection(); focusCanvas(); }} data-testid="canvas-fit-selection">
+            <Focus className={ICON} strokeWidth={1.75} aria-hidden />
+          </IconButton>
+          <div className={DIVIDER} aria-hidden />
+          <Help focusCanvas={focusCanvas} canWrite={canWrite} open={helpOpen} onOpenChange={onHelpOpenChange} />
+        </>
+      )}
     </div>
   );
 });

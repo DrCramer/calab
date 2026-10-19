@@ -29,6 +29,7 @@ import { ApiError, body, call, callBytes, callEmpty, qs } from '../lib/api/clien
 import { api } from '../lib/api/endpoints';
 import { canvasDocHandle } from '../lib/canvas/docHandle';
 import { ancestorsOf, childKey, isFolder, TOP, trashKey } from '../lib/canvas/tree';
+import { pushOnTab } from '../lib/phoneNav';
 import { useCanvas } from '../stores/canvas';
 import { itemOf, useCanvasUi } from '../stores/canvasUi';
 import { toast, useToasts } from '../stores/toasts';
@@ -165,6 +166,12 @@ export function openCanvas(ws: string, id: string): void {
   ui.openTrash(ws, false);
   ui.openItem(ws, id);
   if (!useCanvas.getState().items[id]) void loadItem(ws, id);
+  if (useUi.getState().phone.on) openPhoneItem(id);
+}
+
+/** The phone pushes a folder or a canvas as a screen over the «Холст» tab (view only, ADR-0107 §5). */
+export function openPhoneItem(id: string): void {
+  useUi.getState().setPhone((n) => pushOnTab(n, 'canvas', { kind: 'canvas', itemId: id }));
 }
 
 /**

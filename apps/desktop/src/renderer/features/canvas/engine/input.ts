@@ -92,9 +92,13 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       // Synthetic events have no active pointer to capture.
     }
     if (pointers.size === 2) {
-      // Second finger: abort a plain gesture and pinch.
-      engine.activeGesture?.cancel();
+      // Second finger: abort a plain gesture and pinch. A pan in progress is kept (cancelling it would
+      // snap the view back to where the first finger touched down).
+      const g = engine.activeGesture;
+      if (g?.kind === 'pan') g.end(w, s, mods(e));
+      else g?.cancel();
       engine.activeGesture = null;
+      panDrag = null;
       const [a, b] = [...pointers.values()];
       if (a && b) pinch = new PinchGesture(engine, a, b);
       return;
@@ -187,7 +191,15 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       // Already released.
     }
     if (pinch) {
-      if (pointers.size < 2) pinch = null;
+      if (pointers.size < 2) {
+        pinch = null;
+        // One finger stays down after a pinch: it carries on as a pan, as in any map.
+        const rest = [...pointers.entries()][0];
+        if (rest && !cancelled) {
+          engine.activeGesture = new PanGesture(engine, rest[1]);
+          panDrag = { id: rest[0] };
+        }
+      }
       return;
     }
     const g = engine.activeGesture;

@@ -21,6 +21,7 @@ import { toast } from '../../../stores/toasts';
 import type { CanvasPalette } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { ZoomBar } from './Controls';
+import { PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
 import { StatusBanner } from './StatusBanner';
@@ -42,6 +43,11 @@ export interface CanvasViewProps {
   onShare: () => void;
   /** The canvas' name, for the snapshot meta (search) and the PNG file name. Optional; read at call time. */
   name?: string;
+  /**
+   * The phone viewer (ADR-0107 §5): always read-only whatever `bits` say, no toolbar / properties / help /
+   * context menu / avatars; the zoom bar, connection notices, a count of the others and a one-time note stay.
+   */
+  phone?: boolean;
   /** The server closed the socket for good: 4003 (access changed) or 4404 (gone). The shell may reload the item's rights. */
   onFatal?: (code: number) => void;
   /** Receives the handle (export, fit) once the canvas is open; `getCanvasViewHandle(canvasId)` is the same. */
@@ -62,9 +68,9 @@ function readEnv(): Env {
   };
 }
 
-export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
+export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, phone = false, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
   useLocale();
-  const canWrite = (bits & CANVAS_BITS.WRITE) !== 0n;
+  const canWrite = !phone && (bits & CANVAS_BITS.WRITE) !== 0n;
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [session, setSession] = useState<CanvasSession | null>(null);
@@ -259,7 +265,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   const engine = session?.engine ?? null;
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>
+      <ContextMenu.Trigger asChild disabled={phone}>
         <div
           className="relative size-full min-h-0 min-w-0 select-none overflow-hidden bg-main"
           data-testid="canvas-view"
@@ -281,11 +287,12 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
               focusCanvas={focusCanvas}
               helpOpen={helpOpen}
               onHelpOpenChange={setHelpOpen}
+              phone={phone}
             />
           ) : null}
         </div>
       </ContextMenu.Trigger>
-      {engine ? (
+      {engine && !phone ? (
         <CanvasMenu engine={engine} mode={menuMode} canWrite={canWrite} focusCanvas={focusCanvas} onOpenHistory={onOpenHistory} onShare={onShare} />
       ) : null}
     </ContextMenu.Root>
@@ -294,7 +301,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
 
 /** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
 function Chrome({
-  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange,
+  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange, phone,
 }: {
   session: CanvasSession;
   palette: CanvasPalette;
@@ -305,9 +312,20 @@ function Chrome({
   focusCanvas: () => void;
   helpOpen: boolean;
   onHelpOpenChange: (o: boolean) => void;
+  phone: boolean;
 }): ReactNode {
   const { engine, sync } = session;
   const editable = !useEngineValue(engine, (s) => s.readOnly);
+  if (phone) {
+    return (
+      <>
+        <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={onHelpOpenChange} phone />
+        <PhoneOthers store={presence} />
+        <PhoneNote />
+        <StatusBanner engine={engine} sync={sync} canWrite={false} gone={gone} onRetry={onRetry} phone />
+      </>
+    );
+  }
   return (
     <>
       {editable ? (
