@@ -9,6 +9,7 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.view': 'Vista',
   'disk.view.tiles': 'Mosaico',
   'disk.view.list': 'Lista',
+  'disk.view.columns': 'Columnas',
   'disk.sort': 'Ordenar',
   'disk.sortBy': 'Ordenar: {by}',
   'disk.sort.name': 'Por nombre',

@@ -16,7 +16,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 
 /**
  * The disk's header (docs/08 «Шапки», ADR-0094 §8): crumbs of the open folder (each a drop target
- * for dragged items) · the search of the open folder · «Плитки | Список» · the sort · «+» (Папка,
+ * for dragged items) · the search of the open folder · «Плитки | Список | Колонки» · the sort · «+» (Папка,
  * Загрузить файлы) · «⋯» (Корзина, История диска, Место, Настройки корзины). In the trash: the
  * crumbs «Диск › Корзина» and «Очистить корзину». Reads primitives only.
  */
@@ -135,6 +135,7 @@ function ViewSwitch(): ReactNode {
       options={[
         { value: 'tiles', label: t('disk.view.tiles') },
         { value: 'list', label: t('disk.view.list') },
+        { value: 'columns', label: t('disk.view.columns') },
       ]}
       onChange={(diskView) => usePrefs.getState().setPrefs({ diskView })}
       testId="disk-view"

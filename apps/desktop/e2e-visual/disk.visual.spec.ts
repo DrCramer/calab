@@ -34,6 +34,18 @@ test('disk-list', async ({ open, win, shot, theme }) => {
   // A selected row (the «⋯» shows on it).
   await win.getByTestId('disk-row').filter({ hasText: 'Отчёт за квартал.pdf' }).click();
   await checkpoint(shot, 'disk-list');
+  // CBF-21: «Колонки» — the root column, a folder opens the next one, a file adds the card column.
+  await win.getByTestId('disk-view').getByRole('radio', { name: 'Колонки' }).click();
+  await expect(win.getByTestId('disk-column')).toHaveCount(1);
+  await win.getByTestId('disk-col-row').filter({ hasText: 'Проекты' }).click();
+  await expect(win.getByTestId('disk-column')).toHaveCount(2);
+  await win.keyboard.press('ArrowRight');
+  await expect(win.getByTestId('disk-column')).toHaveCount(3);
+  await checkpoint(shot, 'disk-columns');
+  await win.getByTestId('disk-col-row').filter({ hasText: 'Отчёт за квартал.pdf' }).click();
+  await expect(win.getByTestId('disk-col-preview')).toBeVisible();
+  await expect(win.getByTestId('disk-column')).toHaveCount(1);
+  await checkpoint(shot, 'disk-columns-card');
 });
 
 test('disk-trash', async ({ open, win, shot, theme }) => {

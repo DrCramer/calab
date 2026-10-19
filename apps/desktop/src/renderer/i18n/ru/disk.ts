@@ -9,6 +9,7 @@ export const ruDisk = {
   'disk.view': 'Вид',
   'disk.view.tiles': 'Плитки',
   'disk.view.list': 'Список',
+  'disk.view.columns': 'Колонки',
   'disk.sort': 'Сортировка',
   'disk.sortBy': 'Сортировка: {by}',
   'disk.sort.name': 'По имени',

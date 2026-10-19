@@ -9,6 +9,7 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.view': '视图',
   'disk.view.tiles': '平铺',
   'disk.view.list': '列表',
+  'disk.view.columns': '分栏',
   'disk.sort': '排序',
   'disk.sortBy': '排序：{by}',
   'disk.sort.name': '按名称',
