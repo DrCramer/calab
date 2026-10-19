@@ -48,6 +48,11 @@ type room struct {
 	conns     map[*conn]struct{}
 	stop      chan struct{}
 	lastCheck time.Time // the COMPACT_REQUEST threshold query (hub.mu)
+	// The updates after the snapshot as this instance knows them (hub.mu): read from the database
+	// at statsAt, then counted up by the updates stored here; other instances' updates are seen at
+	// the next refresh.
+	updates, bytes int64
+	statsAt        time.Time
 	// ready closes when the first SUBSCRIBE of <name>:<doc> is confirmed: a socket reads its
 	// snapshot only after it, so that nothing published between that read and the subscription
 	// is lost (a frame after the read arrives through Redis; one before it is in the database).
@@ -164,11 +169,19 @@ func (h *Hub) onRelay(r *room, msg []byte) {
 	}
 	h.mu.Unlock()
 	for _, c := range conns {
-		if frame[0] == ctlRecheck {
-			c.recheckSoon()
-		} else {
-			c.enqueue(frame)
-		}
+		c.deliverFrame(frame)
+	}
+}
+
+// deliverFrame hands a relayed frame to c: a recheck control to its checker, a COMPACT_REQUEST
+// only to a socket that may write (a read-only client has nothing to post), the rest queued.
+func (c *conn) deliverFrame(frame []byte) {
+	switch {
+	case frame[0] == ctlRecheck:
+		c.recheckSoon()
+	case frame[0] == FrameCompact && !c.write.Load():
+	default:
+		c.enqueue(frame)
 	}
 }
 
@@ -179,11 +192,7 @@ func (h *Hub) deliver(doc uuid.UUID, from *conn, frame []byte) {
 	if r := h.rooms[doc]; r != nil {
 		for c := range r.conns {
 			if c != from {
-				if frame[0] == ctlRecheck {
-					c.recheckSoon()
-				} else {
-					c.enqueue(frame)
-				}
+				c.deliverFrame(frame)
 			}
 		}
 	}
@@ -247,6 +256,54 @@ func (h *Hub) shouldCheckCompact(doc uuid.UUID) bool {
 	}
 	r.lastCheck = now
 	return true
+}
+
+// docStats is the room's count of the updates after the snapshot: the cached estimate while it is
+// younger than CompactCheckEvery, else read from the database (always, when that is < 0).
+func (h *Hub) docStats(ctx context.Context, doc uuid.UUID) (updates, size int64, err error) {
+	ttl := max(h.cfg.CompactCheckEvery, 0)
+	if ttl > 0 {
+		h.mu.Lock()
+		if r := h.rooms[doc]; r != nil && time.Since(r.statsAt) < ttl {
+			updates, size = r.updates, r.bytes
+			h.mu.Unlock()
+			return updates, size, nil
+		}
+		h.mu.Unlock()
+	}
+	seq, err := SnapshotSeq(ctx, h.b, h.db.Q, doc)
+	if err != nil {
+		return 0, 0, err
+	}
+	st, err := h.b.UpdatesSince(ctx, h.db.Q, doc, seq)
+	if err != nil {
+		return 0, 0, err
+	}
+	h.mu.Lock()
+	if r := h.rooms[doc]; r != nil {
+		r.updates, r.bytes, r.statsAt = int64(st.Updates), st.Bytes, time.Now()
+	}
+	h.mu.Unlock()
+	return int64(st.Updates), st.Bytes, nil
+}
+
+// noteStored counts an update stored here; noteCompacted forgets the estimate after a snapshot
+// (the next UPDATE reads the database).
+func (h *Hub) noteStored(doc uuid.UUID, n int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r := h.rooms[doc]; r != nil {
+		r.updates++
+		r.bytes += int64(n)
+	}
+}
+
+func (h *Hub) noteCompacted(doc uuid.UUID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r := h.rooms[doc]; r != nil {
+		r.statsAt = time.Time{}
+	}
 }
 
 // ---- per-person socket limit (Redis, across instances) ----
