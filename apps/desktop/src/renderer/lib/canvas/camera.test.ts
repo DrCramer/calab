@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_SCALE, MIN_SCALE, clampScale, fitRect, lerpCamera, nextZoomStep, panBy, screenToWorld, snapCamera, visibleRect, worldToScreen, zoomAt, zoomTo,
+  MAX_SCALE, MIN_SCALE, clampScale, fitRect, lerpCamera, nextZoomStep, panBy, pinchStep, screenToWorld, snapCamera, visibleRect, worldToScreen, zoomAt, zoomTo,
 } from './camera';
 
 const cam = { tx: 100, ty: -50, scale: 2 };
@@ -64,5 +64,44 @@ describe('camera', () => {
     const mid = lerpCamera({ tx: 0, ty: 0, scale: 0.25 }, { tx: 100, ty: 0, scale: 4 }, 0.5);
     expect(mid.scale).toBeCloseTo(1);
     expect(mid.tx).toBe(50);
+  });
+});
+
+describe('pinchStep', () => {
+  // Deterministic pseudo-random gestures (a property check without a dependency).
+  const rnd = ((seed: number) => () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296))(7);
+
+  it('keeps the world point under the midpoint under the midpoint as it moves, at any scale', () => {
+    for (let i = 0; i < 200; i++) {
+      const c = { tx: rnd() * 400 - 200, ty: rnd() * 400 - 200, scale: 0.15 + rnd() * 3.5 };
+      const a0 = { x: rnd() * 400, y: rnd() * 800 };
+      const b0 = { x: rnd() * 400, y: rnd() * 800 };
+      const a1 = { x: a0.x + rnd() * 80 - 40, y: a0.y + rnd() * 80 - 40 };
+      const b1 = { x: b0.x + rnd() * 80 - 40, y: b0.y + rnd() * 80 - 40 };
+      const m0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
+      const m1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
+      const next = pinchStep(c, a0, b0, a1, b1);
+      const was = screenToWorld(c, m0);
+      const now = screenToWorld(next, m1);
+      expect(now.x).toBeCloseTo(was.x, 6);
+      expect(now.y).toBeCloseTo(was.y, 6);
+    }
+  });
+  it('scales by the change of the finger distance', () => {
+    const next = pinchStep({ tx: 0, ty: 0, scale: 1 }, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 50, y: 0 }, { x: 250, y: 0 });
+    expect(next.scale).toBeCloseTo(2);
+  });
+  it('does not stick at a limit: pinching back responds at once', () => {
+    let c = { tx: 0, ty: 0, scale: 3.9 };
+    c = pinchStep(c, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 0, y: 0 }, { x: 400, y: 0 });
+    expect(c.scale).toBe(MAX_SCALE);
+    c = pinchStep(c, { x: 0, y: 0 }, { x: 400, y: 0 }, { x: 100, y: 0 }, { x: 300, y: 0 });
+    expect(c.scale).toBeCloseTo(MAX_SCALE / 2);
+  });
+  it('treats fingers touching each other as a pure pan (no ratio blow-up)', () => {
+    const next = pinchStep({ tx: 0, ty: 0, scale: 1 }, { x: 100, y: 100 }, { x: 102, y: 100 }, { x: 110, y: 120 }, { x: 160, y: 120 });
+    expect(next.scale).toBe(1);
+    expect(next.tx).toBeCloseTo(10 + 25 - 1);
+    expect(next.ty).toBeCloseTo(20);
   });
 });

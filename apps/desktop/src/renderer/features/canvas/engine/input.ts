@@ -6,6 +6,15 @@ import {
   type Mods,
 } from './gestures';
 import { HANDLE_PX } from './overlay';
+import { WheelClassifier } from './wheel';
+import { clampScale } from '../../../lib/canvas/camera';
+
+/** Safari's pinch events (macOS trackpad, iPadOS): no `wheel`, no pointer events; `scale` is relative to the start. */
+interface SafariGestureEvent extends UIEvent {
+  scale: number;
+  clientX: number;
+  clientY: number;
+}
 
 const RESIZE_CURSOR: Record<HandleId, string> = {
   nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
@@ -19,13 +28,19 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
 
 /**
  * Wires pointer, wheel and keyboard events on the canvas element to engine commands (ADR-0107 §4).
- * Returns the detach function. Listeners are passive-free only where preventDefault is needed (wheel).
+ * Returns the detach function. Camera input (wheel, pinch, Safari gestures) is queued on the engine and
+ * applied once per frame; nothing here owns a timer or a frame of its own.
  */
 export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): () => void {
   const pointers = new Map<number, Point>();
   let spaceDown = false;
   let panDrag: { id: number } | null = null;
   let pinch: PinchGesture | null = null;
+  /** Pointer ids the pinch measures (a third finger does not take part). */
+  let pair: [number, number] = [0, 0];
+  const wheelKind = new WheelClassifier();
+  /** A Safari pinch in progress: the camera and world point at its start. */
+  let gesture: { scale: number; wx: number; wy: number } | null = null;
   let cursor = '';
 
   const setCursor = (c: string): void => {
@@ -84,7 +99,17 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const onDown = (e: PointerEvent): void => {
     canvas.focus({ preventScroll: true });
     engine.cancelAnimation();
+    engine.flushCamera();
     const { s, w } = local(e);
+    if (e.isPrimary && pointers.size > 0) {
+      // A new first finger while the old ones are still "down": their pointerup was lost (a system gesture,
+      // the app went to the background). Forget them, or the next touch would pinch with a phantom finger.
+      pointers.clear();
+      pinch = null;
+      panDrag = null;
+      engine.activeGesture?.cancel();
+      engine.activeGesture = null;
+    }
     pointers.set(e.pointerId, s);
     try {
       canvas.setPointerCapture(e.pointerId);
@@ -99,8 +124,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       else g?.cancel();
       engine.activeGesture = null;
       panDrag = null;
-      const [a, b] = [...pointers.values()];
-      if (a && b) pinch = new PinchGesture(engine, a, b);
+      const [ea, eb] = [...pointers.entries()];
+      if (ea && eb) {
+        pair = [ea[0], eb[0]];
+        pinch = new PinchGesture(engine, ea[1], eb[1]);
+      }
       return;
     }
     if (pointers.size > 2) return;
@@ -168,9 +196,10 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const onMove = (e: PointerEvent): void => {
     const { s, w } = local(e);
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, s);
-    if (pinch && pointers.size >= 2) {
-      const [a, b] = [...pointers.values()];
-      if (a && b) pinch.update(a, b);
+    if (pinch) {
+      const a = pointers.get(pair[0]);
+      const b = pointers.get(pair[1]);
+      if (a && b && (e.pointerId === pair[0] || e.pointerId === pair[1])) pinch.update(a, b);
       return;
     }
     const g = engine.activeGesture;
@@ -191,15 +220,21 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       // Already released.
     }
     if (pinch) {
-      if (pointers.size < 2) {
-        pinch = null;
-        // One finger stays down after a pinch: it carries on as a pan, as in any map.
-        const rest = [...pointers.entries()][0];
-        if (rest && !cancelled) {
-          engine.activeGesture = new PanGesture(engine, rest[1]);
-          panDrag = { id: rest[0] };
-        }
+      if (e.pointerId !== pair[0] && e.pointerId !== pair[1]) return;
+      const [ea, eb] = [...pointers.entries()];
+      if (ea && eb && !cancelled) {
+        // A third finger takes the place of the one that left: measure from the new pair, no jump.
+        pair = [ea[0], eb[0]];
+        pinch.rebase(ea[1], eb[1]);
+        return;
       }
+      pinch.end();
+      pinch = null;
+      // One finger stays down after a pinch: it carries on as a pan, as in any map.
+      if (ea && !cancelled) {
+        engine.activeGesture = new PanGesture(engine, ea[1]);
+        panDrag = { id: ea[0] };
+      } else pointers.clear();
       return;
     }
     const g = engine.activeGesture;
@@ -227,18 +262,42 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
 
   const onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    // Safari reports a trackpad pinch as gesture events; a ctrl+wheel in the middle of one is not a second zoom.
+    if (gesture && e.ctrlKey) return;
     const { s } = local(e);
-    // Line/page deltas are a mouse wheel; the scale below makes them comparable to pixel deltas.
-    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
-    const dx = e.deltaX * unit;
-    const dy = e.deltaY * unit;
-    if (e.ctrlKey || e.metaKey) {
-      // Trackpad pinch arrives as ctrl+wheel with small deltas; a mouse notch is ~100.
-      const notch = e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50;
-      const factor = notch ? (dy < 0 ? 1.1 : 1 / 1.1) : Math.exp(-dy * 0.01);
-      engine.zoomAtPoint(factor, s);
-    } else if (e.shiftKey && dx === 0) engine.panByScreen(-dy, 0);
-    else engine.panByScreen(-dx, -dy);
+    const a = wheelKind.classify(e, canvas.clientHeight);
+    if (a.kind === 'zoom') engine.steerZoom(a.factor, s);
+    else engine.steerPan(a.dx, a.dy);
+  };
+
+  // Safari (macOS trackpad, iPadOS): the browser would zoom the page, so the events are always consumed.
+  // On a touch screen they fire next to the pointer events (which already drive the pinch): ignored there.
+  const onGestureStart = (ev: Event): void => {
+    ev.preventDefault();
+    gesture = null;
+    if (pinch || pointers.size >= 2) return;
+    const e = ev as SafariGestureEvent;
+    const { s } = local(e);
+    const c = engine.liveCamera;
+    gesture = { scale: c.scale, wx: (s.x - c.tx) / c.scale, wy: (s.y - c.ty) / c.scale };
+  };
+
+  const onGestureChange = (ev: Event): void => {
+    ev.preventDefault();
+    if (!gesture || pinch || pointers.size >= 2) return;
+    const e = ev as SafariGestureEvent;
+    if (!(e.scale > 0)) return;
+    const { s } = local(e);
+    // The world point that was under the fingers at the start follows them: zoom and pan in one gesture.
+    const scale = clampScale(gesture.scale * e.scale);
+    engine.steerCamera({ scale, tx: s.x - gesture.wx * scale, ty: s.y - gesture.wy * scale });
+  };
+
+  const onGestureEnd = (ev: Event): void => {
+    ev.preventDefault();
+    if (!gesture) return;
+    gesture = null;
+    engine.flushCamera();
   };
 
   const onKeyDown = (e: KeyboardEvent): void => {
@@ -334,6 +393,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   canvas.addEventListener('pointerleave', onLeave);
   canvas.addEventListener('dblclick', onDouble);
   canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('gesturestart', onGestureStart);
+  canvas.addEventListener('gesturechange', onGestureChange);
+  canvas.addEventListener('gestureend', onGestureEnd);
   canvas.addEventListener('keydown', onKeyDown);
   canvas.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('blur', onBlur);
@@ -345,6 +407,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     canvas.removeEventListener('pointerleave', onLeave);
     canvas.removeEventListener('dblclick', onDouble);
     canvas.removeEventListener('wheel', onWheel);
+    canvas.removeEventListener('gesturestart', onGestureStart);
+    canvas.removeEventListener('gesturechange', onGestureChange);
+    canvas.removeEventListener('gestureend', onGestureEnd);
     canvas.removeEventListener('keydown', onKeyDown);
     canvas.removeEventListener('keyup', onKeyUp);
     canvas.removeEventListener('blur', onBlur);

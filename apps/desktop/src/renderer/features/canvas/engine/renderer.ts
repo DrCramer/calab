@@ -20,6 +20,8 @@ export interface RendererOptions {
   raf?: (cb: () => void) => number;
   cancelRaf?: (id: number) => void;
   now?: () => number;
+  /** Runs at the start of a frame, before the camera is read (the engine applies queued gesture input). */
+  beforeFrame?: () => void;
   makeLayer?: (w: number, h: number) => LayerCanvas;
 }
 
@@ -189,6 +191,8 @@ export class Renderer {
   requestFrame(): void {
     if (this.raf || !this.active) return;
     this.raf = (this.o.raf ?? requestAnimationFrame)(() => {
+      // `raf` is still set here: a camera change made by the hook asks for this very frame, not another.
+      this.o.beforeFrame?.();
       this.raf = 0;
       this.frame();
     });

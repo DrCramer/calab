@@ -129,6 +129,7 @@ export class CanvasEngine implements Core {
   private pasteCount = 0;
   private animToken = 0;
   private animRaf = 0;
+  private pending: Camera | null = null;
   private readonly clipboardPort: ClipboardPort | null;
   private readonly now: () => number;
   private readonly disposers: (() => void)[] = [];
@@ -154,6 +155,7 @@ export class CanvasEngine implements Core {
       palette: this.palette,
       getCamera: () => this.cam,
       getOverlay: () => this.overlay,
+      beforeFrame: () => this.flushCamera(),
       awareness: this.awareness,
       maxDpr: this.lowPower ? 1 : 2,
       ...(opts.raf ? { raf: opts.raf } : {}),
@@ -296,7 +298,33 @@ export class CanvasEngine implements Core {
     return n / this.cam.scale;
   }
 
+  /**
+   * The camera including gesture input that has not reached a frame yet. Wheel, pinch and pan events
+   * arrive faster than frames (120+/s on a trackpad): they build on this and are applied once per frame.
+   */
+  get liveCamera(): Camera {
+    return this.pending ?? this.cam;
+  }
+
+  /** Queues the next camera of a continuous gesture; the frame applies it (one `setCamera` per frame). */
+  steerCamera(c: Camera): void {
+    this.cancelAnimation();
+    const next = { tx: c.tx, ty: c.ty, scale: clampScale(c.scale) };
+    if (sameCamera(next, this.liveCamera)) return;
+    this.pending = next;
+    this.renderer.requestFrame();
+  }
+
+  /** Applies queued gesture input now (gesture end, explicit commands, the frame start). */
+  flushCamera(): void {
+    const c = this.pending;
+    if (!c) return;
+    this.pending = null;
+    this.setCamera(c);
+  }
+
   setCamera(c: Camera): void {
+    this.pending = null;
     const next = { tx: c.tx, ty: c.ty, scale: clampScale(c.scale) };
     if (sameCamera(next, this.cam)) return;
     this.cam = next;
@@ -435,29 +463,43 @@ export class CanvasEngine implements Core {
   }
 
   toWorld(screen: Point): Point {
-    return screenToWorld(this.cam, screen);
+    return screenToWorld(this.liveCamera, screen);
   }
 
   zoomAtPoint(factor: number, at: Point): void {
     this.cancelAnimation();
-    this.setCamera(zoomAt(this.cam, factor, at));
+    this.setCamera(zoomAt(this.liveCamera, factor, at));
   }
 
   panByScreen(dx: number, dy: number): void {
     this.cancelAnimation();
-    this.setCamera({ ...this.cam, tx: this.cam.tx + dx, ty: this.cam.ty + dy });
+    const c = this.liveCamera;
+    this.setCamera({ ...c, tx: c.tx + dx, ty: c.ty + dy });
+  }
+
+  /** `zoomAtPoint` for a stream of wheel/gesture events: queued, applied with the next frame. */
+  steerZoom(factor: number, at: Point): void {
+    this.steerCamera(zoomAt(this.liveCamera, factor, at));
+  }
+
+  /** `panByScreen` for a stream of wheel events: queued, applied with the next frame. */
+  steerPan(dx: number, dy: number): void {
+    const c = this.liveCamera;
+    this.steerCamera({ ...c, tx: c.tx + dx, ty: c.ty + dy });
   }
 
   zoomStep(dir: 1 | -1): void {
     const v = this.viewport;
-    const target = nextZoomStep(this.cam.scale, dir);
-    this.moveCamera(zoomAt(this.cam, target / this.cam.scale, { x: v.w / 2, y: v.h / 2 }));
+    const c = this.liveCamera;
+    const target = nextZoomStep(c.scale, dir);
+    this.moveCamera(zoomAt(c, target / c.scale, { x: v.w / 2, y: v.h / 2 }));
   }
 
   /** Absolute zoom, percent (clamped 10–400), around the viewport center. */
   zoomTo(pct: number): void {
     const v = this.viewport;
-    this.moveCamera(zoomAt(this.cam, clampScale(pct / 100) / this.cam.scale, { x: v.w / 2, y: v.h / 2 }));
+    const c = this.liveCamera;
+    this.moveCamera(zoomAt(c, clampScale(pct / 100) / c.scale, { x: v.w / 2, y: v.h / 2 }));
   }
 
   fitAll(): void {
@@ -475,7 +517,8 @@ export class CanvasEngine implements Core {
   /** Centers the view on a world point at the current zoom. */
   centerOn(p: Point): void {
     const v = this.viewport;
-    this.moveCamera({ scale: this.cam.scale, tx: v.w / 2 - p.x * this.cam.scale, ty: v.h / 2 - p.y * this.cam.scale });
+    const { scale } = this.liveCamera;
+    this.moveCamera({ scale, tx: v.w / 2 - p.x * scale, ty: v.h / 2 - p.y * scale });
   }
 
   visibleWorld(): Rect {
@@ -485,6 +528,7 @@ export class CanvasEngine implements Core {
   /** Animated camera move (instant under reduced motion). The only place that loops frames besides the renderer. */
   private moveCamera(target: Camera): void {
     this.cancelAnimation();
+    this.flushCamera();
     if (this.reducedMotion || sameCamera(target, this.cam)) {
       this.setCamera(target);
       return;

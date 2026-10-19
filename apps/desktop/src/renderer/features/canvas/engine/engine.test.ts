@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import * as Y from 'yjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_SCALE } from '../../../lib/canvas/camera';
 import { isConnector } from '../../../lib/canvas/types';
 import { CanvasEngine, type EngineOptions } from './engine';
 import { defaultPalette } from './palette';
@@ -467,22 +468,109 @@ describe('camera', () => {
     const r = rig();
     const before = r.engine.toWorld({ x: 500, y: 400 });
     r.wheel(-100, { ctrlKey: true });
-    expect(r.engine.camera.scale).toBeCloseTo(1.1);
+    r.raf.flush();
+    expect(r.engine.camera.scale).toBeCloseTo(1.15);
     const after = r.engine.toWorld({ x: 500, y: 400 });
     expect(after.x).toBeCloseTo(before.x);
     expect(after.y).toBeCloseTo(before.y);
     r.wheel(30, { deltaX: 12 });
+    r.raf.flush();
     expect(r.engine.camera.tx).toBeLessThan(0);
     for (let i = 0; i < 60; i++) r.wheel(-100, { ctrlKey: true });
+    r.raf.flush();
     expect(r.engine.camera.scale).toBe(4);
     for (let i = 0; i < 120; i++) r.wheel(100, { ctrlKey: true });
+    r.raf.flush();
     expect(r.engine.camera.scale).toBeCloseTo(0.1);
     expect(r.engine.getState().zoomPct).toBe(10);
   });
   it('trackpad pinch (small ctrl+wheel deltas) zooms smoothly', () => {
     const r = rig();
     r.wheel(-5, { ctrlKey: true });
+    r.raf.flush();
     expect(r.engine.camera.scale).toBeCloseTo(Math.exp(0.05));
+  });
+  it('a burst of wheel events is applied once, with the frame — and a still canvas asks for no frame', () => {
+    const r = rig();
+    r.raf.flush();
+    const fn = vi.fn();
+    r.engine.subscribeView(fn);
+    const frames = r.engine.stats.frames;
+    for (let i = 0; i < 40; i++) r.wheel(-3, { ctrlKey: true });
+    for (let i = 0; i < 40; i++) r.wheel(2, { deltaX: 1 });
+    expect(fn).not.toHaveBeenCalled();
+    expect(r.engine.camera.scale).toBe(1);
+    expect(r.raf.pending).toBe(1);
+    r.raf.flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(r.engine.stats.frames).toBe(frames + 1);
+    expect(r.engine.camera.scale).toBeCloseTo(Math.exp(0.03 * 40));
+    // The state of a gesture builds on the queued camera, not on the stale one: no event is lost.
+    expect(r.engine.camera.tx).toBeLessThan(-30);
+    expect(r.raf.pending).toBe(0);
+    expect(r.raf.flush()).toBe(0);
+  });
+  it('a pinch keeps the world point under the cursor across the whole burst', () => {
+    const r = rig();
+    const before = r.engine.toWorld({ x: 300, y: 200 });
+    for (let i = 0; i < 25; i++) r.wheel(-4, { ctrlKey: true, clientX: 300, clientY: 200 });
+    // Still queued: the conversion already sees the new camera.
+    const mid = r.engine.toWorld({ x: 300, y: 200 });
+    expect(mid.x).toBeCloseTo(before.x);
+    r.raf.flush();
+    const after = r.engine.toWorld({ x: 300, y: 200 });
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
+    expect(r.engine.camera.scale).toBeCloseTo(Math.exp(1));
+  });
+  it('a mouse wheel notch zooms to the cursor, a trackpad scroll pans, a line-mode wheel zooms', () => {
+    const r = rig();
+    r.wheel(-100, { clientX: 200, clientY: 100 });
+    r.raf.flush();
+    expect(r.engine.camera.scale).toBeCloseTo(1.15);
+    expect(r.engine.camera.tx).toBeCloseTo(200 - 200 * 1.15);
+    const c = r.engine.camera;
+    r.wheel(-3, { deltaMode: 1, clientX: 200, clientY: 100 });
+    r.raf.flush();
+    expect(r.engine.camera.scale).toBeCloseTo(c.scale * 1.15);
+    const z = r.engine.camera;
+    r.wheel(7.5, { deltaX: -3 });
+    r.raf.flush();
+    expect(r.engine.camera).toMatchObject({ scale: z.scale, tx: z.tx + 3, ty: z.ty - 7.5 });
+  });
+  it('Safari trackpad pinch: gesture events zoom to the fingers, the page never zooms, a wheel in between adds nothing', () => {
+    const r = rig();
+    const gesture = (type: string, scale: number, x: number, y: number): Event => {
+      const e = new Event(type, { bubbles: true, cancelable: true });
+      Object.assign(e, { scale, clientX: x, clientY: y });
+      r.canvas.dispatchEvent(e);
+      return e;
+    };
+    const anchor = r.engine.toWorld({ x: 400, y: 300 });
+    expect(gesture('gesturestart', 1, 400, 300).defaultPrevented).toBe(true);
+    gesture('gesturechange', 1.5, 400, 300);
+    const w = new WheelEvent('wheel', { deltaY: -4, ctrlKey: true, bubbles: true, cancelable: true, clientX: 400, clientY: 300 });
+    r.canvas.dispatchEvent(w);
+    expect(w.defaultPrevented).toBe(true);
+    gesture('gesturechange', 2, 420, 310);
+    r.raf.flush();
+    expect(r.engine.camera.scale).toBeCloseTo(2);
+    // The point that was under the fingers at the start follows them (zoom and pan in one gesture).
+    const under = r.engine.toWorld({ x: 420, y: 310 });
+    expect(under.x).toBeCloseTo(anchor.x);
+    expect(under.y).toBeCloseTo(anchor.y);
+    expect(gesture('gestureend', 2, 420, 310).defaultPrevented).toBe(true);
+    // A new gesture starts from the new scale; the limits hold.
+    gesture('gesturestart', 1, 400, 300);
+    gesture('gesturechange', 50, 400, 300);
+    r.raf.flush();
+    expect(r.engine.camera.scale).toBe(MAX_SCALE);
+    gesture('gestureend', 50, 400, 300);
+    // After the gesture a ctrl+wheel is a pinch again.
+    r.wheel(5, { ctrlKey: true });
+    r.raf.flush();
+    expect(r.engine.camera.scale).toBeLessThan(MAX_SCALE);
+    expect(r.raf.pending).toBe(0);
   });
   it('prevents the default page scroll/zoom on wheel', () => {
     const r = rig();
@@ -547,6 +635,7 @@ describe('camera', () => {
     r.raf.flush();
     const mid = r.engine.camera.tx;
     r.wheel(0, { deltaX: 40 });
+    r.raf.flush();
     const after = r.engine.camera.tx;
     r.clock.t += 400;
     r.raf.flush();
