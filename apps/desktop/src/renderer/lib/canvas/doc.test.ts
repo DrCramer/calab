@@ -83,6 +83,22 @@ describe('limits (ADR-0107 §3)', () => {
     expect(d.createMany(three.slice(0, 2))).toHaveLength(2);
     expect(d.count).toBe(MAX_OBJECTS);
   });
+  it('writes a big batch as several updates that each fit a sync frame, as one undo step', () => {
+    const y = new Y.Doc();
+    const d = new CanvasDoc(y, { rng: null });
+    const sizes: number[] = [];
+    y.on('update', (u: Uint8Array) => sizes.push(u.length));
+    const items = Array.from({ length: 800 }, (_, i) => ({ init: { kind: 'sticky' as const, x: i, y: 0, text: `pasted note number ${i} with some words` } }));
+    const ids = d.createMany(items);
+    expect(ids).toHaveLength(800);
+    expect(d.count).toBe(800);
+    expect(sizes.length).toBeGreaterThan(3); // one transaction would be ≈ 200 KB: above the 64 KiB frame
+    expect(Math.max(...sizes)).toBeLessThan(60_000);
+    const zs = ids.map((id) => d.snapshot(id)?.z as string);
+    expect([...zs].sort()).toEqual(zs); // still bottom → top in order
+    d.undo.undo();
+    expect(d.count).toBe(0);
+  });
   it('clamps text to 5000 characters on creation and on edit', () => {
     const d = makeDoc();
     const id = d.create({ kind: 'sticky', x: 0, y: 0, text: 'x'.repeat(9000) });
