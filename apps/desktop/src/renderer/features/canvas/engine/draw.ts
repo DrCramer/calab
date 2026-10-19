@@ -3,7 +3,7 @@ import { endDirection } from '../../../lib/canvas/route';
 import { contentRect, STICKY_RADIUS, traceRounded, traceShape } from '../../../lib/canvas/shapes';
 import { LABEL_SIZE, SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
 import type { BoxRec, ConnectorRec, ObjectRec } from '../../../lib/canvas/types';
-import { resolveColor, resolveSticky, type CanvasPalette } from './palette';
+import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -178,7 +178,10 @@ function drawShape(ctx: Ctx2D, o: BoxRec & { kind: 'shape' }, env: DrawEnv): voi
     ctx.lineJoin = 'round';
     ctx.stroke();
   }
-  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, SHAPE_TEXT_SIZE, contentRect(o), resolveColor(env.palette, 'text') ?? env.palette.ink, 'center', true);
+  if (env.hiddenText !== o.id) {
+    const ink = resolveColor(env.palette, 'text') ?? env.palette.ink;
+    drawLines(ctx, env, o, o.text, SHAPE_TEXT_SIZE, contentRect(o), fill && o.text ? readableInk(fill, ink) : ink, 'center', true);
+  }
 }
 
 function drawConnector(ctx: Ctx2D, o: ConnectorRec, env: DrawEnv): void {

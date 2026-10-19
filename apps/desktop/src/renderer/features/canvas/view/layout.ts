@@ -9,23 +9,64 @@ export interface PanelPlacement {
   visible: boolean;
 }
 
+/** Distances (px) from each viewport edge the panel must stay clear of: the screen's own floating chrome. */
+export interface Insets {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 export const PANEL_GAP = 12;
 export const PANEL_MARGIN = 8;
+export const NO_INSETS: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
 
 /**
- * The panel centers above the selection, flips below when there is no room above, and stays inside the
- * viewport. `bounds` is in world units; `size` is the panel's own size in px.
+ * The part of the viewport free of the screen's floating panels: `chrome` (left toolbar, top presence bar,
+ * bottom undo/zoom bars) plus a margin. Never empty — a window too small to leave room keeps a 1px strip.
  */
-export function placePanel(bounds: Rect, cam: Camera, viewport: { w: number; h: number }, size: { w: number; h: number }): PanelPlacement {
+export function safeArea(viewport: { w: number; h: number }, chrome: Insets = NO_INSETS): Rect {
+  const l = Math.min(chrome.left + PANEL_MARGIN, viewport.w - 1);
+  const t = Math.min(chrome.top + PANEL_MARGIN, viewport.h - 1);
+  const r = Math.max(viewport.w - chrome.right - PANEL_MARGIN, l + 1);
+  const b = Math.max(viewport.h - chrome.bottom - PANEL_MARGIN, t + 1);
+  return { x: l, y: t, w: r - l, h: b - t };
+}
+
+/**
+ * The panel centers over the visible part of the selection, goes above it, flips below when there is no
+ * room above, and when neither fits (a selection taller than the window) sits inside its visible part. It
+ * is always clamped into the safe area, so it never covers the toolbar or the zoom/undo bars. `bounds` is
+ * in world units; `size` is the panel's own size in px; `chrome` is how far the floating panels reach in.
+ */
+export function placePanel(
+  bounds: Rect,
+  cam: Camera,
+  viewport: { w: number; h: number },
+  size: { w: number; h: number },
+  chrome: Insets = NO_INSETS,
+): PanelPlacement {
   const sx = cam.tx + bounds.x * cam.scale;
   const sy = cam.ty + bounds.y * cam.scale;
   const sw = bounds.w * cam.scale;
   const sh = bounds.h * cam.scale;
   const visible = sx < viewport.w && sy < viewport.h && sx + sw > 0 && sy + sh > 0;
-  let x = sx + sw / 2 - size.w / 2;
-  x = Math.max(PANEL_MARGIN, Math.min(x, viewport.w - size.w - PANEL_MARGIN));
+  const safe = safeArea(viewport, chrome);
+  const sRight = safe.x + safe.w;
+  const sBottom = safe.y + safe.h;
+
+  // Horizontal: center on the part of the selection inside the safe area (the whole selection when it fits).
+  const vl = Math.max(sx, safe.x);
+  const vr = Math.min(sx + sw, sRight);
+  const center = vl < vr ? (vl + vr) / 2 : sx + sw / 2;
+  const x = Math.max(safe.x, Math.min(center - size.w / 2, sRight - size.w));
+
+  // Vertical: above, else below, else inside the visible top of the selection.
   let y = sy - size.h - PANEL_GAP;
-  if (y < PANEL_MARGIN) y = sy + sh + PANEL_GAP;
-  y = Math.max(PANEL_MARGIN, Math.min(y, viewport.h - size.h - PANEL_MARGIN));
+  if (y < safe.y) {
+    y = sy + sh + PANEL_GAP;
+    if (y + size.h > sBottom) y = Math.max(sy, safe.y) + PANEL_GAP;
+  }
+  y = Math.max(safe.y, Math.min(y, sBottom - size.h));
   return { x: Math.round(x), y: Math.round(y), visible };
 }
