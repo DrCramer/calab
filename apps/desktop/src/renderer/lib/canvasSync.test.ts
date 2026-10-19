@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import { CanvasDoc } from "./canvas/doc";
-import { canvasPlainText, MAX_PLAIN_TEXT } from "./canvas/plainText";
+import { canvasObjectCount, canvasPlainText, MAX_PLAIN_TEXT } from "./canvas/plainText";
 import { ids, seededRng } from "./canvas/testing";
 import {
+  canvasMeta,
   canvasSyncUrl,
   CANVAS_AWARENESS_MIN_GAP_MS,
   canvasIdleSnapshotMs,
@@ -13,6 +14,8 @@ import {
   type CanvasSyncStatus,
 } from "./canvasSync";
 import {
+  decodeFrame,
+  encodeSnapshotPost,
   FRAME_AWARENESS,
   FRAME_UPDATE,
   MAX_FRAME,
@@ -134,6 +137,35 @@ describe("canvasPlainText", () => {
     const d = new CanvasDoc(new Y.Doc(), { rng: seededRng(1), makeId: ids() });
     for (let i = 0; i < 30; i++) d.create(sticky(i, noise(4999, i)));
     expect(canvasPlainText(d.ydoc).length).toBe(MAX_PLAIN_TEXT);
+  });
+});
+
+describe("canvasMeta objects (an empty canvas gets no version, docs/05)", () => {
+  it("is 0 for an empty doc, creates no types, and counts every object, text or not", () => {
+    const y = new Y.Doc();
+    expect(canvasMeta(y)).toEqual({ plain_text: "", title: "", preview: "", objects: 0 });
+    expect(canvasObjectCount(y)).toBe(0);
+    expect(y.share.has("objects")).toBe(false);
+    const d = new CanvasDoc(y, { rng: seededRng(1), makeId: ids() });
+    d.create(sticky(0, ""));
+    d.create({ kind: "shape", x: 0, y: 0, text: "" });
+    expect(canvasMeta(y, "T").objects).toBe(2);
+    d.remove([d.orderedIds()[0] as string]);
+    expect(canvasMeta(y).objects).toBe(1);
+    d.remove(d.orderedIds());
+    expect(canvasMeta(y).objects).toBe(0);
+  });
+});
+
+describe("SNAPSHOT_POST meta objects on the wire", () => {
+  it("an empty canvas posts objects: 0, a Wiki-style meta posts none", () => {
+    const post = (meta: Parameters<typeof encodeSnapshotPost>[1]) => {
+      const f = decodeFrame(encodeSnapshotPost(1, meta, new Uint8Array([0, 0])));
+      if (f?.type !== 4) throw new Error("not a SNAPSHOT_POST");
+      return f.meta;
+    };
+    expect(post(canvasMeta(new Y.Doc()))).toEqual({ plain_text: "", title: "", preview: "", objects: 0 });
+    expect(post({ plain_text: "t", title: "T", preview: "t" })).not.toHaveProperty("objects");
   });
 });
 
@@ -333,7 +365,7 @@ describe("CanvasSync", () => {
       expect(relay.posts).toHaveLength(1);
       const p = relay.posts[0];
       if (!p) throw new Error("no post");
-      expect(p.meta).toEqual({ plain_text: "alpha\nbeta   gamma", title: "Roadmap", preview: "alpha beta gamma" });
+      expect(p.meta).toEqual({ plain_text: "alpha\nbeta   gamma", title: "Roadmap", preview: "alpha beta gamma", objects: 3 }); // the peer's sticky counts
       expect(p.throughSeq).toBe(1); // the highest seq c has seen
       expect(p.broadcast).toBe(false);
       const check = new Y.Doc();
