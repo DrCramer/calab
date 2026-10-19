@@ -213,7 +213,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
     fit();
     return () => {
       done = true;
-      off?.();
+      off();
     };
   }, [session]);
 
