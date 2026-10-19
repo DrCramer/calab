@@ -8,7 +8,11 @@
  * "record" is the time to issue the draw calls; "withRaster" adds a 1×1 readback that forces the
  * rasterization to finish, so it is the real cost of a frame on that machine.
  *
- *   npx tsx tools/perf-canvas.ts [--n 2000,5000] [--dpr 1,2] [--size 1920x1080] [--software]
+ *   nice -n 19 npx tsx tools/perf-canvas.ts [--n 500,2000,5000] [--dpr 1,2] [--size 1920x1080] [--runs 5] [--software]
+ *
+ * Every (dpr, n) is run `--runs` times in a fresh page; the output is median [min..max] of every number.
+ * Heap numbers are taken by CDP after a forced GC (`heapDocMB`: the Y.Doc, `heapEngineMB`: scene + index +
+ * layers' JS side; `canvasLayersMB` is the two bitmap layers).
  *
  * `--software` uses Chromium's software rasterizer (no GPU), a stand-in for a weak machine.
  * Uses the installed Google Chrome (channel "chrome") and falls back to Playwright's Chromium.
@@ -18,6 +22,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser } from '@playwright/test';
+import { aggregate, attachProbe, compact } from './perf-canvas-probe';
 import type { BenchResult } from './perf-canvas-page';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -26,9 +31,10 @@ const opt = (name: string, def: string): string => {
   const i = argv.indexOf(`--${name}`);
   return i > 0 ? (argv[i + 1] ?? def) : def;
 };
-const COUNTS = opt('n', '2000,5000').split(',').map(Number);
+const COUNTS = opt('n', '500,2000,5000').split(',').map(Number);
 const DPRS = opt('dpr', '1,2').split(',').map(Number);
 const [VW, VH] = opt('size', '1920x1080').split('x').map(Number) as [number, number];
+const RUNS = Number(opt('runs', '1'));
 const SOFTWARE = argv.includes('--software');
 
 async function bundle(): Promise<string> {
@@ -50,7 +56,7 @@ async function bundle(): Promise<string> {
 }
 
 async function launch(): Promise<Browser> {
-  const args = SOFTWARE ? ['--disable-gpu', '--use-gl=disabled'] : [];
+  const args = ['--mute-audio', ...(SOFTWARE ? ['--disable-gpu', '--use-gl=disabled'] : [])];
   try {
     return await chromium.launch({ channel: 'chrome', args });
   } catch {
@@ -63,25 +69,34 @@ const html = (w: number, h: number): string =>
 
 async function main(): Promise<void> {
   const code = await bundle();
-  const browser = await launch();
-  const all: BenchResult[] = [];
-  try {
-    for (const dpr of DPRS) {
-      for (const n of COUNTS) {
-        const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: dpr });
-        const page = await ctx.newPage();
-        page.on('pageerror', (e) => console.error('pageerror', e));
-        await page.setContent(html(VW, VH));
-        await page.addScriptTag({ content: code });
-        const res = (await page.evaluate(([count, d]) => (window as unknown as { __bench: { run(n: number, dpr: number): Promise<unknown> } }).__bench.run(count as number, d as number), [n, dpr])) as BenchResult;
-        all.push(res);
-        await ctx.close();
+  const out: unknown[] = [];
+  for (const dpr of DPRS) {
+    for (const n of COUNTS) {
+      const runs: unknown[] = [];
+      for (let r = 0; r < RUNS; r++) {
+        const browser = await launch();
+        try {
+          const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: dpr });
+          const page = await ctx.newPage();
+          page.on('pageerror', (e) => console.error('pageerror', e));
+          await page.setContent(html(VW, VH));
+          const probe = await attachProbe(browser, page);
+          await page.addScriptTag({ content: code });
+          const res = (await page.evaluate(([count, d]) => (window as unknown as { __bench: { run(n: number, dpr: number): Promise<unknown> } }).__bench.run(count as number, d as number), [n, dpr])) as BenchResult;
+          const heapDocMB = Math.round((probe.heapMB('gc:engine-before') - probe.heapMB('gc:start')) * 100) / 100;
+          const heapEngineMB = Math.round((probe.heapMB('gc:engine-after') - probe.heapMB('gc:engine-before')) * 100) / 100;
+          runs.push({ ...res, heapDocMB, heapEngineMB, rendererRssMB: probe.rssMB('gc:engine-after') });
+          await probe.close();
+          await ctx.close();
+        } finally {
+          await browser.close();
+        }
+        console.error(`dpr=${dpr} n=${n} run ${r + 1}/${RUNS} done`);
       }
+      out.push({ dpr, objects: n, runs: RUNS, agg: compact(aggregate(runs)) });
     }
-  } finally {
-    await browser.close();
   }
-  console.log(JSON.stringify({ viewport: `${VW}x${VH}`, software: SOFTWARE, runs: all }, null, 2));
+  console.log(JSON.stringify({ viewport: `${VW}x${VH}`, software: SOFTWARE, results: out }, null, 2));
 }
 
 void main();
