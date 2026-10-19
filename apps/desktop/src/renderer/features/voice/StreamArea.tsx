@@ -324,30 +324,23 @@ function LiveBadge(): ReactNode {
 }
 
 /** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
-/**
- * The mic on the full-screen / pop-out bar (CBF-4): same VoiceService call. A native `title`, not a
- * Tip: a Tip portals into the main window's document, not the pop-out's.
- */
+/** The mic on the full-screen / pop-out bar (CBF-4): same VoiceService call, a Tip like its neighbours. */
 function OverlayMic(): ReactNode {
   const inVoice = useVoice((s) => s.roomId !== null);
   const muted = useVoice((s) => s.muted);
   const label = useVoice((s) => (s.serverMuted ? t('voiceUi.serverMuted') : s.muted ? t('voice.unmute') : t('voice.mute')));
   if (!inVoice) return null;
   return (
-    <button
-      type="button"
+    <IconButton
+      size="sm"
+      label={label}
+      className={cx(overlayBtn, muted && 'bg-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_85%,white)]')}
       onClick={() => voice.toggleMute()}
-      aria-label={label}
-      title={label}
       data-testid="stream-mic"
       data-muted={muted ? 'true' : 'false'}
-      className={cx(
-        'grid size-7 shrink-0 place-items-center rounded-full text-white transition-colors duration-[var(--motion-fast)]',
-        muted ? 'bg-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_85%,white)]' : 'bg-white/15 hover:bg-white/25',
-      )}
     >
-      {muted ? <MicOff className="size-3.5" aria-hidden /> : <Mic className="size-3.5" aria-hidden />}
-    </button>
+      {muted ? <MicOff className="size-4" aria-hidden /> : <Mic className="size-4" aria-hidden />}
+    </IconButton>
   );
 }
 
