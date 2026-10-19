@@ -164,9 +164,12 @@ export function unreadCount(s: Pick<BoardsData, 'unread'>, workspaceId: string):
   return n;
 }
 
-/** Whether a board has an unread task (the sidebar count turns accent) — a primitive, safe as a selector. */
-export function boardHasUnread(s: Pick<BoardsData, 'unread' | 'tasks'>, boardId: string): boolean {
-  for (const id in s.unread) if (s.tasks[id]?.boardId === boardId) return true;
+/** Whether a board has an open unread task assigned to me (the sidebar count turns accent) — a primitive, safe as a selector. */
+export function boardHasUnread(s: Pick<BoardsData, 'unread' | 'tasks'>, boardId: string, me: string): boolean {
+  for (const id in s.unread) {
+    const t = s.tasks[id];
+    if (t && t.boardId === boardId && !t.completedAt && t.assignees.some((a) => a.userId === me)) return true;
+  }
   return false;
 }
 

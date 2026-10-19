@@ -29,7 +29,7 @@ import { DeleteBoardDialog } from './BoardSettings';
 import { BoardForms } from './BoardForms';
 import { boardHasUnread, unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
@@ -403,7 +403,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const priv = useBoards((s) => !!(s.boards[id]?.isPrivate || s.boards[id]?.restricted));
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
   // Grey by default; accent only while a task of this board has something unseen.
-  const fresh = useBoards((s) => boardHasUnread(s, id));
+  const fresh = useBoards((s) => boardHasUnread(s, id, myUserId()));
   const perms = useBoards((s) => s.boards[id]?.permissions);
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);

@@ -1,6 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { ApproverState, BoardSchema, TaskApprovalState, TaskApproverSchema, TaskNoticeKind, TaskSchema, type Task } from '@calaba/protocol';
+import { ApproverState, BoardSchema, TaskApprovalState, TaskApproverSchema, TaskAssigneeSchema, TaskNoticeKind, TaskSchema, type Task } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { approvalTagKey } from '../lib/boards/approvals';
 import { unreadReason } from '../services/boards';
@@ -114,11 +114,14 @@ describe('re-renders of one TASK_UPDATE', () => {
 describe('boardHasUnread (sidebar count tone)', () => {
   beforeEach(seed);
 
-  it('is true only for the board that owns an unread task, and follows read / completed', () => {
+  it('is true only for my open unread tasks of that board', () => {
     const s = useBoards.getState();
-    expect(boardHasUnread(s, 'b1')).toBe(true);
-    expect(boardHasUnread(s, 'b2')).toBe(false);
+    expect(boardHasUnread(s, 'b1', 'me')).toBe(false); // unread, but not assigned to me
+    s.upsertTask({ ...(s.tasks['t5'] as Task), assignees: [create(TaskAssigneeSchema, { userId: 'me' })] });
+    expect(boardHasUnread(useBoards.getState(), 'b1', 'me')).toBe(true);
+    expect(boardHasUnread(useBoards.getState(), 'b2', 'me')).toBe(false);
+    expect(boardHasUnread(useBoards.getState(), 'b1', 'other')).toBe(false);
     s.setUnread('w1', []);
-    expect(boardHasUnread(useBoards.getState(), 'b1')).toBe(false);
+    expect(boardHasUnread(useBoards.getState(), 'b1', 'me')).toBe(false);
   });
 });
