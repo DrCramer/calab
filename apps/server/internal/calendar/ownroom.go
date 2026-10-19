@@ -173,7 +173,9 @@ func (s *Service) MakeTempRooms(ctx context.Context, now time.Time) (int, error)
 			skip = append(skip, *claimed)
 			if ctx.Err() == nil {
 				at := now.Add(tempRoomRetry)
-				logErr(ctx, "defer the meeting's temporary room", s.db.Q.DeferEventTempRoom(ctx, sqlc.DeferEventTempRoomParams{ID: *claimed, At: &at}))
+				logErr(ctx, "defer the meeting's temporary room", db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+					return guarded.DeferEventTempRoom(ctx, sqlc.DeferEventTempRoomParams{ID: *claimed, At: &at})
+				}))
 			}
 			level := slog.LevelWarn
 			if e := httpx.AsError(err); e != nil && e.Status < 500 {
