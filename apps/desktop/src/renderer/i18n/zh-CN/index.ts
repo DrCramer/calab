@@ -22,6 +22,7 @@ import { zhCalendar } from './calendar';
 import { zhMailbox } from './mailbox';
 import { zhDisk } from './disk';
 import { zhWiki } from './wiki';
+import { zhCanvasBoard } from './canvasBoard';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
 import { zhHistory } from './history';
@@ -84,6 +85,7 @@ export const zhCN: Dict = {
   ...zhMailbox,
   ...zhDisk,
   ...zhWiki,
+  ...zhCanvasBoard,
   ...zhBoards,
   ...zhBoards2,
   ...zhHistory,

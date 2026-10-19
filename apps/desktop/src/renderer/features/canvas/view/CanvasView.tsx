@@ -1,0 +1,273 @@
+/**
+ * The Canvas screen's body (ADR-0107 §4–§5): the engine on a `<canvas>`, the tool and properties panels,
+ * zoom, other people's cursors and the connection state. The section's header, tree and dialogs are the
+ * parent's (H5a); this component owns everything inside the work area.
+ *
+ * Lifecycle: mounting opens one Y.Doc + awareness + engine + sync socket (session.ts); unmounting flushes,
+ * compacts when edited and closes all of it — a canvas that is not on screen holds no socket, frame or timer.
+ *
+ * Re-render discipline (CLAUDE.md): this component re-renders for a handful of rare things (session ready,
+ * theme, a help/menu toggle). Everything that changes with editing is read by leaf components through
+ * primitives (`useEngineValue`) or imperatively (the properties panel's position).
+ */
+import * as ContextMenu from '@radix-ui/react-context-menu';
+import { CANVAS_BITS } from '@calaba/protocol';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from 'react';
+import { t, useLocale } from '../../../i18n';
+import { toast } from '../../../stores/toasts';
+import type { CanvasPalette } from '../engine';
+import { CanvasMenu, type MenuMode } from './CanvasMenu';
+import { ZoomBar } from './Controls';
+import { Presence } from './PresenceBar';
+import { PropsPanel } from './PropsPanel';
+import { StatusBanner } from './StatusBanner';
+import { HistoryBar, Toolbar } from './Toolbar';
+import { appDeps } from './defaultDeps';
+import { downloadBlob, exportCanvasPng, pngFileName, type ExportArea } from './exportPng';
+import { registerCanvasViewHandle, type CanvasViewHandle } from './handle';
+import { useEngineValue } from './hooks';
+import { currentTheme, cursorColor, readCanvasPalette } from './palette';
+import { PresenceStore } from './presenceStore';
+import { openCanvasSession, type CanvasSession, type CanvasViewDeps } from './session';
+
+export interface CanvasViewProps {
+  canvasId: string;
+  workspaceId: string;
+  /** `my_bits` of the CanvasItem: CANVAS_WRITE decides edit vs. view only. */
+  bits: bigint;
+  onOpenHistory: () => void;
+  onShare: () => void;
+  /** The canvas' name, for the snapshot meta (search) and the PNG file name. Optional; read at call time. */
+  name?: string;
+  /** Receives the handle (export, fit) once the canvas is open; `getCanvasViewHandle(canvasId)` is the same. */
+  ref?: Ref<CanvasViewHandle>;
+  /** Test seam: connection details instead of the app's. */
+  deps?: CanvasViewDeps;
+}
+
+interface Env {
+  lowPower: boolean;
+  reducedMotion: boolean;
+}
+
+function readEnv(): Env {
+  return {
+    lowPower: document.documentElement.dataset['lowEnd'] === 'true',
+    reducedMotion: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  };
+}
+
+export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, ref, deps: depsProp }: CanvasViewProps): ReactNode {
+  useLocale();
+  const canWrite = (bits & CANVAS_BITS.WRITE) !== 0n;
+  const stage = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [session, setSession] = useState<CanvasSession | null>(null);
+  const [palette, setPalette] = useState<CanvasPalette>(() => readCanvasPalette(currentTheme()));
+  const [gone, setGone] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [menuMode, setMenuMode] = useState<MenuMode>('empty');
+  const presence = useMemo(() => new PresenceStore(), []);
+  const deps = useMemo(() => depsProp ?? appDeps(workspaceId), [depsProp, workspaceId]);
+
+  // Values the long-lived session reads at call time, so changing them does not reopen the socket.
+  const live = useRef({ name: name ?? '', canWrite, deps, palette });
+  useLayoutEffect(() => {
+    live.current = { name: name ?? '', canWrite, deps, palette };
+  });
+
+  const focusCanvas = useCallback((): void => {
+    canvas.current?.focus({ preventScroll: true });
+  }, []);
+
+  // One session per open canvas.
+  useEffect(() => {
+    const cv = canvas.current;
+    const host = stage.current;
+    if (!cv || !host) return undefined;
+    setGone(false);
+    const env = readEnv();
+    const s = openCanvasSession({
+      canvasId,
+      canvas: cv,
+      editorHost: host,
+      deps: live.current.deps,
+      palette: live.current.palette,
+      readOnly: !live.current.canWrite,
+      lowPower: env.lowPower,
+      reducedMotion: env.reducedMotion,
+      presence,
+      color: (id) => cursorColor(id),
+      title: () => live.current.name,
+      onTooLarge: () => toast.error(t('canvasBoard.tooLarge')),
+      onFatal: () => setGone(true),
+    });
+    setSession(s);
+    return () => {
+      setSession(null);
+      s.destroy();
+    };
+  }, [canvasId, presence]);
+
+  // Grant changes while open (CANVAS_WRITE given or taken away).
+  useEffect(() => {
+    session?.binding.setReadOnly(!canWrite);
+  }, [session, canWrite]);
+
+  // The app's theme, «слабый компьютер» and reduced motion reach the engine without reopening anything.
+  useEffect(() => {
+    if (!session) return undefined;
+    const { engine } = session;
+    let theme = currentTheme();
+    const apply = (): void => {
+      const env = readEnv();
+      engine.setLowPower(env.lowPower);
+      engine.setReducedMotion(env.reducedMotion);
+      const next = currentTheme();
+      if (next !== theme) {
+        theme = next;
+        const p = readCanvasPalette(next);
+        engine.setPalette(p);
+        setPalette(p);
+      }
+    };
+    apply();
+    const mo = new MutationObserver(apply);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-low-end'] });
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    mq?.addEventListener('change', apply);
+    return () => {
+      mo.disconnect();
+      mq?.removeEventListener('change', apply);
+    };
+  }, [session]);
+
+  // Off screen (a hidden tab / panel of the app) draws nothing, like a hidden window does.
+  useEffect(() => {
+    const host = stage.current;
+    if (!session || !host || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last) session.engine.setActive(last.isIntersecting && document.visibilityState !== 'hidden');
+    });
+    io.observe(host);
+    return () => io.disconnect();
+  }, [session]);
+
+  const handle = useMemo<CanvasViewHandle | null>(() => {
+    if (!session) return null;
+    const { engine } = session;
+    return {
+      fitAll: () => engine.fitAll(),
+      exportPng: async (opts) => {
+        const area: ExportArea = opts?.area ?? 'all';
+        if (!engine.scene.bounds()) {
+          toast.info(t('canvasBoard.export.empty'));
+          return false;
+        }
+        const blob = await exportCanvasPng(engine, { area });
+        if (!blob) {
+          toast.error(t('canvasBoard.export.failed'));
+          return false;
+        }
+        downloadBlob(blob, pngFileName(opts?.name ?? live.current.name, t('canvasBoard.export.fileName')));
+        return true;
+      },
+    };
+  }, [session]);
+  useImperativeHandle(ref, () => handle as CanvasViewHandle, [handle]);
+  useEffect(() => (handle ? registerCanvasViewHandle(canvasId, handle) : undefined), [canvasId, handle]);
+
+  // Right click: select what is under the pointer (or clear), then let the menu open for that.
+  const onContextMenuCapture = (e: ReactMouseEvent): void => {
+    const cv = canvas.current;
+    if (!session || !cv) return;
+    if (e.target !== cv) {
+      // The text editor's own textarea keeps the browser's menu (copy / paste / spelling).
+      e.stopPropagation();
+      return;
+    }
+    const { engine } = session;
+    const r = cv.getBoundingClientRect();
+    const hit = engine.hitAt(engine.toWorld({ x: e.clientX - r.left, y: e.clientY - r.top }));
+    if (hit) {
+      if (!engine.selection.has(hit.id)) engine.setSelection([hit.id]);
+      setMenuMode('object');
+    } else {
+      engine.clearSelection();
+      setMenuMode('empty');
+    }
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent): void => {
+    if (e.key === '?' && e.target === canvas.current) {
+      e.preventDefault();
+      setHelpOpen((o) => !o);
+    }
+  };
+
+  const engine = session?.engine ?? null;
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <div
+          className="relative size-full min-h-0 min-w-0 select-none overflow-hidden bg-main"
+          data-testid="canvas-view"
+          data-canvas-id={canvasId}
+          onContextMenuCapture={onContextMenuCapture}
+          onKeyDown={onKeyDown}
+        >
+          <div ref={stage} className="absolute inset-0">
+            <canvas ref={canvas} className="block size-full outline-none" aria-label={t('canvasBoard.label')} data-testid="canvas-surface" />
+          </div>
+          {session && engine ? (
+            <Chrome
+              session={session}
+              palette={palette}
+              canWrite={canWrite}
+              gone={gone}
+              presence={presence}
+              focusCanvas={focusCanvas}
+              helpOpen={helpOpen}
+              onHelpOpenChange={setHelpOpen}
+            />
+          ) : null}
+        </div>
+      </ContextMenu.Trigger>
+      {engine ? (
+        <CanvasMenu engine={engine} mode={menuMode} canWrite={canWrite} focusCanvas={focusCanvas} onOpenHistory={onOpenHistory} onShare={onShare} />
+      ) : null}
+    </ContextMenu.Root>
+  );
+}
+
+/** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
+function Chrome({
+  session, palette, canWrite, gone, presence, focusCanvas, helpOpen, onHelpOpenChange,
+}: {
+  session: CanvasSession;
+  palette: CanvasPalette;
+  canWrite: boolean;
+  gone: boolean;
+  presence: PresenceStore;
+  focusCanvas: () => void;
+  helpOpen: boolean;
+  onHelpOpenChange: (o: boolean) => void;
+}): ReactNode {
+  const { engine, sync } = session;
+  const editable = !useEngineValue(engine, (s) => s.readOnly);
+  return (
+    <>
+      {editable ? (
+        <>
+          <Toolbar engine={engine} focusCanvas={focusCanvas} />
+          <HistoryBar engine={engine} focusCanvas={focusCanvas} />
+          <PropsPanel engine={engine} palette={palette} focusCanvas={focusCanvas} />
+        </>
+      ) : null}
+      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
+      <Presence store={presence} />
+      <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} />
+    </>
+  );
+}
