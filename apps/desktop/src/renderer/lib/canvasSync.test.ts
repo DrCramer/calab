@@ -137,9 +137,9 @@ describe("canvasPlainText", () => {
 });
 
 describe("canvasSyncUrl", () => {
-  it("is a ws(s) URL of /api/canvas/{id}/sync", () => {
-    expect(canvasSyncUrl("https://app.calab.io", "a1")).toBe("wss://app.calab.io/api/canvas/a1/sync");
-    expect(canvasSyncUrl("http://localhost:8080", "a/b")).toBe("ws://localhost:8080/api/canvas/a%2Fb/sync");
+  it("is a ws(s) URL of /api/canvas/items/{id}/sync", () => {
+    expect(canvasSyncUrl("https://app.calab.io", "a1")).toBe("wss://app.calab.io/api/canvas/items/a1/sync");
+    expect(canvasSyncUrl("http://localhost:8080", "a/b")).toBe("ws://localhost:8080/api/canvas/items/a%2Fb/sync");
   });
 });
 
@@ -150,7 +150,7 @@ describe("CanvasSync", () => {
     const c = client(relay);
     expect(c.sync.status).toBe("connecting");
     await settle();
-    expect(c.last().url).toBe("wss://app.example/api/canvas/cv1/sync");
+    expect(c.last().url).toBe("wss://app.example/api/canvas/items/cv1/sync");
     expect(c.last().sent[0]).toBe("tok");
     expect(c.sync.status).toBe("synced");
     expect(c.statuses).toEqual(["connecting", "synced"]);

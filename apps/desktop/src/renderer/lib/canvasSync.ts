@@ -1,5 +1,5 @@
 /**
- * Client side of the canvas sync socket `GET /api/canvas/{id}/sync` (ADR-0107 §3): the generic Yjs
+ * Client side of the canvas sync socket `GET /api/canvas/items/{id}/sync` (ADR-0107 §3): the generic Yjs
  * provider (lib/ySync.ts; frames 0–4 as on the wiki socket, docs/05) with the canvas's settings.
  *
  * - Updates are batched for 200 ms, an update above 64 KiB goes up as a snapshot (ySync).
@@ -28,7 +28,7 @@ export const CANVAS_AWARENESS_MIN_GAP_MS = 50;
 export const CANVAS_MAX_STATE = 4 * 1024 * 1024;
 
 export interface CanvasSyncDeps {
-  /** `wss://…/api/canvas/{id}/sync`, built per attempt (canvasSyncUrl). */
+  /** `wss://…/api/canvas/items/{id}/sync`, built per attempt (canvasSyncUrl). */
   url: () => string;
   /** Access token sent as the first (text) frame; null = not signed in (retried with backoff). */
   getToken: () => Promise<string | null>;
@@ -47,10 +47,10 @@ export interface CanvasSyncDeps {
   visibility?: Visibility;
 }
 
-/** `wss://host/api/canvas/{id}/sync` from the server URL (the gateway's way). */
+/** `wss://host/api/canvas/items/{id}/sync` from the server URL (the gateway's way). */
 export function canvasSyncUrl(serverUrl: string, canvasId: string): string {
   const u = new URL(
-    `/api/canvas/${encodeURIComponent(canvasId)}/sync`,
+    `/api/canvas/items/${encodeURIComponent(canvasId)}/sync`,
     serverUrl,
   );
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
