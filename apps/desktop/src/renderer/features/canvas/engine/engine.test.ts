@@ -1,0 +1,783 @@
+// @vitest-environment jsdom
+import * as Y from 'yjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isConnector } from '../../../lib/canvas/types';
+import { CanvasEngine, type EngineOptions } from './engine';
+import { defaultPalette } from './palette';
+import { fakeCtx, manualRaf } from './testing';
+
+interface Rig {
+  engine: CanvasEngine;
+  ydoc: Y.Doc;
+  canvas: HTMLCanvasElement;
+  host: HTMLElement;
+  raf: ReturnType<typeof manualRaf>;
+  clip: { text: string; readText(): Promise<string>; writeText(t: string): Promise<void> };
+  clock: { t: number };
+  down(x: number, y: number, init?: MouseEventInit): void;
+  move(x: number, y: number, init?: MouseEventInit): void;
+  up(x: number, y: number, init?: MouseEventInit): void;
+  drag(from: [number, number], to: [number, number], init?: MouseEventInit): void;
+  click(x: number, y: number, init?: MouseEventInit): void;
+  key(key: string, init?: KeyboardEventInit): void;
+  wheel(dy: number, init?: WheelEventInit): void;
+  make(...inits: Parameters<CanvasEngine['doc']['createMany']>[0]): string[];
+}
+
+let rigs: Rig[] = [];
+
+function rig(opts: Partial<EngineOptions> = {}): Rig {
+  const fake = fakeCtx();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fake.ctx as never);
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const canvas = document.createElement('canvas');
+  host.appendChild(canvas);
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 800, right: 1000, bottom: 800, x: 0, y: 0, toJSON: () => ({}) });
+  const raf = manualRaf();
+  const clock = { t: 10_000 };
+  const clip = {
+    text: '',
+    readText: () => Promise.resolve(clip.text),
+    writeText: (t: string) => {
+      clip.text = t;
+      return Promise.resolve();
+    },
+  };
+  const ydoc = new Y.Doc();
+  const engine = new CanvasEngine({
+    canvas, doc: ydoc, palette: defaultPalette('light'), raf: raf.raf, cancelRaf: raf.cancel, now: () => clock.t,
+    clipboard: clip, measure: (t, s) => t.length * s * 0.5, gridSize: 0, reducedMotion: true, ...opts,
+  });
+  const ptr = (type: string, x: number, y: number, init: MouseEventInit = {}): void => {
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...init });
+    Object.defineProperty(e, 'pointerId', { value: 1 });
+    Object.defineProperty(e, 'pointerType', { value: 'mouse' });
+    canvas.dispatchEvent(e);
+  };
+  const r: Rig = {
+    engine, ydoc, canvas, host, raf, clip, clock,
+    down: (x, y, i) => ptr('pointerdown', x, y, i),
+    move: (x, y, i) => ptr('pointermove', x, y, i),
+    up: (x, y, i) => ptr('pointerup', x, y, i),
+    drag(from, to, init) {
+      this.down(from[0], from[1], init);
+      this.move((from[0] + to[0]) / 2, (from[1] + to[1]) / 2, init);
+      this.move(to[0], to[1], init);
+      this.up(to[0], to[1], init);
+    },
+    click(x, y, i) {
+      this.down(x, y, i);
+      this.up(x, y, i);
+    },
+    key: (key, init = {}) => canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })),
+    wheel: (dy, init = {}) => canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true, clientX: 500, clientY: 400, ...init })),
+    make: (...inits) => engine.doc.createMany(inits),
+  };
+  rigs.push(r);
+  return r;
+}
+
+const sticky = (x: number, y: number, extra: object = {}) => ({ init: { kind: 'sticky' as const, x, y, ...extra } });
+const objs = (r: Rig) => r.engine.doc;
+const flush = async (): Promise<void> => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+beforeEach(() => {
+  rigs = [];
+});
+afterEach(() => {
+  for (const r of rigs) r.engine.destroy();
+  document.body.innerHTML = '';
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe('creation tools', () => {
+  it('a click with the sticky tool places a sticky, selects it and opens the text editor', () => {
+    const r = rig();
+    r.engine.setTool('sticky');
+    r.click(300, 300);
+    expect(objs(r).count).toBe(1);
+    const s = r.engine.getState();
+    expect(s.tool).toBe('select');
+    expect(s.selectionCount).toBe(1);
+    expect(s.editing).toBe(true);
+    expect(objs(r).snapshot(s.selectedId ?? '')).toMatchObject({ kind: 'sticky', x: 220, y: 220, w: 160, h: 160 });
+    const ta = r.host.querySelector('textarea');
+    expect(ta).not.toBeNull();
+    if (!ta) return;
+    ta.value = 'hello';
+    ta.dispatchEvent(new Event('input'));
+    r.engine.editor.commit();
+    expect(objs(r).getText(s.selectedId ?? '')).toBe('hello');
+    expect(r.engine.getState().editing).toBe(false);
+  });
+  it('dragging with the shape tool sizes the shape and uses the chosen kind', () => {
+    const r = rig();
+    r.engine.setShapeKind('diamond');
+    r.engine.setTool('shape');
+    r.drag([100, 100], [300, 250]);
+    const id = r.engine.getState().selectedId ?? '';
+    expect(objs(r).snapshot(id)).toMatchObject({ kind: 'shape', shape: 'diamond', x: 100, y: 100, w: 200, h: 150 });
+  });
+  it('an empty text object is dropped when editing ends without text', () => {
+    const r = rig();
+    r.engine.setTool('text');
+    r.click(200, 200);
+    expect(objs(r).count).toBe(1);
+    r.engine.editor.commit();
+    expect(objs(r).count).toBe(0);
+  });
+  it('double-click on empty canvas creates a text object; on an object it edits it', () => {
+    const r = rig();
+    r.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 50, clientY: 60 }));
+    expect(objs(r).count).toBe(1);
+    expect(r.engine.getState().editing).toBe(true);
+    r.engine.editor.commit();
+    const [id] = r.make(sticky(400, 400, { text: 'abc' }));
+    r.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 450, clientY: 450 }));
+    expect(r.engine.getState().selectedId).toBe(id);
+    expect(r.host.querySelector('textarea')?.value).toBe('abc');
+  });
+  it('snaps new objects to the grid unless ⌘/Ctrl is held', () => {
+    const r = rig({ gridSize: 8 });
+    r.engine.setTool('shape');
+    r.drag([101, 99], [203, 197]);
+    const id = r.engine.getState().selectedId ?? '';
+    expect(objs(r).snapshot(id)).toMatchObject({ x: 104, y: 96, w: 96, h: 104 });
+  });
+  it('refuses to create beyond 5000 objects', () => {
+    const r = rig();
+    r.engine.doc.ydoc.transact(() => {
+      for (let i = 0; i < 5000; i++) r.engine.doc.objects.set(`f${i}`, new Y.Map());
+    });
+    r.engine.setTool('sticky');
+    r.click(10, 10);
+    expect(objs(r).count).toBe(5000);
+    expect(r.engine.getState().editing).toBe(false);
+  });
+});
+
+describe('selection, move, resize', () => {
+  it('clicking selects the topmost, empty canvas clears, Shift toggles', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(0, 0), sticky(100, 100));
+    r.click(120, 120);
+    expect(r.engine.getState().selectedId).toBe(b);
+    r.click(10, 10);
+    expect(r.engine.getState().selectedId).toBe(a);
+    r.click(600, 600);
+    expect(r.engine.getState().selectionCount).toBe(0);
+    r.click(10, 10);
+    r.click(120, 120, { shiftKey: true });
+    expect(r.engine.getState().selectionCount).toBe(2);
+    expect(r.engine.getState().selectedId).toBeNull();
+    r.click(120, 120, { shiftKey: true });
+    expect(r.engine.getState().selectedId).toBe(a);
+  });
+  it('a marquee selects what it touches', () => {
+    const r = rig();
+    const [a, b, c] = r.make(sticky(0, 0), sticky(300, 0), sticky(700, 500));
+    r.drag([-20, -20], [350, 100]);
+    expect([...r.engine.selection].sort()).toEqual([a, b].sort());
+    expect(r.engine.selection.has(c ?? '')).toBe(false);
+    r.drag([-30, 900], [-10, 910]);
+    expect(r.engine.getState().selectionCount).toBe(0);
+  });
+  it('drags a selection and writes one undo step', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100));
+    r.engine.doc.undo.stopCapturing();
+    r.drag([150, 150], [210, 190]);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 160, y: 140 });
+    expect(r.engine.getState().canUndo).toBe(true);
+    r.key('z', { metaKey: true });
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100, y: 100 });
+    r.key('z', { metaKey: true, shiftKey: true });
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 160, y: 140 });
+  });
+  it('a click without moving writes nothing', () => {
+    const r = rig();
+    r.make(sticky(100, 100));
+    r.engine.doc.undo.stopCapturing();
+    const before = r.engine.doc.undo.undoStack.length;
+    r.click(150, 150);
+    expect(r.engine.doc.undo.undoStack.length).toBe(before);
+  });
+  it('Shift constrains the drag to one axis', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100));
+    r.drag([150, 150], [250, 170], { shiftKey: true });
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 200, y: 100 });
+  });
+  it('Alt-drag duplicates and moves the copy', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100, { text: 'orig' }));
+    r.drag([150, 150], [450, 150], { altKey: true });
+    expect(objs(r).count).toBe(2);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100 });
+    const copy = r.engine.getState().selectedId ?? '';
+    expect(copy).not.toBe(a);
+    expect(objs(r).snapshot(copy)).toMatchObject({ x: 400, y: 100, text: 'orig' });
+  });
+  it('snaps to a neighbour\'s edge and shows the guide while dragging', () => {
+    const r = rig();
+    r.make(sticky(0, 0), sticky(400, 300));
+    r.down(480, 380);
+    r.move(500, 360);
+    r.move(0 + 160 + 4 + 80, 100);
+    // the dragged sticky's left edge would sit at 164 → attracted to the first one's right edge (160)
+    const second = [...r.engine.selection][0] ?? '';
+    expect(objs(r).snapshot(second)?.x).toBe(160);
+    expect(r.engine['overlay'].guides.length).toBeGreaterThan(0);
+    r.up(244, 100);
+    expect(r.engine['overlay'].guides).toEqual([]);
+  });
+  it('snaps to the grid, and ⌘/Ctrl turns snapping off', () => {
+    const r = rig({ gridSize: 8 });
+    const [a] = r.make(sticky(100, 100));
+    r.drag([150, 150], [163, 157]);
+    expect(objs(r).snapshot(a ?? '')?.x ?? 0).toBe(112);
+    r.drag([170, 170], [183, 177], { ctrlKey: true });
+    expect(objs(r).snapshot(a ?? '')?.x).toBe(125);
+  });
+  it('resizes from the 8 handles, Shift keeps the aspect ratio', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100, { w: 200, h: 100 }));
+    r.click(150, 150);
+    r.drag([300, 200], [400, 260]); // se handle
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100, y: 100, w: 300, h: 160 });
+    r.drag([100, 100], [150, 120]); // nw handle
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 150, y: 120, w: 250, h: 140 });
+    r.drag([275, 120], [275, 60]); // n handle
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ y: 60, h: 200 });
+    r.drag([400, 160], [500, 160], { shiftKey: true }); // e handle ignores the ratio
+    expect(objs(r).snapshot(a ?? '')?.w).toBe(350);
+    const before = objs(r).snapshot(a ?? '');
+    r.drag([500, 260], [600, 260], { shiftKey: true }); // se corner with Shift
+    const after = objs(r).snapshot(a ?? '');
+    expect(Number(after?.w) / Number(after?.h)).toBeCloseTo(Number(before?.w) / Number(before?.h), 1);
+  });
+  it('resizing a text box changes its width only', () => {
+    const r = rig();
+    const [a] = r.make({ init: { kind: 'text', x: 100, y: 100, w: 200, text: 'hello' } });
+    r.click(150, 110);
+    expect(r.engine.getState().selectedId).toBe(a);
+    const h = r.engine.scene.get(a ?? '')?.h ?? 0;
+    r.drag([300, 100 + h / 2], [400, 100 + h / 2]);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ w: 300, x: 100 });
+    r.drag([300, 100], [350, 400]); // a corner of a text box: width/height not both free
+    expect(objs(r).snapshot(a ?? '')).not.toHaveProperty('h');
+  });
+  it('resizes a multi-selection as a group', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(0, 0, { w: 100, h: 100 }), sticky(100, 0, { w: 100, h: 100 }));
+    r.engine.selectAll();
+    r.drag([200, 100], [400, 100]);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 0, w: 200 });
+    expect(objs(r).snapshot(b ?? '')).toMatchObject({ x: 200, w: 200 });
+  });
+  it('Escape during a drag restores the position', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100));
+    r.down(150, 150);
+    r.move(250, 250);
+    expect(objs(r).snapshot(a ?? '')?.x).toBe(200);
+    r.key('Escape');
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100, y: 100 });
+    r.up(250, 250);
+    expect(objs(r).snapshot(a ?? '')?.x).toBe(100);
+  });
+  it('arrow keys nudge, Shift by 10', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100));
+    r.click(150, 150);
+    r.key('ArrowRight');
+    r.key('ArrowDown', { shiftKey: true });
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 101, y: 110 });
+  });
+});
+
+describe('connectors', () => {
+  const two = (r: Rig): [string, string] => {
+    const [a, b] = r.make(sticky(0, 0), sticky(500, 0));
+    return [a ?? '', b ?? ''];
+  };
+  it('the connector tool glues both ends and goes back to select', () => {
+    const r = rig();
+    const [a, b] = two(r);
+    r.engine.setTool('connector');
+    r.drag([80, 80], [580, 80]);
+    const id = r.engine.getState().selectedId ?? '';
+    const c = r.engine.scene.get(id);
+    expect(c && isConnector(c)).toBe(true);
+    expect(objs(r).snapshot(id)).toMatchObject({ from: { id: a, side: 'auto' }, to: { id: b, side: 'auto' }, arrow: 'end', route: 'straight' });
+    expect(r.engine.getState().tool).toBe('select');
+  });
+  it('dropping on empty canvas leaves a free end; dropping on an anchor picks that side', () => {
+    const r = rig();
+    const [a] = two(r);
+    r.engine.setTool('connector');
+    r.drag([80, 80], [300, 300]);
+    expect(objs(r).snapshot(r.engine.getState().selectedId ?? '')).toMatchObject({ from: { id: a }, to: { x: 300, y: 300 } });
+    r.engine.setTool('connector');
+    r.drag([300, 400], [500, 80]); // left anchor of the second sticky
+    expect(objs(r).snapshot(r.engine.getState().selectedId ?? '')).toMatchObject({ from: { x: 300, y: 400 }, to: { side: 'left' } });
+  });
+  it('uses the chosen route for new connectors', () => {
+    const r = rig();
+    two(r);
+    r.engine.setConnectorRoute('elbow');
+    r.engine.setTool('connector');
+    r.drag([80, 80], [580, 80]);
+    expect(objs(r).snapshot(r.engine.getState().selectedId ?? '')).toMatchObject({ route: 'elbow' });
+  });
+  it('follows its objects when they move or resize', () => {
+    const r = rig();
+    const [, b] = two(r);
+    r.engine.setTool('connector');
+    r.drag([80, 80], [580, 80]);
+    const id = r.engine.getState().selectedId ?? '';
+    r.click(580, 120);
+    r.drag([580, 120], [580, 400]);
+    const c = r.engine.scene.get(id);
+    expect(objs(r).snapshot(b)?.y).toBe(280);
+    expect(c && isConnector(c) ? c.points.slice(-2) : null).toEqual([500, 360]);
+  });
+  it('retargets by dragging an end handle', () => {
+    const r = rig();
+    const [a, b] = two(r);
+    const [c3] = r.make(sticky(0, 600));
+    r.engine.setTool('connector');
+    r.drag([80, 80], [580, 80]);
+    const id = r.engine.getState().selectedId ?? '';
+    // drag the "to" end (left side of b, at 500,80) onto the third sticky
+    r.drag([500, 80], [80, 680]);
+    expect(objs(r).snapshot(id)).toMatchObject({ from: { id: a }, to: { id: c3 } });
+    expect(objs(r).snapshot(id)?.to).not.toMatchObject({ id: b });
+  });
+  it('is detached, not deleted, when its target is deleted', () => {
+    const r = rig();
+    const [, b] = two(r);
+    r.engine.setTool('connector');
+    r.drag([80, 80], [580, 80]);
+    const id = r.engine.getState().selectedId ?? '';
+    r.engine.setSelection([b]);
+    r.key('Delete');
+    expect(objs(r).count).toBe(2);
+    expect(objs(r).snapshot(id)?.to).toEqual({ x: 500, y: 80 });
+    r.key('z', { metaKey: true });
+    expect(objs(r).count).toBe(3);
+  });
+});
+
+describe('keyboard', () => {
+  it('tool hotkeys', () => {
+    const r = rig();
+    for (const [k, tool] of [['s', 'sticky'], ['t', 'text'], ['r', 'shape'], ['c', 'connector'], ['v', 'select']] as const) {
+      r.key(k);
+      expect(r.engine.getState().tool).toBe(tool);
+    }
+  });
+  it('Delete, select all, Escape and Tab', () => {
+    const r = rig();
+    const [a, b, c] = r.make(sticky(0, 0), sticky(300, 0), sticky(600, 0));
+    r.key('a', { metaKey: true });
+    expect(r.engine.getState().selectionCount).toBe(3);
+    r.key('Escape');
+    expect(r.engine.getState().selectionCount).toBe(0);
+    r.key('Tab');
+    expect(r.engine.getState().selectedId).toBe(a);
+    r.key('Tab');
+    expect(r.engine.getState().selectedId).toBe(b);
+    r.key('Tab', { shiftKey: true });
+    expect(r.engine.getState().selectedId).toBe(a);
+    r.key('Delete');
+    expect(objs(r).count).toBe(2);
+    expect(objs(r).objects.has(c ?? '')).toBe(true);
+    expect(r.engine.getState().selectionCount).toBe(0);
+  });
+  it('layer order with ⌘] / ⌘[ (Shift: all the way)', () => {
+    const r = rig();
+    const [a, b, c] = r.make(sticky(0, 0), sticky(0, 0), sticky(0, 0));
+    r.engine.setSelection([a ?? '']);
+    r.key(']', { metaKey: true, code: 'BracketRight' });
+    expect(objs(r).orderedIds()).toEqual([b, a, c]);
+    r.key(']', { metaKey: true, code: 'BracketRight', shiftKey: true });
+    expect(objs(r).orderedIds()).toEqual([b, c, a]);
+    r.key('[', { metaKey: true, code: 'BracketLeft', shiftKey: true });
+    expect(objs(r).orderedIds()).toEqual([a, b, c]);
+  });
+  it('copy, paste and cut through the text clipboard, ⌘D duplicates', async () => {
+    const r = rig();
+    r.make(sticky(0, 0, { text: 'copy me' }), { init: { kind: 'shape', x: 300, y: 0 } });
+    r.engine.selectAll();
+    r.key('c', { metaKey: true });
+    await flush();
+    expect(r.clip.text.startsWith('calaba-canvas:')).toBe(true);
+    r.key('v', { metaKey: true });
+    await flush();
+    expect(objs(r).count).toBe(4);
+    expect(r.engine.getState().selectionCount).toBe(2);
+    r.key('d', { metaKey: true });
+    expect(objs(r).count).toBe(6);
+    r.key('x', { metaKey: true });
+    await flush();
+    expect(objs(r).count).toBe(4);
+  });
+  it('pasting plain text makes a text object', async () => {
+    const r = rig();
+    r.clip.text = 'just words';
+    r.key('v', { metaKey: true });
+    await flush();
+    const id = r.engine.getState().selectedId ?? '';
+    expect(objs(r).snapshot(id)).toMatchObject({ kind: 'text', text: 'just words' });
+  });
+  it('pasted objects land in view even if copied far away', async () => {
+    const r = rig();
+    r.make(sticky(90000, 90000));
+    r.engine.selectAll();
+    r.key('c', { metaKey: true });
+    await flush();
+    r.key('v', { metaKey: true });
+    await flush();
+    const id = r.engine.getState().selectedId ?? '';
+    const o = r.engine.scene.get(id);
+    expect(o?.x).toBeLessThan(1000);
+  });
+  it('ignores keys while the text editor owns focus', () => {
+    const r = rig();
+    r.make(sticky(0, 0));
+    r.click(50, 50);
+    r.key('Enter');
+    const ta = r.host.querySelector('textarea');
+    expect(ta).not.toBeNull();
+    ta?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    expect(objs(r).count).toBe(1);
+    ta?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(r.engine.getState().editing).toBe(false);
+  });
+});
+
+describe('camera', () => {
+  it('Ctrl+wheel zooms around the pointer, plain wheel pans, limits hold', () => {
+    const r = rig();
+    const before = r.engine.toWorld({ x: 500, y: 400 });
+    r.wheel(-100, { ctrlKey: true });
+    expect(r.engine.camera.scale).toBeCloseTo(1.1);
+    const after = r.engine.toWorld({ x: 500, y: 400 });
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
+    r.wheel(30, { deltaX: 12 });
+    expect(r.engine.camera.tx).toBeLessThan(0);
+    for (let i = 0; i < 60; i++) r.wheel(-100, { ctrlKey: true });
+    expect(r.engine.camera.scale).toBe(4);
+    for (let i = 0; i < 120; i++) r.wheel(100, { ctrlKey: true });
+    expect(r.engine.camera.scale).toBeCloseTo(0.1);
+    expect(r.engine.getState().zoomPct).toBe(10);
+  });
+  it('trackpad pinch (small ctrl+wheel deltas) zooms smoothly', () => {
+    const r = rig();
+    r.wheel(-5, { ctrlKey: true });
+    expect(r.engine.camera.scale).toBeCloseTo(Math.exp(0.05));
+  });
+  it('prevents the default page scroll/zoom on wheel', () => {
+    const r = rig();
+    const e = new WheelEvent('wheel', { deltaY: 10, bubbles: true, cancelable: true });
+    r.canvas.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+  });
+  it('Space+drag and the middle button pan', () => {
+    const r = rig();
+    r.make(sticky(0, 0));
+    r.key(' ');
+    r.drag([300, 300], [350, 340]);
+    expect(r.engine.camera.tx).toBe(50);
+    expect(r.engine.camera.ty).toBe(40);
+    expect(r.engine.getState().selectionCount).toBe(0);
+    r.canvas.dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }));
+    r.drag([300, 300], [310, 300], { button: 1 });
+    expect(r.engine.camera.tx).toBe(60);
+  });
+  it('+/− step through presets, ⌘0 resets to 100 %', () => {
+    const r = rig();
+    r.key('+');
+    expect(r.engine.getState().zoomPct).toBe(125);
+    r.key('-');
+    r.key('-');
+    expect(r.engine.getState().zoomPct).toBe(75);
+    r.key('0', { metaKey: true });
+    expect(r.engine.getState().zoomPct).toBe(100);
+  });
+  it('Shift+1 fits everything, Shift+2 the selection', () => {
+    const r = rig();
+    const [, b] = r.make(sticky(0, 0), sticky(3000, 2000));
+    r.key('!', { shiftKey: true, code: 'Digit1' });
+    const all = r.engine.visibleWorld();
+    expect(all.x).toBeLessThan(0);
+    expect(all.x + all.w).toBeGreaterThan(3160);
+    expect(all.y + all.h).toBeGreaterThan(2160);
+    r.engine.setSelection([b ?? '']);
+    r.key('@', { shiftKey: true, code: 'Digit2' });
+    expect(r.engine.camera.scale).toBe(1);
+    const sel = r.engine.visibleWorld();
+    expect(sel.x).toBeLessThan(3000);
+    expect(sel.x + sel.w).toBeGreaterThan(3160);
+  });
+  it('fit on an empty canvas centers the origin; it animates unless reduced motion is on', () => {
+    const r = rig({ reducedMotion: false });
+    r.engine.fitAll();
+    expect(r.raf.pending).toBeGreaterThan(0);
+    r.clock.t += 400;
+    for (let i = 0; i < 5; i++) r.raf.flush();
+    expect(r.engine.camera).toMatchObject({ tx: 500, ty: 400, scale: 1 });
+    const jump = rig({ reducedMotion: true });
+    jump.make(sticky(2000, 2000));
+    jump.engine.fitAll();
+    expect(jump.engine.camera.tx).not.toBe(0);
+  });
+  it('animated camera moves stop when the user takes over', () => {
+    const r = rig({ reducedMotion: false });
+    r.make(sticky(4000, 0));
+    r.engine.fitAll();
+    r.clock.t += 50;
+    r.raf.flush();
+    const mid = r.engine.camera.tx;
+    r.wheel(0, { deltaX: 40 });
+    const after = r.engine.camera.tx;
+    r.clock.t += 400;
+    r.raf.flush();
+    expect(r.engine.camera.tx).toBe(after);
+    expect(after).not.toBe(mid + 0.0001);
+  });
+  it('centerOn and zoomTo', () => {
+    const r = rig();
+    r.engine.zoomTo(200);
+    expect(r.engine.camera.scale).toBe(2);
+    r.engine.centerOn({ x: 100, y: 100 });
+    const c = r.engine.visibleWorld();
+    expect(c.x + c.w / 2).toBeCloseTo(100);
+  });
+});
+
+describe('read-only', () => {
+  it('pans on drag, blocks every edit, still copies', async () => {
+    const r = rig({ readOnly: true });
+    const [a] = r.make(sticky(100, 100, { text: 'ro' }));
+    expect(r.engine.getState().readOnly).toBe(true);
+    r.drag([150, 150], [250, 250]);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100, y: 100 });
+    expect(r.engine.camera.tx).toBe(100);
+    r.engine.setTool('sticky');
+    r.engine.setSelection([a ?? '']);
+    r.key('Delete');
+    r.key('d', { metaKey: true });
+    r.key('Enter');
+    expect(objs(r).count).toBe(1);
+    expect(r.engine.startTextEdit(a)).toBe(false);
+    r.key('c', { metaKey: true });
+    await flush();
+    expect(r.clip.text.startsWith('calaba-canvas:')).toBe(true);
+    expect(r.engine['overlay'].group).toBeNull();
+  });
+  it('a document with a newer schema opens read-only', () => {
+    const r = rig();
+    expect(r.engine.getState().readOnly).toBe(false);
+    r.engine.doc.meta.set('schema', 2);
+    expect(r.engine.getState().readOnly).toBe(true);
+    r.engine.setTool('sticky');
+    r.click(100, 100);
+    expect(objs(r).count).toBe(0);
+  });
+  it('can be switched at runtime and closes an open editor', () => {
+    const r = rig();
+    r.make(sticky(0, 0));
+    r.engine.startTextEdit(r.engine.scene.orderedIds()[0]);
+    expect(r.engine.getState().editing).toBe(true);
+    r.engine.setReadOnly(true);
+    expect(r.engine.getState().editing).toBe(false);
+  });
+});
+
+describe('state for React: primitives only', () => {
+  it('notifies only when a primitive changes', () => {
+    const r = rig();
+    const [a] = r.make(sticky(0, 0));
+    const fn = vi.fn();
+    r.engine.subscribe(fn);
+    const s0 = r.engine.getState();
+    r.engine.doc.patch(a ?? '', { x: 50 }); // someone else's / any content edit
+    r.engine.doc.setText(a ?? '', 'typing');
+    expect(fn).not.toHaveBeenCalled();
+    expect(r.engine.getState()).toBe(s0);
+    r.engine.setSelection([a ?? '']);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(r.engine.getState().selectedId).toBe(a);
+    r.engine.setSelection([a ?? '']);
+    expect(fn).toHaveBeenCalledTimes(1);
+    r.engine.setCamera({ ...r.engine.camera, tx: 20 }); // pan: zoom label unchanged
+    expect(fn).toHaveBeenCalledTimes(1);
+    r.engine.zoomAtPoint(1.004, { x: 0, y: 0 }); // rounds to the same percent
+    expect(fn).toHaveBeenCalledTimes(1);
+    r.engine.zoomAtPoint(1.5, { x: 0, y: 0 });
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(r.engine.getState().zoomPct).toBe(151);
+  });
+  it('tracks undo/redo availability and the editing flag', () => {
+    const r = rig();
+    expect(r.engine.getState()).toMatchObject({ canUndo: false, canRedo: false });
+    r.make(sticky(0, 0));
+    expect(r.engine.getState().canUndo).toBe(true);
+    r.engine.undo();
+    expect(r.engine.getState()).toMatchObject({ canUndo: false, canRedo: true });
+  });
+  it('subscribeSelection delivers selected records on selection and on their change only', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(0, 0), sticky(400, 0));
+    const seen: number[] = [];
+    r.engine.subscribeSelection((o) => seen.push(o.length));
+    r.engine.setSelection([a ?? '']);
+    expect(seen).toEqual([1]);
+    r.engine.doc.patch(b ?? '', { x: 5 }); // another object: no event
+    expect(seen).toEqual([1]);
+    r.engine.doc.patch(a ?? '', { color: 'blue' });
+    expect(seen).toEqual([1, 1]);
+    r.engine.updateSelected({ color: 'pink' });
+    expect(objs(r).snapshot(a ?? '')?.color).toBe('pink');
+  });
+  it('drops deleted objects from the selection', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(0, 0), sticky(400, 0));
+    r.engine.setSelection([a ?? '', b ?? '']);
+    r.engine.doc.remove([a ?? '']);
+    expect([...r.engine.selection]).toEqual([b]);
+  });
+  it('a remote edit of a selected object refreshes the selection decoration', () => {
+    const r = rig();
+    const [a] = r.make(sticky(0, 0));
+    r.engine.setSelection([a ?? '']);
+    expect(r.engine['overlay'].group).toMatchObject({ x: 0 });
+    r.ydoc.transact(() => r.engine.doc.objects.get(a ?? '')?.set('x', 77), 'remote');
+    expect(r.engine['overlay'].group).toMatchObject({ x: 77 });
+  });
+});
+
+describe('idle behaviour', () => {
+  it('after a burst of work, no frame stays scheduled and no timer exists', () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.make(sticky(0, 0), sticky(300, 0));
+    r.drag([50, 50], [150, 120]);
+    r.wheel(-100, { ctrlKey: true });
+    r.engine.setSelection([...r.engine.scene.orderedIds()]);
+    for (let i = 0; i < 4; i++) r.raf.flush();
+    vi.runOnlyPendingTimers(); // jsdom's own focus bookkeeping, not ours
+    expect(r.raf.pending).toBe(0);
+    expect(r.engine.renderer.frameScheduled).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    const frames = r.engine.stats.frames;
+    r.clock.t += 60_000;
+    vi.advanceTimersByTime(60_000);
+    expect(r.engine.stats.frames).toBe(frames);
+  });
+  it('a hidden document does not render', () => {
+    const r = rig();
+    r.raf.flush();
+    const frames = r.engine.stats.frames;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    r.make(sticky(0, 0));
+    r.engine.setCamera({ tx: 30, ty: 30, scale: 1 });
+    expect(r.raf.pending).toBe(0);
+    r.raf.flush();
+    expect(r.engine.stats.frames).toBe(frames);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(r.raf.pending).toBe(1);
+  });
+  it('destroy detaches input and stops everything', () => {
+    const r = rig();
+    r.make(sticky(0, 0));
+    r.engine.destroy();
+    r.engine.destroy();
+    r.engine.setTool('select');
+    r.wheel(-100, { ctrlKey: true });
+    r.click(10, 10);
+    expect(r.engine.camera.scale).toBe(1);
+    expect(r.raf.pending).toBe(0);
+  });
+});
+
+describe('remote awareness', () => {
+  it('draws peers, and fades cursors in steps with one timer, never a loop', () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.engine.setPeers([{ id: 'p1', name: 'Анна', color: '#e11', cursor: { x: 10, y: 10 }, selection: [] }]);
+    expect(vi.getTimerCount()).toBe(1);
+    r.raf.flush();
+    expect(r.raf.pending).toBe(0);
+    r.clock.t += 2600;
+    vi.advanceTimersByTime(2600);
+    expect(r.raf.pending).toBe(1); // dim step → one frame
+    r.raf.flush();
+    expect(vi.getTimerCount()).toBe(1);
+    r.clock.t += 4000;
+    vi.advanceTimersByTime(4000);
+    r.raf.flush();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(r.raf.pending).toBe(0);
+  });
+  it('an identical peer snapshot costs no frame', () => {
+    const r = rig();
+    r.raf.flush();
+    const p = [{ id: 'p1', name: 'B', color: '#00f', cursor: { x: 1, y: 1 } }];
+    r.engine.setPeers(p);
+    r.raf.flush();
+    r.engine.setPeers(p.map((x) => ({ ...x })));
+    expect(r.raf.pending).toBe(0);
+  });
+  it('reports the local cursor and selection at most 20 times a second', () => {
+    vi.useFakeTimers();
+    const r = rig();
+    const got: unknown[] = [];
+    r.engine.onLocalAwareness((a) => got.push(a));
+    for (let i = 0; i < 30; i++) {
+      r.move(10 + i, 10);
+      r.clock.t += 5;
+      vi.advanceTimersByTime(5);
+    }
+    vi.advanceTimersByTime(100);
+    // 150 ms of movement → at most ~4 messages including the trailing one
+    expect(got.length).toBeGreaterThan(1);
+    expect(got.length).toBeLessThanOrEqual(5);
+    expect((got.at(-1) as { cursor: { x: number } }).cursor.x).toBe(39);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('export and options', () => {
+  it('exports the scene into a canvas, or null when empty', () => {
+    const r = rig();
+    expect(r.engine.exportToCanvas()).toBeNull();
+    r.make(sticky(0, 0, { text: 'x' }));
+    const c = r.engine.exportToCanvas({ pxPerUnit: 2 });
+    expect(c?.width).toBe(Math.ceil((160 + 48) * 2));
+  });
+  it('palette changes repaint everything', () => {
+    const r = rig();
+    r.make(sticky(0, 0));
+    r.raf.flush();
+    const full = r.engine.stats.full;
+    r.engine.setPalette(defaultPalette('dark'));
+    r.raf.flush();
+    expect(r.engine.stats.full).toBe(full + 1);
+  });
+  it('low-power mode renders at DPR 1', () => {
+    const r = rig();
+    r.engine.setLowPower(true);
+    expect(r.engine.renderer.devicePixelRatio).toBe(1);
+  });
+});
