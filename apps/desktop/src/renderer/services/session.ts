@@ -33,6 +33,7 @@ import { resetDmCaches } from './dms';
 import { startMessageRetention } from './retention';
 import { startAppBadge } from './badge';
 import { startRecordingSync } from './recording';
+import { startBoardsAddress } from './boardsAddress';
 import { startSipSync } from './sip';
 import { installMenu } from './menu';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
@@ -106,6 +107,7 @@ export async function bootstrap(): Promise<void> {
   startAppBadge();
   startRecordingSync();
   startSipSync();
+  if (platform.kind === 'web') startBoardsAddress();
   installMenu();
 
   // Web /join/<code>, /r/<code>: the «open in the app / continue in the browser» card (docs/09 #53)

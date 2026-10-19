@@ -1,4 +1,5 @@
 import { pushOnTab } from '../lib/phoneNav';
+import { holdBoardsAddress } from './boardsAddress';
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampNow } from '@bufbuild/protobuf/wkt';
 import {
@@ -527,13 +528,8 @@ let pending: { kind: 'board' | 'task'; id: string } | null = null;
 /** `/b/<id>` and `/t/<KEY-N>` (web path, calab:// deep link): opened once READY is in. */
 export function openBoardLink(kind: 'board' | 'task', id: string): void {
   pending = { kind, id };
-  if (import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' && /^\/(b|t)\//.test(location.pathname)) {
-    try {
-      history.replaceState(null, '', '/');
-    } catch {
-      // not fatal
-    }
-  }
+  // The web address (/b/…, /t/…) stays while the link is opened; the address sync takes over after.
+  if (import.meta.env.VITE_PLATFORM === 'web') holdBoardsAddress(true);
   if (useSession.getState().ready) takePendingLink();
 }
 
@@ -545,11 +541,13 @@ function takePendingLink(): void {
     const b = useBoards.getState().boards[p.id];
     if (!b) {
       toast.error(t('boards.err.boardNotFound'));
+      holdBoardsAddress(false);
       return;
     }
     const ui = useUi.getState();
     if (ui.activeWorkspaceId !== b.workspaceId) ui.setWorkspace(b.workspaceId);
     openBoard(b.workspaceId, b.id);
+    holdBoardsAddress(false);
     return;
   }
   void (async () => {
@@ -560,6 +558,8 @@ function takePendingLink(): void {
     } catch (e) {
       log.warn('task link failed', e);
       toast.error(t('boards.err.notFound'));
+    } finally {
+      holdBoardsAddress(false);
     }
   })();
 }
