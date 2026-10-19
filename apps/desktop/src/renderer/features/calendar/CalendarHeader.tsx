@@ -1,23 +1,22 @@
-import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Users, Video } from 'lucide-react';
+import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { Bar } from '../../components/Bar';
 import { Button, IconButton, Segmented, Tip } from '../../components/ui';
 import { t } from '../../i18n';
-import { mayCreateTempRooms } from '../../lib/permissions';
 import { addDays, dayStart, formatLongDay, formatWeekTitle } from '../../lib/calendar/time';
 import { loadCalDav } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
-import { myUserId } from '../../stores/session';
 import { useUi, type CalView } from '../../stores/ui';
-import { rolesOf, useWorkspaces } from '../../stores/workspaces';
-import { defaultDraft, newEvent, startFind } from './actions';
+import { startFind } from './actions';
 import { PeopleBar } from './PeopleBar';
 
 /*
  * The desktop header of the calendar (ADR-0038 §7; the week — bug board #6, Yandex Calendar), one
  * for the day and the week view: ‹ › (a day / a week), the title, «Сегодня» (when today is not
- * shown), «Подобрать время», «Неделя | День» (a segmented switch), «Звонок» and «+ Встреча». The phone keeps its own
- * compact day header (DayView.tsx) and never shows the week.
+ * shown), «Подобрать время» and «Неделя | День» (a segmented switch). A meeting is created from the
+ * sidebar's «+» (`section-create-event`), the global create menu or N (dayControls) — no button here
+ * (owner, 19.10); a call now is a temporary room from the room list. The phone keeps its own compact
+ * day header (DayView.tsx, with its round «+») and never shows the week.
  */
 
 export function CalendarHeader({
@@ -69,14 +68,6 @@ export function CalendarHeader({
         </Tip>
       ) : null}
       <ViewSwitch view={view} />
-      <CallButton workspaceId={workspaceId} />
-      {creatable ? (
-        <Tip label={t('cal.newEventLong')} shortcut="N">
-          <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day === today || !showsToday ? day : today))} data-testid="day-new-event">
-            {t('cal.newEvent')}
-          </Button>
-        </Tip>
-      ) : null}
     </Bar>
   );
 }
@@ -95,25 +86,6 @@ function ViewSwitch({ view }: { view: CalView }): ReactNode {
       onChange={setView}
       testId="cal-view"
     />
-  );
-}
-
-/**
- * «Звонок»: a call right now — the calendar has no instant-meeting flow of its own, so it is the
- * temporary room dialog (ADR-0044: a voice room with a link for colleagues and guests, optionally
- * with a calendar meeting). Only with CREATE_TEMP_ROOMS.
- */
-function CallButton({ workspaceId }: { workspaceId: string }): ReactNode {
-  const me = myUserId();
-  const allowed = useWorkspaces((st) => mayCreateTempRooms(rolesOf(st.byId[workspaceId], me)));
-  if (!allowed) return null;
-  return (
-    <Tip label={t('cal.callHint')}>
-      <Button variant="secondary" size="sm" onClick={() => useUi.getState().openDialog({ kind: 'temp-room-create', workspaceId })} data-testid="cal-call">
-        <Video className="size-3.5" aria-hidden />
-        {t('cal.call')}
-      </Button>
-    </Tip>
   );
 }
 

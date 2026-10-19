@@ -3882,7 +3882,7 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await calendarDay(win, mock);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
-  await win.getByTestId('day-new-event').click();
+  await win.keyboard.press('n'); // the header has no «Встреча» (CBF-18)
   const dialog = win.getByTestId('event-dialog');
   await dialog.getByTestId('event-title-input').fill('Разбор релиза');
   await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });

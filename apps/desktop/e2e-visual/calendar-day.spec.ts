@@ -12,7 +12,7 @@ test('create: the dialog → the meeting in the day view, selected, the count in
   await signIn(page, mock);
   await openDay(page);
   await expect(page.getByTestId('day-empty')).toBeVisible();
-  await page.getByTestId('day-new-event').click();
+  await page.keyboard.press('n'); // the header has no «Встреча» (CBF-18): N, as the sidebar «+»
   const dialog = page.getByTestId('event-dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByTestId('event-title-input').fill('Ревью дизайна');
