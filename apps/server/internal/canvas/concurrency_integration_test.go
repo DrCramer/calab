@@ -34,7 +34,7 @@ func TestCanvasConcurrentStructureStaysConsistent(t *testing.T) {
 		wg.Add(1)
 		go func(seed uint64) {
 			defer wg.Done()
-			rng := rand.New(rand.NewPCG(seed, seed+1))
+			rng := rand.New(rand.NewPCG(seed, seed+1)) //nolint:gosec // a seeded test scenario
 			pick := func() string { return ids[rng.IntN(len(ids))] }
 			for i := 0; i < 40; i++ {
 				who := e.alice
