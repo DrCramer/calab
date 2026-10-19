@@ -3769,8 +3769,7 @@ test('calendar-week', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await calendarDay(win, mock);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
-  await win.getByTestId('cal-view').click();
-  await win.getByTestId('cal-view-week').click();
+  await win.getByTestId('cal-view').getByRole('radio', { name: /Неделя|Week/ }).click();
   const week = win.getByTestId('week-view');
   await expect(week).toBeVisible();
   await expect(week.getByTestId('week-today')).toHaveText('15');

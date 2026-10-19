@@ -1,8 +1,7 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { CalendarPlus, CalendarSearch, Check, ChevronDown, ChevronLeft, ChevronRight, Users, Video } from 'lucide-react';
+import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Users, Video } from 'lucide-react';
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { Bar } from '../../components/Bar';
-import { Button, IconButton, Tip, cx } from '../../components/ui';
+import { Button, IconButton, Segmented, Tip } from '../../components/ui';
 import { t } from '../../i18n';
 import { mayCreateTempRooms } from '../../lib/permissions';
 import { addDays, dayStart, formatLongDay, formatWeekTitle } from '../../lib/calendar/time';
@@ -11,14 +10,13 @@ import { useFreeBusy } from '../../stores/freebusy';
 import { myUserId } from '../../stores/session';
 import { useUi, type CalView } from '../../stores/ui';
 import { rolesOf, useWorkspaces } from '../../stores/workspaces';
-import { menuBox, menuItem } from '../shell/menu';
 import { defaultDraft, newEvent, startFind } from './actions';
 import { PeopleBar } from './PeopleBar';
 
 /*
  * The desktop header of the calendar (ADR-0038 §7; the week — bug board #6, Yandex Calendar), one
  * for the day and the week view: ‹ › (a day / a week), the title, «Сегодня» (when today is not
- * shown), «Подобрать время», «День / Неделя», «Звонок» and «+ Встреча». The phone keeps its own
+ * shown), «Подобрать время», «Неделя | День» (a segmented switch), «Звонок» and «+ Встреча». The phone keeps its own
  * compact day header (DayView.tsx) and never shows the week.
  */
 
@@ -83,34 +81,20 @@ export function CalendarHeader({
   );
 }
 
-/** «День / Неделя ▾» (Yandex Calendar): the view, kept on this device. */
+/** «Неделя | День» (Yandex Calendar): the view, kept on this device; the bar's segmented pill. */
 function ViewSwitch({ view }: { view: CalView }): ReactNode {
   const setView = useUi((s) => s.setCalView);
   return (
-    <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <Button variant="secondary" size="sm" aria-label={t('cal.viewPick', { view: view === 'week' ? t('cal.viewWeek') : t('cal.viewDay') })} className="data-[state=open]:bg-active" data-testid="cal-view">
-          {view === 'week' ? t('cal.viewWeek') : t('cal.viewDay')}
-          <ChevronDown className="size-3.5 text-muted" aria-hidden />
-        </Button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'min-w-40')} sideOffset={4} align="end" collisionPadding={16}>
-          <Dropdown.RadioGroup value={view} onValueChange={(v) => setView(v === 'week' ? 'week' : 'day')}>
-            {(['day', 'week'] as const).map((v) => (
-              <Dropdown.RadioItem key={v} value={v} className={menuItem} data-testid={`cal-view-${v}`}>
-                <span className="grid w-4 place-items-center">
-                  <Dropdown.ItemIndicator>
-                    <Check className="size-4" aria-hidden />
-                  </Dropdown.ItemIndicator>
-                </span>
-                <span className="flex-1">{v === 'week' ? t('cal.viewWeek') : t('cal.viewDay')}</span>
-              </Dropdown.RadioItem>
-            ))}
-          </Dropdown.RadioGroup>
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
+    <Segmented<CalView>
+      value={view}
+      label={t('cal.viewPick', { view: view === 'week' ? t('cal.viewWeek') : t('cal.viewDay') })}
+      options={[
+        { value: 'week', label: t('cal.viewWeek') },
+        { value: 'day', label: t('cal.viewDay') },
+      ]}
+      onChange={setView}
+      testId="cal-view"
+    />
   );
 }
 
