@@ -1,0 +1,456 @@
+import * as Y from 'yjs';
+import { clamp, type Point } from './geometry';
+import { after, before, between, isValidKey } from './fracIndex';
+import {
+  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
+  type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
+} from './types';
+
+/** Transaction origin of this client's own edits: the only one the UndoManager tracks. */
+export const LOCAL_ORIGIN: object = Object.freeze({ canvas: 'local' });
+
+const KINDS: readonly ObjectKind[] = ['sticky', 'text', 'shape', 'connector'];
+const SIDE_SET = new Set<string>(['auto', 'top', 'right', 'bottom', 'left']);
+const ARROW_SET = new Set<string>(['none', 'end', 'both']);
+const ROUTE_SET = new Set<string>(['straight', 'elbow']);
+
+export const isKind = (v: unknown): v is ObjectKind => typeof v === 'string' && (KINDS as readonly string[]).includes(v);
+export const isShapeKind = (v: unknown): v is ShapeKind => typeof v === 'string' && (SHAPE_KINDS as readonly string[]).includes(v);
+
+export const num = (v: unknown, fallback: number, lo = -MAX_COORD, hi = MAX_COORD): number =>
+  typeof v === 'number' && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
+
+/** A palette token name or a #hex literal; anything else is replaced by the fallback. */
+export function color(v: unknown, fallback: string): string {
+  return typeof v === 'string' && v.length <= 32 && /^(#[0-9a-fA-F]{3,8}|[a-z][a-z0-9-]*)$/.test(v) ? v : fallback;
+}
+
+export function endpoint(v: unknown): Endpoint | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.id === 'string' && o.id.length > 0 && o.id.length <= 64) {
+    const side = typeof o.side === 'string' && SIDE_SET.has(o.side) ? (o.side as Side) : 'auto';
+    return { id: o.id, side };
+  }
+  if (typeof o.x === 'number' && typeof o.y === 'number' && Number.isFinite(o.x) && Number.isFinite(o.y)) {
+    return { x: clamp(o.x, -MAX_COORD, MAX_COORD), y: clamp(o.y, -MAX_COORD, MAX_COORD) };
+  }
+  return null;
+}
+
+/** Clamps text to MAX_TEXT without cutting a surrogate pair. */
+export function clampText(s: string): string {
+  if (s.length <= MAX_TEXT) return s;
+  let end = MAX_TEXT;
+  const c = s.charCodeAt(end - 1);
+  if (c >= 0xd800 && c <= 0xdbff) end--;
+  return s.slice(0, end);
+}
+
+export function newId(): string {
+  const buf = new Uint8Array(9);
+  globalThis.crypto.getRandomValues(buf);
+  let s = '';
+  for (const b of buf) s += (b % 36).toString(36);
+  return s;
+}
+
+/** Applies `next` to `yt` as the smallest single delete+insert (keeps concurrent edits mergeable). */
+export function applyTextDiff(yt: Y.Text, next: string): void {
+  const cur = yt.toJSON();
+  if (cur === next) return;
+  let p = 0;
+  const max = Math.min(cur.length, next.length);
+  while (p < max && cur.charCodeAt(p) === next.charCodeAt(p)) p++;
+  if (p > 0) {
+    const c = cur.charCodeAt(p - 1);
+    if (c >= 0xd800 && c <= 0xdbff) p--;
+  }
+  let s = 0;
+  while (s < max - p && cur.charCodeAt(cur.length - 1 - s) === next.charCodeAt(next.length - 1 - s)) s++;
+  if (s > 0) {
+    const c = cur.charCodeAt(cur.length - s);
+    if (c >= 0xdc00 && c <= 0xdfff) s--;
+  }
+  yt.doc?.transact(() => {
+    if (cur.length - p - s > 0) yt.delete(p, cur.length - p - s);
+    if (next.length - p - s > 0) yt.insert(p, next.slice(p, next.length - s));
+  }, LOCAL_ORIGIN);
+}
+
+/** Plain copy of one object (text as string), the shape the clipboard and tests work with. */
+export type PlainObject = { id: string; kind: ObjectKind; z: string } & Record<string, unknown>;
+
+const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
+  sticky: ['x', 'y', 'w', 'h', 'color'],
+  text: ['x', 'y', 'w', 'size', 'color'],
+  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth'],
+  connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label'],
+};
+
+const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
+  sticky: ['x', 'y', 'w', 'h', 'color'],
+  text: ['x', 'y', 'w', 'size', 'color'],
+  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth'],
+  connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label'],
+};
+
+/** Validated, defaulted field map for an init (what gets stored). */
+function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: string | null } {
+  switch (init.kind) {
+    case 'sticky':
+      return {
+        fields: {
+          x: num(init.x, 0), y: num(init.y, 0),
+          w: num(init.w, DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(init.h, DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
+          color: color(init.color, DEFAULTS.stickyColor),
+        },
+        text: clampText(init.text ?? ''),
+      };
+    case 'text':
+      return {
+        fields: {
+          x: num(init.x, 0), y: num(init.y, 0),
+          w: num(init.w, DEFAULTS.textW, DEFAULTS.minTextW, MAX_SIZE),
+          size: num(init.size, DEFAULTS.textSize, DEFAULTS.minTextSize, DEFAULTS.maxTextSize),
+          color: color(init.color, DEFAULTS.textColor),
+        },
+        text: clampText(init.text ?? ''),
+      };
+    case 'shape':
+      return {
+        fields: {
+          shape: isShapeKind(init.shape) ? init.shape : 'rect',
+          x: num(init.x, 0), y: num(init.y, 0),
+          w: num(init.w, DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(init.h, DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
+          fill: color(init.fill, DEFAULTS.shapeFill), stroke: color(init.stroke, DEFAULTS.shapeStroke),
+          strokeWidth: num(init.strokeWidth, DEFAULTS.strokeWidth, 0, 24),
+        },
+        text: clampText(init.text ?? ''),
+      };
+    case 'connector':
+      return {
+        fields: {
+          from: endpoint(init.from) ?? { x: 0, y: 0 }, to: endpoint(init.to) ?? { x: 0, y: 0 },
+          arrow: ARROW_SET.has(init.arrow ?? '') ? init.arrow : 'end',
+          route: ROUTE_SET.has(init.route ?? '') ? init.route : 'straight',
+          stroke: color(init.stroke, DEFAULTS.connectorStroke), strokeWidth: num(init.strokeWidth, DEFAULTS.strokeWidth, 0, 24),
+          label: clampText(init.label ?? ''),
+        },
+        text: null,
+      };
+  }
+}
+
+/** Normalizes a stored field before it is written by a patch; undefined = reject. */
+function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unknown {
+  switch (key) {
+    case 'x': case 'y': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, -MAX_COORD, MAX_COORD) : undefined;
+    case 'w': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'text' ? DEFAULTS.minTextW : DEFAULTS.minBox, MAX_SIZE) : undefined;
+    case 'h': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minBox, MAX_SIZE) : undefined;
+    case 'size': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minTextSize, DEFAULTS.maxTextSize) : undefined;
+    case 'strokeWidth': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, 0, 24) : undefined;
+    case 'color': case 'fill': case 'stroke': return color(v, '') || undefined;
+    case 'shape': return isShapeKind(v) ? v : undefined;
+    case 'from': case 'to': return endpoint(v) ?? undefined;
+    case 'arrow': return typeof v === 'string' && ARROW_SET.has(v) ? v : undefined;
+    case 'route': return typeof v === 'string' && ROUTE_SET.has(v) ? v : undefined;
+    case 'label': return typeof v === 'string' ? clampText(v) : undefined;
+  }
+}
+
+const same = (a: unknown, b: unknown): boolean => a === b || (typeof a === 'object' && typeof b === 'object' && JSON.stringify(a) === JSON.stringify(b));
+
+export interface CanvasDocOptions {
+  /** Random source for z-key tails and ids (tests). */
+  rng?: (() => number) | null;
+  makeId?: () => string;
+}
+
+/**
+ * The canvas document on a Y.Doc (ADR-0107 §3): `objects: Y.Map<id, Y.Map>` with flat fields, `z` a
+ * fractional key, text in `Y.Text`, `meta.schema`. All local edits are one transaction each with
+ * `LOCAL_ORIGIN`; the UndoManager tracks only that origin, so undo never reverts someone else's edit.
+ */
+export class CanvasDoc {
+  readonly ydoc: Y.Doc;
+  readonly objects: Y.Map<Y.Map<unknown>>;
+  readonly meta: Y.Map<unknown>;
+  readonly undo: Y.UndoManager;
+  private readonly rng: (() => number) | null;
+  private readonly makeId: () => string;
+  private gesture = 0;
+  private static readonly CAPTURE_MS = 500;
+
+  constructor(ydoc: Y.Doc, opts: CanvasDocOptions = {}) {
+    this.ydoc = ydoc;
+    this.rng = opts.rng === undefined ? Math.random : opts.rng;
+    this.makeId = opts.makeId ?? newId;
+    this.objects = ydoc.getMap<Y.Map<unknown>>('objects');
+    this.meta = ydoc.getMap<unknown>('meta');
+    this.undo = new Y.UndoManager(this.objects, { trackedOrigins: new Set([LOCAL_ORIGIN]), captureTimeout: CanvasDoc.CAPTURE_MS });
+  }
+
+  /** Schema stored in the doc (0 = not initialized yet). */
+  get schema(): number {
+    const v = this.meta.get('schema');
+    return typeof v === 'number' ? v : 0;
+  }
+
+  /** A doc written by a newer client: open it read-only. */
+  get isFuture(): boolean {
+    return this.schema > SCHEMA_VERSION;
+  }
+
+  /** Writes `meta.schema = 1` into a fresh doc (not undoable). Returns false for a newer schema. */
+  ensureSchema(): boolean {
+    if (this.isFuture) return false;
+    if (this.schema === 0) this.ydoc.transact(() => this.meta.set('schema', SCHEMA_VERSION), 'canvas-init');
+    return true;
+  }
+
+  get count(): number {
+    return this.objects.size;
+  }
+
+  get canCreate(): boolean {
+    return this.objects.size < MAX_OBJECTS;
+  }
+
+  transact<T>(fn: () => T): T {
+    let out!: T;
+    this.ydoc.transact(() => {
+      out = fn();
+    }, LOCAL_ORIGIN);
+    return out;
+  }
+
+  /** One drag = one undo step, however long it pauses. */
+  beginGesture(): void {
+    if (this.gesture++ > 0) return;
+    this.undo.stopCapturing();
+    this.undo.captureTimeout = 1e12;
+  }
+
+  endGesture(): void {
+    if (this.gesture === 0 || --this.gesture > 0) return;
+    this.undo.captureTimeout = CanvasDoc.CAPTURE_MS;
+    this.undo.stopCapturing();
+  }
+
+  /** Highest z key currently in the doc. */
+  maxZ(): string | null {
+    let best: string | null = null;
+    for (const m of this.objects.values()) {
+      const z = m.get('z');
+      if (isValidKey(z) && (best === null || z > best)) best = z;
+    }
+    return best;
+  }
+
+  minZ(): string | null {
+    let best: string | null = null;
+    for (const m of this.objects.values()) {
+      const z = m.get('z');
+      if (isValidKey(z) && (best === null || z < best)) best = z;
+    }
+    return best;
+  }
+
+  /** Creates objects on top, in order. All-or-nothing against the object limit. Returns the new ids ([] if refused). */
+  createMany(items: readonly { id?: string; init: ObjectInit }[]): string[] {
+    if (items.length === 0 || this.objects.size + items.length > MAX_OBJECTS) return [];
+    return this.transact(() => {
+      const ids: string[] = [];
+      let z = this.maxZ();
+      for (const item of items) {
+        let id = item.id ?? this.makeId();
+        while (this.objects.has(id)) id = this.makeId();
+        z = after(z, this.rng);
+        const { fields, text } = initFields(item.init);
+        const m = new Y.Map<unknown>();
+        this.objects.set(id, m);
+        m.set('kind', item.init.kind);
+        m.set('z', z);
+        for (const [k, v] of Object.entries(fields)) m.set(k, v);
+        if (text !== null) m.set('text', new Y.Text(text));
+        ids.push(id);
+      }
+      return ids;
+    });
+  }
+
+  create(init: ObjectInit, id?: string): string | null {
+    return this.createMany([id === undefined ? { init } : { id, init }])[0] ?? null;
+  }
+
+  /** Applies plain-field patches (only keys valid for the object's kind, only real changes). */
+  patchMany(patches: ReadonlyMap<string, ObjectPatch>): void {
+    if (patches.size === 0) return;
+    this.transact(() => {
+      for (const [id, patch] of patches) {
+        const m = this.objects.get(id);
+        if (!m) continue;
+        const kind = m.get('kind');
+        if (!isKind(kind)) continue;
+        for (const key of PATCH_KEYS[kind]) {
+          if (!(key in patch)) continue;
+          const v = patchValue(kind, key, patch[key]);
+          if (v !== undefined && !same(m.get(key), v)) m.set(key, v);
+        }
+      }
+    });
+  }
+
+  patch(id: string, patch: ObjectPatch): void {
+    this.patchMany(new Map([[id, patch]]));
+  }
+
+  /** Sets an object's text (Y.Text, minimal diff). Connectors: the label. */
+  setText(id: string, text: string): void {
+    const m = this.objects.get(id);
+    if (!m) return;
+    const kind = m.get('kind');
+    if (kind === 'connector') {
+      this.patch(id, { label: text });
+      return;
+    }
+    const next = clampText(text);
+    this.transact(() => {
+      const cur = m.get('text');
+      if (cur instanceof Y.Text) applyTextDiff(cur, next);
+      else m.set('text', new Y.Text(next));
+    });
+  }
+
+  getText(id: string): string {
+    const m = this.objects.get(id);
+    if (!m) return '';
+    const t = m.get('text');
+    if (t instanceof Y.Text) return t.toJSON();
+    const label = m.get('label');
+    return typeof label === 'string' ? label : '';
+  }
+
+  /**
+   * Deletes objects. Connectors that pointed at a deleted object (and are not deleted themselves)
+   * keep their end where it was: `pointOf(connectorId, 'from'|'to')` supplies the resolved position.
+   */
+  remove(ids: Iterable<string>, pointOf?: (connectorId: string, end: 'from' | 'to') => Point | null): void {
+    const gone = new Set(ids);
+    if (gone.size === 0) return;
+    this.transact(() => {
+      for (const [id, m] of this.objects) {
+        if (gone.has(id) || m.get('kind') !== 'connector') continue;
+        for (const end of ['from', 'to'] as const) {
+          const e = endpoint(m.get(end));
+          if (e && 'id' in e && gone.has(e.id)) m.set(end, pointOf?.(id, end) ?? { x: 0, y: 0 });
+        }
+      }
+      for (const id of gone) this.objects.delete(id);
+    });
+  }
+
+  /** Reads one object as plain data (null if missing/unknown kind). */
+  snapshot(id: string): PlainObject | null {
+    const m = this.objects.get(id);
+    if (!m) return null;
+    const kind = m.get('kind');
+    if (!isKind(kind)) return null;
+    const z = m.get('z');
+    const out: PlainObject = { id, kind, z: isValidKey(z) ? z : '' };
+    for (const k of FIELD_KEYS[kind]) {
+      const v = m.get(k);
+      if (v !== undefined) out[k] = v;
+    }
+    if (kind !== 'connector') out.text = this.getText(id);
+    return out;
+  }
+
+  /** All ids ordered bottom → top (z, then id). */
+  orderedIds(): string[] {
+    const arr: [string, string][] = [];
+    for (const [id, m] of this.objects) {
+      const z = m.get('z');
+      arr.push([isValidKey(z) ? z : '', id]);
+    }
+    arr.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 1));
+    return arr.map((e) => e[1]);
+  }
+
+  private setZ(id: string, z: string): void {
+    this.objects.get(id)?.set('z', z);
+  }
+
+  /** Moves the ids (keeping their relative order) above everything else. */
+  bringToFront(ids: readonly string[]): void {
+    const order = this.orderedIds();
+    const set = new Set(ids);
+    const moving = order.filter((i) => set.has(i));
+    if (moving.length === 0) return;
+    const rest = order.filter((i) => !set.has(i));
+    const top = rest[rest.length - 1];
+    if (top !== undefined && order.slice(order.length - moving.length).every((i) => set.has(i))) return;
+    this.transact(() => {
+      let z = top === undefined ? null : this.zOf(top);
+      for (const id of moving) {
+        z = after(z, this.rng);
+        this.setZ(id, z);
+      }
+    });
+  }
+
+  sendToBack(ids: readonly string[]): void {
+    const order = this.orderedIds();
+    const set = new Set(ids);
+    const moving = order.filter((i) => set.has(i));
+    if (moving.length === 0) return;
+    const rest = order.filter((i) => !set.has(i));
+    if (order.slice(0, moving.length).every((i) => set.has(i))) return;
+    this.transact(() => {
+      let z = rest[0] === undefined ? null : this.zOf(rest[0]);
+      for (let i = moving.length - 1; i >= 0; i--) {
+        const id = moving[i];
+        if (id === undefined) continue;
+        z = before(z, this.rng);
+        this.setZ(id, z);
+      }
+    });
+  }
+
+  /** One step up/down among the objects (the selection moves past its neighbour, order inside it kept). */
+  step(ids: readonly string[], dir: 1 | -1): void {
+    const order = this.orderedIds();
+    const set = new Set(ids);
+    const moving = order.filter((i) => set.has(i));
+    if (moving.length === 0) return;
+    // The nearest non-selected neighbour above (dir=1) / below the selection's extreme member.
+    const edge = dir > 0 ? order.lastIndexOf(moving[moving.length - 1] ?? '') : order.indexOf(moving[0] ?? '');
+    let n = edge + dir;
+    while (n >= 0 && n < order.length && set.has(order[n] ?? '')) n += dir;
+    const neighbour = order[n];
+    if (neighbour === undefined) return;
+    const beyond = order[n + dir];
+    this.transact(() => {
+      const nz = this.zOf(neighbour);
+      const bz = beyond === undefined ? null : this.zOf(beyond);
+      // Place the moving objects between the neighbour and the next one past it, in their old order.
+      const lo = dir > 0 ? nz : bz;
+      const hi = dir > 0 ? bz : nz;
+      let prev = lo;
+      for (const id of moving) {
+        prev = prev !== null && hi !== null && prev >= hi ? prev + 'V' : between(prev, hi, this.rng);
+        this.setZ(id, prev);
+      }
+    });
+  }
+
+  private zOf(id: string): string {
+    const z = this.objects.get(id)?.get('z');
+    return isValidKey(z) ? z : '';
+  }
+
+  destroy(): void {
+    this.undo.destroy();
+  }
+}
