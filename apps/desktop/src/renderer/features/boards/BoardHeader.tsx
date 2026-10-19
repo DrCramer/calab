@@ -284,7 +284,7 @@ function SortMenu({ boardId }: { boardId: string }): ReactNode {
   const kind = useViewKind(boardId);
   const sort = useBoardsUi((s) => prefsOf(s, boardId).sort);
   const disabled = useDisabledFeatures(boardId);
-  if (kind !== 'list') return null;
+  if (kind === 'timeline') return null;
   const current = sortOn(sort, disabled) ? sort : 'manual';
   return (
     <Dropdown.Root modal={false}>
@@ -310,7 +310,7 @@ function SortMenu({ boardId }: { boardId: string }): ReactNode {
 /** Whether the phone's «…» offers «Отображение» (the list's grouping / sort, hidden columns). */
 function useHasDisplay(boardId: string): boolean {
   const hidden = useBoardsUi((s) => prefsOf(s, boardId).hidden.length);
-  return useViewKind(boardId) === 'list' || hidden > 0;
+  return useViewKind(boardId) !== 'timeline' || hidden > 0;
 }
 
 /**
@@ -359,28 +359,28 @@ function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: 
             </div>
           )}
           {kind === 'list' ? (
-            <>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-muted">{t('boards.groupBy')}</span>
-                <select className={sel} value={groupOn(prefs.groupBy, disabled) ? prefs.groupBy : 'status'} onChange={(e) => set({ groupBy: e.target.value as GroupBy })} data-testid="group-by">
-                  {GROUPS.filter((g) => groupOn(g.v, disabled)).map((g) => (
-                    <option key={g.v} value={g.v}>
-                      {t(g.label)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-muted">{t('boards.sortBy')}</span>
-                <select className={sel} value={sortOn(prefs.sort, disabled) ? prefs.sort : 'manual'} onChange={(e) => set({ sort: e.target.value as SortBy })} data-testid="sort-by">
-                  {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
-                    <option key={g.v} value={g.v}>
-                      {t(g.label)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-muted">{t('boards.groupBy')}</span>
+              <select className={sel} value={groupOn(prefs.groupBy, disabled) ? prefs.groupBy : 'status'} onChange={(e) => set({ groupBy: e.target.value as GroupBy })} data-testid="group-by">
+                {GROUPS.filter((g) => groupOn(g.v, disabled)).map((g) => (
+                  <option key={g.v} value={g.v}>
+                    {t(g.label)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {kind !== 'timeline' ? (
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-muted">{t('boards.sortBy')}</span>
+              <select className={sel} value={sortOn(prefs.sort, disabled) ? prefs.sort : 'manual'} onChange={(e) => set({ sort: e.target.value as SortBy })} data-testid="sort-by">
+                {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
+                  <option key={g.v} value={g.v}>
+                    {t(g.label)}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : null}
           {prefs.hidden.length ? (
             <button type="button" className="self-start text-caption text-accent-text hover:underline" onClick={() => set({ hidden: [] })}>

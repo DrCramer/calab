@@ -174,6 +174,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.group.label': '标签',
   'boards.group.milestone': '里程碑',
   'boards.group.none': '不分组',
+  'boards.sortHint': '顺序由排序决定',
   'boards.sort.manual': '看板顺序',
   'boards.sort.updated': '更新时间',
   'boards.sort.due': '截止日期',

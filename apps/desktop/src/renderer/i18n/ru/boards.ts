@@ -176,6 +176,7 @@ export const ruBoards = {
   'boards.group.label': 'Лейбл',
   'boards.group.milestone': 'Веха',
   'boards.group.none': 'Без группировки',
+  'boards.sortHint': 'Порядок — по сортировке',
   'boards.sort.manual': 'Порядок доски',
   'boards.sort.updated': 'Обновлено',
   'boards.sort.due': 'Срок',

@@ -174,6 +174,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.group.label': 'Etiqueta',
   'boards.group.milestone': 'Hito',
   'boards.group.none': 'Sin agrupar',
+  'boards.sortHint': 'Orden según la ordenación',
   'boards.sort.manual': 'Orden del tablero',
   'boards.sort.updated': 'Actualizado',
   'boards.sort.due': 'Fecha límite',
