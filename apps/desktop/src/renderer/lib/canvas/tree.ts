@@ -208,6 +208,13 @@ export function filterItems(items: Readonly<Record<string, CanvasItem>>, wsId: s
   return out;
 }
 
+/** `more` appended to `list` without the ids it already has (a page fetched twice adds nothing); the same array when nothing is new. */
+export function mergeById<T extends { id: string }>(list: readonly T[], more: readonly T[]): readonly T[] {
+  const have = new Set(list.map((x) => x.id));
+  const fresh = more.filter((x) => !have.has(x.id) && have.add(x.id));
+  return fresh.length ? [...list, ...fresh] : list;
+}
+
 export const canView = (bits: bigint): boolean => (bits & CANVAS_BITS.VIEW) !== 0n;
 /** Edit the content of a canvas and create items in a folder (ADR-0107 §2). */
 export const canWrite = (bits: bigint): boolean => (bits & (CANVAS_BITS.WRITE | CANVAS_BITS.MANAGE)) !== 0n;
