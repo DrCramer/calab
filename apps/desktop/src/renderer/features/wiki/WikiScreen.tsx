@@ -13,7 +13,7 @@ import { WikiDialogs } from './Dialogs';
 import { preloadWikiDoc } from './lazy';
 import { WikiMain } from './WikiPage';
 import { DragChip, useWikiDrag, WikiTree } from './WikiTree';
-import { VoiceDock } from '../shell/VoiceDock';
+import { ColumnVoice } from '../shell/BottomIsland';
 
 /**
  * «Вики» on the desktop (ADR-0096 §9, docs/08 «Вики»): one panel in place of the column and the
@@ -67,7 +67,7 @@ export function WikiScreen({ workspaceId }: { workspaceId: string }): ReactNode 
       <section className="mat-content relative flex min-w-0 flex-1" aria-label={t('wiki.section')} data-testid="wiki">
         <aside className="flex shrink-0 flex-col border-r border-line" style={{ width }} data-testid="wiki-column">
           <WikiTree workspaceId={workspaceId} canCreate={canCreate} />
-          <VoiceDock />
+          <ColumnVoice />
         </aside>
         <TreeResize />
         <WikiMain workspaceId={workspaceId} canCreate={canCreate} />

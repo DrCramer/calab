@@ -27,10 +27,6 @@ import { AppSettingsWindow } from './lazyWindows';
 export function SelfPanel(): ReactNode {
   const me = useSession((s) => s.me);
   const muted = useVoice((s) => s.muted);
-  const serverMuted = useVoice((s) => s.serverMuted);
-  const muteKeys = useHotkeyLabel('mute');
-  const deafenKeys = useHotkeyLabel('deafen');
-  const deafened = useVoice((s) => s.deafened);
   const inVoice = useVoice((s) => s.roomId !== null);
   const speaking = useVoice((s) => (me?.user ? (s.speaking[me.user.id] ?? false) : false));
   const open = useUi((s) => s.openDialog);
@@ -79,26 +75,7 @@ export function SelfPanel(): ReactNode {
 
       {/* The controls, 6 px apart. */}
       <span className="flex shrink-0 items-center gap-1.5">
-        <SplitButton
-          label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
-          shortcut={muteKeys}
-          danger={muted}
-          onClick={() => voice.toggleMute()}
-          menuLabel={t('shell.micOptions')}
-          menu={<MicMenu />}
-        >
-          {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
-        </SplitButton>
-        <SplitButton
-          label={deafened ? t('voice.undeafen') : t('voice.deafen')}
-          shortcut={deafenKeys}
-          danger={deafened}
-          onClick={() => voice.toggleDeafen()}
-          menuLabel={t('shell.outputOptions')}
-          menu={<DeviceMenu kind="audiooutput" />}
-        >
-          {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
-        </SplitButton>
+        <VoiceControls />
         {/* Phone: the drawer keeps the settings entry (the mobile top bar has no right cluster);
             on the desktop / wide web the gear lives in the title bar (docs/09 #102). */}
         {mobile ? (
@@ -114,6 +91,39 @@ export function SelfPanel(): ReactNode {
         ) : null}
       </span>
     </div>
+  );
+}
+
+/** Mic ▾ and headphones ▾ (docs/09 #28): the self panel's controls, also the Disk footer's (no column there). */
+export function VoiceControls(): ReactNode {
+  const muted = useVoice((s) => s.muted);
+  const serverMuted = useVoice((s) => s.serverMuted);
+  const deafened = useVoice((s) => s.deafened);
+  const muteKeys = useHotkeyLabel('mute');
+  const deafenKeys = useHotkeyLabel('deafen');
+  return (
+    <>
+    <SplitButton
+      label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+      shortcut={muteKeys}
+      danger={muted}
+      onClick={() => voice.toggleMute()}
+      menuLabel={t('shell.micOptions')}
+      menu={<MicMenu />}
+    >
+      {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+    </SplitButton>
+    <SplitButton
+      label={deafened ? t('voice.undeafen') : t('voice.deafen')}
+      shortcut={deafenKeys}
+      danger={deafened}
+      onClick={() => voice.toggleDeafen()}
+      menuLabel={t('shell.outputOptions')}
+      menu={<DeviceMenu kind="audiooutput" />}
+    >
+      {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
+    </SplitButton>
+    </>
   );
 }
 

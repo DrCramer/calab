@@ -113,7 +113,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from './ColumnHeader';
 import { BoardsList, NewCategoryDialog } from '../boards/BoardsList';
-import { VoiceDock } from './VoiceDock';
+import { ColumnVoice } from './BottomIsland';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
@@ -207,7 +207,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
       {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}
       {/* No bottom island on these tabs: the call's compact block at the column's foot (bug board #4). */}
-      {boards || calList ? <VoiceDock className="mt-auto" /> : null}
+      {boards || calList ? <ColumnVoice /> : null}
       {boards || calList ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>

@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Maximize2, MessageCircle, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX } from 'lucide-react';
+import { Check, ChevronDown, Maximize2, MessageCircle, Mic, MicOff, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
@@ -20,7 +20,6 @@ import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOption
 import { isTouchPrimary } from '../../lib/phone';
 import { bindPopoutVideo } from './popoutVideo';
 import { ZoomSurface } from './ZoomSurface';
-import { OverlayMic } from '../shell/VoiceDock';
 
 /**
  * <video> bound to a stream track: a remote one (its on-screen size drives adaptive stream, the
@@ -325,6 +324,33 @@ function LiveBadge(): ReactNode {
 }
 
 /** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
+/**
+ * The mic on the full-screen / pop-out bar (CBF-4): same VoiceService call. A native `title`, not a
+ * Tip: a Tip portals into the main window's document, not the pop-out's.
+ */
+function OverlayMic(): ReactNode {
+  const inVoice = useVoice((s) => s.roomId !== null);
+  const muted = useVoice((s) => s.muted);
+  const label = useVoice((s) => (s.serverMuted ? t('voiceUi.serverMuted') : s.muted ? t('voice.unmute') : t('voice.mute')));
+  if (!inVoice) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => voice.toggleMute()}
+      aria-label={label}
+      title={label}
+      data-testid="stream-mic"
+      data-muted={muted ? 'true' : 'false'}
+      className={cx(
+        'grid size-7 shrink-0 place-items-center rounded-full text-white transition-colors duration-[var(--motion-fast)]',
+        muted ? 'bg-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_85%,white)]' : 'bg-white/15 hover:bg-white/25',
+      )}
+    >
+      {muted ? <MicOff className="size-3.5" aria-hidden /> : <Mic className="size-3.5" aria-hidden />}
+    </button>
+  );
+}
+
 function StreamerChip({ stream, wsId, size = 'md' }: { stream: RemoteStream; wsId: string | null; size?: 'sm' | 'md' }): ReactNode {
   const name = useMemberName(wsId, stream.userId);
   const avatar = useWorkspaces((s) => s.users[stream.userId]?.avatarFileId);

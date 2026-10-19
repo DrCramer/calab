@@ -17,7 +17,8 @@ import { DiskBar } from './DiskBar';
 import { DiskListing, DragChip, DropTarget } from './DiskItems';
 import { DiskDialogs } from './Dialogs';
 import { UsageMeter } from './UsageMeter';
-import { VoiceDock } from '../shell/VoiceDock';
+import { VoiceControls } from '../shell/SelfPanel';
+import { useVoice } from '../../stores/voice';
 
 /**
  * «Диск» on the desktop (ADR-0094 §8, docs/08 «Диск»): one panel in place of the column and the
@@ -29,6 +30,7 @@ import { VoiceDock } from '../shell/VoiceDock';
  */
 export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode {
   const folderId = useDiskUi((s) => folderOf(s, workspaceId));
+  const inVoice = useVoice((s) => s.roomId !== null);
   const trash = useDiskUi((s) => !!s.trashOf[workspaceId]);
   const roles = useMemberRoles(workspaceId, myUserId());
   const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
@@ -115,8 +117,12 @@ export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode 
             >
               <UsageMeter workspaceId={workspaceId} compact />
             </button>
-            {/* No bottom island on the Disk: the call's compact block (bug board #4). */}
-            <VoiceDock variant="footer" className="ml-auto" />
+            {/* No bottom island or column on the Disk: the self panel's mic and sound (CBF-4). */}
+            {inVoice ? (
+              <span className="ml-auto flex items-center gap-1.5">
+                <VoiceControls />
+              </span>
+            ) : null}
           </footer>
           <Uploads workspaceId={workspaceId} />
           <DiskDialogs workspaceId={workspaceId} />
