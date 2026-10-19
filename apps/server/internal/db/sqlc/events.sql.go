@@ -193,6 +193,17 @@ func (q *Queries) ClaimExternalReminder(ctx context.Context, arg ClaimExternalRe
 	return result.RowsAffected(), nil
 }
 
+const clearRoomEventsTempRoom = `-- name: ClearRoomEventsTempRoom :exec
+UPDATE events SET temp_room = false WHERE room_id = $1 AND temp_room
+`
+
+// The room stops being a meeting's own temporary room (made permanent, deleted for good,
+// ADR-0112): its meetings no longer ask for one, so the sweep makes no other.
+func (q *Queries) ClearRoomEventsTempRoom(ctx context.Context, roomID *uuid.UUID) error {
+	_, err := q.db.Exec(ctx, clearRoomEventsTempRoom, roomID)
+	return err
+}
+
 const createEventRoomInvite = `-- name: CreateEventRoomInvite :one
 INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, not_before, event_id)
 VALUES ($1, $2, $3, $4, 1, true, $5, $6, $7)

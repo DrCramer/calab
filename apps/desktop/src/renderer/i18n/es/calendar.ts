@@ -99,7 +99,7 @@ export const esCalendar: DictShape<typeof ruCalendar> = {
   'cal.f.roomList': 'Salas de voz',
   'cal.f.roomEmpty': 'No se encontraron salas',
   'cal.f.tempRoom': 'Crear una sala temporal',
-  'cal.f.tempRoomHint': 'Aparece una hora antes del inicio y se cierra una hora después del final',
+  'cal.f.tempRoomHint': 'Aparece una hora antes del inicio y se cierra una hora después del final. Solo los participantes de la reunión verán la sala',
   'cal.f.tempRoomOwn': 'Sala temporal de la reunión: se cierra una hora después del final',
   'cal.tempPending': 'La sala temporal aparecerá una hora antes del inicio',
   'cal.scheduleHere': 'Programar una reunión',

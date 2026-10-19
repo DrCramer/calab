@@ -1249,6 +1249,22 @@ func (q *Queries) ReviveRoomInvite(ctx context.Context, arg ReviveRoomInvitePara
 	return err
 }
 
+const revokeUserOverride = `-- name: RevokeUserOverride :exec
+DELETE FROM room_permissions WHERE room_id = $1 AND target_type = 'user' AND target_id = $2::text
+`
+
+type RevokeUserOverrideParams struct {
+	RoomID uuid.UUID
+	UserID string
+}
+
+// A personal override of one user in a room goes (ADR-0112: a person removed from the meeting
+// whose private temporary room it is).
+func (q *Queries) RevokeUserOverride(ctx context.Context, arg RevokeUserOverrideParams) error {
+	_, err := q.db.Exec(ctx, revokeUserOverride, arg.RoomID, arg.UserID)
+	return err
+}
+
 const setCategoryPosition = `-- name: SetCategoryPosition :one
 UPDATE room_categories SET position = $1
 WHERE id = $2 AND workspace_id = $3

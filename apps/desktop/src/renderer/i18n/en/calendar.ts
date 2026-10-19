@@ -99,7 +99,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'cal.f.roomList': 'Voice rooms',
   'cal.f.roomEmpty': 'No rooms found',
   'cal.f.tempRoom': 'Create a temporary room',
-  'cal.f.tempRoomHint': 'Appears an hour before the start, closes an hour after the end',
+  'cal.f.tempRoomHint': 'Appears an hour before the start, closes an hour after the end. Only the meeting\'s attendees will see the room',
   'cal.f.tempRoomOwn': 'The meeting\'s temporary room: closes an hour after the end',
   'cal.tempPending': 'A temporary room appears an hour before the start',
   'cal.scheduleHere': 'Schedule a meeting',

@@ -415,7 +415,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if temp && f.rule.Repeat != v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED {
 		return errTempOneOff
 	}
-	var roomPublish func(context.Context)
+	var roomPublish, accessPublish func(context.Context)
 	attached := false
 
 	var added, removed []sqlc.EventAttendee
@@ -507,6 +507,24 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			}
 			attached = true
 		}
+		// The meeting's own private room follows its people (ADR-0112); a room made in this
+		// change already holds them.
+		if ownRoom(ev) && !roomChanged && !attached && s.TempRooms != nil && (len(addWant) > 0 || len(removed) > 0) {
+			var add, drop []uuid.UUID
+			for _, a := range addWant {
+				if a.user != nil {
+					add = append(add, *a.user)
+				}
+			}
+			for _, a := range removed {
+				if a.UserID != nil {
+					drop = append(drop, *a.UserID)
+				}
+			}
+			if accessPublish, err = s.TempRooms.SyncMeetingRoom(ctx, q, *ev.RoomID, ev.OrganizerID, add, drop); err != nil {
+				return err
+			}
+		}
 		if err := revokeLinks(ctx, q, cur.ID, removed); err != nil {
 			return err
 		}
@@ -534,6 +552,9 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	wsID := after.ev.WorkspaceID
 	if roomPublish != nil {
 		roomPublish(ctx)
+	}
+	if accessPublish != nil {
+		accessPublish(ctx)
 	}
 	// Those who may lose the event (another room, removed from the list) get EVENT_DELETE of
 	// the previous state first; EVENT_UPDATE follows for everyone who still sees it.

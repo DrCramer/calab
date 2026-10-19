@@ -220,3 +220,8 @@ RETURNING *;
 -- The sweep could not make the meeting's room (rights, limits): the next try waits until `at`.
 UPDATE events SET temp_room_retry_at = sqlc.arg('at')
 WHERE id = sqlc.arg('id') AND temp_room AND room_id IS NULL;
+
+-- name: ClearRoomEventsTempRoom :exec
+-- The room stops being a meeting's own temporary room (made permanent, deleted for good,
+-- ADR-0112): its meetings no longer ask for one, so the sweep makes no other.
+UPDATE events SET temp_room = false WHERE room_id = sqlc.arg('room_id') AND temp_room;

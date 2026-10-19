@@ -374,3 +374,8 @@ RETURNING *;
 -- Messages, reactions, pins, read state, overrides and links go by cascade (as a deleted notes
 -- shelf); the room's uploads become orphans for the file cleanup; meetings keep no room.
 DELETE FROM rooms WHERE id = $1 AND expires_at IS NOT NULL AND archived_at IS NOT NULL;
+
+-- name: RevokeUserOverride :exec
+-- A personal override of one user in a room goes (ADR-0112: a person removed from the meeting
+-- whose private temporary room it is).
+DELETE FROM room_permissions WHERE room_id = sqlc.arg('room_id') AND target_type = 'user' AND target_id = sqlc.arg('user_id')::text;

@@ -219,8 +219,9 @@ type tempSpec struct {
 	name          string
 	expires       time.Time
 	private       bool
-	memberIDs     []string // a private room's people (validated by tempMembers)
-	guests        bool     // the link admits guests (else members only)
+	memberIDs     []string    // a private room's people (validated by tempMembers)
+	people        []uuid.UUID // a private room's people validated by the caller (a meeting's attendees)
+	guests        bool        // the link admits guests (else members only)
 	allow         perm.Bits
 }
 
@@ -274,7 +275,7 @@ func insertTemp(ctx context.Context, q *sqlc.Queries, sp tempSpec) (tempMade, er
 		if err := setPrivate(ctx, q, sp.wsID, out.room.ID, true); err != nil {
 			return out, err
 		}
-		for _, u := range append([]uuid.UUID{creator}, members...) {
+		for _, u := range append(append([]uuid.UUID{creator}, members...), sp.people...) {
 			if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: out.room.ID, UserID: u.String(), Allow: int64(sp.allow)}); err != nil { //nolint:gosec // bit mask
 				return out, err
 			}
@@ -465,7 +466,14 @@ func (h *Handlers) PurgeTempRooms(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for _, id := range ids {
-		k, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.DeleteArchivedTempRoom(ctx, id) })
+		k, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) (int64, error) {
+			// room_id of its meetings goes NULL with the room: none of them may ask for a new
+			// own room then (ADR-0112).
+			if err := guarded.ClearRoomEventsTempRoom(ctx, &id); err != nil {
+				return 0, err
+			}
+			return guarded.DeleteArchivedTempRoom(ctx, id)
+		})
 		if err != nil {
 			return n, err
 		}

@@ -99,7 +99,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'cal.f.roomList': '语音房间',
   'cal.f.roomEmpty': '未找到房间',
   'cal.f.tempRoom': '创建临时房间',
-  'cal.f.tempRoomHint': '开始前一小时出现，结束后一小时关闭',
+  'cal.f.tempRoomHint': '开始前一小时出现，结束后一小时关闭。仅会议参与者可见此房间',
   'cal.f.tempRoomOwn': '会议的临时房间：结束后一小时关闭',
   'cal.tempPending': '临时房间将在开始前一小时出现',
   'cal.scheduleHere': '安排会议',

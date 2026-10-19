@@ -47,12 +47,14 @@ func meetingRoomEnd(end, now time.Time) time.Time {
 }
 
 // CreateMeetingRoom creates the temporary room of a meeting inside the caller's transaction q,
-// as POST …/rooms/temp would for creator with the ADR-0044 defaults: public, the link admits
-// guests when the creator may invite them (else members only). The creator's rights are read
+// as POST …/rooms/temp would for creator: private, for the creator and people (the meeting's
+// attendees that are members, not guests; others are left out, not refused) so the meeting is
+// seen by nobody new; the link admits guests when the creator may invite them (else members
+// only). The creator's rights are read
 // now from the database, not taken from the time the meeting was saved: a workspace member,
 // not a guest or a bot, CREATE_TEMP_ROOMS (the plan's restricted mode takes it), the workspace
 // not suspended, and the temporary room limits. publish announces the room after the commit.
-func (h *Handlers) CreateMeetingRoom(ctx context.Context, q *sqlc.Queries, wsID, creator uuid.UUID, title string, end time.Time) (uuid.UUID, func(context.Context), error) {
+func (h *Handlers) CreateMeetingRoom(ctx context.Context, q *sqlc.Queries, wsID, creator uuid.UUID, people []uuid.UUID, title string, end time.Time) (uuid.UUID, func(context.Context), error) {
 	m, ok, err := perm.LoadMember(ctx, q, wsID, creator)
 	if err != nil {
 		return uuid.Nil, nil, err
@@ -84,9 +86,12 @@ func (h *Handlers) CreateMeetingRoom(ctx context.Context, q *sqlc.Queries, wsID,
 	// A guest link needs INVITE_GUESTS and a verified email (ADR-0023, ADR-0065); else the
 	// link is for members only, as with guests=false.
 	guests := bits.Has(perm.InviteGuests) && h.EmailGate.Allow(u) == nil
+	if people, err = meetingPeople(ctx, q, wsID, creator, people); err != nil {
+		return uuid.Nil, nil, err
+	}
 	made, err := insertTemp(ctx, q, tempSpec{
 		wsID: wsID, creator: creator, name: meetingRoomName(title), expires: meetingRoomEnd(end, time.Now()),
-		guests: guests, allow: perm.ViewRoom | TempAllow&bits,
+		private: true, people: people, guests: guests, allow: perm.ViewRoom | TempAllow&bits,
 	})
 	if err != nil {
 		return uuid.Nil, nil, err
@@ -149,4 +154,78 @@ func (h *Handlers) CloseMeetingRoom(ctx context.Context, roomID, creator uuid.UU
 	}
 	_, err = h.archiveTemp(ctx, roomID, false)
 	return err
+}
+
+// meetingPeople keeps of ids the workspace members that are not guests, without the creator
+// and duplicates (a meeting's attendees: one who left or became a guest is skipped).
+func meetingPeople(ctx context.Context, q *sqlc.Queries, wsID, creator uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error) {
+	seen := map[uuid.UUID]bool{creator: true}
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		m, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: id})
+		if db.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if m.Role != string(perm.RoleGuest) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// SyncMeetingRoom follows the meeting's attendee list inside the caller's transaction q: people
+// added get the creator's personal allow of the room, people removed lose theirs (never the
+// creator). Nothing when roomID is no longer creator's live private temporary room. publish
+// announces the room's new overrides after the commit.
+func (h *Handlers) SyncMeetingRoom(ctx context.Context, q *sqlc.Queries, roomID, creator uuid.UUID, add, remove []uuid.UUID) (func(context.Context), error) {
+	if len(add)+len(remove) == 0 {
+		return nil, nil
+	}
+	room, ok, err := meetingRoom(ctx, q, roomID, creator)
+	if err != nil || !ok || !room.IsPrivate {
+		return nil, err
+	}
+	wsID := *room.WorkspaceID
+	ovs, err := q.ListRoomOverrides(ctx, roomID)
+	if err != nil {
+		return nil, err
+	}
+	allow := int64(perm.ViewRoom)
+	for _, o := range ovs {
+		if o.TargetType == "user" && o.TargetID == creator.String() {
+			allow = o.Allow
+		}
+	}
+	if add, err = meetingPeople(ctx, q, wsID, creator, add); err != nil {
+		return nil, err
+	}
+	for _, u := range add {
+		if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: roomID, UserID: u.String(), Allow: allow}); err != nil {
+			return nil, err
+		}
+	}
+	for _, u := range remove {
+		if u == creator {
+			continue
+		}
+		if err := q.RevokeUserOverride(ctx, sqlc.RevokeUserOverrideParams{RoomID: roomID, UserID: u.String()}); err != nil {
+			return nil, err
+		}
+	}
+	pb, err := h.load(ctx, q, room)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context) {
+		h.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomPermissionsUpdate{
+			RoomPermissionsUpdate: &v1.RoomPermissionsUpdate{WorkspaceId: wsID.String(), RoomId: roomID.String(), Permissions: pb.GetPermissionOverrides()},
+		}})
+	}, nil
 }

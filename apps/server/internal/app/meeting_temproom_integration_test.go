@@ -83,6 +83,29 @@ func TestMeetingOwnTempRoom(t *testing.T) {
 	if _, ok := visibleRooms(t, c.carol, wsID)[got.GetRoomId()]; !ok {
 		t.Fatal("an attendee sees the meeting's room")
 	}
+	// The room is private to the meeting's people: the meeting is seen by nobody new — not by
+	// another member, not by the owner — and follows its attendee list.
+	dave := register(t, invite(t, c.o, wsID))
+	for _, u := range []*user{dave, c.o} {
+		if _, ok := visibleRooms(t, u, wsID)[got.GetRoomId()]; ok {
+			t.Fatalf("%s sees the meeting's private room", u.email)
+		}
+		u.must(404, "GET", "/api/events/"+ev.GetId(), nil, nil)
+	}
+	c.bob.must(200, "PATCH", "/api/events/"+ev.GetId(), &v1.UpdateCalendarEventRequest{SetAttendees: true,
+		Attendees: []*v1.CalendarEventAttendeeInput{att(c.carol.id, true), att(dave.id, false)}}, nil)
+	if _, ok := visibleRooms(t, dave, wsID)[got.GetRoomId()]; !ok {
+		t.Fatal("an added attendee gets the room")
+	}
+	c.bob.must(200, "PATCH", "/api/events/"+ev.GetId(), &v1.UpdateCalendarEventRequest{SetAttendees: true,
+		Attendees: []*v1.CalendarEventAttendeeInput{att(c.carol.id, true)}}, nil)
+	if _, ok := visibleRooms(t, dave, wsID)[got.GetRoomId()]; ok {
+		t.Fatal("a removed attendee keeps the room")
+	}
+	dave.must(404, "GET", "/api/events/"+ev.GetId(), nil, nil)
+	if _, ok := visibleRooms(t, c.bob, wsID)[got.GetRoomId()]; !ok {
+		t.Fatal("the organizer keeps the room")
+	}
 	if n, _ := testApp.Calendar.MakeTempRooms(ctx, start.Add(-24*time.Minute)); n != 0 {
 		t.Fatal("made twice")
 	}

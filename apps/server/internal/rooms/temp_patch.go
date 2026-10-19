@@ -78,6 +78,11 @@ func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc
 		if _, err := q.SetRoomExpiry(ctx, sqlc.SetRoomExpiryParams{ID: cur.ID, ExpiresAt: t.expires}); err != nil {
 			return nil, err
 		}
+		if t.permanent { // no meeting's own room any more (ADR-0112): its meeting asks for none
+			if err := q.ClearRoomEventsTempRoom(ctx, &cur.ID); err != nil {
+				return nil, err
+			}
+		}
 		if t.expires != nil {
 			if err := q.FollowRoomExpiry(ctx, sqlc.FollowRoomExpiryParams{RoomID: cur.ID, ExpiresAt: t.expires, OldExpiresAt: cur.ExpiresAt}); err != nil {
 				return nil, err

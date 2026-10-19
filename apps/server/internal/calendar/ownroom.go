@@ -37,9 +37,13 @@ const (
 // TempRooms is what a meeting's own room needs from rooms (rooms.Handlers implements it; an
 // interface because rooms is imported here for its helpers, not its handlers).
 type TempRooms interface {
-	// CreateMeetingRoom creates the room in q on behalf of creator (whose rights it checks
-	// now) and returns it with what to publish after the commit.
-	CreateMeetingRoom(ctx context.Context, q *sqlc.Queries, wsID, creator uuid.UUID, title string, end time.Time) (uuid.UUID, func(context.Context), error)
+	// CreateMeetingRoom creates the private room in q on behalf of creator (whose rights it
+	// checks now) for creator and people, and returns it with what to publish after the commit.
+	CreateMeetingRoom(ctx context.Context, q *sqlc.Queries, wsID, creator uuid.UUID, people []uuid.UUID, title string, end time.Time) (uuid.UUID, func(context.Context), error)
+	// SyncMeetingRoom gives the people added to the meeting access to the room and takes it
+	// from the people removed (nothing when it is no longer creator's live private
+	// temporary room).
+	SyncMeetingRoom(ctx context.Context, q *sqlc.Queries, roomID, creator uuid.UUID, add, remove []uuid.UUID) (func(context.Context), error)
 	// MoveMeetingRoom moves the room's end in q (nothing when it is no longer creator's
 	// live temporary room).
 	MoveMeetingRoom(ctx context.Context, q *sqlc.Queries, roomID, creator uuid.UUID, end time.Time) (func(context.Context), error)
@@ -97,7 +101,18 @@ func (s *Service) attachTempRoom(ctx context.Context, q *sqlc.Queries, ev sqlc.E
 			return ev, nil, httpx.Forbidden("the workspace identity policy does not let the organizer act now")
 		}
 	}
-	roomID, publish, err := s.TempRooms.CreateMeetingRoom(ctx, q, ev.WorkspaceID, ev.OrganizerID, ev.Title, ev.EndsAt.Add(TempRoomAfter))
+	// The room is private to the meeting's people (ADR-0112): the meeting is seen by nobody new.
+	att, err := q.ListEventAttendees(ctx, []uuid.UUID{ev.ID})
+	if err != nil {
+		return ev, nil, err
+	}
+	var people []uuid.UUID
+	for _, a := range att {
+		if a.UserID != nil {
+			people = append(people, *a.UserID)
+		}
+	}
+	roomID, publish, err := s.TempRooms.CreateMeetingRoom(ctx, q, ev.WorkspaceID, ev.OrganizerID, people, ev.Title, ev.EndsAt.Add(TempRoomAfter))
 	if err != nil {
 		return ev, nil, err
 	}
