@@ -341,6 +341,9 @@ export interface BotRec {
   createdAt: Timestamp;
   revokedAt?: Timestamp;
   webhook?: BotWebhook;
+  /** ADR-0111: members who let it act on their behalf, and pending suggestions, per workspace. */
+  delegations?: Record<string, Array<{ userId: string; since: Timestamp }>>;
+  delegationInvites?: Record<string, Array<{ userId: string; invitedBy: string; createdAt: Timestamp }>>;
 }
 
 /** The code every mock email «contains» (verification, email change, password reset). */

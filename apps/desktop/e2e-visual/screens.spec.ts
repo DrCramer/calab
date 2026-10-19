@@ -140,6 +140,8 @@ const KEY = new Set([
   'settings-bots',
   'settings-bot-token',
   'bot-profile',
+  // A member lets a bot act on their behalf (ADR-0111).
+  'bot-delegation',
   'chat-bot-commands',
   'chat-forward-dialog',
   'chat-forwarded',
@@ -3627,6 +3629,17 @@ test('bot-profile', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('bot-commands').getByRole('listitem')).toHaveCount(4);
   await expect(card.getByTestId('bot-block')).toBeVisible();
   await checkpoint(shot, 'bot-profile');
+  // ADR-0111: «Делегировать права» from the bot's menu in the members column — my own row
+  // («Разрешить»), Борис who allowed it, Вера whom Анна (me) suggested it to (× to cancel).
+  await win.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  mock.seedBotDelegations(IDS.bots.weather);
+  await members.getByRole('button', { name: /Погода/ }).click({ button: 'right' });
+  await win.getByTestId('member-bot-delegate').click();
+  const dlg = win.getByRole('dialog', { name: /Делегировать права/ });
+  await expect(dlg.getByTestId('bot-delegation-grant')).toBeVisible();
+  await expect(dlg.getByTestId('bot-delegation-row')).toHaveCount(2);
+  await checkpoint(shot, 'bot-delegation');
 });
 
 // «/» at the start of the field: the room's bot commands («/cmd — описание · @bot»); a sent

@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, Award, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, Award, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, KeyRound, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -18,6 +18,7 @@ import { requestMention } from '../chat/mentionRequest';
 import { memberActions, type MenuActions } from './members';
 import { roleName } from './MemberBits';
 import { NicknameDialog } from './NicknameDialog';
+import { BotDelegationDialog } from './BotDelegationDialog';
 import { useCanCall, useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
 import { startCall } from '../../services/call';
@@ -75,14 +76,19 @@ export function MemberContextMenu({
   // (the portal mounts its content only while open), not in every wrapped row / avatar.
   const known = useWorkspaces((s) => !!s.byId[workspaceId]?.members[userId]?.user);
   const [renaming, setRenaming] = useState(false);
-  const dialog = renaming ? <NicknameDialog workspaceId={workspaceId} userId={userId} onClose={() => setRenaming(false)} /> : null;
+  const [delegating, setDelegating] = useState(false);
+  const dialog = renaming ? (
+    <NicknameDialog workspaceId={workspaceId} userId={userId} onClose={() => setRenaming(false)} />
+  ) : delegating ? (
+    <BotDelegationDialog workspaceId={workspaceId} botUserId={userId} onClose={() => setDelegating(false)} />
+  ) : null;
   if (!known) return children;
   return (
     <>
       <ContextMenu.Root modal={false}>
         <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
         <ContextMenu.Portal>
-          <OpenMemberMenu workspaceId={workspaceId} userId={userId} onRename={() => setRenaming(true)} inProfile={inProfile} />
+          <OpenMemberMenu workspaceId={workspaceId} userId={userId} onRename={() => setRenaming(true)} onDelegate={() => setDelegating(true)} inProfile={inProfile} />
         </ContextMenu.Portal>
       </ContextMenu.Root>
       {dialog}
@@ -90,12 +96,24 @@ export function MemberContextMenu({
   );
 }
 
-function OpenMemberMenu({ workspaceId, userId, onRename, inProfile }: { workspaceId: string; userId: string; onRename: () => void; inProfile: boolean }): ReactNode {
+function OpenMemberMenu({
+  workspaceId,
+  userId,
+  onRename,
+  onDelegate,
+  inProfile,
+}: {
+  workspaceId: string;
+  userId: string;
+  onRename: () => void;
+  onDelegate: () => void;
+  inProfile: boolean;
+}): ReactNode {
   const actions = useMemberActions(workspaceId, userId);
   const canDm = useCanDm(workspaceId, userId);
   const canCall = useCanCall(userId, workspaceId);
   if (!actions) return null;
-  return <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} canCall={canCall} onRename={onRename} inProfile={inProfile} />;
+  return <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} canCall={canCall} onRename={onRename} onDelegate={onDelegate} inProfile={inProfile} />;
 }
 
 /** 40 px rows (Discord member menu), 15 px text. */
@@ -163,6 +181,7 @@ function MemberMenuContent({
   canDm,
   canCall,
   onRename,
+  onDelegate,
   inProfile,
 }: {
   workspaceId: string;
@@ -171,11 +190,17 @@ function MemberMenuContent({
   canDm: boolean;
   canCall: boolean;
   onRename: () => void;
+  onDelegate: () => void;
   inProfile: boolean;
 }): ReactNode {
   const name = useMemberName(workspaceId, userId);
   const self = useSession((s) => s.me?.user?.id) === userId;
   const roomId = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.roomId ?? '');
+  // ADR-0111: «Делегировать права» on a bot, for members with a non-guest role.
+  const delegate = useWorkspaces((s) => {
+    const e = s.byId[workspaceId];
+    return !!e?.members[userId]?.user?.isBot && e.role !== WorkspaceRole.GUEST;
+  });
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const localDeaf = usePrefs((s) => !!s.deafUsers[userId]);
   const videoHidden = usePrefs((s) => !!s.hiddenVideo[userId]);
@@ -221,6 +246,11 @@ function MemberMenuContent({
       <ContextMenu.Item className={row} onSelect={() => requestMention(userId, name)}>
         <AtSign className="size-4" aria-hidden /> {t('people.menu.mention')}
       </ContextMenu.Item>
+      {delegate ? (
+        <ContextMenu.Item className={row} onSelect={onDelegate} data-testid="member-bot-delegate">
+          <KeyRound className="size-4" aria-hidden /> {t('bots.delegate.menu')}
+        </ContextMenu.Item>
+      ) : null}
       <ContextMenu.Item className={row} onSelect={() => openProfile(workspaceId, userId, true)}>
         <NotebookPen className="size-4" aria-hidden />
         <span className="flex min-w-0 flex-col leading-[18px]">

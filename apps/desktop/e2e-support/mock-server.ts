@@ -240,6 +240,8 @@ import {
   CreateBotRequestSchema,
   CreateBotResponseSchema,
   GetBotMeResponseSchema,
+  GetBotResponseSchema,
+  InviteBotDelegationRequestSchema,
   ListBlockedBotsResponseSchema,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
@@ -711,6 +713,8 @@ export interface MockServer {
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
    */
   seedBots(): void;
+  /** ADR-0111: Борис let a (seeded) bot act on his behalf; Анна suggested it to Вера. */
+  seedBotDelegations(botUserId: string): void;
   /**
    * docs/08 «Композер — подсказка стикеров»: a pack «Смех» of «Команда Calab» with three 😂
    * stickers (the last animated), installed by Анна after «Calab». Call before the client loads
@@ -845,6 +849,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addTempRoom: (a) => impl.addTempRoom(a),
     expireTempRooms: (ms) => impl.expireTempRooms(ms),
     seedBots: () => impl.seedBots(),
+    seedBotDelegations: (botUserId) => impl.seedBotDelegations(botUserId),
     addBuiltinStickerPack: (m) => impl.addBuiltinStickerPack(m),
     seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
@@ -2111,6 +2116,14 @@ class MockImpl {
     const pack = create(StickerPackSchema, { id: packId, workspaceId: IDS.workspaces.main, name: 'Смех', shortName: 'laughs', stickers, createdBy: IDS.users.anna, createdAt: at, updatedAt: at });
     s.stickerPacks.set(packId, pack);
     s.userStickerPacks.set(IDS.users.anna, [...(s.userStickerPacks.get(IDS.users.anna) ?? []), packId]);
+  }
+
+  seedBotDelegations(botUserId: string): void {
+    const b = this.state.bots.get(botUserId);
+    if (!b) return;
+    const ws = IDS.workspaces.main;
+    b.delegations = { ...b.delegations, [ws]: [{ userId: IDS.users.boris, since: tick(this.state) }] };
+    b.delegationInvites = { ...b.delegationInvites, [ws]: [{ userId: IDS.users.vera, invitedBy: IDS.users.anna, createdAt: tick(this.state) }] };
   }
 
   seedBots(): void {
@@ -4812,6 +4825,62 @@ class MockImpl {
       botAvatar(c, this.storeFile('', bot.userId, f));
     });
     this.route('DELETE', '/api/workspaces/:id/bots/:botId/avatar', (c) => botAvatar(c, ''));
+    // ADR-0111: «Делегировать права» — only the member gives or takes their consent.
+    const delegationState = (c: Ctx, status = 200): void => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      this.workspaceFor(wsId, me);
+      const bot = botIn(wsId, c.params[1] ?? '');
+      const ds = bot.delegations?.[wsId] ?? [];
+      sendMsg(c.res, status, GetBotResponseSchema, {
+        bot: this.botOut(bot, bot.ownerUserId === me),
+        onBehalfUserIds: ds.map((d) => d.userId),
+        delegations: ds,
+        invites: bot.delegationInvites?.[wsId] ?? [],
+      });
+    };
+    const delegationTarget = (c: Ctx): { bot: BotRec; wsId: string; me: string; userId: string } => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      this.workspaceFor(wsId, me);
+      return { bot: botIn(wsId, c.params[1] ?? ''), wsId, me, userId: c.params[2] ?? '' };
+    };
+    const selfOnly = (me: string, userId: string): void => {
+      if (me !== userId) throw new HttpError(403, ErrorCode.FORBIDDEN, 'only the member gives or revokes their consent', '', { reason: 'ON_BEHALF_SELF_ONLY' });
+    };
+    this.route('GET', '/api/workspaces/:id/bots/:botId', (c) => delegationState(c));
+    this.route('PUT', '/api/workspaces/:id/bots/:botId/delegations/:userId', (c) => {
+      const { bot, wsId, me, userId } = delegationTarget(c);
+      selfOnly(me, userId);
+      const ds = bot.delegations?.[wsId] ?? [];
+      if (!ds.some((d) => d.userId === me)) bot.delegations = { ...bot.delegations, [wsId]: [...ds, { userId: me, since: tick(s()) }] };
+      bot.delegationInvites = { ...bot.delegationInvites, [wsId]: (bot.delegationInvites?.[wsId] ?? []).filter((i) => i.userId !== me) };
+      delegationState(c);
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId/delegations/:userId', (c) => {
+      const { bot, wsId, me, userId } = delegationTarget(c);
+      selfOnly(me, userId);
+      bot.delegations = { ...bot.delegations, [wsId]: (bot.delegations?.[wsId] ?? []).filter((d) => d.userId !== me) };
+      delegationState(c);
+    });
+    this.route('POST', '/api/workspaces/:id/bots/:botId/delegation-invites', (c) => {
+      const { bot, wsId, me } = delegationTarget(c);
+      const req = parseBody(c, InviteBotDelegationRequestSchema);
+      const listed = new Set([...(bot.delegations?.[wsId] ?? []).map((d) => d.userId), ...(bot.delegationInvites?.[wsId] ?? []).map((i) => i.userId)]);
+      const add = req.userIds.filter((u) => u !== me && !listed.has(u) && this.member(wsId, u));
+      bot.delegationInvites = {
+        ...bot.delegationInvites,
+        [wsId]: [...(bot.delegationInvites?.[wsId] ?? []), ...add.map((userId) => ({ userId, invitedBy: me, createdAt: tick(s()) }))],
+      };
+      delegationState(c);
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId/delegation-invites/:userId', (c) => {
+      const { bot, wsId, me, userId } = delegationTarget(c);
+      const inv = (bot.delegationInvites?.[wsId] ?? []).find((i) => i.userId === userId);
+      if (inv && inv.invitedBy !== me && userId !== me) selfOnly(me, userId);
+      bot.delegationInvites = { ...bot.delegationInvites, [wsId]: (bot.delegationInvites?.[wsId] ?? []).filter((i) => i.userId !== userId) };
+      delegationState(c);
+    });
     this.route('GET', '/api/bots/:ref', (c) => {
       this.uid(c);
       const bot = this.botOut(findBot(c.params[0] ?? ''), false);
