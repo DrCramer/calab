@@ -766,6 +766,27 @@ describe('export and options', () => {
     const c = r.engine.exportToCanvas({ pxPerUnit: 2 });
     expect(c?.width).toBe(Math.ceil((160 + 48) * 2));
   });
+  it('exports an explicit world rect with its own padding', () => {
+    const r = rig();
+    r.make(sticky(0, 0, { text: 'x' }));
+    const c = r.engine.exportToCanvas({ rect: { x: 0, y: 0, w: 400, h: 300 }, pad: 0, pxPerUnit: 1 });
+    expect([c?.width, c?.height]).toEqual([400, 300]);
+  });
+  it('subscribeView fires on camera moves and when a gesture starts or ends, not otherwise', () => {
+    const r = rig();
+    const fn = vi.fn();
+    const off = r.engine.subscribeView(fn);
+    r.engine.panByScreen(10, 0);
+    expect(fn).toHaveBeenCalledTimes(1);
+    r.engine.panByScreen(0, 0);
+    expect(fn).toHaveBeenCalledTimes(1);
+    r.down(300, 300);
+    r.up(300, 300);
+    expect(fn).toHaveBeenCalledTimes(3); // marquee gesture began and ended
+    off();
+    r.engine.panByScreen(5, 0);
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
   it('palette changes repaint everything', () => {
     const r = rig();
     r.make(sticky(0, 0));
