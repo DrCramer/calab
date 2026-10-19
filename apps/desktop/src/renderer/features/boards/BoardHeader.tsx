@@ -78,7 +78,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
             <CreateButton label={t('boards.newTask')} tip={false} onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task" />
           ) : (
             <Tip label={t('boards.newTask')} shortcut="C">
-              <Button size="md" aria-label={t('boards.newTask')} className="ml-1 h-7" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+              <Button size="md" aria-label={t('boards.newTask')} className="ml-1" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
                 <Plus className="size-4" aria-hidden />
                 <span>{t('boards.task')}</span>
               </Button>
@@ -120,7 +120,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
   // TIMELINE off (ADR-0058 §3): no «Таймлайн» (a saved timeline view opens as the list).
   const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   return (
-        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex h-7 shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5 " data-testid="view-switch">
+        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex h-(--control-h-bar) shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
           {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
               <button
@@ -130,7 +130,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
                 aria-label={t(k.label)}
                 onClick={() => setPrefs(boardId, { kind: k.kind })}
                 className={cx(
-                  'inline-flex h-6 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)]',
+                  'inline-flex h-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)]',
                   kind === k.kind ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
                 )}
                 data-testid={`view-${k.kind}`}
@@ -167,7 +167,7 @@ function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
     <>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" className="inline-flex h-7 min-w-0 shrink items-center gap-1 rounded-full px-2 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="views-menu">
+          <button type="button" className="inline-flex h-(--control-h-bar) min-w-0 shrink items-center gap-1 rounded-full px-2 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="views-menu">
             <Layers className="size-3.5 shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{current ? current.name : t('boards.allTasks')}</span>
             {changed ? <span className="size-1.5 shrink-0 rounded-full bg-accent" title={t('boards.viewChanged')} /> : null}

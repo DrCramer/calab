@@ -49,7 +49,8 @@ export function InboxButton(): ReactNode {
           <button
             type="button"
             aria-label={t('shell.inbox')}
-            className="relative grid size-7 place-items-center rounded-[var(--radius-bar)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            data-bar-ctl
+            className="relative grid size-(--control-h-bar) place-items-center rounded-full text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
           >
             <Inbox className="size-[18px]" aria-hidden />
             <InboxBadge />

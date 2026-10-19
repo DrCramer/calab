@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { CreateButton } from '../../components/CreateButton';
-import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
+import { BarContext, Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { canStructure, canWrite, childKey, filterPages, TOP, trashKey, type DropZone } from '../../lib/wiki/tree';
@@ -48,6 +48,7 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
   const query = useWikiUi((s) => s.query);
   return (
     <>
+      <BarContext.Provider value>
       <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-line px-2.5">
         <span className="min-w-0 flex-1">
           <Input
@@ -63,7 +64,6 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
             }}
             placeholder={t('wiki.search')}
             aria-label={t('wiki.search')}
-            className="h-8 rounded-full"
             data-testid="wiki-search"
           />
         </span>
@@ -71,6 +71,7 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
           <CreateButton label={t('wiki.newPage')} onClick={() => void createPage(workspaceId, TOP)} data-testid="wiki-new-page" />
         ) : null}
       </div>
+      </BarContext.Provider>
       <nav className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1.5" aria-label={t('wiki.tree')} data-testid="wiki-tree" onPointerEnter={preloadWikiDoc}>
         {query.trim() ? <SearchResults workspaceId={workspaceId} query={query} /> : <ChildList workspaceId={workspaceId} parentId={TOP} depth={0} />}
       </nav>
@@ -327,6 +328,7 @@ function TrashColumn({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [workspaceId]);
   return (
     <>
+      <BarContext.Provider value>
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
         <IconButton label={t('wiki.backToWiki')} onClick={() => useWikiUi.getState().openTrash(workspaceId, false)} data-testid="wiki-trash-back">
           <ArrowLeft className="size-4" aria-hidden />
@@ -338,6 +340,7 @@ function TrashColumn({ workspaceId }: { workspaceId: string }): ReactNode {
           </Button>
         ) : null}
       </div>
+      </BarContext.Provider>
       <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5" data-testid="wiki-trash">
         {!loaded ? (
           <div className="grid h-12 place-items-center">

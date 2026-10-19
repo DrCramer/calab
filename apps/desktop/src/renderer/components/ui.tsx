@@ -103,6 +103,7 @@ export const Button = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; busy?: boolean; size?: 'sm' | 'md' | 'lg' }
 >(function Button({ variant = 'primary', busy, size = 'md', className, children, disabled, ...rest }, ref) {
+  const bar = useContext(BarContext);
   return (
     <button
       ref={ref}
@@ -112,11 +113,14 @@ export const Button = forwardRef<
       className={cx(
         'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[filter,background-color] duration-[var(--motion-fast)] disabled:cursor-default disabled:opacity-40',
         // Phone layout (ADR-0021, docs/08): every size is a 44 px touch target (--control-h-phone), same pill shape.
-        size === 'sm'
-          ? 'h-6 px-2 text-caption mobile:tap-h mobile:tap-px mobile:text-[15px]'
-          : size === 'lg'
-            ? 'h-8 px-4 text-body mobile:tap-h mobile:px-5 mobile:text-[15px]'
-            : 'h-7 px-3 text-body mobile:tap-h mobile:tap-px mobile:text-[15px]',
+        // In a bar (BarContext) every size is --control-h-bar high (docs/08 «Шапки»).
+        bar
+          ? cx('h-(--control-h-bar) mobile:tap-h mobile:text-[15px]', size === 'sm' ? 'px-2.5 text-caption mobile:tap-px' : size === 'lg' ? 'px-4 text-body mobile:px-5' : 'px-3 text-body mobile:tap-px')
+          : size === 'sm'
+            ? 'h-6 px-2 text-caption mobile:tap-h mobile:tap-px mobile:text-[15px]'
+            : size === 'lg'
+              ? 'h-8 px-4 text-body mobile:tap-h mobile:px-5 mobile:text-[15px]'
+              : 'h-7 px-3 text-body mobile:tap-h mobile:tap-px mobile:text-[15px]',
         VARIANTS[variant],
         // Phone: a dimmed (opacity .4) label fell under 3:1 — a disabled button is a flat grey one with a readable label.
         'mobile:disabled:text-[var(--color-label-secondary)] mobile:disabled:opacity-100',
@@ -145,11 +149,12 @@ export const IconButton = forwardRef<
       type="button"
       aria-label={label}
       aria-pressed={active}
+      data-bar-ctl={bar ? '' : undefined}
       className={cx(
         'inline-grid shrink-0 place-items-center transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
-        // `bar` (docs/08 «Шапки»): one rounded-square plate, one size per bar — 32 px on the desktop,
-        // the CreateButton's 36 px on the phone with the 44 px target grown by ::before.
-        bar ? 'size-8 rounded-[var(--radius-bar)] active:bg-active mobile:size-9 mobile:bar-hit' : 'rounded-[var(--radius-icon)]',
+        // `bar` (docs/08 «Шапки»): one size per bar - a --control-h-bar circle on the desktop, a rounded
+        // square of the CreateButton's 36 px on the phone with the 44 px target grown by ::before.
+        bar ? 'size-(--control-h-bar) rounded-full active:bg-active mobile:size-9 mobile:rounded-[var(--radius-bar)] mobile:bar-hit' : 'rounded-[var(--radius-icon)]',
         // Phone: a 44×44 hit area whatever the glyph size.
         bar ? null : size === 'sm' ? 'size-7 mobile:tap-size' : 'size-8 mobile:tap-size',
         danger ? 'text-danger hover:bg-hover' : active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
@@ -317,13 +322,15 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   { className, autoFocus, icon, ...rest },
   ref,
 ) {
+  const bar = useContext(BarContext);
   const field = (
     <input
       ref={ref}
       // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
       autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:tap-h mobile:tap-px text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
+        'selectable w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:tap-h mobile:tap-px text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
+        bar ? 'h-(--control-h-bar)' : 'h-7',
         icon ? 'pl-7 mobile:pl-9' : null,
         className,
       )}
@@ -406,12 +413,14 @@ export const PasswordInput = forwardRef<
 
 /** `ref` is a plain prop in React 19 (focus a select on open, e.g. a sheet's initialFocus). */
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { ref?: Ref<HTMLSelectElement> }): ReactNode {
+  const bar = useContext(BarContext);
   return (
     <select
       className={cx(
         // macOS pop-up button: no native chevron; our own ↕ chevron (10 px) sits 8 px from the right edge,
         // the text keeps clear of it (pr-7) and long values end with an ellipsis.
-        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 mobile:tap-h mobile:pl-3.5 mobile:pr-9 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] disabled:opacity-50 disabled:hover:bg-elev',
+        bar ? 'h-(--control-h-bar)' : 'h-7',
+        'w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 mobile:tap-h mobile:pl-3.5 mobile:pr-9 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] disabled:opacity-50 disabled:hover:bg-elev',
         'select-chevron',
         className,
       )}
@@ -494,12 +503,13 @@ export function Segmented<T extends string>({
   fill?: boolean;
   testId?: string;
 }): ReactNode {
+  const bar = useContext(BarContext);
   return (
     <div
       role="radiogroup"
       aria-label={label}
       data-testid={testId}
-      className={cx('rounded-[var(--radius-control)] bg-hover p-0.5', fill ? 'flex w-full' : 'inline-flex')}
+      className={cx('rounded-[var(--radius-control)] bg-hover p-0.5', bar && 'h-(--control-h-bar)', fill ? 'flex w-full' : 'inline-flex')}
     >
       {options.map((o) => (
         <button
@@ -515,7 +525,8 @@ export function Segmented<T extends string>({
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
             // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it
             // fills the track's 2 px padding instead of spilling onto the neighbours.
-            'h-6 whitespace-nowrap rounded-full px-3 mobile:tap-h mobile:px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
+            bar ? 'h-full' : 'h-6',
+            'whitespace-nowrap rounded-full px-3 mobile:tap-h mobile:px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
             // Each segment grows from its label's width: a long «Частное лицо» next to «ИП» still fits on a phone.
             fill && 'min-w-0 flex-auto truncate',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
@@ -700,6 +711,8 @@ export function Modal({
   );
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()} modal={!nonModal}>
+      {/* A dialog opened from inside a bar is not a bar: its controls keep the form sizes. */}
+      <BarContext.Provider value={false}>
       <DialogP.Portal>
         {nonModal ? null : <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />}
         <DialogP.Content aria-modal={nonModal ? undefined : 'true'}
@@ -759,6 +772,7 @@ export function Modal({
           {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 py-5 mobile:gap-3 mobile:px-4 mobile:py-4 mobile:[&>*]:flex-1">{footer}</div> : null}
         </DialogP.Content>
       </DialogP.Portal>
+      </BarContext.Provider>
     </DialogP.Root>
   );
 }

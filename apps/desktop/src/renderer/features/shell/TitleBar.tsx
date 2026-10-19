@@ -63,7 +63,7 @@ export function TitleBar(): ReactNode {
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
           // Quiet (owner, 07.10): a hairline pill, the fill only on hover.
-          className="flex h-7 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-icon)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+          className="flex h-(--control-h-bar) w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
@@ -118,7 +118,7 @@ function SettingsButton(): ReactNode {
       onPointerEnter={() => void AppSettingsWindow.preload()}
       onFocus={() => void AppSettingsWindow.preload()}
       onClick={() => open(update ? { kind: 'settings', tab: 'about' } : { kind: 'settings' })}
-      className="relative size-7"
+      className="relative"
     >
       <Settings className="size-[18px]" />
       {update ? <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-accent ring-2 ring-[var(--color-rail)]" data-testid="settings-update-dot" aria-hidden /> : null}
@@ -140,7 +140,8 @@ function HelpButton(): ReactNode {
           <button
             type="button"
             aria-label={t('shell.help')}
-            className="grid size-7 place-items-center rounded-[var(--radius-bar)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            data-bar-ctl
+            className="grid size-(--control-h-bar) place-items-center rounded-full text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
           >
             <CircleHelp className="size-[18px]" aria-hidden />
           </button>

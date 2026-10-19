@@ -80,7 +80,7 @@ const SyncControl = memo(function SyncControl(): ReactNode {
   return (
     <>
       {syncing ? (
-        <span className="inline-grid size-8 shrink-0 place-items-center" data-testid="mail-sync-spinner">
+        <span className="inline-grid size-(--control-h-bar) shrink-0 place-items-center" data-testid="mail-sync-spinner">
           <Spinner className="size-4" label={t('mbox.checking')} />
         </span>
       ) : (
@@ -129,7 +129,7 @@ function BoxSwitcher(): ReactNode {
           aria-label={t('mbox.switcher')}
           title={account || undefined}
           data-testid="mail-box-switcher"
-          className="group flex h-8 min-w-0 items-center gap-1 rounded-[var(--radius-row)] px-2 text-[17px] font-semibold leading-[22px] tracking-[-0.01em] text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+          className="group flex h-(--control-h-bar) min-w-0 items-center gap-1 rounded-[var(--radius-control)] px-2.5 text-[17px] font-semibold leading-[22px] tracking-[-0.01em] text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
         >
           <span className="min-w-0 truncate">{title}</span>
           <ChevronDown className="size-4 shrink-0 text-muted transition-transform duration-[var(--motion-fast)] group-data-[state=open]:rotate-180" aria-hidden />

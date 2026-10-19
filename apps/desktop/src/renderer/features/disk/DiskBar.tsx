@@ -92,7 +92,7 @@ function CrumbButton({ workspaceId, crumb, current }: { workspaceId: string; cru
       ref={setNodeRef}
       type="button"
       onClick={() => useDiskUi.getState().openFolder(workspaceId, crumb.id)}
-      className={cx('h-8 min-w-0 truncate rounded-[var(--radius-bar)] px-1.5 text-headline font-semibold text-muted hover:bg-hover hover:text-fg', isOver && 'bg-hover text-fg ring-2 ring-accent')}
+      className={cx('h-(--control-h-bar) min-w-0 truncate rounded-[var(--radius-control)] px-2.5 text-headline font-semibold text-muted hover:bg-hover hover:text-fg', isOver && 'bg-hover text-fg ring-2 ring-accent')}
       title={crumb.name}
       data-testid="disk-crumb"
     >
@@ -120,7 +120,6 @@ function SearchBox(): ReactNode {
         }}
         placeholder={t('disk.search')}
         aria-label={t('disk.search')}
-        className="h-8 rounded-full"
         data-testid="disk-search"
       />
     </span>

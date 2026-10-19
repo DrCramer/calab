@@ -11,7 +11,10 @@
      size (36 on the phone, 32 on the desktop) and one plate shape; the 44 px hit area is the control
      grown by --bar-hit-pad through ::before. */
   --bar-ctl-h-phone: 36px;
-  --bar-ctl-h: 32px;
+  /* Desktop: every control in a screen bar and the window title bar is this high (owner, 19.10) - the
+     CreateButton's disc; set by the primitives in components/ui.tsx through BarContext. */
+  --control-h-bar: 28px;
+  --control-icon-bar: 16px;
   --bar-hit-pad: 4px;
   --radius-bar: 10px;
 }
@@ -51,6 +54,15 @@
     :root.web & {
       @slot;
     }
+  }
+}
+
+/* Desktop: the glyph of an icon-only bar button is one size (the CreateButton's «+»), whatever the
+   caller's size-* class says; the phone keeps its own glyph sizes. */
+@media (min-width: 769px) {
+  button[data-bar-ctl] > svg {
+    width: var(--control-icon-bar);
+    height: var(--control-icon-bar);
   }
 }
 
