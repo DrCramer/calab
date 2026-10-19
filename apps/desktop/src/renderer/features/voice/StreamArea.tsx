@@ -20,6 +20,7 @@ import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOption
 import { isTouchPrimary } from '../../lib/phone';
 import { bindPopoutVideo } from './popoutVideo';
 import { ZoomSurface } from './ZoomSurface';
+import { OverlayMic } from '../shell/VoiceDock';
 
 /**
  * <video> bound to a stream track: a remote one (its on-screen size drives adaptive stream, the
@@ -240,6 +241,7 @@ function FullscreenView({
         </span>
         {quality ? <span className="shrink-0 text-[12px] font-medium text-white/80">{quality}</span> : null}
         <span className="flex-1" />
+        <OverlayMic />
         {stream.local ? null : <VolumeControl stream={stream} />}
         <button
           type="button"

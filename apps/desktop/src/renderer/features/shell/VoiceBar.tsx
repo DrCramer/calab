@@ -68,7 +68,7 @@ const Q_LABEL: Record<LinkQuality, 'quality.good' | 'quality.fair' | 'quality.po
  * 1.5 s never reaches the title; one reconnect cycle is one «Переподключение…». Visual tests
  * see the store phase at once.
  */
-function useDisplayedPhase(): VoicePhase {
+export function useDisplayedPhase(): VoicePhase {
   const phase = useVoice((s) => s.phase);
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   const [shown, setShown] = useState(phase);

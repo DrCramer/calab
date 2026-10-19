@@ -17,6 +17,7 @@ import { DiskBar } from './DiskBar';
 import { DiskListing, DragChip, DropTarget } from './DiskItems';
 import { DiskDialogs } from './Dialogs';
 import { UsageMeter } from './UsageMeter';
+import { VoiceDock } from '../shell/VoiceDock';
 
 /**
  * «Диск» on the desktop (ADR-0094 §8, docs/08 «Диск»): one panel in place of the column and the
@@ -114,6 +115,8 @@ export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode 
             >
               <UsageMeter workspaceId={workspaceId} compact />
             </button>
+            {/* No bottom island on the Disk: the call's compact block (bug board #4). */}
+            <VoiceDock variant="footer" className="ml-auto" />
           </footer>
           <Uploads workspaceId={workspaceId} />
           <DiskDialogs workspaceId={workspaceId} />

@@ -3870,6 +3870,20 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await boardsMode(win, mock);
   await checkpoint(shot, 'boards-kanban');
+
+  // Bug board #4 (needs the dev LiveKit): in voice, the boards column ends with the compact voice
+  // block; its mic mutes the call while the board stays on screen.
+  await win.getByTestId('section-chats').click();
+  await win.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await win.getByRole('region', { name: 'Переговорка' }).getByRole('button', { name: 'Войти в голос', exact: true }).click();
+  await expect(win.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 30_000 });
+  await boardsMode(win, mock);
+  const dock = win.getByTestId('voice-dock');
+  await expect(dock).toContainText('Голос подключён');
+  await dock.getByTestId('voice-dock-mic').click();
+  await expect(dock.getByTestId('voice-dock-mic')).toHaveAttribute('data-muted', 'true');
+  await expect(win.getByTestId('kanban')).toBeVisible();
+  await checkpoint(shot, 'boards-voice-dock');
 });
 
 /** The task full screen over the board: properties, two assignees, relations, comments. */

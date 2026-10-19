@@ -115,7 +115,8 @@ export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], g
 
 /**
  * Hide profile and voice controls while a web app fills the content area, and on the Calendar /
- * Boards tabs — even during a call (owner, 02.10: the user returns to «Голос» to control it).
+ * Boards / Disk / Wiki tabs — even during a call (owner, 02.10); there the column's compact
+ * VoiceDock carries the call's mic / sound / leave (bug board #4, 19.10).
  */
 export function showBottomIsland(appOpen: boolean, workTab = false): boolean {
   return !appOpen && !workTab;
