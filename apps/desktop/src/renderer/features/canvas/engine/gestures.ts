@@ -319,6 +319,7 @@ export class CreateGesture implements Gesture {
   end(w: Point, _s: Point, m: Mods): void {
     this.core.setOverlay({ ghost: null });
     const doc = this.core.doc;
+    doc.checkpoint();
     let id: string | null;
     if (this.dragged) {
       const r = this.rect(w, m);
@@ -398,6 +399,7 @@ export class WireGesture implements Gesture {
     if (!this.moved) return;
     const from = endpointOf(this.source, this.startPoint);
     const to = endpointOf(this.target, w);
+    this.core.doc.checkpoint();
     const id = this.core.doc.create({ kind: 'connector', from, to, arrow: 'end', route: this.core.connectorRoute });
     if (id) this.core.finishCreate([id], false);
   }

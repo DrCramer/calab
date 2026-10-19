@@ -147,13 +147,16 @@ export class Scene {
 
   /** Records whose visual bounds intersect `r`, bottom → top. */
   query(r: Rect): ObjectRec[] {
-    const out: ObjectRec[] = [];
+    // Decorate with the layer rank once, sort by number: thousands of Map lookups inside the comparator cost more than the draw.
+    if (!this.ranks) this.rankOf('');
+    const ranks = this.ranks;
+    const hits: { rank: number; rec: ObjectRec }[] = [];
     this.grid.forEach(r, (id) => {
       const rec = this.recs.get(id);
-      if (rec) out.push(rec);
+      if (rec) hits.push({ rank: ranks?.get(id) ?? -1, rec });
     });
-    out.sort((a, b) => this.rankOf(a.id) - this.rankOf(b.id));
-    return out;
+    hits.sort((a, b) => a.rank - b.rank);
+    return hits.map((h) => h.rec);
   }
 
   connectorsOf(id: string): ReadonlySet<string> {

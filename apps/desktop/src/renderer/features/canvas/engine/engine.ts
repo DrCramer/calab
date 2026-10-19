@@ -519,11 +519,13 @@ export class CanvasEngine implements Core {
   deleteSelection(): void {
     if (!this.canEdit() || this.sel.size === 0) return;
     const ids = [...this.sel];
+    this.doc.checkpoint();
     this.doc.remove(ids, (c, end) => this.scene.pointOf(c, end));
   }
 
   duplicateSelection(): string[] {
     if (!this.canEdit() || this.sel.size === 0) return [];
+    this.doc.checkpoint();
     const ids = duplicate(this.scene, this.doc, this.sel, 24, 24);
     if (ids.length > 0) this.setSelection(ids);
     return ids;
@@ -567,6 +569,7 @@ export class CanvasEngine implements Core {
       const t = text.trim();
       if (!t || text.startsWith('calaba-canvas:')) return [];
       const c = { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+      this.doc.checkpoint();
       const id = this.doc.create({ kind: 'text', x: c.x - DEFAULTS.textW / 2, y: c.y - DEFAULTS.textSize, text: t });
       if (id) this.setSelection([id]);
       return id ? [id] : [];
@@ -580,6 +583,7 @@ export class CanvasEngine implements Core {
       dy = view.y + view.h / 2 - (bb.y + bb.h / 2);
     }
     this.pasteCount++;
+    this.doc.checkpoint();
     const ids = this.doc.createMany(toInits(payload, dx, dy));
     if (ids.length > 0) this.setSelection(ids);
     return ids;
@@ -599,6 +603,7 @@ export class CanvasEngine implements Core {
   reorder(dir: 1 | -1, edge: boolean): void {
     if (!this.canEdit() || this.sel.size === 0) return;
     const ids = [...this.sel];
+    this.doc.checkpoint();
     if (edge) {
       if (dir > 0) this.doc.bringToFront(ids);
       else this.doc.sendToBack(ids);
@@ -661,6 +666,7 @@ export class CanvasEngine implements Core {
       this.renderer.setHiddenText(null);
       const cur = this.scene.get(oid);
       if (cur) {
+        this.doc.checkpoint();
         if (cur.kind === 'text' && text.trim() === '') this.doc.remove([oid]);
         else this.doc.setText(oid, text);
       }
@@ -675,6 +681,7 @@ export class CanvasEngine implements Core {
   /** Double-click on empty canvas: a new text object, in edit mode. */
   createTextAt(world: Point): string | null {
     if (!this.canEdit()) return null;
+    this.doc.checkpoint();
     const id = this.doc.create({ kind: 'text', x: world.x - 8, y: world.y - DEFAULTS.textSize });
     if (id) this.finishCreate([id], true);
     return id;

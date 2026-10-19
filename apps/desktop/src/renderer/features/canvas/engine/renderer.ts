@@ -1,5 +1,5 @@
 import { snapCamera, visibleRect, type Camera } from '../../../lib/canvas/camera';
-import { type Rect } from '../../../lib/canvas/geometry';
+import { rectUnion, rectsIntersect, type Rect } from '../../../lib/canvas/geometry';
 import type { Scene, SceneChange } from '../../../lib/canvas/scene';
 import { visualBounds } from '../../../lib/canvas/scene';
 import { AwarenessLayer } from './awareness';
@@ -270,14 +270,23 @@ export class Renderer {
       const cy1 = Math.min(H, y1);
       if (cx1 > cx0 && cy1 > cy0) dev.push({ x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 });
     }
-    if (dev.length <= MAX_REGIONS) return dev;
-    // Too many small rects: one covering rect beats many clips.
-    let u = dev[0] as Rect;
+    // Overlapping rects (an object's old and new bounds) become one region.
+    const merged: Rect[] = [];
     for (const r of dev) {
-      const x = Math.min(u.x, r.x);
-      const y = Math.min(u.y, r.y);
-      u = { x, y, w: Math.max(u.x + u.w, r.x + r.w) - x, h: Math.max(u.y + u.h, r.y + r.h) - y };
+      let cur = r;
+      for (let i = merged.length - 1; i >= 0; i--) {
+        const m = merged[i];
+        if (m && rectsIntersect(m, cur)) {
+          cur = rectUnion(m, cur);
+          merged.splice(i, 1);
+        }
+      }
+      merged.push(cur);
     }
+    if (merged.length <= MAX_REGIONS) return merged;
+    // Too many small rects: one covering rect beats many clips.
+    let u = merged[0] as Rect;
+    for (const r of merged) u = rectUnion(u, r);
     return [u];
   }
 
@@ -299,7 +308,7 @@ export class Renderer {
       w: region.w / dpr / cam.scale,
       h: region.h / dpr / cam.scale,
     };
-    drawBackground(l, this.palette, world, cam.scale);
+    drawBackground(l, this.palette, world, cam.scale, dpr);
     const objs = this.o.scene.query(world);
     this.stats.drawn += objs.length;
     drawObjects(l, objs, world, this.env(cam.scale));

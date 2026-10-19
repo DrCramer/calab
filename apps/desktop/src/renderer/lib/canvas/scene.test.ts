@@ -187,7 +187,7 @@ describe('connectors in the scene', () => {
     a.objects.delete('a2'); // a raw delete (no detach), as a concurrent client could produce
     const c = s.get('a3');
     expect(c).not.toBe(c0);
-    expect(isConnector(c ?? ({} as never)) && (c as { points: number[] }).points.slice(-2)).toEqual([500, 80]);
+    expect(c && isConnector(c) ? c.points.slice(-2) : null).toEqual([500, 80]);
   });
   it('re-attaches when the target comes back (undo of the delete)', () => {
     const d = makeDoc();

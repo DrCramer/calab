@@ -225,6 +225,11 @@ export class CanvasDoc {
     return out;
   }
 
+  /** The next local change starts a new undo step (discrete commands: delete, paste, create…). */
+  checkpoint(): void {
+    this.undo.stopCapturing();
+  }
+
   /** One drag = one undo step, however long it pauses. */
   beginGesture(): void {
     if (this.gesture++ > 0) return;
