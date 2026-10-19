@@ -1,0 +1,202 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/room.proto";
+
+// Canvas (ADR-0107, docs/04 «Холст»): a tree of folders and canvases of a workspace, per-item
+// access, trash, version history and a journal. The content of a canvas is a Yjs document: it
+// never travels in these messages, only through GET /api/canvas/{id}/sync (binary frames, the
+// same 0-4 as the Wiki, docs/05) and the version state route. There are no public links and no
+// files in v1.
+//
+// Access: workspace bits CANVAS_VIEW (1 << 41), CANVAS_WRITE (1 << 42), CANVAS_MANAGE (1 << 43),
+// then the overrides of every ancestor and the item itself (canvas_permissions, VIEW / WRITE
+// only), the same tree rule as the Disk and the Wiki (Go perm.ComputeCanvasItem over
+// perm.ComputeTree, TS canvasItemPermissions over treeItemPermissions). CANVAS_WRITE on a canvas
+// edits its content and creates items in a folder; rename, move, trash, restore, delete and
+// access need the owner of the item or CANVAS_MANAGE (perm.CanvasStructureAllowed). No
+// CANVAS_VIEW on an item → 404.
+
+enum CanvasItemKind {
+  CANVAS_ITEM_KIND_UNSPECIFIED = 0;
+  CANVAS_ITEM_KIND_FOLDER = 1;
+  CANVAS_ITEM_KIND_CANVAS = 2;
+}
+
+// A folder or a canvas of the Canvas section. Folders hold folders and canvases (depth ≤ 32);
+// a canvas holds nothing.
+message CanvasItem {
+  string id = 1;
+  string workspace_id = 2;
+  string parent_id = 3; // empty = the top level
+  CanvasItemKind kind = 4;
+  string name = 5; // 0..200 characters ("" = «Без названия» in the client)
+  string owner_id = 6; // who created it; empty after the account is gone
+  bool restricted = 7; // «Только выбранные»: the roles and the parent give no access
+  bool shared = 8; // the item has its own overrides (canvas_permissions)
+  google.protobuf.Timestamp updated_at = 9; // the last snapshot or structural change
+  string updated_by = 10;
+  google.protobuf.Timestamp trashed_at = 11; // set while in the trash (with its subtree)
+  uint64 my_bits = 12; // the caller's canvas bits on the item (CANVAS_VIEW | CANVAS_WRITE | CANVAS_MANAGE)
+  bool has_children = 13; // live children exist (visible or not: the tree expands lazily)
+  google.protobuf.Timestamp created_at = 14;
+  int32 position = 15; // the order among the siblings, ascending
+  string trashed_by = 16;
+  bool trashed_root = 17; // the item the deletion started at (the trash lists only these)
+  uint32 doc_size = 18; // bytes of the last snapshot (the client warns near 4 MiB); canvases only
+  string preview = 19; // the first ≤ 200 characters of the objects' text (from the last snapshot)
+}
+
+// One override of an item (canvas_permissions): «Просмотр» = CANVAS_VIEW, «Правка» = CANVAS_VIEW
+// | CANVAS_WRITE. A guest can be given access only as a USER target.
+message CanvasPermissionEntry {
+  PermissionTargetType target_type = 1;
+  string target_id = 2; // role id or user id
+  uint64 allow = 3;
+  uint64 deny = 4;
+}
+
+// A saved version of a canvas (canvas_versions, ADR-0107 §1): at most one per 10 minutes, only
+// when the content changed; ≤ 50 per canvas. The Yjs state is not here:
+// GET /api/canvas/{id}/versions/{vid} returns it (application/octet-stream).
+message CanvasVersion {
+  string id = 1;
+  string canvas_id = 2;
+  repeated string author_ids = 3; // who edited since the previous version
+  google.protobuf.Timestamp created_at = 4;
+  uint32 size = 5; // bytes of the state
+}
+
+enum CanvasActivityKind {
+  CANVAS_ACTIVITY_KIND_UNSPECIFIED = 0;
+  CANVAS_ACTIVITY_KIND_CREATE = 1;
+  CANVAS_ACTIVITY_KIND_RENAME = 2;
+  CANVAS_ACTIVITY_KIND_MOVE = 3;
+  CANVAS_ACTIVITY_KIND_SHARE = 4; // overrides or restricted changed
+  CANVAS_ACTIVITY_KIND_TRASH = 5;
+  CANVAS_ACTIVITY_KIND_RESTORE = 6;
+  CANVAS_ACTIVITY_KIND_DELETE = 7; // deleted forever
+  CANVAS_ACTIVITY_KIND_VERSION = 8; // a version was saved (edits themselves are not journaled)
+}
+
+// A journal entry (canvas_activity). before / after carry snapshots (the old and new name, the
+// destination folder's name, who got access).
+message CanvasActivity {
+  string id = 1;
+  string workspace_id = 2;
+  string item_id = 3; // empty after the item was deleted forever
+  string actor_id = 4; // empty after the account is gone or for the trash sweeper
+  CanvasActivityKind kind = 5;
+  google.protobuf.Struct before = 6;
+  google.protobuf.Struct after = 7;
+  google.protobuf.Timestamp created_at = 8;
+  string item_name = 9; // the item's name when the entry was written
+}
+
+// GET /api/workspaces/{id}/canvas/items?parent=&trashed=&cursor= — the visible live children of
+// a folder (parent empty = the top level) by position, or, with trashed=1, the trash roots the
+// caller can see, the newest deletion first. ≤ 200 per page.
+message ListCanvasItemsResponse {
+  repeated CanvasItem items = 1;
+  string next_cursor = 2;
+}
+
+// POST /api/workspaces/{id}/canvas/items (CANVAS_WRITE on the parent folder, or on the Canvas
+// section for the top level). The item goes last among its siblings; the creator owns it. The
+// parent is a folder; a canvas has no children.
+message CreateCanvasItemRequest {
+  string parent_id = 1; // empty = the top level
+  CanvasItemKind kind = 2;
+  string name = 3;
+}
+
+// The response of create / update / trash / restore and GET /api/canvas/items/{id}.
+message CanvasItemResponse {
+  CanvasItem item = 1;
+}
+
+// PATCH /api/canvas/items/{id} (owner of the item or CANVAS_MANAGE): rename, move (parent_id
+// set, "" = the top level; position = the index among the new siblings, the rest shift; also
+// CANVAS_WRITE on the destination folder) and the restricted switch.
+message UpdateCanvasItemRequest {
+  optional string name = 1;
+  optional string parent_id = 2;
+  optional int32 position = 3;
+  optional bool restricted = 4;
+}
+
+// GET /api/canvas/items/{id}/path — the ancestors, the top-level item first, then the item.
+message CanvasPathResponse {
+  repeated CanvasItem items = 1;
+}
+
+// POST /api/workspaces/{id}/canvas/trash/empty — deletes forever every trashed item the caller
+// may delete (their own; everything with CANVAS_MANAGE).
+message EmptyCanvasTrashResponse {
+  uint32 deleted = 1;
+}
+
+// GET /api/canvas/items/{id}/permissions (owner of the item or CANVAS_MANAGE).
+message CanvasPermissionsResponse {
+  repeated CanvasPermissionEntry entries = 1;
+  bool restricted = 2;
+}
+
+// PUT /api/canvas/items/{id}/permissions — replaces the item's overrides (allow / deny within
+// CANVAS_VIEW | CANVAS_WRITE) and optionally the restricted switch.
+message UpdateCanvasPermissionsRequest {
+  repeated CanvasPermissionEntry entries = 1;
+  optional bool restricted = 2;
+}
+
+// GET /api/canvas/items/{id}/versions?cursor= (CANVAS_VIEW on the canvas), the newest first.
+message CanvasVersionsResponse {
+  repeated CanvasVersion versions = 1;
+  string next_cursor = 2;
+}
+
+// GET /api/canvas/items/{id}/activity?cursor= (CANVAS_VIEW on the item) and
+// GET /api/workspaces/{id}/canvas/activity?actor=&cursor= (CANVAS_MANAGE) — newest first.
+message CanvasActivityPage {
+  repeated CanvasActivity activities = 1;
+  string next_cursor = 2;
+}
+
+// GET / PUT /api/workspaces/{id}/canvas/settings (PUT: CANVAS_MANAGE).
+message CanvasSettings {
+  uint32 trash_days = 1; // automatic deletion from the trash after this many days; 0 = never
+}
+
+// One level of an item's access chain (the top-level item first, the item last): what
+// perm.ComputeCanvasItem reads. Server-internal routing of the CANVAS_ITEM_* events, always
+// empty for clients.
+message CanvasAccessLevel {
+  bool restricted = 1;
+  string owner_id = 2;
+  repeated CanvasPermissionEntry overrides = 3;
+}
+
+// CANVAS_ITEM_UPSERT: an item was created or changed structurally (name, moved, shared,
+// trashed, restored, a new snapshot's preview). To members with CANVAS_VIEW on the item;
+// item.my_bits is the recipient's own bits (filled by the gateway). A member who saw the item
+// before the change and does not any more gets CANVAS_ITEM_REMOVE instead.
+message CanvasItemUpsert {
+  string workspace_id = 1;
+  CanvasItem item = 2;
+  // Server-internal routing, always empty for clients: the access chain after the change and,
+  // when it changed (move, restricted, overrides), before it (empty = nobody saw it before).
+  repeated CanvasAccessLevel access = 3;
+  repeated CanvasAccessLevel access_before = 4;
+}
+
+// CANVAS_ITEM_REMOVE: an item was deleted forever or the recipient lost access to it.
+message CanvasItemRemove {
+  string workspace_id = 1;
+  string item_id = 2;
+  string parent_id = 3;
+  // Server-internal routing, always empty for clients: the access chain the item had (who saw
+  // it gets the event).
+  repeated CanvasAccessLevel access = 4;
+}

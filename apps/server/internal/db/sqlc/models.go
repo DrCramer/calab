@@ -641,6 +641,92 @@ type CaldavPush struct {
 	CreatedAt time.Time
 }
 
+type CanvasActivity struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ItemID      *uuid.UUID
+	ItemName    string
+	ActorID     *uuid.UUID
+	Kind        string
+	Before      []byte
+	After       []byte
+	Private     bool
+	CreatedAt   time.Time
+}
+
+type CanvasItem struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	PlainText   string
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type CanvasItemHead struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type CanvasPermission struct {
+	CanvasID   uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
+}
+
+type CanvasSnapshot struct {
+	CanvasID   uuid.UUID
+	State      []byte
+	ThroughSeq int64
+	SavedBy    *uuid.UUID
+	SavedAt    time.Time
+}
+
+type CanvasUpdate struct {
+	CanvasID  uuid.UUID
+	Seq       int64
+	Data      []byte
+	AuthorID  *uuid.UUID
+	CreatedAt time.Time
+}
+
+type CanvasVersion struct {
+	ID        uuid.UUID
+	CanvasID  uuid.UUID
+	State     []byte
+	Authors   []uuid.UUID
+	CreatedAt time.Time
+}
+
 type DirectoryObject struct {
 	ID                uuid.UUID
 	WorkspaceID       uuid.UUID
@@ -1770,6 +1856,7 @@ type Workspace struct {
 	WikiTrashDays           *int32
 	TempArchiveDays         int32
 	OwnerSeesPrivate        bool
+	CanvasTrashDays         *int32
 }
 
 type WorkspaceAdminLog struct {

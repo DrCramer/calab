@@ -20,8 +20,8 @@ func TestCheckGrantDiskBits(t *testing.T) {
 	if err := checkGrant(admin, member, member|perm.BillingView); err == nil {
 		t.Fatal("an admin must not grant billing bits")
 	}
-	if err := checkGrant(admin, member, member|1<<41); err == nil {
-		t.Fatal("unknown bit 41 must be refused")
+	if err := checkGrant(admin, member, member|1<<44); err == nil {
+		t.Fatal("unknown bit 44 must be refused")
 	}
 	// A role manager without DISK_MANAGE cannot grant it; the disk bits it holds it can.
 	mgr := perm.NewMember("m", perm.RoleMember, []perm.RoleBits{{ID: "member", Position: perm.PosMember, Permissions: member | perm.ManageRoles}})
@@ -40,5 +40,15 @@ func TestCheckGrantDiskBits(t *testing.T) {
 	}
 	if err := checkGrant(admin, member, member|perm.WikiManage); err != nil {
 		t.Fatalf("an admin grants WIKI_MANAGE: %v", err)
+	}
+	// And for the canvas bits (ADR-0107).
+	if err := checkGrant(mgr, 0, perm.CanvasManage); err == nil {
+		t.Fatal("cannot grant CANVAS_MANAGE without holding it")
+	}
+	if err := checkGrant(mgr, 0, perm.CanvasView|perm.CanvasWrite); err != nil {
+		t.Fatalf("grants the canvas bits it holds: %v", err)
+	}
+	if err := checkGrant(admin, member, member|perm.CanvasManage); err != nil {
+		t.Fatalf("an admin grants CANVAS_MANAGE: %v", err)
 	}
 }
