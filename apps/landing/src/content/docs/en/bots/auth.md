@@ -163,7 +163,7 @@ curl -s -X POST https://app.example.com/api/boards/$BOARD/tasks \
 ```
 
 - The rights are the **member's**; the author and the journal are the member, marked `viaBotId` (“Name (via bot X)”): the card is in their “Mine”, notifications go as for their own action.
-- Routes are the same as [on behalf of the owner](#on-behalf-of-the-owner): tasks, comments, attachments, watchers, the approval vote and everything else open to bots; the account, bot management, billing, voice and calls are closed.
+- Routes are the same as [on behalf of the owner](#on-behalf-of-the-owner): tasks, comments, attachments, watchers, the approval vote and everything else open to bots; the account, bot management, billing, voice and calls are closed. On behalf of a member, the workspace's access control is closed too: its settings, members and their roles, roles, bans, invitations, and the permissions of rooms, wiki pages and the Disk.
 - **Only inside the workspace of the permission**: the member's direct messages, their profile (`GET /api/me`) and summaries across workspaces (`/api/me/tasks`, mentions) are `403 ON_BEHALF_ROUTE`.
 - Revoking works at once, including for a request already running.
 - The gateway and the webhook do not change; the limits are the bot's.
