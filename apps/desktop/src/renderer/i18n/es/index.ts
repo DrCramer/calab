@@ -22,6 +22,8 @@ import { esCalendar } from './calendar';
 import { esMailbox } from './mailbox';
 import { esDisk } from './disk';
 import { esWiki } from './wiki';
+import { esCanvas } from './canvas';
+import { esCanvasBoard } from './canvasBoard';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
 import { esHistory } from './history';
@@ -84,6 +86,8 @@ export const es: Dict = {
   ...esMailbox,
   ...esDisk,
   ...esWiki,
+  ...esCanvas,
+  ...esCanvasBoard,
   ...esBoards,
   ...esBoards2,
   ...esHistory,

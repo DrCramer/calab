@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "targetType": "PERMISSION_TARGET_TYPE_USER",
+      "targetId": "0190a0b0-0000-7000-8000-0000000000a2",
+      "allow": "6597069766656"
+    },
+    {
+      "targetType": "PERMISSION_TARGET_TYPE_ROLE",
+      "targetId": "0190a0b0-0000-7000-8000-000000000090",
+      "allow": "2199023255552",
+      "deny": "4398046511104"
+    }
+  ],
+  "restricted": true
+}

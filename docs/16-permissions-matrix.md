@@ -183,6 +183,18 @@
 | Переименовать, иконка, обложка, перенести, в корзину, доступ, ссылка | владелец страницы или `WIKI_MANAGE` (`perm.WikiStructureAllowed`) | `internal/wiki` (W2) | по `WikiPage.my_bits` (W4) |
 | Срок корзины, очистка всей корзины, чужие ссылки, журнал вики | `WIKI_MANAGE` | `internal/wiki` (W2) | (W4) |
 
+## Холст (ADR-0107)
+
+Биты `CANVAS_VIEW` (41) / `CANVAS_WRITE` (42) / `CANVAS_MANAGE` (43) — как у вики: уровень пространства, вне `ALL_PERMISSIONS`, у `member` по умолчанию VIEW + WRITE (миграция 00102), `ADMINISTRATOR` даёт все три, гостям — только личный allow на элементе; боты — как участники. Права на элемент — `perm.ComputeCanvasItem` (общий `perm.ComputeTree`), нет `CANVAS_VIEW` — 404. Приватный холст или папка (`restricted`) — как приватная страница вики: администраторы, `CANVAS_MANAGE` и владелец пространства без переопределения (и без «Владелец видит приватное») его не видят; `perm.Detached` отцепляет невидимую приватную подпапку при удалении/переносе предка. «Только просмотр» — отсутствие `CANVAS_WRITE`: сокет `/sync` не принимает UPDATE. Публичной ссылки в v1 нет. Контракт и права — задача H1 (`docs/plans/canvas-v1-tasks.md`), сервер и клиент — H2/H4/H5, столбцы заполняются вместе с ними. Тесты: векторы `canvas:` в `proto/testdata/permissions.json` (Go `internal/perm`, TS `permissions.test.ts`).
+
+| Действие | Бит | Сервер | Клиент |
+|---|---|---|---|
+| Раздел «Холст», дерево, открыть холст, история версий | `CANVAS_VIEW` на элемент | `internal/canvas` (H2) | (H5) |
+| Править содержимое (`/sync` с приёмом правок), создать папку или холст | `CANVAS_WRITE` на элемент (на верхнем уровне — в пространстве) | `internal/canvas` (H2) | (H5) |
+| Переименовать, перенести, в корзину, доступ | владелец элемента или `CANVAS_MANAGE` (`perm.CanvasStructureAllowed`); перенос — ещё `CANVAS_WRITE` в целевой папке | `internal/canvas` (H2) | по `CanvasItem.my_bits` (H5) |
+| Срок корзины, очистка всей корзины, журнал холста | `CANVAS_MANAGE` | `internal/canvas` (H2) | (H5) |
+| События `CANVAS_ITEM_UPSERT` / `REMOVE`, поиск `canvas` | `CANVAS_VIEW` на элемент (цепочка доступа, `perm.ComputeCanvasItemIn`) | `gateway` / `search` (H2); до H2 события отбрасываются | (H5) |
+
 ## Телефония
 
 | Действие | Бит | Сервер | Клиент |

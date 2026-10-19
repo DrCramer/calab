@@ -1,6 +1,7 @@
 import { WorkspaceRole } from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useBoardsUi } from '../../stores/boardsUi';
+import { useCanvasUi } from '../../stores/canvasUi';
 import { useDiskUi } from '../../stores/diskUi';
 import { useMailUi } from '../../stores/mailUi';
 import { HOME } from '../../stores/dms';
@@ -21,6 +22,7 @@ describe('desktop sections (ADR-0074)', () => {
     useBoardsUi.setState({ active: false });
     useDiskUi.setState({ active: false });
     useWikiUi.setState({ active: false });
+    useCanvasUi.setState({ active: false });
     useMailUi.setState({ active: false });
     useWebApps.setState({ open: null });
     useWorkspaces.setState({ order: ['a', 'b', 'g'], byId: { a: entry('a'), b: entry('b'), g: entry('g', WorkspaceRole.GUEST) } });
@@ -115,6 +117,47 @@ describe('desktop sections (ADR-0074)', () => {
     openWorkspace('g');
     openSection('wiki');
     expect(useWikiUi.getState().active).toBe(false);
+  });
+
+  it('«Холст» is exclusive with the Disk, the Wiki, the boards and the rooms, and remembered per workspace (ADR-0107 §5)', async () => {
+    openSection('wiki');
+    openSection('canvas');
+    expect(useCanvasUi.getState().active).toBe(true);
+    expect(useWikiUi.getState().active).toBe(false);
+    expect(useDiskUi.getState().active).toBe(false);
+    await settle();
+    expect(useSections.getState().of).toEqual({ a: 'canvas' });
+    openSection('disk');
+    expect(useCanvasUi.getState().active).toBe(false);
+    expect(useDiskUi.getState().active).toBe(true);
+    openSection('canvas');
+    expect(useDiskUi.getState().active).toBe(false);
+    openSection('wiki');
+    expect(useCanvasUi.getState().active).toBe(false);
+    openSection('canvas');
+    useBoardsUi.getState().setActive(true);
+    expect(useCanvasUi.getState().active).toBe(false);
+    openSection('canvas');
+    expect(useBoardsUi.getState().active).toBe(false);
+    openSection('calendar');
+    expect(useCanvasUi.getState().active).toBe(false);
+    expect(useUi.getState().calDay).not.toBeNull();
+    openSection('canvas');
+    expect(useUi.getState().calDay).toBeNull();
+    useUi.getState().openRoom('a', 'r1');
+    expect(useCanvasUi.getState().active).toBe(false);
+    // a workspace opens on the section it was left on
+    openSection('canvas');
+    await settle();
+    openWorkspace('b');
+    expect(useCanvasUi.getState().active).toBe(false);
+    await settle();
+    openWorkspace('a');
+    expect(useCanvasUi.getState().active).toBe(true);
+    // a guest workspace has none
+    openWorkspace('g');
+    openSection('canvas');
+    expect(useCanvasUi.getState().active).toBe(false);
   });
 
   it('a guest workspace opens on its rooms only', () => {
