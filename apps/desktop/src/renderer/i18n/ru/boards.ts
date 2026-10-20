@@ -473,6 +473,7 @@ export const ruBoards = {
   'boards.gate.pending': 'Нужно согласование: {n} из {m}',
   'boards.gate.rejected': 'Отклонено: {name}',
   'boards.gate.hint': 'нужно согласование',
+  'boards.gate.hintRejected': 'отклонено согласующим',
   'boards.gate.bulk': 'Не перенесены — ждут согласования: {keys}',
   // notifications
   'boards.notice.assigned': '{name} назначает вас',

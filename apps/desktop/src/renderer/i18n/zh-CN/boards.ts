@@ -466,6 +466,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.gate.pending': '需要审批：{n}/{m}',
   'boards.gate.rejected': '已驳回：{name}',
   'boards.gate.hint': '需要审批',
+  'boards.gate.hintRejected': '审批人已拒绝',
   'boards.gate.bulk': '未移动 — 等待审批：{keys}',
   'boards.notice.assigned': '{name} 指派了你',
   'boards.notice.mentioned': '{name} 提到了你',
