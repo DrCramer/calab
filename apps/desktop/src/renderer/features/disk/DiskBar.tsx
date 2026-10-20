@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { useDroppable } from '@dnd-kit/core';
 import { ArrowUpDown, Check, ChevronRight, Ellipsis, FolderPlus, Gauge, History, Search, Settings2, Trash2, Upload } from 'lucide-react';
 import { memo, useRef, type ReactNode } from 'react';
@@ -16,7 +16,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 
 /**
  * The disk's header (docs/08 «Шапки», ADR-0094 §8): crumbs of the open folder (each a drop target
- * for dragged items) · the search of the open folder · «Плитки | Список» · the sort · «+» (Папка,
+ * for dragged items) · the search of the open folder · «Плитки | Список | Колонки» · the sort · «+» (Папка,
  * Загрузить файлы) · «⋯» (Корзина, История диска, Место, Настройки корзины). In the trash: the
  * crumbs «Диск › Корзина» and «Очистить корзину». Reads primitives only.
  */
@@ -92,7 +92,7 @@ function CrumbButton({ workspaceId, crumb, current }: { workspaceId: string; cru
       ref={setNodeRef}
       type="button"
       onClick={() => useDiskUi.getState().openFolder(workspaceId, crumb.id)}
-      className={cx('h-8 min-w-0 truncate rounded-[var(--radius-bar)] px-1.5 text-headline font-semibold text-muted hover:bg-hover hover:text-fg', isOver && 'bg-hover text-fg ring-2 ring-accent')}
+      className={cx('h-(--control-h-bar) min-w-0 truncate rounded-[var(--radius-control)] px-2.5 text-headline font-semibold text-muted hover:bg-hover hover:text-fg', isOver && 'bg-hover text-fg ring-2 ring-accent')}
       title={crumb.name}
       data-testid="disk-crumb"
     >
@@ -120,7 +120,6 @@ function SearchBox(): ReactNode {
         }}
         placeholder={t('disk.search')}
         aria-label={t('disk.search')}
-        className="h-8 rounded-full"
         data-testid="disk-search"
       />
     </span>
@@ -136,6 +135,7 @@ function ViewSwitch(): ReactNode {
       options={[
         { value: 'tiles', label: t('disk.view.tiles') },
         { value: 'list', label: t('disk.view.list') },
+        { value: 'columns', label: t('disk.view.columns') },
       ]}
       onChange={(diskView) => usePrefs.getState().setPrefs({ diskView })}
       testId="disk-view"

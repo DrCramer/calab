@@ -1,5 +1,5 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import {
   DndContext,
   DragOverlay,
@@ -33,6 +33,8 @@ import {
   FolderInput,
   FolderPlus,
   Hash,
+  Infinity as InfinityIcon,
+  Link,
   ListPlus,
   Loader2,
   Lock,
@@ -61,14 +63,14 @@ import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isOwnerRoles, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { expiresMs, extendTo, formatRemaining, isExpiring, sortTempRooms } from '../../lib/tempRooms';
-import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom } from '../../services/tempRooms';
+import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom, makeTempRoomPermanent } from '../../services/tempRooms';
 import { useCalendar } from '../../stores/calendar';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications } from '../../services/mentions';
 import { KnockBadge } from '../guests/KnockBadge';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { Bar, BAR_GROUP } from '../../components/Bar';
 import { CreateSlot, PhoneSearchButton } from '../../components/PhoneHeader';
@@ -111,11 +113,13 @@ import { useShallow } from 'zustand/react/shallow';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from './ColumnHeader';
 import { BoardsList, NewCategoryDialog } from '../boards/BoardsList';
+import { ColumnVoice } from './BottomIsland';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
+import { ROOM_ROW_BOX, ROOM_ROW_BUTTON } from './roomRowStyle';
 import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 export { menuBox, menuItem };
@@ -203,6 +207,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
       {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}
+      {/* No bottom island on these tabs: the call's compact block at the column's foot (bug board #4). */}
+      {boards || calList ? <ColumnVoice /> : null}
       {boards || calList ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
@@ -757,7 +763,7 @@ export function CategoryDialog({ workspaceId, onClose }: { workspaceId: string; 
  * grey plate when selected and a fainter one on hover; unread is the bold name (+ the mention badge),
  * no pills or borders; hover actions.
  */
-const rowBox = 'group/row relative flex h-9 items-center rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]';
+const rowBox = ROOM_ROW_BOX;
 
 /**
  * Text room hover actions (invite, settings — no «chat»: the row itself opens it). Same 18 px
@@ -849,6 +855,11 @@ export function RoomMenu({
   const open = useUi((s) => s.openDialog);
   const openRoom = useUi((s) => s.openRoom);
   const temp = !!room.expiresAt;
+  // «Сделать постоянной» (ADR-0044 addendum 14.10): the right to create regular rooms — workspace
+  // MANAGE_ROOM, as the server checks; a primitive, permanent rooms answer false at once.
+  const permanent = useWorkspaces((s) => temp && mayArrangeRooms(rolesOf(s.byId[room.workspaceId], myUserId())));
+  // «Ссылки…» (ADR-0107): an invite right in the room, or its creator (members-only links).
+  const manageLinks = inviteRoom || (temp && !guest && !!room.createdBy && room.createdBy === myUserId());
   // «Добавить встречу» only while the temporary room has no meeting (ADR-0044); a primitive, and
   // permanent rooms answer false at once.
   const hasEvent = useCalendar((s) => temp && (!!s.active[room.id]?.length || Object.values(s.occ).some((e) => e.roomId === room.id)));
@@ -874,6 +885,9 @@ export function RoomMenu({
     hasCategories: canOrder && workspaceCategories(room.workspaceId).length > 0,
     temp,
     hasEvent,
+    manageLinks,
+    makePermanent: permanent,
+    schedule: !guest, // every member but a guest creates meetings (ADR-0038 §2)
   });
   const item = (id: RoomMenuItem): ReactNode => {
     switch (id) {
@@ -893,6 +907,13 @@ export function RoomMenu({
             onSelect={() => (voiceRoom && inviteRoom ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
           >
             <UserPlus className="size-4" /> {t('shell.invite')}
+          </ContextMenu.Item>
+        );
+      case 'schedule':
+        // CBF-18: the new meeting dialog with this room chosen.
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-schedule" onSelect={() => newEvent(room.workspaceId, { ...nextQuarter(), roomId: room.id })}>
+            <CalendarPlus className="size-4" /> {t('cal.scheduleHere')}
           </ContextMenu.Item>
         );
       case 'record':
@@ -960,6 +981,18 @@ export function RoomMenu({
         return (
           <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-copy-link" onSelect={() => void copyTempRoomLink(room)}>
             <Link2 className="size-4" /> {t('temp.copyLink')}
+          </ContextMenu.Item>
+        );
+      case 'links':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-links" onSelect={() => open({ kind: 'room-settings', roomId: room.id, tab: 'guests' })}>
+            <Link className="size-4" /> {t('temp.links')}
+          </ContextMenu.Item>
+        );
+      case 'makePermanent':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-permanent" onSelect={() => void makeTempRoomPermanent(room)}>
+            <InfinityIcon className="size-4" /> {t('temp.permanent')}
           </ContextMenu.Item>
         );
       case 'extend':
@@ -1249,7 +1282,7 @@ const TextRoomRow = memo(function TextRoomRow({
             onClick={() => openRoom(workspaceId, room.id)}
             aria-current={active ? 'page' : undefined}
             className={cx(
-              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-1 text-left text-list leading-5',
+              ROOM_ROW_BUTTON,
               bright ? 'text-fg' : 'text-muted group-hover/row:text-fg',
               unread && !active && 'font-semibold',
             )}

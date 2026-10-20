@@ -127,6 +127,15 @@ group('history: the action sentence names the field and the values', () => {
     expect(text(act('approvals_reset', { approved: 1 }, null))).toBe('согласование началось заново: задачу изменили');
   });
 
+  it('ADR-0108: approvals a manager recorded for an approver, a manual move past the approval', () => {
+    expect(text(act('approval', { user_id: 'vera', state: 'pending' }, { user_id: 'vera', state: 'approved', on_behalf: true }))).toBe('согласовал(а) за Вера');
+    expect(text(act('approval', { user_id: 'vera', state: 'approved', recorded_by: 'anna' }, { user_id: 'vera', state: 'pending', on_behalf: true }))).toBe('отозвал(а) согласование, отмеченное за Вера');
+    // The approver's own vote over one recorded for them reads as their own.
+    expect(text(act('approval', { user_id: 'vera', state: 'approved', recorded_by: 'anna' }, { user_id: 'vera', state: 'approved' }, { actorId: 'vera' }))).toBe('согласовал(а)');
+    expect(text(act('approval_override', null, { from_status_id: 's1', status_id: 's2', approved: 2, quorum: 3, rejected: 0 }))).toBe('перевёл(а) вручную в «В работе», согласование не завершено (2/3)');
+    expect(text(act('approval_override', null, { status_id: 's2', approved: 1, quorum: 3, rejected: 1 }))).toBe('перевёл(а) вручную в «В работе», несмотря на отклонение (1/3)');
+  });
+
   it('comments: new, edited (diff and ± files), deleted (own and someone else’s)', () => {
     const c = describe(act('comment', null, { message_id: 'm1', text: 'Проверил на Mac', attachments: [{ file_id: 'f1', name: 'log.txt', size: 5, mime: 'text/plain' }] }), ctx, NOW);
     expect(c.text).toBe('комментарий: «Проверил на Mac»');

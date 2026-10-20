@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import type { CalendarEvent } from '@calaba/protocol';
 import { ArrowUp, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';

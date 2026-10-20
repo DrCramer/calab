@@ -71,3 +71,13 @@ export function replaceAssignee(list: readonly AssigneeDraft[], from: string, to
   if (list.some((a) => a.userId === to)) return removeAssignee(list, from);
   return normalize(list.map((a) => (a.userId === from ? { ...a, userId: to } : a)));
 }
+
+/**
+ * People pickers (Yandex Tracker-like, task #1): the viewer is always offered at the top of the
+ * people not chosen yet — a long alphabetical list must not hide «me». Order otherwise kept.
+ */
+export function meFirst<T>(list: readonly T[], me: string, idOf: (x: T) => string): T[] {
+  const i = me ? list.findIndex((x) => idOf(x) === me) : -1;
+  if (i <= 0) return [...list];
+  return [list[i] as T, ...list.slice(0, i), ...list.slice(i + 1)];
+}

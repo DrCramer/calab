@@ -12,7 +12,7 @@ import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { findByKey, lastSentId, messageById, useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
-import { idAfter, useRooms } from '../stores/rooms';
+import { useRooms } from '../stores/rooms';
 import { useBoards } from '../stores/boards';
 import { myUserId } from '../stores/session';
 import { toast } from '../stores/toasts';
@@ -101,33 +101,16 @@ function loadErrText(e: unknown): string {
 }
 
 /**
- * First load of a room. With unread messages it loads a window starting just above the
- * first unread one (the list opens there, docs/09 #39); otherwise the newest page.
+ * First load of a room: always its newest page — a chat opens at the latest message (CBF-31,
+ * owner). It used to load a window starting at the first unread one and open there (docs/09 #39):
+ * with a read marker that lagged (read on another device, or the reader never reached the bottom,
+ * which is what marks read) the chat kept opening somewhere in the middle of its history, and with
+ * more than a page unread that window did not even reach the present. The unread divider and the
+ * «к первому непрочитанному» banner still lead to the first unread row.
  */
 export async function openRoom(roomId: string): Promise<void> {
   const st = useMessages.getState().rooms[roomId];
   if (st?.loaded || inFlight(roomId)) return;
-  const rooms = useRooms.getState();
-  const marker = rooms.readState[roomId];
-  if (marker && idAfter(rooms.lastMessage[roomId], marker)) {
-    const gen = beginLoad(roomId);
-    try {
-      const after = await listPage(roomId, { after: marker, limit: PAGE });
-      const first = after.messages[0];
-      if (first) {
-        const before = await listPage(roomId, { before: first.id, limit: 30 });
-        if (!isCurrent(roomId, gen)) return; // superseded by a retry
-        useMessages.getState().setWindow(roomId, [...before.messages].reverse().concat(after.messages), before.hasMore, after.hasMore);
-        return;
-      }
-    } catch (e) {
-      log.warn('load unread window failed', e);
-    } finally {
-      endLoad(roomId, gen);
-    }
-    // Superseded by a retry that runs or already loaded the room.
-    if (loads.has(roomId) || useMessages.getState().rooms[roomId]?.loaded) return;
-  }
   await loadOlder(roomId, true);
 }
 

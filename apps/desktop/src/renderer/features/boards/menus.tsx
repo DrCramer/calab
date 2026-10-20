@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
 import { Check, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
@@ -15,7 +15,9 @@ import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
 import { accessChoice, pickerAccess, type PickerAccess } from '../../lib/boards/access';
+import { meFirst } from '../../lib/boards/assignees';
 import { useBoards } from '../../stores/boards';
+import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
@@ -74,6 +76,8 @@ export function ChoiceMenu({
   testId,
   onInput,
   footer,
+  emptyText,
+  loading,
   ...shell
 }: MenuShell & {
   groups: ReadonlyArray<PickerGroup<Choice>>;
@@ -87,6 +91,8 @@ export function ChoiceMenu({
   testId?: string;
   onInput?: (text: string) => void;
   footer?: ReactNode;
+  emptyText?: string;
+  loading?: boolean;
 }): ReactNode {
   const [open, setOpen] = useOpen(shell);
   const input = useRef<HTMLInputElement>(null);
@@ -126,6 +132,8 @@ export function ChoiceMenu({
             digits={digits}
             height={320}
             {...(onInput ? { onInput } : {})}
+            {...(emptyText ? { emptyText } : {})}
+            {...(loading ? { loading } : {})}
             onSelect={(c) => {
               onPick(c);
               if (!multi) setOpen(false);
@@ -161,9 +169,18 @@ export function ChoiceMenu({
 
 /**
  * `blocked`: statuses the task may not go to now (ADR-0049: not approved yet) — shown disabled
- * with the hint «нужно согласование».
+ * with the hint «нужно согласование». `overridable` (ADR-0108, MANAGE_BOARD): they keep the hint
+ * but stay selectable — the pick asks for a confirmation.
  */
-export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined }): ReactNode {
+export function StatusMenu({
+  boardId,
+  value,
+  onPick,
+  blocked,
+  overridable = false,
+  blockedNote,
+  ...shell
+}: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined; overridable?: boolean; blockedNote?: string | undefined }): ReactNode {
   const statuses = useBoards(useShallow((s) => s.boards[boardId]?.statuses ?? NO_STATUSES));
   const groups = useMemo(
     () => [
@@ -174,11 +191,18 @@ export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuSh
           .sort((a, b) => a.position - b.position)
           .map((s): Choice => {
             const off = !!blocked?.has(s.id);
-            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
+            return {
+              id: s.id,
+              search: [s.name],
+              label: s.name,
+              icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />,
+              checked: s.id === value,
+              ...(off ? { disabled: !overridable, note: blockedNote ?? t('boards.gate.hint') } : {}),
+            };
           }),
       },
     ],
-    [statuses, value, blocked],
+    [statuses, value, blocked, overridable, blockedNote],
   );
   return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(c.id)} placeholder={t('boards.menu.status')} label={t('boards.f.status')} digits testId="status-menu" />;
 }
@@ -241,20 +265,24 @@ export function AssigneeMenu({
       access.set(m.user.id, a);
       return a !== 'hidden' || value.includes(m.user.id);
     });
+    const me = myUserId();
     const person = (id: string, name: string, fileId: string): Choice => ({
       id,
-      search: [name],
+      search: id === me ? [name, t('people.you'), t('boards.me')] : [name],
       label: name,
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
       note: String(counts[id] ?? 0),
       ...accessChoice(access.get(id)),
+      // «вы» marks the viewer (task #1: she looked for herself in the list); an access caption wins.
+      ...(id === me && access.get(id) !== 'card' ? { caption: t('people.you') } : {}),
     });
     const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
-    const others = list
-      .filter((m) => !value.includes(m.user?.id ?? ''))
-      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
-      .map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    const others = meFirst(
+      list.filter((m) => !value.includes(m.user?.id ?? '')).sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
+      me,
+      (m) => m.user?.id ?? '',
+    ).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
     return [
       { id: 'none', label: '', items: [{ id: '__none', search: [t('boards.noAssignee')], label: t('boards.noAssignee'), icon: <CircleSlash className="size-4 text-muted" />, checked: value.length === 0, note: '' }] },
       { id: 'chosen', label: '', items: chosen },

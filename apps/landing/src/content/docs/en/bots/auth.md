@@ -79,24 +79,22 @@ A person can “Block bot” — the bot then can't write to them in direct mess
 
 ## Always closed to bots
 
-These routes answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"` — whatever its roles:
+The rule is simple: **if the bot has the permission, it does what a person with that permission does.** Board automations, the board's Git and webhook, board access, web apps, camera backgrounds, GPTunneL, telephony, the call journal, achievements, meeting comments, recordings — all by the bits of the bot's roles; without the bit it is the ordinary `403` naming the missing permission.
 
-| Area | What exactly |
-|---|---|
-| Billing | balance, payments, payment methods, auto top-up, changing and stopping a plan |
-| Identity | SSO and directory settings, OAuth clients, the OAuth provider (`/oidc/…`), OAuth grants, reauthentication |
-| Bot management | creating, adding and deleting bots, their tokens and avatars — even with `MANAGE_BOTS` |
-| Account | sessions, password, email, email verification, status, choosing a username, notes about people, bot blocks |
-| Workspaces | creating, discovering, deleting, joining by invite, notification settings |
-| Invites | looking an account up by address and adding an account directly (invite links and email invites are open) |
-| Rooms | guest links, notification settings, waiting for admission as a guest |
-| Voice | one-to-one calls (call, accept, decline) |
-| Notes | notes shelves entirely |
-| Push | device registration and everything push |
-| Tasks | voting in approvals (only [on behalf of the owner](#on-behalf-of-the-owner)), board access, purging a board, the board webhook, changing automations, Git links |
-| Messages | pressing buttons under messages (that is a person's action) |
-| Calendar | answering invitations (RSVP), “today”, CalDAV and external calendars |
-| Other | Disk, camera backgrounds, workspace web apps, telephony settings and journal, recording transcription settings, granting achievements, the birthday table and setting birthdays, deleting and re-uploading recordings, link previews, superadmin |
+Only what a role cannot decide stays closed. These routes answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"` — whatever its roles:
+
+| Area | What exactly | Why |
+|---|---|---|
+| Account | sessions, password, email and its verification, push devices, choosing a username | a bot has no password, email or sessions — only its token |
+| Identity | SSO and the directory, OAuth clients, the OAuth provider (`/oidc/…`), OAuth grants, reauthentication | a person's login and the workspace's login policy |
+| Billing | balance, payments, payment methods, auto top-up, plans; superadmin | money is the workspace owner's decision |
+| Workspace ownership | creating, deleting, discovering and joining; taking over a room, board, file or page | a bot owns no workspace and does not join by itself — people add it |
+| Accounts without consent | looking an account up by address, adding an account directly | invite links and email invites are open |
+| Bot management | creating, adding and deleting bots, tokens, avatars, “on behalf of the owner”, the journal of contacts shared with bots, bot blocks | a bot does not manage bots or their oversight — no self-escalation |
+| A person's decision | the approval vote (only [on behalf of the owner](#on-behalf-of-the-owner)), pressing buttons, sharing a contact, answering an invitation (RSVP) | the intent of a particular person |
+| Personal | notes, status, notification and chat-list settings, birthdays, “today”, CalDAV and external calendars | a person's private data and settings |
+| Voice and guests | one-to-one calls, room guest links, waiting for admission | a bot does not ring people or hand out anonymous entry to calls |
+| Helpers | link previews, the HEIC converter | client helpers, not the API: a token must not become a free proxy |
 
 The exact route list is in [Bot routes](../reference/routes).
 
@@ -116,7 +114,7 @@ curl -s -X POST https://app.example.com/api/tasks/$TASK/approval \
 ```
 
 - Such a request runs **with the owner's permissions** and is stored as the owner's action: the message author, the vote, the task journal entry are the owner, marked with `viaBotId` (the app shows “Name (via bot X)”).
-- Everything open to bots is available, **plus** the vote in task approvals. Closed even on behalf of the owner: the owner's account (profile, password, email, sessions), bot management (this switch included), billing, workspace deletion, superadmin, voice and calls, recording.
+- Everything open to bots is available, **plus** the vote in task approvals. Closed even on behalf of the owner: the owner's account (profile, password, email, sessions), bot management (this switch included), billing, workspace deletion, superadmin, voice and calls, recording, and the administration opened to bots in 3.9 (automations, the board's Git, webhook and access, integrations, backgrounds, achievements, meeting comments, recordings) — a bot does that only as itself.
 - The bot must be a member of the workspace and the owner an active member there. Workspaces with enforced SSO refuse on-behalf requests.
 - The gateway and the webhook do not change: the bot receives events with its own permissions.
 - On-behalf requests count against the bot's limits.
@@ -137,6 +135,51 @@ curl -s -X POST https://app.example.com/api/tasks/$TASK/approval \
 > The token of such a bot acts as its owner. Keep it like a password; if it may have leaked, reissue the token or turn the switch off — it takes effect at once.
 
 In the SDK: `bot.asOwner()` — the same bot with the header on every call (`await bot.asOwner().tasks.vote(taskId, 'approve')`), or `{ onBehalfOfOwner: true }` on a single `bot.rest.request`.
+
+## On behalf of a member
+
+Any member of a workspace can let a bot act **on their behalf** in that workspace themselves: the bot's “⋯” menu (in the members column or the bot's profile) → “Delegate rights” → “Allow”. The same dialog suggests it to other members: the bot sends each of them a direct message — who suggests it and what the bot will be able to do — with the buttons “Accept” and “Decline”.
+
+- **Only the member** gives and revokes the permission: neither an admin, nor the bot's owner, nor whoever suggested it can do it for them. Only the recipient's own “Accept” counts; if the bot edits that message, its buttons stop working.
+- The permission is for one workspace. It stops when the member revokes it, leaves the workspace, becomes a guest, or the bot is removed from the workspace.
+- Not for guests, bots, or workspaces with mandatory SSO.
+
+The bot learns whom it may help right now:
+
+```sh
+curl -s https://app.example.com/api/workspaces/$WS/bots/$BOT_ID -H "Authorization: Bearer $TOKEN"
+# → {"bot": {…}, "onBehalfUserIds": ["…"], "delegations": [{"userId": "…", "since": "…"}], "invites": [...]}
+```
+
+A request on behalf of a member carries `Calab-On-Behalf` with their id:
+
+```sh
+# A card on the DOC board — the member is its author, not the bot
+curl -s -X POST https://app.example.com/api/boards/$BOARD/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Calab-On-Behalf: $USER_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Supplier invoice"}'
+```
+
+- The rights are the **member's**; the author and the journal are the member, marked `viaBotId` (“Name (via bot X)”): the card is in their “Mine”, notifications go as for their own action.
+- Routes are the same as [on behalf of the owner](#on-behalf-of-the-owner): tasks, comments, attachments, watchers, the approval vote and everything else open to bots; the account, bot management, billing, voice and calls are closed. On behalf of a member, the workspace's access control is closed too: its settings, members and their roles, roles, bans, invitations, and the permissions of rooms, wiki pages and the Disk.
+- **Only inside the workspace of the permission**: the member's direct messages, their profile (`GET /api/me`) and summaries across workspaces (`/api/me/tasks`, mentions) are `403 ON_BEHALF_ROUTE`.
+- Revoking works at once, including for a request already running.
+- The gateway and the webhook do not change; the limits are the bot's.
+
+| Response | `reason` | Why |
+|---|---|---|
+| `400` | `ON_BEHALF_INVALID` | the value is neither `owner` nor a user id, or it is the bot's own id |
+| `403` | `ON_BEHALF_NO_CONSENT` | the member has not allowed this bot (in this workspace), revoked it, became a guest or cannot allow it |
+| `403` | `ON_BEHALF_OWNER_NOT_MEMBER` | the member is banned or suspended by the directory in this workspace |
+| `403` | `ON_BEHALF_IDENTITY_POLICY` | the workspace requires the person's own sign-in (SSO) |
+| `403` | `ON_BEHALF_ROUTE` | the route is closed on behalf, or it is outside the workspace |
+
+> [!WARNING]
+> A bot token with permissions acts as those members. The bot's owner holds it — so members should allow only bots they trust.
+
+In the SDK: `bot.asMember(userId)` — the same bot with every call on behalf of the member (`await bot.asMember(userId).tasks.create(boardId, { title })`), or `{ onBehalfOf: userId }` on a single `bot.rest.request`.
 
 ## Good practice
 

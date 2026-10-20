@@ -61,6 +61,11 @@ A bot sees only the rooms where it has `VIEW_ROOM`. With the permissions of its 
 | `POST` | `/api/rooms/{id}/sounds/play` | Play a sound to everyone in the call `{soundId}` |
 | `POST` | `/api/rooms/{id}/calls` | Dial a number from the room's call `{number}` (`PLACE_CALLS`) |
 | `DELETE` | `/api/rooms/{id}/calls/{cid}` | Hang up |
+| `POST` | `/api/rooms/{id}/make-permanent` | Make a temporary room permanent (the workspace's `MANAGE_ROOM`) |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | Recheck a failed recording (`MANAGE_RECORDINGS`) |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | Send a failed recording again (`MANAGE_RECORDINGS`) |
+| `DELETE` | `/api/rooms/{id}/recordings/{rid}` | Delete a recording: your own, or with the room's `MANAGE_MESSAGES` / `MANAGE_RECORDINGS` |
+| `GET` | `/api/workspaces/{id}/calls` | The journal of calls to numbers (`VIEW_JOURNALS`) |
 <!-- /routes -->
 
 ### Not available to bots
@@ -68,10 +73,7 @@ A bot sees only the rooms where it has `VIEW_ROOM`. With the permissions of its 
 - Room guest links: `GET · POST /api/rooms/{id}/invites`, `PATCH · DELETE /api/rooms/{id}/invites/{inviteId}`, joining by link `POST /api/room-invites/{code}/join`.
 - Room notification settings: `PUT /api/rooms/{id}/notifications`.
 - Waiting for admission (`DELETE /api/rooms/{id}/admissions/me`) — that is a guest's action.
-- Workspace camera backgrounds `/api/workspaces/{id}/backgrounds…` — a bot has no camera background.
-- Telephony settings and the call journal: `/api/workspaces/{id}/sip`, `/api/workspaces/{id}/sip/test`, `GET /api/workspaces/{id}/calls`.
 - One-to-one calls: `POST /api/dms/{id}/call`, `/api/calls/{id}/…` — a bot neither calls nor answers, and nobody can call a bot.
-- Reprocessing, re-uploading and deleting meeting recordings.
 
 ## Create a room
 

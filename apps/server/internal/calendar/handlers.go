@@ -195,6 +195,11 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		f.room = &rid
 	}
+	if req.GetTempRoom() {
+		if err := s.checkTempRequest(v, me, f); err != nil {
+			return err
+		}
+	}
 	want, err := parseAttendees(req.GetAttendees())
 	if err != nil {
 		return err
@@ -207,12 +212,16 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	var b *bundle
+	var (
+		b           *bundle
+		roomPublish func(context.Context) // the meeting's own room, made at once (ADR-0112)
+	)
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		series := f.series()
 		ev, err := q.InsertEvent(ctx, sqlc.InsertEventParams{
 			WorkspaceID: wsID, RoomID: f.room, Title: f.title, Description: f.desc, StartsAt: f.start, EndsAt: f.end,
 			AllDay: f.allDay, Tz: f.tz, OrganizerID: me, Record: f.record, Rrule: rrulePtr(f.rule), UntilAt: series.UntilAt(),
+			TempRoom: req.GetTempRoom(),
 		})
 		if err != nil {
 			return err
@@ -231,6 +240,11 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+		if tempRoomDue(ev, s.Now()) {
+			if ev, roomPublish, err = s.attachTempRoom(ctx, q, ev, false); err != nil {
+				return err
+			}
+		}
 		if b, err = loadOne(ctx, q, ev); err != nil {
 			return err
 		}
@@ -242,6 +256,9 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		return err
+	}
+	if roomPublish != nil {
+		roomPublish(ctx) // the room first: clients place the meeting in it
 	}
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventCreate{EventCreate: &v1.CalendarEventCreate{Event: b.proto(nil, nil)}}})
 	s.roomSignals(ctx, nil, b)
@@ -381,6 +398,25 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	timeChanged := !old.start.Equal(f.start) || !old.end.Equal(f.end) || old.allDay != f.allDay || old.tz != f.tz ||
 		old.rule.String() != f.rule.String()
 	significant := roomChanged || timeChanged || old.title != f.title || old.desc != f.desc
+	// The meeting's own temporary room (ADR-0112): asked for (again) by the organizer; dropped
+	// by false or by a room chosen or removed by hand (a room made already stays as an
+	// ordinary one).
+	temp := before.ev.TempRoom
+	askTemp := req.TempRoom != nil && req.GetTempRoom()
+	if (req.TempRoom != nil && !req.GetTempRoom()) || (roomChanged && !askTemp) {
+		temp = false
+	}
+	if askTemp && (!before.ev.TempRoom || roomChanged) {
+		if err := s.checkTempRequest(v, before.ev.OrganizerID, f); err != nil {
+			return err
+		}
+		temp = true
+	}
+	if temp && f.rule.Repeat != v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED {
+		return errTempOneOff
+	}
+	var roomPublish, accessPublish func(context.Context)
+	attached := false
 
 	var added, removed []sqlc.EventAttendee
 	var after *bundle
@@ -395,6 +431,12 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		curB, err := loadOne(ctx, q, cur)
 		if err != nil {
 			return err
+		}
+		// A room the request does not touch is the locked row's: the sweep may have attached
+		// the meeting's own room since `before` was read (ADR-0112); writing the stale empty
+		// room_id back would leave that room behind and let the sweep make a second one.
+		if req.RoomId == nil && before.ev.RoomID == nil && cur.TempRoom && cur.RoomID != nil {
+			f.room = cur.RoomID
 		}
 		var addWant []wantAttendee
 		if req.GetSetAttendees() {
@@ -449,9 +491,39 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		ev, err := q.UpdateEvent(ctx, sqlc.UpdateEventParams{
 			ID: cur.ID, RoomID: f.room, Title: f.title, Description: f.desc, StartsAt: f.start, EndsAt: f.end, AllDay: f.allDay,
 			Tz: f.tz, Record: f.record, Rrule: rrulePtr(f.rule), UntilAt: series.UntilAt(), Bump: bump,
+			TempRoom: temp,
 		})
 		if err != nil {
 			return err
+		}
+		switch {
+		case ownRoom(ev) && !roomChanged && timeChanged && s.TempRooms != nil: // the room follows the meeting
+			if roomPublish, err = s.TempRooms.MoveMeetingRoom(ctx, q, *ev.RoomID, ev.OrganizerID, ev.EndsAt.Add(TempRoomAfter)); err != nil {
+				return err
+			}
+		case tempRoomDue(ev, s.Now()): // moved close (or asked for close to the start): made now
+			if ev, roomPublish, err = s.attachTempRoom(ctx, q, ev, me != ev.OrganizerID); err != nil {
+				return err
+			}
+			attached = true
+		}
+		// The meeting's own private room follows its people (ADR-0112); a room made in this
+		// change already holds them.
+		if ownRoom(ev) && !roomChanged && !attached && s.TempRooms != nil && (len(addWant) > 0 || len(removed) > 0) {
+			var add, drop []uuid.UUID
+			for _, a := range addWant {
+				if a.user != nil {
+					add = append(add, *a.user)
+				}
+			}
+			for _, a := range removed {
+				if a.UserID != nil {
+					drop = append(drop, *a.UserID)
+				}
+			}
+			if accessPublish, err = s.TempRooms.SyncMeetingRoom(ctx, q, *ev.RoomID, ev.OrganizerID, add, drop); err != nil {
+				return err
+			}
 		}
 		if err := revokeLinks(ctx, q, cur.ID, removed); err != nil {
 			return err
@@ -459,7 +531,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		if after, err = loadOne(ctx, q, ev); err != nil {
 			return err
 		}
-		if err := s.syncLinks(ctx, q, after, roomChanged, timeChanged); err != nil {
+		if err := s.syncLinks(ctx, q, after, roomChanged || attached, timeChanged); err != nil {
 			return err
 		}
 		if after, err = loadOne(ctx, q, ev); err != nil {
@@ -478,6 +550,12 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	wsID := after.ev.WorkspaceID
+	if roomPublish != nil {
+		roomPublish(ctx)
+	}
+	if accessPublish != nil {
+		accessPublish(ctx)
+	}
 	// Those who may lose the event (another room, removed from the list) get EVENT_DELETE of
 	// the previous state first; EVENT_UPDATE follows for everyone who still sees it.
 	if roomChanged || len(removed) > 0 {
@@ -612,6 +690,12 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	s.roomSignals(ctx, before, nil)
 	s.sendMails(ctx, after, mail.TemplateEventCancel, MethodCancel, after.att)
 	s.changed(ctx, after)
+	// ADR-0112: the room made for the meeting closes with it (archived, as its creator's
+	// DELETE would); a request not served yet just ends with the meeting. The cancelled row,
+	// not `before`: the sweep may have made the room in between.
+	if ownRoom(after.ev) && s.TempRooms != nil {
+		logErr(ctx, "close the meeting's temporary room", s.TempRooms.CloseMeetingRoom(ctx, *after.ev.RoomID, after.ev.OrganizerID))
+	}
 	httpx.NoContent(w)
 	return nil
 }

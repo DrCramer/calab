@@ -515,7 +515,8 @@ func New(d Deps) *App {
 	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
 	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute
 	calSvc.Routes(mux, private)
-	roomHandlers.Meetings = calSvc // temporary rooms book and close meetings (ADR-0044)
+	roomHandlers.Meetings = calSvc  // temporary rooms book and close meetings (ADR-0044)
+	calSvc.TempRooms = roomHandlers // meetings get their own temporary rooms (ADR-0112)
 	cdOpts := d.CalDAV
 	if cdOpts.AllowAddr == nil {
 		cdOpts.AllowAddr = unfurlPolicy(d)

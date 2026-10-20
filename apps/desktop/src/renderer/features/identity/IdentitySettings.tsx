@@ -14,7 +14,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 import { memo, useCallback, useRef, useState, type ReactNode } from 'react';
-import { Button, Card, Field, Input, Modal, PasswordInput, Select, Switch as Toggle } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, PasswordInput, Select, Switch as Toggle, TextArea } from '../../components/ui';
 import { confirmIdentity as confirmAction } from './confirm';
 import { t, getLocale } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
@@ -545,8 +545,8 @@ function DirectoryForm({
           <PasswordInput value={bindPassword} autoComplete="new-password" onChange={(e) => setBindPassword(e.target.value)} />
         </Field>
         <Field label={t('identity.groups')} hint={t('identity.groupsHelp')}>
-          <textarea
-            className="min-h-24 w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+          <TextArea
+          className="min-h-24"
             placeholder="CN=Team,OU=Groups,DC=example,DC=com"
             spellCheck={false}
             value={groups}

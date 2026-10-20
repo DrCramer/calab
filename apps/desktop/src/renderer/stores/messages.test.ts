@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { MessageSchema } from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { reactWith, useMessages } from './messages';
+import { opensAwayFromPresent, reactWith, useMessages, type RoomMessages } from './messages';
 
 const msg = (id: string, nonce = '', content = id) => create(MessageSchema, { id, roomId: 'r', authorId: 'u', content, nonce });
 const keys = (): string[] => useMessages.getState().rooms['r']?.items.map((c) => c.key) ?? [];
@@ -9,6 +9,24 @@ const keys = (): string[] => useMessages.getState().rooms['r']?.items.map((c) =>
 beforeEach(() => {
   useMessages.getState().reset();
   useMessages.getState().prependPage('r', [msg('0002'), msg('0001')], true); // API: newest first
+});
+
+describe('opensAwayFromPresent (CBF-31)', () => {
+  const win = (hasMoreAfter: boolean, loaded = true): RoomMessages => ({ items: [], hasMoreBefore: true, hasMoreAfter, loading: false, loaded, error: null, base: 0 });
+
+  it('a loaded window left away from the present reloads the present before the feed opens', () => {
+    expect(opensAwayFromPresent(win(true), false)).toBe(true);
+  });
+
+  it('a window at the present, or a room not loaded yet: the feed opens as is', () => {
+    expect(opensAwayFromPresent(win(false), false)).toBe(false);
+    expect(opensAwayFromPresent(win(true, false), false)).toBe(false);
+    expect(opensAwayFromPresent(undefined, false)).toBe(false);
+  });
+
+  it('back from a phone screen pushed over the room: its window is where the reader left it', () => {
+    expect(opensAwayFromPresent(win(true), true)).toBe(false);
+  });
 });
 
 describe('messages store', () => {

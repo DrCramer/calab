@@ -178,83 +178,124 @@ func (h *Handlers) createTemp(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	code, err := NewLinkCode()
-	if err != nil {
-		return err
-	}
 	now := time.Now()
-	expires := now.Add(ttl).Truncate(time.Second)
-	// The creator cannot hand out more than they hold (as with links and overrides).
-	allow := perm.ViewRoom | TempAllow&bits
+	spec := tempSpec{
+		wsID: wsID, creator: me, name: name, expires: now.Add(ttl).Truncate(time.Second),
+		private: req.GetPrivate(), memberIDs: req.GetMemberIds(), guests: guests,
+		// The creator cannot hand out more than they hold (as with links and overrides).
+		allow: perm.ViewRoom | TempAllow&bits,
+	}
 	var (
-		room    sqlc.Room
-		ws      sqlc.Workspace
-		ovs     []sqlc.RoomPermission
+		made    tempMade
 		event   *v1.CalendarEvent
 		publish func(context.Context)
 	)
 	err = h.db.Tx(ctx, func(q *sqlc.Queries) error {
-		members, err := tempMembers(ctx, q, wsID, me, req.GetMemberIds())
-		if err != nil {
-			return err
-		}
-		if err := q.LockTempRooms(ctx, wsID); err != nil {
-			return err
-		}
-		n, err := q.CountLiveTempRooms(ctx, sqlc.CountLiveTempRoomsParams{WorkspaceID: wsID, UserID: me})
-		if err != nil {
-			return err
-		}
-		if n.Total >= MaxTempPerWorkspace {
-			return errTempLimit.WithDetails("", uint64(n.Total), MaxTempPerWorkspace) //nolint:gosec // count ≥ 0
-		}
-		if n.Mine >= MaxTempPerUser {
-			return errTempLimit.WithDetails(ReasonPerUser, uint64(n.Mine), MaxTempPerUser) //nolint:gosec // count ≥ 0
-		}
-		if ws, err = q.GetWorkspace(ctx, wsID); err != nil {
-			return err
-		}
-		room, err = q.CreateRoom(ctx, sqlc.CreateRoomParams{
-			WorkspaceID: wsID, Type: "voice", Name: name, IsPrivate: req.GetPrivate(),
-			ExpiresAt: &expires, CreatedBy: &me,
-		})
-		if err != nil {
-			return err
-		}
-		if room.IsPrivate {
-			if err := setPrivate(ctx, q, wsID, room.ID, true); err != nil {
-				return err
-			}
-			for _, u := range append([]uuid.UUID{me}, members...) {
-				if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: room.ID, UserID: u.String(), Allow: int64(allow)}); err != nil { //nolint:gosec // bit mask
-					return err
-				}
-			}
-		}
-		if _, err := q.CreateRoomInvite(ctx, sqlc.CreateRoomInviteParams{
-			RoomID: room.ID, Code: code, CreatedBy: me, ExpiresAt: &expires,
-			AllowGuests: guests, AllowBits: int64(allow), MembersOnly: !guests, //nolint:gosec // bit mask
-		}); err != nil {
+		var err error
+		if made, err = insertTemp(ctx, q, spec); err != nil {
 			return err
 		}
 		if req.GetWithEvent() && h.Meetings != nil {
-			if event, publish, err = h.Meetings.CreateRoomMeeting(ctx, q, wsID, me, room.ID, name, ceil5(now), expires); err != nil {
+			if event, publish, err = h.Meetings.CreateRoomMeeting(ctx, q, wsID, me, made.room.ID, name, ceil5(now), spec.expires); err != nil {
 				return err
 			}
 		}
-		ovs, err = q.ListRoomOverrides(ctx, room.ID)
-		return err
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	pb := pbconv.Room(room, pbconv.WorkspaceDefaults(ws), ovs)
-	h.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomCreate{RoomCreate: &v1.RoomCreate{Room: pb}}})
+	pb := h.publishTemp(ctx, made)
 	if publish != nil {
 		publish(ctx)
 	}
-	httpx.Write(w, http.StatusCreated, &v1.TempRoomResponse{Room: pb, InviteUrl: LinkURL(h.PublicURL, code), InviteCode: code, Event: event})
+	httpx.Write(w, http.StatusCreated, &v1.TempRoomResponse{Room: pb, InviteUrl: LinkURL(h.PublicURL, made.code), InviteCode: made.code, Event: event})
 	return nil
+}
+
+// tempSpec is one new temporary room: of POST …/rooms/temp, or a meeting's own (ADR-0112).
+type tempSpec struct {
+	wsID, creator uuid.UUID
+	name          string
+	expires       time.Time
+	private       bool
+	memberIDs     []string    // a private room's people (validated by tempMembers)
+	people        []uuid.UUID // a private room's people validated by the caller (a meeting's attendees)
+	guests        bool        // the link admits guests (else members only)
+	allow         perm.Bits
+}
+
+// tempMade is what insertTemp wrote.
+type tempMade struct {
+	room sqlc.Room
+	ws   sqlc.Workspace
+	ovs  []sqlc.RoomPermission
+	code string // the room link
+}
+
+// insertTemp creates a temporary room inside q (ADR-0044 §API 1–2): the limits (20 per
+// workspace, 5 per creator), the room after the last one, a private room's personal allows,
+// and the room link ending with it. The caller has checked the creator's rights.
+func insertTemp(ctx context.Context, q *sqlc.Queries, sp tempSpec) (tempMade, error) {
+	var out tempMade
+	code, err := NewLinkCode()
+	if err != nil {
+		return out, err
+	}
+	out.code = code
+	members, err := tempMembers(ctx, q, sp.wsID, sp.creator, sp.memberIDs)
+	if err != nil {
+		return out, err
+	}
+	if err := q.LockTempRooms(ctx, sp.wsID); err != nil {
+		return out, err
+	}
+	n, err := q.CountLiveTempRooms(ctx, sqlc.CountLiveTempRoomsParams{WorkspaceID: sp.wsID, UserID: sp.creator})
+	if err != nil {
+		return out, err
+	}
+	if n.Total >= MaxTempPerWorkspace {
+		return out, errTempLimit.WithDetails("", uint64(n.Total), MaxTempPerWorkspace) //nolint:gosec // count ≥ 0
+	}
+	if n.Mine >= MaxTempPerUser {
+		return out, errTempLimit.WithDetails(ReasonPerUser, uint64(n.Mine), MaxTempPerUser) //nolint:gosec // count ≥ 0
+	}
+	if out.ws, err = q.GetWorkspace(ctx, sp.wsID); err != nil {
+		return out, err
+	}
+	creator := sp.creator
+	out.room, err = q.CreateRoom(ctx, sqlc.CreateRoomParams{
+		WorkspaceID: sp.wsID, Type: "voice", Name: sp.name, IsPrivate: sp.private,
+		ExpiresAt: &sp.expires, CreatedBy: &creator,
+	})
+	if err != nil {
+		return out, err
+	}
+	if out.room.IsPrivate {
+		if err := setPrivate(ctx, q, sp.wsID, out.room.ID, true); err != nil {
+			return out, err
+		}
+		for _, u := range append(append([]uuid.UUID{creator}, members...), sp.people...) {
+			if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: out.room.ID, UserID: u.String(), Allow: int64(sp.allow)}); err != nil { //nolint:gosec // bit mask
+				return out, err
+			}
+		}
+	}
+	if _, err := q.CreateRoomInvite(ctx, sqlc.CreateRoomInviteParams{
+		RoomID: out.room.ID, Code: code, CreatedBy: creator, ExpiresAt: &sp.expires,
+		AllowGuests: sp.guests, AllowBits: int64(sp.allow), MembersOnly: !sp.guests, //nolint:gosec // bit mask
+	}); err != nil {
+		return out, err
+	}
+	out.ovs, err = q.ListRoomOverrides(ctx, out.room.ID)
+	return out, err
+}
+
+// publishTemp announces a new temporary room after the commit (ROOM_CREATE) and returns it.
+func (h *Handlers) publishTemp(ctx context.Context, made tempMade) *v1.Room {
+	pb := pbconv.Room(made.room, pbconv.WorkspaceDefaults(made.ws), made.ovs)
+	h.events.Workspace(ctx, made.ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomCreate{RoomCreate: &v1.RoomCreate{Room: pb}}})
+	return pb
 }
 
 var errTempLimit = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_TEMP_ROOM_LIMIT, "too many temporary rooms")
@@ -276,9 +317,10 @@ func setPrivate(ctx context.Context, q *sqlc.Queries, wsID, roomID uuid.UUID, pr
 }
 
 // archiveTemp archives a live temporary room in one transaction — archived_at, every link
-// revoked, its meetings closed — then announces ROOM_DELETE (rtc.SyncPublisher closes the
-// LiveKit room: participants leave). onlyExpired: the sweeper's re-check (an extension that
-// raced it wins). Reports whether the room was archived.
+// revoked (the usable ones marked to come back on restore, ADR-0107), its meetings closed —
+// then announces ROOM_DELETE (rtc.SyncPublisher closes the LiveKit room: participants leave).
+// onlyExpired: the sweeper's re-check (an extension that raced it wins). Reports whether the
+// room was archived.
 func (h *Handlers) archiveTemp(ctx context.Context, roomID uuid.UUID, onlyExpired bool) (bool, error) {
 	var (
 		room    sqlc.Room
@@ -289,7 +331,7 @@ func (h *Handlers) archiveTemp(ctx context.Context, roomID uuid.UUID, onlyExpire
 		if room, err = q.ArchiveTempRoom(ctx, sqlc.ArchiveTempRoomParams{ID: roomID, OnlyExpired: onlyExpired}); err != nil {
 			return err
 		}
-		if err := q.RevokeAllRoomInvites(ctx, roomID); err != nil {
+		if err := q.ArchiveRoomInvites(ctx, roomID); err != nil {
 			return err
 		}
 		if h.Meetings != nil {
@@ -424,7 +466,14 @@ func (h *Handlers) PurgeTempRooms(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for _, id := range ids {
-		k, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.DeleteArchivedTempRoom(ctx, id) })
+		k, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) (int64, error) {
+			// room_id of its meetings goes NULL with the room: none of them may ask for a new
+			// own room then (ADR-0112).
+			if err := guarded.ClearRoomEventsTempRoom(ctx, &id); err != nil {
+				return 0, err
+			}
+			return guarded.DeleteArchivedTempRoom(ctx, id)
+		})
 		if err != nil {
 			return n, err
 		}

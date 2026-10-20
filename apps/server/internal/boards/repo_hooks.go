@@ -88,12 +88,10 @@ func providerProto(s string) v1.GitProvider {
 	return v1.GitProvider_GIT_PROVIDER_UNSPECIFIED
 }
 
-// repoBoard resolves the board of a Git settings route: people with MANAGE_BOARD on it and
-// MANAGE_INTEGRATIONS of the workspace (the secret and an inbound channel are integrations).
+// repoBoard resolves the board of a Git settings route: MANAGE_BOARD on it and
+// MANAGE_INTEGRATIONS of the workspace (the secret and an inbound channel are integrations);
+// bots by the same bits (ADR-0109).
 func (s *Service) repoBoard(r *http.Request, write bool) (uuid.UUID, perm.BoardAccess, error) {
-	if isBot(r) {
-		return uuid.Nil, perm.BoardAccess{}, httpx.Forbidden("bots cannot manage Git webhooks")
-	}
 	if s.repo == nil {
 		return uuid.Nil, perm.BoardAccess{}, httpx.Unavailable(nil)
 	}

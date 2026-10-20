@@ -1,5 +1,5 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Maximize2, MessageCircle, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX } from 'lucide-react';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import { Check, ChevronDown, Maximize2, MessageCircle, Mic, MicOff, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
@@ -240,6 +240,7 @@ function FullscreenView({
         </span>
         {quality ? <span className="shrink-0 text-[12px] font-medium text-white/80">{quality}</span> : null}
         <span className="flex-1" />
+        <OverlayMic />
         {stream.local ? null : <VolumeControl stream={stream} />}
         <button
           type="button"
@@ -323,6 +324,26 @@ function LiveBadge(): ReactNode {
 }
 
 /** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
+/** The mic on the full-screen / pop-out bar (CBF-4): same VoiceService call, a Tip like its neighbours. */
+function OverlayMic(): ReactNode {
+  const inVoice = useVoice((s) => s.roomId !== null);
+  const muted = useVoice((s) => s.muted);
+  const label = useVoice((s) => (s.serverMuted ? t('voiceUi.serverMuted') : s.muted ? t('voice.unmute') : t('voice.mute')));
+  if (!inVoice) return null;
+  return (
+    <IconButton
+      size="sm"
+      label={label}
+      className={cx(overlayBtn, muted && 'bg-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_85%,white)]')}
+      onClick={() => voice.toggleMute()}
+      data-testid="stream-mic"
+      data-muted={muted ? 'true' : 'false'}
+    >
+      {muted ? <MicOff className="size-4" aria-hidden /> : <Mic className="size-4" aria-hidden />}
+    </IconButton>
+  );
+}
+
 function StreamerChip({ stream, wsId, size = 'md' }: { stream: RemoteStream; wsId: string | null; size?: 'sm' | 'md' }): ReactNode {
   const name = useMemberName(wsId, stream.userId);
   const avatar = useWorkspaces((s) => s.users[stream.userId]?.avatarFileId);

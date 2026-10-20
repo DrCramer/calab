@@ -303,7 +303,7 @@ export const enBilling: DictShape<typeof ruBilling> = {
   'billing.err.quoteExpired': 'The quote is outdated — showing a new one.',
   'billing.err.revision': 'The account changed — showing a new quote.',
   'billing.err.reconciling': 'Payments are being reconciled. Try again in a minute.',
-  'billing.err.pending': 'A payment is still in progress. Wait for its result.',
+  'billing.err.pending': 'The previous charge is still being processed. Wait a minute and try again.',
   'billing.err.unknown': 'The result of the last payment is not known yet. Try later.',
   'billing.err.incompatible': 'Not possible right now. Pay the debt first.',
   'billing.err.priceConfirm': 'The price changed — the new one needs a confirmation.',

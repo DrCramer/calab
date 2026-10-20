@@ -46,18 +46,27 @@ export const routeGroup = (path: string): string => GROUP_RULES.find(([re]) => r
 
 const ORDER: Record<string, number> = { GET: 0, POST: 1, PUT: 2, PATCH: 3, DELETE: 4, OPTIONS: 5, '*': 6 };
 
-/** Parses the `botRoutes` map literal of botroutes.go. Throws when the map is missing or empty. */
+/**
+ * Parses the `botRouteGroups` table of botroutes.go: sections `{access: botX, …, routes: []string{`
+ * with one quoted route per line. Throws when the table is missing or empty.
+ */
 export function parseBotRoutes(source: string): BotRoute[] {
-  const start = source.indexOf('var botRoutes = map[string]botAccess{');
-  if (start < 0) throw new Error('botroutes.go: `var botRoutes = map[string]botAccess{` not found');
-  const end = source.indexOf('\n}', start);
+  const start = source.indexOf('var botRouteGroups = []botRouteGroup{');
+  if (start < 0) throw new Error('botroutes.go: `var botRouteGroups = []botRouteGroup{` not found');
+  const end = source.indexOf('\n}\n', start);
   const body = source.slice(start, end < 0 ? undefined : end);
   const routes: BotRoute[] = [];
-  const line = /^\s*"(?:([A-Z]+) )?([^"\s]+)":\s*(botAllow|botDeny|botPublic)\s*,/gm;
-  for (const m of body.matchAll(line)) {
-    const [, method = '*', path = '', access = ''] = m;
-    const decision = DECISIONS[access];
-    if (decision === undefined) continue;
+  let decision: Decision | undefined;
+  for (const text of body.split('\n')) {
+    const access = /\baccess:\s*(botAllow|botDeny|botPublic)\b/.exec(text);
+    if (access) {
+      decision = DECISIONS[access[1] ?? ''];
+      continue;
+    }
+    const m = /^\s*"(?:([A-Z]+) )?([^"\s]+)",\s*(?:\/\/.*)?$/.exec(text);
+    if (!m) continue;
+    if (decision === undefined) throw new Error(`botroutes.go: route ${m[0].trim()} outside a group`);
+    const [, method = '*', path = ''] = m;
     routes.push({ method, path, decision, group: routeGroup(path) });
   }
   if (routes.length === 0) throw new Error('botroutes.go: no routes parsed');

@@ -582,6 +582,10 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if tp.permanent && !acc.Suspended { // its links stop following its end (ADR-0107)
+		l := h.linkPolicyOf(r, acc)
+		tp.links = &l
+	}
 	if req.CategoryId != nil {
 		p.SetCategory = true
 		if p.CategoryID, err = parseCategory(r.Context(), h.db.Q, acc.WorkspaceID, req.GetCategoryId()); err != nil {

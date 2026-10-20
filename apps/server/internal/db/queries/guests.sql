@@ -47,9 +47,22 @@ INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
--- name: SetRoomInviteApproval :one
--- require_approval NULL = as the room (ADR-0040).
-UPDATE room_invites SET require_approval = sqlc.narg('require_approval')
+-- name: GetRoomInviteForUpdate :one
+-- An active link of the room, locked (PATCH, ADR-0107).
+SELECT * FROM room_invites
+WHERE id = $1 AND room_id = $2 AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())
+  AND (max_uses = 0 OR uses < max_uses)
+FOR UPDATE;
+
+-- name: UpdateRoomInvite :one
+-- PATCH of a link (ADR-0040, ADR-0107): the fields whose set_* flag is on change.
+-- require_approval NULL = as the room; expires_at NULL = never.
+UPDATE room_invites SET
+    require_approval = CASE WHEN sqlc.arg('set_approval')::boolean THEN sqlc.narg('require_approval') ELSE require_approval END,
+    expires_at = CASE WHEN sqlc.arg('set_expiry')::boolean THEN sqlc.narg('expires_at') ELSE expires_at END,
+    max_uses = coalesce(sqlc.narg('max_uses'), max_uses),
+    allow_bits = coalesce(sqlc.narg('allow_bits'), allow_bits)
 WHERE id = sqlc.arg('id') AND room_id = sqlc.arg('room_id') AND revoked_at IS NULL
 RETURNING *;
 

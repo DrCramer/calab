@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBottomPin, initialFeedLocation, lastRowChange, type FeedGeometry } from './lastRowPin';
+import { createBottomPin, initialFeedLocation, isOwnSend, type FeedGeometry } from './lastRowPin';
 
 /** A feed of `content` px in a scroller of `view` px, scrolled to `top`. */
 const g = (content: number, view: number, top: number): FeedGeometry => ({ scrollHeight: content, clientHeight: view, scrollTop: top });
@@ -65,7 +65,7 @@ describe('createBottomPin (docs/09 #149)', () => {
 
   it('a smooth scroll down still on its way keeps the pin', () => {
     const pin = stuckAtBottom();
-    pin.scrolled(g(2080, 600, 1420)); // a new message, followOutput animating down
+    pin.scrolled(g(2080, 600, 1420)); // a smooth scroll down («to bottom») still on its way
     expect(pin.resized(g(2300, 600, 1440))).toBe(true); // its image loads mid-animation
   });
 
@@ -147,7 +147,7 @@ describe('createBottomPin: my own send sticks (stick())', () => {
     pin.scrolled(g(2000, 600, 1400));
     pin.scrolled(g(2000, 600, 300)); // far up in history
     pin.stick(); // my pending row appeared
-    // followOutput('auto') landed on the estimate, 40 px short of the real bottom: still pinned.
+    // The pin's first scroll landed on the estimate, 40 px short of the real bottom: still pinned.
     pin.scrolled(g(2060, 600, 1420));
     expect(pin.resized(g(2100, 600, 1420))).toBe(true);
     pin.scrolled(atEnd(2100, 600));
@@ -223,29 +223,55 @@ describe('createBottomPin: my own send sticks (stick())', () => {
   });
 });
 
-describe('lastRowChange', () => {
-  const row = (key: string, own: boolean, pending: boolean, nonce = '') => ({ key, own, pending, nonce });
+describe('isOwnSend', () => {
+  const row = (key: string, own: boolean, pending: boolean) => ({ key, own, pending });
 
   it('my optimistic row appearing is a send', () => {
-    expect(lastRowChange('m1', row('local:n1', true, true, 'n1'))).toBe('send');
-    expect(lastRowChange('local:n1', row('local:n2', true, true, 'n2'))).toBe('send'); // two sends in a row
+    expect(isOwnSend(row('local:n1', true, true))).toBe(true);
   });
 
-  it('the server echo of my last row is an echo, not fresh', () => {
-    expect(lastRowChange('local:n1', row('m2', true, false, 'n1'))).toBe('echo');
+  it('the server echo of mine, someone else’s message, mine from another device are not', () => {
+    expect(isOwnSend(row('m2', true, false))).toBe(false);
+    expect(isOwnSend(row('m2', false, false))).toBe(false);
+    expect(isOwnSend(row('local:n1', true, false))).toBe(false); // failed / already confirmed
+  });
+});
+
+// CBF-13 «Сообщения в чате не сразу видно»: the pin is the only writer of «to the bottom», its
+// first report after a new row included (it used to be left to Virtuoso's smooth followOutput,
+// which aimed at the row's estimated height and left a taller row under the composer).
+describe('createBottomPin: someone else’s new message (CBF-13)', () => {
+  it('a new row appended at the bottom pins on its first report, then through its real height', () => {
+    const pin = stuckAtBottom();
+    expect(pin.resized(g(2092, 600, 1400))).toBe(true); // the row rendered (Virtuoso's estimate)
+    pin.scrolled(atEnd(2092, 600));
+    expect(pin.resized(g(2310, 600, 1492))).toBe(true); // measured: twelve lines
+    pin.scrolled(atEnd(2310, 600));
+    expect(pin.resized(g(2510, 600, 1710))).toBe(true); // its link preview arrived
   });
 
-  it('someone else’s new message stays fresh (left to the smooth follow)', () => {
-    expect(lastRowChange('m1', row('m2', false, false, 'x9'))).toBe('fresh');
-    expect(lastRowChange('m1', row('m2', false, false))).toBe('fresh');
+  it('several rows before our scroll landed: every report pins to the latest bottom', () => {
+    const pin = stuckAtBottom();
+    expect(pin.resized(g(2100, 600, 1400))).toBe(true);
+    expect(pin.resized(g(2300, 600, 1400))).toBe(true);
   });
 
-  it('my own message from another device (already sent) is fresh', () => {
-    expect(lastRowChange('m1', row('m2', true, false, 'n7'))).toBe('fresh');
+  it('the composer growing and a message arriving together pin', () => {
+    const pin = stuckAtBottom();
+    expect(pin.resized(g(2100, 480, 1400))).toBe(true);
   });
 
-  it('a removed last row exposing an older one is fresh', () => {
-    expect(lastRowChange('m2', row('m1', false, false))).toBe('fresh');
+  it('a hidden window gets one report on its return: still stuck, it pins', () => {
+    const pin = stuckAtBottom();
+    expect(pin.resized(g(4800, 600, 1400))).toBe(true);
+  });
+
+  it('scrolled up: new rows, previews and the composer never move the reader', () => {
+    const pin = stuckAtBottom();
+    pin.scrolled(g(2000, 600, 1200));
+    expect(pin.resized(g(2092, 600, 1200))).toBe(false);
+    expect(pin.resized(g(2400, 600, 1200))).toBe(false);
+    expect(pin.resized(g(2400, 480, 1200))).toBe(false);
   });
 });
 
@@ -279,14 +305,10 @@ describe('createBottomPin: an unfold the reader clicked lets go (release())', ()
 
 describe('initialFeedLocation', () => {
   it('no unread: the last row aligned by its bottom (a tall last message is not cut off), stuck', () => {
-    expect(initialFeedLocation(-1, false)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: true });
-  });
-
-  it('first unread: its top under the banner, not stuck (opening must not mark it read)', () => {
-    expect(initialFeedLocation(12, false)).toEqual({ location: { index: 12, align: 'start', offset: -40 }, stuck: false });
+    expect(initialFeedLocation(false)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: true });
   });
 
   it('a window away from the present opens at its last row but does not stick', () => {
-    expect(initialFeedLocation(-1, true).stuck).toBe(false);
+    expect(initialFeedLocation(true)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: false });
   });
 });

@@ -2,7 +2,7 @@ import { TriangleAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { isMailError, type MailAccount, type MailCertInfo } from '../../../shared/mail';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Field, Modal, PasswordInput, Row, Segmented, Select, Toggle } from '../../components/ui';
+import { Button, Card, Field, Modal, PasswordInput, Row, Segmented, Select, TextArea, Toggle } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { mailApi, updateSettings, useMail } from '../../stores/mail';
@@ -251,7 +251,7 @@ function SignatureField({ id, value }: { id: string; value: string }): ReactNode
     setV(value);
   }
   return (
-    <textarea
+    <TextArea
       value={v}
       rows={3}
       maxLength={2000}
@@ -262,7 +262,7 @@ function SignatureField({ id, value }: { id: string; value: string }): ReactNode
         if (v === value) return;
         void updateSettings({ signatures: { ...useMail.getState().settings.signatures, [id]: v } });
       }}
-      className="selectable w-60 resize-y rounded-[8px] border border-line bg-elev px-2 py-1 text-body text-fg shadow-[var(--shadow-card)]"
+      className="w-60 py-1"
     />
   );
 }

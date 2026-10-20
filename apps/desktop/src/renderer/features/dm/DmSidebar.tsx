@@ -1,4 +1,4 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

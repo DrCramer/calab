@@ -1,6 +1,6 @@
 import { localAuthority } from '../identity/model';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { PresenceStatus } from '@calaba/protocol';
 import { Check, ChevronRight, Pencil, Smile, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';

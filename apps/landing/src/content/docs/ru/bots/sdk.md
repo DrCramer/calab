@@ -87,6 +87,7 @@ console.log(`${ready.me?.user?.displayName} в сети, пространств:
 | `invites.list` · `create` · `delete` · `email(wsId, address)` · `listEmail` · `deleteEmail` | приглашения |
 | `badges.list` · `create` · `update` · `delete` · `set(wsId, userId, badgeId)` | бейджи |
 | `recording.start(roomId)` · `recording.stop(roomId)` | запись встречи |
+| `asMember(userId)` | тот же бот [от имени участника](./auth#от-имени-участника), который сам разрешил (только REST) |
 | `asOwner()` · `tasks.vote(taskId, 'approve' \| 'reject' \| 'withdraw', comment?)` | тот же бот [от имени владельца](./auth#от-имени-владельца) (только REST) · голос владельца в согласовании |
 | `fetchMe()` · `updateProfile({ displayName?, description? })` | профиль бота |
 | `rest.request(method, path, { json?, query?, form?, onBehalfOfOwner? })` · `rest.call(Schema, …)` | любой другой разрешённый маршрут |

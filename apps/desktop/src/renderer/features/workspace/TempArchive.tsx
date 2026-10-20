@@ -3,7 +3,7 @@ import type { Room } from '@calaba/protocol';
 import { Archive, Timer } from 'lucide-react';
 import { memo, useEffect, type ReactNode } from 'react';
 import { PhoneHeader } from '../../components/PhoneHeader';
-import { Button, Empty, Modal, Spinner } from '../../components/ui';
+import { Button, CountBadge, Empty, Modal, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { mayArrangeRooms, mayManageRoom } from '../../lib/permissions';
@@ -12,6 +12,8 @@ import { useArchiveView } from '../../stores/archiveView';
 import { myUserId } from '../../stores/session';
 import { useTempArchive } from '../../stores/tempArchive';
 import { useUi } from '../../stores/ui';
+import { ROW_HOVER } from '../shell/ColumnHeader';
+import { ROOM_ROW_BOX, ROOM_ROW_BUTTON } from '../shell/roomRowStyle';
 import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 
 /**
@@ -32,18 +34,43 @@ export function useArchiveCount(workspaceId: string, enabled: boolean): number {
   return useTempArchive((s) => s.byWs[workspaceId]?.length ?? 0);
 }
 
-/** «Архив · N» — a small quiet button at the end of the «Временные» group. */
-export const TempArchiveButton = memo(function TempArchiveButton({ workspaceId, n }: { workspaceId: string; n: number }): ReactNode {
+/**
+ * «Архив · N» — the last row of the «Временные» group, built from the room row's own classes
+ * (features/shell/roomRowStyle): same height, indent, icon slot, type and hover; the count sits on
+ * the right like a room's counter. On the phone it is a list row like the room rows there.
+ */
+export const TempArchiveButton = memo(function TempArchiveButton({ workspaceId, n, phone = false }: { workspaceId: string; n: number; phone?: boolean }): ReactNode {
+  const open = (): void => useUi.getState().openDialog({ kind: 'temp-archive', workspaceId });
+  const label = t('temp.archiveButton', { n });
+  if (phone) {
+    return (
+      <button
+        type="button"
+        onClick={open}
+        aria-label={label}
+        className="flex h-14 w-full min-w-0 select-none items-center gap-3 px-3 text-left active:bg-hover"
+        data-testid="temp-archive-button"
+      >
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-fill)] text-muted">
+          <Archive className="size-5" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-list text-fg">{t('temp.archiveName')}</span>
+        <CountBadge count={n} tone="neutral" phone aria-hidden />
+      </button>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={() => useUi.getState().openDialog({ kind: 'temp-archive', workspaceId })}
-      className="mb-1 ml-2 flex h-7 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-caption font-medium text-muted transition-colors duration-[var(--motion-fast)] hover:bg-row-hover hover:text-fg mobile:ml-3 mobile:h-9"
-      data-testid="temp-archive-button"
-    >
-      <Archive className="size-3.5" aria-hidden />
-      {t('temp.archiveButton', { n })}
-    </button>
+    <div className={cx(ROOM_ROW_BOX, ROW_HOVER, 'mt-px')}>
+      <button type="button" onClick={open} aria-label={label} className={cx(ROOM_ROW_BUTTON, 'text-muted group-hover/row:text-fg')} data-testid="temp-archive-button">
+        <span className="grid w-[18px] shrink-0 place-items-center">
+          <Archive className="size-4" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{t('temp.archiveName')}</span>
+      </button>
+      <span className="flex shrink-0 items-center pr-2.5">
+        <CountBadge count={n} tone="neutral" aria-hidden />
+      </span>
+    </div>
   );
 });
 

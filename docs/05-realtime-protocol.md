@@ -125,6 +125,7 @@ BOARD_CREATE / BOARD_UPDATE   { board } — доска (ADR-0042) с Board.permi
 BOARD_DELETE                  { workspace_id, board_id, purged } — в архив (purged false) или удалена; или доска перестала быть видна
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
                               notice.kind (ADR-0089) += UNASSIGNED, WATCHER_ADDED, DUE_SOON, OVERDUE (адресные; actor_id пуст у DUE_SOON / OVERDUE),
+                              APPROVED_ON_BEHALF (ADR-0108, обязательное: руководитель доски согласовал за получателя),
                               DUE_CHANGED, PRIORITY, MILESTONE, MOVED, EDITED, ATTACHMENT, ARCHIVED (подписчикам); notice.due_on "YYYY-MM-DD"
                               (DUE_SOON / OVERDUE / DUE_CHANGED, "" = срок снят), notice.days_left (DUE_SOON 1 / 0, OVERDUE −1), notice.text —
                               детали (MILESTONE — имя вехи, MOVED — имя доски, EDITED — title | description, ATTACHMENT — имя файла).
@@ -535,7 +536,7 @@ POST   /api/rooms/{id}/invites                 CreateRoomInviteRequest → 201 R
 GET    /api/rooms/{id}/invites                 активные ссылки;  DELETE /api/rooms/{id}/invites/{inviteId} — отзыв
 GET    /api/room-invites/{code}                превью для страницы /r/<code> (без auth)
 POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me][, admission]}
-PATCH  /api/rooms/{id}/invites/{inviteId}      UpdateRoomInviteRequest{requireApproval | inheritApproval} → {invite}   (MANAGE_ROOM)
+PATCH  /api/rooms/{id}/invites/{inviteId}      UpdateRoomInviteRequest{requireApproval | inheritApproval, expiresInSeconds?, maxUses?, allow*?} → {invite}   (одобрение — INVITE_GUESTS; срок/лимит/права — права создания такой ссылки, ADR-0107)
 GET    /api/rooms/{id}/admissions              ожидающие стуки (ADR-0040): MANAGE_ROOM — все, автор ссылки — по своим ссылкам
 POST   /api/rooms/{id}/admissions/{userId}     DecideRoomAdmissionRequest{status ADMITTED|DECLINED, displayName?, badgeId?} → {admission}
 DELETE /api/rooms/{id}/admissions/me           гость отменяет ожидание → 204

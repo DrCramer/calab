@@ -165,7 +165,7 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 #### Windows-клиент self-host форка
 
 Форк `DrCramer/calab` собирает только Windows-клиент в `.github/workflows/windows-selfhost-release.yml`.
-Сборка запускается тегом `win-vX.Y.Z` (например, `win-v3.7.1`) или вручную через Actions с версией.
+Сборка запускается тегом `win-vX.Y.Z` (например, `win-v3.12.0`) или вручную через Actions с версией.
 Workflow проверяет native-модуль и update manifest, затем создаёт черновик GitHub Release с тегом
 `vX.Y.Z`. После Windows smoke-проверки опубликовать релиз:
 
@@ -175,7 +175,7 @@ gh release edit vX.Y.Z --repo DrCramer/calab --draft=false --latest
 
 В клиент вшиты `MAIN_VITE_UPDATE_GITHUB=DrCramer/calab`, generic fallback на GitHub `latest/download`
 и адрес self-host API. В `%AppData%` менять `updateUrl` для автообновления не требуется: источник
-обновлений закреплён в приложении во время сборки (ADR-0108). Публикуемые релизы должны быть
+обновлений закреплён в приложении во время сборки (ADR-0114). Публикуемые релизы должны быть
 публичными; черновики updater не видит.
 
 Все три ОС собираются с одного Mac (Apple Silicon): `apps/desktop/scripts/build-release.sh [mac] [linux] [win]` (без аргументов — все). На Apple Silicon Linux/Windows собираются на x86_64-хосте: `BUILD_DOCKER_HOST=ssh://root@141.105.69.177` (стенд, согласовано; без эмуляции, в разы быстрее и не забивает диск мака образом 4.7 GB).

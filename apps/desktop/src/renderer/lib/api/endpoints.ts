@@ -52,6 +52,8 @@ import {
   CreateInviteRequestSchema,
   CreateRoomInviteRequestSchema,
   CreateRoomInviteResponseSchema,
+  UpdateRoomInviteRequestSchema,
+  UpdateRoomInviteResponseSchema,
   GetRoomInviteResponseSchema,
   JoinRoomInviteRequestSchema,
   JoinRoomInviteResponseSchema,
@@ -202,6 +204,8 @@ import {
   ReissueBotTokenResponseSchema,
   UpdateBotRequestSchema,
   UpdateBotResponseSchema,
+  GetBotResponseSchema,
+  InviteBotDelegationRequestSchema,
   SetBotAvatarResponseSchema,
   SearchResponseSchema,
   type StickerPackResponse,
@@ -490,6 +494,9 @@ export const api = {
     create: (roomId: string, init: MessageInitShape<typeof CreateRoomInviteRequestSchema>) =>
       call('POST', `/api/rooms/${roomId}/invites`, CreateRoomInviteResponseSchema, body(CreateRoomInviteRequestSchema, init)),
     revoke: (roomId: string, inviteId: string) => callEmpty('DELETE', `/api/rooms/${roomId}/invites/${inviteId}`),
+    /** Expiry, uses, rights (ADR-0107); the approval has admissionApi.setLinkApproval. */
+    update: (roomId: string, inviteId: string, init: MessageInitShape<typeof UpdateRoomInviteRequestSchema>) =>
+      call('PATCH', `/api/rooms/${roomId}/invites/${inviteId}`, UpdateRoomInviteResponseSchema, body(UpdateRoomInviteRequestSchema, init)),
     /** Public preview (no auth needed). */
     get: (code: string) => call('GET', `/api/room-invites/${encodeURIComponent(code)}`, GetRoomInviteResponseSchema),
     /** Signed in: joins as the current user (becomes a guest of the workspace if not a member). */
@@ -576,6 +583,21 @@ export const api = {
     /** {bot}: its home workspace; acts_as_owner (ADR-0106) — the bot's owner only (403 ON_BEHALF_OWNER_ONLY). */
     update: (workspaceId: string, botUserId: string, init: MessageInitShape<typeof UpdateBotRequestSchema>) =>
       call('PATCH', `/api/workspaces/${workspaceId}/bots/${botUserId}`, UpdateBotResponseSchema, body(UpdateBotRequestSchema, init)),
+    /** ADR-0111: the bot in this workspace and whom it may act for (consents, pending invitations). */
+    delegations: (workspaceId: string, botUserId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/bots/${botUserId}`, GetBotResponseSchema, undefined, signal),
+    /** My own consent (403 ON_BEHALF_SELF_ONLY for anyone else's id). */
+    grantDelegation: (workspaceId: string, botUserId: string, me: string) =>
+      call('PUT', `/api/workspaces/${workspaceId}/bots/${botUserId}/delegations/${me}`, GetBotResponseSchema),
+    /** My own revocation, effective at once. */
+    revokeDelegation: (workspaceId: string, botUserId: string, me: string) =>
+      call('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}/delegations/${me}`, GetBotResponseSchema),
+    /** The bot DMs each member a suggestion naming me, with «Принять» / «Отказаться». */
+    inviteDelegation: (workspaceId: string, botUserId: string, userIds: string[]) =>
+      call('POST', `/api/workspaces/${workspaceId}/bots/${botUserId}/delegation-invites`, GetBotResponseSchema, body(InviteBotDelegationRequestSchema, { userIds })),
+    /** Cancels a pending invitation: mine as the inviter, or declines mine as the invitee. */
+    cancelDelegationInvite: (workspaceId: string, botUserId: string, userId: string) =>
+      call('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}/delegation-invites/${userId}`, GetBotResponseSchema),
     /** 204: at home the bot is deleted; elsewhere it only leaves the workspace. */
     remove: (workspaceId: string, botUserId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}`),
     /** {bot, token}: the old token stops working at once. */

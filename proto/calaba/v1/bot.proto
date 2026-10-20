@@ -97,6 +97,47 @@ message UpdateBotResponse {
   Bot bot = 1;
 }
 
+// ADR-0111: a member's own consent for the bot to act on their behalf in a workspace (REST
+// requests of the bot with the header "Calab-On-Behalf: <user id>"); since = when it was given.
+message BotDelegation {
+  string user_id = 1;
+  google.protobuf.Timestamp since = 2;
+}
+
+// ADR-0111: a pending suggestion of invited_by to user_id; the bot's DM to user_id carries the
+// buttons «Принять» / «Отказаться» (only the invitee's own click accepts).
+message BotDelegationInvite {
+  string user_id = 1;
+  string invited_by = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// GET /api/workspaces/{id}/bots/{botId}: a bot that is a member of the workspace, for its
+// members (not guests) and for the bot itself. bot is its card (with the managed fields for
+// the bot, its owner and MANAGE_BOTS of its home workspace); on_behalf_user_ids = the members
+// it may act for in this workspace now (ADR-0111), with their consents and the pending
+// invitations. Also the answer of the delegation routes below.
+//
+// PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}: the caller's own consent;
+// DELETE: its revocation, effective at once. userId must be the caller (403 FORBIDDEN reason
+// ON_BEHALF_SELF_ONLY: nobody, admins and the bot's owner included, gives or takes it for
+// another member). People with a non-guest role only; bots and requests on behalf get 403.
+// POST /api/workspaces/{id}/bots/{botId}/delegation-invites (InviteBotDelegationRequest): the
+// bot DMs each listed member a suggestion naming the caller. DELETE
+// …/delegation-invites/{userId}: cancels a pending invitation, by its inviter or the invitee.
+message GetBotResponse {
+  Bot bot = 1;
+  repeated string on_behalf_user_ids = 2;
+  repeated BotDelegation delegations = 3;
+  repeated BotDelegationInvite invites = 4;
+}
+
+// At most 20 members of the workspace with a non-guest role, people, not the caller. Members
+// who already consented or are invited are skipped.
+message InviteBotDelegationRequest {
+  repeated string user_ids = 1;
+}
+
 // POST /api/workspaces/{id}/bots/add (MANAGE_BOTS of that workspace): adds an existing
 // bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
 message AddBotRequest {

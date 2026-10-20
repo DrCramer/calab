@@ -1685,6 +1685,12 @@ test('m-disk-root', async ({ page }) => {
   await expect(root.getByTestId('disk-row')).toHaveCount(9);
   await expect(root.getByTestId('disk-row').first()).toContainText('Дизайн');
   await checkpoint(page, 'm-disk-root');
+  // CBF-20: a file without a viewer opens its card (a sheet), not a download.
+  await root.getByTestId('disk-row').filter({ hasText: 'Бюджет 2026.xlsx' }).getByTestId('disk-row-open').tap();
+  await expect(page.getByTestId('disk-file-card')).toBeVisible();
+  await checkpoint(page, 'm-disk-file-card', { snapshot: false });
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('disk-file-card')).toHaveCount(0);
   // Tiles: two columns.
   await root.getByTestId('phone-disk-more').tap();
   await page.getByTestId('phone-disk-view-tiles').tap();
@@ -1708,6 +1714,15 @@ test('m-disk-folder', async ({ page }) => {
   await expect(folder.getByTestId('phone-header')).toContainText('Проекты');
   await expect(folder.getByTestId('disk-row')).toHaveCount(1);
   await checkpoint(page, 'm-disk-folder');
+  // CBF-22: a text file opens the read-only viewer (tap), the type plates read in the rows.
+  await folder.getByTestId('disk-row').getByTestId('disk-row-open').tap();
+  await expect(folder.getByTestId('disk-row')).toHaveCount(4);
+  await checkpoint(page, 'm-disk-type-icons');
+  await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-row-open').tap();
+  await expect(page.getByTestId('disk-view-markdown')).toBeVisible();
+  await checkpoint(page, 'm-disk-preview-text');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('phone-back').tap();
   await page.getByTestId('phone-back').tap();
   await expect(page.getByTestId('phone-disk')).toBeVisible();
 });

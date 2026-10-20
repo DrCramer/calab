@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { ChevronRight, CloudOff, Ellipsis, Eye, FileText, FileX, ImagePlus, Plus, Share2, Smile, Trash2, X } from 'lucide-react';
 import { memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -100,7 +100,7 @@ function WikiBar({ workspaceId, pageId }: { workspaceId: string; pageId: string 
       {pageId ? <Crumbs workspaceId={workspaceId} pageId={pageId} clear={reconnecting} /> : <h1 className="px-1.5 text-headline font-semibold">{t('wiki.section')}</h1>}
       <span className="flex-1" />
       {pageId && !(reconnecting && sync === 'offline') && (sync === 'offline' || sync === 'readonly') ? (
-        <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-fill)] px-2.5 text-caption text-muted" role="status" data-testid="wiki-sync-pill">
+        <span className="flex h-(--control-h-bar) shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-fill)] px-2.5 text-caption text-muted" role="status" data-testid="wiki-sync-pill">
           {sync === 'offline' ? <CloudOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
           {sync === 'offline' ? t('wiki.sync.offline') : t('wiki.sync.readonly')}
         </span>
@@ -144,7 +144,7 @@ function CrumbButton({ workspaceId, id }: { workspaceId: string; id: string }): 
     <button
       type="button"
       onClick={() => openWikiPage(workspaceId, id)}
-      className="flex h-8 min-w-0 max-w-48 items-center gap-1 truncate rounded-[var(--radius-bar)] px-1.5 text-body text-muted hover:bg-hover hover:text-fg"
+      className="flex h-(--control-h-bar) min-w-0 max-w-48 items-center gap-1 truncate rounded-[var(--radius-control)] px-2.5 text-body text-muted hover:bg-hover hover:text-fg"
       data-testid="wiki-crumb"
     >
       {icon ? <span aria-hidden>{icon}</span> : null}

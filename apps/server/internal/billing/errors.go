@@ -16,7 +16,7 @@ const (
 	ReasonQuoteExpired               = "BILLING_QUOTE_EXPIRED"
 	ReasonRevisionConflict           = "BILLING_REVISION_CONFLICT"
 	ReasonReconciling                = "BILLING_RECONCILING"
-	ReasonPaymentPending             = "BILLING_PAYMENT_PENDING" // an open checkout / attempt exists
+	ReasonPaymentPending             = "BILLING_PAYMENT_PENDING" // a saved-card charge is in flight (hosted checkouts never block)
 	ReasonPaymentUnknown             = "BILLING_PAYMENT_UNKNOWN"
 	ReasonChangeIncompatible         = "BILLING_CHANGE_INCOMPATIBLE" // e.g. upgrade with debt
 	ReasonPriceConfirmationRequired  = "BILLING_PRICE_CONFIRMATION_REQUIRED"

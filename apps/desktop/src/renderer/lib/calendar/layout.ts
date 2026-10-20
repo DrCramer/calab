@@ -63,3 +63,45 @@ export function layoutDay(items: readonly DayItem[], dayStart: number, dayEnd: n
   flush();
   return out;
 }
+
+export interface SpanItem {
+  key: string;
+  /** Columns (0-based day indexes of the week) the item shows on. */
+  days: readonly number[];
+}
+
+export interface SpanPlaced {
+  key: string;
+  /** First column and how many columns the bar covers. */
+  col: number;
+  span: number;
+  /** Row of the «весь день» band, 0-based. */
+  lane: number;
+}
+
+/**
+ * The week view's «весь день» band (Apple / Yandex Calendar): an all-day (or multi-day) item is one
+ * bar across its days; bars that share a day go into separate lanes, each taking the first lane
+ * free over all of its columns. Order: the earlier first, then the longer. Pure.
+ */
+export function layoutAllDay(items: readonly SpanItem[]): SpanPlaced[] {
+  const bars = items
+    .filter((it) => it.days.length > 0)
+    .map((it) => {
+      const col = Math.min(...it.days);
+      return { key: it.key, col, span: Math.max(...it.days) - col + 1 };
+    })
+    .sort((a, b) => a.col - b.col || b.span - a.span || (a.key < b.key ? -1 : 1));
+  const lanes: boolean[][] = [];
+  return bars.map((b) => {
+    let lane = lanes.findIndex((row) => !row.slice(b.col, b.col + b.span).some(Boolean));
+    if (lane < 0) {
+      lane = lanes.length;
+      lanes.push([]);
+    }
+    const row = lanes[lane] ?? [];
+    for (let c = b.col; c < b.col + b.span; c++) row[c] = true;
+    lanes[lane] = row;
+    return { ...b, lane };
+  });
+}

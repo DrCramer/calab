@@ -10,13 +10,17 @@ import { canWrite } from '../../lib/disk';
 import { loadListing, loadPath, moveItems, trashItems, uploadFiles } from '../../services/disk';
 import { useDisk, useDiskUploads } from '../../stores/disk';
 import { folderOf, useDiskUi } from '../../stores/diskUi';
+import { usePrefs } from '../../stores/prefs';
 import { myUserId } from '../../stores/session';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useFileDrop } from '../chat/useFileDrop';
 import { DiskBar } from './DiskBar';
+import { DiskColumns } from './DiskColumns';
 import { DiskListing, DragChip, DropTarget } from './DiskItems';
 import { DiskDialogs } from './Dialogs';
 import { UsageMeter } from './UsageMeter';
+import { VoiceControls } from '../shell/SelfPanel';
+import { useVoice } from '../../stores/voice';
 
 /**
  * «Диск» on the desktop (ADR-0094 §8, docs/08 «Диск»): one panel in place of the column and the
@@ -28,7 +32,9 @@ import { UsageMeter } from './UsageMeter';
  */
 export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode {
   const folderId = useDiskUi((s) => folderOf(s, workspaceId));
+  const inVoice = useVoice((s) => s.roomId !== null);
   const trash = useDiskUi((s) => !!s.trashOf[workspaceId]);
+  const columns = usePrefs((s) => s.diskView === 'columns');
   const roles = useMemberRoles(workspaceId, myUserId());
   const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
   const wsBits = diskPermissions(roles, { guest });
@@ -94,7 +100,7 @@ export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode 
             {...dropHandlers}
             data-testid="disk-area"
           >
-            <DiskListing workspaceId={workspaceId} folderId={folderId} trash={trash} />
+            {columns && !trash ? <DiskColumns workspaceId={workspaceId} folderId={folderId} /> : <DiskListing workspaceId={workspaceId} folderId={folderId} trash={trash} />}
             {dragging ? (
               <div className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-[var(--radius-panel)] border-2 border-dashed border-accent bg-[color-mix(in_srgb,var(--color-accent)_8%,transparent)]" data-testid="disk-drop">
                 <span className="flex items-center gap-2 rounded-full bg-[var(--color-popover-solid)] px-3 py-1.5 text-body font-medium shadow-[var(--shadow-popover)]">
@@ -114,6 +120,12 @@ export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode 
             >
               <UsageMeter workspaceId={workspaceId} compact />
             </button>
+            {/* No bottom island or column on the Disk: the self panel's mic and sound (CBF-4). */}
+            {inVoice ? (
+              <span className="ml-auto flex items-center gap-1.5">
+                <VoiceControls />
+              </span>
+            ) : null}
           </footer>
           <Uploads workspaceId={workspaceId} />
           <DiskDialogs workspaceId={workspaceId} />

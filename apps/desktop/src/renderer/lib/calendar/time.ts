@@ -80,6 +80,44 @@ export function monthGrid(month: string, first: 0 | 1 = weekStart()): string[] {
   return Array.from({ length: 42 }, (_, i) => dayKey(new Date(y, m - 1, 1 - lead + i)));
 }
 
+/** The 7 day keys of the week holding `day` (the week view), from the locale's first weekday. */
+export function weekDays(day: string, first: 0 | 1 = weekStart()): string[] {
+  const [y, m, d] = parts(day);
+  const lead = (new Date(y, m - 1, d).getDay() - first + 7) % 7;
+  return Array.from({ length: 7 }, (_, i) => dayKey(new Date(y, m - 1, d - lead + i)));
+}
+
+/** ISO 8601 week number of a day («43 нед.»): the week of its Thursday, weeks from Monday. */
+export function isoWeek(day: string): number {
+  const [y, m, d] = parts(day);
+  // UTC arithmetic: no DST hours in the day count.
+  const at = Date.UTC(y, m - 1, d);
+  const thursday = at + (3 - ((new Date(at).getUTCDay() + 6) % 7)) * 86_400_000;
+  const jan1 = Date.UTC(new Date(thursday).getUTCFullYear(), 0, 1);
+  return Math.floor((thursday - jan1) / 86_400_000 / 7) + 1;
+}
+
+/** «UTC+3», «UTC−4:30», «UTC» — the viewer's offset at an instant (the week view's time column). */
+export function utcOffsetLabel(at: number): string {
+  const off = -new Date(at).getTimezoneOffset();
+  if (off === 0) return 'UTC';
+  const abs = Math.abs(off);
+  const mm = abs % 60;
+  return `UTC${off > 0 ? '+' : '−'}${Math.floor(abs / 60)}${mm ? `:${pad(mm)}` : ''}`;
+}
+
+/**
+ * The week view's title: «Октябрь 2026 г.»; a week across two months — the locale's range form
+ * («октябрь – ноябрь 2026 г.»), first letter capitalised.
+ */
+export function formatWeekTitle(days: readonly string[]): string {
+  const a = days[0] ?? '';
+  const b = days[days.length - 1] ?? a;
+  if (monthOf(a) === monthOf(b)) return formatMonth(monthOf(a));
+  const s = dateTimeFormat({ month: 'long', year: 'numeric' }).formatRange(dayStart(a), dayStart(b));
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /** [from, to) of a month's grid: what one list request covers (≤ 62 days, ADR-0038 §3). */
 export function gridWindow(month: string, first: 0 | 1 = weekStart()): [number, number] {
   const g = monthGrid(month, first);

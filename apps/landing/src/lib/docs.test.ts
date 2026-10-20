@@ -71,8 +71,11 @@ describe('route tables', () => {
 });
 
 describe('gen-bot-routes', () => {
-  it('parses the map literal', () => {
-    const go = `var botRoutes = map[string]botAccess{\n\t"GET /api/boards/{id}": botAllow, // c\n\t// comment\n\t"/api/": botPublic,\n\t"POST /api/me/password": botDeny,\n}\n`;
+  it('parses the grouped table', () => {
+    const go = 'var botRouteGroups = []botRouteGroup{\n\t// comment\n' +
+      '\t{access: botAllow, why: "a \\"quoted\\" reason", routes: []string{\n\t\t"GET /api/boards/{id}",\n\t}},\n' +
+      '\t{access: botPublic, why: "x", routes: []string{\n\t\t"/api/", // c\n\t}},\n' +
+      '\t{access: botDeny, onBehalf: onBehalfClosed, why: "y", routes: []string{\n\t\t"POST /api/me/password",\n\t}},\n}\n';
     expect(parseBotRoutes(go)).toEqual([
       { method: 'GET', path: '/api/boards/{id}', decision: 'allow', group: 'boards' },
       { method: 'POST', path: '/api/me/password', decision: 'deny', group: 'profile' },

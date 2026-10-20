@@ -1,5 +1,5 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
 import { TaskField, TaskOp, WorkspaceRole, type Board } from '@calaba/protocol';
 import { ArrowLeft, Check, CircleSlash, Filter, ListFilter, UserX, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';

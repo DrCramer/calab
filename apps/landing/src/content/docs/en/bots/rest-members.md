@@ -52,6 +52,26 @@ A bot is a member of a workspace with the member role; roles give it more permis
 | `GET` | `/api/workspaces/{id}/invites/email` | Email invites → `{invites}` (`INVITE_MEMBERS`) |
 | `POST` | `/api/workspaces/{id}/invites/email` | Invite an address `{email, role?}` (`INVITE_MEMBERS`) |
 | `DELETE` | `/api/workspaces/{id}/invites/email/{inviteId}` | Revoke an email invite (`INVITE_MEMBERS`) |
+| `POST` | `/api/workspaces/{id}/achievements` | Add an achievement to the catalog (`MANAGE_WORKSPACE`) |
+| `PATCH` | `/api/achievements/{id}` | Change or archive an achievement (`MANAGE_WORKSPACE`) |
+| `DELETE` | `/api/achievements/{id}` | Delete an achievement (`MANAGE_WORKSPACE`) |
+| `POST` | `/api/workspaces/{id}/members/{userId}/achievements` | Grant an achievement `{achievementId, note, announce}` (`MANAGE_MEMBERS`; not to a bot or yourself) |
+| `DELETE` | `/api/workspaces/{id}/members/{userId}/achievements/{grantId}` | Revoke a grant (`MANAGE_MEMBERS`) |
+| `GET` | `/api/workspaces/{id}/apps` | The workspace's web apps → `{apps}` |
+| `POST` | `/api/workspaces/{id}/apps` | Add a web app (`MANAGE_INTEGRATIONS`) |
+| `PATCH` | `/api/workspace-apps/{appId}` | Change a web app (`MANAGE_INTEGRATIONS`) |
+| `DELETE` | `/api/workspace-apps/{appId}` | Delete a web app (`MANAGE_INTEGRATIONS`) |
+| `PUT` | `/api/workspace-apps/{appId}/position` | Order of web apps (`MANAGE_INTEGRATIONS`) |
+| `GET` | `/api/workspaces/{id}/backgrounds` | The workspace's camera backgrounds → `{backgrounds}` |
+| `POST` | `/api/workspaces/{id}/backgrounds` | Add a background from your own picture (`MANAGE_WORKSPACE`) |
+| `PATCH` | `/api/workspaces/{id}/backgrounds/{bgId}` | Rename a background (`MANAGE_WORKSPACE`) |
+| `DELETE` | `/api/workspaces/{id}/backgrounds/{bgId}` | Delete a background (`MANAGE_WORKSPACE`) |
+| `GET` | `/api/workspaces/{id}/integrations/gptunnel` | The GPTunneL pairing (no token) |
+| `POST` | `/api/workspaces/{id}/integrations/gptunnel` | Pair GPTunneL with a code `{code}` (`MANAGE_INTEGRATIONS`) |
+| `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | Unpair GPTunneL (`MANAGE_INTEGRATIONS`) |
+| `GET` | `/api/workspaces/{id}/sip` | Telephony settings, without the provider password (`MANAGE_INTEGRATIONS`) |
+| `PUT` | `/api/workspaces/{id}/sip` | Change telephony settings (`MANAGE_INTEGRATIONS`) |
+| `POST` | `/api/workspaces/{id}/sip/test` | Test the telephony connection (`MANAGE_INTEGRATIONS`) |
 <!-- /routes -->
 
 ### Not available to bots
@@ -59,8 +79,7 @@ A bot is a member of a workspace with the member role; roles give it more permis
 - Creating or deleting a workspace, discovering and joining open workspaces: `POST /api/workspaces`, `DELETE /api/workspaces/{id}`, `GET /api/workspaces/discover`, `POST /api/workspaces/{id}/join`, `POST /api/invites/{code}/join`.
 - Looking an account up by address and adding an account without its consent: `POST /api/workspaces/{id}/invites/lookup`, `POST /api/workspaces/{id}/members`.
 - The table of all members' birthdays and setting a birthday: `GET /api/workspaces/{id}/members/birthdays`, `PATCH /api/workspaces/{id}/members/{userId}/birthday`.
-- The achievement catalog and granting are for people: `POST /api/workspaces/{id}/achievements`, `PATCH · DELETE /api/achievements/{id}`, `POST /api/workspaces/{id}/members/{userId}/achievements`, `DELETE …/achievements/{grantId}`.
-- Workspace notifications (`PUT /api/workspaces/{id}/notifications`), workspace web apps (`/api/workspaces/{id}/apps`, `/api/workspace-apps/…`), private notes about users (`/api/users/{id}/note`).
+- Workspace notifications (`PUT /api/workspaces/{id}/notifications`), private notes about users (`/api/users/{id}/note`).
 - Billing, bot management, sign-in settings (SSO, directory, OAuth clients) — see [Errors and limits](./errors-limits).
 
 ## Members
@@ -133,7 +152,7 @@ There are also `bot.badges.list`, `bot.badges.update` and `bot.badges.delete`.
 
 ## Achievements
 
-A bot reads the catalog (`GET …/achievements`: archived ones carry `archivedAt`; the response has an `ETag`; the 512×512 WebP picture is `GET /api/files/{fileId}`) and a member's live achievements: `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, newest first. Only people grant and revoke achievements.
+A bot reads the catalog (`GET …/achievements`: archived ones carry `archivedAt`; the response has an `ETag`; the 512×512 WebP picture is `GET /api/files/{fileId}`) and a member's live achievements: `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, newest first. With `MANAGE_WORKSPACE` a bot keeps the catalog, with `MANAGE_MEMBERS` it grants and revokes achievements like a person (not to a bot or itself).
 
 ## Birthdays
 

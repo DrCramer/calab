@@ -126,6 +126,6 @@ export function launchMethod(userAgent: string): 'iframe' | 'location' {
 }
 
 /** The internal deep link for a web link page (never shown or copied: links are https, docs/09 #53). */
-export function deepLinkFor(kind: 'join' | 'r', code: string): string {
+export function deepLinkFor(kind: 'join' | 'r' | 't', code: string): string {
   return `calab://${kind}/${code}`;
 }

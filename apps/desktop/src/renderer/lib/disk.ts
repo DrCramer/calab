@@ -9,9 +9,12 @@ import { DISK_BITS, DiskActivityKind, DiskItemKind, type DiskActivity, type Disk
  */
 
 export type DiskSort = 'name' | 'updated' | 'size';
-export type DiskView = 'tiles' | 'list';
+export type DiskView = 'tiles' | 'list' | 'columns';
 export const DISK_SORTS: readonly DiskSort[] = ['name', 'updated', 'size'];
-export const DISK_VIEWS: readonly DiskView[] = ['tiles', 'list'];
+export const DISK_VIEWS: readonly DiskView[] = ['tiles', 'list', 'columns'];
+
+/** The phone has no columns (CBF-21): the view falls back to the list. */
+export const phoneDiskView = (v: DiskView): 'tiles' | 'list' => (v === 'columns' ? 'list' : v);
 
 export const isDiskSort = (v: unknown): v is DiskSort => typeof v === 'string' && (DISK_SORTS as readonly string[]).includes(v);
 export const isDiskView = (v: unknown): v is DiskView => typeof v === 'string' && (DISK_VIEWS as readonly string[]).includes(v);
@@ -72,6 +75,52 @@ export interface Crumb {
 }
 export function crumbs(rootName: string, path: readonly Pick<DiskItem, 'id' | 'name'>[]): Crumb[] {
   return [{ id: ROOT, name: rootName }, ...path.map((p) => ({ id: p.id, name: p.name }))];
+}
+
+// ---------------------------------------------------------------- columns view (CBF-21)
+
+/** The folders shown as columns, left to right: the root, then the open folder's ancestors and itself. */
+export function columnFolders(folderId: string, path: readonly Pick<DiskItem, 'id'>[] | undefined): string[] {
+  if (!folderId) return [ROOT];
+  // Until GET …/path is back, the open folder alone follows the root.
+  return [ROOT, ...(path && path.length ? path.map((p) => p.id) : [folderId])];
+}
+
+export interface NavColumn {
+  /** The folder whose listing the column shows. */
+  folder: string;
+  /** The shown (sorted, filtered) ids. */
+  ids: readonly string[];
+}
+
+export type ColumnKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight';
+
+/**
+ * Arrow keys over the columns, Finder-like: ↑/↓ move within the column of the cursor (`selected`)
+ * and stop at the ends; → goes into the selected folder (its column is the next one — the first
+ * row there); ← goes back to the folder of the cursor's column (it sits in the previous column;
+ * selecting it closes the deeper columns). Without a cursor any move picks the first row of the
+ * last column. Returns the id to select, or null when nothing moves.
+ */
+export function columnsNav(cols: readonly NavColumn[], selected: string | null, key: ColumnKey): string | null {
+  const last = cols[cols.length - 1];
+  if (!last) return null;
+  const c = selected ? cols.findIndex((x) => x.ids.includes(selected)) : -1;
+  const col = cols[c];
+  if (!selected || !col) return last.ids[0] ?? null;
+  const at = col.ids.indexOf(selected);
+  switch (key) {
+    case 'ArrowDown':
+      return col.ids[Math.min(at + 1, col.ids.length - 1)] ?? null;
+    case 'ArrowUp':
+      return col.ids[Math.max(at - 1, 0)] ?? null;
+    case 'ArrowRight': {
+      const next = cols[c + 1];
+      return next && next.folder === selected ? (next.ids[0] ?? null) : null;
+    }
+    case 'ArrowLeft':
+      return c > 0 ? col.folder : null;
+  }
 }
 
 /** What a file looks like in a tile / row without a thumbnail. */

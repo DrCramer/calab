@@ -170,6 +170,11 @@ export interface BotOptions {
    * Such a client is REST only: `start()` refuses (the realtime stream keeps the bot's own rights).
    */
   onBehalfOfOwner?: boolean;
+  /**
+   * Every REST call on behalf of a member who let the bot act for them (ADR-0111, their user id);
+   * usually through `bot.asMember(userId)`. REST only, like `onBehalfOfOwner`.
+   */
+  onBehalfOf?: string;
 }
 
 /** A file to attach: bytes and a name (the server sniffs the type; `type` is a hint). */
@@ -358,6 +363,7 @@ export class Bot extends Emitter<BotEvents> {
       ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
       ...(options.sleep ? { sleep: options.sleep } : {}),
       ...(options.onBehalfOfOwner ? { onBehalfOfOwner: true } : {}),
+      ...(options.onBehalfOf ? { onBehalfOf: options.onBehalfOf } : {}),
     });
     this.token = token;
     this.disk = createDiskApi(this.rest);
@@ -390,13 +396,29 @@ export class Bot extends Emitter<BotEvents> {
    * ```
    */
   asOwner(): Bot {
-    if (this.opts.onBehalfOfOwner) return this;
-    return new Bot(this.token, { ...this.opts, onBehalfOfOwner: true });
+    if (this.opts.onBehalfOfOwner && !this.opts.onBehalfOf) return this;
+    return new Bot(this.token, { ...this.opts, onBehalfOfOwner: true, onBehalfOf: '' });
+  }
+
+  /**
+   * The same bot acting on behalf of a member who let it (ADR-0111: «Делегировать права» in the
+   * bot's menu, or «Принять» under the bot's suggestion in their DM): every REST call carries
+   * `Calab-On-Behalf: <userId>` and runs as that member, marked «via bot», inside the workspaces
+   * of their consent only. `GET /api/workspaces/{id}/bots/{botId}` lists whom the bot may act for
+   * (`onBehalfUserIds`). Without the consent calls fail with 403 ON_BEHALF_NO_CONSENT. REST only.
+   *
+   * ```ts
+   * await bot.asMember(userId).tasks.create(boardId, { title: 'Счёт от поставщика' });
+   * ```
+   */
+  asMember(userId: string): Bot {
+    if (this.opts.onBehalfOf === userId) return this;
+    return new Bot(this.token, { ...this.opts, onBehalfOfOwner: false, onBehalfOf: userId });
   }
 
   /** Connects the gateway; resolves with READY. Rejects if the token is refused. */
   start(): Promise<Ready> {
-    if (this.opts.onBehalfOfOwner) throw new Error('on behalf of the owner is REST only: start() the bot itself (ADR-0106)');
+    if (this.opts.onBehalfOfOwner || this.opts.onBehalfOf) throw new Error('on behalf of someone is REST only: start() the bot itself (ADR-0106, ADR-0111)');
     if (this.gateway) throw new Error('bot already started');
     const g = this.opts.gateway ?? {};
     return new Promise<Ready>((resolve, reject) => {

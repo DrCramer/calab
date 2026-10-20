@@ -87,7 +87,13 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
           <Logo size={56} alt="Calab" />
         </div>
         <div className="mat-popover flex flex-col gap-5 rounded-[var(--radius-panel)] p-6">
-          {link.kind === 'r' ? <RoomPreview code={link.code} authed={authed} /> : <WorkspacePreview code={link.code} authed={authed} />}
+          {link.kind === 'r' ? (
+            <RoomPreview code={link.code} authed={authed} />
+          ) : link.kind === 't' ? (
+            <TaskPreview taskKey={link.code} />
+          ) : (
+            <WorkspacePreview code={link.code} authed={authed} />
+          )}
 
           <div role="status" aria-live="polite" className={cx('text-center text-body', state === 'idle' && 'sr-only')} data-testid="link-landing-status">
             {state === 'trying' ? (
@@ -158,6 +164,21 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
       </main>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
       <AuthLegalFooter className="mobile:mt-6 mobile:shrink-0" />
+    </div>
+  );
+}
+
+/** A task link: the task needs a session to read, so the card shows just its key (CBF-40). */
+function TaskPreview({ taskKey }: { taskKey: string }): ReactNode {
+  return (
+    <div className="flex flex-col items-center gap-3 text-center">
+      <div className="flex max-w-full flex-col items-center">
+        <p className="text-body text-muted">{t('landing.taskTitle')}</p>
+        <h1 className="mt-1 max-w-full truncate text-title font-semibold" title={taskKey}>
+          {taskKey}
+        </h1>
+        <p className="mt-0.5 text-body text-muted">{t('landing.taskGeneric')}</p>
+      </div>
     </div>
   );
 }

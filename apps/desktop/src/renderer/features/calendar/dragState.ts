@@ -14,6 +14,11 @@ export interface DragState {
   range: Range | null;
   /** Over the all-day row: the meeting becomes all-day. */
   allDay: boolean;
+  /**
+   * The day the range / the all-day drop is on: the day view's own day, in the week view the
+   * column under the pointer (its ghost draws there). Null elsewhere.
+   */
+  day: string | null;
   /** Over a day of the mini calendar: the meeting moves to that day (same time). */
   overDay: string | null;
   /** A meeting I may not change: the cursor says no, nothing moves. */
@@ -22,7 +27,7 @@ export interface DragState {
   clear: () => void;
 }
 
-const IDLE = { key: null, mode: null, range: null, allDay: false, overDay: null, locked: false } as const;
+const IDLE = { key: null, mode: null, range: null, allDay: false, day: null, overDay: null, locked: false } as const;
 
 export const useDayDrag = create<DragState>()((set) => ({
   ...IDLE,

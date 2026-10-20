@@ -285,12 +285,27 @@ export function describe(a: TaskActivity, ctx: HistoryCtx, now = new Date()): Hi
       const state = str(f?.['state']);
       const comment = str(f?.['comment']);
       const note = comment ? { note: comment } : null;
+      // ADR-0108: a board manager (the actor) recorded or withdrew the approval for the approver.
+      if (f?.['on_behalf'] === true) {
+        const name = ctx.member(str(f['user_id']));
+        return entry(a, t(state === 'approved' ? 'boards.act.approvedFor' : 'boards.act.withdrawnFor', { name }));
+      }
       if (state === 'approved') return entry(a, t('boards.act.approved'), note);
       if (state === 'rejected') return entry(a, t('boards.act.rejected', { comment: clip(comment, 60) }), note);
       return entry(a, t('boards.act.withdrawn'));
     }
     case 'approvals_reset':
       return entry(a, t('boards.act.approvalsReset'));
+    case 'approval_override':
+      // ADR-0108: the status went forward past an incomplete approval (the «status» entry is beside it).
+      return entry(
+        a,
+        t(num(f?.['rejected']) > 0 ? 'boards.act.overrideRejected' : 'boards.act.override', {
+          to: ctx.status(str(f?.['status_id'])) ?? NONE,
+          n: num(f?.['approved']),
+          m: num(f?.['quorum']),
+        }),
+      );
     case 'comment': {
       const text = str(f?.['text']);
       const att = files(f?.['attachments']);

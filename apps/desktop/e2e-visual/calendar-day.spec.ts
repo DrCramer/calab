@@ -12,13 +12,14 @@ test('create: the dialog → the meeting in the day view, selected, the count in
   await signIn(page, mock);
   await openDay(page);
   await expect(page.getByTestId('day-empty')).toBeVisible();
-  await page.getByTestId('day-new-event').click();
+  await page.keyboard.press('n'); // the header has no «Встреча» (CBF-18): N, as the sidebar «+»
   const dialog = page.getByTestId('event-dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByTestId('event-title-input').fill('Ревью дизайна');
   await dialog.getByTestId('event-start').selectOption({ label: '15:00' });
   await dialog.getByTestId('event-end').selectOption({ label: '16:00' });
-  await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });
+  await dialog.getByTestId('event-room').click(); // the room picker with a search (CBF-18)
+  await page.getByRole('option', { name: 'Переговорка' }).click();
   await dialog.getByTestId('event-add-people').click();
   await page.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
   await dialog.getByTestId('event-email').fill('ext@example.com');
@@ -176,7 +177,7 @@ test('the card: Esc closes it (focus back on the block), another day closes it, 
   await expect(page.getByTestId('event-dialog')).toBeVisible();
 });
 
-test('editing a selected meeting: the members column is back for a drag; a room dragged from the list highlights the field', async ({ page, mock }) => {
+test('editing a selected meeting: the members column is back for a drag', async ({ page, mock }) => {
   planerka(mock, { organizerId: IDS.users.anna, attendees: [] });
   await signIn(page, mock);
   await openDay(page);
@@ -188,7 +189,7 @@ test('editing a selected meeting: the members column is back for a drag; a room 
   await expect(members).toBeVisible();
   await expect(page.getByTestId('event-panel')).toHaveCount(0);
 
-  const drag = async (from: Locator, to: Locator, during?: () => Promise<void>): Promise<void> => {
+  const drag = async (from: Locator, to: Locator): Promise<void> => {
     const a = await from.boundingBox();
     const b = await to.boundingBox();
     if (!a || !b) throw new Error('drag: no boxes');
@@ -196,17 +197,10 @@ test('editing a selected meeting: the members column is back for a drag; a room 
     await page.mouse.down();
     await page.mouse.move(a.x + a.width / 2 + 10, a.y + a.height / 2 + 5, { steps: 3 });
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 10 });
-    await during?.();
     await page.mouse.up();
   };
   await drag(members.getByRole('button', { name: /Вера Ким/ }).first(), dialog.getByTestId('event-attendees'));
   await expect(dialog.getByTestId('event-chip').filter({ hasText: 'Вера Ким' })).toHaveCount(1);
 
-  // The room list's own drag (dnd-kit): the field lights up like under a native drag.
-  const field = dialog.locator('[data-drop-room]');
-  await drag(page.locator('aside').first().getByRole('button', { name: /Созвон/ }).first(), dialog.getByTestId('event-room'), async () => {
-    await expect(field).toHaveClass(/outline-accent/);
-  });
-  await expect(dialog.getByTestId('event-room')).toHaveValue(IDS.rooms.call);
-  await expect(field).not.toHaveClass(/outline-accent/);
+  // No room-list drag here: the calendar section has shown no room list since 0c24978f (02.10).
 });

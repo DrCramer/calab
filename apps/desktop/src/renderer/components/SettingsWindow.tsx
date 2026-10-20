@@ -1,4 +1,4 @@
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from './radix/dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { LucideIcon } from 'lucide-react';
 import { ChevronLeft, ChevronRight, Lock, Search, Settings } from 'lucide-react';

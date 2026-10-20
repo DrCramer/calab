@@ -88,6 +88,11 @@ order: 1
 | `POST` | `/api/workspaces/{id}/sounds` | журналируется как действие бота |
 | `DELETE` | `/api/workspaces/{id}/sounds/{soundId}` | журналируется как действие бота |
 | `PATCH` | `/api/workspaces/{id}/sounds/{soundId}` | журналируется как действие бота |
+| `POST` | `/api/rooms/{id}/make-permanent` | по правам ролей |
+| `DELETE` | `/api/rooms/{id}/recordings/{rid}` | по правам ролей |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | по правам ролей |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/calls` | по правам ролей |
 <!-- /routes -->
 
 ### Пространство и участники
@@ -128,6 +133,11 @@ order: 1
 | `DELETE` | `/api/workspaces/{id}/roles/{roleId}` | журналируется как действие бота |
 | `PATCH` | `/api/workspaces/{id}/roles/{roleId}` | журналируется как действие бота |
 | `PUT` | `/api/workspaces/{id}/roles/order` | журналируется как действие бота |
+| `PATCH` | `/api/achievements/{id}` | по правам ролей |
+| `DELETE` | `/api/achievements/{id}` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/achievements` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/members/{userId}/achievements` | по правам ролей |
+| `DELETE` | `/api/workspaces/{id}/members/{userId}/achievements/{grantId}` | по правам ролей |
 <!-- /routes -->
 
 ### Доски и задачи
@@ -195,6 +205,18 @@ order: 1
 | `POST` | `/api/workspaces/{id}/boards` | по правам ролей |
 | `PUT` | `/api/workspaces/{id}/boards/order` | по правам ролей |
 | `GET` | `/api/workspaces/{id}/tasks/search` | по правам ролей |
+| `GET` | `/api/boards/{id}/git` | по правам ролей |
+| `PUT` | `/api/boards/{id}/git` | по правам ролей |
+| `DELETE` | `/api/boards/{id}/git` | по правам ролей |
+| `PUT` | `/api/boards/{id}/permissions` | по правам ролей |
+| `POST` | `/api/boards/{id}/rules` | по правам ролей |
+| `GET` | `/api/boards/{id}/webhook` | по правам ролей |
+| `PUT` | `/api/boards/{id}/webhook` | по правам ролей |
+| `DELETE` | `/api/boards/{id}/webhook` | по правам ролей |
+| `POST` | `/api/boards/{id}/webhook/ping` | по правам ролей |
+| `PATCH` | `/api/rules/{id}` | по правам ролей |
+| `DELETE` | `/api/rules/{id}` | по правам ролей |
+| `POST` | `/api/rules/{id}/test` | по правам ролей |
 <!-- /routes -->
 
 ### Формы досок
@@ -227,6 +249,10 @@ order: 1
 | `POST` | `/api/workspaces/{id}/events` | журналируется как действие бота |
 | `GET` | `/api/workspaces/{id}/freebusy` | по правам ролей |
 | `POST` | `/api/workspaces/{id}/freebusy/suggest` | по правам ролей |
+| `GET` | `/api/events/{id}/comments` | по правам ролей |
+| `POST` | `/api/events/{id}/comments` | по правам ролей |
+| `PATCH` | `/api/events/{id}/comments/{comment_id}` | по правам ролей |
+| `DELETE` | `/api/events/{id}/comments/{comment_id}` | по правам ролей |
 <!-- /routes -->
 
 ### Личные сообщения
@@ -316,6 +342,34 @@ order: 1
 |---|---|---|
 | `POST` | `/api/mailbox/hosting-check` | только боты из списка оператора |
 | `POST` | `/api/mailbox/password-reset` | только боты из списка оператора |
+<!-- /routes -->
+
+
+### Интеграции и настройки пространства
+
+Веб-приложения, фоны камеры, GPTunneL, телефония, журнал и бывшие участники — по битам ролей бота (ADR-0109). Подробно — [Участники](../bots/rest-members).
+
+<!-- routes:allow:workspaces -->
+| Метод | Путь | Что делает |
+|---|---|---|
+| `PATCH` | `/api/workspace-apps/{appId}` | по правам ролей |
+| `DELETE` | `/api/workspace-apps/{appId}` | по правам ролей |
+| `PUT` | `/api/workspace-apps/{appId}/position` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/apps` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/apps` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/audit` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/backgrounds` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/backgrounds` | по правам ролей |
+| `PATCH` | `/api/workspaces/{id}/backgrounds/{bgId}` | по правам ролей |
+| `DELETE` | `/api/workspaces/{id}/backgrounds/{bgId}` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/former-members` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/integrations/gptunnel` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/integrations/gptunnel` | по правам ролей |
+| `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/sip` | по правам ролей |
+| `PUT` | `/api/workspaces/{id}/sip` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/sip/test` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/users` | по правам ролей |
 <!-- /routes -->
 
 
@@ -428,15 +482,6 @@ order: 1
 | `DELETE` | `/api/users/{id}/note` | Аккаунт |
 | `GET` | `/api/users/{id}/note` | Аккаунт |
 | `PUT` | `/api/users/{id}/note` | Аккаунт |
-| `DELETE` | `/api/workspace-apps/{appId}` | Веб-приложения и фоны |
-| `PATCH` | `/api/workspace-apps/{appId}` | Веб-приложения и фоны |
-| `PUT` | `/api/workspace-apps/{appId}/position` | Веб-приложения и фоны |
-| `GET` | `/api/workspaces/{id}/apps` | Веб-приложения и фоны |
-| `POST` | `/api/workspaces/{id}/apps` | Веб-приложения и фоны |
-| `GET` | `/api/workspaces/{id}/backgrounds` | Веб-приложения и фоны |
-| `POST` | `/api/workspaces/{id}/backgrounds` | Веб-приложения и фоны |
-| `DELETE` | `/api/workspaces/{id}/backgrounds/{bgId}` | Веб-приложения и фоны |
-| `PATCH` | `/api/workspaces/{id}/backgrounds/{bgId}` | Веб-приложения и фоны |
 | `DELETE` | `/api/disk/items/{id}` | Диск |
 | `GET` | `/api/disk/items/{id}` | Диск |
 | `PATCH` | `/api/disk/items/{id}` | Диск |
@@ -456,18 +501,6 @@ order: 1
 | `POST` | `/api/workspaces/{id}/disk/trash/empty` | Диск |
 | `POST` | `/api/workspaces/{id}/disk/upload` | Диск |
 | `GET` | `/api/workspaces/{id}/disk/usage` | Диск |
-| `DELETE` | `/api/boards/{id}/git` | Доски и задачи |
-| `GET` | `/api/boards/{id}/git` | Доски и задачи |
-| `PUT` | `/api/boards/{id}/git` | Доски и задачи |
-| `PUT` | `/api/boards/{id}/permissions` | Доски и задачи |
-| `POST` | `/api/boards/{id}/rules` | Доски и задачи |
-| `DELETE` | `/api/boards/{id}/webhook` | Доски и задачи |
-| `GET` | `/api/boards/{id}/webhook` | Доски и задачи |
-| `PUT` | `/api/boards/{id}/webhook` | Доски и задачи |
-| `POST` | `/api/boards/{id}/webhook/ping` | Доски и задачи |
-| `DELETE` | `/api/rules/{id}` | Доски и задачи |
-| `PATCH` | `/api/rules/{id}` | Доски и задачи |
-| `POST` | `/api/rules/{id}/test` | Доски и задачи |
 | `POST` | `/api/tasks/{id}/approval` | Доски и задачи |
 | `GET` | `/api/notes` | Заметки |
 | `POST` | `/api/notes` | Заметки |
@@ -565,17 +598,7 @@ order: 1
 | `PUT` | `/api/admin/workspaces/{id}/plan` | Суперадминка |
 | `GET` | `/api/admin/workspaces/{id}/plan/log` | Суперадминка |
 | `PUT` | `/api/admin/workspaces/{id}/suspension` | Суперадминка |
-| `DELETE` | `/api/rooms/{id}/recordings/{rid}` | Телефония и записи |
-| `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | Телефония и записи |
-| `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | Телефония и записи |
-| `GET` | `/api/workspaces/{id}/calls` | Телефония и записи |
 | `GET` | `/api/workspaces/{id}/bot-contact-shares` | Журналы |
-| `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | Телефония и записи |
-| `GET` | `/api/workspaces/{id}/integrations/gptunnel` | Телефония и записи |
-| `POST` | `/api/workspaces/{id}/integrations/gptunnel` | Телефония и записи |
-| `GET` | `/api/workspaces/{id}/sip` | Телефония и записи |
-| `PUT` | `/api/workspaces/{id}/sip` | Телефония и записи |
-| `POST` | `/api/workspaces/{id}/sip/test` | Телефония и записи |
 | `GET` | `/api/bots/{ref}` | Управление ботами |
 | `GET` | `/api/workspaces/{id}/bots` | Управление ботами |
 | `POST` | `/api/workspaces/{id}/bots` | Управление ботами |
@@ -585,11 +608,6 @@ order: 1
 | `DELETE` | `/api/workspaces/{id}/bots/{botId}/token` | Управление ботами |
 | `POST` | `/api/workspaces/{id}/bots/{botId}/token` | Управление ботами |
 | `POST` | `/api/workspaces/{id}/bots/add` | Управление ботами |
-| `DELETE` | `/api/achievements/{id}` | Участники |
-| `PATCH` | `/api/achievements/{id}` | Участники |
-| `POST` | `/api/workspaces/{id}/achievements` | Участники |
-| `POST` | `/api/workspaces/{id}/members/{userId}/achievements` | Участники |
-| `DELETE` | `/api/workspaces/{id}/members/{userId}/achievements/{grantId}` | Участники |
 | `PATCH` | `/api/workspaces/{id}/members/{userId}/birthday` | Участники |
 | `GET` | `/api/workspaces/{id}/members/birthdays` | Участники |
 <!-- /routes -->

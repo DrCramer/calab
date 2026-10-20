@@ -25,6 +25,10 @@ order: 9
 | `DELETE` | `/api/events/{id}` | Отменить встречу или одно повторение `?occurrence=` |
 | `GET` | `/api/workspaces/{id}/freebusy` | Занятость `?users=<id,id,…>&from=&to=` (≤ 20 человек, окно ≤ 14 дней) → `{users}` |
 | `POST` | `/api/workspaces/{id}/freebusy/suggest` | Подобрать общее свободное окно → `{slots}` |
+| `GET` | `/api/events/{id}/comments` | Комментарии встречи `?before=&limit=` → `{comments, hasMore}` (кто видит встречу) |
+| `POST` | `/api/events/{id}/comments` | Написать комментарий `{body}` → `201 {comment}` |
+| `PATCH` | `/api/events/{id}/comments/{comment_id}` | Изменить свой комментарий |
+| `DELETE` | `/api/events/{id}/comments/{comment_id}` | Удалить свой комментарий или любой — если бот может менять встречу |
 <!-- /routes -->
 
 ### Недоступно ботам

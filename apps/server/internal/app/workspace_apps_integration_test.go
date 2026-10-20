@@ -95,7 +95,7 @@ func TestWorkspaceAppsCRUD(t *testing.T) {
 	}
 
 	// Rights: a member cannot manage (403); a guest does not see (403 on the list, 404 on an app);
-	// an outsider gets 404; a bot is refused on every route.
+	// an outsider gets 404; a bot works by its bits (ADR-0109).
 	name := "Grafana 2"
 	bob.must(403, "POST", base, &v1.CreateWorkspaceAppRequest{Name: "X", Url: "https://x.example"}, nil)
 	bob.must(403, "PATCH", "/api/workspace-apps/"+grafana.GetId(), &v1.UpdateWorkspaceAppRequest{Name: &name}, nil)
@@ -112,8 +112,12 @@ func TestWorkspaceAppsCRUD(t *testing.T) {
 	if st, _ := setMemberRoles(o, wid, b.id, integr.GetId()); st != 200 {
 		t.Fatalf("bot role: %d", st)
 	}
-	b.must(403, "GET", base, nil, nil)
-	b.must(403, "POST", base, &v1.CreateWorkspaceAppRequest{Name: "X", Url: "https://x.example"}, nil)
+	// A bot with MANAGE_INTEGRATIONS manages apps through the API like a person (ADR-0109); its
+	// READY still carries none (apps are a client surface).
+	b.must(200, "GET", base, nil, nil)
+	var ba v1.CreateWorkspaceAppResponse
+	b.must(201, "POST", base, &v1.CreateWorkspaceAppRequest{Name: "X", Url: "https://x.example"}, &ba)
+	b.must(204, "DELETE", "/api/workspace-apps/"+ba.GetApp().GetId(), nil, nil)
 	if apps, ok := readyApps(t, b.token, wid); !ok || len(apps) != 0 {
 		t.Fatalf("bot READY apps: %v (%v)", apps, ok)
 	}

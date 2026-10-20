@@ -1,4 +1,4 @@
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from '../../components/radix/dialog';
 import { Phone } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

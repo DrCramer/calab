@@ -1,5 +1,5 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors, type DragMoveEvent, type DragStartEvent } from '@dnd-kit/core';
 import { Check, Ellipsis, NotebookText, Plus, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';

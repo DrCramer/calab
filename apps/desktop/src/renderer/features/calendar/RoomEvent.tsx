@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { CalendarDays } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
 import { Button, cx } from '../../components/ui';

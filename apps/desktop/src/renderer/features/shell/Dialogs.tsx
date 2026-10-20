@@ -11,6 +11,10 @@ import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { sendPageToChats } from '../../services/wiki';
+import { sendDiskItemToChats } from '../../services/diskLink';
+import { openSendToChat } from '../../services/disk';
+import { DiskViewDialog } from '../disk/DiskViewer';
+import { DiskFileDialog } from '../disk/FileCard';
 import { t } from '../../i18n';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileRoute } from '../people/FormerProfile';
@@ -124,6 +128,7 @@ export function Dialogs(): ReactNode {
         break;
       case 'image': {
         const inChat = d.inChat;
+        const diskIds = d.diskItemIds;
         node = (
           <Lightbox
             images={d.images}
@@ -137,12 +142,34 @@ export function Dialogs(): ReactNode {
                   },
                 }
               : {})}
+            {...(diskIds ? { onSendToChat: (i: number) => diskIds[i] && openSendToChat(diskIds[i]) } : {})}
           />
         );
         break;
       }
-      case 'pdf':
-        node = <PdfViewer key={d.file.id} file={d.file} onClose={close} />;
+      case 'pdf': {
+        const diskId = d.diskItemId;
+        node = <PdfViewer key={d.file.id} file={d.file} onClose={close} {...(diskId ? { onSendToChat: () => openSendToChat(diskId) } : {})} />;
+        break;
+      }
+      case 'disk-file':
+        node = <DiskFileDialog itemId={d.itemId} onClose={close} />;
+        break;
+      case 'disk-view':
+        node = <DiskViewDialog itemId={d.itemId} siblings={d.siblings} onClose={close} />;
+        break;
+      case 'disk-send':
+        node = (
+          <ForwardDialog
+            roomId=""
+            messageId=""
+            onClose={close}
+            title={t('disk.send.title')}
+            description={t('disk.send.hint')}
+            comment
+            onSend={(targets, comment) => sendDiskItemToChats(d.itemId, targets, comment)}
+          />
+        );
         break;
       case 'transcript':
         node = (

@@ -79,17 +79,28 @@ A bot works with task boards like a person, within the permissions of its roles 
 | `DELETE` | `/api/task-milestones/{id}` | Delete a task milestone |
 | `GET` | `/api/boards/{id}/rules` | The board's automation rules (`VIEW_BOARD`) |
 | `GET` | `/api/rules/{id}/runs` | A rule's run log (`MANAGE_BOARD`) |
+| `PUT` | `/api/boards/{id}/permissions` | The board's permission overrides as a whole (`MANAGE_BOARD`; only bits you hold) |
+| `POST` | `/api/boards/{id}/rules` | Create an automation rule (`MANAGE_BOARD`, Team plan and above) |
+| `PATCH` | `/api/rules/{id}` | Change, enable or disable a rule (`MANAGE_BOARD`) |
+| `DELETE` | `/api/rules/{id}` | Delete a rule (`MANAGE_BOARD`) |
+| `POST` | `/api/rules/{id}/test` | Dry-run a rule on a task `{taskId}` → `{matches, actions}` (`MANAGE_BOARD`) |
+| `GET` | `/api/boards/{id}/git` | The board's Git link, without the secret (`MANAGE_BOARD` + `MANAGE_INTEGRATIONS`) |
+| `PUT` | `/api/boards/{id}/git` | Connect a repository `{provider, secret?}` → the secret once |
+| `DELETE` | `/api/boards/{id}/git` | Disconnect the repository |
+| `GET` | `/api/boards/{id}/webhook` | The board webhook (`MANAGE_BOARD`), see [Webhooks](./webhooks) |
+| `PUT` | `/api/boards/{id}/webhook` | Create or replace the board webhook (+ `MANAGE_INTEGRATIONS`) |
+| `DELETE` | `/api/boards/{id}/webhook` | Delete the board webhook |
+| `POST` | `/api/boards/{id}/webhook/ping` | Test the board webhook |
 <!-- /routes -->
 
 ### Not available to bots
 
 These routes answer a bot with `403 BOT_NOT_ALLOWED`, whatever permissions it has:
 
-- board access `PUT /api/boards/{id}/permissions` and the final delete `DELETE /api/boards/{id}?purge=1`;
-- voting on an approval `POST /api/tasks/{id}/approval` — a bot never approves tasks;
-- the board webhook `/api/boards/{id}/webhook…` — it holds a secret and exports data (people set it up, see [Webhooks](./webhooks));
-- creating, changing, deleting and testing automation rules: `POST /api/boards/{id}/rules`, `PATCH · DELETE /api/rules/{id}`, `POST /api/rules/{id}/test`;
-- connecting a Git repository to a board `/api/boards/{id}/git`.
+- the final delete `DELETE /api/boards/{id}?purge=1` and taking over `POST /api/boards/{id}/take-over`;
+- voting on an approval `POST /api/tasks/{id}/approval` — a bot never approves tasks (only [on behalf of its owner](./auth#on-behalf-of-the-owner)).
+
+Everything else goes by permissions: a bot sets up automations, Git, the webhook and board access like a person with `MANAGE_BOARD` (plus the workspace's `MANAGE_INTEGRATIONS` for Git and the webhook). Without the permission it is the ordinary `403` naming it. The server shows the Git and webhook secret once, to whoever set it — keep it like a password.
 
 ## Create a task
 
@@ -214,7 +225,7 @@ await bot.boards.setOrder(wsId, { boards: [{ boardId, categoryId: cat.id, positi
 
 ## Automations
 
-A bot **reads** a board's rules (`GET /api/boards/{id}/rules`) and their run log (`GET /api/rules/{id}/runs`). Task changes made by a bot run the board's rules just like people's changes. Changes made by rules appear in the journal with an empty `actorId` and a `ruleId`.
+A bot reads a board's rules (`GET /api/boards/{id}/rules`) and their run log (`GET /api/rules/{id}/runs`) and, with `MANAGE_BOARD`, creates, changes, dry-runs and deletes them like a person. A rule acts on behalf of the board, not of its author: delete it when the bot should no longer run it. Task changes made by a bot run the board's rules just like people's changes. Changes made by rules appear in the journal with an empty `actorId` and a `ruleId`.
 
 ## Gotchas
 

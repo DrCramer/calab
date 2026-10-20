@@ -1,4 +1,4 @@
-# ADR-0108: Self-hosted desktop updates from GitHub Releases (2026-10-18)
+# ADR-0114: Self-hosted desktop updates from GitHub Releases (2026-10-18)
 
 ## Context
 

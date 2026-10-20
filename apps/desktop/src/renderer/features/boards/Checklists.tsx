@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Check, ChevronRight, Ellipsis, FolderInput, GitFork, ListChecks, Pencil, Plus, Trash2 } from 'lucide-react';
 import { memo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';

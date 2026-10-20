@@ -70,6 +70,7 @@ bot.on('taskNotice', async (n) => {
 | `TASK_NOTICE_KIND_COMMENT` | a comment in a task they are subscribed to |
 | `TASK_NOTICE_KIND_STATUS` | the status of a task they are subscribed to changed |
 | `TASK_NOTICE_KIND_WATCHER_ADDED` | they were added as a watcher |
+| `TASK_NOTICE_KIND_APPROVED_ON_BEHALF` | a board manager approved the task on their behalf (always sent) |
 | `TASK_NOTICE_KIND_APPROVAL_REQUESTED` | their approval is needed (mandatory) |
 | `TASK_NOTICE_KIND_APPROVED` · `…_REJECTED` | approved · rejected |
 | `TASK_NOTICE_KIND_RULE` | an automation rule's “notify” action; the text is in `notice.text` |

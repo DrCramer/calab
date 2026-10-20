@@ -1,8 +1,8 @@
 -- Workspace calendar (ADR-0038).
 
 -- name: InsertEvent :one
-INSERT INTO events (workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+INSERT INTO events (workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, temp_room)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, sqlc.arg('temp_room'))
 RETURNING *;
 
 -- name: GetEvent :one
@@ -13,7 +13,8 @@ SELECT * FROM events WHERE id = $1 AND cancelled_at IS NULL FOR UPDATE;
 
 -- name: UpdateEvent :one
 UPDATE events SET room_id = $2, title = $3, description = $4, starts_at = $5, ends_at = $6, all_day = $7,
-    tz = $8, record = $9, rrule = $10, until_at = $11, sequence = sequence + sqlc.arg('bump')::integer, updated_at = now()
+    tz = $8, record = $9, rrule = $10, until_at = $11, temp_room = sqlc.arg('temp_room'),
+    sequence = sequence + sqlc.arg('bump')::integer, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
@@ -195,3 +196,32 @@ RETURNING *;
 -- name: ListEventsByIDs :many
 -- Events of a search page (unified search, ADR-0062); the caller keeps its own order.
 SELECT * FROM events WHERE id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: ClaimEventTempRoom :one
+-- One meeting whose own temporary room is due (ADR-0112: starts within the lead, not ended),
+-- locked for the transaction that creates the room; instances skip each other's claims, `skip`
+-- holds the meetings that failed earlier in this pass, temp_room_retry_at defers a failed one.
+SELECT * FROM events
+WHERE temp_room AND room_id IS NULL AND cancelled_at IS NULL
+  AND starts_at <= sqlc.arg('due') AND ends_at > sqlc.arg('now')
+  AND (temp_room_retry_at IS NULL OR temp_room_retry_at <= sqlc.arg('now'))
+  AND NOT (id = ANY(sqlc.arg('skip')::uuid[]))
+ORDER BY starts_at, id
+LIMIT 1
+FOR UPDATE SKIP LOCKED;
+
+-- name: SetEventTempRoom :one
+-- The meeting's own temporary room was created (ADR-0112): not a change mailed to the attendees.
+UPDATE events SET room_id = sqlc.arg('room_id'), updated_at = now()
+WHERE id = sqlc.arg('id') AND temp_room AND room_id IS NULL AND cancelled_at IS NULL
+RETURNING *;
+
+-- name: DeferEventTempRoom :exec
+-- The sweep could not make the meeting's room (rights, limits): the next try waits until `at`.
+UPDATE events SET temp_room_retry_at = sqlc.arg('at')
+WHERE id = sqlc.arg('id') AND temp_room AND room_id IS NULL;
+
+-- name: ClearRoomEventsTempRoom :exec
+-- The room stops being a meeting's own temporary room (made permanent, deleted for good,
+-- ADR-0112): its meetings no longer ask for one, so the sweep makes no other.
+UPDATE events SET temp_room = false WHERE room_id = sqlc.arg('room_id') AND temp_room;

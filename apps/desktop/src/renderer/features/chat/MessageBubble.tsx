@@ -1,6 +1,6 @@
 import { RoomType, type FileMeta, type Message, type PermissionBits } from '@calaba/protocol';
 import { useRooms } from '../../stores/rooms';
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -26,6 +26,7 @@ import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
 import { WikiLinkCard, firstWikiPage } from '../wiki/WikiLinkCard';
+import { DiskLinkChip, firstDiskItem } from '../disk/DiskLinkChip';
 import { MessageActions, hasMessageActions } from './MessageActions';
 import { createHoverIntent, placeActionBar } from './hoverIntent';
 import { previewPartsOf, useMentionLabel } from './mentionText';
@@ -298,6 +299,8 @@ function Bubble({
   const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
   // A wiki page link of this server (owner 14.10): the page card in place of the web preview.
   const wikiPage = useMemo(() => (link ? firstWikiPage(nodes) : null), [link, nodes]);
+  // A Disk file link of this server (CBF-20): the compact chip in place of the web preview.
+  const diskItem = useMemo(() => (link && !wikiPage ? firstDiskItem(nodes) : null), [link, wikiPage, nodes]);
   const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
@@ -440,7 +443,7 @@ function Bubble({
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
+            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : diskItem ? <DiskLinkChip itemId={diskItem} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
           </div>
         ) : null}
         {rows.length ? (

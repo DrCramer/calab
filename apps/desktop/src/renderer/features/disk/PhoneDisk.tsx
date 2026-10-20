@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, diskPermissions, WorkspaceRole, type DiskItem } from '@calaba/protocol';
 import { Check, Ellipsis, Gauge, History, Search, Trash2, Users } from 'lucide-react';
@@ -11,7 +11,7 @@ import { CreateSlot, HeaderIcon, PhoneHeader, PhoneSearchButton } from '../../co
 import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
-import { canShare, canWrite, DISK_SORTS, folderKey, isFolder, trashKey, visibleIds, type DiskSort, type DiskView } from '../../lib/disk';
+import { canShare, canWrite, DISK_SORTS, folderKey, isFolder, phoneDiskView, trashKey, visibleIds, type DiskSort, type DiskView } from '../../lib/disk';
 import { fmt } from '../../lib/format';
 import { collator, emptyTrash, loadListing, loadPath, openItem, openPhoneDisk } from '../../services/disk';
 import { useDisk, useDiskUploads } from '../../stores/disk';
@@ -152,7 +152,7 @@ const MoreMenu = memo(function MoreMenu({
   manage: boolean;
   shareFolder: boolean;
 }): ReactNode {
-  const view = usePrefs((s) => s.diskView);
+  const view = usePrefs((s) => phoneDiskView(s.diskView));
   const sort = usePrefs((s) => s.diskSort);
   const ui = useDiskUi.getState;
   const item = (icon: ReactNode, label: string, run: () => void, testId: string, danger = false): ReactNode => (
@@ -214,7 +214,7 @@ const MoreMenu = memo(function MoreMenu({
 function PhoneListing({ workspaceId, folderId, trash, root }: { workspaceId: string; folderId: string; trash: boolean; root: boolean }): ReactNode {
   const key = trash ? trashKey(workspaceId) : folderKey(workspaceId, folderId);
   const sort = usePrefs((s) => (trash ? 'updated' : s.diskSort));
-  const view = usePrefs((s) => (trash ? 'list' : s.diskView));
+  const view = usePrefs((s) => (trash ? 'list' : phoneDiskView(s.diskView)));
   const query = useDiskUi((s) => s.query);
   const ids = useDisk(useShallow((s) => (trash ? trashOrder(s.lists[key], s.items, query) : visibleIds(s.lists[key], s.items, sort, query, collator()))));
   const loaded = useDisk((s) => !!s.lists[key]);

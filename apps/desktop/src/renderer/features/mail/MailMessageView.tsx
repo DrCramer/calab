@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Archive, Flag, FolderInput, Forward, ImageOff, Mail, MailOpen, MessageSquareShare, Paperclip, Reply, ReplyAll, Trash2 } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';

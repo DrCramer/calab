@@ -427,11 +427,12 @@ func TestSIP(t *testing.T) {
 	guest.wantErr(403, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "POST", calls, num)
 	guest.wantErr(403, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "GET", base, nil)
 
-	// Bots: settings are people-only; calls follow the bit and being in the call.
+	// Bots: settings by MANAGE_INTEGRATIONS like people (ADR-0109: TestBotAPIv3Integrations); calls
+	// follow the bit and being in the call.
 	b := createBot(t, o, wid, "Dialer")
 	b.wantErr(403, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "GET", base, nil)
-	if reason, _ := errReason(b.client); reason != "BOT_NOT_ALLOWED" {
-		t.Fatalf("bot settings: %q", reason)
+	if reason, _ := errReason(b.client); reason == "BOT_NOT_ALLOWED" {
+		t.Fatal("bot settings closed by the route table")
 	}
 	b.wantErr(403, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "POST", calls, num) // no PLACE_CALLS
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{

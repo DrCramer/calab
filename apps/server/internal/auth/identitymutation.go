@@ -240,7 +240,7 @@ func (s *Service) checkMutationGlobal(ctx context.Context, q *sqlc.Queries, id I
 		if u.IsBot || u.IsGuest {
 			return ErrOnBehalfOwnerInactive
 		}
-		if admin {
+		if admin || id.ForMember { // ADR-0111: a member's consent never reaches account-wide state
 			return ErrOnBehalfRoute
 		}
 		return nil
@@ -285,7 +285,9 @@ func (s *Service) checkMutationGlobal(ctx context.Context, q *sqlc.Queries, id I
 }
 
 // lockDelegation locks the bot of a request on behalf of its owner (exclusively for a global
-// mutation, like a bot's own) and checks the delegation again inside the transaction.
+// mutation, like a bot's own) and checks the delegation again inside the transaction. For a
+// member (ADR-0111) it locks the member's consents for the bot instead: a revocation waits for
+// the commit and stops every later request; checkOnBehalfWorkspace checks each workspace.
 func (s *Service) lockDelegation(ctx context.Context, q *sqlc.Queries, id Identity, global bool) error {
 	var bot sqlc.Bot
 	var err error
@@ -296,6 +298,25 @@ func (s *Service) lockDelegation(ctx context.Context, q *sqlc.Queries, id Identi
 	}
 	if err != nil {
 		return mutationSourceError(err)
+	}
+	if id.ForMember {
+		if bot.TokenID == nil || *bot.TokenID != id.SessionID || bot.RevokedAt != nil {
+			return httpx.Unauthenticated("session revoked")
+		}
+		if _, err := q.LockMemberDelegations(ctx, sqlc.LockMemberDelegationsParams{BotID: id.ViaBot, UserID: id.UserID}); err != nil {
+			return mutationSourceError(err)
+		}
+		d, err := q.GetMemberDelegation(ctx, sqlc.GetMemberDelegationParams{UserID: id.UserID, BotID: id.ViaBot})
+		if err != nil {
+			return mutationSourceError(err)
+		}
+		if d.BotDisabled {
+			return httpx.Unauthenticated("session revoked")
+		}
+		if !d.MemberActive || !d.Consented {
+			return ErrOnBehalfNoConsent
+		}
+		return nil
 	}
 	if bot.OwnerUserID != id.UserID {
 		return httpx.Unauthenticated("session revoked")

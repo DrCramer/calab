@@ -30,7 +30,7 @@ export const TASK_NOTIFY_GROUPS: readonly TaskNotifyGroup[] = [
       { id: 'unassigned', kinds: [TaskNoticeKind.UNASSIGNED], label: 'tn.unassigned', hint: 'tn.unassignedHint' },
       { id: 'mentioned', kinds: [TaskNoticeKind.MENTIONED], label: 'tn.mentioned', hint: 'tn.mentionedHint' },
       { id: 'watcher', kinds: [TaskNoticeKind.WATCHER_ADDED], label: 'tn.watcherAdded', hint: 'tn.watcherAddedHint' },
-      { id: 'approval', kinds: [TaskNoticeKind.APPROVAL_REQUESTED], label: 'tn.approvalRequested', hint: 'tn.always', locked: true },
+      { id: 'approval', kinds: [TaskNoticeKind.APPROVAL_REQUESTED, TaskNoticeKind.APPROVED_ON_BEHALF], label: 'tn.approvalRequested', hint: 'tn.always', locked: true },
       { id: 'rule', kinds: [TaskNoticeKind.RULE], label: 'tn.rule', hint: 'tn.ruleHint' },
       { id: 'dueSoon', kinds: [TaskNoticeKind.DUE_SOON], label: 'tn.dueSoon', hint: 'tn.dueSoonHint' },
       { id: 'overdue', kinds: [TaskNoticeKind.OVERDUE], label: 'tn.overdue', hint: 'tn.overdueHint' },

@@ -426,15 +426,27 @@ func (x *CreateRoomInviteResponse) GetInvite() *RoomInvite {
 	return nil
 }
 
-// PATCH /api/rooms/{id}/invites/{invite_id} (INVITE_GUESTS): the link's approval setting
-// (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
-// unset); otherwise require_approval, when set, overrides the room for this link.
+// PATCH /api/rooms/{id}/invites/{invite_id}: changes an active link; only the fields that are
+// set change, at least one. Approval (ADR-0040): inherit_approval true resets it to the room's
+// (require_approval must then be unset); otherwise require_approval, when set, overrides the
+// room for this link; INVITE_GUESTS, guest links only. The rest (ADR-0107) with the right to
+// manage this kind of link, as when creating it (INVITE_GUESTS; a members_only link also with
+// INVITE_MEMBERS or as the creator of the temporary room); never on a meeting guest link
+// (event_id). expires_in_seconds counts from now, 0 = never, ≤ 365 days; max_uses 0 = unlimited,
+// ≤ 10000 and above the uses so far; allow_* within the caller's own rights. members_only and
+// allow_guests never change (a new link instead).
 type UpdateRoomInviteRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	RequireApproval *bool                  `protobuf:"varint,1,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"`
-	InheritApproval bool                   `protobuf:"varint,2,opt,name=inherit_approval,json=inheritApproval,proto3" json:"inherit_approval,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RequireApproval  *bool                  `protobuf:"varint,1,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"`
+	InheritApproval  bool                   `protobuf:"varint,2,opt,name=inherit_approval,json=inheritApproval,proto3" json:"inherit_approval,omitempty"`
+	ExpiresInSeconds *uint32                `protobuf:"varint,3,opt,name=expires_in_seconds,json=expiresInSeconds,proto3,oneof" json:"expires_in_seconds,omitempty"`
+	MaxUses          *uint32                `protobuf:"varint,4,opt,name=max_uses,json=maxUses,proto3,oneof" json:"max_uses,omitempty"`
+	AllowSpeak       *bool                  `protobuf:"varint,5,opt,name=allow_speak,json=allowSpeak,proto3,oneof" json:"allow_speak,omitempty"`
+	AllowMessages    *bool                  `protobuf:"varint,6,opt,name=allow_messages,json=allowMessages,proto3,oneof" json:"allow_messages,omitempty"`
+	AllowFiles       *bool                  `protobuf:"varint,7,opt,name=allow_files,json=allowFiles,proto3,oneof" json:"allow_files,omitempty"`
+	AllowStream      *bool                  `protobuf:"varint,8,opt,name=allow_stream,json=allowStream,proto3,oneof" json:"allow_stream,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateRoomInviteRequest) Reset() {
@@ -477,6 +489,48 @@ func (x *UpdateRoomInviteRequest) GetRequireApproval() bool {
 func (x *UpdateRoomInviteRequest) GetInheritApproval() bool {
 	if x != nil {
 		return x.InheritApproval
+	}
+	return false
+}
+
+func (x *UpdateRoomInviteRequest) GetExpiresInSeconds() uint32 {
+	if x != nil && x.ExpiresInSeconds != nil {
+		return *x.ExpiresInSeconds
+	}
+	return 0
+}
+
+func (x *UpdateRoomInviteRequest) GetMaxUses() uint32 {
+	if x != nil && x.MaxUses != nil {
+		return *x.MaxUses
+	}
+	return 0
+}
+
+func (x *UpdateRoomInviteRequest) GetAllowSpeak() bool {
+	if x != nil && x.AllowSpeak != nil {
+		return *x.AllowSpeak
+	}
+	return false
+}
+
+func (x *UpdateRoomInviteRequest) GetAllowMessages() bool {
+	if x != nil && x.AllowMessages != nil {
+		return *x.AllowMessages
+	}
+	return false
+}
+
+func (x *UpdateRoomInviteRequest) GetAllowFiles() bool {
+	if x != nil && x.AllowFiles != nil {
+		return *x.AllowFiles
+	}
+	return false
+}
+
+func (x *UpdateRoomInviteRequest) GetAllowStream() bool {
+	if x != nil && x.AllowStream != nil {
+		return *x.AllowStream
 	}
 	return false
 }
@@ -1166,11 +1220,25 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\r_allow_streamB\x13\n" +
 	"\x11_require_approval\"I\n" +
 	"\x18CreateRoomInviteResponse\x12-\n" +
-	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"\x89\x01\n" +
+	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"\xe4\x03\n" +
 	"\x17UpdateRoomInviteRequest\x12.\n" +
 	"\x10require_approval\x18\x01 \x01(\bH\x00R\x0frequireApproval\x88\x01\x01\x12)\n" +
-	"\x10inherit_approval\x18\x02 \x01(\bR\x0finheritApprovalB\x13\n" +
-	"\x11_require_approval\"I\n" +
+	"\x10inherit_approval\x18\x02 \x01(\bR\x0finheritApproval\x121\n" +
+	"\x12expires_in_seconds\x18\x03 \x01(\rH\x01R\x10expiresInSeconds\x88\x01\x01\x12\x1e\n" +
+	"\bmax_uses\x18\x04 \x01(\rH\x02R\amaxUses\x88\x01\x01\x12$\n" +
+	"\vallow_speak\x18\x05 \x01(\bH\x03R\n" +
+	"allowSpeak\x88\x01\x01\x12*\n" +
+	"\x0eallow_messages\x18\x06 \x01(\bH\x04R\rallowMessages\x88\x01\x01\x12$\n" +
+	"\vallow_files\x18\a \x01(\bH\x05R\n" +
+	"allowFiles\x88\x01\x01\x12&\n" +
+	"\fallow_stream\x18\b \x01(\bH\x06R\vallowStream\x88\x01\x01B\x13\n" +
+	"\x11_require_approvalB\x15\n" +
+	"\x13_expires_in_secondsB\v\n" +
+	"\t_max_usesB\x0e\n" +
+	"\f_allow_speakB\x11\n" +
+	"\x0f_allow_messagesB\x0e\n" +
+	"\f_allow_filesB\x0f\n" +
+	"\r_allow_stream\"I\n" +
 	"\x18UpdateRoomInviteResponse\x12-\n" +
 	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"J\n" +
 	"\x17ListRoomInvitesResponse\x12/\n" +

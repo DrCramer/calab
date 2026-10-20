@@ -1,5 +1,5 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
 import { AttendeeStatus, WorkspaceRole } from '@calaba/protocol';
 import { CalendarPlus, CalendarSync, Clock, ExternalLink, Mail, MapPin, Trash2, Video } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
@@ -18,7 +18,7 @@ import { menuBox, menuItem, popoverBox } from '../shell/menu';
 import { respondExternalEvent } from '../../services/freebusy';
 import { deleteExternalWithConfirm, newEvent } from './actions';
 import { RsvpButtons, StatusIcon } from './EventCard';
-import { PX_PER_MIN } from './gridParts';
+import { PX_PER_MIN, blockBox } from './gridParts';
 
 /*
  * My external calendar's events in my day (ADR-0045 §3, docs/08 «Календарь»): a card in the
@@ -52,6 +52,7 @@ export const ExternalBlock = memo(function ExternalBlock({
   height,
   col,
   cols,
+  minPx,
 }: {
   workspaceId: string;
   day: string;
@@ -60,6 +61,8 @@ export const ExternalBlock = memo(function ExternalBlock({
   height: number;
   col: number;
   cols: number;
+  /** The week view: the narrowest block (gridParts.blockBox). */
+  minPx?: number;
 }): ReactNode {
   const ev = useExternal(day, extKey);
   if (!ev) return null;
@@ -74,12 +77,7 @@ export const ExternalBlock = memo(function ExternalBlock({
         data-ext={extKey}
         aria-label={t('ext.block', { title: titleOf(ev), time })}
         className={cx('absolute z-[1] overflow-hidden rounded-[6px] px-1.5 text-left', short ? 'py-0' : 'py-1', tone, 'hover:bg-[var(--color-fill-hover)]')}
-        style={{
-          top: top * PX_PER_MIN + 1,
-          height: Math.max(18, px - 2),
-          left: `calc(${(col / cols) * 100}% + 2px)`,
-          width: `calc(${100 / cols}% - 4px)`,
-        }}
+        style={blockBox(top, height, col, cols, minPx)}
       >
         {short ? (
           <p className="flex items-center gap-1 truncate text-caption leading-4">

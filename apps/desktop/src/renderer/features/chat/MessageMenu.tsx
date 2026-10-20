@@ -1,5 +1,5 @@
 import { RoomType, type FileMeta, type PermissionBits } from '@calaba/protocol';
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import { Copy, CornerUpLeft, Download, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';

@@ -244,14 +244,67 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// update: PATCH /api/rooms/{id}/invites/{inviteId} — the link's approval setting (ADR-0040).
+// linkEdit is the validated non-approval part of a PATCH of a link (ADR-0107).
+type linkEdit struct {
+	setExpiry bool
+	expires   *time.Time
+	maxUses   *int32
+	rights    bool // any allow_* set
+}
+
+func (e linkEdit) any() bool { return e.setExpiry || e.maxUses != nil || e.rights }
+
+// editOf validates expiry and uses of a PATCH (the rights need the link: editBits).
+func editOf(req *v1.UpdateRoomInviteRequest, now time.Time) (linkEdit, error) {
+	var e linkEdit
+	if req.ExpiresInSeconds != nil {
+		d := time.Duration(req.GetExpiresInSeconds()) * time.Second
+		if d > maxExpiry {
+			return e, httpx.Validation("expiresInSeconds", "links expire in at most 365 days")
+		}
+		e.setExpiry = true
+		if d > 0 {
+			t := now.Add(d)
+			e.expires = &t
+		}
+	}
+	if req.MaxUses != nil {
+		if req.GetMaxUses() > maxUses {
+			return e, httpx.Validation("maxUses", "maxUses must be 0..10000")
+		}
+		n := int32(req.GetMaxUses()) //nolint:gosec // bounded
+		e.maxUses = &n
+	}
+	e.rights = req.AllowSpeak != nil || req.AllowMessages != nil || req.AllowFiles != nil || req.AllowStream != nil
+	return e, nil
+}
+
+// editBits applies the allow_* of a PATCH to the link's current bits; the bits a PATCH does not
+// name (VIEW_ROOM, CONNECT, VIDEO of a temporary room's link) stay as they are.
+func editBits(req *v1.UpdateRoomInviteRequest, cur perm.Bits) perm.Bits {
+	set := func(b perm.Bits, v *bool, bit perm.Bits) perm.Bits {
+		switch {
+		case v == nil:
+			return b
+		case *v:
+			return b | bit
+		}
+		return b &^ bit
+	}
+	b := set(cur, req.AllowSpeak, perm.Speak)
+	b = set(b, req.AllowMessages, perm.SendMessages)
+	b = set(b, req.AllowFiles, perm.AttachFiles)
+	return set(b, req.AllowStream, perm.Stream)
+}
+
+// update: PATCH /api/rooms/{id}/invites/{inviteId} — the link's approval setting (ADR-0040), its
+// end, uses and rights (ADR-0107). Approval: INVITE_GUESTS, guest links only; the rest: the right
+// to manage this kind of link (linkRights), never a meeting guest link.
 func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	roomID, acc, rights, err := linkAccess(r)
 	if err != nil {
 		return err
-	}
-	if !rights.guests { // approval concerns guests only
-		return httpx.Forbidden("INVITE_GUESTS required")
 	}
 	invID, err := httpx.PathUUID(r, "inviteId", "invite")
 	if err != nil {
@@ -264,11 +317,58 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if req.GetInheritApproval() && req.RequireApproval != nil {
 		return httpx.Validation("requireApproval", "requireApproval and inheritApproval exclude each other")
 	}
-	if !req.GetInheritApproval() && req.RequireApproval == nil {
+	approval := req.GetInheritApproval() || req.RequireApproval != nil
+	if approval && !rights.guests { // approval concerns guests only
+		return httpx.Forbidden("INVITE_GUESTS required")
+	}
+	edit, err := editOf(&req, time.Now())
+	if err != nil {
+		return err
+	}
+	if !approval && !edit.any() {
 		return httpx.Validation("requireApproval", "nothing to change")
 	}
-	inv, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomInvite, error) {
-		return guarded.SetRoomInviteApproval(r.Context(), sqlc.SetRoomInviteApprovalParams{ID: invID, RoomID: roomID, RequireApproval: req.RequireApproval})
+	if edit.any() {
+		if acc.Suspended { // like creating a link (moderation.blocked); approval stays changeable
+			return httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, "the workspace is suspended")
+		}
+		// Changing a link hands it out anew: a verified email, as when creating it (ADR-0023, ADR-0065).
+		if _, err := s.auth.EmailGate().User(ctx, s.db.Q, auth.MustFromContext(ctx).UserID); err != nil {
+			return err
+		}
+	}
+	var inv sqlc.RoomInvite
+	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		cur, err := q.GetRoomInviteForUpdate(ctx, sqlc.GetRoomInviteForUpdateParams{ID: invID, RoomID: roomID})
+		if err != nil {
+			return err
+		}
+		if !rights.mayManage(cur.MembersOnly) {
+			return httpx.Forbidden("INVITE_GUESTS required (INVITE_MEMBERS allows members-only links)")
+		}
+		if req.RequireApproval != nil && cur.MembersOnly {
+			return httpx.Validation("requireApproval", "a members-only link admits no guests")
+		}
+		p := sqlc.UpdateRoomInviteParams{ID: invID, RoomID: roomID, SetApproval: approval, RequireApproval: req.RequireApproval,
+			SetExpiry: edit.setExpiry, ExpiresAt: edit.expires, MaxUses: edit.maxUses}
+		if edit.any() && cur.EventID != nil {
+			return httpx.Validation("expiresInSeconds", "a meeting guest link follows its meeting")
+		}
+		if edit.maxUses != nil && *edit.maxUses != 0 && *edit.maxUses <= cur.Uses {
+			return httpx.Validation("maxUses", "maxUses must be above the uses so far")
+		}
+		// No escalation through links: the edited link carries only rights the caller holds — also
+		// when only its end or uses change (extending a broader link hands it out anew, ADR-0107).
+		bits := editBits(&req, perm.Bits(uint64(cur.AllowBits))) //nolint:gosec // bit mask
+		if edit.any() && !acc.Bits.Has(perm.Administrator) && bits&^acc.Bits != 0 {
+			return httpx.Forbidden("cannot grant permissions you do not have")
+		}
+		if edit.rights {
+			b := int64(bits) //nolint:gosec // bit mask
+			p.AllowBits = &b
+		}
+		inv, err = q.UpdateRoomInvite(ctx, p)
+		return err
 	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("invite")

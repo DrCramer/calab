@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { Plan, type Board } from '@calaba/protocol';
 import { ChevronDown, Ellipsis, GripVertical, History, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react';

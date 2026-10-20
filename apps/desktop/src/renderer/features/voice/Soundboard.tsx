@@ -1,5 +1,5 @@
 import type { Sound } from '@calaba/protocol';
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { Music, Play, Search, Settings, Star } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { IconButton, Input, Tip, cx } from '../../components/ui';

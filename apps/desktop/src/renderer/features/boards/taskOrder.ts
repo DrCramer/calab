@@ -3,6 +3,8 @@ import type { MatchCtx } from '../../lib/boards/filter';
 import type { BoardsData } from '../../lib/boards/reducers';
 import { GROUP_ROW, timelineRows } from '../../lib/boards/timeline';
 import type { BoardPrefs, ViewKind } from '../../stores/boardsUi';
+import { sortOn } from '../../lib/boards/features';
+import { sortColumnIds } from './columnSort';
 import { listItems } from './ListView';
 import { columnsOf, visibleColumn, visibleTasks } from './model';
 
@@ -13,7 +15,10 @@ import { columnsOf, visibleColumn, visibleTasks } from './model';
  * task view (memo on the view's inputs), never inside a store selector.
  */
 export function boardOrder(s: BoardsData, b: Board, prefs: BoardPrefs, kind: ViewKind, ctx: MatchCtx, workspaceId: string): string[] {
-  if (kind === 'kanban') return columnsOf(b, prefs).shown.flatMap((st) => [...visibleColumn(s, b.id, st.id, prefs.filter, ctx)]);
+  if (kind === 'kanban') {
+    const sort = sortOn(prefs.sort, b.disabledFeatures) ? prefs.sort : 'manual';
+    return columnsOf(b, prefs).shown.flatMap((st) => [...sortColumnIds(visibleColumn(s, b.id, st.id, prefs.filter, ctx), s.tasks, sort)]);
+  }
   const tasks = visibleTasks(s, b, prefs, ctx);
   if (kind === 'list') return listItems(tasks, b, prefs, workspaceId).flatMap((x) => (x.kind === 'row' ? [x.id] : []));
   const { rows, undated } = timelineRows(tasks, prefs.tlGroup ?? 'none');

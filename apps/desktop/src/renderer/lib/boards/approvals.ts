@@ -56,6 +56,32 @@ export function blockedStatusIds(t: Pick<Task, 'approvalState' | 'statusId'>, st
   return out;
 }
 
+/**
+ * What picking status `to` does (ADR-0108): `move` — the gate lets it go; `override` — the gate
+ * holds it, yet the viewer manages the board (MANAGE_BOARD): ask «Согласование не завершено —
+ * перевести вручную?» and send `overrideApproval`; `blocked` — the toast, nothing is sent.
+ */
+export type StatusPick = 'same' | 'move' | 'override' | 'blocked';
+
+export function statusPick(t: Pick<Task, 'approvalState' | 'statusId'>, statuses: readonly BoardStatus[], to: string, manage: boolean): StatusPick {
+  if (to === t.statusId) return 'same';
+  if (!blockedStatusIds(t, statuses).has(to)) return 'move';
+  return manage ? 'override' : 'blocked';
+}
+
+/**
+ * Why the gate holds a task, as the hint of a disabled status: «1/3» while waiting, «rejected»
+ * after a veto, null when nothing holds it. Primitive-keyed input of `approvalTagKey`.
+ */
+export type GateReason = { kind: 'pending'; n: number; m: number } | { kind: 'rejected' } | null;
+
+export function gateReason(t: Approvals): GateReason {
+  if (!approvalBlocks(t)) return null;
+  if (t.approvalState === TaskApprovalState.REJECTED) return { kind: 'rejected' };
+  const m = quorumOf(t);
+  return { kind: 'pending', n: Math.min(approvedCount(t), m), m };
+}
+
 /** The card / row badge: nothing without approvers. */
 export type ApprovalBadge = { kind: 'pending'; approved: number; quorum: number } | { kind: 'approved' } | { kind: 'rejected' } | null;
 
@@ -116,9 +142,11 @@ export interface ApprovalControls {
   vote: boolean;
   /** The viewer's own vote (UNSPECIFIED = not an approver). */
   mine: ApproverState;
+  /** ADR-0108: the viewer manages the board and may approve for others (the approver row menu). */
+  forOthers: boolean;
 }
 
-export function approvalControls(t: Pick<Task, 'approvers' | 'archivedAt'>, canEditTask: boolean, seesBoard: boolean, me: string): ApprovalControls {
+export function approvalControls(t: Pick<Task, 'approvers' | 'archivedAt'>, canEditTask: boolean, seesBoard: boolean, me: string, manage = false): ApprovalControls {
   const own = t.approvers.find((a) => a.userId === me);
   const edit = canEditTask && !t.archivedAt;
   return {
@@ -126,7 +154,22 @@ export function approvalControls(t: Pick<Task, 'approvers' | 'archivedAt'>, canE
     edit,
     vote: !!own && seesBoard && !t.archivedAt,
     mine: own?.state ?? ApproverState.UNSPECIFIED,
+    forOthers: manage && seesBoard && !t.archivedAt,
   };
+}
+
+/**
+ * What a manager may do in another approver's row (ADR-0108; the server checks again): `approve`
+ * over a pending vote («Согласовать за …»), `withdraw` an approval recorded on behalf («Отозвать
+ * согласование за …»); never anything over the approver's own decision or the viewer's own row.
+ */
+export type OnBehalfAction = 'approve' | 'withdraw' | null;
+
+export function onBehalfAction(a: Pick<Task['approvers'][number], 'userId' | 'state' | 'onBehalf'>, me: string, forOthers: boolean): OnBehalfAction {
+  if (!forOthers || a.userId === me) return null;
+  if (a.state === ApproverState.PENDING) return 'approve';
+  if (a.state === ApproverState.APPROVED && a.onBehalf) return 'withdraw';
+  return null;
 }
 
 /** Approvers who already decided (approved or rejected): the votes an edit of the task would drop. */
