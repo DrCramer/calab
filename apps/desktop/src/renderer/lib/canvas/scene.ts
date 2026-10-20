@@ -181,18 +181,33 @@ export class Scene {
     return boundsOf(rects);
   }
 
-  /** Topmost object at a world point; `tol` is the pick radius in world units. */
+  /**
+   * Topmost object at a world point; `tol` is the pick radius in world units. An unfilled, textless shape is picked
+   * by its outline only, so a big empty frame never swallows the clicks (and the marquee) inside it.
+   */
   hit(p: Point, tol: number, accept?: (o: ObjectRec) => boolean): ObjectRec | null {
+    return this.pick(p, tol, accept, false);
+  }
+
+  /**
+   * Topmost object whose whole area (a shape's transparent interior included) contains the point, `tol` around its
+   * edge counted in. For wiring connectors, not for selection: releasing a wire anywhere inside a frame glues to it.
+   */
+  hitArea(p: Point, tol: number, accept?: (o: ObjectRec) => boolean): ObjectRec | null {
+    return this.pick(p, tol, accept, true);
+  }
+
+  private pick(p: Point, tol: number, accept: ((o: ObjectRec) => boolean) | undefined, area: boolean): ObjectRec | null {
     const cands = this.query({ x: p.x - tol, y: p.y - tol, w: 2 * tol, h: 2 * tol });
     for (let i = cands.length - 1; i >= 0; i--) {
       const o = cands[i];
       if (!o || (accept && !accept(o))) continue;
-      if (this.hitsObject(o, p, tol)) return o;
+      if (this.hitsObject(o, p, tol, area)) return o;
     }
     return null;
   }
 
-  private hitsObject(o: ObjectRec, p: Point, tol: number): boolean {
+  private hitsObject(o: ObjectRec, p: Point, tol: number, area: boolean): boolean {
     if (isConnector(o)) {
       if (distToPolyline(p, o.points) <= tol) return true;
       if (o.label) {
@@ -203,7 +218,7 @@ export class Scene {
     }
     if (o.kind !== 'shape') return rectContainsPoint(o, p, 0);
     if (!pointInShape(o.shape, rectInflate(o, tol), p)) return false;
-    if (o.fill !== 'none' || o.text !== '') return pointInShape(o.shape, o, p) || distNearOutline(o, p, tol);
+    if (area || o.fill !== 'none' || o.text !== '') return pointInShape(o.shape, o, p) || distNearOutline(o, p, tol);
     // Unfilled and empty: only the outline picks.
     const inner = rectInflate(o, -2 * tol);
     return !(inner.w > 0 && inner.h > 0 && pointInShape(o.shape, inner, p));

@@ -251,6 +251,15 @@ describe('queries', () => {
     expect(s.hit({ x: 2100, y: 100 }, 3)).toBeNull();
     expect(s.hit({ x: 2000, y: 100 }, 3)?.id).toBe('o4');
   });
+  it('hitArea picks the whole area of an unfilled shape; hit (selection) still only its border', () => {
+    const s = populated();
+    expect(s.hit({ x: 2100, y: 100 }, 3)).toBeNull();
+    expect(s.hitArea({ x: 2100, y: 100 }, 3)?.id).toBe('o4');
+    expect(s.hitArea({ x: 2000, y: 100 }, 3)?.id).toBe('o4');
+    expect(s.hitArea({ x: 2250, y: 100 }, 3)).toBeNull();
+    expect(s.hitArea({ x: 1005, y: 5 }, 2)).toBeNull(); // outside the ellipse itself
+    expect(s.hitArea({ x: 120, y: 120 }, 2)?.id).toBe('o2'); // stickies as before
+  });
   it('hit-tests connectors by distance', () => {
     const s = populated();
     expect(s.hit({ x: 200, y: 504 }, 6)?.id).toBe('o5');
