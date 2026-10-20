@@ -86,6 +86,17 @@ describe('drawing formatted text (recorded calls)', () => {
     raf.flush();
     expect(layer.count('fillText') + canvas.fake.count('fillText')).toBe(0);
   });
+  it('rotated text under 8 px on screen is a plaque (its glyphs share no cache); straight text keeps glyphs to 4 px', () => {
+    // 18 px sticky text: 7.2 px at 40 %, 9 px at 50 %.
+    const at = (scale: number, rot?: number): number => paint((d) => d.create({ kind: 'sticky', x: 0, y: 0, w: 400, text: 'turned note', ...(rot ? { rot } : {}) }), scale).count('fillText');
+    expect(at(0.4)).toBe(1);
+    expect(at(0.4, 30)).toBe(0);
+    expect(at(0.5, 30)).toBe(1);
+    // The plaque keeps the text's lines (one bar here), drawn in the turned frame.
+    const f = paint((d) => d.create({ kind: 'sticky', x: 0, y: 0, w: 400, text: 'turned note', rot: 30 }), 0.4);
+    expect(f.count('rotate')).toBe(1);
+    expect(f.calls.filter((c) => c.name === 'fillRect').length).toBeGreaterThanOrEqual(2);
+  });
   it('an old record with no attributes does not allocate a rich layout', () => {
     const d = makeDoc();
     d.create({ kind: 'sticky', x: 0, y: 0, text: 'aaa' });

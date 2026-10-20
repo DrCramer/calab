@@ -16,6 +16,11 @@ export interface Sample {
   t: number;
   task: number;
   script: number;
+  /** Blink: style recalculation and layout, seconds and counts (Performance.getMetrics). */
+  style: number;
+  layout: number;
+  styleCount: number;
+  layoutCount: number;
   heapUsed: number;
   procs: ProcSample[];
   rssKB: number;
@@ -24,7 +29,7 @@ export interface Sample {
 export interface Probe {
   marks: Map<string, Sample>;
   /** Percent of ONE core, per process type, between two marks (`renderer` summed over renderers). */
-  cpu(from: string, to: string): { wallS: number; renderer: number; gpu: number; browser: number; total: number; mainThread: number; script: number };
+  cpu(from: string, to: string): { wallS: number; renderer: number; gpu: number; browser: number; total: number; mainThread: number; script: number; style: number; layout: number; styleCount: number; layoutCount: number };
   /** Takes a sample now (driver-side marks, e.g. a blank-page baseline). */
   sample(name: string): Promise<void>;
   heapMB(mark: string): number;
@@ -63,6 +68,10 @@ export async function attachProbe(browser: Browser, page: Page, onMark?: (name: 
       t: Date.now() / 1000,
       task: m('TaskDuration'),
       script: m('ScriptDuration'),
+      style: m('RecalcStyleDuration'),
+      layout: m('LayoutDuration'),
+      styleCount: m('RecalcStyleCount'),
+      layoutCount: m('LayoutCount'),
       heapUsed: heap.usedSize,
       procs,
       rssKB: rssOfRenderers(procs.filter((p) => p.type === 'renderer').map((p) => p.id)),
@@ -99,6 +108,10 @@ export async function attachProbe(browser: Browser, page: Page, onMark?: (name: 
         total: round(renderer + gpu + browserP),
         mainThread: round(((b.task - a.task) / wall) * 100),
         script: round(((b.script - a.script) / wall) * 100),
+        style: round(((b.style - a.style) / wall) * 100),
+        layout: round(((b.layout - a.layout) / wall) * 100),
+        styleCount: b.styleCount - a.styleCount,
+        layoutCount: b.layoutCount - a.layoutCount,
       };
     },
     sample: async (name) => {

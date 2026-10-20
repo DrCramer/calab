@@ -3,7 +3,7 @@ import { Pause, Play, RotateCcw, Timer as TimerIcon } from 'lucide-react';
 import { memo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
-import { TIMER_MAX_MINUTES, TIMER_MIN_MINUTES, TIMER_PRESETS_MIN, clampMinutes, mmss } from '../../../lib/canvas/timer';
+import { TIMER_MAX_MINUTES, TIMER_MIN_MINUTES, TIMER_PRESETS_MIN, clampMinutes, mmss, type TimerPhase } from '../../../lib/canvas/timer';
 import type { CanvasEngine } from '../engine';
 import { ACTIVE_TOOL, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
@@ -13,7 +13,8 @@ const ICON = 'size-[18px]';
 
 /**
  * The countdown plaque, top center: the time left, and for people who can edit pause / resume / reset. A leaf with its
- * own subscription: it re-renders once a second while the timer runs and the canvas is visible, nothing else does.
+ * own subscription: it re-renders once a second while the timer runs and the canvas is visible, nothing else does —
+ * and within it only the time: the icon and the buttons are memo leaves that change with the phase.
  * When the time is up the plaque is highlighted (a solid accent, no animation).
  */
 export const TimerChip = memo(function TimerChip({ store, engine }: { store: TimerStore; engine: CanvasEngine }): ReactNode {
@@ -23,7 +24,6 @@ export const TimerChip = memo(function TimerChip({ store, engine }: { store: Tim
   if (v.phase === 'none') return null;
   const ended = v.phase === 'ended';
   const time = mmss(v.secs);
-  const btn = ended ? 'text-accent-fg! hover:bg-white/20!' : undefined;
   return (
     <div
       role="timer"
@@ -32,27 +32,38 @@ export const TimerChip = memo(function TimerChip({ store, engine }: { store: Tim
       data-phase={v.phase}
       className={cx(PANEL, 'flex items-center gap-1.5 rounded-full py-1 pl-3 text-control tabular-nums text-fg', editable ? 'pr-1' : 'pr-3', ended && ACTIVE_TOOL)}
     >
-      <TimerIcon className={cx('size-4', ended ? 'text-accent-fg' : 'text-muted')} aria-hidden />
+      <ChipIcon ended={ended} />
       <span className="min-w-10 text-title" data-testid="canvas-timer-time">{time}</span>
       {ended ? <span data-testid="canvas-timer-ended">{t('canvasBoard.timer.ended')}</span> : null}
-      {editable ? (
-        <>
-          {v.phase === 'running' ? (
-            <IconButton label={t('canvasBoard.timer.pause')} size="sm" className={btn} onMouseDown={keepFocus} onClick={() => store.pause()} data-testid="canvas-timer-pause">
-              <Pause className="size-4" strokeWidth={1.75} aria-hidden />
-            </IconButton>
-          ) : null}
-          {v.phase === 'paused' ? (
-            <IconButton label={t('canvasBoard.timer.resume')} size="sm" className={btn} onMouseDown={keepFocus} onClick={() => store.resume()} data-testid="canvas-timer-resume">
-              <Play className="size-4" strokeWidth={1.75} aria-hidden />
-            </IconButton>
-          ) : null}
-          <IconButton label={t('canvasBoard.timer.reset')} size="sm" className={btn} onMouseDown={keepFocus} onClick={() => store.reset()} data-testid="canvas-timer-reset">
-            <RotateCcw className="size-4" strokeWidth={1.75} aria-hidden />
-          </IconButton>
-        </>
-      ) : null}
+      {editable ? <TimerControls store={store} phase={v.phase} /> : null}
     </div>
+  );
+});
+
+const ChipIcon = memo(function ChipIcon({ ended }: { ended: boolean }): ReactNode {
+  return <TimerIcon className={cx('size-4', ended ? 'text-accent-fg' : 'text-muted')} aria-hidden />;
+});
+
+/** Pause / resume / reset: re-rendered when the phase changes, not on every second. */
+const TimerControls = memo(function TimerControls({ store, phase }: { store: TimerStore; phase: TimerPhase }): ReactNode {
+  useLocale();
+  const btn = phase === 'ended' ? 'text-accent-fg! hover:bg-white/20!' : undefined;
+  return (
+    <>
+      {phase === 'running' ? (
+        <IconButton label={t('canvasBoard.timer.pause')} size="sm" className={btn} onMouseDown={keepFocus} onClick={() => store.pause()} data-testid="canvas-timer-pause">
+          <Pause className="size-4" strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      ) : null}
+      {phase === 'paused' ? (
+        <IconButton label={t('canvasBoard.timer.resume')} size="sm" className={btn} onMouseDown={keepFocus} onClick={() => store.resume()} data-testid="canvas-timer-resume">
+          <Play className="size-4" strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      ) : null}
+      <IconButton label={t('canvasBoard.timer.reset')} size="sm" className={btn} onMouseDown={keepFocus} onClick={() => store.reset()} data-testid="canvas-timer-reset">
+        <RotateCcw className="size-4" strokeWidth={1.75} aria-hidden />
+      </IconButton>
+    </>
   );
 });
 

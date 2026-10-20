@@ -12,6 +12,7 @@
  *   paste         500 and 1500 objects pasted into a small canvas: frames and bytes we send
  * Exposed as `window.__viewBench`.
  */
+import { who } from './perf-react-who';
 import { createElement, Profiler } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
@@ -54,12 +55,14 @@ export interface ViewBenchResult {
   checks: { panelShownAfterClick: boolean; zoomBefore: string; zoomAfter: string; objectMoved: boolean; peerSeen: boolean; resumedAfterHidden: boolean };
   /** React commits caused by each burst. Expected: 0 for pan and foreign edits; the drag's 1 is the undo button enabling; zoom updates the percentage leaf. */
   commits: { peerJoin: number; wheelPan: number; dragSelected: number; remoteEditOther: number; remoteEditSelected: number; zoomClicks: number };
+  /** The components that rendered in each burst (`perf-react-who`). */
+  rendered: Record<string, Record<string, number>>;
   paste: { objects: number; updateFrames: number; updateBytes: number; snapshotPosts: number; snapshotPostBytes: number; maxFrame: number; settledObjects: number }[];
   teardown: { socketsOpen: number; liveTimersAfterUnmount: number };
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-const BITS = (1n << 41n) | (1n << 42n); // CANVAS_BITS.VIEW | WRITE
+export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+export const BITS = (1n << 41n) | (1n << 42n); // CANVAS_BITS.VIEW | WRITE
 
 function populate(relay: MockRelay, n: number): void {
   const cdoc = new CanvasDoc(relay.doc);
@@ -69,18 +72,18 @@ function populate(relay: MockRelay, n: number): void {
   cdoc.ensureSchema(); // as a stored document has it: opening writes nothing
 }
 
-function pointer(canvas: HTMLElement, type: string, x: number, y: number): void {
+export function pointer(canvas: HTMLElement, type: string, x: number, y: number): void {
   const e = new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: 'mouse' });
   canvas.dispatchEvent(e);
 }
 
 // ---- instrumentation: installed before anything mounts
 
-const counters = { raf: 0, scheduled: 0, fires: 0 };
+export const counters = { raf: 0, scheduled: 0, fires: 0 };
 /** `--sites`: also name the call site of every timeout (costs a stack per timer — diagnosis only). */
 const siteCounts = new Map<string, number>();
 const trackSites = (): boolean => (window as unknown as { __sites?: boolean }).__sites === true;
-const live = new Map<number, { kind: 'timeout' | 'interval'; site: string }>();
+export const live = new Map<number, { kind: 'timeout' | 'interval'; site: string }>();
 let hidden = false;
 
 const siteOf = (): string =>
@@ -90,7 +93,7 @@ const siteOf = (): string =>
     .map((l) => l.trim().replace(/^at /, '').replace(/\(.*\/(\w+\.\w+:\d+):\d+\)$/, '($1)').replace(/^.*\/(\w+\.\w+:\d+):\d+$/, '$1'))
     .join(' < ');
 
-function instrument(): void {
+export function instrument(): void {
   const raf0 = window.requestAnimationFrame.bind(window);
   const to0 = window.setTimeout.bind(window);
   const clearTo0 = window.clearTimeout.bind(window);
@@ -134,12 +137,12 @@ function instrument(): void {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
 }
 
-function setHidden(on: boolean): void {
+export function setHidden(on: boolean): void {
   hidden = on;
   document.dispatchEvent(new Event('visibilitychange'));
 }
 
-const liveSummary = (): ViewBenchResult['liveTimers'] => {
+export const liveSummary = (): ViewBenchResult['liveTimers'] => {
   const sites = new Map<string, number>();
   let timeouts = 0;
   let intervals = 0;
@@ -153,7 +156,7 @@ const liveSummary = (): ViewBenchResult['liveTimers'] => {
 
 // ---- what a client sent
 
-interface Sent {
+export interface Sent {
   update: number;
   updateBytes: number;
   awareness: number;
@@ -161,7 +164,7 @@ interface Sent {
   snapshotPostBytes: number;
   maxFrame: number;
 }
-function tally(sockets: MockSocket[]): Sent {
+export function tally(sockets: MockSocket[]): Sent {
   const t: Sent = { update: 0, updateBytes: 0, awareness: 0, snapshotPost: 0, snapshotPostBytes: 0, maxFrame: 0 };
   for (const s of sockets)
     for (const d of s.sent) {
@@ -178,7 +181,7 @@ function tally(sockets: MockSocket[]): Sent {
     }
   return t;
 }
-const diff = (a: Sent, b: Sent): Sent => ({
+export const diff = (a: Sent, b: Sent): Sent => ({
   update: b.update - a.update,
   updateBytes: b.updateBytes - a.updateBytes,
   awareness: b.awareness - a.awareness,
@@ -187,7 +190,7 @@ const diff = (a: Sent, b: Sent): Sent => ({
   maxFrame: b.maxFrame,
 });
 
-interface Mounted {
+export interface Mounted {
   host: HTMLElement;
   canvas: HTMLCanvasElement;
   relay: MockRelay;
@@ -196,12 +199,13 @@ interface Mounted {
   unmount(): void;
 }
 
-async function mountView(relay: MockRelay, clipboardText?: () => string): Promise<Mounted> {
+/** `extra`: more CanvasView props (`publicCode`…); `grant`: the relay grant of our socket (`{ viewer: true }` for the public link). */
+export async function mountView(relay: MockRelay, clipboardText?: () => string, extra: Record<string, unknown> = {}, grant: { canWrite?: boolean; viewer?: boolean } = { canWrite: true }): Promise<Mounted> {
   const host = document.getElementById('app') as HTMLElement;
   const root = createRoot(host);
   const commits = { n: 0 };
   const mine: MockSocket[] = [];
-  const factory = relay.socketFactory({ canWrite: true });
+  const factory = relay.socketFactory(grant);
   root.render(
     createElement(
       Profiler,
@@ -212,6 +216,7 @@ async function mountView(relay: MockRelay, clipboardText?: () => string): Promis
         bits: BITS,
         onOpenHistory: () => undefined,
         onShare: () => undefined,
+        ...extra,
         deps: {
           serverUrl: () => 'https://bench.test',
           getToken: () => Promise.resolve('t'),
@@ -232,7 +237,7 @@ async function mountView(relay: MockRelay, clipboardText?: () => string): Promis
 }
 
 /** A second participant: a socket on the relay with its own doc and awareness (no engine). */
-function makePeer(relay: MockRelay): { doc: CanvasDoc; ydoc: Y.Doc; cursor(x: number, y: number, sel?: string[]): void; socket: MockSocket } {
+export function makePeer(relay: MockRelay): { doc: CanvasDoc; ydoc: Y.Doc; cursor(x: number, y: number, sel?: string[], view?: { x: number; y: number; zoom: number }): void; socket: MockSocket } {
   const socket = relay.socketFactory({ canWrite: true })('wss://peer.test');
   const ydoc = new Y.Doc();
   Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(relay.doc));
@@ -248,8 +253,8 @@ function makePeer(relay: MockRelay): { doc: CanvasDoc; ydoc: Y.Doc; cursor(x: nu
     doc: new CanvasDoc(ydoc),
     ydoc,
     socket,
-    cursor(x, y, sel = []) {
-      aw.setLocalState({ user: { id: 'peer', name: 'Peer', color: '#c0392b' }, canvas: { cursor: { x, y }, selection: sel } });
+    cursor(x, y, sel = [], view) {
+      aw.setLocalState({ user: { id: 'peer', name: 'Peer', color: '#c0392b' }, canvas: { cursor: { x, y }, selection: sel }, ...(view ? { view } : {}) });
       socket.send(encodeAwareness(encodeAwarenessUpdate(aw, [aw.clientID])));
     },
   };
@@ -360,10 +365,14 @@ export async function run(n: number): Promise<ViewBenchResult> {
     pointer(canvas, 'pointerup', x0, y0 + 90);
     await sleep(4000); // 200 ms batch, 3 s idle snapshot
   });
-  const burst = async (fn: () => void | Promise<void>): Promise<number> => {
+  const rendered: Record<string, Record<string, number>> = {};
+  const burst = async (fn: () => void | Promise<void>, name = ''): Promise<number> => {
     const before = commits.n;
+    who.start();
     await fn();
     await sleep(400);
+    if (name) rendered[name] = who.stop().renders;
+    else who.stop();
     return commits.n - before;
   };
   const startX = relay.doc.getMap<Y.Map<unknown>>('objects').get('o0')?.get('x');
@@ -371,7 +380,7 @@ export async function run(n: number): Promise<ViewBenchResult> {
     pointer(canvas, 'pointerdown', cx - 540, cy - 340);
     for (let i = 1; i <= 40; i++) pointer(canvas, 'pointermove', cx - 540 + i * 3, cy - 340 + i * 2);
     pointer(canvas, 'pointerup', cx - 420, cy - 260);
-  });
+  }, 'dragSelected');
   const remote = new Y.Doc();
   Y.applyUpdate(remote, Y.encodeStateAsUpdate(relay.doc));
   const rdoc = new CanvasDoc(remote);
@@ -389,7 +398,7 @@ export async function run(n: number): Promise<ViewBenchResult> {
   const zoomBefore = zoomLabel();
   const zoomClicks = await burst(() => {
     (host.querySelector('[data-testid="canvas-zoom-in"]') as HTMLElement | null)?.click();
-  });
+  }, 'zoomClicks');
 
   const checks = {
     panelShownAfterClick,
@@ -436,6 +445,7 @@ export async function run(n: number): Promise<ViewBenchResult> {
     phases,
     checks,
     commits: { peerJoin, wheelPan, dragSelected, remoteEditOther, remoteEditSelected, zoomClicks },
+    rendered,
     paste,
     teardown,
   };

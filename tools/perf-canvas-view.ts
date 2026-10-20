@@ -4,7 +4,13 @@
  * the screen around it adds nothing at rest: idle rAF / timer / React-commit counts over 3 s and the React
  * commits caused by pan, drag, remote edits (must be 0). Sockets and platform are stubbed (no server).
  *
- *   nice -n 19 npx tsx tools/perf-canvas-view.ts [--n 2000,5000] [--runs 5] [--software]
+ *   nice -n 19 npx tsx tools/perf-canvas-view.ts [--n 2000,5000] [--runs 5] [--software] [--page v2]
+ *
+ * `--page v2` (V6): the second iteration's objects and features instead — mini-map, timer, vote, comment pins,
+ * following, the rotation gesture, formatted typing, templates, the public viewer (tools/perf-canvas-v2-page.tsx).
+ * It loads the app's real stylesheet (Tailwind compiled here from `app/styles.css`, offline): without it the panels
+ * and comment pins sit in the page's normal flow and every style change re-lays out all of them. `--css` does the
+ * same for the H5b page (its H9 numbers were taken without).
  *
  * Every run is a fresh page; the output is the median / min / max over `--runs` of every number. CPU is the
  * real CPU time of the Chromium processes (CDP), per phase, in % of one core. Phase list: see the page file.
@@ -27,13 +33,33 @@ const RUNS = Number(opt('runs', '3'));
 const SOFTWARE = argv.includes('--software');
 const SITES = argv.includes('--sites');
 const PROFILE = opt('profile', '');
+const V2 = opt('page', '') === 'v2';
+const CSS = V2 || argv.includes('--css');
+/**
+ * `--diag minimap|timer` (with `--page v2`): only idle windows with the mini-map open / a running timer, nothing before
+ * them. `--plain`: the H5b page's short stickies instead of the second iteration's mix (memory: content vs page).
+ */
+const DIAG = opt('diag', '');
+
+/** The app's stylesheet as the build makes it: Tailwind over `app/styles.css`, candidates scanned from the renderer sources. */
+async function appCss(): Promise<string> {
+  const require = createRequire(import.meta.url);
+  const { compile } = require('@tailwindcss/node') as typeof import('@tailwindcss/node');
+  const { Scanner } = require('@tailwindcss/oxide') as typeof import('@tailwindcss/oxide');
+  const renderer = resolve(here, '../apps/desktop/src/renderer');
+  const file = resolve(renderer, 'app/styles.css');
+  const { readFile } = await import('node:fs/promises');
+  const compiler = await compile(await readFile(file, 'utf8'), { base: dirname(file), from: file, onDependency: () => undefined });
+  const scanner = new Scanner({ sources: [{ base: renderer, pattern: '**/*', negated: false }] });
+  return compiler.build(scanner.scan());
+}
 
 async function bundle(): Promise<string> {
   const require = createRequire(import.meta.url);
   const esbuild = require('esbuild') as typeof import('esbuild');
   const stub = (file: string): string => resolve(here, file);
   const out = await esbuild.build({
-    entryPoints: [resolve(here, 'perf-canvas-view-page.tsx')],
+    entryPoints: [resolve(here, V2 ? 'perf-canvas-v2-page.tsx' : 'perf-canvas-view-page.tsx')],
     bundle: true,
     format: 'iife',
     platform: 'browser',
@@ -75,6 +101,7 @@ const PHASES = ['idle', 'hiddenIdle', 'hiddenBusy', 'cursors', 'peerEdits', 'dra
 
 async function main(): Promise<void> {
   const code = await bundle();
+  const css = CSS ? await appCss() : '';
   const out: unknown[] = [];
   for (const n of COUNTS) {
     const runs: unknown[] = [];
@@ -102,10 +129,16 @@ async function main(): Promise<void> {
         await page.waitForTimeout(10_000);
         await probe.sample('blank-end');
         if (SITES) await page.evaluate(() => ((window as unknown as { __sites: boolean }).__sites = true));
+        if (css) await page.addStyleTag({ content: css });
+        if (argv.includes('--plain')) await page.evaluate(() => ((window as unknown as { __v2Plain: boolean }).__v2Plain = true));
+        if (DIAG) await page.evaluate((d) => ((window as unknown as { __v2Diag: string }).__v2Diag = d), DIAG);
         await page.addScriptTag({ content: code });
-        const res = (await page.evaluate((count) => (window as unknown as { __viewBench: { run(n: number): Promise<unknown> } }).__viewBench.run(count), n)) as ViewBenchResult;
+        const res = (await page.evaluate(
+          ([count, v2]) => (window as unknown as Record<string, { run(n: number): Promise<unknown> }>)[v2 ? '__v2Bench' : '__viewBench']?.run(count as number),
+          [n, V2] as const,
+        )) as ViewBenchResult;
         const cpu: Record<string, unknown> = { blank: probe.cpu('blank-start', 'blank-end') };
-        for (const p of PHASES) cpu[p] = probe.cpu(`${p}-start`, `${p}-end`);
+        for (const p of V2 ? Object.keys(res.phases) : PHASES) cpu[p] = probe.cpu(`${p}-start`, `${p}-end`);
         const memory = {
           heapDocOnlyMB: probe.heapMB('gc:doc-only'),
           heapMountedMB: probe.heapMB('gc:mounted'),
@@ -113,6 +146,8 @@ async function main(): Promise<void> {
           rendererRssMB: probe.rssMB('gc:mounted'),
           /** Renderer RSS with the open canvas minus the same renderer with an empty page: what the screen adds (JS heap, bitmaps, scene). */
           rssDeltaMB: Math.round((probe.rssMB('gc:mounted') - probe.rssMB('blank-end')) * 10) / 10,
+          /** The same after 10 s of rest and a forced GC (the v2 page only). */
+          ...(probe.marks.has('gc:idle') ? { heapIdleMB: probe.heapMB('gc:idle'), rssIdleDeltaMB: Math.round((probe.rssMB('gc:idle') - probe.rssMB('blank-end')) * 10) / 10 } : {}),
         };
         runs.push({ ...res, cpu, memory });
         await probe.close();

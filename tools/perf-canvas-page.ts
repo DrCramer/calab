@@ -6,9 +6,12 @@
 import * as Y from 'yjs';
 import { CanvasDoc } from '../apps/desktop/src/renderer/lib/canvas/doc';
 import { Scene } from '../apps/desktop/src/renderer/lib/canvas/scene';
+import { fmtFromDelta, type DeltaOp, type Fmt } from '../apps/desktop/src/renderer/lib/canvas/richText';
+import { TEMPLATE_IDS } from '../apps/desktop/src/renderer/lib/canvas/templates';
 import { TextLayouter } from '../apps/desktop/src/renderer/lib/canvas/textLayout';
-import type { ObjectInit } from '../apps/desktop/src/renderer/lib/canvas/types';
+import { SHAPE_KINDS, type ObjectInit } from '../apps/desktop/src/renderer/lib/canvas/types';
 import { CanvasEngine } from '../apps/desktop/src/renderer/features/canvas/engine/engine';
+import { RotateGesture } from '../apps/desktop/src/renderer/features/canvas/engine/gestures';
 import { defaultPalette } from '../apps/desktop/src/renderer/features/canvas/engine/palette';
 
 export interface Stat {
@@ -62,6 +65,63 @@ export function populate(doc: CanvasDoc, n: number): void {
   for (let i = 0; i < inits.length; i += 500) doc.createMany(inits.slice(i, i + 500));
 }
 
+/** Bold / italic / strike spans and a bullet list over `text` (ADR-0114 wave 2): what a formatted note stores. */
+function richOf(text: string, k: number): { text: string; fmt: Fmt | undefined } {
+  const words = text.split(' ');
+  const ops: DeltaOp[] = [];
+  words.forEach((w, i) => {
+    const f = (i + k) % 4;
+    ops.push({ insert: i < words.length - 1 ? `${w} ` : w, ...(f === 1 ? { attributes: { bold: true } } : f === 2 ? { attributes: { italic: true } } : f === 3 && i % 3 === 0 ? { attributes: { strike: true } } : {}) });
+    if (i === 1 && k % 2 === 0) ops.push({ insert: '\n', attributes: { list: 'bullet' } });
+  });
+  if (k % 2 === 0) ops.push({ insert: '\n', attributes: { list: 'bullet' } });
+  return fmtFromDelta(ops);
+}
+
+/**
+ * The second iteration's mix (ADR-0114) on the same lattice and the same kinds as `populate`: half of the boxes
+ * rotated, a third of them in groups of 5, 40 % of the texts formatted (runs and lists), shapes over all 11
+ * kinds, a quarter of the stickies with a non-default font size. `rot: false` / `fmt: false` (mixes `v2-norot`,
+ * `v2-nofmt`) leave one of them out, the same objects otherwise — to tell what costs what; `v2-rot10` turns 10 % of the
+ * boxes instead of half.
+ */
+export function populateV2(doc: CanvasDoc, n: number, opts: { rot?: boolean; fmt?: boolean; rotEvery?: number } = {}): void {
+  const withRot = opts.rot ?? true;
+  const rotEvery = opts.rotEvery ?? 2;
+  const withFmt = opts.fmt ?? true;
+  const r = rng(42);
+  const cols = 100;
+  const pos = (i: number): { x: number; y: number } => ({ x: (i % cols) * 200, y: Math.floor(i / cols) * 200 });
+  const words = (k: number): string => Array.from({ length: k }, () => WORDS[Math.floor(r() * WORDS.length)] ?? '').join(' ');
+  const nConn = Math.floor(n * 0.05);
+  const nBox = n - nConn;
+  const inits: { id: string; init: ObjectInit }[] = [];
+  const sizes = ['s', 'l', 'xl'] as const;
+  for (let i = 0; i < nBox; i++) {
+    const { x, y } = pos(i);
+    const t = r();
+    const id = `b${i}`;
+    const extra: { rot?: number; group?: string; fontSize?: 's' | 'l' | 'xl' } = {};
+    const angle = 5 + Math.floor(r() * 350);
+    if (i % rotEvery === 0 && withRot) extra.rot = angle;
+    if (i % 30 < 10) extra.group = `g${Math.floor(i / 5)}`;
+    const rich = (s: string): { text: string; fmt?: Fmt } => {
+      if (i % 5 >= 2 || !withFmt) return { text: s };
+      const v = richOf(s, i);
+      return v.fmt ? { text: v.text, fmt: v.fmt } : { text: v.text };
+    };
+    if (t < 0.6) inits.push({ id, init: { kind: 'sticky', x, y, w: 160, h: 160, color: ['yellow', 'green', 'blue', 'pink'][i % 4] ?? 'yellow', ...rich(words(4 + Math.floor(r() * 8))), ...extra, ...(i % 4 === 1 ? { fontSize: sizes[i % 3] } : {}) } });
+    else if (t < 0.8) inits.push({ id, init: { kind: 'text', x, y, w: 180, size: 20, ...rich(words(2 + Math.floor(r() * 4))), ...extra } });
+    else inits.push({ id, init: { kind: 'shape', shape: SHAPE_KINDS[i % SHAPE_KINDS.length] ?? 'rect', x, y, w: 160, h: 100, fill: i % 2 ? 'none' : 'blue', stroke: 'stroke', ...rich(words(2)), ...extra } });
+  }
+  for (let i = 0; i < nConn; i++) {
+    const a = Math.floor(r() * nBox);
+    const b = Math.min(nBox - 1, a + 1 + Math.floor(r() * 3));
+    inits.push({ id: `c${i}`, init: { kind: 'connector', from: { id: `b${a}`, side: 'auto' }, to: { id: `b${b}`, side: 'auto' }, route: i % 2 ? 'elbow' : 'straight', arrow: 'end' } });
+  }
+  for (let i = 0; i < inits.length; i += 500) doc.createMany(inits.slice(i, i + 500));
+}
+
 const sync = (c: HTMLCanvasElement): void => {
   // Forces the pending GPU/raster work to finish, so the time includes rasterization.
   c.getContext('2d')?.getImageData(0, 0, 1, 1);
@@ -93,9 +153,21 @@ export interface BenchResult {
   editFrame: { record: Stat; withRaster: Stat };
   dragWithSnap: Stat;
   idle: { seconds: number; rafCalls: number; timeoutCalls: number; intervalCalls: number; frames: number };
+  /** `--mix v2` only. */
+  ops?: { templates: Record<string, OpCost>; alignLeft500: OpCost; distribute500: OpCost; group500: OpCost; rotate500: { perMoveMs: Stat; bytesPerMove: number } };
 }
 
-export async function run(n: number, dprLabel: number): Promise<BenchResult> {
+/** One command: the Yjs transaction(s), the frame after it, the updates it produced (`over64k`: above one socket frame). */
+export interface OpCost {
+  txMs: number;
+  frameMs: number;
+  updates: number;
+  bytes: number;
+  maxUpdate: number;
+  over64k: number;
+}
+
+export async function run(n: number, dprLabel: number, mix: 'h9' | 'v2' | 'v2-norot' | 'v2-nofmt' | 'v2-rot10' = 'h9'): Promise<BenchResult> {
   await mark('gc:start');
   const canvas = document.getElementById('c') as HTMLCanvasElement;
   const W = canvas.clientWidth;
@@ -105,7 +177,8 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
   let t = performance.now();
   const ydoc = new Y.Doc();
   const cdoc = new CanvasDoc(ydoc, { rng: rng(7) });
-  populate(cdoc, n);
+  if (mix === 'h9') populate(cdoc, n);
+  else populateV2(cdoc, n, { rot: mix !== 'v2-norot', fmt: mix !== 'v2-nofmt', rotEvery: mix === 'v2-rot10' ? 10 : 2 });
   const buildDocMs = performance.now() - t;
   const state = Y.encodeStateAsUpdate(ydoc);
 
@@ -194,6 +267,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
   const zrec: number[] = [];
   const zras: number[] = [];
   engine.setCamera(camAt(cx, cy, 1));
+  await mark('zoom-start');
   for (let k = 0; k < 40; k++) {
     engine.zoomAtPoint(0.96, { x: W / 2, y: H / 2 });
     zrec.push(recordOnly());
@@ -201,6 +275,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
     engine.zoomAtPoint(0.96, { x: W / 2, y: H / 2 });
     zras.push(withRaster());
   }
+  await mark('zoom-end');
 
   // Editing one object while the view is static (dirty-rect repaint) and a snapped drag through the engine's own gesture.
   engine.setCamera(camAt(cx, cy, 1));
@@ -241,6 +316,51 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
     fire('pointerup', sx + 180, sy + 120);
   }
 
+  // Second-iteration commands over many objects (ADR-0114): templates, align / distribute, group, group rotation.
+  let ops: BenchResult['ops'];
+  if (mix !== 'h9') {
+    const sizes: number[] = [];
+    const onUpdate = (u: Uint8Array): void => void sizes.push(u.length);
+    ydoc.on('update', onUpdate);
+    const measure = (body: () => void): OpCost => {
+      sizes.length = 0;
+      const s = performance.now();
+      body();
+      const txMs = performance.now() - s;
+      const f = performance.now();
+      frame();
+      sync(canvas);
+      return { txMs: round(txMs), frameMs: round(performance.now() - f), updates: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0), maxUpdate: Math.max(0, ...sizes), over64k: sizes.filter((b) => b > 65536).length };
+    };
+    const templates: Record<string, OpCost> = {};
+    for (const id of TEMPLATE_IDS) {
+      engine.setCamera(camAt(cx + 3000, cy + 3000, 1));
+      templates[id] = measure(() => void engine.insertTemplate(id, (key) => `Заметка ${key}`));
+    }
+    const five = Array.from({ length: 500 }, (_, i) => `b${i}`);
+    engine.setCamera(camAt(cx, cy, 0.25));
+    engine.setSelection(five);
+    const alignLeft = measure(() => engine.arrange('left'));
+    const distribute = measure(() => engine.arrange('hspace'));
+    engine.setSelection(Array.from({ length: 500 }, (_, i) => `b${1000 + i}`));
+    const group = measure(() => void engine.groupSelection());
+    engine.setSelection(five);
+    const b = engine.scene.bounds(engine.selection) ?? { x: 0, y: 0, w: 1, h: 1 };
+    const pivot = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    const g = new RotateGesture(engine, engine.expandUnits(five), { x: pivot.x + 500, y: pivot.y });
+    const moves: number[] = [];
+    const moveBytes: number[] = [];
+    for (let k = 1; k <= 30; k++) {
+      const a = (k * 3 * Math.PI) / 180;
+      const c = measure(() => g.move({ x: pivot.x + 500 * Math.cos(a), y: pivot.y + 500 * Math.sin(a) }, { x: 0, y: 0 }, { shift: false, alt: false, mod: false }));
+      moves.push(c.txMs + c.frameMs);
+      moveBytes.push(c.bytes);
+    }
+    g.end();
+    ydoc.off('update', onUpdate);
+    ops = { templates, alignLeft500: alignLeft, distribute500: distribute, group500: group, rotate500: { perMoveMs: fmt(stat(moves)), bytesPerMove: Math.round(moveBytes.reduce((a, x) => a + x, 0) / moveBytes.length) } };
+  }
+
   // Idle: nothing should schedule frames or timers while the canvas just sits there.
   const counts = { raf: 0, to: 0, iv: 0 };
   const raf0 = window.requestAnimationFrame.bind(window);
@@ -279,6 +399,7 @@ export async function run(n: number, dprLabel: number): Promise<BenchResult> {
     editFrame: { record: fmt(stat(erec)), withRaster: fmt(stat(eras)) },
     dragWithSnap: fmt(stat(drag)),
     idle,
+    ...(ops ? { ops } : {}),
   };
   engine.destroy();
   return result;

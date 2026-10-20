@@ -12,6 +12,14 @@ export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
 /** Below this zoom, glyphs become plaques and strokes lose their details (ADR-0113 §4). */
 export const TEXT_PLAQUE_SCALE = 0.25;
+/** Glyphs smaller than this on screen (CSS px) become plaques; plain text keeps them down to 25 % anyway. */
+const MIN_GLYPH_PX = 4;
+/**
+ * The same for a rotated box (ADR-0114). Every distinct angle × zoom rasterizes its own glyphs (no shared glyph
+ * cache), so a zoom over hundreds of turned notes repainted them at 4–8 px — barely legible — for a 3–4× costlier
+ * frame (docs/14-energy.md «Холст, вторая итерация»).
+ */
+const MIN_ROTATED_GLYPH_PX = 8;
 
 export interface DrawEnv {
   palette: CanvasPalette;
@@ -142,7 +150,8 @@ function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: F
   const lay = layoutFor(owner, env, text, fmt, size, box.w);
   const top = vcenter ? box.y + Math.max(0, (box.h - lay.height) / 2) : box.y;
   const bottom = box.y + box.h + lay.lineHeight * 0.5;
-  if (env.scale < TEXT_PLAQUE_SCALE || size * env.scale < 4) {
+  const minPx = (owner as { rot?: number }).rot ? MIN_ROTATED_GLYPH_PX : MIN_GLYPH_PX;
+  if (env.scale < TEXT_PLAQUE_SCALE || size * env.scale < minPx) {
     ctx.fillStyle = env.palette.plaque;
     if (env.scale < 0.15) {
       // Lines are ~2 px tall here: one block per text.
