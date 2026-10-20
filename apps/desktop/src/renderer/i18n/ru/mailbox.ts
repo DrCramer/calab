@@ -172,6 +172,8 @@ export const ruMailbox = {
   'mbox.settings.reading': 'Чтение',
   'mbox.settings.notify': 'Уведомлять о новых письмах',
   'mbox.settings.notifyHint': 'Пока Calab запущен; в режиме «Не беспокоить» — нет',
+  'mbox.settings.group': 'Группировать письма по переписке',
+  'mbox.settings.groupHint': 'Выключите, чтобы каждое письмо было отдельной строкой списка',
   'mbox.settings.images': 'Картинки из сети',
   'mbox.settings.imagesHint': 'Картинки из сети сообщают отправителю, что письмо открыто',
   'mbox.settings.imagesAsk': 'Спрашивать',

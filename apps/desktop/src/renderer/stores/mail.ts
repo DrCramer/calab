@@ -871,6 +871,14 @@ export function inTrash(s: MailState): boolean {
 
 // ---------------------------------------------------------------- settings
 
+/** «Группировать письма по переписке»: the engine re-threads the mailbox, so the list and the open thread are reloaded. */
+export async function setGrouping(on: boolean): Promise<void> {
+  await updateSettings({ groupThreads: on });
+  if (useMail.getState().settings.groupThreads !== on) return;
+  useMail.setState({ selected: null, thread: null, headers: {}, bodies: {}, bodyState: {}, openId: null });
+  await reloadList();
+}
+
 export async function updateSettings(patch: Partial<MailSettings>): Promise<void> {
   const a = api;
   if (!a) return;
