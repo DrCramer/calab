@@ -671,6 +671,23 @@ type CanvasActivity struct {
 	CreatedAt   time.Time
 }
 
+type CanvasComment struct {
+	ID         uuid.UUID
+	CanvasID   uuid.UUID
+	ParentID   *uuid.UUID
+	ObjectID   *string
+	X          float64
+	Y          float64
+	AuthorID   *uuid.UUID
+	Body       string
+	Mentions   []uuid.UUID
+	Notified   []uuid.UUID
+	ResolvedAt *time.Time
+	ResolvedBy *uuid.UUID
+	CreatedAt  time.Time
+	EditedAt   *time.Time
+}
+
 type CanvasItem struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

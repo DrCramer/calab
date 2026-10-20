@@ -57,6 +57,9 @@ const (
 	scopeWikiPage
 	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0113), the item's workspace.
 	scopeCanvasItem
+	// scopeCanvasComment: /api/canvas/comments/{id} (ADR-0114 wave 4), the workspace of the
+	// comment's canvas.
+	scopeCanvasComment
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -534,6 +537,12 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/canvas/items/{id}/versions":          scopeCanvasItem,
 	"GET /api/canvas/items/{id}/versions/{vid}":    scopeCanvasItem,
 	"GET /api/canvas/items/{id}/sync":              scopePublic,
+	// Canvas comments (ADR-0114 wave 4).
+	"GET /api/canvas/items/{id}/comments":                scopeCanvasItem,
+	"POST /api/canvas/items/{id}/comments":               scopeCanvasItem,
+	"GET /api/canvas/items/{id}/comments/mention-access": scopeCanvasItem,
+	"PATCH /api/canvas/comments/{id}":                    scopeCanvasComment,
+	"DELETE /api/canvas/comments/{id}":                   scopeCanvasComment,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
@@ -798,6 +807,8 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeCanvasItem:
 		row, err := q.GetCanvasItem(ctx, id)
 		return row.WorkspaceID, err
+	case scopeCanvasComment:
+		return q.GetCanvasCommentWorkspace(ctx, id)
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -926,6 +937,8 @@ func IdentityRouteClass(pattern string) string {
 		return "wiki_page"
 	case scopeCanvasItem:
 		return "canvas_item"
+	case scopeCanvasComment:
+		return "canvas_comment"
 	default:
 		return "specialized"
 	}

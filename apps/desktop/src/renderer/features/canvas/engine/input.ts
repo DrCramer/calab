@@ -126,6 +126,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       engine.activeGesture = new WireGesture(engine, w, s, TOUCH_SLOP_PX);
       return;
     }
+    if (tool === 'comment') {
+      // A tap places a pin; a drag pans.
+      engine.activeGesture = new TapPanGesture(engine, s, () => engine.emitCommentAt(s, w));
+      return;
+    }
     if (rotateHandleAt(w)) {
       engine.activeGesture = new RotateGesture(engine, engine.selection, w);
       return;
@@ -263,6 +268,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         return;
       case 'connector':
         engine.activeGesture = new WireGesture(engine, w, s);
+        return;
+      case 'comment':
+        engine.emitCommentAt(s, w);
         return;
       case 'select':
         break;
@@ -473,7 +481,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       e.preventDefault();
       return;
     }
-    if (e.shiftKey && e.code === 'Digit1') {
+    if (e.altKey && !e.shiftKey && e.code === 'KeyC') {
+      // ⌥C: the «Комментарий» tool (ADR-0114 wave 4) on and off; by the physical key (⌥C types «ç» on a Mac).
+      if (engine.readOnly) return;
+      engine.setTool(engine.tool === 'comment' ? 'select' : 'comment');
+    } else if (e.shiftKey && e.code === 'Digit1') {
       engine.fitAll();
     } else if (e.shiftKey && e.code === 'Digit2') {
       engine.fitSelection();

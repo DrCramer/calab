@@ -31,6 +31,7 @@ import { canvasDocHandle } from '../lib/canvas/docHandle';
 import { ancestorsOf, childKey, isFolder, TOP, trashKey } from '../lib/canvas/tree';
 import { pushOnTab } from '../lib/phoneNav';
 import { useCanvas } from '../stores/canvas';
+import { useCanvasComments } from '../stores/canvasComments';
 import { itemOf, useCanvasUi } from '../stores/canvasUi';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
@@ -257,6 +258,9 @@ export function onCanvasItemRemove(e: CanvasItemRemove): void {
   const ui = useCanvasUi.getState();
   const open = itemOf(ui, e.workspaceId);
   if (open && (open === e.itemId || ancestorsOf(st.items, open).includes(e.itemId))) ui.openItem(e.workspaceId, '');
+  // The comments of the item and of every canvas below it that are held go with it (ADR-0114 wave 4).
+  const cs = useCanvasComments.getState();
+  for (const id of Object.keys(cs.loaded)) if (id === e.itemId || ancestorsOf(st.items, id).includes(e.itemId)) cs.forget(id);
   st.remove(e.itemId);
   if (!onScreen(e.workspaceId)) useCanvas.getState().forgetLists(e.workspaceId);
 }

@@ -470,6 +470,7 @@ func New(d Deps) *App {
 	wikiSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, wiki.SyncConfig{})
 	wikiSvc.Routes(mux, private)
 	canvasSvc := canvas.New(d.DB, pub)
+	canvasSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-comment:", 20, 20) // ADR-0114 wave 4: 20 at once, 20 per minute
 	canvasSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, ysync.Config{})
 	canvasSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,

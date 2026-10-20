@@ -20,6 +20,7 @@ import { restoreCanvasState } from '../../../lib/canvas/restore';
 import { toast } from '../../../stores/toasts';
 import type { CanvasPalette } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
+import { CommentsLayer, CommentsToggle } from './comments/CommentsLayer';
 import { ZoomBar } from './Controls';
 import { MiniMap } from './MiniMap';
 import { PhoneEditBar } from './PhoneEditBar';
@@ -332,6 +333,9 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
               onHelpOpenChange={setHelpOpen}
               phone={phone}
               granted={granted}
+              canvasId={canvasId}
+              workspaceId={workspaceId}
+              bits={bits}
             />
           ) : null}
         </div>
@@ -345,7 +349,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
 
 /** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
 function Chrome({
-  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange, phone, granted,
+  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange, phone, granted, canvasId, workspaceId, bits,
 }: {
   session: CanvasSession;
   palette: CanvasPalette;
@@ -359,13 +363,20 @@ function Chrome({
   phone: boolean;
   /** CANVAS_WRITE is granted (the phone may be in view mode with it). */
   granted: boolean;
+  canvasId: string;
+  workspaceId: string;
+  bits: bigint;
 }): ReactNode {
   const { engine, sync, timer } = session;
   const editable = !useEngineValue(engine, (s) => s.readOnly);
+  // Comments (ADR-0114 wave 4): their own layer and panel; the canvas never re-renders for them.
+  const comments = <CommentsLayer engine={engine} sync={sync} canvasId={canvasId} workspaceId={workspaceId} bits={bits} phone={phone} />;
+  const commentsToggle = <CommentsToggle canvasId={canvasId} focusCanvas={phone ? undefined : focusCanvas} />;
   if (phone) {
     return (
       <>
-        <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={onHelpOpenChange} phone top={canWrite} />
+        {comments}
+        <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={onHelpOpenChange} phone top={canWrite} comments={commentsToggle} />
         <PhoneOthers store={presence} top={canWrite} />
         {granted ? null : <PhoneNote />}
         {canWrite && editable ? <PhoneEditHint /> : null}
@@ -390,7 +401,8 @@ function Chrome({
           <TemplatesCard engine={engine} sync={sync} focusCanvas={focusCanvas} />
         </>
       ) : null}
-      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
+      {comments}
+      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} comments={commentsToggle} />
       <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
       <Presence store={presence} engine={engine} />
       <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} />

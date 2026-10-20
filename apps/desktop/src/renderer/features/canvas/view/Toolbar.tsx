@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, MousePointer2, Redo2, Spline, StickyNote, Type, Undo2, Waypoints } from 'lucide-react';
+import { ChevronDown, MessageSquarePlus, MousePointer2, Redo2, Spline, StickyNote, Type, Undo2, Waypoints } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
@@ -221,6 +221,7 @@ export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { e
           </FlyoutTrigger>
         }
       />
+      <ToolButton {...common} tool="comment" icon={<MessageSquarePlus className={ICON} strokeWidth={1.75} aria-hidden />} active={tool === 'comment'} pinned={false} />
       <div className="mx-1 my-0.5 h-px bg-line" aria-hidden />
       <TemplatesMenu engine={engine} focusCanvas={focusCanvas} />
       <VoteButton engine={engine} focusCanvas={focusCanvas} />

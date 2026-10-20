@@ -49,6 +49,7 @@ const HELP_ROWS = [
   'canvasBoard.help.lock',
   'canvasBoard.help.format',
   'canvasBoard.help.undo',
+  'canvasBoard.help.comment',
 ] as const;
 
 function Help({ focusCanvas, canWrite, open, onOpenChange }: { focusCanvas: () => void; canWrite: boolean; open: boolean; onOpenChange: (o: boolean) => void }): ReactNode {
@@ -109,7 +110,7 @@ function MiniMapToggle({ focusCanvas }: { focusCanvas: () => void }): ReactNode 
 
 /** Zoom, fit and the shortcut help: bottom right. `phone` (view only, no keyboard): zoom and «вписать всё» only. */
 export const ZoomBar = memo(function ZoomBar({
-  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false,
+  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false, comments,
 }: {
   engine: CanvasEngine;
   focusCanvas: () => void;
@@ -119,6 +120,8 @@ export const ZoomBar = memo(function ZoomBar({
   phone?: boolean;
   /** The phone's edit mode: the bar hangs from the top, the bottom belongs to the tool bar. */
   top?: boolean;
+  /** The comments panel's button (ADR-0114 wave 4). */
+  comments?: ReactNode;
 }): ReactNode {
   useLocale();
   const step = (dir: 1 | -1) => (): void => {
@@ -138,6 +141,12 @@ export const ZoomBar = memo(function ZoomBar({
       <IconButton label={t('canvasBoard.zoom.fitAll')} shortcut="⇧1" onMouseDown={keepFocus} onClick={() => { engine.fitAll(); focusCanvas(); }} data-testid="canvas-fit-all">
         <Maximize className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
+      {comments ? (
+        <>
+          <div className={DIVIDER} aria-hidden />
+          {comments}
+        </>
+      ) : null}
       {phone ? null : (
         <>
           <IconButton label={t('canvasBoard.zoom.fitSelection')} shortcut="⇧2" onMouseDown={keepFocus} onClick={() => { engine.fitSelection(); focusCanvas(); }} data-testid="canvas-fit-selection">

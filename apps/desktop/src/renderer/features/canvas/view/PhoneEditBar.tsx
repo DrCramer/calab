@@ -1,4 +1,4 @@
-import { MousePointer2, Plus, Redo2, Spline, StickyNote, Type, Undo2, Vote, Timer as TimerIcon, type LucideIcon } from 'lucide-react';
+import { MessageSquarePlus, MousePointer2, Plus, Redo2, Spline, StickyNote, Type, Undo2, Vote, Timer as TimerIcon, type LucideIcon } from 'lucide-react';
 import { memo, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
@@ -211,6 +211,10 @@ function PlusSheet({ engine, timer, focusCanvas, onDone }: { engine: CanvasEngin
   };
   return (
     <div className={cx(SHEET, 'flex flex-col gap-1 p-2')} role="group" aria-label={t('canvasPhone.plus')} data-testid="canvas-phone-plus-sheet">
+      <button type="button" className={ROW} onMouseDown={keepFocus} onClick={act(() => engine.setTool('comment'))} data-testid="canvas-tool-comment">
+        <MessageSquarePlus className="size-5 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
+        <span className="text-body text-fg">{t('canvasBoard.tool.comment')}</span>
+      </button>
       <h2 className="px-3 pt-1 text-caption text-muted">{t('canvasBoard.templates.title')}</h2>
       {TEMPLATE_IDS.map((id: TemplateId) => {
         const Icon = TEMPLATE_ICON[id];

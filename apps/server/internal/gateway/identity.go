@@ -292,6 +292,10 @@ var eventScope = map[protoreflect.Name]bool{
 	"event_comment_upsert": true, "event_comment_delete": true,
 	// Canvas (ADR-0113 §6): workspace channel; routed to the item's viewers (CANVAS_VIEW).
 	"canvas_item_upsert": true, "canvas_item_remove": true,
+	// Canvas comments (ADR-0114 wave 4): workspace channel, routed to the canvas's viewers
+	// (CANVAS_VIEW); the @mention notice on the mentioned member's user channel, lease-gated by
+	// its workspace like every scoped event.
+	"canvas_comment_upsert": true, "canvas_comment_delete": true, "canvas_comment_mention": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

@@ -33,6 +33,14 @@ type vector struct {
 		Mandatory      bool   `json:"mandatory"`
 		Off            bool   `json:"off"`
 	} `json:"task"`
+	// ADR-0114 wave 4: a canvas @mention vector; text = the notice may carry the comment.
+	Canvas *struct {
+		Level          string `json:"level"`
+		WorkspaceMuted bool   `json:"workspaceMuted"`
+		HideText       bool   `json:"hideText"`
+		Private        bool   `json:"private"`
+	} `json:"canvas"`
+	Text bool `json:"text"`
 }
 
 func TestVectors(t *testing.T) {
@@ -50,8 +58,19 @@ func TestVectors(t *testing.T) {
 	lvl := func(s string) v1.NotificationLevel {
 		return LevelFromDB(s, v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED)
 	}
-	tasks := 0
+	tasks, canvases := 0, 0
 	for _, v := range vs {
+		if cv := v.Canvas; cv != nil {
+			canvases++
+			f := CanvasFacts{Level: lvl(cv.Level), Muted: cv.WorkspaceMuted, HideText: cv.HideText, Private: cv.Private}
+			if got := CanvasMentionNotifies(f); got != v.Notifies {
+				t.Errorf("%s: canvas notifies %v, want %v", v.Name, got, v.Notifies)
+			}
+			if got := CanvasMentionText(f); got != v.Text {
+				t.Errorf("%s: canvas text %v, want %v", v.Name, got, v.Text)
+			}
+			continue
+		}
 		if tv := v.Task; tv != nil {
 			tasks++
 			f := TaskFacts{Kind: TaskKind(tv.Kind), Level: lvl(tv.Level), Subscribed: tv.Subscribed, Muted: tv.Muted, Workspace: tv.WorkspaceMuted, Mandatory: tv.Mandatory, Off: tv.Off}
@@ -70,6 +89,9 @@ func TestVectors(t *testing.T) {
 	}
 	if tasks < 50 {
 		t.Fatalf("only %d task vectors", tasks)
+	}
+	if canvases < 32 {
+		t.Fatalf("only %d canvas vectors", canvases)
 	}
 }
 

@@ -14,6 +14,7 @@ export const ruCanvasPhone = {
   'canvasPhone.armed.text': 'Коснитесь холста — написать текст',
   'canvasPhone.armed.shape': 'Коснитесь холста — поставить фигуру',
   'canvasPhone.armed.connector': 'Протяните палец от одного объекта к другому',
+  'canvasPhone.armed.comment': 'Коснитесь объекта или поля — оставить комментарий',
   'canvasPhone.multi': 'Выбрать несколько',
   'canvasPhone.multiHint': 'Коснитесь объектов, чтобы выбрать',
   'canvasPhone.selected': { one: 'Выбран {n}', few: 'Выбрано {n}', many: 'Выбрано {n}', other: 'Выбрано {n}' },

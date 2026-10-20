@@ -14,7 +14,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/canvas.proto.
  */
 export const file_calaba_v1_canvas: GenFile = /*@__PURE__*/
-  fileDesc("ChZjYWxhYmEvdjEvY2FudmFzLnByb3RvEgljYWxhYmEudjEi2AMKCkNhbnZhc0l0ZW0SCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRInCgRraW5kGAQgASgOMhkuY2FsYWJhLnYxLkNhbnZhc0l0ZW1LaW5kEgwKBG5hbWUYBSABKAkSEAoIb3duZXJfaWQYBiABKAkSEgoKcmVzdHJpY3RlZBgHIAEoCBIOCgZzaGFyZWQYCCABKAgSLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKdXBkYXRlZF9ieRgKIAEoCRIuCgp0cmFzaGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdteV9iaXRzGAwgASgEEhQKDGhhc19jaGlsZHJlbhgNIAEoCBIuCgpjcmVhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghwb3NpdGlvbhgPIAEoBRISCgp0cmFzaGVkX2J5GBAgASgJEhQKDHRyYXNoZWRfcm9vdBgRIAEoCBIQCghkb2Nfc2l6ZRgSIAEoDRIPCgdwcmV2aWV3GBMgASgJIn0KFUNhbnZhc1Blcm1pc3Npb25FbnRyeRI0Cgt0YXJnZXRfdHlwZRgBIAEoDjIfLmNhbGFiYS52MS5QZXJtaXNzaW9uVGFyZ2V0VHlwZRIRCgl0YXJnZXRfaWQYAiABKAkSDQoFYWxsb3cYAyABKAQSDAoEZGVueRgEIAEoBCKAAQoNQ2FudmFzVmVyc2lvbhIKCgJpZBgBIAEoCRIRCgljYW52YXNfaWQYAiABKAkSEgoKYXV0aG9yX2lkcxgDIAMoCRIuCgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIMCgRzaXplGAUgASgNIpYCCg5DYW52YXNBY3Rpdml0eRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDwoHaXRlbV9pZBgDIAEoCRIQCghhY3Rvcl9pZBgEIAEoCRIrCgRraW5kGAUgASgOMh0uY2FsYWJhLnYxLkNhbnZhc0FjdGl2aXR5S2luZBInCgZiZWZvcmUYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiYKBWFmdGVyGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglpdGVtX25hbWUYCSABKAkiVAoXTGlzdENhbnZhc0l0ZW1zUmVzcG9uc2USJAoFaXRlbXMYASADKAsyFS5jYWxhYmEudjEuQ2FudmFzSXRlbRITCgtuZXh0X2N1cnNvchgCIAEoCSJjChdDcmVhdGVDYW52YXNJdGVtUmVxdWVzdBIRCglwYXJlbnRfaWQYASABKAkSJwoEa2luZBgCIAEoDjIZLmNhbGFiYS52MS5DYW52YXNJdGVtS2luZBIMCgRuYW1lGAMgASgJIjkKEkNhbnZhc0l0ZW1SZXNwb25zZRIjCgRpdGVtGAEgASgLMhUuY2FsYWJhLnYxLkNhbnZhc0l0ZW0ipwEKF1VwZGF0ZUNhbnZhc0l0ZW1SZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIWCglwYXJlbnRfaWQYAiABKAlIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEhcKCnJlc3RyaWN0ZWQYBCABKAhIA4gBAUIHCgVfbmFtZUIMCgpfcGFyZW50X2lkQgsKCV9wb3NpdGlvbkINCgtfcmVzdHJpY3RlZCI6ChJDYW52YXNQYXRoUmVzcG9uc2USJAoFaXRlbXMYASADKAsyFS5jYWxhYmEudjEuQ2FudmFzSXRlbSIrChhFbXB0eUNhbnZhc1RyYXNoUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoDSJiChlDYW52YXNQZXJtaXNzaW9uc1Jlc3BvbnNlEjEKB2VudHJpZXMYASADKAsyIC5jYWxhYmEudjEuQ2FudmFzUGVybWlzc2lvbkVudHJ5EhIKCnJlc3RyaWN0ZWQYAiABKAgiewoeVXBkYXRlQ2FudmFzUGVybWlzc2lvbnNSZXF1ZXN0EjEKB2VudHJpZXMYASADKAsyIC5jYWxhYmEudjEuQ2FudmFzUGVybWlzc2lvbkVudHJ5EhcKCnJlc3RyaWN0ZWQYAiABKAhIAIgBAUINCgtfcmVzdHJpY3RlZCJZChZDYW52YXNWZXJzaW9uc1Jlc3BvbnNlEioKCHZlcnNpb25zGAEgAygLMhguY2FsYWJhLnYxLkNhbnZhc1ZlcnNpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkiWAoSQ2FudmFzQWN0aXZpdHlQYWdlEi0KCmFjdGl2aXRpZXMYASADKAsyGS5jYWxhYmEudjEuQ2FudmFzQWN0aXZpdHkSEwoLbmV4dF9jdXJzb3IYAiABKAkiJAoOQ2FudmFzU2V0dGluZ3MSEgoKdHJhc2hfZGF5cxgBIAEoDSJuChFDYW52YXNBY2Nlc3NMZXZlbBISCgpyZXN0cmljdGVkGAEgASgIEhAKCG93bmVyX2lkGAIgASgJEjMKCW92ZXJyaWRlcxgDIAMoCzIgLmNhbGFiYS52MS5DYW52YXNQZXJtaXNzaW9uRW50cnkisAEKEENhbnZhc0l0ZW1VcHNlcnQSFAoMd29ya3NwYWNlX2lkGAEgASgJEiMKBGl0ZW0YAiABKAsyFS5jYWxhYmEudjEuQ2FudmFzSXRlbRIsCgZhY2Nlc3MYAyADKAsyHC5jYWxhYmEudjEuQ2FudmFzQWNjZXNzTGV2ZWwSMwoNYWNjZXNzX2JlZm9yZRgEIAMoCzIcLmNhbGFiYS52MS5DYW52YXNBY2Nlc3NMZXZlbCJ6ChBDYW52YXNJdGVtUmVtb3ZlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdpdGVtX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRIsCgZhY2Nlc3MYBCADKAsyHC5jYWxhYmEudjEuQ2FudmFzQWNjZXNzTGV2ZWwqbAoOQ2FudmFzSXRlbUtpbmQSIAocQ0FOVkFTX0lURU1fS0lORF9VTlNQRUNJRklFRBAAEhsKF0NBTlZBU19JVEVNX0tJTkRfRk9MREVSEAESGwoXQ0FOVkFTX0lURU1fS0lORF9DQU5WQVMQAirAAgoSQ2FudmFzQWN0aXZpdHlLaW5kEiQKIENBTlZBU19BQ1RJVklUWV9LSU5EX1VOU1BFQ0lGSUVEEAASHwobQ0FOVkFTX0FDVElWSVRZX0tJTkRfQ1JFQVRFEAESHwobQ0FOVkFTX0FDVElWSVRZX0tJTkRfUkVOQU1FEAISHQoZQ0FOVkFTX0FDVElWSVRZX0tJTkRfTU9WRRADEh4KGkNBTlZBU19BQ1RJVklUWV9LSU5EX1NIQVJFEAQSHgoaQ0FOVkFTX0FDVElWSVRZX0tJTkRfVFJBU0gQBRIgChxDQU5WQVNfQUNUSVZJVFlfS0lORF9SRVNUT1JFEAYSHwobQ0FOVkFTX0FDVElWSVRZX0tJTkRfREVMRVRFEAcSIAocQ0FOVkFTX0FDVElWSVRZX0tJTkRfVkVSU0lPThAIQpkBCg1jb20uY2FsYWJhLnYxQgtDYW52YXNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_struct, file_google_protobuf_timestamp, file_calaba_v1_room]);
+  fileDesc("ChZjYWxhYmEvdjEvY2FudmFzLnByb3RvEgljYWxhYmEudjEi2AMKCkNhbnZhc0l0ZW0SCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRInCgRraW5kGAQgASgOMhkuY2FsYWJhLnYxLkNhbnZhc0l0ZW1LaW5kEgwKBG5hbWUYBSABKAkSEAoIb3duZXJfaWQYBiABKAkSEgoKcmVzdHJpY3RlZBgHIAEoCBIOCgZzaGFyZWQYCCABKAgSLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKdXBkYXRlZF9ieRgKIAEoCRIuCgp0cmFzaGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdteV9iaXRzGAwgASgEEhQKDGhhc19jaGlsZHJlbhgNIAEoCBIuCgpjcmVhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghwb3NpdGlvbhgPIAEoBRISCgp0cmFzaGVkX2J5GBAgASgJEhQKDHRyYXNoZWRfcm9vdBgRIAEoCBIQCghkb2Nfc2l6ZRgSIAEoDRIPCgdwcmV2aWV3GBMgASgJIn0KFUNhbnZhc1Blcm1pc3Npb25FbnRyeRI0Cgt0YXJnZXRfdHlwZRgBIAEoDjIfLmNhbGFiYS52MS5QZXJtaXNzaW9uVGFyZ2V0VHlwZRIRCgl0YXJnZXRfaWQYAiABKAkSDQoFYWxsb3cYAyABKAQSDAoEZGVueRgEIAEoBCKAAQoNQ2FudmFzVmVyc2lvbhIKCgJpZBgBIAEoCRIRCgljYW52YXNfaWQYAiABKAkSEgoKYXV0aG9yX2lkcxgDIAMoCRIuCgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIMCgRzaXplGAUgASgNIpYCCg5DYW52YXNBY3Rpdml0eRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDwoHaXRlbV9pZBgDIAEoCRIQCghhY3Rvcl9pZBgEIAEoCRIrCgRraW5kGAUgASgOMh0uY2FsYWJhLnYxLkNhbnZhc0FjdGl2aXR5S2luZBInCgZiZWZvcmUYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiYKBWFmdGVyGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglpdGVtX25hbWUYCSABKAkiVAoXTGlzdENhbnZhc0l0ZW1zUmVzcG9uc2USJAoFaXRlbXMYASADKAsyFS5jYWxhYmEudjEuQ2FudmFzSXRlbRITCgtuZXh0X2N1cnNvchgCIAEoCSJjChdDcmVhdGVDYW52YXNJdGVtUmVxdWVzdBIRCglwYXJlbnRfaWQYASABKAkSJwoEa2luZBgCIAEoDjIZLmNhbGFiYS52MS5DYW52YXNJdGVtS2luZBIMCgRuYW1lGAMgASgJIjkKEkNhbnZhc0l0ZW1SZXNwb25zZRIjCgRpdGVtGAEgASgLMhUuY2FsYWJhLnYxLkNhbnZhc0l0ZW0ipwEKF1VwZGF0ZUNhbnZhc0l0ZW1SZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIWCglwYXJlbnRfaWQYAiABKAlIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEhcKCnJlc3RyaWN0ZWQYBCABKAhIA4gBAUIHCgVfbmFtZUIMCgpfcGFyZW50X2lkQgsKCV9wb3NpdGlvbkINCgtfcmVzdHJpY3RlZCI6ChJDYW52YXNQYXRoUmVzcG9uc2USJAoFaXRlbXMYASADKAsyFS5jYWxhYmEudjEuQ2FudmFzSXRlbSIrChhFbXB0eUNhbnZhc1RyYXNoUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoDSJiChlDYW52YXNQZXJtaXNzaW9uc1Jlc3BvbnNlEjEKB2VudHJpZXMYASADKAsyIC5jYWxhYmEudjEuQ2FudmFzUGVybWlzc2lvbkVudHJ5EhIKCnJlc3RyaWN0ZWQYAiABKAgiewoeVXBkYXRlQ2FudmFzUGVybWlzc2lvbnNSZXF1ZXN0EjEKB2VudHJpZXMYASADKAsyIC5jYWxhYmEudjEuQ2FudmFzUGVybWlzc2lvbkVudHJ5EhcKCnJlc3RyaWN0ZWQYAiABKAhIAIgBAUINCgtfcmVzdHJpY3RlZCJZChZDYW52YXNWZXJzaW9uc1Jlc3BvbnNlEioKCHZlcnNpb25zGAEgAygLMhguY2FsYWJhLnYxLkNhbnZhc1ZlcnNpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkiWAoSQ2FudmFzQWN0aXZpdHlQYWdlEi0KCmFjdGl2aXRpZXMYASADKAsyGS5jYWxhYmEudjEuQ2FudmFzQWN0aXZpdHkSEwoLbmV4dF9jdXJzb3IYAiABKAkiJAoOQ2FudmFzU2V0dGluZ3MSEgoKdHJhc2hfZGF5cxgBIAEoDSJuChFDYW52YXNBY2Nlc3NMZXZlbBISCgpyZXN0cmljdGVkGAEgASgIEhAKCG93bmVyX2lkGAIgASgJEjMKCW92ZXJyaWRlcxgDIAMoCzIgLmNhbGFiYS52MS5DYW52YXNQZXJtaXNzaW9uRW50cnkisAEKEENhbnZhc0l0ZW1VcHNlcnQSFAoMd29ya3NwYWNlX2lkGAEgASgJEiMKBGl0ZW0YAiABKAsyFS5jYWxhYmEudjEuQ2FudmFzSXRlbRIsCgZhY2Nlc3MYAyADKAsyHC5jYWxhYmEudjEuQ2FudmFzQWNjZXNzTGV2ZWwSMwoNYWNjZXNzX2JlZm9yZRgEIAMoCzIcLmNhbGFiYS52MS5DYW52YXNBY2Nlc3NMZXZlbCJ6ChBDYW52YXNJdGVtUmVtb3ZlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdpdGVtX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRIsCgZhY2Nlc3MYBCADKAsyHC5jYWxhYmEudjEuQ2FudmFzQWNjZXNzTGV2ZWwi1AIKDUNhbnZhc0NvbW1lbnQSCgoCaWQYASABKAkSEQoJY2FudmFzX2lkGAIgASgJEhEKCW9iamVjdF9pZBgDIAEoCRIJCgF4GAQgASgBEgkKAXkYBSABKAESEQoJYXV0aG9yX2lkGAYgASgJEhEKCXBhcmVudF9pZBgHIAEoCRIMCgRib2R5GAggASgJEhAKCG1lbnRpb25zGAkgAygJEhAKCHJlc29sdmVkGAogASgIEhMKC3Jlc29sdmVkX2J5GAsgASgJEi4KCmNyZWF0ZWRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KCWVkaXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLcmVzb2x2ZWRfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInMKGkxpc3RDYW52YXNDb21tZW50c1Jlc3BvbnNlEioKCGNvbW1lbnRzGAEgAygLMhguY2FsYWJhLnYxLkNhbnZhc0NvbW1lbnQSEwoLbmV4dF9jdXJzb3IYAiABKAkSFAoMb3Blbl90aHJlYWRzGAMgASgNImYKGkNyZWF0ZUNhbnZhc0NvbW1lbnRSZXF1ZXN0EgwKBGJvZHkYASABKAkSEQoJcGFyZW50X2lkGAIgASgJEhEKCW9iamVjdF9pZBgDIAEoCRIJCgF4GAQgASgBEgkKAXkYBSABKAEiXAoaVXBkYXRlQ2FudmFzQ29tbWVudFJlcXVlc3QSEQoEYm9keRgBIAEoCUgAiAEBEhUKCHJlc29sdmVkGAIgASgISAGIAQFCBwoFX2JvZHlCCwoJX3Jlc29sdmVkIkIKFUNhbnZhc0NvbW1lbnRSZXNwb25zZRIpCgdjb21tZW50GAEgASgLMhguY2FsYWJhLnYxLkNhbnZhc0NvbW1lbnQiLgobQ2FudmFzTWVudGlvbkFjY2Vzc1Jlc3BvbnNlEg8KB3NlZV9pZHMYASADKAkihAEKE0NhbnZhc0NvbW1lbnRVcHNlcnQSFAoMd29ya3NwYWNlX2lkGAEgASgJEikKB2NvbW1lbnQYAiABKAsyGC5jYWxhYmEudjEuQ2FudmFzQ29tbWVudBIsCgZhY2Nlc3MYAyADKAsyHC5jYWxhYmEudjEuQ2FudmFzQWNjZXNzTGV2ZWwigAEKE0NhbnZhc0NvbW1lbnREZWxldGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhEKCWNhbnZhc19pZBgCIAEoCRISCgpjb21tZW50X2lkGAMgASgJEiwKBmFjY2VzcxgEIAMoCzIcLmNhbGFiYS52MS5DYW52YXNBY2Nlc3NMZXZlbCLEAQoUQ2FudmFzQ29tbWVudE1lbnRpb24SFAoMd29ya3NwYWNlX2lkGAEgASgJEhEKCWNhbnZhc19pZBgCIAEoCRITCgtjYW52YXNfbmFtZRgDIAEoCRISCgpjb21tZW50X2lkGAQgASgJEhEKCXRocmVhZF9pZBgFIAEoCRIQCghhY3Rvcl9pZBgGIAEoCRIMCgR0ZXh0GAcgASgJEhEKCW9iamVjdF9pZBgIIAEoCRIJCgF4GAkgASgBEgkKAXkYCiABKAEqbAoOQ2FudmFzSXRlbUtpbmQSIAocQ0FOVkFTX0lURU1fS0lORF9VTlNQRUNJRklFRBAAEhsKF0NBTlZBU19JVEVNX0tJTkRfRk9MREVSEAESGwoXQ0FOVkFTX0lURU1fS0lORF9DQU5WQVMQAiqEAwoSQ2FudmFzQWN0aXZpdHlLaW5kEiQKIENBTlZBU19BQ1RJVklUWV9LSU5EX1VOU1BFQ0lGSUVEEAASHwobQ0FOVkFTX0FDVElWSVRZX0tJTkRfQ1JFQVRFEAESHwobQ0FOVkFTX0FDVElWSVRZX0tJTkRfUkVOQU1FEAISHQoZQ0FOVkFTX0FDVElWSVRZX0tJTkRfTU9WRRADEh4KGkNBTlZBU19BQ1RJVklUWV9LSU5EX1NIQVJFEAQSHgoaQ0FOVkFTX0FDVElWSVRZX0tJTkRfVFJBU0gQBRIgChxDQU5WQVNfQUNUSVZJVFlfS0lORF9SRVNUT1JFEAYSHwobQ0FOVkFTX0FDVElWSVRZX0tJTkRfREVMRVRFEAcSIAocQ0FOVkFTX0FDVElWSVRZX0tJTkRfVkVSU0lPThAIEiAKHENBTlZBU19BQ1RJVklUWV9LSU5EX0NPTU1FTlQQCRIgChxDQU5WQVNfQUNUSVZJVFlfS0lORF9SRVNPTFZFEApCmQEKDWNvbS5jYWxhYmEudjFCC0NhbnZhc1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp, file_calaba_v1_room]);
 
 /**
  * A folder or a canvas of the Canvas section. Folders hold folders and canvases (depth ≤ 32);
@@ -681,6 +681,384 @@ export const CanvasItemRemoveSchema: GenMessage<CanvasItemRemove> = /*@__PURE__*
   messageDesc(file_calaba_v1_canvas, 17);
 
 /**
+ * A comment. A root carries the pin and the resolution; a reply has parent_id.
+ *
+ * @generated from message calaba.v1.CanvasComment
+ */
+export type CanvasComment = Message<"calaba.v1.CanvasComment"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string canvas_id = 2;
+   */
+  canvasId: string;
+
+  /**
+   * the document object the pin is on; empty = the field (roots only)
+   *
+   * @generated from field: string object_id = 3;
+   */
+  objectId: string;
+
+  /**
+   * the pin's offset from the object, or its point in the world
+   *
+   * @generated from field: double x = 4;
+   */
+  x: number;
+
+  /**
+   * @generated from field: double y = 5;
+   */
+  y: number;
+
+  /**
+   * empty after the account is gone
+   *
+   * @generated from field: string author_id = 6;
+   */
+  authorId: string;
+
+  /**
+   * the root of the thread; empty for a root
+   *
+   * @generated from field: string parent_id = 7;
+   */
+  parentId: string;
+
+  /**
+   * @generated from field: string body = 8;
+   */
+  body: string;
+
+  /**
+   * the mentioned members the server accepted
+   *
+   * @generated from field: repeated string mentions = 9;
+   */
+  mentions: string[];
+
+  /**
+   * roots only
+   *
+   * @generated from field: bool resolved = 10;
+   */
+  resolved: boolean;
+
+  /**
+   * @generated from field: string resolved_by = 11;
+   */
+  resolvedBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 12;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * set after an edit of the body
+   *
+   * @generated from field: google.protobuf.Timestamp edited_at = 13;
+   */
+  editedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp resolved_at = 14;
+   */
+  resolvedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CanvasComment.
+ * Use `create(CanvasCommentSchema)` to create a new message.
+ */
+export const CanvasCommentSchema: GenMessage<CanvasComment> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 18);
+
+/**
+ * GET /api/canvas/items/{id}/comments?cursor=&open=1&limit= — a page of threads, the oldest
+ * first: up to limit roots (1..100, default 50; open=1 leaves resolved ones out), each followed
+ * by all its replies. open_threads counts the canvas's open threads.
+ *
+ * @generated from message calaba.v1.ListCanvasCommentsResponse
+ */
+export type ListCanvasCommentsResponse = Message<"calaba.v1.ListCanvasCommentsResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.CanvasComment comments = 1;
+   */
+  comments: CanvasComment[];
+
+  /**
+   * @generated from field: string next_cursor = 2;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: uint32 open_threads = 3;
+   */
+  openThreads: number;
+};
+
+/**
+ * Describes the message calaba.v1.ListCanvasCommentsResponse.
+ * Use `create(ListCanvasCommentsResponseSchema)` to create a new message.
+ */
+export const ListCanvasCommentsResponseSchema: GenMessage<ListCanvasCommentsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 19);
+
+/**
+ * POST /api/canvas/items/{id}/comments — a root (parent_id empty: object_id / x / y place the
+ * pin) or a reply (parent_id set: the pin fields are ignored).
+ *
+ * @generated from message calaba.v1.CreateCanvasCommentRequest
+ */
+export type CreateCanvasCommentRequest = Message<"calaba.v1.CreateCanvasCommentRequest"> & {
+  /**
+   * @generated from field: string body = 1;
+   */
+  body: string;
+
+  /**
+   * @generated from field: string parent_id = 2;
+   */
+  parentId: string;
+
+  /**
+   * ≤ 64 characters; empty = the field
+   *
+   * @generated from field: string object_id = 3;
+   */
+  objectId: string;
+
+  /**
+   * |x|, |y| ≤ 10^7
+   *
+   * @generated from field: double x = 4;
+   */
+  x: number;
+
+  /**
+   * @generated from field: double y = 5;
+   */
+  y: number;
+};
+
+/**
+ * Describes the message calaba.v1.CreateCanvasCommentRequest.
+ * Use `create(CreateCanvasCommentRequestSchema)` to create a new message.
+ */
+export const CreateCanvasCommentRequestSchema: GenMessage<CreateCanvasCommentRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 20);
+
+/**
+ * PATCH /api/canvas/comments/{id} — body: the author (or the owner / CANVAS_MANAGE); resolved:
+ * a root, CANVAS_WRITE.
+ *
+ * @generated from message calaba.v1.UpdateCanvasCommentRequest
+ */
+export type UpdateCanvasCommentRequest = Message<"calaba.v1.UpdateCanvasCommentRequest"> & {
+  /**
+   * @generated from field: optional string body = 1;
+   */
+  body?: string | undefined;
+
+  /**
+   * @generated from field: optional bool resolved = 2;
+   */
+  resolved?: boolean | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateCanvasCommentRequest.
+ * Use `create(UpdateCanvasCommentRequestSchema)` to create a new message.
+ */
+export const UpdateCanvasCommentRequestSchema: GenMessage<UpdateCanvasCommentRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 21);
+
+/**
+ * The answer of create / update.
+ *
+ * @generated from message calaba.v1.CanvasCommentResponse
+ */
+export type CanvasCommentResponse = Message<"calaba.v1.CanvasCommentResponse"> & {
+  /**
+   * @generated from field: calaba.v1.CanvasComment comment = 1;
+   */
+  comment?: CanvasComment | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CanvasCommentResponse.
+ * Use `create(CanvasCommentResponseSchema)` to create a new message.
+ */
+export const CanvasCommentResponseSchema: GenMessage<CanvasCommentResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 22);
+
+/**
+ * GET /api/canvas/items/{id}/comments/mention-access?user_ids=a,b — which of the given members
+ * (≤ 200) see the canvas and may be @mentioned there (CANVAS_VIEW on the canvas to ask).
+ *
+ * @generated from message calaba.v1.CanvasMentionAccessResponse
+ */
+export type CanvasMentionAccessResponse = Message<"calaba.v1.CanvasMentionAccessResponse"> & {
+  /**
+   * @generated from field: repeated string see_ids = 1;
+   */
+  seeIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.CanvasMentionAccessResponse.
+ * Use `create(CanvasMentionAccessResponseSchema)` to create a new message.
+ */
+export const CanvasMentionAccessResponseSchema: GenMessage<CanvasMentionAccessResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 23);
+
+/**
+ * CANVAS_COMMENT_UPSERT: a comment was written, edited or its thread resolved / opened again;
+ * to members with CANVAS_VIEW on the canvas.
+ *
+ * @generated from message calaba.v1.CanvasCommentUpsert
+ */
+export type CanvasCommentUpsert = Message<"calaba.v1.CanvasCommentUpsert"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: calaba.v1.CanvasComment comment = 2;
+   */
+  comment?: CanvasComment | undefined;
+
+  /**
+   * Server-internal routing, always empty for clients: the canvas's access chain.
+   *
+   * @generated from field: repeated calaba.v1.CanvasAccessLevel access = 3;
+   */
+  access: CanvasAccessLevel[];
+};
+
+/**
+ * Describes the message calaba.v1.CanvasCommentUpsert.
+ * Use `create(CanvasCommentUpsertSchema)` to create a new message.
+ */
+export const CanvasCommentUpsertSchema: GenMessage<CanvasCommentUpsert> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 24);
+
+/**
+ * CANVAS_COMMENT_DELETE: a comment was deleted (a root takes its replies along); to members
+ * with CANVAS_VIEW on the canvas.
+ *
+ * @generated from message calaba.v1.CanvasCommentDelete
+ */
+export type CanvasCommentDelete = Message<"calaba.v1.CanvasCommentDelete"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string canvas_id = 2;
+   */
+  canvasId: string;
+
+  /**
+   * @generated from field: string comment_id = 3;
+   */
+  commentId: string;
+
+  /**
+   * Server-internal routing, always empty for clients: the canvas's access chain.
+   *
+   * @generated from field: repeated calaba.v1.CanvasAccessLevel access = 4;
+   */
+  access: CanvasAccessLevel[];
+};
+
+/**
+ * Describes the message calaba.v1.CanvasCommentDelete.
+ * Use `create(CanvasCommentDeleteSchema)` to create a new message.
+ */
+export const CanvasCommentDeleteSchema: GenMessage<CanvasCommentDelete> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 25);
+
+/**
+ * CANVAS_COMMENT_MENTION: the recipient was @mentioned in a comment (user channel; once per
+ * comment and person; not to the author; by the recipient's workspace notification level and
+ * mute, notifications.CanvasMentionNotifies). text is the start of the comment (≤ 200
+ * characters), empty when the recipient hides message text in notifications or the canvas
+ * is private (restricted somewhere on its chain). The client opens the canvas at the pin.
+ *
+ * @generated from message calaba.v1.CanvasCommentMention
+ */
+export type CanvasCommentMention = Message<"calaba.v1.CanvasCommentMention"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string canvas_id = 2;
+   */
+  canvasId: string;
+
+  /**
+   * @generated from field: string canvas_name = 3;
+   */
+  canvasName: string;
+
+  /**
+   * @generated from field: string comment_id = 4;
+   */
+  commentId: string;
+
+  /**
+   * the root (= comment_id for a root)
+   *
+   * @generated from field: string thread_id = 5;
+   */
+  threadId: string;
+
+  /**
+   * @generated from field: string actor_id = 6;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string text = 7;
+   */
+  text: string;
+
+  /**
+   * the thread's pin
+   *
+   * @generated from field: string object_id = 8;
+   */
+  objectId: string;
+
+  /**
+   * @generated from field: double x = 9;
+   */
+  x: number;
+
+  /**
+   * @generated from field: double y = 10;
+   */
+  y: number;
+};
+
+/**
+ * Describes the message calaba.v1.CanvasCommentMention.
+ * Use `create(CanvasCommentMentionSchema)` to create a new message.
+ */
+export const CanvasCommentMentionSchema: GenMessage<CanvasCommentMention> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_canvas, 26);
+
+/**
  * @generated from enum calaba.v1.CanvasItemKind
  */
 export enum CanvasItemKind {
@@ -760,6 +1138,20 @@ export enum CanvasActivityKind {
    * @generated from enum value: CANVAS_ACTIVITY_KIND_VERSION = 8;
    */
   VERSION = 8,
+
+  /**
+   * a comment was written (after: comment_id, thread_id; never the text)
+   *
+   * @generated from enum value: CANVAS_ACTIVITY_KIND_COMMENT = 9;
+   */
+  COMMENT = 9,
+
+  /**
+   * a thread was resolved (after: thread_id)
+   *
+   * @generated from enum value: CANVAS_ACTIVITY_KIND_RESOLVE = 10;
+   */
+  RESOLVE = 10,
 }
 
 /**

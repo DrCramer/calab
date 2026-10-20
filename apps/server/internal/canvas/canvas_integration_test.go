@@ -42,12 +42,29 @@ func TestMain(m *testing.M) {
 
 // recorder keeps the published events.
 type recorder struct {
-	mu  sync.Mutex
-	evs []*v1.DispatchEvent
+	mu    sync.Mutex
+	evs   []*v1.DispatchEvent
+	users []userEvent // the user-channel events (mention notices)
+}
+
+type userEvent struct {
+	user uuid.UUID
+	ev   *v1.DispatchEvent
 }
 
 func (r *recorder) Workspace(_ context.Context, _ uuid.UUID, ev *v1.DispatchEvent) { r.add(ev) }
-func (r *recorder) User(context.Context, uuid.UUID, *v1.DispatchEvent)             {}
+func (r *recorder) User(_ context.Context, u uuid.UUID, ev *v1.DispatchEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.users = append(r.users, userEvent{u, ev})
+}
+func (r *recorder) takeUsers() []userEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.users
+	r.users = nil
+	return out
+}
 func (r *recorder) Workspaces(_ context.Context, _ []uuid.UUID, ev *v1.DispatchEvent) {
 	r.add(ev)
 }

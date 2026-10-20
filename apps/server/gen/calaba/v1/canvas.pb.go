@@ -82,22 +82,26 @@ const (
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_SHARE       CanvasActivityKind = 4 // overrides or restricted changed
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_TRASH       CanvasActivityKind = 5
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_RESTORE     CanvasActivityKind = 6
-	CanvasActivityKind_CANVAS_ACTIVITY_KIND_DELETE      CanvasActivityKind = 7 // deleted forever
-	CanvasActivityKind_CANVAS_ACTIVITY_KIND_VERSION     CanvasActivityKind = 8 // a version was saved (edits themselves are not journaled)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_DELETE      CanvasActivityKind = 7  // deleted forever
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_VERSION     CanvasActivityKind = 8  // a version was saved (edits themselves are not journaled)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_COMMENT     CanvasActivityKind = 9  // a comment was written (after: comment_id, thread_id; never the text)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_RESOLVE     CanvasActivityKind = 10 // a thread was resolved (after: thread_id)
 )
 
 // Enum value maps for CanvasActivityKind.
 var (
 	CanvasActivityKind_name = map[int32]string{
-		0: "CANVAS_ACTIVITY_KIND_UNSPECIFIED",
-		1: "CANVAS_ACTIVITY_KIND_CREATE",
-		2: "CANVAS_ACTIVITY_KIND_RENAME",
-		3: "CANVAS_ACTIVITY_KIND_MOVE",
-		4: "CANVAS_ACTIVITY_KIND_SHARE",
-		5: "CANVAS_ACTIVITY_KIND_TRASH",
-		6: "CANVAS_ACTIVITY_KIND_RESTORE",
-		7: "CANVAS_ACTIVITY_KIND_DELETE",
-		8: "CANVAS_ACTIVITY_KIND_VERSION",
+		0:  "CANVAS_ACTIVITY_KIND_UNSPECIFIED",
+		1:  "CANVAS_ACTIVITY_KIND_CREATE",
+		2:  "CANVAS_ACTIVITY_KIND_RENAME",
+		3:  "CANVAS_ACTIVITY_KIND_MOVE",
+		4:  "CANVAS_ACTIVITY_KIND_SHARE",
+		5:  "CANVAS_ACTIVITY_KIND_TRASH",
+		6:  "CANVAS_ACTIVITY_KIND_RESTORE",
+		7:  "CANVAS_ACTIVITY_KIND_DELETE",
+		8:  "CANVAS_ACTIVITY_KIND_VERSION",
+		9:  "CANVAS_ACTIVITY_KIND_COMMENT",
+		10: "CANVAS_ACTIVITY_KIND_RESOLVE",
 	}
 	CanvasActivityKind_value = map[string]int32{
 		"CANVAS_ACTIVITY_KIND_UNSPECIFIED": 0,
@@ -109,6 +113,8 @@ var (
 		"CANVAS_ACTIVITY_KIND_RESTORE":     6,
 		"CANVAS_ACTIVITY_KIND_DELETE":      7,
 		"CANVAS_ACTIVITY_KIND_VERSION":     8,
+		"CANVAS_ACTIVITY_KIND_COMMENT":     9,
+		"CANVAS_ACTIVITY_KIND_RESOLVE":     10,
 	}
 )
 
@@ -1380,6 +1386,696 @@ func (x *CanvasItemRemove) GetAccess() []*CanvasAccessLevel {
 	return nil
 }
 
+// A comment. A root carries the pin and the resolution; a reply has parent_id.
+type CanvasComment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CanvasId      string                 `protobuf:"bytes,2,opt,name=canvas_id,json=canvasId,proto3" json:"canvas_id,omitempty"`
+	ObjectId      string                 `protobuf:"bytes,3,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"` // the document object the pin is on; empty = the field (roots only)
+	X             float64                `protobuf:"fixed64,4,opt,name=x,proto3" json:"x,omitempty"`                             // the pin's offset from the object, or its point in the world
+	Y             float64                `protobuf:"fixed64,5,opt,name=y,proto3" json:"y,omitempty"`
+	AuthorId      string                 `protobuf:"bytes,6,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"` // empty after the account is gone
+	ParentId      string                 `protobuf:"bytes,7,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"` // the root of the thread; empty for a root
+	Body          string                 `protobuf:"bytes,8,opt,name=body,proto3" json:"body,omitempty"`
+	Mentions      []string               `protobuf:"bytes,9,rep,name=mentions,proto3" json:"mentions,omitempty"`   // the mentioned members the server accepted
+	Resolved      bool                   `protobuf:"varint,10,opt,name=resolved,proto3" json:"resolved,omitempty"` // roots only
+	ResolvedBy    string                 `protobuf:"bytes,11,opt,name=resolved_by,json=resolvedBy,proto3" json:"resolved_by,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	EditedAt      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=edited_at,json=editedAt,proto3" json:"edited_at,omitempty"` // set after an edit of the body
+	ResolvedAt    *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasComment) Reset() {
+	*x = CanvasComment{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasComment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasComment) ProtoMessage() {}
+
+func (x *CanvasComment) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasComment.ProtoReflect.Descriptor instead.
+func (*CanvasComment) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CanvasComment) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetCanvasId() string {
+	if x != nil {
+		return x.CanvasId
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetX() float64 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *CanvasComment) GetY() float64 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+func (x *CanvasComment) GetAuthorId() string {
+	if x != nil {
+		return x.AuthorId
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetParentId() string {
+	if x != nil {
+		return x.ParentId
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetMentions() []string {
+	if x != nil {
+		return x.Mentions
+	}
+	return nil
+}
+
+func (x *CanvasComment) GetResolved() bool {
+	if x != nil {
+		return x.Resolved
+	}
+	return false
+}
+
+func (x *CanvasComment) GetResolvedBy() string {
+	if x != nil {
+		return x.ResolvedBy
+	}
+	return ""
+}
+
+func (x *CanvasComment) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *CanvasComment) GetEditedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EditedAt
+	}
+	return nil
+}
+
+func (x *CanvasComment) GetResolvedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ResolvedAt
+	}
+	return nil
+}
+
+// GET /api/canvas/items/{id}/comments?cursor=&open=1&limit= — a page of threads, the oldest
+// first: up to limit roots (1..100, default 50; open=1 leaves resolved ones out), each followed
+// by all its replies. open_threads counts the canvas's open threads.
+type ListCanvasCommentsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Comments      []*CanvasComment       `protobuf:"bytes,1,rep,name=comments,proto3" json:"comments,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	OpenThreads   uint32                 `protobuf:"varint,3,opt,name=open_threads,json=openThreads,proto3" json:"open_threads,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCanvasCommentsResponse) Reset() {
+	*x = ListCanvasCommentsResponse{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCanvasCommentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCanvasCommentsResponse) ProtoMessage() {}
+
+func (x *ListCanvasCommentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCanvasCommentsResponse.ProtoReflect.Descriptor instead.
+func (*ListCanvasCommentsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListCanvasCommentsResponse) GetComments() []*CanvasComment {
+	if x != nil {
+		return x.Comments
+	}
+	return nil
+}
+
+func (x *ListCanvasCommentsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *ListCanvasCommentsResponse) GetOpenThreads() uint32 {
+	if x != nil {
+		return x.OpenThreads
+	}
+	return 0
+}
+
+// POST /api/canvas/items/{id}/comments — a root (parent_id empty: object_id / x / y place the
+// pin) or a reply (parent_id set: the pin fields are ignored).
+type CreateCanvasCommentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Body          string                 `protobuf:"bytes,1,opt,name=body,proto3" json:"body,omitempty"`
+	ParentId      string                 `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	ObjectId      string                 `protobuf:"bytes,3,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"` // ≤ 64 characters; empty = the field
+	X             float64                `protobuf:"fixed64,4,opt,name=x,proto3" json:"x,omitempty"`                             // |x|, |y| ≤ 10^7
+	Y             float64                `protobuf:"fixed64,5,opt,name=y,proto3" json:"y,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCanvasCommentRequest) Reset() {
+	*x = CreateCanvasCommentRequest{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCanvasCommentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCanvasCommentRequest) ProtoMessage() {}
+
+func (x *CreateCanvasCommentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCanvasCommentRequest.ProtoReflect.Descriptor instead.
+func (*CreateCanvasCommentRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CreateCanvasCommentRequest) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *CreateCanvasCommentRequest) GetParentId() string {
+	if x != nil {
+		return x.ParentId
+	}
+	return ""
+}
+
+func (x *CreateCanvasCommentRequest) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *CreateCanvasCommentRequest) GetX() float64 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *CreateCanvasCommentRequest) GetY() float64 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+// PATCH /api/canvas/comments/{id} — body: the author (or the owner / CANVAS_MANAGE); resolved:
+// a root, CANVAS_WRITE.
+type UpdateCanvasCommentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Body          *string                `protobuf:"bytes,1,opt,name=body,proto3,oneof" json:"body,omitempty"`
+	Resolved      *bool                  `protobuf:"varint,2,opt,name=resolved,proto3,oneof" json:"resolved,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateCanvasCommentRequest) Reset() {
+	*x = UpdateCanvasCommentRequest{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateCanvasCommentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateCanvasCommentRequest) ProtoMessage() {}
+
+func (x *UpdateCanvasCommentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateCanvasCommentRequest.ProtoReflect.Descriptor instead.
+func (*UpdateCanvasCommentRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *UpdateCanvasCommentRequest) GetBody() string {
+	if x != nil && x.Body != nil {
+		return *x.Body
+	}
+	return ""
+}
+
+func (x *UpdateCanvasCommentRequest) GetResolved() bool {
+	if x != nil && x.Resolved != nil {
+		return *x.Resolved
+	}
+	return false
+}
+
+// The answer of create / update.
+type CanvasCommentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Comment       *CanvasComment         `protobuf:"bytes,1,opt,name=comment,proto3" json:"comment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasCommentResponse) Reset() {
+	*x = CanvasCommentResponse{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasCommentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasCommentResponse) ProtoMessage() {}
+
+func (x *CanvasCommentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasCommentResponse.ProtoReflect.Descriptor instead.
+func (*CanvasCommentResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *CanvasCommentResponse) GetComment() *CanvasComment {
+	if x != nil {
+		return x.Comment
+	}
+	return nil
+}
+
+// GET /api/canvas/items/{id}/comments/mention-access?user_ids=a,b — which of the given members
+// (≤ 200) see the canvas and may be @mentioned there (CANVAS_VIEW on the canvas to ask).
+type CanvasMentionAccessResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SeeIds        []string               `protobuf:"bytes,1,rep,name=see_ids,json=seeIds,proto3" json:"see_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasMentionAccessResponse) Reset() {
+	*x = CanvasMentionAccessResponse{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasMentionAccessResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasMentionAccessResponse) ProtoMessage() {}
+
+func (x *CanvasMentionAccessResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasMentionAccessResponse.ProtoReflect.Descriptor instead.
+func (*CanvasMentionAccessResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *CanvasMentionAccessResponse) GetSeeIds() []string {
+	if x != nil {
+		return x.SeeIds
+	}
+	return nil
+}
+
+// CANVAS_COMMENT_UPSERT: a comment was written, edited or its thread resolved / opened again;
+// to members with CANVAS_VIEW on the canvas.
+type CanvasCommentUpsert struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Comment     *CanvasComment         `protobuf:"bytes,2,opt,name=comment,proto3" json:"comment,omitempty"`
+	// Server-internal routing, always empty for clients: the canvas's access chain.
+	Access        []*CanvasAccessLevel `protobuf:"bytes,3,rep,name=access,proto3" json:"access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasCommentUpsert) Reset() {
+	*x = CanvasCommentUpsert{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasCommentUpsert) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasCommentUpsert) ProtoMessage() {}
+
+func (x *CanvasCommentUpsert) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasCommentUpsert.ProtoReflect.Descriptor instead.
+func (*CanvasCommentUpsert) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *CanvasCommentUpsert) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *CanvasCommentUpsert) GetComment() *CanvasComment {
+	if x != nil {
+		return x.Comment
+	}
+	return nil
+}
+
+func (x *CanvasCommentUpsert) GetAccess() []*CanvasAccessLevel {
+	if x != nil {
+		return x.Access
+	}
+	return nil
+}
+
+// CANVAS_COMMENT_DELETE: a comment was deleted (a root takes its replies along); to members
+// with CANVAS_VIEW on the canvas.
+type CanvasCommentDelete struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CanvasId    string                 `protobuf:"bytes,2,opt,name=canvas_id,json=canvasId,proto3" json:"canvas_id,omitempty"`
+	CommentId   string                 `protobuf:"bytes,3,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
+	// Server-internal routing, always empty for clients: the canvas's access chain.
+	Access        []*CanvasAccessLevel `protobuf:"bytes,4,rep,name=access,proto3" json:"access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasCommentDelete) Reset() {
+	*x = CanvasCommentDelete{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasCommentDelete) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasCommentDelete) ProtoMessage() {}
+
+func (x *CanvasCommentDelete) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasCommentDelete.ProtoReflect.Descriptor instead.
+func (*CanvasCommentDelete) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CanvasCommentDelete) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *CanvasCommentDelete) GetCanvasId() string {
+	if x != nil {
+		return x.CanvasId
+	}
+	return ""
+}
+
+func (x *CanvasCommentDelete) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
+func (x *CanvasCommentDelete) GetAccess() []*CanvasAccessLevel {
+	if x != nil {
+		return x.Access
+	}
+	return nil
+}
+
+// CANVAS_COMMENT_MENTION: the recipient was @mentioned in a comment (user channel; once per
+// comment and person; not to the author; by the recipient's workspace notification level and
+// mute, notifications.CanvasMentionNotifies). text is the start of the comment (≤ 200
+// characters), empty when the recipient hides message text in notifications or the canvas
+// is private (restricted somewhere on its chain). The client opens the canvas at the pin.
+type CanvasCommentMention struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CanvasId      string                 `protobuf:"bytes,2,opt,name=canvas_id,json=canvasId,proto3" json:"canvas_id,omitempty"`
+	CanvasName    string                 `protobuf:"bytes,3,opt,name=canvas_name,json=canvasName,proto3" json:"canvas_name,omitempty"`
+	CommentId     string                 `protobuf:"bytes,4,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"` // the root (= comment_id for a root)
+	ActorId       string                 `protobuf:"bytes,6,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Text          string                 `protobuf:"bytes,7,opt,name=text,proto3" json:"text,omitempty"`
+	ObjectId      string                 `protobuf:"bytes,8,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"` // the thread's pin
+	X             float64                `protobuf:"fixed64,9,opt,name=x,proto3" json:"x,omitempty"`
+	Y             float64                `protobuf:"fixed64,10,opt,name=y,proto3" json:"y,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasCommentMention) Reset() {
+	*x = CanvasCommentMention{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasCommentMention) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasCommentMention) ProtoMessage() {}
+
+func (x *CanvasCommentMention) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasCommentMention.ProtoReflect.Descriptor instead.
+func (*CanvasCommentMention) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CanvasCommentMention) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetCanvasId() string {
+	if x != nil {
+		return x.CanvasId
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetCanvasName() string {
+	if x != nil {
+		return x.CanvasName
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *CanvasCommentMention) GetX() float64 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *CanvasCommentMention) GetY() float64 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
 var File_calaba_v1_canvas_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_canvas_proto_rawDesc = "" +
@@ -1504,11 +2200,74 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
 	"\aitem_id\x18\x02 \x01(\tR\x06itemId\x12\x1b\n" +
 	"\tparent_id\x18\x03 \x01(\tR\bparentId\x124\n" +
-	"\x06access\x18\x04 \x03(\v2\x1c.calaba.v1.CanvasAccessLevelR\x06access*l\n" +
+	"\x06access\x18\x04 \x03(\v2\x1c.calaba.v1.CanvasAccessLevelR\x06access\"\xcd\x03\n" +
+	"\rCanvasComment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tcanvas_id\x18\x02 \x01(\tR\bcanvasId\x12\x1b\n" +
+	"\tobject_id\x18\x03 \x01(\tR\bobjectId\x12\f\n" +
+	"\x01x\x18\x04 \x01(\x01R\x01x\x12\f\n" +
+	"\x01y\x18\x05 \x01(\x01R\x01y\x12\x1b\n" +
+	"\tauthor_id\x18\x06 \x01(\tR\bauthorId\x12\x1b\n" +
+	"\tparent_id\x18\a \x01(\tR\bparentId\x12\x12\n" +
+	"\x04body\x18\b \x01(\tR\x04body\x12\x1a\n" +
+	"\bmentions\x18\t \x03(\tR\bmentions\x12\x1a\n" +
+	"\bresolved\x18\n" +
+	" \x01(\bR\bresolved\x12\x1f\n" +
+	"\vresolved_by\x18\v \x01(\tR\n" +
+	"resolvedBy\x129\n" +
+	"\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x127\n" +
+	"\tedited_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\x12;\n" +
+	"\vresolved_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"resolvedAt\"\x96\x01\n" +
+	"\x1aListCanvasCommentsResponse\x124\n" +
+	"\bcomments\x18\x01 \x03(\v2\x18.calaba.v1.CanvasCommentR\bcomments\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\x12!\n" +
+	"\fopen_threads\x18\x03 \x01(\rR\vopenThreads\"\x86\x01\n" +
+	"\x1aCreateCanvasCommentRequest\x12\x12\n" +
+	"\x04body\x18\x01 \x01(\tR\x04body\x12\x1b\n" +
+	"\tparent_id\x18\x02 \x01(\tR\bparentId\x12\x1b\n" +
+	"\tobject_id\x18\x03 \x01(\tR\bobjectId\x12\f\n" +
+	"\x01x\x18\x04 \x01(\x01R\x01x\x12\f\n" +
+	"\x01y\x18\x05 \x01(\x01R\x01y\"l\n" +
+	"\x1aUpdateCanvasCommentRequest\x12\x17\n" +
+	"\x04body\x18\x01 \x01(\tH\x00R\x04body\x88\x01\x01\x12\x1f\n" +
+	"\bresolved\x18\x02 \x01(\bH\x01R\bresolved\x88\x01\x01B\a\n" +
+	"\x05_bodyB\v\n" +
+	"\t_resolved\"K\n" +
+	"\x15CanvasCommentResponse\x122\n" +
+	"\acomment\x18\x01 \x01(\v2\x18.calaba.v1.CanvasCommentR\acomment\"6\n" +
+	"\x1bCanvasMentionAccessResponse\x12\x17\n" +
+	"\asee_ids\x18\x01 \x03(\tR\x06seeIds\"\xa2\x01\n" +
+	"\x13CanvasCommentUpsert\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x122\n" +
+	"\acomment\x18\x02 \x01(\v2\x18.calaba.v1.CanvasCommentR\acomment\x124\n" +
+	"\x06access\x18\x03 \x03(\v2\x1c.calaba.v1.CanvasAccessLevelR\x06access\"\xaa\x01\n" +
+	"\x13CanvasCommentDelete\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x1b\n" +
+	"\tcanvas_id\x18\x02 \x01(\tR\bcanvasId\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x03 \x01(\tR\tcommentId\x124\n" +
+	"\x06access\x18\x04 \x03(\v2\x1c.calaba.v1.CanvasAccessLevelR\x06access\"\x9b\x02\n" +
+	"\x14CanvasCommentMention\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x1b\n" +
+	"\tcanvas_id\x18\x02 \x01(\tR\bcanvasId\x12\x1f\n" +
+	"\vcanvas_name\x18\x03 \x01(\tR\n" +
+	"canvasName\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x04 \x01(\tR\tcommentId\x12\x1b\n" +
+	"\tthread_id\x18\x05 \x01(\tR\bthreadId\x12\x19\n" +
+	"\bactor_id\x18\x06 \x01(\tR\aactorId\x12\x12\n" +
+	"\x04text\x18\a \x01(\tR\x04text\x12\x1b\n" +
+	"\tobject_id\x18\b \x01(\tR\bobjectId\x12\f\n" +
+	"\x01x\x18\t \x01(\x01R\x01x\x12\f\n" +
+	"\x01y\x18\n" +
+	" \x01(\x01R\x01y*l\n" +
 	"\x0eCanvasItemKind\x12 \n" +
 	"\x1cCANVAS_ITEM_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17CANVAS_ITEM_KIND_FOLDER\x10\x01\x12\x1b\n" +
-	"\x17CANVAS_ITEM_KIND_CANVAS\x10\x02*\xc0\x02\n" +
+	"\x17CANVAS_ITEM_KIND_CANVAS\x10\x02*\x84\x03\n" +
 	"\x12CanvasActivityKind\x12$\n" +
 	" CANVAS_ACTIVITY_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCANVAS_ACTIVITY_KIND_CREATE\x10\x01\x12\x1f\n" +
@@ -1518,7 +2277,10 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\x1aCANVAS_ACTIVITY_KIND_TRASH\x10\x05\x12 \n" +
 	"\x1cCANVAS_ACTIVITY_KIND_RESTORE\x10\x06\x12\x1f\n" +
 	"\x1bCANVAS_ACTIVITY_KIND_DELETE\x10\a\x12 \n" +
-	"\x1cCANVAS_ACTIVITY_KIND_VERSION\x10\bB\x99\x01\n" +
+	"\x1cCANVAS_ACTIVITY_KIND_VERSION\x10\b\x12 \n" +
+	"\x1cCANVAS_ACTIVITY_KIND_COMMENT\x10\t\x12 \n" +
+	"\x1cCANVAS_ACTIVITY_KIND_RESOLVE\x10\n" +
+	"B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCanvasProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -1535,7 +2297,7 @@ func file_calaba_v1_canvas_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_canvas_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_canvas_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_calaba_v1_canvas_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_calaba_v1_canvas_proto_goTypes = []any{
 	(CanvasItemKind)(0),                    // 0: calaba.v1.CanvasItemKind
 	(CanvasActivityKind)(0),                // 1: calaba.v1.CanvasActivityKind
@@ -1557,21 +2319,30 @@ var file_calaba_v1_canvas_proto_goTypes = []any{
 	(*CanvasAccessLevel)(nil),              // 17: calaba.v1.CanvasAccessLevel
 	(*CanvasItemUpsert)(nil),               // 18: calaba.v1.CanvasItemUpsert
 	(*CanvasItemRemove)(nil),               // 19: calaba.v1.CanvasItemRemove
-	(*timestamppb.Timestamp)(nil),          // 20: google.protobuf.Timestamp
-	(PermissionTargetType)(0),              // 21: calaba.v1.PermissionTargetType
-	(*structpb.Struct)(nil),                // 22: google.protobuf.Struct
+	(*CanvasComment)(nil),                  // 20: calaba.v1.CanvasComment
+	(*ListCanvasCommentsResponse)(nil),     // 21: calaba.v1.ListCanvasCommentsResponse
+	(*CreateCanvasCommentRequest)(nil),     // 22: calaba.v1.CreateCanvasCommentRequest
+	(*UpdateCanvasCommentRequest)(nil),     // 23: calaba.v1.UpdateCanvasCommentRequest
+	(*CanvasCommentResponse)(nil),          // 24: calaba.v1.CanvasCommentResponse
+	(*CanvasMentionAccessResponse)(nil),    // 25: calaba.v1.CanvasMentionAccessResponse
+	(*CanvasCommentUpsert)(nil),            // 26: calaba.v1.CanvasCommentUpsert
+	(*CanvasCommentDelete)(nil),            // 27: calaba.v1.CanvasCommentDelete
+	(*CanvasCommentMention)(nil),           // 28: calaba.v1.CanvasCommentMention
+	(*timestamppb.Timestamp)(nil),          // 29: google.protobuf.Timestamp
+	(PermissionTargetType)(0),              // 30: calaba.v1.PermissionTargetType
+	(*structpb.Struct)(nil),                // 31: google.protobuf.Struct
 }
 var file_calaba_v1_canvas_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.CanvasItem.kind:type_name -> calaba.v1.CanvasItemKind
-	20, // 1: calaba.v1.CanvasItem.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 2: calaba.v1.CanvasItem.trashed_at:type_name -> google.protobuf.Timestamp
-	20, // 3: calaba.v1.CanvasItem.created_at:type_name -> google.protobuf.Timestamp
-	21, // 4: calaba.v1.CanvasPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
-	20, // 5: calaba.v1.CanvasVersion.created_at:type_name -> google.protobuf.Timestamp
+	29, // 1: calaba.v1.CanvasItem.updated_at:type_name -> google.protobuf.Timestamp
+	29, // 2: calaba.v1.CanvasItem.trashed_at:type_name -> google.protobuf.Timestamp
+	29, // 3: calaba.v1.CanvasItem.created_at:type_name -> google.protobuf.Timestamp
+	30, // 4: calaba.v1.CanvasPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
+	29, // 5: calaba.v1.CanvasVersion.created_at:type_name -> google.protobuf.Timestamp
 	1,  // 6: calaba.v1.CanvasActivity.kind:type_name -> calaba.v1.CanvasActivityKind
-	22, // 7: calaba.v1.CanvasActivity.before:type_name -> google.protobuf.Struct
-	22, // 8: calaba.v1.CanvasActivity.after:type_name -> google.protobuf.Struct
-	20, // 9: calaba.v1.CanvasActivity.created_at:type_name -> google.protobuf.Timestamp
+	31, // 7: calaba.v1.CanvasActivity.before:type_name -> google.protobuf.Struct
+	31, // 8: calaba.v1.CanvasActivity.after:type_name -> google.protobuf.Struct
+	29, // 9: calaba.v1.CanvasActivity.created_at:type_name -> google.protobuf.Timestamp
 	2,  // 10: calaba.v1.ListCanvasItemsResponse.items:type_name -> calaba.v1.CanvasItem
 	0,  // 11: calaba.v1.CreateCanvasItemRequest.kind:type_name -> calaba.v1.CanvasItemKind
 	2,  // 12: calaba.v1.CanvasItemResponse.item:type_name -> calaba.v1.CanvasItem
@@ -1585,11 +2356,19 @@ var file_calaba_v1_canvas_proto_depIdxs = []int32{
 	17, // 20: calaba.v1.CanvasItemUpsert.access:type_name -> calaba.v1.CanvasAccessLevel
 	17, // 21: calaba.v1.CanvasItemUpsert.access_before:type_name -> calaba.v1.CanvasAccessLevel
 	17, // 22: calaba.v1.CanvasItemRemove.access:type_name -> calaba.v1.CanvasAccessLevel
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	29, // 23: calaba.v1.CanvasComment.created_at:type_name -> google.protobuf.Timestamp
+	29, // 24: calaba.v1.CanvasComment.edited_at:type_name -> google.protobuf.Timestamp
+	29, // 25: calaba.v1.CanvasComment.resolved_at:type_name -> google.protobuf.Timestamp
+	20, // 26: calaba.v1.ListCanvasCommentsResponse.comments:type_name -> calaba.v1.CanvasComment
+	20, // 27: calaba.v1.CanvasCommentResponse.comment:type_name -> calaba.v1.CanvasComment
+	20, // 28: calaba.v1.CanvasCommentUpsert.comment:type_name -> calaba.v1.CanvasComment
+	17, // 29: calaba.v1.CanvasCommentUpsert.access:type_name -> calaba.v1.CanvasAccessLevel
+	17, // 30: calaba.v1.CanvasCommentDelete.access:type_name -> calaba.v1.CanvasAccessLevel
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_canvas_proto_init() }
@@ -1600,13 +2379,14 @@ func file_calaba_v1_canvas_proto_init() {
 	file_calaba_v1_room_proto_init()
 	file_calaba_v1_canvas_proto_msgTypes[7].OneofWrappers = []any{}
 	file_calaba_v1_canvas_proto_msgTypes[11].OneofWrappers = []any{}
+	file_calaba_v1_canvas_proto_msgTypes[21].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_canvas_proto_rawDesc), len(file_calaba_v1_canvas_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   18,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
