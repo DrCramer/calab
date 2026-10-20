@@ -105,6 +105,8 @@ export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.zoom.reset': 'Zoom al 100 %',
   'canvasBoard.zoom.value': 'Zoom {pct} %',
   'canvasBoard.zoom.fitAll': 'Ajustar al contenido',
+  'canvasBoard.minimap.toggle': 'Minimapa',
+  'canvasBoard.minimap.label': 'Minimapa de todo el lienzo: clic o arrastre para mover la vista',
   'canvasBoard.zoom.fitSelection': 'Ir a la selección',
   'canvasBoard.zoom.group': 'Zoom',
   'canvasBoard.help.open': 'Atajos de teclado',

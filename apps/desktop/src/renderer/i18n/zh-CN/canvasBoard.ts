@@ -105,6 +105,8 @@ export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.zoom.reset': '缩放至 100%',
   'canvasBoard.zoom.value': '缩放 {pct}%',
   'canvasBoard.zoom.fitAll': '适应全部内容',
+  'canvasBoard.minimap.toggle': '小地图',
+  'canvasBoard.minimap.label': '整个画布的小地图：点击或拖动以移动视图',
   'canvasBoard.zoom.fitSelection': '定位到所选',
   'canvasBoard.zoom.group': '缩放',
   'canvasBoard.help.open': '快捷键',

@@ -105,6 +105,8 @@ export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.zoom.reset': 'Reset zoom to 100%',
   'canvasBoard.zoom.value': 'Zoom {pct}%',
   'canvasBoard.zoom.fitAll': 'Fit to content',
+  'canvasBoard.minimap.toggle': 'Mini-map',
+  'canvasBoard.minimap.label': 'Mini-map of the whole canvas: click or drag to move the view',
   'canvasBoard.zoom.fitSelection': 'Zoom to selection',
   'canvasBoard.zoom.group': 'Zoom',
   'canvasBoard.help.open': 'Keyboard shortcuts',

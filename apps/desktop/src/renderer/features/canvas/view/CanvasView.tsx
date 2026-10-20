@@ -21,6 +21,7 @@ import { toast } from '../../../stores/toasts';
 import type { CanvasPalette } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { ZoomBar } from './Controls';
+import { MiniMap } from './MiniMap';
 import { PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
@@ -363,6 +364,7 @@ function Chrome({
         </>
       ) : null}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
+      <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
       <Presence store={presence} />
       <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} onRetry={onRetry} />
     </>

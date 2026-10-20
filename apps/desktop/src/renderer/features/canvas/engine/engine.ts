@@ -461,10 +461,18 @@ export class CanvasEngine implements Core {
 
   /** The window/tab is hidden: stop drawing (and sending awareness) until shown; no cursor-fade timer either. */
   setActive(on: boolean): void {
+    const changed = this.active !== on;
     this.active = on;
     this.renderer.setActive(on);
     if (on) this.scheduleAwarenessStep();
     else this.clearAwarenessStep();
+    // Pieces of UI that pause while hidden (the mini-map) pick up again on this.
+    if (changed) this.emitView();
+  }
+
+  /** The window and the canvas are on screen (what `setActive` last said). */
+  get isActive(): boolean {
+    return this.active;
   }
 
   // ── camera commands ─────────────────────────────────────────────────────────

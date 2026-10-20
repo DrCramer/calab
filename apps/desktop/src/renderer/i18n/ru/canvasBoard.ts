@@ -105,6 +105,8 @@ export const ruCanvasBoard = {
   'canvasBoard.zoom.reset': 'Масштаб 100 %',
   'canvasBoard.zoom.value': 'Масштаб {pct} %',
   'canvasBoard.zoom.fitAll': 'Вписать всё',
+  'canvasBoard.minimap.toggle': 'Мини-карта',
+  'canvasBoard.minimap.label': 'Мини-карта: вся доска; клик или перетаскивание двигает вид',
   'canvasBoard.zoom.fitSelection': 'К выделенному',
   'canvasBoard.zoom.group': 'Масштаб',
   'canvasBoard.help.open': 'Горячие клавиши',
