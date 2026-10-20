@@ -391,6 +391,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.subtaskPlaceholder': '子任务标题',
   'boards.relations': '关联',
   'boards.addRelation': '添加关联',
+  'boards.noTasksToLink': '没有可关联的任务',
   'boards.removeRelation': '移除关联',
   'boards.rel.blocks': '阻塞',
   'boards.rel.blocked': '被阻塞',

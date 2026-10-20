@@ -39,6 +39,7 @@ import {
   copyTaskLink,
   createTask,
   duplicateTask,
+  ensureBoardTasks,
   loadTask,
   moveTaskToBoard,
   restoreTask,
@@ -75,6 +76,7 @@ import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
+import { taskChoices } from './taskChoices';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
@@ -684,14 +686,11 @@ function ParentMilestone({ task, canEdit }: { task: Task; canEdit: boolean }): R
 /** Tasks of the board as picker choices (parent, relations). */
 function useTaskChoices(boardId: string, exclude: string, open: boolean): Choice[] {
   const tasks = useBoards((s) => (open ? s.tasks : null));
-  return useMemo(() => {
-    if (!tasks) return [];
-    return Object.values(tasks)
-      .filter((x) => x.boardId === boardId && x.id !== exclude && !x.archivedAt)
-      .sort((a, b) => b.number - a.number)
-      .slice(0, 500)
-      .map((x) => ({ id: x.id, search: [x.key, x.title], label: `${x.key} ${x.title}` }));
-  }, [tasks, boardId, exclude]);
+  // A task opened by a link / notification / search: its board may not be loaded, so the list would be empty.
+  useEffect(() => {
+    if (open) void ensureBoardTasks(boardId);
+  }, [open, boardId]);
+  return useMemo(() => taskChoices(tasks, boardId, exclude), [tasks, boardId, exclude]);
 }
 
 function ParentMenu({ task, children }: { task: Task; children: ReactNode }): ReactNode {
@@ -910,6 +909,7 @@ const REL_GROUPS: ReadonlyArray<{ key: 'blocks' | 'blocked' | 'relates' | 'dupli
 export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: boolean }): ReactNode {
   const [kind, setKind] = useState<TaskRelationKind | null>(null);
   const choices = useTaskChoices(task.boardId, task.id, kind !== null);
+  const loading = useBoards((s) => kind !== null && s.load[task.boardId] === 'loading');
   const groups = useMemo(() => {
     const g: Record<string, Array<{ other: string; kind: TaskRelationKind }>> = { blocks: [], blocked: [], relates: [], duplicates: [] };
     for (const r of task.relations) {
@@ -955,7 +955,7 @@ export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdi
             </button>
           </Dropdown.Trigger>
           <Dropdown.Portal>
-            <Dropdown.Content className={cx(menuBox, 'w-52')} sideOffset={4} align="start">
+            <Dropdown.Content className={cx(menuBox, 'w-52')} sideOffset={4} align="start" onCloseAutoFocus={(e) => e.preventDefault()}>
               {[TaskRelationKind.BLOCKS, TaskRelationKind.RELATES, TaskRelationKind.DUPLICATES].map((k) => (
                 <Dropdown.Item key={k} className={menuItem} onSelect={() => window.setTimeout(() => setKind(k), 0)}>
                   {t(k === TaskRelationKind.BLOCKS ? 'boards.rel.blocks' : k === TaskRelationKind.RELATES ? 'boards.rel.relates' : 'boards.rel.duplicates')}
@@ -966,7 +966,7 @@ export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdi
         </Dropdown.Root>
       ) : null}
       {kind !== null ? (
-        <ChoiceMenu open onOpenChange={(v) => !v && setKind(null)} groups={[{ id: 't', label: '', items: choices }]} width={320} onPick={(c) => void setRelation(task.id, c.id, kind, true)} placeholder={t('boards.menu.task')} label={t('boards.addRelation')}>
+        <ChoiceMenu open onOpenChange={(v) => !v && setKind(null)} groups={[{ id: 't', label: '', items: choices }]} width={320} onPick={(c) => void setRelation(task.id, c.id, kind, true)} placeholder={t('boards.menu.task')} label={t('boards.addRelation')} loading={loading} emptyText={t('boards.noTasksToLink')}>
           <span className="block h-0" />
         </ChoiceMenu>
       ) : null}

@@ -391,6 +391,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.subtaskPlaceholder': 'Sub-task title',
   'boards.relations': 'Relations',
   'boards.addRelation': 'Add relation',
+  'boards.noTasksToLink': 'No tasks to link with',
   'boards.removeRelation': 'Remove relation',
   'boards.rel.blocks': 'Blocks',
   'boards.rel.blocked': 'Blocked by',

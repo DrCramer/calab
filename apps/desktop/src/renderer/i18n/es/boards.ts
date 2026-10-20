@@ -391,6 +391,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.subtaskPlaceholder': 'Título de la subtarea',
   'boards.relations': 'Relaciones',
   'boards.addRelation': 'Añadir relación',
+  'boards.noTasksToLink': 'No hay tareas para vincular',
   'boards.removeRelation': 'Quitar relación',
   'boards.rel.blocks': 'Bloquea',
   'boards.rel.blocked': 'Bloqueada por',
