@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PANEL_GAP, PANEL_MARGIN, placePanel, safeArea, type Insets } from './layout';
+import { rotateHandlePoint } from '../../../lib/canvas/geometry';
+import { KNOB_RADIUS, PANEL_GAP, PANEL_MARGIN, placePanel, safeArea, type Insets } from './layout';
 
 const cam = { tx: 0, ty: 0, scale: 1 };
 const vp = { w: 1000, h: 800 };
@@ -102,5 +103,69 @@ describe('placePanel with floating chrome', () => {
   it('hides when the selection is off screen', () => {
     expect(placePanel(box(5000, 100, 10, 10), cam, vp, size, chrome).visible).toBe(false);
     expect(placePanel(box(100, 100, 10, 10), cam, vp, size, chrome).visible).toBe(true);
+  });
+});
+
+describe('placePanel with a rotation handle', () => {
+  const offset = 26;
+  /** The handle of an upright box: above the middle of its top side. */
+  const knobOf = (b: { x: number; y: number; w: number; h: number }) => rotateHandlePoint(b, 0, offset);
+  const free = (p: { x: number; y: number }, b: { y: number; h: number }, k: { y: number }): boolean =>
+    p.y + size.h <= k.y - KNOB_RADIUS || p.y >= b.y + b.h;
+
+  it('sits above the handle, clear of it', () => {
+    const b = box(400, 300, 160, 160);
+    const k = knobOf(b);
+    const p = placePanel(b, cam, vp, size, chrome, k);
+    expect(p.y + size.h).toBeLessThanOrEqual(k.y - KNOB_RADIUS - PANEL_GAP + 1);
+    expect(placePanel(b, cam, vp, size, chrome).y).toBeGreaterThan(p.y); // without the handle it hangs lower
+    expectClear(p);
+  });
+
+  it('goes below the object, clear of the bottom handles, when the handle leaves no room above', () => {
+    const b = box(400, 70, 160, 160);
+    const k = knobOf(b);
+    const p = placePanel(b, cam, vp, size, chrome, k);
+    expect(p.y).toBeGreaterThanOrEqual(b.y + b.h + PANEL_GAP - 1);
+    expect(free(p, b, k)).toBe(true);
+    expectClear(p);
+  });
+
+  it('flips for an object that would have fit the panel above it, if not for the handle', () => {
+    const b = box(400, 130, 160, 160); // 70 px above the box fit the 40 px panel + gap; the handle takes 34 of them
+    expect(placePanel(b, cam, vp, size, chrome).y + size.h).toBeLessThanOrEqual(b.y);
+    const withKnob = placePanel(b, cam, vp, size, chrome, knobOf(b));
+    expect(withKnob.y).toBeGreaterThanOrEqual(b.y + b.h);
+  });
+
+  it('a rotated object: the panel clears the handle wherever the turn put it', () => {
+    for (const rot of [0, 45, 90, 180, 270]) {
+      const b = box(400, 300, 160, 100);
+      const k = rotateHandlePoint(b, rot, offset);
+      // The selection's circumscribed rect, as the engine reports it.
+      const a = (rot * Math.PI) / 180;
+      const w = 160 * Math.abs(Math.cos(a)) + 100 * Math.abs(Math.sin(a));
+      const h = 160 * Math.abs(Math.sin(a)) + 100 * Math.abs(Math.cos(a));
+      const bb = box(480 - w / 2, 350 - h / 2, w, h);
+      const p = placePanel(bb, cam, vp, size, chrome, k);
+      expect(p.y + size.h <= k.y - KNOB_RADIUS || p.y >= Math.max(bb.y + bb.h, k.y + KNOB_RADIUS) || p.x + size.w <= k.x - KNOB_RADIUS || p.x >= k.x + KNOB_RADIUS).toBe(true);
+      expectClear(p);
+    }
+  });
+
+  it('a very tall object: neither side fits, the panel stays inside the viewport', () => {
+    const b = box(300, -400, 300, 1600);
+    const p = placePanel(b, cam, vp, size, chrome, knobOf(b));
+    expectClear(p);
+    expect(p.visible).toBe(true);
+  });
+
+  it('follows the camera with the handle (zoomed, panned) and never changes without a handle', () => {
+    const c = { tx: 40, ty: 30, scale: 2 };
+    const b = box(100, 100, 100, 80);
+    const k = knobOf(b);
+    const p = placePanel(b, c, vp, size, chrome, k);
+    expect(p.y + size.h).toBeLessThanOrEqual(c.ty + k.y * 2 - KNOB_RADIUS);
+    expect(placePanel(b, c, vp, size, chrome, null)).toEqual(placePanel(b, c, vp, size, chrome));
   });
 });
