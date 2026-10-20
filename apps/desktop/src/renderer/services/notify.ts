@@ -1,4 +1,5 @@
 import { CallOutcome, PresenceStatus, levelNotifies, type Message, type Room } from '@calaba/protocol';
+import { holdNotification } from '../lib/notifyHold';
 import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
 import { achievementForMe } from '../lib/achievements';
@@ -111,7 +112,7 @@ function showMessageNotification(m: Message, workspaceId: string, room: Room | u
   const body = systemPreview(m, author) || previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
   try {
     // A DM is titled with its author alone (the chat is them).
-    const n = new Notification(`${author}${room && !dm ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId });
+    const n = holdNotification(new Notification(`${author}${room && !dm ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId }));
     n.onclick = () => {
       window.focus();
       useUi.getState().openRoom(dm ? HOME : workspaceId, m.roomId);
