@@ -377,3 +377,44 @@ func TestTempRoomExtendFollowsMeeting(t *testing.T) {
 		t.Fatalf("hand-edited meeting moved to %v, want %v", got, manual)
 	}
 }
+
+// CBF-45: a room made permanent goes to the end of the sidebar list, into the last category if any.
+func TestTempRoomMadePermanentGoesToEnd(t *testing.T) {
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	wid := ws.GetId()
+	place := func(id string) (int32, string) {
+		t.Helper()
+		var pos int32
+		var cat *string
+		if err := testDB.Pool.QueryRow(context.Background(), "SELECT position, category_id::text FROM rooms WHERE id = $1", id).Scan(&pos, &cat); err != nil {
+			t.Fatal(err)
+		}
+		if cat == nil {
+			return pos, ""
+		}
+		return pos, *cat
+	}
+	var loose v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "loose"}, &loose)
+	first := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "first", TtlSeconds: 3600, Guests: noGuests()})
+	second := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "second", TtlSeconds: 3600, Guests: noGuests()})
+	var ur v1.UpdateRoomResponse
+
+	// No categories: after the last loose room.
+	o.must(200, "PATCH", "/api/rooms/"+first.GetRoom().GetId(), &v1.UpdateRoomRequest{MakePermanent: true}, &ur)
+	lp, _ := place(loose.GetRoom().GetId())
+	if pos, cat := place(first.GetRoom().GetId()); cat != "" || pos <= lp {
+		t.Fatalf("loose end: position %d (loose %d) category %q", pos, lp, cat)
+	}
+
+	// Last category by position: inside it, after its rooms.
+	var c1, c2 v1.CreateCategoryResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/categories", &v1.CreateCategoryRequest{Name: "A"}, &c1)
+	o.must(201, "POST", "/api/workspaces/"+wid+"/categories", &v1.CreateCategoryRequest{Name: "B"}, &c2)
+	sqlExec(t, "UPDATE rooms SET category_id = $1, position = 7 WHERE id = $2", c2.GetCategory().GetId(), loose.GetRoom().GetId())
+	o.must(200, "PATCH", "/api/rooms/"+second.GetRoom().GetId(), &v1.UpdateRoomRequest{MakePermanent: true}, &ur)
+	if pos, cat := place(second.GetRoom().GetId()); cat != c2.GetCategory().GetId() || pos != 8 {
+		t.Fatalf("last category end: position %d category %q, want 8 in %q", pos, cat, c2.GetCategory().GetId())
+	}
+}
