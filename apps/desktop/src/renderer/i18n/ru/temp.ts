@@ -12,6 +12,7 @@ export const ruTemp = {
   'temp.preset.1d': '1 день',
   'temp.preset.3d': '3 дня',
   'temp.preset.7d': '7 дней',
+  'temp.preset.30d': '30 дней',
   'temp.preset.date': 'До даты',
   'temp.closesAt': 'Закроется {when}',
   'temp.untilDate': 'Дата и время закрытия',

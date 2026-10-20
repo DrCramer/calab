@@ -24,10 +24,12 @@ const (
 	KindStickerPacks
 	// KindBoards counts the task boards of the workspace, live and archived (ADR-0042).
 	KindBoards
+	// KindWikiPages counts the live (not trashed) Wiki pages of the workspace (ADR-0096).
+	KindWikiPages
 )
 
 // what names a kind in the error message; the client tells the limits apart by it.
-var what = map[Kind]string{KindMembers: "members", KindBots: "bots", KindStickerPacks: "sticker packs", KindBoards: "boards"}
+var what = map[Kind]string{KindMembers: "members", KindBots: "bots", KindStickerPacks: "sticker packs", KindBoards: "boards", KindWikiPages: "wiki pages"}
 
 // LimitError is the plan-limit error of every counted kind (ADR-0024): 409 CONFLICT, reason
 // PLAN_LIMIT, with the counter and the limit.
@@ -46,6 +48,8 @@ func (k Kind) limit(l Limits) uint32 {
 		return l.StickerPacks
 	case KindBoards:
 		return l.Boards
+	case KindWikiPages:
+		return l.WikiPages
 	}
 	return 0
 }
@@ -60,6 +64,8 @@ func (k Kind) lock(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
 		return q.LockWorkspaceStickers(ctx, wsID)
 	case KindBoards:
 		return q.LockBoards(ctx, wsID.String())
+	case KindWikiPages:
+		return q.LockWikiTree(ctx, wsID)
 	}
 	return nil
 }
@@ -77,6 +83,8 @@ func (k Kind) count(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (int64
 	case KindBoards:
 		n, err := q.CountAllBoards(ctx, wsID)
 		return int64(n), err
+	case KindWikiPages:
+		return q.CountLiveWikiPages(ctx, wsID)
 	}
 	return 0, nil
 }

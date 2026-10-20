@@ -149,6 +149,14 @@ describe('30.09 lineup: Business naming, features by plan', () => {
     expect(planErrorNotice(e, Plan.TEAM)?.text).toBe('Лимит тарифа Team: 30 досок');
   });
 
+  it('wiki pages over the plan name the plan and its limit (CBF-43)', () => {
+    const e = (n: number) =>
+      new ApiError('ERROR_CODE_CONFLICT', `the workspace plan allows ${n} wiki pages`, 409, undefined, { reason: 'PLAN_LIMIT', used: n, limit: n });
+    expect(planErrorNotice(e(10), Plan.FREE)?.text).toBe('Лимит тарифа Free: 10 статей в Wiki');
+    expect(planErrorNotice(e(50), Plan.TEAM)?.text).toBe('Лимит тарифа Team: 50 статей в Wiki');
+    expect(planErrorNotice(e(500), Plan.ENTERPRISE)?.text).toMatch(/: 500 статей в Wiki$/);
+  });
+
   it('planHas: a missing plan or flag allows; the disabled flags lock', () => {
     const p = (limits: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.FREE, limits: create(PlanLimitsSchema, limits) });
     expect(planHas(undefined, 'caldav')).toBe(true);

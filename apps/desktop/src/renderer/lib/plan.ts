@@ -25,6 +25,8 @@ export const FREE_LIMITS = {
   camerasPerRoom: 3,
   stickers: 200,
   boards: 3,
+  wikiPages: 10,
+  tempRooms: 3,
 } as const;
 
 /** Voice tiers the admin form offers as the plan cap; 0 = no cap. */
@@ -240,6 +242,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     // Telephony SIP — Business only (ADR-0046, owner 02.10).
     if (/telephony/i.test(msg)) return { text: t('plan.telephonyLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
+    // Wiki pages over the plan (owner, CBF-43).
+    if (/\bwiki\b/i.test(msg)) return { text: t('plan.wikiPagesFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     const key: PluralKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
     return { text: plural(key, n), contact: true };
@@ -279,6 +283,8 @@ export interface LimitsForm {
   stickerPacks: string;
   stickers: string;
   boards: string;
+  wikiPages: string;
+  tempRooms: string;
   /** A tier (8 | 16 | 32 | 64) or 0 = no cap. */
   audioTierMaxKbps: number;
   /** Feature flags of the plan (ADR-0058 §5, ADR-0046, ADR-0052, ADR-0113). */
@@ -313,6 +319,8 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     stickerPacks: String(src ? src.stickerPacks : FREE_LIMITS.stickerPacks),
     stickers: String(src ? src.stickers : FREE_LIMITS.stickers),
     boards: String(src ? src.boards : FREE_LIMITS.boards),
+    wikiPages: String(src ? src.wikiPages : FREE_LIMITS.wikiPages),
+    tempRooms: String(src ? src.tempRooms : FREE_LIMITS.tempRooms),
     audioTierMaxKbps: src ? src.audioTierMaxKbps : FREE_LIMITS.audioTierMaxKbps,
     caldavDisabled: src ? src.caldavDisabled : CUSTOM_DEFAULT_FLAGS.caldavDisabled,
     musicianDisabled: src ? src.musicianDisabled : CUSTOM_DEFAULT_FLAGS.musicianDisabled,
@@ -342,7 +350,7 @@ export const CUSTOM_DEFAULT_FLAGS = {
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
 const MAX: Record<
-  'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'camerasPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks' | 'stickers' | 'boards',
+  'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'camerasPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks' | 'stickers' | 'boards' | 'wikiPages' | 'tempRooms',
   number
 > = {
   boardFormsPerBoard: 1_000_000,
@@ -357,6 +365,8 @@ const MAX: Record<
   stickerPacks: 10_000,
   stickers: 1_000_000,
   boards: 50,
+  wikiPages: 1_000_000,
+  tempRooms: 1000,
 };
 
 export type LimitsField = keyof typeof MAX;
@@ -377,6 +387,8 @@ export interface PlanLimitsInit {
   stickerPacks: number;
   stickers: number;
   boards: number;
+  wikiPages: number;
+  tempRooms: number;
   audioTierMaxKbps: number;
   caldavDisabled: boolean;
   musicianDisabled: boolean;
@@ -416,6 +428,8 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       stickerPacks: out.stickerPacks ?? 0,
       stickers: out.stickers ?? 0,
       boards: out.boards ?? 0,
+      wikiPages: out.wikiPages ?? 0,
+      tempRooms: out.tempRooms ?? 0,
       audioTierMaxKbps: f.audioTierMaxKbps,
       caldavDisabled: f.caldavDisabled,
       musicianDisabled: f.musicianDisabled,
