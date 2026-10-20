@@ -1833,9 +1833,9 @@ test('m-wiki-trash', async ({ page }) => {
   await checkpoint(page, 'm-wiki-trash', { snapshot: false });
 });
 
-// ADR-0113 §5: «Холст» on the phone is view only — the section behind «Ещё», the tree as 56 px rows, a
-// folder and a canvas as pushed screens; the canvas pans with a finger, pinches, has the zoom bar and
-// a one-time note, no tools or panels.
+// ADR-0113 §5 / ADR-0114 wave 5b: «Холст» on the phone — the section behind «Ещё», the tree as 56 px rows, a
+// folder and a canvas as pushed screens; the canvas opens in view mode (pans with a finger, pinches, has the
+// zoom bar; no tools or panels) and «Править» in the header turns on the edit mode (m-canvas-edit).
 test('m-canvas-root', async ({ page }) => {
   await signedIn(page);
   await toRoot(page);
@@ -1875,16 +1875,13 @@ test('m-canvas-view', async ({ page }) => {
   await expect(screen.getByTestId('phone-header')).toContainText('Дорожная карта Q1');
   const view = screen.getByTestId('canvas-view');
   await expect(view.getByTestId('canvas-zoom')).toBeVisible();
-  // View only whatever the grant (the owner can write on the desktop): no tools, no panels, no help, no chip.
-  for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-props', 'canvas-help', 'canvas-presence', 'canvas-view-only']) await expect(view.getByTestId(id)).toHaveCount(0);
+  // View mode by default, whatever the grant (the owner can write): no tools, no panels, no help, no chip, no note —
+  // the way to edit is «Править» in the header.
+  for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-props', 'canvas-help', 'canvas-presence', 'canvas-view-only', 'canvas-phone-toolbar', 'canvas-phone-note']) await expect(view.getByTestId(id)).toHaveCount(0);
+  await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Править');
   await expectNoFieldFocus(page, 'canvas view');
-  // The one-time note.
-  await expect(view.getByTestId('canvas-phone-note')).toBeVisible();
   await view.getByTestId('canvas-fit-all').tap();
   await checkpoint(page, 'm-canvas-view');
-  await view.getByTestId('canvas-phone-note-close').tap();
-  await expect(view.getByTestId('canvas-phone-note')).toHaveCount(0);
-  await checkpoint(page, 'm-canvas-view-clean', { snapshot: false });
 
   // Pinch: two touch pointers moving apart zoom in; one finger pans (synthetic pointer events: Playwright has no multi-touch gesture).
   const pct = async (): Promise<number> => Number(/\d+/.exec((await view.getByTestId('canvas-zoom-pct').textContent()) ?? '')?.[0]);
@@ -1910,6 +1907,63 @@ test('m-canvas-view', async ({ page }) => {
   await view.getByTestId('canvas-zoom-pct').tap();
   await expect.poll(pct).toBe(100);
   await checkpoint(page, 'm-canvas-view-zoom', { snapshot: false });
+});
+
+// ADR-0114 wave 5b: the edit mode — the bottom tool bar, the shapes grid, «+», a new sticky with its text editor and
+// the format bar, the properties sheet, «Выбрать несколько», and «Готово» back to view mode. Written, not run (no WebKit).
+test('m-canvas-edit', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'canvas');
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Продукт' }).getByRole('button').tap();
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Дорожная карта Q1' }).getByRole('button').tap();
+  const screen = page.getByTestId('phone-canvas-screen');
+  const view = screen.getByTestId('canvas-view');
+  await expect(view.getByTestId('canvas-zoom')).toBeVisible();
+  await screen.getByTestId('phone-canvas-edit').tap();
+  await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Готово');
+  // The bar with 44 px targets above the home indicator, the zoom bar moved to the top, the one-time hint.
+  const bar = view.getByTestId('canvas-phone-toolbar');
+  await expect(bar).toBeVisible();
+  for (const btn of await bar.getByRole('button').all()) {
+    const box = await btn.boundingBox();
+    expect(box?.width ?? 0, 'tool bar target width').toBeGreaterThanOrEqual(43.5);
+    expect(box?.height ?? 0, 'tool bar target height').toBeGreaterThanOrEqual(43.5);
+  }
+  await expect(view.getByTestId('canvas-phone-edit-hint')).toBeVisible();
+  await view.getByTestId('canvas-fit-all').tap();
+  await checkpoint(page, 'm-canvas-edit');
+  await view.getByTestId('canvas-phone-edit-hint-close').tap();
+  // The shapes grid.
+  await view.getByTestId('canvas-tool-shape').tap();
+  await expect(view.getByTestId('canvas-phone-shapes')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-shapes', { snapshot: false });
+  await view.getByTestId('canvas-shape-ellipse').tap();
+  // «+»: templates, vote, timer.
+  await view.getByTestId('canvas-phone-plus').tap();
+  await expect(view.getByTestId('canvas-phone-plus-sheet')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-plus', { snapshot: false });
+  await view.getByTestId('canvas-phone-plus').tap();
+  // A sticky: arm the tool, tap the canvas — its text editor opens with the format bar above the keyboard.
+  await view.getByTestId('canvas-tool-sticky').tap();
+  await expect(view.getByTestId('canvas-phone-armed')).toBeVisible();
+  await view.getByTestId('canvas-surface').tap({ position: { x: 180, y: 300 } });
+  await expect(view.getByTestId('canvas-format-bar')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-text', { snapshot: false });
+  await view.getByTestId('canvas-format-done').tap();
+  // The new object stays selected: its properties sheet is above the tool bar.
+  await expect(view.getByTestId('canvas-phone-props')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-props');
+  await view.getByTestId('canvas-prop-sticky-color').tap();
+  await expect(view.getByTestId('canvas-phone-panel')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-color', { snapshot: false });
+  await view.getByTestId('canvas-phone-color-pink').tap();
+  await view.getByTestId('canvas-phone-multi').tap();
+  await expect(view.getByTestId('canvas-phone-multi')).toHaveAttribute('aria-pressed', 'true');
+  // «Готово» is back to view mode: the bar and the sheet are gone, the canvas is the same.
+  await screen.getByTestId('phone-canvas-edit').tap();
+  await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Править');
+  for (const id of ['canvas-phone-toolbar', 'canvas-phone-props']) await expect(view.getByTestId(id)).toHaveCount(0);
+  await checkpoint(page, 'm-canvas-edit-done', { snapshot: false });
 });
 
 // /w/{code} at 390 px: the outline is a «Содержание» disclosure above the text.

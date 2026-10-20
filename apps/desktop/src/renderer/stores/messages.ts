@@ -342,6 +342,17 @@ export function trimWindow(r: RoomMessages, keep: number): RoomMessages | null {
   return { ...r, items: [...sentItems.slice(sentItems.length - keep), ...pending], hasMoreBefore: true };
 }
 
+/**
+ * Opening a room whose loaded window is away from the present (`hasMoreAfter`: left after a jump to
+ * a search hit, a reply quote or a pin, and kept because the room stayed current or holds unsent
+ * rows): the present must be loaded before the feed mounts, or it opens at that window's last row —
+ * in the middle of the history (CBF-31). `savedPlace`: the reader returns from a phone screen pushed
+ * over the room (features/chat/feedPosition.ts) — that window is where they left it.
+ */
+export function opensAwayFromPresent(r: RoomMessages | undefined, savedPlace: boolean): boolean {
+  return !!r?.loaded && r.hasMoreAfter && !savedPlace;
+}
+
 export const useMessages = create<MessagesState>()((rawSet) => {
   const set = (fn: (s: MessagesState) => Partial<MessagesState>): void => rawSet((s) => anchored(s, fn(s)));
   return {

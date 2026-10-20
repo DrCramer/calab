@@ -130,15 +130,13 @@ export function isOwnSend(last: { key: string; own: boolean; pending: boolean })
   return last.own && last.pending && last.key.startsWith('local:');
 }
 
-/** Where the feed opens: at the first unread row (docs/09 #39, `firstNew` ≥ 0), else at the
- * bottom — the last row's *bottom* (align end): a bare index aligns the row's top, so a last
- * message taller than the feed opened cut off above the composer. `stuck` seeds the pin: opened at
- * the present's bottom, rows growing before the first scroll event (images, previews being
- * measured) keep the feed there. */
-export function initialFeedLocation(
-  firstNew: number,
-  hasMoreAfter: boolean,
-): { location: { index: number | 'LAST'; align: 'start' | 'end'; offset?: number }; stuck: boolean } {
-  if (firstNew >= 0) return { location: { index: firstNew, align: 'start', offset: -40 }, stuck: false };
+/** Where the feed opens: at the bottom — the last row's *bottom* (align end): a bare index aligns
+ * the row's top, so a last message taller than the feed opened cut off above the composer. Never at
+ * the first unread (CBF-31, owner: a chat always opens at its latest message; that was docs/09 #39,
+ * and with a lagging read marker it kept opening in the middle of the history — the unread divider
+ * and the «first unread» banner still lead there). `stuck` seeds the pin: opened at the present's
+ * bottom, rows growing before the first scroll event (images, previews being measured) keep the
+ * feed there. */
+export function initialFeedLocation(hasMoreAfter: boolean): { location: { index: 'LAST'; align: 'end' }; stuck: boolean } {
   return { location: { index: 'LAST', align: 'end' }, stuck: !hasMoreAfter };
 }

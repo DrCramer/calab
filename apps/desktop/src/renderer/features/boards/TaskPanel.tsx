@@ -28,7 +28,7 @@ import { Choice as ChoiceSwitch } from '../../components/Choice';
 import { t } from '../../i18n';
 import { Markdown } from '../../lib/markdown/Markdown';
 import type { ActivityTab } from '../../lib/boards/activity';
-import { approvalsWouldReset, blockedStatusIds, decidedApprovers } from '../../lib/boards/approvals';
+import { approvalsWouldReset, blockedStatusIds, decidedApprovers, gateReason } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, replaceAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
@@ -39,6 +39,7 @@ import {
   copyTaskLink,
   createTask,
   duplicateTask,
+  ensureBoardTasks,
   loadTask,
   moveTaskToBoard,
   restoreTask,
@@ -75,6 +76,7 @@ import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
+import { taskChoices } from './taskChoices';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
@@ -519,6 +521,10 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
   const blocked = useMemo(() => blockedStatusIds(task, statuses ?? []), [task, statuses]);
+  // Why they are disabled: «1/3» or «rejected» instead of the bare «approval needed».
+  const reason = gateReason(task);
+  const gateKey = !reason ? '' : reason.kind === 'rejected' ? 'r' : `${reason.n}/${reason.m}`;
+  const blockedNote = useMemo(() => (gateKey === '' ? undefined : gateKey === 'r' ? t('boards.gate.hintRejected') : `${t('boards.gate.hint')} ${gateKey}`), [gateKey]);
   // ADR-0108: a board manager may still pick them (marked), after a confirmation.
   const manage = !scoped && hasBit(perms, MANAGE_BOARD);
   const labels = useBoards((s) => s.boards[task.boardId]?.labels);
@@ -535,7 +541,7 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
     <section className={cx('flex flex-col gap-0.5', !bare && 'rounded-[var(--radius-card)] border border-line p-2')} aria-label={t('boards.properties')} data-testid="task-properties">
       {task.createdBy ? <AuthorProp task={task} /> : null}
       <Prop label={t('boards.f.status')}>
-        <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} overridable={manage} onPick={(s) => void pickStatus(task.id, s, manage)} {...req('status')}>
+        <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} blockedNote={blockedNote} overridable={manage} onPick={(s) => void pickStatus(task.id, s, manage)} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} /> <span className="truncate">{status?.name ?? ''}</span>
           </button>
@@ -684,14 +690,11 @@ function ParentMilestone({ task, canEdit }: { task: Task; canEdit: boolean }): R
 /** Tasks of the board as picker choices (parent, relations). */
 function useTaskChoices(boardId: string, exclude: string, open: boolean): Choice[] {
   const tasks = useBoards((s) => (open ? s.tasks : null));
-  return useMemo(() => {
-    if (!tasks) return [];
-    return Object.values(tasks)
-      .filter((x) => x.boardId === boardId && x.id !== exclude && !x.archivedAt)
-      .sort((a, b) => b.number - a.number)
-      .slice(0, 500)
-      .map((x) => ({ id: x.id, search: [x.key, x.title], label: `${x.key} ${x.title}` }));
-  }, [tasks, boardId, exclude]);
+  // A task opened by a link / notification / search: its board may not be loaded, so the list would be empty.
+  useEffect(() => {
+    if (open) void ensureBoardTasks(boardId);
+  }, [open, boardId]);
+  return useMemo(() => taskChoices(tasks, boardId, exclude), [tasks, boardId, exclude]);
 }
 
 function ParentMenu({ task, children }: { task: Task; children: ReactNode }): ReactNode {
@@ -910,6 +913,7 @@ const REL_GROUPS: ReadonlyArray<{ key: 'blocks' | 'blocked' | 'relates' | 'dupli
 export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: boolean }): ReactNode {
   const [kind, setKind] = useState<TaskRelationKind | null>(null);
   const choices = useTaskChoices(task.boardId, task.id, kind !== null);
+  const loading = useBoards((s) => kind !== null && s.load[task.boardId] === 'loading');
   const groups = useMemo(() => {
     const g: Record<string, Array<{ other: string; kind: TaskRelationKind }>> = { blocks: [], blocked: [], relates: [], duplicates: [] };
     for (const r of task.relations) {
@@ -955,7 +959,7 @@ export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdi
             </button>
           </Dropdown.Trigger>
           <Dropdown.Portal>
-            <Dropdown.Content className={cx(menuBox, 'w-52')} sideOffset={4} align="start">
+            <Dropdown.Content className={cx(menuBox, 'w-52')} sideOffset={4} align="start" onCloseAutoFocus={(e) => e.preventDefault()}>
               {[TaskRelationKind.BLOCKS, TaskRelationKind.RELATES, TaskRelationKind.DUPLICATES].map((k) => (
                 <Dropdown.Item key={k} className={menuItem} onSelect={() => window.setTimeout(() => setKind(k), 0)}>
                   {t(k === TaskRelationKind.BLOCKS ? 'boards.rel.blocks' : k === TaskRelationKind.RELATES ? 'boards.rel.relates' : 'boards.rel.duplicates')}
@@ -966,7 +970,7 @@ export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdi
         </Dropdown.Root>
       ) : null}
       {kind !== null ? (
-        <ChoiceMenu open onOpenChange={(v) => !v && setKind(null)} groups={[{ id: 't', label: '', items: choices }]} width={320} onPick={(c) => void setRelation(task.id, c.id, kind, true)} placeholder={t('boards.menu.task')} label={t('boards.addRelation')}>
+        <ChoiceMenu open onOpenChange={(v) => !v && setKind(null)} groups={[{ id: 't', label: '', items: choices }]} width={320} onPick={(c) => void setRelation(task.id, c.id, kind, true)} placeholder={t('boards.menu.task')} label={t('boards.addRelation')} loading={loading} emptyText={t('boards.noTasksToLink')}>
           <span className="block h-0" />
         </ChoiceMenu>
       ) : null}

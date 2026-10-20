@@ -54,6 +54,8 @@ export interface EngineState {
   readonly votesLeft: number;
   /** A vote is open and I may take part (write access, signed in). */
   readonly canVote: boolean;
+  /** Phone edit mode: taps add to / remove from the selection (the stand-in for Shift). */
+  readonly multiSelect: boolean;
 }
 
 export interface ClipboardPort {
@@ -79,6 +81,8 @@ export interface EngineOptions {
   lowPower?: boolean;
   /** Camera moves jump instead of animating. */
   reducedMotion?: boolean;
+  /** The phone (ADR-0114 wave 5b): touch editing semantics (tap selects, drag moves the selected, bigger handles). */
+  touch?: boolean;
   /** World grid step for snapping; 0 disables. */
   gridSize?: number;
   clipboard?: ClipboardPort;
@@ -92,11 +96,14 @@ export interface EngineOptions {
   cancelRaf?: (id: number) => void;
 }
 
-const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote'];
+const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote', 'multiSelect'];
 const LOCAL_AWARENESS_MS = 50;
 /** Our camera goes out at most this often (5/s), and only when it moved. */
 const LOCAL_VIEW_MS = 200;
 const ANIM_MS = 180;
+/** Phone: the format bar above the keyboard (44 px targets + padding) and the zoom bar / count of others at the top. */
+const PHONE_FORMAT_BAR_PX = 56;
+const PHONE_TOP_BARS_PX = 64;
 
 function makeCanvasMeasure(family: () => string): MeasureFn {
   if (typeof document === 'undefined') return estimateMeasure;
@@ -127,6 +134,8 @@ export class CanvasEngine implements Core {
   readonly renderer: Renderer;
   readonly editor: TextEditor;
   readonly canvas: HTMLCanvasElement;
+  /** Touch editing on the phone: set once at construction (the viewer's `phone` mode). */
+  readonly touch: boolean;
 
   private palette: CanvasPalette;
   private cam: Camera = { ...DEFAULT_CAMERA };
@@ -158,12 +167,16 @@ export class CanvasEngine implements Core {
   private readOnlyFlag: boolean;
   private lowPower: boolean;
   private reducedMotion: boolean;
+  private readonly pressListeners = new Set<(screen: Point, world: Point) => void>();
   private tool_: Tool = 'select';
+  private multi_ = false;
   private shape_: ShapeKind = 'rect';
   private route_: RouteKind = 'straight';
   private pasteCount = 0;
   /** The object whose text the editor is open on. */
   private editingId: string | null = null;
+  /** The view before the on-screen keyboard made it move for a text edit, and where it was moved to (phone). */
+  private editCam: { before: Camera; after: Camera } | null = null;
   private animToken = 0;
   private animRaf = 0;
   private pending: Camera | null = null;
@@ -176,6 +189,7 @@ export class CanvasEngine implements Core {
 
   constructor(private readonly opts: EngineOptions) {
     this.canvas = opts.canvas;
+    this.touch = opts.touch ?? false;
     this.palette = opts.palette;
     this.readOnlyFlag = opts.readOnly ?? false;
     this.lowPower = opts.lowPower ?? false;
@@ -208,7 +222,12 @@ export class CanvasEngine implements Core {
       now: this.now,
     });
     const host = opts.editorHost ?? opts.canvas.parentElement;
-    this.editor = new TextEditor({ host: host ?? opts.canvas, canvas: opts.canvas, getCamera: () => this.cam });
+    this.editor = new TextEditor({
+      host: host ?? opts.canvas,
+      canvas: opts.canvas,
+      getCamera: () => this.cam,
+      ...(this.touch ? { phone: { keepVisible: (dy: number) => this.keepEditVisible(dy), reserve: PHONE_FORMAT_BAR_PX, top: PHONE_TOP_BARS_PX } } : {}),
+    });
     this.renderer.onFrame = () => {
       if (this.editor.isOpen) this.editor.reposition();
     };
@@ -294,6 +313,7 @@ export class CanvasEngine implements Core {
       votesPer: this.votes.session?.votesPerPerson ?? 0,
       votesLeft: this.canVote ? this.votes.left() : 0,
       canVote: this.canVote,
+      multiSelect: this.multi_,
     };
   }
 
@@ -427,7 +447,7 @@ export class CanvasEngine implements Core {
       else outlines.push({ rect: { x: o.x, y: o.y, w: o.w, h: o.h }, rot: o.rot ?? 0 });
     }
     const group = !this.readOnly && !this.editor.isOpen ? selectionFrame(recs) : null;
-    this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group };
+    this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group, ...(this.touch ? { touch: true } : {}) };
     this.renderer.requestFrame();
   }
 
@@ -478,6 +498,41 @@ export class CanvasEngine implements Core {
     this.sync();
   }
 
+  /**
+   * Leaving the phone's edit mode (the screen's «Готово»): what was typed is kept, a gesture in progress is dropped, and no
+   * selection, tool or «several» mode stays armed. The caller flushes the socket before it turns the canvas read-only.
+   */
+  leaveTouchEdit(): void {
+    if (this.editor.isOpen) this.editor.commit();
+    const g = this.gesture;
+    this.activeGesture = null;
+    g?.cancel();
+    this.clearSelection();
+    this.setTool('select');
+    this.setMultiSelect(false);
+  }
+
+  /** A long press on empty canvas (touch editing): the phone shows its menu. */
+  onLongPress(fn: (screen: Point, world: Point) => void): () => void {
+    this.pressListeners.add(fn);
+    return () => this.pressListeners.delete(fn);
+  }
+
+  emitLongPress(screen: Point, world: Point): void {
+    for (const fn of [...this.pressListeners]) fn(screen, world);
+  }
+
+  /** «Выбрать несколько» (touch): while on, a tap adds the object to the selection or takes it out. */
+  setMultiSelect(on: boolean): void {
+    if (this.multi_ === on) return;
+    this.multi_ = on;
+    this.sync();
+  }
+
+  get multiSelect(): boolean {
+    return this.multi_;
+  }
+
   setShapeKind(k: ShapeKind): void {
     this.shape_ = k;
     this.sync();
@@ -489,7 +544,12 @@ export class CanvasEngine implements Core {
 
   setReadOnly(on: boolean): void {
     this.readOnlyFlag = on;
-    if (this.readOnly) this.editor.cancel();
+    if (this.readOnly) {
+      this.editor.cancel();
+      this.renderer.setHiddenText(null);
+      this.editingId = null;
+      this.endEditCamera();
+    }
     this.refreshOverlay();
     this.sync();
   }
@@ -597,6 +657,29 @@ export class CanvasEngine implements Core {
     const v = this.viewport;
     const { scale } = this.liveCamera;
     this.moveCamera({ scale, tx: v.w / 2 - p.x * scale, ty: v.h / 2 - p.y * scale });
+  }
+
+  /**
+   * Moves the camera (animated, zoom unchanged) so the selection lies between `inset.top` and `inset.bottom` px of the view,
+   * the strips the screen's own panels cover (phone: the zoom bar above, the properties sheet and tool bar below). A selection
+   * taller than that is aligned to the top. False: nothing needed, or a gesture is in progress.
+   */
+  revealSelection(inset: { top: number; bottom: number }): boolean {
+    const b = this.scene.bounds(this.sel);
+    if (!b || this.gesture) return false;
+    const c = this.liveCamera;
+    const v = this.viewport;
+    const top = inset.top + 8;
+    const bottom = v.h - inset.bottom - 8;
+    const y0 = c.ty + b.y * c.scale;
+    const y1 = c.ty + (b.y + b.h) * c.scale;
+    let dy = 0;
+    if (y1 - y0 > bottom - top) dy = top - y0;
+    else if (y1 > bottom) dy = bottom - y1;
+    else if (y0 < top) dy = top - y0;
+    if (Math.abs(dy) < 1) return false;
+    this.moveCamera({ ...c, ty: c.ty + dy });
+    return true;
   }
 
   visibleWorld(): Rect {
@@ -906,6 +989,23 @@ export class CanvasEngine implements Core {
     }
   }
 
+  /** The text editor asks for the view to move by `dy` px so the text stays clear of the keyboard (phone). Remembers where it came from. */
+  private keepEditVisible(dy: number): void {
+    const c = this.liveCamera;
+    const target = { ...c, ty: c.ty + dy };
+    if (!this.editCam) this.editCam = { before: c, after: target };
+    else this.editCam.after = target;
+    this.moveCamera(target);
+  }
+
+  /** The edit is over: the view goes back to where it was before the keyboard moved it — unless the person has moved it since. */
+  private endEditCamera(): void {
+    const e = this.editCam;
+    this.editCam = null;
+    if (!e) return;
+    if (sameCamera(this.liveCamera, e.after) || sameCamera(this.cam, e.after)) this.moveCamera(e.before);
+  }
+
   /** Opens the textarea over an object (default: the single selected one). */
   startTextEdit(id?: string): boolean {
     if (!this.canEdit()) return false;
@@ -921,6 +1021,7 @@ export class CanvasEngine implements Core {
     this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
       this.editingId = null;
+      this.endEditCamera();
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();

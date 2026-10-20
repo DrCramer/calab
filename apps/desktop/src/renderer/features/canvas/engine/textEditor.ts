@@ -44,9 +44,24 @@ export interface FormatState {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  /** Phone: px of the host's bottom the on-screen keyboard covers (the format bar sits above it); 0 without one. */
+  readonly kbd: number;
 }
 
-const CLOSED: FormatState = { open: false, rich: false, bold: false, italic: false, strike: false, list: null, token: null, x: 0, y: 0, w: 0, h: 0 };
+const CLOSED: FormatState = { open: false, rich: false, bold: false, italic: false, strike: false, list: null, token: null, x: 0, y: 0, w: 0, h: 0, kbd: 0 };
+
+/** Keeping the text clear of the on-screen keyboard (the phone's edit mode, ADR-0114 wave 5b). */
+export interface PhoneKeyboard {
+  /** The view must move by `dy` px (negative: up) so the text stays in the free part of the screen. */
+  keepVisible(dy: number): void;
+  /** Px at the bottom of the host that the format bar takes. */
+  reserve: number;
+  /** Px at the top of the host that the screen's own bars cover. */
+  top: number;
+}
+
+/** Air between the text and the keyboard / bar above it. */
+const KBD_GAP = 12;
 
 export type EditDone = (text: string, changed: boolean, fmt: Fmt | undefined, fmtChanged: boolean) => void;
 
@@ -55,6 +70,8 @@ export interface TextEditorOptions {
   host: HTMLElement;
   canvas: HTMLElement;
   getCamera: () => Camera;
+  /** The phone: follow `window.visualViewport` while a text is open and keep the text above the keyboard. */
+  phone?: PhoneKeyboard;
 }
 
 /**
@@ -82,6 +99,9 @@ export class TextEditor {
   private pending: number | null = null;
   private pendingAt = -1;
   private snap: FormatState = CLOSED;
+  /** The keyboard's overlap with the host (px), read when the visual viewport changes — only while open. */
+  private kbd = 0;
+  private vv: VisualViewport | null = null;
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly o: TextEditorOptions) {}
@@ -148,10 +168,47 @@ export class TextEditor {
     ta.addEventListener('mouseup', this.onCaret);
     ta.ownerDocument.addEventListener('selectionchange', this.onCaret);
     this.reposition();
-    ta.focus();
+    if (this.o.phone) {
+      // The keyboard narrows the visible area: watch it only while this text is open (no listener at rest).
+      const vv = ta.ownerDocument.defaultView?.visualViewport ?? null;
+      this.vv = vv;
+      vv?.addEventListener('resize', this.onViewport);
+      vv?.addEventListener('scroll', this.onViewport);
+      ta.focus({ preventScroll: true });
+    } else ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
+    this.onViewport();
     this.refresh();
   }
+
+  /**
+   * The visible area changed (the keyboard came up or went) or the text grew: measure how much of the host the keyboard
+   * covers and, if the text sits below the free part or under the top bars, ask the screen to move the view by that much.
+   */
+  private readonly onViewport = (): void => {
+    const { ta } = this;
+    const phone = this.o.phone;
+    if (!ta || !phone) return;
+    // The camera may have moved since the last frame placed the box: measure where it is now.
+    this.reposition();
+    const host = this.o.host.getBoundingClientRect();
+    const vv = this.vv;
+    const visibleTop = vv ? vv.offsetTop : -Infinity;
+    const visibleBottom = vv ? vv.offsetTop + vv.height : Infinity;
+    const kbd = Math.max(0, Math.round(host.bottom - visibleBottom));
+    if (kbd !== this.kbd) {
+      this.kbd = kbd;
+      this.refresh();
+    }
+    const limitBottom = Math.min(host.bottom, visibleBottom) - phone.reserve - KBD_GAP;
+    const limitTop = Math.max(host.top, visibleTop) + phone.top;
+    const r = ta.getBoundingClientRect();
+    if (r.height === 0 && r.width === 0) return;
+    let dy = r.bottom > limitBottom ? limitBottom - r.bottom : 0;
+    // Never push the start of the text off the top to show its end.
+    dy = Math.min(0, Math.max(dy, limitTop - r.top));
+    if (Math.abs(dy) >= 1) phone.keepVisible(dy);
+  };
 
   /** Follows the camera (call after any pan/zoom while open). */
   reposition(): void {
@@ -250,6 +307,8 @@ export class TextEditor {
     this.syncModel();
     this.fit();
     this.refresh();
+    // A growing text (more lines) may reach the keyboard.
+    this.onViewport();
   };
 
   /** The caret or selection moved: a pending style is dropped unless the caret is where typing left it. */
@@ -329,6 +388,7 @@ export class TextEditor {
       y: r(y),
       w: r(parseFloat(ta.style.width) || 0),
       h: r(parseFloat(ta.style.height) || 0),
+      kbd: this.kbd,
     };
     this.setSnap(next);
   }
@@ -337,7 +397,7 @@ export class TextEditor {
     const a = this.snap;
     if (
       a.open === next.open && a.rich === next.rich && a.bold === next.bold && a.italic === next.italic && a.strike === next.strike &&
-      a.list === next.list && a.token === next.token && a.x === next.x && a.y === next.y && a.w === next.w && a.h === next.h
+      a.list === next.list && a.token === next.token && a.x === next.x && a.y === next.y && a.w === next.w && a.h === next.h && a.kbd === next.kbd
     ) return;
     this.snap = next;
     for (const fn of [...this.listeners]) fn();
@@ -350,6 +410,10 @@ export class TextEditor {
     ta.removeEventListener('keyup', this.onCaret);
     ta.removeEventListener('mouseup', this.onCaret);
     ta.ownerDocument.removeEventListener('selectionchange', this.onCaret);
+    this.vv?.removeEventListener('resize', this.onViewport);
+    this.vv?.removeEventListener('scroll', this.onViewport);
+    this.vv = null;
+    this.kbd = 0;
   }
 
   /** Finishes editing and reports the text (changed = differs from what it opened with) and its formatting. */

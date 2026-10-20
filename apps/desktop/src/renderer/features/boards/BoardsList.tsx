@@ -376,13 +376,19 @@ export function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: strin
   );
 }
 
+/** The row click: «Мои задачи» always shows the list — a task open over it (store openBoard is a no-op on the same board) is closed. */
+function openMyTasks(workspaceId: string): void {
+  openBoard(workspaceId, MY_TASKS);
+  useBoardsUi.getState().openTask(null);
+}
+
 function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === MY_TASKS);
   const unread = useBoards((s) => unreadCount(s, workspaceId));
   return (
     <button
       type="button"
-      onClick={() => openBoard(workspaceId, MY_TASKS)}
+      onClick={() => openMyTasks(workspaceId)}
       aria-current={active ? 'page' : undefined}
       className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-14 mobile:gap-3 mobile:rounded-none mobile:px-3 mobile:text-list', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
       data-testid="my-tasks"

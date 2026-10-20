@@ -398,6 +398,7 @@ export const ruBoards = {
   'boards.subtaskPlaceholder': 'Заголовок подзадачи',
   'boards.relations': 'Связи',
   'boards.addRelation': 'Добавить связь',
+  'boards.noTasksToLink': 'Нет задач, с которыми можно связать',
   'boards.removeRelation': 'Убрать связь',
   'boards.rel.blocks': 'Блокирует',
   'boards.rel.blocked': 'Заблокирована',
@@ -405,6 +406,7 @@ export const ruBoards = {
   'boards.rel.duplicates': 'Дубликат',
   'boards.activity': 'Активность',
   'boards.olderComments': 'Показать ранние',
+  'boards.toLatest': 'К последнему комментарию',
   'boards.commentPlaceholder': 'Оставить комментарий…',
   // approvals (ADR-0049)
   'boards.approvals': 'Согласование',
@@ -471,6 +473,7 @@ export const ruBoards = {
   'boards.gate.pending': 'Нужно согласование: {n} из {m}',
   'boards.gate.rejected': 'Отклонено: {name}',
   'boards.gate.hint': 'нужно согласование',
+  'boards.gate.hintRejected': 'отклонено согласующим',
   'boards.gate.bulk': 'Не перенесены — ждут согласования: {keys}',
   // notifications
   'boards.notice.assigned': '{name} назначает вас',

@@ -76,6 +76,8 @@ export function ChoiceMenu({
   testId,
   onInput,
   footer,
+  emptyText,
+  loading,
   ...shell
 }: MenuShell & {
   groups: ReadonlyArray<PickerGroup<Choice>>;
@@ -89,6 +91,8 @@ export function ChoiceMenu({
   testId?: string;
   onInput?: (text: string) => void;
   footer?: ReactNode;
+  emptyText?: string;
+  loading?: boolean;
 }): ReactNode {
   const [open, setOpen] = useOpen(shell);
   const input = useRef<HTMLInputElement>(null);
@@ -128,6 +132,8 @@ export function ChoiceMenu({
             digits={digits}
             height={320}
             {...(onInput ? { onInput } : {})}
+            {...(emptyText ? { emptyText } : {})}
+            {...(loading ? { loading } : {})}
             onSelect={(c) => {
               onPick(c);
               if (!multi) setOpen(false);
@@ -172,8 +178,9 @@ export function StatusMenu({
   onPick,
   blocked,
   overridable = false,
+  blockedNote,
   ...shell
-}: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined; overridable?: boolean }): ReactNode {
+}: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined; overridable?: boolean; blockedNote?: string | undefined }): ReactNode {
   const statuses = useBoards(useShallow((s) => s.boards[boardId]?.statuses ?? NO_STATUSES));
   const groups = useMemo(
     () => [
@@ -190,12 +197,12 @@ export function StatusMenu({
               label: s.name,
               icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />,
               checked: s.id === value,
-              ...(off ? { disabled: !overridable, note: t('boards.gate.hint') } : {}),
+              ...(off ? { disabled: !overridable, note: blockedNote ?? t('boards.gate.hint') } : {}),
             };
           }),
       },
     ],
-    [statuses, value, blocked, overridable],
+    [statuses, value, blocked, overridable, blockedNote],
   );
   return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(c.id)} placeholder={t('boards.menu.status')} label={t('boards.f.status')} digits testId="status-menu" />;
 }

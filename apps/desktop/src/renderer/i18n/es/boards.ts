@@ -391,6 +391,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.subtaskPlaceholder': 'Título de la subtarea',
   'boards.relations': 'Relaciones',
   'boards.addRelation': 'Añadir relación',
+  'boards.noTasksToLink': 'No hay tareas para vincular',
   'boards.removeRelation': 'Quitar relación',
   'boards.rel.blocks': 'Bloquea',
   'boards.rel.blocked': 'Bloqueada por',
@@ -398,6 +399,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.rel.duplicates': 'Duplicado',
   'boards.activity': 'Actividad',
   'boards.olderComments': 'Mostrar anteriores',
+  'boards.toLatest': 'Ir al último comentario',
   'boards.commentPlaceholder': 'Deja un comentario…',
   // approvals (ADR-0049)
   'boards.approvals': 'Aprobación',
@@ -464,6 +466,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.gate.pending': 'Se necesita aprobación: {n} de {m}',
   'boards.gate.rejected': 'Rechazada: {name}',
   'boards.gate.hint': 'se necesita aprobación',
+  'boards.gate.hintRejected': 'rechazado por un aprobador',
   'boards.gate.bulk': 'No se movieron — esperan aprobación: {keys}',
   'boards.notice.assigned': '{name} te asignó',
   'boards.notice.mentioned': '{name} te mencionó',

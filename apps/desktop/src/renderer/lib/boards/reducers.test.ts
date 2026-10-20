@@ -11,6 +11,18 @@ function loaded(): BoardsData {
   return { ...EMPTY_DATA, ...setBoardTasks(EMPTY_DATA, 'b1', [task('a', 's1', 1024), task('b', 's1', 2048), task('c', 's2', 1024)]) };
 }
 
+describe('task attachments (GET /tasks/{id} only)', () => {
+  const file = { id: 'f1', name: 'Отображение.docx' };
+  it('a count-only update keeps the loaded files; a smaller count or a full answer wins', () => {
+    const full = task('a', 's1', 1, { attachments: [file], attachmentCount: 1 });
+    let d: BoardsData = { ...EMPTY_DATA, ...setBoardTasks(EMPTY_DATA, 'b1', [full]) };
+    d = { ...d, ...upsertTask(d, task('a', 's1', 1, { attachmentCount: 1, title: 'x' })) };
+    expect(d.tasks['a']?.attachments.map((f) => f.id)).toEqual(['f1']);
+    d = { ...d, ...upsertTask(d, task('a', 's1', 1, { attachmentCount: 0 })) };
+    expect(d.tasks['a']?.attachments).toEqual([]);
+  });
+});
+
 describe('board reducers', () => {
   it('builds ordered columns and the room → task map', () => {
     const d = loaded();

@@ -49,17 +49,17 @@ export function measureChrome(host: HTMLElement): Insets {
 
 type ColorKind = 'sticky' | 'ink' | 'fill';
 
-function swatchCss(palette: CanvasPalette, kind: ColorKind, token: string): string | null {
+export function swatchCss(palette: CanvasPalette, kind: ColorKind, token: string): string | null {
   return kind === 'sticky' ? resolveSticky(palette, token).bg : resolveColor(palette, token);
 }
 
-function colorLabel(token: string): string {
+export function colorLabel(token: string): string {
   const key = `canvasBoard.color.${token}`;
   const s = t(key as Parameters<typeof t>[0]);
   return s === key ? token : s;
 }
 
-function Swatch({ css, none, size = 18 }: { css: string | null; none?: boolean; size?: number }): ReactNode {
+export function Swatch({ css, none, size = 18 }: { css: string | null; none?: boolean; size?: number }): ReactNode {
   return (
     <span
       aria-hidden

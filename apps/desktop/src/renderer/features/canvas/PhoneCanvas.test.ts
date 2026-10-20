@@ -42,6 +42,9 @@ const TREE: Record<string, CanvasItem[]> = {
   f1: [item('c2', 'f1', 'Дорожная карта Q1'), item('c3', 'f1', 'Ретро-доска')],
 };
 
+/** A canvas the person may only look at. */
+const VIEWONLY = create(CanvasItemSchema, { id: 'c9', workspaceId: W, parentId: '', kind: CanvasItemKind.CANVAS, name: 'Только чтение', myBits: CANVAS_BITS.VIEW, ownerId: 'x' });
+
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
@@ -75,7 +78,7 @@ beforeEach(async () => {
   useUi.getState().setPhone(() => ({ on: true, tab: 'canvas', stack: [] }));
   vi.spyOn(canvasApi, 'list').mockImplementation((_ws, p) => Promise.resolve(create(ListCanvasItemsResponseSchema, { items: TREE[p.parent ?? ''] ?? [] })));
   vi.spyOn(canvasApi, 'get').mockImplementation((id) => {
-    const it = Object.values(TREE).flat().find((x) => x.id === id);
+    const it = [...Object.values(TREE).flat(), VIEWONLY].find((x) => x.id === id);
     return it ? Promise.resolve(create(CanvasItemResponseSchema, { item: it })) : Promise.reject(new Error('404'));
   });
   host = document.createElement('div');
@@ -129,11 +132,11 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
     expect(q('phone-canvas')).not.toBeNull();
   });
 
-  it('the viewer is always asked for view-only mode, whatever the grant says', async () => {
+  it('the viewer opens in view mode, whatever the grant says', async () => {
     act(() => all('phone-canvas-row')[1]?.querySelector('button')?.click());
     await flush();
-    expect(view.props).toMatchObject({ canvasId: 'c1', workspaceId: W, phone: true, name: 'Планирование спринта' });
-    // The item carries write and manage bits; the phone flag, not the bits, makes the viewer read-only.
+    expect(view.props).toMatchObject({ canvasId: 'c1', workspaceId: W, phone: true, phoneEdit: false, name: 'Планирование спринта' });
+    // The item carries write and manage bits; the phone flag, not the bits, makes the viewer read-only until «Править».
     expect((view.props?.['bits'] as bigint) & CANVAS_BITS.WRITE).toBe(CANVAS_BITS.WRITE);
   });
 
@@ -190,5 +193,52 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
     act(() => q('phone-search')?.click());
     expect(useCanvasUi.getState().query).toBe('');
     expect(names()).toHaveLength(2);
+  });
+});
+
+describe('«Править» (ADR-0114 wave 5b)', () => {
+  const open = async (id: string): Promise<void> => {
+    act(() => useUi.getState().setPhone((p) => ({ ...p, stack: [{ kind: 'canvas', itemId: id }] })));
+    await flush();
+  };
+
+  it('the header button turns the edit mode on and «Готово» off; the viewer is told', async () => {
+    await open('c1');
+    const btn = q('phone-canvas-edit');
+    expect(btn?.textContent).toBe('Править');
+    expect(btn?.getAttribute('aria-pressed')).toBe('false');
+    expect(view.props?.['phoneEdit']).toBe(false);
+    act(() => btn?.click());
+    expect(q('phone-canvas-edit')?.textContent).toBe('Готово');
+    expect(q('phone-canvas-edit')?.getAttribute('aria-pressed')).toBe('true');
+    expect(view.props?.['phoneEdit']).toBe(true);
+    act(() => q('phone-canvas-edit')?.click());
+    expect(q('phone-canvas-edit')?.textContent).toBe('Править');
+    expect(view.props?.['phoneEdit']).toBe(false);
+  });
+
+  it('is in memory only, and another canvas opens in view mode again', async () => {
+    const before = Object.keys(localStorage).length;
+    await open('c1');
+    act(() => q('phone-canvas-edit')?.click());
+    expect(view.props?.['phoneEdit']).toBe(true);
+    expect(Object.keys(localStorage).length).toBe(before);
+    await open('c2');
+    expect(view.props).toMatchObject({ canvasId: 'c2', phoneEdit: false });
+    expect(q('phone-canvas-edit')?.textContent).toBe('Править');
+  });
+
+  it('is not offered without CANVAS_WRITE: no button, the viewer stays in view mode', async () => {
+    await open('c9');
+    expect(q('phone-canvas-screen')).not.toBeNull();
+    expect(q('phone-canvas-edit')).toBeNull();
+    expect(view.props).toMatchObject({ canvasId: 'c9', phoneEdit: false });
+    expect((view.props?.['bits'] as bigint) & CANVAS_BITS.WRITE).toBe(0n);
+  });
+
+  it('a folder screen has no edit button', async () => {
+    await open('f1');
+    expect(q('phone-canvas-folder')).not.toBeNull();
+    expect(q('phone-canvas-edit')).toBeNull();
   });
 });

@@ -109,7 +109,7 @@ function MiniMapToggle({ focusCanvas }: { focusCanvas: () => void }): ReactNode 
 
 /** Zoom, fit and the shortcut help: bottom right. `phone` (view only, no keyboard): zoom and «вписать всё» only. */
 export const ZoomBar = memo(function ZoomBar({
-  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false,
+  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false,
 }: {
   engine: CanvasEngine;
   focusCanvas: () => void;
@@ -117,6 +117,8 @@ export const ZoomBar = memo(function ZoomBar({
   helpOpen: boolean;
   onHelpOpenChange: (o: boolean) => void;
   phone?: boolean;
+  /** The phone's edit mode: the bar hangs from the top, the bottom belongs to the tool bar. */
+  top?: boolean;
 }): ReactNode {
   useLocale();
   const step = (dir: 1 | -1) => (): void => {
@@ -124,7 +126,7 @@ export const ZoomBar = memo(function ZoomBar({
     focusCanvas();
   };
   return (
-    <div role="group" aria-label={t('canvasBoard.zoom.group')} className={cx(PANEL, 'absolute bottom-3 right-3 z-10 flex items-center gap-0.5')} data-testid="canvas-zoom">
+    <div role="group" aria-label={t('canvasBoard.zoom.group')} className={cx(PANEL, 'absolute right-3 z-10 flex items-center gap-0.5', top ? 'top-3' : 'bottom-3')} data-testid="canvas-zoom">
       <IconButton label={t('canvasBoard.zoom.out')} shortcut="−" onMouseDown={keepFocus} onClick={step(-1)} data-testid="canvas-zoom-out">
         <Minus className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>

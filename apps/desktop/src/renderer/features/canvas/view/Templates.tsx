@@ -10,7 +10,8 @@ import type { CanvasEngine } from '../engine';
 import { MENU_BOX, PANEL, keepFocus } from './chrome';
 import { useSyncStatus } from './StatusBanner';
 
-const ICON: Record<TemplateId, LucideIcon> = { kanban: Columns3, retro: MessagesSquare, swot: Grid2x2, mindmap: Network, flow: Workflow };
+/** One icon per template (the menu, the card and the phone's «+» sheet). */
+export const TEMPLATE_ICON: Record<TemplateId, LucideIcon> = { kanban: Columns3, retro: MessagesSquare, swot: Grid2x2, mindmap: Network, flow: Workflow };
 
 const text = (key: TemplateKey, params?: Record<string, string | number>): string => t(`canvasBoard.templates.${key}`, params);
 
@@ -59,7 +60,7 @@ export const TemplatesMenu = memo(function TemplatesMenu({ engine, focusCanvas }
 });
 
 function TemplateRow({ id, onPick, as }: { id: TemplateId; onPick: () => void; as: 'item' | 'button' }): ReactNode {
-  const Icon = ICON[id];
+  const Icon = TEMPLATE_ICON[id];
   const body = (
     <>
       <Icon className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />

@@ -44,6 +44,8 @@ export interface SessionOptions {
   readOnly: boolean;
   lowPower: boolean;
   reducedMotion: boolean;
+  /** The phone viewer: touch editing semantics in the engine. */
+  touch?: boolean;
   presence: PresenceStore;
   color: (userId: string) => string;
   /** The canvas' name for the snapshot meta (read at call time). */
@@ -76,6 +78,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     readOnly: o.readOnly,
     lowPower: o.lowPower,
     reducedMotion: o.reducedMotion,
+    ...(o.touch ? { touch: true } : {}),
     editorHost: o.editorHost,
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
   });

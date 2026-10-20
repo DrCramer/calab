@@ -44,16 +44,25 @@ export interface Core {
   finishCreate(ids: readonly string[], edit: boolean): void;
   /** The ids plus every member of their groups (the unlocked ones; a group the user stepped into stays as picked). */
   expandUnits(ids: Iterable<string>): string[];
+  /** Touch editing (the phone): glue targets are found from further away, a finger being what it is. */
+  readonly touch?: boolean;
 }
 
 export interface Gesture {
-  readonly kind: 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create' | 'wire' | 'endpoint' | 'pinch';
+  readonly kind: 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create' | 'wire' | 'endpoint' | 'pinch' | 'tap';
   move(w: Point, s: Point, m: Mods): void;
   end(w: Point, s: Point, m: Mods): void;
   cancel(): void;
 }
 
 const DRAG_PX = 3;
+/** A finger wanders: a touch counts as a tap (or a press that has not started to drag) within this many px. */
+export const TOUCH_SLOP_PX = 8;
+/** How far from an object (px) a finger still means it when wiring a connector, and from an anchor to snap to it. */
+const GLUE_PX = 6;
+const TOUCH_GLUE_PX = 16;
+const ANCHOR_PX = 12;
+const TOUCH_ANCHOR_PX = 24;
 
 const snapOpts = (core: Core): SnapOptions => ({ threshold: core.px(6), grid: core.gridSize });
 
@@ -84,6 +93,45 @@ export class PanGesture implements Gesture {
   }
   cancel(): void {
     this.core.setCamera(this.start);
+  }
+}
+
+// ── tap or pan (touch editing) ──────────────────────────────────────────────
+
+/**
+ * A touch on an empty place or on an object that is not selected: a tap runs `onTap`, a drag pans the view (so a scroll
+ * never moves anything by accident). Past the slop the camera follows the finger from where it started; a second finger
+ * cancels without undoing the pan, like a pan does.
+ */
+export class TapPanGesture implements Gesture {
+  readonly kind = 'tap';
+  private readonly start: Camera;
+  private moved = false;
+  private spent = false;
+  constructor(private readonly core: Core, private readonly from: Point, private readonly onTap: () => void) {
+    this.start = core.liveCamera;
+  }
+  get panned(): boolean {
+    return this.moved;
+  }
+  /** The press became something else (a long press): lifting the finger is not a tap. */
+  consume(): void {
+    this.spent = true;
+  }
+  move(_w: Point, s: Point): void {
+    if (this.spent) return;
+    if (!this.moved) {
+      if (Math.hypot(s.x - this.from.x, s.y - this.from.y) < TOUCH_SLOP_PX) return;
+      this.moved = true;
+    }
+    this.core.steerCamera({ ...this.start, tx: this.start.tx + (s.x - this.from.x), ty: this.start.ty + (s.y - this.from.y) });
+  }
+  end(): void {
+    if (this.moved) this.core.flushCamera();
+    else if (!this.spent) this.onTap();
+  }
+  cancel(): void {
+    if (this.moved) this.core.flushCamera();
   }
 }
 
@@ -135,6 +183,7 @@ export class MoveGesture implements Gesture {
     private readonly fromWorld: Point,
     private readonly fromScreen: Point,
     private readonly onClickOnly: () => void,
+    private readonly slop = DRAG_PX,
   ) {
     // Locked objects stay where they are, whatever else moves with them.
     this.ids = Array.from(ids).filter((id) => !core.scene.get(id)?.locked);
@@ -164,7 +213,7 @@ export class MoveGesture implements Gesture {
   move(w: Point, s: Point, m: Mods): void {
     if (this.started && this.ids.length === 0) return;
     if (!this.started) {
-      if (Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < DRAG_PX) return;
+      if (Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < this.slop) return;
       this.started = true;
       if (this.ids.length === 0) return;
       this.core.doc.beginGesture();
@@ -471,12 +520,31 @@ interface GlueTarget {
 /** Object under the pointer to glue to, with the side if the pointer is on one of its anchors. */
 export function glueAt(core: Core, w: Point, exclude?: string): GlueTarget | null {
   // By area, not by what selection picks: an unfilled frame is a target everywhere inside it (selection stays outline-only).
-  const o = core.scene.hitArea(w, core.px(6), (x) => isBox(x) && x.id !== exclude);
+  const o = core.scene.hitArea(w, core.px(core.touch ? TOUCH_GLUE_PX : GLUE_PX), (x) => isBox(x) && x.id !== exclude) ?? (core.touch ? nearestBox(core, w, exclude) : null);
   if (!o || !isBox(o)) return null;
   const anchors = SIDES.map((s) => ({ side: s, p: anchorOf(o, s) }));
   let best: { side: ConcreteSide; p: Point } | null = null;
-  for (const a of anchors) if (dist(a.p, w) <= core.px(12) && (!best || dist(a.p, w) < dist(best.p, w))) best = a;
+  const near = core.px(core.touch ? TOUCH_ANCHOR_PX : ANCHOR_PX);
+  for (const a of anchors) if (dist(a.p, w) <= near && (!best || dist(a.p, w) < dist(best.p, w))) best = a;
   return { id: o.id, side: best?.side ?? 'auto', rect: { x: o.x, y: o.y, w: o.w, h: o.h }, rot: o.rot ?? 0, anchors: anchors.map((a) => a.p), active: best?.p ?? null };
+}
+
+/** A finger's release lands near, not on: the box (stickies and texts have no tolerance of their own) closest within the touch radius. */
+function nearestBox(core: Core, w: Point, exclude: string | undefined): BoxRec | null {
+  const tol = core.px(TOUCH_GLUE_PX);
+  let best: BoxRec | null = null;
+  let bestD = Infinity;
+  for (const o of core.scene.query({ x: w.x - tol, y: w.y - tol, w: 2 * tol, h: 2 * tol })) {
+    if (!isBox(o) || o.id === exclude) continue;
+    const dx = Math.max(o.x - w.x, 0, w.x - (o.x + o.w));
+    const dy = Math.max(o.y - w.y, 0, w.y - (o.y + o.h));
+    const d = Math.hypot(dx, dy);
+    if (d <= tol && d < bestD) {
+      best = o;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 const endpointOf = (g: GlueTarget | null, free: Point): Endpoint => (g ? { id: g.id, side: g.side } : { x: free.x, y: free.y });
@@ -492,13 +560,13 @@ export class WireGesture implements Gesture {
   private target: GlueTarget | null = null;
   private moved = false;
 
-  constructor(private readonly core: Core, from: Point, private readonly fromScreen: Point) {
+  constructor(private readonly core: Core, from: Point, private readonly fromScreen: Point, private readonly slop = DRAG_PX) {
     this.source = glueAt(core, from);
     this.startPoint = from;
   }
 
   move(w: Point, s: Point): void {
-    if (!this.moved && Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < DRAG_PX) return;
+    if (!this.moved && Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < this.slop) return;
     this.moved = true;
     this.target = glueAt(this.core, w, this.source?.id);
     const a = this.source?.active ?? this.startPoint;
