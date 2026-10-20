@@ -194,6 +194,10 @@
 | Переименовать, перенести, в корзину, доступ | владелец элемента или `CANVAS_MANAGE` (`perm.CanvasStructureAllowed`); перенос — ещё `CANVAS_WRITE` в целевой папке | `internal/canvas` | по `CanvasItem.my_bits` (`canvasStructureAllowed`) |
 | Срок корзины, очистка всей корзины, журнал холста | `CANVAS_MANAGE` | `internal/canvas` | `features/canvas` (настройки, корзина) |
 | События `CANVAS_ITEM_UPSERT` / `REMOVE`, поиск `canvas` | `CANVAS_VIEW` на элемент (цепочка доступа, `perm.ComputeCanvasItemIn`) | `gateway` / `search` | `features/canvas` (по событиям дерева) |
+| Комментарии холста: читать (`GET …/comments`, события `CANVAS_COMMENT_*`) | `CANVAS_VIEW` на холст (нет — 404, и по id комментария) | `internal/canvas` (`comments.go`), `gateway` (цепочка холста) | `features/canvas/view/comments` |
+| Комментарии холста: написать, ответить, решить / открыть | `CANVAS_WRITE` на холст; не в корзине, пространство не приостановлено | `internal/canvas` | по `my_bits` (`commentRights`) |
+| Комментарии холста: править и удалять своё / чужое | своё — автор с `CANVAS_WRITE`; чужое — владелец холста или `CANVAS_MANAGE` | `internal/canvas` (`commentEditable`) | `mayChange` |
+| @упоминание в комментарии холста | упомянуть можно участника, у которого есть `CANVAS_VIEW` на холст (не бота); остальные отбрасываются | `internal/canvas` (`mentionable`), `notifications.CanvasMentionNotifies` | `CommentInput` (`mention-access`) |
 | Телефон: просмотр холста (пан, щипок) | `CANVAS_VIEW` на элемент; правки на телефоне нет ни у кого (v1, ADR-0113 §5) | `internal/canvas` (сокет как на десктопе) | `features/canvas/PhoneCanvas` (клиент — `readOnly`) |
 
 ## Телефония
