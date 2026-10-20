@@ -3,11 +3,13 @@ import {
   CanvasActivityPageSchema,
   CanvasItemKind,
   CanvasItemResponseSchema,
+  CanvasLinkResponseSchema,
   CanvasPathResponseSchema,
   CanvasPermissionsResponseSchema,
   CanvasSettingsSchema,
   CanvasVersionsResponseSchema,
   CreateCanvasItemRequestSchema,
+  CreateCanvasLinkRequestSchema,
   EmptyCanvasTrashResponseSchema,
   ListCanvasItemsResponseSchema,
   SearchType,
@@ -17,6 +19,7 @@ import {
   type CanvasItem,
   type CanvasItemRemove,
   type CanvasItemUpsert,
+  type CanvasLinkResponse,
   type CanvasPermissionsResponse,
   type CanvasVersionsResponse,
   type SearchCanvasRef,
@@ -76,6 +79,12 @@ export const canvasApi = {
   /** GET / PUT …/canvas/settings — `CanvasSettings { trash_days }` (0 = never; PUT needs CANVAS_MANAGE). */
   trashDays: async (ws: string): Promise<number> => (await call('GET', `${W(ws)}/settings`, CanvasSettingsSchema)).trashDays,
   setTrashDays: (ws: string, days: number) => callEmpty('PUT', `${W(ws)}/settings`, body(CanvasSettingsSchema, { trashDays: days })),
+  /** The public read-only link (ADR-0114 wave 5; the owner or CANVAS_MANAGE): `link` unset when there is none. */
+  link: (id: string): Promise<CanvasLinkResponse> => call('GET', `${C(id)}/link`, CanvasLinkResponseSchema),
+  /** Makes the link, or changes the expiry of the live one (its code stays). `days` 0 = never, 1, 7, 30. */
+  createLink: (id: string, days: number): Promise<CanvasLinkResponse> =>
+    call('POST', `${C(id)}/link`, CanvasLinkResponseSchema, body(CreateCanvasLinkRequestSchema, { expiresInDays: days })),
+  deleteLink: (id: string) => callEmpty('DELETE', `${C(id)}/link`),
 };
 
 // ---------------------------------------------------------------- loading

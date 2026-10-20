@@ -3,7 +3,7 @@ import { CanvasItemKind, CANVAS_BITS, type CanvasVersion } from '@calaba/protoco
 import { ChevronRight, Folder } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, Modal, Spinner, cx } from '../../components/ui';
+import { Button, Modal, Segmented, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { canvasDocHandle } from '../../lib/canvas/docHandle';
@@ -15,9 +15,11 @@ import { useCanvasUi, type CanvasDialog } from '../../stores/canvasUi';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberAvatar } from '../boards/menus';
 import { entryOf, TreeAccessEditor, useTreeAccess } from '../people/TreeAccess';
+import { LinkPanel } from './LinkPanel';
 
 /**
- * The canvas section's dialogs (ADR-0113 §5): «Доступ» (the shared tree access editor),
+ * The canvas section's dialogs (ADR-0113 §5): «Доступ» (the shared tree access editor and, for a canvas, the
+ * public read-only «Ссылка», ADR-0114 wave 5),
  * «История версий» (the list, «Восстановить» into the live document) and «Переместить». One host
  * reads the request from stores/canvasUi; each mounts only while open.
  */
@@ -44,9 +46,14 @@ function DialogBody({ dialog, workspaceId, onClose }: { dialog: CanvasDialog; wo
 
 const CANVAS_TREE = { VIEW: CANVAS_BITS.VIEW, WRITE: CANVAS_BITS.WRITE };
 
+type ShareTab = 'access' | 'link';
+
 function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void }): ReactNode {
   useLocale();
   const item = useCanvas((s) => s.items[itemId]);
+  // A private canvas: restricted itself or below a restricted folder (the server refuses a link then).
+  const privateChain = useCanvas((s) => !!s.items[itemId]?.restricted || ancestorsOf(s.items, itemId).some((id) => !!s.items[id]?.restricted));
+  const [tab, setTab] = useState<ShareTab>('access');
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => canvasApi.permissions(itemId), [itemId]);
   const access = useTreeAccess(load, CANVAS_TREE, (e) => {
@@ -54,6 +61,7 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
     onClose();
   });
   if (!item) return null;
+  const isCanvas = item.kind === CanvasItemKind.CANVAS;
   const { drafts, restricted } = access;
   const save = (): void => {
     if (!drafts) return;
@@ -83,29 +91,52 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
       initialFocus="body"
       title={t('canvas.shareTitle', { name: item.name || t('canvas.untitled') })}
       footer={
-        <>
+        tab === 'access' ? (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={save} busy={busy} disabled={!drafts} data-testid="canvas-access-save">
+              {t('common.save')}
+            </Button>
+          </>
+        ) : (
           <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
+            {t('common.close')}
           </Button>
-          <Button onClick={save} busy={busy} disabled={!drafts} data-testid="canvas-access-save">
-            {t('common.save')}
-          </Button>
-        </>
+        )
       }
     >
       <div className="flex min-h-[340px] flex-col gap-4" data-testid="canvas-share-dialog">
-        <TreeAccessEditor
-          workspaceId={item.workspaceId}
-          ownerId={item.ownerId}
-          access={access}
-          hint={t('canvas.restrictedHint')}
-          hintOwner={t('canvas.restrictedHintOwner')}
-          itemName={item.name || t('canvas.untitled')}
-          onTakeOver={() => canvasApi.takeOver(itemId).then((r) => r.item && useCanvas.getState().upsert(r.item))}
-          inherited={t('canvas.accessInherited')}
-          footer={t('canvas.accessFooter')}
-          testId="canvas-access"
-        />
+        {isCanvas ? (
+          <Segmented<ShareTab>
+            value={tab}
+            label={t('canvasShare.tabs')}
+            fill
+            options={[
+              { value: 'access', label: t('canvasShare.tab.access') },
+              { value: 'link', label: t('canvasShare.tab.link') },
+            ]}
+            onChange={setTab}
+            testId="canvas-share-tabs"
+          />
+        ) : null}
+        {tab === 'link' && isCanvas ? (
+          <LinkPanel itemId={itemId} restricted={privateChain} />
+        ) : (
+          <TreeAccessEditor
+            workspaceId={item.workspaceId}
+            ownerId={item.ownerId}
+            access={access}
+            hint={t('canvas.restrictedHint')}
+            hintOwner={t('canvas.restrictedHintOwner')}
+            itemName={item.name || t('canvas.untitled')}
+            onTakeOver={() => canvasApi.takeOver(itemId).then((r) => r.item && useCanvas.getState().upsert(r.item))}
+            inherited={t('canvas.accessInherited')}
+            footer={t('canvas.accessFooter')}
+            testId="canvas-access"
+          />
+        )}
       </div>
     </Modal>
   );

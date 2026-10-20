@@ -25,6 +25,7 @@ import { ruCanvas } from './canvas';
 import { ruCanvasBoard } from './canvasBoard';
 import { ruCanvasPhone } from './canvasPhone';
 import { ruCanvasComments } from './canvasComments';
+import { ruCanvasShare } from './canvasShare';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
 import { ruHistory } from './history';
@@ -91,6 +92,7 @@ export const ru = {
   ...ruCanvasBoard,
   ...ruCanvasPhone,
   ...ruCanvasComments,
+  ...ruCanvasShare,
   ...ruBoards,
   ...ruBoards2,
   ...ruHistory,
