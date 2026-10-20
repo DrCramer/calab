@@ -147,6 +147,23 @@ describe('touch and trackpad gestures belong to the canvas, not the page', () =>
   });
 });
 
+describe('remote cursor layer', () => {
+  it('is a second canvas over the main one that takes no events and is not the canvas the engine listens on', async () => {
+    const m = await mount();
+    const canvases = [...m.host.querySelectorAll('canvas')];
+    expect(canvases).toHaveLength(2);
+    const [main, remote] = canvases as [HTMLCanvasElement, HTMLCanvasElement];
+    expect(main).toBe(m.q('canvas-surface'));
+    expect(remote).toBe(m.q('canvas-remote'));
+    expect(remote.className).toContain('pointer-events-none');
+    expect(remote.getAttribute('aria-hidden')).toBe('true');
+    expect(remote.tabIndex).toBe(-1);
+    // later in the DOM = painted above, same box
+    expect(main.compareDocumentPosition(remote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(remote.parentElement).toBe(main.parentElement);
+  });
+});
+
 describe('toolbar and hotkeys', () => {
   it('shows the five tools with «Выбор» active, and the hotkeys switch the tool', async () => {
     const m = await mount();

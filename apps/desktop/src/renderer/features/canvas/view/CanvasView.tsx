@@ -74,6 +74,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   const root = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const remote = useRef<HTMLCanvasElement>(null);
   const [session, setSession] = useState<CanvasSession | null>(null);
   const [palette, setPalette] = useState<CanvasPalette>(() => readCanvasPalette(currentTheme()));
   const [gone, setGone] = useState(false);
@@ -118,6 +119,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
     const s = openCanvasSession({
       canvasId,
       canvas: cv,
+      remoteCanvas: remote.current,
       editorHost: host,
       deps: live.current.deps,
       palette: live.current.palette,
@@ -294,6 +296,8 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
         >
           <div ref={stage} className="absolute inset-0">
             <canvas ref={canvas} className="block size-full outline-none" aria-label={t('canvasBoard.label')} data-testid="canvas-surface" />
+            {/* Other people's cursors: a second layer so their stream never repaints the canvas above (ADR-0113 §4). */}
+            <canvas ref={remote} className="pointer-events-none absolute inset-0 block size-full" aria-hidden="true" data-testid="canvas-remote" />
           </div>
           {session && engine ? (
             <Chrome

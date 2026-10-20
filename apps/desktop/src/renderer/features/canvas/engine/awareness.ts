@@ -1,5 +1,5 @@
 import type { Camera } from '../../../lib/canvas/camera';
-import { rectInflate, type Point } from '../../../lib/canvas/geometry';
+import { rectInflate, rectUnion, type Point, type Rect } from '../../../lib/canvas/geometry';
 import type { Scene } from '../../../lib/canvas/scene';
 import type { Ctx2D } from './draw';
 import type { CanvasPalette } from './palette';
@@ -73,9 +73,19 @@ export class AwarenessLayer {
     return this.peers.has(id);
   }
 
-  /** Paints selections (world transform on ctx) and cursors (screen space) for the camera. */
-  draw(ctx: Ctx2D, cam: Camera, scene: Scene, p: CanvasPalette, now: number): void {
+  /** Some peer has a selection: its outline follows the objects, so content changes redraw this layer. */
+  get hasSelections(): boolean {
+    for (const t of this.peers.values()) if (t.state.selection && t.state.selection.length > 0) return true;
+    return false;
+  }
+
+  /**
+   * Paints selections and cursors (world transform on ctx) for the camera. Returns the world rect that holds
+   * everything painted (null if nothing was), so the owner clears just that next time.
+   */
+  draw(ctx: Ctx2D, cam: Camera, scene: Scene, p: CanvasPalette, now: number): Rect | null {
     const px = 1 / cam.scale;
+    let box: Rect | null = null;
     for (const t of this.peers.values()) {
       const sel = t.state.selection;
       if (!sel) continue;
@@ -86,17 +96,20 @@ export class AwarenessLayer {
         if (!o) continue;
         const r = rectInflate(o, 2 * px);
         ctx.strokeRect(r.x, r.y, r.w, r.h);
+        box = box ? rectUnion(box, rectInflate(r, px)) : rectInflate(r, px);
       }
     }
     for (const t of this.peers.values()) {
       const a = this.alpha(t.state.id, now);
       const c = t.state.cursor;
       if (a === 0 || !c) continue;
-      this.drawCursor(ctx, c.x, c.y, t.state, a, p, px);
+      const r = this.drawCursor(ctx, c.x, c.y, t.state, a, p, px);
+      box = box ? rectUnion(box, r) : r;
     }
+    return box;
   }
 
-  private drawCursor(ctx: Ctx2D, x: number, y: number, s: PeerState, alpha: number, p: CanvasPalette, px: number): void {
+  private drawCursor(ctx: Ctx2D, x: number, y: number, s: PeerState, alpha: number, p: CanvasPalette, px: number): Rect {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = s.color;
     ctx.beginPath();
@@ -119,6 +132,7 @@ export class AwarenessLayer {
     ctx.fillStyle = '#ffffff';
     ctx.fillText(s.name, x + 17 * px, y + 14 * px + h / 2, Math.max(size, w));
     ctx.globalAlpha = 1;
+    return { x, y, w: Math.max(13 * px, 12 * px + w), h: 30 * px };
   }
 }
 

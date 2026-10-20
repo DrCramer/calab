@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Scene } from '../../../lib/canvas/scene';
 import { makeDoc } from '../../../lib/canvas/testing';
-import { AwarenessLayer } from './awareness';
+import { AwarenessLayer, CURSOR_FULL_MS, type PeerState } from './awareness';
 import { emptyOverlay } from './overlay';
 import { defaultPalette } from './palette';
 import { Renderer, renderSceneTo } from './renderer';
@@ -16,12 +16,15 @@ interface Rig {
   cam: Camera;
   setCam(c: Partial<Camera>): void;
   canvas: ReturnType<typeof fakeCanvas>;
+  /** The transparent cursor layer (only with `remote: true`). */
+  remote: ReturnType<typeof fakeCanvas>;
+  awareness: AwarenessLayer;
   layer: FakeCtx;
   raf: ReturnType<typeof manualRaf>;
   now: { t: number };
 }
 
-function rig(opts: { objects?: number; size?: [number, number]; dpr?: number; maxDpr?: number } = {}): Rig {
+function rig(opts: { objects?: number; size?: [number, number]; dpr?: number; maxDpr?: number; remote?: boolean } = {}): Rig {
   const doc = makeDoc();
   const n = opts.objects ?? 0;
   if (n > 0) {
@@ -29,17 +32,20 @@ function rig(opts: { objects?: number; size?: [number, number]; dpr?: number; ma
   }
   const scene = new Scene(doc);
   const canvas = fakeCanvas();
+  const remote = fakeCanvas();
+  const awareness = new AwarenessLayer();
   const layer = fakeCtx();
   const raf = manualRaf();
   const now = { t: 1000 };
   const state = { cam: { tx: 0, ty: 0, scale: 1 } };
   const r = new Renderer({
     canvas: canvas as unknown as HTMLCanvasElement,
+    ...(opts.remote ? { remoteCanvas: remote as unknown as HTMLCanvasElement } : {}),
     scene,
     palette: defaultPalette('light'),
     getCamera: () => state.cam,
     getOverlay: emptyOverlay,
-    awareness: new AwarenessLayer(),
+    awareness,
     raf: raf.raf,
     cancelRaf: raf.cancel,
     now: () => now.t,
@@ -49,7 +55,7 @@ function rig(opts: { objects?: number; size?: [number, number]; dpr?: number; ma
   const [w, h] = opts.size ?? [800, 600];
   r.resize(w, h, opts.dpr ?? 1);
   return {
-    doc, scene, r, canvas, layer, raf, now,
+    doc, scene, r, canvas, remote, awareness, layer, raf, now,
     get cam() {
       return state.cam;
     },
@@ -245,5 +251,149 @@ describe('renderSceneTo (export)', () => {
     renderSceneTo(target, t.scene, defaultPalette('dark'), b, 2, 10);
     expect(target.width).toBe(Math.ceil((b.w + 20) * 2));
     expect(f.count('fillText')).toBe(6);
+  });
+});
+
+const peer = (id: string, x: number, y: number, extra: Partial<PeerState> = {}): PeerState => ({ id, name: `Peer ${id}`, color: '#e11', cursor: { x, y }, ...extra });
+
+describe('Renderer: remote layer (cursors apart from the content)', () => {
+  /** What the main canvas and its content layer were asked to do so far. */
+  const mainCalls = (t: Rig): number => t.canvas.fake.calls.length + t.layer.calls.length;
+
+  it('a stream of awareness frames repaints only the remote canvas', () => {
+    const t = rig({ objects: 200, remote: true });
+    t.raf.flush();
+    t.awareness.setPeers([peer('a', 10, 10)], t.now.t);
+    const frames = t.r.stats.frames;
+    const main = mainCalls(t);
+    t.remote.fake.clear();
+    for (let i = 0; i < 50; i++) {
+      t.awareness.setPeers([peer('a', 10 + i * 7, 10 + i * 3)], t.now.t);
+      t.r.requestRemoteFrame();
+      t.raf.flush();
+    }
+    expect(t.r.stats.frames).toBe(frames);
+    expect(t.r.stats.remote).toBe(50 + 1);
+    expect(mainCalls(t)).toBe(main); // not one draw call on the main canvas or its cache layer
+    expect(t.canvas.fake.count('drawImage')).toBe(1); // the first frame's composite only
+    expect(t.remote.fake.count('fill')).toBeGreaterThan(50);
+  });
+  it('clears only the box it painted last time, not the whole layer', () => {
+    const t = rig({ remote: true, size: [1000, 800] });
+    t.raf.flush();
+    t.awareness.setPeers([peer('a', 100, 100)], t.now.t);
+    t.r.requestRemoteFrame();
+    t.raf.flush();
+    t.remote.fake.clear();
+    t.awareness.setPeers([peer('a', 300, 200)], t.now.t);
+    t.r.requestRemoteFrame();
+    t.raf.flush();
+    const clears = t.remote.fake.calls.filter((c) => c.name === 'clearRect');
+    expect(clears).toHaveLength(1);
+    const [, , w, h] = clears[0]?.args as number[];
+    expect(w).toBeLessThan(200);
+    expect(h).toBeLessThan(100);
+  });
+  it('is idle without peers: no frame, no timer, nothing drawn', () => {
+    const t = rig({ remote: true });
+    t.raf.flush();
+    expect(t.raf.pending).toBe(0);
+    const scheduled = t.raf.scheduled;
+    t.raf.flush();
+    expect(t.raf.scheduled).toBe(scheduled);
+  });
+  it('hidden: no remote frame is scheduled; shown again: one repaint of both layers', () => {
+    const t = rig({ remote: true });
+    t.raf.flush();
+    t.r.setActive(false);
+    t.awareness.setPeers([peer('a', 10, 10)], t.now.t);
+    t.r.requestRemoteFrame();
+    expect(t.raf.pending).toBe(0);
+    const remote = t.r.stats.remote;
+    t.r.setActive(true);
+    expect(t.raf.pending).toBe(1);
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(remote + 1);
+    expect(t.remote.fake.count('fill')).toBeGreaterThan(0);
+  });
+  it('follows the camera: a pan or zoom repaints the remote layer in full for the new camera', () => {
+    const t = rig({ remote: true, objects: 20 });
+    t.awareness.setPeers([peer('a', 10, 10)], t.now.t);
+    t.raf.flush();
+    const remote = t.r.stats.remote;
+    t.remote.fake.clear();
+    t.setCam({ tx: -40 });
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(remote + 1);
+    expect(t.remote.fake.calls.find((c) => c.name === 'clearRect')?.args).toEqual([0, 0, 800, 600]);
+    // an unrelated main frame (same camera, no content change) leaves the remote layer alone
+    t.r.requestFrame();
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(remote + 1);
+  });
+  it("peers' selection outlines follow the objects they surround", () => {
+    const t = rig({ remote: true, objects: 3 });
+    t.awareness.setPeers([peer('a', 5, 5, { selection: ['o1'] })], t.now.t);
+    t.raf.flush();
+    const remote = t.r.stats.remote;
+    t.doc.patch('o1', { x: 50 });
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(remote + 1);
+    t.awareness.setPeers([peer('a', 5, 5)], t.now.t);
+    const r2 = t.r.stats.remote;
+    t.doc.patch('o2', { x: 70 });
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(r2); // no selections → content edits do not touch the remote layer
+  });
+  it('a cursor that faded out is cleared by the next remote frame', () => {
+    const t = rig({ remote: true });
+    t.awareness.setPeers([peer('a', 10, 10)], t.now.t);
+    t.raf.flush();
+    t.now.t += 7000;
+    t.remote.fake.clear();
+    t.r.requestRemoteFrame();
+    t.raf.flush();
+    expect(t.remote.fake.count('clearRect')).toBe(1);
+    expect(t.remote.fake.count('fill')).toBe(0);
+    expect(CURSOR_FULL_MS).toBeLessThan(7000);
+  });
+  it('resize and DPR changes size both layers alike and repaint the remote one', () => {
+    const t = rig({ remote: true, size: [800, 600], dpr: 1 });
+    t.awareness.setPeers([peer('a', 10, 10)], t.now.t);
+    t.raf.flush();
+    expect([t.remote.width, t.remote.height]).toEqual([t.canvas.width, t.canvas.height]);
+    t.r.resize(1000, 700, 2);
+    expect([t.canvas.width, t.canvas.height]).toEqual([2000, 1400]);
+    expect([t.remote.width, t.remote.height]).toEqual([2000, 1400]);
+    const remote = t.r.stats.remote;
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(remote + 1);
+    t.r.setMaxDpr(1);
+    expect([t.remote.width, t.remote.height]).toEqual([1000, 700]);
+    expect([t.canvas.width, t.canvas.height]).toEqual([1000, 700]);
+    t.raf.flush();
+    expect(t.r.stats.remote).toBe(remote + 2);
+  });
+  it('without a remote canvas the peers are composited onto the main canvas as before', () => {
+    const t = rig();
+    t.awareness.setPeers([peer('a', 10, 10)], t.now.t);
+    t.raf.flush();
+    expect(t.canvas.fake.count('fill')).toBeGreaterThan(0);
+    const frames = t.r.stats.frames;
+    t.r.requestRemoteFrame();
+    t.raf.flush();
+    expect(t.r.stats.frames).toBe(frames + 1);
+    expect(t.r.stats.remote).toBe(0);
+  });
+  it('the PNG export never contains cursors', () => {
+    const t = rig({ remote: true, objects: 4 });
+    t.awareness.setPeers([peer('a', 10, 10, { selection: ['o1'] })], t.now.t);
+    t.raf.flush();
+    const f = fakeCtx();
+    const b = t.scene.bounds();
+    if (!b) throw new Error('empty');
+    renderSceneTo({ width: 0, height: 0, getContext: () => f.ctx }, t.scene, defaultPalette('light'), b, 1, 10);
+    expect(t.remote.fake.calls.some((c) => c.name === 'fillText' && c.args[0] === 'Peer a')).toBe(true);
+    expect(f.calls.some((c) => c.name === 'fillText' && c.args[0] === 'Peer a')).toBe(false);
   });
 });
