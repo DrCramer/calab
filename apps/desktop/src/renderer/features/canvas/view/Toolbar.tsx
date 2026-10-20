@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, Circle, Diamond, MousePointer2, Redo2, Spline, Square, SquareRoundCorner, StickyNote, Triangle, Type, Undo2, Waypoints } from 'lucide-react';
+import { ChevronDown, MousePointer2, Redo2, Spline, StickyNote, Type, Undo2, Waypoints } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
@@ -7,17 +7,13 @@ import type { RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import type { CanvasEngine, Tool } from '../engine';
 import { ACTIVE_TOOL, DIVIDER, MENU_BOX, MENU_ITEM, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
+import { ShapeIcon } from './ShapeIcon';
+import { TemplatesMenu } from './Templates';
 import { ROUTE_DEFS, SHAPE_DEFS, TOOL_DEFS } from './model';
 
 const ICON = 'size-[18px]';
 
-const SHAPE_ICON: Record<ShapeKind, ReactNode> = {
-  rect: <Square className={ICON} strokeWidth={1.75} aria-hidden />,
-  rounded: <SquareRoundCorner className={ICON} strokeWidth={1.75} aria-hidden />,
-  ellipse: <Circle className={ICON} strokeWidth={1.75} aria-hidden />,
-  diamond: <Diamond className={ICON} strokeWidth={1.75} aria-hidden />,
-  triangle: <Triangle className={ICON} strokeWidth={1.75} aria-hidden />,
-};
+const shapeIcon = (kind: ShapeKind): ReactNode => <ShapeIcon kind={kind} className={ICON} />;
 
 const ROUTE_ICON: Record<RouteKind, ReactNode> = {
   straight: <Spline className={ICON} strokeWidth={1.75} aria-hidden />,
@@ -156,24 +152,36 @@ export const Toolbar = memo(function Toolbar({ engine, focusCanvas }: { engine: 
       <ToolButton
         {...common}
         tool="shape"
-        icon={SHAPE_ICON[shapeKind]}
+        icon={shapeIcon(shapeKind)}
         active={tool === 'shape'}
         pinned={pinned === 'shape'}
         menu={
           <FlyoutTrigger label={t('canvasBoard.tool.more')}>
             <Dropdown.Portal>
-              <Dropdown.Content side="right" align="start" sideOffset={8} className={MENU_BOX} onCloseAutoFocus={refocus} data-testid="canvas-shape-menu">
+              <Dropdown.Content
+                side="right"
+                align="start"
+                sideOffset={8}
+                className={cx(MENU_BOX, 'grid w-auto min-w-0 grid-cols-4 gap-0.5')}
+                onCloseAutoFocus={refocus}
+                data-testid="canvas-shape-menu"
+              >
                 {SHAPE_DEFS.map((d) => (
                   <Dropdown.Item
                     key={d.kind}
-                    className={cx(MENU_ITEM, shapeKind === d.kind && 'font-medium')}
+                    aria-label={t(d.label)}
+                    title={t(d.label)}
+                    data-testid={`canvas-shape-${d.kind}`}
+                    className={cx(
+                      'grid size-9 cursor-default place-items-center rounded-[6px] text-fg outline-none data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg',
+                      shapeKind === d.kind && 'bg-active',
+                    )}
                     onSelect={() => {
                       engine.setShapeKind(d.kind);
                       pick('shape');
                     }}
                   >
-                    {SHAPE_ICON[d.kind]}
-                    {t(d.label)}
+                    {shapeIcon(d.kind)}
                   </Dropdown.Item>
                 ))}
               </Dropdown.Content>
@@ -210,6 +218,8 @@ export const Toolbar = memo(function Toolbar({ engine, focusCanvas }: { engine: 
           </FlyoutTrigger>
         }
       />
+      <div className="mx-1 my-0.5 h-px bg-line" aria-hidden />
+      <TemplatesMenu engine={engine} focusCanvas={focusCanvas} />
     </div>
   );
 });

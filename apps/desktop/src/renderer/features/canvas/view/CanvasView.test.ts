@@ -644,6 +644,113 @@ describe('transform controls (ADR-0114)', () => {
     expect(new Set(ys(relay)).size).toBe(1);
   });
 
+  it('the shape picker of the panel offers all eleven shapes and changes the selected one', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    m.key('r');
+    m.ptr('pointerdown', 200, 200);
+    m.ptr('pointermove', 260, 240);
+    m.ptr('pointermove', 340, 300);
+    m.ptr('pointerup', 340, 300);
+    escapeEditor(m);
+    await settle(400);
+    await act(async () => {
+      m.q('canvas-prop-shape')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }));
+      m.q('canvas-prop-shape')?.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(m.q('canvas-prop-shape')).not.toBeNull();
+    const items = document.querySelectorAll('[data-testid^="canvas-prop-shape-"]');
+    expect(items).toHaveLength(11);
+    act(() => document.querySelector<HTMLElement>('[data-testid="canvas-prop-shape-cylinder"]')?.click());
+    await settle(400);
+    const o = [...relay.doc.getMap<Y.Map<unknown>>('objects').values()][0];
+    expect(o?.get('shape')).toBe('cylinder');
+  });
+
+  it('the format bar follows the text editor: it shows while a text is edited, formats the selection and commits no extra React work per keystroke', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    expect(m.q('canvas-format-bar')).toBeNull();
+    m.key('s');
+    m.ptr('pointerdown', 400, 400);
+    m.ptr('pointerup', 400, 400);
+    await settle(100);
+    const ta = m.host.querySelector('textarea');
+    expect(ta).not.toBeNull();
+    expect(m.q('canvas-format-bar')).not.toBeNull();
+    expect(m.q('canvas-props')?.getAttribute('style') ?? '').toContain('hidden');
+    if (!ta) return;
+    const before = m.commits.n;
+    for (let i = 1; i <= 20; i++) {
+      ta.value = 'x'.repeat(i);
+      ta.setSelectionRange(i, i);
+      act(() => void ta.dispatchEvent(new Event('input', { bubbles: true })));
+    }
+    expect(m.commits.n).toBe(before);
+    ta.setSelectionRange(0, 5);
+    act(() => void document.dispatchEvent(new Event('selectionchange')));
+    expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('false');
+    act(() => m.q('canvas-format-bold')?.click());
+    expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('true');
+    expect(m.host.querySelector('textarea')).toBe(ta); // the button did not steal the focus: the editor is still open
+    act(() => m.q('canvas-format-bullet')?.click());
+    expect(m.q('canvas-format-bullet')?.getAttribute('aria-pressed')).toBe('true');
+    act(() => m.q('canvas-format-size-xl')?.click());
+    expect(m.q('canvas-format-size-xl')?.getAttribute('aria-pressed')).toBe('true');
+    escapeEditor(m);
+    await settle(400);
+    expect(m.q('canvas-format-bar')).toBeNull();
+    const o = [...relay.doc.getMap<Y.Map<unknown>>('objects').values()][0];
+    expect(o?.get('fontSize')).toBe('xl');
+    const delta = (o?.get('text') as Y.Text).toDelta() as { insert: string; attributes?: object }[];
+    expect(delta[0]).toEqual({ insert: 'xxxxx', attributes: { bold: true } });
+    expect(delta[delta.length - 1]).toEqual({ insert: '\n', attributes: { list: 'bullet' } });
+  });
+
+  it('an empty canvas offers the templates; one click inserts it, selects it and the card goes; the toolbar menu has the same five', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    await settle(100);
+    expect(m.q('canvas-templates-card')).not.toBeNull();
+    expect(m.host.querySelectorAll('[data-testid^="canvas-template-"]').length).toBeGreaterThanOrEqual(5);
+    expect(m.q('canvas-templates-button')).not.toBeNull();
+    act(() => m.q('canvas-template-retro')?.click());
+    await settle(400);
+    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(12);
+    expect(m.q('canvas-templates-card')).toBeNull();
+    expect(m.q('canvas-props')).not.toBeNull(); // the inserted set is selected
+  });
+
+  it('the templates card can be closed, and the toolbar menu lists the templates', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    await settle(100);
+    act(() => m.q('canvas-templates-close')?.click());
+    expect(m.q('canvas-templates-card')).toBeNull();
+    await act(async () => {
+      m.q('canvas-templates-button')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }));
+      m.q('canvas-templates-button')?.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const items = document.querySelectorAll('[data-testid="canvas-templates-menu"] [data-testid^="canvas-template-"]');
+    expect(items).toHaveLength(5);
+    act(() => (items[2] as HTMLElement).click());
+    await settle(400);
+    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(8); // SWOT
+  });
+
+  it('a canvas that has objects shows no templates card, and it stays out of the way while the document loads', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay });
+    a.key('s');
+    a.ptr('pointerdown', 400, 400);
+    a.ptr('pointerup', 400, 400);
+    escapeEditor(a);
+    await settle(400);
+    expect(a.q('canvas-templates-card')).toBeNull();
+  });
+
   it('rotating and locking do not re-render React per frame; a turned object is stored with its angle', async () => {
     const relay = new MockRelay();
     const m = await mount({ relay });

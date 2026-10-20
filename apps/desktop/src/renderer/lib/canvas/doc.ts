@@ -1,6 +1,8 @@
 import * as Y from 'yjs';
 import { clamp, normRot, type Point } from './geometry';
 import { after, before, between, isValidKey } from './fracIndex';
+import { fmtFromDelta, fmtToDelta, formatChanges, rawText, type Fmt } from './richText';
+import { isFontToken } from './textLayout';
 import {
   DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
   type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
@@ -82,16 +84,16 @@ export function applyTextDiff(yt: Y.Text, next: string): void {
 export type PlainObject = { id: string; kind: ObjectKind; z: string } & Record<string, unknown>;
 
 const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'rot', 'locked', 'group'],
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'rot', 'locked', 'group'],
+  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
 };
 
 const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'rot', 'locked', 'group'],
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'rot', 'locked', 'group'],
+  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
 };
 
@@ -105,6 +107,7 @@ function extraFields(init: ObjectInit): Record<string, unknown> {
   if (rot !== 0) out.rot = rot;
   if (init.locked === true) out.locked = true;
   if (isGroupId(init.group)) out.group = init.group;
+  if ((init.kind === 'sticky' || init.kind === 'shape') && isFontToken(init.fontSize) && init.fontSize !== 'm') out.fontSize = init.fontSize;
   return out;
 }
 
@@ -164,6 +167,7 @@ function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unkno
     case 'rot': return typeof v === 'number' && Number.isFinite(v) ? (normRot(v) === 0 ? REMOVE : normRot(v)) : undefined;
     case 'locked': return typeof v === 'boolean' ? (v ? true : REMOVE) : undefined;
     case 'group': return v === null ? REMOVE : isGroupId(v) ? v : undefined;
+    case 'fontSize': return isFontToken(v) ? (v === 'm' ? REMOVE : v) : undefined;
     case 'x': case 'y': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, -MAX_COORD, MAX_COORD) : undefined;
     case 'w': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'text' ? DEFAULTS.minTextW : DEFAULTS.minBox, MAX_SIZE) : undefined;
     case 'h': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minBox, MAX_SIZE) : undefined;
@@ -321,7 +325,13 @@ export class CanvasDoc {
           m.set('z', z);
           for (const [k, v] of Object.entries(fields)) m.set(k, v);
           for (const [k, v] of Object.entries(extra)) m.set(k, v);
-          if (text !== null) m.set('text', new Y.Text(text));
+          if (text !== null) {
+            const yt = new Y.Text();
+            const ops = item.init.kind !== 'connector' && item.init.fmt ? fmtToDelta(text, item.init.fmt) : null;
+            if (ops) yt.applyDelta(ops);
+            else if (text !== '') yt.insert(0, text);
+            m.set('text', yt);
+          }
           ids.push(id);
         }
       });
@@ -383,11 +393,46 @@ export class CanvasDoc {
     });
   }
 
+  /**
+   * Sets an object's text together with its formatting: the text by the same minimal diff as `setText`, then only the
+   * attribute ranges that differ (`Y.Text.format`), so the parts nobody touched stay as concurrent editors left them.
+   * `text` is plain text (no list terminator); a connector keeps only the plain label.
+   */
+  setRich(id: string, text: string, fmt: Fmt | undefined): void {
+    const m = this.objects.get(id);
+    if (!m) return;
+    if (m.get('kind') === 'connector') {
+      this.patch(id, { label: text });
+      return;
+    }
+    const next = clampText(text);
+    this.transact(() => {
+      let yt = m.get('text');
+      if (!(yt instanceof Y.Text)) {
+        yt = new Y.Text();
+        m.set('text', yt);
+      }
+      if (!(yt instanceof Y.Text)) return;
+      applyTextDiff(yt, rawText(next, fmt));
+      for (const c of formatChanges(yt.toDelta() as never, fmtToDelta(next, fmt))) yt.format(c.index, c.length, c.attrs);
+    });
+  }
+
+  /** An object's plain text and formatting (the list terminator of the last paragraph is not part of the text). */
+  getRich(id: string): { text: string; fmt: Fmt | undefined } {
+    const t = this.objects.get(id)?.get('text');
+    if (t instanceof Y.Text) return fmtFromDelta(t.toDelta() as never);
+    return { text: this.getText(id), fmt: undefined };
+  }
+
   getText(id: string): string {
     const m = this.objects.get(id);
     if (!m) return '';
     const t = m.get('text');
-    if (t instanceof Y.Text) return t.toJSON();
+    if (t instanceof Y.Text) {
+      const raw = t.toJSON();
+      return raw.endsWith('\n') ? fmtFromDelta(t.toDelta() as never).text : raw;
+    }
     const label = m.get('label');
     return typeof label === 'string' ? label : '';
   }
@@ -423,7 +468,14 @@ export class CanvasDoc {
       const v = m.get(k);
       if (v !== undefined) out[k] = v;
     }
-    if (kind !== 'connector') out.text = this.getText(id);
+    if (kind !== 'connector') {
+      const t = m.get('text');
+      if (t instanceof Y.Text) {
+        const { text, fmt } = fmtFromDelta(t.toDelta() as never);
+        out.text = text;
+        if (fmt) out.rich = fmtToDelta(text, fmt);
+      } else out.text = '';
+    }
     return out;
   }
 

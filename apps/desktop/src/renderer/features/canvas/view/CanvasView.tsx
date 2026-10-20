@@ -21,10 +21,13 @@ import { toast } from '../../../stores/toasts';
 import type { CanvasPalette } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { ZoomBar } from './Controls';
+import { MiniMap } from './MiniMap';
 import { PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
 import { StatusBanner } from './StatusBanner';
+import { TemplatesCard } from './Templates';
+import { TextFormatBar } from './TextFormatBar';
 import { HistoryBar, Toolbar } from './Toolbar';
 import { appDeps } from './defaultDeps';
 import { downloadBlob, exportCanvasPng, pngFileName, type ExportArea } from './exportPng';
@@ -356,9 +359,12 @@ function Chrome({
           <Toolbar engine={engine} focusCanvas={focusCanvas} />
           <HistoryBar engine={engine} focusCanvas={focusCanvas} />
           <PropsPanel engine={engine} palette={palette} focusCanvas={focusCanvas} />
+          <TextFormatBar engine={engine} />
+          <TemplatesCard engine={engine} sync={sync} focusCanvas={focusCanvas} />
         </>
       ) : null}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
+      <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
       <Presence store={presence} />
       <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} onRetry={onRetry} />
     </>

@@ -54,7 +54,7 @@ describe('TextEditor', () => {
     ed.commit();
     ed.commit();
     expect(done).toHaveBeenCalledTimes(1);
-    expect(done).toHaveBeenCalledWith('new text', true);
+    expect(done).toHaveBeenCalledWith('new text', true, undefined, false);
     expect(host.querySelector('textarea')).toBeNull();
     expect(ed.isOpen).toBe(false);
   });
@@ -63,7 +63,7 @@ describe('TextEditor', () => {
     const done = vi.fn();
     ed.open(spec(), done);
     ed.commit();
-    expect(done).toHaveBeenCalledWith('start', false);
+    expect(done).toHaveBeenCalledWith('start', false, undefined, false);
   });
   it('commits on Escape, ⌘/Ctrl+Enter and blur; plain Enter inserts a newline', () => {
     for (const make of [
@@ -102,7 +102,7 @@ describe('TextEditor', () => {
     const first = vi.fn();
     ed.open(spec({ text: 'a' }), first);
     ed.open(spec({ text: 'b' }), vi.fn());
-    expect(first).toHaveBeenCalledWith('a', false);
+    expect(first).toHaveBeenCalledWith('a', false, undefined, false);
   });
   it('cancel closes without reporting', () => {
     const { ed, host } = setup();

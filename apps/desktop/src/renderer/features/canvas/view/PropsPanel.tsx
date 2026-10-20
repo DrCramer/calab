@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Lock, LockOpen, Minus, SendToBack, Slash, Trash2, Ungroup,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Lock, LockOpen, Minus, SendToBack, Shapes, Slash, Trash2, Ungroup,
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
@@ -9,13 +9,15 @@ import { rotateHandlePoint } from '../../../lib/canvas/geometry';
 import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
+import { ShapeIcon } from './ShapeIcon';
+import { TEXT_FONT } from '../../../lib/canvas/textLayout';
 import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { ROTATE_OFFSET_PX } from '../engine/overlay';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { NO_INSETS, placePanel, type Insets } from './layout';
 import {
-  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS, TEXT_SIZES, nearestTextSize,
+  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, FONT_SIZE_DEFS, STROKE_WIDTHS,
 } from './model';
 import { createSelectionModel } from './selectionModel';
 
@@ -244,15 +246,51 @@ function routeNode(route: RouteKind): ReactNode {
   );
 }
 
-function shapeNode(kind: ShapeKind): ReactNode {
-  const p: Record<ShapeKind, ReactNode> = {
-    rect: <rect x="2.5" y="3.5" width="11" height="9" />,
-    rounded: <rect x="2.5" y="3.5" width="11" height="9" rx="3" />,
-    ellipse: <ellipse cx="8" cy="8" rx="5.5" ry="4.5" />,
-    diamond: <path d="M8 2.5 13.5 8 8 13.5 2.5 8Z" />,
-    triangle: <path d="M8 3 13.5 13h-11Z" />,
-  };
-  return <svg viewBox="0 0 16 16" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden>{p[kind]}</svg>;
+const shapeNode = (kind: ShapeKind): ReactNode => <ShapeIcon kind={kind} className={ICON} />;
+
+/** Shape picker: the current outline on the button, the eleven in a 4-column grid (an inline row would not fit the panel). */
+function ShapeMenu({ value, onPick, focusCanvas }: { value: ShapeKind | undefined; onPick: (k: ShapeKind) => void; focusCanvas: () => void }): ReactNode {
+  const label = t('canvasBoard.props.shape');
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <IconButton label={label} size="sm" onMouseDown={keepFocus} data-testid="canvas-prop-shape">
+          {value ? shapeNode(value) : <Shapes className={ICON} strokeWidth={1.75} aria-hidden />}
+        </IconButton>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="center"
+          sideOffset={8}
+          collisionPadding={8}
+          className={cx(MENU_BOX, 'w-auto min-w-0 p-1')}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            focusCanvas();
+          }}
+          aria-label={label}
+        >
+          <div role="group" aria-label={label} className="grid grid-cols-4 gap-0.5">
+            {SHAPE_DEFS.map((d) => (
+              <IconButton
+                key={d.kind}
+                label={t(d.label)}
+                size="sm"
+                active={d.kind === value}
+                className={cx(d.kind === value && 'bg-active text-fg')}
+                onMouseDown={keepFocus}
+                onClick={() => onPick(d.kind)}
+                data-testid={`canvas-prop-shape-${d.kind}`}
+              >
+                {shapeNode(d.kind)}
+              </IconButton>
+            ))}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
 }
 
 function widthNode(w: number): ReactNode {
@@ -416,24 +454,21 @@ export const PropsPanel = memo(function PropsPanel({
       {!m.locked && m.hasText ? (
         <>
           <SwatchMenu label={t('canvasBoard.props.color')} kind="ink" tokens={INK_COLORS} value={m.textColor} palette={palette} onPick={(c) => patch({ color: c })} focusCanvas={focusCanvas} testId="canvas-prop-text-color" />
-          <Seg
-            label={t('canvasBoard.props.textSize')}
-            testId="canvas-prop-size"
-            value={m.textSize === undefined ? undefined : nearestTextSize(m.textSize)}
-            items={TEXT_SIZES.map((s) => ({ id: s.size, label: t(s.label), node: <span className="text-caption font-semibold">{s.glyph}</span> }))}
-            onPick={(size) => patch({ size })}
-          />
         </>
+      ) : null}
+      {!m.locked && (m.hasText || m.hasSticky || m.hasShape) ? (
+        <Seg
+          label={t('canvasBoard.props.textSize')}
+          testId="canvas-prop-size"
+          value={m.fontToken}
+          items={FONT_SIZE_DEFS.map((d) => ({ id: d.token, label: t(d.label), node: <span className="text-caption font-semibold">{d.glyph}</span> }))}
+          // A text object takes the preset as its pixel size, a sticky or shape as its token; the patch carries both and each kind keeps its own.
+          onPick={(token) => patch({ fontSize: token, size: TEXT_FONT[token] })}
+        />
       ) : null}
       {!m.locked && m.hasShape ? (
         <>
-          <Seg
-            label={t('canvasBoard.props.shape')}
-            testId="canvas-prop-shape"
-            value={m.shape}
-            items={SHAPE_DEFS.map((d) => ({ id: d.kind, label: t(d.label), node: shapeNode(d.kind) }))}
-            onPick={(shape) => patch({ shape })}
-          />
+          <ShapeMenu value={m.shape} onPick={(shape) => patch({ shape })} focusCanvas={focusCanvas} />
           <SwatchMenu label={t('canvasBoard.props.fill')} kind="fill" tokens={FILL_COLORS} value={m.fill} palette={palette} onPick={(c) => patch({ fill: c })} focusCanvas={focusCanvas} testId="canvas-prop-fill" />
         </>
       ) : null}

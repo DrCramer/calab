@@ -9,7 +9,8 @@ import { CanvasDoc, newId } from '../../../lib/canvas/doc';
 import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
 import { Scene } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
-import { LABEL_SIZE, SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE, TextLayouter, estimateMeasure, type MeasureFn } from '../../../lib/canvas/textLayout';
+import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
+import { LABEL_SIZE, TEXT_FONT, TextLayouter, boxFontSize, estimateMeasure, fontOf, nearestToken, type FontToken, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import {
   DEFAULTS, aabb, isConnector,
@@ -84,8 +85,8 @@ function makeCanvasMeasure(family: () => string): MeasureFn {
   const ctx = document.createElement('canvas').getContext('2d');
   if (!ctx) return estimateMeasure;
   let last = '';
-  return (text, size) => {
-    const f = `${size}px ${family()}`;
+  return (text, size, flags = 0) => {
+    const f = fontOf(size, family(), flags);
     if (f !== last) {
       ctx.font = f;
       last = f;
@@ -133,6 +134,8 @@ export class CanvasEngine implements Core {
   private shape_: ShapeKind = 'rect';
   private route_: RouteKind = 'straight';
   private pasteCount = 0;
+  /** The object whose text the editor is open on. */
+  private editingId: string | null = null;
   private animToken = 0;
   private animRaf = 0;
   private pending: Camera | null = null;
@@ -458,10 +461,18 @@ export class CanvasEngine implements Core {
 
   /** The window/tab is hidden: stop drawing (and sending awareness) until shown; no cursor-fade timer either. */
   setActive(on: boolean): void {
+    const changed = this.active !== on;
     this.active = on;
     this.renderer.setActive(on);
     if (on) this.scheduleAwarenessStep();
     else this.clearAwarenessStep();
+    // Pieces of UI that pause while hidden (the mini-map) pick up again on this.
+    if (changed) this.emitView();
+  }
+
+  /** The window and the canvas are on screen (what `setActive` last said). */
+  get isActive(): boolean {
+    return this.active;
   }
 
   // ── camera commands ─────────────────────────────────────────────────────────
@@ -829,9 +840,9 @@ export class CanvasEngine implements Core {
     const box = contentRect(o);
     const turn = o.rot ? { rot: o.rot, center: rectCenter(o) } : {};
     switch (o.kind) {
-      case 'sticky': return { box, text: o.text, size: STICKY_TEXT_SIZE, color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, ...turn };
-      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, ...turn };
-      case 'shape': return { box, text: o.text, size: SHAPE_TEXT_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, ...turn };
+      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, rich: true, token: o.fontSize ?? 'm', ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, rich: true, token: nearestToken(o.size), ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, token: o.fontSize ?? 'm', ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
     }
   }
 
@@ -846,13 +857,16 @@ export class CanvasEngine implements Core {
     const oid = o.id;
     this.renderer.setHiddenText(oid);
     this.overlay = { ...this.overlay, group: null };
-    this.editor.open(spec, (text) => {
+    this.editingId = oid;
+    this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
+      this.editingId = null;
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();
         if (cur.kind === 'text' && text.trim() === '') this.doc.remove([oid]);
-        else this.doc.setText(oid, text);
+        else if (cur.kind === 'connector') this.doc.setText(oid, text);
+        else if (changed || fmtChanged) this.doc.setRich(oid, text, fmt);
       }
       this.refreshOverlay();
       this.sync();
@@ -860,6 +874,33 @@ export class CanvasEngine implements Core {
     });
     this.sync();
     return true;
+  }
+
+  /**
+   * Inserts a built-in template centered on the visible area, in one transaction (one undo step), and selects it.
+   * Returns the new ids; [] when the canvas has no room (the 5000-object limit) or cannot be edited.
+   */
+  insertTemplate(id: TemplateId, tr: TemplateText): string[] {
+    if (!this.canEdit()) return [];
+    const view = this.visibleWorld();
+    const items = buildTemplate(id, { x: view.x + view.w / 2, y: view.y + view.h / 2 }, tr, newId);
+    this.doc.checkpoint();
+    const ids = this.doc.createMany(items);
+    if (ids.length > 0) {
+      this.setSelection(ids);
+      this.setTool('select');
+    }
+    return ids;
+  }
+
+  /** The text size of the object under edit (the format bar's S / M / L / XL): the object changes, the textarea follows. */
+  setEditFontSize(token: FontToken): void {
+    const id = this.editingId;
+    const o = id ? this.scene.get(id) : undefined;
+    if (!id || !o || isConnector(o) || o.locked || !this.canEdit() || !this.editor.isOpen) return;
+    this.doc.patch(id, { fontSize: token, size: TEXT_FONT[token] });
+    const now = this.scene.get(id);
+    if (now && !isConnector(now)) this.editor.setSize(boxFontSize(now), token);
   }
 
   /** Double-click on empty canvas: a new text object, in edit mode. */

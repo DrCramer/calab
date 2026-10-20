@@ -1,11 +1,13 @@
 import * as Popover from '@radix-ui/react-popover';
-import { CircleHelp, Focus, Maximize, Minus, Plus } from 'lucide-react';
+import { CircleHelp, Focus, Map as MapIcon, Maximize, Minus, Plus } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { CanvasEngine } from '../engine';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
+import { useMinimapPref } from './MiniMap';
+import { minimapPref } from './minimapDraw';
 
 const ICON = 'size-[18px]';
 
@@ -45,6 +47,7 @@ const HELP_ROWS = [
   'canvasBoard.help.rotate',
   'canvasBoard.help.group',
   'canvasBoard.help.lock',
+  'canvasBoard.help.format',
   'canvasBoard.help.undo',
 ] as const;
 
@@ -83,6 +86,27 @@ function Help({ focusCanvas, canWrite, open, onOpenChange }: { focusCanvas: () =
   );
 }
 
+/** The mini-map switch: its own leaf, remembered per person (`localStorage`). */
+function MiniMapToggle({ focusCanvas }: { focusCanvas: () => void }): ReactNode {
+  useLocale();
+  const on = useMinimapPref();
+  return (
+    <IconButton
+      label={t('canvasBoard.minimap.toggle')}
+      active={on}
+      className={cx(on && 'bg-active text-fg')}
+      onMouseDown={keepFocus}
+      onClick={() => {
+        minimapPref.set(!on);
+        focusCanvas();
+      }}
+      data-testid="canvas-minimap-toggle"
+    >
+      <MapIcon className={ICON} strokeWidth={1.75} aria-hidden />
+    </IconButton>
+  );
+}
+
 /** Zoom, fit and the shortcut help: bottom right. `phone` (view only, no keyboard): zoom and «вписать всё» only. */
 export const ZoomBar = memo(function ZoomBar({
   engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false,
@@ -117,6 +141,7 @@ export const ZoomBar = memo(function ZoomBar({
           <IconButton label={t('canvasBoard.zoom.fitSelection')} shortcut="⇧2" onMouseDown={keepFocus} onClick={() => { engine.fitSelection(); focusCanvas(); }} data-testid="canvas-fit-selection">
             <Focus className={ICON} strokeWidth={1.75} aria-hidden />
           </IconButton>
+          <MiniMapToggle focusCanvas={focusCanvas} />
           <div className={DIVIDER} aria-hidden />
           <Help focusCanvas={focusCanvas} canWrite={canWrite} open={helpOpen} onOpenChange={onHelpOpenChange} />
         </>

@@ -12,6 +12,18 @@ const shape = (id: string, over: Partial<{ fill: string; stroke: string; strokeW
   ...base, id, kind: 'shape', shape: 'rect', fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '', ...over,
 });
 
+describe('panelModelOf: text size token', () => {
+  const text = (id: string, size: number): ObjectRec => ({ ...base, id, kind: 'text', size, color: 'text', text: '' });
+  it('stickies and shapes show their token, a text object its nearest preset, and a mix shows none', () => {
+    expect(panelModelOf([sticky('a', 'yellow')])?.fontToken).toBe('m');
+    expect(panelModelOf([{ ...sticky('a', 'yellow'), fontSize: 'xl' } as ObjectRec])?.fontToken).toBe('xl');
+    expect(panelModelOf([text('t', 31)])?.fontToken).toBe('l');
+    expect(panelModelOf([text('t', 20), sticky('a', 'yellow')])?.fontToken).toBe('m');
+    expect(panelModelOf([text('t', 48), sticky('a', 'yellow')])?.fontToken).toBeUndefined();
+    expect(panelModelOf([{ ...shape('s'), fontSize: 's' } as ObjectRec])?.fontToken).toBe('s');
+  });
+});
+
 describe('placePanel', () => {
   const cam = { tx: 0, ty: 0, scale: 1 };
   const vp = { w: 1000, h: 800 };
