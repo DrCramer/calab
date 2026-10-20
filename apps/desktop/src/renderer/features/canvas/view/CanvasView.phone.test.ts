@@ -263,3 +263,119 @@ describe('the edit mode (ADR-0114 wave 5b)', () => {
     expect(m.q('canvas-phone-edit-hint')).toBeNull();
   });
 });
+
+describe('the edit mode tool bar', () => {
+  const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
+  const objects = (m: Mounted): Array<Record<string, unknown>> => [...m.relay.doc.getMap<{ toJSON(): Record<string, unknown> }>('objects').values()].map((o) => o.toJSON());
+
+  it('exists only in edit mode, with 44 px targets above the home indicator', async () => {
+    const m = await mount();
+    expect(m.q('canvas-phone-toolbar')).toBeNull();
+    await m.rerender({ phoneEdit: true });
+    const bar = m.q('canvas-phone-toolbar');
+    expect(bar?.getAttribute('role')).toBe('toolbar');
+    expect(bar?.className).toContain('--safe-bottom');
+    const buttons = [...(bar?.querySelectorAll('button') ?? [])];
+    // select · sticky · text · shape · connector · «+» · undo · redo
+    expect(buttons).toHaveLength(8);
+    for (const b of buttons) expect(b.className, b.getAttribute('aria-label') ?? '').toContain('size-11');
+    await m.rerender({ phoneEdit: false });
+    expect(m.q('canvas-phone-toolbar')).toBeNull();
+  });
+
+  it('a tool button arms the tool, says what to do, and a tap on the canvas places the object', async () => {
+    const m = await mount({ phoneEdit: true });
+    expect(m.q('canvas-tool-select')?.getAttribute('aria-pressed')).toBe('true');
+    expect(m.q('canvas-phone-armed')).toBeNull();
+    click(m, 'canvas-tool-sticky');
+    expect(m.q('canvas-tool-sticky')?.getAttribute('aria-pressed')).toBe('true');
+    expect(m.q('canvas-tool-select')?.getAttribute('aria-pressed')).toBe('false');
+    expect(m.q('canvas-phone-armed')?.textContent).toMatch(/стикер/);
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    // Its text editor is open (the bar steps aside); after it the tool is back on «Выбор».
+    expect(m.host.querySelector('textarea')).not.toBeNull();
+    act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(m.q('canvas-tool-select')?.getAttribute('aria-pressed')).toBe('true');
+    expect(m.q('canvas-phone-armed')).toBeNull();
+    await settle(600);
+    expect(objects(m).map((o) => o['kind'])).toEqual(['sticky']);
+  });
+
+  it('the shape button offers the shapes in a grid; the chosen one is what a tap places', async () => {
+    const m = await mount({ phoneEdit: true });
+    click(m, 'canvas-tool-shape');
+    const sheet = m.q('canvas-phone-shapes');
+    expect(sheet).not.toBeNull();
+    const cells = [...(sheet?.querySelectorAll('button') ?? [])];
+    expect(cells).toHaveLength(11);
+    for (const b of cells) expect(b.className).toContain('size-11');
+    click(m, 'canvas-shape-star');
+    expect(m.q('canvas-phone-shapes')).toBeNull();
+    expect(m.q('canvas-tool-shape')?.getAttribute('aria-pressed')).toBe('true');
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    await settle(600);
+    expect(objects(m).map((o) => [o['kind'], o['shape']])).toEqual([['shape', 'star']]);
+    // A second tap on the button puts the sheet away without disarming the tool.
+    click(m, 'canvas-tool-shape');
+    expect(m.q('canvas-phone-shapes')).not.toBeNull();
+    click(m, 'canvas-tool-shape');
+    expect(m.q('canvas-phone-shapes')).toBeNull();
+  });
+
+  it('«+» inserts a template at the view center; vote and countdown start from the same sheet', async () => {
+    const m = await mount({ phoneEdit: true });
+    click(m, 'canvas-phone-plus');
+    expect(m.q('canvas-phone-plus-sheet')).not.toBeNull();
+    click(m, 'canvas-template-kanban');
+    expect(m.q('canvas-phone-plus-sheet')).toBeNull();
+    await settle(600);
+    expect(objects(m).length).toBeGreaterThan(3);
+    click(m, 'canvas-phone-plus');
+    click(m, 'canvas-vote-start');
+    click(m, 'canvas-phone-plus');
+    click(m, 'canvas-timer-preset-5');
+    await settle(600);
+    const meta = m.relay.doc.getMap('meta');
+    expect((meta.get('vote') as { open: boolean }).open).toBe(true);
+    expect(meta.get('timer')).toBeDefined();
+    // Both show as plaques on the canvas; the vote can be finished from «+» again.
+    click(m, 'canvas-phone-plus');
+    click(m, 'canvas-vote-finish');
+    await settle(600);
+    expect((m.relay.doc.getMap('meta').get('vote') as { open: boolean }).open).toBe(false);
+  });
+
+  it('undo and redo follow the history', async () => {
+    const m = await mount({ phoneEdit: true });
+    expect((m.q('canvas-undo') as HTMLButtonElement).disabled).toBe(true);
+    expect((m.q('canvas-redo') as HTMLButtonElement).disabled).toBe(true);
+    click(m, 'canvas-tool-text');
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    // An empty text object is not kept; a sticky is.
+    click(m, 'canvas-tool-sticky');
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect((m.q('canvas-undo') as HTMLButtonElement).disabled).toBe(false);
+    click(m, 'canvas-undo');
+    expect((m.q('canvas-redo') as HTMLButtonElement).disabled).toBe(false);
+    click(m, 'canvas-redo');
+    expect((m.q('canvas-redo') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('is replaced by nothing while a text is edited, and comes back after', async () => {
+    const m = await mount({ phoneEdit: true });
+    click(m, 'canvas-tool-sticky');
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    expect(m.host.querySelector('textarea')).not.toBeNull();
+    expect(m.q('canvas-phone-toolbar')).toBeNull();
+    act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(m.q('canvas-phone-toolbar')).not.toBeNull();
+  });
+});

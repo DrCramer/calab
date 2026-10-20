@@ -325,8 +325,8 @@ function CanvasScreenView({ workspaceId, itemId }: { workspaceId: string; itemId
           </Button>
         ) : null}
       </PhoneHeader>
-      {/* The bottom inset stays free of the canvas so the zoom bar clears the home indicator. */}
-      <div className="relative min-h-0 flex-1 pb-[var(--safe-bottom,0px)]" data-testid="phone-canvas-stage">
+      {/* The bottom inset stays free of the canvas so the zoom bar clears the home indicator; in edit mode the tool bar owns it (it clears the indicator itself). */}
+      <div className={cx('relative min-h-0 flex-1', !on && 'pb-[var(--safe-bottom,0px)]')} data-testid="phone-canvas-stage">
         <Suspense
           fallback={
             <div className="grid h-full place-items-center">
