@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
+import { BoardFeature, MessageKind, Permission, TaskRelationKind, WorkspaceRole, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
 import {
   Archive,
   ArchiveRestore,
@@ -59,7 +59,8 @@ import { EMPTY_ROOM_MESSAGES, useMessages } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { myUserId, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import { memberName, useFormerInfo, useMemberName } from '../../stores/workspaces';
+import { memberName, useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { BotConsentPrompt } from '../people/BotConsentPrompt';
 import { FormerChip } from '../people/MemberBits';
 import { Composer, toOutgoing } from '../chat/Composer';
 import { buildMetas, type RowMeta } from '../chat/grouping';
@@ -504,13 +505,20 @@ export function Prop({ label, children, testId }: { label: string; children: Rea
 /** The task's author (Task.created_by: a user or a bot), read-only, the first property. */
 const AuthorProp = memo(function AuthorProp({ task }: { task: Task }): ReactNode {
   const name = useMemberName(task.workspaceId, task.createdBy);
+  // CBF-41: a bot-made card shows the bot's «act on your behalf» request to the people it concerns.
+  const botAuthor = useWorkspaces((s) => !!s.users[task.createdBy]?.isBot && s.byId[task.workspaceId]?.role !== WorkspaceRole.GUEST);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const concerned = botAuthor && me !== '' && (task.subscribed || task.assignees.some((a) => a.userId === me));
   return (
-    <Prop label={t('boards.f.author')} testId="prop-author">
-      <ProfileTarget userId={task.createdBy} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex h-7 min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] px-1 text-left">
-        <MemberAvatar workspaceId={task.workspaceId} userId={task.createdBy} size={20} />
-        <span className="min-w-0 truncate text-control font-medium">{name}</span>
-      </ProfileTarget>
-    </Prop>
+    <>
+      <Prop label={t('boards.f.author')} testId="prop-author">
+        <ProfileTarget userId={task.createdBy} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex h-7 min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] px-1 text-left">
+          <MemberAvatar workspaceId={task.workspaceId} userId={task.createdBy} size={20} />
+          <span className="min-w-0 truncate text-control font-medium">{name}</span>
+        </ProfileTarget>
+      </Prop>
+      {concerned ? <BotConsentPrompt workspaceId={task.workspaceId} botUserId={task.createdBy} /> : null}
+    </>
   );
 });
 

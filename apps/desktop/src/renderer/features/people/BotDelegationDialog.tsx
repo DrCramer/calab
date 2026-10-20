@@ -31,14 +31,14 @@ import { memberItems, type PeoplePickItem } from './memberPickItems';
  * asks once more (a leaked token then acts as the owner); the server accepts only the owner.
  */
 
-const queryKey = (ws: string, bot: string): string[] => ['botDelegations', ws, bot];
+export const delegationsKey = (ws: string, bot: string): string[] => ['botDelegations', ws, bot];
 
 export function BotDelegationDialog({ workspaceId, botUserId, onClose }: { workspaceId: string; botUserId: string; onClose: () => void }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const botName = useMemberName(workspaceId, botUserId);
   const qc = useQueryClient();
   const state = useQuery({
-    queryKey: queryKey(workspaceId, botUserId),
+    queryKey: delegationsKey(workspaceId, botUserId),
     queryFn: ({ signal }) => api.bots.delegations(workspaceId, botUserId, signal),
     staleTime: 0,
   });
@@ -47,7 +47,7 @@ export function BotDelegationDialog({ workspaceId, botUserId, onClose }: { works
     setBusy(true);
     p.then(
       (r) => {
-        qc.setQueryData(queryKey(workspaceId, botUserId), r);
+        qc.setQueryData(delegationsKey(workspaceId, botUserId), r);
         setBusy(false);
         if (done) toast.success(done);
       },
