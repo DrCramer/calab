@@ -356,10 +356,13 @@ var botRouteGroups = []botRouteGroup{
 
 	// ---------------------------------------------------------------- allow: opened by ADR-0109
 	// Closed on behalf of the owner (ADR-0106 §3 is not widened by ADR-0109).
-	{access: botDeny, why: "Canvas v1 (ADR-0113): people only — there is no bot SDK for it yet and the sync socket refuses bot tokens (4003); the group becomes botAllow by the canvas bits like the Disk and the Wiki (ADR-0109) when bots get the Canvas", routes: []string{
+	{access: botDeny, why: "Canvas v1 (ADR-0113) and its comments (ADR-0114 wave 4): people only — there is no bot SDK for it yet, the sync socket refuses bot tokens (4003) and a bot is never @mentioned on a canvas; the group becomes botAllow by the canvas bits like the Disk and the Wiki (ADR-0109) when bots get the Canvas", routes: []string{
+		"DELETE /api/canvas/comments/{id}",
 		"DELETE /api/canvas/items/{id}",
 		"GET /api/canvas/items/{id}",
 		"GET /api/canvas/items/{id}/activity",
+		"GET /api/canvas/items/{id}/comments",
+		"GET /api/canvas/items/{id}/comments/mention-access",
 		"GET /api/canvas/items/{id}/path",
 		"GET /api/canvas/items/{id}/permissions",
 		"GET /api/canvas/items/{id}/versions",
@@ -367,7 +370,9 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/canvas/activity",
 		"GET /api/workspaces/{id}/canvas/items",
 		"GET /api/workspaces/{id}/canvas/settings",
+		"PATCH /api/canvas/comments/{id}",
 		"PATCH /api/canvas/items/{id}",
+		"POST /api/canvas/items/{id}/comments",
 		"POST /api/canvas/items/{id}/restore",
 		"POST /api/canvas/items/{id}/take-over",
 		"POST /api/canvas/items/{id}/trash",
