@@ -20,6 +20,7 @@ enum Plan {
 message PlanLimits {
   bool board_forms_disabled = 33;
   uint32 board_forms_per_board = 34; // 0 = unlimited; ADR-0064
+  uint32 wiki_pages = 36;            // live (not trashed) Wiki pages of the workspace (ADR-0096); 0 = no plan limit
   uint32 room_members = 1;                 // users in one voice room (guests and pending devices count)
   ScreenSharePreset stream_max_preset = 2; // highest screen share preset
   uint32 stream_max_fps = 3;               // screen share frame rate cap

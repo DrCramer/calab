@@ -52,6 +52,7 @@ export const zhPlan: DictShape<typeof ruPlan> = {
   'plan.caldavLocked': 'Team 及以上套餐可使用 CalDAV',
   'plan.membersFull': '已达到 {plan} 套餐的成员上限（{n}）',
   'plan.boardsFull': '{plan} 套餐最多 {n} 个看板',
+  'plan.wikiPagesFull': '{plan} 套餐最多 {n} 篇 Wiki 页面',
   'plan.lockedOption': '{label} 🔒',
   'camera.quality': '画质',
   'camera.qualityNext': '摄像头将以新画质重新启动',

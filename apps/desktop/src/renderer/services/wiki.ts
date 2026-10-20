@@ -44,6 +44,7 @@ import { useWikiRefs } from '../stores/wikiRefs';
 import { HOME } from '../stores/dms';
 import { useRooms } from '../stores/rooms';
 import { wikiPageUrl } from './links';
+import { reportPlanError } from './plan';
 import { MAX_CONTENT, sendMessage } from './chat';
 import { ensureDm } from './dms';
 
@@ -274,6 +275,8 @@ export async function createPage(ws: string, parentId: string): Promise<void> {
     // A page just created opens for editing, the cursor in its title (lib/wiki/mode.ts).
     useWikiUi.getState().setEditing(nextEditing(useWikiUi.getState().editing, { kind: 'create', id: r.page.id }));
   } catch (e) {
+    // 409 PLAN_LIMIT: the plan's page cap (Free 10, Team 50, Business 500) -> the plan toast.
+    if (reportPlanError(e, ws)) return;
     fail(e, t('wiki.err.create'));
   }
 }
