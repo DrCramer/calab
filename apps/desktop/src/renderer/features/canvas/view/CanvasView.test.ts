@@ -951,3 +951,84 @@ describe('transform controls (ADR-0114)', () => {
     expect(document.querySelector('[data-testid="canvas-menu-ungroup"]')).toBeNull();
   });
 });
+
+describe('the public link viewer (publicCode, ADR-0114 wave 5)', () => {
+  const CODE = 'B'.repeat(43);
+
+  async function mountViewer(relay = new MockRelay()) {
+    const urls: string[] = [];
+    const sockets: Array<{ sent: unknown[] }> = [];
+    const make = relay.socketFactory({ viewer: true });
+    const viewerDeps: CanvasViewDeps = {
+      serverUrl: () => 'https://x.test',
+      getToken: () => Promise.resolve('never-sent'),
+      createSocket: (url) => {
+        urls.push(url);
+        const s = make(url);
+        sockets.push(s);
+        return s;
+      },
+      user: () => ({ id: '', name: '' }),
+    };
+    const m = await mount({ relay, bits: WRITE, id: 'public', props: { publicCode: CODE, deps: viewerDeps } });
+    return { m, urls, sockets };
+  }
+
+  it('reads through the anonymous socket and mounts none of the people chrome; nothing is sent or fetched', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const relay = new MockRelay();
+    new CanvasDoc(relay.doc).create({ kind: 'sticky', x: 0, y: 0, text: 'public' });
+    const { m, urls, sockets } = await mountViewer(relay);
+    await settle(5000);
+    expect(urls).toEqual([`wss://x.test/api/public/canvas/${CODE}/sync`]);
+    expect(m.q('canvas-view')).not.toBeNull();
+    expect(m.q('canvas-zoom')).not.toBeNull();
+    expect(m.q('canvas-status')).not.toBeNull();
+    for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-presence', 'canvas-comments-toggle', 'canvas-minimap', 'canvas-view-only', 'canvas-props']) {
+      expect(m.q(id), id).toBeNull();
+    }
+    // Keys that would edit for a writer (bits say WRITE: the viewer ignores them).
+    m.key('s');
+    m.key('Delete');
+    m.ptr('pointerdown', 100, 100);
+    m.ptr('pointerup', 100, 100);
+    await settle(5000);
+    expect(sockets[0]?.sent).toEqual([]);
+    expect(relay.violations).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(canvasDocHandle('public')).toBeNull();
+    fetchSpy.mockRestore();
+  });
+
+  it('at rest: no frames, no React commits and no timer at all', async () => {
+    const { m } = await mountViewer();
+    await settle(5000);
+    const commits = m.commits.n;
+    expect(vi.getTimerCount()).toBe(0);
+    await settle(60_000);
+    expect(m.commits.n).toBe(commits);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a 4404 from the server reaches onFatal (the page shows its neutral screen)', async () => {
+    const onFatal = vi.fn();
+    const relay = new MockRelay();
+    const urls: string[] = [];
+    const make = relay.socketFactory({ viewer: true });
+    await mount({
+      relay,
+      id: 'public',
+      props: {
+        publicCode: CODE,
+        onFatal,
+        deps: { serverUrl: () => 'https://x.test', getToken: () => Promise.resolve(null), createSocket: (u) => (urls.push(u), make(u)), user: () => ({ id: '', name: '' }) },
+      },
+    });
+    await settle(50);
+    act(() => relay.dropAll(4404));
+    await settle(50);
+    expect(onFatal).toHaveBeenCalledWith(4404);
+    await settle(60_000);
+    expect(urls).toHaveLength(1);
+  });
+});

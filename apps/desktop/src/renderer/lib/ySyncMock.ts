@@ -8,6 +8,8 @@
  *   its doc, UPDATEs applied and relayed with a seq, AWARENESS relayed, SNAPSHOT_POST stored (and
  *   relayed as a SNAPSHOT when `broadcast`), COMPACT_REQUEST on demand, write without a grant →
  *   close 4003, oversized frames → close 4008. Delivery is synchronous, so tests stay simple.
+ *   A viewer socket (`socketFactory({ viewer: true })`, the canvas's public link) gets the SNAPSHOT
+ *   as soon as it opens (no token), never AWARENESS; any message from it closes it 4013.
  */
 import * as Y from "yjs";
 import type { SocketLike } from "./gateway/client";
@@ -101,6 +103,7 @@ interface Conn {
   socket: MockSocket;
   canWrite: boolean;
   authed: boolean;
+  viewer: boolean;
 }
 
 export interface RelayOptions {
@@ -125,18 +128,26 @@ export class MockRelay {
   }
 
   /** `createSocket` for a client: its socket opens on a microtask and talks to this relay. */
-  socketFactory(grant: { canWrite?: boolean } = {}): (url: string) => MockSocket {
+  socketFactory(grant: { canWrite?: boolean; viewer?: boolean } = {}): (url: string) => MockSocket {
     return (url) => {
       const socket = new MockSocket(url);
+      const viewer = grant.viewer ?? false;
       const conn: Conn = {
         socket,
-        canWrite: grant.canWrite ?? true,
+        canWrite: !viewer && (grant.canWrite ?? true),
         authed: false,
+        viewer,
       };
       this.conns.add(conn);
       socket.onSend = (d) => this.onMessage(conn, d);
       socket.onClientClose = () => this.conns.delete(conn);
-      queueMicrotask(() => socket.open());
+      queueMicrotask(() => {
+        socket.open();
+        if (viewer && socket.readyState === 1) {
+          conn.authed = true;
+          socket.receive(encodeSnapshot(this.seq, Y.encodeStateAsUpdate(this.doc)));
+        }
+      });
       return socket;
     };
   }
@@ -170,6 +181,12 @@ export class MockRelay {
   }
 
   private onMessage(conn: Conn, d: Uint8Array | string): void {
+    if (conn.viewer) {
+      this.violations.push("a viewer sent a frame");
+      conn.socket.drop(4013);
+      this.conns.delete(conn);
+      return;
+    }
     if (typeof d === "string") {
       if (conn.authed) return;
       if (!d || (this.opts.accept && !this.opts.accept(d))) {
@@ -225,6 +242,9 @@ export class MockRelay {
   }
 
   private relay(from: Conn, frame: Uint8Array): void {
-    for (const c of this.conns) if (c !== from && c.authed) c.socket.receive(frame);
+    for (const c of this.conns) {
+      if (c === from || !c.authed || (c.viewer && frame[0] === FRAME_AWARENESS)) continue;
+      c.socket.receive(frame);
+    }
   }
 }

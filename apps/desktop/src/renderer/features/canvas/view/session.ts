@@ -7,7 +7,7 @@
  */
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { canvasSyncUrl, createCanvasSync, type CanvasSync } from '../../../lib/canvasSync';
+import { canvasPublicSyncUrl, canvasSyncUrl, createCanvasSync, type CanvasSync } from '../../../lib/canvasSync';
 import type { SocketLike } from '../../../lib/gateway/client';
 import { CanvasEngine, type CanvasPalette, type ClipboardPort } from '../engine';
 import { bindCanvasSync, type CanvasUser, type SyncBinding, type SyncEnginePort } from '../syncBinding';
@@ -42,6 +42,11 @@ export interface SessionOptions {
   palette: CanvasPalette;
   /** No CANVAS_WRITE. */
   readOnly: boolean;
+  /**
+   * The public link's viewer (ADR-0114 wave 5): the anonymous receive-only socket of this code instead of
+   * `/api/canvas/items/{id}/sync` — no token, nothing sent (lib/canvasSync.ts `anonymous`).
+   */
+  publicCode?: string;
   lowPower: boolean;
   reducedMotion: boolean;
   /** The phone viewer: touch editing semantics in the engine. */
@@ -82,8 +87,10 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     editorHost: o.editorHost,
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
   });
+  const code = o.publicCode;
   const sync = createCanvasSync(ydoc, awareness, {
-    url: () => canvasSyncUrl(o.deps.serverUrl(), o.canvasId),
+    url: () => (code ? canvasPublicSyncUrl(o.deps.serverUrl(), code) : canvasSyncUrl(o.deps.serverUrl(), o.canvasId)),
+    ...(code ? { anonymous: true } : {}),
     getToken: o.deps.getToken,
     ...(o.deps.refreshToken ? { refreshToken: o.deps.refreshToken } : {}),
     createSocket: o.deps.createSocket,

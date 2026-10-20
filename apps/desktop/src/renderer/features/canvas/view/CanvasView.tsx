@@ -29,7 +29,7 @@ import { PhoneProps } from './PhoneProps';
 import { PhoneEditHint, PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
-import { StatusBanner } from './StatusBanner';
+import { StatusBanner, ViewerStatus } from './StatusBanner';
 import { TemplatesCard } from './Templates';
 import { TextFormatBar } from './TextFormatBar';
 import { HistoryBar, Toolbar } from './Toolbar';
@@ -60,6 +60,13 @@ export interface CanvasViewProps {
    * bottom tool bar, properties sheet). Off — the view-only viewer as before. Ignored off the phone.
    */
   phoneEdit?: boolean;
+  /**
+   * The public link's viewer `/c/{code}` (ADR-0114 wave 5): the anonymous receive-only socket of this code, view
+   * only whatever `bits` say, and none of the people's chrome — no tools, properties, context menu, comments,
+   * voting, presence, cursors or mini-map; the zoom bar, the timer and the connection notices stay. `phone` picks
+   * the touch viewer.
+   */
+  publicCode?: string;
   /** The server closed the socket for good: 4003 (access changed) or 4404 (gone). The shell may reload the item's rights. */
   onFatal?: (code: number) => void;
   /** Receives the handle (export, fit) once the canvas is open; `getCanvasViewHandle(canvasId)` is the same. */
@@ -80,9 +87,10 @@ function readEnv(): Env {
   };
 }
 
-export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, phone = false, phoneEdit = false, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
+export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, phone = false, phoneEdit = false, publicCode, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
   useLocale();
-  const granted = (bits & CANVAS_BITS.WRITE) !== 0n;
+  const viewer = !!publicCode;
+  const granted = !viewer && (bits & CANVAS_BITS.WRITE) !== 0n;
   const canWrite = (!phone || phoneEdit) && granted;
   const root = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -137,6 +145,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       deps: live.current.deps,
       palette: live.current.palette,
       readOnly: !live.current.canWrite,
+      ...(publicCode ? { publicCode } : {}),
       lowPower: env.lowPower,
       reducedMotion: env.reducedMotion,
       touch: phone,
@@ -154,7 +163,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       setSession(null);
       s.destroy();
     };
-  }, [canvasId, presence, epoch, phone]);
+  }, [canvasId, presence, epoch, phone, publicCode]);
 
   // Grant changes while open (CANVAS_WRITE given or taken away).
   useEffect(() => {
@@ -259,7 +268,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   // «Восстановить версию» (history dialog, main chunk) reaches the live document through this handle. The
   // canvas is never in the trash while this view is mounted (the section shows a banner instead).
   useEffect(() => {
-    if (!session) return undefined;
+    if (!session || viewer) return undefined;
     const h = {
       canvasId,
       restore: (state: Uint8Array): boolean => restoreCanvasState(session.engine.doc, state),
@@ -270,7 +279,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       // Another canvas may have registered its own already (switch): only clear what is ours.
       if (canvasDocHandle(canvasId) === h) setCanvasDocHandle(null);
     };
-  }, [session, canvasId]);
+  }, [session, canvasId, viewer]);
 
   // Right click: select what is under the pointer (or clear), then let the menu open for that.
   const onContextMenuCapture = (e: ReactMouseEvent): void => {
@@ -304,7 +313,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
   const engine = session?.engine ?? null;
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild disabled={phone}>
+      <ContextMenu.Trigger asChild disabled={phone || viewer}>
         <div
           ref={root}
           // Panning and scrolling panels are the browser's; pinch and double-tap zoom of the page are not.
@@ -320,7 +329,9 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
             {/* Other people's cursors: a second layer so their stream never repaints the canvas above (ADR-0113 §4). */}
             <canvas ref={remote} className="pointer-events-none absolute inset-0 block size-full" aria-hidden="true" data-testid="canvas-remote" />
           </div>
-          {session && engine ? (
+          {session && engine && viewer ? (
+            <ViewerChrome session={session} focusCanvas={focusCanvas} gone={gone} phone={phone} />
+          ) : session && engine ? (
             <Chrome
               session={session}
               palette={palette}
@@ -340,12 +351,28 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
           ) : null}
         </div>
       </ContextMenu.Trigger>
-      {engine && !phone ? (
+      {engine && !phone && !viewer ? (
         <CanvasMenu engine={engine} mode={menuMode} canWrite={canWrite} focusCanvas={focusCanvas} onOpenHistory={onOpenHistory} onShare={onShare} />
       ) : null}
     </ContextMenu.Root>
   );
 }
+
+/**
+ * Over the public link's canvas: the zoom bar, the timer and the connection notices. Nothing that reads who is on
+ * the canvas or loads comments and votes (CommentsLayer, Presence, VoteChip are never mounted).
+ */
+function ViewerChrome({ session, focusCanvas, gone, phone }: { session: CanvasSession; focusCanvas: () => void; gone: boolean; phone: boolean }): ReactNode {
+  const { engine, sync, timer } = session;
+  return (
+    <>
+      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={noop} phone={phone} />
+      <ViewerStatus engine={engine} sync={sync} timer={timer} gone={gone} />
+    </>
+  );
+}
+
+const noop = (): void => undefined;
 
 /** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
 function Chrome({

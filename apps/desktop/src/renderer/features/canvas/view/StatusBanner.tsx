@@ -97,3 +97,26 @@ export const StatusBanner = memo(function StatusBanner({
     </div>
   );
 });
+
+/**
+ * The public link's notices (ADR-0114 wave 5): the shared timer and the connection state only — no «Только
+ * просмотр» (the page says it), no follow or vote chips. `gone` is the page's (it shows its own neutral screen).
+ */
+export const ViewerStatus = memo(function ViewerStatus({ engine, sync, timer, gone }: { engine: CanvasEngine; sync: CanvasSync; timer: TimerStore; gone: boolean }): ReactNode {
+  useLocale();
+  const status = useSyncStatus(sync);
+  const connecting = useAfter(status === 'connecting', 600);
+  const offline = status === 'offline';
+  if (gone) return null;
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5" data-testid="canvas-status">
+      <TimerChip store={timer} engine={engine} />
+      {offline || connecting ? (
+        <div role="status" className={cx(PANEL, 'flex items-center gap-2 rounded-full px-3 py-1.5 text-control text-fg')} data-testid={offline ? 'canvas-offline' : 'canvas-connecting'}>
+          {offline ? <WifiOff className="size-4 text-muted" aria-hidden /> : <Loader2 className="size-4 animate-spin text-muted" aria-hidden />}
+          <span>{offline ? t('canvasBoard.status.offline') : t('canvasBoard.status.connecting')}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+});
