@@ -204,7 +204,9 @@ func (s *Service) myTasks(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// search: GET /api/workspaces/{id}/tasks/search?q=&limit= — ⌘K over the tasks the caller sees.
+// search: GET /api/workspaces/{id}/tasks/search?q=&limit=&state= — the tasks the caller sees on
+// every board of the workspace (⌘K, «Мои задачи → Все задачи»); state: open (not in a completed /
+// cancelled status), done (in one) or all (the default).
 func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	wsID, err := httpx.PathUUID(r, "id", "workspace")
 	if err != nil {
@@ -229,6 +231,12 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 		}
 		limit = n
 	}
+	state := r.URL.Query().Get("state")
+	switch state {
+	case "", "all", "open", "done":
+	default:
+		return httpx.BadRequest("state must be open, done or all")
+	}
 	vis, err := VisibleBoards(r.Context(), s.db.Q, wsID, m)
 	if err != nil {
 		return err
@@ -238,7 +246,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 		httpx.Write(w, http.StatusOK, out)
 		return nil
 	}
-	rows, err := searchTasks(r.Context(), s.db.Pool, vis, q, limit)
+	rows, err := searchTasks(r.Context(), s.db.Pool, vis, q, state, limit)
 	if err != nil {
 		return err
 	}
@@ -276,9 +284,13 @@ func SearchMatch(pq searchq.Query, raw string, a *Args) (cond, keyMatch string, 
 	return "(" + strings.Join(parts, " OR ") + ")", keyMatch, rank
 }
 
-// searchTasks finds the visible live tasks by key and words; exact key matches first, then
-// by relevance and recency. A query without a word finds nothing.
-func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q string, limit int) ([]taskRow, error) {
+// doneStatuses is the condition over tasks t of a status of a done type (completed, cancelled).
+const doneStatuses = "t.status_id IN (SELECT st.id FROM board_statuses st WHERE st.type IN ('completed', 'cancelled'))"
+
+// searchTasks finds the visible live tasks by key and words — of a done status (state done),
+// of another (open) or any (all, "") — exact key matches first, then by relevance and recency.
+// A query without a word finds nothing.
+func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q, state string, limit int) ([]taskRow, error) {
 	pq, err := searchq.Parse(q)
 	if err != nil {
 		return nil, nil //nolint:nilerr // only punctuation: no match
@@ -286,6 +298,12 @@ func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q string, lim
 	var a Args
 	visible := vis.Cond(&a)
 	cond, key, rank := SearchMatch(pq, q, &a)
+	switch state {
+	case "open":
+		cond += " AND NOT " + doneStatuses
+	case "done":
+		cond += " AND " + doneStatuses
+	}
 	order := rank() + " DESC, t.updated_at DESC, t.id DESC"
 	if key != "false" { // a constant cannot be an ORDER BY item
 		order = key + " DESC, " + order

@@ -115,9 +115,9 @@ function useOrder(boardId: string, workspaceId: string, taskId: string): readonl
   return kept.fresh === fresh ? kept.order : keepOrder(kept.order, fresh, taskId);
 }
 
-/** «Мои задачи» rows (scopes and «Непрочитанное»): short, unvirtualised, so the DOM is the order. */
+/** «Мои задачи» rows (scopes, «Непрочитанное», «Все задачи»): short, unvirtualised, so the DOM is the order. */
 function myTasksOrder(): string[] {
-  const ids = [...document.querySelectorAll<HTMLElement>('[data-testid=boards-view] :is([data-testid=my-tasks-view], [data-testid=unread-view]) [data-task]')].map((n) => n.dataset.task ?? '');
+  const ids = [...document.querySelectorAll<HTMLElement>('[data-testid=boards-view] :is([data-testid=my-tasks-view], [data-testid=unread-view], [data-testid=all-tasks-view]) [data-task]')].map((n) => n.dataset.task ?? '');
   return [...new Set(ids.filter(Boolean))];
 }
 

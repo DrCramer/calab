@@ -323,7 +323,7 @@ PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read
 GET    /api/tasks/{id}/activity?before&limit&only    лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7); only=journal — только журнал (с comment*), only=comments — только сообщения (ADR-0091)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
 GET    /api/me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1&cursor
-GET    /api/workspaces/{id}/tasks/search?q&limit     ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062)
+GET    /api/workspaces/{id}/tasks/search?q&limit&state  ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062); state=open|done|all (по умолчанию all) — по типу статуса completed/cancelled
 ```
 
 - Комментарии — сообщения комнаты `task.room_id` через обычные `/api/rooms/{room_id}/messages*`, реакции, стикеры, закрепы (`EDIT_TASKS`), поиск, пересылка, прочтение и typing; `@<user_id>` подписывает и уведомляет упомянутого, если он видит доску.
