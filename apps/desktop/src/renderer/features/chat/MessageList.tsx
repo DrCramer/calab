@@ -8,7 +8,7 @@ import { plural, t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead, reloadRoom, STALE_LOAD_MS } from '../../services/chat';
 import { log } from '../../lib/log';
-import { EMPTY_ROOM_MESSAGES, WINDOW_CAP, findByKey, firstUnreadIndex, keyIndex, lastSentId as lastSentOf, useMessages, type ChatMessage } from '../../stores/messages';
+import { EMPTY_ROOM_MESSAGES, WINDOW_CAP, findByKey, firstUnreadIndex, keyIndex, lastSentId as lastSentOf, opensAwayFromPresent, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { streamCoversChat, useVoice } from '../../stores/voice';
@@ -17,7 +17,7 @@ import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
 import { createBottomPin, initialFeedLocation, isOwnSend } from './lastRowPin';
-import { readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
+import { hasFeedPosition, readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
 import { useUi } from '../../stores/ui';
 import { DisclosureScope } from '../../lib/disclosure';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
@@ -59,7 +59,16 @@ export function MessageList({
     const r = s.rooms[room.id];
     return !!r && r.items.length === 0 && !r.hasMoreBefore && !r.hasMoreAfter;
   });
-  if (!loaded) return <FirstLoad roomId={room.id} error={error} />;
+  // CBF-31: a window left away from the present (a jump) is still in the store when the room is
+  // opened again — the present is loaded before the feed mounts, so it opens at the latest message.
+  // Decided once per open (this shell is keyed by room): a later jump in the open feed is left alone.
+  const detached = useMessages((s) => s.rooms[room.id]?.hasMoreAfter ?? false);
+  const [reopen, setReopen] = useState(() => opensAwayFromPresent(useMessages.getState().rooms[room.id], hasFeedPosition(room.id)));
+  if (reopen && !detached) setReopen(false);
+  useEffect(() => {
+    if (reopen) void loadPresent(room.id);
+  }, [reopen, room.id]);
+  if (!loaded || reopen) return <FirstLoad roomId={room.id} error={error} present={reopen} />;
   if (empty) {
     return <EmptyRoom workspaceId={workspaceId} room={room} perms={perms} underStage={underStage} />;
   }
@@ -71,7 +80,7 @@ export function MessageList({
  * or once the load has been pending STALE_LOAD_MS (docs/09 #146 — never a spinner forever). One
  * timer while this is shown, nothing after.
  */
-function FirstLoad({ roomId, error }: { roomId: string; error: string | null }): ReactNode {
+function FirstLoad({ roomId, error, present }: { roomId: string; error: string | null; present: boolean }): ReactNode {
   const [attempt, setAttempt] = useState(0);
   // The attempt (room + retry count) whose load outlived STALE_LOAD_MS.
   const key = `${roomId}:${attempt}`;
@@ -83,7 +92,8 @@ function FirstLoad({ roomId, error }: { roomId: string; error: string | null }):
   const slow = slowKey === key;
   const retry = (): void => {
     setAttempt((n) => n + 1);
-    void reloadRoom(roomId);
+    // The room is loaded, only away from the present (CBF-31): reloading it would be a no-op.
+    void (present ? loadPresent(roomId) : reloadRoom(roomId));
   };
   return (
     <div className="grid min-h-0 flex-1 place-items-center bg-feed">
@@ -219,7 +229,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // firstItemIndex; the store keeps the window's base exact for every change.
   const firstIndex = START_INDEX + state.base;
 
-  // Opens at the first unread message (docs/09 #39), otherwise at the last row's bottom.
+  // Opens at the last row's bottom, always the present (CBF-31: never at the first unread).
   // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
   // edit), a new message or the composer growing keep it there while stuck (lastRowPin.ts).
   // Back from a screen pushed over the room (phone: members, settings…): where the reader left it.
@@ -227,7 +237,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     const pos = takeFeedPosition(roomId);
     const at = pos ? keyIndex(items).get(pos.key) : undefined;
     if (pos && at !== undefined) return { location: { index: at, align: 'start' as const, offset: -pos.offset }, stuck: false };
-    return initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter);
+    return initialFeedLocation(state.hasMoreAfter);
   });
   const [bottomPin] = useState(() => createBottomPin(openStuck));
 

@@ -305,14 +305,10 @@ describe('createBottomPin: an unfold the reader clicked lets go (release())', ()
 
 describe('initialFeedLocation', () => {
   it('no unread: the last row aligned by its bottom (a tall last message is not cut off), stuck', () => {
-    expect(initialFeedLocation(-1, false)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: true });
-  });
-
-  it('first unread: its top under the banner, not stuck (opening must not mark it read)', () => {
-    expect(initialFeedLocation(12, false)).toEqual({ location: { index: 12, align: 'start', offset: -40 }, stuck: false });
+    expect(initialFeedLocation(false)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: true });
   });
 
   it('a window away from the present opens at its last row but does not stick', () => {
-    expect(initialFeedLocation(-1, true).stuck).toBe(false);
+    expect(initialFeedLocation(true)).toEqual({ location: { index: 'LAST', align: 'end' }, stuck: false });
   });
 });

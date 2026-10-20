@@ -22,6 +22,11 @@ export function saveFeedPosition(roomId: string, pos: FeedPosition | null): void
   else saved.delete(roomId);
 }
 
+/** Whether the room has a saved position (its feed restores it on mount). */
+export function hasFeedPosition(roomId: string): boolean {
+  return saved.has(roomId);
+}
+
 /** The saved position of the room, forgotten once read (a later open starts as usual). */
 export function takeFeedPosition(roomId: string): FeedPosition | undefined {
   const pos = saved.get(roomId);

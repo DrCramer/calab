@@ -109,20 +109,21 @@ describe('room first load (docs/09 #146)', () => {
     expect(st(B)?.loaded).toBe(true);
   });
 
-  it('an unread window whose «after» page is empty falls back to the newest page', async () => {
+  it('with unread messages the room still loads its newest page (CBF-31: opens at the latest message)', async () => {
     useRooms.setState({ readState: { [A]: '0001' }, lastMessage: { [A]: '0005' } });
-    list.mockResolvedValueOnce({ messages: [], hasMore: false }).mockResolvedValueOnce(page(A, '0001'));
+    list.mockResolvedValueOnce({ messages: ['0005', '0004', '0003', '0002', '0001'].map((id) => msg(A, id)), hasMore: true });
     await openRoom(A);
-    expect(list.mock.calls[0]?.[1]).toMatchObject({ after: '0001' });
-    expect(st(A)?.loaded).toBe(true);
-    expect(st(A)?.loading).toBe(false);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(list.mock.calls[0]?.[1]).not.toHaveProperty('after');
+    expect(st(A)?.hasMoreAfter).toBe(false);
+    expect(st(A)?.items.at(-1)?.key).toBe('0005');
   });
 
-  it('an unread window that stalls falls back, and the fallback timing out shows the error', async () => {
+  it('with unread messages a stalled load ends in the error state', async () => {
     useRooms.setState({ readState: { [A]: '0001' }, lastMessage: { [A]: '0005' } });
     list.mockImplementation((_r, _p, signal) => hang(signal));
     const p = openRoom(A);
-    await vi.advanceTimersByTimeAsync(2 * LOAD_TIMEOUT_MS + 2);
+    await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS + 1);
     await p;
     expect(st(A)?.loading).toBe(false);
     expect(st(A)?.error).toBeTruthy();
