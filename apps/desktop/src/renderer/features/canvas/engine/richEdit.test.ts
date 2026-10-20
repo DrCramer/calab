@@ -187,3 +187,35 @@ describe('formatting while editing', () => {
     expect(r.engine.doc.getRich(id).fmt?.spans).toEqual([{ from: 3, to: 6, f: F_BOLD }]);
   });
 });
+
+describe('templates', () => {
+  const tr = (key: string, p?: Record<string, string | number>): string => (p ? `${key} ${Object.values(p).join(',')}` : key);
+  it('insertTemplate puts the objects at the center of the view, selects them, and is one undo step', () => {
+    const r = rig();
+    const steps = r.engine.doc.undo.undoStack.length;
+    const view = r.engine.visibleWorld();
+    const ids = r.engine.insertTemplate('kanban', tr);
+    expect(ids).toHaveLength(12);
+    expect(r.engine.selection.size).toBe(12);
+    const b = r.engine.scene.bounds(ids);
+    expect(b ? b.x + b.w / 2 : 0).toBeCloseTo(view.x + view.w / 2);
+    expect(b ? b.y + b.h / 2 : 0).toBeCloseTo(view.y + view.h / 2);
+    r.engine.doc.undo.undo();
+    expect(r.engine.doc.count).toBe(0);
+    expect(r.engine.doc.undo.undoStack.length).toBe(steps);
+  });
+  it('refuses on a read-only canvas', () => {
+    const r = rig({ readOnly: true });
+    expect(r.engine.insertTemplate('flow', tr)).toEqual([]);
+    expect(r.engine.doc.count).toBe(0);
+  });
+  it('connectors of a template follow the (moved) shapes', () => {
+    const r = rig();
+    const ids = r.engine.insertTemplate('flow', tr);
+    const conn = ids.map((i) => r.engine.scene.get(i)).find((o) => o?.kind === 'connector');
+    const before = conn?.kind === 'connector' ? [...conn.points] : [];
+    r.engine.doc.patch(ids[0] ?? '', { x: (r.engine.scene.get(ids[0] ?? '')?.x ?? 0) - 200 });
+    const after = r.engine.scene.get(conn?.id ?? '');
+    expect(after?.kind === 'connector' ? after.points[0] : 0).not.toBe(before[0]);
+  });
+});

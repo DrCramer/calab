@@ -25,6 +25,7 @@ import { PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
 import { StatusBanner } from './StatusBanner';
+import { TemplatesCard } from './Templates';
 import { TextFormatBar } from './TextFormatBar';
 import { HistoryBar, Toolbar } from './Toolbar';
 import { appDeps } from './defaultDeps';
@@ -358,6 +359,7 @@ function Chrome({
           <HistoryBar engine={engine} focusCanvas={focusCanvas} />
           <PropsPanel engine={engine} palette={palette} focusCanvas={focusCanvas} />
           <TextFormatBar engine={engine} />
+          <TemplatesCard engine={engine} sync={sync} focusCanvas={focusCanvas} />
         </>
       ) : null}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />

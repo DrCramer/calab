@@ -9,6 +9,7 @@ import { CanvasDoc, newId } from '../../../lib/canvas/doc';
 import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
 import { Scene } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
+import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
 import { LABEL_SIZE, TEXT_FONT, TextLayouter, boxFontSize, estimateMeasure, fontOf, nearestToken, type FontToken, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import {
@@ -865,6 +866,23 @@ export class CanvasEngine implements Core {
     });
     this.sync();
     return true;
+  }
+
+  /**
+   * Inserts a built-in template centered on the visible area, in one transaction (one undo step), and selects it.
+   * Returns the new ids; [] when the canvas has no room (the 5000-object limit) or cannot be edited.
+   */
+  insertTemplate(id: TemplateId, tr: TemplateText): string[] {
+    if (!this.canEdit()) return [];
+    const view = this.visibleWorld();
+    const items = buildTemplate(id, { x: view.x + view.w / 2, y: view.y + view.h / 2 }, tr, newId);
+    this.doc.checkpoint();
+    const ids = this.doc.createMany(items);
+    if (ids.length > 0) {
+      this.setSelection(ids);
+      this.setTool('select');
+    }
+    return ids;
   }
 
   /** The text size of the object under edit (the format bar's S / M / L / XL): the object changes, the textarea follows. */

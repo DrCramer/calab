@@ -708,6 +708,49 @@ describe('transform controls (ADR-0114)', () => {
     expect(delta[delta.length - 1]).toEqual({ insert: '\n', attributes: { list: 'bullet' } });
   });
 
+  it('an empty canvas offers the templates; one click inserts it, selects it and the card goes; the toolbar menu has the same five', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    await settle(100);
+    expect(m.q('canvas-templates-card')).not.toBeNull();
+    expect(m.host.querySelectorAll('[data-testid^="canvas-template-"]').length).toBeGreaterThanOrEqual(5);
+    expect(m.q('canvas-templates-button')).not.toBeNull();
+    act(() => m.q('canvas-template-retro')?.click());
+    await settle(400);
+    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(12);
+    expect(m.q('canvas-templates-card')).toBeNull();
+    expect(m.q('canvas-props')).not.toBeNull(); // the inserted set is selected
+  });
+
+  it('the templates card can be closed, and the toolbar menu lists the templates', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    await settle(100);
+    act(() => m.q('canvas-templates-close')?.click());
+    expect(m.q('canvas-templates-card')).toBeNull();
+    await act(async () => {
+      m.q('canvas-templates-button')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }));
+      m.q('canvas-templates-button')?.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const items = document.querySelectorAll('[data-testid="canvas-templates-menu"] [data-testid^="canvas-template-"]');
+    expect(items).toHaveLength(5);
+    act(() => (items[2] as HTMLElement).click());
+    await settle(400);
+    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(8); // SWOT
+  });
+
+  it('a canvas that has objects shows no templates card, and it stays out of the way while the document loads', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay });
+    a.key('s');
+    a.ptr('pointerdown', 400, 400);
+    a.ptr('pointerup', 400, 400);
+    escapeEditor(a);
+    await settle(400);
+    expect(a.q('canvas-templates-card')).toBeNull();
+  });
+
   it('rotating and locking do not re-render React per frame; a turned object is stored with its angle', async () => {
     const relay = new MockRelay();
     const m = await mount({ relay });
