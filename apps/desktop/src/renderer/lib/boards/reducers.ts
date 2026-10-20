@@ -146,6 +146,16 @@ function keepViewer(prev: Task | undefined, t: Task): Task {
 }
 
 /**
+ * `attachments` come only with the full task (GET /tasks/{id}); TASK_UPDATE, lists and PATCH
+ * answers carry just `attachment_count`. Such a task must not blank the loaded files: keep them
+ * while the count still matches (a full answer with fewer files has a smaller count and wins).
+ */
+function keepAttachments(prev: Task | undefined, t: Task): Task {
+  if (!prev || t.attachments.length || !prev.attachments.length || t.attachmentCount !== prev.attachments.length) return t;
+  return { ...t, attachments: prev.attachments };
+}
+
+/**
  * The task's milestones (ADR-0063) travel in every task: unchanged ones keep their objects, so a
  * TASK_UPDATE re-renders only the milestone rows / diamonds that changed.
  */
@@ -165,7 +175,7 @@ function keepMilestones(prev: Task | undefined, t: Task): Task {
 export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
   if (task.archivedAt) return removeTask(d, task.id, task);
   const prev = d.tasks[task.id];
-  const next = keepMilestones(prev, keepViewer(prev, task));
+  const next = keepMilestones(prev, keepAttachments(prev, keepViewer(prev, task)));
   const out: Partial<BoardsData> = { tasks: { ...d.tasks, [task.id]: next } };
   const cc = keepCounts(d.checkCounts, prev, next);
   if (cc !== d.checkCounts) out.checkCounts = cc;
