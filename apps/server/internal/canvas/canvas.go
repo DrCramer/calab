@@ -36,6 +36,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
@@ -57,6 +58,9 @@ type Service struct {
 	ev events.Publisher
 	// Now is the clock (tests move it).
 	Now func() time.Time
+
+	// CommentLimit: a per-user budget of comment writes (ADR-0114 wave 4); nil = unlimited.
+	CommentLimit *redisx.RateLimiter
 
 	sync *ysync.Hub
 }
@@ -100,6 +104,11 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("POST /api/canvas/items/{id}/take-over", s.takeOver)
 	h("GET /api/canvas/items/{id}/versions", s.versions)
 	h("GET /api/canvas/items/{id}/versions/{vid}", s.version)
+	h("GET /api/canvas/items/{id}/comments", s.listComments)
+	h("POST /api/canvas/items/{id}/comments", s.createComment)
+	h("GET /api/canvas/items/{id}/comments/mention-access", s.mentionAccess)
+	h("PATCH /api/canvas/comments/{id}", s.updateComment)
+	h("DELETE /api/canvas/comments/{id}", s.deleteComment)
 	if s.sync != nil {
 		mux.Handle("GET /api/canvas/items/{id}/sync", http.HandlerFunc(s.sync.Serve))
 	}
