@@ -1,19 +1,38 @@
-import { HANDLE_IDS, handlePoint, type Point, type Rect } from '../../../lib/canvas/geometry';
+import { DEG, HANDLE_IDS, handlePoint, rectCenter, type Point, type Rect } from '../../../lib/canvas/geometry';
 import type { Guide } from '../../../lib/canvas/snap';
 import type { ConnectorRec } from '../../../lib/canvas/types';
 import type { Ctx2D } from './draw';
 import type { CanvasPalette } from './palette';
 
 export const HANDLE_PX = 8;
+/** The rotation handle hangs this many screen px above the top side of the frame. */
+export const ROTATE_OFFSET_PX = 26;
+
+/** An outline of a (possibly rotated) box: its unrotated frame and the angle. */
+export interface Outline {
+  rect: Rect;
+  rot: number;
+}
+
+/**
+ * The selection frame: the single box's own (rotated) frame, or the circumscribed rect of several. `resize` shows
+ * the eight handles, `rotate` the rotation handle; both off (locked objects, a group's resize) leaves just the frame.
+ */
+export interface SelFrame {
+  rect: Rect;
+  rot: number;
+  resize: boolean;
+  rotate: boolean;
+}
 
 /** Transient, per-gesture decoration drawn over the content layer (never part of the document). */
 export interface OverlayState {
   /** Outlines of selected boxes. */
-  outlines: readonly Rect[];
+  outlines: readonly Outline[];
   /** Selected connectors: highlighted path + end handles. */
   connectors: readonly ConnectorRec[];
-  /** Box with the 8 resize handles (selection bounds); null when nothing resizable is selected. */
-  group: Rect | null;
+  /** Selection frame with its handles; null when no box is selected. */
+  group: SelFrame | null;
   marquee: Rect | null;
   guides: readonly Guide[];
   /** Rubber band while placing a new object. */
@@ -21,7 +40,7 @@ export interface OverlayState {
   /** Connector being drawn / retargeted: polyline in world units. */
   wire: readonly number[] | null;
   /** Glue target under the cursor while wiring: rect + its four anchors. */
-  glue: { rect: Rect; anchors: readonly Point[]; active: Point | null } | null;
+  glue: { rect: Rect; /** Rotation of the glue target. */ rot?: number; anchors: readonly Point[]; active: Point | null } | null;
 }
 
 export const emptyOverlay = (): OverlayState => ({ outlines: [], connectors: [], group: null, marquee: null, guides: [], ghost: null, wire: null, glue: null });
@@ -35,7 +54,7 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
   ctx.lineJoin = 'miter';
   ctx.lineWidth = px * 1.5;
   ctx.strokeStyle = p.accent;
-  for (const r of o.outlines) ctx.strokeRect(r.x, r.y, r.w, r.h);
+  for (const r of o.outlines) strokeTurned(ctx, r.rect, r.rot);
 
   for (const c of o.connectors) {
     const pts = c.points;
@@ -51,10 +70,26 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
   }
 
   if (o.group) {
+    const g = o.group;
+    const c = rectCenter(g.rect);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(g.rot * DEG);
+    ctx.translate(-c.x, -c.y);
     ctx.lineWidth = px * 1.5;
     ctx.strokeStyle = p.accent;
-    ctx.strokeRect(o.group.x, o.group.y, o.group.w, o.group.h);
-    for (const h of HANDLE_IDS) drawHandle(ctx, handlePoint(o.group, h), p, px, false);
+    ctx.strokeRect(g.rect.x, g.rect.y, g.rect.w, g.rect.h);
+    if (g.rotate) {
+      const top = { x: g.rect.x + g.rect.w / 2, y: g.rect.y };
+      const knob = { x: top.x, y: top.y - ROTATE_OFFSET_PX * px };
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(knob.x, knob.y + (HANDLE_PX / 2 + 1) * px);
+      ctx.stroke();
+      drawHandle(ctx, knob, p, px, true);
+    }
+    if (g.resize) for (const h of HANDLE_IDS) drawHandle(ctx, handlePoint(g.rect, h), p, px, false);
+    ctx.restore();
   }
 
   if (o.marquee) {
@@ -76,7 +111,7 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
   if (o.glue) {
     ctx.lineWidth = px * 2;
     ctx.strokeStyle = p.accent;
-    ctx.strokeRect(o.glue.rect.x, o.glue.rect.y, o.glue.rect.w, o.glue.rect.h);
+    strokeTurned(ctx, o.glue.rect, o.glue.rot ?? 0);
     for (const a of o.glue.anchors) {
       const active = o.glue.active !== null && a.x === o.glue.active.x && a.y === o.glue.active.y;
       ctx.beginPath();
@@ -113,6 +148,19 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
     }
     ctx.stroke();
   }
+}
+
+function strokeTurned(ctx: Ctx2D, r: Rect, rot: number): void {
+  if (!rot) {
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    return;
+  }
+  const c = rectCenter(r);
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.rotate(rot * DEG);
+  ctx.strokeRect(-r.w / 2, -r.h / 2, r.w, r.h);
+  ctx.restore();
 }
 
 function drawHandle(ctx: Ctx2D, at: Point, p: CanvasPalette, px: number, round: boolean): void {

@@ -1,8 +1,8 @@
-import { polylineMidpoint, rectsIntersect, type Rect } from '../../../lib/canvas/geometry';
+import { polylineMidpoint, rectCenter, rectsIntersect, DEG, type Rect } from '../../../lib/canvas/geometry';
 import { endDirection } from '../../../lib/canvas/route';
 import { contentRect, STICKY_RADIUS, traceRounded, traceShape } from '../../../lib/canvas/shapes';
 import { LABEL_SIZE, SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
-import type { BoxRec, ConnectorRec, ObjectRec } from '../../../lib/canvas/types';
+import { aabb, type BoxRec, type ConnectorRec, type ObjectRec } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -75,6 +75,21 @@ export function drawBackground(ctx: Ctx2D, p: CanvasPalette, r: Rect, scale: num
 export function drawObject(ctx: Ctx2D, o: ObjectRec, env: DrawEnv): void {
   // Sub-pixel objects are not worth a draw call.
   if (o.kind !== 'connector' && o.w * env.scale < 0.6 && o.h * env.scale < 0.6) return;
+  if (o.kind !== 'connector' && o.rot) {
+    // A rotated box is drawn in its own frame: the context turns about the center, nothing else knows.
+    const c = rectCenter(o);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(o.rot * DEG);
+    ctx.translate(-c.x, -c.y);
+    drawBody(ctx, o, env);
+    ctx.restore();
+    return;
+  }
+  drawBody(ctx, o, env);
+}
+
+function drawBody(ctx: Ctx2D, o: ObjectRec, env: DrawEnv): void {
   switch (o.kind) {
     case 'sticky':
       drawSticky(ctx, o, env);
@@ -229,5 +244,5 @@ function drawArrowHead(ctx: Ctx2D, x: number, y: number, d: { x: number; y: numb
 
 /** Draws `objects` (already z-sorted) that touch `region`. */
 export function drawObjects(ctx: Ctx2D, objects: readonly ObjectRec[], region: Rect, env: DrawEnv): void {
-  for (const o of objects) if (rectsIntersect(o, region) || o.kind === 'connector') drawObject(ctx, o, env);
+  for (const o of objects) if (o.kind === 'connector' || rectsIntersect(aabb(o), region)) drawObject(ctx, o, env);
 }

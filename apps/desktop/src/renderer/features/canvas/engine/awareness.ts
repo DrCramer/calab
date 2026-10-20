@@ -1,6 +1,7 @@
 import type { Camera } from '../../../lib/canvas/camera';
-import { rectInflate, rectUnion, type Point, type Rect } from '../../../lib/canvas/geometry';
+import { DEG, rectCenter, rectInflate, rectUnion, type Point, type Rect } from '../../../lib/canvas/geometry';
 import type { Scene } from '../../../lib/canvas/scene';
+import { aabb } from '../../../lib/canvas/types';
 import type { Ctx2D } from './draw';
 import type { CanvasPalette } from './palette';
 
@@ -95,8 +96,16 @@ export class AwarenessLayer {
         const o = scene.get(id);
         if (!o) continue;
         const r = rectInflate(o, 2 * px);
-        ctx.strokeRect(r.x, r.y, r.w, r.h);
-        box = box ? rectUnion(box, rectInflate(r, px)) : rectInflate(r, px);
+        if (o.kind !== 'connector' && o.rot) {
+          const c = rectCenter(r);
+          ctx.save();
+          ctx.translate(c.x, c.y);
+          ctx.rotate(o.rot * DEG);
+          ctx.strokeRect(-r.w / 2, -r.h / 2, r.w, r.h);
+          ctx.restore();
+        } else ctx.strokeRect(r.x, r.y, r.w, r.h);
+        const b = rectInflate(aabb(o), 3 * px);
+        box = box ? rectUnion(box, b) : b;
       }
     }
     for (const t of this.peers.values()) {
