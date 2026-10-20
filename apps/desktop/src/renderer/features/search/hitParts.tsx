@@ -1,5 +1,5 @@
 import { RoomType, type SearchHit } from '@calaba/protocol';
-import { AudioLines, BookOpen, CalendarDays, FileText, Folder, Hash, Image, MessageSquareText, NotebookText, Paperclip, SquareCheckBig } from 'lucide-react';
+import { AudioLines, BookOpen, CalendarDays, FileText, Folder, Hash, Image, MessageSquareText, NotebookText, Paperclip, Shapes, SquareCheckBig } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { RoomIcon } from '../../components/RoomIcon';
 import { cx } from '../../components/ui';
@@ -28,6 +28,7 @@ export const SECTION_LABEL: Readonly<Record<SectionName, MessageKey>> = {
   notes: 'search.sec.notes',
   transcripts: 'search.sec.transcripts',
   wiki: 'search.sec.wiki',
+  canvas: 'search.sec.canvas',
   disk: 'search.sec.disk',
 };
 
@@ -60,6 +61,8 @@ export function HitIcon({ section, hit, className }: { section: SectionName; hit
       </span>
     );
   }
+  // A canvas folder: a folder, as in the Canvas tree.
+  if (hit.ref.case === 'canvas' && hit.ref.value.folder) return <Folder {...p} />;
   // A Disk item: the Disk's glyph of its kind (folder, picture, sheet…), in the row's tone.
   if (hit.ref.case === 'disk') return <DiskKindGlyph folder={hit.ref.value.folder} mime={hit.ref.value.mime} name={hit.title} className={className} />;
   if (hit.ref.case === 'message' && useRooms.getState().byId[hit.ref.value.roomId]?.type === RoomType.DM) return <MessageSquareText {...p} />;
@@ -84,6 +87,8 @@ export function HitIcon({ section, hit, className }: { section: SectionName; hit
       return <AudioLines {...p} />;
     case 'wiki':
       return <BookOpen {...p} />;
+    case 'canvas':
+      return <Shapes {...p} />;
     case 'disk':
       return <Folder {...p} />;
   }

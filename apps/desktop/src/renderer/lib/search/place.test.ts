@@ -54,6 +54,10 @@ describe('placeLine', () => {
     expect(placeLine(hit({ ref: { case: 'wiki', value: { pageId: 'p', icon: '', path: ['Инженерия', 'Бэкенд'] } } }), ctx)).toBe('Инженерия / Бэкенд · 3 окт.');
     expect(placeLine(hit({ ref: { case: 'wiki', value: { pageId: 'p', icon: '' } } }), ctx)).toBe('3 окт.');
   });
+  it('canvas: the folders above it · date', () => {
+    expect(placeLine(hit({ ref: { case: 'canvas', value: { itemId: 'c', path: ['Продукт', 'Планы'] } } }), ctx)).toBe('Продукт / Планы · 3 окт.');
+    expect(placeLine(hit({ workspaceId: 'w2', ref: { case: 'canvas', value: { itemId: 'c', folder: true } } }), ctx)).toBe('3 окт. · Дизайн');
+  });
   it('Disk file: Disk / folders · size · date; a folder has no size', () => {
     expect(placeLine(hit({ ref: { case: 'disk', value: { itemId: 'i', fileId: 'f', size: 1200n, path: ['Отчёты', '2026'] } } }), ctx)).toBe('Диск / Отчёты / 2026 · 1200 Б · 3 окт.');
     expect(placeLine(hit({ workspaceId: 'w2', ref: { case: 'disk', value: { itemId: 'i', folder: true } } }), ctx)).toBe('Диск · 3 окт. · Дизайн');

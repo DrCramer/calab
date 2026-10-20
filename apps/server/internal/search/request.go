@@ -40,6 +40,7 @@ var typeNames = []struct {
 	{"transcripts", v1.SearchType_SEARCH_TYPE_TRANSCRIPTS},
 	{"wiki", v1.SearchType_SEARCH_TYPE_WIKI},
 	{"disk", v1.SearchType_SEARCH_TYPE_DISK},
+	{"canvas", v1.SearchType_SEARCH_TYPE_CANVAS},
 }
 
 func parseType(s string) (v1.SearchType, bool) {

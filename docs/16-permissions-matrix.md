@@ -183,6 +183,19 @@
 | Переименовать, иконка, обложка, перенести, в корзину, доступ, ссылка | владелец страницы или `WIKI_MANAGE` (`perm.WikiStructureAllowed`) | `internal/wiki` (W2) | по `WikiPage.my_bits` (W4) |
 | Срок корзины, очистка всей корзины, чужие ссылки, журнал вики | `WIKI_MANAGE` | `internal/wiki` (W2) | (W4) |
 
+## Холст (ADR-0113)
+
+Биты `CANVAS_VIEW` (41) / `CANVAS_WRITE` (42) / `CANVAS_MANAGE` (43) — как у вики: уровень пространства, вне `ALL_PERMISSIONS`, у `member` по умолчанию VIEW + WRITE (миграция 00107), `ADMINISTRATOR` даёт все три, гостям — только личный allow на элементе; боты — как участники. Права на элемент — `perm.ComputeCanvasItem` (общий `perm.ComputeTree`), нет `CANVAS_VIEW` — 404. Приватный холст или папка (`restricted`) — как приватная страница вики: администраторы, `CANVAS_MANAGE` и владелец пространства без переопределения (и без «Владелец видит приватное») его не видят; `perm.Detached` отцепляет невидимую приватную подпапку при удалении/переносе предка. «Только просмотр» — отсутствие `CANVAS_WRITE`: сокет `/sync` не принимает UPDATE. Публичной ссылки в v1 нет. Боты в v1 — только люди: группа `botDeny` «Холст v1» в `internal/app/botroutes.go` (ADR-0109), SDK для холста нет, сокет `/sync` отклоняет токены ботов кодом 4003; когда ботам дадут холст, группа станет `botAllow` по битам `CANVAS_*`. Тесты: векторы `canvas:` в `proto/testdata/permissions.json` (Go `internal/perm`, TS `permissions.test.ts`).
+
+| Действие | Бит | Сервер | Клиент |
+|---|---|---|---|
+| Раздел «Холст», дерево, открыть холст, история версий | `CANVAS_VIEW` на элемент | `internal/canvas` | `features/canvas` |
+| Править содержимое (`/sync` с приёмом правок), создать папку или холст | `CANVAS_WRITE` на элемент (на верхнем уровне — в пространстве) | `internal/canvas` | `features/canvas` (без `WRITE` — «Только просмотр») |
+| Переименовать, перенести, в корзину, доступ | владелец элемента или `CANVAS_MANAGE` (`perm.CanvasStructureAllowed`); перенос — ещё `CANVAS_WRITE` в целевой папке | `internal/canvas` | по `CanvasItem.my_bits` (`canvasStructureAllowed`) |
+| Срок корзины, очистка всей корзины, журнал холста | `CANVAS_MANAGE` | `internal/canvas` | `features/canvas` (настройки, корзина) |
+| События `CANVAS_ITEM_UPSERT` / `REMOVE`, поиск `canvas` | `CANVAS_VIEW` на элемент (цепочка доступа, `perm.ComputeCanvasItemIn`) | `gateway` / `search` | `features/canvas` (по событиям дерева) |
+| Телефон: просмотр холста (пан, щипок) | `CANVAS_VIEW` на элемент; правки на телефоне нет ни у кого (v1, ADR-0113 §5) | `internal/canvas` (сокет как на десктопе) | `features/canvas/PhoneCanvas` (клиент — `readOnly`) |
+
 ## Телефония
 
 | Действие | Бит | Сервер | Клиент |

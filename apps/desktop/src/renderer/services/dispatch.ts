@@ -75,6 +75,9 @@ import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsRead
 import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
 import { useDisk } from '../stores/disk';
 import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
+import { onCanvasItemRemove, onCanvasItemUpsert } from './canvas';
+import { restoreSectionOnBoot } from '../features/shell/sectionNav';
+import { useCanvas } from '../stores/canvas';
 import { useWiki } from '../stores/wiki';
 import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
@@ -231,6 +234,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      // The first READY of this page: back on the section the workspace was left on (ADR-0074 §1).
+      restoreSectionOnBoot();
       // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
       onCalendarReady(r.workspaces);
       // Boards (ADR-0042): loaded boards and the open task reloaded, a pending /b/ or /t/ link.
@@ -332,6 +337,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'wikiPageRemove':
       onWikiPageRemove(e.value);
       return;
+    // Canvas (ADR-0113 §6): the tree's structure follows; the content only through /sync.
+    case 'canvasItemUpsert':
+      onCanvasItemUpsert(e.value);
+      return;
+    case 'canvasItemRemove':
+      onCanvasItemRemove(e.value);
+      return;
     case 'billingUpdate':
       onBillingUpdate(e.value.workspaceId, e.value.revision);
       return;
@@ -348,6 +360,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       dropWorkspaceBoards(id);
       useDisk.getState().dropWorkspace(id);
       useWiki.getState().dropWorkspace(id);
+      useCanvas.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();

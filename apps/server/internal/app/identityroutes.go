@@ -55,6 +55,8 @@ const (
 	scopeDiskItem
 	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
 	scopeWikiPage
+	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0113), the item's workspace.
+	scopeCanvasItem
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -512,6 +514,26 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/wiki/{code}":                scopePublic,
 	"GET /api/public/wiki/{code}/state":          scopePublic,
 	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
+	// Canvas (ADR-0113 §7). The sync socket authenticates in-band like the Wiki's.
+	"GET /api/workspaces/{id}/canvas/items":        scopeWorkspace,
+	"POST /api/workspaces/{id}/canvas/items":       scopeWorkspace,
+	"POST /api/workspaces/{id}/canvas/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/canvas/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/canvas/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/canvas/settings":     scopeWorkspace,
+	"GET /api/canvas/items/{id}":                   scopeCanvasItem,
+	"PATCH /api/canvas/items/{id}":                 scopeCanvasItem,
+	"DELETE /api/canvas/items/{id}":                scopeCanvasItem,
+	"POST /api/canvas/items/{id}/trash":            scopeCanvasItem,
+	"POST /api/canvas/items/{id}/restore":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/path":              scopeCanvasItem,
+	"GET /api/canvas/items/{id}/activity":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/permissions":       scopeCanvasItem,
+	"PUT /api/canvas/items/{id}/permissions":       scopeCanvasItem,
+	"POST /api/canvas/items/{id}/take-over":        scopeCanvasItem,
+	"GET /api/canvas/items/{id}/versions":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/versions/{vid}":    scopeCanvasItem,
+	"GET /api/canvas/items/{id}/sync":              scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
@@ -773,6 +795,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeWikiPage:
 		row, err := q.GetWikiPage(ctx, id)
 		return row.WorkspaceID, err
+	case scopeCanvasItem:
+		row, err := q.GetCanvasItem(ctx, id)
+		return row.WorkspaceID, err
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -899,6 +924,8 @@ func IdentityRouteClass(pattern string) string {
 		return "disk_item"
 	case scopeWikiPage:
 		return "wiki_page"
+	case scopeCanvasItem:
+		return "canvas_item"
 	default:
 		return "specialized"
 	}

@@ -12,6 +12,7 @@ import type { SearchHit } from '@calaba/protocol';
  *   transcript   «#Созвон · 12:34 · 3 окт.»
  *   wiki page    «Инженерия / Бэкенд · 3 окт.» (the pages above it the caller sees)
  *   Disk item    «Диск / Отчёты / 2026 · 1,2 МБ · 3 окт.» (the folders above it the caller sees)
+ *   canvas       «Продукт / Планы · 3 окт.» (the folders above it the caller sees)
  * plus the workspace's name when it is not the open one («Везде»). Pure: names and formats come
  * from the caller.
  */
@@ -68,6 +69,9 @@ export function placeParts(h: SearchHit, c: PlaceCtx): string[] {
       break;
     case 'disk':
       parts = [[c.diskRoot, ...r.value.path].join(' / '), !r.value.folder && r.value.size > 0n ? c.size(Number(r.value.size)) : '', date];
+      break;
+    case 'canvas':
+      parts = [r.value.path.join(' / '), date];
       break;
     default:
       parts = [date];
