@@ -104,6 +104,10 @@ ORDER BY down.depth, wp.position, wp.id;
 -- before one (the order of the Disk's LockDiskTree).
 SELECT pg_advisory_xact_lock(hashtext('calaba.wiki.' || sqlc.arg('workspace_id')::uuid::text));
 
+-- name: CountLiveWikiPages :one
+-- Live (not trashed) pages of a workspace: the plan limit of ADR-0096 counts these.
+SELECT count(*) FROM wiki_pages WHERE workspace_id = $1 AND trashed_at IS NULL;
+
 -- name: CreateWikiPage :one
 -- A new page goes last among its live siblings (under LockWikiTree).
 INSERT INTO wiki_pages (workspace_id, parent_id, title, icon, owner_id, updated_by, position)

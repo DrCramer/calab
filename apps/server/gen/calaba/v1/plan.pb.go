@@ -82,6 +82,7 @@ type PlanLimits struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	BoardFormsDisabled    bool                   `protobuf:"varint,33,opt,name=board_forms_disabled,json=boardFormsDisabled,proto3" json:"board_forms_disabled,omitempty"`
 	BoardFormsPerBoard    uint32                 `protobuf:"varint,34,opt,name=board_forms_per_board,json=boardFormsPerBoard,proto3" json:"board_forms_per_board,omitempty"`                      // 0 = unlimited; ADR-0064
+	WikiPages             uint32                 `protobuf:"varint,36,opt,name=wiki_pages,json=wikiPages,proto3" json:"wiki_pages,omitempty"`                                                     // live (not trashed) Wiki pages of the workspace (ADR-0096); 0 = no plan limit
 	RoomMembers           uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
 	StreamMaxPreset       ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
 	StreamMaxFps          uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
@@ -146,6 +147,13 @@ func (x *PlanLimits) GetBoardFormsDisabled() bool {
 func (x *PlanLimits) GetBoardFormsPerBoard() uint32 {
 	if x != nil {
 		return x.BoardFormsPerBoard
+	}
+	return 0
+}
+
+func (x *PlanLimits) GetWikiPages() uint32 {
+	if x != nil {
+		return x.WikiPages
 	}
 	return 0
 }
@@ -390,11 +398,13 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xd0\a\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xef\a\n" +
 	"\n" +
 	"PlanLimits\x120\n" +
 	"\x14board_forms_disabled\x18! \x01(\bR\x12boardFormsDisabled\x121\n" +
-	"\x15board_forms_per_board\x18\" \x01(\rR\x12boardFormsPerBoard\x12!\n" +
+	"\x15board_forms_per_board\x18\" \x01(\rR\x12boardFormsPerBoard\x12\x1d\n" +
+	"\n" +
+	"wiki_pages\x18$ \x01(\rR\twikiPages\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
 	"\x11stream_max_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x0fstreamMaxPreset\x12$\n" +
 	"\x0estream_max_fps\x18\x03 \x01(\rR\fstreamMaxFps\x12H\n" +

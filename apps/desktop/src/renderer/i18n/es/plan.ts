@@ -52,6 +52,7 @@ export const esPlan: DictShape<typeof ruPlan> = {
   'plan.caldavLocked': 'CalDAV está disponible en el plan Team y superiores',
   'plan.membersFull': 'Se alcanzó el límite de miembros del plan {plan} ({n})',
   'plan.boardsFull': 'El plan {plan} permite hasta {n} tableros',
+  'plan.wikiPagesFull': 'El plan {plan} permite hasta {n} páginas de Wiki',
   'plan.lockedOption': '{label} 🔒',
   'camera.quality': 'Calidad',
   'camera.qualityNext': 'La cámara se reinicia con la nueva calidad',

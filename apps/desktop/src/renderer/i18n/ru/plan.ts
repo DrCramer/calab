@@ -55,6 +55,7 @@ export const ruPlan = {
   'plan.caldavLocked': 'CalDAV доступен на тарифах Team и выше',
   'plan.membersFull': 'Лимит тарифа {plan}: {n} участников',
   'plan.boardsFull': 'Лимит тарифа {plan}: {n} досок',
+  'plan.wikiPagesFull': 'Лимит тарифа {plan}: {n} статей в Wiki',
   'plan.lockedOption': '{label} 🔒',
   // camera ▾
   'camera.quality': 'Качество',
