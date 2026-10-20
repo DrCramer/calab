@@ -35,6 +35,7 @@ import { DayView } from '../calendar/DayView';
 import { EventPanel } from '../calendar/EventCard';
 import { BoardsList } from '../boards/BoardsList';
 import { BoardsView } from '../boards/BoardsView';
+import { PhoneCanvas, PhoneCanvasScreen } from '../canvas/PhoneCanvas';
 import { PhoneDisk } from '../disk/PhoneDisk';
 import { PhoneWiki, PhoneWikiPage, PhoneWikiTrash } from '../wiki/PhoneWiki';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
@@ -142,6 +143,8 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <DiskRoot welcome={welcome} />;
     case 'wiki':
       return <WikiRoot welcome={welcome} />;
+    case 'canvas':
+      return <CanvasRoot welcome={welcome} />;
     case 'profile':
       return <ProfileRoot />;
   }
@@ -247,6 +250,14 @@ function WikiRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return <PhoneWiki workspaceId={ws} />;
 }
 
+/** «Холст» (ADR-0113 §5, view only on the phone): the top level of the open workspace; a folder or a canvas is a pushed screen (guests have no tab). */
+function CanvasRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneCanvas workspaceId={ws} />;
+}
+
 /** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
 function ProfileRoot(): ReactNode {
   return (
@@ -302,6 +313,8 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <SettingsScreen section={screen.section} />;
     case 'disk':
       return <ActiveWorkspace>{(ws) => <PhoneDisk key={`${screen.folderId}|${screen.trash ? 't' : ''}`} workspaceId={ws} folderId={screen.folderId} trash={!!screen.trash} root={false} />}</ActiveWorkspace>;
+    case 'canvas':
+      return <ActiveWorkspace>{(ws) => <PhoneCanvasScreen key={screen.itemId} workspaceId={ws} itemId={screen.itemId} />}</ActiveWorkspace>;
     case 'wiki':
       return <ActiveWorkspace>{(ws) => (screen.trash ? <PhoneWikiTrash workspaceId={ws} /> : <PhoneWikiPage key={screen.pageId} workspaceId={ws} pageId={screen.pageId} />)}</ActiveWorkspace>;
   }

@@ -80,8 +80,24 @@ import {
 } from '@calaba/protocol';
 import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
 import { DiskError, DiskMock } from './mock-disk';
+import { CanvasError, CanvasMock } from './mock-canvas';
+import type { CanvasDoc } from '../src/renderer/lib/canvas/doc';
 import { WikiError, WikiMock } from './mock-wiki';
 import {
+  CANVAS_BITS,
+  CanvasActivityPageSchema,
+  CanvasItemKind,
+  CanvasItemResponseSchema,
+  CanvasPathResponseSchema,
+  CanvasPermissionEntrySchema,
+  CanvasPermissionsResponseSchema,
+  CanvasSettingsSchema,
+  CanvasVersionsResponseSchema,
+  CreateCanvasItemRequestSchema,
+  EmptyCanvasTrashResponseSchema,
+  ListCanvasItemsResponseSchema,
+  UpdateCanvasItemRequestSchema,
+  UpdateCanvasPermissionsRequestSchema,
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
   DISK_BITS,
@@ -805,6 +821,8 @@ export interface MockServer {
   readonly disk: DiskMock;
   /** Wiki (ADR-0096, mock-wiki.ts): the live pages, documents and sync sockets (marketing scenes replace the fixture). */
   readonly wiki: WikiMock;
+  /** Canvas (ADR-0113, mock-canvas.ts): the live tree, documents and sync sockets. */
+  readonly canvas: CanvasMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
   updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
@@ -883,6 +901,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     },
     get wiki() {
       return impl.wiki;
+    },
+    get canvas() {
+      return impl.canvas;
     },
     updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
     failMessagesOnce: (roomId) => impl.failMessages.set(roomId, (impl.failMessages.get(roomId) ?? 0) + 1),
@@ -1128,6 +1149,12 @@ function send(res: ServerResponse, status: number, body: string | Buffer, type: 
   res.end(body);
 }
 
+/** A search snippet as the server writes it (ADR-0062 §1): the first match of `q` wrapped in \u0002…\u0003. */
+function markHit(text: string, q: string): string {
+  const at = q.trim() ? text.toLowerCase().indexOf(q.trim().toLowerCase()) : -1;
+  return at < 0 ? text : `${text.slice(0, at)}\u0002${text.slice(at, at + q.trim().length)}\u0003${text.slice(at + q.trim().length)}`;
+}
+
 function sendMsg<S extends DescMessage>(res: ServerResponse, status: number, schema: S, init: MessageInitShape<S>): void {
   const json = toJson(schema, create(schema, init), JSON_WRITE);
   send(res, status, JSON.stringify(json), 'application/json');
@@ -1210,6 +1237,10 @@ class MockImpl {
   wiki: WikiMock;
   /** The wiki sync sockets (snapshots up to 2 MiB: not the gateway's 64 KiB limit). */
   private readonly wikiWss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
+  /** Canvas (ADR-0113); rebuilt with the state. */
+  canvas: CanvasMock;
+  /** The canvas sync sockets (snapshots up to 4 MiB). */
+  private readonly canvasWss = new WebSocketServer({ noServer: true, maxPayload: 5 * 1024 * 1024 });
   /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
   readonly calWorkHours = new Map<string, WorkHoursRec>();
   readonly calExternal = new Map<string, ExternalSpan[]>();
@@ -1223,6 +1254,7 @@ class MockImpl {
     this.boards = this.newBoards();
     this.disk = this.newDisk();
     this.wiki = this.newWiki();
+    this.canvas = this.newCanvas();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -1241,12 +1273,20 @@ class MockImpl {
     this.seedDisk();
     this.wikiRoutes();
     this.seedWiki();
+    this.canvasRoutes();
+    this.seedCanvas();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       const sync = /^\/api\/wiki\/pages\/([^/]+)\/sync$/.exec(path);
       if (sync?.[1]) {
         const pageId = sync[1];
         this.wikiWss.handleUpgrade(req, socket, head, (ws) => this.wiki.connect(ws, pageId, (token) => this.byAccessToken(token.trim())?.user.user.id ?? null));
+        return;
+      }
+      const canvasSync = /^\/api\/canvas\/items\/([^/]+)\/sync$/.exec(path);
+      if (canvasSync?.[1]) {
+        const canvasId = canvasSync[1];
+        this.canvasWss.handleUpgrade(req, socket, head, (ws) => this.canvas.connect(ws, canvasId, (token) => this.byAccessToken(token.trim())?.user.user.id ?? null));
         return;
       }
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -1278,9 +1318,11 @@ class MockImpl {
     this.timers.clear();
     for (const c of this.conns) c.ws.terminate();
     this.wiki.closeAll();
+    this.canvas.closeAll();
     this.conns.clear();
     await new Promise<void>((r) => this.wss.close(() => r()));
     await new Promise<void>((r) => this.wikiWss.close(() => r()));
+    await new Promise<void>((r) => this.canvasWss.close(() => r()));
     this.http.closeAllConnections();
     await new Promise<void>((r) => this.http.close(() => r()));
   }
@@ -1297,6 +1339,9 @@ class MockImpl {
     this.wiki.closeAll();
     this.wiki = this.newWiki();
     this.seedWiki();
+    this.canvas.closeAll();
+    this.canvas = this.newCanvas();
+    this.seedCanvas();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
@@ -7766,11 +7811,20 @@ class MockImpl {
       const b = parseBody(c, CreateWikiPageRequestSchema);
       sendMsg(c.res, 201, WikiPageResponseSchema, { page: w().create(p0(c), me, b) });
     });
-    // Search of the wiki section only (the one the Wiki tree uses): the shape of the real server's answer.
+    // Search of the wiki / canvas section only (the one the section's tree uses): the shape of the real server's answer.
     this.wikiRoute('GET', '/api/search', (c, me) => {
-      const hits = q(c, 'type') === 'wiki' ? w().search(q(c, 'scope'), me, q(c, 'q'), Number(q(c, 'limit')) || 20) : [];
+      const type = q(c, 'type');
+      const limit = Number(q(c, 'limit')) || 20;
+      if (type === 'canvas') {
+        const hits = this.canvas.search(q(c, 'scope'), me, q(c, 'q'), limit);
+        sendMsg(c.res, 200, SearchResponseSchema, {
+          sections: [{ type: SearchType.CANVAS, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: markHit(h.preview || h.name, q(c, 'q')), title: h.name, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'canvas' as const, value: { itemId: h.id, parentId: h.parentId, folder: h.kind === CanvasItemKind.FOLDER, path: this.canvas.ancestorNames(h) } } })) }],
+        });
+        return;
+      }
+      const hits = type === 'wiki' ? w().search(q(c, 'scope'), me, q(c, 'q'), limit) : [];
       sendMsg(c.res, 200, SearchResponseSchema, {
-        sections: q(c, 'type') === 'wiki' ? [{ type: SearchType.WIKI, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.title, title: h.title, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'wiki' as const, value: { pageId: h.id, icon: h.icon } } })) }] : [],
+        sections: type === 'wiki' ? [{ type: SearchType.WIKI, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.title, title: h.title, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'wiki' as const, value: { pageId: h.id, icon: h.icon } } })) }] : [],
       });
     });
     this.wikiRoute('POST', '/api/workspaces/:id/wiki/trash/empty', (c, me) => sendMsg(c.res, 200, EmptyWikiTrashResponseSchema, { deleted: w().emptyTrash(p0(c), me) }));
@@ -7858,6 +7912,150 @@ class MockImpl {
       const meta = this.state.files.get(id)?.meta;
       if (!meta) throw notFound();
       sendMsg(c.res, 201, UploadFileResponseSchema, { file: meta }); // {file}, like POST /api/files
+    });
+  }
+
+  // ------------------------------------------------ Canvas (ADR-0113, mock-canvas.ts)
+
+  private newCanvas(): CanvasMock {
+    return new CanvasMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      tick: () => tick(this.state),
+      nextId: () => nextId(this.state, 'file'),
+      // As the gateway: the recipient's own bits in my_bits; the access chains are server-internal and empty.
+      emit: (wsId, item, removed, bitsOf) =>
+        this.fanout((u) => {
+          const bits = this.member(wsId, u) ? bitsOf(u) : 0n;
+          if (!(bits & CANVAS_BITS.VIEW)) return null;
+          return removed
+            ? { event: { case: 'canvasItemRemove', value: { workspaceId: wsId, itemId: item.id, parentId: item.parentId } } }
+            : { event: { case: 'canvasItemUpsert', value: { workspaceId: wsId, item: { ...item, myBits: bits, shared: false } } } };
+        }),
+    });
+  }
+
+  /**
+   * The Canvas of «Команда Calab» (data scenario): «Продукт» (→ «Дорожная карта Q1» with stickies,
+   * shapes and connectors, two versions; «Ретро-доска»), «Дизайн» (→ «Схема навигации»), the
+   * top-level «Планирование спринта», «Черновики» (restricted, shared with Борис); in the trash
+   * «Старая схема» and the folder «Архив» with a canvas inside.
+   */
+  private seedCanvas(): void {
+    if (this.state.scenario !== 'data') return;
+    const ws = IDS.workspaces.main;
+    const U = IDS.users;
+    const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
+    const c = this.canvas;
+    const FOLDER = CanvasItemKind.FOLDER;
+    const roadmap = (d: CanvasDoc): void => {
+      const a = d.create({ kind: 'sticky', x: 0, y: 0, color: 'yellow', text: 'Голос без эха' });
+      const b = d.create({ kind: 'sticky', x: 220, y: 0, color: 'green', text: 'Раздел «Холст»' });
+      const e = d.create({ kind: 'sticky', x: 440, y: 0, color: 'blue', text: 'Телефон: просмотр' });
+      const f = d.create({ kind: 'shape', shape: 'ellipse', x: 220, y: 240, w: 200, h: 100, fill: 'none', stroke: 'stroke', text: 'Релиз 3.0' });
+      d.create({ kind: 'text', x: 0, y: -80, size: 28, text: 'Дорожная карта Q1' });
+      if (a && f) d.create({ kind: 'connector', from: { id: a, side: 'auto' }, to: { id: f, side: 'auto' }, arrow: 'end' });
+      if (b && f) d.create({ kind: 'connector', from: { id: b, side: 'auto' }, to: { id: f, side: 'auto' }, arrow: 'end' });
+      if (e && f) d.create({ kind: 'connector', from: { id: e, side: 'auto' }, to: { id: f, side: 'auto' }, arrow: 'end', route: 'elbow' });
+    };
+    const product = c.put({ workspaceId: ws, name: 'Продукт', kind: FOLDER, ownerId: U.anna, updatedAt: at('2026-01-14T16:20:00Z') });
+    const road = c.put({ workspaceId: ws, parentId: product.id, name: 'Дорожная карта Q1', ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z'), updatedBy: U.vera }, roadmap);
+    c.put({ workspaceId: ws, parentId: product.id, name: 'Ретро-доска', ownerId: U.boris }, (d) => {
+      d.create({ kind: 'sticky', x: 0, y: 0, color: 'green', text: 'Что получилось' });
+      d.create({ kind: 'sticky', x: 220, y: 0, color: 'pink', text: 'Что не получилось' });
+    });
+    const design = c.put({ workspaceId: ws, name: 'Дизайн', kind: FOLDER, ownerId: U.vera });
+    c.put({ workspaceId: ws, parentId: design.id, name: 'Схема навигации', ownerId: U.vera }, (d) => {
+      d.create({ kind: 'shape', shape: 'rounded', x: 0, y: 0, text: 'Рейл' });
+      d.create({ kind: 'shape', shape: 'rounded', x: 260, y: 0, text: 'Колонка' });
+    });
+    c.put({ workspaceId: ws, name: 'Планирование спринта', ownerId: U.anna }, (d) => {
+      d.create({ kind: 'sticky', x: 0, y: 0, color: 'yellow', text: 'Задачи спринта' });
+    });
+    const drafts = c.put({ workspaceId: ws, name: 'Черновики', ownerId: U.anna, restricted: true }, (d) => {
+      d.create({ kind: 'sticky', x: 0, y: 0, text: 'Наброски' });
+    });
+    c.perms.set(drafts.id, [create(CanvasPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.boris, allow: CANVAS_BITS.VIEW | CANVAS_BITS.WRITE })]);
+    c.put({ workspaceId: ws, name: 'Старая схема', ownerId: U.anna, trashedAt: at('2026-01-14T10:00:00Z'), trashedBy: U.anna, trashedRoot: true }, (d) => {
+      d.create({ kind: 'sticky', x: 0, y: 0, text: 'Устарело' });
+    });
+    const archive = c.put({ workspaceId: ws, name: 'Архив', kind: FOLDER, ownerId: U.vera, trashedAt: at('2026-01-13T09:00:00Z'), trashedBy: U.vera, trashedRoot: true });
+    c.put({ workspaceId: ws, parentId: archive.id, name: 'Идеи 2025', ownerId: U.vera, trashedAt: at('2026-01-13T09:00:00Z'), trashedBy: U.vera }, (d) => {
+      d.create({ kind: 'text', x: 0, y: 0, text: 'Идеи' });
+    });
+    c.addVersion(road.id, (d) => {
+      d.create({ kind: 'sticky', x: 0, y: 0, color: 'yellow', text: 'Голос без эха' });
+    }, [U.anna], at('2026-01-12T11:00:00Z'));
+    c.addVersion(road.id, (d) => {
+      d.create({ kind: 'sticky', x: 0, y: 0, color: 'yellow', text: 'Голос без эха' });
+      d.create({ kind: 'sticky', x: 220, y: 0, color: 'green', text: 'Раздел «Холст»' });
+    }, [U.anna, U.vera], at('2026-01-14T15:40:00Z'));
+  }
+
+  private canvasRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof CanvasError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    });
+  }
+
+  private canvasRoutes(): void {
+    const k = (): CanvasMock => this.canvas;
+    const q = (c: Ctx, name: string): string => c.url.searchParams.get(name) ?? '';
+    const p0 = (c: Ctx): string => c.params[0] ?? '';
+    this.canvasRoute('GET', '/api/workspaces/:id/canvas/items', (c, me) => {
+      const items = k().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true' });
+      sendMsg(c.res, 200, ListCanvasItemsResponseSchema, { items });
+    });
+    this.canvasRoute('POST', '/api/workspaces/:id/canvas/items', (c, me) => {
+      const b = parseBody(c, CreateCanvasItemRequestSchema);
+      sendMsg(c.res, 201, CanvasItemResponseSchema, { item: k().create(p0(c), me, b) });
+    });
+    this.canvasRoute('POST', '/api/workspaces/:id/canvas/trash/empty', (c, me) => sendMsg(c.res, 200, EmptyCanvasTrashResponseSchema, { deleted: k().emptyTrash(p0(c), me) }));
+    this.canvasRoute('GET', '/api/workspaces/:id/canvas/activity', (c, me) => {
+      k().settings(p0(c), me);
+      sendMsg(c.res, 200, CanvasActivityPageSchema, { activities: [] });
+    });
+    this.canvasRoute('GET', '/api/workspaces/:id/canvas/settings', (c, me) => sendMsg(c.res, 200, CanvasSettingsSchema, { trashDays: k().settings(p0(c), me) }));
+    this.canvasRoute('PUT', '/api/workspaces/:id/canvas/settings', (c, me) => {
+      const b = parseBody(c, CanvasSettingsSchema);
+      k().setSettings(p0(c), me, b.trashDays);
+      sendMsg(c.res, 200, CanvasSettingsSchema, { trashDays: k().settings(p0(c), me) });
+    });
+    this.canvasRoute('GET', '/api/canvas/items/:id', (c, me) => sendMsg(c.res, 200, CanvasItemResponseSchema, { item: k().get(p0(c), me) }));
+    this.canvasRoute('PATCH', '/api/canvas/items/:id', (c, me) => {
+      const b = parseBody(c, UpdateCanvasItemRequestSchema);
+      sendMsg(c.res, 200, CanvasItemResponseSchema, { item: k().update(p0(c), me, b) });
+    });
+    this.canvasRoute('DELETE', '/api/canvas/items/:id', (c, me) => {
+      k().remove(p0(c), me);
+      noContent(c.res);
+    });
+    this.canvasRoute('GET', '/api/canvas/items/:id/path', (c, me) => sendMsg(c.res, 200, CanvasPathResponseSchema, { items: k().path(p0(c), me) }));
+    this.canvasRoute('POST', '/api/canvas/items/:id/trash', (c, me) => sendMsg(c.res, 200, CanvasItemResponseSchema, { item: k().trash(p0(c), me) }));
+    this.canvasRoute('POST', '/api/canvas/items/:id/restore', (c, me) => sendMsg(c.res, 200, CanvasItemResponseSchema, { item: k().restore(p0(c), me) }));
+    this.canvasRoute('POST', '/api/canvas/items/:id/take-over', (c, me) => sendMsg(c.res, 200, CanvasItemResponseSchema, { item: k().takeOver(p0(c), me) }));
+    this.canvasRoute('GET', '/api/canvas/items/:id/activity', (c, me) => {
+      k().get(p0(c), me);
+      sendMsg(c.res, 200, CanvasActivityPageSchema, { activities: [] });
+    });
+    this.canvasRoute('GET', '/api/canvas/items/:id/permissions', (c, me) => sendMsg(c.res, 200, CanvasPermissionsResponseSchema, k().permissions(p0(c), me)));
+    this.canvasRoute('PUT', '/api/canvas/items/:id/permissions', (c, me) => {
+      const b = parseBody(c, UpdateCanvasPermissionsRequestSchema);
+      k().setPermissions(p0(c), me, b.entries, b.restricted);
+      noContent(c.res);
+    });
+    this.canvasRoute('GET', '/api/canvas/items/:id/versions', (c, me) => sendMsg(c.res, 200, CanvasVersionsResponseSchema, { versions: k().listVersions(p0(c), me) }));
+    this.canvasRoute('GET', '/api/canvas/items/:id/versions/:vid', (c, me) => {
+      const state = k().versionState(p0(c), c.params[1] ?? '', me);
+      c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(state.length) });
+      c.res.end(Buffer.from(state));
     });
   }
 

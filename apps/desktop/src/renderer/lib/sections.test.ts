@@ -29,6 +29,12 @@ describe('currentSection', () => {
   it('an open web app selects no section', () => {
     expect(currentSection({ home: false, boards: false, calendar: false, app: true })).toBeNull();
   });
+  it('«Холст» (ADR-0113) is a section of its own, below mail and «Личные», above the boards and rooms', () => {
+    expect(currentSection({ home: false, boards: false, calendar: false, canvas: true })).toBe('canvas');
+    expect(currentSection({ home: false, boards: true, calendar: true, canvas: true })).toBe('canvas');
+    expect(currentSection({ home: true, boards: false, calendar: false, canvas: true })).toBe('dms');
+    expect(currentSection({ home: false, boards: false, calendar: false, app: true, canvas: true })).toBeNull();
+  });
   it('«Почта» (ADR-0088) covers everything while on', () => {
     expect(currentSection({ home: true, boards: true, calendar: true, app: true, mail: true })).toBe('mail');
   });
@@ -46,6 +52,15 @@ describe('section memory', () => {
     expect(sectionFor(m, 'a', false)).toBe('calendar');
     expect(sectionFor(m, 'b', false)).toBe('chats');
     expect(sectionFor(m, 'a', true)).toBe('chats');
+  });
+  it('a value this build does not know is «Команда»', () => {
+    expect(sectionFor({ a: 'holodeck' as never }, 'a', false)).toBe('chats');
+  });
+  it('a remembered «Холст» comes back, except for guests (no canvas for them)', () => {
+    const m = { a: 'canvas' as const };
+    expect(sectionFor(m, 'a', false)).toBe('canvas');
+    expect(sectionFor(m, 'a', true)).toBe('chats');
+    expect(rememberSection({}, 'a', 'canvas')).toEqual({ a: 'canvas' });
   });
 });
 

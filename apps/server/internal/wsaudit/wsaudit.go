@@ -24,10 +24,11 @@ const (
 
 // workspace_audit.subject_type values of TakeOver.
 const (
-	SubjectRoom     = "room"
-	SubjectBoard    = "board"
-	SubjectDiskItem = "disk_item"
-	SubjectWikiPage = "wiki_page"
+	SubjectRoom       = "room"
+	SubjectBoard      = "board"
+	SubjectDiskItem   = "disk_item"
+	SubjectWikiPage   = "wiki_page"
+	SubjectCanvasItem = "canvas_item"
 )
 
 // ReasonOwnerOnly is the error reason of a take-over by anyone but the owner who sees private
