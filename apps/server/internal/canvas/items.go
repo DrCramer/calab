@@ -402,6 +402,12 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			}
 			it, changed = row, true
 		}
+		if p.Restricted != nil || moving {
+			// Made private, or moved below a restricted folder: its public links go (ADR-0114 wave 5).
+			if err := dropLinks(ctx, q, id); err != nil {
+				return err
+			}
+		}
 		for _, j := range journal {
 			if err := j(it); err != nil {
 				return err
@@ -502,6 +508,9 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 		}
 		if !slices.Contains(ids, id) {
 			return errTrashed // trashed concurrently
+		}
+		if err := dropLinks(ctx, q, id); err != nil { // the trash revokes the public links (ADR-0114 wave 5)
+			return err
 		}
 		if a.item, err = q.GetCanvasItem(ctx, id); err != nil {
 			return err

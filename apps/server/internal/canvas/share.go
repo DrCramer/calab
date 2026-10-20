@@ -97,6 +97,13 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		if a.item.TrashedAt != nil {
 			return errTrashed
 		}
+		// The tree lock before the row lock (like update): a public link made meanwhile below a
+		// folder turned restricted here would outlive dropLinks.
+		if req.Restricted != nil {
+			if err := q.LockCanvasTree(ctx, ws); err != nil {
+				return err
+			}
+		}
 		if _, err := q.GetCanvasItemForUpdate(ctx, id); err != nil {
 			return err
 		}
@@ -148,6 +155,11 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		row, err := q.UpdateCanvasItem(ctx, sqlc.UpdateCanvasItemParams{ID: id, Restricted: &restricted, UpdatedBy: &a.c.uid})
 		if err != nil {
 			return err
+		}
+		if restricted && !a.item.Restricted {
+			if err := dropLinks(ctx, q, id); err != nil { // made private: its public links go (ADR-0114 wave 5)
+				return err
+			}
 		}
 		ch, err := canvasacl.Load(ctx, q, []uuid.UUID{id})
 		if err != nil {

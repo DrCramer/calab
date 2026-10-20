@@ -62,7 +62,23 @@ type Service struct {
 	// CommentLimit: a per-user budget of comment writes (ADR-0114 wave 4); nil = unlimited.
 	CommentLimit *redisx.RateLimiter
 
+	// The public read-only link (ADR-0114 wave 5, link.go). PublicURL is PUBLIC_APP_URL: the page
+	// of a link is PublicURL + "/c/" + code. LinkReadLimit (the public name) and LinkSyncLimit
+	// (connects of the anonymous socket) are budgets per client IP (nil = unlimited);
+	// ViewersPerLink / ViewersPerIP cap the live anonymous sockets of a canvas and of a client IP
+	// (0 = DefaultViewersPerLink / DefaultViewersPerIP). Billing refuses visits while the
+	// workspace is suspended for its billing (nil = never).
+	PublicURL                    string
+	LinkReadLimit, LinkSyncLimit *redisx.RateLimiter
+	ViewersPerLink, ViewersPerIP int
+	Billing                      BillingGate
+
 	sync *ysync.Hub
+}
+
+// BillingGate is what the public link needs of plans.Service: whether a workspace is open.
+type BillingGate interface {
+	CheckBillingOpen(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) error
 }
 
 // New creates the service. Call EnableSync before Routes to serve the sync socket.
@@ -109,8 +125,14 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/canvas/items/{id}/comments/mention-access", s.mentionAccess)
 	h("PATCH /api/canvas/comments/{id}", s.updateComment)
 	h("DELETE /api/canvas/comments/{id}", s.deleteComment)
+	h("GET /api/canvas/items/{id}/link", s.getLink)
+	h("POST /api/canvas/items/{id}/link", s.createLink)
+	h("DELETE /api/canvas/items/{id}/link", s.deleteLink)
+	// Anonymous: the code is the credential (link.go).
+	mux.Handle("GET /api/public/canvas/{code}", httpx.HandlerFunc(s.publicCanvas))
 	if s.sync != nil {
 		mux.Handle("GET /api/canvas/items/{id}/sync", http.HandlerFunc(s.sync.Serve))
+		mux.Handle("GET /api/public/canvas/{code}/sync", httpx.HandlerFunc(s.publicSync))
 	}
 }
 
