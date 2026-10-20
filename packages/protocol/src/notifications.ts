@@ -124,7 +124,7 @@ export interface CanvasMentionFacts {
 
 /** Whether a canvas @mention notifies (Go notifications.CanvasMentionNotifies): ALL and MENTIONS, not NONE or a muted workspace. */
 export function canvasMentionNotifies(f: CanvasMentionFacts): boolean {
-  return levelNotifies({ dm: false, mention: true, room: NotificationLevel.INHERIT, workspace: f.level, roomMuted: false, workspaceMuted: f.workspaceMuted });
+  return levelNotifies({ dm: false, mention: true, room: NotificationLevel.INHERIT, ...(f.level === undefined ? {} : { workspace: f.level }), roomMuted: false, workspaceMuted: f.workspaceMuted });
 }
 
 /** Whether the notice may carry the comment's text (Go notifications.CanvasMentionText): never for a private canvas. */
