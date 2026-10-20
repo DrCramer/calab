@@ -343,6 +343,30 @@ describe('AccountSync against a fake server', () => {
     expect(events.find((e) => e.type === 'messages_removed')).toMatchObject({ messageIds: [expect.stringMatching(/\.2$/)] });
   });
 
+  it('CBF-37: mail the server moved out of the inbox is dropped even when fetching new headers fails', async () => {
+    const { imap, store, sync, events } = setup();
+    const f = imap.addFolder('INBOX');
+    imap.addFolder('Tracker');
+    imap.deliver('INBOX');
+    const u2 = imap.deliver('INBOX');
+    const u3 = imap.deliver('INBOX');
+    sync.start();
+    await settle();
+    const inbox = store.folderByRole('inbox');
+    if (!inbox) throw new Error('no inbox');
+    expect(store.folderCounts(inbox.row).total).toBe(3);
+    // A server-side rule moves two messages to Tracker, one new message arrives, the header fetch drops.
+    f.msgs.delete(u2);
+    f.msgs.delete(u3);
+    imap.deliver('INBOX');
+    imap.dropOnFetch = 1;
+    events.length = 0;
+    await sync.run((s) => sync.syncFolder(s, inbox)).catch(() => undefined);
+    expect(store.folderCounts(inbox.row).total).toBe(1);
+    const removed = events.find((e) => e.type === 'messages_removed');
+    expect(removed?.type === 'messages_removed' ? removed.messageIds.map((id) => id.split('.').pop()).sort() : []).toEqual([String(u2), String(u3)]);
+  });
+
   it('UIDVALIDITY change rebuilds the folder with new ids', async () => {
     const { imap, store, sync, events } = setup();
     const f = imap.addFolder('INBOX');
