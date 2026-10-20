@@ -853,6 +853,29 @@ describe('remote awareness', () => {
     expect(vi.getTimerCount()).toBe(1);
     expect(r.raf.pending).toBe(1);
   });
+  it('with a remote layer, peers repaint it alone; the main canvas gets no frame', () => {
+    vi.useFakeTimers();
+    const remoteCanvas = document.createElement('canvas');
+    const r = rig({ remoteCanvas });
+    r.raf.flush();
+    const { frames } = r.engine.stats;
+    for (let i = 0; i < 20; i++) {
+      r.engine.setPeers([{ id: 'p1', name: 'Анна', color: '#e11', cursor: { x: 10 + i, y: 10 } }]);
+      r.raf.flush();
+    }
+    expect(r.engine.stats.frames).toBe(frames);
+    expect(r.engine.stats.remote).toBe(20 + 1);
+    expect(r.raf.pending).toBe(0);
+    // the fade timer asks for a remote frame too, never a main one
+    r.clock.t += 2600;
+    vi.advanceTimersByTime(2600);
+    r.raf.flush();
+    expect(r.engine.stats.frames).toBe(frames);
+    expect(r.engine.stats.remote).toBe(20 + 2);
+    // size follows the main canvas
+    expect(remoteCanvas.width).toBe(r.canvas.width);
+    expect(remoteCanvas.height).toBe(r.canvas.height);
+  });
   it('an identical peer snapshot costs no frame', () => {
     const r = rig();
     r.raf.flush();

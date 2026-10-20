@@ -51,6 +51,8 @@ export interface LocalAwareness {
 
 export interface EngineOptions {
   canvas: HTMLCanvasElement;
+  /** Transparent canvas over `canvas` for other people's cursors and selections (see `RendererOptions.remoteCanvas`). */
+  remoteCanvas?: HTMLCanvasElement;
   doc: Y.Doc;
   palette: CanvasPalette;
   readOnly?: boolean;
@@ -151,6 +153,7 @@ export class CanvasEngine implements Core {
     this.scene = new Scene(this.doc, layouter);
     this.renderer = new Renderer({
       canvas: opts.canvas,
+      ...(opts.remoteCanvas ? { remoteCanvas: opts.remoteCanvas } : {}),
       scene: this.scene,
       palette: this.palette,
       getCamera: () => this.cam,
@@ -765,7 +768,7 @@ export class CanvasEngine implements Core {
   /** Remote participants from the sync layer; schedules at most one timer for the next cursor fade step. */
   setPeers(peers: readonly PeerState[]): void {
     const changed = this.awareness.setPeers(peers, this.now());
-    if (changed) this.renderer.requestFrame();
+    if (changed) this.renderer.requestRemoteFrame();
     this.scheduleAwarenessStep();
   }
 
@@ -793,7 +796,7 @@ export class CanvasEngine implements Core {
     this.awarenessDue = due;
     this.awarenessTimer = setTimeout(() => {
       this.awarenessTimer = null;
-      this.renderer.requestFrame();
+      this.renderer.requestRemoteFrame();
       this.scheduleAwarenessStep();
     }, d);
   }

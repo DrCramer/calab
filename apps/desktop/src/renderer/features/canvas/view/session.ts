@@ -28,6 +28,8 @@ export interface CanvasViewDeps {
 export interface SessionOptions {
   canvasId: string;
   canvas: HTMLCanvasElement;
+  /** The transparent layer over `canvas` for other people's cursors. */
+  remoteCanvas?: HTMLCanvasElement | null;
   editorHost: HTMLElement;
   deps: CanvasViewDeps;
   palette: CanvasPalette;
@@ -57,6 +59,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
   const awareness = new Awareness(ydoc);
   const engine = new CanvasEngine({
     canvas: o.canvas,
+    ...(o.remoteCanvas ? { remoteCanvas: o.remoteCanvas } : {}),
     doc: ydoc,
     palette: o.palette,
     readOnly: o.readOnly,

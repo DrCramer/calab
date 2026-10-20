@@ -9,6 +9,12 @@ import type { CanvasPalette } from './palette';
 
 export interface RendererOptions {
   canvas: HTMLCanvasElement;
+  /**
+   * A second, transparent canvas stacked over `canvas` (same CSS box, `pointer-events: none`) that holds only
+   * other people's cursors and selections (ADR-0113 §4). A stream of awareness frames repaints a few hundred
+   * pixels there and never touches `canvas` or its content layer. Absent: they are composited onto `canvas`.
+   */
+  remoteCanvas?: HTMLCanvasElement;
   scene: Scene;
   palette: CanvasPalette;
   getCamera: () => Camera;
@@ -32,7 +38,10 @@ export interface LayerCanvas {
 }
 
 export interface FrameStats {
+  /** Frames that repainted the main canvas. */
   frames: number;
+  /** Frames that repainted only the remote layer (cursors / peer selections). */
+  remote: number;
   full: number;
   scrolled: number;
   regions: number;
@@ -47,11 +56,20 @@ const MAX_REGIONS = 8;
  * gesture changed the camera, and nothing is scheduled while idle. The content (background + objects) is
  * kept in an offscreen layer: panning blits it shifted and paints just the exposed strips; object changes
  * repaint only their dirty rects; the overlay (selection, guides, remote cursors) is composited on top each
- * frame. No shadows or blur.
+ * frame. No shadows or blur. Remote cursors and selections live on their own canvas (`remoteCanvas`) and
+ * repaint on `requestRemoteFrame` without touching the content layer or the main canvas.
  */
 export class Renderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: Ctx2D;
+  private readonly remote: HTMLCanvasElement | null;
+  private rctx: Ctx2D | null = null;
+  /** The main canvas needs a frame (content, camera, overlay); false = only the remote layer does. */
+  private mainDirty = true;
+  private remoteDirty = true;
+  /** Device-pixel box the remote layer painted last (what to clear next), and the camera it was painted for. */
+  private remoteBox: Rect | null = null;
+  private remoteCam: Camera | null = null;
   private layer: LayerCanvas;
   private lctx: Ctx2D;
   private layerCam: Camera | null = null;
@@ -67,7 +85,7 @@ export class Renderer {
   private hiddenText: string | null = null;
   private palette: CanvasPalette;
   private readonly off: () => void;
-  readonly stats: FrameStats = { frames: 0, full: 0, scrolled: 0, regions: 0, drawn: 0 };
+  readonly stats: FrameStats = { frames: 0, remote: 0, full: 0, scrolled: 0, regions: 0, drawn: 0 };
   /** Frame callback for the owner (e.g. to keep the text editor aligned). */
   onFrame: (() => void) | null = null;
 
@@ -76,6 +94,11 @@ export class Renderer {
     const ctx = o.canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('canvas 2d context unavailable');
     this.ctx = ctx;
+    this.remote = o.remoteCanvas ?? null;
+    if (this.remote) {
+      this.rctx = this.remote.getContext('2d');
+      if (!this.rctx) throw new Error('canvas 2d context unavailable');
+    }
     this.maxDpr = o.maxDpr ?? 2;
     this.palette = o.palette;
     this.layer = this.makeLayer(1, 1);
@@ -113,6 +136,7 @@ export class Renderer {
 
   setPalette(p: CanvasPalette): void {
     this.palette = p;
+    this.remoteDirty = true;
     this.invalidateAll();
   }
 
@@ -126,8 +150,10 @@ export class Renderer {
   setActive(on: boolean): void {
     if (this.active === on) return;
     this.active = on;
-    if (on) this.invalidateAll();
-    else if (this.raf) {
+    if (on) {
+      this.remoteDirty = true;
+      this.invalidateAll();
+    } else if (this.raf) {
       (this.o.cancelRaf ?? cancelAnimationFrame)(this.raf);
       this.raf = 0;
     }
@@ -154,6 +180,13 @@ export class Renderer {
     this.dpr = dpr;
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
+    if (this.remote) {
+      this.remote.width = this.canvas.width;
+      this.remote.height = this.canvas.height;
+      this.remoteBox = null;
+      this.remoteCam = null;
+      this.remoteDirty = true;
+    }
     this.layer = this.makeLayer(this.canvas.width, this.canvas.height);
     const l = this.layer.getContext('2d');
     if (l) this.lctx = l;
@@ -187,8 +220,20 @@ export class Renderer {
     this.requestFrame();
   }
 
-  /** Only the overlay/camera changed (selection, guides, remote cursors, pan): a frame, no content repaint beyond the scroll. */
+  /** Only the overlay/camera changed (selection, guides, pan): a frame, no content repaint beyond the scroll. */
   requestFrame(): void {
+    this.mainDirty = true;
+    this.schedule();
+  }
+
+  /** Other people's cursors / selections changed: repaints the remote layer only (the main canvas when there is none). */
+  requestRemoteFrame(): void {
+    if (this.remote) this.remoteDirty = true;
+    else this.mainDirty = true;
+    this.schedule();
+  }
+
+  private schedule(): void {
     if (this.raf || !this.active) return;
     this.raf = (this.o.raf ?? requestAnimationFrame)(() => {
       // `raf` is still set here: a camera change made by the hook asks for this very frame, not another.
@@ -206,6 +251,11 @@ export class Renderer {
 
   frame(): void {
     if (!this.active || this.cssW === 0) return;
+    if (!this.mainDirty) {
+      if (this.remoteDirty) this.remoteFrame(snapCamera(this.o.getCamera(), this.dpr));
+      return;
+    }
+    this.mainDirty = false;
     const dpr = this.dpr;
     const cam = snapCamera(this.o.getCamera(), dpr);
     const W = this.canvas.width;
@@ -243,6 +293,7 @@ export class Renderer {
       const regions = this.toDeviceRegions(dirty, cam, W, H);
       for (const r of regions) this.paintDevice(cam, r);
     }
+    const contentChanged = full || dirty.length > 0;
     this.layerCam = cam;
     this.layerValid = true;
 
@@ -253,10 +304,44 @@ export class Renderer {
     c.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.tx, dpr * cam.ty);
     const ov = this.o.getOverlay();
     drawOverlay(c, ov, this.palette, cam.scale);
-    const now = (this.o.now ?? Date.now)();
-    this.o.awareness.draw(c, cam, this.o.scene, this.palette, now);
+    if (!this.remote) this.o.awareness.draw(c, cam, this.o.scene, this.palette, (this.o.now ?? Date.now)());
     c.setTransform(1, 0, 0, 1, 0, 0);
+    if (this.remote) {
+      const rc = this.remoteCam;
+      // The remote layer is in screen space: it follows the camera, and peers' selections follow the objects.
+      if (!rc || rc.tx !== cam.tx || rc.ty !== cam.ty || rc.scale !== cam.scale || (contentChanged && this.o.awareness.hasSelections)) this.remoteDirty = true;
+      if (this.remoteDirty) this.remoteFrame(cam);
+    }
     this.onFrame?.();
+  }
+
+  /** Repaints the remote layer: clears the box painted last time (all of it after a camera move), draws, remembers the new box. */
+  private remoteFrame(cam: Camera): void {
+    const c = this.rctx;
+    if (!c || !this.remote || this.cssW === 0) return;
+    this.remoteDirty = false;
+    this.stats.remote++;
+    const dpr = this.dpr;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    const rc = this.remoteCam;
+    const sameCam = !!rc && rc.tx === cam.tx && rc.ty === cam.ty && rc.scale === cam.scale;
+    const prev = this.remoteBox;
+    if (!sameCam || !prev) c.clearRect(0, 0, this.remote.width, this.remote.height);
+    else c.clearRect(prev.x, prev.y, prev.w, prev.h);
+    c.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.tx, dpr * cam.ty);
+    const box = this.o.awareness.draw(c, cam, this.o.scene, this.palette, (this.o.now ?? Date.now)());
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    this.remoteCam = cam;
+    if (!box) {
+      this.remoteBox = null;
+      return;
+    }
+    const s = dpr * cam.scale;
+    const x0 = Math.max(0, Math.floor(box.x * s + cam.tx * dpr) - 3);
+    const y0 = Math.max(0, Math.floor(box.y * s + cam.ty * dpr) - 3);
+    const x1 = Math.min(this.remote.width, Math.ceil((box.x + box.w) * s + cam.tx * dpr) + 3);
+    const y1 = Math.min(this.remote.height, Math.ceil((box.y + box.h) * s + cam.ty * dpr) + 3);
+    this.remoteBox = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
   }
 
   /** World dirty rects → merged device-pixel regions. */
