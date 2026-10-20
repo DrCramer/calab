@@ -45,6 +45,8 @@ export function PhoneBtn({
       title={label}
       aria-pressed={active === undefined ? undefined : active}
       disabled={disabled}
+      // A tap on a button never takes the focus from the canvas or from the textarea being edited (the keyboard stays up).
+      onPointerDown={keepFocus}
       onMouseDown={keepFocus}
       onClick={onClick}
       className={cx(BTN, active && ACTIVE_TOOL)}

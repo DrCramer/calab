@@ -503,6 +503,7 @@ describe('the properties sheet', () => {
 });
 
 describe('touch editing in the viewer', () => {
+  const objects = (m: Mounted): Array<Record<string, unknown>> => [...m.relay.doc.getMap<{ toJSON(): Record<string, unknown> }>('objects').values()].map((o) => o.toJSON());
   const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
   const esc = (m: Mounted): void => act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   const place = (m: Mounted, tool: string, x: number, y: number): void => {
@@ -582,6 +583,42 @@ describe('touch editing in the viewer', () => {
     expect(m.host.querySelector('textarea')).toBeNull();
     click(m, 'canvas-prop-edit-text');
     expect(m.host.querySelector('textarea')).not.toBeNull();
+  });
+
+  it('while a text is edited the format bar sits at the bottom with 44 px targets and «Готово» ends the edit', async () => {
+    const m = await mount({ phoneEdit: true });
+    expect(m.q('canvas-format-bar')).toBeNull();
+    click(m, 'canvas-tool-sticky');
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    const bar = m.q('canvas-format-bar');
+    expect(bar).not.toBeNull();
+    expect(bar?.className).toContain('inset-x-0');
+    for (const b of bar?.querySelectorAll('button') ?? []) expect(b.className, b.getAttribute('aria-label') ?? '').toContain('size-11');
+    expect(m.q('canvas-phone-toolbar')).toBeNull();
+    // B toggles bold at the caret and keeps the textarea focused (the keyboard stays up)
+    const ta = m.host.querySelector('textarea') as HTMLTextAreaElement;
+    ta.focus();
+    const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+    act(() => void m.q('canvas-format-bold')?.dispatchEvent(down));
+    expect(down.defaultPrevented).toBe(true);
+    click(m, 'canvas-format-bold');
+    expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('true');
+    click(m, 'canvas-format-size-l');
+    expect(m.q('canvas-format-size-l')?.getAttribute('aria-pressed')).toBe('true');
+    ta.value = 'Привет';
+    act(() => void ta.dispatchEvent(new Event('input', { bubbles: true })));
+    click(m, 'canvas-format-done');
+    expect(m.host.querySelector('textarea')).toBeNull();
+    expect(m.q('canvas-format-bar')).toBeNull();
+    expect(m.q('canvas-phone-toolbar')).not.toBeNull();
+    await settle(600);
+    expect(objects(m)[0]).toMatchObject({ text: 'Привет', fontSize: 'l' });
+  });
+
+  it('has no format bar in view mode', async () => {
+    const m = await mount();
+    expect(m.q('canvas-format-bar')).toBeNull();
   });
 
   it('adds no timer or frame at rest beyond what a writable desktop canvas has (the socket keeps its own)', async () => {

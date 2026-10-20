@@ -24,6 +24,7 @@ export const zhCanvasPhone: DictShape<typeof ruCanvasPhone> = {
   'canvasPhone.menu.text': '在此输入文字',
   'canvasPhone.menu.templates': '模板…',
   'canvasPhone.editText': '编辑文字',
+  'canvasPhone.textDone': '完成',
   'canvasPhone.dismiss': '知道了',
   'canvasPhone.others': { other: '画布上还有 {n} 人' },
   'canvasPhone.loadFailed': '无法加载画布',

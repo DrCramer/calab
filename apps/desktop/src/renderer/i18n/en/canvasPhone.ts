@@ -24,6 +24,7 @@ export const enCanvasPhone: DictShape<typeof ruCanvasPhone> = {
   'canvasPhone.menu.text': 'Text here',
   'canvasPhone.menu.templates': 'Template…',
   'canvasPhone.editText': 'Edit text',
+  'canvasPhone.textDone': 'Done',
   'canvasPhone.dismiss': 'Got it',
   'canvasPhone.others': { one: '{n} more on the canvas', other: '{n} more on the canvas' },
   'canvasPhone.loadFailed': 'Could not load the canvases',

@@ -24,6 +24,7 @@ export const esCanvasPhone: DictShape<typeof ruCanvasPhone> = {
   'canvasPhone.menu.text': 'Texto aquí',
   'canvasPhone.menu.templates': 'Plantilla…',
   'canvasPhone.editText': 'Editar texto',
+  'canvasPhone.textDone': 'Listo',
   'canvasPhone.dismiss': 'Entendido',
   'canvasPhone.others': { one: '{n} más en el lienzo', many: '{n} más en el lienzo', other: '{n} más en el lienzo' },
   'canvasPhone.loadFailed': 'No se pudieron cargar los lienzos',

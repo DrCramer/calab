@@ -23,6 +23,7 @@ export const ruCanvasPhone = {
   'canvasPhone.menu.text': 'Текст здесь',
   'canvasPhone.menu.templates': 'Шаблон…',
   'canvasPhone.editText': 'Изменить текст',
+  'canvasPhone.textDone': 'Готово',
   'canvasPhone.dismiss': 'Понятно',
   'canvasPhone.others': { one: 'ещё {n} на холсте', few: 'ещё {n} на холсте', many: 'ещё {n} на холсте', other: 'ещё {n} на холсте' },
   'canvasPhone.loadFailed': 'Не удалось загрузить холсты',
