@@ -53,7 +53,9 @@ describe('the timer plaque re-renders only its time once a second', () => {
     const commits = { n: 0 };
     const s = store;
     act(() => {
-      r.render(createElement(Profiler, { id: 't', onRender: () => void commits.n++ }, createElement(TimerChip, { store: s, engine })));
+      r.render(createElement(Profiler, { id: 't', onRender: () => {
+        commits.n++;
+      } }, createElement(TimerChip, { store: s, engine })));
     });
     act(() => void startTimer(meta, 3, 'u1', Date.now()));
     const time = (): string | null | undefined => host.querySelector('[data-testid="canvas-timer-time"]')?.textContent;
