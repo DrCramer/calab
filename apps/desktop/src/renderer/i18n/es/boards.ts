@@ -398,6 +398,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.rel.duplicates': 'Duplicado',
   'boards.activity': 'Actividad',
   'boards.olderComments': 'Mostrar anteriores',
+  'boards.toLatest': 'Ir al último comentario',
   'boards.commentPlaceholder': 'Deja un comentario…',
   // approvals (ADR-0049)
   'boards.approvals': 'Aprobación',

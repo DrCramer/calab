@@ -1,14 +1,16 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
-import { Bell, BellOff, ChevronDown, ChevronRight, ChevronUp, Hash, Link2 } from 'lucide-react';
+import { ArrowDown, Bell, BellOff, ChevronDown, ChevronRight, ChevronUp, Hash, Link2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Bar } from '../../components/Bar';
 import { ResizeHandle } from '../../components/ResizeHandle';
-import { IconButton, Spinner, cx } from '../../components/ui';
+import { IconButton, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { featureOn } from '../../lib/boards/features';
+import { loadPresent } from '../../services/chat';
 import { copyTaskKey, copyTaskLink, loadTask, moveTaskToBoard, openBoard, setSubscription, useTaskDetails } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
+import { useMessages } from '../../stores/messages';
 import { MY_TASKS, PROPS_DEFAULT, PROPS_MAX, PROPS_MIN, prefsOf, useBoardsUi } from '../../stores/boardsUi';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
@@ -231,6 +233,7 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
           <div className="relative shrink-0 px-6 pb-3 min-[1200px]:px-12" data-testid="task-composer-dock">
             {/* A short fade so the text does not end on a hard edge above the composer (no backdrop-filter: docs/08). */}
             <span className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-t from-[var(--color-bg)] to-transparent" aria-hidden />
+            {task.roomId ? <JumpToLatest scroller={scroller} roomId={task.roomId} toEnd={toEnd} /> : null}
             <div className="mx-auto max-w-[760px]">
               <CommentBox task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="" />
             </div>
@@ -342,3 +345,47 @@ function ActivityAside({ task }: { task: Task }): ReactNode {
     </>
   );
 }
+
+/** Farther than this from the end of the scroll (px) the «down» button shows. */
+const LATEST_GAP = 160;
+
+/**
+ * «To the latest comment» (CBF-28): a round button docked above the composer at the column's right
+ * edge (the border with the properties column), shown while the scroll is above the end of the task
+ * or the room's newest page is not loaded. Leaf: owns its scroll subscription and writes state only
+ * when the flag flips, so a scroll tick re-renders nothing else.
+ */
+const JumpToLatest = memo(function JumpToLatest({ scroller, roomId, toEnd }: { scroller: RefObject<HTMLDivElement | null>; roomId: string; toEnd: () => void }): ReactNode {
+  const tab = useBoardsUi((s) => s.activityTab);
+  const hasMoreAfter = useMessages((s) => !!s.rooms[roomId]?.hasMoreAfter);
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const check = (): void => setAway(el.scrollHeight - el.scrollTop - el.clientHeight > LATEST_GAP);
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    // Content growth (comments arriving, sections opening) and window resizes move the end too.
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener('scroll', check);
+      ro.disconnect();
+    };
+  }, [scroller, tab]);
+  if (tab !== 'comments' || !(away || hasMoreAfter)) return null;
+  const go = (): void => {
+    if (hasMoreAfter) void loadPresent(roomId).then(() => requestAnimationFrame(toEnd));
+    else toEnd();
+  };
+  return (
+    <div className="pointer-events-none absolute -top-14 right-3 z-[var(--z-sticky)] min-[1200px]:right-6">
+      <Tip label={t('boards.toLatest')} side="left">
+        <button type="button" onClick={go} aria-label={t('boards.toLatest')} className="mat-popover anim-in pointer-events-auto grid size-9 place-items-center rounded-full text-muted hover:text-fg" data-testid="task-to-latest">
+          <ArrowDown className="size-4" aria-hidden />
+        </button>
+      </Tip>
+    </div>
+  );
+});

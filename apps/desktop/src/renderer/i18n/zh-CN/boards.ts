@@ -398,6 +398,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.rel.duplicates': '重复',
   'boards.activity': '动态',
   'boards.olderComments': '显示更早的',
+  'boards.toLatest': '跳至最新评论',
   'boards.commentPlaceholder': '发表评论…',
   // approvals (ADR-0049)
   'boards.approvals': '审批',
