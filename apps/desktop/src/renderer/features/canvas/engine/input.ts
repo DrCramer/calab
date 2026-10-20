@@ -2,10 +2,10 @@ import { dist, hitHandleRot, resizeCursorAt, rotateHandlePoint, type HandleId, t
 import { isConnector } from '../../../lib/canvas/types';
 import type { CanvasEngine } from './engine';
 import {
-  CreateGesture, EndpointGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, RotateGesture, WireGesture,
+  CreateGesture, EndpointGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, RotateGesture, TOUCH_SLOP_PX, TapPanGesture, WireGesture,
   type Mods,
 } from './gestures';
-import { HANDLE_PX, ROTATE_OFFSET_PX } from './overlay';
+import { HANDLE_PX, ROTATE_OFFSET_PX, TOUCH_HIT_PX, TOUCH_ROTATE_OFFSET_PX, type SelFrame } from './overlay';
 import { WheelClassifier } from './wheel';
 import { clampScale } from '../../../lib/canvas/camera';
 
@@ -21,6 +21,14 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
   alt: e.altKey,
   mod: e.ctrlKey || e.metaKey,
 });
+
+const NO_MODS: Mods = { shift: false, alt: false, mod: false };
+/** Touch editing (ADR-0114 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
+const LONG_PRESS_MS = 500;
+/** Two taps on one object within this long edit its text (the finger's double click). */
+const DOUBLE_TAP_MS = 350;
+/** How far (px) from an object a finger still picks it. */
+const TOUCH_PICK_PX = 10;
 
 /**
  * Wires pointer, wheel and keyboard events on the canvas element to engine commands (ADR-0113 §4).
@@ -38,6 +46,14 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   /** A Safari pinch in progress: the camera and world point at its start. */
   let gesture: { scale: number; wx: number; wy: number } | null = null;
   let cursor = '';
+  /** Touch editing: the long press in progress (one at most) and the last tap, for the double tap. */
+  let press: { id: number; timer: ReturnType<typeof setTimeout>; s: Point; w: Point; g: TapPanGesture } | null = null;
+  let lastTap: { id: string; at: number } | null = null;
+
+  const clearPress = (): void => {
+    if (press) clearTimeout(press.timer);
+    press = null;
+  };
 
   const setCursor = (c: string): void => {
     if (c === cursor) return;
@@ -70,13 +86,19 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   /** The selection frame's rotation handle under the pointer. */
   const rotateHandleAt = (w: Point): boolean => {
     const f = engine.selectionFrame();
-    return !!f && f.rotate && dist(w, rotateHandlePoint(f.rect, f.rot, engine.px(ROTATE_OFFSET_PX))) <= engine.px(HANDLE_PX + 2);
+    if (!f || !f.rotate) return false;
+    // The finger: the handle hangs further out and is hit from a 44 px zone.
+    const off = engine.touch ? TOUCH_ROTATE_OFFSET_PX : ROTATE_OFFSET_PX;
+    return dist(w, rotateHandlePoint(f.rect, f.rot, engine.px(off))) <= engine.px(engine.touch ? TOUCH_HIT_PX : HANDLE_PX + 2);
   };
+
+  /** The hit radius (px) of the frame's resize handles under a finger: 22, less on a small object so its body stays reachable. */
+  const touchRadius = (f: SelFrame): number => Math.min(TOUCH_HIT_PX, Math.max(12, Math.min(f.rect.w, f.rect.h) * engine.camera.scale * 0.35));
 
   /** A resize handle of the selection frame under the pointer (none on a locked or grouped selection). */
   const resizeHandleAt = (w: Point): HandleId | null => {
     const f = engine.selectionFrame();
-    return f && f.resize ? hitHandleRot(f.rect, f.rot, w, engine.px(HANDLE_PX)) : null;
+    return f && f.resize ? hitHandleRot(f.rect, f.rot, w, engine.px(engine.touch ? touchRadius(f) : HANDLE_PX)) : null;
   };
 
   const connectorEndAt = (w: Point): 'from' | 'to' | null => {
@@ -84,7 +106,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     const id = [...engine.selection][0];
     const c = id ? engine.scene.get(id) : undefined;
     if (!c || !isConnector(c) || c.points.length < 4) return null;
-    const r = engine.px(HANDLE_PX);
+    const r = engine.px(engine.touch ? TOUCH_HIT_PX : HANDLE_PX);
     const a = { x: c.points[0] ?? 0, y: c.points[1] ?? 0 };
     const b = { x: c.points[c.points.length - 2] ?? 0, y: c.points[c.points.length - 1] ?? 0 };
     if (dist(w, b) <= r) return 'to';
@@ -92,10 +114,101 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     return null;
   };
 
+  /** A finger on an editable canvas (the phone's edit mode): tap selects, drag moves what is selected, anything else pans. */
+  const touchDown = (e: PointerEvent, s: Point, w: Point): void => {
+    const tool = engine.tool;
+    if (tool === 'sticky' || tool === 'text' || tool === 'shape') {
+      // A tap places the object (a text opens its editor at once); a drag pans to where it should go.
+      engine.activeGesture = new TapPanGesture(engine, s, () => new CreateGesture(engine, tool, w, s).end(w, s, NO_MODS));
+      return;
+    }
+    if (tool === 'connector') {
+      engine.activeGesture = new WireGesture(engine, w, s, TOUCH_SLOP_PX);
+      return;
+    }
+    if (rotateHandleAt(w)) {
+      engine.activeGesture = new RotateGesture(engine, engine.selection, w);
+      return;
+    }
+    const handle = resizeHandleAt(w);
+    if (handle) {
+      const ids = [...engine.selection].filter((id) => {
+        const o = engine.scene.get(id);
+        return o && !isConnector(o);
+      });
+      engine.activeGesture = new ResizeGesture(engine, handle, ids);
+      return;
+    }
+    const end = connectorEndAt(w);
+    if (end) {
+      const id = [...engine.selection][0];
+      const c = id ? engine.scene.get(id) : undefined;
+      if (c && isConnector(c)) {
+        engine.activeGesture = new EndpointGesture(engine, c, end);
+        return;
+      }
+    }
+    const multi = engine.multiSelect;
+    const hit = engine.hitAt(w, TOUCH_PICK_PX);
+    if (!hit) {
+      // Empty place: a tap clears the selection, a drag pans, a press that stays put opens the menu.
+      const g = new TapPanGesture(engine, s, () => engine.clearSelection());
+      engine.activeGesture = g;
+      press = {
+        id: e.pointerId, s, w, g,
+        timer: setTimeout(() => {
+          const p = press;
+          press = null;
+          if (!p || engine.activeGesture !== p.g || p.g.panned) return;
+          p.g.consume();
+          engine.emitLongPress(p.s, p.w);
+        }, LONG_PRESS_MS),
+      };
+      return;
+    }
+    // A tap takes the object's whole group; stepped into a group, just the member.
+    const unit = engine.unitAt(hit.id);
+    if (engine.selection.has(hit.id)) {
+      // Selected: dragging it moves the selection; a tap narrows, edits (second tap) or — in «several» mode — takes it out.
+      const ids = [...engine.selection];
+      engine.activeGesture = new MoveGesture(engine, ids, w, s, () => {
+        if (multi) {
+          const next = new Set(engine.selection);
+          for (const id of unit) next.delete(id);
+          engine.setSelection(next);
+          return;
+        }
+        const now = Date.now();
+        if (lastTap && lastTap.id === hit.id && now - lastTap.at < DOUBLE_TAP_MS && !engine.votableAt(hit.id)) {
+          lastTap = null;
+          // As a double click: the first steps into a group, the next edits the text.
+          if (engine.enterGroupAt(hit.id)) return;
+          engine.setSelection([hit.id]);
+          engine.startTextEdit(hit.id);
+          return;
+        }
+        lastTap = { id: hit.id, at: now };
+        if (ids.length > 1) engine.setSelection(unit);
+        engine.voteClick(hit.id, w, false);
+      }, TOUCH_SLOP_PX);
+      return;
+    }
+    // Not selected: a tap selects (adds, in «several» mode), a drag pans — nothing moves by accident.
+    engine.activeGesture = new TapPanGesture(engine, s, () => {
+      if (multi) engine.setSelection([...engine.selection, ...unit]);
+      else {
+        engine.setSelection(unit);
+        lastTap = { id: hit.id, at: Date.now() };
+        engine.voteClick(hit.id, w, false);
+      }
+    });
+  };
+
   const onDown = (e: PointerEvent): void => {
     canvas.focus({ preventScroll: true });
     engine.cancelAnimation();
     engine.flushCamera();
+    clearPress();
     const { s, w } = local(e);
     if (e.isPrimary && pointers.size > 0) {
       // A new first finger while the old ones are still "down": their pointerup was lost (a system gesture,
@@ -138,6 +251,10 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       return;
     }
     if (e.button !== 0) return;
+    if (engine.touch && !engine.readOnly) {
+      touchDown(e, s, w);
+      return;
+    }
     switch (engine.tool) {
       case 'sticky':
       case 'text':
@@ -200,6 +317,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const onMove = (e: PointerEvent): void => {
     const { s, w } = local(e);
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, s);
+    if (press && press.id === e.pointerId && Math.hypot(s.x - press.s.x, s.y - press.s.y) > TOUCH_SLOP_PX) clearPress();
     if (pinch) {
       const a = pointers.get(pair[0]);
       const b = pointers.get(pair[1]);
@@ -216,6 +334,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   };
 
   const finish = (e: PointerEvent, cancelled: boolean): void => {
+    clearPress();
     const { s, w } = local(e);
     pointers.delete(e.pointerId);
     try {
@@ -412,6 +531,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   canvas.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('blur', onBlur);
   return () => {
+    clearPress();
     canvas.removeEventListener('pointerdown', onDown);
     canvas.removeEventListener('pointermove', onMove);
     canvas.removeEventListener('pointerup', onUp);

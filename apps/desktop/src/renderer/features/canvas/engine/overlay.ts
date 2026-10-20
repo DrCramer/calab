@@ -5,6 +5,10 @@ import type { Ctx2D } from './draw';
 import type { CanvasPalette } from './palette';
 
 export const HANDLE_PX = 8;
+/** The phone's handles: drawn a little larger, hit from a 44 px zone (radius `TOUCH_HIT_PX`), the rotation handle hung further out. */
+export const TOUCH_HANDLE_PX = 14;
+export const TOUCH_ROTATE_OFFSET_PX = 40;
+export const TOUCH_HIT_PX = 22;
 /** The rotation handle hangs this many screen px above the top side of the frame. */
 export const ROTATE_OFFSET_PX = 26;
 
@@ -40,6 +44,8 @@ export interface OverlayState {
   /** Connector being drawn / retargeted: polyline in world units. */
   wire: readonly number[] | null;
   /** Glue target under the cursor while wiring: rect + its four anchors. */
+  /** Touch editing: larger handles. */
+  touch?: boolean;
   glue: { rect: Rect; /** Rotation of the glue target. */ rot?: number; anchors: readonly Point[]; active: Point | null } | null;
 }
 
@@ -51,6 +57,7 @@ export const overlayIsEmpty = (o: OverlayState): boolean =>
 /** Paints the overlay. The context carries the camera transform (world units); `scale` is the camera scale. */
 export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale: number): void {
   const px = 1 / scale;
+  const hp = o.touch ? TOUCH_HANDLE_PX : HANDLE_PX;
   ctx.lineJoin = 'miter';
   ctx.lineWidth = px * 1.5;
   ctx.strokeStyle = p.accent;
@@ -65,8 +72,8 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
     ctx.moveTo(pts[0] ?? 0, pts[1] ?? 0);
     for (let i = 2; i + 1 < pts.length; i += 2) ctx.lineTo(pts[i] ?? 0, pts[i + 1] ?? 0);
     ctx.stroke();
-    drawHandle(ctx, { x: pts[0] ?? 0, y: pts[1] ?? 0 }, p, px, true);
-    drawHandle(ctx, { x: pts[pts.length - 2] ?? 0, y: pts[pts.length - 1] ?? 0 }, p, px, true);
+    drawHandle(ctx, { x: pts[0] ?? 0, y: pts[1] ?? 0 }, p, px, true, hp);
+    drawHandle(ctx, { x: pts[pts.length - 2] ?? 0, y: pts[pts.length - 1] ?? 0 }, p, px, true, hp);
   }
 
   if (o.group) {
@@ -81,14 +88,14 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
     ctx.strokeRect(g.rect.x, g.rect.y, g.rect.w, g.rect.h);
     if (g.rotate) {
       const top = { x: g.rect.x + g.rect.w / 2, y: g.rect.y };
-      const knob = { x: top.x, y: top.y - ROTATE_OFFSET_PX * px };
+      const knob = { x: top.x, y: top.y - (o.touch ? TOUCH_ROTATE_OFFSET_PX : ROTATE_OFFSET_PX) * px };
       ctx.beginPath();
       ctx.moveTo(top.x, top.y);
-      ctx.lineTo(knob.x, knob.y + (HANDLE_PX / 2 + 1) * px);
+      ctx.lineTo(knob.x, knob.y + (hp / 2 + 1) * px);
       ctx.stroke();
-      drawHandle(ctx, knob, p, px, true);
+      drawHandle(ctx, knob, p, px, true, hp);
     }
-    if (g.resize) for (const h of HANDLE_IDS) drawHandle(ctx, handlePoint(g.rect, h), p, px, false);
+    if (g.resize) for (const h of HANDLE_IDS) drawHandle(ctx, handlePoint(g.rect, h), p, px, false, hp);
     ctx.restore();
   }
 
@@ -163,8 +170,8 @@ function strokeTurned(ctx: Ctx2D, r: Rect, rot: number): void {
   ctx.restore();
 }
 
-function drawHandle(ctx: Ctx2D, at: Point, p: CanvasPalette, px: number, round: boolean): void {
-  const s = HANDLE_PX * px;
+function drawHandle(ctx: Ctx2D, at: Point, p: CanvasPalette, px: number, round: boolean, size = HANDLE_PX): void {
+  const s = size * px;
   ctx.fillStyle = p.handleFill;
   ctx.strokeStyle = p.accent;
   ctx.lineWidth = px * 1.5;

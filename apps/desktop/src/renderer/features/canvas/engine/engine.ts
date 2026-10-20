@@ -164,6 +164,7 @@ export class CanvasEngine implements Core {
   private readOnlyFlag: boolean;
   private lowPower: boolean;
   private reducedMotion: boolean;
+  private readonly pressListeners = new Set<(screen: Point, world: Point) => void>();
   private tool_: Tool = 'select';
   private multi_ = false;
   private shape_: ShapeKind = 'rect';
@@ -436,7 +437,7 @@ export class CanvasEngine implements Core {
       else outlines.push({ rect: { x: o.x, y: o.y, w: o.w, h: o.h }, rot: o.rot ?? 0 });
     }
     const group = !this.readOnly && !this.editor.isOpen ? selectionFrame(recs) : null;
-    this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group };
+    this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group, ...(this.touch ? { touch: true } : {}) };
     this.renderer.requestFrame();
   }
 
@@ -485,6 +486,16 @@ export class CanvasEngine implements Core {
     this.tool_ = t;
     this.canvas.style.cursor = t === 'select' ? '' : 'crosshair';
     this.sync();
+  }
+
+  /** A long press on empty canvas (touch editing): the phone shows its menu. */
+  onLongPress(fn: (screen: Point, world: Point) => void): () => void {
+    this.pressListeners.add(fn);
+    return () => this.pressListeners.delete(fn);
+  }
+
+  emitLongPress(screen: Point, world: Point): void {
+    for (const fn of [...this.pressListeners]) fn(screen, world);
   }
 
   /** «Выбрать несколько» (touch): while on, a tap adds the object to the selection or takes it out. */
