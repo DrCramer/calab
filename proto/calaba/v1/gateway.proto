@@ -309,6 +309,12 @@ message DispatchEvent {
     // canvas's /sync socket.
     CanvasItemUpsert canvas_item_upsert = 105;
     CanvasItemRemove canvas_item_remove = 106;
+    // Canvas comments (ADR-0114 wave 4): workspace channel, routed per recipient like the
+    // items (CANVAS_VIEW on the canvas).
+    CanvasCommentUpsert canvas_comment_upsert = 107;
+    CanvasCommentDelete canvas_comment_delete = 108;
+    // An @mention in a canvas comment: the mentioned member's user channel only.
+    CanvasCommentMention canvas_comment_mention = 109;
   }
 }
 

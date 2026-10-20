@@ -79,6 +79,8 @@ enum CanvasActivityKind {
   CANVAS_ACTIVITY_KIND_RESTORE = 6;
   CANVAS_ACTIVITY_KIND_DELETE = 7; // deleted forever
   CANVAS_ACTIVITY_KIND_VERSION = 8; // a version was saved (edits themselves are not journaled)
+  CANVAS_ACTIVITY_KIND_COMMENT = 9; // a comment was written (after: comment_id, thread_id; never the text)
+  CANVAS_ACTIVITY_KIND_RESOLVE = 10; // a thread was resolved (after: thread_id)
 }
 
 // A journal entry (canvas_activity). before / after carry snapshots (the old and new name, the
@@ -199,4 +201,108 @@ message CanvasItemRemove {
   // Server-internal routing, always empty for clients: the access chain the item had (who saw
   // it gets the event).
   repeated CanvasAccessLevel access = 4;
+}
+
+// ---- comments (ADR-0114 wave 4) ----
+//
+// A server entity next to the Yjs document (canvas_comments). A thread is a root comment with a
+// pin and its replies (one level: a reply to a reply is attached to the root). Reading needs
+// CANVAS_VIEW on the canvas (404 without it); writing, replying and resolving CANVAS_WRITE;
+// the author edits and deletes their own (with CANVAS_WRITE), the owner of the canvas or
+// CANVAS_MANAGE anyone's. Not on a canvas in the trash (409) nor in a suspended workspace. A
+// body holds mentions as "@<user_id>" (like a chat message): the server keeps the ones of
+// members who see the canvas (others stay plain text) and sends each kept one, once per
+// comment, CANVAS_COMMENT_MENTION. Limits: body 1..2000 characters, ≤ 10 mentions, ≤ 500
+// comments per canvas (409), a per-user rate of writes (429).
+
+// A comment. A root carries the pin and the resolution; a reply has parent_id.
+message CanvasComment {
+  string id = 1;
+  string canvas_id = 2;
+  string object_id = 3; // the document object the pin is on; empty = the field (roots only)
+  double x = 4; // the pin's offset from the object, or its point in the world
+  double y = 5;
+  string author_id = 6; // empty after the account is gone
+  string parent_id = 7; // the root of the thread; empty for a root
+  string body = 8;
+  repeated string mentions = 9; // the mentioned members the server accepted
+  bool resolved = 10; // roots only
+  string resolved_by = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp edited_at = 13; // set after an edit of the body
+  google.protobuf.Timestamp resolved_at = 14;
+}
+
+// GET /api/canvas/items/{id}/comments?cursor=&open=1&limit= — a page of threads, the oldest
+// first: up to limit roots (1..100, default 50; open=1 leaves resolved ones out), each followed
+// by all its replies. open_threads counts the canvas's open threads.
+message ListCanvasCommentsResponse {
+  repeated CanvasComment comments = 1;
+  string next_cursor = 2;
+  uint32 open_threads = 3;
+}
+
+// POST /api/canvas/items/{id}/comments — a root (parent_id empty: object_id / x / y place the
+// pin) or a reply (parent_id set: the pin fields are ignored).
+message CreateCanvasCommentRequest {
+  string body = 1;
+  string parent_id = 2;
+  string object_id = 3; // ≤ 64 characters; empty = the field
+  double x = 4; // |x|, |y| ≤ 10^7
+  double y = 5;
+}
+
+// PATCH /api/canvas/comments/{id} — body: the author (or the owner / CANVAS_MANAGE); resolved:
+// a root, CANVAS_WRITE.
+message UpdateCanvasCommentRequest {
+  optional string body = 1;
+  optional bool resolved = 2;
+}
+
+// The answer of create / update.
+message CanvasCommentResponse {
+  CanvasComment comment = 1;
+}
+
+// GET /api/canvas/items/{id}/comments/mention-access?user_ids=a,b — which of the given members
+// (≤ 200) see the canvas and may be @mentioned there (CANVAS_VIEW on the canvas to ask).
+message CanvasMentionAccessResponse {
+  repeated string see_ids = 1;
+}
+
+// CANVAS_COMMENT_UPSERT: a comment was written, edited or its thread resolved / opened again;
+// to members with CANVAS_VIEW on the canvas.
+message CanvasCommentUpsert {
+  string workspace_id = 1;
+  CanvasComment comment = 2;
+  // Server-internal routing, always empty for clients: the canvas's access chain.
+  repeated CanvasAccessLevel access = 3;
+}
+
+// CANVAS_COMMENT_DELETE: a comment was deleted (a root takes its replies along); to members
+// with CANVAS_VIEW on the canvas.
+message CanvasCommentDelete {
+  string workspace_id = 1;
+  string canvas_id = 2;
+  string comment_id = 3;
+  // Server-internal routing, always empty for clients: the canvas's access chain.
+  repeated CanvasAccessLevel access = 4;
+}
+
+// CANVAS_COMMENT_MENTION: the recipient was @mentioned in a comment (user channel; once per
+// comment and person; not to the author; by the recipient's workspace notification level and
+// mute, notifications.CanvasMentionNotifies). text is the start of the comment (≤ 200
+// characters), empty when the recipient hides message text in notifications or the canvas
+// is private (restricted somewhere on its chain). The client opens the canvas at the pin.
+message CanvasCommentMention {
+  string workspace_id = 1;
+  string canvas_id = 2;
+  string canvas_name = 3;
+  string comment_id = 4;
+  string thread_id = 5; // the root (= comment_id for a root)
+  string actor_id = 6;
+  string text = 7;
+  string object_id = 8; // the thread's pin
+  double x = 9;
+  double y = 10;
 }

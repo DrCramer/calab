@@ -118,6 +118,7 @@ var activityKinds = map[string]v1.CanvasActivityKind{
 	"move": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_MOVE, "share": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_SHARE,
 	"trash": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_TRASH, "restore": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_RESTORE,
 	"delete": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_DELETE, "version": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_VERSION,
+	"comment": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_COMMENT, "resolve": v1.CanvasActivityKind_CANVAS_ACTIVITY_KIND_RESOLVE,
 }
 
 func activityProto(a sqlc.CanvasActivity) *v1.CanvasActivity {
