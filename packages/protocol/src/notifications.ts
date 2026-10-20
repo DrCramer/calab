@@ -109,3 +109,25 @@ export function levelNotifies(f: NotifyFacts): boolean {
       return false;
   }
 }
+
+/** One @mention in a canvas comment by someone else (ADR-0114 wave 4), as seen by the mentioned member. */
+export interface CanvasMentionFacts {
+  /** The workspace's level; unset = MENTIONS. */
+  level?: NotificationLevel;
+  /** The workspace's muted_until is in the future. */
+  workspaceMuted: boolean;
+  /** UserSettings.hideMessageTextInNotifications (ADR-0072). */
+  hideText: boolean;
+  /** The canvas is restricted somewhere on its chain. */
+  private: boolean;
+}
+
+/** Whether a canvas @mention notifies (Go notifications.CanvasMentionNotifies): ALL and MENTIONS, not NONE or a muted workspace. */
+export function canvasMentionNotifies(f: CanvasMentionFacts): boolean {
+  return levelNotifies({ dm: false, mention: true, room: NotificationLevel.INHERIT, workspace: f.level, roomMuted: false, workspaceMuted: f.workspaceMuted });
+}
+
+/** Whether the notice may carry the comment's text (Go notifications.CanvasMentionText): never for a private canvas. */
+export function canvasMentionText(f: CanvasMentionFacts): boolean {
+  return !f.hideText && !f.private;
+}
