@@ -76,6 +76,8 @@ export function ChoiceMenu({
   testId,
   onInput,
   footer,
+  emptyText,
+  loading,
   ...shell
 }: MenuShell & {
   groups: ReadonlyArray<PickerGroup<Choice>>;
@@ -89,6 +91,8 @@ export function ChoiceMenu({
   testId?: string;
   onInput?: (text: string) => void;
   footer?: ReactNode;
+  emptyText?: string;
+  loading?: boolean;
 }): ReactNode {
   const [open, setOpen] = useOpen(shell);
   const input = useRef<HTMLInputElement>(null);
@@ -128,6 +132,8 @@ export function ChoiceMenu({
             digits={digits}
             height={320}
             {...(onInput ? { onInput } : {})}
+            {...(emptyText ? { emptyText } : {})}
+            {...(loading ? { loading } : {})}
             onSelect={(c) => {
               onPick(c);
               if (!multi) setOpen(false);

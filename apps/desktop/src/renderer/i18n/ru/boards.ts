@@ -398,6 +398,7 @@ export const ruBoards = {
   'boards.subtaskPlaceholder': 'Заголовок подзадачи',
   'boards.relations': 'Связи',
   'boards.addRelation': 'Добавить связь',
+  'boards.noTasksToLink': 'Нет задач, с которыми можно связать',
   'boards.removeRelation': 'Убрать связь',
   'boards.rel.blocks': 'Блокирует',
   'boards.rel.blocked': 'Заблокирована',
