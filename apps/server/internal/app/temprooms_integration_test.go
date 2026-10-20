@@ -96,7 +96,7 @@ func TestTempRooms(t *testing.T) {
 	for _, bad := range []*v1.CreateTempRoomRequest{
 		{Name: "", TtlSeconds: 3600, Guests: noGuests()},
 		{Name: "x", TtlSeconds: 899, Guests: noGuests()},
-		{Name: "x", TtlSeconds: 604801, Guests: noGuests()},
+		{Name: "x", TtlSeconds: 30*24*3600 + 1, Guests: noGuests()}, // just past the 30-day default (TEMP_ROOM_MAX_TTL_DAYS)
 		{Name: "x", TtlSeconds: 3600, Guests: noGuests(), MemberIds: []string{carol.id}}, // people for a private room only
 		{Name: "x", TtlSeconds: 3600, Guests: noGuests(), Private: true, MemberIds: []string{uuid.NewString()}},
 	} {
