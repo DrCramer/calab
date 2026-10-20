@@ -370,7 +370,8 @@ interface GlueTarget {
 
 /** Object under the pointer to glue to, with the side if the pointer is on one of its anchors. */
 export function glueAt(core: Core, w: Point, exclude?: string): GlueTarget | null {
-  const o = core.scene.hit(w, core.px(6), (x) => isBox(x) && x.id !== exclude);
+  // By area, not by what selection picks: an unfilled frame is a target everywhere inside it (selection stays outline-only).
+  const o = core.scene.hitArea(w, core.px(6), (x) => isBox(x) && x.id !== exclude);
   if (!o || !isBox(o)) return null;
   const shape = o.kind === 'shape' ? o.shape : undefined;
   const anchors = SIDES.map((s) => ({ side: s, p: anchorPoint(o, shape, s) }));

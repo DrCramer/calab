@@ -2,7 +2,8 @@
 import * as Y from 'yjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_SCALE } from '../../../lib/canvas/camera';
-import { isConnector } from '../../../lib/canvas/types';
+import { anchorPoint } from '../../../lib/canvas/route';
+import { isBox, isConnector } from '../../../lib/canvas/types';
 import { CanvasEngine, type EngineOptions } from './engine';
 import { defaultPalette } from './palette';
 import { fakeCtx, manualRaf } from './testing';
@@ -372,6 +373,87 @@ describe('connectors', () => {
     expect(objs(r).snapshot(id)?.to).toEqual({ x: 500, y: 80 });
     r.key('z', { metaKey: true });
     expect(objs(r).count).toBe(3);
+  });
+});
+
+describe('connectors on shapes without a fill', () => {
+  const shape = (kind: 'rect' | 'ellipse' | 'diamond' | 'triangle', x: number, y: number, w = 200, h = 150) => ({
+    init: { kind: 'shape' as const, shape: kind, x, y, w, h },
+  });
+  const wire = (r: Rig, from: [number, number], to: [number, number]): string => {
+    r.engine.setTool('connector');
+    r.drag(from, to);
+    return r.engine.getState().selectedId ?? '';
+  };
+  const lastPoint = (r: Rig, id: string): number[] => {
+    const c = r.engine.scene.get(id);
+    return c && isConnector(c) ? c.points.slice(-2) : [];
+  };
+
+  it.each(['rect', 'ellipse', 'diamond', 'triangle'] as const)('a %s released inside its empty area glues to it (auto side)', (kind) => {
+    const r = rig();
+    const [a] = r.make(sticky(0, 0));
+    const [s] = r.make(shape(kind, 400, 300));
+    // The middle of the area: well inside every outline, far from the border.
+    const id = wire(r, [80, 80], [500, 380]);
+    expect(objs(r).snapshot(id)).toMatchObject({ from: { id: a, side: 'auto' }, to: { id: s, side: 'auto' } });
+    // Resolved to the side nearest to the other end (the sticky up-left): the left anchor.
+    const rec = r.engine.scene.get(s ?? '');
+    expect(rec && isBox(rec) ? lastPoint(r, id) : null).toEqual(rec && isBox(rec) ? Object.values(anchorPoint(rec, kind, 'left')) : null);
+  });
+  it('released 14px below the top border of an empty rectangle still glues', () => {
+    const r = rig();
+    const [s] = r.make(shape('rect', 400, 300));
+    r.make(sticky(440, 0)); // above the frame: the nearest side is the top one
+    const id = wire(r, [500, 80], [520, 314]);
+    expect(objs(r).snapshot(id)).toMatchObject({ to: { id: s, side: 'auto' } });
+    expect(lastPoint(r, id)).toEqual([500, 300]);
+  });
+  it('released in the corner of the bounds outside a diamond / triangle / ellipse stays a free point', () => {
+    const r = rig();
+    r.make(sticky(0, 0), shape('diamond', 400, 300), shape('triangle', 400, 600), shape('ellipse', 400, 900));
+    for (const [x, y] of [[410, 310], [410, 610], [410, 910]] as const) {
+      const id = wire(r, [80, 80], [x, y]);
+      expect(objs(r).snapshot(id)).toMatchObject({ to: { x, y } });
+    }
+  });
+  it('released outside every object stays a free point', () => {
+    const r = rig();
+    r.make(sticky(0, 0), shape('rect', 400, 300));
+    const id = wire(r, [80, 80], [700, 600]);
+    expect(objs(r).snapshot(id)).toMatchObject({ to: { x: 700, y: 600 } });
+  });
+  it('the topmost of overlapping empty shapes wins', () => {
+    const r = rig();
+    const [, , top] = r.make(sticky(0, 0), shape('rect', 400, 300, 300, 300), shape('rect', 450, 350, 100, 100));
+    const id = wire(r, [80, 80], [500, 400]);
+    expect(objs(r).snapshot(id)).toMatchObject({ to: { id: top } });
+  });
+  it('the start of the wire inside an empty shape glues too', () => {
+    const r = rig();
+    const [s, b] = r.make(shape('rect', 0, 0, 300, 300), sticky(600, 0));
+    const id = wire(r, [150, 150], [680, 80]);
+    expect(objs(r).snapshot(id)).toMatchObject({ from: { id: s, side: 'auto' }, to: { id: b } });
+  });
+  it('follows the shape when it moves and resizes', () => {
+    const r = rig();
+    r.make(sticky(440, 0));
+    const [s] = r.make(shape('rect', 400, 300));
+    const id = wire(r, [500, 80], [520, 314]);
+    expect(lastPoint(r, id)).toEqual([500, 300]);
+    objs(r).patch(s ?? '', { x: 600, y: 500 });
+    expect(lastPoint(r, id)).toEqual([700, 500]);
+    objs(r).patch(s ?? '', { w: 400, h: 250 });
+    expect(lastPoint(r, id)).toEqual([800, 500]);
+    expect(objs(r).snapshot(id)).toMatchObject({ to: { id: s } });
+  });
+  it('a click inside an empty shape still does not select it (the marquee must start there)', () => {
+    const r = rig();
+    r.make(shape('rect', 400, 300, 600, 400));
+    r.click(700, 500);
+    expect(r.engine.getState().selectedId).toBeNull();
+    r.click(700, 300); // the border does
+    expect(r.engine.getState().selectedId).not.toBeNull();
   });
 });
 
