@@ -192,7 +192,7 @@ func TestTempRooms(t *testing.T) {
 	// Limits follow the workspace plan (Free: 3 live per creator, TempRooms in plans.Limits): create
 	// until the cap answers 409, then the next create reports it.
 	for i := 0; i < 60; i++ {
-		if bob.client.do("POST", base, &v1.CreateTempRoomRequest{Name: "r" + string(rune('a'+i%26)), TtlSeconds: 900, Guests: noGuests()}, &v1.TempRoomResponse{}) == 409 {
+		if bob.do("POST", base, &v1.CreateTempRoomRequest{Name: "r" + string(rune('a'+i%26)), TtlSeconds: 900, Guests: noGuests()}, &v1.TempRoomResponse{}) == 409 {
 			break
 		}
 	}
@@ -201,7 +201,7 @@ func TestTempRooms(t *testing.T) {
 		t.Fatalf("per-user cap: %v %q", c, reason)
 	}
 	sqlExec(t, `INSERT INTO rooms (workspace_id, type, name, expires_at, created_by)
-		SELECT $1, 'voice', 'filler', now() + interval '1 hour', $2 FROM generate_series(1, 15)`, wid, o.id)
+		SELECT $1, 'voice', 'filler', now() + interval '1 hour', $2 FROM generate_series(1, 60)`, wid, o.id) // over TEMP_ROOMS_PER_WORKSPACE (50)
 	c, reason = apiErrOf(t, carol.client, 409, "POST", base, &v1.CreateTempRoomRequest{Name: "21st", TtlSeconds: 900, Guests: noGuests()})
 	if c != v1.ErrorCode_ERROR_CODE_TEMP_ROOM_LIMIT || reason != "" {
 		t.Fatalf("workspace cap: %v %q", c, reason)
