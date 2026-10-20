@@ -25,6 +25,7 @@ import { esWiki } from './wiki';
 import { esCanvas } from './canvas';
 import { esCanvasBoard } from './canvasBoard';
 import { esCanvasPhone } from './canvasPhone';
+import { esCanvasComments } from './canvasComments';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
 import { esHistory } from './history';
@@ -90,6 +91,7 @@ export const es: Dict = {
   ...esCanvas,
   ...esCanvasBoard,
   ...esCanvasPhone,
+  ...esCanvasComments,
   ...esBoards,
   ...esBoards2,
   ...esHistory,

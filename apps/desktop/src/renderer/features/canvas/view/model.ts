@@ -16,6 +16,7 @@ export const TOOL_DEFS: readonly ToolDef[] = [
   { tool: 'text', key: 'T', label: 'canvasBoard.tool.text' },
   { tool: 'shape', key: 'R', label: 'canvasBoard.tool.shape' },
   { tool: 'connector', key: 'C', label: 'canvasBoard.tool.connector' },
+  { tool: 'comment', key: '⌥C', label: 'canvasBoard.tool.comment' },
 ];
 
 export const SHAPE_DEFS: readonly { kind: ShapeKind; label: `canvasBoard.shape.${ShapeKind}` }[] = [

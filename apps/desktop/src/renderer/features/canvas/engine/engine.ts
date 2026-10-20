@@ -27,7 +27,14 @@ import { selectionFrame } from './selection';
 import { TextEditor, type EditSpec } from './textEditor';
 import { BADGE_MARGIN_PX, hitBadge } from './voteDraw';
 
-export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector';
+export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment';
+
+/** A click (tap) of the «Комментарий» tool (ADR-0114 wave 4): where, and the object under it (null = the field). */
+export interface CommentClick {
+  readonly screen: Point;
+  readonly world: Point;
+  readonly objectId: string | null;
+}
 
 /** Everything React is allowed to see: primitives only (ADR-0113 §4). The object identity changes only when a value does. */
 export interface EngineState {
@@ -168,6 +175,7 @@ export class CanvasEngine implements Core {
   private lowPower: boolean;
   private reducedMotion: boolean;
   private readonly pressListeners = new Set<(screen: Point, world: Point) => void>();
+  private readonly commentListeners = new Set<(c: CommentClick) => void>();
   private tool_: Tool = 'select';
   private multi_ = false;
   private shape_: ShapeKind = 'rect';
@@ -520,6 +528,21 @@ export class CanvasEngine implements Core {
 
   emitLongPress(screen: Point, world: Point): void {
     for (const fn of [...this.pressListeners]) fn(screen, world);
+  }
+
+  /**
+   * A click of the «Комментарий» tool: the view places a pin there and opens the input. The document is not
+   * touched — comments are a server entity (ADR-0114 wave 4).
+   */
+  onCommentAt(fn: (c: CommentClick) => void): () => void {
+    this.commentListeners.add(fn);
+    return () => this.commentListeners.delete(fn);
+  }
+
+  emitCommentAt(screen: Point, world: Point): void {
+    const hit = this.hitAt(world);
+    const c: CommentClick = { screen, world, objectId: hit ? hit.id : null };
+    for (const fn of [...this.commentListeners]) fn(c);
   }
 
   /** «Выбрать несколько» (touch): while on, a tap adds the object to the selection or takes it out. */
