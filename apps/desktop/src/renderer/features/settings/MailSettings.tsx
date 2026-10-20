@@ -5,7 +5,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Modal, PasswordInput, Row, Segmented, Select, TextArea, Toggle } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { mailApi, updateSettings, useMail } from '../../stores/mail';
+import { mailApi, setGrouping, updateSettings, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -27,6 +27,7 @@ const errText = (e: unknown): string => mailErrorText(isMailError(e) ? e.code : 
 export function MailTab(): ReactNode {
   const ids = useMail((s) => s.accountIds);
   const notify = useMail((s) => s.settings.notify);
+  const group = useMail((s) => s.settings.groupThreads);
   const images = useMail((s) => s.settings.remoteImages);
   const cache = useMail((s) => s.settings.cacheLimitBytes);
   const addAccount = (): void => {
@@ -47,6 +48,9 @@ export function MailTab(): ReactNode {
       <Card title={t('mbox.settings.reading')}>
         <Row label={t('mbox.settings.notify')} hint={t('mbox.settings.notifyHint')}>
           <Toggle checked={notify} onChange={(v) => void updateSettings({ notify: v })} label={t('mbox.settings.notify')} />
+        </Row>
+        <Row label={t('mbox.settings.group')} hint={t('mbox.settings.groupHint')}>
+          <Toggle checked={group} onChange={(v) => void setGrouping(v)} label={t('mbox.settings.group')} />
         </Row>
         <Row label={t('mbox.settings.images')} hint={t('mbox.settings.imagesHint')}>
           <Segmented

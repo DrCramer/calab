@@ -226,9 +226,9 @@ func TestPlanBusinessLimits(t *testing.T) {
 	best := uint32(64)
 	o.must(200, "PATCH", "/api/workspaces/"+wsID, &v1.UpdateWorkspaceRequest{DefaultAudioBitrateKbps: &best}, nil)
 
-	// Setting limits for ENTERPRISE is refused (only CUSTOM stores them).
+	// ENTERPRISE takes per-workspace overrides (ADR-0113, TestAdminPlanIdentityAndOverrides), validated like CUSTOM.
 	st, e = superadminUser(t).apiErrBody("PUT", "/api/admin/workspaces/"+wsID+"/plan",
-		&v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Limits: &v1.PlanLimits{RoomMembers: 3}})
+		&v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Limits: &v1.PlanLimits{RoomMembers: 5000}})
 	if st != 422 {
 		t.Fatalf("business with limits: %d %v", st, e)
 	}

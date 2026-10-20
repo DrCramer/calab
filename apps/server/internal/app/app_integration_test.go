@@ -143,11 +143,12 @@ func run(m *testing.M) int {
 	defer stopFakes()
 
 	cfg := &config.Config{
-		DatabaseURL:      u.String(),
-		RedisKeyPrefix:   redistest.Prefix(),
-		JWTSecret:        "integration-secret-integration-secret",
-		AccessTokenTTL:   24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
-		RefreshTokenTTL:  8760 * time.Hour,
+		DatabaseURL:        u.String(),
+		RedisKeyPrefix:     redistest.Prefix(),
+		JWTSecret:          "integration-secret-integration-secret",
+		AccessTokenTTL:     24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
+		RefreshTokenTTL:    8760 * time.Hour,
+		TempRoomMaxTTLDays: 30, TempRoomsPerWorkspace: 50, // the defaults (config.go); the literal skips envDefault
 		RegistrationMode: config.RegistrationInvite,
 		PublicAppURL:     "https://app.example.com",
 		// Abuse limits are exercised separately (TestAbuseLimits) with small values.

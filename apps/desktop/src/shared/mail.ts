@@ -416,6 +416,8 @@ export interface MailSettings {
   remoteImageSenders: string[];
   /** System notifications for new inbox mail (§8). */
   notify: boolean;
+  /** Group messages into conversations (default); off = every message is its own row (CBF-39). */
+  groupThreads: boolean;
   /** Plain-text signature per account id ('' / absent = none). */
   signatures: Record<string, string>;
   /** Body / attachment cache limit per account, bytes (default 1 GiB, §3). */
@@ -426,6 +428,7 @@ export const DEFAULT_MAIL_SETTINGS: MailSettings = {
   remoteImages: 'ask',
   remoteImageSenders: [],
   notify: true,
+  groupThreads: true,
   signatures: {},
   cacheLimitBytes: 1024 * 1024 * 1024,
 };

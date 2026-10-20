@@ -30,14 +30,14 @@ func TestParseLimitsEnv(t *testing.T) {
 	}
 	if team != (Limits{BoardFormsPerBoard: 5, RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, WikiPages: 50, TempRooms: 10, StorageMB: 300 * 1024,
 		StreamsPerRoom: 2, CamerasPerRoom: 10, BoardWebhooksDisabled: true, TelephonyDisabled: true}) ||
-		biz != (Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, WikiPages: 500, TempRooms: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}) {
+		biz != (Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, WikiPages: 500, TempRooms: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25, CorporateIdentity: true}) {
 		t.Fatalf("team / business defaults: %+v %+v", team, biz)
 	}
 
 	if free.RoomMembers != 5 || free.StreamMaxPreset != h720 || free.StreamMaxFPS != 15 || free.CameraMaxFPS != 15 ||
 		free.StreamsPerRoom != 1 || free.StorageMB != 5120 || team.StorageMB != 300<<10 || free.Members != 50 || free.AudioMaxKbps != 16 ||
 		free.Bots != 1 || free.WikiPages != 10 || free.StickerPacks != 1 || !free.ChecklistsDisabled || !free.BoardWebhooksDisabled ||
-		!free.TelephonyDisabled || biz.TelephonyDisabled {
+		!free.TelephonyDisabled || biz.TelephonyDisabled || free.CorporateIdentity || !biz.CorporateIdentity {
 		t.Fatalf("free defaults: %+v", free)
 	}
 	// Keys override one by one; 0 / "" = no limit; presets are case-insensitive.
@@ -70,12 +70,45 @@ func TestParseLimitsEnv(t *testing.T) {
 	if _, _, b, err := Defaults("", "", `{"members":7,"room_members":0}`); err != nil || b.Members != 7 || b.RoomMembers != 0 || b.Bots != 20 {
 		t.Errorf("business env override: %+v %v", b, err)
 	}
+	// ADR-0113: the identity gate reads a plan kind's identity flag from SQL, so env cannot move it;
+	// restating the built-in value is fine.
+	for _, env := range [][3]string{{`{"corporate_identity":true}`, "", ""}, {"", `{"corporate_identity":true}`, ""}, {"", "", `{"corporate_identity":false}`}} {
+		if _, _, _, err := Defaults(env[0], env[1], env[2]); err == nil {
+			t.Errorf("corporate_identity in env accepted: %q", env)
+		}
+	}
+	if _, _, _, err := Defaults(`{"corporate_identity":false}`, "", `{"corporate_identity":true}`); err != nil {
+		t.Errorf("built-in identity flags refused: %v", err)
+	}
+}
+
+// CBF-44: overrides of a Team / Business plan store only the keys that differ from the plan's
+// defaults, so the rest keeps following the defaults (env changes included).
+func TestOverrides(t *testing.T) {
+	if b, err := Overrides(DefaultTeam, DefaultTeam); err != nil || b != nil {
+		t.Fatalf("no change: %s %v", b, err)
+	}
+	l := DefaultTeam
+	l.RoomMembers, l.CorporateIdentity, l.Stickers = 40, true, 500
+	b, err := Overrides(l, DefaultTeam)
+	if err != nil || string(b) != `{"corporate_identity":true,"room_members":40,"stickers":500}` {
+		t.Fatalf("overrides: %s %v", b, err)
+	}
+	// Applied over changed defaults: the overridden keys stay, the others follow.
+	base := DefaultTeam
+	base.Members = 300
+	back, err := ParseLimits(string(b), base)
+	want := base
+	want.RoomMembers, want.CorporateIdentity, want.Stickers = 40, true, 500
+	if err != nil || back != want {
+		t.Fatalf("over new defaults: %+v %v", back, err)
+	}
 }
 
 func TestLimitsJSONRoundTrip(t *testing.T) {
 	l := Limits{BoardFormsDisabled: true, BoardFormsPerBoard: 17, RoomMembers: 7, StreamMaxPreset: orig, StreamMaxFPS: 30, CameraMaxPreset: h1080, CameraMaxFPS: 24,
 		StreamsPerRoom: 2, StorageMB: 5000, Members: 40, StickerPacks: 3, Stickers: 90, Bots: 3, AudioMaxKbps: 32, Boards: 2, WikiPages: 12,
-		ChecklistsDisabled: true, BoardWebhooksDisabled: true, TelephonyDisabled: true}
+		ChecklistsDisabled: true, BoardWebhooksDisabled: true, TelephonyDisabled: true, CorporateIdentity: true}
 	b, err := json.Marshal(l)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +122,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"board_forms_disabled":false,"board_forms_per_board":0,"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"temp_rooms":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"wiki_pages":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"board_webhooks_disabled":false,"telephony_disabled":false,"automations_disabled":false}` {
+	if string(b) != `{"board_forms_disabled":false,"board_forms_per_board":0,"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"temp_rooms":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"wiki_pages":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"board_webhooks_disabled":false,"telephony_disabled":false,"automations_disabled":false,"corporate_identity":false}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }

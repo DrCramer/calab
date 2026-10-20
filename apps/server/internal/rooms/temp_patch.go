@@ -80,6 +80,9 @@ func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc
 			return nil, err
 		}
 		if t.permanent { // no meeting's own room any more (ADR-0112): its meeting asks for none
+			if err := placeAtEnd(ctx, q, cur); err != nil {
+				return nil, err
+			}
 			if err := q.ClearRoomEventsTempRoom(ctx, &cur.ID); err != nil {
 				return nil, err
 			}
@@ -98,6 +101,37 @@ func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc
 		}
 	}
 	return publish, nil
+}
+
+// placeAtEnd puts a room just made permanent (CBF-45) at the end of the sidebar list, which is the
+// loose rooms in position order followed by the categories in position order: into the last
+// category when there is one, else after the last loose room. Other temporary rooms do not count
+// (they have their own virtual group), nor does the room itself.
+func placeAtEnd(ctx context.Context, q *sqlc.Queries, cur sqlc.Room) error {
+	cats, err := q.ListCategories(ctx, *cur.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	var cat *uuid.UUID
+	if n := len(cats); n > 0 {
+		cat = &cats[n-1].ID
+	}
+	rooms, err := q.ListRooms(ctx, *cur.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	var pos int32
+	for _, r := range rooms {
+		if r.ID == cur.ID || r.ExpiresAt != nil {
+			continue
+		}
+		same := (r.CategoryID == nil) == (cat == nil) && (cat == nil || *r.CategoryID == *cat)
+		if same && r.Position >= pos {
+			pos = r.Position + 1
+		}
+	}
+	_, err = q.SetRoomPlacement(ctx, sqlc.SetRoomPlacementParams{ID: cur.ID, WorkspaceID: *cur.WorkspaceID, Position: pos, CategoryID: cat})
+	return err
 }
 
 // privacyPatch reads the private / public switch of a PATCH (ADR-0078 addendum 2026-10-14):

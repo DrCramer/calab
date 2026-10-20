@@ -140,15 +140,18 @@ func ViolationsError(target string, v []*v1.PlanLimitViolation) *httpx.Error {
 }
 
 // TargetLimits are the limits of a self-serve plan by its DB name (free | team | enterprise) and
-// whether it grants the identity features (Business only).
+// whether it grants the identity features (Business only: the built-in flags, ADR-0113).
 func (s *Service) TargetLimits(plan string) (Limits, bool) {
+	var l Limits
 	switch plan {
 	case "team":
-		return s.PlanLimits(v1.Plan_PLAN_TEAM), false
+		l = s.PlanLimits(v1.Plan_PLAN_TEAM)
 	case "enterprise":
-		return s.PlanLimits(v1.Plan_PLAN_ENTERPRISE), true
+		l = s.PlanLimits(v1.Plan_PLAN_ENTERPRISE)
+	default:
+		l = s.PlanLimits(v1.Plan_PLAN_FREE)
 	}
-	return s.PlanLimits(v1.Plan_PLAN_FREE), false
+	return l, l.CorporateIdentity
 }
 
 // AdminAssigned reports a plan a superadmin assigned that self-serve must not override (ADR-0086):
@@ -207,6 +210,7 @@ func (s *Service) CheckTransition(ctx context.Context, q *sqlc.Queries, ws uuid.
 			return billing.ErrPlanAdminAssigned // custom is only ever the superadmin's assignment
 		}
 		lim = s.CustomLimits(ctx, row)
+		identity = lim.CorporateIdentity
 	case ok && AdminAssigned(row, now) && (target != "free" || BillingCustom(row)):
 		return billing.ErrPlanAdminAssigned
 	default:
