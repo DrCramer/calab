@@ -54,7 +54,7 @@ export function rectInflate(r: Rect, d: number): Rect {
 /** Bounding box of several rects; null for none. */
 export function boundsOf(rects: Iterable<Rect>): Rect | null {
   let out: Rect | null = null;
-  for (const r of rects) out = out ? rectUnion(out, r) : { ...r };
+  for (const r of rects) out = out ? rectUnion(out, r) : { x: r.x, y: r.y, w: r.w, h: r.h };
   return out;
 }
 
@@ -255,4 +255,127 @@ export function pointInShape(kind: 'rect' | 'ellipse' | 'diamond' | 'triangle' |
       // Apex at the top middle; the half-width grows linearly with y.
       return Math.abs(nx - 0.5) <= ny / 2;
   }
+}
+
+// ── rotation (ADR-0114 §Волна 1) ───────────────────────────────────────────────
+// A rotated object keeps its unrotated frame (x, y, w, h) and an angle `rot` in degrees, clockwise (y grows
+// downwards), about the frame's center. Everything object-local (hit-testing, handles, resize) works in the
+// local frame: the point is rotated back about the center.
+
+export const DEG = Math.PI / 180;
+
+/** Angle step of Shift+rotate. */
+export const ROT_STEP = 15;
+
+/** Degrees folded into [0, 360), rounded to 0.01° (what is stored: no float dust, 360 → 0). */
+export function normRot(deg: number): number {
+  if (!Number.isFinite(deg)) return 0;
+  const r = Math.round((((deg % 360) + 360) % 360) * 100) / 100;
+  return r >= 360 ? 0 : r;
+}
+
+/** `p` rotated by `deg` clockwise about `c`. */
+export function rotatePoint(p: Point, c: Point, deg: number): Point {
+  if (deg === 0) return p;
+  const a = deg * DEG;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const dx = p.x - c.x;
+  const dy = p.y - c.y;
+  return { x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos };
+}
+
+/** A world point in the local (unrotated) frame of `r` rotated by `rot`. */
+export const toLocal = (r: Rect, rot: number, p: Point): Point => (rot === 0 ? p : rotatePoint(p, rectCenter(r), -rot));
+
+/** A point of the local frame in the world. */
+export const fromLocal = (r: Rect, rot: number, p: Point): Point => (rot === 0 ? p : rotatePoint(p, rectCenter(r), rot));
+
+/** The four corners (nw, ne, se, sw) of `r` rotated by `rot`. */
+export function rotatedCorners(r: Rect, rot: number): [Point, Point, Point, Point] {
+  const c = rectCenter(r);
+  return [
+    rotatePoint({ x: r.x, y: r.y }, c, rot),
+    rotatePoint({ x: r.x + r.w, y: r.y }, c, rot),
+    rotatePoint({ x: r.x + r.w, y: r.y + r.h }, c, rot),
+    rotatePoint({ x: r.x, y: r.y + r.h }, c, rot),
+  ];
+}
+
+/** The circumscribed axis-aligned rect of `r` rotated by `rot` (the grid, culling, snapping, export and align use it). */
+export function rotatedBounds(r: Rect, rot: number): Rect {
+  if (rot === 0) return r;
+  const c = rectCenter(r);
+  const a = rot * DEG;
+  // A quarter turn has cos = 6e-17, not 0: that dust would round a 40-unit side up to 41 pixels in an export.
+  const trim = (v: number): number => (Math.abs(v) < 1e-12 ? 0 : Math.abs(v));
+  const cos = trim(Math.cos(a));
+  const sin = trim(Math.sin(a));
+  const w = r.w * cos + r.h * sin;
+  const h = r.w * sin + r.h * cos;
+  return { x: c.x - w / 2, y: c.y - h / 2, w, h };
+}
+
+/** Does the rotated rect touch the axis-aligned `q` (separating axis test)? */
+export function rotatedRectHitsRect(r: Rect, rot: number, q: Rect): boolean {
+  if (rot === 0) return rectsIntersect(r, q);
+  if (!rectsIntersect(rotatedBounds(r, rot), q)) return false;
+  // The axes of q are the world axes (already covered by the bounds); the remaining ones are r's own.
+  const a = rot * DEG;
+  const axes: Point[] = [{ x: Math.cos(a), y: Math.sin(a) }, { x: -Math.sin(a), y: Math.cos(a) }];
+  const rc = rotatedCorners(r, rot);
+  const qc: Point[] = [{ x: q.x, y: q.y }, { x: q.x + q.w, y: q.y }, { x: q.x + q.w, y: q.y + q.h }, { x: q.x, y: q.y + q.h }];
+  for (const ax of axes) {
+    let r0 = Infinity;
+    let r1 = -Infinity;
+    for (const p of rc) {
+      const d = p.x * ax.x + p.y * ax.y;
+      if (d < r0) r0 = d;
+      if (d > r1) r1 = d;
+    }
+    let q0 = Infinity;
+    let q1 = -Infinity;
+    for (const p of qc) {
+      const d = p.x * ax.x + p.y * ax.y;
+      if (d < q0) q0 = d;
+      if (d > q1) q1 = d;
+    }
+    if (r1 < q0 || q1 < r0) return false;
+  }
+  return true;
+}
+
+/** Hit-test of the 8 handles of a rotated frame at a world point. */
+export const hitHandleRot = (r: Rect, rot: number, p: Point, radius: number): HandleId | null => hitHandle(r, toLocal(r, rot, p), radius);
+
+/** World position of a handle of a rotated frame. */
+export const handlePointRot = (r: Rect, rot: number, h: HandleId): Point => fromLocal(r, rot, handlePoint(r, h));
+
+/** The rotation handle sits `offset` world units above the middle of the top side (in the local frame). */
+export const rotateHandlePoint = (r: Rect, rot: number, offset: number): Point => fromLocal(r, rot, { x: r.x + r.w / 2, y: r.y - offset });
+
+/** The angle (degrees, [0, 360)) that points the object's top at the world point `p`, seen from `c`. */
+export const angleToward = (c: Point, p: Point): number => normRot(Math.atan2(p.y - c.y, p.x - c.x) / DEG + 90);
+
+/** Rounds `deg` to the nearest `step`. */
+export const snapAngle = (deg: number, step = ROT_STEP): number => Math.round(deg / step) * step;
+
+/**
+ * Resize of a rotated frame by one handle, along its own axes: `p` (world) is taken into the local frame, the
+ * rect resized there, and the result placed back so the opposite side/corner (or the center, with
+ * `fromCenter`) stays where it was in the world. Returns the new unrotated frame (its rotation is unchanged).
+ */
+export function resizeRotated(start: Rect, rot: number, handle: HandleId, p: Point, o: ResizeOptions = {}): Rect {
+  if (rot === 0) return resizeRect(start, handle, p, o);
+  const c0 = rectCenter(start);
+  const next = resizeRect(start, handle, rotatePoint(p, c0, -rot), o);
+  const c1 = rotatePoint(rectCenter(next), c0, rot);
+  return { x: c1.x - next.w / 2, y: c1.y - next.h / 2, w: next.w, h: next.h };
+}
+
+/** Resize cursor for a handle of a frame rotated by `rot`: the handle's direction turns with it. */
+export function resizeCursorAt(h: HandleId, rot: number): string {
+  const base: Record<HandleId, number> = { e: 0, se: 45, s: 90, sw: 135, w: 180, nw: 225, n: 270, ne: 315 };
+  const a = Math.round(((((base[h] + rot) % 180) + 180) % 180) / 45) % 4;
+  return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][a] ?? 'default';
 }

@@ -1,6 +1,6 @@
-import { CanvasDoc, clampText, color, endpoint, isShapeKind, newId, num, type PlainObject } from './doc';
+import { CanvasDoc, clampText, color, endpoint, isGroupId, isShapeKind, newId, num, type PlainObject } from './doc';
 import type { Scene } from './scene';
-import { MAX_OBJECTS, type Endpoint, type ObjectInit } from './types';
+import { MAX_OBJECTS, type Endpoint, type InitExtras, type ObjectInit } from './types';
 
 /** Text-clipboard format: prefix + JSON (ADR-0113 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
@@ -72,26 +72,37 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
     }
     return { x: e.x + dx, y: e.y + dy };
   };
+  // Groups travel with their members under a fresh id (a pasted copy must not join the original group); a group the
+  // copy holds fewer than two members of is not carried at all.
+  const members = new Map<string, number>();
+  for (const o of payload.objects) if (isGroupId(o.group)) members.set(o.group, (members.get(o.group) ?? 0) + 1);
+  const groups = new Map<string, string>();
+  for (const [g, n] of members) if (n >= 2) groups.set(g, makeId());
   const out: { id: string; init: ObjectInit }[] = [];
   for (const o of payload.objects) {
     const id = ids.get(o.id);
     if (!id) continue;
     const text = typeof o.text === 'string' ? clampText(o.text) : '';
+    const extras: InitExtras = {};
+    if (o.kind !== 'connector' && typeof o.rot === 'number') extras.rot = o.rot;
+    if (o.locked === true) extras.locked = true;
+    const g = isGroupId(o.group) ? groups.get(o.group) : undefined;
+    if (g !== undefined) extras.group = g;
     const x = num(o.x, 0) + dx;
     const y = num(o.y, 0) + dy;
     switch (o.kind) {
       case 'sticky':
-        out.push({ id, init: { kind: 'sticky', x, y, w: num(o.w, 160), h: num(o.h, 160), color: color(o.color, 'yellow'), text } });
+        out.push({ id, init: { kind: 'sticky', x, y, w: num(o.w, 160), h: num(o.h, 160), color: color(o.color, 'yellow'), text, ...extras } });
         break;
       case 'text':
-        out.push({ id, init: { kind: 'text', x, y, w: num(o.w, 240), size: num(o.size, 20), color: color(o.color, 'text'), text } });
+        out.push({ id, init: { kind: 'text', x, y, w: num(o.w, 240), size: num(o.size, 20), color: color(o.color, 'text'), text, ...extras } });
         break;
       case 'shape':
         out.push({
           id,
           init: {
             kind: 'shape', shape: isShapeKind(o.shape) ? o.shape : 'rect', x, y, w: num(o.w, 160), h: num(o.h, 100),
-            fill: color(o.fill, 'none'), stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), text,
+            fill: color(o.fill, 'none'), stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), text, ...extras,
           },
         });
         break;
@@ -101,7 +112,7 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
           init: {
             kind: 'connector', from: shift(endpoint(o.from)), to: shift(endpoint(o.to)),
             arrow: o.arrow === 'none' || o.arrow === 'both' ? o.arrow : 'end', route: o.route === 'elbow' ? 'elbow' : 'straight',
-            stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), label: typeof o.label === 'string' ? clampText(o.label) : '',
+            stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), label: typeof o.label === 'string' ? clampText(o.label) : '', ...extras,
           },
         });
         break;
