@@ -573,6 +573,52 @@ describe('two clients on one document', () => {
     expect((relay.doc.getMap('meta').get('vote') as { open: boolean }).open).toBe(false);
   });
 
+  it('timer: the writer starts it from the toolbar; everyone sees the countdown; only writers pause, resume and reset', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay, name: 'Ann' });
+    const v = await mount({ relay, name: 'Vera', bits: VIEW });
+    await settle(50);
+    expect(a.q('canvas-timer')).toBeNull();
+    expect(v.q('canvas-timer-button')).toBeNull();
+
+    const click = (el: Element | null): void => {
+      act(() => {
+        (el as HTMLElement).click();
+      });
+    };
+    click(a.q('canvas-timer-button'));
+    await settle(50);
+    click(document.querySelector('[data-testid="canvas-timer-preset-3"]'));
+    await settle(400);
+    for (const m of [a, v]) {
+      expect(m.q('canvas-timer')?.getAttribute('data-phase')).toBe('running');
+      expect(m.q('canvas-timer-time')?.textContent).toMatch(/^(3:00|2:5\d)$/);
+    }
+    expect(a.q('canvas-timer-pause')).not.toBeNull();
+    expect(v.q('canvas-timer-pause')).toBeNull();
+    expect(v.q('canvas-timer-reset')).toBeNull();
+
+    await settle(5000);
+    const left = a.q('canvas-timer-time')?.textContent;
+    expect(left).toMatch(/^2:[0-5]\d$/);
+    expect(v.q('canvas-timer-time')?.textContent).toBe(left);
+
+    click(a.q('canvas-timer-pause'));
+    await settle(400);
+    expect(v.q('canvas-timer')?.getAttribute('data-phase')).toBe('paused');
+    const frozen = v.q('canvas-timer-time')?.textContent;
+    await settle(5000);
+    expect(v.q('canvas-timer-time')?.textContent).toBe(frozen);
+    click(a.q('canvas-timer-resume'));
+    await settle(400);
+    expect(a.q('canvas-timer')?.getAttribute('data-phase')).toBe('running');
+    click(a.q('canvas-timer-reset'));
+    await settle(400);
+    expect(a.q('canvas-timer')).toBeNull();
+    expect(v.q('canvas-timer')).toBeNull();
+    expect(relay.doc.getMap('meta').get('timer')).toBeUndefined();
+  });
+
   it('a viewer sees the editor’s changes live', async () => {
     const relay = new MockRelay();
     const editor = await mount({ relay, name: 'Ann' });

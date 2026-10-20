@@ -12,6 +12,8 @@ import type { SocketLike } from '../../../lib/gateway/client';
 import { CanvasEngine, type CanvasPalette, type ClipboardPort } from '../engine';
 import { bindCanvasSync, type CanvasUser, type SyncBinding, type SyncEnginePort } from '../syncBinding';
 import type { PresenceStore } from './presenceStore';
+import { playTimerEnd } from './timerSound';
+import { TimerStore } from './timerStore';
 
 /** Connection details the screen needs from the app (injected so tests run against a mock socket). */
 export interface CanvasViewDeps {
@@ -23,6 +25,11 @@ export interface CanvasViewDeps {
   /** The signed-in person as the others see them. */
   user: () => { id: string; name: string };
   clipboard?: ClipboardPort;
+  /**
+   * `serverNow − localNow` in ms, estimated from the `Date` header of one light REST call; null = unknown. Called once
+   * per open canvas, and only when a timer is first seen or started (ADR-0114). Absent: the local clock is used.
+   */
+  serverClockOffset?: () => Promise<number | null>;
 }
 
 export interface SessionOptions {
@@ -51,6 +58,8 @@ export interface CanvasSession {
   readonly sync: CanvasSync;
   readonly engine: CanvasEngine;
   readonly binding: SyncBinding;
+  /** The shared countdown (meta.timer). */
+  readonly timer: TimerStore;
   destroy(): void;
 }
 
@@ -92,6 +101,16 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
   const user: CanvasUser = { id: me.id, name: me.name, color: o.color(me.id) };
   const binding = bindCanvasSync({ doc: ydoc, awareness, sync, engine: port, user, readOnly: o.readOnly });
 
+  const timer = new TimerStore({
+    meta: ydoc.getMap('meta'),
+    userId: me.id,
+    canWrite: () => !engine.readOnly,
+    visible: () => engine.isActive,
+    onVisible: (fn) => engine.subscribeView(fn),
+    ...(o.deps.serverClockOffset ? { fetchOffset: o.deps.serverClockOffset } : {}),
+    playEnd: playTimerEnd,
+  });
+
   let closed = false;
   return {
     ydoc,
@@ -99,10 +118,12 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     sync,
     engine,
     binding,
+    timer,
     destroy() {
       if (closed) return;
       closed = true;
       if (engine.editor.isOpen) engine.editor.commit();
+      timer.destroy();
       binding.destroy();
       sync.destroy();
       engine.destroy();

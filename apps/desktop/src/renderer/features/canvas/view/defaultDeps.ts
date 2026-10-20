@@ -10,6 +10,15 @@ export function appDeps(workspaceId: string): CanvasViewDeps {
     getToken: () => platform.auth.accessToken(),
     refreshToken: () => platform.auth.forceRefresh(),
     createSocket: (url) => new WebSocket(url),
+    serverClockOffset: async () => {
+      // One light request: the server's `Date` (whole seconds; +½ s) against our clock around the round trip.
+      const t0 = Date.now();
+      const res = await fetch(`${useSession.getState().serverUrl || window.location.origin}/api/version`, { cache: 'no-store' });
+      const t1 = Date.now();
+      const date = res.headers.get('Date');
+      const server = date ? Date.parse(date) : NaN;
+      return Number.isFinite(server) ? server + 500 - (t0 + t1) / 2 : null;
+    },
     user: () => {
       const id = useSession.getState().me?.user?.id ?? '';
       const known = id && useWorkspaces.getState().byId[workspaceId]?.members[id];

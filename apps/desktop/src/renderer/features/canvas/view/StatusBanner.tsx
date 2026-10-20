@@ -6,6 +6,8 @@ import type { CanvasSync, CanvasSyncStatus } from '../../../lib/canvasSync';
 import type { CanvasEngine } from '../engine';
 import { PANEL } from './chrome';
 import { useAfter, useEngineValue } from './hooks';
+import { TimerChip } from './Timer';
+import type { TimerStore } from './timerStore';
 import { VoteChip } from './Vote';
 
 const noopSubscribe = (): (() => void) => () => undefined;
@@ -36,10 +38,11 @@ const FollowChip = memo(function FollowChip({ engine }: { engine: CanvasEngine }
  * it shows), «Только просмотр» (no CANVAS_WRITE) and the newer-schema notice. Primitives only.
  */
 export const StatusBanner = memo(function StatusBanner({
-  engine, sync, canWrite, gone, onRetry, phone = false,
+  engine, sync, timer, canWrite, gone, onRetry, phone = false,
 }: {
   engine: CanvasEngine;
   sync: CanvasSync;
+  timer: TimerStore;
   canWrite: boolean;
   gone: boolean;
   onRetry: () => void;
@@ -68,6 +71,7 @@ export const StatusBanner = memo(function StatusBanner({
   const chip = 'flex items-center gap-2 rounded-full px-3 py-1.5 text-control text-fg';
   return (
     <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5" data-testid="canvas-status">
+      <TimerChip store={timer} engine={engine} />
       {offline || connecting ? (
         <div role="status" className={cx(PANEL, chip)} data-testid={offline ? 'canvas-offline' : 'canvas-connecting'}>
           {offline ? <WifiOff className="size-4 text-muted" aria-hidden /> : <Loader2 className="size-4 animate-spin text-muted" aria-hidden />}
