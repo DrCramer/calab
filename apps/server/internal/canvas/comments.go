@@ -134,6 +134,16 @@ func commentable(ctx context.Context, q *sqlc.Queries, a access) error {
 	return nil
 }
 
+// changeable is commentable for a change of existing comments: the owner of the canvas or
+// CANVAS_MANAGE without CANVAS_WRITE (an override to themselves) may still moderate.
+func changeable(ctx context.Context, q *sqlc.Queries, a access) error {
+	err := commentable(ctx, q, a)
+	if errors.Is(err, errNoWrite) && a.structure() {
+		return nil
+	}
+	return err
+}
+
 // commentEditable: the author with CANVAS_WRITE, or the owner of the canvas / CANVAS_MANAGE
 // (perm.CanvasStructureAllowed).
 func commentEditable(a access, c sqlc.CanvasComment) bool {
@@ -415,7 +425,7 @@ func (s *Service) updateComment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := commentable(ctx, s.db.Q, a); err != nil && !(errors.Is(err, errNoWrite) && a.structure()) {
+	if err := changeable(ctx, s.db.Q, a); err != nil {
 		return err
 	}
 	if req.Body != nil {
@@ -433,7 +443,7 @@ func (s *Service) updateComment(w http.ResponseWriter, r *http.Request) error {
 		if c, a, err = pathComment(r, q, true); err != nil {
 			return err
 		}
-		if err := commentable(ctx, q, a); err != nil && !(errors.Is(err, errNoWrite) && a.structure()) {
+		if err := changeable(ctx, q, a); err != nil {
 			return err
 		}
 		if req.Body != nil && body != c.Body {
@@ -503,7 +513,7 @@ func (s *Service) deleteComment(w http.ResponseWriter, r *http.Request) error {
 		if c, a, err = pathComment(r, q, true); err != nil {
 			return err
 		}
-		if err := commentable(ctx, q, a); err != nil && !(errors.Is(err, errNoWrite) && a.structure()) {
+		if err := changeable(ctx, q, a); err != nil {
 			return err
 		}
 		if !commentEditable(a, c) {
