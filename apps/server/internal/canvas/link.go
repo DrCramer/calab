@@ -65,7 +65,8 @@ func validCode(code string) bool {
 	}
 	for i := 0; i < len(code); i++ {
 		c := code[i]
-		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+		ok := c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_'
+		if !ok {
 			return false
 		}
 	}

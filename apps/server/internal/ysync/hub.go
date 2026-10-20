@@ -215,6 +215,7 @@ func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	if err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error(); err != nil {
+		//nolint:gosec // G706: the section name, the document id and a Redis error only
 		slog.Warn(h.b.Name()+" sync: publish", "doc_id", doc, "err", err)
 	}
 }
