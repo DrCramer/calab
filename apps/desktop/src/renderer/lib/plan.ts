@@ -22,6 +22,9 @@ export const FREE_LIMITS = {
   bots: 1,
   stickerPacks: 1,
   audioTierMaxKbps: 16,
+  camerasPerRoom: 3,
+  stickers: 200,
+  boards: 3,
 } as const;
 
 /** Voice tiers the admin form offers as the plan cap; 0 = no cap. */
@@ -95,7 +98,11 @@ export function planHas(p: WorkspacePlan | undefined, f: PlanFeature): boolean {
  * server and an effective grant overrides this (PlanLock only without one).
  */
 export function planHasIdentity(p: WorkspacePlan | undefined): boolean {
-  return !p || (p.plan === Plan.ENTERPRISE && !p.expired);
+  if (!p) return true;
+  if (p.expired) return false;
+  // ADR-0113: PlanLimits.corporateIdentity (custom plans and superadmin overrides of Team / Business);
+  // no limits at all: Business only.
+  return p.limits ? p.limits.corporateIdentity : p.plan === Plan.ENTERPRISE;
 }
 
 /** The stored plan (UNSPECIFIED reads as FREE: the server's default when none was ever set). */
@@ -249,9 +256,13 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
   return null;
 }
 
-// ---------------------------------------------------------------- admin form (CUSTOM limits)
+// ---------------------------------------------------------------- admin form (plan limits)
 
-/** The CUSTOM form's fields as typed (strings: inputs), converted by `limitsFromForm`. */
+/**
+ * The limits form's fields as typed (strings: inputs), converted by `limitsFromForm`: a CUSTOM plan,
+ * or the per-workspace overrides of TEAM / ENTERPRISE (ADR-0113). Every field of PlanLimits is here:
+ * a missing one would be sent as 0 / false and lift that limit (CBF-44).
+ */
 export interface LimitsForm {
   boardFormsDisabled: boolean;
   boardFormsPerBoard: string;
@@ -261,25 +272,31 @@ export interface LimitsForm {
   cameraMaxPreset: ScreenSharePreset;
   cameraMaxFps: string;
   streamsPerRoom: string;
+  camerasPerRoom: string;
   storageMb: string;
   members: string;
   bots: string;
   stickerPacks: string;
+  stickers: string;
+  boards: string;
   /** A tier (8 | 16 | 32 | 64) or 0 = no cap. */
   audioTierMaxKbps: number;
-  /** Feature flags of the plan (ADR-0058 §5, ADR-0046): checklists off, board webhooks off, telephony off. */
+  /** Feature flags of the plan (ADR-0058 §5, ADR-0046, ADR-0052, ADR-0113). */
+  caldavDisabled: boolean;
+  musicianDisabled: boolean;
   checklistsDisabled: boolean;
   boardWebhooksDisabled: boolean;
   telephonyDisabled: boolean;
   automationsDisabled: boolean;
+  corporateIdentity: boolean;
 }
 
 /**
- * The form's starting values: the workspace's stored limits when it is CUSTOM already, the FREE
- * defaults otherwise (switching FREE / TEAM → CUSTOM starts from the free limits).
+ * The form's starting values: the workspace's effective limits when it is CUSTOM, TEAM or
+ * ENTERPRISE (switching to CUSTOM starts from them), the FREE defaults otherwise.
  */
 export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): LimitsForm {
-  const src = plan === Plan.CUSTOM && limits ? limits : null;
+  const src = (plan === Plan.CUSTOM || plan === Plan.TEAM || plan === Plan.ENTERPRISE) && limits ? limits : null;
   return {
     boardFormsDisabled: src?.boardFormsDisabled ?? false,
     boardFormsPerBoard: String(src?.boardFormsPerBoard ?? 0),
@@ -289,36 +306,57 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     cameraMaxPreset: src ? src.cameraMaxPreset : FREE_LIMITS.cameraMaxPreset,
     cameraMaxFps: String(src ? src.cameraMaxFps : FREE_LIMITS.cameraMaxFps),
     streamsPerRoom: String(src ? src.streamsPerRoom : FREE_LIMITS.streamsPerRoom),
+    camerasPerRoom: String(src ? src.camerasPerRoom : FREE_LIMITS.camerasPerRoom),
     storageMb: String(src ? src.storageMb : FREE_LIMITS.storageMb),
     members: String(src ? src.members : FREE_LIMITS.members),
     bots: String(src ? src.bots : FREE_LIMITS.bots),
     stickerPacks: String(src ? src.stickerPacks : FREE_LIMITS.stickerPacks),
+    stickers: String(src ? src.stickers : FREE_LIMITS.stickers),
+    boards: String(src ? src.boards : FREE_LIMITS.boards),
     audioTierMaxKbps: src ? src.audioTierMaxKbps : FREE_LIMITS.audioTierMaxKbps,
+    caldavDisabled: src ? src.caldavDisabled : CUSTOM_DEFAULT_FLAGS.caldavDisabled,
+    musicianDisabled: src ? src.musicianDisabled : CUSTOM_DEFAULT_FLAGS.musicianDisabled,
     // ADR-0058 §5: a new CUSTOM plan has checklists and no board webhooks (the stored flags else).
     checklistsDisabled: src ? src.checklistsDisabled : CUSTOM_DEFAULT_FLAGS.checklistsDisabled,
     boardWebhooksDisabled: src ? src.boardWebhooksDisabled : CUSTOM_DEFAULT_FLAGS.boardWebhooksDisabled,
     telephonyDisabled: src ? src.telephonyDisabled : CUSTOM_DEFAULT_FLAGS.telephonyDisabled,
     automationsDisabled: src ? src.automationsDisabled : CUSTOM_DEFAULT_FLAGS.automationsDisabled,
+    corporateIdentity: src ? src.corporateIdentity : CUSTOM_DEFAULT_FLAGS.corporateIdentity,
   };
 }
 
 /**
- * The feature flags a CUSTOM plan starts with: checklists on, board webhooks off (ADR-0058 §5),
- * telephony off (ADR-0046: Business only) — the server's CustomBase.
+ * The feature flags a CUSTOM plan starts with: CalDAV, musician mode and checklists on, board
+ * webhooks off (ADR-0058 §5), telephony off (ADR-0046: Business only), corporate identity off
+ * (ADR-0113) — the server's CustomBase.
  */
-export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true, automationsDisabled: false } as const;
+export const CUSTOM_DEFAULT_FLAGS = {
+  caldavDisabled: false,
+  musicianDisabled: false,
+  checklistsDisabled: false,
+  boardWebhooksDisabled: true,
+  telephonyDisabled: true,
+  automationsDisabled: false,
+  corporateIdentity: false,
+} as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
-const MAX: Record<'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
+const MAX: Record<
+  'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'camerasPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks' | 'stickers' | 'boards',
+  number
+> = {
   boardFormsPerBoard: 1_000_000,
-  roomMembers: 10_000,
+  roomMembers: 1000,
   streamMaxFps: 120,
   cameraMaxFps: 120,
   streamsPerRoom: 100,
+  camerasPerRoom: 100,
   storageMb: 100 * 1024 * 1024,
   members: 1_000_000,
   bots: 1000,
   stickerPacks: 10_000,
+  stickers: 1_000_000,
+  boards: 50,
 };
 
 export type LimitsField = keyof typeof MAX;
@@ -332,15 +370,21 @@ export interface PlanLimitsInit {
   cameraMaxPreset: ScreenSharePreset;
   cameraMaxFps: number;
   streamsPerRoom: number;
+  camerasPerRoom: number;
   storageMb: bigint;
   members: number;
   bots: number;
   stickerPacks: number;
+  stickers: number;
+  boards: number;
   audioTierMaxKbps: number;
+  caldavDisabled: boolean;
+  musicianDisabled: boolean;
   checklistsDisabled: boolean;
   boardWebhooksDisabled: boolean;
   telephonyDisabled: boolean;
   automationsDisabled: boolean;
+  corporateIdentity: boolean;
 }
 
 /**
@@ -365,15 +409,21 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       cameraMaxPreset: f.cameraMaxPreset,
       cameraMaxFps: out.cameraMaxFps ?? 0,
       streamsPerRoom: out.streamsPerRoom ?? 0,
+      camerasPerRoom: out.camerasPerRoom ?? 0,
       storageMb: BigInt(out.storageMb ?? 0),
       members: out.members ?? 0,
       bots: out.bots ?? 0,
       stickerPacks: out.stickerPacks ?? 0,
+      stickers: out.stickers ?? 0,
+      boards: out.boards ?? 0,
       audioTierMaxKbps: f.audioTierMaxKbps,
+      caldavDisabled: f.caldavDisabled,
+      musicianDisabled: f.musicianDisabled,
       checklistsDisabled: f.checklistsDisabled,
       boardWebhooksDisabled: f.boardWebhooksDisabled,
       telephonyDisabled: f.telephonyDisabled,
       automationsDisabled: f.automationsDisabled,
+      corporateIdentity: f.corporateIdentity,
     },
   };
 }
@@ -393,15 +443,17 @@ export interface PlanForm {
 export const NOTE_MAX = 500;
 
 /**
- * The PUT /api/admin/workspaces/{id}/plan body from the form: limits only with CUSTOM (FREE and
- * TEAM take theirs from the server config, ENTERPRISE has none), the end of the chosen day, the trimmed note. Returns
- * the first invalid field instead when the CUSTOM numbers are wrong.
+ * The PUT /api/admin/workspaces/{id}/plan body from the form: limits with CUSTOM, and with TEAM /
+ * ENTERPRISE when `overrides` (ADR-0113: the server stores what differs from the plan's defaults;
+ * without limits the plan follows its defaults), the end of the chosen day, the trimmed note.
+ * Returns the first invalid field instead when the numbers are wrong.
  */
 export function setPlanBody(
   f: PlanForm,
+  overrides = false,
 ): { body: { plan: Plan; limits?: PlanLimitsInit; validUntil?: Date; note: string; displayName?: string; description?: string } } | { error: LimitsField } {
   let limits: PlanLimitsInit | undefined;
-  if (f.plan === Plan.CUSTOM) {
+  if (f.plan === Plan.CUSTOM || (overrides && (f.plan === Plan.TEAM || f.plan === Plan.ENTERPRISE))) {
     const r = limitsFromForm(f.limits);
     if ('error' in r) return r;
     limits = r.limits;

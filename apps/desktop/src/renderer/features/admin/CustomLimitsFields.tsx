@@ -6,8 +6,9 @@ import { audioTierLabel } from '../../lib/audioTierLabel';
 import { AUDIO_CAP_OPTIONS, type LimitsField, type LimitsForm } from '../../lib/plan';
 
 /**
- * The limits of a custom plan as a superadmin edits them (ADR-0024): the manual plan form of a
- * workspace and the custom plan of a billing account (ADR-0086 «Индивидуальный тариф») share it.
+ * The limits of a plan as a superadmin edits them (ADR-0024): the manual plan form of a workspace
+ * (a custom plan or the overrides of Team / Business, ADR-0113) and the custom plan of a billing
+ * account (ADR-0086 «Индивидуальный тариф») share it.
  * Rows only — the caller puts them in a card or a dialog. 0 / empty = no limit.
  */
 
@@ -27,6 +28,9 @@ export const FIELD_LABEL: Record<LimitsField, MessageKey> = {
   roomMembers: 'plan.limit.roomMembers',
   members: 'plan.limit.members',
   streamsPerRoom: 'plan.limit.streams',
+  camerasPerRoom: 'admin.limit.cameras',
+  stickers: 'admin.limit.stickers',
+  boards: 'plan.limit.boards',
   streamMaxFps: 'admin.limit.streamFps',
   cameraMaxFps: 'admin.limit.cameraFps',
   storageMb: 'admin.limit.storageMb',
@@ -72,6 +76,7 @@ export function CustomLimitsFields({ form, onChange }: { form: LimitsForm; onCha
       <NumberField field="streamMaxFps" form={form} onChange={onChange} />
       <PresetField label={t('admin.limit.cameraPreset')} value={form.cameraMaxPreset} options={CAMERA_PRESET_OPTIONS} onChange={(p) => onChange({ ...form, cameraMaxPreset: p })} />
       <NumberField field="cameraMaxFps" form={form} onChange={onChange} />
+      <NumberField field="camerasPerRoom" form={form} onChange={onChange} />
       <NumberField field="storageMb" form={form} onChange={onChange} />
       <NumberField field="members" form={form} onChange={onChange} />
       <Row label={t('admin.limit.audio')}>
@@ -85,6 +90,15 @@ export function CustomLimitsFields({ form, onChange }: { form: LimitsForm; onCha
       </Row>
       <NumberField field="bots" form={form} onChange={onChange} />
       <NumberField field="stickerPacks" form={form} onChange={onChange} />
+      <NumberField field="stickers" form={form} onChange={onChange} />
+      <NumberField field="boards" form={form} onChange={onChange} />
+      {/* CBF-44: every flag of PlanLimits is in the form — one left out was saved as «on». */}
+      <Row label={t('plan.limit.caldav')}>
+        <Toggle label={t('plan.limit.caldav')} checked={!form.caldavDisabled} onChange={(v) => onChange({ ...form, caldavDisabled: !v })} />
+      </Row>
+      <Row label={t('admin.limit.musician')}>
+        <Toggle label={t('admin.limit.musician')} checked={!form.musicianDisabled} onChange={(v) => onChange({ ...form, musicianDisabled: !v })} />
+      </Row>
       {/* ADR-0058 §5: written with the plan — without them a save would switch both on. */}
       <Row label={t('admin.limit.checklists')} hint={t('admin.limit.checklistsHint')}>
         <Toggle label={t('admin.limit.checklists')} checked={!form.checklistsDisabled} onChange={(v) => onChange({ ...form, checklistsDisabled: !v })} />
@@ -105,6 +119,10 @@ export function CustomLimitsFields({ form, onChange }: { form: LimitsForm; onCha
       {/* ADR-0046 (owner, 02.10): telephony is Business only; a new Custom plan starts without it. */}
       <Row label={t('admin.limit.telephony')} hint={t('admin.limit.telephonyHint')}>
         <Toggle label={t('admin.limit.telephony')} checked={!form.telephonyDisabled} onChange={(v) => onChange({ ...form, telephonyDisabled: !v })} />
+      </Row>
+      {/* ADR-0113: SSO, directory sync and the OAuth provider together; Business has them, a new Custom plan does not. */}
+      <Row label={t('admin.limit.identity')} hint={t('admin.limit.identityHint')}>
+        <Toggle label={t('admin.limit.identity')} checked={form.corporateIdentity} onChange={(v) => onChange({ ...form, corporateIdentity: v })} />
       </Row>
     </>
   );

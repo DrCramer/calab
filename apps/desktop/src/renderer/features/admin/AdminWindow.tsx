@@ -280,6 +280,8 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
   const a = ws.data?.workspace;
   const [form, setForm] = useState<PlanForm | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Team / Business: «back to the plan's defaults» — the save sends no limits (ADR-0113).
+  const [useDefaults, setUseDefaults] = useState(false);
   // The form starts from the loaded workspace (once; a save refreshes it below).
   if (a && !form) setForm(formFrom(a));
 
@@ -290,6 +292,7 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
       if (r.workspace) {
         qc.setQueryData(KEY.ws(id), { workspace: r.workspace });
         setForm(formFrom(r.workspace));
+        setUseDefaults(false);
       }
       void qc.invalidateQueries({ queryKey: ['admin', 'search'] });
       void qc.invalidateQueries({ queryKey: KEY.log(id) });
@@ -321,9 +324,13 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
     );
   }
   const w = a.workspace;
+  // ADR-0113: the parameters of Team / Business are edited for the plan the workspace is on (the
+  // form holds its effective limits); after switching to another plan they are its defaults until
+  // saved — sending the form then would store another plan's values as overrides.
+  const overridable = (form.plan === Plan.TEAM || form.plan === Plan.ENTERPRISE) && form.plan === planKind(w.plan) && !w.plan?.expired && !!w.plan?.limits;
   const submit = async (): Promise<void> => {
     setError(null);
-    const r = setPlanBody(form);
+    const r = setPlanBody(form, overridable && !useDefaults);
     if ('error' in r) {
       setError(t('admin.invalid', { field: t(FIELD_LABEL[r.error]) }));
       return;
@@ -424,6 +431,27 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
                 />
               </Row>
               <CustomLimitsFields form={form.limits} onChange={setLimits} />
+            </Card>
+          ) : form.plan === Plan.TEAM || form.plan === Plan.ENTERPRISE ? (
+            <Card title={t('admin.card.overrides', { plan: t(PLAN_LABEL[form.plan]) })} footer={t('admin.overridesHint')}>
+              {!overridable ? (
+                <p className="px-4 py-3 text-body text-muted">{t('admin.overridesAfterSave')}</p>
+              ) : useDefaults ? (
+                <Row label={t('admin.overridesReset')}>
+                  <Button variant="secondary" size="sm" onClick={() => setUseDefaults(false)}>
+                    {t('admin.overridesKeep')}
+                  </Button>
+                </Row>
+              ) : (
+                <>
+                  <CustomLimitsFields form={form.limits} onChange={setLimits} />
+                  <Row label={t('admin.overridesDefaults')}>
+                    <Button variant="secondary" size="sm" onClick={() => setUseDefaults(true)} data-testid="admin-plan-defaults">
+                      {t('admin.overridesDefaultsAction')}
+                    </Button>
+                  </Row>
+                </>
+              )}
             </Card>
           ) : null}
 

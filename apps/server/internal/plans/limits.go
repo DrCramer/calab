@@ -50,6 +50,14 @@ type Limits struct {
 	// AutomationsDisabled: board automations (ADR-0060) are Team and above; without them new rules
 	// are refused, existing rules and Git events do not run (the setup stays).
 	AutomationsDisabled bool
+	// CorporateIdentity: the cloud corporate identity features — SSO, directory sync and the OAuth
+	// provider (ADR-0054 §5, ADR-0113) — are part of the plan. A positive flag, unlike the others:
+	// ADR-0054 wants no entitlement from a permissive zero, so Limits{} and a key a client did not
+	// send mean «no». Business has them; a custom plan or a superadmin override of Team / Business
+	// turns them on or off per workspace. The built-in value of a plan kind is fixed (PLAN_*_LIMITS
+	// cannot change it): the identity gate reads it from workspace_plans in SQL
+	// (identitypolicy.PlanGrantsIdentity).
+	CorporateIdentity bool
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS override them key by key.
@@ -73,13 +81,14 @@ var (
 		BoardWebhooksDisabled: true, TelephonyDisabled: true}
 	// DefaultBusiness (owner, 30.09) is the cloud tier stored as PLAN_ENTERPRISE: 50 in a room,
 	// 500 members, 20 bots, 50 boards (the hard cap), 5 streams and 25 cameras per room, 1 TiB of files; voice and video quality unlimited.
-	DefaultBusiness = Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}
+	DefaultBusiness = Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25,
+		CorporateIdentity: true}
 )
 
 // CustomBase is what a stored PLAN_CUSTOM row means for a key it lacks (rows written before the
 // key existed): no limit, except flags that are off unless granted (ADR-0058 §5: board webhooks
 // and ADR-0046: telephony are Business only, so an older Custom row does not gain them silently;
-// checklists default on).
+// checklists default on; ADR-0113: corporate identity, a positive flag, is off unless granted).
 var CustomBase = Limits{BoardWebhooksDisabled: true, TelephonyDisabled: true}
 
 // Upper bounds of every limit (validation of env and admin input).
@@ -142,6 +151,7 @@ type limitsJSON struct {
 	BoardWebhooks      *bool   `json:"board_webhooks_disabled,omitempty"`
 	Telephony          *bool   `json:"telephony_disabled,omitempty"`
 	Automations        *bool   `json:"automations_disabled,omitempty"`
+	Identity           *bool   `json:"corporate_identity,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -204,6 +214,9 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	if j.Automations != nil {
 		l.AutomationsDisabled = *j.Automations
 	}
+	if j.Identity != nil {
+		l.CorporateIdentity = *j.Identity
+	}
 	for _, p := range []struct {
 		dst  *v1.ScreenSharePreset
 		v    *string
@@ -236,9 +249,40 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
 		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards, CalDAVDisabled: &l.CalDAVDisabled, MusicianDisabled: &l.MusicianDisabled,
 		Checklists: &l.ChecklistsDisabled, BoardWebhooks: &l.BoardWebhooksDisabled, Telephony: &l.TelephonyDisabled,
-		Automations: &l.AutomationsDisabled,
+		Automations: &l.AutomationsDisabled, Identity: &l.CorporateIdentity,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
+}
+
+// Overrides returns the JSON object of the keys whose value in l differs from base (ADR-0113:
+// what a superadmin changed in a Team / Business plan of one workspace), nil when none differ.
+// ParseLimits(Overrides(l, base), base) == l.
+func Overrides(l, base Limits) ([]byte, error) {
+	keys := func(x Limits) (map[string]json.RawMessage, error) {
+		raw, err := x.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var m map[string]json.RawMessage
+		return m, json.Unmarshal(raw, &m)
+	}
+	have, err := keys(l)
+	if err != nil {
+		return nil, err
+	}
+	def, err := keys(base)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range have {
+		if bytes.Equal(v, def[k]) {
+			delete(have, k)
+		}
+	}
+	if len(have) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(have)
 }
 
 // Validate checks the bounds of every limit.
@@ -280,7 +324,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
 		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards, CaldavDisabled: l.CalDAVDisabled, MusicianDisabled: l.MusicianDisabled,
 		ChecklistsDisabled: l.ChecklistsDisabled, BoardWebhooksDisabled: l.BoardWebhooksDisabled, TelephonyDisabled: l.TelephonyDisabled,
-		AutomationsDisabled: l.AutomationsDisabled,
+		AutomationsDisabled: l.AutomationsDisabled, CorporateIdentity: l.CorporateIdentity,
 	}
 }
 
@@ -292,7 +336,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
 		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(), CalDAVDisabled: p.GetCaldavDisabled(), MusicianDisabled: p.GetMusicianDisabled(),
 		ChecklistsDisabled: p.GetChecklistsDisabled(), BoardWebhooksDisabled: p.GetBoardWebhooksDisabled(), BoardFormsDisabled: p.GetBoardFormsDisabled(), BoardFormsPerBoard: p.GetBoardFormsPerBoard(), TelephonyDisabled: p.GetTelephonyDisabled(),
-		AutomationsDisabled: p.GetAutomationsDisabled(),
+		AutomationsDisabled: p.GetAutomationsDisabled(), CorporateIdentity: p.GetCorporateIdentity(),
 	}
 }
 

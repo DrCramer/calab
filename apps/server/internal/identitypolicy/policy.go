@@ -4,6 +4,7 @@ package identitypolicy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -129,6 +130,28 @@ func (c EntitlementConfig) Eligible(ws uuid.UUID, source string, business bool) 
 	default:
 		return false
 	}
+}
+
+// PlanGrantsIdentity reports whether a workspace_plans row (plan, limits, valid_until) is a
+// current plan with corporate identity (ADR-0054 §5, ADR-0113): the boolean corporate_identity
+// key of the stored limits when present (a custom plan, or a superadmin override of Team /
+// Business), else Business (enterprise) only; never once valid_until has passed. It is the
+// "business" argument of EntitlementConfig.Eligible and mirrors business_eligible of the
+// GetIdentityGateState(s) queries; plans.Limits.CorporateIdentity is the same flag.
+func PlanGrantsIdentity(plan string, limits []byte, validUntil *time.Time, now time.Time) bool {
+	if validUntil != nil && !now.Before(*validUntil) {
+		return false
+	}
+	if len(limits) > 0 {
+		var keys map[string]json.RawMessage
+		if json.Unmarshal(limits, &keys) == nil {
+			var granted *bool
+			if raw, ok := keys["corporate_identity"]; ok && json.Unmarshal(raw, &granted) == nil && granted != nil {
+				return *granted
+			}
+		}
+	}
+	return plan == "enterprise"
 }
 
 // Policy supplies a versioned SSO requirement and a bounded proof age.

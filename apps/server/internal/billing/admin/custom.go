@@ -79,7 +79,7 @@ func (h *Handlers) customPlan(w http.ResponseWriter, r *http.Request) error {
 		if unit > 0 && req.GetUnit().GetCurrency() != acc.Currency {
 			return nil, billing.ErrCurrencyMismatch
 		}
-		note, err := checkLimits(ctx, q, ws, "custom", lim, false, req.GetOverrideLimits(), c.reason, &over)
+		note, err := checkLimits(ctx, q, ws, "custom", lim, lim.CorporateIdentity, req.GetOverrideLimits(), c.reason, &over)
 		if err != nil {
 			return nil, err
 		}

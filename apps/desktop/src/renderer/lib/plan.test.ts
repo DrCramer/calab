@@ -186,9 +186,31 @@ describe('admin CUSTOM form', () => {
     expect(f).toMatchObject({ members: '50', bots: '1', stickerPacks: '1', audioTierMaxKbps: 16 });
     const custom = create(PlanLimitsSchema, { roomMembers: 12, storageMb: 5120n, streamMaxPreset: H1080 });
     expect(limitsFormFrom(Plan.CUSTOM, custom)).toMatchObject({ roomMembers: '12', storageMb: '5120', streamMaxPreset: H1080, cameraMaxFps: '0' });
-    // Team → Custom: the free defaults, not Team's.
-    expect(limitsFormFrom(Plan.TEAM, custom).roomMembers).toBe('5');
+    // ADR-0113: Team / Business start from their effective limits (the overrides form; Team → Custom keeps them).
+    expect(limitsFormFrom(Plan.TEAM, custom).roomMembers).toBe('12');
     expect(limitsFormFrom(Plan.ENTERPRISE, custom).storageMb).toBe('5120');
+    expect(limitsFormFrom(Plan.FREE, custom).roomMembers).toBe('5');
+  });
+
+  it('CBF-44: the form carries every PlanLimits field (a missing one was saved as 0 / false = lifted)', () => {
+    const r = limitsFromForm(limitsFormFrom(Plan.FREE, undefined));
+    if (!('limits' in r)) throw new Error('invalid');
+    for (const f of PlanLimitsSchema.fields) expect(r.limits, f.localName).toHaveProperty(f.localName);
+    const stored = create(PlanLimitsSchema, { camerasPerRoom: 7, stickers: 300, boards: 9, caldavDisabled: true, musicianDisabled: true, corporateIdentity: true });
+    const back = limitsFromForm(limitsFormFrom(Plan.CUSTOM, stored));
+    expect('limits' in back && back.limits).toMatchObject({ camerasPerRoom: 7, stickers: 300, boards: 9, caldavDisabled: true, musicianDisabled: true, corporateIdentity: true });
+    // A new custom plan: no corporate identity (the server's CustomBase).
+    expect(limitsFormFrom(Plan.FREE, undefined).corporateIdentity).toBe(false);
+  });
+
+  it('ADR-0113: Team / Business send limits only as overrides of the plan they are on', () => {
+    const limits = limitsFormFrom(Plan.TEAM, create(PlanLimitsSchema, { roomMembers: 40 }));
+    expect(setPlanBody({ plan: Plan.TEAM, limits, validUntil: '', note: '' })).toEqual({ body: { plan: Plan.TEAM, note: '' } });
+    const team = setPlanBody({ plan: Plan.TEAM, limits, validUntil: '', note: '' }, true);
+    expect('body' in team && team.body.limits?.roomMembers).toBe(40);
+    const biz = setPlanBody({ plan: Plan.ENTERPRISE, limits, validUntil: '', note: '' }, true);
+    expect('body' in biz && biz.body.limits?.roomMembers).toBe(40);
+    expect(setPlanBody({ plan: Plan.FREE, limits, validUntil: '', note: '' }, true)).toEqual({ body: { plan: Plan.FREE, note: '' } });
   });
 
   it('validates whole numbers ≥ 0 (empty = 0 = no limit)', () => {
@@ -283,5 +305,13 @@ describe('plan caps for workspace voice defaults (#42)', () => {
     expect(planHasIdentity(create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE }))).toBe(true);
     expect(planHasIdentity(create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE, expired: true }))).toBe(false);
     for (const plan of [Plan.UNSPECIFIED, Plan.FREE, Plan.TEAM, Plan.CUSTOM]) expect(planHasIdentity(create(WorkspacePlanSchema, { plan }))).toBe(false);
+    // ADR-0113: the plan's identity flag (custom plans, overrides of Team / Business).
+    const withFlag = (plan: Plan, corporateIdentity: boolean) => create(WorkspacePlanSchema, { plan, limits: { corporateIdentity } });
+    expect(planHasIdentity(withFlag(Plan.CUSTOM, true))).toBe(true);
+    expect(planHasIdentity(withFlag(Plan.TEAM, true))).toBe(true);
+    expect(planHasIdentity(withFlag(Plan.CUSTOM, false))).toBe(false);
+    expect(planHasIdentity(withFlag(Plan.ENTERPRISE, false))).toBe(false);
+    expect(planHasIdentity(withFlag(Plan.ENTERPRISE, true))).toBe(true);
+    expect(planHasIdentity(create(WorkspacePlanSchema, { plan: Plan.CUSTOM, expired: true, limits: { corporateIdentity: true } }))).toBe(false);
   });
 });

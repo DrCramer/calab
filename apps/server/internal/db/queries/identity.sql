@@ -268,7 +268,10 @@ COALESCE(x.version,1)::bigint AS access_version,
 COALESCE(p.mode,'off')::text AS policy_mode, COALESCE(p.version,1)::bigint AS policy_version,
 COALESCE(p.entitlement_version,1)::bigint AS entitlement_version,
 COALESCE(p.assurance_max_age_seconds,3600)::integer AS max_age_seconds,
-COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()),false)::boolean AS business_eligible,
+-- identitypolicy.PlanGrantsIdentity: a stored boolean corporate_identity decides (custom plan, superadmin
+-- override of Team / Business; ADR-0113), else Business (enterprise) only.
+COALESCE((wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()) AND CASE WHEN jsonb_typeof(wp.limits->'corporate_identity')='boolean'
+  THEN wp.limits->'corporate_identity'='true'::jsonb ELSE wp.plan='enterprise' END,false)::boolean AS business_eligible,
 wp.valid_until AS plan_valid_until,
 a.session_id AS assurance_session_id, a.user_id AS assurance_user_id, a.connection_id AS assurance_connection_id, a.identity_id AS assurance_identity_id,
 a.authenticated_at AS assurance_authenticated_at, a.valid_until AS assurance_valid_until, a.revoked_at AS assurance_revoked_at,
@@ -324,7 +327,10 @@ COALESCE(x.version,1)::bigint AS access_version,
 COALESCE(p.mode,'off')::text AS policy_mode, COALESCE(p.version,1)::bigint AS policy_version,
 COALESCE(p.entitlement_version,1)::bigint AS entitlement_version,
 COALESCE(p.assurance_max_age_seconds,3600)::integer AS max_age_seconds,
-COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()),false)::boolean AS business_eligible,
+-- identitypolicy.PlanGrantsIdentity: a stored boolean corporate_identity decides (custom plan, superadmin
+-- override of Team / Business; ADR-0113), else Business (enterprise) only.
+COALESCE((wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()) AND CASE WHEN jsonb_typeof(wp.limits->'corporate_identity')='boolean'
+  THEN wp.limits->'corporate_identity'='true'::jsonb ELSE wp.plan='enterprise' END,false)::boolean AS business_eligible,
 wp.valid_until AS plan_valid_until,
 a.session_id AS assurance_session_id, a.user_id AS assurance_user_id, a.connection_id AS assurance_connection_id, a.identity_id AS assurance_identity_id,
 a.authenticated_at AS assurance_authenticated_at, a.valid_until AS assurance_valid_until, a.revoked_at AS assurance_revoked_at,

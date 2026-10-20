@@ -139,7 +139,7 @@ func (s *Service) entitlement(ctx context.Context, q *sqlc.Queries, ws uuid.UUID
 	if err != nil {
 		return err
 	}
-	business := planFound && plan.Plan == "enterprise" && (plan.ValidUntil == nil || now.Before(*plan.ValidUntil))
+	business := planFound && identitypolicy.PlanGrantsIdentity(plan.Plan, plan.Limits, plan.ValidUntil, now)
 	grant := identitypolicy.Grant{WorkspaceID: ws, Feature: identitypolicy.OAuthProvider, Source: g.Source, Enabled: g.Enabled, Revoked: g.RevokedAt != nil, Version: g.Version, PlanEligible: s.c.Entitlements.Eligible(ws, g.Source, business)}
 	if g.ValidUntil != nil {
 		grant.ValidUntil = *g.ValidUntil
