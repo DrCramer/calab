@@ -101,6 +101,9 @@ const LOCAL_AWARENESS_MS = 50;
 /** Our camera goes out at most this often (5/s), and only when it moved. */
 const LOCAL_VIEW_MS = 200;
 const ANIM_MS = 180;
+/** Phone: the format bar above the keyboard (44 px targets + padding) and the zoom bar / count of others at the top. */
+const PHONE_FORMAT_BAR_PX = 56;
+const PHONE_TOP_BARS_PX = 64;
 
 function makeCanvasMeasure(family: () => string): MeasureFn {
   if (typeof document === 'undefined') return estimateMeasure;
@@ -172,6 +175,8 @@ export class CanvasEngine implements Core {
   private pasteCount = 0;
   /** The object whose text the editor is open on. */
   private editingId: string | null = null;
+  /** The view before the on-screen keyboard made it move for a text edit, and where it was moved to (phone). */
+  private editCam: { before: Camera; after: Camera } | null = null;
   private animToken = 0;
   private animRaf = 0;
   private pending: Camera | null = null;
@@ -217,7 +222,12 @@ export class CanvasEngine implements Core {
       now: this.now,
     });
     const host = opts.editorHost ?? opts.canvas.parentElement;
-    this.editor = new TextEditor({ host: host ?? opts.canvas, canvas: opts.canvas, getCamera: () => this.cam });
+    this.editor = new TextEditor({
+      host: host ?? opts.canvas,
+      canvas: opts.canvas,
+      getCamera: () => this.cam,
+      ...(this.touch ? { phone: { keepVisible: (dy: number) => this.keepEditVisible(dy), reserve: PHONE_FORMAT_BAR_PX, top: PHONE_TOP_BARS_PX } } : {}),
+    });
     this.renderer.onFrame = () => {
       if (this.editor.isOpen) this.editor.reposition();
     };
@@ -520,7 +530,12 @@ export class CanvasEngine implements Core {
 
   setReadOnly(on: boolean): void {
     this.readOnlyFlag = on;
-    if (this.readOnly) this.editor.cancel();
+    if (this.readOnly) {
+      this.editor.cancel();
+      this.renderer.setHiddenText(null);
+      this.editingId = null;
+      this.endEditCamera();
+    }
     this.refreshOverlay();
     this.sync();
   }
@@ -960,6 +975,23 @@ export class CanvasEngine implements Core {
     }
   }
 
+  /** The text editor asks for the view to move by `dy` px so the text stays clear of the keyboard (phone). Remembers where it came from. */
+  private keepEditVisible(dy: number): void {
+    const c = this.liveCamera;
+    const target = { ...c, ty: c.ty + dy };
+    if (!this.editCam) this.editCam = { before: c, after: target };
+    else this.editCam.after = target;
+    this.moveCamera(target);
+  }
+
+  /** The edit is over: the view goes back to where it was before the keyboard moved it — unless the person has moved it since. */
+  private endEditCamera(): void {
+    const e = this.editCam;
+    this.editCam = null;
+    if (!e) return;
+    if (sameCamera(this.liveCamera, e.after) || sameCamera(this.cam, e.after)) this.moveCamera(e.before);
+  }
+
   /** Opens the textarea over an object (default: the single selected one). */
   startTextEdit(id?: string): boolean {
     if (!this.canEdit()) return false;
@@ -975,6 +1007,7 @@ export class CanvasEngine implements Core {
     this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
       this.editingId = null;
+      this.endEditCamera();
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();

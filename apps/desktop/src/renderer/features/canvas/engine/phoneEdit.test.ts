@@ -361,3 +361,146 @@ describe('touch gestures on an editable canvas', () => {
     }
   });
 });
+
+/** A stand-in for `window.visualViewport`: the part of the screen the keyboard leaves. */
+class FakeViewport extends EventTarget {
+  height = 800;
+  offsetTop = 0;
+  width = 400;
+  count = 0;
+  override addEventListener(type: string, cb: EventListenerOrEventListenerObject | null, opts?: boolean | AddEventListenerOptions): void {
+    this.count++;
+    super.addEventListener(type, cb, opts);
+  }
+  override removeEventListener(type: string, cb: EventListenerOrEventListenerObject | null, opts?: boolean | EventListenerOptions): void {
+    this.count--;
+    super.removeEventListener(type, cb, opts);
+  }
+  resizeTo(height: number): void {
+    this.height = height;
+    this.dispatchEvent(new Event('resize'));
+  }
+}
+
+describe('a text edit and the on-screen keyboard (visualViewport)', () => {
+  const rect = (top: number, bottom: number): DOMRect => ({ top, bottom, left: 0, right: 400, width: 400, height: bottom - top, x: 0, y: top, toJSON: () => ({}) });
+  let vv: FakeViewport;
+
+  const setup = (opts: Partial<EngineOptions> = {}): Rig => {
+    vv = new FakeViewport();
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    // jsdom lays nothing out: the textarea's box is the one the editor positioned, the host is the whole 400×800 stage.
+    vi.spyOn(HTMLTextAreaElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLTextAreaElement) {
+      const top = parseFloat(this.style.top) || 0;
+      return rect(top, top + (parseFloat(this.style.height) || 0));
+    });
+    const r = rig(opts);
+    r.host.getBoundingClientRect = () => rect(0, 800);
+    return r;
+  };
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'visualViewport');
+  });
+
+  /** Where the textarea is now (its box follows the camera). */
+  const box = (r: Rig): { top: number; bottom: number } => {
+    r.cam();
+    r.engine.editor.reposition();
+    const b = (r.engine.editor.element as HTMLTextAreaElement).getBoundingClientRect();
+    return { top: b.top, bottom: b.bottom };
+  };
+
+  it('moves the view up so the text clears the keyboard and the format bar, and puts it back when the edit ends', () => {
+    const r = setup();
+    const [a] = r.make(sticky(100, 620));
+    r.engine.setSelection([a as string]);
+    r.engine.startTextEdit(a);
+    // No keyboard yet, but the format bar (56 px) and a 12 px gap still reserve the bottom: the text ends at 732.
+    expect(box(r).bottom).toBeCloseTo(732, 3);
+    const first = r.cam().ty;
+    expect(first).toBeLessThan(0);
+    // The keyboard comes up: 450 px stay visible, the text goes above 450 − 56 − 12 = 382.
+    vv.resizeTo(450);
+    expect(box(r).bottom).toBeCloseTo(382, 3);
+    expect(r.cam().scale).toBe(1);
+    expect(r.cam().tx).toBe(0);
+    expect(r.engine.editor.getSnapshot().kbd).toBe(350);
+    // Idempotent: the same viewport again moves nothing.
+    const moved = r.cam().ty;
+    vv.resizeTo(450);
+    expect(r.cam().ty).toBe(moved);
+    r.engine.editor.commit();
+    expect(r.cam()).toMatchObject({ tx: 0, ty: 0, scale: 1 });
+    expect(r.engine.editor.getSnapshot().kbd).toBe(0);
+  });
+
+  it('does not move an object that is already clear, and never pushes the start of a tall one off the top', () => {
+    const r = setup();
+    const [a, b] = r.make(sticky(100, 100), sticky(100, 300, 160, 500));
+    r.engine.startTextEdit(a);
+    vv.resizeTo(450);
+    expect(r.cam().ty).toBe(0);
+    r.engine.editor.commit();
+    r.engine.startTextEdit(b);
+    vv.resizeTo(450);
+    // 500 px tall in a free area of 382 − 64: its start lines up under the bars, the end stays hidden
+    expect(box(r).top).toBeCloseTo(64, 3);
+    r.engine.editor.commit();
+    expect(r.cam().ty).toBe(0);
+  });
+
+  it('leaves a view the person moved meanwhile where it is', () => {
+    const r = setup();
+    const [a] = r.make(sticky(100, 620));
+    r.engine.startTextEdit(a);
+    vv.resizeTo(450);
+    r.engine.setCamera({ tx: 30, ty: -100, scale: 1 });
+    r.engine.editor.commit();
+    expect(r.cam()).toMatchObject({ tx: 30, ty: -100 });
+  });
+
+  it('follows the viewport only while a text is open: no listener at rest, none left after, none off the phone', () => {
+    const r = setup();
+    const [a] = r.make(sticky(100, 100));
+    expect(vv.count).toBe(0);
+    r.engine.startTextEdit(a);
+    expect(vv.count).toBe(2);
+    r.engine.editor.commit();
+    expect(vv.count).toBe(0);
+    r.engine.startTextEdit(a);
+    r.engine.editor.cancel();
+    expect(vv.count).toBe(0);
+    const d = setup({ touch: false });
+    const [b] = d.make(sticky(100, 620));
+    d.engine.startTextEdit(b);
+    expect(vv.count).toBe(0);
+    vv.resizeTo(450);
+    expect(d.cam().ty).toBe(0);
+  });
+
+  it('leaving the edit mode (read-only) with a text open ends the edit and gives the view back', () => {
+    const r = setup();
+    const [a] = r.make(sticky(100, 620));
+    r.engine.startTextEdit(a);
+    vv.resizeTo(450);
+    r.engine.setReadOnly(true);
+    expect(r.engine.editor.isOpen).toBe(false);
+    expect(r.cam().ty).toBe(0);
+    expect(vv.count).toBe(0);
+  });
+
+  it('growing text that reaches the keyboard moves the view on typing', () => {
+    const r = setup();
+    const [a] = r.make({ init: { kind: 'text' as const, x: 100, y: 300, w: 200, text: 'one' } });
+    r.engine.startTextEdit(a);
+    vv.resizeTo(450);
+    const ta = r.engine.editor.element as HTMLTextAreaElement;
+    const before = r.cam().ty;
+    // the textarea grows by a few lines (jsdom has no layout: make it so) and the user types
+    Object.defineProperty(ta, 'scrollHeight', { value: 260, configurable: true });
+    ta.value = 'one\ntwo\nthree\nfour';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(r.cam().ty).toBeLessThan(before);
+  });
+});
