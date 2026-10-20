@@ -1,8 +1,9 @@
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import type { FooterKind } from '../../stores/mail';
+import { certTitle } from './CertNotice';
 import { folderLabel, mailErrorText } from './format';
-import type { MailErrorCode, MailFolderRole, MailSyncPhase } from '../../../shared/mail';
+import type { MailCertInfo, MailErrorCode, MailFolderRole, MailSyncPhase } from '../../../shared/mail';
 
 /** The footer's key from `scopeFooter` (`kind\naccountId\nmore`) taken apart. */
 export function parseFooter(key: string): { kind: FooterKind; accountId: string; more: number } | null {
@@ -21,13 +22,20 @@ export interface FooterInput {
   /** The engine failed for good (report in hand) — «Скопировать отчёт». */
   engineFailed: boolean;
   code: MailErrorCode | null;
+  /**
+   * The server certificate that stopped the sync (`TLS` with `MailError.cert`, ADR-0088 §4). A retry
+   * meets the same certificate, so the footer names the reason and leads to the trust prompt.
+   */
+  cert?: MailCertInfo | null;
+  /** This computer's clock for the certificate's dates (defaults to now). */
+  now?: number;
   phase: MailSyncPhase | null;
   folder: { role: MailFolderRole | null; name: string };
   done: number;
   total: number;
 }
 
-export type FooterAction = 'retry' | 'password' | 'report' | null;
+export type FooterAction = 'retry' | 'password' | 'report' | 'cert' | null;
 
 export interface FooterView {
   title: string;
@@ -66,6 +74,9 @@ function footerLines(i: FooterInput): Omit<FooterView, 'parts'> {
     case 'offline':
       return { title: t('mbox.state.offline'), detail: join([i.email, more]), action: 'retry', problem: true };
     case 'error':
+      if (i.code === 'TLS' && i.cert) {
+        return { title: certTitle(i.cert, i.now ?? Date.now()), detail: join([i.email, `${i.cert.host}:${String(i.cert.port)}`, more]), action: 'cert', problem: true };
+      }
       return { title: i.code ? mailErrorText(i.code) : t('mbox.state.error'), detail: join([i.email, more]), action: 'retry', problem: true };
     case 'syncing':
       return { title: t('mbox.status.checking'), detail: join([more]), action: null, problem: false };

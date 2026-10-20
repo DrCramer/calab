@@ -38,6 +38,8 @@ const FooterBody = memo(function FooterBody({ kind, accountId, more }: { kind: P
   const email = useMail((s) => s.accounts[accountId]?.email ?? '');
   const multi = useMail((s) => s.accountIds.length > 1);
   const code = useMail((s) => s.accounts[accountId]?.error?.code ?? null);
+  // The same object until the account's state changes (the engine announces a new cert only).
+  const cert = useMail((s) => s.accounts[accountId]?.error?.cert ?? null);
   const engineFailed = useMail((s) => s.engineReport !== null);
   const report = useMail((s) => s.engineReport ?? '');
   // Only a first sync reads the progress (≤ 2 events/s): primitives, so a repeat re-renders nothing.
@@ -47,7 +49,7 @@ const FooterBody = memo(function FooterBody({ kind, accountId, more }: { kind: P
       return { phase: x?.phase ?? null, role: x?.folder?.role ?? null, name: x?.folder?.name ?? '', done: x?.done ?? 0, total: x?.total ?? 0 };
     }),
   );
-  const v = footerView({ kind, email, multi, more, engineFailed, code, phase: p.phase, folder: { role: p.role, name: p.name }, done: p.done, total: p.total });
+  const v = footerView({ kind, email, multi, more, engineFailed, code, cert, phase: p.phase, folder: { role: p.role, name: p.name }, done: p.done, total: p.total });
   const ratio = kind === 'first' && p.phase !== null && p.phase !== 'folders' && p.total > 0 ? Math.min(1, p.done / p.total) : null;
   return (
     <>
@@ -78,10 +80,11 @@ const FooterBody = memo(function FooterBody({ kind, accountId, more }: { kind: P
         <button
           type="button"
           className="mt-1 text-[12px] font-medium text-accent-text hover:underline"
-          onClick={() => (v.action === 'password' ? useUi.getState().openDialog({ kind: 'settings', tab: 'mail' }) : void syncNow(accountId))}
+          onClick={() => (v.action === 'password' || v.action === 'cert' ? useUi.getState().openDialog({ kind: 'settings', tab: 'mail' }) : void syncNow(accountId))}
           data-testid="mail-status-action"
+          data-action={v.action}
         >
-          {v.action === 'password' ? t('mbox.enterPassword') : t('mbox.retry')}
+          {v.action === 'password' ? t('mbox.enterPassword') : v.action === 'cert' ? (cert?.reason === 'changed' ? t('mbox.cert.showTrust') : t('mbox.cert.show')) : t('mbox.retry')}
         </button>
       ) : null}
     </>

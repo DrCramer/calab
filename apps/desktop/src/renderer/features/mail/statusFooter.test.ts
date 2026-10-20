@@ -33,6 +33,14 @@ describe('status footer texts (ru)', () => {
     expect(v({ kind: 'error', code: 'AUTH_FAILED' }).title).toBe('Неверный пароль');
   });
 
+  it('a certificate that stopped the sync: its reason and the trust prompt, not «Повторить» (CBF-36)', () => {
+    const cert = { host: 'mail.unne.ai', port: 993, fingerprint256: 'AB:CD', subject: 'CN=mail.unne.ai', issuer: 'CN=unne CA', notBefore: 0, notAfter: 0, reason: 'changed' as const };
+    expect(v({ kind: 'error', code: 'TLS', cert })).toMatchObject({ title: 'Сертификат сервера изменился', detail: 'it@unne.ai · mail.unne.ai:993', action: 'cert', problem: true });
+    expect(v({ kind: 'error', code: 'TLS', cert: { ...cert, reason: 'self_signed' } }).title).toBe('Сертификат самоподписанный');
+    // A handshake failure without a certificate keeps the generic text and the retry.
+    expect(v({ kind: 'error', code: 'TLS' })).toMatchObject({ title: 'Не удалось установить защищённое соединение', action: 'retry' });
+  });
+
   it('engine: restarting has no button, failed offers the report', () => {
     expect(v({ kind: 'engine' })).toMatchObject({ title: 'Почта перезапускается', action: null });
     expect(v({ kind: 'engine', engineFailed: true })).toMatchObject({ title: 'Почта не запускается', action: 'report' });
