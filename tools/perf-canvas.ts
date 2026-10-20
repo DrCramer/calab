@@ -8,7 +8,7 @@
  * "record" is the time to issue the draw calls; "withRaster" adds a 1×1 readback that forces the
  * rasterization to finish, so it is the real cost of a frame on that machine.
  *
- *   nice -n 19 npx tsx tools/perf-canvas.ts [--n 500,2000,5000] [--dpr 1,2] [--size 1920x1080] [--runs 5] [--software]
+ *   nice -n 19 npx tsx tools/perf-canvas.ts [--n 500,2000,5000] [--dpr 1,2] [--size 1920x1080] [--runs 5] [--software] [--mix h9|v2]
  *
  * Every (dpr, n) is run `--runs` times in a fresh page; the output is median [min..max] of every number.
  * Heap numbers are taken by CDP after a forced GC (`heapDocMB`: the Y.Doc, `heapEngineMB`: scene + index +
@@ -22,7 +22,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser } from '@playwright/test';
-import { aggregate, attachProbe, compact } from './perf-canvas-probe';
+import { aggregate, attachProbe, compact, topSelf } from './perf-canvas-probe';
 import type { BenchResult } from './perf-canvas-page';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +36,10 @@ const DPRS = opt('dpr', '1,2').split(',').map(Number);
 const [VW, VH] = opt('size', '1920x1080').split('x').map(Number) as [number, number];
 const RUNS = Number(opt('runs', '1'));
 const SOFTWARE = argv.includes('--software');
+/** `v2`: the second iteration's objects (rotated, grouped, formatted, new shapes) and its commands (templates, align, group rotation). */
+const MIX = opt('mix', 'h9');
+/** `--profile zoom`: the top functions by self time during the zoom frames (CDP sampling profiler). */
+const PROFILE = opt('profile', '');
 
 async function bundle(): Promise<string> {
   const require = createRequire(import.meta.url);
@@ -80,9 +84,19 @@ async function main(): Promise<void> {
           const page = await ctx.newPage();
           page.on('pageerror', (e) => console.error('pageerror', e));
           await page.setContent(html(VW, VH));
-          const probe = await attachProbe(browser, page);
+          const probe = await attachProbe(browser, page, async (name, cdp) => {
+            if (!PROFILE) return;
+            if (name === `${PROFILE}-start`) {
+              await cdp.send('Profiler.enable');
+              await cdp.send('Profiler.setSamplingInterval', { interval: 100 });
+              await cdp.send('Profiler.start');
+            } else if (name === `${PROFILE}-end`) {
+              const { profile } = (await cdp.send('Profiler.stop')) as { profile: Parameters<typeof topSelf>[0] };
+              console.error(`--- top self time during ${PROFILE}\n${topSelf(profile).join('\n')}`);
+            }
+          });
           await page.addScriptTag({ content: code });
-          const res = (await page.evaluate(([count, d]) => (window as unknown as { __bench: { run(n: number, dpr: number): Promise<unknown> } }).__bench.run(count as number, d as number), [n, dpr])) as BenchResult;
+          const res = (await page.evaluate(([count, d, m]) => (window as unknown as { __bench: { run(n: number, dpr: number, mix: string): Promise<unknown> } }).__bench.run(count as number, d as number, m as string), [n, dpr, MIX] as const)) as BenchResult;
           const heapDocMB = Math.round((probe.heapMB('gc:engine-before') - probe.heapMB('gc:start')) * 100) / 100;
           const heapEngineMB = Math.round((probe.heapMB('gc:engine-after') - probe.heapMB('gc:engine-before')) * 100) / 100;
           runs.push({ ...res, heapDocMB, heapEngineMB, rendererRssMB: probe.rssMB('gc:engine-after') });
@@ -96,7 +110,7 @@ async function main(): Promise<void> {
       out.push({ dpr, objects: n, runs: RUNS, agg: compact(aggregate(runs)) });
     }
   }
-  console.log(JSON.stringify({ viewport: `${VW}x${VH}`, software: SOFTWARE, results: out }, null, 2));
+  console.log(JSON.stringify({ viewport: `${VW}x${VH}`, software: SOFTWARE, mix: MIX, results: out }, null, 2));
 }
 
 void main();
