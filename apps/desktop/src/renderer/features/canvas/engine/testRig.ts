@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { vi } from 'vitest';
 import { CanvasEngine, type EngineOptions } from './engine';
 import { defaultPalette } from './palette';
-import { fakeCtx, manualRaf } from './testing';
+import { fakeCtx, manualRaf, type FakeCtx } from './testing';
 
 export interface Rig {
   engine: CanvasEngine;
@@ -12,6 +12,8 @@ export interface Rig {
   raf: ReturnType<typeof manualRaf>;
   clip: { text: string; readText(): Promise<string>; writeText(t: string): Promise<void> };
   clock: { t: number };
+  /** The recording 2D context every canvas of the rig draws on. */
+  fake: FakeCtx;
   down(x: number, y: number, init?: MouseEventInit): void;
   move(x: number, y: number, init?: MouseEventInit): void;
   up(x: number, y: number, init?: MouseEventInit): void;
@@ -60,7 +62,7 @@ export function rig(opts: Partial<EngineOptions> = {}): Rig {
     canvas.dispatchEvent(e);
   };
   const r: Rig = {
-    engine, ydoc, canvas, host, raf, clip, clock,
+    engine, ydoc, canvas, host, raf, clip, clock, fake,
     down: (x, y, i) => ptr('pointerdown', x, y, i),
     move: (x, y, i) => ptr('pointermove', x, y, i),
     up: (x, y, i) => ptr('pointerup', x, y, i),

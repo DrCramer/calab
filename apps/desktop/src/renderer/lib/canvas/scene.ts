@@ -337,6 +337,12 @@ export class Scene {
         }
         continue;
       }
+      if (old && sameButFlags(old, rec)) {
+        // Only locked / group changed: nothing on the canvas moves, so no repaint and no connector is re-routed.
+        changed.add(id);
+        this.store(rec);
+        continue;
+      }
       touch(id);
       if (!old || old.z !== rec.z) order = true;
       this.store(rec);
@@ -533,6 +539,16 @@ export class Scene {
     this.link(id, to);
     return rec;
   }
+}
+
+/** Same record except the `locked` / `group` flags (shallow compare; records are flat apart from connector paths, which are not boxes). */
+function sameButFlags(a: ObjectRec, b: ObjectRec): boolean {
+  const ka = Object.keys(a).filter((k) => k !== 'locked' && k !== 'group');
+  const kb = Object.keys(b).filter((k) => k !== 'locked' && k !== 'group');
+  if (ka.length !== kb.length) return false;
+  const x = a as unknown as Record<string, unknown>;
+  const y = b as unknown as Record<string, unknown>;
+  return ka.every((k) => x[k] === y[k]);
 }
 
 function distNearOutline(o: BoxRec, p: Point, tol: number): boolean {
