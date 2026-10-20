@@ -7,7 +7,7 @@ import { duplicate, parse, serialize, toInits } from '../../../lib/canvas/clipbo
 import { arrangeDeltas, arrangeUnits, type ArrangeOp } from '../../../lib/canvas/arrange';
 import { CanvasDoc, newId } from '../../../lib/canvas/doc';
 import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
-import { Scene } from '../../../lib/canvas/scene';
+import { Scene, visualBounds } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
 import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
 import { LABEL_SIZE, TEXT_FONT, TextLayouter, boxFontSize, estimateMeasure, fontOf, nearestToken, type FontToken, type MeasureFn } from '../../../lib/canvas/textLayout';
@@ -16,6 +16,7 @@ import {
   DEFAULTS, aabb, isConnector,
   type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
+import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
 import { AwarenessLayer, sameView, type PeerState, type PeerView } from './awareness';
 import type { Core, Gesture } from './gestures';
 import { attachInput } from './input';
@@ -24,6 +25,7 @@ import { resolveColor, resolveSticky, type CanvasPalette } from './palette';
 import { Renderer, renderSceneTo, type FrameStats } from './renderer';
 import { selectionFrame } from './selection';
 import { TextEditor, type EditSpec } from './textEditor';
+import { BADGE_MARGIN_PX, hitBadge } from './voteDraw';
 
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector';
 
@@ -44,6 +46,14 @@ export interface EngineState {
   readonly followKey: string | null;
   /** Their name (empty while not following). */
   readonly followName: string;
+  /** No vote on the canvas, one counting, or one finished (totals shown). */
+  readonly votePhase: VotePhase;
+  /** Votes per person of the current session (0 without one). */
+  readonly votesPer: number;
+  /** Votes I may still give (0 unless I can vote now). */
+  readonly votesLeft: number;
+  /** A vote is open and I may take part (write access, signed in). */
+  readonly canVote: boolean;
 }
 
 export interface ClipboardPort {
@@ -62,6 +72,8 @@ export interface EngineOptions {
   remoteCanvas?: HTMLCanvasElement;
   doc: Y.Doc;
   palette: CanvasPalette;
+  /** The signed-in person: the owner of the vote cells (no id, no voting). */
+  userId?: string;
   readOnly?: boolean;
   /** «Слабый компьютер»: DPR 1. */
   lowPower?: boolean;
@@ -80,7 +92,7 @@ export interface EngineOptions {
   cancelRaf?: (id: number) => void;
 }
 
-const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName'];
+const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote'];
 const LOCAL_AWARENESS_MS = 50;
 /** Our camera goes out at most this often (5/s), and only when it moved. */
 const LOCAL_VIEW_MS = 200;
@@ -109,6 +121,8 @@ function makeCanvasMeasure(family: () => string): MeasureFn {
 export class CanvasEngine implements Core {
   readonly doc: CanvasDoc;
   readonly scene: Scene;
+  /** Voting on stickies and shapes (ADR-0114): the numbers behind the badges. */
+  readonly votes: VoteBook;
   readonly awareness = new AwarenessLayer();
   readonly renderer: Renderer;
   readonly editor: TextEditor;
@@ -153,6 +167,7 @@ export class CanvasEngine implements Core {
   private animToken = 0;
   private animRaf = 0;
   private pending: Camera | null = null;
+  private readonly userId: string;
   private readonly clipboardPort: ClipboardPort | null;
   private readonly now: () => number;
   private readonly disposers: (() => void)[] = [];
@@ -172,6 +187,11 @@ export class CanvasEngine implements Core {
     this.doc = new CanvasDoc(opts.doc);
     const layouter = new TextLayouter(opts.measure ?? makeCanvasMeasure(() => this.palette.fontFamily));
     this.scene = new Scene(this.doc, layouter);
+    this.userId = opts.userId ?? '';
+    this.votes = new VoteBook(opts.doc, this.userId, (id) => {
+      const o = this.scene.get(id);
+      return o?.kind === 'sticky' || o?.kind === 'shape';
+    });
     this.renderer = new Renderer({
       canvas: opts.canvas,
       ...(opts.remoteCanvas ? { remoteCanvas: opts.remoteCanvas } : {}),
@@ -181,6 +201,7 @@ export class CanvasEngine implements Core {
       getOverlay: () => this.overlay,
       beforeFrame: () => this.flushCamera(),
       awareness: this.awareness,
+      getVotes: () => (this.votes.active ? this.votes : undefined),
       maxDpr: this.lowPower ? 1 : 2,
       ...(opts.raf ? { raf: opts.raf } : {}),
       ...(opts.cancelRaf ? { cancelRaf: opts.cancelRaf } : {}),
@@ -193,7 +214,9 @@ export class CanvasEngine implements Core {
     };
 
     this.state = this.computeState();
-    this.disposers.push(this.scene.subscribe((c) => this.onSceneChange(c.ids)));
+    this.disposers.push(this.scene.subscribe((c) => this.onSceneChange(c.ids, c.order)));
+    this.disposers.push(this.votes.subscribe((ids) => this.onVotes(ids)));
+    this.disposers.push(() => this.votes.destroy());
 
     const um = this.doc.undo;
     const onUndo = (): void => this.sync();
@@ -267,6 +290,10 @@ export class CanvasEngine implements Core {
       readOnly: this.readOnly,
       followKey: this.followKey_,
       followName: this.followKey_ === null ? '' : (this.awareness.followTarget(this.followKey_)?.name ?? ''),
+      votePhase: this.votes.phase,
+      votesPer: this.votes.session?.votesPerPerson ?? 0,
+      votesLeft: this.canVote ? this.votes.left() : 0,
+      canVote: this.canVote,
     };
   }
 
@@ -409,7 +436,9 @@ export class CanvasEngine implements Core {
     return this.overlay.group;
   }
 
-  private onSceneChange(ids: ReadonlySet<string>): void {
+  private onSceneChange(ids: ReadonlySet<string>, order = false): void {
+    // Objects came or went: votes for gone ones stop counting, the leaders and my remaining votes may differ.
+    if (order && this.votes.active) this.votes.invalidate();
     let touched = false;
     for (const id of this.sel) {
       if (!this.scene.has(id)) {
@@ -959,6 +988,63 @@ export class CanvasEngine implements Core {
       this.applyFollow();
       this.sync();
     }
+  }
+
+  // ── voting ──────────────────────────────────────────────────────────────────
+
+  /** A vote is open and I may take part in it. */
+  get canVote(): boolean {
+    return this.votes.phase === 'open' && this.canEdit() && this.userId !== '';
+  }
+
+  /** Starts a new vote (all earlier votes are dropped); null without write access. */
+  startVote(votesPerPerson = VOTE_DEFAULT): VoteSession | null {
+    if (!this.canEdit() || this.userId === '') return null;
+    const s = this.votes.start(votesPerPerson);
+    this.sync();
+    return s;
+  }
+
+  finishVote(): boolean {
+    return this.canEdit() && this.votes.finish();
+  }
+
+  resetVote(): boolean {
+    return this.canEdit() && this.votes.reset();
+  }
+
+  /** +1 / −1 of my vote on a sticky or shape. */
+  castVote(id: string, delta: 1 | -1): boolean {
+    return this.canVote && this.votes.add(id, delta);
+  }
+
+  /** Whether a click on this object is a vote right now (the hover cursor and the double-click ask). */
+  votableAt(id: string): boolean {
+    if (!this.canVote) return false;
+    const k = this.scene.get(id)?.kind;
+    return k === 'sticky' || k === 'shape';
+  }
+
+  /** A click on an object while voting: +1, or −1 with Alt or on its own badge. Returns whether a vote changed. */
+  voteClick(id: string, at: Point, alt: boolean): boolean {
+    if (!this.votableAt(id)) return false;
+    const o = this.scene.get(id);
+    const own = this.votes.own(id);
+    const onBadge = !!o && o.kind !== 'connector' && own > 0 && hitBadge(o, own, this.cam.scale, at);
+    return this.castVote(id, alt || onBadge ? -1 : 1);
+  }
+
+  /** Repaints just the objects whose badge may differ (everything for a new session, a finish or a reset). */
+  private onVotes(ids: ReadonlySet<string> | null): void {
+    if (ids === null || ids.size > 256) this.renderer.invalidateAll();
+    else {
+      const margin = BADGE_MARGIN_PX / this.cam.scale;
+      for (const id of ids) {
+        const o = this.scene.get(id);
+        if (o) this.renderer.invalidate(rectInflate(visualBounds(o), margin));
+      }
+    }
+    this.sync();
   }
 
   // ── follow a participant ────────────────────────────────────────────────────

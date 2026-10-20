@@ -5,6 +5,8 @@ import { F_STRIKE, type Fmt } from '../../../lib/canvas/richText';
 import { LABEL_SIZE, boxFontSize, fontOf, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
 import { aabb, type BoxRec, type ConnectorRec, type ObjectRec } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
+import type { VoteBadge } from '../../../lib/canvas/votes';
+import { drawVoteMark } from './voteDraw';
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -18,6 +20,8 @@ export interface DrawEnv {
   scale: number;
   /** Object whose text is being edited in the overlay textarea: its glyphs are not painted. */
   hiddenText: string | null;
+  /** Vote badges of the open or finished vote (ADR-0114); absent while there is no vote, so a plain canvas pays nothing. */
+  votes?: { badge(id: string): VoteBadge | null } | undefined;
 }
 
 const font = (env: DrawEnv, size: number): string => `${size}px ${env.palette.fontFamily}`;
@@ -94,17 +98,24 @@ function drawBody(ctx: Ctx2D, o: ObjectRec, env: DrawEnv): void {
   switch (o.kind) {
     case 'sticky':
       drawSticky(ctx, o, env);
+      if (env.votes) markVotes(ctx, o, env);
       break;
     case 'text':
       drawText(ctx, o, env);
       break;
     case 'shape':
       drawShape(ctx, o, env);
+      if (env.votes) markVotes(ctx, o, env);
       break;
     case 'connector':
       drawConnector(ctx, o, env);
       break;
   }
+}
+
+function markVotes(ctx: Ctx2D, o: BoxRec, env: DrawEnv): void {
+  const b = env.votes?.badge(o.id);
+  if (b) drawVoteMark(ctx, o, b, env);
 }
 
 interface Laid {

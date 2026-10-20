@@ -6,6 +6,7 @@ import type { CanvasSync, CanvasSyncStatus } from '../../../lib/canvasSync';
 import type { CanvasEngine } from '../engine';
 import { PANEL } from './chrome';
 import { useAfter, useEngineValue } from './hooks';
+import { VoteChip } from './Vote';
 
 const noopSubscribe = (): (() => void) => () => undefined;
 
@@ -86,6 +87,7 @@ export const StatusBanner = memo(function StatusBanner({
         </div>
       ) : null}
       <FollowChip engine={engine} />
+      <VoteChip engine={engine} />
     </div>
   );
 });

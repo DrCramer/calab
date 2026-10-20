@@ -63,7 +63,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     const g = resizeHandleAt(w);
     if (g) return resizeCursorAt(g, engine.selectionFrame()?.rot ?? 0);
     if (connectorEndAt(w)) return 'pointer';
-    return engine.hitAt(w) ? 'move' : '';
+    const over = engine.hitAt(w);
+    return over ? (engine.votableAt(over.id) ? 'pointer' : 'move') : '';
   };
 
   /** The selection frame's rotation handle under the pointer. */
@@ -188,6 +189,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       engine.activeGesture = new MoveGesture(engine, ids, w, s, () => {
         // A click on an already selected member of a multi-selection narrows to it (to its group, if it has one).
         if (!m.shift && wasSelected && ids.length > 1) engine.setSelection(unit);
+        // Voting open: a plain click on a sticky or shape is a vote (Alt or its own badge takes one back).
+        if (!m.shift && !m.mod) engine.voteClick(hit.id, w, m.alt);
       });
       return;
     }
@@ -256,6 +259,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     const { w } = local(e);
     const hit = engine.hitAt(w);
     if (hit) {
+      // While voting a double-click is two votes, not a text edit.
+      if (engine.votableAt(hit.id)) return;
       // First double-click on a group member steps into the group; the next edits the text.
       if (engine.enterGroupAt(hit.id)) return;
       engine.setSelection([hit.id]);

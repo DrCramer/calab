@@ -515,6 +515,64 @@ describe('two clients on one document', () => {
     expect(b.q('canvas-following')).toBeNull();
   });
 
+  it('voting: the writer starts it from the toolbar and votes; a viewer sees that it is on but cannot take part; finish shows the totals', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay, name: 'Ann' });
+    const v = await mount({ relay, name: 'Vera', bits: VIEW });
+    await settle(50);
+    a.key('s');
+    a.ptr('pointerdown', 300, 300);
+    a.ptr('pointerup', 300, 300);
+    escapeEditor(a);
+    await settle(400);
+    expect(a.q('canvas-vote-chip')).toBeNull();
+    expect(v.q('canvas-vote-button')).toBeNull();
+
+    act(() => {
+      (a.q('canvas-vote-button') as HTMLElement).click();
+    });
+    await settle(50);
+    const count = document.querySelector('[data-testid="canvas-vote-count"]') as HTMLInputElement;
+    expect(count.value).toBe('5');
+    act(() => {
+      (document.querySelector('[data-testid="canvas-vote-start"]') as HTMLElement).click();
+    });
+    await settle(400);
+    expect(a.q('canvas-vote-chip')?.textContent).toContain('5');
+    expect(v.q('canvas-vote-chip')).not.toBeNull();
+    expect(v.q('canvas-vote-chip')?.textContent).not.toBe(a.q('canvas-vote-chip')?.textContent);
+
+    // Ann clicks the sticky twice: 3 of 5 left; the viewer's clicks change nothing
+    a.ptr('pointerdown', 300, 300);
+    a.ptr('pointerup', 300, 300);
+    a.ptr('pointerdown', 300, 300);
+    a.ptr('pointerup', 300, 300);
+    const viewerCommits = v.commits.n;
+    await settle(400);
+    // the viewer's React tree does not re-render for somebody else's votes
+    expect(v.commits.n).toBe(viewerCommits);
+    v.ptr('pointerdown', 300, 300);
+    v.ptr('pointerup', 300, 300);
+    await settle(400);
+    expect(a.q('canvas-vote-chip')?.textContent).toContain('3');
+    const cells = relay.doc.getMap('votes').toJSON() as Record<string, Record<string, number>>;
+    expect(Object.values(cells).map((c) => Object.values(c))).toEqual([[2]]);
+
+    // finish: the chip goes away on both sides, the button stays lit
+    act(() => {
+      (a.q('canvas-vote-button') as HTMLElement).click();
+    });
+    await settle(50);
+    act(() => {
+      (document.querySelector('[data-testid="canvas-vote-finish"]') as HTMLElement).click();
+    });
+    await settle(400);
+    expect(a.q('canvas-vote-chip')).toBeNull();
+    expect(v.q('canvas-vote-chip')).toBeNull();
+    expect(pressed(a, 'canvas-vote-button')).toBe('true');
+    expect((relay.doc.getMap('meta').get('vote') as { open: boolean }).open).toBe(false);
+  });
+
   it('a viewer sees the editor’s changes live', async () => {
     const relay = new MockRelay();
     const editor = await mount({ relay, name: 'Ann' });

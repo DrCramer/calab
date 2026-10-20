@@ -9,6 +9,7 @@ import { ACTIVE_TOOL, DIVIDER, MENU_BOX, MENU_ITEM, PANEL, keepFocus } from './c
 import { useEngineValue } from './hooks';
 import { ShapeIcon } from './ShapeIcon';
 import { TemplatesMenu } from './Templates';
+import { VoteButton } from './Vote';
 import { ROUTE_DEFS, SHAPE_DEFS, TOOL_DEFS } from './model';
 
 const ICON = 'size-[18px]';
@@ -220,6 +221,7 @@ export const Toolbar = memo(function Toolbar({ engine, focusCanvas }: { engine: 
       />
       <div className="mx-1 my-0.5 h-px bg-line" aria-hidden />
       <TemplatesMenu engine={engine} focusCanvas={focusCanvas} />
+      <VoteButton engine={engine} focusCanvas={focusCanvas} />
     </div>
   );
 });

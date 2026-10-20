@@ -20,6 +20,8 @@ export interface RendererOptions {
   getCamera: () => Camera;
   getOverlay: () => OverlayState;
   awareness: AwarenessLayer;
+  /** Vote badges: the book while a vote exists (open or finished), null otherwise (ADR-0114). */
+  getVotes?: () => DrawEnv['votes'];
   /** Max device-pixel ratio; 1 in the low-power mode. */
   maxDpr?: number;
   /** Injected for tests / non-DOM hosts. */
@@ -246,7 +248,7 @@ export class Renderer {
   // ── frame ──────────────────────────────────────────────────────────────────
 
   private env(scale: number): DrawEnv {
-    return { palette: this.palette, layouter: this.o.scene.text, scale, hiddenText: this.hiddenText };
+    return { palette: this.palette, layouter: this.o.scene.text, scale, hiddenText: this.hiddenText, votes: this.o.getVotes?.() };
   }
 
   frame(): void {

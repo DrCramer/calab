@@ -57,8 +57,10 @@ export interface CanvasSession {
 export function openCanvasSession(o: SessionOptions): CanvasSession {
   const ydoc = new Y.Doc();
   const awareness = new Awareness(ydoc);
+  const me = o.deps.user();
   const engine = new CanvasEngine({
     canvas: o.canvas,
+    userId: me.id,
     ...(o.remoteCanvas ? { remoteCanvas: o.remoteCanvas } : {}),
     doc: ydoc,
     palette: o.palette,
@@ -78,7 +80,6 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     onTooLarge: o.onTooLarge,
     onFatal: o.onFatal,
   });
-  const me = o.deps.user();
   const port: SyncEnginePort = {
     setPeers: (peers) => {
       engine.setPeers(peers);
