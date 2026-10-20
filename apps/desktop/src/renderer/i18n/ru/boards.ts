@@ -405,6 +405,7 @@ export const ruBoards = {
   'boards.rel.duplicates': 'Дубликат',
   'boards.activity': 'Активность',
   'boards.olderComments': 'Показать ранние',
+  'boards.toLatest': 'К последнему комментарию',
   'boards.commentPlaceholder': 'Оставить комментарий…',
   // approvals (ADR-0049)
   'boards.approvals': 'Согласование',
