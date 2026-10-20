@@ -265,7 +265,7 @@ describe('the edit mode (ADR-0114 wave 5b)', () => {
 });
 
 describe('the edit mode tool bar', () => {
-  const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
+  const click = (m: Mounted, id: string): void => act(() => m.q(id)?.click());
   const objects = (m: Mounted): Array<Record<string, unknown>> => [...m.relay.doc.getMap<{ toJSON(): Record<string, unknown> }>('objects').values()].map((o) => o.toJSON());
 
   it('exists only in edit mode, with 44 px targets above the home indicator', async () => {
@@ -381,7 +381,7 @@ describe('the edit mode tool bar', () => {
 });
 
 describe('the properties sheet', () => {
-  const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
+  const click = (m: Mounted, id: string): void => act(() => m.q(id)?.click());
   const objects = (m: Mounted): Array<Record<string, unknown>> => [...m.relay.doc.getMap<{ toJSON(): Record<string, unknown> }>('objects').values()].map((o) => o.toJSON());
   const esc = (m: Mounted): void => act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   /** Arms a tool, taps the canvas and closes the editor the object opens: the new object stays selected. */
@@ -414,7 +414,7 @@ describe('the properties sheet', () => {
     expect(m.q('canvas-phone-panel')).not.toBeNull();
     const first = m.host.querySelectorAll<HTMLElement>('[data-testid^="canvas-phone-color-"]')[2];
     const token = first?.dataset['testid']?.replace('canvas-phone-color-', '');
-    act(() => void first?.click());
+    act(() => first?.click());
     expect(m.q('canvas-phone-panel')).toBeNull();
     click(m, 'canvas-prop-size-l');
     click(m, 'canvas-prop-lock');
@@ -504,7 +504,7 @@ describe('the properties sheet', () => {
 
 describe('touch editing in the viewer', () => {
   const objects = (m: Mounted): Array<Record<string, unknown>> => [...m.relay.doc.getMap<{ toJSON(): Record<string, unknown> }>('objects').values()].map((o) => o.toJSON());
-  const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
+  const click = (m: Mounted, id: string): void => act(() => m.q(id)?.click());
   const esc = (m: Mounted): void => act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   const place = (m: Mounted, tool: string, x: number, y: number): void => {
     click(m, `canvas-tool-${tool}`);

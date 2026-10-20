@@ -498,6 +498,20 @@ export class CanvasEngine implements Core {
     this.sync();
   }
 
+  /**
+   * Leaving the phone's edit mode (the screen's «Готово»): what was typed is kept, a gesture in progress is dropped, and no
+   * selection, tool or «several» mode stays armed. The caller flushes the socket before it turns the canvas read-only.
+   */
+  leaveTouchEdit(): void {
+    if (this.editor.isOpen) this.editor.commit();
+    const g = this.gesture;
+    this.activeGesture = null;
+    g?.cancel();
+    this.clearSelection();
+    this.setTool('select');
+    this.setMultiSelect(false);
+  }
+
   /** A long press on empty canvas (touch editing): the phone shows its menu. */
   onLongPress(fn: (screen: Point, world: Point) => void): () => void {
     this.pressListeners.add(fn);

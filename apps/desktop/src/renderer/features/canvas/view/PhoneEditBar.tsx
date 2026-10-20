@@ -1,5 +1,5 @@
 import { MousePointer2, Plus, Redo2, Spline, StickyNote, Type, Undo2, Vote, Timer as TimerIcon, type LucideIcon } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import { TEMPLATE_IDS, type TemplateId } from '../../../lib/canvas/templates';
@@ -102,7 +102,6 @@ export const PhoneEditBar = memo(function PhoneEditBar({
   const tool = useEngineValue(engine, (s) => s.tool);
   const shapeKind = useEngineValue(engine, (s) => s.shapeKind);
   const editing = useEngineValue(engine, (s) => s.editing);
-  const selected = useEngineValue(engine, (s) => s.selectionCount);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const close = useCallback(() => setSheet(null), []);
   const dock = useRef<HTMLDivElement>(null);
@@ -123,9 +122,11 @@ export const PhoneEditBar = memo(function PhoneEditBar({
   }, [engine, selKey, editing]);
 
   // Selecting something (or starting to type) puts any open sheet away: the properties are what matters then.
-  useEffect(() => {
-    if (selected > 0 || editing) setSheet(null);
-  }, [selected, editing]);
+  const [seen, setSeen] = useState({ selKey, editing });
+  if (seen.selKey !== selKey || seen.editing !== editing) {
+    setSeen({ selKey, editing });
+    if (editing || selKey !== '') setSheet(null);
+  }
 
   if (editing) return null;
   const openTemplates = (): void => setSheet('plus');

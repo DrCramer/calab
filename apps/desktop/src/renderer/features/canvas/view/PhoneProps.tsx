@@ -2,12 +2,12 @@ import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
   AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, Check, CopyPlus, Group, ListChecks, Lock, LockOpen, Minus, Palette, Pencil, Shapes, Trash2, Ungroup, type LucideIcon,
 } from 'lucide-react';
-import { memo, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { memo, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { plural, t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import { TEXT_FONT } from '../../../lib/canvas/textLayout';
-import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
+import type { Arrow, ObjectPatch, RouteKind } from '../../../lib/canvas/types';
 import { readableInk, type CanvasEngine, type CanvasPalette } from '../engine';
 import { keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
@@ -62,11 +62,8 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
   const m = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const multi = useEngineValue(engine, (s) => s.multiSelect);
   const [panel, setPanel] = useState<PanelId | null>(null);
-  const present = m !== null;
   // Nothing selected (or the panel's subject is gone): its grid goes with it.
-  useEffect(() => {
-    if (!present) setPanel(null);
-  }, [present]);
+  if (m === null && panel !== null) setPanel(null);
   if (!m && !multi) return null;
 
   const patch = (p: ObjectPatch): void => engine.updateSelected(p);
@@ -252,7 +249,7 @@ function PanelGrid({
     return (
       <div role="group" aria-label={t('canvasBoard.props.shape')} className="flex flex-wrap gap-0.5 border-b border-line p-1" data-testid="canvas-phone-panel">
         {SHAPE_DEFS.map((d) => (
-          <PhoneBtn key={d.kind} label={t(d.label)} active={d.kind === m.shape} onClick={() => onPatch({ shape: d.kind as ShapeKind })} testId={`canvas-prop-shape-${d.kind}`}>
+          <PhoneBtn key={d.kind} label={t(d.label)} active={d.kind === m.shape} onClick={() => onPatch({ shape: d.kind })} testId={`canvas-prop-shape-${d.kind}`}>
             <ShapeIcon kind={d.kind} className={ICON} />
           </PhoneBtn>
         ))}

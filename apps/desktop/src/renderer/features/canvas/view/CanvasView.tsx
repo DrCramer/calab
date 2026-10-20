@@ -160,12 +160,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
     if (!session) return;
     // Leaving the phone's edit mode keeps what was typed and drops the selection and the tool (nothing stays half-armed).
     if (!canWrite && phone) {
-      const { engine } = session;
-      if (engine.editor.isOpen) engine.editor.commit();
-      engine.activeGesture?.cancel();
-      engine.activeGesture = null;
-      engine.clearSelection();
-      engine.setTool('select');
+      session.engine.leaveTouchEdit();
       // The read-only socket sends nothing: what was drawn a moment ago goes out first.
       session.sync.flush();
     }

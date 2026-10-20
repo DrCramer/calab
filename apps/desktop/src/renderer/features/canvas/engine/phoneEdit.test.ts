@@ -12,6 +12,8 @@ interface Rig {
   host: HTMLElement;
   raf: ReturnType<typeof manualRaf>;
   clock: { t: number };
+  /** The recording 2D context the canvas draws on. */
+  fake: ReturnType<typeof fakeCtx>;
   down(id: number, x: number, y: number): void;
   move(id: number, x: number, y: number): void;
   up(id: number, x: number, y: number): void;
@@ -26,7 +28,8 @@ const rigs: Rig[] = [];
 const sticky = (x: number, y: number, w = 160, h = 160, extra: object = {}) => ({ init: { kind: 'sticky' as const, x, y, w, h, ...extra } });
 
 function rig(opts: Partial<EngineOptions> = {}): Rig {
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fakeCtx().ctx as never);
+  const fake = fakeCtx();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fake.ctx as never);
   const host = document.createElement('div');
   document.body.appendChild(host);
   const canvas = document.createElement('canvas');
@@ -51,7 +54,7 @@ function rig(opts: Partial<EngineOptions> = {}): Rig {
     canvas.dispatchEvent(e);
   };
   const r: Rig = {
-    engine, canvas, host, raf, clock,
+    engine, canvas, host, raf, clock, fake,
     down: (id, x, y) => ptr('pointerdown', id, x, y),
     move: (id, x, y) => ptr('pointermove', id, x, y),
     up: (id, x, y) => ptr('pointerup', id, x, y),
@@ -502,5 +505,42 @@ describe('a text edit and the on-screen keyboard (visualViewport)', () => {
     ta.value = 'one\ntwo\nthree\nfour';
     ta.dispatchEvent(new Event('input', { bubbles: true }));
     expect(r.cam().ty).toBeLessThan(before);
+  });
+});
+
+describe('what the selection looks like under a finger (recorded draw calls)', () => {
+  const handles = (r: Rig): Array<[number, number, number, number]> => {
+    r.fake.clear();
+    r.engine.setSelection([...r.engine.scene.query({ x: -999, y: -999, w: 3000, h: 3000 })].map((o) => o.id));
+    r.raf.flush();
+    return r.fake.calls.filter((c) => c.name === 'rect').map((c) => c.args as [number, number, number, number]);
+  };
+
+  it('the phone draws its eight resize handles 14 px (the desktop 8 px) and hangs the rotation handle 40 px out', () => {
+    const touch = rig();
+    touch.make(sticky(100, 100));
+    const big = handles(touch).filter((a) => a[2] === 14 && a[3] === 14);
+    expect(big).toHaveLength(8);
+    // centered on the frame's corners/sides: the top-left one at (100, 100)
+    expect(big.some((a) => a[0] === 93 && a[1] === 93)).toBe(true);
+    const arcs = touch.fake.calls.filter((c) => c.name === 'arc').map((c) => c.args as number[]);
+    // the rotation knob: 40 px above the top edge, x at the middle
+    expect(arcs.some((a) => a[0] === 180 && a[1] === 60 && a[2] === 8)).toBe(true);
+
+    const mouse = rig({ touch: false });
+    mouse.make(sticky(100, 100));
+    const small = handles(mouse).filter((a) => a[2] === 8 && a[3] === 8);
+    expect(small).toHaveLength(8);
+    expect(mouse.fake.calls.filter((c) => c.name === 'arc').some((a) => (a.args as number[])[1] === 74)).toBe(true);
+  });
+
+  it('draws nothing while idle: a frame is requested by a change, not by time', () => {
+    const r = rig();
+    r.make(sticky(100, 100));
+    r.raf.flush();
+    expect(r.raf.pending).toBe(0);
+    r.tap(180, 180);
+    r.raf.flush();
+    expect(r.raf.pending).toBe(0);
   });
 });
