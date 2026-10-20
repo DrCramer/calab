@@ -729,6 +729,16 @@ type CanvasItemHead struct {
 	TrashedRoot bool
 }
 
+type CanvasLink struct {
+	Code      string
+	CanvasID  uuid.UUID
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt *time.Time
+	RevokedAt *time.Time
+	Views     int64
+}
+
 type CanvasPermission struct {
 	CanvasID   uuid.UUID
 	TargetType string
