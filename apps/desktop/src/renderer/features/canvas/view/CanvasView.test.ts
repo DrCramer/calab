@@ -458,6 +458,167 @@ describe('two clients on one document', () => {
     expect(relay.doc.getMap('objects').size).toBe(2);
   });
 
+  it('clicking a person follows their camera; the chip, our own zoom and their leaving end it', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay, name: 'Ann' });
+    const b = await mount({ relay, name: 'Bob', bits: VIEW });
+    await settle(50);
+    // Ann zooms in with the pinch gesture; Bob (a viewer) is at 100 %
+    a.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, ctrlKey: true, bubbles: true, cancelable: true, clientX: 500, clientY: 400 }));
+    await settle(600);
+    const annZoom = a.q('canvas-zoom-pct')?.textContent;
+    expect(annZoom).not.toMatch(/\b100\b/);
+    expect(b.q('canvas-zoom-pct')?.textContent).toMatch(/\b100\b/);
+    expect(b.q('canvas-following')).toBeNull();
+
+    // follow: banner with her name, Bob's camera takes her zoom
+    const ann = b.q('canvas-presence-user') as HTMLElement;
+    act(() => {
+      ann.click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')?.textContent).toContain('Ann');
+    expect(b.q('canvas-presence-user')?.getAttribute('aria-pressed')).toBe('true');
+    expect(b.q('canvas-zoom-pct')?.textContent).toBe(annZoom);
+
+    // she zooms further: he follows
+    a.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, ctrlKey: true, bubbles: true, cancelable: true, clientX: 500, clientY: 400 }));
+    await settle(600);
+    expect(b.q('canvas-zoom-pct')?.textContent).toBe(a.q('canvas-zoom-pct')?.textContent);
+
+    // his own zoom button ends it
+    act(() => {
+      (b.q('canvas-zoom-in') as HTMLElement).click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')).toBeNull();
+
+    // again, then the ✕ of the chip
+    act(() => {
+      (b.q('canvas-presence-user') as HTMLElement).click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')).not.toBeNull();
+    act(() => {
+      (b.q('canvas-following-stop') as HTMLElement).click();
+    });
+    expect(b.q('canvas-following')).toBeNull();
+
+    // and when she leaves the canvas
+    act(() => {
+      (b.q('canvas-presence-user') as HTMLElement).click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')).not.toBeNull();
+    a.unmount();
+    await settle(2000);
+    expect(b.q('canvas-following')).toBeNull();
+  });
+
+  it('voting: the writer starts it from the toolbar and votes; a viewer sees that it is on but cannot take part; finish shows the totals', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay, name: 'Ann' });
+    const v = await mount({ relay, name: 'Vera', bits: VIEW });
+    await settle(50);
+    a.key('s');
+    a.ptr('pointerdown', 300, 300);
+    a.ptr('pointerup', 300, 300);
+    escapeEditor(a);
+    await settle(400);
+    expect(a.q('canvas-vote-chip')).toBeNull();
+    expect(v.q('canvas-vote-button')).toBeNull();
+
+    act(() => {
+      (a.q('canvas-vote-button') as HTMLElement).click();
+    });
+    await settle(50);
+    const count = document.querySelector('[data-testid="canvas-vote-count"]') as HTMLInputElement;
+    expect(count.value).toBe('5');
+    act(() => {
+      (document.querySelector('[data-testid="canvas-vote-start"]') as HTMLElement).click();
+    });
+    await settle(400);
+    expect(a.q('canvas-vote-chip')?.textContent).toContain('5');
+    expect(v.q('canvas-vote-chip')).not.toBeNull();
+    expect(v.q('canvas-vote-chip')?.textContent).not.toBe(a.q('canvas-vote-chip')?.textContent);
+
+    // Ann clicks the sticky twice: 3 of 5 left; the viewer's clicks change nothing
+    a.ptr('pointerdown', 300, 300);
+    a.ptr('pointerup', 300, 300);
+    a.ptr('pointerdown', 300, 300);
+    a.ptr('pointerup', 300, 300);
+    const viewerCommits = v.commits.n;
+    await settle(400);
+    // the viewer's React tree does not re-render for somebody else's votes
+    expect(v.commits.n).toBe(viewerCommits);
+    v.ptr('pointerdown', 300, 300);
+    v.ptr('pointerup', 300, 300);
+    await settle(400);
+    expect(a.q('canvas-vote-chip')?.textContent).toContain('3');
+    const cells = relay.doc.getMap('votes').toJSON() as Record<string, Record<string, number>>;
+    expect(Object.values(cells).map((c) => Object.values(c))).toEqual([[2]]);
+
+    // finish: the chip goes away on both sides, the button stays lit
+    act(() => {
+      (a.q('canvas-vote-button') as HTMLElement).click();
+    });
+    await settle(50);
+    act(() => {
+      (document.querySelector('[data-testid="canvas-vote-finish"]') as HTMLElement).click();
+    });
+    await settle(400);
+    expect(a.q('canvas-vote-chip')).toBeNull();
+    expect(v.q('canvas-vote-chip')).toBeNull();
+    expect(pressed(a, 'canvas-vote-button')).toBe('true');
+    expect((relay.doc.getMap('meta').get('vote') as { open: boolean }).open).toBe(false);
+  });
+
+  it('timer: the writer starts it from the toolbar; everyone sees the countdown; only writers pause, resume and reset', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay, name: 'Ann' });
+    const v = await mount({ relay, name: 'Vera', bits: VIEW });
+    await settle(50);
+    expect(a.q('canvas-timer')).toBeNull();
+    expect(v.q('canvas-timer-button')).toBeNull();
+
+    const click = (el: Element | null): void => {
+      act(() => {
+        (el as HTMLElement).click();
+      });
+    };
+    click(a.q('canvas-timer-button'));
+    await settle(50);
+    click(document.querySelector('[data-testid="canvas-timer-preset-3"]'));
+    await settle(400);
+    for (const m of [a, v]) {
+      expect(m.q('canvas-timer')?.getAttribute('data-phase')).toBe('running');
+      expect(m.q('canvas-timer-time')?.textContent).toMatch(/^(3:00|2:5\d)$/);
+    }
+    expect(a.q('canvas-timer-pause')).not.toBeNull();
+    expect(v.q('canvas-timer-pause')).toBeNull();
+    expect(v.q('canvas-timer-reset')).toBeNull();
+
+    await settle(5000);
+    const left = a.q('canvas-timer-time')?.textContent;
+    expect(left).toMatch(/^2:[0-5]\d$/);
+    expect(v.q('canvas-timer-time')?.textContent).toBe(left);
+
+    click(a.q('canvas-timer-pause'));
+    await settle(400);
+    expect(v.q('canvas-timer')?.getAttribute('data-phase')).toBe('paused');
+    const frozen = v.q('canvas-timer-time')?.textContent;
+    await settle(5000);
+    expect(v.q('canvas-timer-time')?.textContent).toBe(frozen);
+    click(a.q('canvas-timer-resume'));
+    await settle(400);
+    expect(a.q('canvas-timer')?.getAttribute('data-phase')).toBe('running');
+    click(a.q('canvas-timer-reset'));
+    await settle(400);
+    expect(a.q('canvas-timer')).toBeNull();
+    expect(v.q('canvas-timer')).toBeNull();
+    expect(relay.doc.getMap('meta').get('timer')).toBeUndefined();
+  });
+
   it('a viewer sees the editor’s changes live', async () => {
     const relay = new MockRelay();
     const editor = await mount({ relay, name: 'Ann' });

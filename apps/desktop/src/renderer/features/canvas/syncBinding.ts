@@ -1,23 +1,26 @@
 /**
  * Binds the engine to the sync provider (ADR-0113 §3, §4): our cursor and selection go into the
- * Yjs awareness, other participants' awareness states come back as `PeerState`s for the engine's
+ * Yjs awareness (and our camera as `view`, so the others can follow us), other participants' awareness states come back as `PeerState`s for the engine's
  * awareness layer. It also writes `meta.schema` into a fresh document after the first sync and keeps
  * the provider read-only for a newer schema. No React, no Zustand: awareness never reaches the stores.
  *
  * Awareness state of a participant: `{ user: {id, name, color}, canvas: {cursor, selection} }`
- * (`user` as on the wiki socket). The frame rate is the provider's job (≤ 20/s, none while hidden).
+ * (`user` as on the wiki socket), plus `view: {x, y, zoom}` — the center of the visible area in world units and
+ * the zoom — sent by the engine at most 5 times a second and only when the camera moved. The frame rate is the provider's job (≤ 20/s, none while hidden).
  */
 import * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
 import { SCHEMA_VERSION } from '../../lib/canvas/types';
 import type { CanvasSync, CanvasSyncStatus } from '../../lib/canvasSync';
-import type { PeerState } from './engine/awareness';
+import { sameView, type PeerState, type PeerView } from './engine/awareness';
 import type { LocalAwareness } from './engine/engine';
 
 /** The part of CanvasEngine the binding needs (the engine satisfies it structurally). */
 export interface SyncEnginePort {
   setPeers(peers: readonly PeerState[]): void;
   onLocalAwareness(fn: (a: LocalAwareness) => void): () => void;
+  /** Our camera (center, zoom), already throttled to 5/s and silent while hidden; optional so older ports still fit. */
+  onLocalView?(fn: (v: PeerView) => void): () => void;
   setReadOnly?(on: boolean): void;
 }
 
@@ -46,9 +49,17 @@ export function peerOf(clientId: number, state: unknown): PeerState | null {
   if (typeof u.id !== 'string' || !u.id) return null;
   const peer: PeerState = {
     id: String(clientId),
+    userId: u.id,
     name: typeof u.name === 'string' ? u.name.slice(0, 80) : '',
     color: typeof u.color === 'string' && /^(#[0-9a-fA-F]{3,8}|[a-z]+\([^)]{0,40}\))$/.test(u.color) ? u.color : '#8e8e93',
   };
+  const view = (state as { view?: unknown }).view as { x?: unknown; y?: unknown; zoom?: unknown } | null | undefined;
+  if (
+    view && typeof view.x === 'number' && typeof view.y === 'number' && typeof view.zoom === 'number' &&
+    Number.isFinite(view.x) && Number.isFinite(view.y) && Number.isFinite(view.zoom) && view.zoom > 0
+  ) {
+    peer.view = { x: view.x, y: view.y, zoom: view.zoom };
+  }
   if (typeof canvas === 'object' && canvas !== null) {
     const c = canvas as { cursor?: unknown; selection?: unknown };
     const cur = c.cursor as { x?: unknown; y?: unknown } | null | undefined;
@@ -132,6 +143,13 @@ export function bindCanvasSync(opts: {
     awareness.setLocalStateField('canvas', { cursor: last.cursor, selection: last.selection });
   });
 
+  let lastView: PeerView | null = null;
+  const unsubView = engine.onLocalView?.((v) => {
+    if (done || sameView(lastView, v)) return;
+    lastView = { x: v.x, y: v.y, zoom: v.zoom };
+    awareness.setLocalStateField('view', lastView);
+  });
+
   return {
     setReadOnly(on) {
       if (on === grantRO) return;
@@ -142,6 +160,7 @@ export function bindCanvasSync(opts: {
       if (done) return;
       done = true;
       unsubLocal();
+      unsubView?.();
       unsubStatus();
       awareness.off('change', pushPeers);
       meta.unobserve(onMeta);

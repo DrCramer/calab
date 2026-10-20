@@ -340,7 +340,7 @@ function Chrome({
   onHelpOpenChange: (o: boolean) => void;
   phone: boolean;
 }): ReactNode {
-  const { engine, sync } = session;
+  const { engine, sync, timer } = session;
   const editable = !useEngineValue(engine, (s) => s.readOnly);
   if (phone) {
     return (
@@ -348,7 +348,7 @@ function Chrome({
         <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={onHelpOpenChange} phone />
         <PhoneOthers store={presence} />
         <PhoneNote />
-        <StatusBanner engine={engine} sync={sync} canWrite={false} gone={gone} onRetry={onRetry} phone />
+        <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={false} gone={gone} onRetry={onRetry} phone />
       </>
     );
   }
@@ -356,7 +356,7 @@ function Chrome({
     <>
       {editable ? (
         <>
-          <Toolbar engine={engine} focusCanvas={focusCanvas} />
+          <Toolbar engine={engine} timer={timer} focusCanvas={focusCanvas} />
           <HistoryBar engine={engine} focusCanvas={focusCanvas} />
           <PropsPanel engine={engine} palette={palette} focusCanvas={focusCanvas} />
           <TextFormatBar engine={engine} />
@@ -365,8 +365,8 @@ function Chrome({
       ) : null}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
       <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
-      <Presence store={presence} />
-      <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} onRetry={onRetry} />
+      <Presence store={presence} engine={engine} />
+      <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} />
     </>
   );
 }

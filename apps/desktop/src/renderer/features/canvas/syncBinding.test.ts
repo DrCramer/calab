@@ -6,7 +6,7 @@ import { ids, seededRng } from '../../lib/canvas/testing';
 import { SCHEMA_VERSION } from '../../lib/canvas/types';
 import { canvasSyncUrl, CanvasSync } from '../../lib/canvasSync';
 import { MockRelay } from '../../lib/ySyncMock';
-import type { PeerState } from './engine/awareness';
+import type { PeerState, PeerView } from './engine/awareness';
 import type { CanvasEngine } from './engine';
 import type { LocalAwareness } from './engine/engine';
 import { bindCanvasSync, peerOf, type SyncBinding, type SyncEnginePort } from './syncBinding';
@@ -19,6 +19,7 @@ class StubEngine implements SyncEnginePort {
   setPeersCalls = 0;
   readOnly: boolean | null = null;
   private fn: ((a: LocalAwareness) => void) | null = null;
+  private viewFn: ((v: PeerView) => void) | null = null;
   setPeers(p: readonly PeerState[]): void {
     this.peers = [...p];
     this.setPeersCalls++;
@@ -28,6 +29,15 @@ class StubEngine implements SyncEnginePort {
     return () => {
       this.fn = null;
     };
+  }
+  onLocalView(fn: (v: PeerView) => void): () => void {
+    this.viewFn = fn;
+    return () => {
+      this.viewFn = null;
+    };
+  }
+  emitView(v: PeerView): void {
+    this.viewFn?.(v);
   }
   setReadOnly(on: boolean): void {
     this.readOnly = on;
@@ -90,7 +100,7 @@ describe('peerOf', () => {
   it('maps a well-formed state', () => {
     expect(
       peerOf(7, { user: { id: 'u', name: 'Ann', color: '#abc' }, canvas: { cursor: { x: 1, y: 2 }, selection: ['a', 'b'] } }),
-    ).toEqual({ id: '7', name: 'Ann', color: '#abc', cursor: { x: 1, y: 2 }, selection: ['a', 'b'] });
+    ).toEqual({ id: '7', userId: 'u', name: 'Ann', color: '#abc', cursor: { x: 1, y: 2 }, selection: ['a', 'b'] });
   });
 
   it('survives garbage from a peer', () => {
@@ -101,12 +111,50 @@ describe('peerOf', () => {
       user: { id: 'u', name: 5, color: 'url(javascript:alert(1))' },
       canvas: { cursor: { x: 'a', y: NaN }, selection: ['ok', 3, 'x'.repeat(100), null] },
     });
-    expect(p).toEqual({ id: '2', name: '', color: '#8e8e93', selection: ['ok'] });
-    expect(peerOf(3, { user: { id: 'u', name: 'x' } })).toEqual({ id: '3', name: 'x', color: '#8e8e93' });
+    expect(p).toEqual({ id: '2', userId: 'u', name: '', color: '#8e8e93', selection: ['ok'] });
+    expect(peerOf(3, { user: { id: 'u', name: 'x' } })).toEqual({ id: '3', userId: 'u', name: 'x', color: '#8e8e93' });
+  });
+});
+
+describe('peerOf view', () => {
+  const user = { id: 'u', name: 'Ann', color: '#abc' };
+  it('reads the camera of a peer and drops malformed ones', () => {
+    expect(peerOf(1, { user, view: { x: 10, y: -4.5, zoom: 2 } })?.view).toEqual({ x: 10, y: -4.5, zoom: 2 });
+    for (const view of [null, {}, { x: 1, y: 2 }, { x: 'a', y: 2, zoom: 1 }, { x: 1, y: NaN, zoom: 1 }, { x: 1, y: 2, zoom: 0 }, { x: 1, y: 2, zoom: Infinity }]) {
+      expect(peerOf(1, { user, view })?.view, JSON.stringify(view)).toBeUndefined();
+    }
   });
 });
 
 describe('bindCanvasSync', () => {
+  it('sends our view as the awareness field `view`, skipping an unchanged one; peers read it back', async () => {
+    const relay = new MockRelay();
+    const a = peer(relay, 'Ann');
+    const b = peer(relay, 'Bob');
+    await settle();
+    a.engine.emitView({ x: 100, y: 50, zoom: 1.5 });
+    vi.advanceTimersByTime(50);
+    expect(b.engine.peers[0]?.view).toEqual({ x: 100, y: 50, zoom: 1.5 });
+    const clock = a.awareness.meta.get(a.awareness.clientID)?.clock ?? 0;
+    a.engine.emitView({ x: 100.1, y: 50, zoom: 1.5 });
+    a.engine.emitView({ x: 100, y: 50, zoom: 1.5 });
+    expect(a.awareness.meta.get(a.awareness.clientID)?.clock).toBe(clock);
+    a.engine.emitView({ x: 300, y: 50, zoom: 1.5 });
+    expect(a.awareness.getLocalState()).toMatchObject({ view: { x: 300, y: 50, zoom: 1.5 } });
+    a.sync.destroy();
+    b.sync.destroy();
+  });
+
+  it('destroy stops listening for the view too', async () => {
+    const relay = new MockRelay();
+    const a = peer(relay, 'Ann');
+    await settle();
+    a.binding.destroy();
+    a.engine.emitView({ x: 1, y: 1, zoom: 1 });
+    expect(a.awareness.getLocalState()).not.toHaveProperty('view');
+    a.sync.destroy();
+  });
+
   it('sends our cursor and selection as awareness; peers see them as PeerState', async () => {
     const relay = new MockRelay();
     const a = peer(relay, 'Ann');
@@ -115,7 +163,7 @@ describe('bindCanvasSync', () => {
     a.engine.emit({ cursor: { x: 10, y: 20 }, selection: ['s1'] });
     vi.advanceTimersByTime(50);
     expect(b.engine.peers).toEqual([
-      { id: String(a.awareness.clientID), name: 'Ann', color: '#ff0000', cursor: { x: 10, y: 20 }, selection: ['s1'] },
+      { id: String(a.awareness.clientID), userId: 'u-Ann', name: 'Ann', color: '#ff0000', cursor: { x: 10, y: 20 }, selection: ['s1'] },
     ]);
     // cursor away, selection kept
     a.engine.emit({ cursor: null, selection: ['s1'] });

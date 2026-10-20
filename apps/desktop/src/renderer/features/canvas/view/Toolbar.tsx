@@ -9,6 +9,9 @@ import { ACTIVE_TOOL, DIVIDER, MENU_BOX, MENU_ITEM, PANEL, keepFocus } from './c
 import { useEngineValue } from './hooks';
 import { ShapeIcon } from './ShapeIcon';
 import { TemplatesMenu } from './Templates';
+import { TimerButton } from './Timer';
+import type { TimerStore } from './timerStore';
+import { VoteButton } from './Vote';
 import { ROUTE_DEFS, SHAPE_DEFS, TOOL_DEFS } from './model';
 
 const ICON = 'size-[18px]';
@@ -115,7 +118,7 @@ function FlyoutTrigger({ label, children }: { label: string; children: ReactNode
   );
 }
 
-export const Toolbar = memo(function Toolbar({ engine, focusCanvas }: { engine: CanvasEngine; focusCanvas: () => void }): ReactNode {
+export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { engine: CanvasEngine; timer: TimerStore; focusCanvas: () => void }): ReactNode {
   useLocale();
   const tool = useEngineValue(engine, (s) => s.tool);
   const shapeKind = useEngineValue(engine, (s) => s.shapeKind);
@@ -220,6 +223,8 @@ export const Toolbar = memo(function Toolbar({ engine, focusCanvas }: { engine: 
       />
       <div className="mx-1 my-0.5 h-px bg-line" aria-hidden />
       <TemplatesMenu engine={engine} focusCanvas={focusCanvas} />
+      <VoteButton engine={engine} focusCanvas={focusCanvas} />
+      <TimerButton store={timer} focusCanvas={focusCanvas} />
     </div>
   );
 });

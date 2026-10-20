@@ -13,6 +13,26 @@ export interface PeerState {
   color: string;
   cursor?: Point | null;
   selection?: readonly string[];
+  /** The signed-in person behind this window; the same person in two windows shares it. */
+  userId?: string;
+  /** Their camera: the center of what they see (world units) and zoom. */
+  view?: PeerView;
+}
+
+export interface PeerView {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+/** The key «follow» uses for a peer: the person when known, else the window. */
+export const followKeyOf = (p: Pick<PeerState, 'id' | 'userId'>): string => p.userId ?? p.id;
+
+/** Two views closer than half a screen pixel and 0.1 % zoom are the same: keeps two followers from chasing rounding noise. */
+export function sameView(a: PeerView | null | undefined, b: PeerView | null | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  const px = 0.5 / Math.max(Math.min(a.zoom, b.zoom), 1e-6);
+  return Math.abs(a.x - b.x) <= px && Math.abs(a.y - b.y) <= px && Math.abs(a.zoom - b.zoom) <= 0.001 * Math.min(a.zoom, b.zoom);
 }
 
 /** Cursor stays fully visible this long after its last move, then dims, then disappears (no animation loop). */
@@ -22,6 +42,8 @@ export const CURSOR_DIM_MS = 6000;
 interface Tracked {
   state: PeerState;
   movedAt: number;
+  /** When the view last changed (engine clock): of two windows of one person, the one that moved last is followed. */
+  viewAt: number;
 }
 
 /**
@@ -40,7 +62,11 @@ export class AwarenessLayer {
       const prev = this.peers.get(s.id);
       const moved = !prev || !sameCursor(prev.state.cursor, s.cursor);
       if (!prev || moved || prev.state.color !== s.color || prev.state.name !== s.name || !sameSel(prev.state.selection, s.selection)) changed = true;
-      out.set(s.id, { state: s, movedAt: moved && s.cursor ? now : (prev?.movedAt ?? now - CURSOR_DIM_MS) });
+      out.set(s.id, {
+        state: s,
+        movedAt: moved && s.cursor ? now : (prev?.movedAt ?? now - CURSOR_DIM_MS),
+        viewAt: !prev || !sameView(prev.state.view, s.view) ? now : prev.viewAt,
+      });
     }
     this.peers = out;
     return changed;
@@ -72,6 +98,20 @@ export class AwarenessLayer {
 
   has(id: string): boolean {
     return this.peers.has(id);
+  }
+
+  /**
+   * The window to follow for a person (`followKeyOf`): the one whose view moved last, a window with a view
+   * before one without. Null when the person is not on the canvas. View changes alone never count as «changed»
+   * for drawing (`setPeers`): they move the camera, not this layer.
+   */
+  followTarget(key: string): PeerState | null {
+    let best: Tracked | null = null;
+    for (const t of this.peers.values()) {
+      if (followKeyOf(t.state) !== key) continue;
+      if (!best || (!!t.state.view && !best.state.view) || (!!t.state.view === !!best.state.view && t.viewAt > best.viewAt)) best = t;
+    }
+    return best?.state ?? null;
   }
 
   /** Some peer has a selection: its outline follows the objects, so content changes redraw this layer. */

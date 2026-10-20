@@ -1,8 +1,10 @@
 /** «Who is on the canvas»: a tiny external store fed from awareness, outside React and Zustand. */
-import type { PeerState } from '../engine';
+import { followKeyOf, type PeerState } from '../engine/awareness';
 
 export interface PresenceUser {
   key: string;
+  /** What «follow» takes (`followKeyOf`): the person, not the window. */
+  followKey: string;
   name: string;
   color: string;
 }
@@ -20,10 +22,10 @@ export class PresenceStore {
     const seen = new Map<string, PresenceUser>();
     for (const p of peers) {
       const key = `${p.name}\u0000${p.color}`;
-      if (!seen.has(key)) seen.set(key, { key, name: p.name, color: p.color });
+      if (!seen.has(key)) seen.set(key, { key, followKey: followKeyOf(p), name: p.name, color: p.color });
     }
     const next = [...seen.values()];
-    const sig = next.map((u) => u.key).join('\u0001');
+    const sig = next.map((u) => `${u.key}\u0002${u.followKey}`).join('\u0001');
     if (sig === this.sig) return;
     this.sig = sig;
     this.users = next;
