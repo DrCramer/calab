@@ -87,3 +87,76 @@ func TestCanvasEventsPerRecipient(t *testing.T) {
 		t.Fatal("a board event taken as a canvas event")
 	}
 }
+
+// ADR-0114 wave 4: CANVAS_COMMENT_* reach only members who see the canvas (not bots), without
+// the chain; a private canvas's comments reach only who was let in.
+func TestCanvasCommentEventsPerRecipient(t *testing.T) {
+	wid := uuid.New()
+	alice, bob, guest, admin, bot := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	const memberCanvas = perm.CanvasView | perm.CanvasWrite
+	st := &wsState{rooms: map[uuid.UUID]*v1.Room{}, roleDefs: perm.Roles{
+		"member": {ID: "member", Position: perm.PosMember, Permissions: perm.RoleDefaults[perm.RoleMember] | memberCanvas},
+		"guest":  {ID: "guest", Position: perm.PosGuest, Permissions: perm.RoleDefaults[perm.RoleGuest]},
+		"admin":  {ID: "admin", Position: perm.PosAdmin, Permissions: perm.Administrator},
+	}}
+	st.setMember(alice, perm.RoleMember, []string{"member"})
+	st.setMember(bob, perm.RoleMember, []string{"member"})
+	st.setMember(guest, perm.RoleGuest, []string{"guest"})
+	st.setMember(admin, perm.RoleAdmin, []string{"admin"})
+	st.setMember(bot, perm.RoleMember, []string{"member"})
+	st.setBot(bot, true)
+	h := &Hub{}
+	open := []perm.TreeNode{{OwnerID: alice.String()}}
+	closed := []perm.TreeNode{{Restricted: true, OwnerID: alice.String(), Overrides: []perm.OverrideTarget{
+		{TargetType: "user", TargetID: guest.String(), Override: perm.Override{Allow: perm.CanvasView}}}}}
+	canvas := uuid.NewString()
+	comment := &v1.CanvasComment{Id: uuid.NewString(), CanvasId: canvas, Body: "secret plan"}
+	deliver := func(ev *v1.DispatchEvent) map[uuid.UUID]string {
+		sessions := []*Session{{user: alice}, {user: bob}, {user: guest}, {user: admin}, {user: bot}}
+		if !h.routeCanvas(st, wid, uuid.New(), sessions, ev) {
+			t.Fatal("a comment event not taken")
+		}
+		out := map[uuid.UUID]string{}
+		for _, s := range sessions {
+			for _, p := range s.pending {
+				switch x := p.enc.ev.GetEvent().(type) {
+				case *v1.DispatchEvent_CanvasCommentUpsert:
+					if len(x.CanvasCommentUpsert.GetAccess()) > 0 {
+						t.Fatal("access chain leaked to a client")
+					}
+					if x.CanvasCommentUpsert.GetComment().GetBody() != "secret plan" {
+						t.Fatal("comment lost")
+					}
+					out[s.user] += "U"
+				case *v1.DispatchEvent_CanvasCommentDelete:
+					if len(x.CanvasCommentDelete.GetAccess()) > 0 {
+						t.Fatal("access chain leaked to a client")
+					}
+					out[s.user] += "D"
+				}
+			}
+		}
+		return out
+	}
+	upsert := func(chain []perm.TreeNode) *v1.DispatchEvent {
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_CanvasCommentUpsert{CanvasCommentUpsert: &v1.CanvasCommentUpsert{
+			WorkspaceId: wid.String(), Comment: comment, Access: canvasacl.Levels(chain)}}}
+	}
+	del := func(chain []perm.TreeNode) *v1.DispatchEvent {
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_CanvasCommentDelete{CanvasCommentDelete: &v1.CanvasCommentDelete{
+			WorkspaceId: wid.String(), CanvasId: canvas, CommentId: comment.GetId(), Access: canvasacl.Levels(chain)}}}
+	}
+	names := map[uuid.UUID]string{alice: "alice", bob: "bob", guest: "guest", admin: "admin", bot: "bot"}
+	check := func(name string, got, want map[uuid.UUID]string) {
+		t.Helper()
+		for u, n := range names {
+			if got[u] != want[u] {
+				t.Errorf("%s: %s got %q, want %q", name, n, got[u], want[u])
+			}
+		}
+	}
+	check("open canvas", deliver(upsert(open)), map[uuid.UUID]string{alice: "U", bob: "U", admin: "U"})
+	check("private canvas", deliver(upsert(closed)), map[uuid.UUID]string{alice: "U", guest: "U"})
+	check("delete on a private canvas", deliver(del(closed)), map[uuid.UUID]string{alice: "D", guest: "D"})
+	check("no chain reaches nobody", deliver(upsert(nil)), map[uuid.UUID]string{})
+}

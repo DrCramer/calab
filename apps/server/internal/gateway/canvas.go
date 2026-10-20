@@ -77,8 +77,32 @@ func (h *Hub) routeCanvas(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 				s.dispatchEnc(id, remove)
 			}
 		}
+	case *v1.DispatchEvent_CanvasCommentUpsert:
+		// Comments (ADR-0114 wave 4): the whole comment to who sees the canvas, the chain stripped.
+		x := e.CanvasCommentUpsert
+		h.canvasToViewers(st, wid, id, sessions, canvasacl.FromLevels(x.GetAccess()), &v1.DispatchEvent{Event: &v1.DispatchEvent_CanvasCommentUpsert{
+			CanvasCommentUpsert: &v1.CanvasCommentUpsert{WorkspaceId: x.GetWorkspaceId(), Comment: x.GetComment()}}})
+	case *v1.DispatchEvent_CanvasCommentDelete:
+		x := e.CanvasCommentDelete
+		h.canvasToViewers(st, wid, id, sessions, canvasacl.FromLevels(x.GetAccess()), &v1.DispatchEvent{Event: &v1.DispatchEvent_CanvasCommentDelete{
+			CanvasCommentDelete: &v1.CanvasCommentDelete{WorkspaceId: x.GetWorkspaceId(), CanvasId: x.GetCanvasId(), CommentId: x.GetCommentId()}}})
 	default:
 		return false
 	}
 	return true
+}
+
+// canvasToViewers sends out (already without its chain) to the sessions whose member sees an
+// item with chain (st.mu held); an empty chain reaches nobody (fail closed).
+func (h *Hub) canvasToViewers(st *wsState, wid, id uuid.UUID, sessions []*Session, chain []perm.TreeNode, out *v1.DispatchEvent) {
+	var enc *encEvent
+	for _, s := range sessions {
+		if !st.canvasSees(s.user, chain) {
+			continue
+		}
+		if enc == nil {
+			enc = newScopedEnc(wid, out)
+		}
+		s.dispatchEnc(id, enc)
+	}
 }
