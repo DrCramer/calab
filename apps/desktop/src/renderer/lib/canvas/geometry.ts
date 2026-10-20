@@ -234,29 +234,6 @@ export function mapRect(r: Rect, from: Rect, to: Rect): Rect {
   return { x: to.x + (r.x - from.x) * sx, y: to.y + (r.y - from.y) * sy, w: r.w * sx, h: r.h * sy };
 }
 
-/** Is `p` inside the shape (kind-specific outline) occupying `r`? */
-export function pointInShape(kind: 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'rounded', r: Rect, p: Point): boolean {
-  if (!rectContainsPoint(r, p)) return false;
-  if (r.w <= 0 || r.h <= 0) return false;
-  const nx = (p.x - r.x) / r.w; // 0..1
-  const ny = (p.y - r.y) / r.h;
-  switch (kind) {
-    case 'rect':
-    case 'rounded':
-      return true;
-    case 'ellipse': {
-      const dx = nx - 0.5;
-      const dy = ny - 0.5;
-      return dx * dx + dy * dy <= 0.25;
-    }
-    case 'diamond':
-      return Math.abs(nx - 0.5) + Math.abs(ny - 0.5) <= 0.5;
-    case 'triangle':
-      // Apex at the top middle; the half-width grows linearly with y.
-      return Math.abs(nx - 0.5) <= ny / 2;
-  }
-}
-
 // ── rotation (ADR-0114 §Волна 1) ───────────────────────────────────────────────
 // A rotated object keeps its unrotated frame (x, y, w, h) and an angle `rot` in degrees, clockwise (y grows
 // downwards), about the frame's center. Everything object-local (hit-testing, handles, resize) works in the

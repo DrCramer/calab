@@ -23,6 +23,12 @@ export const SHAPE_DEFS: readonly { kind: ShapeKind; label: `canvasBoard.shape.$
   { kind: 'ellipse', label: 'canvasBoard.shape.ellipse' },
   { kind: 'diamond', label: 'canvasBoard.shape.diamond' },
   { kind: 'triangle', label: 'canvasBoard.shape.triangle' },
+  { kind: 'star', label: 'canvasBoard.shape.star' },
+  { kind: 'hexagon', label: 'canvasBoard.shape.hexagon' },
+  { kind: 'parallelogram', label: 'canvasBoard.shape.parallelogram' },
+  { kind: 'arrow', label: 'canvasBoard.shape.arrow' },
+  { kind: 'bubble', label: 'canvasBoard.shape.bubble' },
+  { kind: 'cylinder', label: 'canvasBoard.shape.cylinder' },
 ];
 
 export const ROUTE_DEFS: readonly { route: RouteKind; label: `canvasBoard.route.${RouteKind}` }[] = [

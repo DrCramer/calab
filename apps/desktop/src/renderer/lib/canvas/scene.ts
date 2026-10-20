@@ -1,12 +1,13 @@
 import * as Y from 'yjs';
 import { CanvasDoc, color, endpoint, isGroupId, isKind, isShapeKind, num } from './doc';
 import {
-  boundsOf, distToPolyline, normRot, pointInShape, pointsBounds, polylineMidpoint, rectCenter, rectContainsPoint, rectInflate,
+  boundsOf, distToPolyline, normRot, pointsBounds, polylineMidpoint, rectCenter, rectContainsPoint, rectInflate,
   rotatePoint, rotatedRectHitsRect, type Point, type Rect,
 } from './geometry';
 import { isValidKey } from './fracIndex';
 import { SpatialGrid } from './grid';
 import { RouteCache, routeConnector } from './route';
+import { pointInShape } from './shapes';
 import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter } from './textLayout';
 import {
   DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector,

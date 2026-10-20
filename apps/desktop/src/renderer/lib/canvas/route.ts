@@ -1,4 +1,5 @@
 import { rectCenter, dist, rotatePoint, type Point, type Rect } from './geometry';
+import { anchorFraction } from './shapes';
 import type { BoxRec, Endpoint, RouteKind, ShapeKind, Side } from './types';
 
 export type ConcreteSide = Exclude<Side, 'auto'>;
@@ -15,20 +16,10 @@ export const SIDE_DIR: Record<ConcreteSide, Point> = {
 /** Length of the straight stub that leaves an object before an elbow connector turns. */
 export const STUB = 20;
 
-/** Where a connector touches side `side` of an object occupying `r` (triangles: the slanted edges' midpoints). */
+/** Where a connector touches side `side` of an object occupying `r`: a point of the shape's outline (triangle: the slanted edges' midpoints). */
 export function anchorPoint(r: Rect, shape: ShapeKind | undefined, side: ConcreteSide): Point {
-  const cx = r.x + r.w / 2;
-  const cy = r.y + r.h / 2;
-  if (shape === 'triangle') {
-    if (side === 'left') return { x: r.x + r.w * 0.25, y: cy };
-    if (side === 'right') return { x: r.x + r.w * 0.75, y: cy };
-  }
-  switch (side) {
-    case 'top': return { x: cx, y: r.y };
-    case 'right': return { x: r.x + r.w, y: cy };
-    case 'bottom': return { x: cx, y: r.y + r.h };
-    case 'left': return { x: r.x, y: cy };
-  }
+  const [fx, fy] = anchorFraction(shape, side);
+  return { x: r.x + r.w * fx, y: r.y + r.h * fy };
 }
 
 /** Nearest side (by its anchor) to a world point: the "auto" side. */

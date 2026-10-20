@@ -644,6 +644,30 @@ describe('transform controls (ADR-0114)', () => {
     expect(new Set(ys(relay)).size).toBe(1);
   });
 
+  it('the shape picker of the panel offers all eleven shapes and changes the selected one', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    m.key('r');
+    m.ptr('pointerdown', 200, 200);
+    m.ptr('pointermove', 260, 240);
+    m.ptr('pointermove', 340, 300);
+    m.ptr('pointerup', 340, 300);
+    escapeEditor(m);
+    await settle(400);
+    await act(async () => {
+      m.q('canvas-prop-shape')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }));
+      m.q('canvas-prop-shape')?.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(m.q('canvas-prop-shape')).not.toBeNull();
+    const items = document.querySelectorAll('[data-testid^="canvas-prop-shape-"]');
+    expect(items).toHaveLength(11);
+    act(() => document.querySelector<HTMLElement>('[data-testid="canvas-prop-shape-cylinder"]')?.click());
+    await settle(400);
+    const o = [...relay.doc.getMap<Y.Map<unknown>>('objects').values()][0];
+    expect(o?.get('shape')).toBe('cylinder');
+  });
+
   it('rotating and locking do not re-render React per frame; a turned object is stored with its angle', async () => {
     const relay = new MockRelay();
     const m = await mount({ relay });

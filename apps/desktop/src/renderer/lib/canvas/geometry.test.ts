@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  boundsOf, distToPolyline, distToSegment, handlePoint, hitHandle, mapRect, pointInShape, pointsBounds, polylineMidpoint,
+  boundsOf, distToPolyline, distToSegment, handlePoint, hitHandle, mapRect, pointsBounds, polylineMidpoint,
   rectContains, rectFromPoints, rectInflate, rectUnion, rectsIntersect, resizeRect, snapTo,
 } from './geometry';
+import { pointInShape } from './shapes';
 
 describe('rects', () => {
   it('builds from points in any order', () => {

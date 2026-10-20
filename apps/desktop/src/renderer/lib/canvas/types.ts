@@ -8,8 +8,13 @@ export const MAX_COORD = 1e7;
 export const MAX_SIZE = 1e5;
 
 export type ObjectKind = 'sticky' | 'text' | 'shape' | 'connector';
-export type ShapeKind = 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'rounded';
-export const SHAPE_KINDS: readonly ShapeKind[] = ['rect', 'ellipse', 'diamond', 'triangle', 'rounded'];
+export type ShapeKind =
+  | 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'rounded'
+  | 'star' | 'hexagon' | 'parallelogram' | 'arrow' | 'bubble' | 'cylinder';
+/** A kind written by a newer build is not in this list: the reader draws it as `rect` (ADR-0114). */
+export const SHAPE_KINDS: readonly ShapeKind[] = [
+  'rect', 'ellipse', 'diamond', 'triangle', 'rounded', 'star', 'hexagon', 'parallelogram', 'arrow', 'bubble', 'cylinder',
+];
 export type Side = 'auto' | 'top' | 'right' | 'bottom' | 'left';
 export type Arrow = 'none' | 'end' | 'both';
 export type RouteKind = 'straight' | 'elbow';
