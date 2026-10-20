@@ -2,14 +2,14 @@ import { pinchStep, type Camera } from '../../../lib/canvas/camera';
 import { duplicate } from '../../../lib/canvas/clipboard';
 import type { CanvasDoc } from '../../../lib/canvas/doc';
 import {
-  boundsOf, dist, mapRect, rectFromPoints, rectInflate, resizeRect, snapTo,
+  ROT_STEP, angleToward, boundsOf, dist, mapRect, normRot, rectCenter, rectFromPoints, rectInflate, resizeRect, resizeRotated, rotatePoint, snapAngle, snapTo,
   type HandleId, type Point, type Rect,
 } from '../../../lib/canvas/geometry';
-import { anchorPoint, SIDES, type ConcreteSide } from '../../../lib/canvas/route';
+import { anchorOf, SIDES, type ConcreteSide } from '../../../lib/canvas/route';
 import type { Scene } from '../../../lib/canvas/scene';
 import { snapMove, snapResizePoint, type SnapOptions } from '../../../lib/canvas/snap';
 import {
-  DEFAULTS, isBound, isBox, isConnector,
+  DEFAULTS, aabb, isBound, isBox, isConnector,
   type BoxRec, type ConnectorRec, type Endpoint, type ObjectPatch, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
 import type { OverlayState } from './overlay';
@@ -42,10 +42,12 @@ export interface Core {
   px(n: number): number;
   /** Created objects: select, leave the creation tool, and optionally open the text editor. */
   finishCreate(ids: readonly string[], edit: boolean): void;
+  /** The ids plus every member of their groups (the unlocked ones; a group the user stepped into stays as picked). */
+  expandUnits(ids: Iterable<string>): string[];
 }
 
 export interface Gesture {
-  readonly kind: 'pan' | 'move' | 'resize' | 'marquee' | 'create' | 'wire' | 'endpoint' | 'pinch';
+  readonly kind: 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create' | 'wire' | 'endpoint' | 'pinch';
   move(w: Point, s: Point, m: Mods): void;
   end(w: Point, s: Point, m: Mods): void;
   cancel(): void;
@@ -60,7 +62,7 @@ function neighbours(core: Core, r: Rect, exclude: ReadonlySet<string>): Rect[] {
   const out: Rect[] = [];
   for (const o of core.scene.query(rectInflate(r, core.px(240)))) {
     if (exclude.has(o.id) || isConnector(o)) continue;
-    out.push(o);
+    out.push(aabb(o));
     if (out.length >= 64) break;
   }
   return out;
@@ -122,7 +124,7 @@ export class MoveGesture implements Gesture {
   private ids: string[];
   private started = false;
   private wrote = false;
-  private boxStart = new Map<string, Rect>();
+  private boxStart = new Map<string, Point>();
   private freeStart = new Map<string, { from?: Point; to?: Point }>();
   private startRect: Rect | null = null;
 
@@ -134,7 +136,8 @@ export class MoveGesture implements Gesture {
     private readonly fromScreen: Point,
     private readonly onClickOnly: () => void,
   ) {
-    this.ids = Array.from(ids);
+    // Locked objects stay where they are, whatever else moves with them.
+    this.ids = Array.from(ids).filter((id) => !core.scene.get(id)?.locked);
     this.capture();
   }
 
@@ -151,17 +154,19 @@ export class MoveGesture implements Gesture {
         if (!isBound(o.to)) f.to = { x: o.to.x, y: o.to.y };
         if (f.from || f.to) this.freeStart.set(id, f);
       } else {
-        this.boxStart.set(id, { x: o.x, y: o.y, w: o.w, h: o.h });
-        rects.push(o);
+        this.boxStart.set(id, { x: o.x, y: o.y });
+        rects.push(aabb(o));
       }
     }
     this.startRect = boundsOf(rects);
   }
 
   move(w: Point, s: Point, m: Mods): void {
+    if (this.started && this.ids.length === 0) return;
     if (!this.started) {
       if (Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < DRAG_PX) return;
       this.started = true;
+      if (this.ids.length === 0) return;
       this.core.doc.beginGesture();
       if (m.alt) {
         const copies = duplicate(this.core.scene, this.core.doc, this.ids, 0, 0);
@@ -204,12 +209,13 @@ export class MoveGesture implements Gesture {
       this.onClickOnly();
       return;
     }
+    if (this.ids.length === 0) return;
     this.core.doc.endGesture();
     this.core.setOverlay({ guides: [] });
   }
 
   cancel(): void {
-    if (!this.started) return;
+    if (!this.started || this.ids.length === 0) return;
     this.core.doc.endGesture();
     if (this.wrote) this.core.doc.undo.undo();
     this.core.setOverlay({ guides: [] });
@@ -218,6 +224,11 @@ export class MoveGesture implements Gesture {
 
 // ── resize ──────────────────────────────────────────────────────────────────
 
+/**
+ * Resize by one handle. One box (rotated or not): along its own axes, the opposite side/corner stays put in the
+ * world. Several boxes (unrotated, ungrouped — the frame only offers handles then): the group box is scaled
+ * and every member mapped through it. A group is never resized (its frame has rotation and move only).
+ */
 export class ResizeGesture implements Gesture {
   readonly kind = 'resize';
   private readonly group: Rect;
@@ -228,9 +239,9 @@ export class ResizeGesture implements Gesture {
     const rects: Rect[] = [];
     for (const id of ids) {
       const o = core.scene.get(id);
-      if (o && isBox(o)) {
+      if (o && isBox(o) && !o.locked) {
         this.items.set(id, o);
-        rects.push(o);
+        rects.push(aabb(o));
       }
     }
     this.group = boundsOf(rects) ?? { x: 0, y: 0, w: 1, h: 1 };
@@ -246,20 +257,28 @@ export class ResizeGesture implements Gesture {
     // Text boxes size by width only; their height follows the content.
     const handle: HandleId = isText ? (this.handle.includes('w') ? 'w' : this.handle.includes('e') ? 'e' : this.handle) : this.handle;
     if (isText && handle !== 'w' && handle !== 'e') return;
+    const rot = single?.rot ?? 0;
     let p = w;
     let guides: OverlayState['guides'] = [];
     const keepAspect = m.shift && !isText;
-    if (!m.mod && !keepAspect) {
+    // Snapping works on the world axes: a rotated box is free of it.
+    if (!m.mod && !keepAspect && rot === 0) {
       const sn = snapResizePoint(p, handle, neighbours(this.core, this.group, new Set(this.items.keys())), snapOpts(this.core));
       p = sn.p;
       guides = sn.guides;
     }
     const minW = isText ? DEFAULTS.minTextW : DEFAULTS.minBox;
-    const next = resizeRect(this.group, handle, p, { keepAspect, minW, minH: isText ? 1 : DEFAULTS.minBox });
+    const minH = isText ? 1 : DEFAULTS.minBox;
     const patches = new Map<string, ObjectPatch>();
-    for (const [id, o] of this.items) {
-      const r = mapRect(o, this.group, next);
-      patches.set(id, o.kind === 'text' ? { x: r.x, w: r.w } : { x: r.x, y: r.y, w: r.w, h: r.h });
+    if (single) {
+      const r = resizeRotated(single, rot, handle, p, { keepAspect, minW, minH });
+      patches.set(single.id, isText ? (rot === 0 ? { x: r.x, w: r.w } : { x: r.x, y: r.y, w: r.w }) : { x: r.x, y: r.y, w: r.w, h: r.h });
+    } else {
+      const next = resizeRect(this.group, handle, p, { keepAspect, minW, minH });
+      for (const [id, o] of this.items) {
+        const r = mapRect(o, this.group, next);
+        patches.set(id, o.kind === 'text' ? { x: r.x, w: r.w } : { x: r.x, y: r.y, w: r.w, h: r.h });
+      }
     }
     this.core.doc.patchMany(patches);
     this.core.setOverlay({ guides });
@@ -278,6 +297,85 @@ export class ResizeGesture implements Gesture {
   }
 }
 
+// ── rotate ──────────────────────────────────────────────────────────────────
+
+/**
+ * Turns the selected boxes about the center of their joint bounds (a single box: about its own center). Each
+ * box gets its position turned about the pivot and its own `rot` advanced by the same angle; free connector
+ * ends turn with them, glued ones follow their objects. Shift snaps to 15° (one box: the angle itself,
+ * several: the turn). Locked objects are left out.
+ */
+export class RotateGesture implements Gesture {
+  readonly kind = 'rotate';
+  private readonly pivot: Point;
+  private readonly startAngle: number;
+  private readonly boxes: { id: string; c: Point; rot: number }[] = [];
+  private readonly free = new Map<string, { from?: Point; to?: Point }>();
+  private began = false;
+
+  constructor(private readonly core: Core, ids: Iterable<string>, from: Point) {
+    const rects: Rect[] = [];
+    for (const id of ids) {
+      const o = core.scene.get(id);
+      if (!o || o.locked) continue;
+      if (isConnector(o)) {
+        const f: { from?: Point; to?: Point } = {};
+        if (!isBound(o.from)) f.from = { x: o.from.x, y: o.from.y };
+        if (!isBound(o.to)) f.to = { x: o.to.x, y: o.to.y };
+        if (f.from || f.to) this.free.set(id, f);
+      } else {
+        this.boxes.push({ id, c: rectCenter(o), rot: o.rot ?? 0 });
+        rects.push(aabb(o));
+      }
+    }
+    const b = boundsOf(rects);
+    this.pivot = b ? rectCenter(b) : from;
+    this.startAngle = angleToward(this.pivot, from);
+  }
+
+  /** Signed turn since the start, degrees in (-180, 180]. */
+  private turn(w: Point, shift: boolean): number {
+    let d = angleToward(this.pivot, w) - this.startAngle;
+    d = ((((d + 180) % 360) + 360) % 360) - 180;
+    if (!shift) return d;
+    const only = this.boxes.length === 1 ? this.boxes[0] : undefined;
+    return only ? snapAngle(only.rot + d, ROT_STEP) - only.rot : snapAngle(d, ROT_STEP);
+  }
+
+  move(w: Point, _s: Point, m: Mods): void {
+    if (this.boxes.length === 0) return;
+    if (!this.began) {
+      this.began = true;
+      this.core.doc.beginGesture();
+    }
+    const d = this.turn(w, m.shift);
+    const patches = new Map<string, ObjectPatch>();
+    for (const b of this.boxes) {
+      const o = this.core.scene.get(b.id);
+      if (!o) continue;
+      const c = rotatePoint(b.c, this.pivot, d);
+      patches.set(b.id, { x: c.x - o.w / 2, y: c.y - o.h / 2, rot: normRot(b.rot + d) });
+    }
+    for (const [id, f] of this.free) {
+      const p: ObjectPatch = {};
+      if (f.from) p.from = rotatePoint(f.from, this.pivot, d);
+      if (f.to) p.to = rotatePoint(f.to, this.pivot, d);
+      patches.set(id, p);
+    }
+    this.core.doc.patchMany(patches);
+  }
+
+  end(): void {
+    if (this.began) this.core.doc.endGesture();
+  }
+
+  cancel(): void {
+    if (!this.began) return;
+    this.core.doc.endGesture();
+    this.core.doc.undo.undo();
+  }
+}
+
 // ── marquee ─────────────────────────────────────────────────────────────────
 
 export class MarqueeGesture implements Gesture {
@@ -289,7 +387,8 @@ export class MarqueeGesture implements Gesture {
   }
   move(w: Point): void {
     const r = rectFromPoints(this.from, w);
-    const hits = this.core.scene.inRect(r).map((o) => o.id);
+    // Locked objects are not picked by a frame; a touched group is taken whole.
+    const hits = this.core.expandUnits(this.core.scene.inRect(r).filter((o) => !o.locked).map((o) => o.id));
     this.core.setSelection([...this.base, ...hits]);
     this.core.setOverlay({ marquee: r });
   }
@@ -364,6 +463,7 @@ interface GlueTarget {
   id: string;
   side: ConcreteSide | 'auto';
   rect: Rect;
+  rot: number;
   anchors: Point[];
   active: Point | null;
 }
@@ -373,17 +473,16 @@ export function glueAt(core: Core, w: Point, exclude?: string): GlueTarget | nul
   // By area, not by what selection picks: an unfilled frame is a target everywhere inside it (selection stays outline-only).
   const o = core.scene.hitArea(w, core.px(6), (x) => isBox(x) && x.id !== exclude);
   if (!o || !isBox(o)) return null;
-  const shape = o.kind === 'shape' ? o.shape : undefined;
-  const anchors = SIDES.map((s) => ({ side: s, p: anchorPoint(o, shape, s) }));
+  const anchors = SIDES.map((s) => ({ side: s, p: anchorOf(o, s) }));
   let best: { side: ConcreteSide; p: Point } | null = null;
   for (const a of anchors) if (dist(a.p, w) <= core.px(12) && (!best || dist(a.p, w) < dist(best.p, w))) best = a;
-  return { id: o.id, side: best?.side ?? 'auto', rect: { x: o.x, y: o.y, w: o.w, h: o.h }, anchors: anchors.map((a) => a.p), active: best?.p ?? null };
+  return { id: o.id, side: best?.side ?? 'auto', rect: { x: o.x, y: o.y, w: o.w, h: o.h }, rot: o.rot ?? 0, anchors: anchors.map((a) => a.p), active: best?.p ?? null };
 }
 
 const endpointOf = (g: GlueTarget | null, free: Point): Endpoint => (g ? { id: g.id, side: g.side } : { x: free.x, y: free.y });
 
 function glueOverlay(g: GlueTarget | null): Pick<OverlayState, 'glue'> {
-  return { glue: g ? { rect: g.rect, anchors: g.anchors, active: g.active } : null };
+  return { glue: g ? { rect: g.rect, rot: g.rot, anchors: g.anchors, active: g.active } : null };
 }
 
 export class WireGesture implements Gesture {

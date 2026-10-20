@@ -1,11 +1,11 @@
-import { dist, hitHandle, type HandleId, type Point } from '../../../lib/canvas/geometry';
+import { dist, hitHandleRot, resizeCursorAt, rotateHandlePoint, type HandleId, type Point } from '../../../lib/canvas/geometry';
 import { isConnector } from '../../../lib/canvas/types';
 import type { CanvasEngine } from './engine';
 import {
-  CreateGesture, EndpointGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, WireGesture,
+  CreateGesture, EndpointGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, RotateGesture, WireGesture,
   type Mods,
 } from './gestures';
-import { HANDLE_PX } from './overlay';
+import { HANDLE_PX, ROTATE_OFFSET_PX } from './overlay';
 import { WheelClassifier } from './wheel';
 import { clampScale } from '../../../lib/canvas/camera';
 
@@ -15,10 +15,6 @@ interface SafariGestureEvent extends UIEvent {
   clientX: number;
   clientY: number;
 }
-
-const RESIZE_CURSOR: Record<HandleId, string> = {
-  nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
-};
 
 const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }): Mods => ({
   shift: e.shiftKey,
@@ -63,24 +59,23 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const hoverCursor = (w: Point): string => {
     if (engine.tool !== 'select') return 'crosshair';
     if (engine.readOnly) return 'grab';
-    const g = groupHandleAt(w);
-    if (g) return RESIZE_CURSOR[g];
+    if (rotateHandleAt(w)) return 'grab';
+    const g = resizeHandleAt(w);
+    if (g) return resizeCursorAt(g, engine.selectionFrame()?.rot ?? 0);
     if (connectorEndAt(w)) return 'pointer';
     return engine.hitAt(w) ? 'move' : '';
   };
 
-  const groupHandleAt = (w: Point): HandleId | null => {
-    const grp = currentGroup();
-    return grp ? hitHandle(grp, w, engine.px(HANDLE_PX)) : null;
+  /** The selection frame's rotation handle under the pointer. */
+  const rotateHandleAt = (w: Point): boolean => {
+    const f = engine.selectionFrame();
+    return !!f && f.rotate && dist(w, rotateHandlePoint(f.rect, f.rot, engine.px(ROTATE_OFFSET_PX))) <= engine.px(HANDLE_PX + 2);
   };
 
-  const currentGroup = (): import('../../../lib/canvas/geometry').Rect | null => {
-    if (engine.readOnly) return null;
-    const b = engine.scene.bounds([...engine.selection].filter((id) => {
-      const o = engine.scene.get(id);
-      return o && !isConnector(o);
-    }));
-    return b;
+  /** A resize handle of the selection frame under the pointer (none on a locked or grouped selection). */
+  const resizeHandleAt = (w: Point): HandleId | null => {
+    const f = engine.selectionFrame();
+    return f && f.resize ? hitHandleRot(f.rect, f.rot, w, engine.px(HANDLE_PX)) : null;
   };
 
   const connectorEndAt = (w: Point): 'from' | 'to' | null => {
@@ -155,7 +150,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         break;
     }
     // Select tool.
-    const handle = groupHandleAt(w);
+    if (rotateHandleAt(w)) {
+      engine.activeGesture = new RotateGesture(engine, engine.selection, w);
+      return;
+    }
+    const handle = resizeHandleAt(w);
     if (handle) {
       const ids = [...engine.selection].filter((id) => {
         const o = engine.scene.get(id);
@@ -175,18 +174,20 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     }
     const hit = engine.hitAt(w);
     if (hit) {
+      // A click takes the object's whole group; stepped into a group, just the member.
+      const unit = engine.unitAt(hit.id);
       const wasSelected = engine.selection.has(hit.id);
       if (m.shift) {
         const next = new Set(engine.selection);
-        if (wasSelected) next.delete(hit.id);
-        else next.add(hit.id);
+        if (wasSelected) for (const id of unit) next.delete(id);
+        else for (const id of unit) next.add(id);
         engine.setSelection(next);
         if (wasSelected) return;
-      } else if (!wasSelected) engine.setSelection([hit.id]);
+      } else if (!wasSelected) engine.setSelection(unit);
       const ids = [...engine.selection];
       engine.activeGesture = new MoveGesture(engine, ids, w, s, () => {
-        // A click on an already selected member of a group narrows to it.
-        if (!m.shift && wasSelected && ids.length > 1) engine.setSelection([hit.id]);
+        // A click on an already selected member of a multi-selection narrows to it (to its group, if it has one).
+        if (!m.shift && wasSelected && ids.length > 1) engine.setSelection(unit);
       });
       return;
     }
@@ -255,6 +256,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     const { w } = local(e);
     const hit = engine.hitAt(w);
     if (hit) {
+      // First double-click on a group member steps into the group; the next edits the text.
+      if (engine.enterGroupAt(hit.id)) return;
       engine.setSelection([hit.id]);
       engine.startTextEdit(hit.id);
     } else engine.createTextAt(w);
@@ -319,6 +322,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       if (g) {
         engine.activeGesture = null;
         g.cancel();
+      } else if (engine.exitGroup()) {
+        // Left the group stepped into; it stays selected as a whole.
       } else if (engine.selection.size > 0) engine.clearSelection();
       else engine.setTool('select');
       return;
@@ -332,6 +337,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         case k === 'z': if (e.shiftKey) engine.redo(); else engine.undo(); break;
         case k === 'y': engine.redo(); break;
         case k === 'd': engine.duplicateSelection(); break;
+        case k === 'g': if (e.shiftKey) engine.ungroupSelection(); else engine.groupSelection(); break;
+        case k === 'l' && e.shiftKey: engine.toggleLock(); break;
         case e.code === 'BracketRight': engine.reorder(1, e.shiftKey); break;
         case e.code === 'BracketLeft': engine.reorder(-1, e.shiftKey); break;
         case k === '0': engine.zoomTo(100); break;

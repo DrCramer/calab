@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { clamp, type Point } from './geometry';
+import { clamp, normRot, type Point } from './geometry';
 import { after, before, between, isValidKey } from './fracIndex';
 import {
   DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
@@ -82,18 +82,31 @@ export function applyTextDiff(yt: Y.Text, next: string): void {
 export type PlainObject = { id: string; kind: ObjectKind; z: string } & Record<string, unknown>;
 
 const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color'],
-  text: ['x', 'y', 'w', 'size', 'color'],
-  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth'],
-  connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'rot', 'locked', 'group'],
+  text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
+  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'rot', 'locked', 'group'],
+  connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
 };
 
 const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color'],
-  text: ['x', 'y', 'w', 'size', 'color'],
-  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth'],
-  connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'rot', 'locked', 'group'],
+  text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
+  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'rot', 'locked', 'group'],
+  connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
 };
+
+/** A group id is a short token (newId's alphabet); anything else is ignored. */
+export const isGroupId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9]{1,32}$/.test(v);
+
+/** Optional transform fields of an init that are worth storing: absent = default, so nothing is written for the defaults. */
+function extraFields(init: ObjectInit): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const rot = init.kind !== 'connector' && typeof init.rot === 'number' ? normRot(init.rot) : 0;
+  if (rot !== 0) out.rot = rot;
+  if (init.locked === true) out.locked = true;
+  if (isGroupId(init.group)) out.group = init.group;
+  return out;
+}
 
 /** Validated, defaulted field map for an init (what gets stored). */
 function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: string | null } {
@@ -142,9 +155,15 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
   }
 }
 
+/** Patch value meaning "remove the key" (a default is stored as absence, never as a value). */
+const REMOVE = Symbol('remove');
+
 /** Normalizes a stored field before it is written by a patch; undefined = reject. */
 function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unknown {
   switch (key) {
+    case 'rot': return typeof v === 'number' && Number.isFinite(v) ? (normRot(v) === 0 ? REMOVE : normRot(v)) : undefined;
+    case 'locked': return typeof v === 'boolean' ? (v ? true : REMOVE) : undefined;
+    case 'group': return v === null ? REMOVE : isGroupId(v) ? v : undefined;
     case 'x': case 'y': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, -MAX_COORD, MAX_COORD) : undefined;
     case 'w': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'text' ? DEFAULTS.minTextW : DEFAULTS.minBox, MAX_SIZE) : undefined;
     case 'h': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minBox, MAX_SIZE) : undefined;
@@ -275,7 +294,7 @@ export class CanvasDoc {
     if (items.length === 0 || this.objects.size + items.length > MAX_OBJECTS) return [];
     const ids: string[] = [];
     let z = this.maxZ();
-    const prepared = items.map((item) => ({ item, ...initFields(item.init) }));
+    const prepared = items.map((item) => ({ item, ...initFields(item.init), extra: extraFields(item.init) }));
     const chunks: (typeof prepared)[] = [];
     let cur: typeof prepared = [];
     let bytes = 0;
@@ -292,7 +311,7 @@ export class CanvasDoc {
     chunks.push(cur);
     const write = (chunk: typeof prepared): void => {
       this.transact(() => {
-        for (const { item, fields, text } of chunk) {
+        for (const { item, fields, text, extra } of chunk) {
           let id = item.id ?? this.makeId();
           while (this.objects.has(id)) id = this.makeId();
           z = after(z, this.rng);
@@ -301,6 +320,7 @@ export class CanvasDoc {
           m.set('kind', item.init.kind);
           m.set('z', z);
           for (const [k, v] of Object.entries(fields)) m.set(k, v);
+          for (const [k, v] of Object.entries(extra)) m.set(k, v);
           if (text !== null) m.set('text', new Y.Text(text));
           ids.push(id);
         }
@@ -334,7 +354,9 @@ export class CanvasDoc {
         for (const key of PATCH_KEYS[kind]) {
           if (!(key in patch)) continue;
           const v = patchValue(kind, key, patch[key]);
-          if (v !== undefined && !same(m.get(key), v)) m.set(key, v);
+          if (v === REMOVE) {
+            if (m.has(key)) m.delete(key);
+          } else if (v !== undefined && !same(m.get(key), v)) m.set(key, v);
         }
       }
     });

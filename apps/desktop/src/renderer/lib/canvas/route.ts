@@ -1,4 +1,4 @@
-import { rectCenter, dist, type Point, type Rect } from './geometry';
+import { rectCenter, dist, rotatePoint, type Point, type Rect } from './geometry';
 import type { BoxRec, Endpoint, RouteKind, ShapeKind, Side } from './types';
 
 export type ConcreteSide = Exclude<Side, 'auto'>;
@@ -32,17 +32,39 @@ export function anchorPoint(r: Rect, shape: ShapeKind | undefined, side: Concret
 }
 
 /** Nearest side (by its anchor) to a world point: the "auto" side. */
-export function nearestSide(r: Rect, shape: ShapeKind | undefined, toward: Point): ConcreteSide {
+export function nearestSide(r: Rect, shape: ShapeKind | undefined, toward: Point, rot = 0): ConcreteSide {
   let best: ConcreteSide = 'right';
   let bestD = Infinity;
   for (const s of SIDES) {
-    const d = dist(anchorPoint(r, shape, s), toward);
+    const d = dist(rot === 0 ? anchorPoint(r, shape, s) : rotatePoint(anchorPoint(r, shape, s), rectCenter(r), rot), toward);
     if (d < bestD) {
       bestD = d;
       best = s;
     }
   }
   return best;
+}
+
+const shapeOf = (b: BoxRec): ShapeKind | undefined => (b.kind === 'shape' ? b.shape : undefined);
+
+/**
+ * Where a connector touches side `side` of a box: the local anchor turned with the box. A side is the box's own
+ * (its top stays its top when it is rotated), so the glued end follows the rotated side.
+ */
+export function anchorOf(b: BoxRec, side: ConcreteSide): Point {
+  const p = anchorPoint(b, shapeOf(b), side);
+  return b.rot ? rotatePoint(p, rectCenter(b), b.rot) : p;
+}
+
+/**
+ * Outward direction of a side of a box, snapped to the nearest world axis: orthogonal routes leave a rotated
+ * box along an axis, from the (exactly rotated) anchor.
+ */
+export function sideDirOf(b: BoxRec, side: ConcreteSide): Point {
+  const d = SIDE_DIR[side];
+  if (!b.rot) return d;
+  const q = rotatePoint(d, { x: 0, y: 0 }, b.rot);
+  return Math.abs(q.x) >= Math.abs(q.y) ? { x: q.x >= 0 ? 1 : -1, y: 0 } : { x: 0, y: q.y >= 0 ? 1 : -1 };
 }
 
 export interface ResolvedEnd {
@@ -56,7 +78,6 @@ export interface ResolvedEnd {
 
 export type BoxLookup = (id: string) => BoxRec | undefined;
 
-const shapeOf = (b: BoxRec): ShapeKind | undefined => (b.kind === 'shape' ? b.shape : undefined);
 
 function refPoint(e: Endpoint, lookup: BoxLookup, last: Point | undefined): Point | null {
   if (!('id' in e)) return { x: e.x, y: e.y };
@@ -69,9 +90,8 @@ function resolveEnd(e: Endpoint, other: Point | null, lookup: BoxLookup, last: P
   if (!('id' in e)) return { p: { x: e.x, y: e.y }, dir: null, target: null, side: null };
   const t = lookup(e.id);
   if (!t) return { p: last ?? other ?? { x: 0, y: 0 }, dir: null, target: null, side: null };
-  const shape = shapeOf(t);
-  const side = e.side === 'auto' ? nearestSide(t, shape, other ?? rectCenter(t)) : e.side;
-  return { p: anchorPoint(t, shape, side), dir: SIDE_DIR[side], target: t.id, side };
+  const side = e.side === 'auto' ? nearestSide(t, shapeOf(t), other ?? rectCenter(t), t.rot ?? 0) : e.side;
+  return { p: anchorOf(t, side), dir: sideDirOf(t, side), target: t.id, side };
 }
 
 export interface RoutedConnector {

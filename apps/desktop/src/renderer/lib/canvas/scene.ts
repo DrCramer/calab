@@ -1,15 +1,15 @@
 import * as Y from 'yjs';
-import { CanvasDoc, color, endpoint, isKind, isShapeKind, num } from './doc';
+import { CanvasDoc, color, endpoint, isGroupId, isKind, isShapeKind, num } from './doc';
 import {
-  boundsOf, distToPolyline, pointInShape, pointsBounds, polylineMidpoint, rectContainsPoint, rectInflate, rectsIntersect,
-  type Point, type Rect,
+  boundsOf, distToPolyline, normRot, pointInShape, pointsBounds, polylineMidpoint, rectCenter, rectContainsPoint, rectInflate,
+  rotatePoint, rotatedRectHitsRect, type Point, type Rect,
 } from './geometry';
 import { isValidKey } from './fracIndex';
 import { SpatialGrid } from './grid';
 import { RouteCache, routeConnector } from './route';
 import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter } from './textLayout';
 import {
-  DEFAULTS, MAX_SIZE, isBound, isBox, isConnector,
+  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector,
   type BoxRec, type ConnectorRec, type Endpoint, type ObjectRec, type RouteKind, type Arrow,
 } from './types';
 
@@ -25,6 +25,7 @@ export interface SceneChange {
 }
 
 const FULL_REPAINT_OVER = 256;
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 const ARROW_PAD = 14;
 const LABEL_W = 180;
 const LABEL_H = 28;
@@ -43,7 +44,7 @@ export function visualBounds(o: ObjectRec): Rect {
     }
     return r;
   }
-  return rectInflate(o, o.kind === 'shape' ? o.strokeWidth : 1);
+  return rectInflate(aabb(o), o.kind === 'shape' ? o.strokeWidth : 1);
 }
 
 function segHitsRect(ax: number, ay: number, bx: number, by: number, r: Rect): boolean {
@@ -78,6 +79,10 @@ export class Scene {
   private recs = new Map<string, ObjectRec>();
   /** target id → connectors that reference it (even if the target does not exist right now). */
   private readonly byTarget = new Map<string, Set<string>>();
+  /** Group id as stored in the doc → ids carrying it; a group of fewer than two is not one (records show `group` only for real groups). */
+  private readonly rawGroups = new Map<string, Set<string>>();
+  private readonly rawOf = new Map<string, string>();
+  private readonly touchedGroups = new Set<string>();
   private order: string[] | null = null;
   private ranks: Map<string, number> | null = null;
   private readonly listeners = new Set<(c: SceneChange) => void>();
@@ -170,14 +175,28 @@ export class Scene {
     return end === 'from' ? { x: c.points[0] ?? 0, y: c.points[1] ?? 0 } : { x: c.points[c.points.length - 2] ?? 0, y: c.points[c.points.length - 1] ?? 0 };
   }
 
+  /** Members of a real group (two or more), empty for anything else. */
+  groupMembers(gid: string | undefined): ReadonlySet<string> {
+    const set = gid === undefined ? undefined : this.rawGroups.get(gid);
+    return set && set.size >= 2 ? set : EMPTY_IDS;
+  }
+
+  /** The object together with its group: what a click on it selects. */
+  unitOf(id: string): string[] {
+    const g = this.recs.get(id)?.group;
+    const m = this.groupMembers(g);
+    return m.size > 0 ? [...m] : [id];
+  }
+
+  /** Bounds on the world axes (rotated boxes by their circumscribed rect). */
   bounds(ids?: Iterable<string>): Rect | null {
     const rects: Rect[] = [];
     if (ids) {
       for (const id of ids) {
         const r = this.recs.get(id);
-        if (r) rects.push(r);
+        if (r) rects.push(aabb(r));
       }
-    } else for (const r of this.recs.values()) rects.push(r);
+    } else for (const r of this.recs.values()) rects.push(aabb(r));
     return boundsOf(rects);
   }
 
@@ -216,18 +235,20 @@ export class Scene {
       }
       return false;
     }
-    if (o.kind !== 'shape') return rectContainsPoint(o, p, 0);
-    if (!pointInShape(o.shape, rectInflate(o, tol), p)) return false;
-    if (area || o.fill !== 'none' || o.text !== '') return pointInShape(o.shape, o, p) || distNearOutline(o, p, tol);
+    // A rotated box is tested in its own frame: the point is turned back about the center.
+    const q = o.rot ? rotatePoint(p, rectCenter(o), -o.rot) : p;
+    if (o.kind !== 'shape') return rectContainsPoint(o, q, 0);
+    if (!pointInShape(o.shape, rectInflate(o, tol), q)) return false;
+    if (area || o.fill !== 'none' || o.text !== '') return pointInShape(o.shape, o, q) || distNearOutline(o, q, tol);
     // Unfilled and empty: only the outline picks.
     const inner = rectInflate(o, -2 * tol);
-    return !(inner.w > 0 && inner.h > 0 && pointInShape(o.shape, inner, p));
+    return !(inner.w > 0 && inner.h > 0 && pointInShape(o.shape, inner, q));
   }
 
   /** Objects touching the rect (marquee). */
   inRect(r: Rect): ObjectRec[] {
     return this.query(r).filter((o) => {
-      if (!isConnector(o)) return rectsIntersect(o, r);
+      if (!isConnector(o)) return rotatedRectHitsRect(o, o.rot ?? 0, r);
       for (let i = 0; i + 3 < o.points.length; i += 2) {
         if (segHitsRect(o.points[i] ?? 0, o.points[i + 1] ?? 0, o.points[i + 2] ?? 0, o.points[i + 3] ?? 0, r)) return true;
       }
@@ -245,6 +266,8 @@ export class Scene {
   private rebuildAll(): void {
     this.recs = new Map();
     this.byTarget.clear();
+    this.rawGroups.clear();
+    this.rawOf.clear();
     this.grid.clear();
     this.order = null;
     this.ranks = null;
@@ -256,11 +279,12 @@ export class Scene {
       }
       const rec = this.buildBox(id, m);
       if (rec) {
-        this.recs.set(id, rec);
+        this.store(rec);
         this.grid.insert(id, visualBounds(rec));
       }
     }
     for (const [id, m] of conns) this.putConnector(id, m);
+    this.normalizeGroups(new Set());
     this.version++;
   }
 
@@ -315,7 +339,7 @@ export class Scene {
       }
       touch(id);
       if (!old || old.z !== rec.z) order = true;
-      this.recs.set(id, rec);
+      this.store(rec);
       this.grid.update(id, visualBounds(rec));
       dirty.push(visualBounds(rec));
       for (const c of this.byTarget.get(id) ?? []) connIds.add(c);
@@ -339,6 +363,7 @@ export class Scene {
       if (!old || old.z !== rec?.z) order = true;
       if (rec) dirty.push(visualBounds(rec));
     }
+    this.normalizeGroups(changed);
     if (order) {
       this.order = null;
       this.ranks = null;
@@ -354,6 +379,57 @@ export class Scene {
     if (old && isConnector(old)) this.unlinkConnector(old);
     this.recs.delete(id);
     this.grid.remove(id);
+    this.setRawGroup(id, undefined);
+  }
+
+  /** Puts a record in (its `group` is the doc's raw value until `normalizeGroups` runs at the end of the update). */
+  private store(rec: ObjectRec): void {
+    this.recs.set(rec.id, rec);
+    this.setRawGroup(rec.id, rec.group);
+    // A rebuilt record carries the raw id again: its group is judged anew.
+    if (rec.group !== undefined) this.touchedGroups.add(rec.group);
+  }
+
+  private setRawGroup(id: string, gid: string | undefined): void {
+    const prev = this.rawOf.get(id);
+    if (prev === gid) return;
+    if (prev !== undefined) {
+      const set = this.rawGroups.get(prev);
+      set?.delete(id);
+      if (set?.size === 0) this.rawGroups.delete(prev);
+      this.touchedGroups.add(prev);
+    }
+    if (gid === undefined) this.rawOf.delete(id);
+    else {
+      this.rawOf.set(id, gid);
+      let set = this.rawGroups.get(gid);
+      if (!set) this.rawGroups.set(gid, (set = new Set()));
+      set.add(id);
+      this.touchedGroups.add(gid);
+    }
+  }
+
+  /**
+   * Makes every record's `group` the effective one: set only while two or more objects carry the id (a lone
+   * leftover — the others deleted, or a concurrent delete — is an ordinary object). Records that change are
+   * reported in `changed`; nothing is repainted for it.
+   */
+  private normalizeGroups(changed: Set<string>): void {
+    if (this.touchedGroups.size === 0) return;
+    const gids = [...this.touchedGroups];
+    this.touchedGroups.clear();
+    for (const gid of gids) {
+      const members = this.rawGroups.get(gid);
+      if (!members) continue;
+      const want = members.size >= 2 ? gid : undefined;
+      for (const id of members) {
+        const rec = this.recs.get(id);
+        if (!rec || rec.group === want) continue;
+        const { group: _drop, ...rest } = rec;
+        this.recs.set(id, (want === undefined ? rest : { ...rest, group: want }));
+        changed.add(id);
+      }
+    }
   }
 
   private link(connId: string, e: Endpoint): void {
@@ -379,6 +455,17 @@ export class Scene {
     return isValidKey(z) ? z : '';
   }
 
+  /** Optional transform fields as they are in the doc; defaults stay absent so unchanged documents build the same records. */
+  private extras(m: Y.Map<unknown>, box: boolean): { rot?: number; locked?: boolean; group?: string } {
+    const out: { rot?: number; locked?: boolean; group?: string } = {};
+    const rot = box ? normRot(num(m.get('rot'), 0, -1e6, 1e6)) : 0;
+    if (rot !== 0) out.rot = rot;
+    if (m.get('locked') === true) out.locked = true;
+    const g = m.get('group');
+    if (isGroupId(g)) out.group = g;
+    return out;
+  }
+
   private buildBox(id: string, m: Y.Map<unknown>): BoxRec | null {
     const kind = m.get('kind');
     const z = this.zOf(m);
@@ -393,14 +480,14 @@ export class Scene {
         return {
           kind, id, z, x, y,
           w: num(m.get('w'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
-          color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(),
+          color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...this.extras(m, true),
         };
       case 'text': {
         const w = num(m.get('w'), DEFAULTS.textW, DEFAULTS.minTextW, MAX_SIZE);
         const size = num(m.get('size'), DEFAULTS.textSize, DEFAULTS.minTextSize, DEFAULTS.maxTextSize);
         const text = textOf();
         const h = Math.max(size * 1.3, this.text.layout(text, size, w - 2 * TEXT_PAD).height) + 2 * TEXT_PAD;
-        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text };
+        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...this.extras(m, true) };
       }
       case 'shape': {
         const shape = m.get('shape');
@@ -409,7 +496,7 @@ export class Scene {
           w: num(m.get('w'), DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
           shape: isShapeKind(shape) ? shape : 'rect',
           fill: color(m.get('fill'), DEFAULTS.shapeFill), stroke: color(m.get('stroke'), DEFAULTS.shapeStroke),
-          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(),
+          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...this.extras(m, true),
         };
       }
       default:
@@ -438,9 +525,9 @@ export class Scene {
       kind: 'connector', id, z: this.zOf(m), x: b.x, y: b.y, w: b.w, h: b.h,
       from, to, arrow, route, stroke: color(m.get('stroke'), DEFAULTS.connectorStroke),
       strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), label: typeof lab === 'string' ? lab : '',
-      points: routed.points,
+      points: routed.points, ...this.extras(m, false),
     };
-    this.recs.set(id, rec);
+    this.store(rec);
     this.grid.update(id, visualBounds(rec));
     this.link(id, from);
     this.link(id, to);

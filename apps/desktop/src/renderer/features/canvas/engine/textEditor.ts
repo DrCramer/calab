@@ -1,5 +1,5 @@
 import type { Camera } from '../../../lib/canvas/camera';
-import type { Rect } from '../../../lib/canvas/geometry';
+import type { Point, Rect } from '../../../lib/canvas/geometry';
 import { MAX_TEXT } from '../../../lib/canvas/types';
 import { LINE_HEIGHT } from '../../../lib/canvas/textLayout';
 
@@ -15,6 +15,9 @@ export interface EditSpec {
   /** Grow the textarea with its content instead of scrolling (free text objects). */
   autoHeight: boolean;
   fontFamily: string;
+  /** The object is rotated by this many degrees (about `center`, world units): the textarea turns with it. */
+  rot?: number;
+  center?: Point;
 }
 
 export interface TextEditorOptions {
@@ -97,6 +100,10 @@ export class TextEditor {
     st.top = `${top + spec.box.y * cam.scale + cam.ty}px`;
     st.width = `${spec.box.w * cam.scale}px`;
     st.fontSize = `${spec.size * cam.scale}px`;
+    if (spec.rot && spec.center) {
+      st.transformOrigin = `${(spec.center.x - spec.box.x) * cam.scale}px ${(spec.center.y - spec.box.y) * cam.scale}px`;
+      st.transform = `rotate(${spec.rot}deg)`;
+    }
     this.fit();
   }
 

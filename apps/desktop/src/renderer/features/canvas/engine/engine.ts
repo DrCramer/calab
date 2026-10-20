@@ -4,22 +4,24 @@ import {
   type Camera,
 } from '../../../lib/canvas/camera';
 import { duplicate, parse, serialize, toInits } from '../../../lib/canvas/clipboard';
-import { CanvasDoc } from '../../../lib/canvas/doc';
-import { boundsOf, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
+import { arrangeDeltas, arrangeUnits, type ArrangeOp } from '../../../lib/canvas/arrange';
+import { CanvasDoc, newId } from '../../../lib/canvas/doc';
+import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
 import { Scene } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
 import { LABEL_SIZE, SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE, TextLayouter, estimateMeasure, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import {
-  DEFAULTS, isConnector,
+  DEFAULTS, aabb, isConnector,
   type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
 import { AwarenessLayer, type PeerState } from './awareness';
 import type { Core, Gesture } from './gestures';
 import { attachInput } from './input';
-import { emptyOverlay, type OverlayState } from './overlay';
+import { emptyOverlay, type Outline, type OverlayState, type SelFrame } from './overlay';
 import { resolveColor, resolveSticky, type CanvasPalette } from './palette';
 import { Renderer, renderSceneTo, type FrameStats } from './renderer';
+import { selectionFrame } from './selection';
 import { TextEditor, type EditSpec } from './textEditor';
 
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector';
@@ -108,6 +110,8 @@ export class CanvasEngine implements Core {
   private palette: CanvasPalette;
   private cam: Camera = { ...DEFAULT_CAMERA };
   private sel = new Set<string>();
+  /** The group the user stepped into (double-click): its members select one by one until the selection leaves it. */
+  private entered: string | null = null;
   private overlay: OverlayState = emptyOverlay();
   private gesture: Gesture | null = null;
   private state: EngineState;
@@ -346,6 +350,7 @@ export class CanvasEngine implements Core {
     for (const id of ids) if (this.scene.has(id)) next.add(id);
     if (next.size === this.sel.size && [...next].every((i) => this.sel.has(i))) return;
     this.sel = next;
+    if (this.entered !== null && ![...next].some((i) => this.scene.get(i)?.group === this.entered)) this.entered = null;
     this.refreshOverlay();
     this.sync();
     this.notifySelection();
@@ -359,23 +364,23 @@ export class CanvasEngine implements Core {
     if (edit && id) this.startTextEdit(id);
   }
 
-  /** Decoration for the current selection (outlines, group handles, connector ends). */
+  /** Decoration for the current selection (outlines, the frame with its handles, connector ends). */
   private refreshOverlay(): void {
-    const outlines: Rect[] = [];
+    const outlines: Outline[] = [];
     const connectors = [];
-    const boxes: Rect[] = [];
-    for (const id of this.sel) {
-      const o = this.scene.get(id);
-      if (!o) continue;
+    const recs = this.getSelected();
+    for (const o of recs) {
       if (isConnector(o)) connectors.push(o);
-      else {
-        outlines.push({ x: o.x, y: o.y, w: o.w, h: o.h });
-        boxes.push(o);
-      }
+      else outlines.push({ rect: { x: o.x, y: o.y, w: o.w, h: o.h }, rot: o.rot ?? 0 });
     }
-    const group = !this.readOnly && !this.editor.isOpen ? boundsOf(boxes) : null;
+    const group = !this.readOnly && !this.editor.isOpen ? selectionFrame(recs) : null;
     this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group };
     this.renderer.requestFrame();
+  }
+
+  /** The selection frame the input hit-tests its handles against (null when read-only or editing): the one the overlay draws, kept current by `refreshOverlay`. */
+  selectionFrame(): SelFrame | null {
+    return this.overlay.group;
   }
 
   private onSceneChange(ids: ReadonlySet<string>): void {
@@ -565,8 +570,9 @@ export class CanvasEngine implements Core {
     return !this.readOnly;
   }
 
+  /** Everything but the locked objects (those are picked by a click only). */
   selectAll(): void {
-    this.setSelection(this.scene.orderedIds());
+    this.setSelection(this.scene.orderedIds().filter((id) => !this.scene.get(id)?.locked));
   }
 
   clearSelection(): void {
@@ -581,9 +587,11 @@ export class CanvasEngine implements Core {
     const i = cur === null ? (dir > 0 ? -1 : order.length) : order.indexOf(cur);
     const next = order[(i + dir + order.length) % order.length];
     if (next) {
+      // Tab walks the objects one by one: a group's member is stepped into.
+      this.entered = this.scene.get(next)?.group ?? null;
       this.setSelection([next]);
       const o = this.scene.get(next);
-      if (o && !rectInView(o, this.visibleWorld())) this.centerOn({ x: o.x + o.w / 2, y: o.y + o.h / 2 });
+      if (o && !rectInView(aabb(o), this.visibleWorld())) this.centerOn(rectCenter(aabb(o)));
     }
   }
 
@@ -681,28 +689,132 @@ export class CanvasEngine implements Core {
     } else this.doc.step(ids, dir);
   }
 
-  /** Moves the selection by a world delta (arrow keys). */
+  /** A patch that shifts an object by a world delta (boxes by their frame, connectors by their free ends). */
+  private shiftPatch(o: ObjectRec, dx: number, dy: number): ObjectPatch {
+    if (!isConnector(o)) return { x: o.x + dx, y: o.y + dy };
+    const p: ObjectPatch = {};
+    if (!('id' in o.from)) p.from = { x: o.from.x + dx, y: o.from.y + dy };
+    if (!('id' in o.to)) p.to = { x: o.to.x + dx, y: o.to.y + dy };
+    return p;
+  }
+
+  /** Moves the selection by a world delta (arrow keys); locked objects stay. */
   nudge(dx: number, dy: number): void {
     if (!this.canEdit() || this.sel.size === 0) return;
     const patches = new Map<string, ObjectPatch>();
     for (const id of this.sel) {
       const o = this.scene.get(id);
-      if (!o) continue;
-      if (isConnector(o)) {
-        const p: ObjectPatch = {};
-        if (!('id' in o.from)) p.from = { x: o.from.x + dx, y: o.from.y + dy };
-        if (!('id' in o.to)) p.to = { x: o.to.x + dx, y: o.to.y + dy };
-        patches.set(id, p);
-      } else patches.set(id, { x: o.x + dx, y: o.y + dy });
+      if (o && !o.locked) patches.set(id, this.shiftPatch(o, dx, dy));
     }
     this.doc.patchMany(patches);
   }
 
-  /** Applies plain-field changes (color, size, fill, arrow, …) to every selected object they apply to. */
+  /** Applies plain-field changes (color, size, fill, arrow, …) to every selected object they apply to (not the locked ones). */
   updateSelected(patch: ObjectPatch): void {
     if (!this.canEdit() || this.sel.size === 0) return;
     const patches = new Map<string, ObjectPatch>();
-    for (const id of this.sel) patches.set(id, patch);
+    for (const id of this.sel) if (!this.scene.get(id)?.locked) patches.set(id, patch);
+    this.doc.patchMany(patches);
+  }
+
+  // ── lock, groups, arrangement (ADR-0114) ────────────────────────────────────
+
+  /** Locks the selection; when every selected object is already locked, unlocks it. */
+  toggleLock(): void {
+    if (!this.canEdit() || this.sel.size === 0) return;
+    const recs = this.getSelected();
+    const lock = !recs.every((o) => o.locked);
+    const patches = new Map<string, ObjectPatch>();
+    for (const o of recs) patches.set(o.id, { locked: lock });
+    this.doc.checkpoint();
+    this.doc.patchMany(patches);
+  }
+
+  /** Groups the selection (two or more objects) into one flat group; it replaces any group they were in. */
+  groupSelection(): string | null {
+    if (!this.canEdit() || this.sel.size < 2) return null;
+    const recs = this.getSelected();
+    const first = recs[0]?.group;
+    if (first !== undefined && recs.every((o) => o.group === first) && this.scene.groupMembers(first).size === recs.length) return first;
+    const gid = newId();
+    const patches = new Map<string, ObjectPatch>();
+    for (const o of recs) patches.set(o.id, { group: gid });
+    this.doc.checkpoint();
+    this.doc.patchMany(patches);
+    this.entered = null;
+    return gid;
+  }
+
+  /** Dissolves every group the selection touches (all their members, selected or not) and selects them. */
+  ungroupSelection(): void {
+    if (!this.canEdit()) return;
+    const members = new Set<string>();
+    for (const o of this.getSelected()) for (const id of this.scene.groupMembers(o.group)) members.add(id);
+    if (members.size === 0) return;
+    const patches = new Map<string, ObjectPatch>();
+    for (const id of members) patches.set(id, { group: null });
+    this.doc.checkpoint();
+    this.doc.patchMany(patches);
+    this.entered = null;
+    this.setSelection(members);
+  }
+
+  /** The ids plus the unlocked members of their groups; inside the group the user stepped into, ids stay as they are. */
+  expandUnits(ids: Iterable<string>): string[] {
+    const out = new Set<string>();
+    for (const id of ids) {
+      const g = this.scene.get(id)?.group;
+      if (g === undefined || g === this.entered) out.add(id);
+      else for (const m of this.scene.groupMembers(g)) if (!this.scene.get(m)?.locked) out.add(m);
+    }
+    return [...out];
+  }
+
+  /** What a click on `id` selects: the object's whole group (just itself inside the group stepped into). */
+  unitAt(id: string): string[] {
+    const g = this.scene.get(id)?.group;
+    return g === undefined || g === this.entered ? [id] : this.scene.unitOf(id);
+  }
+
+  /** Double-click on a group member from outside: step into the group and select that member. Returns false when there is nothing to step into. */
+  enterGroupAt(id: string): boolean {
+    const g = this.scene.get(id)?.group;
+    if (g === undefined || g === this.entered) return false;
+    this.entered = g;
+    this.setSelection([id]);
+    return true;
+  }
+
+  /** Esc: leave the group stepped into, keeping it selected as a whole. Returns false when none was entered. */
+  exitGroup(): boolean {
+    const g = this.entered;
+    if (g === null) return false;
+    this.entered = null;
+    this.setSelection(this.scene.groupMembers(g));
+    return true;
+  }
+
+  get enteredGroup(): string | null {
+    return this.entered;
+  }
+
+  /** Aligns / distributes the selection by circumscribed rects, groups as units; locked ones do not move. One undo step. */
+  arrange(op: ArrangeOp): void {
+    if (!this.canEdit()) return;
+    const units = arrangeUnits(this.getSelected(), (g) => this.scene.groupMembers(g).size);
+    const deltas = arrangeDeltas(units, op);
+    if (!deltas) return;
+    const patches = new Map<string, ObjectPatch>();
+    units.forEach((u, i) => {
+      const d = deltas[i];
+      if (!d || (d.dx === 0 && d.dy === 0)) return;
+      for (const id of u.ids) {
+        const o = this.scene.get(id);
+        if (o) patches.set(id, this.shiftPatch(o, d.dx, d.dy));
+      }
+    });
+    if (patches.size === 0) return;
+    this.doc.checkpoint();
     this.doc.patchMany(patches);
   }
 
@@ -715,10 +827,11 @@ export class CanvasEngine implements Core {
       return { box: { x: m.x - 80, y: m.y - 12, w: 160, h: 24 }, text: o.label, size: LABEL_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily };
     }
     const box = contentRect(o);
+    const turn = o.rot ? { rot: o.rot, center: rectCenter(o) } : {};
     switch (o.kind) {
-      case 'sticky': return { box, text: o.text, size: STICKY_TEXT_SIZE, color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily };
-      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily };
-      case 'shape': return { box, text: o.text, size: SHAPE_TEXT_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily };
+      case 'sticky': return { box, text: o.text, size: STICKY_TEXT_SIZE, color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, ...turn };
+      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, ...turn };
+      case 'shape': return { box, text: o.text, size: SHAPE_TEXT_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, ...turn };
     }
   }
 
@@ -727,7 +840,7 @@ export class CanvasEngine implements Core {
     if (!this.canEdit()) return false;
     const target = id ?? this.state.selectedId;
     const o = target ? this.scene.get(target) : undefined;
-    if (!o) return false;
+    if (!o || o.locked) return false;
     const spec = this.editSpec(o);
     if (!spec) return false;
     const oid = o.id;

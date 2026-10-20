@@ -39,18 +39,25 @@ export function CanvasMenu({
   const editable = canWrite && !s.readOnly;
   const hasSel = s.selectionCount > 0;
   const textual = hasSel && s.selectedId !== null;
+  const selected = engine.getSelected();
+  const allLocked = selected.length > 0 && selected.every((o) => o.locked);
+  const grouped = selected.some((o) => o.group !== undefined);
   return (
     <ContextMenu.Portal>
       <ContextMenu.Content className={MENU_BOX} onCloseAutoFocus={(e) => { e.preventDefault(); focusCanvas(); }} data-testid="canvas-menu">
         {mode === 'object' && hasSel ? (
           <>
-            {editable && textual ? <Item label={t('canvasBoard.menu.edit')} kbd="Enter" onSelect={() => { engine.startTextEdit(); }} testId="canvas-menu-edit" /> : null}
+            {editable && textual && !allLocked ? <Item label={t('canvasBoard.menu.edit')} kbd="Enter" onSelect={() => { engine.startTextEdit(); }} testId="canvas-menu-edit" /> : null}
             <Item label={t('canvasBoard.menu.copy')} kbd={`${MOD}C`} onSelect={() => void engine.copy()} testId="canvas-menu-copy" />
             {editable ? (
               <>
                 <Item label={t('canvasBoard.menu.cut')} kbd={`${MOD}X`} onSelect={() => void engine.cut()} testId="canvas-menu-cut" />
                 <Item label={t('canvasBoard.menu.paste')} kbd={`${MOD}V`} onSelect={() => void engine.paste()} testId="canvas-menu-paste" />
                 <Item label={t('canvasBoard.menu.duplicate')} kbd={`${MOD}D`} onSelect={() => { engine.duplicateSelection(); }} testId="canvas-menu-duplicate" />
+                <ContextMenu.Separator className={SEP} />
+                {s.selectionCount > 1 && !grouped ? <Item label={t('canvasBoard.menu.group')} kbd={`${MOD}G`} onSelect={() => { engine.groupSelection(); }} testId="canvas-menu-group" /> : null}
+                {grouped ? <Item label={t('canvasBoard.menu.ungroup')} kbd={`⇧${MOD}G`} onSelect={() => engine.ungroupSelection()} testId="canvas-menu-ungroup" /> : null}
+                <Item label={t(allLocked ? 'canvasBoard.menu.unlock' : 'canvasBoard.menu.lock')} kbd={`⇧${MOD}L`} onSelect={() => engine.toggleLock()} testId="canvas-menu-lock" />
                 <ContextMenu.Separator className={SEP} />
                 <Item label={t('canvasBoard.menu.front')} kbd={`⇧${MOD}]`} onSelect={() => engine.reorder(1, true)} testId="canvas-menu-front" />
                 <Item label={t('canvasBoard.menu.back')} kbd={`⇧${MOD}[`} onSelect={() => engine.reorder(-1, true)} testId="canvas-menu-back" />
