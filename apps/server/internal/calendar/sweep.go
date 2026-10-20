@@ -45,6 +45,11 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 		} else if n > 0 {
 			slog.InfoContext(ctx, "calendar: reminders sent", "count", n)
 		}
+		if n, err := s.MakeTempRooms(ctx, now); err != nil && ctx.Err() == nil {
+			slog.WarnContext(ctx, "calendar: meetings' temporary rooms", "err", err)
+		} else if n > 0 {
+			slog.InfoContext(ctx, "calendar: meetings' temporary rooms created", "count", n)
+		}
 		if now.Sub(lastCleanup) > time.Hour {
 			lastCleanup = now
 			logErr(ctx, "cleanup", db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.DeleteOldEventSignals(ctx, now.Add(-72*time.Hour)) }))

@@ -1,6 +1,6 @@
 import type { Rect } from './geometry';
 
-/** Document schema this build reads and writes (ADR-0107 §3). Newer docs open read-only. */
+/** Document schema this build reads and writes (ADR-0113 §3). Newer docs open read-only. */
 export const SCHEMA_VERSION = 1;
 export const MAX_OBJECTS = 5000;
 export const MAX_TEXT = 5000;

@@ -44,7 +44,6 @@ order: 4
 
 - `POST /api/messages/{id}/interactions` — нажатие inline-кнопки: нажимают только люди (бот получает результат как событие `botCallback`, см. [Команды и кнопки](./commands-buttons));
 - `GET /api/unfurl`, `GET /api/unfurl/image` — превью ссылок строит приложение, не бот;
-- `POST /api/rooms/{id}/recordings/{rid}/recheck`, `…/reupload`, `DELETE /api/rooms/{id}/recordings/{rid}` — повтор обработки, перезагрузка и удаление записей.
 
 ## Отправить сообщение
 

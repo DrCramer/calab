@@ -17,7 +17,7 @@ import { useCanvasUi } from '../../stores/canvasUi';
 import { CanvasViewLazy } from './lazy';
 
 /**
- * «Холст» on the phone (ADR-0107 §5, ADR-0095: a section behind «Ещё»; **view only** in v1): the tab
+ * «Холст» on the phone (ADR-0113 §5, ADR-0095: a section behind «Ещё»; **view only** in v1): the tab
  * root lists the top-level folders and canvases (56 px rows, a name filter behind the magnifier), a
  * folder and a canvas are pushed screens (`{kind:'canvas'}`, lib/phoneNav.ts) with the standard header.
  * The canvas screen is the desktop's lazy `CanvasView` in its `phone` mode: pan with one finger, pinch

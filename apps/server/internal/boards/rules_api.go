@@ -21,7 +21,7 @@ import (
 )
 
 // The rules API (ADR-0060 §3): read by the board's viewers (bots too), changed, tested and its
-// log read with MANAGE_BOARD (bots: 403 by the route table). New rules need the plan's
+// log read with MANAGE_BOARD (bots by the same bits, ADR-0109). New rules need the plan's
 // automations (Team and above).
 
 const automationsFeature = "board automations"

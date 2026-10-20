@@ -55,7 +55,7 @@ const (
 	scopeDiskItem
 	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
 	scopeWikiPage
-	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0107), the item's workspace.
+	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0113), the item's workspace.
 	scopeCanvasItem
 )
 
@@ -514,7 +514,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/wiki/{code}":                scopePublic,
 	"GET /api/public/wiki/{code}/state":          scopePublic,
 	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
-	// Canvas (ADR-0107 §7). The sync socket authenticates in-band like the Wiki's.
+	// Canvas (ADR-0113 §7). The sync socket authenticates in-band like the Wiki's.
 	"GET /api/workspaces/{id}/canvas/items":        scopeWorkspace,
 	"POST /api/workspaces/{id}/canvas/items":       scopeWorkspace,
 	"POST /api/workspaces/{id}/canvas/trash/empty": scopeWorkspace,
@@ -591,6 +591,12 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/billing/tochkapay/webhook":                                     scopePublic,
 	"GET /api/billing/public/offers":                                          scopePublic,
 	"GET /api/billing/return":                                                 scopePublic,
+	// ADR-0111: a member lets a bot act on their behalf
+	"GET /api/workspaces/{id}/bots/{botId}":                                scopeWorkspace,
+	"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}":           scopeWorkspace,
+	"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}":        scopeWorkspace,
+	"POST /api/workspaces/{id}/bots/{botId}/delegation-invites":            scopeWorkspace,
+	"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}": scopeWorkspace,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of
@@ -643,7 +649,9 @@ func identityGate(q *sqlc.Queries, a *auth.Service, planActive func(ctx context.
 			}
 			err = a.CheckGlobal(ctx, id, identitypolicy.ProductAdmin)
 		case scopeProfile, scopeAggregate:
-			if id.Principal.Authority == identitypolicy.Recovery {
+			if id.ForMember {
+				err = auth.ErrOnBehalfRoute // ADR-0111: a member's consent is for one workspace, not their account
+			} else if id.Principal.Authority == identitypolicy.Recovery {
 				err = httpx.Coded(403, v1.ErrorCode_ERROR_CODE_RECOVERY_ONLY, "recovery only")
 			}
 		case scopeMachine:

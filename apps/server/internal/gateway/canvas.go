@@ -9,7 +9,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// Canvas events (ADR-0107 §6), routed like the Wiki's (wiki.go): each CANVAS_ITEM_* event
+// Canvas events (ADR-0113 §6), routed like the Wiki's (wiki.go): each CANVAS_ITEM_* event
 // carries the item's access chain (server-internal, stripped here) and every recipient's bits
 // come from it and their roles (perm.ComputeCanvasItemIn). Without CANVAS_VIEW on the item
 // nothing is delivered; who saw the item before a change of its chain (move, restricted,
@@ -17,7 +17,7 @@ import (
 // canvases never travels here (the sync socket, internal/canvas).
 
 // canvasBits is member uid's canvas bits on an item with this chain (mu held); 0 = not a member,
-// a bot (the Canvas is for people in v1, ADR-0107) or no chain.
+// a bot (the Canvas is for people in v1, ADR-0113) or no chain.
 func (s *wsState) canvasBits(uid uuid.UUID, chain []perm.TreeNode) perm.Bits {
 	m, ok := s.members[uid]
 	if !ok || len(chain) == 0 || s.bots[uid] {

@@ -27,6 +27,13 @@ describe('roomMenuGroups', () => {
     expect(roomMenuGroups({ ...base, guest: true })).toEqual([['markRead', 'notify']]);
   });
 
+  it('«Запланировать встречу» (CBF-18): a permanent voice room, for who creates meetings', () => {
+    expect(roomMenuGroups({ ...base, schedule: true, inviteRoom: true })[0]).toEqual(['invite', 'schedule', 'record']);
+    expect(roomMenuGroups({ ...base, schedule: true, voice: false, admin: true })[0]).toEqual(['invite']);
+    expect(roomMenuGroups({ ...base, schedule: true, guest: true })[0]).toEqual(['markRead', 'notify']);
+    expect(roomMenuGroups({ ...base, schedule: true, temp: true, canManage: true })[0]).toEqual(['record', 'settings']);
+  });
+
   it('text room: no recording, no chat item', () => {
     expect(roomMenuGroups({ ...base, voice: false, mobile: true, admin: true })[0]).toEqual(['invite']);
   });
@@ -46,6 +53,18 @@ describe('roomMenuGroups', () => {
       ['markRead', 'notify'],
       ['deleteRoom'],
     ]);
+  });
+
+  it('a temporary room: «Ссылки…» for who manages its links, «Сделать постоянной» with workspace MANAGE_ROOM (ADR-0107)', () => {
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, manageLinks: true, makePermanent: true })).toEqual([
+      ['record', 'settings'],
+      ['copyLink', 'links', 'extend', 'addMeeting'],
+      ['markRead', 'notify'],
+      ['makePermanent', 'deleteRoom'],
+    ]);
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, guest: true, manageLinks: true, makePermanent: true })[1]).toEqual(['copyLink', 'extend']);
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, guest: true, makePermanent: true }).at(-1)).toEqual(['deleteRoom']);
+    expect(roomMenuGroups({ ...base, canManage: false, temp: true, manageLinks: true, makePermanent: true })).toEqual([['record'], ['markRead', 'notify']]);
   });
 
   it('a temporary room with a meeting already: no «Добавить встречу»', () => {

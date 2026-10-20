@@ -1,4 +1,4 @@
-import * as DialogP from '@radix-ui/react-dialog';
+import * as DialogP from '../../components/radix/dialog';
 import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba/protocol';
 import { ArrowRight, MessageCircle, MessageSquare, NotebookText, Phone, Search, X } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';

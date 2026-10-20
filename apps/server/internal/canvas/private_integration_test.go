@@ -21,7 +21,7 @@ import (
 )
 
 // A restricted item («Только выбранные») is not seen by the administrator nor the workspace
-// owner (ADR-0107 §2, addendum 2026-10-14): 404 on it and its subitems, not in listings, paths,
+// owner (ADR-0113 §2, addendum 2026-10-14): 404 on it and its subitems, not in listings, paths,
 // search, versions, the workspace journal or the events they get; their «empty the trash» skips
 // it; the people let in see it.
 func TestCanvasPrivateItemHiddenFromAdmins(t *testing.T) {

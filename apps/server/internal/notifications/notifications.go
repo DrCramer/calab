@@ -145,6 +145,9 @@ const (
 	TaskApprovalRequested TaskKind = "approval_requested" // the recipient's vote is asked for: always notifies
 	TaskApproved          TaskKind = "approved"           // the quorum was reached
 	TaskRejected          TaskKind = "rejected"           // an approver rejected
+	// TaskApprovedOnBehalf: a board manager recorded an approval on the recipient's behalf
+	// (ADR-0108): always notifies, like an approval request.
+	TaskApprovedOnBehalf TaskKind = "approved_on_behalf"
 	// TaskRule: an automation rule's «notify» action addressed the recipient (ADR-0060); like an
 	// assignment.
 	TaskRule TaskKind = "rule"
@@ -184,6 +187,7 @@ var taskKinds = map[TaskKind]v1.TaskNoticeKind{
 	TaskEdited:            v1.TaskNoticeKind_TASK_NOTICE_KIND_EDITED,
 	TaskAttachment:        v1.TaskNoticeKind_TASK_NOTICE_KIND_ATTACHMENT,
 	TaskArchived:          v1.TaskNoticeKind_TASK_NOTICE_KIND_ARCHIVED,
+	TaskApprovedOnBehalf:  v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVED_ON_BEHALF,
 }
 
 // Notice is the wire value of k (UNSPECIFIED for an unknown kind).
@@ -200,9 +204,10 @@ func TaskKindOf(n v1.TaskNoticeKind) (TaskKind, bool) {
 }
 
 // Mandatory reports whether k may never be switched off (ADR-0089 §2): approval requests and
-// their outcome (for the creator and the lead; others get those by their level).
+// their outcome (for the creator and the lead; others get those by their level), and an approval
+// recorded on the recipient's behalf (ADR-0108).
 func (k TaskKind) Mandatory() bool {
-	return k == TaskApprovalRequested || k == TaskApproved || k == TaskRejected
+	return k == TaskApprovalRequested || k == TaskApproved || k == TaskRejected || k == TaskApprovedOnBehalf
 }
 
 // direct reports whether k is addressed to the recipient («Мне лично», ADR-0089 §1): it
@@ -232,14 +237,14 @@ type TaskFacts struct {
 
 // TaskNotifies reports whether a task change notifies the recipient (the unread badge of the
 // boards icon and a system notification). Approvals (ADR-0049 §5) are mandatory like a direct
-// mention, bypassing levels, mutes and Off: APPROVAL_REQUESTED always, APPROVED / REJECTED for
-// the creator and the lead (Mandatory). Otherwise nothing for a kind switched off (ADR-0089),
+// mention, bypassing levels, mutes and Off: APPROVAL_REQUESTED and APPROVED_ON_BEHALF (ADR-0108)
+// always, APPROVED / REJECTED for the creator and the lead (Mandatory). Otherwise nothing for a kind switched off (ADR-0089),
 // with level NONE or a muted workspace; the kinds addressed to the recipient (assigned,
 // mentioned, rule, unassigned, watcher_added, due_soon, overdue) with ALL and MENTIONS, even
 // when unsubscribed; the rest (comments, status, the other approvals, field changes) with ALL
 // only, to subscribers who did not mute the task.
 func TaskNotifies(f TaskFacts) bool {
-	if f.Kind == TaskApprovalRequested || (f.Mandatory && (f.Kind == TaskApproved || f.Kind == TaskRejected)) {
+	if f.Kind == TaskApprovalRequested || f.Kind == TaskApprovedOnBehalf || (f.Mandatory && (f.Kind == TaskApproved || f.Kind == TaskRejected)) {
 		return true
 	}
 	level := orDefault(f.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL)

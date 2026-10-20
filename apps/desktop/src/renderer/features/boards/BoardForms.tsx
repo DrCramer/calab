@@ -11,14 +11,14 @@ import {
 import { ArrowDown, ArrowUp, Copy, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Select, Switch, Spinner } from '../../components/ui';
+import { Button, Field, Input, Modal, Select, Switch, Spinner, TextArea } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { boardForms } from '../../services/boardForms';
 import { copyText } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { FieldV2, pruneOptions, retype, RoutesEditor } from './FormEditorV2';
-import { FormFields, formControl, formError } from './FormFields';
+import { FormFields, formError } from './FormFields';
 
 const TYPES: [Kind, MessageKey][] = [
   [Kind.TEXT, 'forms.text'],
@@ -240,8 +240,7 @@ function FormEditor({
           <Input value={draft.title} maxLength={100} onChange={(e) => change({ title: e.target.value })} />
         </Field>
         <Field label={t('forms.description')}>
-          <textarea
-            className={`${formControl} !rounded-[var(--radius-card)]`}
+          <TextArea
             rows={3}
             maxLength={2000}
             value={draft.description}
@@ -302,8 +301,7 @@ function FormEditor({
             </Field>
             {f.type === Kind.SELECT || f.type === Kind.MULTISELECT ? (
               <Field label={t('forms.options')}>
-                <textarea
-                  className={`${formControl} !rounded-[var(--radius-card)]`}
+                <TextArea
                   rows={3}
                   value={f.options.join('\n')}
                   onChange={(e) => field(f.id, pruneOptions(f, e.target.value.split('\n')))}

@@ -61,6 +61,11 @@ order: 5
 | `POST` | `/api/rooms/{id}/sounds/play` | Проиграть звук всем в звонке `{soundId}` |
 | `POST` | `/api/rooms/{id}/calls` | Позвонить на номер из звонка комнаты `{number}` (`PLACE_CALLS`) |
 | `DELETE` | `/api/rooms/{id}/calls/{cid}` | Положить трубку |
+| `POST` | `/api/rooms/{id}/make-permanent` | Сделать временную комнату постоянной (`MANAGE_ROOM` пространства) |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/recheck` | Перепроверить неудавшуюся запись (`MANAGE_RECORDINGS`) |
+| `POST` | `/api/rooms/{id}/recordings/{rid}/reupload` | Отправить неудавшуюся запись снова (`MANAGE_RECORDINGS`) |
+| `DELETE` | `/api/rooms/{id}/recordings/{rid}` | Удалить запись: свою, или с `MANAGE_MESSAGES` комнаты / `MANAGE_RECORDINGS` |
+| `GET` | `/api/workspaces/{id}/calls` | Журнал звонков на номера (`VIEW_JOURNALS`) |
 <!-- /routes -->
 
 ### Недоступно ботам
@@ -68,10 +73,7 @@ order: 5
 - Гостевые ссылки на комнату: `GET · POST /api/rooms/{id}/invites`, `PATCH · DELETE /api/rooms/{id}/invites/{inviteId}`, вход по ссылке `POST /api/room-invites/{code}/join`.
 - Настройки уведомлений комнаты: `PUT /api/rooms/{id}/notifications`.
 - Ожидание допуска (`DELETE /api/rooms/{id}/admissions/me`) — это действие гостя.
-- Фоны камеры пространства `/api/workspaces/{id}/backgrounds…` — у бота нет камеры с фоном.
-- Настройки телефонии и журнал звонков: `/api/workspaces/{id}/sip`, `/api/workspaces/{id}/sip/test`, `GET /api/workspaces/{id}/calls`.
 - Звонки один на один: `POST /api/dms/{id}/call`, `/api/calls/{id}/…` — бот не звонит и не отвечает, позвонить боту нельзя.
-- Повтор обработки, перезагрузка и удаление записей встреч.
 
 ## Создать комнату
 

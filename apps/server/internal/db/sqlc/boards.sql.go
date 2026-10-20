@@ -2166,7 +2166,7 @@ func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityPara
 
 const listTaskApprovers = `-- name: ListTaskApprovers :many
 
-SELECT task_id, user_id, state, comment, decided_at, added_by, added_at, requested_at, reminders, reminded_at, notify_due_at, notify_reason FROM task_approvers WHERE task_id = ANY($1::uuid[])
+SELECT task_id, user_id, state, comment, decided_at, added_by, added_at, requested_at, reminders, reminded_at, notify_due_at, notify_reason, on_behalf, recorded_by FROM task_approvers WHERE task_id = ANY($1::uuid[])
 ORDER BY task_id, added_at, user_id
 `
 
@@ -2193,6 +2193,8 @@ func (q *Queries) ListTaskApprovers(ctx context.Context, taskIds []uuid.UUID) ([
 			&i.RemindedAt,
 			&i.NotifyDueAt,
 			&i.NotifyReason,
+			&i.OnBehalf,
+			&i.RecordedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -2785,7 +2787,7 @@ func (q *Queries) PurgeTaskDueNotices(ctx context.Context) (int64, error) {
 
 const resetTaskApprovals = `-- name: ResetTaskApprovals :many
 UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
-    reminders = 0, reminded_at = NULL, notify_due_at = NULL
+    reminders = 0, reminded_at = NULL, notify_due_at = NULL, on_behalf = false, recorded_by = NULL
 WHERE task_id = $1 AND state <> 'pending'
 RETURNING user_id
 `
@@ -2839,27 +2841,34 @@ func (q *Queries) ScheduleApprovalNotices(ctx context.Context, arg ScheduleAppro
 
 const setApproverVote = `-- name: SetApproverVote :exec
 UPDATE task_approvers SET state = $1::text, comment = $2::text,
+    on_behalf = $3::boolean, recorded_by = $4::uuid,
     notify_due_at = CASE WHEN $1::text = 'pending' THEN notify_due_at ELSE NULL END,
     decided_at = CASE WHEN $1::text = 'pending' THEN NULL ELSE now() END,
     requested_at = CASE WHEN $1::text = 'pending' THEN now() ELSE requested_at END,
     reminders = CASE WHEN $1::text = 'pending' THEN 0 ELSE reminders END,
     reminded_at = CASE WHEN $1::text = 'pending' THEN NULL ELSE reminded_at END
-WHERE task_id = $3 AND user_id = $4
+WHERE task_id = $5 AND user_id = $6
 `
 
 type SetApproverVoteParams struct {
-	State   string
-	Comment string
-	TaskID  uuid.UUID
-	UserID  uuid.UUID
+	State      string
+	Comment    string
+	OnBehalf   bool
+	RecordedBy *uuid.UUID
+	TaskID     uuid.UUID
+	UserID     uuid.UUID
 }
 
 // A vote; pending (withdraw) asks for it again: the reminders start over. A cast vote drops its
 // notice not sent yet (ADR-0082): a later reset or delay-0 request is then never sent twice.
+// on_behalf / recorded_by: an approval a manager records on the approver's behalf and who did
+// (ADR-0108); false / NULL for the approver's own vote and for every withdrawal.
 func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams) error {
 	_, err := q.db.Exec(ctx, setApproverVote,
 		arg.State,
 		arg.Comment,
+		arg.OnBehalf,
+		arg.RecordedBy,
 		arg.TaskID,
 		arg.UserID,
 	)

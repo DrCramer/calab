@@ -16,7 +16,7 @@ import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
-import { createBottomPin, initialFeedLocation, lastRowChange } from './lastRowPin';
+import { createBottomPin, initialFeedLocation, isOwnSend } from './lastRowPin';
 import { readFeedPosition, saveFeedPosition, takeFeedPosition } from './feedPosition';
 import { useUi } from '../../stores/ui';
 import { DisclosureScope } from '../../lib/disclosure';
@@ -221,7 +221,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
 
   // Opens at the first unread message (docs/09 #39), otherwise at the last row's bottom.
   // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
-  // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
+  // edit), a new message or the composer growing keep it there while stuck (lastRowPin.ts).
   // Back from a screen pushed over the room (phone: members, settings…): where the reader left it.
   const [{ location: initialIndex, stuck: openStuck }] = useState(() => {
     const pos = takeFeedPosition(roomId);
@@ -308,42 +308,24 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     if (state.hasMoreAfter) void loadNewer(roomId);
   }, [roomId, state.hasMoreAfter]);
 
-  // A new item: my own unsent row jumps to the bottom from anywhere ('auto'; it lands on Virtuoso's
-  // estimate of the row — the pin, stuck by the send, takes it to the real bottom); someone else's
-  // scrolls smoothly, only when the reader is at the bottom.
-  const followOutput = useCallback(
-    (isAtBottom: boolean) => {
-      if (state.hasMoreAfter) return false;
-      const last = items[items.length - 1];
-      if (last && last.msg.authorId === me && last.status !== 'sent') return 'auto';
-      return isAtBottom ? 'smooth' : false;
-    },
-    [items, me, state.hasMoreAfter],
-  );
-  // Layout effects: a window loaded away from the present must stop the pin before the next
-  // ResizeObserver delivery (which precedes passive effects), or it would chase endReached.
+  // A new item never scrolls by itself (no Virtuoso followOutput): the bottom pin is the feed's only
+  // writer of «to the bottom» (CBF-13, ADR-0110, lastRowPin.ts). Layout effects: a window loaded
+  // away from the present must stop the pin before the next ResizeObserver delivery (which precedes
+  // passive effects), or it would chase endReached.
   useLayoutEffect(() => bottomPin.setLive(!state.hasMoreAfter), [bottomPin, state.hasMoreAfter]);
-  // The last row, as primitives (lastRowChange): its key, whether it is my own unsent row, its nonce.
+  // The last row, as primitives: my own optimistic row appearing is a send, which sticks the pin
+  // wherever the reader was (isOwnSend). Layout effect: before the ResizeObserver delivery that
+  // measures the new row.
   const last = items[items.length - 1];
   const lastKey = last?.key ?? '';
   const lastOwn = !!last && last.msg.authorId === me;
   const lastPending = !!last && last.status !== 'sent';
-  const lastNonce = last?.msg.nonce ?? '';
-  // The last key the bottom pin's observer has accounted for: a different current key means a new
-  // last row whose first resize is left to followOutput (someone else's message, smooth follow).
   const lastKeyRef = useRef(lastKey);
-  const seenKeyRef = useRef(lastKey);
-  // Layout effect: decided before the ResizeObserver delivery that measures the new row.
   useLayoutEffect(() => {
-    const prev = lastKeyRef.current;
-    if (prev === lastKey) return;
+    if (lastKeyRef.current === lastKey) return;
     lastKeyRef.current = lastKey;
-    const change = lastRowChange(prev, { key: lastKey, own: lastOwn, pending: lastPending, nonce: lastNonce });
-    // My own send sticks the pin wherever the reader was, and neither it nor its server echo is
-    // «fresh»: the observer pins through the row's real height, not Virtuoso's estimate.
-    if (change === 'send') bottomPin.stick();
-    if (change !== 'fresh') seenKeyRef.current = lastKey;
-  }, [bottomPin, lastKey, lastOwn, lastPending, lastNonce]);
+    if (isOwnSend({ key: lastKey, own: lastOwn, pending: lastPending })) bottomPin.stick();
+  }, [bottomPin, lastKey, lastOwn, lastPending]);
 
   // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
   const scroller = useRef<HTMLElement | null>(null);
@@ -351,24 +333,22 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     scroller.current = r instanceof HTMLElement ? r : null;
   }, []);
 
-  // docs/09 #149: keep the bottom while stuck to it. One observer, no per-render or per-frame
-  // work, on two elements: the scroller (its height — the composer growing, the window resizing)
-  // and Virtuoso's item list (the rendered rows' height — any row changing size, the last one
-  // included). Someone else's new last message is left to followOutput, so it still scrolls
-  // smoothly; my own just-sent row and its server echo are not (lastRowChange): a send sticks the
-  // pin, which then holds the bottom through the row's real height — several lines, a sticker or an
-  // image loading, upload → preview, the echo re-rendering it — and the composer shrinking.
+  // docs/09 #149, CBF-13: keep the bottom while stuck to it. One observer, called by the browser
+  // only when a size changes (no per-render or per-frame work), on two elements: the scroller (its
+  // height — the composer growing, the window resizing) and Virtuoso's item list, border box (the
+  // rendered rows — a new message appended, any row growing: a link preview, an image, a reaction,
+  // an edit — and its padding, Virtuoso's estimate of rows not rendered). Every report while stuck
+  // pins, including the first one of someone else's new row: it is set before paint, so the new
+  // message is never painted under the composer. A hidden window gets the report when shown again.
   useEffect(() => {
     const root = scroller.current;
     if (!root || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
-      const fresh = seenKeyRef.current !== lastKeyRef.current;
-      seenKeyRef.current = lastKeyRef.current;
-      if (bottomPin.resized(root) && !fresh) root.scrollTop = root.scrollHeight;
+      if (bottomPin.resized(root)) root.scrollTop = root.scrollHeight;
     });
     ro.observe(root);
     const list = root.querySelector('[data-testid="virtuoso-item-list"]');
-    if (list) ro.observe(list);
+    if (list) ro.observe(list, { box: 'border-box' });
     return () => ro.disconnect();
   }, [bottomPin]);
 
@@ -486,7 +466,6 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         startReached={startReached}
         rangeChanged={rangeChanged}
         endReached={endReached}
-        followOutput={followOutput}
         atBottomStateChange={setAtBottom}
         atBottomThreshold={48}
         // Measure rows in the ResizeObserver callback, before paint, not a frame later: a row

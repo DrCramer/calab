@@ -8,6 +8,8 @@ The bot API only grows: new routes, fields and events are added, existing ones k
 
 | Server version | Date | What's new |
 |---|---|---|
+| next | — | A bot acts on behalf of a member who allowed it: the `Calab-On-Behalf: <user id>` header, `GET /api/workspaces/{id}/bots/{botId}` → `onBehalfUserIds` — see [Token and permissions](./auth#on-behalf-of-a-member) |
+| 3.9.0 | — | A bot with the permissions can do whatever a person with the same permissions can: board automations (create, edit, test, delete), the board's Git and webhook, board access, web apps, camera backgrounds, GPTunneL, telephony and the call journal, achievements, meeting comments, recordings — without the bit the ordinary `403`, not `BOT_NOT_ALLOWED`; closed on behalf of the owner. See [Token and permissions](./auth#always-closed-to-bots) |
 | 3.7.0 | — | A bot acts on behalf of its owner: the `Calab-On-Behalf: owner` header, the vote in task approvals, `viaBotId` on messages and journal entries — see [Token and permissions](./auth#on-behalf-of-the-owner) |
 | 3.5.1 | 2026-10-15 | Resetting a hosted mailbox password through a bot: `POST /api/mailbox/hosting-check`, `POST /api/mailbox/password-reset` and a one-time link with the new password — see [Mailbox](./rest-mailbox) |
 | 3.2.0 | 2026-10-12 | Forwarding task notifications to a chosen bot: the `taskNotice` event on the gateway and webhook — see [Task notifications](./task-notices) |

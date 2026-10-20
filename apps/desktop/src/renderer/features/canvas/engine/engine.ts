@@ -24,7 +24,7 @@ import { TextEditor, type EditSpec } from './textEditor';
 
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector';
 
-/** Everything React is allowed to see: primitives only (ADR-0107 §4). The object identity changes only when a value does. */
+/** Everything React is allowed to see: primitives only (ADR-0113 §4). The object identity changes only when a value does. */
 export interface EngineState {
   /** The selected object when exactly one is selected. */
   readonly selectedId: string | null;
@@ -92,7 +92,7 @@ function makeCanvasMeasure(family: () => string): MeasureFn {
 
 /**
  * The Canvas engine: Y.Doc → Scene → Canvas 2D renderer, with pointer/keyboard input, selection,
- * snapping, connectors, undo and a text-edit overlay (ADR-0107 §3–§4). Plain TS; the section UI (H5)
+ * snapping, connectors, undo and a text-edit overlay (ADR-0113 §3–§4). Plain TS; the section UI (H5)
  * subscribes to `getState()` primitives and calls the command methods.
  */
 export class CanvasEngine implements Core {

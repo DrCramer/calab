@@ -93,6 +93,9 @@ type Service struct {
 	// CommentLimit: per-user budget of comment writes (ADR-0104), apart from the meeting
 	// writes so a discussion does not eat the budget of editing; nil = unlimited.
 	CommentLimit *redisx.RateLimiter
+	// TempRooms makes, moves and closes the meetings' own temporary rooms (ADR-0112;
+	// rooms.Handlers); nil = meetings cannot ask for one.
+	TempRooms TempRooms
 }
 
 // IdentityGate is the background side of the identity policy (identitypolicy.Delivery).
@@ -386,7 +389,7 @@ func (b *bundle) proto(occ *Occurrence, v *viewer) *v1.CalendarEvent {
 	out := &v1.CalendarEvent{
 		Id: e.ID.String(), WorkspaceId: e.WorkspaceID.String(), Title: e.Title, Description: e.Description,
 		StartsAt: timestamppb.New(e.StartsAt), EndsAt: timestamppb.New(e.EndsAt), AllDay: e.AllDay, Tz: e.Tz,
-		OrganizerId: e.OrganizerID.String(), Record: e.Record, Repeat: b.series.Rule.Repeat,
+		OrganizerId: e.OrganizerID.String(), Record: e.Record, Repeat: b.series.Rule.Repeat, TempRoom: e.TempRoom,
 		Counts: b.counts(), CreatedAt: timestamppb.New(e.CreatedAt), UpdatedAt: timestamppb.New(e.UpdatedAt),
 		Sequence: uint32(max(e.Sequence, 0)), //nolint:gosec // non-negative counter
 	}

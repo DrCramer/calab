@@ -8,7 +8,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, Card, Field, Input, Modal, Select, Spinner, Switch as Toggle } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, Select, Spinner, Switch as Toggle, TextArea } from '../../components/ui';
 import { confirmIdentity as confirmAction } from './confirm';
 import { t } from '../../i18n';
 import { describeError, errorText, identityNotConfigured } from '../../lib/api/errors';
@@ -258,8 +258,7 @@ function ClientForm({
         </Field>
         <h3 className="mt-2 text-body font-semibold">{t('identity.callbackSection')}</h3>
         <Field label={t('identity.redirects')} hint={t(native ? 'identity.nativeRedirectHelp' : 'identity.redirectHelp')} error={errors.redirectUris}>
-          <textarea
-            className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+          <TextArea
             rows={3}
             placeholder="https://app.example.com/auth/callback"
             spellCheck={false}
@@ -273,8 +272,7 @@ function ClientForm({
         </Field>
         {spa ? (
           <Field label={t('identity.origins')} hint={t('identity.originsHelp')} error={errors.allowedOrigins}>
-            <textarea
-              className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+            <TextArea
               rows={2}
               placeholder="https://app.example.com"
               spellCheck={false}

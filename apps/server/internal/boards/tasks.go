@@ -1436,6 +1436,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			to, t.StatusID = x, sid
 		}
 		// APPROVALS off (ADR-0058 §3): the gate does not apply; the votes are kept.
+		var overridden *Tally
 		if t.StatusID != old.StatusID && !approvalsOff {
 			tl, err := taskTally(r.Context(), q, old)
 			if err != nil {
@@ -1445,7 +1446,13 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				tl = tl.reset() // the same request resets the votes: they do not count
 			}
 			if err := checkApprovalGate(tl, from, to); err != nil {
-				return err
+				if !req.GetOverrideApproval() {
+					return err
+				}
+				if err := mayOverrideApproval(r, acc); err != nil {
+					return err
+				}
+				overridden = &tl
 			}
 		}
 		after, err := parseOptID("afterTaskId", req.GetAfterTaskId())
@@ -1470,6 +1477,11 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 		journalFrom := len(c.journal)
 		if err := s.recordFields(r.Context(), q, old, t, from, to, me, &c); err != nil {
 			return err
+		}
+		if overridden != nil {
+			if err := recordOverride(r.Context(), q, t, me, *overridden, from, to, &c); err != nil {
+				return err
+			}
 		}
 		// The due sweep's notices are about the old date or a live task (ADR-0089).
 		if dateAny(old.DueOn) != dateAny(t.DueOn) || (t.StatusID != old.StatusID && Finished(to.Type)) {

@@ -337,7 +337,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'wikiPageRemove':
       onWikiPageRemove(e.value);
       return;
-    // Canvas (ADR-0107 §6): the tree's structure follows; the content only through /sync.
+    // Canvas (ADR-0113 §6): the tree's structure follows; the content only through /sync.
     case 'canvasItemUpsert':
       onCanvasItemUpsert(e.value);
       return;

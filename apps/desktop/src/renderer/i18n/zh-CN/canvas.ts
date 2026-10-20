@@ -1,7 +1,7 @@
 import type { ruCanvas } from '../ru/canvas';
 import type { DictShape } from '../types';
 
-/** Simplified Chinese UI strings — 画布板块 (ADR-0107 §5). Same keys and placeholders as ru/canvas.ts. */
+/** Simplified Chinese UI strings — 画布板块 (ADR-0113 §5). Same keys and placeholders as ru/canvas.ts. */
 export const zhCanvas: DictShape<typeof ruCanvas> = {
   'canvas.section': '画布',
   'canvas.untitled': '未命名',

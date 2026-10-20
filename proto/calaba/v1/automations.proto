@@ -21,7 +21,7 @@ import "calaba/v1/boards.proto";
 //
 // Routes: GET /api/boards/{id}/rules (VIEW_BOARD; bots too), POST /api/boards/{id}/rules,
 // PATCH / DELETE /api/rules/{id}, POST /api/rules/{id}/test, GET /api/rules/{id}/runs —
-// MANAGE_BOARD; bots may only read (writes are 403 BOT_NOT_ALLOWED). Without the plan's
+// MANAGE_BOARD; bots by the same bits (ADR-0109). Without the plan's
 // automations POST is 409 PLAN_LIMIT (existing rules stay editable and stop running).
 
 // A Git event of the board's Git webhook (§4).
@@ -277,7 +277,7 @@ message ListRuleRunsResponse {
 
 // ---- Git (ADR-0060 §4) ----
 // PUT / GET / DELETE /api/boards/{id}/git: MANAGE_BOARD on the board and MANAGE_INTEGRATIONS of
-// the workspace; people only (bots: 403). The repository posts to
+// the workspace; bots by the same bits (ADR-0109). The repository posts to
 // POST /api/git/boards/{board_id}/{provider} (provider "github" | "gitlab" | "gitea"; public,
 // signed with the secret): GitHub — content type application/json, secret (X-Hub-Signature-256);
 // GitLab — Secret token (X-Gitlab-Token); Gitea / Forgejo — secret (X-Gitea-Signature). Body ≤ 1

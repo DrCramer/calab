@@ -220,6 +220,7 @@ describe('noticeText (ADR-0089 triggers)', () => {
     expect(text({ kind: TaskNoticeKind.UNASSIGNED, actorId: 'u1' })).toBe(t('boards.notice.unassigned', { name: who }));
     expect(text({ kind: TaskNoticeKind.UNASSIGNED })).toBe(t('boards.notice.unassignedAuto'));
     expect(text({ kind: TaskNoticeKind.WATCHER_ADDED, actorId: 'u1' })).toBe(t('boards.notice.watcherAdded', { name: who }));
+    expect(text({ kind: TaskNoticeKind.APPROVED_ON_BEHALF, actorId: 'u1' })).toBe(t('boards.notice.approvedOnBehalf', { name: who })); // ADR-0108
     expect(text({ kind: TaskNoticeKind.DUE_SOON, dueOn: '2030-03-11', daysLeft: 1 })).toBe(t('boards.notice.dueTomorrow'));
     expect(text({ kind: TaskNoticeKind.DUE_SOON, dueOn: '2030-03-10', daysLeft: 0 })).toBe(t('boards.notice.dueToday'));
     const overdue = text({ kind: TaskNoticeKind.OVERDUE, dueOn: '2030-03-09', daysLeft: -1 });

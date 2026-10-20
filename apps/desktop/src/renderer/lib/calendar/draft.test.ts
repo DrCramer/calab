@@ -63,6 +63,14 @@ describe('meeting dialog model', () => {
     expect(toUpdate({ ...series, repeat: EventRepeat.UNSPECIFIED, until: '' }, series, 'UTC')).toMatchObject({ repeat: EventRepeat.UNSPECIFIED, clearRepeatUntil: true });
   });
 
+  it('the meeting’s own temporary room (ADR-0112): asked for without a room; an edit sends only a change', () => {
+    expect(toCreate({ ...base(), tempRoom: true }, 'UTC')).toMatchObject({ tempRoom: true, roomId: '' });
+    expect(toCreate(base(), 'UTC')).toMatchObject({ tempRoom: false });
+    const pending = { ...base(), tempRoom: true };
+    expect(toUpdate({ ...pending, roomId: 'r1', tempRoom: false }, pending, 'UTC')).toEqual({ roomId: 'r1', tempRoom: false });
+    expect(toUpdate({ ...base(), tempRoom: true }, { ...base(), roomId: 'r1' }, 'UTC')).toEqual({ roomId: '', tempRoom: true });
+  });
+
   it('maps the server’s 422 fields to the form', () => {
     expect(fieldOf('title')).toBe('title');
     expect(fieldOf('endsAt')).toBe('end');

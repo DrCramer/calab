@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Bell, CalendarDays, ChevronDown, ChevronRight, CircleUser, HeadphoneOff, Headphones, Info, LogOut, Mic, MicOff, MonitorSmartphone, ShieldCheck, SlidersHorizontal, Wifi, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

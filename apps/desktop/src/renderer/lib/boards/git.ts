@@ -35,8 +35,51 @@ export function gitLinkView(l: Pick<TaskGitLink, 'kind' | 'state' | 'repo' | 're
 /** Only web pages open from a link row (the server stores what the provider sent). */
 export const isWebUrl = (url: string): boolean => /^https?:\/\/[^\s/]+/i.test(url);
 
-export const GIT_PROVIDERS: ReadonlyArray<{ v: GitProvider; label: MessageKey; how: MessageKey }> = [
-  { v: GitProvider.GITHUB, label: 'git.github', how: 'git.how.github' },
-  { v: GitProvider.GITLAB, label: 'git.gitlab', how: 'git.how.gitlab' },
-  { v: GitProvider.GITEA, label: 'git.gitea', how: 'git.how.gitea' },
+export const GIT_PROVIDERS: ReadonlyArray<{ v: GitProvider; label: MessageKey }> = [
+  { v: GitProvider.GITHUB, label: 'git.github' },
+  { v: GitProvider.GITLAB, label: 'git.gitlab' },
+  { v: GitProvider.GITEA, label: 'git.gitea' },
 ];
+
+/** The provider's path segment of the webhook URL (server: `vcs.GitHub` / `GitLab` / `Gitea`). */
+const PROVIDER_SLUG: Readonly<Record<number, string>> = { [GitProvider.GITHUB]: 'github', [GitProvider.GITLAB]: 'gitlab', [GitProvider.GITEA]: 'gitea' };
+
+/**
+ * The webhook address of a board, known before saving: `<origin>/api/git/boards/<boardId>/<provider>`
+ * (the server builds the same from PUBLIC_APP_URL). `serverUrl` is the origin the client talks
+ * to; '' when unknown (then the UI says «the address appears after saving»). After saving the
+ * UI shows the server's own `url`.
+ */
+export function gitHookUrl(serverUrl: string, boardId: string, provider: GitProvider): string {
+  const slug = PROVIDER_SLUG[provider];
+  const origin = serverUrl.trim().replace(/\/+$/, '');
+  if (!slug || !/^https?:\/\/[^\s/]+/i.test(origin)) return '';
+  return `${origin}/api/git/boards/${boardId}/${slug}`;
+}
+
+/** A strong random webhook secret: 32 random bytes, base64url (43 characters; the server wants 16..256). */
+export function generateGitSecret(random: (a: Uint8Array) => Uint8Array = (a) => crypto.getRandomValues(a)): string {
+  const bytes = random(new Uint8Array(32));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** One numbered step of the connection guide; `copy` puts an inline «Скопировать» after the text. */
+export interface GitStep {
+  text: MessageKey;
+  copy?: 'url' | 'secret';
+}
+
+const steps = (p: 'github' | 'gitlab' | 'gitea', n: number, copy: Record<number, 'url' | 'secret'>): GitStep[] =>
+  Array.from({ length: n }, (_, i) => ({ text: `git.step.${p}.${i + 1}` as MessageKey, copy: copy[i + 1] }));
+
+/** The guide per provider — field names as the provider's UI shows them; events = what the server parses. */
+export const GIT_STEPS: Readonly<Record<number, ReadonlyArray<GitStep>>> = {
+  [GitProvider.GITHUB]: steps('github', 7, { 2: 'url', 4: 'secret' }),
+  [GitProvider.GITLAB]: steps('gitlab', 5, { 2: 'url', 3: 'secret' }),
+  [GitProvider.GITEA]: steps('gitea', 6, { 2: 'url', 4: 'secret' }),
+};
+
+/** The last two steps, the same for every provider: how a task is linked, how to check it. */
+export const GIT_STEPS_COMMON: ReadonlyArray<GitStep> = [{ text: 'git.step.link' }, { text: 'git.step.check' }];

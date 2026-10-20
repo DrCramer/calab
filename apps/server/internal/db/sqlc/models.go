@@ -602,6 +602,23 @@ type BotContactShare struct {
 	CreatedAt   time.Time
 }
 
+type BotDelegation struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+	Since       time.Time
+}
+
+type BotDelegationInvite struct {
+	WorkspaceID      uuid.UUID
+	BotID            uuid.UUID
+	UserID           uuid.UUID
+	InvitedBy        uuid.UUID
+	MessageID        *uuid.UUID
+	KeyboardRevision int64
+	CreatedAt        time.Time
+}
+
 type BotWebhookDelivery struct {
 	ID          uuid.UUID
 	BotUserID   uuid.UUID
@@ -850,23 +867,25 @@ type EmailInvite struct {
 }
 
 type Event struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-	RoomID      *uuid.UUID
-	Title       string
-	Description string
-	StartsAt    time.Time
-	EndsAt      time.Time
-	AllDay      bool
-	Tz          string
-	OrganizerID uuid.UUID
-	Record      bool
-	Rrule       *string
-	UntilAt     *time.Time
-	Sequence    int32
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CancelledAt *time.Time
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	RoomID          *uuid.UUID
+	Title           string
+	Description     string
+	StartsAt        time.Time
+	EndsAt          time.Time
+	AllDay          bool
+	Tz              string
+	OrganizerID     uuid.UUID
+	Record          bool
+	Rrule           *string
+	UntilAt         *time.Time
+	Sequence        int32
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	CancelledAt     *time.Time
+	TempRoom        bool
+	TempRoomRetryAt *time.Time
 }
 
 type EventAttendee struct {
@@ -1364,6 +1383,7 @@ type RoomInvite struct {
 	EventID         *uuid.UUID
 	RequireApproval *bool
 	MembersOnly     bool
+	ArchiveRevoked  bool
 }
 
 type RoomNotificationSetting struct {
@@ -1575,6 +1595,8 @@ type TaskApprover struct {
 	RemindedAt   *time.Time
 	NotifyDueAt  *time.Time
 	NotifyReason string
+	OnBehalf     bool
+	RecordedBy   *uuid.UUID
 }
 
 type TaskAssignee struct {

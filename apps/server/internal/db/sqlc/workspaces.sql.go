@@ -137,7 +137,7 @@ type DeleteUserOverridesInWorkspaceParams struct {
 }
 
 // A member leaves: their room, board (ADR-0042), disk (ADR-0094), wiki (ADR-0096) and canvas
-// (ADR-0107) overrides go.
+// (ADR-0113) overrides go.
 func (q *Queries) DeleteUserOverridesInWorkspace(ctx context.Context, arg DeleteUserOverridesInWorkspaceParams) error {
 	_, err := q.db.Exec(ctx, deleteUserOverridesInWorkspace, arg.WorkspaceID, arg.UserID)
 	return err

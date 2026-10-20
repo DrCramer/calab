@@ -22,6 +22,9 @@ import {
   usageBar,
   visibleIds,
   type DiskData,
+  columnFolders,
+  columnsNav,
+  phoneDiskView,
 } from './disk';
 
 const WS = 'w1';
@@ -232,5 +235,41 @@ describe('trash retention', () => {
     expect(trashDaysOption(30)).toBe(30);
     expect(trashDaysOption(10)).toBe(30);
     expect(trashDaysOption(365)).toBe(90);
+  });
+});
+
+describe('columns view (CBF-21)', () => {
+  const cols = [
+    { folder: '', ids: ['a', 'b', 'c'] },
+    { folder: 'b', ids: ['b1', 'b2'] },
+    { folder: 'b2', ids: ['f'] },
+  ];
+  it('the column folders are the root and the path, or the open folder until the path is loaded', () => {
+    expect(columnFolders('', undefined)).toEqual(['']);
+    expect(columnFolders('b2', [{ id: 'b' }, { id: 'b2' }])).toEqual(['', 'b', 'b2']);
+    expect(columnFolders('b2', undefined)).toEqual(['', 'b2']);
+  });
+  it('up and down stay in the column and stop at the ends', () => {
+    expect(columnsNav(cols, 'a', 'ArrowDown')).toBe('b');
+    expect(columnsNav(cols, 'c', 'ArrowDown')).toBe('c');
+    expect(columnsNav(cols, 'a', 'ArrowUp')).toBe('a');
+    expect(columnsNav(cols, 'b2', 'ArrowUp')).toBe('b1');
+  });
+  it('right goes into the open folder, left back to its parent folder', () => {
+    expect(columnsNav(cols, 'b', 'ArrowRight')).toBe('b1');
+    expect(columnsNav(cols, 'a', 'ArrowRight')).toBeNull();
+    expect(columnsNav(cols, 'b1', 'ArrowRight')).toBeNull();
+    expect(columnsNav(cols, 'b1', 'ArrowLeft')).toBe('b');
+    expect(columnsNav(cols, 'f', 'ArrowLeft')).toBe('b2');
+    expect(columnsNav(cols, 'a', 'ArrowLeft')).toBeNull();
+  });
+  it('without a cursor (or with a filtered-out one) the first row of the last column is picked', () => {
+    expect(columnsNav(cols, null, 'ArrowDown')).toBe('f');
+    expect(columnsNav(cols, 'gone', 'ArrowRight')).toBe('f');
+    expect(columnsNav([], null, 'ArrowDown')).toBeNull();
+  });
+  it('the phone has no columns', () => {
+    expect(phoneDiskView('columns')).toBe('list');
+    expect(phoneDiskView('tiles')).toBe('tiles');
   });
 });

@@ -1,6 +1,6 @@
 import { WorkspaceRole, type PermissionBits, type RecordingCard as Card } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { AlertCircle, Copy, CornerUpLeft, FileText, Forward, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../components/ui';

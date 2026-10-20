@@ -1,5 +1,5 @@
 /**
- * Client side of a Yjs sync socket (ADR-0096 §4 for the wiki, ADR-0107 §3 for canvases; frame layout
+ * Client side of a Yjs sync socket (ADR-0096 §4 for the wiki, ADR-0113 §3 for canvases; frame layout
  * in lib/wiki/frames.ts — the same frames 0–4 on both sockets). lib/wikiSync.ts and lib/canvasSync.ts
  * are the two consumers: they supply the URL, the doc, the awareness, the snapshot meta and the
  * awareness rate.
@@ -101,7 +101,7 @@ export interface YSyncDeps {
    * would otherwise be re-uploaded whole after every pause of 3 s.
    */
   idleSnapshotMs?: (stateBytes: number) => number;
-  /** Largest snapshot state the server takes; default MAX_STATE (canvases: 4 MiB, ADR-0107 §3). */
+  /** Largest snapshot state the server takes; default MAX_STATE (canvases: 4 MiB, ADR-0113 §3). */
   maxState?: number;
   /** The Yjs state outgrew maxState: the server will not take a snapshot; the UI warns. */
   onTooLarge?: (bytes: number) => void;

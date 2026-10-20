@@ -1,10 +1,24 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { ApproverState, TaskApprovalDecision, type Task } from '@calaba/protocol';
-import { Check, ChevronDown, Clock3, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, Clock3, Ellipsis, Plus, X } from 'lucide-react';
 import { memo, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { Button, Modal, Tip, cx } from '../../components/ui';
+import { Button, Modal, TextArea, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { approvalBadge, approvalControls, approvalTagKey, approvedCount, clampRequired, parseApprovalTag, quorumChoices, quorumOf, rejecters, toggleApprover, MAX_REJECT_COMMENT } from '../../lib/boards/approvals';
+import {
+  approvalBadge,
+  approvalControls,
+  approvalTagKey,
+  approvedCount,
+  clampRequired,
+  onBehalfAction,
+  parseApprovalTag,
+  quorumChoices,
+  quorumOf,
+  rejecters,
+  toggleApprover,
+  MAX_REJECT_COMMENT,
+  type OnBehalfAction,
+} from '../../lib/boards/approvals';
 import { useBoards } from '../../stores/boards';
 import { setApprovers, voteApproval } from '../../services/boards';
 import { myUserId } from '../../stores/session';
@@ -13,12 +27,14 @@ import { FormerChip } from '../people/MemberBits';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { menuBox, menuItem } from '../shell/menu';
 import { ApproverMenu, MemberAvatar } from './menus';
-import { hasBit, VIEW_BOARD } from './model';
+import { hasBit, MANAGE_BOARD, VIEW_BOARD } from './model';
 
 /**
  * Task approvals UI (ADR-0049 §6, docs/08 «Доски»): the card / row tag and the panel section
  * «Согласующие» — the state band / approvers with their votes, «Нужно: Все ▾ / N из M», «+ Согласующий» and,
- * for me as an approver, «Согласовать» / «Отклонить» (a comment is required) / «Отозвать».
+ * for me as an approver, «Согласовать» / «Отклонить» (a comment is required) / «Отозвать». A board
+ * manager (ADR-0108) gets «Согласовать за …» / «Отозвать согласование за …» in another approver's
+ * row; an approval so recorded is marked «за него: <кто>».
  */
 
 // ------------------------------------------------------------------ tag (card, list row)
@@ -79,7 +95,7 @@ const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounde
  */
 export function ApprovalsSection({ task, canEdit, perms }: { task: Task; canEdit: boolean; perms: bigint | undefined }): ReactNode {
   const me = myUserId();
-  const c = approvalControls(task, canEdit, hasBit(perms, VIEW_BOARD), me);
+  const c = approvalControls(task, canEdit, hasBit(perms, VIEW_BOARD), me, hasBit(perms, MANAGE_BOARD));
   const [over, setOver] = useState(false);
   if (!c.visible) return null;
   const ids = task.approvers.map((a) => a.userId);
@@ -120,7 +136,16 @@ export function ApprovalsSection({ task, canEdit, perms }: { task: Task; canEdit
           </ApproverMenu>
         ) : null}
       </div>
-      <ApprovalsBody task={task} state={state} quorum={quorum} approved={approved} onRemove={c.edit ? (u) => save(ids.filter((x) => x !== u)) : undefined} />
+      <ApprovalsBody
+        task={task}
+        state={state}
+        quorum={quorum}
+        approved={approved}
+        onRemove={c.edit ? (u) => save(ids.filter((x) => x !== u)) : undefined}
+        me={me}
+        forOthers={c.forOthers}
+        onBehalf={(u, a) => void voteApproval(task.id, a === 'approve' ? TaskApprovalDecision.APPROVE : TaskApprovalDecision.WITHDRAW, '', u)}
+      />
       {c.vote ? <VoteBar task={task} mine={c.mine} /> : null}
     </div>
   );
@@ -133,13 +158,21 @@ export function ApprovalsBody({
   quorum,
   approved,
   onRemove,
+  me = '',
+  forOthers = false,
+  onBehalf,
 }: {
   task: Pick<Task, 'workspaceId' | 'approvers'>;
   state: 'pending' | 'approved' | 'rejected' | null;
   quorum: number;
   approved: number;
   onRemove: ((userId: string) => void) | undefined;
+  /** ADR-0108: the viewer, whether they manage the board, and the on-behalf vote. */
+  me?: string;
+  forOthers?: boolean;
+  onBehalf?: OnBehalf;
 }): ReactNode {
+  const actionOf = (a: Task['approvers'][number]): OnBehalfAction => (onBehalf ? onBehalfAction(a, me, forOthers) : null);
   if (state === 'approved') {
     const yes = task.approvers.filter((a) => a.state === ApproverState.APPROVED);
     return (
@@ -150,14 +183,25 @@ export function ApprovalsBody({
         <span className="min-w-0 flex-1 truncate text-control font-semibold">{t('boards.approvalBand', { n: Math.min(approved, quorum), m: quorum })}</span>
         <span className="flex shrink-0 -space-x-1.5">
           {yes.map((a) => (
-            <BandAvatar key={a.userId} workspaceId={task.workspaceId} userId={a.userId} />
+            <BandAvatar key={a.userId} workspaceId={task.workspaceId} userId={a.userId} proxied={a.onBehalf} recordedBy={a.recordedBy} action={actionOf(a)} onBehalf={onBehalf} />
           ))}
         </span>
       </div>
     );
   }
   const rows = task.approvers.map((a) => (
-    <ApproverRow key={a.userId} workspaceId={task.workspaceId} userId={a.userId} state={a.state} comment={state === 'rejected' ? '' : a.comment} onRemove={onRemove} />
+    <ApproverRow
+      key={a.userId}
+      workspaceId={task.workspaceId}
+      userId={a.userId}
+      state={a.state}
+      comment={state === 'rejected' ? '' : a.comment}
+      proxied={a.onBehalf}
+      recordedBy={a.recordedBy}
+      action={actionOf(a)}
+      onBehalf={onBehalf}
+      onRemove={onRemove}
+    />
   ));
   if (state === 'rejected') {
     const no = task.approvers.filter((a) => a.state === ApproverState.REJECTED);
@@ -184,16 +228,64 @@ export function ApprovalsBody({
   );
 }
 
-const BandAvatar = memo(function BandAvatar({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
+type OnBehalf = ((userId: string, action: 'approve' | 'withdraw') => void) | undefined;
+
+const BandAvatar = memo(function BandAvatar({
+  workspaceId,
+  userId,
+  proxied,
+  recordedBy,
+  action,
+  onBehalf,
+}: {
+  workspaceId: string;
+  userId: string;
+  proxied: boolean;
+  recordedBy: string;
+  action: OnBehalfAction;
+  onBehalf: OnBehalf;
+}): ReactNode {
   const name = useMemberName(workspaceId, userId);
+  // '' (the recorder's account is gone) resolves to «unknown user», never to the approver.
+  const actor = useMemberName(workspaceId, recordedBy);
+  const tip = proxied ? t('boards.apvState.approvedFor', { name, actor }) : t('boards.apvState.approved', { name });
+  const avatar = <MemberAvatar workspaceId={workspaceId} userId={userId} size={22} />;
+  // ADR-0108: an approval a manager recorded can be withdrawn from the band too.
+  if (action && onBehalf)
+    return (
+      <OnBehalfMenu name={name} userId={userId} action={action} onBehalf={onBehalf} tip={tip}>
+        <button type="button" className="rounded-full ring-2 ring-[var(--color-ok-surface)]" aria-label={tip} data-testid="approver-band-actions">
+          {avatar}
+        </button>
+      </OnBehalfMenu>
+    );
   return (
-    <Tip label={t('boards.apvState.approved', { name })}>
-      <span className="rounded-full ring-2 ring-[var(--color-ok-surface)]" tabIndex={0} aria-label={t('boards.apvState.approved', { name })}>
-        <MemberAvatar workspaceId={workspaceId} userId={userId} size={22} />
+    <Tip label={tip}>
+      <span className="rounded-full ring-2 ring-[var(--color-ok-surface)]" tabIndex={0} aria-label={tip}>
+        {avatar}
       </span>
     </Tip>
   );
 });
+
+/** ADR-0108: the manager's action over another approver's vote — one menu item. */
+function OnBehalfMenu({ name, userId, action, onBehalf, tip, children }: { name: string; userId: string; action: 'approve' | 'withdraw'; onBehalf: NonNullable<OnBehalf>; tip: string; children: ReactNode }): ReactNode {
+  return (
+    <Dropdown.Root modal={false}>
+      <Tip label={tip}>
+        <Dropdown.Trigger asChild>{children}</Dropdown.Trigger>
+      </Tip>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-64')} sideOffset={4} align="end" collisionPadding={16}>
+          <Dropdown.Item className={menuItem} onSelect={() => onBehalf(userId, action)} data-testid={action === 'approve' ? 'approve-for' : 'withdraw-for'}>
+            {action === 'approve' ? <Check className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
+            {t(action === 'approve' ? 'boards.approveFor' : 'boards.withdrawFor', { name })}
+          </Dropdown.Item>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
 
 /** «✕ Анна отклонила» + the comment (the red band). */
 const RejectLine = memo(function RejectLine({ workspaceId, userId, comment }: { workspaceId: string; userId: string; comment: string }): ReactNode {
@@ -211,10 +303,40 @@ const RejectLine = memo(function RejectLine({ workspaceId, userId, comment }: { 
   );
 });
 
-const ApproverRow = memo(function ApproverRow({ workspaceId, userId, state, comment, onRemove }: { workspaceId: string; userId: string; state: ApproverState; comment: string; onRemove: ((userId: string) => void) | undefined }): ReactNode {
+const ApproverRow = memo(function ApproverRow({
+  workspaceId,
+  userId,
+  state,
+  comment,
+  proxied: onBehalfVote,
+  recordedBy,
+  action,
+  onBehalf,
+  onRemove,
+}: {
+  workspaceId: string;
+  userId: string;
+  state: ApproverState;
+  comment: string;
+  /** ADR-0108: a manager recorded this approval for the approver (not their own vote). */
+  proxied: boolean;
+  /** ADR-0108: that manager ('' when their account is gone). */
+  recordedBy: string;
+  action: OnBehalfAction;
+  onBehalf: OnBehalf;
+  onRemove: ((userId: string) => void) | undefined;
+}): ReactNode {
   const name = useMemberName(workspaceId, userId);
-  const tip = state === ApproverState.APPROVED ? t('boards.apvState.approved', { name }) : state === ApproverState.REJECTED ? t('boards.apvState.rejected', { name, comment }) : t('boards.apvState.pending', { name });
-  const status = state === ApproverState.APPROVED ? t('boards.apv.approved') : state === ApproverState.REJECTED ? t('boards.apv.rejected') : t('boards.apv.pending');
+  const actor = useMemberName(workspaceId, recordedBy);
+  const proxied = state === ApproverState.APPROVED && onBehalfVote;
+  const tip = proxied
+    ? t('boards.apvState.approvedFor', { name, actor })
+    : state === ApproverState.APPROVED
+      ? t('boards.apvState.approved', { name })
+      : state === ApproverState.REJECTED
+        ? t('boards.apvState.rejected', { name, comment })
+        : t('boards.apvState.pending', { name });
+  const status = proxied ? t('boards.apv.approvedFor', { actor }) : state === ApproverState.APPROVED ? t('boards.apv.approved') : state === ApproverState.REJECTED ? t('boards.apv.rejected') : t('boards.apv.pending');
   return (
     <div className="group/ap flex min-h-8 items-center gap-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="approver-row" data-user={userId} data-state={ApproverState[state].toLowerCase()}>
       <Tip label={tip}>
@@ -231,9 +353,27 @@ const ApproverRow = memo(function ApproverRow({ workspaceId, userId, state, comm
             {comment}
           </span>
         </Tip>
+      ) : proxied ? (
+        <Tip label={tip}>
+          <span className="min-w-0 max-w-[50%] shrink truncate text-caption text-[var(--color-green-text)]" data-testid="approver-recorded-by">
+            {status}
+          </span>
+        </Tip>
       ) : (
         <span className={cx('shrink-0 text-caption', state === ApproverState.APPROVED ? 'text-[var(--color-green-text)]' : state === ApproverState.REJECTED ? 'text-danger-text' : 'text-muted')}>{status}</span>
       )}
+      {action && onBehalf ? (
+        <OnBehalfMenu name={name} userId={userId} action={action} onBehalf={onBehalf} tip={t('boards.approverActions', { name })}>
+          <button
+            type="button"
+            aria-label={t('boards.approverActions', { name })}
+            className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/ap:opacity-100 data-[state=open]:opacity-100 mobile:opacity-100"
+            data-testid="approver-actions"
+          >
+            <Ellipsis className="size-3.5" aria-hidden />
+          </button>
+        </OnBehalfMenu>
+      ) : null}
       {onRemove ? (
         <button type="button" aria-label={t('boards.removeApprover', { name })} onClick={() => onRemove(userId)} className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/ap:opacity-100 mobile:opacity-100" data-testid="approver-remove">
           <X className="size-3.5" aria-hidden />
@@ -359,7 +499,7 @@ function RejectDialog({ task, onClose }: { task: Task; onClose: () => void }): R
         </>
       }
     >
-      <textarea
+      <TextArea
         ref={ref}
         value={v}
         rows={4}
@@ -374,7 +514,7 @@ function RejectDialog({ task, onClose }: { task: Task; onClose: () => void }): R
         }}
         placeholder={t('boards.rejectComment')}
         aria-label={t('boards.rejectComment')}
-        className="selectable min-h-24 w-full resize-y rounded-[var(--radius-card)] border border-line bg-elev p-2.5 text-body text-fg outline-none placeholder:text-faint focus-visible:border-accent"
+        className="min-h-24"
         data-testid="reject-comment"
       />
       <div className="pt-1 text-right text-caption tabular-nums text-faint">

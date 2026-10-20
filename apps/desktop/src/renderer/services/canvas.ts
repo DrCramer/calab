@@ -37,7 +37,7 @@ import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
 
 /**
- * Canvas REST (ADR-0107 §7, proto/calaba/v1/canvas.proto) and the section's actions: the one module
+ * Canvas REST (ADR-0113 §7, proto/calaba/v1/canvas.proto) and the section's actions: the one module
  * that knows the routes; the screen (features/canvas) calls the actions, the stores hold the result.
  * Rights are the server's: a refusal comes back as a toast and an optimistic change is rolled back.
  * The canvas content never goes through here — only through the sync socket (lib/canvasSync.ts).
@@ -169,13 +169,13 @@ export function openCanvas(ws: string, id: string): void {
   if (useUi.getState().phone.on) openPhoneItem(id);
 }
 
-/** The phone pushes a folder or a canvas as a screen over the «Холст» tab (view only, ADR-0107 §5). */
+/** The phone pushes a folder or a canvas as a screen over the «Холст» tab (view only, ADR-0113 §5). */
 export function openPhoneItem(id: string): void {
   useUi.getState().setPhone((n) => pushOnTab(n, 'canvas', { kind: 'canvas', itemId: id }));
 }
 
 /**
- * A ⌘K hit (ADR-0107 §6): the Canvas section of the hit's workspace with the canvas open, or — for a
+ * A ⌘K hit (ADR-0113 §6): the Canvas section of the hit's workspace with the canvas open, or — for a
  * folder — the tree with the folder and everything above it expanded. An item that is gone, trashed or
  * hidden from me says so. Guests have no Canvas section: nothing to open. The phone has none yet (H6):
  * the choice is remembered for when it opens.
@@ -397,7 +397,7 @@ export async function restoreVersion(canvasId: string, versionId: string): Promi
   }
 }
 
-/** Server search of names and text (ADR-0107 §6, `GET /api/search?type=canvas`): the tree's filter for items not loaded yet. */
+/** Server search of names and text (ADR-0113 §6, `GET /api/search?type=canvas`): the tree's filter for items not loaded yet. */
 export async function searchItems(ws: string, q: string, signal?: AbortSignal): Promise<Array<{ id: string; name: string; folder: boolean }>> {
   const r = await api.search({ q, scope: ws, type: 'canvas', limit: '20' }, signal);
   const out: Array<{ id: string; name: string; folder: boolean }> = [];

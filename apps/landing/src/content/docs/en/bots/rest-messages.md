@@ -44,7 +44,6 @@ These routes answer a bot with `403 FORBIDDEN`, `reason: "BOT_NOT_ALLOWED"`:
 
 - `POST /api/messages/{id}/interactions` — pressing an inline button: only people press; the bot receives the result as a `botCallback` event (see [Commands and buttons](./commands-buttons));
 - `GET /api/unfurl`, `GET /api/unfurl/image` — link previews are built by the app, not by bots;
-- `POST /api/rooms/{id}/recordings/{rid}/recheck`, `…/reupload`, `DELETE /api/rooms/{id}/recordings/{rid}` — reprocessing, re-uploading and deleting recordings.
 
 ## Send a message
 

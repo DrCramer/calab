@@ -256,6 +256,8 @@ import {
   CreateBotRequestSchema,
   CreateBotResponseSchema,
   GetBotMeResponseSchema,
+  GetBotResponseSchema,
+  InviteBotDelegationRequestSchema,
   ListBlockedBotsResponseSchema,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
@@ -727,6 +729,8 @@ export interface MockServer {
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
    */
   seedBots(): void;
+  /** ADR-0111: Борис let a (seeded) bot act on his behalf; Анна suggested it to Вера. */
+  seedBotDelegations(botUserId: string): void;
   /**
    * docs/08 «Композер — подсказка стикеров»: a pack «Смех» of «Команда Calab» with three 😂
    * stickers (the last animated), installed by Анна after «Calab». Call before the client loads
@@ -817,7 +821,7 @@ export interface MockServer {
   readonly disk: DiskMock;
   /** Wiki (ADR-0096, mock-wiki.ts): the live pages, documents and sync sockets (marketing scenes replace the fixture). */
   readonly wiki: WikiMock;
-  /** Canvas (ADR-0107, mock-canvas.ts): the live tree, documents and sync sockets. */
+  /** Canvas (ADR-0113, mock-canvas.ts): the live tree, documents and sync sockets. */
   readonly canvas: CanvasMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
   updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
@@ -863,6 +867,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addTempRoom: (a) => impl.addTempRoom(a),
     expireTempRooms: (ms) => impl.expireTempRooms(ms),
     seedBots: () => impl.seedBots(),
+    seedBotDelegations: (botUserId) => impl.seedBotDelegations(botUserId),
     addBuiltinStickerPack: (m) => impl.addBuiltinStickerPack(m),
     seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
@@ -1232,7 +1237,7 @@ class MockImpl {
   wiki: WikiMock;
   /** The wiki sync sockets (snapshots up to 2 MiB: not the gateway's 64 KiB limit). */
   private readonly wikiWss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
-  /** Canvas (ADR-0107); rebuilt with the state. */
+  /** Canvas (ADR-0113); rebuilt with the state. */
   canvas: CanvasMock;
   /** The canvas sync sockets (snapshots up to 4 MiB). */
   private readonly canvasWss = new WebSocketServer({ noServer: true, maxPayload: 5 * 1024 * 1024 });
@@ -2156,6 +2161,14 @@ class MockImpl {
     const pack = create(StickerPackSchema, { id: packId, workspaceId: IDS.workspaces.main, name: 'Смех', shortName: 'laughs', stickers, createdBy: IDS.users.anna, createdAt: at, updatedAt: at });
     s.stickerPacks.set(packId, pack);
     s.userStickerPacks.set(IDS.users.anna, [...(s.userStickerPacks.get(IDS.users.anna) ?? []), packId]);
+  }
+
+  seedBotDelegations(botUserId: string): void {
+    const b = this.state.bots.get(botUserId);
+    if (!b) return;
+    const ws = IDS.workspaces.main;
+    b.delegations = { ...b.delegations, [ws]: [{ userId: IDS.users.boris, since: tick(this.state) }] };
+    b.delegationInvites = { ...b.delegationInvites, [ws]: [{ userId: IDS.users.vera, invitedBy: IDS.users.anna, createdAt: tick(this.state) }] };
   }
 
   seedBots(): void {
@@ -4857,6 +4870,62 @@ class MockImpl {
       botAvatar(c, this.storeFile('', bot.userId, f));
     });
     this.route('DELETE', '/api/workspaces/:id/bots/:botId/avatar', (c) => botAvatar(c, ''));
+    // ADR-0111: «Делегировать права» — only the member gives or takes their consent.
+    const delegationState = (c: Ctx, status = 200): void => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      this.workspaceFor(wsId, me);
+      const bot = botIn(wsId, c.params[1] ?? '');
+      const ds = bot.delegations?.[wsId] ?? [];
+      sendMsg(c.res, status, GetBotResponseSchema, {
+        bot: this.botOut(bot, bot.ownerUserId === me),
+        onBehalfUserIds: ds.map((d) => d.userId),
+        delegations: ds,
+        invites: bot.delegationInvites?.[wsId] ?? [],
+      });
+    };
+    const delegationTarget = (c: Ctx): { bot: BotRec; wsId: string; me: string; userId: string } => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      this.workspaceFor(wsId, me);
+      return { bot: botIn(wsId, c.params[1] ?? ''), wsId, me, userId: c.params[2] ?? '' };
+    };
+    const selfOnly = (me: string, userId: string): void => {
+      if (me !== userId) throw new HttpError(403, ErrorCode.FORBIDDEN, 'only the member gives or revokes their consent', '', { reason: 'ON_BEHALF_SELF_ONLY' });
+    };
+    this.route('GET', '/api/workspaces/:id/bots/:botId', (c) => delegationState(c));
+    this.route('PUT', '/api/workspaces/:id/bots/:botId/delegations/:userId', (c) => {
+      const { bot, wsId, me, userId } = delegationTarget(c);
+      selfOnly(me, userId);
+      const ds = bot.delegations?.[wsId] ?? [];
+      if (!ds.some((d) => d.userId === me)) bot.delegations = { ...bot.delegations, [wsId]: [...ds, { userId: me, since: tick(s()) }] };
+      bot.delegationInvites = { ...bot.delegationInvites, [wsId]: (bot.delegationInvites?.[wsId] ?? []).filter((i) => i.userId !== me) };
+      delegationState(c);
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId/delegations/:userId', (c) => {
+      const { bot, wsId, me, userId } = delegationTarget(c);
+      selfOnly(me, userId);
+      bot.delegations = { ...bot.delegations, [wsId]: (bot.delegations?.[wsId] ?? []).filter((d) => d.userId !== me) };
+      delegationState(c);
+    });
+    this.route('POST', '/api/workspaces/:id/bots/:botId/delegation-invites', (c) => {
+      const { bot, wsId, me } = delegationTarget(c);
+      const req = parseBody(c, InviteBotDelegationRequestSchema);
+      const listed = new Set([...(bot.delegations?.[wsId] ?? []).map((d) => d.userId), ...(bot.delegationInvites?.[wsId] ?? []).map((i) => i.userId)]);
+      const add = req.userIds.filter((u) => u !== me && !listed.has(u) && this.member(wsId, u));
+      bot.delegationInvites = {
+        ...bot.delegationInvites,
+        [wsId]: [...(bot.delegationInvites?.[wsId] ?? []), ...add.map((userId) => ({ userId, invitedBy: me, createdAt: tick(s()) }))],
+      };
+      delegationState(c);
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId/delegation-invites/:userId', (c) => {
+      const { bot, wsId, me, userId } = delegationTarget(c);
+      const inv = (bot.delegationInvites?.[wsId] ?? []).find((i) => i.userId === userId);
+      if (inv && inv.invitedBy !== me && userId !== me) selfOnly(me, userId);
+      bot.delegationInvites = { ...bot.delegationInvites, [wsId]: (bot.delegationInvites?.[wsId] ?? []).filter((i) => i.userId !== userId) };
+      delegationState(c);
+    });
     this.route('GET', '/api/bots/:ref', (c) => {
       this.uid(c);
       const bot = this.botOut(findBot(c.params[0] ?? ''), false);
@@ -7527,10 +7596,10 @@ class MockImpl {
     const ws = IDS.workspaces.main;
     const U = IDS.users;
     const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
-    const file = (name: string, mime: string, size: bigint, pic?: { w: number; h: number; bg: [number, number, number]; fg: [number, number, number] }): FileMeta => {
+    const file = (name: string, mime: string, size: bigint, pic?: { w: number; h: number; bg: [number, number, number]; fg: [number, number, number] }, content?: string): FileMeta => {
       const id = nextId(this.state, 'file');
-      const bytes = pic ? encodePng(pic.w, pic.h, cardPicture(pic.bg, [255, 255, 255], pic.fg, pic.w / pic.h)) : Buffer.from(`mock ${name}`);
-      const meta = create(FileMetaSchema, { ...fileMeta(id, ws, U.anna, name, mime, bytes, at('2026-01-10T10:00:00Z'), pic ? { width: pic.w, height: pic.h } : null), size });
+      const bytes = pic ? encodePng(pic.w, pic.h, cardPicture(pic.bg, [255, 255, 255], pic.fg, pic.w / pic.h)) : Buffer.from(content ?? `mock ${name}`);
+      const meta = create(FileMetaSchema, { ...fileMeta(id, ws, U.anna, name, mime, bytes, at('2026-01-10T10:00:00Z'), pic ? { width: pic.w, height: pic.h } : null), size: content !== undefined ? BigInt(bytes.length) : size });
       this.state.files.set(id, { meta, bytes, ...(pic ? { thumbnail: { bytes, mime } } : {}) });
       return meta;
     };
@@ -7538,7 +7607,15 @@ class MockImpl {
     const F = DiskItemKind.FOLDER;
     const FI = DiskItemKind.FILE;
     const projects = d.put({ workspaceId: ws, kind: F, name: 'Проекты', ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z') });
-    d.put({ workspaceId: ws, kind: F, name: 'Q4', parentId: projects.id, ownerId: U.anna, createdAt: at('2026-01-06T09:00:00Z') });
+    const q4 = d.put({ workspaceId: ws, kind: F, name: 'Q4', parentId: projects.id, ownerId: U.anna, createdAt: at('2026-01-06T09:00:00Z') });
+    // Previews (CBF-22): text-like files and a sound in «Проекты / Q4» (the root's item count is pinned by the specs).
+    const inQ4 = (name: string, mime: string, content: string, iso: string): void => {
+      d.put({ workspaceId: ws, kind: FI, name, parentId: q4.id, ownerId: U.anna, file: file(name, mime, 0n, undefined, content), updatedAt: at(iso) });
+    };
+    inQ4('План релиза.md', 'text/markdown', '# План релиза\n\nИтоги **квартала** и ближайшие шаги:\n\n- собрать *сборку* 3.1\n- проверить [сайт](https://calab.io)\n\n> Дата выхода — в пятницу.\n\n```go\nfmt.Println("release")\n```\n\n| Этап | Срок |\n| --- | --- |\n| QA | 12 янв |\n| Выпуск | 16 янв |\n', '2026-01-14T10:00:00Z');
+    inQ4('Выгрузка продаж.csv', 'text/csv', 'Менеджер,Регион,Сумма\nАнна,Москва,120000\nБорис,"Санкт-Петербург, центр",98500\nВера,Казань,43200\n', '2026-01-13T10:00:00Z');
+    inQ4('server.go', 'text/x-go', 'package main\n\nimport "net/http"\n\nfunc main() {\n\thttp.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {\n\t\tw.Write([]byte("ok"))\n\t})\n\thttp.ListenAndServe(":8080", nil)\n}\n', '2026-01-12T10:00:00Z');
+    inQ4('Подкаст — выпуск 12.mp3', 'audio/mpeg', 'ID3 mock audio', '2026-01-11T10:00:00Z');
     d.put({ workspaceId: ws, kind: F, name: 'Дизайн', ownerId: U.vera, createdAt: at('2026-01-07T11:00:00Z'), updatedAt: at('2026-01-13T12:10:00Z') });
     const contracts = d.put({ workspaceId: ws, kind: F, name: 'Договоры', ownerId: U.anna, restricted: true, createdAt: at('2026-01-08T10:00:00Z'), updatedAt: at('2026-01-12T10:00:00Z') });
     d.perms.set(contracts.id, [
@@ -7838,7 +7915,7 @@ class MockImpl {
     });
   }
 
-  // ------------------------------------------------ Canvas (ADR-0107, mock-canvas.ts)
+  // ------------------------------------------------ Canvas (ADR-0113, mock-canvas.ts)
 
   private newCanvas(): CanvasMock {
     return new CanvasMock({

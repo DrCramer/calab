@@ -164,6 +164,22 @@ describe('rest', () => {
     expect(() => owner.start()).toThrow(/REST only/);
   });
 
+  it('acts on behalf of a member through asMember() or per call (ADR-0111)', async () => {
+    srv.route(`POST /api/rooms/${TEXT_ROOM}/messages`, (r) => ({ status: 201, json: messageJson('new', (r.json as { content: string }).content) }));
+    srv.route('GET /api/workspaces/w1', () => ({ json: {} }));
+    const bot = newBot();
+    const carol = bot.asMember('u-carol');
+    expect(carol.asMember('u-carol')).toBe(carol);
+    await carol.send(TEXT_ROOM, 'as carol');
+    await carol.asOwner().send(TEXT_ROOM, 'as the owner');
+    await bot.rest.request('GET', '/api/workspaces/w1', { onBehalfOf: 'u-dave' });
+    const [member, owner, raw] = srv.requests;
+    expect(member?.headers['calab-on-behalf']).toBe('u-carol');
+    expect(owner?.headers['calab-on-behalf']).toBe('owner');
+    expect(raw?.headers['calab-on-behalf']).toBe('u-dave');
+    expect(() => carol.start()).toThrow(/REST only/);
+  });
+
   it('forwards a message into another room (ADR-0033)', async () => {
     srv.route(`POST /api/rooms/${TEXT_ROOM}/messages/m-1/forward`, { status: 201, json: { message: { id: 'copy', roomId: 'r-2', forward: { authorId: 'u-1', messageId: 'm-1' } } } });
     const bot = newBot();

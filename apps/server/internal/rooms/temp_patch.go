@@ -14,8 +14,9 @@ import (
 
 // tempChange is the temporary-room part of PATCH /api/rooms/{id} (ADR-0044), validated.
 type tempChange struct {
-	expires   *time.Time // a new end
-	permanent bool       // make_permanent
+	expires   *time.Time  // a new end
+	permanent bool        // make_permanent
+	links     *linkPolicy // make_permanent: the links bound to the end never expire (nil: they keep it)
 }
 
 func (t tempChange) any() bool { return t.expires != nil || t.permanent }
@@ -68,9 +69,19 @@ func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc
 	if cur.ExpiresAt == nil || cur.WorkspaceID == nil { // made permanent meanwhile
 		return nil, httpx.Validation("expiresAt", "temporary rooms only")
 	}
+	if t.permanent && t.links != nil {
+		if err := unboundLinks(ctx, q, cur.ID, *cur.ExpiresAt, *t.links); err != nil {
+			return nil, err
+		}
+	}
 	if t.expires != nil || t.permanent {
 		if _, err := q.SetRoomExpiry(ctx, sqlc.SetRoomExpiryParams{ID: cur.ID, ExpiresAt: t.expires}); err != nil {
 			return nil, err
+		}
+		if t.permanent { // no meeting's own room any more (ADR-0112): its meeting asks for none
+			if err := q.ClearRoomEventsTempRoom(ctx, &cur.ID); err != nil {
+				return nil, err
+			}
 		}
 		if t.expires != nil {
 			if err := q.FollowRoomExpiry(ctx, sqlc.FollowRoomExpiryParams{RoomID: cur.ID, ExpiresAt: t.expires, OldExpiresAt: cur.ExpiresAt}); err != nil {

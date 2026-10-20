@@ -209,6 +209,7 @@ func TestOnBehalfOfOwner(t *testing.T) {
 	ob = &client{t: t, token: re.GetToken(), header: http.Header{"Calab-On-Behalf": {"owner"}}}
 	ob.must(200, "GET", "/api/workspaces/"+wid, nil, nil)
 
+	resetBotLimit(t, bt.id)
 	// The owner out of the bot's home workspace (where only they turn it off): the bot no
 	// longer acts as them anywhere, a shared workspace included.
 	bob.must(200, "POST", "/api/invites/"+invite(t, o, ws2)+"/join", nil, &j)

@@ -1,4 +1,4 @@
-/** Text wrapping with a cache keyed by (text, size, width) — ADR-0107 §4. Pure given a measure function. */
+/** Text wrapping with a cache keyed by (text, size, width) — ADR-0113 §4. Pure given a measure function. */
 
 export const LINE_HEIGHT = 1.3;
 export const STICKY_PAD = 14;

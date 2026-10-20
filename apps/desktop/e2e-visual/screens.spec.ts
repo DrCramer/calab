@@ -140,6 +140,8 @@ const KEY = new Set([
   'settings-bots',
   'settings-bot-token',
   'bot-profile',
+  // A member lets a bot act on their behalf (ADR-0111).
+  'bot-delegation',
   'chat-bot-commands',
   'chat-forward-dialog',
   'chat-forwarded',
@@ -155,6 +157,7 @@ const KEY = new Set([
   // Calendar (ADR-0038 §7).
   'calendar-mini',
   'calendar-day',
+  'calendar-week',
   'calendar-dialog',
   // Free / busy, find a time, Settings → Календарь (ADR-0041).
   'calendar-filter',
@@ -3626,6 +3629,17 @@ test('bot-profile', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('bot-commands').getByRole('listitem')).toHaveCount(4);
   await expect(card.getByTestId('bot-block')).toBeVisible();
   await checkpoint(shot, 'bot-profile');
+  // ADR-0111: «Делегировать права» from the bot's menu in the members column — my own row
+  // («Разрешить»), Борис who allowed it, Вера whom Анна (me) suggested it to (× to cancel).
+  await win.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  mock.seedBotDelegations(IDS.bots.weather);
+  await members.getByRole('button', { name: /Погода/ }).click({ button: 'right' });
+  await win.getByTestId('member-bot-delegate').click();
+  const dlg = win.getByRole('dialog', { name: /Делегировать права/ });
+  await expect(dlg.getByTestId('bot-delegation-grant')).toBeVisible();
+  await expect(dlg.getByTestId('bot-delegation-row')).toHaveCount(2);
+  await checkpoint(shot, 'bot-delegation');
 });
 
 // «/» at the start of the field: the room's bot commands («/cmd — описание · @bot»); a sent
@@ -3744,6 +3758,38 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
 });
 
 /**
+ * Week view (bug board #6, Yandex Calendar): «День / Неделя» in the header, Monday-first week of
+ * 12–18 January with today (Thursday 15) in an accent circle and a shaded column, the «now» line in
+ * it, the daily stand-up in every column from Tuesday, «Планёрка» and «Ревью дизайна» side by side,
+ * «Релиз 1.0» in the «весь день» band, the ISO week number and the UTC offset (at 960 the narrow
+ * columns cascade the overlapping pair). Then a block opens its card; ‹ › step a week.
+ */
+test('calendar-week', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await calendarDay(win, mock);
+  await win.locator(`[data-cal-day="${DAY}"]`).click();
+  await win.getByTestId('cal-view').getByRole('radio', { name: /Неделя|Week/ }).click();
+  const week = win.getByTestId('week-view');
+  await expect(week).toBeVisible();
+  await expect(week.getByTestId('week-today')).toHaveText('15');
+  await expect(week.getByTestId('week-number')).toHaveText('3 нед.');
+  await expect(week.getByTestId('week-zone')).toHaveText('UTC+3');
+  await expect(week.getByTestId('now-line')).toBeVisible();
+  await expect(week.getByTestId('event-block').filter({ hasText: 'Стендап' })).toHaveCount(6);
+  await expect(week.getByTestId('allday-row')).toContainText('Релиз 1.0');
+  await checkpoint(shot, 'calendar-week');
+  await week.getByTestId('event-block').filter({ hasText: 'Ревью дизайна' }).click();
+  await expect(win.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Ревью дизайна');
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('event-panel')).toHaveCount(0);
+  await win.getByTestId('cal-next').click();
+  await expect(week.getByTestId('cal-title')).toHaveText(/январь 2026/i);
+  await expect(week.getByTestId('week-today')).toHaveCount(0);
+  await expect(week.getByTestId('event-block').filter({ hasText: 'Ретро' })).toHaveCount(1);
+});
+
+/**
  * «Люди» (ADR-0041 §3): Борис and Вера chosen — their meetings, grey «Занято · Борис Петров» for his
  * meeting Анна cannot see, Вера's external calendar hatched; my own meetings without them hidden.
  */
@@ -3836,10 +3882,11 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await calendarDay(win, mock);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
-  await win.getByTestId('day-new-event').click();
+  await win.keyboard.press('n'); // the header has no «Встреча» (CBF-18)
   const dialog = win.getByTestId('event-dialog');
   await dialog.getByTestId('event-title-input').fill('Разбор релиза');
-  await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });
+  await dialog.getByTestId('event-room').click(); // the room picker with a search (CBF-18)
+  await win.getByRole('option', { name: 'Переговорка' }).click();
   await dialog.getByTestId('event-add-people').click();
   // The picker stays open for several people.
   await win.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
@@ -3870,6 +3917,20 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await boardsMode(win, mock);
   await checkpoint(shot, 'boards-kanban');
+
+  // Bug board #4 (needs the dev LiveKit): in voice, the boards column ends with the same voice
+  // block as the rooms island; its mic mutes the call while the board stays on screen.
+  await win.getByTestId('section-chats').click();
+  await win.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await win.getByRole('region', { name: 'Переговорка' }).getByRole('button', { name: 'Войти в голос', exact: true }).click();
+  await expect(win.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 30_000 });
+  await boardsMode(win, mock);
+  const dock = win.getByTestId('voice-dock');
+  await expect(dock).toContainText('Голос подключён');
+  await dock.getByRole('button', { name: /^Выключить микрофон/ }).click();
+  await expect(dock.getByRole('button', { name: /^Включить микрофон/ })).toBeVisible();
+  await expect(win.getByTestId('kanban')).toBeVisible();
+  await checkpoint(shot, 'boards-voice-dock');
 });
 
 /** The task full screen over the board: properties, two assignees, relations, comments. */

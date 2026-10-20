@@ -11,8 +11,8 @@
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
 | Настройки (название, иконка, тема, медиа по умолчанию, политика гостей) | `MANAGE_WORKSPACE` ws; тариф `audio_tier_max_kbps` (медиа) | `workspaces.update` (`requireManage`), `plans.Check` | `mayManageWorkspace` |
-| Фоны камеры пространства (ADR-0035): добавить / переименовать / удалить | `MANAGE_WORKSPACE` ws; исходный файл — своя загрузка в это пространство (не стикер); бот-токен — 403 | `workspaces.createBackground`, `updateBackground`, `deleteBackground` | `BackgroundsTab` (`mayManageWorkspace`) |
-| Список фонов пространства, картинка фона | участник пространства (и гость); бот-токен — 403 | `workspaces.listBackgrounds`, `files.CanRead` (`IsWorkspaceBackground`) | «Фоны пространства» в `BackgroundPicker` |
+| Фоны камеры пространства (ADR-0035): добавить / переименовать / удалить | `MANAGE_WORKSPACE` ws; исходный файл — своя загрузка в это пространство (не стикер); боты — так же (ADR-0109) | `workspaces.createBackground`, `updateBackground`, `deleteBackground` | `BackgroundsTab` (`mayManageWorkspace`) |
+| Список фонов пространства, картинка фона | участник пространства (и гость); боты — так же (ADR-0109) | `workspaces.listBackgrounds`, `files.CanRead` (`IsWorkspaceBackground`) | «Фоны пространства» в `BackgroundPicker` |
 | Роли: создать / править / порядок / удалить | `MANAGE_ROLES` ws, только ниже своей старшей; `MANAGE_ROLES` / `MANAGE_WORKSPACE` выдаёт/снимает только админ; `ADMINISTRATOR` — никогда | `roles.go` (`above`, `checkGrant`) | `canCreateRole`, `canEditRole`, `editableBits` |
 | Стикерпаки: создать / править / загрузить / удалить (ADR-0030) | `MANAGE_STICKERS` ws | `stickers.manager` | вкладка «Стикеры» (`can(ws,'MANAGE_STICKERS')`) |
 | Саундборд пространства (ADR-0036): добавить / изменить / удалить | `MANAGE_STICKERS` ws («Стикеры и звуки»); исходный файл — своя загрузка в это пространство; бот — так же, но внешние адреса добавляет только в свою встречу (ADR-0051) | `sounds.manager` | вкладка «Звуки» |
@@ -35,8 +35,8 @@
 | Бейдж участника: назначить / снять | `MANAGE_NICKNAMES` ws + иерархия `workspaces.outranks` (себе — можно); цель — не бот; бот — так же (ADR-0051) | `workspaces.setMemberBadge` | `canSetMemberBadge` |
 | Профиль участника `GET …/members/{userId}` (ADR-0051) | участник (и бот); гость — только видимых ему (ADR-0016), иначе 404; открытые задачи — только с досок, которые видит вызывающий (закрытая без переопределения — нет); скрытый день рождения не отдаётся | `workspaces.getMember`, `boards.OpenTasksOf` | — |
 | Список бейджей, картинка бейджа | участник пространства (и гость) | `workspaces.listBadges`, `files.CanRead` (`IsWorkspaceBadge`) | — |
-| Каталог ачивок пространства (ADR-0061, поправка 1): добавить / изменить / архив / удалить | `MANAGE_WORKSPACE` ws (не гость); ≤ 100 (409 `ACHIEVEMENT_LIMIT`); картинка — своя загрузка в это пространство; удалить — только без вручений (409 `ACHIEVEMENT_IN_USE`); чужое пространство — 404; бот-токен — 403 `BOT_NOT_ALLOWED` | `achievements.create`, `update`, `remove` | настройки → «Библиотека» → «Ачивки» |
-| Вручить / отозвать ачивку (ADR-0061) | `MANAGE_MEMBERS` ws (не гость); получатель — участник, не гость, не бот, не я (422 `SELF_GRANT`); ачивка не в архиве; бот-токен — 403 `BOT_NOT_ALLOWED` | `achievements.grant`, `revoke` | — |
+| Каталог ачивок пространства (ADR-0061, поправка 1): добавить / изменить / архив / удалить | `MANAGE_WORKSPACE` ws (не гость); ≤ 100 (409 `ACHIEVEMENT_LIMIT`); картинка — своя загрузка в это пространство; удалить — только без вручений (409 `ACHIEVEMENT_IN_USE`); чужое пространство — 404; боты — так же (ADR-0109) | `achievements.create`, `update`, `remove` | настройки → «Библиотека» → «Ачивки» |
+| Вручить / отозвать ачивку (ADR-0061) | `MANAGE_MEMBERS` ws (не гость); получатель — участник, не гость, не бот, не я (422 `SELF_GRANT`); ачивка не в архиве; боты — так же (ADR-0109) | `achievements.grant`, `revoke` | — |
 | Ачивки участника, каталог и картинки ачивок | участник (и бот); гость — ачивки только видимых ему участников (как профиль), иначе 404; каталог и картинки пространства — любой его участник (и гость) | `achievements.list`, `catalog`, `files.CanRead` (`IsWorkspaceAchievement`) | — |
 | Ник другого | `MANAGE_NICKNAMES` ws (иерархии нет, docs/12) | `updateMember` | `canRenameMember` |
 | День рождения другого (docs/09 #77), таблица с датами | `MANAGE_NICKNAMES` ws + иерархия; цель — не бот и не гость; бот-токен — 403 | `workspaces.setMemberBirthday`, `listMemberBirthdays` | `canEditMemberBirthday` |
@@ -116,15 +116,15 @@
 | Назначить исполнителя / согласующего / наблюдателя (ADR-0042 §1, ADR-0049 §1, ADR-0059, ADR-0076) | право править задачу; цель — участник пространства, не гость: видящий доску или любой человек (и на закрытой доске) — увидит её по карточке; бот — только с `VIEW_BOARD`, согласующим — никогда; иначе 422 `the user does not see this board`. @упоминание редактором задачи (описание, комментарий) делает упомянутых людей наблюдателями; упоминание без права правки только подписывает видящих задачу. Снять наблюдателя — редактор или он сам | `boards.mayInvite` (`assigneesIn`, `approversIn`, `addWatcher`), `mentionWatchers`, `removeWatcher` | `WatcherMenu`, `watcherControls` |
 | Править / двигать / архивировать любые задачи; модерация комментариев | `EDIT_TASKS` board (в комнате задачи → `MANAGE_MESSAGES`) | `boards.requireEdit`, `setArchived`, `messages.delete` | — |
 | Статусы, лейблы, вехи, настройки, общие виды, порядок, архив доски | `MANAGE_BOARD` board; создать лейбл — ещё и `CREATE_TASKS` | `boards.manageBoard` | — |
-| Доступ к доске (переопределения) | `MANAGE_BOARD` board; только биты доски; не-админ (на закрытой — любой, кроме владельца) — только свои биты; бот-токен — 403 | `boards.validateOverrides` | — |
+| Доступ к доске (переопределения) | `MANAGE_BOARD` board; только биты доски; не-админ (на закрытой — любой, кроме владельца) — только свои биты; боты — так же (ADR-0109) | `boards.validateOverrides` | — |
 | Перенести задачу на другую доску · удалить доску навсегда (`?purge=1`, бот — 403) | `MANAGE_BOARD` на обеих · `MANAGE_BOARD` | `boards.moveBoard`, `deleteBoard` | — |
 | «Создать задачу из сообщения» | `CREATE_TASKS` board + `VIEW_ROOM` в комнате сообщения (иначе 404) | `boards.quoteMessage` | — |
 | Правила автоматизации (ADR-0060): список | `VIEW_BOARD` board (по карточкам — 403, не видно — 404); бот — так же | `boards.listRules` | — |
-| Правила: создать / изменить / удалить / порядок / проверить на задаче · журнал срабатываний | `MANAGE_BOARD` board; тариф `automations_disabled` (Free) — создание `409 PLAN_LIMIT`; бот-токен — 403 `BOT_NOT_ALLOWED` (журнал — читать можно); `notify_room` — только текстовая комната пространства, где автор правила может писать (`VIEW_ROOM` + `SEND_MESSAGES`, иначе 422) | `boards.createRule`, `updateRule`, `deleteRule`, `testRule`, `listRuns` (`ruleAccess`) | — |
+| Правила: создать / изменить / удалить / порядок / проверить на задаче · журнал срабатываний | `MANAGE_BOARD` board; тариф `automations_disabled` (Free) — создание `409 PLAN_LIMIT`; боты — так же (ADR-0109); `notify_room` — только текстовая комната пространства, где автор правила может писать (`VIEW_ROOM` + `SEND_MESSAGES`, иначе 422) | `boards.createRule`, `updateRule`, `deleteRule`, `testRule`, `listRuns` (`ruleAccess`) | — |
 | Вехи внутри задачи (ADR-0063): создать / переименовать / дата / порядок / отметить / удалить | как поля задачи: `EDIT_TASKS`, или `CREATE_TASKS` на своей / назначенной (исполнитель по карточке — да, согласующий — нет); видеть — `TaskBits ≠ 0`; фича `MILESTONES` выкл. — запись `409 FEATURE_DISABLED` (удаление можно); бот — так же | `boards.msWrite` → `requireEdit` | — |
 | Привязать подзадачу к вехе родителя (ADR-0063) | право правки подзадачи (`requireEdit`); веха — только родителя (`422`) | `boards.updateTask` → `subtaskMilestone` | — |
 | Действия правила при срабатывании | от имени доски: права пользователя не проверяются (правило создал `MANAGE_BOARD`), инварианты — да: approval gate, фичи доски, тариф чек-листов, лимиты, `mayInvite` для исполнителей / согласующих; уведомления — только тем, кто видит задачу (`sees`) | `boards.runRules` → `actx` | — |
-| Git-вебхук доски: настроить / посмотреть / удалить (ADR-0060 §4) | `MANAGE_BOARD` board + `MANAGE_INTEGRATIONS` ws; тариф как у правил; бот-токен — 403; секрет — только в ответе `PUT` | `boards.repoBoard` | — |
+| Git-вебхук доски: настроить / посмотреть / удалить (ADR-0060 §4) | `MANAGE_BOARD` board + `MANAGE_INTEGRATIONS` ws; тариф как у правил; боты — так же (ADR-0109); секрет — только в ответе `PUT` | `boards.repoBoard` | — |
 | Приём Git-событий `POST /api/git/boards/{id}/{provider}` | без сессии; подпись провайдера секретом доски (иначе 401), ≤ 1 МБ, 60/мин на доску, повтор доставки — 204 без эффекта; связи и правила — только задачам этой доски (ключ доски) | `boards.repoInbound`, `vcs.Verify` | — |
 
 ## Поиск
@@ -183,7 +183,7 @@
 | Переименовать, иконка, обложка, перенести, в корзину, доступ, ссылка | владелец страницы или `WIKI_MANAGE` (`perm.WikiStructureAllowed`) | `internal/wiki` (W2) | по `WikiPage.my_bits` (W4) |
 | Срок корзины, очистка всей корзины, чужие ссылки, журнал вики | `WIKI_MANAGE` | `internal/wiki` (W2) | (W4) |
 
-## Холст (ADR-0107)
+## Холст (ADR-0113)
 
 Биты `CANVAS_VIEW` (41) / `CANVAS_WRITE` (42) / `CANVAS_MANAGE` (43) — как у вики: уровень пространства, вне `ALL_PERMISSIONS`, у `member` по умолчанию VIEW + WRITE (миграция 00103), `ADMINISTRATOR` даёт все три, гостям — только личный allow на элементе; боты — как участники. Права на элемент — `perm.ComputeCanvasItem` (общий `perm.ComputeTree`), нет `CANVAS_VIEW` — 404. Приватный холст или папка (`restricted`) — как приватная страница вики: администраторы, `CANVAS_MANAGE` и владелец пространства без переопределения (и без «Владелец видит приватное») его не видят; `perm.Detached` отцепляет невидимую приватную подпапку при удалении/переносе предка. «Только просмотр» — отсутствие `CANVAS_WRITE`: сокет `/sync` не принимает UPDATE. Публичной ссылки в v1 нет. Контракт и права — задача H1 (`docs/plans/canvas-v1-tasks.md`), сервер и клиент — H2/H4/H5, столбцы заполняются вместе с ними. Тесты: векторы `canvas:` в `proto/testdata/permissions.json` (Go `internal/perm`, TS `permissions.test.ts`).
 
@@ -201,17 +201,20 @@
 |---|---|---|---|
 | Позвонить на номер из комнаты (ADR-0046) | `PLACE_CALLS` + `VIEW_ROOM` + `CONNECT` room (по умолчанию ни у кого), не гость, в звонке этой комнаты, `Workspace.sip_enabled`; боты — так же | `sip.place` | — |
 | Положить телефонную линию | звонивший или `MUTE_MEMBERS` room (не гость) | `sip.hangup` | — |
-| Настройки SIP, проверка подключения | `MANAGE_INTEGRATIONS` ws (ADR-0048; не гость); бот-токен — 403 | `sip.manage` | — |
+| Настройки SIP, проверка подключения | `MANAGE_INTEGRATIONS` ws (ADR-0048; не гость); боты — так же (ADR-0109) | `sip.manage` | — |
 
 ## Интеграции и боты
 
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
-| GPTunneL: подключить / отключить | `MANAGE_INTEGRATIONS` ws (ADR-0048; не гость); смотреть — любой не гость; бот-токен — 403 | `recording.pairIntegration`, `unpairIntegration` | — |
+| GPTunneL: подключить / отключить | `MANAGE_INTEGRATIONS` ws (ADR-0048; не гость); смотреть — любой не гость; боты — так же (ADR-0109) | `recording.pairIntegration`, `unpairIntegration` | — |
 | Создать бота, список ботов (ADR-0031) | `MANAGE_BOTS` ws (ADR-0048; не гость), подтверждённый email (кроме `EMAIL_VERIFICATION=optional`, ADR-0065); тариф `bots`; шлюз `BOT_*` — держателям `MANAGE_BOTS` и владельцу бота | `bots.create`, `bots.list` (`manager`) | — |
 | Перевыпустить / отозвать токен, удалить бота, аватар бота | в «домашнем» пространстве: владелец бота или `MANAGE_BOTS` ws (бот не участник — 404, чужое пространство — 403); бот-токен — 403 | `bots.homeBot`, `bots.remove`, `bots.setAvatar` | `BotsTab`, `BotAvatarControls` |
 | Добавить / убрать бота в другом пространстве | `MANAGE_BOTS` ws этого пространства | `bots.add`, `bots.remove` | — |
-| «Действовать от моего имени» `PATCH …/bots/{botId} {actsAsOwner}` (ADR-0106) | только владелец бота (`owner_user_id`), в домашнем пространстве; `MANAGE_BOTS` — 403 `ON_BEHALF_OWNER_ONLY`; бот-токен (и «от имени») — 403 | `bots.update` | `BotActsAsOwner` (владелец — тумблер, прочие — строка) |
+| «Действовать от моего имени» `PATCH …/bots/{botId} {actsAsOwner}` (ADR-0106) | только владелец бота (`owner_user_id`), в домашнем пространстве; `MANAGE_BOTS` — 403 `ON_BEHALF_OWNER_ONLY`; бот-токен (и «от имени») — 403 | `bots.update` | `BotDelegationDialog` (владелец — строка «Вы», CBF-17; прочие видят строку-статус `BotActsAsOwnerNote`) |
+| Согласие «бот от моего имени» `PUT`/`DELETE …/bots/{botId}/delegations/{userId}` (ADR-0111) | только сам участник (`userId` = свой, иначе 403 `ON_BEHALF_SELF_ONLY` — и админу, и владельцу бота); дать — роль не `guest` (`ON_BEHALF_NOT_ELIGIBLE`), не `enforced` SSO; бот и «от имени» — 403 | `bots.grant`, `delegation.Check` | «Делегировать права» в меню бота |
+| Предложить согласие `POST …/delegation-invites`, отменить `DELETE …/delegation-invites/{userId}` (ADR-0111) | участник с ролью не `guest`; цели — люди с ролью не `guest`; отменяет приглашающий, отказывается приглашённый; «Принять» в DM бота засчитывается только кликом самого приглашённого | `bots.inviteDelegation`, `messages.delegationClick` | диалог «Делегировать права» |
+| Запрос бота «от имени участника» (`Calab-On-Behalf: <user id>`, ADR-0111) | как «от имени владельца», но вместо `acts_as_owner` — действующее согласие участника в **каждом** пространстве запроса (`ON_BEHALF_NO_CONSENT`); только внутри пространства: DM, профиль, агрегаты, глобальные операции — `ON_BEHALF_ROUTE`; закрыто и управление доступом (настройки пространства, участники/роли/баны/приглашения, переопределения прав — `app.memberClosed`); права — **участника** | `auth.delegateMember`, `checkOnBehalfWorkspace`, `lockDelegation` | `viaBotId`: «Имя (через бота X)» |
 | Запрос бота «от имени владельца» (`Calab-On-Behalf: owner`, ADR-0106) | бот с `acts_as_owner` и действующим токеном (иначе 403 `ON_BEHALF_DISABLED` / 401); владелец — живой человек (`ON_BEHALF_OWNER_INACTIVE`); на каждое пространство запроса: бот — участник (иначе 404), владелец — участник без бана и приостановки каталогом (`ON_BEHALF_OWNER_NOT_MEMBER`), не `enforced` SSO и каталог актуален (`ON_BEHALF_IDENTITY_POLICY`); права — **владельца** (`computePermissions` без изменений); маршруты — `botAllow` + голос в согласовании, кроме аккаунта, `/api/bots/me*`, почтового хостинга, голоса/звонков/записи (`ON_BEHALF_ROUTE`); gateway — права бота; лимиты — бота | `auth.onBehalf`, `checkOnBehalfWorkspace`, `lockDelegation`, `app.onBehalfRoutes` | `viaBotId`: «Имя (через бота X)» |
 | Бот: любое действие | те же биты, что у человека (роли + переопределения; встроенная роль `member`; закрытые объекты — только по переопределению) + маршрут `allow` в `internal/app/botroutes.go`, иначе `403 BOT_NOT_ALLOWED`; управление ботами — только люди, какой бы бит ни был у бота. Административные действия бота — строка журнала `bot action` с владельцем бота (`botAudited`, ADR-0051) | `botGate` (`auth.NoBots`) + обработчик | предупреждение в карточке роли (`warnBotsAdmin`) |
 | Бот: писать в DM | общее пространство и не заблокирован (`403 BOT_BLOCKED`) | `dms.create`, `messages.create` | — |
@@ -222,7 +225,7 @@
 
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
-| Журнал звонков (телефония) | `VIEW_JOURNALS` ws (ADR-0048; не гость); звонки комнат, которых не видно (закрытые), пропускаются; бот-токен — 403 | `sip.journal` | — |
+| Журнал звонков (телефония) | `VIEW_JOURNALS` ws (ADR-0048; не гость); звонки комнат, которых не видно (закрытые), пропускаются; боты — так же (ADR-0109) | `sip.journal` | — |
 | Журнал отданных ботам контактов (ADR-0100) `GET /api/workspaces/{id}/bot-contact-shares` | `VIEW_JOURNALS` ws пространства бота (не гость); кто, какому боту, какие поля, когда — без значений; бот-токен — 403 | `messages.listContactShares` | — |
 | Журнал доски и CSV-экспорт | `MANAGE_BOARD` или `EDIT_TASKS` board, или `VIEW_JOURNALS` ws — на доске, которую видно (закрытая без переопределения — 404) | `boards.boardActivity` | — |
 

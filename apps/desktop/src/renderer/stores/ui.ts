@@ -31,9 +31,9 @@ export type Dialog =
   | { kind: 'stream-picker' }
   | { kind: 'camera-preview' }
   /** The image viewer; `images` are the message's images (←/→), `index` the one opened; `inChat`: «Показать в чате». */
-  | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string } }
+  | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string }; diskItemIds?: string[] }
   /** The PDF viewer of an API file (ADR-0103): Chromium's built-in viewer in a blob: frame, «Скачать». */
-  | { kind: 'pdf'; file: { id: string; name: string; size: bigint } }
+  | { kind: 'pdf'; file: { id: string; name: string; size: bigint }; diskItemId?: string }
   /**
    * A meeting recording opened from a search hit at a segment (ADR-0062 §4): the player and the
    * summary from its card message (messageId, '' = gone), the transcript.
@@ -47,6 +47,12 @@ export type Dialog =
   | { kind: 'forward'; roomId: string; messageId: string }
   /** «Отправить в чат…» of a wiki page (owner 14.10): the forward picker sends the page's address (+ a comment). */
   | { kind: 'wiki-send'; pageId: string }
+  /** The Disk file card (CBF-20): details and actions of a file; on every surface (also from a chat link). */
+  | { kind: 'disk-file'; itemId: string }
+  /** The Disk viewer of an audio / text file (CBF-22): `siblings` are the folder's viewable ids (←/→). */
+  | { kind: 'disk-view'; itemId: string; siblings: string[] }
+  /** «Отправить в чат…» of a Disk file (CBF-20): the forward picker sends the item's link (+ a comment). */
+  | { kind: 'disk-send'; itemId: string }
   /** «Пригласить в комнату»: pick members to invite by DM, or copy the room link (docs/09 #33). */
   | { kind: 'room-invite'; roomId: string }
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */
@@ -143,7 +149,15 @@ interface UiState {
   openCalendarDay: (day: string, eventKey?: string | null) => void;
   selectCalEvent: (key: string | null) => void;
   closeCalendar: () => void;
+  /**
+   * «День / Неделя» of the desktop calendar (bug board #6, Yandex Calendar), persisted on this
+   * device; the phone always shows the day. `calDay` stays the anchor: the week is the one holding it.
+   */
+  calView: CalView;
+  setCalView: (view: CalView) => void;
 }
+
+export type CalView = 'day' | 'week';
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
 export const MEMBERS_COLUMN_MIN = 1200;
@@ -192,6 +206,8 @@ export const useUi = create<UiState>()(
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
       closeCalendar: () => set({ calDay: null, calEvent: null }),
+      calView: 'day',
+      setCalView: (calView) => set({ calView }),
       setWorkspace: (id) =>
         set((s) => {
           // A click on a workspace (the open one too) leads back to its rooms (ADR-0050 §3).
@@ -257,6 +273,7 @@ export const useUi = create<UiState>()(
         sidebarWidth: s.sidebarWidth,
         collapsed: s.collapsed,
         hideMuted: s.hideMuted,
+        calView: s.calView,
       }),
     },
   ),

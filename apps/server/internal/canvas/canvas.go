@@ -1,4 +1,4 @@
-// Package canvas implements the Canvas section of a workspace (ADR-0107): a tree of folders and
+// Package canvas implements the Canvas section of a workspace (ADR-0113): a tree of folders and
 // canvases with per-item access (perm.ComputeCanvasItem over internal/canvasacl chains), the
 // trash with its hourly sweeper, the journal (canvas_activity), version history and the
 // collaborative content.
@@ -39,7 +39,7 @@ import (
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
-// MaxDepth is how deep the tree may go (ADR-0107 §1): a top-level item has depth 1.
+// MaxDepth is how deep the tree may go (ADR-0113 §1): a top-level item has depth 1.
 const MaxDepth = 32
 
 // MaxName is the longest name in characters (canvas_items CHECK).
@@ -155,7 +155,7 @@ type access struct {
 
 func (a access) manage() bool { return a.bits.Has(perm.CanvasManage) }
 
-// structure: rename, move, trash, restore, delete, access (ADR-0107 §2).
+// structure: rename, move, trash, restore, delete, access (ADR-0113 §2).
 func (a access) structure() bool { return perm.CanvasStructureAllowed(a.bits, a.c.owns(a.item)) }
 
 func (a access) nodes() []perm.TreeNode { return a.chain.Nodes(a.item.ID) }

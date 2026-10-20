@@ -2,7 +2,7 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { ApproverState, BoardFeature, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { approvalBadge, approvalTagKey, parseApprovalTag, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, quorumChoices, quorumOf, toggleApprover, MAX_APPROVERS } from './approvals';
+import { approvalBadge, approvalTagKey, parseApprovalTag, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, onBehalfAction, quorumChoices, quorumOf, statusPick, toggleApprover, MAX_APPROVERS } from './approvals';
 
 // ADR-0049 «Контракт для клиента»: the gate mirrors the server's checkApprovalGate.
 const st = (id: string, position: number, type = BoardStatusType.UNSTARTED) => create(BoardStatusSchema, { id, position, type });
@@ -90,6 +90,41 @@ describe('approvalControls (permission gating of the section)', () => {
   it('no vote without the board, nothing editable on an archived task', () => {
     expect(approvalControls(t(), true, false, 'me').vote).toBe(false);
     expect(approvalControls(t(undefined, true), true, true, 'me')).toMatchObject({ edit: false, vote: false });
+  });
+
+  it('ADR-0108: only a board manager acts for others, on a live task they see', () => {
+    expect(approvalControls(t(), false, true, 'me').forOthers).toBe(false);
+    expect(approvalControls(t(), false, true, 'me', true).forOthers).toBe(true);
+    expect(approvalControls(t(), false, false, 'me', true).forOthers).toBe(false);
+    expect(approvalControls(t(undefined, true), true, true, 'me', true).forOthers).toBe(false);
+  });
+});
+
+describe('ADR-0108: a board manager over the gate and the votes', () => {
+  const pending = task(TaskApprovalState.PENDING, { statusId: 'todo' });
+
+  it('statusPick: the gate holds a member, asks a manager, lets free moves go', () => {
+    expect(statusPick(pending, statuses, 'doing', false)).toBe('blocked');
+    expect(statusPick(pending, statuses, 'done', false)).toBe('blocked');
+    expect(statusPick(pending, statuses, 'doing', true)).toBe('override');
+    expect(statusPick(pending, statuses, 'done', true)).toBe('override');
+    expect(statusPick(pending, statuses, 'backlog', true)).toBe('move');
+    expect(statusPick(pending, statuses, 'cancelled', false)).toBe('move');
+    expect(statusPick(pending, statuses, 'todo', true)).toBe('same');
+    expect(statusPick(task(TaskApprovalState.REJECTED, { statusId: 'todo' }), statuses, 'doing', true)).toBe('override');
+    expect(statusPick(task(TaskApprovalState.APPROVED, { statusId: 'todo' }), statuses, 'done', false)).toBe('move');
+  });
+
+  it('onBehalfAction: approve a pending vote, withdraw only one recorded for them, never a personal decision or my own row', () => {
+    const rec = (userId: string, state: ApproverState, recordedBy = '', onBehalf = !!recordedBy) => create(TaskApproverSchema, { userId, state, recordedBy, onBehalf });
+    expect(onBehalfAction(rec('a', ApproverState.PENDING), 'me', true)).toBe('approve');
+    expect(onBehalfAction(rec('a', ApproverState.APPROVED, 'boss'), 'me', true)).toBe('withdraw');
+    expect(onBehalfAction(rec('a', ApproverState.APPROVED), 'me', true)).toBeNull();
+    // The recorder's account is gone: still recorded on behalf, still withdrawable.
+    expect(onBehalfAction(rec('a', ApproverState.APPROVED, '', true), 'me', true)).toBe('withdraw');
+    expect(onBehalfAction(rec('a', ApproverState.REJECTED), 'me', true)).toBeNull();
+    expect(onBehalfAction(rec('me', ApproverState.PENDING), 'me', true)).toBeNull();
+    expect(onBehalfAction(rec('a', ApproverState.PENDING), 'me', false)).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-// Package canvasacl loads the access chains of Canvas items (ADR-0107 §2) and turns them into
+// Package canvasacl loads the access chains of Canvas items (ADR-0113 §2) and turns them into
 // perm.TreeNode chains for perm.ComputeCanvasItemIn: the REST handlers and the sync socket
 // (internal/canvas), the search section and the gateway's per-recipient routing of
 // CANVAS_ITEM_* events (from the chains the events carry) share it. It is the Canvas's twin of

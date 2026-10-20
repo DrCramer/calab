@@ -1,5 +1,5 @@
 /**
- * Fractional z-order keys (ADR-0107 §3): strings over a 62-digit alphabet whose plain code-unit order
+ * Fractional z-order keys (ADR-0113 §3): strings over a 62-digit alphabet whose plain code-unit order
  * is the layer order. Inserting between two keys never rewrites a neighbour, so reordering one object
  * does not conflict with an insert of another.
  */

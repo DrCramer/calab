@@ -1,6 +1,6 @@
 import { BoardForms } from './BoardForms';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dropdown from '../../components/radix/dropdown-menu';
+import * as Popover from '../../components/radix/popover';
 import { Archive, ArchiveRestore, ArrowDownUp, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
 import { useCallback, useState, type ReactNode } from 'react';
@@ -78,7 +78,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
             <CreateButton label={t('boards.newTask')} tip={false} onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task" />
           ) : (
             <Tip label={t('boards.newTask')} shortcut="C">
-              <Button size="md" aria-label={t('boards.newTask')} className="ml-1 h-7" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+              <Button size="md" aria-label={t('boards.newTask')} className="ml-1" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
                 <Plus className="size-4" aria-hidden />
                 <span>{t('boards.task')}</span>
               </Button>
@@ -120,7 +120,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
   // TIMELINE off (ADR-0058 §3): no «Таймлайн» (a saved timeline view opens as the list).
   const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   return (
-        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex h-7 shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5 " data-testid="view-switch">
+        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex h-(--control-h-bar) shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
           {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
               <button
@@ -130,7 +130,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
                 aria-label={t(k.label)}
                 onClick={() => setPrefs(boardId, { kind: k.kind })}
                 className={cx(
-                  'inline-flex h-6 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)]',
+                  'inline-flex h-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)]',
                   kind === k.kind ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
                 )}
                 data-testid={`view-${k.kind}`}
@@ -167,7 +167,7 @@ function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
     <>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" className="inline-flex h-7 min-w-0 shrink items-center gap-1 rounded-full px-2 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="views-menu">
+          <button type="button" className="inline-flex h-(--control-h-bar) min-w-0 shrink items-center gap-1 rounded-full px-2 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="views-menu">
             <Layers className="size-3.5 shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{current ? current.name : t('boards.allTasks')}</span>
             {changed ? <span className="size-1.5 shrink-0 rounded-full bg-accent" title={t('boards.viewChanged')} /> : null}
@@ -284,7 +284,7 @@ function SortMenu({ boardId }: { boardId: string }): ReactNode {
   const kind = useViewKind(boardId);
   const sort = useBoardsUi((s) => prefsOf(s, boardId).sort);
   const disabled = useDisabledFeatures(boardId);
-  if (kind !== 'list') return null;
+  if (kind === 'timeline') return null;
   const current = sortOn(sort, disabled) ? sort : 'manual';
   return (
     <Dropdown.Root modal={false}>
@@ -310,7 +310,7 @@ function SortMenu({ boardId }: { boardId: string }): ReactNode {
 /** Whether the phone's «…» offers «Отображение» (the list's grouping / sort, hidden columns). */
 function useHasDisplay(boardId: string): boolean {
   const hidden = useBoardsUi((s) => prefsOf(s, boardId).hidden.length);
-  return useViewKind(boardId) === 'list' || hidden > 0;
+  return useViewKind(boardId) !== 'timeline' || hidden > 0;
 }
 
 /**
@@ -359,28 +359,28 @@ function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: 
             </div>
           )}
           {kind === 'list' ? (
-            <>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-muted">{t('boards.groupBy')}</span>
-                <select className={sel} value={groupOn(prefs.groupBy, disabled) ? prefs.groupBy : 'status'} onChange={(e) => set({ groupBy: e.target.value as GroupBy })} data-testid="group-by">
-                  {GROUPS.filter((g) => groupOn(g.v, disabled)).map((g) => (
-                    <option key={g.v} value={g.v}>
-                      {t(g.label)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-muted">{t('boards.sortBy')}</span>
-                <select className={sel} value={sortOn(prefs.sort, disabled) ? prefs.sort : 'manual'} onChange={(e) => set({ sort: e.target.value as SortBy })} data-testid="sort-by">
-                  {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
-                    <option key={g.v} value={g.v}>
-                      {t(g.label)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-muted">{t('boards.groupBy')}</span>
+              <select className={sel} value={groupOn(prefs.groupBy, disabled) ? prefs.groupBy : 'status'} onChange={(e) => set({ groupBy: e.target.value as GroupBy })} data-testid="group-by">
+                {GROUPS.filter((g) => groupOn(g.v, disabled)).map((g) => (
+                  <option key={g.v} value={g.v}>
+                    {t(g.label)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {kind !== 'timeline' ? (
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-muted">{t('boards.sortBy')}</span>
+              <select className={sel} value={sortOn(prefs.sort, disabled) ? prefs.sort : 'manual'} onChange={(e) => set({ sort: e.target.value as SortBy })} data-testid="sort-by">
+                {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
+                  <option key={g.v} value={g.v}>
+                    {t(g.label)}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : null}
           {prefs.hidden.length ? (
             <button type="button" className="self-start text-caption text-accent-text hover:underline" onClick={() => set({ hidden: [] })}>

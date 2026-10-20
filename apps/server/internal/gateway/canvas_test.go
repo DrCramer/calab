@@ -10,7 +10,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// ADR-0107 §6: CANVAS_ITEM_* reach only members who see the item; the access chains are stripped;
+// ADR-0113 §6: CANVAS_ITEM_* reach only members who see the item; the access chains are stripped;
 // who lost the item with a change gets CANVAS_ITEM_REMOVE.
 func TestCanvasEventsPerRecipient(t *testing.T) {
 	wid := uuid.New()

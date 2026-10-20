@@ -121,7 +121,7 @@ test('find a time from the dialog hands the slot back; a conflict warns; NO_COMM
   mock.addEvent({ workspaceId: W, organizerId: U.boris, title: 'Занят', startMs: AT_15 - 2 * HOUR, endMs: AT_15 + HOUR, attendees: [] });
   await signIn(page, mock);
   await openDay(page, DAY);
-  await page.getByTestId('day-new-event').click();
+  await page.keyboard.press('n'); // the header has no «Встреча» (CBF-18): N, as the sidebar «+»
   const dialog = page.getByTestId('event-dialog');
   await dialog.getByTestId('event-start').selectOption({ label: '15:00' });
   await dialog.getByTestId('event-add-people').click();

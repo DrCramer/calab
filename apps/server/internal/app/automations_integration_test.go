@@ -123,12 +123,12 @@ func TestBoardRules(t *testing.T) {
 		wantPlanLimit(t, "a rule on Free", st, e, 0, 0)
 	})
 
-	// Rights: MANAGE_BOARD writes; viewers and bots read; bots never write.
+	// Rights: MANAGE_BOARD writes, bots too (ADR-0109: TestBotAPIv3Automations); viewers read.
 	bob.must(403, "POST", rules, valid, nil)
 	bt := createBot(t, o, wid, "rulebot")
 	bt.must(403, "POST", rules, valid, nil)
-	if reason, _ := errReason(bt.client); reason != "BOT_NOT_ALLOWED" {
-		t.Fatalf("bot write reason %q", reason)
+	if reason, _ := errReason(bt.client); reason == "BOT_NOT_ALLOWED" {
+		t.Fatal("rules closed to bots by the route table")
 	}
 	carol.must(404, "GET", rules, nil, nil)
 

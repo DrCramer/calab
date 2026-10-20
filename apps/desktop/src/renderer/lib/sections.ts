@@ -29,7 +29,7 @@ export function currentSection(s: { home: boolean; boards: boolean; calendar: bo
   if (s.disk) return 'disk';
   // «Вики» (ADR-0096 §9): exclusive the same way (stores/wikiUi.ts).
   if (s.wiki) return 'wiki';
-  // «Холст» (ADR-0107 §5): exclusive the same way (stores/canvasUi.ts).
+  // «Холст» (ADR-0113 §5): exclusive the same way (stores/canvasUi.ts).
   if (s.canvas) return 'canvas';
   return s.boards ? 'boards' : s.calendar ? 'calendar' : 'chats';
 }

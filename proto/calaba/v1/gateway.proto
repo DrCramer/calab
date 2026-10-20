@@ -304,7 +304,7 @@ message DispatchEvent {
     // Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
     CalendarEventCommentUpsert event_comment_upsert = 103;
     CalendarEventCommentDelete event_comment_delete = 104;
-    // Canvas (ADR-0107 §6): workspace channel, routed per recipient like the Wiki
+    // Canvas (ADR-0113 §6): workspace channel, routed per recipient like the Wiki
     // (CANVAS_VIEW on the item); the tree structure only, the content goes through the
     // canvas's /sync socket.
     CanvasItemUpsert canvas_item_upsert = 105;

@@ -6,7 +6,7 @@ import { CanvasEngine, type EngineOptions } from './engine';
 import { defaultPalette } from './palette';
 import { fakeCtx, manualRaf } from './testing';
 
-/** Touch pointers (pan with one finger, pinch with two) on a read-only canvas — the phone viewer (ADR-0107 §5). */
+/** Touch pointers (pan with one finger, pinch with two) on a read-only canvas — the phone viewer (ADR-0113 §5). */
 interface Rig {
   engine: CanvasEngine;
   canvas: HTMLCanvasElement;

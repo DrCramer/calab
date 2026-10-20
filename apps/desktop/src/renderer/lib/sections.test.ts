@@ -29,7 +29,7 @@ describe('currentSection', () => {
   it('an open web app selects no section', () => {
     expect(currentSection({ home: false, boards: false, calendar: false, app: true })).toBeNull();
   });
-  it('«Холст» (ADR-0107) is a section of its own, below mail and «Личные», above the boards and rooms', () => {
+  it('«Холст» (ADR-0113) is a section of its own, below mail and «Личные», above the boards and rooms', () => {
     expect(currentSection({ home: false, boards: false, calendar: false, canvas: true })).toBe('canvas');
     expect(currentSection({ home: false, boards: true, calendar: true, canvas: true })).toBe('canvas');
     expect(currentSection({ home: true, boards: false, calendar: false, canvas: true })).toBe('dms');

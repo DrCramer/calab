@@ -227,8 +227,8 @@ func (x *ListAchievementsResponse) GetAchievements() []*Achievement {
 	return nil
 }
 
-// POST /api/workspaces/{id}/achievements -> 201 Achievement. MANAGE_WORKSPACE (bot tokens: 403
-// BOT_NOT_ALLOWED). file_id: a PNG or WebP the caller uploaded to this workspace (POST
+// POST /api/workspaces/{id}/achievements -> 201 Achievement. MANAGE_WORKSPACE (bots too,
+// ADR-0109). file_id: a PNG or WebP the caller uploaded to this workspace (POST
 // /api/files), at most 4 MB, each side 128..2048 px, with an alpha channel and a transparent
 // background (else 422 reason IMAGE_NEEDS_ALPHA); the server crops it to the visible part
 // (+4 % margin) and makes a new 512x512 WebP file with alpha in the workspace quota (the upload
@@ -296,7 +296,7 @@ func (x *CreateAchievementRequest) GetFileId() string {
 }
 
 // PATCH /api/achievements/{id} -> Achievement. MANAGE_WORKSPACE in the achievement's workspace
-// (others: 404 when not a member, 403 without the right; bot tokens 403 BOT_NOT_ALLOWED). Unset
+// (others: 404 when not a member, 403 without the right; bots alike, ADR-0109). Unset
 // fields are left unchanged; file_id replaces the picture by the rules of the create.
 // position: 0..1000000. DELETE /api/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once
 // it was granted (revoked grants included: archive it instead).
@@ -534,7 +534,7 @@ func (x *MemberAchievement) GetRoomId() string {
 }
 
 // POST /api/workspaces/{id}/members/{userId}/achievements -> MemberAchievement.
-// MANAGE_MEMBERS (bot tokens: 403 BOT_NOT_ALLOWED). The recipient is a member of the workspace,
+// MANAGE_MEMBERS (bots too, ADR-0109). The recipient is a member of the workspace,
 // not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement is one
 // of this workspace's catalog and is not archived (422). note: 1..120 characters after trimming,
 // required (422).
@@ -607,7 +607,7 @@ func (x *GrantAchievementRequest) GetAnnounce() bool {
 // first. Any member of the workspace; a guest only for the members visible to them (the profile
 // rule, ADR-0051; others 404); bots read too.
 // DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId} revokes a grant
-// (MANAGE_MEMBERS, not bots; 204): it leaves the profile, its card in the chat stays.
+// (MANAGE_MEMBERS, bots too; 204): it leaves the profile, its card in the chat stays.
 type ListMemberAchievementsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*MemberAchievement   `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`

@@ -262,7 +262,7 @@ describe('wiki screens (ADR-0096 §7)', () => {
   });
 });
 
-describe('canvas screens (ADR-0107 §5, view only on the phone)', () => {
+describe('canvas screens (ADR-0113 §5, view only on the phone)', () => {
   it('folders and canvases stack over the Canvas tab; the same item is returned to', () => {
     let n = pushOnTab(nav({ tab: 'chats' }), 'canvas', { kind: 'canvas', itemId: 'f1' });
     expect(n.tab).toBe('canvas');

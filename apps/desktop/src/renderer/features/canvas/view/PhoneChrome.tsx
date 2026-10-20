@@ -7,7 +7,7 @@ import type { PresenceStore } from './presenceStore';
 
 /**
  * What the phone viewer draws over the canvas besides the zoom bar and the connection notices
- * (ADR-0107 §5: view only): the count of the others on the canvas — no avatars, no cursors — and the
+ * (ADR-0113 §5: view only): the count of the others on the canvas — no avatars, no cursors — and the
  * one-time «editing is not available on the phone» note. Both are leaves with their own subscription.
  */
 

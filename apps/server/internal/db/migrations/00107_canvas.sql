@@ -1,4 +1,4 @@
--- Canvas (ADR-0107): a tree of folders and canvases of a workspace with Yjs content, per-item
+-- Canvas (ADR-0113): a tree of folders and canvases of a workspace with Yjs content, per-item
 -- access, trash, version history and a journal. The server stores and relays the Yjs bytes, it
 -- never parses them. The tables follow the Wiki's (00090) with the differences of the ADR: no
 -- icon / cover / files / public links in v1, folders next to documents (kind), snapshots up to

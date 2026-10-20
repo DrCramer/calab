@@ -42,6 +42,22 @@ func (q *Queries) ArchiveRoom(ctx context.Context, id uuid.UUID) (int64, error) 
 	return result.RowsAffected(), nil
 }
 
+const archiveRoomInvites = `-- name: ArchiveRoomInvites :exec
+UPDATE room_invites i SET revoked_at = now(),
+    archive_revoked = (i.event_id IS NULL AND (i.max_uses = 0 OR i.uses < i.max_uses)
+        AND (i.expires_at IS NULL OR i.expires_at >= r.expires_at OR i.expires_at > now()))
+FROM rooms r
+WHERE r.id = i.room_id AND i.room_id = $1 AND i.revoked_at IS NULL
+`
+
+// The archive of a temporary room revokes every link; those usable at that moment (no expiry,
+// bound to the room's end or not expired yet, uses left; not meeting links) are marked
+// archive_revoked: they come back on restore / make permanent (ADR-0107).
+func (q *Queries) ArchiveRoomInvites(ctx context.Context, roomID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, archiveRoomInvites, roomID)
+	return err
+}
+
 const archiveTempRoom = `-- name: ArchiveTempRoom :one
 UPDATE rooms SET archived_at = now()
 WHERE id = $1 AND archived_at IS NULL AND expires_at IS NOT NULL
@@ -687,6 +703,43 @@ func (q *Queries) GetRoomForUpdate(ctx context.Context, id uuid.UUID) (Room, err
 	return i, err
 }
 
+const getTempRoomForUpdate = `-- name: GetTempRoomForUpdate :one
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id FROM rooms WHERE id = $1 AND expires_at IS NOT NULL FOR UPDATE
+`
+
+// A temporary room, live or archived, locked (make permanent reads its end).
+func (q *Queries) GetTempRoomForUpdate(ctx context.Context, id uuid.UUID) (Room, error) {
+	row := q.db.QueryRow(ctx, getTempRoomForUpdate, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.IconFileID,
+	)
+	return i, err
+}
+
 const grantRoleOverride = `-- name: GrantRoleOverride :exec
 INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
 VALUES ($1, 'role', $2::text, $3, 0)
@@ -749,6 +802,52 @@ func (q *Queries) InsertRoomOverride(ctx context.Context, arg InsertRoomOverride
 		arg.Deny,
 	)
 	return err
+}
+
+const listArchiveRevokedInvites = `-- name: ListArchiveRevokedInvites :many
+SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only, archive_revoked FROM room_invites
+WHERE room_id = $1 AND archive_revoked AND revoked_at IS NOT NULL AND event_id IS NULL
+  AND (max_uses = 0 OR uses < max_uses)
+ORDER BY created_at
+FOR UPDATE
+`
+
+// The links the archive of a temporary room revoked and that may come back (ADR-0107), locked.
+func (q *Queries) ListArchiveRevokedInvites(ctx context.Context, roomID uuid.UUID) ([]RoomInvite, error) {
+	rows, err := q.db.Query(ctx, listArchiveRevokedInvites, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoomInvite{}
+	for rows.Next() {
+		var i RoomInvite
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Code,
+			&i.CreatedBy,
+			&i.ExpiresAt,
+			&i.MaxUses,
+			&i.Uses,
+			&i.AllowGuests,
+			&i.AllowBits,
+			&i.RevokedAt,
+			&i.CreatedAt,
+			&i.NotBefore,
+			&i.EventID,
+			&i.RequireApproval,
+			&i.MembersOnly,
+			&i.ArchiveRevoked,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listArchivedTempRooms = `-- name: ListArchivedTempRooms :many
@@ -1134,12 +1233,35 @@ func (q *Queries) RestoreTempRoom(ctx context.Context, arg RestoreTempRoomParams
 	return i, err
 }
 
-const revokeAllRoomInvites = `-- name: RevokeAllRoomInvites :exec
-UPDATE room_invites SET revoked_at = now() WHERE room_id = $1 AND revoked_at IS NULL
+const reviveRoomInvite = `-- name: ReviveRoomInvite :exec
+UPDATE room_invites SET revoked_at = NULL, archive_revoked = false, expires_at = $1
+WHERE id = $2 AND archive_revoked AND revoked_at IS NOT NULL
 `
 
-func (q *Queries) RevokeAllRoomInvites(ctx context.Context, roomID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, revokeAllRoomInvites, roomID)
+type ReviveRoomInviteParams struct {
+	ExpiresAt *time.Time
+	ID        uuid.UUID
+}
+
+// An archive-revoked link works again with the given end (NULL = never).
+func (q *Queries) ReviveRoomInvite(ctx context.Context, arg ReviveRoomInviteParams) error {
+	_, err := q.db.Exec(ctx, reviveRoomInvite, arg.ExpiresAt, arg.ID)
+	return err
+}
+
+const revokeUserOverride = `-- name: RevokeUserOverride :exec
+DELETE FROM room_permissions WHERE room_id = $1 AND target_type = 'user' AND target_id = $2::text
+`
+
+type RevokeUserOverrideParams struct {
+	RoomID uuid.UUID
+	UserID string
+}
+
+// A personal override of one user in a room goes (ADR-0112: a person removed from the meeting
+// whose private temporary room it is).
+func (q *Queries) RevokeUserOverride(ctx context.Context, arg RevokeUserOverrideParams) error {
+	_, err := q.db.Exec(ctx, revokeUserOverride, arg.RoomID, arg.UserID)
 	return err
 }
 
@@ -1391,6 +1513,45 @@ func (q *Queries) SetVoiceStatus(ctx context.Context, arg SetVoiceStatusParams) 
 		&i.IconFileID,
 	)
 	return i, err
+}
+
+const settleArchiveRevokedInvites = `-- name: SettleArchiveRevokedInvites :exec
+UPDATE room_invites SET archive_revoked = false WHERE room_id = $1 AND archive_revoked
+`
+
+// The archive-revoked links not brought back stay revoked for good.
+func (q *Queries) SettleArchiveRevokedInvites(ctx context.Context, roomID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, settleArchiveRevokedInvites, roomID)
+	return err
+}
+
+const unboundRoomInvites = `-- name: UnboundRoomInvites :exec
+UPDATE room_invites SET expires_at = NULL
+WHERE room_id = $1 AND revoked_at IS NULL AND event_id IS NULL
+  AND expires_at = $2 AND ($3::boolean OR members_only)
+  AND ($4::boolean OR allow_bits & ~$5::bigint = 0)
+`
+
+type UnboundRoomInvitesParams struct {
+	RoomID       uuid.UUID
+	OldExpiresAt *time.Time
+	GuestLinks   bool
+	Admin        bool
+	CallerBits   int64
+}
+
+// A temporary room made permanent: its live links bound to its end never expire (ADR-0107);
+// guest-capable ones only when guest_links (the caller may invite guests), and only links whose
+// rights the caller holds (admin, or allow_bits within caller_bits). Not meeting links.
+func (q *Queries) UnboundRoomInvites(ctx context.Context, arg UnboundRoomInvitesParams) error {
+	_, err := q.db.Exec(ctx, unboundRoomInvites,
+		arg.RoomID,
+		arg.OldExpiresAt,
+		arg.GuestLinks,
+		arg.Admin,
+		arg.CallerBits,
+	)
+	return err
 }
 
 const updateCategory = `-- name: UpdateCategory :one

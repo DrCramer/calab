@@ -1,5 +1,5 @@
-import { WorkspaceRole, type Role } from '@calaba/protocol';
-import { Crown, ShieldCheck } from 'lucide-react';
+import { WorkspaceRole, type Bot, type Role } from '@calaba/protocol';
+import { Crown, ShieldCheck, UserCheck } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
@@ -197,4 +197,15 @@ export function useSharedRole(userId: string): { role: WorkspaceRole; workspace:
   const role = useWorkspaces((s) => (wsId ? s.byId[wsId]?.members[userId]?.role : undefined));
   const workspace = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.ws.name ?? '') : ''));
   return role !== undefined && hasRoleMark(role) ? { role, workspace } : null;
+}
+
+/** Read-only status (ADR-0106): the bot acts on behalf of its owner. Managed in «⋯ → Делегировать права» (CBF-17). */
+export function BotActsAsOwnerNote({ bot, className }: { bot: Bot; className?: string }): ReactNode {
+  if (!bot.actsAsOwner) return null;
+  return (
+    <p className={cx('flex min-w-0 items-center gap-1 text-caption text-muted', className)} data-testid="bot-acts-as-owner-line">
+      <UserCheck className="size-3.5 shrink-0" aria-hidden />
+      <span className="truncate">{t('bots.actsAsOwnerOn')}</span>
+    </p>
+  );
 }

@@ -4,7 +4,7 @@
  */
 import { simpleParser, type AddressObject, type ParsedMail, type SimpleParserOptions } from 'mailparser';
 import type { MailAddress, MailAttachment } from '../../shared/mail';
-import { sniffCharset, SniffingIconv } from './charset';
+import { sniffCharset, SniffingIconv, trimUtf8Tail } from './charset';
 import type { StoredBody } from './store';
 
 /** The subset of imapflow's MessageStructureObject we read. */
@@ -38,7 +38,7 @@ export function snippetPart(bs: BodyStructure | undefined): { part: string; type
       return null;
     }
     if ((n.disposition ?? '').toLowerCase() === 'attachment') return null;
-    const info = { part: n.part ?? path, type, encoding: (n.encoding ?? '7bit').toLowerCase(), charset: n.parameters?.['charset'] ?? 'utf-8' };
+    const info = { part: n.part ?? path, type, encoding: (n.encoding ?? '7bit').toLowerCase(), charset: n.parameters?.['charset'] ?? '' };
     if (type === 'text/plain') return info;
     if (type === 'text/html' && !html) html = info;
     return null;
@@ -74,36 +74,59 @@ function decodeQp(s: string): Buffer {
 }
 
 export function decodeCharset(buf: Uint8Array, charset: string): string {
-  return new TextDecoder(sniffCharset(buf, charset)).decode(buf);
+  const enc = sniffCharset(buf, charset);
+  // a partial fetch may end mid-letter: drop the cut sequence instead of rendering U+FFFD
+  return new TextDecoder(enc).decode(enc === 'utf-8' ? trimUtf8Tail(buf) : buf);
+}
+
+/** Undoes the transfer encoding of a (possibly truncated) part: the raw content bytes. */
+export function transferDecode(raw: Uint8Array, encoding: string): Uint8Array {
+  if (encoding === 'base64') {
+    const clean = Buffer.from(raw).toString('latin1').replace(/[^A-Za-z0-9+/=]/g, '');
+    return Buffer.from(clean.slice(0, clean.length - (clean.length % 4)), 'base64');
+  }
+  if (encoding === 'quoted-printable') return decodeQp(Buffer.from(raw).toString('latin1'));
+  return raw;
 }
 
 /** Decodes a (possibly truncated) transfer-encoded part to text. */
 export function decodePart(raw: Uint8Array, encoding: string, charset: string): string {
-  const s = Buffer.from(raw).toString('latin1');
-  let bytes: Uint8Array;
-  if (encoding === 'base64') {
-    const clean = s.replace(/[^A-Za-z0-9+/=]/g, '');
-    bytes = Buffer.from(clean.slice(0, clean.length - (clean.length % 4)), 'base64');
-  } else if (encoding === 'quoted-printable') bytes = decodeQp(s);
-  else bytes = Buffer.from(raw);
-  return decodeCharset(bytes, charset);
+  return decodeCharset(transferDecode(raw, encoding), charset);
+}
+
+const META_CHARSET = /<meta\b[^>]*?\bcharset\s*=\s*["']?\s*([\w.:-]+)/i;
+
+/** The charset an html document declares in `<meta charset>` / `<meta http-equiv content="…; charset=…">`. */
+export function htmlMetaCharset(bytes: Uint8Array): string {
+  const head = Buffer.from(bytes.subarray(0, 4096)).toString('latin1');
+  return META_CHARSET.exec(head)?.[1] ?? '';
 }
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', laquo: '«', raquo: '»', mdash: '—', ndash: '–', hellip: '…' };
 
-/** Crude HTML → text for snippets (not for display): drops head / style / script, tags, decodes entities. */
+/** True when `text` is markup rather than prose: starts with a doctype / comment / well-known html tag. */
+export function looksLikeHtml(text: string): boolean {
+  return /^\s*(?:\uFEFF)?<(?:!--|!doctype|\?xml|\/?(?:html|head|body|meta|style|table|tbody|tr|td|th|div|p|span|center|font|a|img|br|h[1-6]|ul|ol|li|section|article|header|footer|b|i|u|strong|em)\b)/i.test(text);
+}
+
+/**
+ * Crude HTML → text for snippets (not for display): drops comments / head / style / script / doctype,
+ * tags (also a tag cut at the end of the partial fetch), decodes entities, collapses whitespace.
+ */
 export function htmlToText(html: string): string {
   return html
-    .replace(/<(head|style|script|title)[\s\S]*?(<\/\1>|$)/gi, ' ')
-    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n')
-    .replace(/<[^>]*>?/g, ' ')
+    .replace(/<!--[\s\S]*?(-->|$)/g, ' ')
+    .replace(/<(head|style|script|title|noscript)\b[\s\S]*?(<\/\1\s*>|$)/gi, ' ')
+    .replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d|table)\s*>/gi, '\n')
+    .replace(/<[!?/]?[a-z][^>]*(>|$)|<![^>]*(>|$)|<\?[^>]*(>|$)/gi, ' ')
     .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e: string) => {
       if (e.startsWith('#')) {
         const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
         return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : ' ';
       }
       return ENTITIES[e.toLowerCase()] ?? m;
-    });
+    })
+    .replace(/[\u00a0\u200b-\u200f\u2060\ufeff]/g, ' ');
 }
 
 /** List preview: quoted lines dropped, whitespace collapsed, ≤ 200 chars. */
@@ -113,9 +136,16 @@ export function makeSnippet(text: string): string {
   return s.length > SNIPPET_MAX ? `${s.slice(0, SNIPPET_MAX - 1).trimEnd()}…` : s;
 }
 
+/**
+ * List preview of a partially fetched text part: the same transfer + charset decoding as the
+ * body (sniffing included); an html part without a charset parameter falls back to its <meta>.
+ */
 export function snippetFrom(raw: Uint8Array, part: { type: string; encoding: string; charset: string }): string {
-  const text = decodePart(raw, part.encoding, part.charset);
-  return makeSnippet(part.type === 'text/html' ? htmlToText(text) : text);
+  const bytes = transferDecode(raw, part.encoding);
+  const charset = part.charset || (part.type === 'text/html' ? htmlMetaCharset(bytes) : '');
+  const text = decodeCharset(bytes, charset);
+  // A text/plain part that is really markup (some bulk senders) is stripped like html.
+  return makeSnippet(part.type === 'text/html' || looksLikeHtml(text) ? htmlToText(text) : text);
 }
 
 /** `<a@b> <c@d>` → ['<a@b>', '<c@d>'] (Message-IDs keep their brackets, as in the headers). */

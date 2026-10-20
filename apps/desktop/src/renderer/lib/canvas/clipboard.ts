@@ -2,7 +2,7 @@ import { CanvasDoc, clampText, color, endpoint, isShapeKind, newId, num, type Pl
 import type { Scene } from './scene';
 import { MAX_OBJECTS, type Endpoint, type ObjectInit } from './types';
 
-/** Text-clipboard format: prefix + JSON (ADR-0107 §4). */
+/** Text-clipboard format: prefix + JSON (ADR-0113 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
 const VERSION = 1;
 

@@ -3,11 +3,13 @@ import { confirmAction } from '../../components/Confirm';
 import { t } from '../../i18n';
 import { deletePrompt } from '../../lib/calendar/external';
 import type { ExternalDeleteScopeName, ExternalEvent } from '../../lib/calendar/freebusyApi';
-import { eventSpan, formatLongDay } from '../../lib/calendar/time';
+import { CLICK_DURATION } from '../../lib/calendar/drag';
+import { addPeople } from '../../lib/calendar/people';
+import { atMinutes, dayKey, eventSpan, formatLongDay } from '../../lib/calendar/time';
 import { cancelEvent, canEditEvent, eventOf } from '../../services/calendar';
 import { deleteExternalEvent } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { useUi, type EventDraftInit } from '../../stores/ui';
 
 /*
@@ -18,6 +20,25 @@ import { useUi, type EventDraftInit } from '../../stores/ui';
 /** «+ Встреча» / a range on the grid / N: the dialog for a new meeting. */
 export function newEvent(workspaceId: string, draft?: EventDraftInit): void {
   useUi.getState().openDialog({ kind: 'event', workspaceId, ...(draft ? { draft } : {}) });
+}
+
+/** «+ Встреча» on a day: the next full half hour today, 10:00 on another day; 30 minutes. */
+export function defaultDraft(day: string): { start: number; end: number } {
+  const now = new Date();
+  let start = atMinutes(day, 10 * 60).getTime();
+  if (dayKey(now) === day) {
+    const m = Math.min(23 * 60, Math.ceil((now.getHours() * 60 + now.getMinutes() + 1) / 30) * 30);
+    start = atMinutes(day, m).getTime();
+  }
+  return { start, end: start + CLICK_DURATION * 60_000 };
+}
+
+/** «Подобрать время» from the day / week view: the filter's people (and me) as the first chips. */
+export function startFind(workspaceId: string): void {
+  const me = myUserId();
+  const fb = useFreeBusy.getState();
+  const users = addPeople(me ? [me] : [], fb.people[workspaceId] ?? []).list;
+  fb.setFind({ workspaceId, users, durationMin: 30, workHours: true });
 }
 
 /** «Изменить» (double click, the card, the menu). */

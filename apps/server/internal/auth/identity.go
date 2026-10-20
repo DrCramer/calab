@@ -148,7 +148,8 @@ func (s *Service) CheckGlobal(ctx context.Context, id Identity, op identitypolic
 	if id.OnBehalf() {
 		// ADR-0106: the owner's account-wide reads and writes (DMs, personal sticker packs) are
 		// open; account management, linking and product administration need the person.
-		if op == identitypolicy.GlobalRead || op == identitypolicy.GlobalWrite {
+		// ADR-0111: a member's consent is for a workspace: nothing outside it (DMs included).
+		if !id.ForMember && (op == identitypolicy.GlobalRead || op == identitypolicy.GlobalWrite) {
 			return nil
 		}
 		return ErrOnBehalfRoute

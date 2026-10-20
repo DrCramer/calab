@@ -24,6 +24,11 @@ export interface EventDraft {
   end: number;
   allDay: boolean;
   roomId: string;
+  /**
+   * The meeting's own temporary room (ADR-0112): with `roomId` '' the server makes it 1 h before
+   * the start; with `roomId` set that room is the one it made. Excludes a chosen room and a repeat.
+   */
+  tempRoom: boolean;
   attendees: DraftAttendee[];
   repeat: EventRepeat;
   /** `YYYY-MM-DD` (inclusive, the viewer's zone), '' = no end. */
@@ -48,7 +53,7 @@ export function newDraft(init: { start?: number; end?: number; allDay?: boolean;
   const start = snapDown(minutesOf(s));
   const endMs = init.end ?? s.getTime() + 30 * 60_000;
   const end = Math.max(start + STEP_MIN, snapDown(Math.round((endMs - dayStart(day)) / 60_000)));
-  return { title: '', description: '', day, start, end, allDay: init.allDay ?? false, roomId: init.roomId ?? '', attendees: (init.attendees ?? []).reduce<DraftAttendee[]>((l, id) => addMember(l, id), []), repeat: EventRepeat.UNSPECIFIED, until: '', record: false };
+  return { title: '', description: '', day, start, end, allDay: init.allDay ?? false, roomId: init.roomId ?? '', tempRoom: false, attendees: (init.attendees ?? []).reduce<DraftAttendee[]>((l, id) => addMember(l, id), []), repeat: EventRepeat.UNSPECIFIED, until: '', record: false };
 }
 
 /** The form of an existing occurrence (its own date and times). */
@@ -64,6 +69,7 @@ export function draftOf(ev: CalendarEvent): EventDraft {
     end: ev.allDay ? 10 * 60 : Math.round((end - dayStart(day)) / 60_000),
     allDay: ev.allDay,
     roomId: ev.roomId,
+    tempRoom: ev.tempRoom,
     attendees: ev.attendees.filter((a) => a.userId !== ev.organizerId).map((a) => ({ userId: a.userId, email: a.email, required: a.required })),
     repeat: ev.repeat,
     until: ev.repeatUntil ? dayKey(timestampMs(ev.repeatUntil)) : '',
@@ -71,9 +77,10 @@ export function draftOf(ev: CalendarEvent): EventDraft {
   };
 }
 
-/** A copy for «Дублировать»: everything but the answers. */
+/** A copy for «Дублировать»: everything but the answers; a meeting's own room is asked for anew. */
 export function copyDraft(ev: CalendarEvent): EventDraft {
-  return { ...draftOf(ev), attendees: draftOf(ev).attendees.map((a) => ({ ...a })) };
+  const d = draftOf(ev);
+  return { ...d, ...(d.tempRoom ? { roomId: '' } : {}), attendees: d.attendees.map((a) => ({ ...a })) };
 }
 
 /** The draft's [start, end) in ms; all-day — the local day (the server rounds to midnight of tz). */
@@ -142,7 +149,8 @@ export function toCreate(d: EventDraft, tz: string): CreateInit {
     endsAt: timestampFromMs(end),
     allDay: d.allDay,
     tz,
-    roomId: d.roomId,
+    roomId: d.tempRoom ? '' : d.roomId,
+    tempRoom: d.tempRoom,
     record: d.record,
     repeat: d.repeat,
     ...(until !== null ? { repeatUntil: timestampFromMs(until) } : {}),
@@ -159,6 +167,7 @@ export function toUpdate(d: EventDraft, orig: EventDraft, tz: string, seriesStar
   if (d.title.trim() !== orig.title) out.title = d.title.trim();
   if (d.description !== orig.description) out.description = d.description;
   if (d.roomId !== orig.roomId) out.roomId = d.roomId;
+  if (d.tempRoom !== orig.tempRoom) out.tempRoom = d.tempRoom;
   if (d.record !== orig.record) out.record = d.record;
   if (d.allDay !== orig.allDay) {
     out.allDay = d.allDay;

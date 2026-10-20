@@ -81,11 +81,16 @@ type Identity struct {
 	// id, Principal is zero. The identity policy treats it as a machine (Machine), never as a
 	// session of the owner.
 	ViaBot uuid.UUID
+	// ForMember: with ViaBot, the bot acts for a member who consented (ADR-0111, header
+	// Calab-On-Behalf: <user id>), not for its owner: UserID is that member. Such a request
+	// stays inside the workspaces of the consent (no DMs, nothing account-wide).
+	ForMember bool
 	// RefreshGen: the refresh generation the access token was minted for (0 = unknown / bot).
 	RefreshGen int64
 }
 
-// OnBehalf reports a bot's request on behalf of its owner (ADR-0106).
+// OnBehalf reports a bot's request on behalf of its owner (ADR-0106) or of a member who
+// consented (ADR-0111, ForMember).
 func (id Identity) OnBehalf() bool { return id.ViaBot != uuid.Nil }
 
 // Machine reports an identity without a person's session: a bot, or a bot on behalf of its

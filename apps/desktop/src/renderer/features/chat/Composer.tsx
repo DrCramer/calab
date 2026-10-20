@@ -1,5 +1,5 @@
 import { BillingState, RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { CLOSE_HIT, CloseButton, IconButton, Tip, cx } from '../../components/ui';

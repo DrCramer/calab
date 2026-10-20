@@ -1,5 +1,5 @@
 /**
- * Russian UI strings — экран холста (ADR-0107 §5): панели инструментов и свойств, масштаб, справка,
+ * Russian UI strings — экран холста (ADR-0113 §5): панели инструментов и свойств, масштаб, справка,
  * состояния соединения, меню. Flat dotted keys, `{param}` placeholders.
  */
 export const ruCanvasBoard = {

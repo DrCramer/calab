@@ -9,18 +9,19 @@ import { Button, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { matchTask, type MatchCtx } from '../../lib/boards/filter';
-import { bulkArchive, bulkUpdate, setAssignees, updateTask } from '../../services/boards';
+import { bulkArchive, bulkUpdate, pickStatus, setAssignees, updateTask } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
 import { prefsOf, useBoardsUi, type BoardPrefs } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
-import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
+import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { ApprovalTag } from './Approvals';
 import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
 import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { UnreadDot } from './UnreadDot';
 import { UpdatedAge } from './UpdatedAge';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
@@ -270,6 +271,7 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
   if (!task) return null;
   const on = (f: BoardFeature): boolean => featureOn(disabled, f);
   const canEdit = mayEditTask(task, perms, me);
+  const manage = !scoped && hasBit(perms, MANAGE_BOARD); // ADR-0108: may move past an incomplete approval
   const done = doneType(status?.type);
   const stop = (e: MouseEvent): void => e.stopPropagation();
   const req = (k: string): { open?: boolean; onOpenChange?: (v: boolean) => void } => (menu === k ? { open: true, onOpenChange: (v) => !v && useBoardsUi.getState().closeMenu() } : {});
@@ -313,11 +315,12 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
           </PriorityMenu>
         ) : null}
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
-        <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
+        <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} overridable={manage} onPick={(s) => void pickStatus(id, s, manage)} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
           </button>
         </StatusMenu>
+        <UnreadDot id={id} />
         <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
         {/* Placed here for the phone (end of the title line); `order-last` keeps it rightmost on desktop. */}
         <Tip label={assigneeTip}>

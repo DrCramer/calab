@@ -52,6 +52,26 @@ order: 6
 | `GET` | `/api/workspaces/{id}/invites/email` | Приглашения по почте → `{invites}` (`INVITE_MEMBERS`) |
 | `POST` | `/api/workspaces/{id}/invites/email` | Пригласить по адресу `{email, role?}` (`INVITE_MEMBERS`) |
 | `DELETE` | `/api/workspaces/{id}/invites/email/{inviteId}` | Отозвать приглашение по почте (`INVITE_MEMBERS`) |
+| `POST` | `/api/workspaces/{id}/achievements` | Добавить достижение в каталог (`MANAGE_WORKSPACE`) |
+| `PATCH` | `/api/achievements/{id}` | Изменить или архивировать достижение (`MANAGE_WORKSPACE`) |
+| `DELETE` | `/api/achievements/{id}` | Удалить достижение (`MANAGE_WORKSPACE`) |
+| `POST` | `/api/workspaces/{id}/members/{userId}/achievements` | Выдать достижение `{achievementId, note, announce}` (`MANAGE_MEMBERS`; не боту и не себе) |
+| `DELETE` | `/api/workspaces/{id}/members/{userId}/achievements/{grantId}` | Отозвать достижение (`MANAGE_MEMBERS`) |
+| `GET` | `/api/workspaces/{id}/apps` | Веб-приложения пространства → `{apps}` |
+| `POST` | `/api/workspaces/{id}/apps` | Добавить веб-приложение (`MANAGE_INTEGRATIONS`) |
+| `PATCH` | `/api/workspace-apps/{appId}` | Изменить веб-приложение (`MANAGE_INTEGRATIONS`) |
+| `DELETE` | `/api/workspace-apps/{appId}` | Удалить веб-приложение (`MANAGE_INTEGRATIONS`) |
+| `PUT` | `/api/workspace-apps/{appId}/position` | Порядок веб-приложений (`MANAGE_INTEGRATIONS`) |
+| `GET` | `/api/workspaces/{id}/backgrounds` | Фоны камеры пространства → `{backgrounds}` |
+| `POST` | `/api/workspaces/{id}/backgrounds` | Добавить фон из своей картинки (`MANAGE_WORKSPACE`) |
+| `PATCH` | `/api/workspaces/{id}/backgrounds/{bgId}` | Переименовать фон (`MANAGE_WORKSPACE`) |
+| `DELETE` | `/api/workspaces/{id}/backgrounds/{bgId}` | Удалить фон (`MANAGE_WORKSPACE`) |
+| `GET` | `/api/workspaces/{id}/integrations/gptunnel` | Подключение GPTunneL (без токена) |
+| `POST` | `/api/workspaces/{id}/integrations/gptunnel` | Подключить GPTunneL кодом `{code}` (`MANAGE_INTEGRATIONS`) |
+| `DELETE` | `/api/workspaces/{id}/integrations/gptunnel` | Отключить GPTunneL (`MANAGE_INTEGRATIONS`) |
+| `GET` | `/api/workspaces/{id}/sip` | Настройки телефонии, без пароля провайдера (`MANAGE_INTEGRATIONS`) |
+| `PUT` | `/api/workspaces/{id}/sip` | Изменить настройки телефонии (`MANAGE_INTEGRATIONS`) |
+| `POST` | `/api/workspaces/{id}/sip/test` | Проверить подключение телефонии (`MANAGE_INTEGRATIONS`) |
 <!-- /routes -->
 
 ### Недоступно ботам
@@ -59,8 +79,7 @@ order: 6
 - Создание, удаление пространства, поиск открытых пространств и вход в них: `POST /api/workspaces`, `DELETE /api/workspaces/{id}`, `GET /api/workspaces/discover`, `POST /api/workspaces/{id}/join`, `POST /api/invites/{code}/join`.
 - Поиск аккаунта по адресу и добавление аккаунта без его согласия: `POST /api/workspaces/{id}/invites/lookup`, `POST /api/workspaces/{id}/members`.
 - Таблица дней рождения всех участников и установка дня рождения: `GET /api/workspaces/{id}/members/birthdays`, `PATCH /api/workspaces/{id}/members/{userId}/birthday`.
-- Каталог достижений и их выдача — дело людей: `POST /api/workspaces/{id}/achievements`, `PATCH · DELETE /api/achievements/{id}`, `POST /api/workspaces/{id}/members/{userId}/achievements`, `DELETE …/achievements/{grantId}`.
-- Уведомления пространства (`PUT /api/workspaces/{id}/notifications`), веб-приложения пространства (`/api/workspaces/{id}/apps`, `/api/workspace-apps/…`), личные заметки о пользователях (`/api/users/{id}/note`).
+- Уведомления пространства (`PUT /api/workspaces/{id}/notifications`), личные заметки о пользователях (`/api/users/{id}/note`).
 - Оплата, управление ботами, настройки входа (SSO, каталог, OAuth-клиенты) — см. [Ошибки и лимиты](./errors-limits).
 
 ## Участники
@@ -133,7 +152,7 @@ curl -s -X PUT $CALAB/api/workspaces/$WS/members/$USER/badge -H "Authorization: 
 
 ## Достижения
 
-Бот читает каталог (`GET …/achievements`: у архивных — `archivedAt`; ответ с `ETag`; картинка 512×512 WebP — `GET /api/files/{fileId}`) и выданные участнику достижения: `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, новые сверху. Выдают и отзывают достижения только люди.
+Бот читает каталог (`GET …/achievements`: у архивных — `archivedAt`; ответ с `ETag`; картинка 512×512 WebP — `GET /api/files/{fileId}`) и выданные участнику достижения: `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, новые сверху. С `MANAGE_WORKSPACE` бот ведёт каталог, с `MANAGE_MEMBERS` — выдаёт и отзывает достижения, как человек (не боту и не себе).
 
 ## Дни рождения
 

@@ -1,5 +1,5 @@
 /**
- * The Canvas screen's body (ADR-0107 §4–§5): the engine on a `<canvas>`, the tool and properties panels,
+ * The Canvas screen's body (ADR-0113 §4–§5): the engine on a `<canvas>`, the tool and properties panels,
  * zoom, other people's cursors and the connection state. The section's header, tree and dialogs are the
  * parent's (H5a); this component owns everything inside the work area.
  *
@@ -44,7 +44,7 @@ export interface CanvasViewProps {
   /** The canvas' name, for the snapshot meta (search) and the PNG file name. Optional; read at call time. */
   name?: string;
   /**
-   * The phone viewer (ADR-0107 §5): always read-only whatever `bits` say, no toolbar / properties / help /
+   * The phone viewer (ADR-0113 §5): always read-only whatever `bits` say, no toolbar / properties / help /
    * context menu / avatars; the zoom bar, connection notices, a count of the others and a one-time note stay.
    */
   phone?: boolean;

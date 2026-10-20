@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import type { Room } from '@calaba/protocol';
 import { Ellipsis, Lock, NotebookText, Pencil, Search, Smile, Trash2 } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -37,7 +37,7 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
     <Bar className="drag sticky top-0 z-[var(--z-sticky)] gap-2 pl-3 pr-2" data-testid="notes-header-bar">
       {mobile ? <NavButton /> : null}
       <EmojiPicker key={emojiOpen} label={t('notes.changeEmoji')} closeOnPick side="bottom" defaultOpen={emojiOpen > 0} onPick={(e) => void updateShelf(room.id, { emoji: e })}>
-        <button type="button" aria-label={t('notes.changeEmoji')} className="no-drag grid size-8 shrink-0 place-items-center rounded-[var(--radius-bar)] text-[18px] leading-none hover:bg-hover mobile:size-9 mobile:bar-hit">
+        <button type="button" aria-label={t('notes.changeEmoji')} className="no-drag grid size-(--control-h-bar) shrink-0 place-items-center rounded-full text-[18px] leading-none hover:bg-hover mobile:size-9 mobile:bar-hit">
           {emoji || <NotebookText className="size-[18px] text-accent-text" strokeWidth={1.75} aria-hidden />}
         </button>
       </EmojiPicker>
@@ -128,7 +128,7 @@ function RenameField({ initial, onDone }: { initial: string; onDone: (name: stri
       onKeyDown={onKey}
       onBlur={() => finish(value)}
       aria-label={t('notes.name')}
-      className="no-drag h-8 w-[min(280px,50%)] min-w-0 rounded-[var(--radius-control)] border border-accent bg-[var(--color-bg)] px-2 text-list font-semibold text-fg"
+      className="no-drag h-(--control-h-bar) w-[min(280px,50%)] min-w-0 rounded-[var(--radius-control)] border border-accent bg-[var(--color-bg)] px-2 text-list font-semibold text-fg"
     />
   );
 }

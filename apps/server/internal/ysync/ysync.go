@@ -1,5 +1,5 @@
 // Package ysync is the server side of the Yjs sync socket shared by the Wiki (ADR-0096 §4) and
-// the Canvas (ADR-0107 §3): GET /api/<section>/.../sync. The server never parses a Yjs document;
+// the Canvas (ADR-0113 §3): GET /api/<section>/.../sync. The server never parses a Yjs document;
 // it stores the last snapshot plus the updates after it and relays frames between the sockets of
 // one document, on this instance directly and across instances through the Redis channel
 // <name>:<docId>.
@@ -63,7 +63,7 @@ const (
 	ctlRecheck byte = 0xF0
 )
 
-// Limits of the protocol (ADR-0096 §4, ADR-0107 §3). MaxState is per section (Backend.MaxState).
+// Limits of the protocol (ADR-0096 §4, ADR-0113 §3). MaxState is per section (Backend.MaxState).
 const (
 	MaxUpdate   = 64 << 10 // bytes of one Yjs update (and of one awareness update)
 	MaxMeta     = 1 << 20  // bytes of a snapshot's meta JSON (plain_text ≤ 256 KiB, escaped)

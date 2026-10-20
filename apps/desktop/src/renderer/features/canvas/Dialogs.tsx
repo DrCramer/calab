@@ -17,7 +17,7 @@ import { MemberAvatar } from '../boards/menus';
 import { entryOf, TreeAccessEditor, useTreeAccess } from '../people/TreeAccess';
 
 /**
- * The canvas section's dialogs (ADR-0107 §5): «Доступ» (the shared tree access editor),
+ * The canvas section's dialogs (ADR-0113 §5): «Доступ» (the shared tree access editor),
  * «История версий» (the list, «Восстановить» into the live document) and «Переместить». One host
  * reads the request from stores/canvasUi; each mounts only while open.
  */
@@ -114,7 +114,7 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
 // ---------------------------------------------------------------- «История версий»
 
 /**
- * «История версий» (ADR-0107 §1, §3): the versions newest first (date, authors) on the left; the
+ * «История версий» (ADR-0113 §1, §3): the versions newest first (date, authors) on the left; the
  * picked one on the right (who edited, size) with «Восстановить», which puts the version's objects
  * into the live document as one edit (co-authors see it, my undo takes it back). The restore needs
  * the open canvas (its document handle, lib/canvas/docHandle.ts) and the right to write.

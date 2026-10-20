@@ -1,5 +1,5 @@
 /**
- * The open canvas's live document, as the main chunk may call it (ADR-0107 §3, §5): «Восстановить»
+ * The open canvas's live document, as the main chunk may call it (ADR-0113 §3, §5): «Восстановить»
  * a version needs the live Y.Doc, which lives in the lazy chunk (features/canvas/view). The view
  * registers a handle here while it is mounted; nothing in this module imports Yjs or the engine.
  * Same idea as lib/wiki/docHandle.ts.

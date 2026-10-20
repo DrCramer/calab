@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import {
   BoardFeature,
   BoardStatusType,
@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, Input, Modal, Select, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, Input, Modal, Select, Spinner, TextArea as TextAreaField, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { featureOn } from '../../lib/boards/features';
 import {
@@ -305,7 +305,7 @@ function DaysInput({ value, min, max, onChange }: { value: number; min: number; 
 
 function TextArea({ value, onChange, rows = 3, placeholder, max = MAX_TEMPLATE, label }: { value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; max?: number; label: string }): ReactNode {
   return (
-    <textarea
+    <TextAreaField
       value={value}
       rows={rows}
       maxLength={max}
@@ -313,7 +313,6 @@ function TextArea({ value, onChange, rows = 3, placeholder, max = MAX_TEMPLATE, 
       aria-label={label}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => e.stopPropagation()}
-      className="selectable w-full resize-y rounded-[var(--radius-control)] border border-line bg-elev px-2.5 py-1.5 text-body text-fg outline-none focus-visible:border-accent"
     />
   );
 }

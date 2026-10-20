@@ -1,23 +1,25 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { GitProvider, type Board, type BoardGit } from '@calaba/protocol';
-import { Copy, Trash2 } from 'lucide-react';
+import { Copy, Dices, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
-import { Button, Card, Input, Row, Select, Spinner, cx } from '../../components/ui';
+import { Button, Card, Input, Row, Select, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { GIT_PROVIDERS } from '../../lib/boards/git';
+import { GIT_PROVIDERS, GIT_STEPS, GIT_STEPS_COMMON, generateGitSecret, gitHookUrl, type GitStep } from '../../lib/boards/git';
 import { fmt } from '../../lib/format';
 import { planHas } from '../../lib/plan';
 import { deleteGit, loadGit, saveGit } from '../../services/automations';
 import { copyText } from '../../services/boards';
+import { useSession } from '../../stores/session';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 
 /**
  * Board settings → «Git» (ADR-0060 §4): the provider (GitHub / GitLab / Gitea-Forgejo), the
- * secret (own or generated — shown once, with «Скопировать»), the webhook address to paste into
- * the repository with «Скопировать», the status (last event, count, last error), a short
- * instruction per provider, «Отключить». MANAGE_BOARD + MANAGE_INTEGRATIONS (the tab is hidden
+ * secret (own, «Сгенерировать» in the client, or empty — the server generates it and shows it
+ * once, with «Скопировать»), the webhook address (known before saving: it is deterministic) with
+ * «Скопировать», a numbered guide per provider with inline copy buttons, the status (last event,
+ * count, last error), «Отключить». MANAGE_BOARD + MANAGE_INTEGRATIONS (the tab is hidden
  * otherwise); Team and above — below it the form is locked.
  */
 export function GitTab({ board }: { board: Board }): ReactNode {
@@ -28,6 +30,7 @@ export function GitTab({ board }: { board: Board }): ReactNode {
   const [secret, setSecret] = useState('');
   const [shown, setShown] = useState('');
   const [busy, setBusy] = useState(false);
+  const serverUrl = useSession((s) => s.serverUrl);
   useEffect(() => {
     const ac = new AbortController();
     loadGit(board.id, ac.signal).then(
@@ -65,7 +68,8 @@ export function GitTab({ board }: { board: Board }): ReactNode {
     }
   };
   const secretOk = secret.trim() === '' || (secret.trim().length >= 16 && secret.trim().length <= 256);
-  const how = GIT_PROVIDERS.find((p) => p.v === provider)?.how ?? 'git.how.github';
+  const url = git && git.provider === provider ? git.url : gitHookUrl(serverUrl, board.id, provider);
+  const secretNow = secret.trim() || shown;
   const form = (
     <Card title={t('git.card')} footer={t('git.footer', { key: board.key })}>
       <Row label={t('git.provider')}>
@@ -78,7 +82,19 @@ export function GitTab({ board }: { board: Board }): ReactNode {
         </Select>
       </Row>
       <Row label={t('git.secret')} hint={git?.hasSecret ? t('git.secretKept') : t('git.secretHint')}>
-        <Input className="w-72" value={secret} maxLength={256} placeholder={t('git.secretAuto')} onChange={(e) => setSecret(e.target.value)} aria-label={t('git.secret')} data-testid="git-secret" />
+        <div className="flex items-center gap-1.5">
+          <Input className="w-56" value={secret} maxLength={256} placeholder={t('git.secretPh')} onChange={(e) => setSecret(e.target.value)} aria-label={t('git.secret')} data-testid="git-secret" />
+          <Tip label={t('git.secretGenTip')}>
+            <Button size="sm" variant="secondary" onClick={() => setSecret(generateGitSecret())} data-testid="git-secret-gen">
+              <Dices className="size-3.5" aria-hidden /> {t('git.secretAuto')}
+            </Button>
+          </Tip>
+          {secret.trim() ? (
+            <Button size="sm" variant="secondary" onClick={() => copyText(secret.trim(), t('git.secretCopied'))} aria-label={t('git.copy')} data-testid="git-secret-copy">
+              <Copy className="size-3.5" aria-hidden />
+            </Button>
+          ) : null}
+        </div>
       </Row>
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <Button size="sm" busy={busy} disabled={!secretOk} onClick={() => void save()} data-testid="git-save">
@@ -108,31 +124,47 @@ export function GitTab({ board }: { board: Board }): ReactNode {
         </Card>
       ) : null}
       {allowed ? form : <PlanLock plan="team" testId="git-lock">{form}</PlanLock>}
-      {git ? (
-        <>
-          <Card title={t('git.url')}>
-            <div className="flex items-center gap-2 px-3 py-2" data-testid="git-url">
-              <code className="selectable min-w-0 flex-1 truncate font-mono text-caption">{git.url}</code>
-              <Button size="sm" variant="secondary" onClick={() => copyText(git.url, t('git.urlCopied'))} data-testid="git-url-copy">
+      <Card title={t('git.url')} footer={git ? undefined : t('git.urlPre')}>
+        <div className="flex items-center gap-2 px-3 py-2" data-testid="git-url">
+          {url ? (
+            <>
+              <code className="selectable min-w-0 flex-1 truncate font-mono text-caption">{url}</code>
+              <Button size="sm" variant="secondary" onClick={() => copyText(url, t('git.urlCopied'))} data-testid="git-url-copy">
                 <Copy className="size-3.5" aria-hidden /> {t('git.copy')}
               </Button>
-            </div>
-          </Card>
-          <Card title={t('git.howTo')}>
-            <p className="px-3 py-2.5 text-body text-muted" data-testid="git-how">
-              {t(how)}
-            </p>
-          </Card>
-          <GitStatus git={git} workspaceId={board.workspaceId} />
-        </>
-      ) : (
-        <Card title={t('git.howTo')}>
-          <p className="px-3 py-2.5 text-body text-muted" data-testid="git-how">
-            {t(how)}
-          </p>
-        </Card>
-      )}
+            </>
+          ) : (
+            <span className="text-body text-muted">{t('git.urlLater')}</span>
+          )}
+        </div>
+      </Card>
+      <Card title={t('git.howTo')} footer={t('git.stepsFoot')}>
+        <ol className="flex flex-col gap-2 px-3 py-2.5 text-body" data-testid="git-how">
+          {[...(GIT_STEPS[provider] ?? []), ...GIT_STEPS_COMMON].map((st, n) => (
+            <GuideStep key={st.text} n={n + 1} step={st} boardKey={board.key} url={url} secret={secretNow} />
+          ))}
+        </ol>
+      </Card>
+      {git ? <GitStatus git={git} workspaceId={board.workspaceId} /> : null}
     </>
+  );
+}
+
+/** One numbered step; an inline «Скопировать» when the step wants the URL / the secret and it is known. */
+export function GuideStep({ n, step, boardKey, url, secret }: { n: number; step: GitStep; boardKey: string; url: string; secret: string }): ReactNode {
+  const value = step.copy === 'url' ? url : step.copy === 'secret' ? secret : '';
+  return (
+    <li className="flex items-start gap-2.5">
+      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-card-line)] text-caption font-semibold text-muted" aria-hidden>
+        {n}
+      </span>
+      <span className="min-w-0 flex-1 break-words text-muted">{t(step.text, { key: boardKey })}</span>
+      {value ? (
+        <Button size="sm" variant="secondary" onClick={() => copyText(value, step.copy === 'url' ? t('git.urlCopied') : t('git.secretCopied'))} aria-label={t('git.copy')}>
+          <Copy className="size-3.5" aria-hidden />
+        </Button>
+      ) : null}
+    </li>
   );
 }
 

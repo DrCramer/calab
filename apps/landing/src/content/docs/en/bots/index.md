@@ -49,17 +49,15 @@ A bot with admin permissions is an admin: keep a token with `MANAGE_*`, `INVITE_
 
 ## What a bot can never do
 
-Part of the API is closed to bots whatever their roles — the server answers `403 FORBIDDEN` with `reason: "BOT_NOT_ALLOWED"`:
+If the bot has a permission, it does what a person with that permission does (board automations and Git, integrations, backgrounds, achievements too). Only what a role cannot decide is closed — the server answers `403 FORBIDDEN` with `reason: "BOT_NOT_ALLOWED"`:
 
 - **billing and plans** — balance, payments, plan changes;
 - **identity** — SSO, the directory, OAuth clients and the OAuth provider, reauthentication;
 - **bot management** — creating bots, tokens, other bots' avatars (even with `MANAGE_BOTS`);
-- **notes**, **one-to-one calls**, **push notifications**;
-- a person's account: password, email, sessions, status, notification settings;
-- creating, discovering and deleting workspaces, joining by invite;
-- guest links to rooms, workspace web apps, camera backgrounds;
-- voting in task approvals, pressing buttons under messages;
-- the workspace Disk (for now; see [Disk](./rest-disk)).
+- a person's account: password, email, sessions, push devices; personal: notes, status, notification settings, external calendars;
+- creating, discovering and deleting workspaces, joining by invite, taking over;
+- one-to-one calls and guest links to rooms;
+- voting in task approvals, pressing buttons under messages, answering invitations.
 
 The complete list with a decision for every route is in [Bot routes](../reference/routes).
 

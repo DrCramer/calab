@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { NotificationLevel } from '@calaba/protocol';
 import { Archive, ArchiveRestore, Ban, Bell, BellOff, Ellipsis, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';

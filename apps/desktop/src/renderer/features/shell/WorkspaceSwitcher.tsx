@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { WorkspaceRole } from '@calaba/protocol';
 import { Check, ChevronDown, Compass, LockKeyhole, Plus, Volume2 } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
@@ -55,7 +55,7 @@ export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; 
           data-testid={testId}
           className={cx(
             'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
-            phone ? 'h-9 gap-2 rounded-[var(--radius-bar)] px-2 text-left text-headline bar-hit' : 'no-drag h-7 max-w-[240px] px-2 text-body',
+            phone ? 'h-9 gap-2 rounded-[var(--radius-bar)] px-2 text-left text-headline bar-hit' : 'no-drag h-(--control-h-bar) max-w-[240px] px-2 text-body',
           )}
         >
           {phone ? <WorkspaceIcon name={title} iconFileId={iconFileId} /> : null}

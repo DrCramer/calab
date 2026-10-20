@@ -43,7 +43,7 @@ export interface FrameStats {
 const MAX_REGIONS = 8;
 
 /**
- * Canvas 2D renderer, on demand (ADR-0107 §4): a frame is scheduled only when something is dirty or a
+ * Canvas 2D renderer, on demand (ADR-0113 §4): a frame is scheduled only when something is dirty or a
  * gesture changed the camera, and nothing is scheduled while idle. The content (background + objects) is
  * kept in an offscreen layer: panning blits it shifted and paints just the exposed strips; object changes
  * repaint only their dirty rects; the overlay (selection, guides, remote cursors) is composited on top each

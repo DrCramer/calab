@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import * as Popover from '../../components/radix/popover';
 import { SipCallStatus } from '@calaba/protocol';
 import { Phone, PhoneOff } from 'lucide-react';
 import { memo, useEffect, useId, useState, type ReactNode } from 'react';

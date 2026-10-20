@@ -1,5 +1,5 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardFeature, type Board } from '@calaba/protocol';
 import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -27,9 +27,9 @@ import {
 } from '../../services/boards';
 import { DeleteBoardDialog } from './BoardSettings';
 import { BoardForms } from './BoardForms';
-import { unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
+import { boardHasUnread, unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
@@ -402,6 +402,8 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   // One kind of private board (ADR-0058 addendum 2026-10-14): isPrivate or the pre-3.5 restricted flag.
   const priv = useBoards((s) => !!(s.boards[id]?.isPrivate || s.boards[id]?.restricted));
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
+  // Grey by default; accent only while a task of this board has something unseen.
+  const fresh = useBoards((s) => boardHasUnread(s, id, myUserId()));
   const perms = useBoards((s) => s.boards[id]?.permissions);
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
@@ -431,6 +433,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
             {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>
+          {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
           {scoped ? (
             <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
               <span className="w-full min-w-0 truncate">{name}</span>
@@ -441,21 +444,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           ) : (
             <span className="min-w-0 flex-1 truncate">{name}</span>
           )}
-          {priv && mine === 0 ? (
-            // Desktop: the lock sits in the menu button's slot and the «…» replaces it on hover / focus / open menu.
-            <span className="pointer-events-none absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center group-focus-within/board:opacity-0 group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:size-auto mobile:translate-y-0 mobile:opacity-100 mobile:group-hover/board:opacity-100">
-              <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} />
-            </span>
-          ) : null}
-          {priv && mine > 0 ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
-          {mine > 0 ? (
-            <span
-              className="pointer-events-none absolute right-1 top-1/2 grid h-6 min-w-6 -translate-y-1/2 place-items-center rounded-[var(--radius-icon)] bg-[var(--color-fill)] px-1.5 text-caption tabular-nums text-muted group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:h-[22px] mobile:min-w-[22px] mobile:translate-y-0 mobile:rounded-full mobile:px-1.5 mobile:text-fg mobile:group-hover/board:opacity-100"
-              title={t('boards.myOpen')}
-            >
-              {mine}
-            </span>
-          ) : null}
+          {mine > 0 ? <CountBadge count={mine} tone={fresh ? 'accent' : 'neutral'} title={t('boards.myOpen')} /> : null}
         </button>
         <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
           <Dropdown.Trigger asChild>

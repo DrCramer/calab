@@ -75,7 +75,7 @@ func (h *Webhooks) wake() {
 	}
 }
 
-// webhookRoutes registers the webhook routes (MANAGE_BOARD + MANAGE_INTEGRATIONS; bots never).
+// webhookRoutes registers the webhook routes (MANAGE_BOARD + MANAGE_INTEGRATIONS; bots by the same bits, ADR-0109).
 func (s *Service) webhookRoutes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	h := func(pattern string, f func(http.ResponseWriter, *http.Request) error) {
 		mux.Handle(pattern, wrap(httpx.HandlerFunc(f)))
@@ -96,11 +96,8 @@ func (s *Service) webhooksAllowed(ctx context.Context, wsID uuid.UUID) (bool, er
 }
 
 // webhookBoard resolves the board of a webhook route: MANAGE_BOARD, and for changes (manage)
-// also MANAGE_INTEGRATIONS of the workspace and a writable one. Bots are refused (secrets).
+// also MANAGE_INTEGRATIONS of the workspace and a writable one. Bots by the same bits (ADR-0109).
 func (s *Service) webhookBoard(r *http.Request, archivedOK, manage bool) (uuid.UUID, perm.BoardAccess, error) {
-	if isBot(r) {
-		return uuid.Nil, perm.BoardAccess{}, httpx.Forbidden("bots cannot manage board webhooks")
-	}
 	if s.hooks == nil {
 		return uuid.Nil, perm.BoardAccess{}, httpx.Unavailable(nil)
 	}

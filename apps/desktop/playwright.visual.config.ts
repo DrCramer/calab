@@ -57,7 +57,7 @@ export default defineConfig<VisualOptions>({
     // «Вики» (ADR-0096 §9, a new interface): dark 960×600; the page also light (wiki.visual.spec.ts).
     { name: 'wiki-dark-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'wiki-light-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
-    // «Холст» (ADR-0107 §5, a new interface): dark 960×600; «Доступ» also light (canvas.visual.spec.ts).
+    // «Холст» (ADR-0113 §5, a new interface): dark 960×600; «Доступ» also light (canvas.visual.spec.ts).
     { name: 'canvas-dark-960', testMatch: /canvas\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'canvas-light-960', testMatch: /canvas\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // Text selection in the feed (issue #13): behaviour only, no screenshots.
@@ -89,8 +89,9 @@ export default defineConfig<VisualOptions>({
       use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
     },
     // A tall row (a meeting summary) scrolled past, unfolded, far away and back: the text under the
-    // reader never jumps (owner, 15.10): behaviour only, the web build in Chromium, three window sizes.
-    { name: 'feed-scroll', testMatch: /feed-tall-row\.spec\.ts/, use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark' } },
+    // reader never jumps (owner, 15.10); at the bottom a new message, a late preview or image and the
+    // composer growing keep the feed at its end (CBF-13, feed-bottom): behaviour only, web build in Chromium.
+    { name: 'feed-scroll', testMatch: /feed-[a-z-]+\.spec\.ts/, use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark' } },
     { name: 'inline-buttons', testMatch: /inline-buttons\.spec\.ts/, use: { browserName: 'chromium', viewport: { width: 960, height: 600 } } },
     // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
     { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },

@@ -15,6 +15,7 @@ import { useDiskUi } from '../../stores/diskUi';
 import { usePrefs } from '../../stores/prefs';
 import { useMemberName } from '../../stores/workspaces';
 import { ItemContextMenu, ItemMenuButton } from './ItemMenu';
+import { useQuickLook } from './useQuickLook';
 import { ItemBadges, ItemGlyph, ItemPicture } from './visuals';
 
 /**
@@ -45,6 +46,7 @@ export function DiskListing({ workspaceId, folderId, trash }: { workspaceId: str
   useEffect(() => {
     shownRef.current = ids;
   }, [ids]);
+  useQuickLook(shownRef, !trash);
 
   if (!loaded) {
     return load === 'error' ? (
@@ -127,7 +129,7 @@ export function Center({ children, testId }: { children: ReactNode; testId?: str
  * Selection, open, keyboard and drag wiring of a tile / row. Dragging needs WRITE on the item
  * (the server checks the target too); a folder is also a drop target for items and system files.
  */
-function useItemDnd(item: DiskItem | undefined, renaming: boolean, selected: boolean) {
+export function useItemDnd(item: DiskItem | undefined, renaming: boolean, selected: boolean) {
   const id = item?.id ?? '';
   const folder = !!item && isFolder(item) && !item.trashedAt;
   const { setNodeRef: setDragNode, listeners, isDragging } = useDraggable({ id, disabled: !item || !!item.trashedAt || renaming || !canWrite(item.myBits), data: { name: item?.name ?? '' } });

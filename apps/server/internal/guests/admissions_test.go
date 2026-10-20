@@ -7,7 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 func TestRequiresApprovalInheritance(t *testing.T) {
@@ -78,5 +80,18 @@ func TestGuestName(t *testing.T) {
 		if _, err := guestName(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestEditBitsKeepsUnnamedBits(t *testing.T) {
+	on, off := true, false
+	cur := perm.ViewRoom | perm.Connect | perm.Speak | perm.Video | perm.SendMessages
+	got := editBits(&v1.UpdateRoomInviteRequest{AllowMessages: &off, AllowStream: &on}, cur)
+	want := perm.ViewRoom | perm.Connect | perm.Speak | perm.Video | perm.Stream
+	if got != want {
+		t.Fatalf("editBits = %b, want %b", got, want)
+	}
+	if editBits(&v1.UpdateRoomInviteRequest{}, cur) != cur {
+		t.Fatal("no allow_* keeps the bits")
 	}
 }

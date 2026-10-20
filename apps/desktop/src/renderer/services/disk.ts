@@ -31,9 +31,10 @@ import { ApiError, body, call, callEmpty, qs } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { fmt } from '../lib/format';
 import { filePreview } from '../lib/filePreview';
+import { previewKind } from '../lib/diskPreview';
 import { pushOnTab, type PhoneScreen } from '../lib/phoneNav';
 import { uploadInto } from '../lib/api/endpoints';
-import { folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
+import { columnFolders, folderKey, isFolder, previewable, ROOT, trashKey, visibleIds, type DiskSort } from '../lib/disk';
 import { getLocale } from '../i18n';
 import { platform } from '../platform';
 import { useDisk, useDiskUploads } from '../stores/disk';
@@ -150,16 +151,25 @@ export async function loadUsage(ws: string): Promise<void> {
  * Refetches what the disk screen shows for `ws` — the open listing, the trash when it was
  * loaded, the usage — once per synchronous burst of events (a trashed subtree sends many).
  */
-const queued = new Set<string>();
-export function refreshDisk(ws: string): void {
-  if (queued.has(ws)) return;
-  queued.add(ws);
+const queued = new Map<string, Set<string>>();
+export function refreshDisk(ws: string, parents: readonly string[] = []): void {
+  const pending = queued.get(ws);
+  if (pending) {
+    for (const p of parents) pending.add(p);
+    return;
+  }
+  queued.set(ws, new Set(parents));
   queueMicrotask(() => {
+    const touched = queued.get(ws) ?? new Set<string>();
     queued.delete(ws);
     const ui = useDiskUi.getState();
     const trash = !!ui.trashOf[ws];
     const folder = folderOf(ui, ws);
     void loadListing(ws, folder, trash);
+    // The columns view shows the ancestors too: reload those an event touched (CBF-21).
+    if (!trash && prefs().diskView === 'columns') {
+      for (const f of columnFolders(folder, useDisk.getState().paths[folder])) if (f !== folder && touched.has(f)) void loadListing(ws, f, false);
+    }
     if (!trash && useDisk.getState().lists[trashKey(ws)]) void loadListing(ws, ROOT, true);
     void loadUsage(ws);
   });
@@ -203,18 +213,21 @@ export function onDiskItemUpsert(e: DiskItemUpsert): void {
     useDisk.getState().forgetLists(e.workspaceId);
     return;
   }
+  // A move touches the old parent too.
+  const before = useDisk.getState().items[e.item.id]?.parentId;
   useDisk.getState().upsert(e.item, true);
-  refreshDisk(e.workspaceId);
+  refreshDisk(e.workspaceId, before === undefined ? [e.item.parentId] : [e.item.parentId, before]);
 }
 
 /** DISK_ITEM_REMOVE: deleted forever or my access is gone; the open folder inside it falls back to the root. */
 export function onDiskItemRemove(e: DiskItemRemove): void {
   const st = useDisk.getState();
+  const parent = st.items[e.itemId]?.parentId;
   st.remove(e.itemId);
   const ui = useDiskUi.getState();
   const open = folderOf(ui, e.workspaceId);
   if (open === e.itemId || (open && st.paths[open]?.some((p) => p.id === e.itemId))) ui.openFolder(e.workspaceId, ROOT);
-  if (onScreen(e.workspaceId)) refreshDisk(e.workspaceId);
+  if (onScreen(e.workspaceId)) refreshDisk(e.workspaceId, parent === undefined ? [] : [parent]);
   else useDisk.getState().forgetLists(e.workspaceId);
 }
 
@@ -421,7 +434,8 @@ export function downloadItem(item: DiskItem): void {
 
 /**
  * «Открыть»: a folder opens, a picture goes to the Lightbox with the other pictures of the
- * listing (←/→), a video to the player card, a PDF to the PDF viewer, anything else is downloaded.
+ * listing (←/→), a video to the player card, a PDF to the PDF viewer, anything else opens the
+ * file card (CBF-20: download / send to a chat / links) — a click never starts a download.
  */
 export function openItem(item: DiskItem, siblings: readonly string[] = []): void {
   if (isFolder(item)) {
@@ -440,6 +454,7 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
       kind: 'image',
       images: pics.map((x) => ({ fileId: x.file?.id ?? '', name: x.name, mime: x.file?.mime ?? '', width: x.file?.width ?? 0, height: x.file?.height ?? 0 })),
       index,
+      diskItemIds: pics.map((x) => x.id),
     });
     return;
   }
@@ -447,12 +462,34 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
     useDiskUi.getState().openDialog({ kind: 'preview', itemId: item.id });
     return;
   }
-  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment; the rest is saved.
+  // A PDF opens in the PDF viewer (ADR-0103), like a task attachment.
   if (item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf') {
-    useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size } });
+    useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size }, diskItemId: item.id });
     return;
   }
-  downloadItem(item);
+  // Audio (the chat's player) and text-like files (read-only viewer, CBF-22): ←/→ among such siblings.
+  const phone = useUi.getState().phone.on;
+  if (previewKind(item.file, phone) === 'audio' || previewKind(item.file, phone) === 'text') {
+    const { items, lists } = useDisk.getState();
+    const around = siblings.length ? siblings : visibleIds(lists[folderKey(item.workspaceId, item.parentId)], items, prefs().diskSort, '', collator());
+    const same = (around.length ? around : [item.id]).filter((id) => {
+      const k = previewKind(items[id]?.file, phone);
+      return id === item.id || k === 'audio' || k === 'text';
+    });
+    useUi.getState().openDialog({ kind: 'disk-view', itemId: item.id, siblings: same });
+    return;
+  }
+  openFileCard(item.id);
+}
+
+/** The file card (CBF-20): details, «Скачать», «Отправить в чат», the links. Works on every surface. */
+export function openFileCard(itemId: string): void {
+  useUi.getState().openDialog({ kind: 'disk-file', itemId });
+}
+
+/** «Отправить в чат…» of a Disk file: the room / people picker, then the item's link goes as a message. */
+export function openSendToChat(itemId: string): void {
+  useUi.getState().openDialog({ kind: 'disk-send', itemId });
 }
 
 /** The link's page URL to the clipboard (POST returns the live link as is). */
@@ -477,7 +514,16 @@ export function openPhoneDisk(screen: Extract<PhoneScreen, { kind: 'disk' }>): v
 
 /** The viewer of a file that has one in the app: a picture, a video, a PDF (as «Открыть»). */
 function hasViewer(item: DiskItem): boolean {
-  return !!previewable(item.file) || (!!item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf');
+  return previewKind(item.file, useUi.getState().phone.on) !== 'card';
+}
+
+/**
+ * Quick Look (CBF-22): Space on a selected file opens its preview — picture, video, PDF, audio,
+ * text — or else the file card; a folder does nothing. `siblings` are the folder's visible ids (←/→).
+ */
+export function quickLook(item: DiskItem, siblings: readonly string[] = []): void {
+  if (isFolder(item) || item.trashedAt) return;
+  openItem(item, siblings);
 }
 
 /**
@@ -507,8 +553,20 @@ export async function openDiskHit(ws: string, ref: Pick<SearchDiskRef, 'itemId' 
     openItem(item, [item.id]);
     return;
   }
+  revealDiskItem(item, false);
+}
+
+/**
+ * The Disk at the item's folder with the item selected (a folder opens itself); `card` also opens
+ * the file card on top (a chat link, CBF-20). A guest has no Disk screen: a file goes to the card
+ * (or is saved by a search hit). The phone pushes the folder over its «Диск» tab.
+ */
+export function revealDiskItem(item: DiskItem, card: boolean): void {
+  const ws = item.workspaceId;
   if (useWorkspaces.getState().byId[ws]?.role === WorkspaceRole.GUEST) {
-    if (!isFolder(item)) downloadItem(item);
+    if (isFolder(item)) return;
+    if (card) openFileCard(item.id);
+    else downloadItem(item);
     return;
   }
   const ui = useUi.getState();
@@ -520,4 +578,5 @@ export async function openDiskHit(ws: string, ref: Pick<SearchDiskRef, 'itemId' 
     useDiskUi.getState().openFolder(ws, folder);
   }
   if (!isFolder(item)) useDiskUi.getState().select(item.id);
+  if (card && !isFolder(item)) openFileCard(item.id);
 }

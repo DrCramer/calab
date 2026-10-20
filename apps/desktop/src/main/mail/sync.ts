@@ -8,7 +8,7 @@
 import type { MailAccountState, MailError, MailEvent, MailFlagPatch, MailFlags, MailFolder, MailFolderRole, MailSyncPhase, MailThreadRow } from '../../shared/mail';
 import { classify, errorDetail, invalid, mailError, notFound } from './errors';
 import { folderId } from './ids';
-import { parseBody } from './mime';
+import { htmlToText, looksLikeHtml, makeSnippet, parseBody } from './mime';
 import { flagsFrom, type ImapSession, type RemoteFlags, type RemoteFolder, type RemoteHeader } from './session';
 import type { FolderRecord, LocalFlags, MailStore, Scope } from './store';
 
@@ -670,7 +670,9 @@ export class AccountSync {
     const src = await s.fetchSource(uid);
     if (!src) throw notFound('message');
     const parsed = await parseBody(src);
-    this.store.setBody(id, parsed.body, parsed.attachments);
+    const { text, html } = parsed.body;
+    const snippet = makeSnippet(text && !looksLikeHtml(text) ? text : htmlToText(html ?? text ?? ''));
+    this.store.setBody(id, parsed.body, parsed.attachments, snippet);
     this.store.evict(this.host.cacheLimit());
   }
 

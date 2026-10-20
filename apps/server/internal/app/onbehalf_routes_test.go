@@ -4,6 +4,10 @@ import (
 	"regexp"
 	"slices"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/calaba/calaba/server/internal/auth"
 )
 
 // TestOnBehalfRouteTable (ADR-0106 §3): the on-behalf tag only adjusts the bot table — an open
@@ -62,6 +66,34 @@ func TestOnBehalfRouteTable(t *testing.T) {
 	} {
 		if got := onBehalfAllowed(p); got != want {
 			t.Errorf("onBehalfAllowed(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+// TestMemberClosedRoutes (ADR-0111 §3): the member-only closures narrow routes that are open on
+// behalf of the owner (else the line is dead), and the workspace's access control stays closed
+// on behalf of a member who consented.
+func TestMemberClosedRoutes(t *testing.T) {
+	owner, member := auth.Identity{ViaBot: uuid.New()}, auth.Identity{ViaBot: uuid.New(), ForMember: true}
+	for p := range memberClosed {
+		if !onBehalfAllowed(p) {
+			t.Errorf("%q is in memberClosed but not open on behalf at all: drop the line", p)
+		}
+		if onBehalfAllowedFor(member, p) || !onBehalfAllowedFor(owner, p) {
+			t.Errorf("%q: member closure not applied", p)
+		}
+	}
+	for p, want := range map[string]bool{
+		"PUT /api/workspaces/{id}/members/{userId}/roles": false,
+		"POST /api/workspaces/{id}/bans":                  false,
+		"POST /api/workspaces/{id}/invites":               false,
+		"PUT /api/rooms/{id}/permissions":                 false,
+		"POST /api/boards/{id}/tasks":                     true,
+		"POST /api/rooms/{id}/messages":                   true,
+		"POST /api/workspaces/{id}/files":                 true,
+	} {
+		if got := onBehalfAllowedFor(member, p); got != want {
+			t.Errorf("onBehalfAllowedFor(member, %q) = %v, want %v", p, got, want)
 		}
 	}
 }

@@ -1,5 +1,5 @@
 import { statusShown } from '../../lib/boards/completion';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardStatusType, type BoardStatus } from '@calaba/protocol';
 import { ChevronDown, ChevronRight, Ellipsis, EyeOff, Palette, Plus, Star, Trash2, Eye, Shapes } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -11,16 +11,18 @@ import { Button, Modal, Select, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
 import type { FilterState, MatchCtx } from '../../lib/boards/filter';
+import { sortOn } from '../../lib/boards/features';
 import { dropIndex } from '../../lib/boards/position';
 import { createStatus, deleteStatus, gateText, moveStatus, moveTask, updateStatus } from '../../services/boards';
 import { taskPermsOf, useBoards } from '../../stores/boards';
 import { myUserId } from '../../stores/session';
-import { prefsOf, useBoardsUi } from '../../stores/boardsUi';
+import { prefsOf, useBoardsUi, type BoardPrefs } from '../../stores/boardsUi';
 import { toast } from '../../stores/toasts';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { columnsOf, hasBit, visibleColumn, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { TaskCard } from './TaskCard';
-import { useMatchCtx } from './useBoardView';
+import { sortColumnIds } from './columnSort';
+import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /** Above this many cards a column is virtualized (ADR-0042 §5). */
@@ -61,6 +63,14 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
   const statuses = useBoards(useShallow((s) => s.boards[boardId]?.statuses ?? NONE));
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
   const ctx = useMatchCtx(boardId);
+  const disabled = useDisabledFeatures(boardId);
+  // A non-manual view sort orders the columns: cards keep status drag, but no in-column reorder.
+  const sort = sortOn(prefs.sort, disabled) ? prefs.sort : 'manual';
+  const sorted = sort !== 'manual';
+  const sortedRef = useRef(sorted);
+  useEffect(() => {
+    sortedRef.current = sorted;
+  }, [sorted]);
   const cols = useMemo(() => columnsOf({ statuses } as never, prefs), [statuses, prefs]);
   const manage = hasBit(perms, MANAGE_BOARD);
   const canCreate = hasBit(perms, CREATE_TASKS);
@@ -86,6 +96,10 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
       .find((n): n is HTMLElement => !!n);
     if (!col) return null;
     const statusId = col.dataset.column ?? '';
+    if (sortedRef.current) {
+      // Sorted view: the order is not ours to set. Another column takes the card at its end; the card's own column is no target.
+      return statusId === useBoards.getState().tasks[dragged]?.statusId ? null : { statusId, index: Number.MAX_SAFE_INTEGER };
+    }
     const cards = [...col.querySelectorAll<HTMLElement>('[data-card]')].filter((n) => n.dataset.card !== dragged);
     const middles = cards.map((n) => {
       const r = n.getBoundingClientRect();
@@ -113,6 +127,10 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
     const beforeId = visible[tgt.index] ?? '';
     const task = s.tasks[id];
     if (!task) return;
+    if (sortedRef.current) {
+      if (task.statusId !== tgt.statusId) void moveTask(id, tgt.statusId, '', '');
+      return;
+    }
     // Dropped where it was: nothing to send.
     if (task.statusId === tgt.statusId) {
       const all = visibleColumn(s, boardId, tgt.statusId, f, ctx);
@@ -291,6 +309,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
           workspaceId={workspaceId}
           status={s}
           filter={prefs.filter}
+          sort={sort}
           ctx={ctx}
           manage={manage}
           canCreate={canCreate}
@@ -303,6 +322,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
           statuses={statuses}
         />
       ))}
+      {sorted ? <SortHint /> : null}
       {manage ? <AddColumn boardId={boardId} /> : null}
       {cols.hidden.length ? <HiddenColumns boardId={boardId} list={cols.hidden} filter={prefs.filter} ctx={ctx} /> : null}
       {colLine !== null && colTarget !== null ? <div aria-hidden className="pointer-events-none absolute inset-y-3 z-10 w-0.5 rounded-full bg-accent" style={{ left: colLine }} data-testid="column-drop-line" /> : null}
@@ -339,6 +359,15 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
 
 const NONE: BoardStatus[] = [];
 
+/** Shown while a non-manual sort is on: the in-column order is the sort's, only the status changes by drag. */
+function SortHint(): ReactNode {
+  return (
+    <p className="pointer-events-none absolute bottom-1 left-1/2 z-10 -translate-x-1/2 rounded-full bg-fill px-3 py-0.5 text-caption text-muted" data-testid="kanban-sort-hint">
+      {t('boards.sortHint')}
+    </p>
+  );
+}
+
 // ------------------------------------------------------------------ column
 
 const KanbanColumn = memo(function KanbanColumn({
@@ -346,6 +375,7 @@ const KanbanColumn = memo(function KanbanColumn({
   workspaceId,
   status,
   filter,
+  sort,
   ctx,
   manage,
   canCreate,
@@ -361,6 +391,7 @@ const KanbanColumn = memo(function KanbanColumn({
   workspaceId: string;
   status: BoardStatus;
   filter: FilterState;
+  sort: BoardPrefs['sort'];
   ctx: MatchCtx;
   manage: boolean;
   canCreate: boolean;
@@ -373,7 +404,7 @@ const KanbanColumn = memo(function KanbanColumn({
   onHeaderPointerDown: (e: ReactPointerEvent, statusId: string) => void;
   statuses: readonly BoardStatus[];
 }): ReactNode {
-  const ids = useBoards(useShallow((s) => visibleColumn(s, boardId, status.id, filter, ctx)));
+  const ids = useBoards(useShallow((s) => sortColumnIds(visibleColumn(s, boardId, status.id, filter, ctx), s.tasks, sort)));
   const shown = draggingId ? ids.filter((x) => x !== draggingId) : ids;
   const virtual = ids.length > VIRTUAL_MIN;
   const add = (): void => useBoardsUi.getState().openCreate({ boardId, statusId: status.id });

@@ -27,7 +27,7 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
 });
 
 /**
- * Wires pointer, wheel and keyboard events on the canvas element to engine commands (ADR-0107 §4).
+ * Wires pointer, wheel and keyboard events on the canvas element to engine commands (ADR-0113 §4).
  * Returns the detach function. Camera input (wheel, pinch, Safari gestures) is queued on the engine and
  * applied once per frame; nothing here owns a timer or a frame of its own.
  */

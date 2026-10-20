@@ -1,5 +1,5 @@
 /**
- * Binds the engine to the sync provider (ADR-0107 §3, §4): our cursor and selection go into the
+ * Binds the engine to the sync provider (ADR-0113 §3, §4): our cursor and selection go into the
  * Yjs awareness, other participants' awareness states come back as `PeerState`s for the engine's
  * awareness layer. It also writes `meta.schema` into a fresh document after the first sync and keeps
  * the provider read-only for a newer schema. No React, no Zustand: awareness never reaches the stores.

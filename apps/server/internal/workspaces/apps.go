@@ -20,8 +20,8 @@ import (
 )
 
 // Web apps of a workspace (ADR-0050): sites pinned to the rail under the workspace icon. Every
-// member except guests sees them; MANAGE_INTEGRATIONS (ADR-0048) manages them; bots have no
-// access (the routes are botDeny). The server validates the address and never fetches it.
+// member except guests sees them; MANAGE_INTEGRATIONS (ADR-0048) manages them; bots by the
+// same bits (ADR-0109; READY does not list apps to bots). The server validates the address and never fetches it.
 const (
 	MaxApps        = 20
 	maxAppNameLen  = 40

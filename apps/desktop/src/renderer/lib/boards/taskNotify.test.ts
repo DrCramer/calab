@@ -15,7 +15,7 @@ describe('task notification triggers (ADR-0089 §5)', () => {
     const wire = Object.values(TaskNoticeKind).filter((v): v is TaskNoticeKind => typeof v === 'number' && v !== TaskNoticeKind.UNSPECIFIED);
     expect([...kinds].sort((a, b) => a - b)).toEqual([...wire].sort((a, b) => a - b));
     expect(rows.filter((r) => r.locked).flatMap((r) => r.kinds).sort()).toEqual(
-      [TaskNoticeKind.APPROVAL_REQUESTED, TaskNoticeKind.APPROVED, TaskNoticeKind.REJECTED].sort(),
+      [TaskNoticeKind.APPROVAL_REQUESTED, TaskNoticeKind.APPROVED, TaskNoticeKind.REJECTED, TaskNoticeKind.APPROVED_ON_BEHALF].sort(),
     );
   });
 

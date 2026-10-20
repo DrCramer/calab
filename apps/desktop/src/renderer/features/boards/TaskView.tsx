@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
 import { Bell, BellOff, ChevronDown, ChevronRight, ChevronUp, Hash, Link2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';

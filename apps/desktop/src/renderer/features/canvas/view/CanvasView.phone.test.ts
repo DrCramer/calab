@@ -10,7 +10,7 @@ import { NOTE_KEY } from './PhoneChrome';
 
 vi.mock('../../../platform', () => ({ platform: { kind: 'web', apiBase: '', auth: { accessToken: () => Promise.resolve('t'), forceRefresh: () => Promise.resolve('t') } } }));
 
-/** `phone` mode of CanvasView (ADR-0107 §5): read-only whatever the grant, no tools, touch navigation. */
+/** `phone` mode of CanvasView (ADR-0113 §5): read-only whatever the grant, no tools, touch navigation. */
 const WRITE = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE;
 
 beforeAll(() => {

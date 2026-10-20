@@ -1,5 +1,5 @@
 /**
- * Russian UI strings — «Холст» на телефоне (ADR-0107 §5: только просмотр). Flat dotted keys, `{param}` placeholders.
+ * Russian UI strings — «Холст» на телефоне (ADR-0113 §5: только просмотр). Flat dotted keys, `{param}` placeholders.
  */
 export const ruCanvasPhone = {
   'canvasPhone.note': 'Править холст на телефоне пока нельзя — можно листать и приближать. Откройте его на компьютере, чтобы изменить.',

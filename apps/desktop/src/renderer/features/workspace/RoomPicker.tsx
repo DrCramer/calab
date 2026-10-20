@@ -1,4 +1,4 @@
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as ContextMenu from '../../components/radix/context-menu';
 import type { Room } from '@calaba/protocol';
 import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';

@@ -7,7 +7,7 @@ import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-/** Below this zoom, glyphs become plaques and strokes lose their details (ADR-0107 §4). */
+/** Below this zoom, glyphs become plaques and strokes lose their details (ADR-0113 §4). */
 export const TEXT_PLAQUE_SCALE = 0.25;
 
 export interface DrawEnv {

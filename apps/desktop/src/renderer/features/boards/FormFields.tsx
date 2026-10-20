@@ -9,7 +9,7 @@ import {
 } from '@calaba/protocol';
 import { Paperclip, X } from 'lucide-react';
 import { memo, useCallback, useRef, useState, type ReactNode } from 'react';
-import { Button, Input, Select } from '../../components/ui';
+import { Button, Input, Select, TextArea } from '../../components/ui';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 
@@ -124,9 +124,8 @@ export function FormFields({
               {f.required ? ' *' : ''}
             </label>
             {f.type === Kind.PARAGRAPH ? (
-              <textarea
+              <TextArea
                 {...props}
-                className={`${formControl} !rounded-[var(--radius-card)]`}
                 rows={4}
                 maxLength={2000}
                 placeholder={f.placeholder}

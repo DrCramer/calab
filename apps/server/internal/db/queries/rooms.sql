@@ -273,8 +273,41 @@ VALUES (sqlc.arg('room_id'), 'user', sqlc.arg('user_id')::text, sqlc.arg('allow'
 ON CONFLICT (room_id, target_type, target_id) DO UPDATE
     SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny);
 
--- name: RevokeAllRoomInvites :exec
-UPDATE room_invites SET revoked_at = now() WHERE room_id = $1 AND revoked_at IS NULL;
+-- name: ArchiveRoomInvites :exec
+-- The archive of a temporary room revokes every link; those usable at that moment (no expiry,
+-- bound to the room's end or not expired yet, uses left; not meeting links) are marked
+-- archive_revoked: they come back on restore / make permanent (ADR-0107).
+UPDATE room_invites i SET revoked_at = now(),
+    archive_revoked = (i.event_id IS NULL AND (i.max_uses = 0 OR i.uses < i.max_uses)
+        AND (i.expires_at IS NULL OR i.expires_at >= r.expires_at OR i.expires_at > now()))
+FROM rooms r
+WHERE r.id = i.room_id AND i.room_id = $1 AND i.revoked_at IS NULL;
+
+-- name: ListArchiveRevokedInvites :many
+-- The links the archive of a temporary room revoked and that may come back (ADR-0107), locked.
+SELECT * FROM room_invites
+WHERE room_id = $1 AND archive_revoked AND revoked_at IS NOT NULL AND event_id IS NULL
+  AND (max_uses = 0 OR uses < max_uses)
+ORDER BY created_at
+FOR UPDATE;
+
+-- name: ReviveRoomInvite :exec
+-- An archive-revoked link works again with the given end (NULL = never).
+UPDATE room_invites SET revoked_at = NULL, archive_revoked = false, expires_at = sqlc.narg('expires_at')
+WHERE id = sqlc.arg('id') AND archive_revoked AND revoked_at IS NOT NULL;
+
+-- name: SettleArchiveRevokedInvites :exec
+-- The archive-revoked links not brought back stay revoked for good.
+UPDATE room_invites SET archive_revoked = false WHERE room_id = $1 AND archive_revoked;
+
+-- name: UnboundRoomInvites :exec
+-- A temporary room made permanent: its live links bound to its end never expire (ADR-0107);
+-- guest-capable ones only when guest_links (the caller may invite guests), and only links whose
+-- rights the caller holds (admin, or allow_bits within caller_bits). Not meeting links.
+UPDATE room_invites SET expires_at = NULL
+WHERE room_id = sqlc.arg('room_id') AND revoked_at IS NULL AND event_id IS NULL
+  AND expires_at = sqlc.arg('old_expires_at') AND (sqlc.arg('guest_links')::boolean OR members_only)
+  AND (sqlc.arg('admin')::boolean OR allow_bits & ~sqlc.arg('caller_bits')::bigint = 0);
 
 -- name: ArchiveTempRoom :one
 -- Archives a live temporary room: now (DELETE), or only when it has expired (the sweeper; a
@@ -324,6 +357,10 @@ RETURNING *;
 -- The archived temporary room, locked (restore reads its original lifetime).
 SELECT * FROM rooms WHERE id = $1 AND archived_at IS NOT NULL AND expires_at IS NOT NULL FOR UPDATE;
 
+-- name: GetTempRoomForUpdate :one
+-- A temporary room, live or archived, locked (make permanent reads its end).
+SELECT * FROM rooms WHERE id = $1 AND expires_at IS NOT NULL FOR UPDATE;
+
 -- name: MakeRoomPermanent :one
 -- A temporary room (live or archived) becomes a regular live room after the last one; history,
 -- overrides and settings stay.
@@ -337,3 +374,8 @@ RETURNING *;
 -- Messages, reactions, pins, read state, overrides and links go by cascade (as a deleted notes
 -- shelf); the room's uploads become orphans for the file cleanup; meetings keep no room.
 DELETE FROM rooms WHERE id = $1 AND expires_at IS NOT NULL AND archived_at IS NOT NULL;
+
+-- name: RevokeUserOverride :exec
+-- A personal override of one user in a room goes (ADR-0112: a person removed from the meeting
+-- whose private temporary room it is).
+DELETE FROM room_permissions WHERE room_id = sqlc.arg('room_id') AND target_type = 'user' AND target_id = sqlc.arg('user_id')::text;

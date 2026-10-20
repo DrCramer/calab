@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"regexp"
@@ -164,6 +165,7 @@ func (h *Handlers) interact(w http.ResponseWriter, r *http.Request) error {
 	var receipt sqlc.MessageInteraction
 	var event *v1.DispatchEvent
 	var botID uuid.UUID
+	var closed *sqlc.Message // a consent invitation the click closed (ADR-0111)
 	err = h.db.Tx(ctx, func(q *sqlc.Queries) error {
 		if err := q.LockInteractionNonce(ctx, user.String()+":"+req.GetNonce()); err != nil {
 			return err
@@ -198,11 +200,20 @@ func (h *Handlers) interact(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		inv, isInvite, err := delegationInvite(ctx, q, m)
+		if err != nil {
+			return err
+		}
 		if err := h.limiter.Take(ctx, "interaction:"+user.String()); err != nil {
 			return err
 		}
 		receipt, err = q.InsertInteraction(ctx, sqlc.InsertInteractionParams{MessageID: m.ID, UserID: user, Nonce: req.GetNonce(), ButtonID: button.GetId(), KeyboardRevision: m.KeyboardRevision})
 		if err != nil {
+			return err
+		}
+		if isInvite { // ADR-0111: the server decides; the bot gets no callback
+			edited, err := delegationClick(ctx, q, m, inv, user, button.GetId())
+			closed = &edited
 			return err
 		}
 		event = &v1.DispatchEvent{Event: &v1.DispatchEvent_BotCallback{BotCallback: &v1.BotCallback{
@@ -225,6 +236,11 @@ func (h *Handlers) interact(w http.ResponseWriter, r *http.Request) error {
 	if event != nil {
 		h.events.User(ctx, botID, event)
 	} // post-commit gateway delivery is best effort
+	if closed != nil {
+		if err := (&System{h: h}).publishEdited(ctx, *closed); err != nil {
+			slog.WarnContext(ctx, "delegation: publish closed invitation", "message_id", closed.ID, "err", err)
+		}
+	}
 	httpx.Write(w, http.StatusOK, &v1.CreateMessageInteractionResponse{InteractionId: receipt.ID.String()})
 	return nil
 }

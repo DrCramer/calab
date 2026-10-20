@@ -1,4 +1,4 @@
-/** Plain geometry for the canvas engine (ADR-0107 §4). World units, y grows downwards. No DOM. */
+/** Plain geometry for the canvas engine (ADR-0113 §4). World units, y grows downwards. No DOM. */
 
 export interface Point {
   x: number;

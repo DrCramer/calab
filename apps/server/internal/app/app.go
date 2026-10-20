@@ -153,7 +153,7 @@ type App struct {
 	Disk *disk.Service
 	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
 	Wiki *wiki.Service
-	// Canvas: the workspace Canvas (ADR-0107) with its sync socket and the hourly trash sweeper.
+	// Canvas: the workspace Canvas (ADR-0113) with its sync socket and the hourly trash sweeper.
 	Canvas *canvas.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP *sip.Service
@@ -523,7 +523,8 @@ func New(d Deps) *App {
 	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
 	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute
 	calSvc.Routes(mux, private)
-	roomHandlers.Meetings = calSvc // temporary rooms book and close meetings (ADR-0044)
+	roomHandlers.Meetings = calSvc  // temporary rooms book and close meetings (ADR-0044)
+	calSvc.TempRooms = roomHandlers // meetings get their own temporary rooms (ADR-0112)
 	cdOpts := d.CalDAV
 	if cdOpts.AllowAddr == nil {
 		cdOpts.AllowAddr = unfurlPolicy(d)

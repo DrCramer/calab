@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useMobile } from '../../lib/mobile';
+import { useVoice } from '../../stores/voice';
 import { SelfPanel } from './SelfPanel';
 import { VoiceBar } from './VoiceBar';
 import { MeetingRecordPrompt } from '../calendar/RoomEvent';
@@ -33,6 +35,23 @@ export function BottomIsland(): ReactNode {
       style={{ width: 'calc(var(--rail-width) + var(--sidebar-width) - 16px)' }}
     >
       <MeetingRecordPrompt />
+      <VoiceBar />
+      <SelfPanel />
+    </div>
+  );
+}
+
+/**
+ * The same voice block and self panel as the island, in the flow at the foot of a work-section
+ * column (Boards, Calendar, Wiki have no island - owner 02.10 - but a call must stay reachable:
+ * bug board CBF-4). Only while in voice, desktop layout only (the phone has its call strip).
+ */
+export function ColumnVoice(): ReactNode {
+  const inVoice = useVoice((s) => s.roomId !== null);
+  const mobile = useMobile();
+  if (!inVoice || mobile) return null;
+  return (
+    <div data-testid="voice-dock" className="mx-2 mb-2 mt-auto flex shrink-0 flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-fill)]">
       <VoiceBar />
       <SelfPanel />
     </div>

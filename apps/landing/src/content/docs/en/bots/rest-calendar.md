@@ -25,6 +25,10 @@ A bot reads the workspace calendar, books meetings, changes and cancels them, ch
 | `DELETE` | `/api/events/{id}` | Cancel a meeting or one occurrence `?occurrence=` |
 | `GET` | `/api/workspaces/{id}/freebusy` | Busy time `?users=<id,id,…>&from=&to=` (≤ 20 people, window ≤ 14 days) → `{users}` |
 | `POST` | `/api/workspaces/{id}/freebusy/suggest` | Find a common free window → `{slots}` |
+| `GET` | `/api/events/{id}/comments` | A meeting's comments `?before=&limit=` → `{comments, hasMore}` (whoever sees the meeting) |
+| `POST` | `/api/events/{id}/comments` | Write a comment `{body}` → `201 {comment}` |
+| `PATCH` | `/api/events/{id}/comments/{comment_id}` | Edit your own comment |
+| `DELETE` | `/api/events/{id}/comments/{comment_id}` | Delete your own comment, or any if the bot may change the meeting |
 <!-- /routes -->
 
 ### Not available to bots

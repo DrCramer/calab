@@ -912,6 +912,9 @@ const (
 	TaskNoticeKind_TASK_NOTICE_KIND_ATTACHMENT TaskNoticeKind = 18
 	// ARCHIVED: the task was archived.
 	TaskNoticeKind_TASK_NOTICE_KIND_ARCHIVED TaskNoticeKind = 19
+	// ADR-0108 (mandatory, like the approval notices): a board manager recorded an approval on
+	// the recipient's behalf (actor_id: the manager).
+	TaskNoticeKind_TASK_NOTICE_KIND_APPROVED_ON_BEHALF TaskNoticeKind = 20
 )
 
 // Enum value maps for TaskNoticeKind.
@@ -937,6 +940,7 @@ var (
 		17: "TASK_NOTICE_KIND_EDITED",
 		18: "TASK_NOTICE_KIND_ATTACHMENT",
 		19: "TASK_NOTICE_KIND_ARCHIVED",
+		20: "TASK_NOTICE_KIND_APPROVED_ON_BEHALF",
 	}
 	TaskNoticeKind_value = map[string]int32{
 		"TASK_NOTICE_KIND_UNSPECIFIED":        0,
@@ -959,6 +963,7 @@ var (
 		"TASK_NOTICE_KIND_EDITED":             17,
 		"TASK_NOTICE_KIND_ATTACHMENT":         18,
 		"TASK_NOTICE_KIND_ARCHIVED":           19,
+		"TASK_NOTICE_KIND_APPROVED_ON_BEHALF": 20,
 	}
 )
 
@@ -2414,13 +2419,21 @@ func (x *TaskAssigneeInput) GetNote() string {
 
 // An approver of a task (ADR-0049 §1): a member who sees the board, not a guest nor a bot.
 type TaskApprover struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	State         ApproverState          `protobuf:"varint,2,opt,name=state,proto3,enum=calaba.v1.ApproverState" json:"state,omitempty"`
-	Comment       string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`                      // ≤ 500 characters; always set when REJECTED
-	DecidedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"` // unset while PENDING
-	AddedBy       string                 `protobuf:"bytes,5,opt,name=added_by,json=addedBy,proto3" json:"added_by,omitempty"`
-	AddedAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=added_at,json=addedAt,proto3" json:"added_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	UserId    string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	State     ApproverState          `protobuf:"varint,2,opt,name=state,proto3,enum=calaba.v1.ApproverState" json:"state,omitempty"`
+	Comment   string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`                      // ≤ 500 characters; always set when REJECTED
+	DecidedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"` // unset while PENDING
+	AddedBy   string                 `protobuf:"bytes,5,opt,name=added_by,json=addedBy,proto3" json:"added_by,omitempty"`
+	AddedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=added_at,json=addedAt,proto3" json:"added_at,omitempty"`
+	// ADR-0108: the board manager (MANAGE_BOARD) who recorded this approval on the approver's
+	// behalf; empty for the approver's own vote, and when that manager's account was deleted
+	// (on_behalf stays true). Cleared with on_behalf.
+	RecordedBy string `protobuf:"bytes,7,opt,name=recorded_by,json=recordedBy,proto3" json:"recorded_by,omitempty"`
+	// ADR-0108: this approval was recorded on the approver's behalf, not cast by them. Only with
+	// state APPROVED; cleared by any later change of the vote (the approver's own vote, a
+	// withdrawal, a reset).
+	OnBehalf      bool `protobuf:"varint,8,opt,name=on_behalf,json=onBehalf,proto3" json:"on_behalf,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2495,6 +2508,20 @@ func (x *TaskApprover) GetAddedAt() *timestamppb.Timestamp {
 		return x.AddedAt
 	}
 	return nil
+}
+
+func (x *TaskApprover) GetRecordedBy() string {
+	if x != nil {
+		return x.RecordedBy
+	}
+	return ""
+}
+
+func (x *TaskApprover) GetOnBehalf() bool {
+	if x != nil {
+		return x.OnBehalf
+	}
+	return false
 }
 
 type TaskRelation struct {
@@ -3003,7 +3030,12 @@ func (x *Task) GetWatcherIds() []string {
 // "approved" | "rejected", "comment"}; "approvals_reset" — the title / description / its
 // attachments changed and every vote went back to pending: before {"approved": n,
 // "rejected": n}. A vote or a change of approvers that decides the task also carries
-// after.approval_state "approved" | "rejected" (ADR-0060). "git" (ADR-0060 §4): after {"event":
+// after.approval_state "approved" | "rejected" (ADR-0060). ADR-0108: an "approval" a board
+// manager recorded or withdrew for the approver (user_id) has actor = the manager and
+// after.on_behalf true; before.on_behalf (and recorded_by, its author) marks a replaced one;
+// "approval_override" — a status moved forward past an incomplete approval: after
+// {"from_status_id", "status_id", "approved", "quorum", "rejected"} (the "status" entry is
+// written as well). "git" (ADR-0060 §4): after {"event":
 // the RuleGitEvent name without its prefix, "kind": "branch" | "pr" | "commit", "provider",
 // "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push};
 // before {"state", "title"} of a pull request that changed.
@@ -3767,7 +3799,7 @@ func (x *SetBoardPositionRequest) GetCategoryId() string {
 	return ""
 }
 
-// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; PUT: people only). Like room overrides:
+// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; bots too, ADR-0109). Like room overrides:
 // ≤ 100 targets, only board bits (VIEW_BOARD, CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD), a
 // non-administrator may only grant / remove bits they hold on the board.
 type SetBoardPermissionsRequest struct {
@@ -4689,8 +4721,14 @@ type UpdateTaskRequest struct {
 	// A subtask's milestone (ADR-0063): one of its parent's (422 "taskMilestoneId" otherwise);
 	// "" = none. MILESTONES off: a new value is 409 FEATURE_DISABLED.
 	TaskMilestoneId *string `protobuf:"bytes,17,opt,name=task_milestone_id,json=taskMilestoneId,proto3,oneof" json:"task_milestone_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// ADR-0108: move the status forward although the approval is not complete (the gate of
+	// ADR-0049 §2 would answer 409 TASK_APPROVAL_REQUIRED). Only for MANAGE_BOARD on the task's
+	// board and a human (403 APPROVAL_OVERRIDE_DENIED otherwise, BOT_NOT_ALLOWED for a bot and a
+	// bot on behalf of its owner); journal "approval_override". Ignored when the gate does not
+	// hold the move; never applies to a move to another board (board_id).
+	OverrideApproval bool `protobuf:"varint,18,opt,name=override_approval,json=overrideApproval,proto3" json:"override_approval,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateTaskRequest) Reset() {
@@ -4842,6 +4880,13 @@ func (x *UpdateTaskRequest) GetTaskMilestoneId() string {
 	return ""
 }
 
+func (x *UpdateTaskRequest) GetOverrideApproval() bool {
+	if x != nil {
+		return x.OverrideApproval
+	}
+	return false
+}
+
 // PUT /api/tasks/{id}/assignees (the full list, ≤ 10; exactly one is_lead when not empty) →
 // TaskResponse. New assignees are subscribed and notified.
 type SetAssigneesRequest struct {
@@ -4953,9 +4998,16 @@ func (x *SetTaskApproversRequest) GetRequired() uint32 {
 // REJECT (422). A vote may change any time. Journal "approval"; the quorum reached notifies
 // APPROVED, a rejection REJECTED (see TaskNoticeKind).
 type TaskApprovalRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Decision      TaskApprovalDecision   `protobuf:"varint,1,opt,name=decision,proto3,enum=calaba.v1.TaskApprovalDecision" json:"decision,omitempty"`
-	Comment       string                 `protobuf:"bytes,2,opt,name=comment,proto3" json:"comment,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Decision TaskApprovalDecision   `protobuf:"varint,1,opt,name=decision,proto3,enum=calaba.v1.TaskApprovalDecision" json:"decision,omitempty"`
+	Comment  string                 `protobuf:"bytes,2,opt,name=comment,proto3" json:"comment,omitempty"`
+	// ADR-0108: an approver of the task the vote is recorded for, by a board manager
+	// (MANAGE_BOARD, a human: 403 APPROVAL_ON_BEHALF_DENIED / BOT_NOT_ALLOWED otherwise). APPROVE
+	// only over a PENDING vote (409 APPROVER_DECIDED over the approver's own decision); WITHDRAW
+	// only of an approval recorded on behalf (409 APPROVER_DECIDED); REJECT is personal (422
+	// "decision"). Not an approver: 422 "onBehalfOf". The caller's own id = their own vote.
+	// Journal "approval" with on_behalf; the approver gets APPROVED_ON_BEHALF.
+	OnBehalfOf    string `protobuf:"bytes,3,opt,name=on_behalf_of,json=onBehalfOf,proto3" json:"on_behalf_of,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5000,6 +5052,13 @@ func (x *TaskApprovalRequest) GetDecision() TaskApprovalDecision {
 func (x *TaskApprovalRequest) GetComment() string {
 	if x != nil {
 		return x.Comment
+	}
+	return ""
+}
+
+func (x *TaskApprovalRequest) GetOnBehalfOf() string {
+	if x != nil {
+		return x.OnBehalfOf
 	}
 	return ""
 }
@@ -8749,7 +8808,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x11TaskAssigneeInput\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +
-	"\x04note\x18\x03 \x01(\tR\x04note\"\xfe\x01\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"\xbc\x02\n" +
 	"\fTaskApprover\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12.\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x18.calaba.v1.ApproverStateR\x05state\x12\x18\n" +
@@ -8757,7 +8816,10 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\n" +
 	"decided_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tdecidedAt\x12\x19\n" +
 	"\badded_by\x18\x05 \x01(\tR\aaddedBy\x125\n" +
-	"\badded_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aaddedAt\"w\n" +
+	"\badded_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aaddedAt\x12\x1f\n" +
+	"\vrecorded_by\x18\a \x01(\tR\n" +
+	"recordedBy\x12\x1b\n" +
+	"\ton_behalf\x18\b \x01(\bR\bonBehalf\"w\n" +
 	"\fTaskRelation\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
 	"\n" +
@@ -8993,7 +9055,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\arelated\x18\x03 \x03(\v2\x0f.calaba.v1.TaskR\arelated\x12'\n" +
 	"\x06parent\x18\x04 \x01(\v2\x0f.calaba.v1.TaskR\x06parent\x12&\n" +
 	"\x05board\x18\x05 \x01(\v2\x10.calaba.v1.BoardR\x05board\x12#\n" +
-	"\x04room\x18\x06 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\x9b\x06\n" +
+	"\x04room\x18\x06 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\xc8\x06\n" +
 	"\x11UpdateTaskRequest\x12\x19\n" +
 	"\x05title\x18\x01 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12 \n" +
@@ -9014,7 +9076,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x0fset_attachments\x18\x0f \x01(\bR\x0esetAttachments\x12%\n" +
 	"\x0eattachment_ids\x18\x10 \x03(\tR\rattachmentIds\x12/\n" +
 	"\x11task_milestone_id\x18\x11 \x01(\tH\n" +
-	"R\x0ftaskMilestoneId\x88\x01\x01B\b\n" +
+	"R\x0ftaskMilestoneId\x88\x01\x01\x12+\n" +
+	"\x11override_approval\x18\x12 \x01(\bR\x10overrideApprovalB\b\n" +
 	"\x06_titleB\x0e\n" +
 	"\f_descriptionB\f\n" +
 	"\n" +
@@ -9032,10 +9095,12 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\tassignees\x18\x01 \x03(\v2\x1c.calaba.v1.TaskAssigneeInputR\tassignees\"P\n" +
 	"\x17SetTaskApproversRequest\x12\x19\n" +
 	"\buser_ids\x18\x01 \x03(\tR\auserIds\x12\x1a\n" +
-	"\brequired\x18\x02 \x01(\rR\brequired\"l\n" +
+	"\brequired\x18\x02 \x01(\rR\brequired\"\x8e\x01\n" +
 	"\x13TaskApprovalRequest\x12;\n" +
 	"\bdecision\x18\x01 \x01(\x0e2\x1f.calaba.v1.TaskApprovalDecisionR\bdecision\x12\x18\n" +
-	"\acomment\x18\x02 \x01(\tR\acomment\"h\n" +
+	"\acomment\x18\x02 \x01(\tR\acomment\x12 \n" +
+	"\fon_behalf_of\x18\x03 \x01(\tR\n" +
+	"onBehalfOf\"h\n" +
 	"\x16SetTaskRelationRequest\x12\x1d\n" +
 	"\n" +
 	"related_id\x18\x01 \x01(\tR\trelatedId\x12/\n" +
@@ -9451,7 +9516,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x1fTASK_APPROVAL_DECISION_WITHDRAW\x10\x03*j\n" +
 	"\x17BoardWebhookPauseReason\x12*\n" +
 	"&BOARD_WEBHOOK_PAUSE_REASON_UNSPECIFIED\x10\x00\x12#\n" +
-	"\x1fBOARD_WEBHOOK_PAUSE_REASON_PLAN\x10\x01*\x8a\x05\n" +
+	"\x1fBOARD_WEBHOOK_PAUSE_REASON_PLAN\x10\x01*\xb3\x05\n" +
 	"\x0eTaskNoticeKind\x12 \n" +
 	"\x1cTASK_NOTICE_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_ASSIGNED\x10\x01\x12\x1e\n" +
@@ -9473,7 +9538,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x16TASK_NOTICE_KIND_MOVED\x10\x10\x12\x1b\n" +
 	"\x17TASK_NOTICE_KIND_EDITED\x10\x11\x12\x1f\n" +
 	"\x1bTASK_NOTICE_KIND_ATTACHMENT\x10\x12\x12\x1d\n" +
-	"\x19TASK_NOTICE_KIND_ARCHIVED\x10\x13*u\n" +
+	"\x19TASK_NOTICE_KIND_ARCHIVED\x10\x13\x12'\n" +
+	"#TASK_NOTICE_KIND_APPROVED_ON_BEHALF\x10\x14*u\n" +
 	"\vGitProvider\x12\x1c\n" +
 	"\x18GIT_PROVIDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13GIT_PROVIDER_GITHUB\x10\x01\x12\x17\n" +

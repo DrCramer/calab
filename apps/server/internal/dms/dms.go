@@ -108,6 +108,11 @@ func List(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]*v1.DmSumma
 	return out, nil
 }
 
+// One returns the summary of one DM as userID sees it (DM_CREATE of a DM the server opens).
+func One(ctx context.Context, q *sqlc.Queries, userID, roomID uuid.UUID) (*v1.DmSummary, error) {
+	return one(ctx, q, userID, roomID)
+}
+
 // one returns the summary of one DM as userID sees it.
 func one(ctx context.Context, q *sqlc.Queries, userID, roomID uuid.UUID) (*v1.DmSummary, error) {
 	rows, err := q.ListDMs(ctx, sqlc.ListDMsParams{UserID: userID, RoomID: &roomID, Lim: 1})

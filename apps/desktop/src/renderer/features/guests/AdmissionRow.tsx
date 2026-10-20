@@ -1,4 +1,4 @@
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Check, Pencil, Tag } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';

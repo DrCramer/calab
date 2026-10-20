@@ -5,7 +5,7 @@ import { useDiskUi } from './diskUi';
 import { useWikiUi } from './wikiUi';
 
 /**
- * The «Холст» section's UI state (ADR-0107 §5): whether the section covers the column and the
+ * The «Холст» section's UI state (ADR-0113 §5): whether the section covers the column and the
  * centre, the open item of each workspace, the trash view, the expanded tree nodes, the tree
  * column's width (persisted), the tree's name filter and the dialog on top. The open canvas's own
  * chrome (connection notices, who else is on it) belongs to the lazy canvas view, not to this store.

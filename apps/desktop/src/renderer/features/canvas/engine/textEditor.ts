@@ -26,7 +26,7 @@ export interface TextEditorOptions {
 
 /**
  * A real `<textarea>` over the object while it is edited — IME, autocorrect and selection come for free,
- * which canvas text cannot do (ADR-0107 §4). The result is written once, on commit (blur, Escape,
+ * which canvas text cannot do (ADR-0113 §4). The result is written once, on commit (blur, Escape,
  * ⌘/Ctrl+Enter), by the caller. Key events never reach the engine's hotkeys: the textarea is not inside
  * the canvas.
  */

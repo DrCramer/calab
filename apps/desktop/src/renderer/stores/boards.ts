@@ -164,6 +164,15 @@ export function unreadCount(s: Pick<BoardsData, 'unread'>, workspaceId: string):
   return n;
 }
 
+/** Whether a board has an open unread task assigned to me (the sidebar count turns accent) — a primitive, safe as a selector. */
+export function boardHasUnread(s: Pick<BoardsData, 'unread' | 'tasks'>, boardId: string, me: string): boolean {
+  for (const id in s.unread) {
+    const t = s.tasks[id];
+    if (t && t.boardId === boardId && !t.completedAt && t.assignees.some((a) => a.userId === me)) return true;
+  }
+  return false;
+}
+
 /** The unread task ids of a workspace (call inside useShallow). */
 export function unreadIds(s: Pick<BoardsData, 'unread'>, workspaceId: string): string[] {
   const out: string[] = [];

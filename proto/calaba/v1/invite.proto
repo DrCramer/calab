@@ -58,12 +58,24 @@ message CreateRoomInviteResponse {
   RoomInvite invite = 1;
 }
 
-// PATCH /api/rooms/{id}/invites/{invite_id} (INVITE_GUESTS): the link's approval setting
-// (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
-// unset); otherwise require_approval, when set, overrides the room for this link.
+// PATCH /api/rooms/{id}/invites/{invite_id}: changes an active link; only the fields that are
+// set change, at least one. Approval (ADR-0040): inherit_approval true resets it to the room's
+// (require_approval must then be unset); otherwise require_approval, when set, overrides the
+// room for this link; INVITE_GUESTS, guest links only. The rest (ADR-0107) with the right to
+// manage this kind of link, as when creating it (INVITE_GUESTS; a members_only link also with
+// INVITE_MEMBERS or as the creator of the temporary room); never on a meeting guest link
+// (event_id). expires_in_seconds counts from now, 0 = never, ≤ 365 days; max_uses 0 = unlimited,
+// ≤ 10000 and above the uses so far; allow_* within the caller's own rights. members_only and
+// allow_guests never change (a new link instead).
 message UpdateRoomInviteRequest {
   optional bool require_approval = 1;
   bool inherit_approval = 2;
+  optional uint32 expires_in_seconds = 3;
+  optional uint32 max_uses = 4;
+  optional bool allow_speak = 5;
+  optional bool allow_messages = 6;
+  optional bool allow_files = 7;
+  optional bool allow_stream = 8;
 }
 
 message UpdateRoomInviteResponse {

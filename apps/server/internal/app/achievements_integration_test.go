@@ -83,7 +83,7 @@ func getRaw(t *testing.T, token, path string, header map[string]string) (*rawRes
 }
 
 // TestAchievements (ADR-0061, amendment 1): the workspace catalog — MANAGE_WORKSPACE for the
-// owner and admins (a member 403, a bot token 403 BOT_NOT_ALLOWED), the picture from the caller's
+// owner and admins (a member 403, a bot by the same bits, ADR-0109), the picture from the caller's
 // own upload made into a new workspace file (IMAGE_NEEDS_ALPHA; someone else's or another
 // workspace's upload refused), read by every member and guest and not by outsiders, the
 // WORKSPACE_ACHIEVEMENTS_UPDATE event, the list with ETag, archive, replace, 409 on delete with
@@ -237,15 +237,16 @@ func TestAchievements(t *testing.T) {
 	grant(o, bob.id, foreign.GetId(), "Чужая", true, 422)
 	b := createBot(t, o, wid, "Helper")
 	grant(o, b.id, medal.GetId(), "Боту", true, 422)
+	// A bot works by its bits like a person (ADR-0109): without MANAGE_MEMBERS / MANAGE_WORKSPACE
+	// the handler refuses (with them: TestBotAPIv3Content).
 	b.must(403, "POST", base+bob.id+"/achievements", &v1.GrantAchievementRequest{AchievementId: medal.GetId(), Note: "От бота", Announce: true}, nil)
-	if r, _ := errReason(b.client); r != "BOT_NOT_ALLOWED" {
-		t.Fatalf("bot grant reason %q", r)
+	if r, _ := errReason(b.client); r == "BOT_NOT_ALLOWED" {
+		t.Fatal("bot grant closed by the route table")
 	}
-	// Bots read the catalog, never change it.
 	b.must(200, "GET", cat, nil, nil)
 	b.must(403, "POST", cat, &v1.CreateAchievementRequest{Title: "Бот", FileId: pic}, nil)
-	if r, _ := errReason(b.client); r != "BOT_NOT_ALLOWED" {
-		t.Fatalf("bot create reason %q", r)
+	if r, _ := errReason(b.client); r == "BOT_NOT_ALLOWED" {
+		t.Fatal("bot catalog closed by the route table")
 	}
 	b.must(403, "PATCH", "/api/achievements/"+medal.GetId(), &v1.UpdateAchievementRequest{Title: &title}, nil)
 	b.must(403, "DELETE", "/api/achievements/"+old.GetId(), nil, nil)
