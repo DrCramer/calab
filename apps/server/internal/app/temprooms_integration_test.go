@@ -189,9 +189,12 @@ func TestTempRooms(t *testing.T) {
 	// ADR-0078 addendum 2026-10-14: a permanent room switches private / public too.
 	o.must(200, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IsPrivate: &tr}, nil)
 
-	// Limits: 5 live per creator, 20 per workspace.
-	for i := range 3 {
-		tempRoom(t, bob, wid, &v1.CreateTempRoomRequest{Name: "r" + string(rune('a'+i)), TtlSeconds: 900, Guests: noGuests()})
+	// Limits follow the workspace plan (Free: 3 live per creator, TempRooms in plans.Limits): create
+	// until the cap answers 409, then the next create reports it.
+	for i := 0; i < 60; i++ {
+		if bob.client.do("POST", base, &v1.CreateTempRoomRequest{Name: "r" + string(rune('a'+i%26)), TtlSeconds: 900, Guests: noGuests()}, &v1.TempRoomResponse{}) == 409 {
+			break
+		}
 	}
 	c, reason := apiErrOf(t, bob.client, 409, "POST", base, &v1.CreateTempRoomRequest{Name: "6th", TtlSeconds: 900, Guests: noGuests()})
 	if c != v1.ErrorCode_ERROR_CODE_TEMP_ROOM_LIMIT || reason != "PER_USER" {
