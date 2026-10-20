@@ -338,29 +338,29 @@ const ApproverRow = memo(function ApproverRow({
         : t('boards.apvState.pending', { name });
   const status = proxied ? t('boards.apv.approvedFor', { actor }) : state === ApproverState.APPROVED ? t('boards.apv.approved') : state === ApproverState.REJECTED ? t('boards.apv.rejected') : t('boards.apv.pending');
   return (
-    <div className="group/ap flex min-h-8 items-center gap-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="approver-row" data-user={userId} data-state={ApproverState[state].toLowerCase()}>
+    <div className="group/ap flex min-h-8 items-start gap-2 rounded-[var(--radius-row)] px-1 py-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="approver-row" data-user={userId} data-state={ApproverState[state].toLowerCase()}>
       <Tip label={tip}>
-        <span className="relative shrink-0" tabIndex={0} aria-label={tip}>
+        <span className="relative mt-0.5 shrink-0" tabIndex={0} aria-label={tip}>
           <MemberAvatar workspaceId={workspaceId} userId={userId} size={20} />
           <StateMark state={state} />
         </span>
       </Tip>
-      <span className="min-w-0 flex-1 truncate text-control font-medium">{name}</span>
-      <FormerChip workspaceId={workspaceId} userId={userId} />
+      <span className="min-w-0 flex-1 break-words py-0.5 text-control font-medium">{name}</span>
+      <FormerChip workspaceId={workspaceId} userId={userId} className="mt-1" />
       {state === ApproverState.REJECTED && comment ? (
         <Tip label={comment}>
-          <span className="min-w-0 max-w-[45%] truncate text-caption text-danger-text" data-testid="approver-comment">
+          <span className="min-w-0 max-w-[50%] shrink-0 break-words py-0.5 text-right text-caption text-danger-text" data-testid="approver-comment">
             {comment}
           </span>
         </Tip>
       ) : proxied ? (
         <Tip label={tip}>
-          <span className="min-w-0 max-w-[50%] shrink truncate text-caption text-[var(--color-green-text)]" data-testid="approver-recorded-by">
+          <span className="min-w-0 max-w-[50%] shrink-0 break-words py-0.5 text-right text-caption text-[var(--color-green-text)]" data-testid="approver-recorded-by">
             {status}
           </span>
         </Tip>
       ) : (
-        <span className={cx('shrink-0 text-caption', state === ApproverState.APPROVED ? 'text-[var(--color-green-text)]' : state === ApproverState.REJECTED ? 'text-danger-text' : 'text-muted')}>{status}</span>
+        <span className={cx('shrink-0 py-0.5 text-right text-caption', state === ApproverState.APPROVED ? 'text-[var(--color-green-text)]' : state === ApproverState.REJECTED ? 'text-danger-text' : 'text-muted')}>{status}</span>
       )}
       {action && onBehalf ? (
         <OnBehalfMenu name={name} userId={userId} action={action} onBehalf={onBehalf} tip={t('boards.approverActions', { name })}>
