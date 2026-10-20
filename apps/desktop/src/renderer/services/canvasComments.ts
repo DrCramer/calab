@@ -187,6 +187,11 @@ export function onCanvasCommentDelete(e: CanvasCommentDelete): void {
   useCanvasComments.getState().remove(e.canvasId, e.commentId);
 }
 
+/** A fresh READY (events may have been missed): the canvases whose comments are held read them again. */
+export function resyncCanvasComments(): void {
+  for (const id of Object.keys(useCanvasComments.getState().loaded)) void loadComments(id);
+}
+
 /** The canvas left my reach (CANVAS_ITEM_REMOVE): its comments go too. */
 export function forgetCanvasComments(canvasId: string): void {
   useCanvasComments.getState().forget(canvasId);

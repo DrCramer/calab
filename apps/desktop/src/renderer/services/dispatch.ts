@@ -76,7 +76,7 @@ import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
 import { useDisk } from '../stores/disk';
 import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
 import { onCanvasItemRemove, onCanvasItemUpsert } from './canvas';
-import { onCanvasCommentDelete, onCanvasCommentMention, onCanvasCommentUpsert } from './canvasComments';
+import { onCanvasCommentDelete, onCanvasCommentMention, onCanvasCommentUpsert, resyncCanvasComments } from './canvasComments';
 import { restoreSectionOnBoot } from '../features/shell/sectionNav';
 import { useCanvas } from '../stores/canvas';
 import { useWiki } from '../stores/wiki';
@@ -174,6 +174,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWebApps.getState().reset();
       // Meeting comments missed while away (ADR-0104): an open card refetches its thread.
       useEventComments.getState().reset();
+      // Canvas comments missed while away (ADR-0114 wave 4): the held canvases read theirs again.
+      resyncCanvasComments();
       // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
       useReadReceipts.getState().reset();
       for (const pr of r.peerReads) useReadReceipts.getState().set(pr.roomId, pr.lastReadMessageId);
