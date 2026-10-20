@@ -466,6 +466,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.gate.pending': 'Se necesita aprobación: {n} de {m}',
   'boards.gate.rejected': 'Rechazada: {name}',
   'boards.gate.hint': 'se necesita aprobación',
+  'boards.gate.hintRejected': 'rechazado por un aprobador',
   'boards.gate.bulk': 'No se movieron — esperan aprobación: {keys}',
   'boards.notice.assigned': '{name} te asignó',
   'boards.notice.mentioned': '{name} te mencionó',

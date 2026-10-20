@@ -28,7 +28,7 @@ import { Choice as ChoiceSwitch } from '../../components/Choice';
 import { t } from '../../i18n';
 import { Markdown } from '../../lib/markdown/Markdown';
 import type { ActivityTab } from '../../lib/boards/activity';
-import { approvalsWouldReset, blockedStatusIds, decidedApprovers } from '../../lib/boards/approvals';
+import { approvalsWouldReset, blockedStatusIds, decidedApprovers, gateReason } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, replaceAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
@@ -521,6 +521,10 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
   const blocked = useMemo(() => blockedStatusIds(task, statuses ?? []), [task, statuses]);
+  // Why they are disabled: «1/3» or «rejected» instead of the bare «approval needed».
+  const reason = gateReason(task);
+  const gateKey = !reason ? '' : reason.kind === 'rejected' ? 'r' : `${reason.n}/${reason.m}`;
+  const blockedNote = useMemo(() => (gateKey === '' ? undefined : gateKey === 'r' ? t('boards.gate.hintRejected') : `${t('boards.gate.hint')} ${gateKey}`), [gateKey]);
   // ADR-0108: a board manager may still pick them (marked), after a confirmation.
   const manage = !scoped && hasBit(perms, MANAGE_BOARD);
   const labels = useBoards((s) => s.boards[task.boardId]?.labels);
@@ -537,7 +541,7 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
     <section className={cx('flex flex-col gap-0.5', !bare && 'rounded-[var(--radius-card)] border border-line p-2')} aria-label={t('boards.properties')} data-testid="task-properties">
       {task.createdBy ? <AuthorProp task={task} /> : null}
       <Prop label={t('boards.f.status')}>
-        <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} overridable={manage} onPick={(s) => void pickStatus(task.id, s, manage)} {...req('status')}>
+        <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} blockedNote={blockedNote} overridable={manage} onPick={(s) => void pickStatus(task.id, s, manage)} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} /> <span className="truncate">{status?.name ?? ''}</span>
           </button>

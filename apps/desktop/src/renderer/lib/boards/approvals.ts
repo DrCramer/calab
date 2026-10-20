@@ -69,6 +69,19 @@ export function statusPick(t: Pick<Task, 'approvalState' | 'statusId'>, statuses
   return manage ? 'override' : 'blocked';
 }
 
+/**
+ * Why the gate holds a task, as the hint of a disabled status: «1/3» while waiting, «rejected»
+ * after a veto, null when nothing holds it. Primitive-keyed input of `approvalTagKey`.
+ */
+export type GateReason = { kind: 'pending'; n: number; m: number } | { kind: 'rejected' } | null;
+
+export function gateReason(t: Approvals): GateReason {
+  if (!approvalBlocks(t)) return null;
+  if (t.approvalState === TaskApprovalState.REJECTED) return { kind: 'rejected' };
+  const m = quorumOf(t);
+  return { kind: 'pending', n: Math.min(approvedCount(t), m), m };
+}
+
 /** The card / row badge: nothing without approvers. */
 export type ApprovalBadge = { kind: 'pending'; approved: number; quorum: number } | { kind: 'approved' } | { kind: 'rejected' } | null;
 

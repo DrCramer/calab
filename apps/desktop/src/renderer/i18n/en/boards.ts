@@ -466,6 +466,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.gate.pending': 'Approval needed: {n} of {m}',
   'boards.gate.rejected': 'Rejected: {name}',
   'boards.gate.hint': 'approval needed',
+  'boards.gate.hintRejected': 'rejected by an approver',
   'boards.gate.bulk': 'Not moved — awaiting approval: {keys}',
   'boards.notice.assigned': '{name} assigned you',
   'boards.notice.mentioned': '{name} mentioned you',

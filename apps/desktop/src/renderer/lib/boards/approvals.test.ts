@@ -2,7 +2,7 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { ApproverState, BoardFeature, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { approvalBadge, approvalTagKey, parseApprovalTag, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, onBehalfAction, quorumChoices, quorumOf, statusPick, toggleApprover, MAX_APPROVERS } from './approvals';
+import { approvalBadge, approvalTagKey, parseApprovalTag, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, gateReason, mayMoveTo, onBehalfAction, quorumChoices, quorumOf, statusPick, toggleApprover, MAX_APPROVERS } from './approvals';
 
 // ADR-0049 «Контракт для клиента»: the gate mirrors the server's checkApprovalGate.
 const st = (id: string, position: number, type = BoardStatusType.UNSTARTED) => create(BoardStatusSchema, { id, position, type });
@@ -162,5 +162,18 @@ describe('approvalTagKey (the card / row tag)', () => {
   it('parses back', () => {
     expect(parseApprovalTag('pending:2:3')).toEqual({ kind: 'pending', n: 2, m: 3 });
     expect(parseApprovalTag('')).toBeNull();
+  });
+});
+
+describe('gateReason', () => {
+  const A = ApproverState.APPROVED;
+  const P = ApproverState.PENDING;
+  const ap = (userId: string, state: ApproverState) => ({ userId, state, comment: '', decidedAt: undefined, onBehalf: false }) as never;
+  it('pending shows approvals of the quorum, rejected a veto, nothing otherwise', () => {
+    const t = { approvalState: TaskApprovalState.PENDING, approvalRequired: 0, approvers: [ap('a', A), ap('b', P), ap('c', P)] };
+    expect(gateReason(t)).toEqual({ kind: 'pending', n: 1, m: 3 });
+    expect(gateReason({ ...t, approvalState: TaskApprovalState.REJECTED })).toEqual({ kind: 'rejected' });
+    expect(gateReason({ ...t, approvalState: TaskApprovalState.APPROVED })).toBeNull();
+    expect(gateReason({ ...t, approvalState: TaskApprovalState.NONE })).toBeNull();
   });
 });
