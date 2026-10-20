@@ -12,6 +12,7 @@ export const zhTemp = {
   'temp.preset.1d': '1 天',
   'temp.preset.3d': '3 天',
   'temp.preset.7d': '7 天',
+  'temp.preset.30d': '30 天',
   'temp.preset.date': '到指定日期',
   'temp.closesAt': '将于 {when} 关闭',
   'temp.untilDate': '关闭日期和时间',

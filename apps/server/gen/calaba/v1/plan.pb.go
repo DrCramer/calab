@@ -103,6 +103,7 @@ type PlanLimits struct {
 	BoardWebhooksDisabled bool                   `protobuf:"varint,30,opt,name=board_webhooks_disabled,json=boardWebhooksDisabled,proto3" json:"board_webhooks_disabled,omitempty"`               // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
 	TelephonyDisabled     bool                   `protobuf:"varint,31,opt,name=telephony_disabled,json=telephonyDisabled,proto3" json:"telephony_disabled,omitempty"`                             // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
 	AutomationsDisabled   bool                   `protobuf:"varint,32,opt,name=automations_disabled,json=automationsDisabled,proto3" json:"automations_disabled,omitempty"`                       // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
+	TempRooms             uint32                 `protobuf:"varint,35,opt,name=temp_rooms,json=tempRooms,proto3" json:"temp_rooms,omitempty"`                                                     // live temporary rooms per creator (ADR-0044, CBF-38); 0 = no plan limit
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -298,6 +299,13 @@ func (x *PlanLimits) GetAutomationsDisabled() bool {
 	return false
 }
 
+func (x *PlanLimits) GetTempRooms() uint32 {
+	if x != nil {
+		return x.TempRooms
+	}
+	return 0
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state                protoimpl.MessageState         `protogen:"open.v1"`
@@ -398,7 +406,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xef\a\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\x8e\b\n" +
 	"\n" +
 	"PlanLimits\x120\n" +
 	"\x14board_forms_disabled\x18! \x01(\bR\x12boardFormsDisabled\x121\n" +
@@ -426,7 +434,9 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x13checklists_disabled\x18\x1d \x01(\bR\x12checklistsDisabled\x126\n" +
 	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabled\x12-\n" +
 	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabled\x121\n" +
-	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
+	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabled\x12\x1d\n" +
+	"\n" +
+	"temp_rooms\x18# \x01(\rR\ttempRoomsJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

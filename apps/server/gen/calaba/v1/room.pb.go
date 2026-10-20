@@ -1970,7 +1970,7 @@ func (x *SetRoomPermissionsResponse) GetRoom() *Room {
 // role's VIEW_ROOM deny plus a personal allow for the caller and member_ids, the room link
 // (expires with the room; approval as the room's guest_approval) and, with with_event, a
 // calendar meeting. Everyone who sees the room gets ROOM_CREATE (and EVENT_CREATE).
-// Limits: 20 live temporary rooms per workspace, 5 per creator — 409 TEMP_ROOM_LIMIT with
+// Limits: live temporary rooms per workspace (env) and per creator (the plan's temp_rooms) — 409 TEMP_ROOM_LIMIT with
 // used / limit, reason "PER_USER" for the creator's cap.
 type CreateTempRoomRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`

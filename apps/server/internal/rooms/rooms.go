@@ -44,6 +44,8 @@ type Handlers struct {
 	// System publishes the system message room_icon a picture change writes (ADR-0092); nil =
 	// the message is still written, only not published (tests).
 	System SystemCreated
+	// Temp are the limits of temporary rooms (CBF-38); the zero value means the defaults.
+	Temp TempLimits
 }
 
 // SystemCreated publishes MESSAGE_CREATE for a system message inserted in a transaction
@@ -578,7 +580,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Forbidden("INVITE_GUESTS required to change guest_approval")
 	}
 	p.GuestApproval = req.GuestApproval // ADR-0040: MANAGE_ROOM, like the room's links
-	tp, err := tempPatch(&req, acc, time.Now())
+	tp, err := tempPatch(&req, acc, time.Now(), h.Temp)
 	if err != nil {
 		return err
 	}

@@ -34,13 +34,13 @@ func meetingRoomName(title string) string {
 }
 
 // meetingRoomEnd bounds the end of a meeting's room to the lifetime a temporary room may have
-// from now (ADR-0044: 15 minutes .. 7 days).
-func meetingRoomEnd(end, now time.Time) time.Time {
+// from now (ADR-0044: 15 minutes .. TempLimits.MaxTTL).
+func meetingRoomEnd(end, now time.Time, maxTTL time.Duration) time.Time {
 	end = end.Truncate(time.Second)
 	if lo := now.Add(MinTempTTL); end.Before(lo) {
 		end = lo.Truncate(time.Second)
 	}
-	if hi := now.Add(MaxTempTTL); end.After(hi) {
+	if hi := now.Add(maxTTL); end.After(hi) {
 		end = hi.Truncate(time.Second)
 	}
 	return end
@@ -89,8 +89,12 @@ func (h *Handlers) CreateMeetingRoom(ctx context.Context, q *sqlc.Queries, wsID,
 	if people, err = meetingPeople(ctx, q, wsID, creator, people); err != nil {
 		return uuid.Nil, nil, err
 	}
+	userCap, err := h.userCap(ctx, wsID)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
 	made, err := insertTemp(ctx, q, tempSpec{
-		wsID: wsID, creator: creator, name: meetingRoomName(title), expires: meetingRoomEnd(end, time.Now()),
+		wsID: wsID, creator: creator, name: meetingRoomName(title), expires: meetingRoomEnd(end, time.Now(), h.Temp.norm().MaxTTL), lim: h.Temp.norm(), userCap: userCap,
 		private: true, people: people, guests: guests, allow: perm.ViewRoom | TempAllow&bits,
 	})
 	if err != nil {
@@ -122,7 +126,7 @@ func (h *Handlers) MoveMeetingRoom(ctx context.Context, q *sqlc.Queries, roomID,
 	if err != nil || !ok {
 		return nil, err
 	}
-	end = meetingRoomEnd(end, time.Now())
+	end = meetingRoomEnd(end, time.Now(), h.Temp.norm().MaxTTL)
 	if end.Equal(*cur.ExpiresAt) {
 		return nil, nil
 	}

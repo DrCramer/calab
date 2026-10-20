@@ -92,7 +92,7 @@ export async function restoreTempRoom(room: Room): Promise<boolean> {
 /** The limits of live temporary rooms by their reason, else the server's text. */
 function restoreError(e: unknown): string {
   if (e instanceof ApiError && e.is('ERROR_CODE_TEMP_ROOM_LIMIT')) {
-    const limit = e.extra.limit ?? (e.reason === 'PER_USER' ? 5 : 20);
+    const limit = e.extra.limit ?? 50;
     return e.reason === 'PER_USER' ? t('temp.errLimitUser', { limit }) : t('temp.errLimitWs', { limit });
   }
   return errorText(e);

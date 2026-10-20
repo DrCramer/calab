@@ -28,9 +28,9 @@ func TestParseLimitsEnv(t *testing.T) {
 	if err != nil || free != DefaultFree || team != DefaultTeam || biz != DefaultBusiness {
 		t.Fatalf("defaults: %+v %+v %+v %v", free, team, biz, err)
 	}
-	if team != (Limits{BoardFormsPerBoard: 5, RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, WikiPages: 50, StorageMB: 300 * 1024,
+	if team != (Limits{BoardFormsPerBoard: 5, RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, WikiPages: 50, TempRooms: 10, StorageMB: 300 * 1024,
 		StreamsPerRoom: 2, CamerasPerRoom: 10, BoardWebhooksDisabled: true, TelephonyDisabled: true}) ||
-		biz != (Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, WikiPages: 500, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}) {
+		biz != (Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, WikiPages: 500, TempRooms: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}) {
 		t.Fatalf("team / business defaults: %+v %+v", team, biz)
 	}
 
@@ -89,7 +89,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"board_forms_disabled":false,"board_forms_per_board":0,"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"wiki_pages":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"board_webhooks_disabled":false,"telephony_disabled":false,"automations_disabled":false}` {
+	if string(b) != `{"board_forms_disabled":false,"board_forms_per_board":0,"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"temp_rooms":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"wiki_pages":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"board_webhooks_disabled":false,"telephony_disabled":false,"automations_disabled":false}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }

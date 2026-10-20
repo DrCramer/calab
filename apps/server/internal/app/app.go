@@ -420,6 +420,10 @@ func New(d Deps) *App {
 	}).WithFiles(filesSvc).WithVoice(voice.Store{C: d.Redis}.Rooms).WithEmailGate(authSvc.EmailGate()).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
 	roomHandlers.PublicURL = d.Config.PublicAppURL
+	roomHandlers.Temp = rooms.TempLimits{
+		MaxTTL:       time.Duration(d.Config.TempRoomMaxTTLDays) * 24 * time.Hour,
+		PerWorkspace: d.Config.TempRoomsPerWorkspace,
+	}
 	roomHandlers.EmailGate = authSvc.EmailGate()
 	roomHandlers.System = messages.NewSystem(d.DB, pub) // the room picture's system message (ADR-0092)
 	roomHandlers.Routes(mux, private)
