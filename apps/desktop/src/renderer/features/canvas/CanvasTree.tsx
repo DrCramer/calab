@@ -19,7 +19,7 @@ import { menuBox, menuItem } from '../shell/menu';
 import { ItemContextMenu, RenameField } from './ItemMenu';
 
 /**
- * The tree column of «Холст» (ADR-0113 §5, docs/08): the name filter and «+» (Новый холст / Новая
+ * The tree column of «Холст» (ADR-0114 §5, docs/08): the name filter and «+» (Новый холст / Новая
  * папка) on top, folders and canvases as collapsible nodes (children loaded when a folder opens),
  * «Корзина» at the bottom; the trash replaces the tree in the same column. Rows are `memo` and read
  * their item by id; a folder subscribes to its own children's ids — an event re-renders the rows it

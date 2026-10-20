@@ -4,7 +4,7 @@ import type { Scene } from './scene';
 import { isFontToken } from './textLayout';
 import { MAX_OBJECTS, MAX_TEXT, type Endpoint, type InitExtras, type ObjectInit } from './types';
 
-/** Text-clipboard format: prefix + JSON (ADR-0113 §4). */
+/** Text-clipboard format: prefix + JSON (ADR-0114 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
 const VERSION = 1;
 

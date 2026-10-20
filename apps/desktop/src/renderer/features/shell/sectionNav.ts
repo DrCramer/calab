@@ -27,7 +27,7 @@ export function showMode(mode: Mode): void {
   const ui = useUi.getState();
   const boards = useBoardsUi.getState();
   if (mode === 'disk' || mode === 'wiki' || mode === 'canvas') {
-    // «Диск» (ADR-0094 §8) / «Вики» (ADR-0096 §9) / «Холст» (ADR-0113 §5): the boards and the day
+    // «Диск» (ADR-0094 §8) / «Вики» (ADR-0096 §9) / «Холст» (ADR-0114 §5): the boards and the day
     // view off, the section covers the column and the centre; the three are exclusive with each other.
     if (ui.calDay !== null) ui.closeCalendar();
     ui.toggleMiniCal(false);

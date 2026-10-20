@@ -6,7 +6,7 @@ import { canvasApi } from '../../services/canvas';
 import { toast } from '../../stores/toasts';
 
 /**
- * Workspace settings → «Холст» (ADR-0113 §1, CANVAS_MANAGE): how long deleted canvases and folders
+ * Workspace settings → «Холст» (ADR-0114 §1, CANVAS_MANAGE): how long deleted canvases and folders
  * stay in the trash — never (default), 7, 30 or 90 days, as the Disk and the Wiki. Saved on change;
  * a refusal restores the value.
  */

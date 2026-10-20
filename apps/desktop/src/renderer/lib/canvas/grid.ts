@@ -19,7 +19,7 @@ const cellKey = (cx: number, cy: number): number => (cx + OFF) * 65536 + (cy + O
 const cellOf = (v: number): number => Math.max(-OFF + 1, Math.min(OFF - 1, Math.floor(v / CELL)));
 
 /**
- * Uniform grid as a spatial index (ADR-0113 §4): culling by the visible rect and hit-testing touch
+ * Uniform grid as a spatial index (ADR-0114 §4): culling by the visible rect and hit-testing touch
  * only the cells they cover. Ids are dedup'd with a query stamp, no allocation per object.
  */
 export class SpatialGrid {

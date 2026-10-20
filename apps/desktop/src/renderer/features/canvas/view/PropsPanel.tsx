@@ -352,7 +352,7 @@ function ArrangeMenu({ engine, units, focusCanvas }: { engine: CanvasEngine; uni
 }
 
 /**
- * The floating properties panel (ADR-0113 §5). It appears above the selected object and follows it by
+ * The floating properties panel (ADR-0114 §5). It appears above the selected object and follows it by
  * writing `transform` directly from the engine's view events — React renders it only when the selection's
  * displayed values change (selectionModel), never per frame of a drag or pan. Hidden during gestures and
  * text editing.

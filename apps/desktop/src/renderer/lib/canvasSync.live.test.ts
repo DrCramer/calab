@@ -407,7 +407,7 @@ describe.skipIf(!LIVE)("Canvas sync against a live server (H8)", () => {
     const outsider = track(open(open1, dave));
     await waitFor("Dave refused", () => outsider.fatal.length > 0);
     expect(outsider.fatal).toEqual([4003]);
-    // A bot: v1 has no bots on the Canvas (ADR-0113).
+    // A bot: v1 has no bots on the Canvas (ADR-0114).
     const bot = await rest(alice.token, "POST", `/api/workspaces/${ws}/bots`, { displayName: "H8 bot", username: `h8bot_${uniq.replace(/\W/g, "").slice(0, 12)}`, description: "" });
     if (bot.status === 200 || bot.status === 201) {
       const viaBot = track(open(open1, { id: "", token: bot.json.token as string, name: "bot" }));

@@ -91,7 +91,7 @@ interface Vector {
   // ADR-0096: a wiki page vector (wikiPagePermissions over the chain, the top-level page first;
   // structure: wikiStructureAllowed for the owner flag of the last level).
   wiki?: TreeVector & { structure: boolean };
-  // ADR-0113: a canvas item vector (canvasItemPermissions over the chain, the top-level item
+  // ADR-0114: a canvas item vector (canvasItemPermissions over the chain, the top-level item
   // first; structure: canvasStructureAllowed for the owner flag of the last level).
   canvas?: TreeVector & { structure: boolean };
   expected: number;
@@ -516,7 +516,7 @@ describe('wiki bits (ADR-0096)', () => {
   });
 });
 
-describe('canvas bits (ADR-0113)', () => {
+describe('canvas bits (ADR-0114)', () => {
   it('stand apart like the wiki bits; VIEW | WRITE by default', () => {
     expect(CANVAS_PERMISSIONS).toBe(0x7n << 41n);
     expect(ALL_PERMISSIONS & CANVAS_PERMISSIONS).toBe(0n);

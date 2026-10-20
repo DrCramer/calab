@@ -1,4 +1,4 @@
-/** Text wrapping with a cache keyed by (text, size, width) — ADR-0113 §4. Pure given a measure function. */
+/** Text wrapping with a cache keyed by (text, size, width) — ADR-0114 §4. Pure given a measure function. */
 import { F_BOLD, F_ITALIC, flagsOf, listNumbers, paragraphCount, type Fmt } from './richText';
 import type { BoxRec } from './types';
 
@@ -10,7 +10,7 @@ export const STICKY_TEXT_SIZE = 18;
 export const SHAPE_TEXT_SIZE = 16;
 export const LABEL_SIZE = 13;
 
-/** Font-size tokens of the object-level `fontSize` (ADR-0114): S, M (the default, absent in the doc), L, XL. */
+/** Font-size tokens of the object-level `fontSize` (ADR-0115): S, M (the default, absent in the doc), L, XL. */
 export type FontToken = 's' | 'm' | 'l' | 'xl';
 export const FONT_TOKENS: readonly FontToken[] = ['s', 'm', 'l', 'xl'];
 export const isFontToken = (v: unknown): v is FontToken => v === 's' || v === 'm' || v === 'l' || v === 'xl';

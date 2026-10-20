@@ -1,4 +1,4 @@
--- The public read-only link of a canvas (ADR-0114 wave 5): whoever has the link sees the canvas
+-- The public read-only link of a canvas (ADR-0115 wave 5): whoever has the link sees the canvas
 -- through an anonymous receive-only sync socket, never writes it and never sees who is on it.
 --
 -- canvas_links     one row per link ever made. code is the credential: 43 characters, base64url

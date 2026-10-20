@@ -20,12 +20,12 @@ import (
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
-// The sync socket GET /api/canvas/items/{id}/sync (ADR-0113 §3, docs/05 «Сокет синхронизации») is
+// The sync socket GET /api/canvas/items/{id}/sync (ADR-0114 §3, docs/05 «Сокет синхронизации») is
 // internal/ysync, shared with the Wiki; this file is the Canvas's side of it (canvasBackend): its
 // storage, the access rule of a socket and what a posted snapshot also changes — the text and
 // preview for search, the size and the versions.
 
-// Limits of the protocol (ADR-0113 §3).
+// Limits of the protocol (ADR-0114 §3).
 const (
 	// MaxState is the largest snapshot state in bytes (the CHECK of canvas_snapshots).
 	MaxState = 4 << 20
@@ -35,7 +35,7 @@ const (
 	MaxVersions = 50
 )
 
-// defaultVersionEvery: a version at most this often per canvas (ADR-0113 §1).
+// defaultVersionEvery: a version at most this often per canvas (ADR-0114 §1).
 const defaultVersionEvery = 10 * time.Minute
 
 // canvasBackend is the Canvas's ysync.Backend.
@@ -96,7 +96,7 @@ func (canvasBackend) DeleteUpdatesThrough(ctx context.Context, q *sqlc.Queries, 
 // the write policy) makes the socket read-only.
 func (b canvasBackend) Authorize(ctx context.Context, id auth.Identity, item uuid.UUID) (bool, int, string) {
 	if id.IsBot {
-		return false, ysync.CloseForbidden, "bots have no access to the Canvas yet" // v2 (ADR-0113)
+		return false, ysync.CloseForbidden, "bots have no access to the Canvas yet" // v2 (ADR-0114)
 	}
 	q := b.s.db.Q
 	ctx = b.auth.WithPolicy(ctx, id, identitypolicy.WorkspaceRead)
@@ -163,7 +163,7 @@ func (canvasBackend) DecodeMeta(raw []byte) (any, bool, error) {
 	return meta, meta.Broadcast, nil
 }
 
-// PostSnapshot stores a snapshot (ADR-0113 §3): in one transaction it checks through_seq against
+// PostSnapshot stores a snapshot (ADR-0114 §3): in one transaction it checks through_seq against
 // the stored snapshot and the canvas's counter, saves it, drops the updates it contains, updates
 // the canvas's text, preview and size, and writes a version when due.
 func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Result, error) {
@@ -207,7 +207,7 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 	return res, nil
 }
 
-// version writes a version of the canvas when due (ADR-0113 §1): at most one per VersionEvery,
+// version writes a version of the canvas when due (ADR-0114 §1): at most one per VersionEvery,
 // only when the state changed since the last one (compared by its sha256) and the document has
 // objects (meta.objects ≠ 0); then thins the history to MaxVersions.
 func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Post, it sqlc.CanvasItemHead, authors []uuid.UUID) error {

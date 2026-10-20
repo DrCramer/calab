@@ -1,5 +1,5 @@
 /**
- * Comments on the open canvas (ADR-0114 wave 4): reads the threads once the view is open, turns a click of
+ * Comments on the open canvas (ADR-0115 wave 4): reads the threads once the view is open, turns a click of
  * the «Комментарий» tool into a new thread's pin, centres the camera on a thread a notification asked for
  * (once the document arrived: the first «fit all» of the view would undo it), and draws the pins and the
  * panel. Mounted inside the view's chrome; the canvas itself never re-renders for a comment.

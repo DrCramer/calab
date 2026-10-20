@@ -24,7 +24,7 @@ interface Vector {
     mandatory?: boolean;
     off?: boolean;
   };
-  // ADR-0114 wave 4: a canvas @mention vector; text = the notice may carry the comment.
+  // ADR-0115 wave 4: a canvas @mention vector; text = the notice may carry the comment.
   canvas?: { level: Lvl; workspaceMuted: boolean; hideText: boolean; private: boolean };
   text?: boolean;
 }

@@ -2,7 +2,7 @@ import { rotatedBounds, type Rect } from './geometry';
 import type { Fmt } from './richText';
 import type { FontToken } from './textLayout';
 
-/** Document schema this build reads and writes (ADR-0113 §3). Newer docs open read-only. */
+/** Document schema this build reads and writes (ADR-0114 §3). Newer docs open read-only. */
 export const SCHEMA_VERSION = 1;
 export const MAX_OBJECTS = 5000;
 export const MAX_TEXT = 5000;
@@ -13,7 +13,7 @@ export type ObjectKind = 'sticky' | 'text' | 'shape' | 'connector';
 export type ShapeKind =
   | 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'rounded'
   | 'star' | 'hexagon' | 'parallelogram' | 'arrow' | 'bubble' | 'cylinder';
-/** A kind written by a newer build is not in this list: the reader draws it as `rect` (ADR-0114). */
+/** A kind written by a newer build is not in this list: the reader draws it as `rect` (ADR-0115). */
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   'rect', 'ellipse', 'diamond', 'triangle', 'rounded', 'star', 'hexagon', 'parallelogram', 'arrow', 'bubble', 'cylinder',
 ];
@@ -37,16 +37,16 @@ export interface BaseRec {
   readonly h: number;
   /**
    * Clockwise rotation about the frame's center, degrees (0, 360). Absent = 0; boxes only — a connector never
-   * rotates. `x, y, w, h` stay the unrotated frame (ADR-0114).
+   * rotates. `x, y, w, h` stay the unrotated frame (ADR-0115).
    */
   readonly rot?: number;
-  /** Cannot be moved, resized, rotated or edited; still selectable and deletable (ADR-0114). */
+  /** Cannot be moved, resized, rotated or edited; still selectable and deletable (ADR-0115). */
   readonly locked?: boolean;
-  /** Id of the flat group this object belongs to; set only while the group still has two or more members (ADR-0114). */
+  /** Id of the flat group this object belongs to; set only while the group still has two or more members (ADR-0115). */
   readonly group?: string;
 }
 
-/** Text formatting (bold / italic / strike, lists): absent for plain text (ADR-0114). */
+/** Text formatting (bold / italic / strike, lists): absent for plain text (ADR-0115). */
 export interface RichFields {
   readonly fmt?: Fmt;
 }
@@ -55,7 +55,7 @@ export interface StickyRec extends BaseRec, RichFields {
   readonly kind: 'sticky';
   readonly color: string;
   readonly text: string;
-  /** Text size token; absent = M (ADR-0114). */
+  /** Text size token; absent = M (ADR-0115). */
   readonly fontSize?: FontToken;
 }
 
@@ -68,7 +68,7 @@ export interface TextRec extends BaseRec, RichFields {
 
 export interface ShapeRec extends BaseRec, RichFields {
   readonly kind: 'shape';
-  /** Text size token; absent = M (ADR-0114). */
+  /** Text size token; absent = M (ADR-0115). */
   readonly fontSize?: FontToken;
   readonly shape: ShapeKind;
   readonly fill: string;

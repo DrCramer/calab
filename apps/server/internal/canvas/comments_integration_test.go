@@ -68,7 +68,7 @@ func (e *env) bot() uuid.UUID {
 
 func ids(xs []string) []string { s := slices.Clone(xs); slices.Sort(s); return s }
 
-// ADR-0114 wave 4: who reads, writes, edits and deletes comments; threads of one level; the
+// ADR-0115 wave 4: who reads, writes, edits and deletes comments; threads of one level; the
 // events go with the canvas's chain.
 func TestCanvasCommentsAccess(t *testing.T) {
 	e := newEnv(t, ysync.Config{})

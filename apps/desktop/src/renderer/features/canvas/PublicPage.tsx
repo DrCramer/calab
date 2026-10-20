@@ -41,7 +41,7 @@ export function publicDeps(code: string, onGone: () => void, make: (url: string)
 }
 
 /**
- * `/c/{code}` — a canvas seen through its public link, without signing in (ADR-0114 wave 5, docs/08 «Холст:
+ * `/c/{code}` — a canvas seen through its public link, without signing in (ADR-0115 wave 5, docs/08 «Холст:
  * публичная ссылка»): the name and «Только просмотр» above the canvas in view only — no app shell, tools, comments,
  * voting, cursors or avatars (CanvasView `publicCode`), pan and pinch on the phone. The name comes first (it counts
  * a view and proves the link); then the canvas chunk and its receive-only socket. A revoked / expired / private /

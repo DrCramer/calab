@@ -99,7 +99,7 @@ export const StatusBanner = memo(function StatusBanner({
 });
 
 /**
- * The public link's notices (ADR-0114 wave 5): the shared timer and the connection state only — no «Только
+ * The public link's notices (ADR-0115 wave 5): the shared timer and the connection state only — no «Только
  * просмотр» (the page says it), no follow or vote chips. `gone` is the page's (it shows its own neutral screen).
  */
 export const ViewerStatus = memo(function ViewerStatus({ engine, sync, timer, gone }: { engine: CanvasEngine; sync: CanvasSync; timer: TimerStore; gone: boolean }): ReactNode {

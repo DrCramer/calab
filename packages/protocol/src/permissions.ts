@@ -141,7 +141,7 @@ export interface TreeLevel {
 }
 
 /**
- * The one tree node rule shared by the Disk (ADR-0094 §2), the Wiki (ADR-0096 §2) and the Canvas (ADR-0113 §2); Go:
+ * The one tree node rule shared by the Disk (ADR-0094 §2), the Wiki (ADR-0096 §2) and the Canvas (ADR-0114 §2); Go:
  * perm.ComputeTree. `chain` runs from the topmost ancestor down to the node (empty = the top of
  * the section). MANAGE or ADMINISTRATOR (the workspace owner too): all three bits outside any
  * restricted node. Otherwise — and for them as well once the chain has a restricted node
@@ -321,7 +321,7 @@ export function wikiStructureAllowed(bits: PermissionBits, owner: boolean): bool
 }
 
 /**
- * Canvas bits (ADR-0113 §2), Go: perm.CanvasView / CanvasWrite / CanvasManage. The same rules as
+ * Canvas bits (ADR-0114 §2), Go: perm.CanvasView / CanvasWrite / CanvasManage. The same rules as
  * the wiki bits: outside ALL_PERMISSIONS, in ADMINISTRATOR, never for guests through roles,
  * per-item overrides carry VIEW and WRITE only (CANVAS_OVERRIDE_PERMISSIONS). WRITE on a canvas
  * edits its content and creates items in a folder; the structure needs the owner or MANAGE
@@ -351,7 +351,7 @@ export function canvasPermissions(
 }
 
 /**
- * The one canvas item rule (ADR-0113 §2; Go: perm.ComputeCanvasItem): treeItemPermissions over
+ * The one canvas item rule (ADR-0114 §2; Go: perm.ComputeCanvasItem): treeItemPermissions over
  * CANVAS_BITS. `chain` runs from the top-level ancestor down to the item (empty = the top level).
  */
 export function canvasItemPermissions(
@@ -363,7 +363,7 @@ export function canvasItemPermissions(
 }
 
 /**
- * The structural rule of a canvas item (ADR-0113 §2; Go: perm.CanvasStructureAllowed): rename,
+ * The structural rule of a canvas item (ADR-0114 §2; Go: perm.CanvasStructureAllowed): rename,
  * move, trash, restore, delete and access need VIEW on the item (`bits`, CanvasItem.myBits) and
  * either its ownership or CANVAS_MANAGE. WRITE alone edits the content and creates items.
  */
@@ -481,7 +481,7 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     // ADR-0096: migration 00090.
     WIKI_BITS.VIEW |
     WIKI_BITS.WRITE |
-    // ADR-0113: migration 00102.
+    // ADR-0114: migration 00102.
     CANVAS_BITS.VIEW |
     CANVAS_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.

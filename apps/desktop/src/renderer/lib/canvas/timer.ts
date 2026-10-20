@@ -1,5 +1,5 @@
 /**
- * The shared timer of a canvas (ADR-0114, wave 3): `meta.timer = {state, endsAt, remainingMs, durationMs, by}`.
+ * The shared timer of a canvas (ADR-0115, wave 3): `meta.timer = {state, endsAt, remainingMs, durationMs, by}`.
  * `endsAt` is a point in server time (ms since the epoch, as the starter's client estimated the server clock);
  * every client counts down from it on its own, nothing ticks on the server. A paused timer keeps `remainingMs`.
  * The field is optional and additive: a build that does not know it draws the canvas as before and leaves it alone.

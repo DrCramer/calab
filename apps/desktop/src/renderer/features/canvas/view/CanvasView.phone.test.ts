@@ -10,7 +10,7 @@ import { EDIT_NOTE_KEY, NOTE_KEY } from './PhoneChrome';
 
 vi.mock('../../../platform', () => ({ platform: { kind: 'web', apiBase: '', auth: { accessToken: () => Promise.resolve('t'), forceRefresh: () => Promise.resolve('t') } } }));
 
-/** `phone` mode of CanvasView (ADR-0113 §5): read-only whatever the grant, no tools, touch navigation. */
+/** `phone` mode of CanvasView (ADR-0114 §5): read-only whatever the grant, no tools, touch navigation. */
 const WRITE = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE;
 
 beforeAll(() => {
@@ -204,7 +204,7 @@ describe('the «view only» note (no CANVAS_WRITE)', () => {
   });
 });
 
-describe('the edit mode (ADR-0114 wave 5b)', () => {
+describe('the edit mode (ADR-0115 wave 5b)', () => {
   it('switches a live viewer between view and edit; leaving commits the open editor', async () => {
     const m = await mount();
     m.key('s');

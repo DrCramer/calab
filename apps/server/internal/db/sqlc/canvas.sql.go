@@ -669,7 +669,7 @@ type LastCanvasVersionRow struct {
 }
 
 // The newest version of a canvas without its state: the 10-minute rule and the «content
-// changed» check of ADR-0113 §1 (state_hash against sha256 of the new state).
+// changed» check of ADR-0114 §1 (state_hash against sha256 of the new state).
 func (q *Queries) LastCanvasVersion(ctx context.Context, canvasID uuid.UUID) (LastCanvasVersionRow, error) {
 	row := q.db.QueryRow(ctx, lastCanvasVersion, canvasID)
 	var i LastCanvasVersionRow
@@ -763,7 +763,7 @@ type ListCanvasChildrenRow struct {
 	HasChildren    bool
 }
 
-// Canvas (ADR-0113). Access is computed in Go (perm.ComputeCanvasItem over CanvasItemPath /
+// Canvas (ADR-0114). Access is computed in Go (perm.ComputeCanvasItem over CanvasItemPath /
 // CanvasItemPaths and the overrides of the levels); these queries return what is stored, visible
 // or not. The content (Yjs updates and snapshots) is opaque bytes. Mirror of queries/wiki.sql
 // without icons, covers, files, public links and search (the search section comes with H2).
@@ -1011,7 +1011,7 @@ type ListCanvasSubtreeRow struct {
 
 // The items below an item (not the item itself), parents before children, trashed or not: a
 // trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
-// of ADR-0096 §2, ADR-0113 §2). Bounded at 64 levels.
+// of ADR-0096 §2, ADR-0114 §2). Bounded at 64 levels.
 func (q *Queries) ListCanvasSubtree(ctx context.Context, id uuid.UUID) ([]ListCanvasSubtreeRow, error) {
 	rows, err := q.db.Query(ctx, listCanvasSubtree, id)
 	if err != nil {
@@ -1442,7 +1442,7 @@ type MarkCanvasSubtreeActivityPrivateParams struct {
 	ID         uuid.UUID
 }
 
-// Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2, ADR-0113 §2): the
+// Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2, ADR-0114 §2): the
 // journal entries of every node of the subtree that lies under a restricted node (restricted:
 // the root's chain has one) become private — the workspace journal cannot check a chain that is
 // gone.
@@ -1658,7 +1658,7 @@ type SearchCanvasItemsRow struct {
 }
 
 // ---- search ----
-// Search candidates (ADR-0113 §6, the shape of SearchWikiPages): live canvases and folders of the
+// Search candidates (ADR-0114 §6, the shape of SearchWikiPages): live canvases and folders of the
 // given workspaces matching the full-text query (tsq: searchq.Query.TS, over
 // canvas_items_search_idx; the expression is search.CanvasVector) or, by name, the words with
 // typos or as substrings (words: searchq.Query.Text, phrase: searchq.Like(Query.Text), over
@@ -1721,7 +1721,7 @@ type SetCanvasContentParams struct {
 	ID        uuid.UUID
 }
 
-// After a snapshot (ADR-0113 §3 SNAPSHOT_POST): the text for search, the preview and the size;
+// After a snapshot (ADR-0114 §3 SNAPSHOT_POST): the text for search, the preview and the size;
 // the client caps plain_text at 256 KiB and preview at 200 characters. Canvases only.
 func (q *Queries) SetCanvasContent(ctx context.Context, arg SetCanvasContentParams) (CanvasItem, error) {
 	row := q.db.QueryRow(ctx, setCanvasContent,

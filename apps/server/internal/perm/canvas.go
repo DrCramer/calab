@@ -1,6 +1,6 @@
 package perm
 
-// Canvas bits (ADR-0113 §2): the same rules as the wiki bits (wiki.go) — listed in the comment of
+// Canvas bits (ADR-0114 §2): the same rules as the wiki bits (wiki.go) — listed in the comment of
 // enum Permission and docs/04, TS CANVAS_BITS; in ADMINISTRATOR (CanvasOf) but outside All;
 // per-item overrides (canvas_permissions) carry CanvasView and CanvasWrite only; guests get
 // nothing from their roles, only from an explicit user override on an item (or by owning it);
@@ -35,7 +35,7 @@ var CanvasTree = TreeBits{View: CanvasView, Write: CanvasWrite, Manage: CanvasMa
 // roles.
 func CanvasOf(raw Bits, guest bool) Bits { return TreeOf(CanvasTree, raw, guest) }
 
-// ComputeCanvasItem is the one item rule (ADR-0113 §2; TS: canvasItemPermissions): ComputeTree
+// ComputeCanvasItem is the one item rule (ADR-0114 §2; TS: canvasItemPermissions): ComputeTree
 // over CanvasTree. chain runs from the top-level ancestor down to the item itself (empty = the
 // top level of the section: creating a top-level item needs CANVAS_WRITE there).
 func ComputeCanvasItem(raw Bits, guest bool, chain []TreeLevel) Bits {
@@ -48,7 +48,7 @@ func ComputeCanvasItemIn(m Member, chain []TreeNode) Bits {
 	return ComputeTreeIn(CanvasTree, m, chain)
 }
 
-// CanvasStructureAllowed is the structural rule of an item (ADR-0113 §2; TS:
+// CanvasStructureAllowed is the structural rule of an item (ADR-0114 §2; TS:
 // canvasStructureAllowed): renaming, moving, trashing, restoring, deleting forever and the access
 // dialog need CANVAS_VIEW on the item (bits = ComputeCanvasItem) and either its ownership or
 // CANVAS_MANAGE. CANVAS_WRITE alone edits the content and creates items, nothing else. Moving

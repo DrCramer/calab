@@ -1,7 +1,7 @@
 import type { ruCanvasShare } from '../ru/canvasShare';
 import type { DictShape } from '../types';
 
-/** The public read-only link of a canvas (ADR-0114 wave 5). Same keys and placeholders as ru/canvasShare.ts. */
+/** The public read-only link of a canvas (ADR-0115 wave 5). Same keys and placeholders as ru/canvasShare.ts. */
 export const esCanvasShare: DictShape<typeof ruCanvasShare> = {
   'canvasShare.tabs': 'Acceso al lienzo',
   'canvasShare.tab.access': 'Acceso',

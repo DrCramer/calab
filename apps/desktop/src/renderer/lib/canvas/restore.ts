@@ -17,7 +17,7 @@ function cloneObject(src: Y.Map<unknown>): Y.Map<unknown> {
 const sameObject = (a: Y.Map<unknown>, b: Y.Map<unknown>): boolean => JSON.stringify(a.toJSON()) === JSON.stringify(b.toJSON());
 
 /**
- * «Восстановить» a version (ADR-0113 §3): the live document's objects become the version's, in ONE
+ * «Восстановить» a version (ADR-0114 §3): the live document's objects become the version's, in ONE
  * local transaction — objects the version lacks are deleted, new and changed ones are written (an
  * unchanged object is left alone, so a co-author's concurrent edit of it is not rewritten), `meta`
  * stays. The state is read through a scratch Y.Doc; the live one never applies it as an update (that

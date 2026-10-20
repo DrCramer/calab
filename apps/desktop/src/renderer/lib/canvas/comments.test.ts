@@ -5,7 +5,7 @@ import { bodyParts, commentRights, mayChange, mentionCount, pinAt, pinWorld } fr
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 
-describe('canvas comments, the pure part (ADR-0114 wave 4)', () => {
+describe('canvas comments, the pure part (ADR-0115 wave 4)', () => {
   it('a pin follows its object; on the field it is the point itself; a gone object hides it', () => {
     const objects: Record<string, { x: number; y: number }> = { o: { x: 100, y: 50 } };
     expect(pinWorld({ objectId: 'o', x: 5, y: -3 }, (id) => objects[id])).toEqual({ x: 105, y: 47 });

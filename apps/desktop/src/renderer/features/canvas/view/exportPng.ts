@@ -1,5 +1,5 @@
 /**
- * PNG export (ADR-0113 §6): the same drawing code as the live view, painted into an offscreen canvas.
+ * PNG export (ADR-0114 §6): the same drawing code as the live view, painted into an offscreen canvas.
  * No server route. The size is capped (long side ≤ 8192 px and ≤ 40 Mpx in all) so a huge canvas
  * cannot take the renderer's memory: the scale is lowered to fit.
  */

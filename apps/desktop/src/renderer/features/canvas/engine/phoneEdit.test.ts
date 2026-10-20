@@ -5,7 +5,7 @@ import { CanvasEngine, type EngineOptions } from './engine';
 import { defaultPalette } from './palette';
 import { fakeCtx, manualRaf } from './testing';
 
-/** The phone's edit mode in the engine (ADR-0114 wave 5b): touch pointers on an editable canvas with `touch: true`. */
+/** The phone's edit mode in the engine (ADR-0115 wave 5b): touch pointers on an editable canvas with `touch: true`. */
 interface Rig {
   engine: CanvasEngine;
   canvas: HTMLCanvasElement;

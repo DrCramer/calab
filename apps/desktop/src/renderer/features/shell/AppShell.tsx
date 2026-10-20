@@ -104,7 +104,7 @@ function ShellLayout(): ReactNode {
   const disk = useDiskUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Вики» (ADR-0096 §9): the same, exclusive with the Disk; guests have none.
   const wiki = useWikiUi((s) => s.active) && !home && !!wsId && !guestWs;
-  // «Холст» (ADR-0113 §5): the same, exclusive with the Disk and the wiki; guests have none.
+  // «Холст» (ADR-0114 §5): the same, exclusive with the Disk and the wiki; guests have none.
   const canvas = useCanvasUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));

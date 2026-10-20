@@ -7,8 +7,8 @@ import type { PresenceStore } from './presenceStore';
 
 /**
  * What the phone viewer draws over the canvas besides the zoom bar and the connection notices
- * (ADR-0113 §5): the count of the others on the canvas — no avatars, no cursors — the one-time «view only» note for a
- * person without CANVAS_WRITE and the one-time hint of the «Править» mode (ADR-0114 wave 5b). All are leaves.
+ * (ADR-0114 §5): the count of the others on the canvas — no avatars, no cursors — the one-time «view only» note for a
+ * person without CANVAS_WRITE and the one-time hint of the «Править» mode (ADR-0115 wave 5b). All are leaves.
  * In edit mode the zoom bar and the count move to the top: the bottom is the tool bar's (PhoneEditBar).
  */
 

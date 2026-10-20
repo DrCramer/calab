@@ -1,5 +1,5 @@
 /**
- * Voting on a canvas (ADR-0114, wave 3). The document carries `meta.vote = {id, by, startedAt, votesPerPerson,
+ * Voting on a canvas (ADR-0115, wave 3). The document carries `meta.vote = {id, by, startedAt, votesPerPerson,
  * open}` and the top-level `votes: Y.Map<objectId, Y.Map<userId, number>>`. Everyone writes only their own cell
  * `votes[objectId][userId]`, so concurrent votes add up with nothing lost; a new session, a reset and the finish
  * are single transactions of a writer. Both fields are optional: a build without them draws the canvas as before

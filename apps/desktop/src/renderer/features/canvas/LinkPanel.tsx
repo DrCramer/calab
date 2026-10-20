@@ -23,7 +23,7 @@ function expiryOf(link: CanvasLink | undefined): Expiry {
 }
 
 /**
- * «Ссылка» of a canvas's «Доступ» (ADR-0114 wave 5): «Доступ по ссылке» — anyone with it sees the canvas without
+ * «Ссылка» of a canvas's «Доступ» (ADR-0115 wave 5): «Доступ по ссылке» — anyone with it sees the canvas without
  * signing in, never edits it and never sees who is on it; the address with «Скопировать», the term (never, 1, 7, 30
  * days; changing it keeps the code), the views. A private canvas (restricted, or below a restricted folder) cannot
  * have one: the switch is off and says why. The dialog is the owner's or CANVAS_MANAGE's (the server checks).

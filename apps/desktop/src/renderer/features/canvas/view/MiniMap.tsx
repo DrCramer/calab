@@ -12,7 +12,7 @@ const MAX_FPS = 10;
 export const useMinimapPref = (): boolean => useSyncExternalStore(minimapPref.subscribe, minimapPref.get);
 
 /**
- * The mini-map (ADR-0114): the whole scene as small rectangles with the visible area framed, click or drag to move
+ * The mini-map (ADR-0115): the whole scene as small rectangles with the visible area framed, click or drag to move
  * the camera. Off by default. While off this renders nothing and holds no subscription, timer or canvas; while on
  * it listens to scene and camera changes, redraws at most 10 times a second and only when something changed, and
  * stays quiet while the window is hidden (a timer exists only between a change and its redraw).

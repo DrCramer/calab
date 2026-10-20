@@ -1,5 +1,5 @@
 /**
- * The Canvas screen's body (ADR-0113 §4–§5): the engine on a `<canvas>`, the tool and properties panels,
+ * The Canvas screen's body (ADR-0114 §4–§5): the engine on a `<canvas>`, the tool and properties panels,
  * zoom, other people's cursors and the connection state. The section's header, tree and dialogs are the
  * parent's (H5a); this component owns everything inside the work area.
  *
@@ -51,17 +51,17 @@ export interface CanvasViewProps {
   /** The canvas' name, for the snapshot meta (search) and the PNG file name. Optional; read at call time. */
   name?: string;
   /**
-   * The phone viewer (ADR-0113 §5): always read-only whatever `bits` say, no toolbar / properties / help /
+   * The phone viewer (ADR-0114 §5): always read-only whatever `bits` say, no toolbar / properties / help /
    * context menu / avatars; the zoom bar, connection notices, a count of the others and a one-time note stay.
    */
   phone?: boolean;
   /**
-   * The phone's «Править» mode (ADR-0114 wave 5b): with CANVAS_WRITE the phone viewer becomes editable (touch editing,
+   * The phone's «Править» mode (ADR-0115 wave 5b): with CANVAS_WRITE the phone viewer becomes editable (touch editing,
    * bottom tool bar, properties sheet). Off — the view-only viewer as before. Ignored off the phone.
    */
   phoneEdit?: boolean;
   /**
-   * The public link's viewer `/c/{code}` (ADR-0114 wave 5): the anonymous receive-only socket of this code, view
+   * The public link's viewer `/c/{code}` (ADR-0115 wave 5): the anonymous receive-only socket of this code, view
    * only whatever `bits` say, and none of the people's chrome — no tools, properties, context menu, comments,
    * voting, presence, cursors or mini-map; the zoom bar, the timer and the connection notices stay. `phone` picks
    * the touch viewer.
@@ -326,7 +326,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
         >
           <div ref={stage} className="absolute inset-0">
             <canvas ref={canvas} className="block size-full outline-none" aria-label={t('canvasBoard.label')} data-testid="canvas-surface" />
-            {/* Other people's cursors: a second layer so their stream never repaints the canvas above (ADR-0113 §4). */}
+            {/* Other people's cursors: a second layer so their stream never repaints the canvas above (ADR-0114 §4). */}
             <canvas ref={remote} className="pointer-events-none absolute inset-0 block size-full" aria-hidden="true" data-testid="canvas-remote" />
           </div>
           {session && engine && viewer ? (
@@ -396,7 +396,7 @@ function Chrome({
 }): ReactNode {
   const { engine, sync, timer } = session;
   const editable = !useEngineValue(engine, (s) => s.readOnly);
-  // Comments (ADR-0114 wave 4): their own layer and panel; the canvas never re-renders for them.
+  // Comments (ADR-0115 wave 4): their own layer and panel; the canvas never re-renders for them.
   const comments = <CommentsLayer engine={engine} sync={sync} canvasId={canvasId} workspaceId={workspaceId} bits={bits} phone={phone} />;
   const commentsToggle = <CommentsToggle canvasId={canvasId} focusCanvas={phone ? undefined : focusCanvas} />;
   if (phone) {

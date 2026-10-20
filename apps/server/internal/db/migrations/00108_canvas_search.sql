@@ -1,5 +1,5 @@
 -- +goose NO TRANSACTION
--- Canvas search (ADR-0113 §6, the pattern of 00091): a full-text index over the name and the text
+-- Canvas search (ADR-0114 §6, the pattern of 00091): a full-text index over the name and the text
 -- of live canvases and folders (russian + simple, like wiki_pages_search_idx) and a trigram index
 -- over the name (typos, substrings). The expressions must stay those of search.CanvasVector and
 -- queries/canvas.sql SearchCanvasItems; both are partial on live items (trashed_at IS NULL), so

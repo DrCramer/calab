@@ -197,7 +197,7 @@ message SearchDiskRef {
   repeated string path = 7;
 }
 
-// A canvas or a Canvas folder (ADR-0113 §6): open it; the snippet is of the text on the canvas
+// A canvas or a Canvas folder (ADR-0114 §6): open it; the snippet is of the text on the canvas
 // (or the name), title is the item's name.
 message SearchCanvasRef {
   string item_id = 1;

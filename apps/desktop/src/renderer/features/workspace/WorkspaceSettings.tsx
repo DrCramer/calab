@@ -169,7 +169,7 @@ export function WorkspaceSettingsDialog({
     ...(diskManage ? [{ id: 'disk', label: t('disk.section'), icon: HardDrive, keywords: t('disk.settings.trash'), content: <DiskSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Вики» (ADR-0096 §1): the trash retention — WIKI_MANAGE (ADMINISTRATOR includes it).
     ...(wikiManage ? [{ id: 'wiki', label: t('wiki.section'), icon: BookOpen, keywords: t('wiki.settings.trash'), content: <WikiSettingsTab workspaceId={workspaceId} /> }] : []),
-    // «Холст» (ADR-0113 §1): the trash retention — CANVAS_MANAGE (ADMINISTRATOR includes it).
+    // «Холст» (ADR-0114 §1): the trash retention — CANVAS_MANAGE (ADMINISTRATOR includes it).
     ...(canvasManage ? [{ id: 'canvas', label: t('canvas.section'), icon: Shapes, keywords: t('canvas.settings.trash'), content: <CanvasSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),

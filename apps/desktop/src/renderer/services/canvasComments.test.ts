@@ -50,7 +50,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('canvas comment events (ADR-0114 wave 4)', () => {
+describe('canvas comment events (ADR-0115 wave 4)', () => {
   it('apply to a canvas whose comments are held only', () => {
     const c = { id: 'r', canvasId: 'cv', parentId: '', body: 'x', authorId: 'alice', resolved: false } as CanvasComment;
     onCanvasCommentUpsert({ workspaceId: 'ws', comment: c } as never);
@@ -63,7 +63,7 @@ describe('canvas comment events (ADR-0114 wave 4)', () => {
   });
 });
 
-describe('the @mention notice (ADR-0114 wave 4)', () => {
+describe('the @mention notice (ADR-0115 wave 4)', () => {
   it('shows the text the server sent, names for ids; none when the server left it out', () => {
     expect(noticeBody(mention({ text: 'look @bob' }))).toBe('Alice: look @bob');
     expect(noticeBody(mention({ text: 'look @00000000-0000-4000-8000-000000000000' }))).toContain('Alice: look @');

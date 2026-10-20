@@ -22,7 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
-// The public read-only link of a canvas (ADR-0114 wave 5, docs/05 «Холст: публичная ссылка»):
+// The public read-only link of a canvas (ADR-0115 wave 5, docs/05 «Холст: публичная ссылка»):
 // the owner of the canvas or CANVAS_MANAGE makes it (one live link per canvas), whoever has its
 // code reads the canvas through GET /api/public/canvas/{code} (the name) and the anonymous
 // receive-only socket GET /api/public/canvas/{code}/sync (ysync.Hub.ServeViewer: the snapshot and

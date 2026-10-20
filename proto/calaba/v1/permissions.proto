@@ -99,7 +99,7 @@ enum Permission {
   // (member default); rename, move, trash and share one's own pages.
   // 1 << 40 WIKI_MANAGE: the structure of any page, the trash retention, empty the whole trash,
   // anyone's public link; implies VIEW and WRITE.
-  // Canvas bits (ADR-0113), the same rules as the wiki bits (in ADMINISTRATOR, never for guests
+  // Canvas bits (ADR-0114), the same rules as the wiki bits (in ADMINISTRATOR, never for guests
   // and bots through roles, per-item overrides in canvas_permissions touch VIEW and WRITE only;
   // TS CANVAS_BITS, Go perm.CanvasView …):
   // 1 << 41 CANVAS_VIEW: see the Canvas section and every item that is not restricted (member

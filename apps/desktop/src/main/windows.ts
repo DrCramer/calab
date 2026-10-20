@@ -270,7 +270,7 @@ export function guardWebContents(wc: WebContents): void {
   // shows our page, has no preload and no IPC. The same for the checkout window's page (ADR-0084,
   // main/checkoutWindow.ts).
   if (isAppSession(wc.session) || isCheckoutSession(wc.session)) return;
-  // A trackpad pinch must reach the page as ctrl+wheel events (the Canvas zooms itself, ADR-0113 §4), not
+  // A trackpad pinch must reach the page as ctrl+wheel events (the Canvas zooms itself, ADR-0114 §4), not
   // scale the whole window. Electron ships with visual zoom off; pinned here so no flag or upgrade turns
   // it on. The interface scale (View → Zoom, ⌘+/−) is the zoom factor, a different thing, and is untouched.
   wc.setVisualZoomLevelLimits(1, 1).catch(() => {});

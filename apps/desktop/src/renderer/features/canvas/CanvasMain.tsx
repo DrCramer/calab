@@ -16,7 +16,7 @@ import { DROP, ItemMenuEntries } from './ItemMenu';
 import { CanvasViewLazy } from './lazy';
 
 /**
- * The right side of «Холст» (ADR-0113 §5, docs/08): the header (crumbs · «Поделиться» · «⋯») and
+ * The right side of «Холст» (ADR-0114 §5, docs/08): the header (crumbs · «Поделиться» · «⋯») and
  * the open canvas — `CanvasView` (features/canvas/view, its own
  * lazy chunk: the engine, Yjs and the socket; it draws its own presence and connection notices). Only the open
  * canvas mounts a document. A canvas in

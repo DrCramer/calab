@@ -14,7 +14,7 @@ import { FixedAccessRow, TakeOverButton, useOwnerSeesPrivate, useWorkspaceOwnerI
 
 /**
  * «Доступ» of a tree item — one editor for the Disk (ADR-0094 §2), the Wiki (ADR-0096 §6) and the
- * Canvas (ADR-0113 §2; its override entries are OverrideEntry rows too):
+ * Canvas (ADR-0114 §2; its override entries are OverrideEntry rows too):
  * «Только выбранные» (restricted), the owner, roles and people with «Просмотр / Правка / Нет
  * доступа», «Добавить роль или человека» (guests only by name). The caller holds the draft
  * (useTreeAccess) and saves it with one PUT; the bits are the section's VIEW / WRITE pair.

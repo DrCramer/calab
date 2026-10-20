@@ -10,12 +10,12 @@ import { drawVoteMark } from './voteDraw';
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-/** Below this zoom, glyphs become plaques and strokes lose their details (ADR-0113 §4). */
+/** Below this zoom, glyphs become plaques and strokes lose their details (ADR-0114 §4). */
 export const TEXT_PLAQUE_SCALE = 0.25;
 /** Glyphs smaller than this on screen (CSS px) become plaques; plain text keeps them down to 25 % anyway. */
 const MIN_GLYPH_PX = 4;
 /**
- * The same for a rotated box (ADR-0114). Every distinct angle × zoom rasterizes its own glyphs (no shared glyph
+ * The same for a rotated box (ADR-0115). Every distinct angle × zoom rasterizes its own glyphs (no shared glyph
  * cache), so a zoom over hundreds of turned notes repainted them at 4–8 px — barely legible — for a 3–4× costlier
  * frame (docs/14-energy.md «Холст, вторая итерация»).
  */
@@ -28,7 +28,7 @@ export interface DrawEnv {
   scale: number;
   /** Object whose text is being edited in the overlay textarea: its glyphs are not painted. */
   hiddenText: string | null;
-  /** Vote badges of the open or finished vote (ADR-0114); absent while there is no vote, so a plain canvas pays nothing. */
+  /** Vote badges of the open or finished vote (ADR-0115); absent while there is no vote, so a plain canvas pays nothing. */
   votes?: { badge(id: string): VoteBadge | null } | undefined;
 }
 

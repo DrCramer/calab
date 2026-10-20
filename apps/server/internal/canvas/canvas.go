@@ -1,4 +1,4 @@
-// Package canvas implements the Canvas section of a workspace (ADR-0113): a tree of folders and
+// Package canvas implements the Canvas section of a workspace (ADR-0114): a tree of folders and
 // canvases with per-item access (perm.ComputeCanvasItem over internal/canvasacl chains), the
 // trash with its hourly sweeper, the journal (canvas_activity), version history and the
 // collaborative content.
@@ -40,7 +40,7 @@ import (
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
-// MaxDepth is how deep the tree may go (ADR-0113 §1): a top-level item has depth 1.
+// MaxDepth is how deep the tree may go (ADR-0114 §1): a top-level item has depth 1.
 const MaxDepth = 32
 
 // MaxName is the longest name in characters (canvas_items CHECK).
@@ -59,10 +59,10 @@ type Service struct {
 	// Now is the clock (tests move it).
 	Now func() time.Time
 
-	// CommentLimit: a per-user budget of comment writes (ADR-0114 wave 4); nil = unlimited.
+	// CommentLimit: a per-user budget of comment writes (ADR-0115 wave 4); nil = unlimited.
 	CommentLimit *redisx.RateLimiter
 
-	// The public read-only link (ADR-0114 wave 5, link.go). PublicURL is PUBLIC_APP_URL: the page
+	// The public read-only link (ADR-0115 wave 5, link.go). PublicURL is PUBLIC_APP_URL: the page
 	// of a link is PublicURL + "/c/" + code. LinkReadLimit (the public name) and LinkSyncLimit
 	// (connects of the anonymous socket) are budgets per client IP (nil = unlimited);
 	// ViewersPerLink / ViewersPerIP cap the live anonymous sockets of a canvas and of a client IP
@@ -186,7 +186,7 @@ type access struct {
 
 func (a access) manage() bool { return a.bits.Has(perm.CanvasManage) }
 
-// structure: rename, move, trash, restore, delete, access (ADR-0113 §2).
+// structure: rename, move, trash, restore, delete, access (ADR-0114 §2).
 func (a access) structure() bool { return perm.CanvasStructureAllowed(a.bits, a.c.owns(a.item)) }
 
 func (a access) nodes() []perm.TreeNode { return a.chain.Nodes(a.item.ID) }

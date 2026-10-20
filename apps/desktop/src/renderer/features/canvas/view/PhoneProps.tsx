@@ -18,7 +18,7 @@ import { ShapeIcon } from './ShapeIcon';
 import { createSelectionModel, type PanelModel } from './selectionModel';
 
 /**
- * The properties of the selection on the phone (ADR-0114 wave 5b): a sheet above the tool bar instead of the desktop's
+ * The properties of the selection on the phone (ADR-0115 wave 5b): a sheet above the tool bar instead of the desktop's
  * floating panel. One row of 44 px targets that scrolls sideways (color, text size, lock, duplicate, delete, group and
  * align, a connector's arrow and route, «Выбрать несколько»); a color, shape or align button opens its choices in a
  * grid above the row. It renders from the same selection snapshot as the desktop panel (selectionModel) — never for

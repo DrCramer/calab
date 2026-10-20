@@ -1,4 +1,4 @@
-/** Public surface of the Canvas engine (ADR-0113 §4) for the section UI. No React in here. */
+/** Public surface of the Canvas engine (ADR-0114 §4) for the section UI. No React in here. */
 export { CanvasEngine } from './engine';
 export type { ClipboardPort, EngineOptions, EngineState, LocalAwareness, Tool } from './engine';
 export type { PeerState } from './awareness';

@@ -1,5 +1,5 @@
 /**
- * The comments panel of a canvas (ADR-0114 wave 4): threads on the right (a sheet on the phone), «Только
+ * The comments panel of a canvas (ADR-0115 wave 4): threads on the right (a sheet on the phone), «Только
  * открытые», a new thread's input after a click of the «Комментарий» tool, replies, «Решить», editing and
  * deleting. What the buttons offer follows the rights (lib/canvas/comments commentRights); the server
  * decides. Each thread and comment is a memo row subscribed to its own ids.
