@@ -2689,7 +2689,7 @@ type DispatchEvent_EventCommentDelete struct {
 }
 
 type DispatchEvent_CanvasItemUpsert struct {
-	// Canvas (ADR-0113 §6): workspace channel, routed per recipient like the Wiki
+	// Canvas (ADR-0114 §6): workspace channel, routed per recipient like the Wiki
 	// (CANVAS_VIEW on the item); the tree structure only, the content goes through the
 	// canvas's /sync socket.
 	CanvasItemUpsert *CanvasItemUpsert `protobuf:"bytes,105,opt,name=canvas_item_upsert,json=canvasItemUpsert,proto3,oneof"`
@@ -2700,7 +2700,7 @@ type DispatchEvent_CanvasItemRemove struct {
 }
 
 type DispatchEvent_CanvasCommentUpsert struct {
-	// Canvas comments (ADR-0114 wave 4): workspace channel, routed per recipient like the
+	// Canvas comments (ADR-0115 wave 4): workspace channel, routed per recipient like the
 	// items (CANVAS_VIEW on the canvas).
 	CanvasCommentUpsert *CanvasCommentUpsert `protobuf:"bytes,107,opt,name=canvas_comment_upsert,json=canvasCommentUpsert,proto3,oneof"`
 }
