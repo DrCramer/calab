@@ -1,8 +1,13 @@
 import * as Popover from '@radix-ui/react-popover';
-import { ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Minus, SendToBack, Slash, Trash2 } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
-import { IconButton, cx } from '../../../components/ui';
+import {
+  AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Lock, LockOpen, Minus, SendToBack, Slash, Trash2, Ungroup,
+  type LucideIcon,
+} from 'lucide-react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
+import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
+import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
@@ -252,6 +257,60 @@ function widthNode(w: number): ReactNode {
   return <svg viewBox="0 0 16 16" className={ICON} aria-hidden><rect x="2" y={8 - w / 2} width="12" height={w} rx={w / 2} fill="currentColor" /></svg>;
 }
 
+const ALIGN_DEFS: readonly { op: ArrangeOp; label: Parameters<typeof t>[0]; Icon: LucideIcon }[] = [
+  { op: 'left', label: 'canvasBoard.props.align.left', Icon: AlignStartVertical },
+  { op: 'hcenter', label: 'canvasBoard.props.align.hcenter', Icon: AlignCenterVertical },
+  { op: 'right', label: 'canvasBoard.props.align.right', Icon: AlignEndVertical },
+  { op: 'top', label: 'canvasBoard.props.align.top', Icon: AlignStartHorizontal },
+  { op: 'vmiddle', label: 'canvasBoard.props.align.vmiddle', Icon: AlignCenterHorizontal },
+  { op: 'bottom', label: 'canvasBoard.props.align.bottom', Icon: AlignEndHorizontal },
+];
+const DISTRIBUTE_DEFS: readonly { op: ArrangeOp; label: Parameters<typeof t>[0]; Icon: LucideIcon }[] = [
+  { op: 'hspace', label: 'canvasBoard.props.distribute.h', Icon: AlignHorizontalDistributeCenter },
+  { op: 'vspace', label: 'canvasBoard.props.distribute.v', Icon: AlignVerticalDistributeCenter },
+];
+
+/** Align / distribute: one button, the operations in a small popover (the panel stays narrow). Distribute needs three things. */
+function ArrangeMenu({ engine, units, focusCanvas }: { engine: CanvasEngine; units: number; focusCanvas: () => void }): ReactNode {
+  const defs = units >= 3 ? [...ALIGN_DEFS, ...DISTRIBUTE_DEFS] : ALIGN_DEFS;
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <IconButton label={t('canvasBoard.props.align')} size="sm" onMouseDown={keepFocus} data-testid="canvas-prop-align">
+          <AlignStartVertical className={ICON} strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="center"
+          sideOffset={8}
+          collisionPadding={8}
+          className={cx(MENU_BOX, 'w-auto min-w-0 p-1')}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            focusCanvas();
+          }}
+          aria-label={t('canvasBoard.props.align')}
+        >
+          <div role="group" aria-label={t('canvasBoard.props.align')} className="flex items-center gap-0.5">
+            {defs.map(({ op, label, Icon }, i) => (
+              <Fragment key={op}>
+                {i === ALIGN_DEFS.length ? <div className={DIVIDER} aria-hidden /> : null}
+                <Popover.Close asChild>
+                  <IconButton label={t(label)} size="sm" onMouseDown={keepFocus} onClick={() => engine.arrange(op)} data-testid={`canvas-prop-arrange-${op}`}>
+                    <Icon className={ICON} strokeWidth={1.75} aria-hidden />
+                  </IconButton>
+                </Popover.Close>
+              </Fragment>
+            ))}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 /**
  * The floating properties panel (ADR-0113 §5). It appears above the selected object and follows it by
  * writing `transform` directly from the engine's view events — React renders it only when the selection's
@@ -346,10 +405,11 @@ export const PropsPanel = memo(function PropsPanel({
       className={cx(PANEL, 'absolute left-0 top-0 z-10 flex w-max items-center gap-1')}
       style={{ visibility: 'hidden' }}
     >
-      {m.hasSticky ? (
+      {m.locked ? <Lock className="mx-1 size-4 shrink-0 text-muted" strokeWidth={1.75} role="img" aria-label={t('canvasBoard.props.locked')} data-testid="canvas-prop-locked-badge" /> : null}
+      {!m.locked && m.hasSticky ? (
         <SwatchMenu label={t('canvasBoard.props.color')} kind="sticky" tokens={STICKY_COLORS} value={m.stickyColor} palette={palette} onPick={(c) => patch({ color: c })} focusCanvas={focusCanvas} testId="canvas-prop-sticky-color" />
       ) : null}
-      {m.hasText ? (
+      {!m.locked && m.hasText ? (
         <>
           <SwatchMenu label={t('canvasBoard.props.color')} kind="ink" tokens={INK_COLORS} value={m.textColor} palette={palette} onPick={(c) => patch({ color: c })} focusCanvas={focusCanvas} testId="canvas-prop-text-color" />
           <Seg
@@ -361,7 +421,7 @@ export const PropsPanel = memo(function PropsPanel({
           />
         </>
       ) : null}
-      {m.hasShape ? (
+      {!m.locked && m.hasShape ? (
         <>
           <Seg
             label={t('canvasBoard.props.shape')}
@@ -373,7 +433,7 @@ export const PropsPanel = memo(function PropsPanel({
           <SwatchMenu label={t('canvasBoard.props.fill')} kind="fill" tokens={FILL_COLORS} value={m.fill} palette={palette} onPick={(c) => patch({ fill: c })} focusCanvas={focusCanvas} testId="canvas-prop-fill" />
         </>
       ) : null}
-      {m.hasShape || m.hasConnector ? (
+      {!m.locked && (m.hasShape || m.hasConnector) ? (
         <>
           <SwatchMenu label={t('canvasBoard.props.stroke')} kind="ink" tokens={STROKE_COLORS} value={m.stroke} palette={palette} onPick={(c) => patch({ stroke: c })} focusCanvas={focusCanvas} testId="canvas-prop-stroke" />
           <Seg
@@ -385,7 +445,7 @@ export const PropsPanel = memo(function PropsPanel({
           />
         </>
       ) : null}
-      {m.hasConnector ? (
+      {!m.locked && m.hasConnector ? (
         <>
           <Seg
             label={t('canvasBoard.props.route')}
@@ -403,6 +463,29 @@ export const PropsPanel = memo(function PropsPanel({
           />
         </>
       ) : null}
+      {!m.locked && m.units >= 2 ? <ArrangeMenu engine={engine} units={m.units} focusCanvas={focusCanvas} /> : null}
+      {m.canGroup ? (
+        <IconButton label={t('canvasBoard.props.group')} shortcut={`${MOD}G`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.groupSelection())} data-testid="canvas-prop-group">
+          <Group className={ICON} strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      ) : null}
+      {m.canUngroup ? (
+        <IconButton label={t('canvasBoard.props.ungroup')} shortcut={`⇧${MOD}G`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.ungroupSelection())} data-testid="canvas-prop-ungroup">
+          <Ungroup className={ICON} strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      ) : null}
+      <IconButton
+        label={t(m.locked ? 'canvasBoard.props.unlock' : 'canvasBoard.props.lock')}
+        shortcut={`⇧${MOD}L`}
+        size="sm"
+        active={m.locked}
+        className={cx(m.locked && 'bg-active text-fg')}
+        onMouseDown={keepFocus}
+        onClick={run(() => engine.toggleLock())}
+        data-testid="canvas-prop-lock"
+      >
+        {m.locked ? <Lock className={ICON} strokeWidth={1.75} aria-hidden /> : <LockOpen className={ICON} strokeWidth={1.75} aria-hidden />}
+      </IconButton>
       <div className={DIVIDER} aria-hidden />
       <IconButton label={t('canvasBoard.props.front')} shortcut="⇧⌘]" size="sm" onMouseDown={keepFocus} onClick={run(() => engine.reorder(1, true))} data-testid="canvas-prop-front">
         <BringToFront className={ICON} strokeWidth={1.75} aria-hidden />

@@ -4,6 +4,8 @@
  * selected object (a drag moves it 60 times a second); the panel must not re-render for x/y, so the
  * snapshot is compared by value and the same object is returned while it is equal.
  */
+import { arrangeUnits } from '../../../lib/canvas/arrange';
+import type { Scene } from '../../../lib/canvas/scene';
 import type { Arrow, ObjectRec, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import type { CanvasEngine } from '../engine';
 
@@ -13,6 +15,14 @@ export interface PanelModel {
   hasText: boolean;
   hasShape: boolean;
   hasConnector: boolean;
+  /** Every selected object is locked: nothing of the selection can be changed, only unlocked, grouped, ordered or deleted. */
+  locked: boolean;
+  /** Two or more objects that are not already exactly one group. */
+  canGroup: boolean;
+  /** Some selected object is in a group. */
+  canUngroup: boolean;
+  /** Things that align / distribute as units (a whole group counts as one), capped at 3: 2 enables align, 3 distribute. */
+  units: number;
   /** Uniform values of the selection; undefined where the selected objects differ (or do not have the field). */
   stickyColor?: string;
   textColor?: string;
@@ -30,8 +40,10 @@ function uniform<T>(values: readonly T[]): T | undefined {
   return first !== undefined && values.every((v) => v === first) ? first : undefined;
 }
 
-export function panelModelOf(objs: readonly ObjectRec[]): PanelModel | null {
+/** Group member counts come from the scene; without it every group in the selection counts as whole. */
+export function panelModelOf(objs: readonly ObjectRec[], groupSize: (gid: string) => number = () => 0): PanelModel | null {
   if (objs.length === 0) return null;
+  const firstGroup = objs[0]?.group;
   const sticky = objs.flatMap((o) => (o.kind === 'sticky' ? [o] : []));
   const text = objs.flatMap((o) => (o.kind === 'text' ? [o] : []));
   const shape = objs.flatMap((o) => (o.kind === 'shape' ? [o] : []));
@@ -42,6 +54,10 @@ export function panelModelOf(objs: readonly ObjectRec[]): PanelModel | null {
     hasText: text.length > 0,
     hasShape: shape.length > 0,
     hasConnector: conn.length > 0,
+    locked: objs.every((o) => o.locked === true),
+    canGroup: objs.length >= 2 && !(firstGroup !== undefined && objs.every((o) => o.group === firstGroup) && groupSize(firstGroup) <= objs.length),
+    canUngroup: objs.some((o) => o.group !== undefined),
+    units: Math.min(3, arrangeUnits(objs, groupSize).length),
   };
   const set = <K extends keyof PanelModel>(k: K, v: PanelModel[K] | undefined): void => {
     if (v !== undefined) out[k] = v;
@@ -59,7 +75,7 @@ export function panelModelOf(objs: readonly ObjectRec[]): PanelModel | null {
 }
 
 const KEYS: readonly (keyof PanelModel)[] = [
-  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'stickyColor', 'textColor', 'textSize', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route',
+  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route',
 ];
 
 export const samePanelModel = (a: PanelModel | null, b: PanelModel | null): boolean =>
@@ -71,12 +87,13 @@ export interface SelectionModelStore {
   getSnapshot: () => PanelModel | null;
 }
 
-export function createSelectionModel(engine: Pick<CanvasEngine, 'subscribeSelection' | 'getSelected'>): SelectionModelStore {
-  let current: PanelModel | null = panelModelOf(engine.getSelected());
+export function createSelectionModel(engine: Pick<CanvasEngine, 'subscribeSelection' | 'getSelected'> & { scene?: Pick<Scene, 'groupMembers'> }): SelectionModelStore {
+  const size = (gid: string): number => engine.scene?.groupMembers(gid).size ?? 0;
+  let current: PanelModel | null = panelModelOf(engine.getSelected(), size);
   return {
     subscribe(cb) {
       return engine.subscribeSelection((objs) => {
-        const next = panelModelOf(objs);
+        const next = panelModelOf(objs, size);
         if (samePanelModel(next, current)) return;
         current = next;
         cb();
@@ -84,7 +101,7 @@ export function createSelectionModel(engine: Pick<CanvasEngine, 'subscribeSelect
     },
     getSnapshot() {
       // The snapshot may be read before the first change event (mount): resync lazily.
-      const fresh = panelModelOf(engine.getSelected());
+      const fresh = panelModelOf(engine.getSelected(), size);
       if (!samePanelModel(fresh, current)) current = fresh;
       return current;
     },

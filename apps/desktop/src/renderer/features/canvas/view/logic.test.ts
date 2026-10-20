@@ -127,3 +127,56 @@ describe('PresenceStore', () => {
     expect(s.getSnapshot()).toEqual([]);
   });
 });
+
+describe('properties panel model: lock, group, align', () => {
+  const grouped = (id: string, group: string, extra: object = {}): ObjectRec => ({ ...sticky(id, 'yellow'), group, ...extra });
+
+  it('reports a locked selection only when every object is locked', () => {
+    expect(panelModelOf([sticky('a', 'yellow')])?.locked).toBe(false);
+    expect(panelModelOf([{ ...sticky('a', 'yellow'), locked: true }])?.locked).toBe(true);
+    expect(panelModelOf([{ ...sticky('a', 'yellow'), locked: true }, sticky('b', 'yellow')])?.locked).toBe(false);
+  });
+
+  it('offers group for two or more objects that are not already exactly one group, ungroup for any grouped one', () => {
+    expect(panelModelOf([sticky('a', 'yellow')])).toMatchObject({ canGroup: false, canUngroup: false });
+    expect(panelModelOf([sticky('a', 'yellow'), sticky('b', 'yellow')])).toMatchObject({ canGroup: true, canUngroup: false });
+    const whole = panelModelOf([grouped('a', 'g'), grouped('b', 'g')], () => 2);
+    expect(whole).toMatchObject({ canGroup: false, canUngroup: true });
+    // Only part of a group (stepped into it): grouping is still possible, and so is ungrouping.
+    const part = panelModelOf([grouped('a', 'g'), grouped('b', 'g')], () => 3);
+    expect(part).toMatchObject({ canGroup: true, canUngroup: true });
+    expect(panelModelOf([grouped('a', 'g'), sticky('c', 'yellow')], () => 2)).toMatchObject({ canGroup: true, canUngroup: true });
+  });
+
+  it('counts the things that align: a whole group is one, locked ones are none, capped at 3', () => {
+    expect(panelModelOf([sticky('a', 'yellow'), sticky('b', 'yellow')])?.units).toBe(2);
+    expect(panelModelOf([sticky('a', 'yellow'), sticky('b', 'yellow'), sticky('c', 'yellow'), sticky('d', 'yellow')])?.units).toBe(3);
+    expect(panelModelOf([grouped('a', 'g'), grouped('b', 'g')], () => 2)?.units).toBe(1);
+    expect(panelModelOf([grouped('a', 'g'), grouped('b', 'g'), sticky('c', 'yellow')], () => 2)?.units).toBe(2);
+    expect(panelModelOf([{ ...sticky('a', 'yellow'), locked: true }, sticky('b', 'yellow')])?.units).toBe(1);
+  });
+
+  it('the store re-renders for lock / group changes but not for a rotation', () => {
+    let objs: ObjectRec[] = [sticky('a', 'yellow'), sticky('b', 'yellow')];
+    const hook: { fire: ((o: readonly ObjectRec[]) => void) | null } = { fire: null };
+    const store = createSelectionModel({
+      getSelected: () => objs,
+      subscribeSelection: (fn) => {
+        hook.fire = fn;
+        return () => undefined;
+      },
+    });
+    const cb = vi.fn();
+    store.subscribe(cb);
+    store.getSnapshot();
+    objs = objs.map((o) => ({ ...o, rot: 40, x: 9 }));
+    hook.fire?.(objs);
+    expect(cb).not.toHaveBeenCalled();
+    objs = objs.map((o) => ({ ...o, locked: true }));
+    hook.fire?.(objs);
+    expect(cb).toHaveBeenCalledTimes(1);
+    objs = objs.map((o) => ({ ...o, locked: undefined, group: 'g' }));
+    hook.fire?.(objs);
+    expect(cb).toHaveBeenCalledTimes(2);
+  });
+});

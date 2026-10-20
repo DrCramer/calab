@@ -588,3 +588,98 @@ describe('PNG export', () => {
     engine.destroy();
   });
 });
+
+describe('transform controls (ADR-0114)', () => {
+  const twoStickies = async (relay: MockRelay): Promise<Mounted> => {
+    const m = await mount({ relay });
+    for (const [x, y] of [[200, 200], [600, 330]] as const) {
+      m.key('s');
+      m.ptr('pointerdown', x, y);
+      m.ptr('pointerup', x, y);
+      escapeEditor(m);
+    }
+    await settle(400);
+    m.key('a', { metaKey: true });
+    return m;
+  };
+  const ys = (relay: MockRelay): number[] => [...relay.doc.getMap<Y.Map<unknown>>('objects').values()].map((o) => Number(o.get('y')));
+
+  it('a multi-selection offers group and align; a group offers ungroup, and a locked selection only the lock, order and delete', async () => {
+    const relay = new MockRelay();
+    const m = await twoStickies(relay);
+    expect(m.q('canvas-prop-group')).not.toBeNull();
+    expect(m.q('canvas-prop-align')).not.toBeNull();
+    expect(m.q('canvas-prop-ungroup')).toBeNull();
+    expect(m.q('canvas-prop-lock')).not.toBeNull();
+    act(() => m.q('canvas-prop-group')?.click());
+    expect(m.q('canvas-prop-ungroup')).not.toBeNull();
+    expect(m.q('canvas-prop-group')).toBeNull();
+    expect(m.q('canvas-prop-align')).toBeNull(); // one group = one thing to align
+    act(() => m.q('canvas-prop-lock')?.click());
+    expect(m.q('canvas-prop-locked-badge')).not.toBeNull();
+    expect(m.q('canvas-prop-sticky-color')).toBeNull();
+    expect(m.q('canvas-prop-delete')).not.toBeNull();
+    expect(m.q('canvas-prop-lock')?.getAttribute('aria-pressed')).toBe('true');
+    act(() => m.q('canvas-prop-lock')?.click());
+    expect(m.q('canvas-prop-locked-badge')).toBeNull();
+    expect(m.q('canvas-prop-sticky-color')).not.toBeNull();
+    act(() => m.q('canvas-prop-ungroup')?.click());
+    expect(m.q('canvas-prop-group')).not.toBeNull();
+  });
+
+  it('the align popover aligns the selection; distribute appears from three objects', async () => {
+    const relay = new MockRelay();
+    const m = await twoStickies(relay);
+    await act(async () => {
+      m.q('canvas-prop-align')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }));
+      m.q('canvas-prop-align')?.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const top = document.querySelector<HTMLElement>('[data-testid="canvas-prop-arrange-top"]');
+    expect(top).not.toBeNull();
+    expect(document.querySelector('[data-testid="canvas-prop-arrange-hspace"]')).toBeNull();
+    expect(new Set(ys(relay)).size).toBe(2);
+    act(() => top?.click());
+    await settle(400);
+    expect(new Set(ys(relay)).size).toBe(1);
+  });
+
+  it('rotating and locking do not re-render React per frame; a turned object is stored with its angle', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    m.key('s');
+    m.ptr('pointerdown', 400, 400);
+    m.ptr('pointerup', 400, 400);
+    escapeEditor(m);
+    await settle(400);
+    const before = m.commits.n;
+    // The sticky spans 320..480; the knob hangs 26 px above its top middle.
+    m.ptr('pointerdown', 400, 320 - 26);
+    for (let i = 1; i <= 20; i++) m.ptr('pointermove', 400 + i * 8, 320 - 26 + i * 5);
+    m.ptr('pointerup', 560, 400);
+    await settle(400);
+    expect(m.commits.n).toBe(before);
+    const o = [...relay.doc.getMap<Y.Map<unknown>>('objects').values()][0];
+    expect(typeof o?.get('rot')).toBe('number');
+  });
+
+  it('shows the new shortcuts in the help', async () => {
+    const m = await mount();
+    m.key('?', { shiftKey: true });
+    const text = document.querySelector('[data-testid="canvas-help-panel"]')?.textContent ?? '';
+    expect(text).toMatch(/Ctrl\+G|⌘G/);
+    expect(text).toMatch(/15°/);
+  });
+
+  it('the right-click menu offers group and lock', async () => {
+    const relay = new MockRelay();
+    const m = await twoStickies(relay);
+    await act(async () => {
+      m.canvas.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200, button: 2 }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(document.querySelector('[data-testid="canvas-menu-group"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="canvas-menu-lock"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="canvas-menu-ungroup"]')).toBeNull();
+  });
+});
