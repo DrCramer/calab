@@ -207,6 +207,8 @@ export const esPeople: DictShape<typeof enPeople> = {
   'landing.notFoundHint': 'Continúa en el navegador o instala Calab.',
   'landing.inBrowser': 'Abrir en el navegador',
   'landing.invalid': 'El enlace no es válido o ha caducado.',
+  'landing.taskTitle': 'Enlace a una tarea',
+  'landing.taskGeneric': 'Ábrela en la app de Calab o en tu navegador.',
   // One-time mailbox password page /mail-reset/<token> (ADR-0101)
   'mailReset.title': 'Contraseña del buzón',
   'mailReset.password': 'Contraseña',

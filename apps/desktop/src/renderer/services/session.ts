@@ -39,7 +39,7 @@ import { installMenu } from './menu';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
 import { resetBoards } from './boards';
-import { showLinkLanding } from './linkLanding';
+import { showLinkLanding, skipsLanding, useLinkLanding } from './linkLanding';
 import { takeEventPage } from './eventPage';
 import { watchSyncedPrefs } from './profile';
 import { recheckTimeZone, resetTimeZoneSync } from './timezone';
@@ -116,12 +116,18 @@ export async function bootstrap(): Promise<void> {
   // the in-app card — the token says who answers, not the session.
   const eventPage = takeEventPage();
   const webLink = platform.kind === 'web' && !eventPage && !formPageCode() ? await platform.app.takeDeepLink() : null;
-  const landed = webLink !== null && showLinkLanding(webLink);
+  let landed = webLink !== null && showLinkLanding(webLink);
 
   try {
     const s = await platform.auth.restore();
     if (s) beginSession(s);
     else useSession.getState().set({ status: 'anon' });
+    // A task link for someone already signed in on the web: the card at once, no landing (CBF-40).
+    const shown = useLinkLanding.getState().link;
+    if (landed && shown && skipsLanding(shown, s !== null)) {
+      useLinkLanding.setState({ link: null });
+      landed = false;
+    }
   } catch (e) {
     log.warn('session restore failed (offline?)', e);
     useSession.getState().set({ status: 'offline' });
