@@ -3,7 +3,7 @@ import type { Message } from '@calaba/protocol';
 import { trimWindow, type ChatMessage, type RoomMessages } from '../stores/messages';
 
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({}), subscribe: () => () => undefined } }));
-const { IDLE_MS, retentionAction } = await import('./retention');
+const { IDLE_MS, openRoomIds, retentionAction } = await import('./retention');
 
 const msg = (id: string): Message => ({ id, roomId: 'r', nonce: '' }) as unknown as Message;
 const sentItem = (id: string): ChatMessage => ({ key: id, msg: msg(id), status: 'sent' });
@@ -51,5 +51,13 @@ describe('message retention (review M10)', () => {
     expect(retentionAction({ open: false, hasPending: false, idleMs: 1000 })).toBe('trim');
     expect(retentionAction({ open: false, hasPending: false, idleMs: IDLE_MS })).toBe('unload');
     expect(retentionAction({ open: false, hasPending: true, idleMs: IDLE_MS })).toBe('trim');
+  });
+  it('counts the open task room as open: its comments are never unloaded under the panel (CBF-30)', () => {
+    expect(openRoomIds('chat', 'task-room')).toEqual(['chat', 'task-room']);
+    expect(openRoomIds(null, 'task-room')).toEqual(['task-room']);
+    expect(openRoomIds('chat', undefined)).toEqual(['chat']);
+    expect(openRoomIds(undefined, '')).toEqual([]);
+    const open = openRoomIds('chat', 'task-room');
+    expect(retentionAction({ open: open.includes('task-room'), hasPending: false, idleMs: IDLE_MS * 10 })).toBe('keep');
   });
 });
