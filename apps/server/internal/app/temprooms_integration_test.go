@@ -157,7 +157,7 @@ func TestTempRooms(t *testing.T) {
 	if err := testDB.Pool.QueryRow(context.Background(), "SELECT expires_at FROM room_invites WHERE code = $1", priv.GetInviteCode()).Scan(&linkEnd); err != nil || !linkEnd.Equal(newEnd) {
 		t.Fatalf("the link follows the room: %v %v", linkEnd, err)
 	}
-	apiErrOf(t, bob.client, 422, "PATCH", up, &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(8 * 24 * time.Hour))})
+	apiErrOf(t, bob.client, 422, "PATCH", up, &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(31 * 24 * time.Hour))})
 	apiErrOf(t, bob.client, 422, "PATCH", up, &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(-time.Minute))})
 	apiErrOf(t, bob.client, 403, "PATCH", up, &v1.UpdateRoomRequest{MakePermanent: true})
 	cat := ""
