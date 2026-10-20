@@ -10,13 +10,14 @@ import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import { ShapeIcon } from './ShapeIcon';
+import { TEXT_FONT } from '../../../lib/canvas/textLayout';
 import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { ROTATE_OFFSET_PX } from '../engine/overlay';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { NO_INSETS, placePanel, type Insets } from './layout';
 import {
-  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS, TEXT_SIZES, nearestTextSize,
+  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, FONT_SIZE_DEFS, STROKE_WIDTHS,
 } from './model';
 import { createSelectionModel } from './selectionModel';
 
@@ -453,14 +454,17 @@ export const PropsPanel = memo(function PropsPanel({
       {!m.locked && m.hasText ? (
         <>
           <SwatchMenu label={t('canvasBoard.props.color')} kind="ink" tokens={INK_COLORS} value={m.textColor} palette={palette} onPick={(c) => patch({ color: c })} focusCanvas={focusCanvas} testId="canvas-prop-text-color" />
-          <Seg
-            label={t('canvasBoard.props.textSize')}
-            testId="canvas-prop-size"
-            value={m.textSize === undefined ? undefined : nearestTextSize(m.textSize)}
-            items={TEXT_SIZES.map((s) => ({ id: s.size, label: t(s.label), node: <span className="text-caption font-semibold">{s.glyph}</span> }))}
-            onPick={(size) => patch({ size })}
-          />
         </>
+      ) : null}
+      {!m.locked && (m.hasText || m.hasSticky || m.hasShape) ? (
+        <Seg
+          label={t('canvasBoard.props.textSize')}
+          testId="canvas-prop-size"
+          value={m.fontToken}
+          items={FONT_SIZE_DEFS.map((d) => ({ id: d.token, label: t(d.label), node: <span className="text-caption font-semibold">{d.glyph}</span> }))}
+          // A text object takes the preset as its pixel size, a sticky or shape as its token; the patch carries both and each kind keeps its own.
+          onPick={(token) => patch({ fontSize: token, size: TEXT_FONT[token] })}
+        />
       ) : null}
       {!m.locked && m.hasShape ? (
         <>

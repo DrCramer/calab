@@ -668,6 +668,46 @@ describe('transform controls (ADR-0114)', () => {
     expect(o?.get('shape')).toBe('cylinder');
   });
 
+  it('the format bar follows the text editor: it shows while a text is edited, formats the selection and commits no extra React work per keystroke', async () => {
+    const relay = new MockRelay();
+    const m = await mount({ relay });
+    expect(m.q('canvas-format-bar')).toBeNull();
+    m.key('s');
+    m.ptr('pointerdown', 400, 400);
+    m.ptr('pointerup', 400, 400);
+    await settle(100);
+    const ta = m.host.querySelector('textarea');
+    expect(ta).not.toBeNull();
+    expect(m.q('canvas-format-bar')).not.toBeNull();
+    expect(m.q('canvas-props')?.getAttribute('style') ?? '').toContain('hidden');
+    if (!ta) return;
+    const before = m.commits.n;
+    for (let i = 1; i <= 20; i++) {
+      ta.value = 'x'.repeat(i);
+      ta.setSelectionRange(i, i);
+      act(() => void ta.dispatchEvent(new Event('input', { bubbles: true })));
+    }
+    expect(m.commits.n).toBe(before);
+    ta.setSelectionRange(0, 5);
+    act(() => void document.dispatchEvent(new Event('selectionchange')));
+    expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('false');
+    act(() => m.q('canvas-format-bold')?.click());
+    expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('true');
+    expect(m.host.querySelector('textarea')).toBe(ta); // the button did not steal the focus: the editor is still open
+    act(() => m.q('canvas-format-bullet')?.click());
+    expect(m.q('canvas-format-bullet')?.getAttribute('aria-pressed')).toBe('true');
+    act(() => m.q('canvas-format-size-xl')?.click());
+    expect(m.q('canvas-format-size-xl')?.getAttribute('aria-pressed')).toBe('true');
+    escapeEditor(m);
+    await settle(400);
+    expect(m.q('canvas-format-bar')).toBeNull();
+    const o = [...relay.doc.getMap<Y.Map<unknown>>('objects').values()][0];
+    expect(o?.get('fontSize')).toBe('xl');
+    const delta = (o?.get('text') as Y.Text).toDelta() as { insert: string; attributes?: object }[];
+    expect(delta[0]).toEqual({ insert: 'xxxxx', attributes: { bold: true } });
+    expect(delta[delta.length - 1]).toEqual({ insert: '\n', attributes: { list: 'bullet' } });
+  });
+
   it('rotating and locking do not re-render React per frame; a turned object is stored with its angle', async () => {
     const relay = new MockRelay();
     const m = await mount({ relay });

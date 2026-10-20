@@ -45,6 +45,7 @@ const HELP_ROWS = [
   'canvasBoard.help.rotate',
   'canvasBoard.help.group',
   'canvasBoard.help.lock',
+  'canvasBoard.help.format',
   'canvasBoard.help.undo',
 ] as const;
 

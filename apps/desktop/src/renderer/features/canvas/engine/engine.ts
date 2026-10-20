@@ -9,7 +9,7 @@ import { CanvasDoc, newId } from '../../../lib/canvas/doc';
 import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
 import { Scene } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
-import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type MeasureFn } from '../../../lib/canvas/textLayout';
+import { LABEL_SIZE, TEXT_FONT, TextLayouter, boxFontSize, estimateMeasure, fontOf, nearestToken, type FontToken, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import {
   DEFAULTS, aabb, isConnector,
@@ -133,6 +133,8 @@ export class CanvasEngine implements Core {
   private shape_: ShapeKind = 'rect';
   private route_: RouteKind = 'straight';
   private pasteCount = 0;
+  /** The object whose text the editor is open on. */
+  private editingId: string | null = null;
   private animToken = 0;
   private animRaf = 0;
   private pending: Camera | null = null;
@@ -829,9 +831,9 @@ export class CanvasEngine implements Core {
     const box = contentRect(o);
     const turn = o.rot ? { rot: o.rot, center: rectCenter(o) } : {};
     switch (o.kind) {
-      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, ...turn };
-      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, ...turn };
-      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, ...turn };
+      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, rich: true, token: o.fontSize ?? 'm', ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, rich: true, token: nearestToken(o.size), ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, token: o.fontSize ?? 'm', ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
     }
   }
 
@@ -846,13 +848,16 @@ export class CanvasEngine implements Core {
     const oid = o.id;
     this.renderer.setHiddenText(oid);
     this.overlay = { ...this.overlay, group: null };
-    this.editor.open(spec, (text) => {
+    this.editingId = oid;
+    this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
+      this.editingId = null;
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();
         if (cur.kind === 'text' && text.trim() === '') this.doc.remove([oid]);
-        else this.doc.setText(oid, text);
+        else if (cur.kind === 'connector') this.doc.setText(oid, text);
+        else if (changed || fmtChanged) this.doc.setRich(oid, text, fmt);
       }
       this.refreshOverlay();
       this.sync();
@@ -860,6 +865,16 @@ export class CanvasEngine implements Core {
     });
     this.sync();
     return true;
+  }
+
+  /** The text size of the object under edit (the format bar's S / M / L / XL): the object changes, the textarea follows. */
+  setEditFontSize(token: FontToken): void {
+    const id = this.editingId;
+    const o = id ? this.scene.get(id) : undefined;
+    if (!id || !o || isConnector(o) || o.locked || !this.canEdit() || !this.editor.isOpen) return;
+    this.doc.patch(id, { fontSize: token, size: TEXT_FONT[token] });
+    const now = this.scene.get(id);
+    if (now && !isConnector(now)) this.editor.setSize(boxFontSize(now), token);
   }
 
   /** Double-click on empty canvas: a new text object, in edit mode. */

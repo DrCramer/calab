@@ -1,4 +1,5 @@
 /** Static tables of the Canvas screen: tools, hotkeys, swatches (ADR-0113 §5). No React. */
+import type { FontToken } from '../../../lib/canvas/textLayout';
 import type { Arrow, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { HUE_IDS, INK_EXTRA_IDS, STICKY_IDS, type Tool } from '../engine';
 
@@ -54,6 +55,14 @@ export const TEXT_SIZES: readonly { size: number; label: `canvasBoard.size.${'s'
   { size: 20, label: 'canvasBoard.size.m', glyph: 'M' },
   { size: 32, label: 'canvasBoard.size.l', glyph: 'L' },
   { size: 48, label: 'canvasBoard.size.xl', glyph: 'XL' },
+];
+
+/** The text size buttons (format bar, properties panel): the token is what is stored for stickies and shapes; a text object stores its own pixel size. */
+export const FONT_SIZE_DEFS: readonly { token: FontToken; label: `canvasBoard.size.${FontToken}`; glyph: string }[] = [
+  { token: 's', label: 'canvasBoard.size.s', glyph: 'S' },
+  { token: 'm', label: 'canvasBoard.size.m', glyph: 'M' },
+  { token: 'l', label: 'canvasBoard.size.l', glyph: 'L' },
+  { token: 'xl', label: 'canvasBoard.size.xl', glyph: 'XL' },
 ];
 
 export const STROKE_WIDTHS: readonly { width: number; label: `canvasBoard.width.${'thin' | 'medium' | 'thick'}` }[] = [
