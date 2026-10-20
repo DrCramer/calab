@@ -14,9 +14,10 @@ vi.stubGlobal('window', globalThis);
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn(), success: vi.fn(), fail: vi.fn() }, useToasts: { getState: () => ({ push: vi.fn() }) } }));
 const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
-vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a) } } }));
+const search = vi.fn<(...a: unknown[]) => Promise<unknown>>();
+vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a), search: (...a: unknown[]) => search(...a) } } }));
 
-const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText } = await import('./boards');
+const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText, searchAllTasks, ALL_TASKS_LIMIT } = await import('./boards');
 const { t } = await import('../i18n');
 const { memberName } = await import('../stores/workspaces');
 const { useBoards, workspaceBoards } = await import('../stores/boards');
@@ -244,5 +245,17 @@ describe('noticeText (ADR-0089 triggers)', () => {
   it('status keeps its text; an unknown kind is «Задача обновлена»', () => {
     expect(text({ kind: TaskNoticeKind.STATUS, actorId: 'u1' })).toBe(t('boards.notice.status', { name: who }));
     expect(text({ kind: 99 as TaskNoticeKind })).toBe(t('boards.notice.updated'));
+  });
+});
+
+describe('«Мои задачи → Все задачи» (CBF-35)', () => {
+  beforeEach(() => useBoards.getState().reset());
+
+  it('asks the workspace search with the state, keeps the server order, stores the tasks', async () => {
+    search.mockResolvedValueOnce({ tasks: [task('z', 's1', 1, { boardId: 'b2' }), task('a', 's1', 2)] });
+    const ac = new AbortController();
+    await expect(searchAllTasks('w1', 'login', 'done', ac.signal)).resolves.toEqual(['z', 'a']);
+    expect(search).toHaveBeenCalledWith('w1', 'login', { state: 'done', limit: ALL_TASKS_LIMIT }, ac.signal);
+    expect(useBoards.getState().tasks['z']?.boardId).toBe('b2');
   });
 });

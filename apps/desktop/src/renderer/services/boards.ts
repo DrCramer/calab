@@ -48,6 +48,7 @@ import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/c
 import { milestonePosition, progressOf, withMilestone } from '../lib/boards/milestones';
 import { boardLayout, boardPlacements } from '../lib/boards/categories';
 import { countsUnread } from '../lib/boards/reducers';
+import type { Completion } from '../lib/boards/completion';
 import { planCategoryMove, planNewCategoryFirst, planRoomMove, type RoomTarget } from '../lib/roomOrder';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
@@ -481,6 +482,20 @@ export async function loadMyTasks(workspaceId: string, scope: TaskScope, open = 
     log.warn('my tasks failed', e);
     useTaskDetails.setState((s) => ({ mine: { ...s.mine, [key]: { ids: s.mine[key]?.ids ?? [], loading: false } } }));
   }
+}
+
+/** Most tasks of one «Все задачи» search (the server's MaxSearchSize). */
+export const ALL_TASKS_LIMIT = 50;
+
+/**
+ * «Мои задачи → Все задачи»: tasks of every board of the workspace the server lets the caller
+ * see, by title, key and description, of the completion state; the tasks go to the store, the ids
+ * come back in the server's order (exact key, relevance, recency). Throws on failure / abort.
+ */
+export async function searchAllTasks(workspaceId: string, q: string, state: Completion, signal?: AbortSignal): Promise<string[]> {
+  const r = await boardsApi.tasks.search(workspaceId, q, { state, limit: ALL_TASKS_LIMIT }, signal);
+  useBoards.getState().upsertTasks(r.tasks);
+  return r.tasks.map((x) => x.id);
 }
 
 // ------------------------------------------------------------------ navigation
