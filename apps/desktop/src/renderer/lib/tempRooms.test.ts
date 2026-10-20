@@ -59,7 +59,9 @@ describe('lifetime presets', () => {
     expect(presetTtl('3h', now)).toBe(3 * 3600);
     expect(presetTtl('1d', now)).toBe(86400);
     expect(presetTtl('3d', now)).toBe(3 * 86400);
-    expect(presetTtl('7d', now)).toBe(MAX_TTL_S);
+    expect(presetTtl('7d', now)).toBe(7 * 86400);
+    expect(presetTtl('30d', now)).toBe(MAX_TTL_S);
+    expect(MAX_TTL_S).toBe(30 * 86400);
   });
 
   it('«до конца дня»: to the local midnight; too late in the evening is out of bounds', () => {
@@ -68,10 +70,11 @@ describe('lifetime presets', () => {
     expect(presetTtl('eod', new Date(2026, 0, 15, 23, 50).getTime())).toBeNull();
   });
 
-  it('«до даты»: within 15 minutes … 7 days', () => {
+  it('«до даты»: within 15 minutes … 30 days', () => {
+    expect(presetTtl('date', now, now + 30 * DAY)).toBe(30 * 86400);
     expect(presetTtl('date', now, now + 2 * DAY)).toBe(2 * 86400);
     expect(presetTtl('date', now, now + 10 * MIN)).toBeNull();
-    expect(presetTtl('date', now, now + 8 * DAY)).toBeNull();
+    expect(presetTtl('date', now, now + 31 * DAY)).toBeNull();
     expect(presetTtl('date', now)).toBeNull();
     expect(presetTtl('date', now, NaN)).toBeNull();
   });
@@ -86,19 +89,20 @@ describe('lifetime presets', () => {
 describe('extension', () => {
   const now = 1_000_000_000_000;
 
-  it('adds to the current end, capped at 7 days from now', () => {
+  it('adds to the current end, capped at 30 days from now', () => {
     expect(extendTo(now + HOUR, HOUR, now)).toBe(now + 2 * HOUR);
-    expect(extendTo(now + 6.5 * DAY, DAY, now)).toBe(now + 7 * DAY);
+    expect(extendTo(now + 29.5 * DAY, DAY, now)).toBe(now + 30 * DAY);
   });
 
   it('an end already passed counts from now', () => {
     expect(extendTo(now - MIN, HOUR, now)).toBe(now + HOUR);
   });
 
-  it('a picked end: 15 minutes … 7 days ahead', () => {
+  it('a picked end: 15 minutes … 30 days ahead', () => {
     expect(validEnd(now + DAY, now)).toBe(now + DAY);
     expect(validEnd(now + MIN, now)).toBeNull();
-    expect(validEnd(now + 8 * DAY, now)).toBeNull();
+    expect(validEnd(now + 30 * DAY, now)).toBe(now + 30 * DAY);
+    expect(validEnd(now + 30 * DAY + MIN, now)).toBeNull();
   });
 });
 

@@ -95,4 +95,6 @@ export const ruBots = {
   'bots.delegate.cancelInvite': 'Отменить предложение для {name}',
   'bots.delegate.decline': 'Отказаться',
   'bots.delegate.noGuests': 'гостям нельзя',
+  'bots.delegate.ask': '{bot} хочет действовать от вашего имени: разрешить?',
+  'bots.delegate.askDetails': 'Подробнее',
 } as const;

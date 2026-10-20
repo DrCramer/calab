@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"log/slog"
+	"math"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -28,17 +29,57 @@ import (
 // Temporary rooms (ADR-0044): voice rooms with rooms.expires_at, created with CREATE_TEMP_ROOMS
 // together with a room link, archived by the sweeper when they expire.
 
-// Limits of temporary rooms: lifetime at creation and extension (MinTempTTL, MaxTempTTL), live
-// rooms per workspace and per creator, people of a private one; TempSweep is how often
-// expired rooms are archived.
+// Fixed limits of temporary rooms: the shortest lifetime, people of a private one; TempSweep is
+// how often expired rooms are archived.
 const (
-	MinTempTTL          = 15 * time.Minute
-	MaxTempTTL          = 7 * 24 * time.Hour
-	MaxTempPerWorkspace = 20
-	MaxTempPerUser      = 5
-	MaxTempMembers      = 50
-	TempSweep           = 30 * time.Second
+	MinTempTTL     = 15 * time.Minute
+	MaxTempMembers = 50
+	TempSweep      = 30 * time.Second
 )
+
+// Defaults of TempLimits (CBF-38): a lifetime up to 30 days, 50 live temporary rooms per workspace.
+const (
+	DefaultMaxTempTTL          = 30 * 24 * time.Hour
+	DefaultMaxTempPerWorkspace = 50
+)
+
+// TempLimits are the configurable limits of temporary rooms (env TEMP_ROOM_MAX_TTL_DAYS,
+// TEMP_ROOMS_PER_WORKSPACE): the longest lifetime at creation and at extension and live rooms
+// per workspace. A zero field means the default. Rooms per creator come from the plan
+// (plans.Limits.TempRooms), see userCap.
+type TempLimits struct {
+	MaxTTL       time.Duration
+	PerWorkspace int
+}
+
+// norm replaces zero fields with the defaults.
+func (l TempLimits) norm() TempLimits {
+	if l.MaxTTL <= 0 {
+		l.MaxTTL = DefaultMaxTempTTL
+	}
+	if l.PerWorkspace <= 0 {
+		l.PerWorkspace = DefaultMaxTempPerWorkspace
+	}
+	return l
+}
+
+// ttlText is the longest lifetime for an error message.
+func (l TempLimits) ttlText() string {
+	return "15 minutes .. " + strconv.Itoa(int(l.norm().MaxTTL/(24*time.Hour))) + " days"
+}
+
+// checkCount refuses a creation or a restore when the workspace or the creator is at the cap;
+// userCap 0 = the plan sets none.
+func (l TempLimits) checkCount(n sqlc.CountLiveTempRoomsRow, userCap uint32) error {
+	l = l.norm()
+	if n.Total >= int32(min(l.PerWorkspace, math.MaxInt32)) { //nolint:gosec // bounded
+		return errTempLimit.WithDetails("", uint64(n.Total), uint64(l.PerWorkspace)) //nolint:gosec // count ≥ 0
+	}
+	if userCap > 0 && n.Mine >= int32(min(userCap, math.MaxInt32)) { //nolint:gosec // bounded
+		return errTempLimit.WithDetails(ReasonPerUser, uint64(n.Mine), uint64(userCap)) //nolint:gosec // count ≥ 0
+	}
+	return nil
+}
 
 const (
 	tempPurgeEvery = time.Hour // the retention purge of the archive
@@ -48,6 +89,15 @@ const (
 // TempAllow are the personal allow bits of a private temporary room (creator, chosen people,
 // members arriving by the link) and the bits of its link — bounded by what the creator holds.
 const TempAllow = perm.ViewRoom | perm.Connect | perm.Speak | perm.Video | perm.Stream | perm.SendMessages | perm.AttachFiles
+
+// userCap is the plan's cap of live temporary rooms per creator in wsID (0: none).
+func (h *Handlers) userCap(ctx context.Context, wsID uuid.UUID) (uint32, error) {
+	if h.plans == nil {
+		return 0, nil
+	}
+	lim, err := h.plans.Effective(ctx, wsID)
+	return lim.TempRooms, err
+}
 
 // ReasonPerUser (ApiError.reason of TEMP_ROOM_LIMIT): the creator's own cap, not the workspace's.
 const ReasonPerUser = "PER_USER"
@@ -159,8 +209,9 @@ func (h *Handlers) createTemp(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ttl := time.Duration(req.GetTtlSeconds()) * time.Second
-	if ttl < MinTempTTL || ttl > MaxTempTTL {
-		return httpx.Validation("ttlSeconds", "lifetime must be 15 minutes .. 7 days")
+	lim := h.Temp.norm()
+	if ttl < MinTempTTL || ttl > lim.MaxTTL {
+		return httpx.Validation("ttlSeconds", "lifetime must be "+lim.ttlText())
 	}
 	guests := req.Guests == nil || req.GetGuests()
 	if auth.IsBotRequest(r) && (guests || req.GetWithEvent()) {
@@ -178,10 +229,14 @@ func (h *Handlers) createTemp(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	userCap, err := h.userCap(ctx, wsID)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	spec := tempSpec{
 		wsID: wsID, creator: me, name: name, expires: now.Add(ttl).Truncate(time.Second),
-		private: req.GetPrivate(), memberIDs: req.GetMemberIds(), guests: guests,
+		lim: lim, userCap: userCap, private: req.GetPrivate(), memberIDs: req.GetMemberIds(), guests: guests,
 		// The creator cannot hand out more than they hold (as with links and overrides).
 		allow: perm.ViewRoom | TempAllow&bits,
 	}
@@ -218,6 +273,8 @@ type tempSpec struct {
 	wsID, creator uuid.UUID
 	name          string
 	expires       time.Time
+	lim           TempLimits
+	userCap       uint32 // the plan's cap per creator; 0 = none
 	private       bool
 	memberIDs     []string    // a private room's people (validated by tempMembers)
 	people        []uuid.UUID // a private room's people validated by the caller (a meeting's attendees)
@@ -233,8 +290,8 @@ type tempMade struct {
 	code string // the room link
 }
 
-// insertTemp creates a temporary room inside q (ADR-0044 §API 1–2): the limits (20 per
-// workspace, 5 per creator), the room after the last one, a private room's personal allows,
+// insertTemp creates a temporary room inside q (ADR-0044 §API 1–2): the limits (per
+// workspace and per creator, TempLimits), the room after the last one, a private room's personal allows,
 // and the room link ending with it. The caller has checked the creator's rights.
 func insertTemp(ctx context.Context, q *sqlc.Queries, sp tempSpec) (tempMade, error) {
 	var out tempMade
@@ -254,11 +311,8 @@ func insertTemp(ctx context.Context, q *sqlc.Queries, sp tempSpec) (tempMade, er
 	if err != nil {
 		return out, err
 	}
-	if n.Total >= MaxTempPerWorkspace {
-		return out, errTempLimit.WithDetails("", uint64(n.Total), MaxTempPerWorkspace) //nolint:gosec // count ≥ 0
-	}
-	if n.Mine >= MaxTempPerUser {
-		return out, errTempLimit.WithDetails(ReasonPerUser, uint64(n.Mine), MaxTempPerUser) //nolint:gosec // count ≥ 0
+	if err := sp.lim.checkCount(n, sp.userCap); err != nil {
+		return out, err
 	}
 	if out.ws, err = q.GetWorkspace(ctx, sp.wsID); err != nil {
 		return out, err

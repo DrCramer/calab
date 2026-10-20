@@ -5,7 +5,7 @@ vi.mock('../stores/session', () => ({ useSession: { getState: () => ({ status: '
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined }) } }));
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: (c: string) => handled.push(`room:${c}`) }));
 
-const { alwaysOpenInApp, continueInBrowser, landingFor, setAlwaysOpenInApp, showLinkLanding, useLinkLanding } = await import('./linkLanding');
+const { alwaysOpenInApp, continueInBrowser, landingFor, setAlwaysOpenInApp, showLinkLanding, skipsLanding, useLinkLanding } = await import('./linkLanding');
 
 describe('link landing (docs/09 #53)', () => {
   afterEach(() => {
@@ -51,5 +51,22 @@ describe('link landing (docs/09 #53)', () => {
     vi.stubGlobal('localStorage', { getItem: boom, setItem: boom, removeItem: boom });
     expect(alwaysOpenInApp()).toBe(false);
     expect(() => setAlwaysOpenInApp(true)).not.toThrow();
+  });
+});
+
+describe('task links on the web landing (CBF-40)', () => {
+  it('recognises /t/<KEY-N> as a task card with the key upper-cased', () => {
+    expect(landingFor('https://app.calab.io/t/inv-820')).toEqual({ kind: 't', code: 'INV-820', url: 'https://app.calab.io/t/inv-820' });
+    expect(landingFor('https://app.calab.io/t/INV-812/')).toMatchObject({ kind: 't', code: 'INV-812' });
+    expect(landingFor('https://app.calab.io/t/INV-812/x')).toBeNull();
+    expect(landingFor('https://app.calab.io/b/0190aaaa-0000-4000-8000-000000000000')).toBeNull();
+  });
+
+  it('is skipped for a signed-in web visitor only, and only for tasks', () => {
+    const task = landingFor('https://app.calab.io/t/INV-820');
+    const join = landingFor('https://app.calab.io/join/calaba-team-2026');
+    expect(task && skipsLanding(task, true)).toBe(true);
+    expect(task && skipsLanding(task, false)).toBe(false);
+    expect(join && skipsLanding(join, true)).toBe(false);
   });
 });

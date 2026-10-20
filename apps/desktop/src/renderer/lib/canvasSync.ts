@@ -11,6 +11,8 @@
  * - Reconnect (backoff 1 s → 30 s): the server sends the snapshot and the updates after it again, and
  *   whatever this doc has beyond them goes up as one update.
  * - Read-only (no CANVAS_WRITE, or a newer document schema): nothing is sent; setReadOnly flips it.
+ * - Anonymous (the public link `/c/{code}`, ADR-0114 wave 5): `GET /api/public/canvas/{code}/sync`, no token,
+ *   nothing is ever sent, no awareness either way (canvasPublicSyncUrl).
  *
  * The status is a primitive for the UI: connecting | synced | readonly | offline.
  */
@@ -48,6 +50,8 @@ export interface CanvasSyncDeps {
   createSocket: (url: string) => SocketLike;
   /** No CANVAS_WRITE (or a newer schema): receive only. */
   readOnly?: boolean;
+  /** The public link's receive-only socket: no token, never sends (YSyncDeps.anonymous). */
+  anonymous?: boolean;
   /** The canvas's name (it lives in canvas_items; the snapshot carries the current one). */
   title?: () => string;
   /** The state outgrew 4 MiB: the server will not take a snapshot; the UI warns. */
@@ -64,6 +68,13 @@ export function canvasSyncUrl(serverUrl: string, canvasId: string): string {
     `/api/canvas/items/${encodeURIComponent(canvasId)}/sync`,
     serverUrl,
   );
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  return u.toString();
+}
+
+/** `wss://host/api/public/canvas/{code}/sync`: the anonymous receive-only socket of a public link. */
+export function canvasPublicSyncUrl(serverUrl: string, code: string): string {
+  const u = new URL(`/api/public/canvas/${encodeURIComponent(code)}/sync`, serverUrl);
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
   return u.toString();
 }
@@ -95,6 +106,7 @@ export class CanvasSync {
       refreshToken: deps.refreshToken,
       createSocket: deps.createSocket,
       readOnly: deps.readOnly,
+      ...(deps.anonymous ? { anonymous: true } : {}),
       meta: () => canvasMeta(doc, deps.title?.() ?? ""),
       awarenessMinGapMs: CANVAS_AWARENESS_MIN_GAP_MS,
       maxState: CANVAS_MAX_STATE,

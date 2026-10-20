@@ -233,6 +233,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     // Telephony SIP — Business only (ADR-0046, owner 02.10).
     if (/telephony/i.test(msg)) return { text: t('plan.telephonyLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
+    // Wiki pages over the plan (owner, CBF-43).
+    if (/\bwiki\b/i.test(msg)) return { text: t('plan.wikiPagesFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     const key: PluralKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
     return { text: plural(key, n), contact: true };

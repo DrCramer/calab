@@ -543,6 +543,13 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/canvas/items/{id}/comments/mention-access": scopeCanvasItem,
 	"PATCH /api/canvas/comments/{id}":                    scopeCanvasComment,
 	"DELETE /api/canvas/comments/{id}":                   scopeCanvasComment,
+	// Canvas public link (ADR-0114 wave 5): managed by people of the canvas's workspace; the
+	// public name and the anonymous receive-only socket take no session at all.
+	"GET /api/canvas/items/{id}/link":    scopeCanvasItem,
+	"POST /api/canvas/items/{id}/link":   scopeCanvasItem,
+	"DELETE /api/canvas/items/{id}/link": scopeCanvasItem,
+	"GET /api/public/canvas/{code}":      scopePublic,
+	"GET /api/public/canvas/{code}/sync": scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,

@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/wikiacl"
 )
 
@@ -198,6 +199,10 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		ch, err := addable(r, q, ws, c, parent)
 		if err != nil {
+			return err
+		}
+		// The plan caps the live pages (owner: Free 10, Team 50, Business 500); the tree lock is held.
+		if err := s.plans.Check(ctx, q, ws, plans.KindWikiPages, true); err != nil {
 			return err
 		}
 		row, err := q.CreateWikiPage(ctx, sqlc.CreateWikiPageParams{WorkspaceID: ws, ParentID: parent, Title: title, Icon: icon, OwnerID: &c.uid})

@@ -86,6 +86,8 @@ const (
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_VERSION     CanvasActivityKind = 8  // a version was saved (edits themselves are not journaled)
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_COMMENT     CanvasActivityKind = 9  // a comment was written (after: comment_id, thread_id; never the text)
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_RESOLVE     CanvasActivityKind = 10 // a thread was resolved (after: thread_id)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_LINK_ON     CanvasActivityKind = 11 // the public link was made (after: expires_in_days; never the code)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_LINK_OFF    CanvasActivityKind = 12 // the public link was revoked by a person
 )
 
 // Enum value maps for CanvasActivityKind.
@@ -102,6 +104,8 @@ var (
 		8:  "CANVAS_ACTIVITY_KIND_VERSION",
 		9:  "CANVAS_ACTIVITY_KIND_COMMENT",
 		10: "CANVAS_ACTIVITY_KIND_RESOLVE",
+		11: "CANVAS_ACTIVITY_KIND_LINK_ON",
+		12: "CANVAS_ACTIVITY_KIND_LINK_OFF",
 	}
 	CanvasActivityKind_value = map[string]int32{
 		"CANVAS_ACTIVITY_KIND_UNSPECIFIED": 0,
@@ -115,6 +119,8 @@ var (
 		"CANVAS_ACTIVITY_KIND_VERSION":     8,
 		"CANVAS_ACTIVITY_KIND_COMMENT":     9,
 		"CANVAS_ACTIVITY_KIND_RESOLVE":     10,
+		"CANVAS_ACTIVITY_KIND_LINK_ON":     11,
+		"CANVAS_ACTIVITY_KIND_LINK_OFF":    12,
 	}
 )
 
@@ -2076,6 +2082,259 @@ func (x *CanvasCommentMention) GetY() float64 {
 	return 0
 }
 
+// The live link of a canvas.
+type CanvasLink struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"` // 43 characters, base64url of 32 random bytes
+	CanvasId      string                 `protobuf:"bytes,2,opt,name=canvas_id,json=canvasId,proto3" json:"canvas_id,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
+	CreatedBy     string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"` // empty after the account is gone
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Views         uint64                 `protobuf:"varint,6,opt,name=views,proto3" json:"views,omitempty"` // visits of the public page (no deduplication)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasLink) Reset() {
+	*x = CanvasLink{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasLink) ProtoMessage() {}
+
+func (x *CanvasLink) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasLink.ProtoReflect.Descriptor instead.
+func (*CanvasLink) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *CanvasLink) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *CanvasLink) GetCanvasId() string {
+	if x != nil {
+		return x.CanvasId
+	}
+	return ""
+}
+
+func (x *CanvasLink) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *CanvasLink) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+func (x *CanvasLink) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *CanvasLink) GetViews() uint64 {
+	if x != nil {
+		return x.Views
+	}
+	return 0
+}
+
+// POST /api/canvas/items/{id}/link — makes the link (201) or, while one is live, changes its
+// expiry and keeps its code (200).
+type CreateCanvasLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExpiresInDays uint32                 `protobuf:"varint,1,opt,name=expires_in_days,json=expiresInDays,proto3" json:"expires_in_days,omitempty"` // 0 = never, else 1, 7 or 30
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCanvasLinkRequest) Reset() {
+	*x = CreateCanvasLinkRequest{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCanvasLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCanvasLinkRequest) ProtoMessage() {}
+
+func (x *CreateCanvasLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCanvasLinkRequest.ProtoReflect.Descriptor instead.
+func (*CreateCanvasLinkRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *CreateCanvasLinkRequest) GetExpiresInDays() uint32 {
+	if x != nil {
+		return x.ExpiresInDays
+	}
+	return 0
+}
+
+// GET / POST /api/canvas/items/{id}/link. GET without a live link: link unset.
+type CanvasLinkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Link          *CanvasLink            `protobuf:"bytes,1,opt,name=link,proto3" json:"link,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"` // the public page of the link (/c/{code}); empty without a link
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CanvasLinkResponse) Reset() {
+	*x = CanvasLinkResponse{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CanvasLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CanvasLinkResponse) ProtoMessage() {}
+
+func (x *CanvasLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CanvasLinkResponse.ProtoReflect.Descriptor instead.
+func (*CanvasLinkResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *CanvasLinkResponse) GetLink() *CanvasLink {
+	if x != nil {
+		return x.Link
+	}
+	return nil
+}
+
+func (x *CanvasLinkResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+// GET /api/public/canvas/{code} — anonymous: what the public page shows before the socket.
+type PublicCanvas struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ReadOnly      bool                   `protobuf:"varint,3,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`   // always true: the link never writes
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicCanvas) Reset() {
+	*x = PublicCanvas{}
+	mi := &file_calaba_v1_canvas_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicCanvas) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicCanvas) ProtoMessage() {}
+
+func (x *PublicCanvas) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_canvas_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicCanvas.ProtoReflect.Descriptor instead.
+func (*PublicCanvas) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_canvas_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *PublicCanvas) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PublicCanvas) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *PublicCanvas) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
+func (x *PublicCanvas) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 var File_calaba_v1_canvas_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_canvas_proto_rawDesc = "" +
@@ -2263,11 +2522,34 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\tobject_id\x18\b \x01(\tR\bobjectId\x12\f\n" +
 	"\x01x\x18\t \x01(\x01R\x01x\x12\f\n" +
 	"\x01y\x18\n" +
-	" \x01(\x01R\x01y*l\n" +
+	" \x01(\x01R\x01y\"\xe8\x01\n" +
+	"\n" +
+	"CanvasLink\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1b\n" +
+	"\tcanvas_id\x18\x02 \x01(\tR\bcanvasId\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\x04 \x01(\tR\tcreatedBy\x129\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x14\n" +
+	"\x05views\x18\x06 \x01(\x04R\x05views\"A\n" +
+	"\x17CreateCanvasLinkRequest\x12&\n" +
+	"\x0fexpires_in_days\x18\x01 \x01(\rR\rexpiresInDays\"Q\n" +
+	"\x12CanvasLinkResponse\x12)\n" +
+	"\x04link\x18\x01 \x01(\v2\x15.calaba.v1.CanvasLinkR\x04link\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"\xb5\x01\n" +
+	"\fPublicCanvas\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
+	"\n" +
+	"updated_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1b\n" +
+	"\tread_only\x18\x03 \x01(\bR\breadOnly\x129\n" +
+	"\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*l\n" +
 	"\x0eCanvasItemKind\x12 \n" +
 	"\x1cCANVAS_ITEM_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17CANVAS_ITEM_KIND_FOLDER\x10\x01\x12\x1b\n" +
-	"\x17CANVAS_ITEM_KIND_CANVAS\x10\x02*\x84\x03\n" +
+	"\x17CANVAS_ITEM_KIND_CANVAS\x10\x02*\xc9\x03\n" +
 	"\x12CanvasActivityKind\x12$\n" +
 	" CANVAS_ACTIVITY_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCANVAS_ACTIVITY_KIND_CREATE\x10\x01\x12\x1f\n" +
@@ -2280,7 +2562,9 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\x1cCANVAS_ACTIVITY_KIND_VERSION\x10\b\x12 \n" +
 	"\x1cCANVAS_ACTIVITY_KIND_COMMENT\x10\t\x12 \n" +
 	"\x1cCANVAS_ACTIVITY_KIND_RESOLVE\x10\n" +
-	"B\x99\x01\n" +
+	"\x12 \n" +
+	"\x1cCANVAS_ACTIVITY_KIND_LINK_ON\x10\v\x12!\n" +
+	"\x1dCANVAS_ACTIVITY_KIND_LINK_OFF\x10\fB\x99\x01\n" +
 	"\rcom.calaba.v1B\vCanvasProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -2297,7 +2581,7 @@ func file_calaba_v1_canvas_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_canvas_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_canvas_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_calaba_v1_canvas_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_calaba_v1_canvas_proto_goTypes = []any{
 	(CanvasItemKind)(0),                    // 0: calaba.v1.CanvasItemKind
 	(CanvasActivityKind)(0),                // 1: calaba.v1.CanvasActivityKind
@@ -2328,21 +2612,25 @@ var file_calaba_v1_canvas_proto_goTypes = []any{
 	(*CanvasCommentUpsert)(nil),            // 26: calaba.v1.CanvasCommentUpsert
 	(*CanvasCommentDelete)(nil),            // 27: calaba.v1.CanvasCommentDelete
 	(*CanvasCommentMention)(nil),           // 28: calaba.v1.CanvasCommentMention
-	(*timestamppb.Timestamp)(nil),          // 29: google.protobuf.Timestamp
-	(PermissionTargetType)(0),              // 30: calaba.v1.PermissionTargetType
-	(*structpb.Struct)(nil),                // 31: google.protobuf.Struct
+	(*CanvasLink)(nil),                     // 29: calaba.v1.CanvasLink
+	(*CreateCanvasLinkRequest)(nil),        // 30: calaba.v1.CreateCanvasLinkRequest
+	(*CanvasLinkResponse)(nil),             // 31: calaba.v1.CanvasLinkResponse
+	(*PublicCanvas)(nil),                   // 32: calaba.v1.PublicCanvas
+	(*timestamppb.Timestamp)(nil),          // 33: google.protobuf.Timestamp
+	(PermissionTargetType)(0),              // 34: calaba.v1.PermissionTargetType
+	(*structpb.Struct)(nil),                // 35: google.protobuf.Struct
 }
 var file_calaba_v1_canvas_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.CanvasItem.kind:type_name -> calaba.v1.CanvasItemKind
-	29, // 1: calaba.v1.CanvasItem.updated_at:type_name -> google.protobuf.Timestamp
-	29, // 2: calaba.v1.CanvasItem.trashed_at:type_name -> google.protobuf.Timestamp
-	29, // 3: calaba.v1.CanvasItem.created_at:type_name -> google.protobuf.Timestamp
-	30, // 4: calaba.v1.CanvasPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
-	29, // 5: calaba.v1.CanvasVersion.created_at:type_name -> google.protobuf.Timestamp
+	33, // 1: calaba.v1.CanvasItem.updated_at:type_name -> google.protobuf.Timestamp
+	33, // 2: calaba.v1.CanvasItem.trashed_at:type_name -> google.protobuf.Timestamp
+	33, // 3: calaba.v1.CanvasItem.created_at:type_name -> google.protobuf.Timestamp
+	34, // 4: calaba.v1.CanvasPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
+	33, // 5: calaba.v1.CanvasVersion.created_at:type_name -> google.protobuf.Timestamp
 	1,  // 6: calaba.v1.CanvasActivity.kind:type_name -> calaba.v1.CanvasActivityKind
-	31, // 7: calaba.v1.CanvasActivity.before:type_name -> google.protobuf.Struct
-	31, // 8: calaba.v1.CanvasActivity.after:type_name -> google.protobuf.Struct
-	29, // 9: calaba.v1.CanvasActivity.created_at:type_name -> google.protobuf.Timestamp
+	35, // 7: calaba.v1.CanvasActivity.before:type_name -> google.protobuf.Struct
+	35, // 8: calaba.v1.CanvasActivity.after:type_name -> google.protobuf.Struct
+	33, // 9: calaba.v1.CanvasActivity.created_at:type_name -> google.protobuf.Timestamp
 	2,  // 10: calaba.v1.ListCanvasItemsResponse.items:type_name -> calaba.v1.CanvasItem
 	0,  // 11: calaba.v1.CreateCanvasItemRequest.kind:type_name -> calaba.v1.CanvasItemKind
 	2,  // 12: calaba.v1.CanvasItemResponse.item:type_name -> calaba.v1.CanvasItem
@@ -2356,19 +2644,24 @@ var file_calaba_v1_canvas_proto_depIdxs = []int32{
 	17, // 20: calaba.v1.CanvasItemUpsert.access:type_name -> calaba.v1.CanvasAccessLevel
 	17, // 21: calaba.v1.CanvasItemUpsert.access_before:type_name -> calaba.v1.CanvasAccessLevel
 	17, // 22: calaba.v1.CanvasItemRemove.access:type_name -> calaba.v1.CanvasAccessLevel
-	29, // 23: calaba.v1.CanvasComment.created_at:type_name -> google.protobuf.Timestamp
-	29, // 24: calaba.v1.CanvasComment.edited_at:type_name -> google.protobuf.Timestamp
-	29, // 25: calaba.v1.CanvasComment.resolved_at:type_name -> google.protobuf.Timestamp
+	33, // 23: calaba.v1.CanvasComment.created_at:type_name -> google.protobuf.Timestamp
+	33, // 24: calaba.v1.CanvasComment.edited_at:type_name -> google.protobuf.Timestamp
+	33, // 25: calaba.v1.CanvasComment.resolved_at:type_name -> google.protobuf.Timestamp
 	20, // 26: calaba.v1.ListCanvasCommentsResponse.comments:type_name -> calaba.v1.CanvasComment
 	20, // 27: calaba.v1.CanvasCommentResponse.comment:type_name -> calaba.v1.CanvasComment
 	20, // 28: calaba.v1.CanvasCommentUpsert.comment:type_name -> calaba.v1.CanvasComment
 	17, // 29: calaba.v1.CanvasCommentUpsert.access:type_name -> calaba.v1.CanvasAccessLevel
 	17, // 30: calaba.v1.CanvasCommentDelete.access:type_name -> calaba.v1.CanvasAccessLevel
-	31, // [31:31] is the sub-list for method output_type
-	31, // [31:31] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	33, // 31: calaba.v1.CanvasLink.expires_at:type_name -> google.protobuf.Timestamp
+	33, // 32: calaba.v1.CanvasLink.created_at:type_name -> google.protobuf.Timestamp
+	29, // 33: calaba.v1.CanvasLinkResponse.link:type_name -> calaba.v1.CanvasLink
+	33, // 34: calaba.v1.PublicCanvas.updated_at:type_name -> google.protobuf.Timestamp
+	33, // 35: calaba.v1.PublicCanvas.expires_at:type_name -> google.protobuf.Timestamp
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_canvas_proto_init() }
@@ -2386,7 +2679,7 @@ func file_calaba_v1_canvas_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_canvas_proto_rawDesc), len(file_calaba_v1_canvas_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   27,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

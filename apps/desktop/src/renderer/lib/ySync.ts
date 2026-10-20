@@ -26,6 +26,9 @@
  *   (setReadOnly flips that at run time, e.g. when the grant changes).
  * - Reconnect: exponential backoff 1 s → 30 s with jitter (the gateway's curve); 4004 refreshes
  *   the token first; 4003 / 4404 stop for good (status «offline»).
+ * - Anonymous (a canvas's public link, ADR-0114 wave 5): the URL carries the credential, no token frame;
+ *   read-only for good, nothing at all is ever sent (the server closes such a socket 4013 on any frame),
+ *   awareness from the server is ignored; 4013 stops for good too.
  */
 import * as Y from "yjs";
 import {
@@ -63,6 +66,8 @@ export const AWARENESS_TIMEOUT_MS = 30_000;
 export const CLOSE_AUTH = 4004;
 export const CLOSE_FORBIDDEN = 4003;
 export const CLOSE_NOT_FOUND = 4404;
+/** A receive-only (anonymous) socket sent a frame: a bug, never retried. */
+export const CLOSE_RECEIVE_ONLY = 4013;
 
 const OPEN = 1;
 
@@ -91,6 +96,11 @@ export interface YSyncDeps {
   createSocket: (url: string) => SocketLike;
   /** No write grant: receive only (see setReadOnly). */
   readOnly?: boolean;
+  /**
+   * An anonymous receive-only socket (the URL is the credential): no token frame, read-only whatever setReadOnly
+   * says, nothing is ever sent, incoming awareness is dropped. getToken is not called.
+   */
+  anonymous?: boolean;
   /** Snapshot meta (plain text, title, preview), read at every SNAPSHOT_POST. */
   meta: () => SnapshotMeta;
   /** Minimum gap between two awareness frames; default AWARENESS_MIN_GAP_MS. */
@@ -167,7 +177,7 @@ export class YSyncProvider {
     this.doc = doc;
     this.awareness = quietAwareness(awareness);
     this.deps = deps;
-    this.readOnlyValue = deps.readOnly ?? false;
+    this.readOnlyValue = (deps.readOnly ?? false) || deps.anonymous === true;
     this.vis = deps.visibility ?? documentVisibility;
     doc.on("update", this.onDocUpdate);
     awareness.on("update", this.onAwarenessUpdate);
@@ -192,6 +202,7 @@ export class YSyncProvider {
    * or snapshots. Writable again: the status flips back and our cursor is announced.
    */
   setReadOnly(on: boolean): void {
+    if (this.deps.anonymous) return; // read-only for good
     if (on === this.readOnlyValue) return;
     this.readOnlyValue = on;
     if (on) {
@@ -242,6 +253,7 @@ export class YSyncProvider {
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onopen = () => {
+      if (this.deps.anonymous) return; // no token: the server sends the snapshot at once
       void this.deps.getToken().then(
         (token) => {
           if (ws !== this.ws) return;
@@ -278,7 +290,7 @@ export class YSyncProvider {
     );
     if (others.length) removeAwarenessStates(this.awareness, others, this);
     if (this.stopped) return;
-    if (code === CLOSE_FORBIDDEN || code === CLOSE_NOT_FOUND) {
+    if (code === CLOSE_FORBIDDEN || code === CLOSE_NOT_FOUND || code === CLOSE_RECEIVE_ONLY) {
       this.stopped = true;
       this.setStatus("offline");
       this.deps.onFatal?.(code);
@@ -344,6 +356,7 @@ export class YSyncProvider {
         this.lastSeq = Math.max(this.lastSeq, f.seq);
         return;
       case FRAME_AWARENESS:
+        if (this.deps.anonymous) return; // the server sends none to a viewer; who is on the canvas stays hidden
         try {
           applyAwarenessUpdate(this.awareness, f.update, this);
         } catch {
@@ -565,6 +578,7 @@ export class YSyncProvider {
   // ---- plumbing
 
   private send(frame: Uint8Array): void {
+    if (this.deps.anonymous) return; // a receive-only socket: any frame would close it 4013
     const ws = this.ws;
     if (ws && ws.readyState === OPEN) ws.send(frame);
   }

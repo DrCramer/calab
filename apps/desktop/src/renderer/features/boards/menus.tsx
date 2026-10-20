@@ -42,6 +42,8 @@ export interface Choice extends PickerItem {
   note?: string;
   /** Secondary caption after the name («увидит только эту карточку», ADR-0059); `title` is its tooltip. */
   caption?: string;
+  /** Explanation under the name (why the item is unavailable). */
+  hint?: string;
   title?: string;
 }
 
@@ -141,8 +143,9 @@ export function ChoiceMenu({
             renderItem={(c, active) => (
               <>
                 {c.icon ? <span className="grid size-5 shrink-0 place-items-center">{c.icon}</span> : null}
-                <span className="min-w-0 flex-1 truncate" {...(c.title ? { title: c.title } : {})}>
-                  {c.label}
+                <span className="flex min-w-0 flex-1 flex-col" {...(c.title ? { title: c.title } : {})}>
+                  <span className="truncate">{c.label}</span>
+                  {c.hint ? <span className={cx('truncate text-caption', active ? 'opacity-75' : 'text-muted')}>{c.hint}</span> : null}
                 </span>
                 {c.caption ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
                 {c.note ? <span className={cx('shrink-0 text-caption tabular-nums', active ? 'opacity-75' : 'text-muted')}>{c.note}</span> : null}
@@ -197,7 +200,7 @@ export function StatusMenu({
               label: s.name,
               icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />,
               checked: s.id === value,
-              ...(off ? { disabled: !overridable, note: blockedNote ?? t('boards.gate.hint') } : {}),
+              ...(off ? { disabled: !overridable, hint: blockedNote ?? t('boards.gate.hint') } : {}),
             };
           }),
       },

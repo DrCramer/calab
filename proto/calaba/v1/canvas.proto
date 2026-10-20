@@ -81,6 +81,8 @@ enum CanvasActivityKind {
   CANVAS_ACTIVITY_KIND_VERSION = 8; // a version was saved (edits themselves are not journaled)
   CANVAS_ACTIVITY_KIND_COMMENT = 9; // a comment was written (after: comment_id, thread_id; never the text)
   CANVAS_ACTIVITY_KIND_RESOLVE = 10; // a thread was resolved (after: thread_id)
+  CANVAS_ACTIVITY_KIND_LINK_ON = 11; // the public link was made (after: expires_in_days; never the code)
+  CANVAS_ACTIVITY_KIND_LINK_OFF = 12; // the public link was revoked by a person
 }
 
 // A journal entry (canvas_activity). before / after carry snapshots (the old and new name, the
@@ -305,4 +307,43 @@ message CanvasCommentMention {
   string object_id = 8; // the thread's pin
   double x = 9;
   double y = 10;
+}
+
+// ---- the public read-only link (ADR-0114 wave 5) ----
+//
+// One live link per canvas (canvas_links): whoever has it sees the canvas through the anonymous
+// receive-only socket GET /api/public/canvas/{code}/sync and never writes it nor sees who is on
+// it. Managed by the owner of the canvas or CANVAS_MANAGE (404 without CANVAS_VIEW); not for a
+// folder, a restricted canvas (or one below a restricted folder), a canvas in the trash nor in a
+// suspended workspace. Turning restricted on, a move into a restricted folder and the trash
+// revoke it; a revoked or expired link answers 404 like an unknown one.
+
+// The live link of a canvas.
+message CanvasLink {
+  string code = 1; // 43 characters, base64url of 32 random bytes
+  string canvas_id = 2;
+  google.protobuf.Timestamp expires_at = 3; // unset = never
+  string created_by = 4; // empty after the account is gone
+  google.protobuf.Timestamp created_at = 5;
+  uint64 views = 6; // visits of the public page (no deduplication)
+}
+
+// POST /api/canvas/items/{id}/link — makes the link (201) or, while one is live, changes its
+// expiry and keeps its code (200).
+message CreateCanvasLinkRequest {
+  uint32 expires_in_days = 1; // 0 = never, else 1, 7 or 30
+}
+
+// GET / POST /api/canvas/items/{id}/link. GET without a live link: link unset.
+message CanvasLinkResponse {
+  CanvasLink link = 1;
+  string url = 2; // the public page of the link (/c/{code}); empty without a link
+}
+
+// GET /api/public/canvas/{code} — anonymous: what the public page shows before the socket.
+message PublicCanvas {
+  string name = 1;
+  google.protobuf.Timestamp updated_at = 2;
+  bool read_only = 3; // always true: the link never writes
+  google.protobuf.Timestamp expires_at = 4; // unset = never
 }

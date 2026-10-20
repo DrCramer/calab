@@ -92,4 +92,6 @@ export const esBots = {
   'bots.delegate.cancelInvite': 'Cancelar la propuesta para {name}',
   'bots.delegate.decline': 'Rechazar',
   'bots.delegate.noGuests': 'no para invitados',
+  'bots.delegate.ask': '{bot} quiere actuar en su nombre: ¿permitir?',
+  'bots.delegate.askDetails': 'Detalles',
 } as const;

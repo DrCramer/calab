@@ -10,16 +10,16 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-/** Server bounds of `ttl_seconds` (CreateTempRoomRequest) and of an extension (≤ 7 days from now). */
+/** Server bounds of `ttl_seconds` (CreateTempRoomRequest) and of an extension (≤ 30 days from now; the server's TEMP_ROOM_MAX_TTL_DAYS default, CBF-38). */
 export const MIN_TTL_S = 15 * 60;
-export const MAX_TTL_S = 7 * 24 * 60 * 60;
+export const MAX_TTL_S = 30 * 24 * 60 * 60;
 export const MAX_LIFETIME_MS = MAX_TTL_S * 1000;
 
 /** Under this the row and the island turn to the attention colour and the island shows «⏱ 9 мин». */
 export const EXPIRING_MS = 10 * MIN;
 
-export type LifetimePreset = '1h' | '3h' | 'eod' | '1d' | '3d' | '7d' | 'date';
-export const LIFETIME_PRESETS: readonly LifetimePreset[] = ['1h', '3h', 'eod', '1d', '3d', '7d', 'date'];
+export type LifetimePreset = '1h' | '3h' | 'eod' | '1d' | '3d' | '7d' | '30d' | 'date';
+export const LIFETIME_PRESETS: readonly LifetimePreset[] = ['1h', '3h', 'eod', '1d', '3d', '7d', '30d', 'date'];
 
 const FIXED: Record<Exclude<LifetimePreset, 'eod' | 'date'>, number> = {
   '1h': HOUR,
@@ -27,6 +27,7 @@ const FIXED: Record<Exclude<LifetimePreset, 'eod' | 'date'>, number> = {
   '1d': DAY,
   '3d': 3 * DAY,
   '7d': 7 * DAY,
+  '30d': 30 * DAY,
 };
 
 /** Local midnight after `now` (the end of today in the viewer's zone). */
@@ -38,7 +39,7 @@ export function endOfDay(now: number): number {
 
 /**
  * The room's lifetime in seconds for a preset, or null when out of the server's bounds
- * (15 min … 7 days): «до конца дня» late in the evening, «до даты» in the past / too far.
+ * (15 min … 30 days): «до конца дня» late in the evening, «до даты» in the past / too far.
  * `until` — the picked end (ms) for 'date'.
  */
 export function presetTtl(preset: LifetimePreset, now: number, until?: number): number | null {
@@ -85,13 +86,13 @@ export function sortTempRooms<T extends Pick<Room, 'expiresAt' | 'name' | 'id'>>
 
 /**
  * «Продлить» (+1 ч / +1 день): from the current end (or from now, if it has passed), never beyond
- * 7 days from now — the server's cap.
+ * 30 days from now — the server's cap.
  */
 export function extendTo(expires: number, addMs: number, now: number): number {
   return Math.min(Math.max(expires, now) + addMs, now + MAX_LIFETIME_MS);
 }
 
-/** «Продлить до даты»: a picked end within (now + 15 min, now + 7 days], else null. */
+/** «Продлить до даты»: a picked end within (now + 15 min, now + 30 days], else null. */
 export function validEnd(until: number, now: number): number | null {
   return Number.isFinite(until) && until - now >= MIN_TTL_S * 1000 && until - now <= MAX_LIFETIME_MS ? until : null;
 }

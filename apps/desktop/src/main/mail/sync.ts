@@ -538,38 +538,9 @@ export class AccountSync {
     const since = f.syncedSince ?? now - WINDOW_MS;
     if (first && (f.uidValidity === null || f.syncedSince === null)) this.store.updateFolderSync(f.row, { uidValidity: info.uidValidity, syncedSince: since });
     const range = this.store.uidRange(f.row);
-    let newUids: number[];
-    this.at('search', f.path);
-    if (first || !range) {
-      const held = range ? this.store.localFlags(f.row) : null;
-      newUids = (await s.searchDate(new Date(since))).filter((u) => !held?.has(u));
-    } else {
-      // New = above both what we hold and the UIDNEXT seen last time (older UIDs outside the
-      // window were skipped on purpose; «load older» fetches them).
-      const top = Math.max(range.max, (f.uidNext ?? 1) - 1);
-      newUids = info.uidNext > top + 1 ? (await s.searchUids(`${String(top + 1)}:*`)).filter((u) => u > top) : [];
-    }
-    // Newest first, stored and announced batch by batch (the list fills while the folder loads).
-    newUids.sort((a, b) => b - a);
-    const added: Added[] = [];
-    let done = 0;
-    this.progress('headers', f, 0, newUids.length);
-    for (const batch of uidBatches(newUids)) {
-      if (this.halted()) return;
-      this.at('fetch', f.path);
-      const got = this.insertHeaders(f, info.uidValidity, await s.fetchHeaders(batch));
-      if (this.halted()) return;
-      done += batch.length;
-      if (got.length) {
-        added.push(...got);
-        this.emitRows('messages_added', f.row, new Set(got.map((a) => a.threadId)), got.map((a) => a.id));
-        this.updateStarred(new Set(got.filter((a) => a.header.flags.flagged).map((a) => a.threadId)));
-        this.emitFolders();
-      }
-      this.progress('headers', f, done, newUids.length);
-    }
+    // Reconcile what we hold (moved / expunged / flags) BEFORE fetching new headers: a fetch that fails
+    // midway (dropped socket) must not keep mail the server already moved to another folder in this one.
     this.at('flags', f.path);
-
     const changedThreads = new Set<string>();
     const changedIds: string[] = [];
     const removedIds: string[] = [];
@@ -602,8 +573,7 @@ export class AccountSync {
         }
       }
     }
-    this.store.updateFolderSync(f.row, { uidValidity: info.uidValidity, highestModseq: info.highestModseq, uidNext: info.uidNext, syncedSince: since, lastSync: now });
-
+    if (this.halted()) return;
     if (changedIds.length) {
       this.emitRows('messages_changed', f.row, changedThreads, changedIds);
       this.updateStarred(changedThreads);
@@ -613,6 +583,37 @@ export class AccountSync {
       this.updateStarred(removedThreads);
     }
     if (changedIds.length || removedIds.length) this.emitFolders();
+    let newUids: number[];
+    this.at('search', f.path);
+    if (first || !range) {
+      const held = range ? this.store.localFlags(f.row) : null;
+      newUids = (await s.searchDate(new Date(since))).filter((u) => !held?.has(u));
+    } else {
+      // New = above both what we hold and the UIDNEXT seen last time (older UIDs outside the
+      // window were skipped on purpose; «load older» fetches them).
+      const top = Math.max(range.max, (f.uidNext ?? 1) - 1);
+      newUids = info.uidNext > top + 1 ? (await s.searchUids(`${String(top + 1)}:*`)).filter((u) => u > top) : [];
+    }
+    // Newest first, stored and announced batch by batch (the list fills while the folder loads).
+    newUids.sort((a, b) => b - a);
+    const added: Added[] = [];
+    let done = 0;
+    this.progress('headers', f, 0, newUids.length);
+    for (const batch of uidBatches(newUids)) {
+      if (this.halted()) return;
+      this.at('fetch', f.path);
+      const got = this.insertHeaders(f, info.uidValidity, await s.fetchHeaders(batch));
+      if (this.halted()) return;
+      done += batch.length;
+      if (got.length) {
+        added.push(...got);
+        this.emitRows('messages_added', f.row, new Set(got.map((a) => a.threadId)), got.map((a) => a.id));
+        this.updateStarred(new Set(got.filter((a) => a.header.flags.flagged).map((a) => a.threadId)));
+        this.emitFolders();
+      }
+      this.progress('headers', f, done, newUids.length);
+    }
+    this.store.updateFolderSync(f.row, { uidValidity: info.uidValidity, highestModseq: info.highestModseq, uidNext: info.uidNext, syncedSince: since, lastSync: now });
 
     if (f.role === 'inbox' && !first) {
       for (const a of added) {

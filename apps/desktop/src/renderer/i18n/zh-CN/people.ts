@@ -207,6 +207,8 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'landing.notFoundHint': '继续在浏览器中使用，或安装 Calab。',
   'landing.inBrowser': '在浏览器中打开',
   'landing.invalid': '链接无效或已过期。',
+  'landing.taskTitle': '任务链接',
+  'landing.taskGeneric': '在 Calab 应用或浏览器中打开。',
   // One-time mailbox password page /mail-reset/<token> (ADR-0101)
   'mailReset.title': '邮箱密码',
   'mailReset.password': '密码',

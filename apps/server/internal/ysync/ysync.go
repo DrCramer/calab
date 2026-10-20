@@ -34,6 +34,15 @@
 // IDENTIFY) — a person's access token or a bot token. The server then sends one SNAPSHOT
 // (through_seq 0 and the empty Yjs update 0x00 0x00 for a document without one) and every
 // UPDATE after it, then relays.
+//
+// A viewer socket (Hub.ServeViewer, the Canvas's public link, ADR-0114 wave 5) is anonymous and
+// receive-only: no token frame — the section resolved the credential (the link code) before the
+// upgrade and gives a Viewer with its access rule and its socket limits. It gets the SNAPSHOT,
+// the UPDATEs and relayed SNAPSHOTs like a read-only socket, never AWARENESS (who is on the
+// document stays hidden) nor COMPACT_REQUEST; any data frame from it closes it with 4013
+// (CloseReceiveOnly) and changes nothing. Its access is rechecked like any socket's (Kick, every
+// RecheckInterval) and also when the Viewer's access ends by itself (an expiry); it lives at most
+// Config.ViewerMaxLife.
 package ysync
 
 import (
@@ -82,7 +91,11 @@ const (
 	CloseIdle      = 4009 // no pong
 	CloseRevoked   = 4010 // the session was revoked
 	CloseCeiling   = 4012 // kept sending UPDATEs past the document's ceiling without compacting it
-	CloseNotFound  = 4404 // no such document, or it is in the trash
+	// CloseReceiveOnly: a viewer socket (an anonymous public link) sent a data frame; nothing of
+	// it was read into the document. The client must not reconnect in a loop: it is a bug or an
+	// attack.
+	CloseReceiveOnly = 4013
+	CloseNotFound    = 4404 // no such document, or it is in the trash
 )
 
 // EmptyState is the Yjs update of an empty document (Y.encodeStateAsUpdate(new Y.Doc())).
@@ -115,6 +128,7 @@ type Config struct {
 	CompactCheckEvery  time.Duration // the threshold query at most this often per document (2 s; < 0 = always)
 	VersionEvery       time.Duration // a version at most this often per document (the Backend's default if 0)
 	WriteTimeout       time.Duration // one frame to the client (10 s)
+	ViewerMaxLife      time.Duration // a viewer socket is closed 4000 (reconnect) after this long (2 h)
 }
 
 // WithDefaults fills the zero fields with the production values. VersionEvery is not defaulted
@@ -156,7 +170,27 @@ func (c Config) WithDefaults() Config {
 		c.CeilingBytes = 16 << 20
 	}
 	def(&c.CeilingGrace, 10*time.Second)
+	def(&c.ViewerMaxLife, 2*time.Hour)
 	return c
+}
+
+// Viewer is an anonymous receive-only socket on a document (Hub.ServeViewer): the section has
+// resolved its credential before the upgrade.
+type Viewer struct {
+	Doc uuid.UUID
+	// Check is the access rule, at connect and on every recheck: code 0 = allowed, else the close
+	// code and its reason; until is when the access ends by itself (an expiry; zero = never), the
+	// socket checks again then. The context carries a deadline.
+	Check func(ctx context.Context) (until time.Time, code int, reason string)
+	// Slots are the socket sets the viewer counts in, across instances (per link, per client IP):
+	// over any Max the socket is closed 4008 before the snapshot.
+	Slots []Slot
+}
+
+// Slot is one socket set of a viewer: Key under <name>:viewers:, at most Max sockets.
+type Slot struct {
+	Key string
+	Max int
 }
 
 // Authenticator is what the socket needs of auth.Service: the gateway's token check, the

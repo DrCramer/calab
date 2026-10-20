@@ -26,6 +26,7 @@ import { zhCanvas } from './canvas';
 import { zhCanvasBoard } from './canvasBoard';
 import { zhCanvasPhone } from './canvasPhone';
 import { zhCanvasComments } from './canvasComments';
+import { zhCanvasShare } from './canvasShare';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
 import { zhHistory } from './history';
@@ -92,6 +93,7 @@ export const zhCN: Dict = {
   ...zhCanvasBoard,
   ...zhCanvasPhone,
   ...zhCanvasComments,
+  ...zhCanvasShare,
   ...zhBoards,
   ...zhBoards2,
   ...zhHistory,

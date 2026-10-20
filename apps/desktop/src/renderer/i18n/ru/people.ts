@@ -205,6 +205,8 @@ export const ruPeople = {
   'landing.notFoundHint': 'Продолжите в браузере или установите Calab.',
   'landing.inBrowser': 'Открыть в браузере',
   'landing.invalid': 'Ссылка недействительна или истекла.',
+  'landing.taskTitle': 'Ссылка на задачу',
+  'landing.taskGeneric': 'Откройте её в приложении Calab или в браузере.',
   // One-time mailbox password page /mail-reset/<token> (ADR-0101)
   'mailReset.title': 'Пароль ящика',
   'mailReset.password': 'Пароль',

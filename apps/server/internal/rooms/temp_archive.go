@@ -21,9 +21,9 @@ const DefaultTempTTL = 24 * time.Hour
 
 // restoreTTL is the lifetime a restored room gets: the original one (end - creation, which
 // includes extensions), within the creation limits; the default when that is out of them.
-func restoreTTL(created, expires time.Time) time.Duration {
+func restoreTTL(created, expires time.Time, maxTTL time.Duration) time.Duration {
 	d := expires.Sub(created)
-	if d < MinTempTTL || d > MaxTempTTL {
+	if d < MinTempTTL || d > maxTTL {
 		return DefaultTempTTL
 	}
 	return d
@@ -90,13 +90,14 @@ func (h *Handlers) restoreTemp(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if n.Total >= MaxTempPerWorkspace {
-			return errTempLimit.WithDetails("", uint64(n.Total), MaxTempPerWorkspace) //nolint:gosec // count ≥ 0
+		userCap, err := h.userCap(ctx, wsID)
+		if err != nil {
+			return err
 		}
-		if n.Mine >= MaxTempPerUser {
-			return errTempLimit.WithDetails(ReasonPerUser, uint64(n.Mine), MaxTempPerUser) //nolint:gosec // count ≥ 0
+		if err := h.Temp.checkCount(n, userCap); err != nil {
+			return err
 		}
-		expires := time.Now().Add(restoreTTL(cur.CreatedAt, *cur.ExpiresAt)).Truncate(time.Second)
+		expires := time.Now().Add(restoreTTL(cur.CreatedAt, *cur.ExpiresAt, h.Temp.norm().MaxTTL)).Truncate(time.Second)
 		if room, err = q.RestoreTempRoom(ctx, sqlc.RestoreTempRoomParams{ID: roomID, ExpiresAt: expires}); err != nil {
 			return err
 		}
