@@ -379,3 +379,125 @@ describe('the edit mode tool bar', () => {
     expect(m.q('canvas-phone-toolbar')).not.toBeNull();
   });
 });
+
+describe('the properties sheet', () => {
+  const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
+  const objects = (m: Mounted): Array<Record<string, unknown>> => [...m.relay.doc.getMap<{ toJSON(): Record<string, unknown> }>('objects').values()].map((o) => o.toJSON());
+  const esc = (m: Mounted): void => act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  /** Arms a tool, taps the canvas and closes the editor the object opens: the new object stays selected. */
+  const place = (m: Mounted, tool: string, x: number, y: number): void => {
+    click(m, `canvas-tool-${tool}`);
+    m.touch('pointerdown', 1, x, y);
+    m.touch('pointerup', 1, x, y);
+    esc(m);
+  };
+
+  it('exists only in edit mode and only for a selection', async () => {
+    const m = await mount();
+    expect(m.q('canvas-phone-props')).toBeNull();
+    await m.rerender({ phoneEdit: true });
+    expect(m.q('canvas-phone-props')).toBeNull();
+    place(m, 'sticky', 200, 300);
+    const sheet = m.q('canvas-phone-props');
+    expect(sheet?.getAttribute('role')).toBe('toolbar');
+    // The sheet sits in the dock, above the tool bar; every target is 44 px.
+    expect(m.q('canvas-phone-dock')?.contains(sheet)).toBe(true);
+    for (const b of sheet?.querySelectorAll('button') ?? []) expect(b.className, b.getAttribute('aria-label') ?? '').toContain('size-11');
+    await m.rerender({ phoneEdit: false });
+    expect(m.q('canvas-phone-props')).toBeNull();
+  });
+
+  it('colors, sizes, lock, duplicate and delete act on the selection', async () => {
+    const m = await mount({ phoneEdit: true });
+    place(m, 'sticky', 200, 300);
+    click(m, 'canvas-prop-sticky-color');
+    expect(m.q('canvas-phone-panel')).not.toBeNull();
+    const first = m.host.querySelectorAll<HTMLElement>('[data-testid^="canvas-phone-color-"]')[2];
+    const token = first?.dataset['testid']?.replace('canvas-phone-color-', '');
+    act(() => void first?.click());
+    expect(m.q('canvas-phone-panel')).toBeNull();
+    click(m, 'canvas-prop-size-l');
+    click(m, 'canvas-prop-lock');
+    await settle(600);
+    expect(objects(m)).toHaveLength(1);
+    expect(objects(m)[0]).toMatchObject({ color: token, fontSize: 'l', locked: true });
+    // A locked selection offers no color or size, only «unlock», duplicate and delete.
+    expect(m.q('canvas-prop-sticky-color')).toBeNull();
+    expect(m.q('canvas-prop-size-l')).toBeNull();
+    click(m, 'canvas-prop-lock');
+    click(m, 'canvas-prop-duplicate');
+    await settle(600);
+    expect(objects(m)).toHaveLength(2);
+    click(m, 'canvas-prop-delete');
+    await settle(600);
+    expect(objects(m)).toHaveLength(1);
+    // The copy is gone with its selection (and the sheet); a tap on the original selects it again.
+    expect(m.q('canvas-phone-props')).toBeNull();
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointerup', 1, 200, 300);
+    click(m, 'canvas-prop-delete');
+    await settle(600);
+    expect(objects(m)).toHaveLength(0);
+    expect(m.q('canvas-phone-props')).toBeNull();
+  });
+
+  it('a shape gets its shape, fill, stroke and align choices in a grid above the row; picking closes it', async () => {
+    const m = await mount({ phoneEdit: true });
+    place(m, 'shape', 120, 200);
+    place(m, 'shape', 300, 500);
+    // Both selected (an external keyboard's ⌘A here; on the touch screen it is «Выбрать несколько»).
+    act(() => void m.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true })));
+    expect(m.q('canvas-phone-count')?.textContent).toMatch(/2/);
+    click(m, 'canvas-prop-align');
+    expect(m.host.querySelectorAll('[data-testid^="canvas-prop-arrange-"]')).toHaveLength(6);
+    click(m, 'canvas-prop-arrange-left');
+    expect(m.q('canvas-phone-panel')).toBeNull();
+    click(m, 'canvas-prop-shape');
+    expect(m.host.querySelectorAll('[data-testid^="canvas-prop-shape-"]')).toHaveLength(11);
+    click(m, 'canvas-prop-shape-hexagon');
+    click(m, 'canvas-prop-fill');
+    click(m, 'canvas-phone-color-white');
+    await settle(600);
+    const o = objects(m);
+    expect(o.map((x) => x['shape'])).toEqual(['hexagon', 'hexagon']);
+    expect(o.map((x) => x['fill'])).toEqual(['white', 'white']);
+    expect(new Set(o.map((x) => x['x'])).size).toBe(1);
+  });
+
+  it('«Выбрать несколько» stays on with an empty selection, with its hint, and goes off with the edit mode', async () => {
+    const m = await mount({ phoneEdit: true });
+    expect(m.q('canvas-phone-multi')).toBeNull();
+    place(m, 'sticky', 200, 300);
+    click(m, 'canvas-phone-multi');
+    // Tapping the empty canvas clears the selection; the mode and its sheet remain.
+    m.touch('pointerdown', 1, 350, 700);
+    m.touch('pointerup', 1, 350, 700);
+    expect(m.q('canvas-phone-multi-hint')).not.toBeNull();
+    expect(m.q('canvas-phone-multi')?.getAttribute('aria-pressed')).toBe('true');
+    click(m, 'canvas-phone-multi');
+    expect(m.q('canvas-phone-props')).toBeNull();
+    click(m, 'canvas-phone-multi');
+    await m.rerender({ phoneEdit: false });
+    await m.rerender({ phoneEdit: true });
+    expect(m.q('canvas-phone-multi-hint')).toBeNull();
+  });
+
+  it('a connector offers its arrow and route; a plain shape does not', async () => {
+    const m = await mount({ phoneEdit: true });
+    place(m, 'sticky', 100, 200);
+    expect(m.q('canvas-prop-arrow-end')).toBeNull();
+    place(m, 'sticky', 100, 500);
+    click(m, 'canvas-tool-connector');
+    m.touch('pointerdown', 1, 100, 200);
+    m.touch('pointermove', 1, 100, 350);
+    m.touch('pointermove', 1, 100, 500);
+    m.touch('pointerup', 1, 100, 500);
+    expect(m.q('canvas-prop-arrow-end')?.getAttribute('aria-pressed')).toBe('true');
+    click(m, 'canvas-prop-arrow-both');
+    click(m, 'canvas-prop-route-elbow');
+    await settle(600);
+    const conn = objects(m).find((o) => o['kind'] === 'connector');
+    expect(conn).toMatchObject({ arrow: 'both', route: 'elbow' });
+    expect(m.q('canvas-prop-size-m')).toBeNull();
+  });
+});

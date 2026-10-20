@@ -1,5 +1,5 @@
 import { MousePointer2, Plus, Redo2, Spline, StickyNote, Type, Undo2, Vote, Timer as TimerIcon, type LucideIcon } from 'lucide-react';
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import { TEMPLATE_IDS, type TemplateId } from '../../../lib/canvas/templates';
@@ -83,6 +83,9 @@ function ArmedHint({ tool }: { tool: Tool }): ReactNode {
   );
 }
 
+/** Px of the view the zoom bar and the count of others cover from the top: a selection is kept below them. */
+const TOP_INSET = 64;
+
 export const PhoneEditBar = memo(function PhoneEditBar({
   engine, timer, focusCanvas, children,
 }: {
@@ -99,6 +102,22 @@ export const PhoneEditBar = memo(function PhoneEditBar({
   const selected = useEngineValue(engine, (s) => s.selectionCount);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const close = useCallback(() => setSheet(null), []);
+  const dock = useRef<HTMLDivElement>(null);
+  /** A primitive that changes when the selection does (another object, a different count). */
+  const selKey = useEngineValue(engine, (s) => (s.selectedId !== null ? s.selectedId : s.selectionCount > 0 ? `#${s.selectionCount}` : ''));
+
+  // The selected object must not hide under the sheet and the bar: when the selection changes, and whenever the dock
+  // changes size (a sheet opens, a grid unfolds), the camera moves just enough. Not during a gesture, never at rest.
+  useLayoutEffect(() => {
+    const node = dock.current;
+    if (!node || selKey === '') return undefined;
+    const reveal = (): void => void engine.revealSelection({ top: TOP_INSET, bottom: node.offsetHeight });
+    reveal();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(reveal);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [engine, selKey, editing]);
 
   // Selecting something (or starting to type) puts any open sheet away: the properties are what matters then.
   useEffect(() => {
@@ -111,7 +130,7 @@ export const PhoneEditBar = memo(function PhoneEditBar({
     engine.setTool(next);
   };
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col" data-testid="canvas-phone-dock">
+    <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col" data-testid="canvas-phone-dock">
       <ArmedHint tool={tool} />
       {sheet === 'shapes' ? <ShapesSheet engine={engine} shapeKind={shapeKind} onDone={close} /> : null}
       {sheet === 'plus' ? <PlusSheet engine={engine} timer={timer} focusCanvas={focusCanvas} onDone={close} /> : null}

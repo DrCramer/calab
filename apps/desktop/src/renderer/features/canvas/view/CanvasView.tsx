@@ -23,6 +23,7 @@ import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { ZoomBar } from './Controls';
 import { MiniMap } from './MiniMap';
 import { PhoneEditBar } from './PhoneEditBar';
+import { PhoneProps } from './PhoneProps';
 import { PhoneEditHint, PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
@@ -372,7 +373,11 @@ function Chrome({
         <PhoneOthers store={presence} top={canWrite} />
         {granted ? null : <PhoneNote />}
         {canWrite && editable ? <PhoneEditHint /> : null}
-        {canWrite && editable ? <PhoneEditBar engine={engine} timer={timer} focusCanvas={focusCanvas} /> : null}
+        {canWrite && editable ? (
+          <PhoneEditBar engine={engine} timer={timer} focusCanvas={focusCanvas}>
+            <PhoneProps engine={engine} palette={palette} focusCanvas={focusCanvas} />
+          </PhoneEditBar>
+        ) : null}
         <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} phone />
       </>
     );

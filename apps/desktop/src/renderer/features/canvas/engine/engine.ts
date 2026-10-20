@@ -54,6 +54,8 @@ export interface EngineState {
   readonly votesLeft: number;
   /** A vote is open and I may take part (write access, signed in). */
   readonly canVote: boolean;
+  /** Phone edit mode: taps add to / remove from the selection (the stand-in for Shift). */
+  readonly multiSelect: boolean;
 }
 
 export interface ClipboardPort {
@@ -94,7 +96,7 @@ export interface EngineOptions {
   cancelRaf?: (id: number) => void;
 }
 
-const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote'];
+const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote', 'multiSelect'];
 const LOCAL_AWARENESS_MS = 50;
 /** Our camera goes out at most this often (5/s), and only when it moved. */
 const LOCAL_VIEW_MS = 200;
@@ -163,6 +165,7 @@ export class CanvasEngine implements Core {
   private lowPower: boolean;
   private reducedMotion: boolean;
   private tool_: Tool = 'select';
+  private multi_ = false;
   private shape_: ShapeKind = 'rect';
   private route_: RouteKind = 'straight';
   private pasteCount = 0;
@@ -299,6 +302,7 @@ export class CanvasEngine implements Core {
       votesPer: this.votes.session?.votesPerPerson ?? 0,
       votesLeft: this.canVote ? this.votes.left() : 0,
       canVote: this.canVote,
+      multiSelect: this.multi_,
     };
   }
 
@@ -483,6 +487,17 @@ export class CanvasEngine implements Core {
     this.sync();
   }
 
+  /** «Выбрать несколько» (touch): while on, a tap adds the object to the selection or takes it out. */
+  setMultiSelect(on: boolean): void {
+    if (this.multi_ === on) return;
+    this.multi_ = on;
+    this.sync();
+  }
+
+  get multiSelect(): boolean {
+    return this.multi_;
+  }
+
   setShapeKind(k: ShapeKind): void {
     this.shape_ = k;
     this.sync();
@@ -602,6 +617,29 @@ export class CanvasEngine implements Core {
     const v = this.viewport;
     const { scale } = this.liveCamera;
     this.moveCamera({ scale, tx: v.w / 2 - p.x * scale, ty: v.h / 2 - p.y * scale });
+  }
+
+  /**
+   * Moves the camera (animated, zoom unchanged) so the selection lies between `inset.top` and `inset.bottom` px of the view,
+   * the strips the screen's own panels cover (phone: the zoom bar above, the properties sheet and tool bar below). A selection
+   * taller than that is aligned to the top. False: nothing needed, or a gesture is in progress.
+   */
+  revealSelection(inset: { top: number; bottom: number }): boolean {
+    const b = this.scene.bounds(this.sel);
+    if (!b || this.gesture) return false;
+    const c = this.liveCamera;
+    const v = this.viewport;
+    const top = inset.top + 8;
+    const bottom = v.h - inset.bottom - 8;
+    const y0 = c.ty + b.y * c.scale;
+    const y1 = c.ty + (b.y + b.h) * c.scale;
+    let dy = 0;
+    if (y1 - y0 > bottom - top) dy = top - y0;
+    else if (y1 > bottom) dy = bottom - y1;
+    else if (y0 < top) dy = top - y0;
+    if (Math.abs(dy) < 1) return false;
+    this.moveCamera({ ...c, ty: c.ty + dy });
+    return true;
   }
 
   visibleWorld(): Rect {
