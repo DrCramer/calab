@@ -40,6 +40,7 @@ message PlanLimits {
   bool board_webhooks_disabled = 30;       // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
   bool telephony_disabled = 31;            // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
   bool automations_disabled = 32;          // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
+  uint32 temp_rooms = 35;                  // live temporary rooms per creator (ADR-0044, CBF-38); 0 = no plan limit
   // Removed flags (an older telephony flag, web apps, approvals per plan): never reuse their numbers.
   reserved 24, 25, 26;
 }

@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,9 +23,9 @@ type tempChange struct {
 func (t tempChange) any() bool { return t.expires != nil || t.permanent }
 
 // tempPatch validates the temporary-room fields of a PATCH: temporary rooms only; a new end in
-// (now, now + 7 days]; make_permanent needs the real MANAGE_ROOM (the creator's implicit right
+// (now, now + the longest lifetime]; make_permanent needs the real MANAGE_ROOM (the creator's implicit right
 // must not turn into a permanent room without it).
-func tempPatch(req *v1.UpdateRoomRequest, acc perm.RoomAccess, now time.Time) (tempChange, error) {
+func tempPatch(req *v1.UpdateRoomRequest, acc perm.RoomAccess, now time.Time, lim TempLimits) (tempChange, error) {
 	var t tempChange
 	if !acc.Temp {
 		switch {
@@ -46,8 +47,8 @@ func tempPatch(req *v1.UpdateRoomRequest, acc perm.RoomAccess, now time.Time) (t
 			return t, httpx.Validation("expiresAt", "invalid time")
 		}
 		e := req.GetExpiresAt().AsTime().Truncate(time.Second)
-		if !e.After(now) || e.After(now.Add(MaxTempTTL)) {
-			return t, httpx.Validation("expiresAt", "the end must be in the future and at most 7 days from now")
+		if !e.After(now) || e.After(now.Add(lim.norm().MaxTTL)) {
+			return t, httpx.Validation("expiresAt", "the end must be in the future and at most "+strconv.Itoa(int(lim.norm().MaxTTL/(24*time.Hour)))+" days from now")
 		}
 		t.expires = &e
 	}

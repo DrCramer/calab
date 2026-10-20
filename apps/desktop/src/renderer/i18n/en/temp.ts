@@ -12,6 +12,7 @@ export const enTemp = {
   'temp.preset.1d': '1 day',
   'temp.preset.3d': '3 days',
   'temp.preset.7d': '7 days',
+  'temp.preset.30d': '30 days',
   'temp.preset.date': 'Until date',
   'temp.closesAt': 'Closes {when}',
   'temp.untilDate': 'Closing date and time',

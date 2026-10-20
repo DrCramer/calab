@@ -94,8 +94,11 @@ type Config struct {
 	LoginAccountBurst int `env:"LOGIN_ACCOUNT_ATTEMPTS" envDefault:"10"`
 
 	// Abuse limits (disk is shared with other tenants of the host).
-	MaxWorkspacesPerUser       int   `env:"MAX_WORKSPACES_PER_USER" envDefault:"5"`
-	WorkspaceCreatesPerHour    int   `env:"WORKSPACE_CREATES_PER_HOUR" envDefault:"3"`
+	MaxWorkspacesPerUser    int `env:"MAX_WORKSPACES_PER_USER" envDefault:"5"`
+	WorkspaceCreatesPerHour int `env:"WORKSPACE_CREATES_PER_HOUR" envDefault:"3"`
+	// Temporary rooms (CBF-38): the longest lifetime in days, live rooms per workspace and per creator.
+	TempRoomMaxTTLDays         int   `env:"TEMP_ROOM_MAX_TTL_DAYS" envDefault:"30"`
+	TempRoomsPerWorkspace      int   `env:"TEMP_ROOMS_PER_WORKSPACE" envDefault:"50"`
 	StorageMaxTotalBytes       int64 `env:"STORAGE_MAX_TOTAL_BYTES" envDefault:"53687091200"`       // 50 GiB, all files
 	DefaultWorkspaceQuotaBytes int64 `env:"DEFAULT_WORKSPACE_QUOTA_BYTES" envDefault:"10737418240"` // 10 GiB per new workspace
 	// Personal file quota of notes shelves (ADR-0039) for users without their own.
@@ -333,6 +336,9 @@ func (c *Config) Validate() error {
 	if c.LoginAccountBurst < 1 || c.MaxWorkspacesPerUser < 1 || c.WorkspaceCreatesPerHour < 1 ||
 		c.StorageMaxTotalBytes < 1 || c.DefaultWorkspaceQuotaBytes < 0 || c.DefaultPersonalQuotaBytes < 0 {
 		errs = append(errs, errors.New("LOGIN_ACCOUNT_ATTEMPTS, MAX_WORKSPACES_PER_USER, WORKSPACE_CREATES_PER_HOUR, STORAGE_MAX_TOTAL_BYTES must be >= 1 and DEFAULT_WORKSPACE_QUOTA_BYTES, DEFAULT_PERSONAL_QUOTA_BYTES >= 0"))
+	}
+	if c.TempRoomMaxTTLDays < 1 || c.TempRoomsPerWorkspace < 1 {
+		errs = append(errs, errors.New("TEMP_ROOM_MAX_TTL_DAYS, TEMP_ROOMS_PER_WORKSPACE must be >= 1"))
 	}
 	if c.MaxFileSizeMB < 1 {
 		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))
