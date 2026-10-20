@@ -8,6 +8,7 @@ import { VOTE_DEFAULT } from '../../../lib/canvas/votes';
 import type { CanvasEngine, Tool } from '../engine';
 import { ACTIVE_TOOL, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
+import { PhoneMenu } from './PhoneMenu';
 import { ShapeIcon } from './ShapeIcon';
 import { SHAPE_DEFS } from './model';
 import { TEMPLATE_ICON, useInsertTemplate } from './Templates';
@@ -125,11 +126,14 @@ export const PhoneEditBar = memo(function PhoneEditBar({
   }, [selected, editing]);
 
   if (editing) return null;
+  const openTemplates = (): void => setSheet('plus');
   const pick = (next: Tool): void => {
     setSheet(null);
     engine.setTool(next);
   };
   return (
+    <>
+    <PhoneMenu engine={engine} onTemplates={openTemplates} />
     <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col" data-testid="canvas-phone-dock">
       <ArmedHint tool={tool} />
       {sheet === 'shapes' ? <ShapesSheet engine={engine} shapeKind={shapeKind} onDone={close} /> : null}
@@ -165,6 +169,7 @@ export const PhoneEditBar = memo(function PhoneEditBar({
         <HistoryBtn engine={engine} redo />
       </div>
     </div>
+    </>
   );
 });
 

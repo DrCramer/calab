@@ -501,3 +501,105 @@ describe('the properties sheet', () => {
     expect(m.q('canvas-prop-size-m')).toBeNull();
   });
 });
+
+describe('touch editing in the viewer', () => {
+  const click = (m: Mounted, id: string): void => act(() => void m.q(id)?.click());
+  const esc = (m: Mounted): void => act(() => void m.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  const place = (m: Mounted, tool: string, x: number, y: number): void => {
+    click(m, `canvas-tool-${tool}`);
+    m.touch('pointerdown', 1, x, y);
+    m.touch('pointerup', 1, x, y);
+    esc(m);
+  };
+
+  it('a long press on empty canvas opens the menu; its items paste, write a text, or open the templates', async () => {
+    const m = await mount({ phoneEdit: true });
+    m.touch('pointerdown', 1, 200, 400);
+    await settle(600);
+    expect(m.q('canvas-phone-menu')).not.toBeNull();
+    m.touch('pointerup', 1, 200, 400);
+    expect(m.q('canvas-phone-menu')).not.toBeNull();
+    for (const b of m.q('canvas-phone-menu')?.querySelectorAll('button') ?? []) expect(b.className).toContain('h-11');
+    // the backdrop closes it
+    click(m, 'canvas-phone-menu-backdrop');
+    expect(m.q('canvas-phone-menu')).toBeNull();
+    // «Текст здесь» starts a text at the finger
+    m.touch('pointerdown', 1, 200, 400);
+    await settle(600);
+    m.touch('pointerup', 1, 200, 400);
+    click(m, 'canvas-phone-menu-text');
+    expect(m.q('canvas-phone-menu')).toBeNull();
+    expect(m.host.querySelector('textarea')).not.toBeNull();
+    esc(m);
+    // «Шаблон…» opens the «+» sheet
+    m.touch('pointerdown', 1, 200, 600);
+    await settle(600);
+    m.touch('pointerup', 1, 200, 600);
+    click(m, 'canvas-phone-menu-templates');
+    expect(m.q('canvas-phone-plus-sheet')).not.toBeNull();
+  });
+
+  it('there is no menu in view mode, on an object, or while the finger moves', async () => {
+    const m = await mount();
+    m.touch('pointerdown', 1, 200, 400);
+    await settle(700);
+    m.touch('pointerup', 1, 200, 400);
+    expect(m.q('canvas-phone-menu')).toBeNull();
+    await m.rerender({ phoneEdit: true });
+    m.touch('pointerdown', 1, 200, 400);
+    await settle(300);
+    m.touch('pointermove', 1, 240, 440);
+    await settle(600);
+    m.touch('pointerup', 1, 240, 440);
+    expect(m.q('canvas-phone-menu')).toBeNull();
+    place(m, 'sticky', 200, 300);
+    m.touch('pointerdown', 1, 200, 300);
+    await settle(700);
+    m.touch('pointerup', 1, 200, 300);
+    expect(m.q('canvas-phone-menu')).toBeNull();
+  });
+
+  it('«Выбрать несколько» takes taps into the selection; the sheet counts them', async () => {
+    const m = await mount({ phoneEdit: true });
+    place(m, 'sticky', 100, 200);
+    place(m, 'sticky', 100, 500);
+    // deselect, then collect both
+    m.touch('pointerdown', 1, 350, 750);
+    m.touch('pointerup', 1, 350, 750);
+    expect(m.q('canvas-phone-props')).toBeNull();
+    m.touch('pointerdown', 1, 100, 200);
+    m.touch('pointerup', 1, 100, 200);
+    click(m, 'canvas-phone-multi');
+    m.touch('pointerdown', 1, 100, 500);
+    m.touch('pointerup', 1, 100, 500);
+    expect(m.q('canvas-phone-count')?.textContent).toMatch(/2/);
+    expect(m.q('canvas-phone-multi')?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('the sheet’s pencil edits the selected object’s text', async () => {
+    const m = await mount({ phoneEdit: true });
+    place(m, 'sticky', 200, 300);
+    expect(m.host.querySelector('textarea')).toBeNull();
+    click(m, 'canvas-prop-edit-text');
+    expect(m.host.querySelector('textarea')).not.toBeNull();
+  });
+
+  it('adds no timer or frame at rest beyond what a writable desktop canvas has (the socket keeps its own)', async () => {
+    const desk = await mount({ phone: false });
+    desk.key('s'); desk.touch('pointerdown', 1, 200, 300); desk.touch('pointerup', 1, 200, 300); act(() => void desk.host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    await settle(2000);
+    const writable = vi.getTimerCount();
+    desk.unmount();
+    const m = await mount({ phoneEdit: true });
+    place(m, 'sticky', 200, 300);
+    m.touch('pointerdown', 1, 200, 300);
+    m.touch('pointermove', 1, 240, 340);
+    m.touch('pointerup', 1, 240, 340);
+    await settle(2000);
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(writable);
+    // and back in view mode the viewer is as quiet as a view-only one (no timer of the phone chrome survives)
+    await m.rerender({ phoneEdit: false });
+    await settle(2000);
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(writable);
+  });
+});

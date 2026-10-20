@@ -1,6 +1,6 @@
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, Check, CopyPlus, Group, ListChecks, Lock, LockOpen, Minus, Palette, Shapes, Trash2, Ungroup, type LucideIcon,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, Check, CopyPlus, Group, ListChecks, Lock, LockOpen, Minus, Palette, Pencil, Shapes, Trash2, Ungroup, type LucideIcon,
 } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
@@ -93,6 +93,11 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
           <span className="shrink-0 px-2 text-control text-muted" data-testid="canvas-phone-multi-hint">{t('canvasPhone.multiHint')}</span>
         )}
         {m?.locked ? <Lock className="mx-1 size-4 shrink-0 text-muted" strokeWidth={1.75} role="img" aria-label={t('canvasBoard.props.locked')} /> : null}
+        {free && m.count === 1 && (m.hasSticky || m.hasText || m.hasShape) ? (
+          <PhoneBtn label={t('canvasPhone.editText')} onClick={() => void engine.startTextEdit()} testId="canvas-prop-edit-text">
+            <Pencil className={ICON} strokeWidth={1.75} aria-hidden />
+          </PhoneBtn>
+        ) : null}
         {free && m.hasSticky ? (
           <PhoneBtn label={t('canvasBoard.props.color')} active={panel === 'sticky'} onClick={toggle('sticky')} testId="canvas-prop-sticky-color">
             <Swatch css={m.stickyColor === undefined ? null : swatchCss(palette, 'sticky', m.stickyColor)} size={22} />
