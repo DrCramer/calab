@@ -1,6 +1,6 @@
 /** Where the floating properties panel sits relative to the selection (screen space). Pure. */
 import type { Camera } from '../../../lib/canvas/camera';
-import type { Rect } from '../../../lib/canvas/geometry';
+import type { Point, Rect } from '../../../lib/canvas/geometry';
 
 export interface PanelPlacement {
   x: number;
@@ -19,6 +19,8 @@ export interface Insets {
 
 export const PANEL_GAP = 12;
 export const PANEL_MARGIN = 8;
+/** Radius (px) the rotation handle occupies around its center, hit area included. */
+export const KNOB_RADIUS = 8;
 export const NO_INSETS: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
 
 /**
@@ -38,6 +40,8 @@ export function safeArea(viewport: { w: number; h: number }, chrome: Insets = NO
  * room above, and when neither fits (a selection taller than the window) sits inside its visible part. It
  * is always clamped into the safe area, so it never covers the toolbar or the zoom/undo bars. `bounds` is
  * in world units; `size` is the panel's own size in px; `chrome` is how far the floating panels reach in.
+ * `knob` (world units) is the selection's rotation handle: the panel clears it like part of the selection —
+ * above the handle, or below the object when there is no room above — instead of lying over it.
  */
 export function placePanel(
   bounds: Rect,
@@ -45,11 +49,23 @@ export function placePanel(
   viewport: { w: number; h: number },
   size: { w: number; h: number },
   chrome: Insets = NO_INSETS,
+  knob?: Point | null,
 ): PanelPlacement {
-  const sx = cam.tx + bounds.x * cam.scale;
-  const sy = cam.ty + bounds.y * cam.scale;
-  const sw = bounds.w * cam.scale;
-  const sh = bounds.h * cam.scale;
+  let sx = cam.tx + bounds.x * cam.scale;
+  let sy = cam.ty + bounds.y * cam.scale;
+  let sw = bounds.w * cam.scale;
+  let sh = bounds.h * cam.scale;
+  if (knob) {
+    // The handle's disc joins the selection's screen box.
+    const kx = cam.tx + knob.x * cam.scale;
+    const ky = cam.ty + knob.y * cam.scale;
+    const x0 = Math.min(sx, kx - KNOB_RADIUS);
+    const y0 = Math.min(sy, ky - KNOB_RADIUS);
+    sw = Math.max(sx + sw, kx + KNOB_RADIUS) - x0;
+    sh = Math.max(sy + sh, ky + KNOB_RADIUS) - y0;
+    sx = x0;
+    sy = y0;
+  }
   const visible = sx < viewport.w && sy < viewport.h && sx + sw > 0 && sy + sh > 0;
   const safe = safeArea(viewport, chrome);
   const sRight = safe.x + safe.w;

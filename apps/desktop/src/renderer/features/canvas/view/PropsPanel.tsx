@@ -5,11 +5,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
+import { rotateHandlePoint } from '../../../lib/canvas/geometry';
 import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
+import { ROTATE_OFFSET_PX } from '../engine/overlay';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { NO_INSETS, placePanel, type Insets } from './layout';
 import {
@@ -347,7 +349,9 @@ export const PropsPanel = memo(function PropsPanel({
           chrome.current = measureChrome(node.offsetParent);
           stale.current = false;
         }
-        const p = placePanel(b, engine.camera, engine.viewport, size.current, chrome.current);
+        const f = engine.selectionFrame();
+        const knob = f?.rotate ? rotateHandlePoint(f.rect, f.rot, engine.px(ROTATE_OFFSET_PX)) : null;
+        const p = placePanel(b, engine.camera, engine.viewport, size.current, chrome.current, knob);
         visible = p.visible;
         if (visible) node.style.transform = `translate(${p.x}px, ${p.y}px)`;
       }
