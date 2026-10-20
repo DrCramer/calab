@@ -164,6 +164,8 @@ export const enMailbox: DictShape<typeof ruMailbox> = {
   'mbox.settings.reading': 'Reading',
   'mbox.settings.notify': 'Notify about new mail',
   'mbox.settings.notifyHint': 'While Calab is running; not in Do Not Disturb',
+  'mbox.settings.group': 'Group messages into conversations',
+  'mbox.settings.groupHint': 'Turn off to list every message as its own row',
   'mbox.settings.images': 'Remote images',
   'mbox.settings.imagesHint': 'Remote images tell the sender that you opened the message',
   'mbox.settings.imagesAsk': 'Ask',

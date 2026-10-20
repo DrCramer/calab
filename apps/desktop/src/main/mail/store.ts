@@ -243,6 +243,8 @@ const addrJson = (a: MailAddress[]): string => JSON.stringify(a.map((x) => ({ na
 export class MailStore {
   readonly db: DatabaseSync;
   private readonly blobDir: string;
+  /** Conversation grouping (CBF-39); off = every new message gets a thread of its own. */
+  grouped = true;
 
   constructor(
     readonly dir: string,
@@ -453,8 +455,35 @@ export class MailStore {
     return { min: num(r['mn']), max: num(r['mx']), count: num(r['c']) };
   }
 
+  private newThread(): string {
+    const r = this.db.prepare('INSERT INTO threads (created) VALUES (?)').run(this.now());
+    return `${this.accountId}.t${String(r.lastInsertRowid)}`;
+  }
+
+  /**
+   * Re-threads every stored message after the grouping setting changed (CBF-39): off = a thread per
+   * message, on = the References / subject matching replayed oldest first. Thread ids change.
+   */
+  regroup(grouped: boolean): void {
+    this.grouped = grouped;
+    this.tx(() => {
+      this.db.prepare('DELETE FROM thread_keys').run();
+      this.db.prepare("UPDATE messages SET thread_id = ''").run();
+      const upd = this.db.prepare('UPDATE messages SET thread_id = ? WHERE rid = ?');
+      for (const r of this.db.prepare('SELECT rid, message_id_hdr, in_reply_to, refs, subject, subject_norm, date FROM messages ORDER BY date, rid').all()) {
+        const thread = grouped
+          ? this.threadFor(
+              { messageIdHdr: str(r['message_id_hdr']), inReplyTo: str(r['in_reply_to']), references: json<string[]>(r['refs'], []), subject: str(r['subject']), date: num(r['date']) },
+              str(r['subject_norm']),
+            )
+          : this.newThread();
+        upd.run(thread, num(r['rid']));
+      }
+    });
+  }
+
   /** Finds or allocates the thread of a new message (References / In-Reply-To, then subject ≤ 7 days). */
-  private threadFor(m: NewMessage, subjectNorm: string): string {
+  private threadFor(m: Pick<NewMessage, 'messageIdHdr' | 'inReplyTo' | 'references' | 'subject' | 'date'>, subjectNorm: string): string {
     const keys = [m.messageIdHdr, m.inReplyTo, ...m.references].filter(Boolean);
     const get = this.db.prepare('SELECT thread_id FROM thread_keys WHERE key = ?');
     let thread: string | null = null;
@@ -470,14 +499,11 @@ export class MailStore {
     // so unrelated mail with the same subject («Your order») does not merge.
     if (!thread && subjectNorm && (hasReplyPrefix(m.subject) || m.inReplyTo || m.references.length)) {
       const r = this.db
-        .prepare('SELECT thread_id FROM messages WHERE subject_norm = ? AND date BETWEEN ? AND ? ORDER BY ABS(date - ?) LIMIT 1')
+        .prepare("SELECT thread_id FROM messages WHERE subject_norm = ? AND thread_id <> '' AND date BETWEEN ? AND ? ORDER BY ABS(date - ?) LIMIT 1")
         .get(subjectNorm, m.date - SUBJECT_WINDOW_MS, m.date + SUBJECT_WINDOW_MS, m.date);
       if (r) thread = str(r['thread_id']);
     }
-    if (!thread) {
-      const r = this.db.prepare('INSERT INTO threads (created) VALUES (?)').run(this.now());
-      thread = `${this.accountId}.t${String(r.lastInsertRowid)}`;
-    }
+    if (!thread) thread = this.newThread();
     const put = this.db.prepare('INSERT OR IGNORE INTO thread_keys (key, thread_id) VALUES (?, ?)');
     for (const k of keys) put.run(k, thread);
     return thread;
@@ -489,7 +515,7 @@ export class MailStore {
     const ex = this.db.prepare('SELECT thread_id FROM messages WHERE id = ?').get(id);
     if (ex) return { id, threadId: str(ex['thread_id']), inserted: false };
     const subjectNorm = normalizeSubject(m.subject);
-    const threadId = this.threadFor(m, subjectNorm);
+    const threadId = this.grouped ? this.threadFor(m, subjectNorm) : this.newThread();
     const r = this.db
       .prepare(
         `INSERT INTO messages (id, folder_row, uid, thread_id, message_id_hdr, in_reply_to, refs, from_name, from_addr, to_json, cc_json, bcc_json,

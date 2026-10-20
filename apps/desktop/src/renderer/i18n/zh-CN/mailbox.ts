@@ -164,6 +164,8 @@ export const zhMailbox: DictShape<typeof ruMailbox> = {
   'mbox.settings.reading': '阅读',
   'mbox.settings.notify': '新邮件通知',
   'mbox.settings.notifyHint': 'Calab 运行时；“勿扰”模式下不通知',
+  'mbox.settings.group': '按会话分组邮件',
+  'mbox.settings.groupHint': '关闭后，每封邮件单独显示为一行',
   'mbox.settings.images': '远程图片',
   'mbox.settings.imagesHint': '远程图片会告诉发件人你已打开邮件',
   'mbox.settings.imagesAsk': '询问',

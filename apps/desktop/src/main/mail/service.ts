@@ -188,6 +188,10 @@ function settingsPatch(v: unknown): Partial<MailSettings> {
     if (typeof v['notify'] !== 'boolean') throw invalid('notify');
     out.notify = v['notify'];
   }
+  if ('groupThreads' in v) {
+    if (typeof v['groupThreads'] !== 'boolean') throw invalid('groupThreads');
+    out.groupThreads = v['groupThreads'];
+  }
   if ('signatures' in v) {
     const s = v['signatures'];
     if (!isObj(s) || !Object.values(s).every((x) => isStr(x, 10_000))) throw invalid('signatures');
@@ -265,6 +269,7 @@ export class MailEngine {
   private openAccount(cfg: MailEngineAccount): void {
     const dir = join(this.deps.dataDir, cfg.id);
     const store = new MailStore(dir, cfg.id, this.now);
+    store.grouped = this.settingsCache.groupThreads;
     const acc = { cfg, dir, store, smtpCert: null } as unknown as Account;
     acc.sync = this.newSync(acc);
     acc.outbox = new Outbox({
@@ -645,7 +650,9 @@ export class MailEngine {
 
   private saveSettings(patch: Partial<MailSettings>): MailSettings {
     this.settingsDb.set(patch);
+    const regroup = patch.groupThreads !== undefined && patch.groupThreads !== this.settingsCache.groupThreads;
     this.settingsCache = { ...this.settingsCache, ...patch };
+    if (regroup) for (const acc of this.accounts.values()) acc.store.regroup(this.settingsCache.groupThreads);
     if (patch.cacheLimitBytes !== undefined) for (const acc of this.accounts.values()) acc.store.evict(patch.cacheLimitBytes);
     return structuredClone(this.settingsCache);
   }
