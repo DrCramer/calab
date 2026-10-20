@@ -186,4 +186,8 @@ export const ruCanvasBoard = {
   'canvasBoard.export.empty': 'Холст пуст — экспортировать нечего',
   'canvasBoard.export.failed': 'Не удалось сохранить PNG',
   'canvasBoard.export.fileName': 'холст',
+  'canvasBoard.follow.banner': 'Вы следите за {name}',
+  'canvasBoard.follow.stop': 'Перестать следить',
+  'canvasBoard.presence.follow': 'Следить за {name}',
+  'canvasBoard.presence.unfollow': 'Не следить за {name}',
 } as const;

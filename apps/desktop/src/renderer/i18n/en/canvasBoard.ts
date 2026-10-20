@@ -186,4 +186,8 @@ export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.export.empty': 'The canvas is empty — nothing to export',
   'canvasBoard.export.failed': 'Couldn’t save the PNG',
   'canvasBoard.export.fileName': 'canvas',
+  'canvasBoard.follow.banner': 'You are following {name}',
+  'canvasBoard.follow.stop': 'Stop following',
+  'canvasBoard.presence.follow': 'Follow {name}',
+  'canvasBoard.presence.unfollow': 'Stop following {name}',
 };

@@ -186,4 +186,8 @@ export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.export.empty': '画布为空，无可导出内容',
   'canvasBoard.export.failed': '无法保存 PNG',
   'canvasBoard.export.fileName': '画布',
+  'canvasBoard.follow.banner': '你正在跟随 {name}',
+  'canvasBoard.follow.stop': '停止跟随',
+  'canvasBoard.presence.follow': '跟随 {name}',
+  'canvasBoard.presence.unfollow': '停止跟随 {name}',
 };

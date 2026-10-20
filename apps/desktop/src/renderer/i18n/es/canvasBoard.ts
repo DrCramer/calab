@@ -186,4 +186,8 @@ export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.export.empty': 'El lienzo está vacío: nada que exportar',
   'canvasBoard.export.failed': 'No se pudo guardar el PNG',
   'canvasBoard.export.fileName': 'lienzo',
+  'canvasBoard.follow.banner': 'Estás siguiendo a {name}',
+  'canvasBoard.follow.stop': 'Dejar de seguir',
+  'canvasBoard.presence.follow': 'Seguir a {name}',
+  'canvasBoard.presence.unfollow': 'Dejar de seguir a {name}',
 };

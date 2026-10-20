@@ -365,7 +365,7 @@ function Chrome({
       ) : null}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} />
       <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
-      <Presence store={presence} />
+      <Presence store={presence} engine={engine} />
       <StatusBanner engine={engine} sync={sync} canWrite={canWrite} gone={gone} onRetry={onRetry} />
     </>
   );

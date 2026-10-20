@@ -16,7 +16,7 @@ import {
   DEFAULTS, aabb, isConnector,
   type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
-import { AwarenessLayer, type PeerState } from './awareness';
+import { AwarenessLayer, sameView, type PeerState, type PeerView } from './awareness';
 import type { Core, Gesture } from './gestures';
 import { attachInput } from './input';
 import { emptyOverlay, type Outline, type OverlayState, type SelFrame } from './overlay';
@@ -40,6 +40,10 @@ export interface EngineState {
   readonly canRedo: boolean;
   readonly editing: boolean;
   readonly readOnly: boolean;
+  /** The person whose view the camera follows (`followKeyOf`), or null. */
+  readonly followKey: string | null;
+  /** Their name (empty while not following). */
+  readonly followName: string;
 }
 
 export interface ClipboardPort {
@@ -76,8 +80,10 @@ export interface EngineOptions {
   cancelRaf?: (id: number) => void;
 }
 
-const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly'];
+const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName'];
 const LOCAL_AWARENESS_MS = 50;
+/** Our camera goes out at most this often (5/s), and only when it moved. */
+const LOCAL_VIEW_MS = 200;
 const ANIM_MS = 180;
 
 function makeCanvasMeasure(family: () => string): MeasureFn {
@@ -120,6 +126,14 @@ export class CanvasEngine implements Core {
   private readonly selListeners = new Set<(objs: readonly ObjectRec[]) => void>();
   private readonly localListeners = new Set<(a: LocalAwareness) => void>();
   private readonly viewListeners = new Set<() => void>();
+  private readonly localViewListeners = new Set<(v: PeerView) => void>();
+  private viewTimer: ReturnType<typeof setTimeout> | null = null;
+  private viewAt = -Infinity;
+  /** The camera changed since the last view was sent (kept across hidden periods). */
+  private viewDirty = false;
+  private followKey_: string | null = null;
+  /** The view of the followed person that the camera was last set to, so an unchanged view moves nothing. */
+  private followApplied: PeerView | null = null;
   private localCursor: Point | null = null;
   private localTimer: ReturnType<typeof setTimeout> | null = null;
   private localAt = 0;
@@ -251,6 +265,8 @@ export class CanvasEngine implements Core {
       canRedo: this.doc.undo.redoStack.length > 0,
       editing: this.editor.isOpen,
       readOnly: this.readOnly,
+      followKey: this.followKey_,
+      followName: this.followKey_ === null ? '' : (this.awareness.followTarget(this.followKey_)?.name ?? ''),
     };
   }
 
@@ -318,6 +334,12 @@ export class CanvasEngine implements Core {
 
   /** Queues the next camera of a continuous gesture; the frame applies it (one `setCamera` per frame). */
   steerCamera(c: Camera): void {
+    this.stopFollow();
+    this.queueCamera(c);
+  }
+
+  /** Queues a camera for the next frame without touching «follow» (the follow itself uses this). */
+  private queueCamera(c: Camera): void {
     this.cancelAnimation();
     const next = { tx: c.tx, ty: c.ty, scale: clampScale(c.scale) };
     if (sameCamera(next, this.liveCamera)) return;
@@ -341,6 +363,7 @@ export class CanvasEngine implements Core {
     this.renderer.requestFrame();
     this.sync();
     this.emitView();
+    this.emitLocalView();
   }
 
   setOverlay(p: Partial<OverlayState>): void {
@@ -464,8 +487,13 @@ export class CanvasEngine implements Core {
     const changed = this.active !== on;
     this.active = on;
     this.renderer.setActive(on);
-    if (on) this.scheduleAwarenessStep();
-    else this.clearAwarenessStep();
+    if (on) {
+      this.scheduleAwarenessStep();
+      this.emitLocalView();
+    } else {
+      this.clearAwarenessStep();
+      this.clearViewTimer();
+    }
     // Pieces of UI that pause while hidden (the mini-map) pick up again on this.
     if (changed) this.emitView();
   }
@@ -486,11 +514,13 @@ export class CanvasEngine implements Core {
   }
 
   zoomAtPoint(factor: number, at: Point): void {
+    this.stopFollow();
     this.cancelAnimation();
     this.setCamera(zoomAt(this.liveCamera, factor, at));
   }
 
   panByScreen(dx: number, dy: number): void {
+    this.stopFollow();
     this.cancelAnimation();
     const c = this.liveCamera;
     this.setCamera({ ...c, tx: c.tx + dx, ty: c.ty + dy });
@@ -546,6 +576,7 @@ export class CanvasEngine implements Core {
 
   /** Animated camera move (instant under reduced motion). The only place that loops frames besides the renderer. */
   private moveCamera(target: Camera): void {
+    this.stopFollow();
     this.cancelAnimation();
     this.flushCamera();
     if (this.reducedMotion || sameCamera(target, this.cam)) {
@@ -924,6 +955,86 @@ export class CanvasEngine implements Core {
     const changed = this.awareness.setPeers(peers, this.now());
     if (changed) this.renderer.requestRemoteFrame();
     this.scheduleAwarenessStep();
+    if (this.followKey_ !== null) {
+      this.applyFollow();
+      this.sync();
+    }
+  }
+
+  // ── follow a participant ────────────────────────────────────────────────────
+
+  /** The camera follows the center and zoom of that person (`PeerState.userId ?? id`); null stops. Their own screen size does not matter. */
+  follow(key: string | null): void {
+    if (key === null) {
+      this.stopFollow();
+      return;
+    }
+    if (key === this.followKey_ || !this.awareness.followTarget(key)) return;
+    this.followKey_ = key;
+    this.followApplied = null;
+    this.applyFollow();
+    this.sync();
+  }
+
+  get followKey(): string | null {
+    return this.followKey_;
+  }
+
+  private stopFollow(): void {
+    if (this.followKey_ === null) return;
+    this.followKey_ = null;
+    this.followApplied = null;
+    this.sync();
+  }
+
+  /** Brings the camera to the followed person's view; ends the follow when they left the canvas. Queued like gesture input (one `setCamera` per frame). */
+  private applyFollow(): void {
+    const key = this.followKey_;
+    if (key === null) return;
+    const peer = this.awareness.followTarget(key);
+    if (!peer) {
+      this.stopFollow();
+      return;
+    }
+    const v = peer.view;
+    const vp = this.viewport;
+    if (!v || vp.w <= 0 || vp.h <= 0 || sameView(v, this.followApplied)) return;
+    this.followApplied = v;
+    const scale = clampScale(v.zoom);
+    this.queueCamera({ scale, tx: vp.w / 2 - v.x * scale, ty: vp.h / 2 - v.y * scale });
+  }
+
+  /** The center and zoom of what we see, for the others to follow (5/s at most, only after a change, nothing while hidden). */
+  onLocalView(fn: (v: PeerView) => void): () => void {
+    this.localViewListeners.add(fn);
+    // A camera that moved before anyone listened still goes out once.
+    if (this.viewDirty) this.emitLocalView();
+    return () => this.localViewListeners.delete(fn);
+  }
+
+  private clearViewTimer(): void {
+    if (this.viewTimer) clearTimeout(this.viewTimer);
+    this.viewTimer = null;
+  }
+
+  private emitLocalView(): void {
+    this.viewDirty = true;
+    if (this.localViewListeners.size === 0 || !this.active || this.viewTimer) return;
+    const wait = this.viewAt + LOCAL_VIEW_MS - this.now();
+    if (wait <= 0) this.fireLocalView();
+    else this.viewTimer = setTimeout(() => this.fireLocalView(), wait);
+  }
+
+  private fireLocalView(): void {
+    this.viewTimer = null;
+    if (!this.viewDirty || !this.active || this.destroyed) return;
+    const vp = this.viewport;
+    if (vp.w <= 0 || vp.h <= 0) return;
+    this.viewDirty = false;
+    this.viewAt = this.now();
+    const r = visibleRect(this.cam, vp);
+    const v: PeerView = { x: r.x + r.w / 2, y: r.y + r.h / 2, zoom: this.cam.scale };
+    for (const fn of this.localViewListeners) fn(v);
   }
 
   private clearAwarenessStep(): void {
@@ -997,6 +1108,12 @@ export class CanvasEngine implements Core {
       const r = this.canvas.getBoundingClientRect();
       const dpr = this.canvas.ownerDocument.defaultView?.devicePixelRatio ?? 1;
       this.renderer.resize(r.width, r.height, dpr);
+      // The center of our view moved with the window: tell the others, and keep the followed center in the middle.
+      this.emitLocalView();
+      if (this.followKey_ !== null) {
+        this.followApplied = null;
+        this.applyFollow();
+      }
     };
     apply();
     if (typeof ResizeObserver !== 'undefined') {
@@ -1021,6 +1138,7 @@ export class CanvasEngine implements Core {
     this.editor.cancel();
     if (this.localTimer) clearTimeout(this.localTimer);
     if (this.awarenessTimer) clearTimeout(this.awarenessTimer);
+    this.clearViewTimer();
     for (const d of this.disposers.splice(0)) d();
     this.renderer.destroy();
     this.scene.destroy();
@@ -1029,6 +1147,7 @@ export class CanvasEngine implements Core {
     this.selListeners.clear();
     this.localListeners.clear();
     this.viewListeners.clear();
+    this.localViewListeners.clear();
   }
 }
 

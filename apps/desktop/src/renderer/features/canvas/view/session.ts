@@ -85,6 +85,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
       o.presence.set(peers);
     },
     onLocalAwareness: (fn) => engine.onLocalAwareness(fn),
+    onLocalView: (fn) => engine.onLocalView(fn),
     setReadOnly: (on) => engine.setReadOnly(on),
   };
   const user: CanvasUser = { id: me.id, name: me.name, color: o.color(me.id) };

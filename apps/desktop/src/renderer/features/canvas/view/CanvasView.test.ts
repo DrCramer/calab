@@ -458,6 +458,63 @@ describe('two clients on one document', () => {
     expect(relay.doc.getMap('objects').size).toBe(2);
   });
 
+  it('clicking a person follows their camera; the chip, our own zoom and their leaving end it', async () => {
+    const relay = new MockRelay();
+    const a = await mount({ relay, name: 'Ann' });
+    const b = await mount({ relay, name: 'Bob', bits: VIEW });
+    await settle(50);
+    // Ann zooms in with the pinch gesture; Bob (a viewer) is at 100 %
+    a.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, ctrlKey: true, bubbles: true, cancelable: true, clientX: 500, clientY: 400 }));
+    await settle(600);
+    const annZoom = a.q('canvas-zoom-pct')?.textContent;
+    expect(annZoom).not.toMatch(/\b100\b/);
+    expect(b.q('canvas-zoom-pct')?.textContent).toMatch(/\b100\b/);
+    expect(b.q('canvas-following')).toBeNull();
+
+    // follow: banner with her name, Bob's camera takes her zoom
+    const ann = b.q('canvas-presence-user') as HTMLElement;
+    act(() => {
+      ann.click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')?.textContent).toContain('Ann');
+    expect(b.q('canvas-presence-user')?.getAttribute('aria-pressed')).toBe('true');
+    expect(b.q('canvas-zoom-pct')?.textContent).toBe(annZoom);
+
+    // she zooms further: he follows
+    a.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, ctrlKey: true, bubbles: true, cancelable: true, clientX: 500, clientY: 400 }));
+    await settle(600);
+    expect(b.q('canvas-zoom-pct')?.textContent).toBe(a.q('canvas-zoom-pct')?.textContent);
+
+    // his own zoom button ends it
+    act(() => {
+      (b.q('canvas-zoom-in') as HTMLElement).click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')).toBeNull();
+
+    // again, then the ✕ of the chip
+    act(() => {
+      (b.q('canvas-presence-user') as HTMLElement).click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')).not.toBeNull();
+    act(() => {
+      (b.q('canvas-following-stop') as HTMLElement).click();
+    });
+    expect(b.q('canvas-following')).toBeNull();
+
+    // and when she leaves the canvas
+    act(() => {
+      (b.q('canvas-presence-user') as HTMLElement).click();
+    });
+    await settle(50);
+    expect(b.q('canvas-following')).not.toBeNull();
+    a.unmount();
+    await settle(2000);
+    expect(b.q('canvas-following')).toBeNull();
+  });
+
   it('a viewer sees the editor’s changes live', async () => {
     const relay = new MockRelay();
     const editor = await mount({ relay, name: 'Ann' });
