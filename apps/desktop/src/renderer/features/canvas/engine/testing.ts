@@ -3,6 +3,8 @@ import type { Ctx2D } from './draw';
 export interface Call {
   name: string;
   args: unknown[];
+  /** `ctx.font` when the call was made (what a `fillText` was drawn in). */
+  font?: unknown;
 }
 
 export interface FakeCtx {
@@ -25,7 +27,7 @@ export function fakeCtx(): FakeCtx {
         if (p === 'measureText') return (t: string) => ({ width: t.length * 6 });
         if (p in state) return state[p];
         return (...args: unknown[]) => {
-          calls.push({ name: p, args });
+          calls.push({ name: p, args, font: state.font });
         };
       },
       set(_t, p, v) {

@@ -1,6 +1,8 @@
 import { CanvasDoc, clampText, color, endpoint, isGroupId, isShapeKind, newId, num, type PlainObject } from './doc';
+import { fmtFromDelta, type DeltaOp } from './richText';
 import type { Scene } from './scene';
-import { MAX_OBJECTS, type Endpoint, type InitExtras, type ObjectInit } from './types';
+import { isFontToken } from './textLayout';
+import { MAX_OBJECTS, MAX_TEXT, type Endpoint, type InitExtras, type ObjectInit } from './types';
 
 /** Text-clipboard format: prefix + JSON (ADR-0113 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
@@ -57,6 +59,23 @@ export function parse(text: string): ClipboardPayload | null {
   return objects.length > 0 ? { v: VERSION, objects } : null;
 }
 
+/** The formatted text of a clipboard object: its `rich` Y.Text delta when it is a sane one, else the plain `text`. */
+function richOf(o: PlainObject): { text: string; fmt: InitExtras['fmt'] } {
+  const raw = o.rich;
+  if (Array.isArray(raw) && raw.length > 0 && raw.length <= MAX_TEXT) {
+    const ops: DeltaOp[] = [];
+    for (const op of raw as unknown[]) {
+      if (typeof op !== 'object' || op === null) continue;
+      const r = op as { insert?: unknown; attributes?: unknown };
+      if (typeof r.insert !== 'string') continue;
+      ops.push({ insert: r.insert, ...(typeof r.attributes === 'object' && r.attributes !== null ? { attributes: r.attributes as Record<string, unknown> } : {}) });
+    }
+    const { text, fmt } = fmtFromDelta(ops);
+    if (ops.length > 0) return { text: clampText(text), fmt };
+  }
+  return { text: typeof o.text === 'string' ? clampText(o.text) : '', fmt: undefined };
+}
+
 /**
  * Turns clipboard objects into creation inits at `dx, dy` with fresh ids. Connector ends glued to a copied
  * object follow its new id; others become free points.
@@ -82,8 +101,10 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
   for (const o of payload.objects) {
     const id = ids.get(o.id);
     if (!id) continue;
-    const text = typeof o.text === 'string' ? clampText(o.text) : '';
+    const { text, fmt } = richOf(o);
     const extras: InitExtras = {};
+    if (fmt && o.kind !== 'connector') extras.fmt = fmt;
+    if ((o.kind === 'sticky' || o.kind === 'shape') && isFontToken(o.fontSize)) extras.fontSize = o.fontSize;
     if (o.kind !== 'connector' && typeof o.rot === 'number') extras.rot = o.rot;
     if (o.locked === true) extras.locked = true;
     const g = isGroupId(o.group) ? groups.get(o.group) : undefined;

@@ -8,7 +8,8 @@ import { isValidKey } from './fracIndex';
 import { SpatialGrid } from './grid';
 import { RouteCache, routeConnector } from './route';
 import { pointInShape } from './shapes';
-import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter } from './textLayout';
+import { fmtFromDelta, type Fmt } from './richText';
+import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter, isFontToken, type FontToken } from './textLayout';
 import {
   DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector,
   type BoxRec, type ConnectorRec, type Endpoint, type ObjectRec, type RouteKind, type Arrow,
@@ -478,23 +479,40 @@ export class Scene {
     const z = this.zOf(m);
     const x = num(m.get('x'), 0);
     const y = num(m.get('y'), 0);
+    // Text and its formatting from the Y.Text delta. A rebuilt record keeps the old `fmt` object while it is equal, so
+    // a lock or a move (which rebuild it) never look like a text change.
+    const cell: { fmt?: Fmt } = {};
     const textOf = (): string => {
       const t = m.get('text');
-      return t instanceof Y.Text ? t.toJSON() : '';
+      if (!(t instanceof Y.Text)) return '';
+      const r = fmtFromDelta(t.toDelta() as never);
+      let f = r.fmt;
+      if (f) {
+        const old = this.recs.get(id);
+        if (old && old.kind !== 'connector' && old.fmt?.key === f.key) f = old.fmt;
+        cell.fmt = f;
+      }
+      return r.text;
+    };
+    const rich = (): { fmt?: Fmt } => (cell.fmt ? { fmt: cell.fmt } : {});
+    const fontSizeOf = (): { fontSize?: FontToken } => {
+      const v = m.get('fontSize');
+      return isFontToken(v) && v !== 'm' ? { fontSize: v } : {};
     };
     switch (kind) {
       case 'sticky':
         return {
           kind, id, z, x, y,
           w: num(m.get('w'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
-          color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...this.extras(m, true),
+          color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...rich(), ...fontSizeOf(), ...this.extras(m, true),
         };
       case 'text': {
         const w = num(m.get('w'), DEFAULTS.textW, DEFAULTS.minTextW, MAX_SIZE);
         const size = num(m.get('size'), DEFAULTS.textSize, DEFAULTS.minTextSize, DEFAULTS.maxTextSize);
         const text = textOf();
-        const h = Math.max(size * 1.3, this.text.layout(text, size, w - 2 * TEXT_PAD).height) + 2 * TEXT_PAD;
-        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...this.extras(m, true) };
+        const lay = cell.fmt ? this.text.layoutRich(text, cell.fmt, size, w - 2 * TEXT_PAD) : this.text.layout(text, size, w - 2 * TEXT_PAD);
+        const h = Math.max(size * 1.3, lay.height) + 2 * TEXT_PAD;
+        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...rich(), ...this.extras(m, true) };
       }
       case 'shape': {
         const shape = m.get('shape');
@@ -503,7 +521,7 @@ export class Scene {
           w: num(m.get('w'), DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
           shape: isShapeKind(shape) ? shape : 'rect',
           fill: color(m.get('fill'), DEFAULTS.shapeFill), stroke: color(m.get('stroke'), DEFAULTS.shapeStroke),
-          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...this.extras(m, true),
+          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf(), ...this.extras(m, true),
         };
       }
       default:

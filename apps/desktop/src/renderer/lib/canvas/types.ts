@@ -1,4 +1,6 @@
 import { rotatedBounds, type Rect } from './geometry';
+import type { Fmt } from './richText';
+import type { FontToken } from './textLayout';
 
 /** Document schema this build reads and writes (ADR-0113 §3). Newer docs open read-only. */
 export const SCHEMA_VERSION = 1;
@@ -44,21 +46,30 @@ export interface BaseRec {
   readonly group?: string;
 }
 
-export interface StickyRec extends BaseRec {
+/** Text formatting (bold / italic / strike, lists): absent for plain text (ADR-0114). */
+export interface RichFields {
+  readonly fmt?: Fmt;
+}
+
+export interface StickyRec extends BaseRec, RichFields {
   readonly kind: 'sticky';
   readonly color: string;
   readonly text: string;
+  /** Text size token; absent = M (ADR-0114). */
+  readonly fontSize?: FontToken;
 }
 
-export interface TextRec extends BaseRec {
+export interface TextRec extends BaseRec, RichFields {
   readonly kind: 'text';
   readonly size: number;
   readonly color: string;
   readonly text: string;
 }
 
-export interface ShapeRec extends BaseRec {
+export interface ShapeRec extends BaseRec, RichFields {
   readonly kind: 'shape';
+  /** Text size token; absent = M (ADR-0114). */
+  readonly fontSize?: FontToken;
   readonly shape: ShapeKind;
   readonly fill: string;
   readonly stroke: string;
@@ -117,6 +128,10 @@ export interface InitExtras {
   rot?: number;
   locked?: boolean;
   group?: string;
+  /** Formatting of the object's text (`text` is the plain text it applies to). */
+  fmt?: Fmt;
+  /** Text size token of a sticky or shape (ignored by the others). */
+  fontSize?: FontToken;
 }
 
 /** Fields a creation call may set (kind-specific; unknown ones are ignored). */
@@ -135,6 +150,8 @@ export interface ObjectPatch {
   locked?: boolean;
   /** null removes the field. */
   group?: string | null;
+  /** Text size token of a sticky or shape; 'm' removes the field. */
+  fontSize?: FontToken;
   x?: number;
   y?: number;
   w?: number;

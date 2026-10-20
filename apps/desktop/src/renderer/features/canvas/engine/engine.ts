@@ -9,7 +9,7 @@ import { CanvasDoc, newId } from '../../../lib/canvas/doc';
 import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../../lib/canvas/geometry';
 import { Scene } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
-import { LABEL_SIZE, SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE, TextLayouter, estimateMeasure, type MeasureFn } from '../../../lib/canvas/textLayout';
+import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import {
   DEFAULTS, aabb, isConnector,
@@ -84,8 +84,8 @@ function makeCanvasMeasure(family: () => string): MeasureFn {
   const ctx = document.createElement('canvas').getContext('2d');
   if (!ctx) return estimateMeasure;
   let last = '';
-  return (text, size) => {
-    const f = `${size}px ${family()}`;
+  return (text, size, flags = 0) => {
+    const f = fontOf(size, family(), flags);
     if (f !== last) {
       ctx.font = f;
       last = f;
@@ -829,9 +829,9 @@ export class CanvasEngine implements Core {
     const box = contentRect(o);
     const turn = o.rot ? { rot: o.rot, center: rectCenter(o) } : {};
     switch (o.kind) {
-      case 'sticky': return { box, text: o.text, size: STICKY_TEXT_SIZE, color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, ...turn };
+      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, ...turn };
       case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, ...turn };
-      case 'shape': return { box, text: o.text, size: SHAPE_TEXT_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, ...turn };
+      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, ...turn };
     }
   }
 

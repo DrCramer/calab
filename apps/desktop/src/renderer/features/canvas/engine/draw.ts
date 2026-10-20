@@ -1,7 +1,8 @@
 import { polylineMidpoint, rectCenter, rectsIntersect, DEG, type Rect } from '../../../lib/canvas/geometry';
 import { endDirection } from '../../../lib/canvas/route';
 import { contentRect, STICKY_RADIUS, traceRounded, traceShape } from '../../../lib/canvas/shapes';
-import { LABEL_SIZE, SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
+import { F_STRIKE, type Fmt } from '../../../lib/canvas/richText';
+import { LABEL_SIZE, boxFontSize, fontOf, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
 import { aabb, type BoxRec, type ConnectorRec, type ObjectRec } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
 
@@ -108,6 +109,7 @@ function drawBody(ctx: Ctx2D, o: ObjectRec, env: DrawEnv): void {
 
 interface Laid {
   text: string;
+  fmt: Fmt | undefined;
   size: number;
   w: number;
   lay: TextLayout;
@@ -115,18 +117,18 @@ interface Laid {
 /** Layout per record: records are immutable, so a repaint of unchanged text skips even the cache's key building. */
 const laidOut = new WeakMap<object, Laid>();
 
-function layoutFor(owner: object, env: DrawEnv, text: string, size: number, w: number): TextLayout {
+function layoutFor(owner: object, env: DrawEnv, text: string, fmt: Fmt | undefined, size: number, w: number): TextLayout {
   const hit = laidOut.get(owner);
-  if (hit && hit.text === text && hit.size === size && hit.w === w) return hit.lay;
-  const lay = env.layouter.layout(text, size, w);
-  laidOut.set(owner, { text, size, w, lay });
+  if (hit && hit.text === text && hit.fmt === fmt && hit.size === size && hit.w === w) return hit.lay;
+  const lay = fmt ? env.layouter.layoutRich(text, fmt, size, w) : env.layouter.layout(text, size, w);
+  laidOut.set(owner, { text, fmt, size, w, lay });
   return lay;
 }
 
 /** Paints glyphs, or plaques when the zoom is too small to read them. */
-function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, size: number, box: Rect, fg: string, align: 'left' | 'center', vcenter: boolean): void {
+function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: Fmt | undefined, size: number, box: Rect, fg: string, align: 'left' | 'center', vcenter: boolean): void {
   if (text === '' || box.w <= 0) return;
-  const lay = layoutFor(owner, env, text, size, box.w);
+  const lay = layoutFor(owner, env, text, fmt, size, box.w);
   const top = vcenter ? box.y + Math.max(0, (box.h - lay.height) / 2) : box.y;
   const bottom = box.y + box.h + lay.lineHeight * 0.5;
   if (env.scale < TEXT_PLAQUE_SCALE || size * env.scale < 4) {
@@ -150,6 +152,10 @@ function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, size: 
   ctx.font = font(env, size);
   ctx.fillStyle = fg;
   ctx.textBaseline = 'top';
+  if (lay.segs) {
+    drawRich(ctx, env, lay, size, box, align, top, bottom);
+    return;
+  }
   ctx.textAlign = align;
   const x = align === 'center' ? box.x + box.w / 2 : box.x;
   for (let i = 0; i < lay.lines.length; i++) {
@@ -157,6 +163,34 @@ function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, size: 
     if (y + lay.lineHeight > bottom) break;
     const line = lay.lines[i];
     if (line) ctx.fillText(line, x, y + (lay.lineHeight - size) / 2);
+  }
+}
+
+/** Formatted lines: each piece in its own font, strike-through as a bar, list markers in the regular font. */
+function drawRich(ctx: Ctx2D, env: DrawEnv, lay: TextLayout, size: number, box: Rect, align: 'left' | 'center', top: number, bottom: number): void {
+  ctx.textAlign = 'left';
+  let current = -1;
+  const setFont = (f: number): void => {
+    if (f === current) return;
+    current = f;
+    ctx.font = fontOf(size, env.palette.fontFamily, f);
+  };
+  const bar = Math.max(size / 16, 1 / env.scale);
+  for (let i = 0; i < lay.lines.length; i++) {
+    const y = top + i * lay.lineHeight;
+    if (y + lay.lineHeight > bottom) break;
+    const ty = y + (lay.lineHeight - size) / 2;
+    const left = align === 'center' ? box.x + Math.max(0, (box.w - (lay.widths[i] ?? 0)) / 2) : box.x;
+    const mark = lay.marks?.[i];
+    if (mark) {
+      setFont(0);
+      ctx.fillText(mark, left, ty);
+    }
+    for (const seg of lay.segs?.[i] ?? []) {
+      setFont(seg.f);
+      ctx.fillText(seg.text, left + seg.x, ty);
+      if (seg.f & F_STRIKE) ctx.fillRect(left + seg.x, ty + size * 0.56, seg.w, bar);
+    }
   }
 }
 
@@ -170,12 +204,12 @@ function drawSticky(ctx: Ctx2D, o: BoxRec & { kind: 'sticky' }, env: DrawEnv): v
     traceRounded(ctx, o, STICKY_RADIUS);
     ctx.fill();
   }
-  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, STICKY_TEXT_SIZE, contentRect(o), c.fg, 'left', false);
+  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(o), c.fg, 'left', false);
 }
 
 function drawText(ctx: Ctx2D, o: BoxRec & { kind: 'text' }, env: DrawEnv): void {
   if (env.hiddenText === o.id) return;
-  drawLines(ctx, env, o, o.text, o.size, contentRect(o), resolveColor(env.palette, o.color) ?? env.palette.ink, 'left', false);
+  drawLines(ctx, env, o, o.text, o.fmt, o.size, contentRect(o), resolveColor(env.palette, o.color) ?? env.palette.ink, 'left', false);
 }
 
 function drawShape(ctx: Ctx2D, o: BoxRec & { kind: 'shape' }, env: DrawEnv): void {
@@ -195,7 +229,7 @@ function drawShape(ctx: Ctx2D, o: BoxRec & { kind: 'shape' }, env: DrawEnv): voi
   }
   if (env.hiddenText !== o.id) {
     const ink = resolveColor(env.palette, 'text') ?? env.palette.ink;
-    drawLines(ctx, env, o, o.text, SHAPE_TEXT_SIZE, contentRect(o), fill && o.text ? readableInk(fill, ink) : ink, 'center', true);
+    drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(o), fill && o.text ? readableInk(fill, ink) : ink, 'center', true);
   }
 }
 
@@ -226,7 +260,7 @@ function drawConnector(ctx: Ctx2D, o: ConnectorRec, env: DrawEnv): void {
     ctx.beginPath();
     traceRounded(ctx, { x: m.x - w / 2, y: m.y - h / 2, w, h }, 6);
     ctx.fill();
-    drawLines(ctx, env, o, o.label, LABEL_SIZE, { x: m.x - w / 2 + 6, y: m.y - h / 2 + 3, w: w - 12, h: h - 6 }, env.palette.ink, 'center', false);
+    drawLines(ctx, env, o, o.label, undefined, LABEL_SIZE, { x: m.x - w / 2 + 6, y: m.y - h / 2 + 3, w: w - 12, h: h - 6 }, env.palette.ink, 'center', false);
   }
 }
 
