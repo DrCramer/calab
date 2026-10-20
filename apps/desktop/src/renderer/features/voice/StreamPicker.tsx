@@ -84,7 +84,7 @@ function QualitySegment({
   onChange: (p: ConcreteScreenSharePreset) => void;
 }): ReactNode {
   return (
-    <div role="radiogroup" aria-label={t('streamPick.quality')} className="inline-flex rounded-[var(--radius-control)] bg-hover p-0.5">
+    <div role="radiogroup" aria-label={t('streamPick.quality')} className="inline-flex max-w-full flex-wrap rounded-[var(--radius-control)] bg-hover p-0.5">
       {presetOptions(max, planMax).map((o) => {
         const btn = (
           <button

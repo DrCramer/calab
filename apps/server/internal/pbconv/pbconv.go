@@ -46,10 +46,18 @@ func idp(id *uuid.UUID) string {
 // ---- enums ----
 
 var presetToDB = map[v1.ScreenSharePreset]string{
-	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY:  "economy",
-	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720:     "h720",
-	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080:    "h1080",
-	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL: "original",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY:     "economy",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720:        "h720",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080:       "h1080",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL:    "original",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720_30:     "h720_30",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_30:    "h1080_30",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60:    "h1080_60",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_30:    "h1440_30",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_60:    "h1440_60",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_30:    "h2160_30",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60:    "h2160_60",
+	v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60: "original_60",
 }
 
 // PresetToDB maps a concrete preset to its DB text; ok=false for UNSPECIFIED/unknown.

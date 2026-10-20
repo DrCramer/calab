@@ -487,11 +487,18 @@ export const es: Dict = {
   'stream.returnHere': 'Traer aquí de vuelta',
 
   // presets
-  'preset.economy': 'Economía',
-  'preset.h720': '720p',
-  'preset.h1080': '1080p',
-  'preset.original': 'Máxima',
-  'preset.originalShort': 'Máx.',
+  'preset.economy': 'Economía · 5 fps',
+  'preset.h720': '720p · 15 fps',
+  'preset.h1080': '1080p · 15 fps',
+  'preset.original': 'Original · 30 fps',
+  'preset.h72030': '720p · 30 fps',
+  'preset.h108030': '1080p · 30 fps',
+  'preset.h108060': '1080p · 60 fps',
+  'preset.h144030': '1440p · 30 fps',
+  'preset.h144060': '1440p · 60 fps',
+  'preset.h216030': '2160p · 30 fps',
+  'preset.h216060': '2160p · 60 fps',
+  'preset.original60': 'Original · 60 fps',
   'preset.native': 'resolución nativa',
   'preset.detail': '{res}, {fps} fps, hasta {mbps} Mbps',
 
