@@ -31,9 +31,17 @@ type conn struct {
 	doc    uuid.UUID
 	id     auth.Identity
 	botTok string // a bot's token: rechecked by authenticating it again (no session row)
-	key    string // the socket's member in the per-person set
+	key    string // the socket's member in its socket sets (slots)
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// viewer: an anonymous receive-only socket (ServeViewer); nil for a person's or a bot's.
+	viewer *Viewer
+	// until is when the viewer's access ends by itself (UnixNano; 0 = never), from its last check.
+	until atomic.Int64
+	// slots are the socket sets the socket counts in: the person's on the document, or the
+	// viewer's (link, IP).
+	slots []Slot
 
 	write   atomic.Bool   // the section's WRITE bit and the policy allow writing
 	out     chan []byte   // frames for the writer
@@ -93,9 +101,58 @@ func (c *conn) close(code int, reason string) {
 	})
 }
 
+// OriginAllowed is the WebSocket upgrade rule of the hub's sockets (Options.Origin); a section
+// checks it before it spends anything on a viewer's credential.
+func (h *Hub) OriginAllowed(r *http.Request) bool {
+	return h.origin == nil || h.origin(r.Header.Get("Origin"), r.Header.Get("Cookie") != "")
+}
+
+// accept upgrades the request to the socket of doc.
+func (h *Hub) accept(w http.ResponseWriter, r *http.Request, doc uuid.UUID) (*conn, bool) {
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// Origin is checked before (gateway.OriginAllowed): Electron's file:// / "null" origins.
+		InsecureSkipVerify: true,
+		CompressionMode:    websocket.CompressionDisabled,
+	})
+	if err != nil {
+		return nil, false
+	}
+	ws.SetReadLimit(readLimitRO)
+	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	return &conn{h: h, ws: ws, doc: doc, key: uuid.NewString(), ctx: ctx, cancel: cancel, lastSent: -1,
+		out: make(chan []byte, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
+		updates:   newBucket(float64(h.cfg.UpdatesPerSecond), float64(h.cfg.UpdatesPerSecond)),
+		awareness: newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
+		snapshots: newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}, true
+}
+
+// ServeViewer is the anonymous receive-only socket of v.Doc (see the package doc): no token
+// frame, v.Check is the access rule, v.Slots the socket limits. The caller has checked the
+// credential, OriginAllowed and its connect rate before.
+func (h *Hub) ServeViewer(w http.ResponseWriter, r *http.Request, v Viewer) {
+	if !h.OriginAllowed(r) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
+	c, ok := h.accept(w, r, v.Doc)
+	if !ok {
+		return
+	}
+	defer c.close(1000, "")
+	c.viewer = &v
+	for _, s := range v.Slots {
+		c.slots = append(c.slots, Slot{Key: redisx.Key(h.b.Name() + ":viewers:" + s.Key), Max: s.Max})
+	}
+	if code, reason := c.authorize(); code != 0 {
+		c.close(code, reason)
+		return
+	}
+	h.run(c)
+}
+
 // Serve is the sync socket handler: the document is the path value {id}.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request) {
-	if h.origin != nil && !h.origin(r.Header.Get("Origin"), r.Header.Get("Cookie") != "") {
+	if !h.OriginAllowed(r) {
 		http.Error(w, "origin not allowed", http.StatusForbidden)
 		return
 	}
@@ -104,22 +161,12 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.NotFound("document"))
 		return
 	}
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Origin is checked above (gateway.OriginAllowed): Electron's file:// / "null" origins.
-		InsecureSkipVerify: true,
-		CompressionMode:    websocket.CompressionDisabled,
-	})
-	if err != nil {
+	c, ok := h.accept(w, r, doc)
+	if !ok {
 		return
 	}
-	ws.SetReadLimit(readLimitRO)
-	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
-	c := &conn{h: h, ws: ws, doc: doc, key: uuid.NewString(), ctx: ctx, cancel: cancel, lastSent: -1,
-		out: make(chan []byte, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
-		updates:   newBucket(float64(h.cfg.UpdatesPerSecond), float64(h.cfg.UpdatesPerSecond)),
-		awareness: newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
-		snapshots: newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}
 	defer c.close(1000, "")
+	ctx, ws := c.ctx, c.ws
 
 	// In-band auth: the first message is a text frame with the access token.
 	actx, acancel := context.WithTimeout(ctx, h.cfg.AuthTimeout)
@@ -154,8 +201,16 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request) {
 		c.close(code, reason)
 		return
 	}
+	c.slots = []Slot{{Key: h.connsKey(doc, id.UserID), Max: h.cfg.MaxConnsPerUser}}
+	h.run(c)
+}
+
+// run is the socket after its access is resolved: the socket limits, the room, the first
+// catch-up, then the writer, the pinger and the reader until the socket ends.
+func (h *Hub) run(c *conn) {
+	ctx := c.ctx
 	if c.write.Load() {
-		ws.SetReadLimit(h.readLimitRW())
+		c.ws.SetReadLimit(h.readLimitRW())
 	}
 	ok, err := h.claim(ctx, c)
 	if err != nil {
@@ -194,6 +249,18 @@ func (h *Hub) readLimitRW() int64 { return int64(headerPost + MaxMeta + h.b.MaxS
 func (c *conn) authorize() (int, string) {
 	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 	defer cancel()
+	if c.viewer != nil { // never writes: write stays false
+		until, code, reason := c.viewer.Check(ctx)
+		if code != 0 {
+			return code, reason
+		}
+		var u int64
+		if !until.IsZero() {
+			u = until.UnixNano()
+		}
+		c.until.Store(u)
+		return 0, ""
+	}
 	write, code, reason := c.h.b.Authorize(ctx, c.id, c.doc)
 	if code != 0 {
 		return code, reason
@@ -210,7 +277,41 @@ func (c *conn) pingLoop() {
 	defer ping.Stop()
 	recheck := time.NewTicker(h.cfg.RecheckInterval)
 	defer recheck.Stop()
+	// A viewer: the end of its access by itself (an expiry) and of its life.
+	var expiry, life <-chan time.Time
+	var expT *time.Timer
+	arm := func() {
+		if expT != nil {
+			expT.Stop()
+		}
+		expT, expiry = nil, nil
+		if u := c.until.Load(); u != 0 {
+			// At least a second: the database's clock decides, a check a little early re-arms.
+			expT = time.NewTimer(max(time.Until(time.Unix(0, u)), time.Second))
+			expiry = expT.C
+		}
+	}
+	if c.viewer != nil {
+		arm()
+		lt := time.NewTimer(h.cfg.ViewerMaxLife)
+		defer lt.Stop()
+		life = lt.C
+		defer func() {
+			if expT != nil {
+				expT.Stop()
+			}
+		}()
+	}
 	check := func() bool {
+		if c.viewer != nil { // no session: the access rule alone
+			code, reason := c.authorize()
+			if code != 0 && code != CloseTryAgain {
+				c.close(code, reason)
+				return false
+			}
+			arm()
+			return true
+		}
 		sctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 		var err error
 		if c.botTok != "" {
@@ -254,6 +355,13 @@ func (c *conn) pingLoop() {
 			if !check() {
 				return
 			}
+		case <-expiry:
+			if !check() {
+				return
+			}
+		case <-life:
+			c.close(CloseTryAgain, "reconnect")
+			return
 		}
 	}
 }
@@ -356,8 +464,16 @@ func (c *conn) send(f []byte) bool {
 	return true
 }
 
-// readLoop handles the client's frames until the socket ends.
+// readLoop handles the client's frames until the socket ends. A viewer sends none: its first
+// data frame (text or binary, any type, before anything of it is looked at) closes it 4013; the
+// reads only serve the control frames (pong, close).
 func (c *conn) readLoop() {
+	if c.viewer != nil {
+		if _, _, err := c.ws.Read(c.ctx); err == nil {
+			c.close(CloseReceiveOnly, "receive only")
+		}
+		return
+	}
 	for {
 		typ, b, err := c.ws.Read(c.ctx)
 		if err != nil {

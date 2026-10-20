@@ -174,12 +174,14 @@ func (h *Hub) onRelay(r *room, msg []byte) {
 }
 
 // deliverFrame hands a relayed frame to c: a recheck control to its checker, a COMPACT_REQUEST
-// only to a socket that may write (a read-only client has nothing to post), the rest queued.
+// only to a socket that may write (a read-only client has nothing to post), AWARENESS never to
+// a viewer (an anonymous link does not see who is on the document), the rest queued.
 func (c *conn) deliverFrame(frame []byte) {
 	switch {
 	case frame[0] == ctlRecheck:
 		c.recheckSoon()
 	case frame[0] == FrameCompact && !c.write.Load():
+	case frame[0] == FrameAwareness && c.viewer != nil:
 	default:
 		c.enqueue(frame)
 	}
@@ -314,44 +316,60 @@ func (h *Hub) connsKey(doc, user uuid.UUID) string {
 
 func (h *Hub) connTTL() time.Duration { return h.cfg.IdleTimeout + h.cfg.PingInterval }
 
-// claim registers socket c of its person on the document; false over MaxConnsPerUser.
+// claim registers socket c in each of its socket sets (c.slots: the person's on the document, or
+// a viewer's per link and per IP); false over any set's Max, and then it is in none.
 func (h *Hub) claim(ctx context.Context, c *conn) (bool, error) {
-	key, now := h.connsKey(c.doc, c.id.UserID), time.Now()
+	now := time.Now()
 	exp := float64(now.Add(h.connTTL()).UnixMilli())
-	res := h.rc.DoMulti(ctx,
-		h.rc.B().Zremrangebyscore().Key(key).Min("-inf").Max(formatMs(now)).Build(),
-		h.rc.B().Zadd().Key(key).ScoreMember().ScoreMember(exp, c.key).Build(),
-		h.rc.B().Zcard().Key(key).Build(),
-		h.rc.B().Pexpire().Key(key).Milliseconds(h.connTTL().Milliseconds()).Build())
+	cmds := make(rueidis.Commands, 0, 4*len(c.slots))
+	for _, s := range c.slots {
+		cmds = append(cmds,
+			h.rc.B().Zremrangebyscore().Key(s.Key).Min("-inf").Max(formatMs(now)).Build(),
+			h.rc.B().Zadd().Key(s.Key).ScoreMember().ScoreMember(exp, c.key).Build(),
+			h.rc.B().Zcard().Key(s.Key).Build(),
+			h.rc.B().Pexpire().Key(s.Key).Milliseconds(h.connTTL().Milliseconds()).Build())
+	}
+	res := h.rc.DoMulti(ctx, cmds...)
 	for _, r := range res {
 		if err := r.Error(); err != nil {
+			h.release(c)
 			return false, err
 		}
 	}
-	n, err := res[2].AsInt64()
-	if err != nil {
-		return false, err
-	}
-	if n > int64(h.cfg.MaxConnsPerUser) {
-		h.release(c)
-		return false, nil
+	for i, s := range c.slots {
+		n, err := res[4*i+2].AsInt64()
+		if err != nil {
+			h.release(c)
+			return false, err
+		}
+		if n > int64(s.Max) {
+			h.release(c)
+			return false, nil
+		}
 	}
 	return true, nil
 }
 
-// touch keeps the socket's registration alive (on every ping).
+// touch keeps the socket's registrations alive (on every ping).
 func (h *Hub) touch(ctx context.Context, c *conn) {
-	key := h.connsKey(c.doc, c.id.UserID)
 	exp := float64(time.Now().Add(h.connTTL()).UnixMilli())
-	h.rc.DoMulti(ctx,
-		h.rc.B().Zadd().Key(key).ScoreMember().ScoreMember(exp, c.key).Build(),
-		h.rc.B().Pexpire().Key(key).Milliseconds(h.connTTL().Milliseconds()).Build())
+	cmds := make(rueidis.Commands, 0, 2*len(c.slots))
+	for _, s := range c.slots {
+		cmds = append(cmds,
+			h.rc.B().Zadd().Key(s.Key).ScoreMember().ScoreMember(exp, c.key).Build(),
+			h.rc.B().Pexpire().Key(s.Key).Milliseconds(h.connTTL().Milliseconds()).Build())
+	}
+	h.rc.DoMulti(ctx, cmds...)
 }
 
 func (h *Hub) release(c *conn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_ = h.rc.Do(ctx, h.rc.B().Zrem().Key(h.connsKey(c.doc, c.id.UserID)).Member(c.key).Build()).Error()
+	cmds := make(rueidis.Commands, 0, len(c.slots))
+	for _, s := range c.slots {
+		cmds = append(cmds, h.rc.B().Zrem().Key(s.Key).Member(c.key).Build())
+	}
+	h.rc.DoMulti(ctx, cmds...)
 }
 
 func formatMs(t time.Time) string { return strconv.FormatInt(t.UnixMilli(), 10) }
