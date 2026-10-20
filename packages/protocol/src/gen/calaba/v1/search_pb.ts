@@ -599,7 +599,7 @@ export const SearchDiskRefSchema: GenMessage<SearchDiskRef> = /*@__PURE__*/
   messageDesc(file_calaba_v1_search, 11);
 
 /**
- * A canvas or a Canvas folder (ADR-0107 §6): open it; the snippet is of the text on the canvas
+ * A canvas or a Canvas folder (ADR-0113 §6): open it; the snippet is of the text on the canvas
  * (or the name), title is the item's name.
  *
  * @generated from message calaba.v1.SearchCanvasRef

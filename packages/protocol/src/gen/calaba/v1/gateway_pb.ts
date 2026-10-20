@@ -1104,7 +1104,7 @@ export type DispatchEvent = Message<"calaba.v1.DispatchEvent"> & {
     case: "eventCommentDelete";
   } | {
     /**
-     * Canvas (ADR-0107 §6): workspace channel, routed per recipient like the Wiki
+     * Canvas (ADR-0113 §6): workspace channel, routed per recipient like the Wiki
      * (CANVAS_VIEW on the item); the tree structure only, the content goes through the
      * canvas's /sync socket.
      *
