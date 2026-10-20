@@ -79,6 +79,8 @@ export interface EngineOptions {
   lowPower?: boolean;
   /** Camera moves jump instead of animating. */
   reducedMotion?: boolean;
+  /** The phone (ADR-0114 wave 5b): touch editing semantics (tap selects, drag moves the selected, bigger handles). */
+  touch?: boolean;
   /** World grid step for snapping; 0 disables. */
   gridSize?: number;
   clipboard?: ClipboardPort;
@@ -127,6 +129,8 @@ export class CanvasEngine implements Core {
   readonly renderer: Renderer;
   readonly editor: TextEditor;
   readonly canvas: HTMLCanvasElement;
+  /** Touch editing on the phone: set once at construction (the viewer's `phone` mode). */
+  readonly touch: boolean;
 
   private palette: CanvasPalette;
   private cam: Camera = { ...DEFAULT_CAMERA };
@@ -176,6 +180,7 @@ export class CanvasEngine implements Core {
 
   constructor(private readonly opts: EngineOptions) {
     this.canvas = opts.canvas;
+    this.touch = opts.touch ?? false;
     this.palette = opts.palette;
     this.readOnlyFlag = opts.readOnly ?? false;
     this.lowPower = opts.lowPower ?? false;

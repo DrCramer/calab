@@ -22,7 +22,7 @@ import type { CanvasPalette } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { ZoomBar } from './Controls';
 import { MiniMap } from './MiniMap';
-import { PhoneNote, PhoneOthers } from './PhoneChrome';
+import { PhoneEditHint, PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
 import { StatusBanner } from './StatusBanner';
@@ -51,6 +51,11 @@ export interface CanvasViewProps {
    * context menu / avatars; the zoom bar, connection notices, a count of the others and a one-time note stay.
    */
   phone?: boolean;
+  /**
+   * The phone's «Править» mode (ADR-0114 wave 5b): with CANVAS_WRITE the phone viewer becomes editable (touch editing,
+   * bottom tool bar, properties sheet). Off — the view-only viewer as before. Ignored off the phone.
+   */
+  phoneEdit?: boolean;
   /** The server closed the socket for good: 4003 (access changed) or 4404 (gone). The shell may reload the item's rights. */
   onFatal?: (code: number) => void;
   /** Receives the handle (export, fit) once the canvas is open; `getCanvasViewHandle(canvasId)` is the same. */
@@ -71,9 +76,10 @@ function readEnv(): Env {
   };
 }
 
-export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, phone = false, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
+export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare, name, phone = false, phoneEdit = false, onFatal, ref, deps: depsProp }: CanvasViewProps): ReactNode {
   useLocale();
-  const canWrite = !phone && (bits & CANVAS_BITS.WRITE) !== 0n;
+  const granted = (bits & CANVAS_BITS.WRITE) !== 0n;
+  const canWrite = (!phone || phoneEdit) && granted;
   const root = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -129,6 +135,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       readOnly: !live.current.canWrite,
       lowPower: env.lowPower,
       reducedMotion: env.reducedMotion,
+      touch: phone,
       presence,
       color: (id) => cursorColor(id),
       title: () => live.current.name,
@@ -143,12 +150,24 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       setSession(null);
       s.destroy();
     };
-  }, [canvasId, presence, epoch]);
+  }, [canvasId, presence, epoch, phone]);
 
   // Grant changes while open (CANVAS_WRITE given or taken away).
   useEffect(() => {
-    session?.binding.setReadOnly(!canWrite);
-  }, [session, canWrite]);
+    if (!session) return;
+    // Leaving the phone's edit mode keeps what was typed and drops the selection and the tool (nothing stays half-armed).
+    if (!canWrite && phone) {
+      const { engine } = session;
+      if (engine.editor.isOpen) engine.editor.commit();
+      engine.activeGesture?.cancel();
+      engine.activeGesture = null;
+      engine.clearSelection();
+      engine.setTool('select');
+      // The read-only socket sends nothing: what was drawn a moment ago goes out first.
+      session.sync.flush();
+    }
+    session.binding.setReadOnly(!canWrite);
+  }, [session, canWrite, phone]);
 
   // The app's theme, «слабый компьютер» and reduced motion reach the engine without reopening anything.
   useEffect(() => {
@@ -314,6 +333,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
               helpOpen={helpOpen}
               onHelpOpenChange={setHelpOpen}
               phone={phone}
+              granted={granted}
             />
           ) : null}
         </div>
@@ -327,7 +347,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
 
 /** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
 function Chrome({
-  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange, phone,
+  session, palette, canWrite, gone, onRetry, presence, focusCanvas, helpOpen, onHelpOpenChange, phone, granted,
 }: {
   session: CanvasSession;
   palette: CanvasPalette;
@@ -339,16 +359,19 @@ function Chrome({
   helpOpen: boolean;
   onHelpOpenChange: (o: boolean) => void;
   phone: boolean;
+  /** CANVAS_WRITE is granted (the phone may be in view mode with it). */
+  granted: boolean;
 }): ReactNode {
   const { engine, sync, timer } = session;
   const editable = !useEngineValue(engine, (s) => s.readOnly);
   if (phone) {
     return (
       <>
-        <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={onHelpOpenChange} phone />
-        <PhoneOthers store={presence} />
-        <PhoneNote />
-        <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={false} gone={gone} onRetry={onRetry} phone />
+        <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={onHelpOpenChange} phone top={canWrite} />
+        <PhoneOthers store={presence} top={canWrite} />
+        {granted ? null : <PhoneNote />}
+        {canWrite && editable ? <PhoneEditHint /> : null}
+        <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} phone />
       </>
     );
   }

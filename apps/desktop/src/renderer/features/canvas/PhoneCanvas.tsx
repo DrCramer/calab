@@ -1,5 +1,5 @@
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { CanvasItemKind } from '@calaba/protocol';
+import { CANVAS_BITS, CanvasItemKind } from '@calaba/protocol';
 import { ChevronRight, Folder, Search, Shapes } from 'lucide-react';
 import { memo, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -17,11 +17,12 @@ import { useCanvasUi } from '../../stores/canvasUi';
 import { CanvasViewLazy } from './lazy';
 
 /**
- * «Холст» on the phone (ADR-0113 §5, ADR-0095: a section behind «Ещё»; **view only** in v1): the tab
+ * «Холст» on the phone (ADR-0113 §5, ADR-0095: a section behind «Ещё»; view by default): the tab
  * root lists the top-level folders and canvases (56 px rows, a name filter behind the magnifier), a
  * folder and a canvas are pushed screens (`{kind:'canvas'}`, lib/phoneNav.ts) with the standard header.
  * The canvas screen is the desktop's lazy `CanvasView` in its `phone` mode: pan with one finger, pinch
- * with two, zoom bar, no tools. No trash, no creating, no menus — editing is v2. Data comes from the
+ * with two, zoom bar. A person with CANVAS_WRITE turns on «Править» in the header (touch editing, ADR-0114 wave 5b).
+ * No trash, no creating of canvases, no menus. Data comes from the
  * same stores and services as the desktop section. Only the top screen is mounted, so leaving a
  * canvas closes its sync socket; rows are `memo` and read their item by id; no timers.
  */
@@ -273,7 +274,8 @@ export function PhoneCanvasScreen({ workspaceId, itemId }: { workspaceId: string
       </section>
     );
   }
-  return folder ? <FolderScreen workspaceId={workspaceId} itemId={itemId} /> : <CanvasScreenView workspaceId={workspaceId} itemId={itemId} />;
+  // `key`: the edit mode lives in the screen's state, so another canvas always opens in view mode.
+  return folder ? <FolderScreen workspaceId={workspaceId} itemId={itemId} /> : <CanvasScreenView key={itemId} workspaceId={workspaceId} itemId={itemId} />;
 }
 
 function ItemTitle({ itemId }: { itemId: string }): ReactNode {
@@ -295,9 +297,16 @@ function FolderScreen({ workspaceId, itemId }: { workspaceId: string; itemId: st
 
 const noop = (): void => undefined;
 
-/** The canvas: the header (name, «изменён …») and the lazy viewer filling the rest. */
+/**
+ * The canvas: the header (name, «изменён …», «Править» for a person with CANVAS_WRITE) and the lazy viewer filling the
+ * rest. The viewer opens in view mode; «Править» turns on touch editing (ADR-0114 wave 5b) until «Готово» or until the
+ * screen closes — the flag is the screen's state, not stored anywhere.
+ */
 function CanvasScreenView({ workspaceId, itemId }: { workspaceId: string; itemId: string }): ReactNode {
   const bits = useCanvas((s) => s.items[itemId]?.myBits ?? 0n);
+  const canWrite = (bits & CANVAS_BITS.WRITE) !== 0n;
+  const [editing, setEditing] = useState(false);
+  const on = editing && canWrite;
   const name = useCanvas((s) => s.items[itemId]?.name ?? '');
   const updated = useCanvas((s) => {
     const at = s.items[itemId]?.updatedAt;
@@ -309,7 +318,13 @@ function CanvasScreenView({ workspaceId, itemId }: { workspaceId: string; itemId
         title={<ItemTitle itemId={itemId} />}
         icon={<HeaderIcon icon={Shapes} />}
         {...(updated ? { subtitle: t('canvasPhone.updated', { when: fmt.relative(new Date(updated)) }) } : {})}
-      />
+      >
+        {canWrite ? (
+          <Button variant={on ? 'primary' : 'secondary'} size="sm" aria-pressed={on} aria-label={t('canvasPhone.editMode')} onClick={() => setEditing((v) => !v)} data-testid="phone-canvas-edit">
+            {t(on ? 'canvasPhone.done' : 'canvasPhone.edit')}
+          </Button>
+        ) : null}
+      </PhoneHeader>
       {/* The bottom inset stays free of the canvas so the zoom bar clears the home indicator. */}
       <div className="relative min-h-0 flex-1 pb-[var(--safe-bottom,0px)]" data-testid="phone-canvas-stage">
         <Suspense
@@ -319,7 +334,7 @@ function CanvasScreenView({ workspaceId, itemId }: { workspaceId: string; itemId
             </div>
           }
         >
-          <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} phone onOpenHistory={noop} onShare={noop} />
+          <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} phone phoneEdit={on} onOpenHistory={noop} onShare={noop} />
         </Suspense>
       </div>
     </section>
