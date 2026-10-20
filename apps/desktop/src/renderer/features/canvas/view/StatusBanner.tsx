@@ -38,7 +38,7 @@ const FollowChip = memo(function FollowChip({ engine }: { engine: CanvasEngine }
  * it shows), «Только просмотр» (no CANVAS_WRITE) and the newer-schema notice. Primitives only.
  */
 export const StatusBanner = memo(function StatusBanner({
-  engine, sync, timer, canWrite, gone, onRetry, phone = false,
+  engine, sync, timer, canWrite, gone, onRetry, phone = false, low = false,
 }: {
   engine: CanvasEngine;
   sync: CanvasSync;
@@ -48,6 +48,8 @@ export const StatusBanner = memo(function StatusBanner({
   onRetry: () => void;
   /** The phone viewer: view only is the rule there (its own note says so), no «Только просмотр» chip. */
   phone?: boolean;
+  /** The phone's edit mode: the zoom bar and the count of others take the top corners, the column starts below them. */
+  low?: boolean;
 }): ReactNode {
   useLocale();
   const status = useSyncStatus(sync);
@@ -70,7 +72,7 @@ export const StatusBanner = memo(function StatusBanner({
   }
   const chip = 'flex items-center gap-2 rounded-full px-3 py-1.5 text-control text-fg';
   return (
-    <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5" data-testid="canvas-status">
+    <div className={cx('pointer-events-none absolute left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5', low ? 'top-[68px]' : 'top-3')} data-testid="canvas-status">
       <TimerChip store={timer} engine={engine} />
       {offline || connecting ? (
         <div role="status" className={cx(PANEL, chip)} data-testid={offline ? 'canvas-offline' : 'canvas-connecting'}>

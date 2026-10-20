@@ -380,7 +380,7 @@ function Chrome({
             <PhoneProps engine={engine} palette={palette} focusCanvas={focusCanvas} />
           </PhoneEditBar>
         ) : null}
-        <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} phone />
+        <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} phone low={canWrite} />
       </>
     );
   }
