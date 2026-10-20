@@ -81,6 +81,8 @@ enum CanvasActivityKind {
   CANVAS_ACTIVITY_KIND_VERSION = 8; // a version was saved (edits themselves are not journaled)
   CANVAS_ACTIVITY_KIND_COMMENT = 9; // a comment was written (after: comment_id, thread_id; never the text)
   CANVAS_ACTIVITY_KIND_RESOLVE = 10; // a thread was resolved (after: thread_id)
+  CANVAS_ACTIVITY_KIND_LINK_ON = 11; // the public link was made (after: expires_in_days; never the code)
+  CANVAS_ACTIVITY_KIND_LINK_OFF = 12; // the public link was revoked by a person
 }
 
 // A journal entry (canvas_activity). before / after carry snapshots (the old and new name, the

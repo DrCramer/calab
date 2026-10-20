@@ -86,6 +86,8 @@ const (
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_VERSION     CanvasActivityKind = 8  // a version was saved (edits themselves are not journaled)
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_COMMENT     CanvasActivityKind = 9  // a comment was written (after: comment_id, thread_id; never the text)
 	CanvasActivityKind_CANVAS_ACTIVITY_KIND_RESOLVE     CanvasActivityKind = 10 // a thread was resolved (after: thread_id)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_LINK_ON     CanvasActivityKind = 11 // the public link was made (after: expires_in_days; never the code)
+	CanvasActivityKind_CANVAS_ACTIVITY_KIND_LINK_OFF    CanvasActivityKind = 12 // the public link was revoked by a person
 )
 
 // Enum value maps for CanvasActivityKind.
@@ -102,6 +104,8 @@ var (
 		8:  "CANVAS_ACTIVITY_KIND_VERSION",
 		9:  "CANVAS_ACTIVITY_KIND_COMMENT",
 		10: "CANVAS_ACTIVITY_KIND_RESOLVE",
+		11: "CANVAS_ACTIVITY_KIND_LINK_ON",
+		12: "CANVAS_ACTIVITY_KIND_LINK_OFF",
 	}
 	CanvasActivityKind_value = map[string]int32{
 		"CANVAS_ACTIVITY_KIND_UNSPECIFIED": 0,
@@ -115,6 +119,8 @@ var (
 		"CANVAS_ACTIVITY_KIND_VERSION":     8,
 		"CANVAS_ACTIVITY_KIND_COMMENT":     9,
 		"CANVAS_ACTIVITY_KIND_RESOLVE":     10,
+		"CANVAS_ACTIVITY_KIND_LINK_ON":     11,
+		"CANVAS_ACTIVITY_KIND_LINK_OFF":    12,
 	}
 )
 
@@ -2543,7 +2549,7 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\x0eCanvasItemKind\x12 \n" +
 	"\x1cCANVAS_ITEM_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17CANVAS_ITEM_KIND_FOLDER\x10\x01\x12\x1b\n" +
-	"\x17CANVAS_ITEM_KIND_CANVAS\x10\x02*\x84\x03\n" +
+	"\x17CANVAS_ITEM_KIND_CANVAS\x10\x02*\xc9\x03\n" +
 	"\x12CanvasActivityKind\x12$\n" +
 	" CANVAS_ACTIVITY_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCANVAS_ACTIVITY_KIND_CREATE\x10\x01\x12\x1f\n" +
@@ -2556,7 +2562,9 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\x1cCANVAS_ACTIVITY_KIND_VERSION\x10\b\x12 \n" +
 	"\x1cCANVAS_ACTIVITY_KIND_COMMENT\x10\t\x12 \n" +
 	"\x1cCANVAS_ACTIVITY_KIND_RESOLVE\x10\n" +
-	"B\x99\x01\n" +
+	"\x12 \n" +
+	"\x1cCANVAS_ACTIVITY_KIND_LINK_ON\x10\v\x12!\n" +
+	"\x1dCANVAS_ACTIVITY_KIND_LINK_OFF\x10\fB\x99\x01\n" +
 	"\rcom.calaba.v1B\vCanvasProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
