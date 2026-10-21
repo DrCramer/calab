@@ -173,6 +173,7 @@ export class TextEditor {
     ta.addEventListener('input', this.onInput);
     ta.addEventListener('keydown', this.onKey);
     ta.addEventListener('blur', this.onBlur);
+    ta.addEventListener('wheel', this.onWheel, { passive: false });
     ta.addEventListener('keyup', this.onCaret);
     ta.addEventListener('mouseup', this.onCaret);
     ta.ownerDocument.addEventListener('selectionchange', this.onCaret);
@@ -220,6 +221,12 @@ export class TextEditor {
   };
 
   /** Follows the camera (call after any pan/zoom while open). */
+  /** The textarea never scrolls (it grows with the text): a wheel or trackpad over it pans / zooms the canvas instead. */
+  private readonly onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    this.o.canvas.dispatchEvent(new WheelEvent('wheel', e));
+  };
+
   reposition(): void {
     const { ta, spec } = this;
     if (!ta || !spec) return;
@@ -427,6 +434,7 @@ export class TextEditor {
     ta.removeEventListener('input', this.onInput);
     ta.removeEventListener('keydown', this.onKey);
     ta.removeEventListener('blur', this.onBlur);
+    ta.removeEventListener('wheel', this.onWheel);
     ta.removeEventListener('keyup', this.onCaret);
     ta.removeEventListener('mouseup', this.onCaret);
     ta.ownerDocument.removeEventListener('selectionchange', this.onCaret);
