@@ -157,6 +157,10 @@ export class TextEditor {
     st.color = spec.color;
     st.fontFamily = spec.fontFamily;
     st.caretColor = spec.color;
+    // The app smooths DOM text as `antialiased` (thinner); the canvas cannot, so match its default weight.
+    st.setProperty('-webkit-font-smoothing', 'auto');
+    // A textarea is two rows tall by default: `height: auto` would measure an empty second line and push centered text up.
+    ta.rows = 1;
     this.ta = ta;
     this.spec = spec;
     this.done = onDone;
