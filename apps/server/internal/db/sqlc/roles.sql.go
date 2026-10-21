@@ -259,6 +259,67 @@ func (q *Queries) ListMemberRoleIDs(ctx context.Context, arg ListMemberRoleIDsPa
 	return items, nil
 }
 
+const listMembersAccess = `-- name: ListMembersAccess :many
+SELECT m.user_id,
+       m.role,
+       coalesce(r.ids, '{}')::uuid[] AS role_ids,
+       coalesce(r.positions, '{}')::integer[] AS role_positions,
+       coalesce(r.perms, '{}')::bigint[] AS role_permissions,
+       w.owner_sees_private
+FROM workspace_members m
+JOIN workspaces w ON w.id = m.workspace_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms
+    FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+    WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
+) r ON true
+WHERE m.workspace_id = $1 AND m.user_id = ANY($2::uuid[])
+`
+
+type ListMembersAccessParams struct {
+	WorkspaceID uuid.UUID
+	UserIds     []uuid.UUID
+}
+
+type ListMembersAccessRow struct {
+	UserID           uuid.UUID
+	Role             string
+	RoleIds          []uuid.UUID
+	RolePositions    []int32
+	RolePermissions  []int64
+	OwnerSeesPrivate bool
+}
+
+// GetMemberAccess for several users at once (the members among user_ids; the rest are absent).
+func (q *Queries) ListMembersAccess(ctx context.Context, arg ListMembersAccessParams) ([]ListMembersAccessRow, error) {
+	rows, err := q.db.Query(ctx, listMembersAccess, arg.WorkspaceID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMembersAccessRow{}
+	for rows.Next() {
+		var i ListMembersAccessRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Role,
+			&i.RoleIds,
+			&i.RolePositions,
+			&i.RolePermissions,
+			&i.OwnerSeesPrivate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspaceMemberRoles = `-- name: ListWorkspaceMemberRoles :many
 SELECT m.user_id, m.role,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)

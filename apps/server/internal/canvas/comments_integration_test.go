@@ -323,3 +323,21 @@ func TestCanvasCommentLimits(t *testing.T) {
 	e.must(429, e.bob, "POST", comments(s.GetId()), &v1.CreateCanvasCommentRequest{Body: "3"}, nil)
 	e.comment(e.alice, s.GetId(), &v1.CreateCanvasCommentRequest{Body: "alice has her own"})
 }
+
+// mention-access of the largest batch: unknown ids and non-members are dropped, the members who
+// see the canvas stay, in the order asked (one batched access query, not one per id).
+func TestCanvasMentionAccessBatch(t *testing.T) {
+	e := newEnv(t, ysync.Config{})
+	p := e.create(e.alice, "", "Many")
+	asked := []string{e.bob.String()}
+	for len(asked) < maxMentionAccess-2 {
+		asked = append(asked, uuid.NewString())
+	}
+	asked = append(asked, e.outsider.String(), e.alice.String())
+	var acc v1.CanvasMentionAccessResponse
+	e.must(200, e.alice, "GET", comments(p.GetId())+"/mention-access?user_ids="+strings.Join(asked, ","), nil, &acc)
+	if !slices.Equal(acc.GetSeeIds(), []string{e.bob.String(), e.alice.String()}) {
+		t.Fatalf("mention access: %v", acc.GetSeeIds())
+	}
+	e.must(422, e.alice, "GET", comments(p.GetId())+"/mention-access?user_ids="+strings.Join(append(asked, uuid.NewString(), uuid.NewString(), uuid.NewString()), ","), nil, nil)
+}

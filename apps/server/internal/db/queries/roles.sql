@@ -99,3 +99,22 @@ LEFT JOIN LATERAL (
     WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
 ) r ON true
 WHERE m.workspace_id = sqlc.arg('workspace_id') AND m.user_id = sqlc.arg('user_id');
+
+-- name: ListMembersAccess :many
+-- GetMemberAccess for several users at once (the members among user_ids; the rest are absent).
+SELECT m.user_id,
+       m.role,
+       coalesce(r.ids, '{}')::uuid[] AS role_ids,
+       coalesce(r.positions, '{}')::integer[] AS role_positions,
+       coalesce(r.perms, '{}')::bigint[] AS role_permissions,
+       w.owner_sees_private
+FROM workspace_members m
+JOIN workspaces w ON w.id = m.workspace_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms
+    FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+    WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
+) r ON true
+WHERE m.workspace_id = sqlc.arg('workspace_id') AND m.user_id = ANY(sqlc.arg('user_ids')::uuid[]);

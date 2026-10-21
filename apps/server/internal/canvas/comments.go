@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -168,17 +167,26 @@ func mentionable(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, chain []per
 	for _, u := range users {
 		people[u.ID] = !u.IsBot && u.DisabledAt == nil
 	}
-	out := make([]uuid.UUID, 0, len(ids))
+	live := make([]uuid.UUID, 0, len(ids))
 	for _, u := range ids {
-		if !people[u] {
-			continue
+		if people[u] {
+			live = append(live, u)
 		}
-		row, err := q.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: ws, UserID: u})
-		if errors.Is(err, pgx.ErrNoRows) {
+	}
+	// One query for all the people left (a mention-access call carries up to maxMentionAccess).
+	rows, err := q.ListMembersAccess(ctx, sqlc.ListMembersAccessParams{WorkspaceID: ws, UserIds: live})
+	if err != nil {
+		return nil, err
+	}
+	members := make(map[uuid.UUID]sqlc.ListMembersAccessRow, len(rows))
+	for _, row := range rows {
+		members[row.UserID] = row
+	}
+	out := make([]uuid.UUID, 0, len(live))
+	for _, u := range live {
+		row, ok := members[u]
+		if !ok {
 			continue
-		}
-		if err != nil {
-			return nil, err
 		}
 		m := perm.NewMember(u.String(), perm.Role(row.Role), perm.RoleList(row.RoleIds, row.RolePositions, row.RolePermissions))
 		m.OwnerSeesPrivate = row.OwnerSeesPrivate
