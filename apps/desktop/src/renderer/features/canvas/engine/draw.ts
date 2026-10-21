@@ -144,6 +144,9 @@ function layoutFor(owner: object, env: DrawEnv, text: string, fmt: Fmt | undefin
   return lay;
 }
 
+/** How strongly a plaque shows its text color. */
+const PLAQUE_ALPHA = 0.4;
+
 /** Paints glyphs, or plaques when the zoom is too small to read them. */
 function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: Fmt | undefined, size: number, box: Rect, fg: string, align: 'left' | 'center', vcenter: boolean): void {
   if (text === '' || box.w <= 0) return;
@@ -152,11 +155,15 @@ function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: F
   const bottom = box.y + box.h + lay.lineHeight * 0.5;
   const minPx = (owner as { rot?: number }).rot ? MIN_ROTATED_GLYPH_PX : MIN_GLYPH_PX;
   if (env.scale < TEXT_PLAQUE_SCALE || size * env.scale < minPx) {
-    ctx.fillStyle = env.palette.plaque;
+    // The text's own (readable) color, faded: a theme-wide light plaque reads as white text on a light card.
+    ctx.fillStyle = fg;
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * PLAQUE_ALPHA;
     if (env.scale < 0.15) {
       // Lines are ~2 px tall here: one block per text.
       const w = Math.max(...lay.widths);
       if (w > 0) ctx.fillRect(align === 'center' ? box.x + (box.w - w) / 2 : box.x, top, w, Math.min(lay.height, box.h) * 0.6);
+      ctx.globalAlpha = alpha;
       return;
     }
     const bar = lay.lineHeight * 0.45;
@@ -167,6 +174,7 @@ function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: F
       if (w <= 0) continue;
       ctx.fillRect(align === 'center' ? box.x + (box.w - w) / 2 : box.x, y, w, bar);
     }
+    ctx.globalAlpha = alpha;
     return;
   }
   ctx.font = font(env, size);
