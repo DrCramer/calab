@@ -518,7 +518,7 @@ export class CanvasEngine implements Core {
     this.setSelection(ids);
     this.setTool('select');
     const id = ids[0];
-    if (edit && id) this.startTextEdit(id);
+    if (edit && id) this.startTextEdit(id, true);
   }
 
   /** Decoration for the current selection (outlines, the frame with its handles, connector ends). */
@@ -1133,8 +1133,10 @@ export class CanvasEngine implements Core {
   }
 
   /** Opens the textarea over an object (default: the single selected one). */
-  startTextEdit(id?: string): boolean {
+  startTextEdit(id?: string, fresh = false): boolean {
     if (!this.canEdit()) return false;
+    // A previous edit still open (a size list held the focus) ends first, so its close does not reset this one.
+    if (this.editor.isOpen) this.editor.commit();
     const target = id ?? this.state.selectedId;
     const o = target ? this.scene.get(target) : undefined;
     if (!o || o.locked) return false;
@@ -1145,6 +1147,8 @@ export class CanvasEngine implements Core {
     this.overlay = { ...this.overlay, group: null };
     this.editingId = oid;
     const original = this.doc.rawTextOf(oid);
+    // An object created for this edit: left empty, it goes with its creation step instead of two silent undo steps.
+    const created = fresh ? this.doc.topStep() : null;
     this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
       this.editingId = null;
@@ -1152,7 +1156,9 @@ export class CanvasEngine implements Core {
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();
-        if (cur.kind === 'text' && text.trim() === '') this.doc.remove([oid]);
+        if (cur.kind === 'text' && text.trim() === '') {
+          if (!this.doc.undoStep(created)) this.doc.remove([oid]);
+        }
         else if (cur.kind === 'connector') this.doc.setText(oid, text);
         else if (changed || fmtChanged) this.doc.setRich(oid, text, fmt, original);
       }
