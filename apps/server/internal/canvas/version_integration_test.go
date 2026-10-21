@@ -34,7 +34,7 @@ func TestCanvasVersionHashKept(t *testing.T) {
 	seq := int64(0)
 	step := func(state string) {
 		seq++
-		a.send(updateFrame(0, []byte{byte(seq)}))
+		a.send(updateFrame(0, []byte{byte(seq)})) //nolint:gosec // seq ≤ 4
 		a.next(frameUpdate)
 		a.send(post(seq, snapshotMeta{PlainText: state}, []byte(state)))
 		e.waitSnapshot(p.GetId(), seq)
