@@ -409,6 +409,21 @@ export interface MailOutgoing {
 
 // ---------------------------------------------------------------- settings
 
+/**
+ * A sorting rule (CBF-39): an inbox message whose sender (name or address) or subject contains
+ * `contains` (case-insensitive) is moved to the folder `folderPath` of the same account. The first
+ * matching rule of the account wins. Folders are referenced by IMAP path (stable across syncs).
+ */
+export interface MailRule {
+  id: string;
+  accountId: string;
+  field: 'from' | 'subject';
+  contains: string;
+  folderPath: string;
+}
+
+export const MAIL_RULES_MAX = 200;
+
 export interface MailSettings {
   /** Remote images: `ask` = hidden with the «Показать» bar (default), `always` = shown. */
   remoteImages: 'ask' | 'always';
@@ -420,6 +435,8 @@ export interface MailSettings {
   groupThreads: boolean;
   /** Plain-text signature per account id ('' / absent = none). */
   signatures: Record<string, string>;
+  /** Sorting rules for incoming mail (CBF-39), applied to new inbox mail and by `folders.applyRules`. */
+  rules: MailRule[];
   /** Body / attachment cache limit per account, bytes (default 1 GiB, §3). */
   cacheLimitBytes: number;
 }
@@ -430,6 +447,7 @@ export const DEFAULT_MAIL_SETTINGS: MailSettings = {
   notify: true,
   groupThreads: true,
   signatures: {},
+  rules: [],
   cacheLimitBytes: 1024 * 1024 * 1024,
 };
 
@@ -575,6 +593,13 @@ export interface MailApi {
      * `UID STORE 1:* +FLAGS (\Deleted)` + EXPUNGE), then locally. Any other folder: `INVALID`.
      */
     empty(folderId: string): Promise<void>;
+    /**
+     * Creates a folder on the IMAP server (under `parentId` when given) and in the local list
+     * (CBF-39). `NETWORK` offline, `INVALID` for a bad / existing name.
+     */
+    create(accountId: string, name: string, parentId?: string | null): Promise<MailFolder>;
+    /** Files the account's inbox by the sorting rules (`settings.rules`); resolves with the number of moved messages. */
+    applyRules(accountId: string): Promise<{ moved: number }>;
   };
   messages: {
     /** A page of thread rows, newest first, from the local database (never waits for the network). */
@@ -685,6 +710,8 @@ export const mailMethods = [
   'accounts.setPassword',
   'folders.list',
   'folders.empty',
+  'folders.create',
+  'folders.applyRules',
   'messages.list',
   'messages.get',
   'messages.raw',

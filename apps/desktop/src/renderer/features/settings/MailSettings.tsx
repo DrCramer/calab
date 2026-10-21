@@ -1,9 +1,9 @@
 import { TriangleAlert } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import { isMailError, type MailAccount, type MailCertInfo } from '../../../shared/mail';
+import { useMemo, useState, type ReactNode } from 'react';
+import { isMailError, MAIL_RULES_MAX, type MailAccount, type MailCertInfo, type MailRule } from '../../../shared/mail';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Field, Modal, PasswordInput, Row, Segmented, Select, TextArea, Toggle } from '../../components/ui';
-import { t } from '../../i18n';
+import { Button, Card, Field, Input, Modal, PasswordInput, Row, Segmented, Select, TextArea, Toggle } from '../../components/ui';
+import { plural, t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { mailApi, setGrouping, updateSettings, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
@@ -174,6 +174,7 @@ function AccountRows({ id }: { id: string }): ReactNode {
       <Row label={t('mbox.settings.signature')}>
         <SignatureField id={id} value={signature} />
       </Row>
+      <FolderRows id={id} />
       {password ? <PasswordDialog account={account} onClose={() => setPassword(false)} /> : null}
       {certOpen ? <CertDialog account={account} kind={certOpen.kind} cert={certOpen.cert} onClose={() => setCertOpen(null)} /> : null}
     </div>
@@ -243,6 +244,96 @@ function CertDialog({ account, kind, cert, onClose }: { account: MailAccount; ki
     <Modal open onClose={onClose} title={t('mbox.cert.dialog', { server: `${cert.host}:${String(cert.port)}` })}>
       <CertNotice cert={cert} busy={busy} onTrust={() => void trust()} />
     </Modal>
+  );
+}
+
+/** Own folders and sorting rules of one account (CBF-39); rules live in the mail settings. */
+function FolderRows({ id }: { id: string }): ReactNode {
+  const folders = useMail((s) => s.folders[id]);
+  const allRules = useMail((s) => s.settings.rules);
+  const rules = useMemo(() => allRules.filter((r) => r.accountId === id), [allRules, id]);
+  const targets = useMemo(() => (folders ?? []).filter((f) => f.path !== '' && f.role !== 'inbox' && f.role !== 'drafts'), [folders]);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [field, setField] = useState<MailRule['field']>('from');
+  const [text, setText] = useState('');
+  const [dest, setDest] = useState('');
+  const destPath = targets.some((f) => f.path === dest) ? dest : (targets[0]?.path ?? '');
+  const create = async (): Promise<void> => {
+    const api = mailApi();
+    if (!api || busy || !name.trim()) return;
+    setBusy(true);
+    try {
+      const f = await api.folders.create(id, name.trim());
+      setName('');
+      setDest(f.path);
+      toast.success(t('mbox.folders.created'));
+    } catch (e) {
+      toast.error(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const addRule = (): void => {
+    if (!text.trim() || !destPath || allRules.length >= MAIL_RULES_MAX) return;
+    const rule: MailRule = { id: crypto.randomUUID(), accountId: id, field, contains: text.trim(), folderPath: destPath };
+    void updateSettings({ rules: [...allRules, rule] });
+    setText('');
+  };
+  const apply = async (): Promise<void> => {
+    const api = mailApi();
+    if (!api || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.folders.applyRules(id);
+      toast.success(plural('mbox.folders.applied', r.moved));
+    } catch (e) {
+      toast.error(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const folderName = (path: string): string => targets.find((f) => f.path === path)?.name ?? path;
+  return (
+    <>
+      <Row label={t('mbox.folders.new')} hint={t('mbox.folders.newHint')}>
+        <Input value={name} maxLength={100} aria-label={t('mbox.folders.new')} placeholder={t('mbox.folders.namePlaceholder')} className="w-44" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void create()} />
+        <Button size="sm" variant="secondary" busy={busy} disabled={!name.trim()} onClick={() => void create()} data-testid="settings-mail-folder-create">
+          {t('mbox.folders.create')}
+        </Button>
+      </Row>
+      {rules.map((r) => (
+        <Row key={r.id} label={t(r.field === 'from' ? 'mbox.rules.fromRow' : 'mbox.rules.subjectRow', { text: r.contains })} hint={t('mbox.rules.to', { folder: folderName(r.folderPath) })}>
+          <Button size="sm" variant="ghost" onClick={() => void updateSettings({ rules: allRules.filter((x) => x.id !== r.id) })}>
+            {t('mbox.settings.remove')}
+          </Button>
+        </Row>
+      ))}
+      <Row label={t('mbox.rules.add')} hint={targets.length ? t('mbox.rules.addHint') : t('mbox.rules.noFolders')}>
+        <Select value={field} onChange={(e) => setField(e.target.value === 'subject' ? 'subject' : 'from')} aria-label={t('mbox.rules.field')} className="w-32">
+          <option value="from">{t('mbox.rules.from')}</option>
+          <option value="subject">{t('mbox.rules.subject')}</option>
+        </Select>
+        <Input value={text} maxLength={200} aria-label={t('mbox.rules.text')} placeholder={t('mbox.rules.textPlaceholder')} className="w-40" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addRule()} />
+        <Select value={destPath} onChange={(e) => setDest(e.target.value)} aria-label={t('mbox.rules.folder')} className="w-36" disabled={!targets.length}>
+          {targets.map((f) => (
+            <option key={f.id} value={f.path}>
+              {f.name}
+            </option>
+          ))}
+        </Select>
+        <Button size="sm" variant="secondary" disabled={!text.trim() || !destPath} onClick={addRule} data-testid="settings-mail-rule-add">
+          {t('mbox.rules.addButton')}
+        </Button>
+      </Row>
+      {rules.length ? (
+        <Row label={t('mbox.rules.apply')} hint={t('mbox.rules.applyHint')}>
+          <Button size="sm" variant="secondary" busy={busy} onClick={() => void apply()} data-testid="settings-mail-rules-apply">
+            {t('mbox.rules.applyButton')}
+          </Button>
+        </Row>
+      ) : null}
+    </>
   );
 }
 
