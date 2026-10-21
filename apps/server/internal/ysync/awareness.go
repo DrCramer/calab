@@ -13,6 +13,10 @@ type awarenessEntry struct {
 	state    []byte // raw JSON state bytes (e.g. `{"cursor":...}` or `null`)
 }
 
+// maxFarewell is the largest frame of a single entry with the state null: the frame byte, the
+// count, clientID and clock as varints, the state's length and "null".
+const maxFarewell = 1 + 1 + 2*binary.MaxVarintLen64 + 1 + len("null")
+
 // parseAwarenessUpdate decodes a y-protocols awareness update payload (excluding FrameAwareness byte).
 // Format: varuint(len) [varuint(clientID), varuint(clock), varstring(state)]...
 func parseAwarenessUpdate(b []byte) ([]awarenessEntry, error) {
@@ -24,6 +28,11 @@ func parseAwarenessUpdate(b []byte) ([]awarenessEntry, error) {
 		return nil, errors.New("ysync: invalid awareness count")
 	}
 	b = b[n:]
+	// An entry takes at least 3 bytes (clientID, clock, an empty state's length): a larger count
+	// is a malformed frame, never an allocation of the client's choosing.
+	if count > uint64(len(b))/3 {
+		return nil, errors.New("ysync: invalid awareness count")
+	}
 	entries := make([]awarenessEntry, 0, count)
 	for i := uint64(0); i < count; i++ {
 		clientID, n := binary.Uvarint(b)

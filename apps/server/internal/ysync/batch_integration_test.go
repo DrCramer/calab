@@ -5,6 +5,7 @@ package ysync
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -758,4 +759,31 @@ func TestBatchAwarenessOwnFarewellStillImmediate(t *testing.T) {
 	if early := func() [][]awarenessEntry { time.Sleep(400 * time.Millisecond); return col.take() }(); !hasFarewell(early, 30, 2) {
 		t.Fatalf("own farewell not delivered at once: %+v", early)
 	}
+}
+
+// A frame with an entry count no frame can hold, held back by the budget, is parsed in the
+// flushAwareness timer and is relayed as it is, not a panic that ends the server; the next frame
+// of the socket is batched as usual.
+func TestBatchAwarenessMalformedCountHeldBack(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{AwarenessPerSecond: 2})
+	a, b := e.dial(), e.dial()
+	col := collectAwareness(t, b)
+	a.send(makeAwarenessFrame(40, 1, `{"v":1}`))
+	a.send(makeAwarenessFrame(40, 2, `{"v":2}`))
+	bad := append([]byte{FrameAwareness}, binary.AppendUvarint(nil, 1<<62)...)
+	a.send(append(bad, 40, 3, 2, '{', '}'))
+	time.Sleep(1500 * time.Millisecond)
+	a.send(makeAwarenessFrame(40, 4, `{"v":4}`))
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, entries := range col.take() {
+			for _, en := range entries {
+				if en.clientID == 40 && en.clock == 4 {
+					return
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("the frame after the malformed one never arrived")
 }
