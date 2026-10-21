@@ -36,11 +36,12 @@ ORDER BY p.position, p.id
 LIMIT sqlc.arg('lim');
 
 -- name: ListCanvasTrash :many
--- The trash: roots of deletions, the most recent first. Cursor: the last row's (trashed_at, id).
+-- The trash: roots of deletions, the most recent first. Cursor: the last row's (trashed_at, id);
+-- the first page passes ('infinity', the max uuid), not NULL: a «cursor IS NULL OR …» is no index
+-- condition in the generic plan, and deep pages would read the trash from its start.
 SELECT * FROM canvas_item_heads
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND trashed_root
-  AND (sqlc.narg('cursor_id')::uuid IS NULL
-       OR (trashed_at, id) < (sqlc.arg('cursor_trashed')::timestamptz, sqlc.narg('cursor_id')::uuid))
+  AND (trashed_at, id) < (sqlc.arg('cursor_trashed')::timestamptz, sqlc.arg('cursor_id')::uuid)
 ORDER BY trashed_at DESC, id DESC
 LIMIT sqlc.arg('lim');
 
@@ -99,19 +100,6 @@ WITH RECURSIVE down (id, depth) AS (
     SELECT c.id, down.depth + 1 FROM canvas_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
 )
 SELECT coalesce(max(depth), 0)::int FROM down;
-
--- name: ListCanvasBranch :many
--- The live items below an item (not the item itself), each with its depth: the cycle check of
--- a move. Bounded at 64 levels.
-WITH RECURSIVE down (id, depth) AS (
-    SELECT c.id, 1 FROM canvas_items c WHERE c.parent_id = sqlc.arg('id')::uuid AND c.trashed_at IS NULL
-    UNION ALL
-    SELECT c.id, down.depth + 1 FROM canvas_items c JOIN down ON c.parent_id = down.id
-    WHERE c.trashed_at IS NULL AND down.depth < 64
-)
-SELECT sqlc.embed(wp), down.depth::int AS depth
-FROM down JOIN canvas_item_heads wp ON wp.id = down.id
-ORDER BY down.depth, wp.position, wp.id;
 
 -- name: LockCanvasTree :exec
 -- Serializes the structural changes of one workspace's Canvas (positions among siblings, moves
@@ -318,10 +306,10 @@ WITH RECURSIVE sub (id, r) AS (
 UPDATE canvas_activity a SET private = true FROM sub WHERE a.item_id = sub.id AND sub.r AND NOT a.private;
 
 -- name: ListCanvasItemActivity :many
--- An item's history, the newest first; cursor: the last id (NULL = the first page).
+-- An item's history, the newest first; cursor: the last id (the max uuid = the first page, an
+-- index condition unlike «cursor IS NULL OR …»).
 SELECT * FROM canvas_activity
-WHERE item_id = sqlc.arg('item_id')::uuid
-  AND (sqlc.narg('cursor')::uuid IS NULL OR id < sqlc.narg('cursor')::uuid)
+WHERE item_id = sqlc.arg('item_id')::uuid AND id < sqlc.arg('cursor')::uuid
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
@@ -330,7 +318,7 @@ LIMIT sqlc.arg('lim');
 SELECT * FROM canvas_activity
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid
   AND (sqlc.narg('actor_id')::uuid IS NULL OR actor_id = sqlc.narg('actor_id')::uuid)
-  AND (sqlc.narg('cursor')::uuid IS NULL OR id < sqlc.narg('cursor')::uuid)
+  AND id < sqlc.arg('cursor')::uuid -- the max uuid = the first page
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 

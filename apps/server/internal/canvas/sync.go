@@ -57,6 +57,7 @@ func (canvasBackend) Profile() ysync.Profile {
 		CoalesceAwareness: true,
 		RecheckJitter:     true,
 		PublishBackoff:    true,
+		RetryPublish:      true,
 		BatchAwareness:    true,
 	}
 }

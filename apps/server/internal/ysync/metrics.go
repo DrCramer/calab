@@ -20,7 +20,7 @@ var (
 		Namespace: "calaba", Subsystem: "ysync", Name: "dropped_frames_total",
 		Help: "Frames not delivered: queue (a socket's queue full; an update or snapshot is caught up from the database), " +
 			"awareness (over the budget: dropped, or replaced by a newer one), ceiling (an UPDATE refused at the update ceiling), " +
-			"publish (not published to the other instances)."}, []string{"section", "reason"})
+			"publish (not published to the other instances), snapshot_size (a snapshot empty or over the size limit, not stored)."}, []string{"section", "reason"})
 	catchUps = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "calaba", Subsystem: "ysync", Name: "catchups_total", Help: "Catch-ups of a socket from the database (its first frames included)."}, []string{"section"})
 	ceilingHits = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -44,6 +44,7 @@ type metrics struct {
 	section                                           string
 	rooms, sockets                                    prometheus.Gauge
 	dropQueue, dropAwareness, dropCeiling, dropPub    prometheus.Counter
+	dropSnapshot                                      prometheus.Counter
 	catchUps, ceilingHits                             prometheus.Counter
 	batchedFrames, coalescedEntries, overwrittenSlots prometheus.Counter
 }
@@ -58,6 +59,7 @@ func newMetrics(section string) metrics {
 		dropAwareness:    drop("awareness"),
 		dropCeiling:      drop("ceiling"),
 		dropPub:          drop("publish"),
+		dropSnapshot:     drop("snapshot_size"),
 		catchUps:         catchUps.WithLabelValues(section),
 		ceilingHits:      ceilingHits.WithLabelValues(section),
 		batchedFrames:    batchedFrames.WithLabelValues(section),

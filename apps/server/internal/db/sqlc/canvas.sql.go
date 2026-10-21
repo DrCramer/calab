@@ -801,64 +801,6 @@ func (q *Queries) LastCanvasVersion(ctx context.Context, canvasID uuid.UUID) (La
 	return i, err
 }
 
-const listCanvasBranch = `-- name: ListCanvasBranch :many
-WITH RECURSIVE down (id, depth) AS (
-    SELECT c.id, 1 FROM canvas_items c WHERE c.parent_id = $1::uuid AND c.trashed_at IS NULL
-    UNION ALL
-    SELECT c.id, down.depth + 1 FROM canvas_items c JOIN down ON c.parent_id = down.id
-    WHERE c.trashed_at IS NULL AND down.depth < 64
-)
-SELECT wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, down.depth::int AS depth
-FROM down JOIN canvas_item_heads wp ON wp.id = down.id
-ORDER BY down.depth, wp.position, wp.id
-`
-
-type ListCanvasBranchRow struct {
-	CanvasItemHead CanvasItemHead
-	Depth          int32
-}
-
-// The live items below an item (not the item itself), each with its depth: the cycle check of
-// a move. Bounded at 64 levels.
-func (q *Queries) ListCanvasBranch(ctx context.Context, id uuid.UUID) ([]ListCanvasBranchRow, error) {
-	rows, err := q.db.Query(ctx, listCanvasBranch, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCanvasBranchRow{}
-	for rows.Next() {
-		var i ListCanvasBranchRow
-		if err := rows.Scan(
-			&i.CanvasItemHead.ID,
-			&i.CanvasItemHead.WorkspaceID,
-			&i.CanvasItemHead.ParentID,
-			&i.CanvasItemHead.Kind,
-			&i.CanvasItemHead.Name,
-			&i.CanvasItemHead.Position,
-			&i.CanvasItemHead.OwnerID,
-			&i.CanvasItemHead.Restricted,
-			&i.CanvasItemHead.Preview,
-			&i.CanvasItemHead.DocSize,
-			&i.CanvasItemHead.NextSeq,
-			&i.CanvasItemHead.UpdatedBy,
-			&i.CanvasItemHead.CreatedAt,
-			&i.CanvasItemHead.UpdatedAt,
-			&i.CanvasItemHead.TrashedAt,
-			&i.CanvasItemHead.TrashedBy,
-			&i.CanvasItemHead.TrashedRoot,
-			&i.Depth,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listCanvasFolderChildren = `-- name: ListCanvasFolderChildren :many
 SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root,
     EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
@@ -932,19 +874,19 @@ func (q *Queries) ListCanvasFolderChildren(ctx context.Context, arg ListCanvasFo
 
 const listCanvasItemActivity = `-- name: ListCanvasItemActivity :many
 SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, private, created_at FROM canvas_activity
-WHERE item_id = $1::uuid
-  AND ($2::uuid IS NULL OR id < $2::uuid)
+WHERE item_id = $1::uuid AND id < $2::uuid
 ORDER BY id DESC
 LIMIT $3
 `
 
 type ListCanvasItemActivityParams struct {
 	ItemID uuid.UUID
-	Cursor *uuid.UUID
+	Cursor uuid.UUID
 	Lim    int32
 }
 
-// An item's history, the newest first; cursor: the last id (NULL = the first page).
+// An item's history, the newest first; cursor: the last id (the max uuid = the first page, an
+// index condition unlike «cursor IS NULL OR …»).
 func (q *Queries) ListCanvasItemActivity(ctx context.Context, arg ListCanvasItemActivityParams) ([]CanvasActivity, error) {
 	rows, err := q.db.Query(ctx, listCanvasItemActivity, arg.ItemID, arg.Cursor, arg.Lim)
 	if err != nil {
@@ -1287,25 +1229,26 @@ func (q *Queries) ListCanvasSweepWorkspaces(ctx context.Context, now time.Time) 
 const listCanvasTrash = `-- name: ListCanvasTrash :many
 SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads
 WHERE workspace_id = $1::uuid AND trashed_root
-  AND ($2::uuid IS NULL
-       OR (trashed_at, id) < ($3::timestamptz, $2::uuid))
+  AND (trashed_at, id) < ($2::timestamptz, $3::uuid)
 ORDER BY trashed_at DESC, id DESC
 LIMIT $4
 `
 
 type ListCanvasTrashParams struct {
 	WorkspaceID   uuid.UUID
-	CursorID      *uuid.UUID
 	CursorTrashed time.Time
+	CursorID      uuid.UUID
 	Lim           int32
 }
 
-// The trash: roots of deletions, the most recent first. Cursor: the last row's (trashed_at, id).
+// The trash: roots of deletions, the most recent first. Cursor: the last row's (trashed_at, id);
+// the first page passes ('infinity', the max uuid), not NULL: a «cursor IS NULL OR …» is no index
+// condition in the generic plan, and deep pages would read the trash from its start.
 func (q *Queries) ListCanvasTrash(ctx context.Context, arg ListCanvasTrashParams) ([]CanvasItemHead, error) {
 	rows, err := q.db.Query(ctx, listCanvasTrash,
 		arg.WorkspaceID,
-		arg.CursorID,
 		arg.CursorTrashed,
+		arg.CursorID,
 		arg.Lim,
 	)
 	if err != nil {
@@ -1565,7 +1508,7 @@ const listWorkspaceCanvasActivity = `-- name: ListWorkspaceCanvasActivity :many
 SELECT id, workspace_id, item_id, item_name, actor_id, kind, before, after, private, created_at FROM canvas_activity
 WHERE workspace_id = $1::uuid
   AND ($2::uuid IS NULL OR actor_id = $2::uuid)
-  AND ($3::uuid IS NULL OR id < $3::uuid)
+  AND id < $3::uuid -- the max uuid = the first page
 ORDER BY id DESC
 LIMIT $4
 `
@@ -1573,7 +1516,7 @@ LIMIT $4
 type ListWorkspaceCanvasActivityParams struct {
 	WorkspaceID uuid.UUID
 	ActorID     *uuid.UUID
-	Cursor      *uuid.UUID
+	Cursor      uuid.UUID
 	Lim         int32
 }
 

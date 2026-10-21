@@ -31,10 +31,10 @@ SELECT i.workspace_id FROM canvas_comments c JOIN canvas_items i ON i.id = c.can
 
 -- name: ListCanvasThreads :many
 -- A page of a canvas's roots, the oldest first, after the cursor (a root id: uuidv7 orders by
--- time); open_only leaves the resolved ones out.
+-- time; the nil uuid = the first page); open_only leaves the resolved ones out.
 SELECT * FROM canvas_comments
 WHERE canvas_id = sqlc.arg('canvas_id') AND parent_id IS NULL
-  AND (sqlc.narg('cursor')::uuid IS NULL OR id > sqlc.narg('cursor')::uuid)
+  AND id > sqlc.arg('cursor')::uuid
   AND (NOT sqlc.arg('open_only')::boolean OR resolved_at IS NULL)
 ORDER BY id
 LIMIT sqlc.arg('lim');

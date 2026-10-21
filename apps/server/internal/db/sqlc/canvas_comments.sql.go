@@ -254,7 +254,7 @@ func (q *Queries) ListCanvasReplies(ctx context.Context, roots []uuid.UUID) ([]C
 const listCanvasThreads = `-- name: ListCanvasThreads :many
 SELECT id, canvas_id, parent_id, object_id, x, y, author_id, body, mentions, notified, resolved_at, resolved_by, created_at, edited_at FROM canvas_comments
 WHERE canvas_id = $1 AND parent_id IS NULL
-  AND ($2::uuid IS NULL OR id > $2::uuid)
+  AND id > $2::uuid
   AND (NOT $3::boolean OR resolved_at IS NULL)
 ORDER BY id
 LIMIT $4
@@ -262,13 +262,13 @@ LIMIT $4
 
 type ListCanvasThreadsParams struct {
 	CanvasID uuid.UUID
-	Cursor   *uuid.UUID
+	Cursor   uuid.UUID
 	OpenOnly bool
 	Lim      int32
 }
 
 // A page of a canvas's roots, the oldest first, after the cursor (a root id: uuidv7 orders by
-// time); open_only leaves the resolved ones out.
+// time; the nil uuid = the first page); open_only leaves the resolved ones out.
 func (q *Queries) ListCanvasThreads(ctx context.Context, arg ListCanvasThreadsParams) ([]CanvasComment, error) {
 	rows, err := q.db.Query(ctx, listCanvasThreads,
 		arg.CanvasID,

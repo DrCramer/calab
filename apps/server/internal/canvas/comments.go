@@ -243,7 +243,7 @@ func (s *Service) listComments(w http.ResponseWriter, r *http.Request) error {
 	}
 	open := qs.Get("open") == "1" || qs.Get("open") == "true"
 	ctx, q := r.Context(), s.db.Q
-	roots, err := q.ListCanvasThreads(ctx, sqlc.ListCanvasThreadsParams{CanvasID: a.item.ID, Cursor: cur, OpenOnly: open, Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
+	roots, err := q.ListCanvasThreads(ctx, sqlc.ListCanvasThreadsParams{CanvasID: a.item.ID, Cursor: orNil(cur), OpenOnly: open, Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
 	if err != nil {
 		return err
 	}
@@ -368,6 +368,9 @@ func (s *Service) createComment(w http.ResponseWriter, r *http.Request) error {
 		}
 		c, err = q.InsertCanvasComment(ctx, sqlc.InsertCanvasCommentParams{CanvasID: id, ParentID: parent, ObjectID: object, X: x, Y: y,
 			AuthorID: &a.c.uid, Body: body, Mentions: mentions, Notified: notified})
+		if parent != nil && db.IsForeignKeyViolation(err) { // the thread was deleted meanwhile
+			return errNoComment
+		}
 		if err != nil {
 			return err
 		}

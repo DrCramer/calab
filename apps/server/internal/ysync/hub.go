@@ -281,7 +281,11 @@ func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []
 	}
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	if err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error(); err != nil {
+	err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error()
+	if err != nil && !aw && h.prof.RetryPublish && pctx.Err() == nil {
+		err = h.rc.Do(pctx, h.relayCmd(doc, frame)).Error()
+	}
+	if err != nil {
 		h.pubDown.Store(time.Now().UnixNano())
 		h.m.dropPub.Inc()
 		if !aw {

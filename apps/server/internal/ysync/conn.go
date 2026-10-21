@@ -958,7 +958,12 @@ func (c *conn) onSnapshot(b []byte) bool {
 	}
 	state := bytes.Clone(b[headerPost+mlen:])
 	if len(state) == 0 || len(state) > c.h.b.MaxState() {
-		return true // the client warns about a document over the limit; nothing is stored
+		// The client warns about a document over the limit; nothing is stored. Counted and logged:
+		// a client and server limit that disagree would otherwise go unseen.
+		c.h.m.dropSnapshot.Inc()
+		//nolint:gosec // G706: the section name, ids and a count only
+		slog.Warn(c.h.b.Name()+" sync: snapshot size", c.h.b.LogKey(), c.doc, "bytes", len(state), "user_id", c.id.UserID)
+		return true
 	}
 	refused := c.refused.Load()
 	res, err := c.h.b.PostSnapshot(c.ctx, Post{Doc: c.doc, Through: through, Meta: meta, State: state, By: c.id.UserID,

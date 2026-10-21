@@ -139,6 +139,8 @@ func (s *Service) eventItem(ctx context.Context, p sqlc.CanvasItemHead) *v1.Canv
 	children := false
 	if with, err := s.db.Q.ListCanvasItemsWithChildren(ctx, []uuid.UUID{p.ID}); err == nil {
 		children = len(with) > 0
+	} else {
+		slog.WarnContext(ctx, "canvas: event has_children", "item_id", p.ID, "err", err) // the folder shows no arrow until a refetch
 	}
 	return itemProto(p, false, children, 0)
 }
