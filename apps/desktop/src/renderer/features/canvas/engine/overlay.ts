@@ -28,6 +28,8 @@ export interface SelFrame {
   rot: number;
   resize: boolean;
   rotate: boolean;
+  /** A lone text sizes by width only: no top / bottom handles. */
+  widthOnly?: boolean;
 }
 
 /** Transient, per-gesture decoration drawn over the content layer (never part of the document). */
@@ -98,7 +100,7 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
       ctx.stroke();
       drawHandle(ctx, knob, p, px, true, hp);
     }
-    if (g.resize) for (const h of HANDLE_IDS) drawHandle(ctx, handlePoint(g.rect, h), p, px, false, hp);
+    if (g.resize) for (const h of HANDLE_IDS) if (!(g.widthOnly && (h === 'n' || h === 's'))) drawHandle(ctx, handlePoint(g.rect, h), p, px, false, hp);
     ctx.restore();
   }
 
