@@ -66,6 +66,8 @@ export const AWARENESS_TIMEOUT_MS = 30_000;
 export const CLOSE_AUTH = 4004;
 export const CLOSE_FORBIDDEN = 4003;
 export const CLOSE_NOT_FOUND = 4404;
+/** Too many frames, or too many sockets on the document (per person; a public link's per link and per network): retried. */
+export const CLOSE_RATE = 4008;
 /** A receive-only (anonymous) socket sent a frame: a bug, never retried. */
 export const CLOSE_RECEIVE_ONLY = 4013;
 

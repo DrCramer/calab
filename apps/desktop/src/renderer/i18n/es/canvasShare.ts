@@ -14,4 +14,5 @@ export const esCanvasShare: DictShape<typeof ruCanvasShare> = {
   'canvasShare.public.readOnly': 'Solo lectura',
   'canvasShare.public.gone': 'Lienzo no disponible',
   'canvasShare.public.goneText': 'El enlace fue revocado o caducó, o el lienzo se hizo privado o se eliminó.',
+  'canvasShare.public.busy': 'Demasiados espectadores desde tu red, inténtalo más tarde',
 };

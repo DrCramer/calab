@@ -14,4 +14,5 @@ export const enCanvasShare: DictShape<typeof ruCanvasShare> = {
   'canvasShare.public.readOnly': 'View only',
   'canvasShare.public.gone': 'Canvas unavailable',
   'canvasShare.public.goneText': 'The link was revoked or expired, or the canvas was made private or deleted.',
+  'canvasShare.public.busy': 'Too many viewers from your network, try again later',
 };

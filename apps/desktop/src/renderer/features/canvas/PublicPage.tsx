@@ -1,10 +1,13 @@
 import type { PublicCanvas } from '@calaba/protocol';
-import { Eye, Link2Off, Shapes } from 'lucide-react';
+import { Eye, Link2Off, Shapes, Users } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Spinner } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
+import { ApiError } from '../../lib/api/client';
 import { serverClockOffset } from '../../lib/canvas/serverClock';
+import { backoffDelay } from '../../lib/gateway/client';
 import { useMobile } from '../../lib/mobile';
+import { CLOSE_RATE } from '../../lib/ySync';
 import { canvasPublic } from '../../services/canvasPublic';
 import { useSession } from '../../stores/session';
 import { CanvasViewLazy } from './lazy';
@@ -18,9 +21,16 @@ const serverUrl = (): string => useSession.getState().serverUrl || window.locati
 /**
  * The connection of the anonymous viewer: no token, nobody signed in, the real WebSocket. A socket that fails before
  * it opens (a refused code is a 404 before the upgrade, which a browser's WebSocket cannot read) asks again with HEAD
- * (not a view): a 404 ends the page, anything else leaves the provider's backoff (1 s → 30 s) to retry.
+ * (not a view): a 404 ends the page, anything else leaves the provider's backoff (1 s → 30 s) to retry. Too many
+ * viewers — a close 4008 (the link's or this network's sockets: one office behind one address), a 429 on the HEAD —
+ * is `onBusy(true)` while the provider retries; the first frame of a socket is `onBusy(false)`.
  */
-export function publicDeps(code: string, onGone: () => void, make: (url: string) => WebSocket = (url) => new WebSocket(url)): CanvasViewDeps {
+export function publicDeps(
+  code: string,
+  onGone: () => void,
+  onBusy: (busy: boolean) => void,
+  make: (url: string) => WebSocket = (url) => new WebSocket(url),
+): CanvasViewDeps {
   return {
     serverUrl,
     getToken: () => Promise.resolve(null),
@@ -30,8 +40,15 @@ export function publicDeps(code: string, onGone: () => void, make: (url: string)
       ws.addEventListener('open', () => {
         opened = true;
       });
-      ws.addEventListener('close', () => {
-        if (!opened) void canvasPublic.alive(serverUrl(), code).then((ok) => ok || onGone());
+      ws.addEventListener('message', () => onBusy(false), { once: true });
+      ws.addEventListener('close', (ev) => {
+        if (ev.code === CLOSE_RATE) onBusy(true);
+        if (!opened) {
+          void canvasPublic.probe(serverUrl(), code).then((s) => {
+            if (s === 'gone') onGone();
+            else if (s === 'busy') onBusy(true);
+          });
+        }
       });
       return ws;
     },
@@ -45,16 +62,19 @@ export function publicDeps(code: string, onGone: () => void, make: (url: string)
  * публичная ссылка»): the name and «Только просмотр» above the canvas in view only — no app shell, tools, comments,
  * voting, cursors or avatars (CanvasView `publicCode`), pan and pinch on the phone. The name comes first (it counts
  * a view and proves the link); then the canvas chunk and its receive-only socket. A revoked / expired / private /
- * deleted canvas is one neutral screen; the server closes a live socket within seconds when that happens.
- * `noindex` + no-referrer like the wiki's public page.
+ * deleted canvas is one neutral screen; the server closes a live socket within seconds when that happens. Too many
+ * viewers from one network (the server's per-address limit; a 429 on the name, a close 4008 of the socket) is a line
+ * under the header while the page retries by itself, not that screen. `noindex` + no-referrer like the wiki's public
+ * page.
  */
 export function CanvasPublicPage({ code }: { code: string }): ReactNode {
   useLocale();
   const phone = useMobile();
   const [meta, setMeta] = useState<PublicCanvas | null>(null);
   const [gone, setGone] = useState(false);
+  const [busy, setBusy] = useState(false);
   const toGone = useCallback(() => setGone(true), []);
-  const deps = useMemo(() => publicDeps(code, toGone), [code, toGone]);
+  const deps = useMemo(() => publicDeps(code, toGone, setBusy), [code, toGone]);
 
   useEffect(() => {
     const robots = document.createElement('meta');
@@ -72,17 +92,33 @@ export function CanvasPublicPage({ code }: { code: string }): ReactNode {
 
   useEffect(() => {
     const ctl = new AbortController();
-    canvasPublic.meta(code, ctl.signal).then(
-      (m) => {
-        setMeta(m);
-        document.title = `${m.name || t('canvas.untitled')} · Calab`;
-      },
-      () => {
-        // 404 = revoked / expired / private / deleted; anything else (429, network) reads the same to a visitor.
-        if (!ctl.signal.aborted) setGone(true);
-      },
-    );
-    return () => ctl.abort();
+    let attempt = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const load = (): void => {
+      canvasPublic.meta(code, ctl.signal).then(
+        (m) => {
+          setBusy(false);
+          setMeta(m);
+          document.title = `${m.name || t('canvas.untitled')} · Calab`;
+        },
+        (e: unknown) => {
+          if (ctl.signal.aborted) return;
+          // 404 = revoked / expired / private / deleted. A 429 (too many requests from this network) or a failure
+          // says nothing about the link: again, with the sockets' backoff.
+          if (e instanceof ApiError && e.status === 404) {
+            setGone(true);
+            return;
+          }
+          if (e instanceof ApiError && e.status === 429) setBusy(true);
+          retry = setTimeout(load, backoffDelay(attempt++, Math.random()));
+        },
+      );
+    };
+    load();
+    return () => {
+      ctl.abort();
+      clearTimeout(retry);
+    };
   }, [code]);
 
   if (gone) return <Gone />;
@@ -99,6 +135,12 @@ export function CanvasPublicPage({ code }: { code: string }): ReactNode {
           {t('canvasShare.public.readOnly')}
         </span>
       </header>
+      {busy ? (
+        <div role="status" className="flex shrink-0 items-center justify-center gap-2 border-b border-line px-4 py-2 text-caption text-muted" data-testid="canvas-public-busy">
+          <Users className="size-3.5 shrink-0" aria-hidden />
+          <span>{t('canvasShare.public.busy')}</span>
+        </div>
+      ) : null}
       <main className="relative min-h-0 flex-1 pb-[var(--safe-bottom,0px)]">
         {meta ? (
           <Suspense fallback={<Loading />}>

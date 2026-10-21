@@ -14,4 +14,5 @@ export const zhCanvasShare: DictShape<typeof ruCanvasShare> = {
   'canvasShare.public.readOnly': '仅查看',
   'canvasShare.public.gone': '画布不可用',
   'canvasShare.public.goneText': '链接已被撤销或已过期，或画布已设为私密或已删除。',
+  'canvasShare.public.busy': '来自您网络的观看者过多，请稍后再试',
 };

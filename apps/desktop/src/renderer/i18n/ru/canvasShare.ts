@@ -14,4 +14,5 @@ export const ruCanvasShare = {
   'canvasShare.public.readOnly': 'Только просмотр',
   'canvasShare.public.gone': 'Холст недоступен',
   'canvasShare.public.goneText': 'Ссылка отозвана или истекла, либо холст закрыли или удалили.',
+  'canvasShare.public.busy': 'Слишком много зрителей с вашей сети, попробуйте позже',
 };
