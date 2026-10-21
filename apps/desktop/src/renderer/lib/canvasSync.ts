@@ -54,7 +54,10 @@ export interface CanvasSyncDeps {
   anonymous?: boolean;
   /** The canvas's name (it lives in canvas_items; the snapshot carries the current one). */
   title?: () => string;
-  /** The state outgrew 4 MiB: the server will not take a snapshot; the UI warns. */
+  /**
+   * The state outgrew 4 MiB: the server will not take a snapshot; the UI warns. Once per CanvasSync (an open document):
+   * every later snapshot attempt (idle, COMPACT_REQUEST every 10 s) fails the same way and would repeat the warning.
+   */
   onTooLarge?: (bytes: number) => void;
   /** 4003 / 4404: the canvas is gone or no longer visible to me. */
   onFatal?: (code: number) => void;
@@ -100,6 +103,8 @@ export class CanvasSync {
   constructor(doc: Y.Doc, awareness: Awareness, deps: CanvasSyncDeps) {
     this.doc = doc;
     this.awareness = awareness;
+    let warned = false;
+    const onTooLarge = deps.onTooLarge;
     this.provider = new YSyncProvider(doc, awareness, {
       url: deps.url,
       getToken: deps.getToken,
@@ -111,7 +116,15 @@ export class CanvasSync {
       awarenessMinGapMs: CANVAS_AWARENESS_MIN_GAP_MS,
       maxState: CANVAS_MAX_STATE,
       idleSnapshotMs: canvasIdleSnapshotMs,
-      onTooLarge: deps.onTooLarge,
+      ...(onTooLarge
+        ? {
+            onTooLarge: (bytes: number) => {
+              if (warned) return;
+              warned = true;
+              onTooLarge(bytes);
+            },
+          }
+        : {}),
       onFatal: deps.onFatal,
       random: deps.random,
       visibility: deps.visibility,

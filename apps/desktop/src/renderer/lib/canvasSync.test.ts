@@ -478,6 +478,12 @@ describe("CanvasSync", () => {
       relay.requestCompaction();
       expect(onTooLarge).toHaveBeenCalledTimes(1);
       expect(onTooLarge.mock.calls[0]?.[0]).toBeGreaterThan(4 * 1024 * 1024);
+      // The server keeps asking (COMPACT_REQUEST every 10 s): the warning is not repeated.
+      vi.advanceTimersByTime(SNAPSHOT_GAP_MS);
+      relay.requestCompaction();
+      vi.advanceTimersByTime(SNAPSHOT_GAP_MS);
+      relay.requestCompaction();
+      expect(onTooLarge).toHaveBeenCalledTimes(1);
       expect(relay.posts).toHaveLength(0);
       c.sync.destroy();
     });
