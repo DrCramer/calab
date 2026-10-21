@@ -275,6 +275,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       canvasId,
       restore: (state: Uint8Array): boolean => restoreCanvasState(session.engine.doc, state),
       writable: (): boolean => live.current.canWrite && !live.current.gone && session.sync.getStatus() === 'synced',
+      subscribe: (fn: () => void): (() => void) => session.sync.subscribe(() => fn()),
     };
     setCanvasDocHandle(h);
     return () => {
