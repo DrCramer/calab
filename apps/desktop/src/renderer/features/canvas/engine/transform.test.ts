@@ -253,17 +253,17 @@ describe('locked objects', () => {
     expect(r.engine.getState().editing).toBe(false);
     expect(r.engine.doc.undo.undoStack.length).toBe(0);
   });
-  it('keys and the panel do not change a locked object, but delete does', () => {
+  it('keys, the panel and delete do not change a locked object (the lock protects from deletion too)', () => {
     const r = rig();
     const [a] = r.make(sticky(100, 100, { locked: true }));
     r.engine.setSelection([a ?? '']);
+    r.engine.doc.undo.clear();
     r.key('ArrowRight');
     r.engine.updateSelected({ color: 'pink' });
     expect(snap(r, a)).toMatchObject({ x: 100, color: 'yellow' });
     r.key('Delete');
-    expect(r.engine.doc.count).toBe(0);
-    r.engine.undo();
     expect(r.engine.doc.count).toBe(1);
+    expect(r.engine.doc.undo.undoStack.length).toBe(0);
   });
   it('are left out of the marquee and of select all', () => {
     const r = rig();
