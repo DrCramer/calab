@@ -74,8 +74,9 @@ type wikiBackend struct {
 	auth Authenticator
 }
 
-func (wikiBackend) Name() string  { return "wiki" }
-func (wikiBackend) MaxState() int { return MaxState }
+func (wikiBackend) Name() string   { return "wiki" }
+func (wikiBackend) LogKey() string { return "page_id" }
+func (wikiBackend) MaxState() int  { return MaxState }
 
 func (b wikiBackend) GetSnapshot(ctx context.Context, q *sqlc.Queries, doc uuid.UUID) (int64, []byte, error) {
 	s, err := q.GetWikiSnapshot(ctx, doc)

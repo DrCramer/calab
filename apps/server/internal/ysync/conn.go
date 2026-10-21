@@ -440,7 +440,7 @@ func (c *conn) catchUp() bool {
 	})
 	if err != nil {
 		if c.ctx.Err() == nil {
-			slog.Warn(st.Name()+" sync: catch-up", "doc_id", c.doc, "err", err)
+			slog.Warn(st.Name()+" sync: catch-up", st.LogKey(), c.doc, "err", err)
 			c.close(CloseTryAgain, "try again")
 		}
 		return false
@@ -532,7 +532,7 @@ func (c *conn) onUpdate(b []byte) bool {
 	}
 	if err != nil {
 		if c.ctx.Err() == nil {
-			slog.Warn(c.h.b.Name()+" sync: append", "doc_id", c.doc, "err", err)
+			slog.Warn(c.h.b.Name()+" sync: append", c.h.b.LogKey(), c.doc, "err", err)
 			c.close(CloseTryAgain, "try again")
 		}
 		return false
@@ -581,7 +581,7 @@ func (c *conn) admitUpdate(size int) admission {
 		Px(h.cfg.CompactCooldown).Build()).AsBool()
 	if (err == nil || rueidis.IsRedisNil(err)) && set {
 		//nolint:gosec // G706: the section name, ids and counts only (a viewer's slots carry its client IP, never logged)
-		slog.Warn(h.b.Name()+" sync: update ceiling reached", "doc_id", c.doc, "updates", updates, "bytes", total, "user_id", c.id.UserID)
+		slog.Warn(h.b.Name()+" sync: update ceiling reached", h.b.LogKey(), c.doc, "updates", updates, "bytes", total, "user_id", c.id.UserID)
 		h.broadcast(c.ctx, c.doc, nil, []byte{FrameCompact})
 	}
 	return admitDrop
@@ -677,7 +677,7 @@ func (c *conn) onSnapshot(b []byte) bool {
 			c.close(CloseBadFrame, "bad snapshot meta")
 		case c.ctx.Err() == nil:
 			//nolint:gosec // G706: the section name, the document id and a database error only
-			slog.Warn(c.h.b.Name()+" sync: snapshot", "doc_id", c.doc, "err", err)
+			slog.Warn(c.h.b.Name()+" sync: snapshot", c.h.b.LogKey(), c.doc, "err", err)
 			c.close(CloseTryAgain, "try again")
 		}
 		return false

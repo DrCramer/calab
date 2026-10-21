@@ -260,6 +260,9 @@ type Backend interface {
 	Store
 	// Name prefixes the Redis keys and channels ("wiki" → wiki:<id>) and the log lines.
 	Name() string
+	// LogKey is the attribute name of the document id in the log lines ("page_id" for the Wiki,
+	// the key its production log queries use; "doc_id" for the others).
+	LogKey() string
 	// MaxState is the largest snapshot state in bytes; a larger post is dropped.
 	MaxState() int
 	// Authorize resolves the identity's access to the document (at connect, and on every

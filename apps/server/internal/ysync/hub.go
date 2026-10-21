@@ -120,7 +120,7 @@ func (h *Hub) listen(r *room) {
 			break
 		}
 		if err != nil {
-			slog.Warn(h.b.Name()+" sync: subscription lost", "doc_id", r.id, "err", err)
+			slog.Warn(h.b.Name()+" sync: subscription lost", h.b.LogKey(), r.id, "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -216,7 +216,7 @@ func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []
 	defer cancel()
 	if err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error(); err != nil {
 		//nolint:gosec // G706: the section name, the document id and a Redis error only
-		slog.Warn(h.b.Name()+" sync: publish", "doc_id", doc, "err", err)
+		slog.Warn(h.b.Name()+" sync: publish", h.b.LogKey(), doc, "err", err)
 	}
 }
 

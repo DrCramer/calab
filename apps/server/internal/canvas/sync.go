@@ -44,8 +44,9 @@ type canvasBackend struct {
 	auth ysync.Authenticator
 }
 
-func (canvasBackend) Name() string  { return "canvas" }
-func (canvasBackend) MaxState() int { return MaxState }
+func (canvasBackend) Name() string   { return "canvas" }
+func (canvasBackend) LogKey() string { return "doc_id" }
+func (canvasBackend) MaxState() int  { return MaxState }
 
 func (canvasBackend) GetSnapshot(ctx context.Context, q *sqlc.Queries, doc uuid.UUID) (int64, []byte, error) {
 	s, err := q.GetCanvasSnapshot(ctx, doc)
