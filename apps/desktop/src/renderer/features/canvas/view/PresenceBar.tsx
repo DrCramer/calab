@@ -2,7 +2,7 @@ import { memo, useSyncExternalStore, type ReactNode } from 'react';
 import { t, useLocale } from '../../../i18n';
 import { PANEL } from './chrome';
 import type { PresenceStore } from './presenceStore';
-import { cx } from '../../../components/ui';
+import { Tip, cx } from '../../../components/ui';
 import type { CanvasEngine } from '../engine';
 import { useEngineValue } from './hooks';
 
@@ -32,26 +32,26 @@ export const Presence = memo(function Presence({ store, engine }: { store: Prese
         const on = following === u.followKey;
         const label = t(on ? 'canvasBoard.presence.unfollow' : 'canvasBoard.presence.follow', { name: u.name || '?' });
         return (
-          <button
-            key={u.key}
-            type="button"
-            aria-label={label}
-            aria-pressed={on}
-            title={label}
-            // The canvas keeps its keyboard focus (Delete, arrows) when an avatar is pressed.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => engine.follow(on ? null : u.followKey)}
-            data-testid="canvas-presence-user"
-            data-following={on ? '' : undefined}
-            className={cx(
-              'grid size-6 place-items-center rounded-full text-micro font-semibold text-white ring-2',
-              on ? 'ring-accent' : 'ring-[var(--color-popover)]',
-              i > 0 && '-ml-1.5',
-            )}
-            style={{ background: u.color }}
-          >
-            {(Array.from(u.name.trim())[0] ?? '?').toUpperCase()}
-          </button>
+          <Tip key={u.key} label={label} side="bottom">
+            <button
+              type="button"
+              aria-label={label}
+              aria-pressed={on}
+              // The canvas keeps its keyboard focus (Delete, arrows) when an avatar is pressed.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => engine.follow(on ? null : u.followKey)}
+              data-testid="canvas-presence-user"
+              data-following={on ? '' : undefined}
+              className={cx(
+                'grid size-6 place-items-center rounded-full text-micro font-semibold text-white ring-2',
+                on ? 'ring-accent' : 'ring-[var(--color-popover)]',
+                i > 0 && '-ml-1.5',
+              )}
+              style={{ background: u.color }}
+            >
+              {(Array.from(u.name.trim())[0] ?? '?').toUpperCase()}
+            </button>
+          </Tip>
         );
       })}
       {more > 0 ? <span className="ml-1 px-1 text-caption text-muted">{t('canvasBoard.presence.more', { n: more })}</span> : null}

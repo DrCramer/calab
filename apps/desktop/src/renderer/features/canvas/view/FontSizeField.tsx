@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react';
 import { memo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { cx } from '../../../components/ui';
+import { Tip, cx } from '../../../components/ui';
 import { t } from '../../../i18n';
 import { DEFAULTS } from '../../../lib/canvas/types';
 import { MENU_BOX, keepFocus } from './chrome';
@@ -12,6 +12,9 @@ const MAX = DEFAULTS.maxTextSize;
 const clamp = (n: number): number => Math.min(MAX, Math.max(MIN, n));
 /** A size as shown: whole numbers as they are, an odd stored one (31.5) to a tenth. */
 const show = (n: number): string => String(Math.round(n * 10) / 10);
+
+/** Hover hint for an icon-only control (docs/08); a finger has no hover, so the touch sheets go bare. */
+const hint = (touch: boolean | undefined, label: string, node: ReactNode): ReactNode => (touch ? node : <Tip label={label}>{node}</Tip>);
 
 const BTN = 'grid shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted outline-none hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted';
 
@@ -84,10 +87,9 @@ export const FontSizeField = memo(function FontSizeField({
   const icon = touch ? 'size-5' : 'size-4';
   return (
     <div role="group" aria-label={label} className="flex items-center gap-0.5" data-testid={testId} {...mark}>
-      <button
+      {hint(touch, t('common.decrease', { label }), <button
         type="button"
         aria-label={t('common.decrease', { label })}
-        title={t('common.less')}
         disabled={mixed || value <= MIN}
         onPointerDown={keepFocus}
         onMouseDown={keepFocus}
@@ -96,7 +98,7 @@ export const FontSizeField = memo(function FontSizeField({
         data-testid={`${testId}-less`}
       >
         <Minus className={icon} strokeWidth={1.75} aria-hidden />
-      </button>
+      </button>)}
       <input
         ref={input}
         type="text"
@@ -128,10 +130,9 @@ export const FontSizeField = memo(function FontSizeField({
         )}
         data-testid={`${testId}-input`}
       />
-      <button
+      {hint(touch, t('common.increase', { label }), <button
         type="button"
         aria-label={t('common.increase', { label })}
-        title={t('common.more')}
         disabled={mixed || value >= MAX}
         onPointerDown={keepFocus}
         onMouseDown={keepFocus}
@@ -140,7 +141,7 @@ export const FontSizeField = memo(function FontSizeField({
         data-testid={`${testId}-more`}
       >
         <Plus className={icon} strokeWidth={1.75} aria-hidden />
-      </button>
+      </button>)}
       <Presets value={value} onPick={onCommit} release={release} touch={touch} keepsEditing={keepsEditing} testId={testId} />
     </div>
   );
@@ -169,11 +170,10 @@ function Presets({
   };
   return (
     <Popover.Root>
-      <Popover.Trigger asChild>
+      {hint(touch, label, <Popover.Trigger asChild>
         <button
           type="button"
           aria-label={label}
-          title={label}
           onPointerDown={keepFocus}
           onMouseDown={keepFocus}
           className={cx(BTN, touch ? 'size-11' : 'h-7 w-5')}
@@ -181,7 +181,7 @@ function Presets({
         >
           <ChevronDown className={touch ? 'size-5' : 'size-3.5'} strokeWidth={1.75} aria-hidden />
         </button>
-      </Popover.Trigger>
+      </Popover.Trigger>)}
       <Popover.Portal>
         <Popover.Content
           side={touch ? 'top' : 'bottom'}
