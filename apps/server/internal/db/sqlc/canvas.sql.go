@@ -1057,6 +1057,7 @@ SELECT w.id, w.canvas_trash_days::int AS days FROM workspaces w
 WHERE w.canvas_trash_days IS NOT NULL AND EXISTS (
     SELECT 1 FROM canvas_items p WHERE p.workspace_id = w.id AND p.trashed_root
       AND p.trashed_at < $1::timestamptz - make_interval(days => w.canvas_trash_days))
+ORDER BY w.id
 `
 
 type ListCanvasSweepWorkspacesRow struct {
@@ -1065,7 +1066,8 @@ type ListCanvasSweepWorkspacesRow struct {
 }
 
 // ---- trash retention ----
-// Workspaces with a trash retention and at least one expired trash root (the hourly sweeper).
+// Workspaces with a trash retention and at least one expired trash root (the hourly sweeper), in a
+// fixed order.
 func (q *Queries) ListCanvasSweepWorkspaces(ctx context.Context, now time.Time) ([]ListCanvasSweepWorkspacesRow, error) {
 	rows, err := q.db.Query(ctx, listCanvasSweepWorkspaces, now)
 	if err != nil {

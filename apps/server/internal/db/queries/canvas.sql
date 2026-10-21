@@ -210,11 +210,13 @@ DELETE FROM canvas_items WHERE id = $1;
 -- ---- trash retention ----
 
 -- name: ListCanvasSweepWorkspaces :many
--- Workspaces with a trash retention and at least one expired trash root (the hourly sweeper).
+-- Workspaces with a trash retention and at least one expired trash root (the hourly sweeper), in a
+-- fixed order.
 SELECT w.id, w.canvas_trash_days::int AS days FROM workspaces w
 WHERE w.canvas_trash_days IS NOT NULL AND EXISTS (
     SELECT 1 FROM canvas_items p WHERE p.workspace_id = w.id AND p.trashed_root
-      AND p.trashed_at < sqlc.arg('now')::timestamptz - make_interval(days => w.canvas_trash_days));
+      AND p.trashed_at < sqlc.arg('now')::timestamptz - make_interval(days => w.canvas_trash_days))
+ORDER BY w.id;
 
 -- name: ListCanvasTrashRootsBefore :many
 -- The sweeper's batch of one workspace: its trash roots deleted before the cutoff, oldest first.

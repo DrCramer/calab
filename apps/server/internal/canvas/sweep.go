@@ -2,6 +2,8 @@ package canvas
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -16,13 +18,17 @@ import (
 // SweepInterval is how often TrashSweep runs (like the Disk's).
 const SweepInterval = time.Hour
 
-// sweepBatch: trash roots deleted per transaction.
-const sweepBatch = 100
+// sweepBatch: trash roots deleted per transaction. Few: the transaction holds the workspace's
+// tree lock (creating and moving items there wait for it), and one root may carry MaxVersions
+// versions of up to MaxState each; the lock is free between batches.
+const sweepBatch = 5
 
 // TrashSweep deletes forever, once, the trash roots older than their workspace's
 // canvas_trash_days (NULL = never), through the delete-forever path. Per workspace, batches of
 // sweepBatch roots, each in a transaction holding the workspace's sweep advisory lock: another
-// instance sweeping the same workspace skips it. Returns the number of roots deleted.
+// instance sweeping the same workspace skips it. A workspace that fails is left for the next run
+// and the others are still swept: the error names every failed workspace. Returns the number of
+// roots deleted.
 func (s *Service) TrashSweep(ctx context.Context) (int, error) {
 	now := s.Now()
 	wss, err := s.db.Q.ListCanvasSweepWorkspaces(ctx, now)
@@ -30,20 +36,25 @@ func (s *Service) TrashSweep(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	total := 0
+	var errs []error
 	for _, w := range wss {
+		if err := ctx.Err(); err != nil {
+			return total, errors.Join(append(errs, err)...)
+		}
 		cutoff := now.Add(-time.Duration(w.Days) * 24 * time.Hour)
 		for {
 			n, more, err := s.sweepBatch(ctx, w.ID, cutoff)
 			total += n
 			if err != nil {
-				return total, err
+				errs = append(errs, fmt.Errorf("workspace %s: %w", w.ID, err))
+				break
 			}
 			if !more {
 				break
 			}
 		}
 	}
-	return total, nil
+	return total, errors.Join(errs...)
 }
 
 func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time) (int, bool, error) {
@@ -134,7 +145,7 @@ func (s *Service) RunTrashSweep(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 			n, err := s.TrashSweep(ctx)
 			if err != nil {
-				slog.ErrorContext(ctx, "canvas trash sweep", "err", err)
+				slog.ErrorContext(ctx, "canvas trash sweep", "deleted", n, "err", err)
 			} else if n > 0 {
 				slog.InfoContext(ctx, "canvas trash swept", "deleted", n)
 			}
