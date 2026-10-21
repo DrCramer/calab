@@ -5,18 +5,33 @@
 
 -- ---- tree ----
 
--- name: ListCanvasChildren :many
--- The live children of a folder (parent_id NULL = the top level) in order, with whether each has
--- live children of its own (the tree expands lazily). Cursor: the last row's (position, id);
--- cursor_id NULL = the first page.
+-- name: ListCanvasRootChildren :many
+-- The live items of the top level in order, with whether each has live children of its own (the
+-- tree expands lazily). Cursor: the last row's (position, id); the zero cursor (0, the nil uuid) is
+-- the first page (positions are ≥ 0, ids above the nil uuid).
+-- Two queries without an OR, not one with «parent_id = $2 OR ($2 IS NULL AND parent_id IS NULL)»
+-- and «cursor IS NULL OR …»: the generic plan of that one read both levels, then filtered and sorted
+-- them whole on every page (second review, minor 13). Each of these starts on canvas_items_tree_idx
+-- at the cursor of its level.
 SELECT sqlc.embed(p),
     EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
 FROM canvas_item_heads p
 WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid
-  AND (p.parent_id = sqlc.narg('parent_id')::uuid OR (sqlc.narg('parent_id')::uuid IS NULL AND p.parent_id IS NULL))
+  AND p.parent_id IS NULL
   AND p.trashed_at IS NULL
-  AND (sqlc.narg('cursor_id')::uuid IS NULL
-       OR (p.position, p.id) > (sqlc.arg('cursor_position')::int, sqlc.narg('cursor_id')::uuid))
+  AND (p.position, p.id) > (sqlc.arg('cursor_position')::int, sqlc.arg('cursor_id')::uuid)
+ORDER BY p.position, p.id
+LIMIT sqlc.arg('lim');
+
+-- name: ListCanvasFolderChildren :many
+-- The live children of a folder, like ListCanvasRootChildren.
+SELECT sqlc.embed(p),
+    EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
+FROM canvas_item_heads p
+WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid
+  AND p.parent_id = sqlc.arg('parent_id')::uuid
+  AND p.trashed_at IS NULL
+  AND (p.position, p.id) > (sqlc.arg('cursor_position')::int, sqlc.arg('cursor_id')::uuid)
 ORDER BY p.position, p.id
 LIMIT sqlc.arg('lim');
 

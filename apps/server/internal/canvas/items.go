@@ -58,6 +58,26 @@ func pageLimit(r *http.Request, def, most int) (int, error) {
 	return n, nil
 }
 
+// listChildren is a page of the live children of a folder (parent nil: the top level): two queries,
+// so that each one's plan walks the tree index in order (ListCanvasRootChildren).
+func listChildren(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, parent *uuid.UUID, cur *cursor, lim int32) ([]sqlc.ListCanvasRootChildrenRow, error) {
+	var curID uuid.UUID // the zero cursor: the first page
+	var curPos int32
+	if cur != nil {
+		curID, curPos = cur.ID, cur.Position
+	}
+	if parent == nil {
+		return q.ListCanvasRootChildren(ctx, sqlc.ListCanvasRootChildrenParams{WorkspaceID: ws, CursorID: curID, CursorPosition: curPos, Lim: lim})
+	}
+	rows, err := q.ListCanvasFolderChildren(ctx, sqlc.ListCanvasFolderChildrenParams{WorkspaceID: ws, ParentID: *parent,
+		CursorID: curID, CursorPosition: curPos, Lim: lim})
+	out := make([]sqlc.ListCanvasRootChildrenRow, len(rows))
+	for i, r := range rows {
+		out[i] = sqlc.ListCanvasRootChildrenRow(r)
+	}
+	return out, err
+}
+
 // list: GET /api/workspaces/{id}/canvas/items?parent=&trashed=&cursor=&limit= — the live children
 // of a folder (or the top level) the caller sees, by position; with trashed=1 the trash roots the
 // caller sees, the newest deletion first. A page of the listing may hold fewer visible items
@@ -120,11 +140,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	if _, _, err := parentBits(r, q, ws, c, parent); err != nil {
 		return err
 	}
-	p := sqlc.ListCanvasChildrenParams{WorkspaceID: ws, ParentID: parent, Lim: lim}
-	if cur != nil {
-		p.CursorID, p.CursorPosition = &cur.ID, cur.Position
-	}
-	rows, err := q.ListCanvasChildren(ctx, p)
+	rows, err := listChildren(ctx, q, ws, parent, cur, lim)
 	if err != nil {
 		return err
 	}

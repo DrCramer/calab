@@ -74,11 +74,11 @@ func TestCanvasStorage(t *testing.T) {
 	}
 
 	// The tree: the top level holds the folder (with children), the folder its two canvases.
-	top, err := q.ListCanvasChildren(ctx, sqlc.ListCanvasChildrenParams{WorkspaceID: ws, Lim: 10})
+	top, err := q.ListCanvasRootChildren(ctx, sqlc.ListCanvasRootChildrenParams{WorkspaceID: ws, Lim: 10})
 	if err != nil || len(top) != 1 || top[0].CanvasItemHead.ID != folder.ID || !top[0].HasChildren {
 		t.Fatalf("top level %+v %v", top, err)
 	}
-	kids, err := q.ListCanvasChildren(ctx, sqlc.ListCanvasChildrenParams{WorkspaceID: ws, ParentID: &folder.ID, Lim: 10})
+	kids, err := q.ListCanvasFolderChildren(ctx, sqlc.ListCanvasFolderChildrenParams{WorkspaceID: ws, ParentID: folder.ID, Lim: 10})
 	if err != nil || len(kids) != 2 || kids[0].CanvasItemHead.ID != a.ID || kids[1].CanvasItemHead.ID != b.ID || kids[0].HasChildren {
 		t.Fatalf("folder children %+v %v", kids, err)
 	}
@@ -198,7 +198,7 @@ func TestCanvasStorage(t *testing.T) {
 	if err != nil || len(roots) != 1 || roots[0].ID != folder.ID {
 		t.Fatalf("trash roots %+v %v", roots, err)
 	}
-	if top, err = q.ListCanvasChildren(ctx, sqlc.ListCanvasChildrenParams{WorkspaceID: ws, Lim: 10}); err != nil || len(top) != 0 {
+	if top, err = q.ListCanvasRootChildren(ctx, sqlc.ListCanvasRootChildrenParams{WorkspaceID: ws, Lim: 10}); err != nil || len(top) != 0 {
 		t.Fatalf("top level after trash %+v %v", top, err)
 	}
 	if ids, err = q.RestoreCanvasSubtree(ctx, sqlc.RestoreCanvasSubtreeParams{ID: folder.ID}); err != nil || len(ids) != 3 {
