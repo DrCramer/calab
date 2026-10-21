@@ -8,7 +8,7 @@ export const ruCanvasPhone = {
   'canvasPhone.editHint': 'Коснитесь объекта, чтобы выделить; потяните выделенный — он переместится. Двумя пальцами — листать и приближать. Долгое касание по пустому месту — меню.',
   'canvasPhone.editMode': 'Режим правки',
   'canvasPhone.tools': 'Инструменты',
-  'canvasPhone.plus': 'Вставить',
+  'canvasPhone.plus': 'Добавить',
   'canvasPhone.shapes': 'Фигуры',
   'canvasPhone.armed.sticky': 'Коснитесь холста — поставить стикер',
   'canvasPhone.armed.text': 'Коснитесь холста — написать текст',

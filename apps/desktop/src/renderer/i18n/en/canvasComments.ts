@@ -11,7 +11,7 @@ export const enCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.loadFailed': "Couldn't load comments",
   'canvasComments.retry': 'Retry',
   'canvasComments.empty': 'No comments',
-  'canvasComments.emptyWrite': 'No comments. Pick «Comment» (⌥C) and click an object or the field.',
+  'canvasComments.emptyWrite': 'No comments. Pick “Comment” ({alt}C) and click an object or the field.',
   'canvasComments.newPlaceholder': 'New comment — @ to mention',
   'canvasComments.replyPlaceholder': 'Reply — @ to mention',
   'canvasComments.editPlaceholder': 'Comment text',
@@ -37,6 +37,6 @@ export const enCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.err.edit': 'Could not edit the comment',
   'canvasComments.err.resolve': 'Could not change the thread',
   'canvasComments.err.delete': 'Could not delete the comment',
-  'canvasComments.notice.title': 'Canvas «{name}»',
+  'canvasComments.notice.title': 'Canvas “{name}”',
   'canvasComments.notice.mentioned': '{name} mentioned you in a comment',
 };

@@ -11,7 +11,7 @@ export const zhCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.loadFailed': '无法加载评论',
   'canvasComments.retry': '重试',
   'canvasComments.empty': '暂无评论',
-  'canvasComments.emptyWrite': '暂无评论。选择“评论”(⌥C)，然后点击对象或画布。',
+  'canvasComments.emptyWrite': '暂无评论。选择“评论”({alt}C)，然后点击对象或画布。',
   'canvasComments.newPlaceholder': '新评论 — 输入 @ 提及',
   'canvasComments.replyPlaceholder': '回复 — 输入 @ 提及',
   'canvasComments.editPlaceholder': '评论内容',
