@@ -1097,5 +1097,5 @@ func TestWikiSyncCeilingBytes(t *testing.T) {
 	// replay resends it).
 	a.next(frameUpdate)
 	b.send(post(3, snapshotMeta{PlainText: "x"}, []byte("state")))
-	a.closed(closeTryAgain)
+	a.closed(closeResend)
 }

@@ -205,7 +205,7 @@ func (c *conn) deliverFrame(frame []byte) {
 		c.recheckSoon()
 	case frame[0] == ctlCompacted:
 		if c.refused.Load() {
-			c.close(CloseTryAgain, "the update ceiling is lifted: reconnect")
+			c.close(CloseResend, "the update ceiling is lifted: resend")
 		}
 	case frame[0] == FrameCompact && !c.write.Load():
 	case frame[0] == FrameAwareness && c.viewer != nil:

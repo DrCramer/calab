@@ -32,9 +32,10 @@
 // their client, and nothing the others got builds on them; a socket with refused updates delivers
 // them in one of two ways. Its own SNAPSHOT_POST, when it holds every stored update, is stored
 // under a seq of its own (StoreSnapshot) and relayed to every other socket: no snapshot from an
-// older base can replace it. Otherwise it is closed 4000 as soon as the ceiling no longer stops
-// it — its next UPDATE that would be stored, or any snapshot stored by another socket (ctlCompacted,
-// on every instance) — and the client's replay after the reconnect resends what was refused.
+// older base can replace it. Otherwise it is closed 4014 (CloseResend) as soon as the ceiling no
+// longer stops it — its next UPDATE that would be stored, or any snapshot stored by another socket
+// (ctlCompacted, on every instance) — and the client's replay after the reconnect resends what was
+// refused.
 //
 // The client's first message is a text frame with its access token (like the gateway's
 // IDENTIFY) — a person's access token or a bot token. The server then sends one SNAPSHOT
@@ -101,6 +102,10 @@ const (
 	CloseIdle      = 4009 // no pong
 	CloseRevoked   = 4010 // the session was revoked
 	CloseCeiling   = 4012 // kept sending UPDATEs past the document's ceiling without compacting it
+	// CloseResend: an UPDATE of the socket was refused at the ceiling, which no longer stops it:
+	// reconnect and replay what the snapshot lacks (the client replays after 4012 and 4014 even
+	// when its last session only replayed).
+	CloseResend = 4014
 	// CloseReceiveOnly: a viewer socket (an anonymous public link) sent a data frame; nothing of
 	// it was read into the document. The client must not reconnect in a loop: it is a bug or an
 	// attack.

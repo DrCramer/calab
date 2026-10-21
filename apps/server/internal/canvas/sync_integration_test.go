@@ -762,11 +762,12 @@ func TestCanvasSyncCeilingRefusedWriters(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Run("the other writer's snapshot first", func(t *testing.T) {
+	// The other writer's snapshot first.
+	{
 		id, a, b, c := e.ceilingRoom("B first")
 		// B's snapshot lifts the ceiling silently; A is told to reconnect.
 		b.send(post(3, snapshotMeta{PlainText: "b"}, []byte("stateB")))
-		a.closed(ysync.CloseTryAgain)
+		a.closed(ysync.CloseResend)
 		c.quiet(b)
 		// The client's replay after the reconnect: what the stored snapshot lacks.
 		a2 := e.dial(e.alice, id)
@@ -778,8 +779,9 @@ func TestCanvasSyncCeilingRefusedWriters(t *testing.T) {
 		late := e.dial(e.alice, id)
 		wantFrame(late, frameSnapshot, 3, "stateB")
 		wantFrame(late, frameUpdate, 4, "a4")
-	})
-	t.Run("its own snapshot first", func(t *testing.T) {
+	}
+	// Its own snapshot first.
+	{
 		id, a, b, c := e.ceilingRoom("A first")
 		// A's snapshot is stored under a seq of its own (4) and relayed; A gets the seq alone.
 		a.send(post(3, snapshotMeta{PlainText: "a"}, []byte("stateA")))
@@ -798,8 +800,9 @@ func TestCanvasSyncCeilingRefusedWriters(t *testing.T) {
 		for _, x := range []*client{a, b, c} {
 			wantFrame(x, frameUpdate, 5, "a5")
 		}
-	})
-	t.Run("the other's snapshot stored, then its own", func(t *testing.T) {
+	}
+	// The other's snapshot stored, then its own.
+	{
 		id, a, b, c := e.ceilingRoom("B stored, A after")
 		storeBehind(id)
 		// A's post from before B's snapshot is behind it: relayed (the others get a4 now) with
@@ -816,13 +819,14 @@ func TestCanvasSyncCeilingRefusedWriters(t *testing.T) {
 		wantFrame(b, frameSnapshot, 4, "stateA")
 		wantFrame(c, frameSnapshot, 4, "stateA")
 		wantFrame(e.dial(e.bob, id), frameSnapshot, 4, "stateA")
-	})
-	t.Run("the ceiling lifted, then its next update", func(t *testing.T) {
+	}
+	// The ceiling lifted, then its next update.
+	{
 		id, a, b, c := e.ceilingRoom("A updates after the lift")
 		storeBehind(id)
 		// "a5" may build on the refused "a4": not stored, A reconnects and replays both.
 		a.send(updateFrame(0, []byte("a5")))
-		a.closed(ysync.CloseTryAgain)
+		a.closed(ysync.CloseResend)
 		c.quiet(b)
 		a2 := e.dial(e.alice, id)
 		wantFrame(a2, frameSnapshot, 3, "stateB")
@@ -830,7 +834,7 @@ func TestCanvasSyncCeilingRefusedWriters(t *testing.T) {
 		for _, x := range []*client{a2, b, c} {
 			wantFrame(x, frameUpdate, 4, "a4a5")
 		}
-	})
+	}
 }
 
 // A run of refusals ends after 2 × CeilingGrace without one: a socket refused long ago gets the
@@ -887,7 +891,7 @@ func TestCanvasSyncCeilingLiftedAcrossInstances(t *testing.T) {
 		x.next(frameCompact)
 	}
 	a.send(post(3, snapshotMeta{PlainText: "a"}, []byte("stateA")))
-	b.closed(ysync.CloseTryAgain) // the second instance heard of the snapshot
+	b.closed(ysync.CloseResend) // the second instance heard of the snapshot
 	b2.send(updateFrame(0, []byte("b5")))
 	wantFrame(b2, frameUpdate, 4, "b5")
 	wantFrame(a, frameUpdate, 4, "b5")

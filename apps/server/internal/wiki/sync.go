@@ -50,6 +50,7 @@ const (
 	closeRevoked   = ysync.CloseRevoked
 	closeNotFound  = ysync.CloseNotFound
 	closeCeiling   = ysync.CloseCeiling
+	closeResend    = ysync.CloseResend
 )
 
 var (

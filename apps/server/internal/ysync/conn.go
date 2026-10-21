@@ -289,7 +289,7 @@ func (c *conn) pingLoop() {
 	h := c.h
 	ping := time.NewTicker(h.cfg.PingInterval)
 	defer ping.Stop()
-	recheck := time.NewTimer(recheckDelay(h.cfg.RecheckInterval, rand.Float64()))
+	recheck := time.NewTimer(recheckDelay(h.cfg.RecheckInterval, rand.Float64())) //nolint:gosec // jitter
 	defer recheck.Stop()
 	// A viewer: the end of its access by itself (an expiry) and of its life.
 	var expiry, life <-chan time.Time
@@ -365,7 +365,7 @@ func (c *conn) pingLoop() {
 			if !check() {
 				return
 			}
-			recheck.Reset(recheckDelay(h.cfg.RecheckInterval, rand.Float64()))
+			recheck.Reset(recheckDelay(h.cfg.RecheckInterval, rand.Float64())) //nolint:gosec // jitter
 		case <-c.recheck:
 			if !check() {
 				return
@@ -592,7 +592,7 @@ func (c *conn) admitUpdate(size int) admission {
 		if c.refused.Load() {
 			// This update may build on the refused ones, which the others never got: storing it
 			// would leave it pending on every replica. The reconnect's replay resends them all.
-			c.close(CloseTryAgain, "the update ceiling is lifted: reconnect")
+			c.close(CloseResend, "the update ceiling is lifted: resend")
 			return admitClose
 		}
 		return admitStore

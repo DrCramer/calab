@@ -385,6 +385,32 @@ describe("WikiSyncProvider", () => {
     expect(docPlainText(server)).toBe("base\noffline edit");
   });
 
+  it.each([4012, 4014])(
+    "replays again after %i (updates refused at the ceiling) even when that session only replayed",
+    async (code) => {
+      const { doc, last } = setup();
+      await connect(last(), serverState("base"));
+      last().drop(1006);
+      type(doc, "refused edit");
+      vi.advanceTimersByTime(500);
+      await connect(last(), serverState("base"));
+      const replayed = () =>
+        last()
+          .frames()
+          .filter((f) => f.type === FRAME_UPDATE);
+      expect(replayed()).toHaveLength(1); // the server refuses it at the ceiling …
+      last().drop(code);
+      vi.advanceTimersByTime(500);
+      await connect(last(), serverState("base")); // … and still lacks it after the reconnect
+      const ups = replayed();
+      expect(ups).toHaveLength(1);
+      const server = new Y.Doc();
+      Y.applyUpdate(server, serverState("base"));
+      for (const f of ups) Y.applyUpdate(server, f.update);
+      expect(docPlainText(server)).toBe("base\nrefused edit");
+    },
+  );
+
   it("does not replay after a reconnect without edits", async () => {
     const { last } = setup();
     await connect(last(), serverState("base"));

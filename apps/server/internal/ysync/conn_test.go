@@ -17,7 +17,7 @@ func TestRecheckDelay(t *testing.T) {
 	}
 	lo, hi := time.Hour, time.Duration(0)
 	for i := 0; i < 1000; i++ {
-		d := recheckDelay(every, rand.Float64())
+		d := recheckDelay(every, rand.Float64()) //nolint:gosec // jitter
 		lo, hi = min(lo, d), max(hi, d)
 	}
 	if lo < 24*time.Second || hi >= 36*time.Second || hi-lo < 10*time.Second {

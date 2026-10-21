@@ -77,5 +77,5 @@ func (l *logLimit) warn(msg string, args ...any) {
 	if held > 0 {
 		args = append(args, "suppressed", held)
 	}
-	slog.Warn(msg, args...)
+	slog.Warn(msg, args...) //nolint:gosec // G706: the callers' section name, document ids and Redis errors only
 }

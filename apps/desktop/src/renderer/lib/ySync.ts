@@ -25,7 +25,9 @@
  *   merged. Read-only providers never send updates, awareness or snapshots
  *   (setReadOnly flips that at run time, e.g. when the grant changes).
  * - Reconnect: exponential backoff 1 s → 30 s with jitter (the gateway's curve); 4004 refreshes
- *   the token first; 4003 / 4404 stop for good (status «offline»).
+ *   the token first; 4003 / 4404 stop for good (status «offline»). After 4012 / 4014 (updates refused
+ *   at the document's ceiling) the next SNAPSHOT is followed by a replay even if that session only
+ *   replayed: the refused updates are still only here.
  * - Anonymous (a canvas's public link, ADR-0115 wave 5): the URL carries the credential, no token frame;
  *   read-only for good, nothing at all is ever sent (the server closes such a socket 4013 on any frame),
  *   awareness from the server is ignored; 4013 stops for good too.
@@ -68,6 +70,9 @@ export const CLOSE_FORBIDDEN = 4003;
 export const CLOSE_NOT_FOUND = 4404;
 /** Too many frames, or too many sockets on the document (per person; a public link's per link and per network): retried. */
 export const CLOSE_RATE = 4008;
+/** Updates refused at the document's ceiling: kept sending without compacting it (4012), or the ceiling is lifted (4014). */
+export const CLOSE_CEILING = 4012;
+export const CLOSE_RESEND = 4014;
 /** A receive-only (anonymous) socket sent a frame: a bug, never retried. */
 export const CLOSE_RECEIVE_ONLY = 4013;
 
@@ -302,6 +307,9 @@ export class YSyncProvider {
       (id) => id !== this.awareness.clientID,
     );
     if (others.length) removeAwarenessStates(this.awareness, others, this);
+    // The server refused some of our updates at the document's ceiling (docs/05 «Потолок обновлений»), perhaps the
+    // replay of this very session: the next one replays whatever its snapshot lacks.
+    if (code === CLOSE_CEILING || code === CLOSE_RESEND) this.replayNeeded = true;
     if (this.stopped) return;
     if (code === CLOSE_FORBIDDEN || code === CLOSE_NOT_FOUND || code === CLOSE_RECEIVE_ONLY) {
       this.stopped = true;
