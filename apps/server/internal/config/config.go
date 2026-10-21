@@ -165,7 +165,7 @@ type Config struct {
 	PlanBusinessLimits string `env:"PLAN_BUSINESS_LIMITS"`
 	// Where to ask for a paid plan: PLAN_CONTACT_URL wins, else mailto:PLAN_CONTACT_EMAIL.
 	PlanContactURL   string `env:"PLAN_CONTACT_URL"`
-	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"it@gptunnel.ai"`
+	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"support@calab.io"`
 	// Product superadmins (comma-separated emails): /api/admin/*, Me.is_superadmin.
 	SuperadminEmails []string `env:"SUPERADMIN_EMAILS" envSeparator:","`
 

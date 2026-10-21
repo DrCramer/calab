@@ -190,7 +190,7 @@ func TestPlanMediaCaps(t *testing.T) {
 
 	// The plan is in READY (Workspace.plan) with the contact for buying.
 	ready := dialGW(t).identify(bob.token)
-	if ready.GetPlanContact() != "mailto:it@gptunnel.ai" {
+	if ready.GetPlanContact() != "mailto:support@calab.io" {
 		t.Fatalf("plan_contact %q", ready.GetPlanContact())
 	}
 	for _, s := range ready.GetWorkspaces() {

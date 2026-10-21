@@ -1,6 +1,6 @@
 # Security policy
 
-Please report vulnerabilities privately to it@gptunnel.ai (or via GitHub private vulnerability reporting) — not in public issues.
+Please report vulnerabilities privately to support@calab.io (or via GitHub private vulnerability reporting) — not in public issues.
 
 We aim to acknowledge within 3 business days and to ship a fix for confirmed high-severity issues within 14 days.
 

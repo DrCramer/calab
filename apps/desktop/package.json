@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Calab desktop client",
-  "author": "GPTunneL <it@gptunnel.ai>",
+  "author": "GPTunneL <support@calab.io>",
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {

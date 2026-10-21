@@ -98,7 +98,7 @@ linux:
   category: Network
   executableName: calab
   artifactName: Calab-${version}-${arch}.${ext}
-  maintainer: GPTunneL <it@gptunnel.ai>
+  maintainer: GPTunneL <support@calab.io>
 deb:
   packageName: calab
   # The package was «calaba» before the rename (docs/10): replace it on upgrade instead of

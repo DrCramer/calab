@@ -1213,7 +1213,7 @@ go test -race -count=1 ./internal/plans/
 TEST_REDIS_URL=redis://localhost:56379/1 TEST_RTC_REDIS_DB=13 go test -race -tags integration -count=1 -v -run 'TestPlan|TestAdminPlans' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
 ```
 Ожидается: 4 `--- PASS` и `ok` (`TestPlanRoomMembersLimit`, `TestPlanMediaCaps` — `SKIP` без dev-LiveKit / `lk`). Проверяется: 6-й в комнате (и владелец) → `409 ROOM_FULL` `reason PLAN_LIMIT`; 1080p → `H720`/15 в `/stream/request`, `/camera/request`, `/join` (`media`, `planLimits`) и `Workspace.plan` в READY; `storage_mb` → `413` c `used`/`limit`; admin: не-суперадмин → 404, поиск (slug/имя/email), 422 на неверный план, `WORKSPACE_UPDATE` с лимитами, журнал; `me.isSuperadmin`, `planContact`.
-Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:it@gptunnel.ai"`.
+Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:support@calab.io"`.
 
 Клиент (`feat/plans-client`):
 ```sh

@@ -935,7 +935,7 @@ class HttpError extends Error {
 }
 
 /** Plan contact of the mock (READY.plan_contact; the server's default). */
-export const MOCK_PLAN_CONTACT = 'mailto:it@gptunnel.ai';
+export const MOCK_PLAN_CONTACT = 'mailto:support@calab.io';
 
 /** 429 with Retry-After (seconds), like the server's limits. */
 const tooMany = (what: string, seconds: number): HttpError =>

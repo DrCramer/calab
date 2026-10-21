@@ -216,7 +216,7 @@ services:
       - PLAN_TEAM_LIMITS=${PLAN_TEAM_LIMITS:-}
       - PLAN_BUSINESS_LIMITS=${PLAN_BUSINESS_LIMITS:-}
       - PLAN_CONTACT_URL=${PLAN_CONTACT_URL:-}
-      - PLAN_CONTACT_EMAIL=${PLAN_CONTACT_EMAIL:-it@gptunnel.ai}
+      - PLAN_CONTACT_EMAIL=${PLAN_CONTACT_EMAIL:-support@calab.io}
       - SUPERADMIN_EMAILS=${SUPERADMIN_EMAILS:-}
       # meeting recording (ADR-0025)
       - GPTUNNEL_API_URL=${GPTUNNEL_API_URL:-https://gptunnel.ru}
