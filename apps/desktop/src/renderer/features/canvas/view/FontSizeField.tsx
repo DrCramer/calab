@@ -16,7 +16,7 @@ const show = (n: number): string => String(Math.round(n * 10) / 10);
 /** Hover hint for an icon-only control (docs/08); a finger has no hover, so the touch sheets go bare. */
 const hint = (touch: boolean | undefined, label: string, node: ReactNode): ReactNode => (touch ? node : <Tip label={label}>{node}</Tip>);
 
-const BTN = 'grid shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted outline-none hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted';
+const BTN = 'grid shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted';
 
 /**
  * The text size as a number (ADR-0115): a field you type in (Enter / blur applies, Esc cancels, ↑ / ↓ ± 1, Shift ± 10), − / + steppers and a
@@ -213,7 +213,7 @@ function Presets({
                   onMouseDown={keepFocus}
                   onClick={() => onPick(n)}
                   className={cx(
-                    'flex cursor-default items-center justify-between gap-3 rounded-[6px] px-2.5 tabular-nums text-fg outline-none hover:bg-hover focus-visible:bg-hover',
+                    'flex cursor-default items-center justify-between gap-3 rounded-[6px] px-2.5 tabular-nums text-fg hover:bg-hover focus-visible:bg-hover',
                     touch ? 'h-11 min-w-24 text-control' : 'h-8 min-w-16 text-body',
                     n === value && 'bg-active',
                   )}

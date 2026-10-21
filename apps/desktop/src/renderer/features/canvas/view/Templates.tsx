@@ -70,7 +70,7 @@ function TemplateRow({ id, onPick, as }: { id: TemplateId; onPick: () => void; a
       </span>
     </>
   );
-  const cls = 'flex w-full cursor-default items-center gap-3 rounded-[6px] px-2.5 py-1.5 outline-none hover:bg-hover data-[highlighted]:bg-hover';
+  const cls = 'flex w-full cursor-default items-center gap-3 rounded-[6px] px-2.5 py-1.5 hover:bg-hover data-[highlighted]:bg-hover';
   return as === 'item' ? (
     <Dropdown.Item className={cls} onSelect={onPick} data-testid={`canvas-template-${id}`}>
       {body}
