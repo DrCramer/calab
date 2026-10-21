@@ -20,6 +20,8 @@ interface Rig {
   tap(x: number, y: number): void;
   /** One finger: down, a few moves, up. */
   drag(from: [number, number], to: [number, number]): void;
+  /** The next pointerdown starts a new touch sequence (primary), as after a lost pointerup. */
+  forget(): void;
   cam(): CanvasEngine['camera'];
   make(...inits: Parameters<CanvasEngine['doc']['createMany']>[0]): string[];
 }
@@ -73,6 +75,7 @@ function rig(opts: Partial<EngineOptions> = {}): Rig {
       return engine.camera;
     },
     make: (...inits) => engine.doc.createMany(inits),
+    forget: () => down.clear(),
   };
   rigs.push(r);
   return r;
@@ -148,6 +151,24 @@ describe('touch gestures on an editable canvas', () => {
     expect(obj(r, b as string)).toMatchObject({ x: 100, y: 400 });
     expect([...r.engine.selection]).toEqual([a]);
     expect(r.cam()).toMatchObject({ tx: 50, ty: 60 });
+  });
+
+  it('a lost release keeps the finished move: the next touch does not take it back', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100), sticky(100, 400));
+    r.engine.doc.checkpoint();
+    r.tap(180, 180);
+    r.down(1, 180, 180);
+    r.move(1, 205, 215);
+    r.move(1, 230, 250);
+    r.forget(); // the pointerup never came (a system gesture took the finger)
+    r.tap(300, 700);
+    expect(obj(r, a as string)).toMatchObject({ x: 150, y: 170 });
+    expect(r.engine.doc.snapshot(a as string)).toMatchObject({ x: 150, y: 170 });
+    expect(r.engine.doc.live.size).toBe(0);
+    r.engine.undo();
+    expect(obj(r, a as string)).toMatchObject({ x: 100, y: 100 });
+    expect(r.engine.doc.count).toBe(2);
   });
 
   it('dragging empty canvas pans, and a finger that wanders a few px still taps', () => {

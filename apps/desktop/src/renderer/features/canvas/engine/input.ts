@@ -217,12 +217,15 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     const { s, w } = local(e);
     if (e.isPrimary && pointers.size > 0) {
       // A new first finger while the old ones are still "down": their pointerup was lost (a system gesture,
-      // the app went to the background). Forget them, or the next touch would pinch with a phantom finger.
+      // the app went to the background). Forget them, or the next touch would pinch with a phantom finger. What their
+      // gesture did stays (the finger did lift): a finished move is not taken back.
       pointers.clear();
       pinch = null;
       panDrag = null;
-      engine.activeGesture?.cancel();
+      const lost = engine.activeGesture;
       engine.activeGesture = null;
+      if (lost?.settle) lost.settle();
+      else lost?.cancel();
     }
     pointers.set(e.pointerId, s);
     try {

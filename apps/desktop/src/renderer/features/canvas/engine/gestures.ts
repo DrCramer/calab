@@ -56,6 +56,11 @@ export interface Gesture {
   move(w: Point, s: Point, m: Mods): void;
   end(w: Point, s: Point, m: Mods): void;
   cancel(): void;
+  /**
+   * The release was lost (a new touch began while this one was still down): keep what the gesture shows, as a release
+   * would, without what a release adds itself (a click, a new object). Gestures without it are cancelled.
+   */
+  settle?(): void;
 }
 
 const DRAG_PX = 3;
@@ -96,6 +101,9 @@ export class PanGesture implements Gesture {
   }
   cancel(): void {
     this.core.setCamera(this.start);
+  }
+  settle(): void {
+    this.core.flushCamera();
   }
 }
 
@@ -272,6 +280,10 @@ export class MoveGesture implements Gesture {
     this.core.doc.cancelGesture();
     this.core.setOverlay({ guides: [] });
   }
+
+  settle(): void {
+    if (this.started) this.end();
+  }
 }
 
 // ── resize ──────────────────────────────────────────────────────────────────
@@ -349,6 +361,10 @@ export class ResizeGesture implements Gesture {
     this.core.live.drop();
     this.core.doc.cancelGesture();
     this.core.setOverlay({ guides: [] });
+  }
+
+  settle(): void {
+    this.end();
   }
 }
 
@@ -435,6 +451,10 @@ export class RotateGesture implements Gesture {
     if (!this.began) return;
     this.core.live.drop();
     this.core.doc.cancelGesture();
+  }
+
+  settle(): void {
+    this.end();
   }
 }
 
@@ -638,5 +658,9 @@ export class EndpointGesture implements Gesture {
       this.core.doc.cancelGesture();
     }
     this.core.setOverlay({ glue: null });
+  }
+
+  settle(): void {
+    this.end();
   }
 }

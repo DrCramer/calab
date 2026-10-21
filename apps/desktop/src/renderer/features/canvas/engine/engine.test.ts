@@ -231,6 +231,64 @@ describe('selection, move, resize', () => {
   });
 });
 
+describe('Escape on a gesture that changed nothing undoes nothing', () => {
+  /** The user's last action is a creation; a cancelled no-op gesture must leave it (and its undo step) alone. */
+  const expectUntouched = (r: Rig, steps: number, count: number): void => {
+    expect(objs(r).undo.undoStack).toHaveLength(steps);
+    expect(objs(r).count).toBe(count);
+  };
+  it('a Shift-rotation by less than half a snap step', () => {
+    const r = rig();
+    const [a] = r.make(sticky(400, 300, { w: 100, h: 100 }));
+    r.click(450, 350);
+    r.down(450, 300 - 26);
+    r.move(456, 300 - 26, { shiftKey: true });
+    expect(r.engine.activeGesture?.kind).toBe('rotate');
+    r.key('Escape');
+    expectUntouched(r, 1, 1);
+    expect(objs(r).snapshot(a ?? '')?.rot).toBeUndefined();
+  });
+  it('a resize of a box already at the minimum size, inward', () => {
+    const r = rig();
+    const [a] = r.make(sticky(400, 300, { w: 24, h: 24 }));
+    r.click(412, 312);
+    r.down(424, 324);
+    r.move(418, 318);
+    r.move(410, 310);
+    expect(r.engine.activeGesture?.kind).toBe('resize');
+    r.key('Escape');
+    expectUntouched(r, 1, 1);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 400, y: 300, w: 24, h: 24 });
+  });
+  it('a connector end left on the same object and side', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(100, 100), sticky(400, 100));
+    objs(r).checkpoint();
+    const conn = objs(r).create({ kind: 'connector', from: { id: a ?? '', side: 'right' }, to: { id: b ?? '', side: 'left' } }) ?? '';
+    objs(r).checkpoint();
+    r.engine.setSelection([conn]);
+    const c = r.engine.scene.get(conn);
+    if (!c || !isConnector(c)) throw new Error('no connector');
+    const [ex = 0, ey = 0] = c.points.slice(-2);
+    r.down(ex, ey);
+    r.move(ex + 2, ey + 1);
+    expect(r.engine.activeGesture?.kind).toBe('endpoint');
+    r.key('Escape');
+    expectUntouched(r, 2, 3);
+    expect(objs(r).snapshot(conn)?.to).toEqual({ id: b, side: 'left' });
+  });
+  it('a move with Alt takes back its copies, and only them', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100));
+    r.down(150, 150, { altKey: true });
+    r.move(250, 250, { altKey: true });
+    expect(objs(r).count).toBe(2);
+    r.key('Escape');
+    expectUntouched(r, 1, 1);
+    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100, y: 100 });
+  });
+});
+
 describe('connectors', () => {
   const two = (r: Rig): [string, string] => {
     const [a, b] = r.make(sticky(0, 0), sticky(500, 0));

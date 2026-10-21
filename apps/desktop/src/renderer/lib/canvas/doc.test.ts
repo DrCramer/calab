@@ -369,6 +369,20 @@ describe('undo (own edits only)', () => {
     expect(b.snapshot(ids[3] ?? '')).toMatchObject({ x: 50 * 10 + 0.5, y: 50 * 3 + 0.25 });
     expect(a.count).toBe(20);
   });
+  it('a cancelled gesture undoes only what it wrote', () => {
+    const d = makeDoc();
+    d.create({ kind: 'sticky', x: 0, y: 0 });
+    d.checkpoint();
+    d.beginGesture();
+    d.patch('o1', { rot: 0 }); // equal to the stored default: nothing is written
+    d.cancelGesture();
+    expect(d.count).toBe(1);
+    d.beginGesture();
+    d.patch('o1', { x: 40 });
+    d.cancelGesture();
+    expect(d.snapshot('o1')?.x).toBe(0);
+    expect(d.count).toBe(1);
+  });
   it('uses the LOCAL origin', () => {
     const d = makeDoc();
     const origins: unknown[] = [];
