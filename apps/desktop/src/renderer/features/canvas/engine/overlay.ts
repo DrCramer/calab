@@ -1,5 +1,6 @@
 import { DEG, HANDLE_IDS, handlePoint, rectCenter, type Point, type Rect } from '../../../lib/canvas/geometry';
 import type { Guide } from '../../../lib/canvas/snap';
+import { traceRounded } from '../../../lib/canvas/shapes';
 import type { ConnectorRec } from '../../../lib/canvas/types';
 import type { Ctx2D } from './draw';
 import type { CanvasPalette } from './palette';
@@ -39,6 +40,8 @@ export interface OverlayState {
   group: SelFrame | null;
   marquee: Rect | null;
   guides: readonly Guide[];
+  /** Angle badge hung by the cursor while turning: world point + whole degrees (one box: its angle, several: the turn). */
+  angle: { at: Point; deg: number } | null;
   /** Rubber band while placing a new object. */
   ghost: Rect | null;
   /** Connector being drawn / retargeted: polyline in world units. */
@@ -49,10 +52,10 @@ export interface OverlayState {
   glue: { rect: Rect; /** Rotation of the glue target. */ rot?: number; anchors: readonly Point[]; active: Point | null } | null;
 }
 
-export const emptyOverlay = (): OverlayState => ({ outlines: [], connectors: [], group: null, marquee: null, guides: [], ghost: null, wire: null, glue: null });
+export const emptyOverlay = (): OverlayState => ({ outlines: [], connectors: [], group: null, marquee: null, guides: [], angle: null, ghost: null, wire: null, glue: null });
 
 export const overlayIsEmpty = (o: OverlayState): boolean =>
-  o.outlines.length === 0 && o.connectors.length === 0 && !o.group && !o.marquee && o.guides.length === 0 && !o.ghost && !o.wire && !o.glue;
+  o.outlines.length === 0 && o.connectors.length === 0 && !o.group && !o.marquee && o.guides.length === 0 && !o.angle && !o.ghost && !o.wire && !o.glue;
 
 /** Paints the overlay. The context carries the camera transform (world units); `scale` is the camera scale. */
 export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale: number): void {
@@ -155,6 +158,26 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
     }
     ctx.stroke();
   }
+
+  if (o.angle) drawAngle(ctx, o.angle, p, px);
+}
+
+/** The «45°» pill: screen-sized, hung down-right of the cursor so the pointer and the handle stay visible. */
+function drawAngle(ctx: Ctx2D, a: { at: Point; deg: number }, p: CanvasPalette, px: number): void {
+  const text = `${a.deg}°`;
+  ctx.save();
+  ctx.font = `600 ${12 * px}px ${p.fontFamily}`;
+  const w = ctx.measureText(text).width + 14 * px;
+  const h = 20 * px;
+  ctx.beginPath();
+  traceRounded(ctx, { x: a.at.x + 14 * px, y: a.at.y + 14 * px, w, h }, h / 2);
+  ctx.fillStyle = p.accent;
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, a.at.x + 14 * px + w / 2, a.at.y + 14 * px + h / 2 + 0.5 * px);
+  ctx.restore();
 }
 
 function strokeTurned(ctx: Ctx2D, r: Rect, rot: number): void {
