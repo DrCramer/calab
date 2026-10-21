@@ -54,7 +54,7 @@
 
 ### 7. Каскады и миграция
 - `00109:26` `canvas_id … ON DELETE CASCADE` — удаление холста навсегда (и очистка корзины, и почасовой sweeper) уносит комментарии; корзина их сохраняет. `:27` `parent_id … CASCADE` — корень уносит ветку. `author_id/resolved_by … SET NULL` с индексами. Тест: `TestCanvasCommentLimits` (CASCADE после `DELETE /api/canvas/items/{id}`).
-- `00109:53–:56`: замена CHECK `canvas_activity.kind` — `DROP` + `ADD … NOT VALID` + `VALIDATE` (короткая `ACCESS EXCLUSIVE` на DROP/ADD без скана, скан под `SHARE UPDATE EXCLUSIVE`), `lock_timeout 10s`. Down удаляет записи `comment/resolve` до возврата старого CHECK. **Проверить:** имя автосгенерированного ограничения `canvas_activity_kind_check` (инлайн CHECK в 00107) — на проде то же.
+- `00109:53–:56`: замена CHECK `canvas_activity.kind` — `DROP` + `ADD … NOT VALID` + `VALIDATE` (goose гонит файл одной транзакцией, поэтому `ACCESS EXCLUSIVE` от ALTER держится и во время `VALIDATE`; таблица `canvas_activity` новая и небольшая — блокировка короткая), `lock_timeout 10s`. Down удаляет записи `comment/resolve` до возврата старого CHECK. **Проверить:** имя автосгенерированного ограничения `canvas_activity_kind_check` (инлайн CHECK в 00107) — на проде то же.
 - Журнал (`comments.go` `s.journal(… "comment" / "resolve" …)`): `after` — только `comment_id`/`thread_id`, `item_name` — название холста (как у всех записей журнала; `visibleActivity` прячет записи холстов, которые читатель не видит). Тест: `TestCanvasCommentsAccess` (в `after` нет текста).
 
 ### 8. SQL

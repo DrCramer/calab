@@ -362,7 +362,7 @@ func TestCanvasPermissionsMatrix(t *testing.T) {
 	if set.GetTrashDays() != 30 {
 		t.Fatalf("settings: %v", &set)
 	}
-	// The workspace-level bits: a member's role carries VIEW | WRITE (migration 00103), a guest's
+	// The workspace-level bits: a member's role carries VIEW | WRITE (migration 00107), a guest's
 	// none.
 	m, err := perm.NewResolver(e.d.Q).Member(context.Background(), e.ws, e.guest)
 	if err != nil || perm.CanvasOf(m.Raw(), m.Role == perm.RoleGuest) != 0 {

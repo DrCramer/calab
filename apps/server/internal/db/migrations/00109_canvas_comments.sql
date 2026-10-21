@@ -16,7 +16,8 @@
 --                  resolved): the fact and the ids only, never the text.
 --
 -- Safe on a populated database: a new table, and the kind CHECK of canvas_activity replaced
--- NOT VALID then validated (no long lock: VALIDATE takes SHARE UPDATE EXCLUSIVE).
+-- NOT VALID then validated. goose runs the file in one transaction, so the ACCESS EXCLUSIVE lock of
+-- the ALTER is held through VALIDATE too; canvas_activity is small and new, so it is short.
 
 -- +goose Up
 SET LOCAL lock_timeout = '10s';

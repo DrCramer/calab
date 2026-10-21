@@ -31,7 +31,7 @@ func canvasSeed(ctx context.Context, t *testing.T, d *db.DB) (user, ws uuid.UUID
 	return user, ws
 }
 
-// ADR-0114 §1 (migration 00103): a new workspace's member role carries CANVAS_VIEW | CANVAS_WRITE
+// ADR-0114 §1 (migration 00107): a new workspace's member role carries CANVAS_VIEW | CANVAS_WRITE
 // and nothing of CANVAS_MANAGE (the workspace_builtin_roles trigger).
 func TestCanvasMemberRoleDefault(t *testing.T) {
 	ctx := context.Background()
