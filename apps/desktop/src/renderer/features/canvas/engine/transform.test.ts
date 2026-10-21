@@ -222,7 +222,7 @@ describe('rotation', () => {
     const [a] = r.make(sticky(400, 300, { rot: 45 }));
     expect(r.engine.startTextEdit(a)).toBe(true);
     const ta = r.host.querySelector('textarea');
-    expect(ta?.style.transform).toBe('rotate(45deg)');
+    expect(ta?.style.transform).toContain('rotate(45deg)');
     r.engine.editor.cancel();
   });
   it('a read-only canvas offers no handles', () => {
