@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -645,5 +646,116 @@ func TestBatchAwarenessRoomTimerOnDemand(t *testing.T) {
 	conns[0].awAccumMu.Unlock()
 	if rec.clientID != 101 || rec.clock != 1 || string(rec.state) != `{"cursor":"active"}` {
 		t.Fatalf("expected entry delivered to accumulator, got: %+v", rec)
+	}
+}
+
+// awCollector reads a client's awareness frames in the background (a Read context that expires
+// would close the socket).
+type awCollector struct {
+	mu     sync.Mutex
+	frames [][]awarenessEntry
+}
+
+func collectAwareness(t *testing.T, c *profClient) *awCollector {
+	t.Helper()
+	col := &awCollector{}
+	go func() {
+		for {
+			_, msg, err := c.ws.Read(context.Background())
+			if err != nil {
+				return
+			}
+			if len(msg) > 0 && msg[0] == FrameAwareness {
+				if es, err := parseAwarenessUpdate(msg[1:]); err == nil {
+					col.mu.Lock()
+					col.frames = append(col.frames, es)
+					col.mu.Unlock()
+				}
+			}
+		}
+	}()
+	return col
+}
+
+// take returns the frames received since the last call.
+func (c *awCollector) take() [][]awarenessEntry {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.frames
+	c.frames = nil
+	return out
+}
+
+func hasFarewell(frames [][]awarenessEntry, cid, clock uint64) bool {
+	for _, f := range frames {
+		for _, e := range f {
+			if e.clientID == cid && e.clock == clock && string(e.state) == "null" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// A flood of own farewell frames: at most FarewellBurst go at once, the rest is batched and the
+// highest-clock "left" entry still arrives.
+func TestBatchAwarenessFarewellFloodLimited(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 1500 * time.Millisecond})
+	a, b := e.dial(), e.dial()
+	col := collectAwareness(t, b)
+	a.send(makeAwarenessFrame(10, 1, `{"v":1}`))
+	time.Sleep(1800 * time.Millisecond)
+	col.take()
+
+	const n = 500
+	for i := 2; i <= n+1; i++ {
+		a.send(makeAwarenessFrame(10, uint64(i), "null"))
+	}
+	// Within the window only the bypass frames can have arrived.
+	time.Sleep(700 * time.Millisecond)
+	early := col.take()
+	if len(early) > 2 {
+		t.Fatalf("%d farewell frames delivered at once, want <= 2", len(early))
+	}
+	time.Sleep(4 * time.Second)
+	late := col.take()
+	if !hasFarewell(append(early, late...), 10, n+1) {
+		t.Fatalf("left entry with the highest clock %d never arrived", n+1)
+	}
+	if len(late) > 6 {
+		t.Fatalf("%d batched frames after the flood, want a few windows' worth", len(late))
+	}
+}
+
+// A farewell for somebody else's clientID is batched, not sent at once.
+func TestBatchAwarenessForeignFarewellBatched(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 800 * time.Millisecond})
+	a, b := e.dial(), e.dial()
+	col := collectAwareness(t, b)
+	a.send(makeAwarenessFrame(20, 1, `{"v":1}`))
+	time.Sleep(1000 * time.Millisecond)
+	col.take()
+
+	a.send(makeAwarenessFrame(999, 5, "null"))
+	if early := func() [][]awarenessEntry { time.Sleep(300 * time.Millisecond); return col.take() }(); len(early) != 0 {
+		t.Fatalf("foreign farewell delivered at once: %+v", early)
+	}
+	if late := func() [][]awarenessEntry { time.Sleep(2 * time.Second); return col.take() }(); !hasFarewell(late, 999, 5) {
+		t.Fatalf("foreign farewell never arrived: %+v", late)
+	}
+}
+
+// One own farewell still arrives without waiting for the window.
+func TestBatchAwarenessOwnFarewellStillImmediate(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 1500 * time.Millisecond})
+	a, b := e.dial(), e.dial()
+	col := collectAwareness(t, b)
+	a.send(makeAwarenessFrame(30, 1, `{"v":1}`))
+	time.Sleep(1800 * time.Millisecond)
+	col.take()
+
+	a.send(makeAwarenessFrame(30, 2, "null"))
+	if early := func() [][]awarenessEntry { time.Sleep(400 * time.Millisecond); return col.take() }(); !hasFarewell(early, 30, 2) {
+		t.Fatalf("own farewell not delivered at once: %+v", early)
 	}
 }

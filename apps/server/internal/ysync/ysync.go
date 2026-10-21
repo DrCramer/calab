@@ -159,6 +159,8 @@ type Config struct {
 	WriteTimeout         time.Duration // one frame to the client (10 s)
 	ViewerMaxLife        time.Duration // a viewer socket is closed 4000 (reconnect) after this long (2 h)
 	AwarenessWindow      time.Duration // batching window for awareness (100 ms)
+	FarewellBurst        int           // Profile.BatchAwareness: own farewell frames (state null) a socket may relay at once per FarewellWindow (2); further ones are batched
+	FarewellWindow       time.Duration // … per this long (10 s)
 }
 
 // WithDefaults fills the zero fields with the production values. VersionEvery is not defaulted
@@ -180,6 +182,10 @@ func (c Config) WithDefaults() Config {
 	def(&c.CompactCheckEvery, 2*time.Second)
 	def(&c.WriteTimeout, 10*time.Second)
 	def(&c.AwarenessWindow, 100*time.Millisecond)
+	def(&c.FarewellWindow, 10*time.Second)
+	if c.FarewellBurst == 0 {
+		c.FarewellBurst = 2
+	}
 	if c.UpdatesPerSecond == 0 {
 		c.UpdatesPerSecond = 20
 	}

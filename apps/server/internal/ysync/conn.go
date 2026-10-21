@@ -57,6 +57,7 @@ type conn struct {
 	awAccum            map[uint64]awarenessEntry
 	testPauseAwareness atomic.Bool
 	parsedAwareness    atomic.Uint64
+	farewells          bucket // own farewell frames relayed at once (reader goroutine only)
 
 	// The writer's position: the highest seq the client has (snapshot or update); -1 = nothing
 	// sent yet. Writer goroutine only.
@@ -69,6 +70,7 @@ type conn struct {
 	awMu      sync.Mutex
 	awareness bucket
 	awPending []byte
+	awPendEnt []awarenessEntry // awPending parsed (Canvas profile; nil = not parsed yet)
 	awTimer   *time.Timer
 	// refused: an UPDATE of this socket was refused at the ceiling and no stored snapshot of this
 	// socket carried it yet (the package doc: it is delivered by such a snapshot or by a reconnect).
@@ -210,6 +212,7 @@ func (h *Hub) accept(w http.ResponseWriter, r *http.Request, doc uuid.UUID) (*co
 		updates:     newBucket(float64(burst), float64(h.cfg.UpdatesPerSecond)),
 		updateBytes: newBucket(float64(h.cfg.UpdateBytesBurst), float64(h.cfg.UpdateBytesPerSecond)),
 		awareness:   newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
+		farewells:   newBucket(float64(h.cfg.FarewellBurst), float64(h.cfg.FarewellBurst)/h.cfg.FarewellWindow.Seconds()),
 		snapshots:   newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}, true
 }
 
@@ -801,19 +804,26 @@ func (c *conn) onAwareness(b []byte) bool {
 		return true
 	}
 
-	// Farewell frames (state null) bypass budget so peers immediately learn the client left.
+	var entries []awarenessEntry
+	// Farewell frames (state null) bypass the budget so peers immediately learn the client left.
 	if bytes.Contains(b[1:], []byte("null")) {
-		if entries, err := parseAwarenessUpdate(b[1:]); err == nil && isFarewell(entries) {
-			c.parsedAwareness.Add(1)
-			if c.clientID.Load() == 0 && len(entries) > 0 {
-				c.clientID.Store(entries[0].clientID)
-			}
-			if c.h.prof.BatchAwareness {
-				c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)
-			} else {
+		if !c.h.prof.BatchAwareness {
+			if es, err := parseAwarenessUpdate(b[1:]); err == nil && isFarewell(es) {
+				c.parsedAwareness.Add(1)
+				if c.clientID.Load() == 0 && len(es) > 0 {
+					c.clientID.Store(es[0].clientID)
+				}
 				c.h.broadcast(c.ctx, c.doc, c, b)
+				return true
 			}
-			return true
+		} else if es, ok := c.parseAwareness(b); ok {
+			// Canvas: only the socket's own farewell, and only a few per FarewellWindow, goes at once;
+			// anything else takes the ordinary way below, with the entries already parsed.
+			entries = es
+			if isFarewell(es) && c.ownOnly(es) && c.farewells.take() {
+				c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)
+				return true
+			}
 		}
 	}
 
@@ -821,37 +831,63 @@ func (c *conn) onAwareness(b []byte) bool {
 	switch {
 	case c.awPending != nil:
 		c.h.m.dropAwareness.Inc()
-		c.awPending = b
+		c.awPending, c.awPendEnt = b, entries
 		c.awMu.Unlock()
 	case c.awareness.take():
 		c.awMu.Unlock()
-		c.forwardAwareness(b)
+		c.forwardAwareness(b, entries, false)
 	case !c.h.prof.CoalesceAwareness: // over the budget: dropped, as the Wiki's relay did
 		c.h.m.dropAwareness.Inc()
 		c.awMu.Unlock()
 	default:
-		c.awPending = b
+		c.awPending, c.awPendEnt = b, entries
 		c.awTimer = time.AfterFunc(c.awareness.wait(), c.flushAwareness)
 		c.awMu.Unlock()
 	}
 	return true
 }
 
-func (c *conn) forwardAwareness(b []byte) {
-	if !c.h.prof.BatchAwareness {
-		c.h.broadcast(c.ctx, c.doc, c, b)
-		return
-	}
+// parseAwareness parses a frame once (Canvas profile) and remembers the socket's clientID from
+// its first frame; ok is false for a malformed or empty one.
+func (c *conn) parseAwareness(b []byte) ([]awarenessEntry, bool) {
 	entries, err := parseAwarenessUpdate(b[1:])
 	if err != nil || len(entries) == 0 {
-		c.h.broadcast(c.ctx, c.doc, c, b)
-		return
+		return nil, false
 	}
 	c.parsedAwareness.Add(1)
 	if c.clientID.Load() == 0 {
 		c.clientID.Store(entries[0].clientID)
 	}
-	if isFarewell(entries) {
+	return entries, true
+}
+
+// ownOnly reports whether every entry belongs to the socket's own clientID.
+func (c *conn) ownOnly(entries []awarenessEntry) bool {
+	cid := c.clientID.Load()
+	for _, e := range entries {
+		if e.clientID != cid {
+			return false
+		}
+	}
+	return cid != 0
+}
+
+// forwardAwareness relays a frame that passed the budget; entries are its parsed form (nil: not
+// parsed yet). With Profile.BatchAwareness it joins the window batch; only final (the closing
+// socket's last frame, endAwareness) sends a farewell at once.
+func (c *conn) forwardAwareness(b []byte, entries []awarenessEntry, final bool) {
+	if !c.h.prof.BatchAwareness {
+		c.h.broadcast(c.ctx, c.doc, c, b)
+		return
+	}
+	if entries == nil {
+		var ok bool
+		if entries, ok = c.parseAwareness(b); !ok {
+			c.h.broadcast(c.ctx, c.doc, c, b)
+			return
+		}
+	}
+	if final && isFarewell(entries) {
 		c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)
 		return
 	}
@@ -866,7 +902,7 @@ func (c *conn) flushAwareness() {
 		return // nothing, or the socket is ending: endAwareness sends it
 	}
 	if !c.write.Load() { // read-only since
-		c.awPending = nil
+		c.awPending, c.awPendEnt = nil, nil
 		c.awMu.Unlock()
 		return
 	}
@@ -875,10 +911,10 @@ func (c *conn) flushAwareness() {
 		c.awMu.Unlock()
 		return
 	}
-	f := c.awPending
-	c.awPending = nil
+	f, ent := c.awPending, c.awPendEnt
+	c.awPending, c.awPendEnt = nil, nil
 	c.awMu.Unlock()
-	c.forwardAwareness(f)
+	c.forwardAwareness(f, ent, false)
 }
 
 // endAwareness sends the waiting awareness frame of a socket that is ending, over the budget: it
@@ -889,11 +925,11 @@ func (c *conn) endAwareness() {
 	if c.awTimer != nil {
 		c.awTimer.Stop()
 	}
-	f := c.awPending
-	c.awPending = nil
+	f, ent := c.awPending, c.awPendEnt
+	c.awPending, c.awPendEnt = nil, nil
 	c.awMu.Unlock()
 	if f != nil && c.write.Load() {
-		c.forwardAwareness(f)
+		c.forwardAwareness(f, ent, true)
 	}
 }
 
