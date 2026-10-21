@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Vote } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
-import { Button, IconButton, cx } from '../../../components/ui';
+import { ALT, Button, IconButton, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import { VOTE_DEFAULT, VOTE_MAX, VOTE_MIN, clampVotes } from '../../../lib/canvas/votes';
 import type { CanvasEngine } from '../engine';
@@ -19,7 +19,9 @@ export const VoteButton = memo(function VoteButton({ engine, focusCanvas }: { en
   const phase = useEngineValue(engine, (s) => s.votePhase);
   const per = useEngineValue(engine, (s) => s.votesPer);
   const [open, setOpen] = useState(false);
-  const [count, setCount] = useState(VOTE_DEFAULT);
+  // A draft string, clamped on blur and on start, so the field can be cleared to type a new number.
+  const [count, setCount] = useState(String(VOTE_DEFAULT));
+  const votes = (): number => clampVotes(Number.parseInt(count, 10));
   const act = (fn: () => unknown): void => {
     fn();
     setOpen(false);
@@ -46,7 +48,7 @@ export const VoteButton = memo(function VoteButton({ engine, focusCanvas }: { en
         >
           <h2 className="text-title text-fg">{t('canvasBoard.vote.title')}</h2>
           <p className="text-caption text-muted">
-            {phase === 'none' ? t('canvasBoard.vote.hintNone') : phase === 'open' ? t('canvasBoard.vote.hintOpen') : t('canvasBoard.vote.hintClosed')}
+            {phase === 'none' ? t('canvasBoard.vote.hintNone') : phase === 'open' ? t('canvasBoard.vote.hintOpen', { alt: ALT }) : t('canvasBoard.vote.hintClosed')}
           </p>
           {phase !== 'open' ? (
             <label className="flex items-center justify-between gap-3 text-body text-fg">
@@ -57,13 +59,14 @@ export const VoteButton = memo(function VoteButton({ engine, focusCanvas }: { en
                 max={VOTE_MAX}
                 step={1}
                 value={count}
-                onChange={(e) => setCount(clampVotes(e.target.valueAsNumber))}
+                onChange={(e) => setCount(e.target.value)}
+                onBlur={() => setCount(String(votes()))}
                 className="selectable h-7 w-16 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-center text-body tabular-nums text-fg"
                 data-testid="canvas-vote-count"
               />
             </label>
           ) : (
-            <p className="text-body tabular-nums text-fg">{t('canvasBoard.vote.perPerson')}: {per}</p>
+            <p className="text-body tabular-nums text-fg">{t('canvasBoard.vote.perPersonValue', { n: per })}</p>
           )}
           <div className="flex items-center justify-end gap-2">
             {phase !== 'none' ? (
@@ -76,7 +79,7 @@ export const VoteButton = memo(function VoteButton({ engine, focusCanvas }: { en
                 {t('canvasBoard.vote.finish')}
               </Button>
             ) : (
-              <Button onClick={() => act(() => engine.startVote(count))} data-testid="canvas-vote-start">
+              <Button onClick={() => act(() => engine.startVote(votes()))} data-testid="canvas-vote-start">
                 {phase === 'none' ? t('canvasBoard.vote.start') : t('canvasBoard.vote.startNew')}
               </Button>
             )}
@@ -96,7 +99,7 @@ export const VoteChip = memo(function VoteChip({ engine }: { engine: CanvasEngin
   const per = useEngineValue(engine, (s) => s.votesPer);
   if (phase !== 'open') return null;
   return (
-    <div role="status" className={cx(PANEL, 'flex items-center gap-2 rounded-full px-3 py-1.5 text-control tabular-nums text-fg')} data-testid="canvas-vote-chip">
+    <div className={cx(PANEL, 'flex items-center gap-2 rounded-full px-3 py-1.5 text-control tabular-nums text-fg')} data-testid="canvas-vote-chip">
       <Vote className="size-4 text-muted" aria-hidden />
       <span>{can ? t('canvasBoard.vote.left', { left, per }) : t('canvasBoard.vote.watching')}</span>
     </div>

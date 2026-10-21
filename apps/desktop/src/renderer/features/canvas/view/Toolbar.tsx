@@ -1,7 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, MessageSquarePlus, MousePointer2, Redo2, Spline, StickyNote, Type, Undo2, Waypoints } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { IconButton, Tip, cx } from '../../../components/ui';
+import { ALT, IconButton, MOD, Tip, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import type { CanvasEngine, Tool } from '../engine';
@@ -78,7 +78,7 @@ function ToolButton({
     <div className="relative">
       <IconButton
         label={label}
-        shortcut={def.key}
+        shortcut={def.alt ? `${ALT}${def.key}` : def.key}
         active={active}
         className={cx(active && ACTIVE_TOOL)}
         onMouseDown={keepFocus}
@@ -107,7 +107,7 @@ function FlyoutTrigger({ label, children }: { label: string; children: ReactNode
             type="button"
             aria-label={label}
             onMouseDown={keepFocus}
-            className="absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full text-muted hover:text-fg"
+            className="absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full text-muted before:absolute before:-inset-1 before:content-[''] hover:text-fg"
           >
             <ChevronDown className="size-3" strokeWidth={2} aria-hidden />
           </button>
@@ -143,8 +143,8 @@ export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { e
 
   return (
     <div
-      role="toolbar"
-      aria-orientation="vertical"
+      // A group, not role=toolbar: every button is in the Tab order, there is no arrow-key roving.
+      role="group"
       aria-label={t('canvasBoard.toolbar')}
       data-testid="canvas-toolbar"
       className={cx(PANEL, 'absolute left-3 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-0.5')}
@@ -237,11 +237,11 @@ export const HistoryBar = memo(function HistoryBar({ engine, focusCanvas }: { en
   const canRedo = useEngineValue(engine, (s) => s.canRedo);
   return (
     <div className={cx(PANEL, 'absolute bottom-3 left-3 z-10 flex items-center gap-0.5')} data-testid="canvas-history">
-      <IconButton label={t('canvasBoard.undo')} shortcut="⌘Z" disabled={!canUndo} onMouseDown={keepFocus} onClick={() => { engine.undo(); focusCanvas(); }} data-testid="canvas-undo">
+      <IconButton label={t('canvasBoard.undo')} shortcut={`${MOD}Z`} disabled={!canUndo} onMouseDown={keepFocus} onClick={() => { engine.undo(); focusCanvas(); }} data-testid="canvas-undo">
         <Undo2 className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
       <div className={DIVIDER} aria-hidden />
-      <IconButton label={t('canvasBoard.redo')} shortcut="⇧⌘Z" disabled={!canRedo} onMouseDown={keepFocus} onClick={() => { engine.redo(); focusCanvas(); }} data-testid="canvas-redo">
+      <IconButton label={t('canvasBoard.redo')} shortcut={`⇧${MOD}Z`} disabled={!canRedo} onMouseDown={keepFocus} onClick={() => { engine.redo(); focusCanvas(); }} data-testid="canvas-redo">
         <Redo2 className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
     </div>

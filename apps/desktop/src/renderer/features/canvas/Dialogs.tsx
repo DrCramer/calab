@@ -3,7 +3,7 @@ import { CanvasItemKind, CANVAS_BITS, type CanvasVersion } from '@calaba/protoco
 import { ChevronRight, Folder } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, Modal, Segmented, Spinner, cx } from '../../components/ui';
+import { Button, MOD, Modal, Segmented, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { canvasDocHandle } from '../../lib/canvas/docHandle';
@@ -303,7 +303,7 @@ function VersionDetails({ workspaceId, v, writable }: { workspaceId: string; v: 
         </section>
       ) : null}
       <p className="text-caption text-muted">{t('canvas.versions.size', { size: fmt.size(v.size) })}</p>
-      <p className="text-caption text-muted">{writable ? t('canvas.versions.hint') : t('canvas.versions.noWrite')}</p>
+      <p className="text-caption text-muted">{writable ? t('canvas.versions.hint', { mod: MOD }) : t('canvas.versions.noWrite')}</p>
     </div>
   );
 }

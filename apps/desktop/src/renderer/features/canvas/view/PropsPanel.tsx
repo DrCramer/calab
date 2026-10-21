@@ -139,7 +139,7 @@ function SwatchGrid({
                 onMouseEnter={() => setHot(tok)}
                 onFocus={() => setHot(tok)}
                 className={cx(
-                  'grid size-8 place-items-center rounded-[var(--radius-icon)] outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]',
+                  'grid size-8 place-items-center rounded-[var(--radius-icon)] hover:bg-hover',
                   selected && 'bg-active',
                 )}
               >
@@ -520,13 +520,13 @@ export const PropsPanel = memo(function PropsPanel({
         {m.locked ? <Lock className={ICON} strokeWidth={1.75} aria-hidden /> : <LockOpen className={ICON} strokeWidth={1.75} aria-hidden />}
       </IconButton>
       <div className={DIVIDER} aria-hidden />
-      <IconButton label={t('canvasBoard.props.front')} shortcut="⇧⌘]" size="sm" onMouseDown={keepFocus} onClick={run(() => engine.reorder(1, true))} data-testid="canvas-prop-front">
+      <IconButton label={t('canvasBoard.props.front')} shortcut={`⇧${MOD}]`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.reorder(1, true))} data-testid="canvas-prop-front">
         <BringToFront className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
-      <IconButton label={t('canvasBoard.props.back')} shortcut="⇧⌘[" size="sm" onMouseDown={keepFocus} onClick={run(() => engine.reorder(-1, true))} data-testid="canvas-prop-back">
+      <IconButton label={t('canvasBoard.props.back')} shortcut={`⇧${MOD}[`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.reorder(-1, true))} data-testid="canvas-prop-back">
         <SendToBack className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
-      <IconButton label={t('canvasBoard.props.duplicate')} shortcut="⌘D" size="sm" onMouseDown={keepFocus} onClick={run(() => engine.duplicateSelection())} data-testid="canvas-prop-duplicate">
+      <IconButton label={t('canvasBoard.props.duplicate')} shortcut={`${MOD}D`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.duplicateSelection())} data-testid="canvas-prop-duplicate">
         <CopyPlus className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
       {m.locked ? null : (
