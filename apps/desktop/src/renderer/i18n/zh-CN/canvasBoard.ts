@@ -158,7 +158,7 @@ export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.help.comment': '评论 ⌥C — 点击对象或画布放置评论',
   'canvasBoard.status.connecting': '正在连接…',
   'canvasBoard.status.offline': '正在重新连接…',
-  'canvasBoard.status.offlineHint': '更改会保留，连接后自动发送',
+  'canvasBoard.status.offlineHint': '连接后将发送更改，请勿关闭画布',
   'canvasBoard.status.viewOnly': '仅查看',
   'canvasBoard.status.viewOnlyHint': '你只能查看此画布',
   'canvasBoard.status.newerSchema': '仅查看：此画布由更新版本的 Calab 创建',

@@ -14,7 +14,7 @@ import { IconButton, Toggle, cx } from '../../../../components/ui';
 import { t, useLocale } from '../../../../i18n';
 import { bodyParts, mayChange, pinWorld, type CommentRights } from '../../../../lib/canvas/comments';
 import { fmt } from '../../../../lib/format';
-import { createThread, deleteComment, editComment, replyTo, resolveThread } from '../../../../services/canvasComments';
+import { createThread, loadComments, deleteComment, editComment, replyTo, resolveThread } from '../../../../services/canvasComments';
 import { useCanvasComments } from '../../../../stores/canvasComments';
 import { myUserId } from '../../../../stores/session';
 import { memberName, useWorkspaces } from '../../../../stores/workspaces';
@@ -205,6 +205,7 @@ export const CommentsPanel = memo(function CommentsPanel({
   const open = useCanvasComments((s) => s.panel);
   const filterOpen = useCanvasComments((s) => s.filterOpen);
   const loaded = useCanvasComments((s) => !!s.loaded[canvasId]);
+  const failed = useCanvasComments((s) => !!s.failed[canvasId]);
   const ids = useCanvasComments(useShallow((s) => (s.threads[canvasId] ?? EMPTY).filter((id) => !s.filterOpen || !s.byId[id]?.resolved)));
   const ctx = useMemo<Ctx>(() => ({ canvasId, workspaceId, rights, engine }), [canvasId, workspaceId, rights, engine]);
   if (!open) return null;
@@ -239,7 +240,12 @@ export const CommentsPanel = memo(function CommentsPanel({
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {ids.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">
-            {!loaded ? t('canvasComments.loading') : rights.write ? t('canvasComments.emptyWrite') : t('canvasComments.empty')}
+            {!loaded ? (failed ? t('canvasComments.loadFailed') : t('canvasComments.loading')) : rights.write ? t('canvasComments.emptyWrite') : t('canvasComments.empty')}
+            {!loaded && failed ? (
+              <button type="button" className="ml-2 text-accent underline" onClick={() => void loadComments(canvasId)} data-testid="canvas-comments-retry">
+                {t('canvasComments.retry')}
+              </button>
+            ) : null}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

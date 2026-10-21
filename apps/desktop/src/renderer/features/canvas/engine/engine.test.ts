@@ -884,6 +884,14 @@ describe('state for React: primitives only', () => {
     r.engine.updateSelected({ color: 'pink' });
     expect(objs(r).snapshot(a ?? '')?.color).toBe('pink');
   });
+  it('updateSelected with kinds patches only those kinds', () => {
+    const r = rig();
+    const [a, t] = r.make(sticky(0, 0), { init: { kind: 'text' as const, x: 400, y: 0, text: 'x' } });
+    r.engine.setSelection([a ?? '', t ?? '']);
+    r.engine.updateSelected({ color: 'pink' }, ['sticky']);
+    expect(objs(r).snapshot(a ?? '')?.color).toBe('pink');
+    expect(objs(r).snapshot(t ?? '')?.color).not.toBe('pink');
+  });
   it('drops deleted objects from the selection', () => {
     const r = rig();
     const [a, b] = r.make(sticky(0, 0), sticky(400, 0));

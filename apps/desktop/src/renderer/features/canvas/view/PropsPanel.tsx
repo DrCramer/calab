@@ -11,7 +11,7 @@ import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import { FontSizeField } from './FontSizeField';
 import { ShapeIcon } from './ShapeIcon';
-import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
+import type { Arrow, ObjectKind, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { ROTATE_OFFSET_PX } from '../engine/overlay';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
@@ -430,8 +430,8 @@ export const PropsPanel = memo(function PropsPanel({
   }, [engine, place]);
 
   if (!m) return null;
-  const patch = (p: ObjectPatch): void => {
-    engine.updateSelected(p);
+  const patch = (p: ObjectPatch, kinds?: readonly ObjectKind[]): void => {
+    engine.updateSelected(p, kinds);
   };
   const run = (fn: () => void) => (): void => {
     fn();
@@ -449,11 +449,11 @@ export const PropsPanel = memo(function PropsPanel({
     >
       {m.locked ? <Lock className="mx-1 size-4 shrink-0 text-muted" strokeWidth={1.75} role="img" aria-label={t('canvasBoard.props.locked')} data-testid="canvas-prop-locked-badge" /> : null}
       {!m.locked && m.hasSticky ? (
-        <SwatchMenu label={t('canvasBoard.props.color')} kind="sticky" tokens={STICKY_COLORS} value={m.stickyColor} palette={palette} onPick={(c) => patch({ color: c })} focusCanvas={focusCanvas} testId="canvas-prop-sticky-color" />
+        <SwatchMenu label={t('canvasBoard.props.color')} kind="sticky" tokens={STICKY_COLORS} value={m.stickyColor} palette={palette} onPick={(c) => patch({ color: c }, ['sticky'])} focusCanvas={focusCanvas} testId="canvas-prop-sticky-color" />
       ) : null}
       {!m.locked && m.hasText ? (
         <>
-          <SwatchMenu label={t('canvasBoard.props.color')} kind="ink" tokens={INK_COLORS} value={m.textColor} palette={palette} onPick={(c) => patch({ color: c })} focusCanvas={focusCanvas} testId="canvas-prop-text-color" />
+          <SwatchMenu label={t('canvasBoard.props.color')} kind="ink" tokens={INK_COLORS} value={m.textColor} palette={palette} onPick={(c) => patch({ color: c }, ['text'])} focusCanvas={focusCanvas} testId="canvas-prop-text-color" />
         </>
       ) : null}
       {!m.locked && (m.hasText || m.hasSticky || m.hasShape) ? (

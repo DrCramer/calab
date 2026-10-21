@@ -158,7 +158,7 @@ export const ruCanvasBoard = {
   'canvasBoard.help.comment': 'Комментарий ⌥C — клик по объекту или полю ставит метку и открывает ввод',
   'canvasBoard.status.connecting': 'Подключение…',
   'canvasBoard.status.offline': 'Переподключение…',
-  'canvasBoard.status.offlineHint': 'Правки сохранятся и отправятся после подключения',
+  'canvasBoard.status.offlineHint': 'Правки отправятся после подключения — не закрывайте холст',
   'canvasBoard.status.viewOnly': 'Только просмотр',
   'canvasBoard.status.viewOnlyHint': 'Вам доступен только просмотр этого холста',
   'canvasBoard.status.newerSchema': 'Только просмотр: холст создан в более новой версии Calab',

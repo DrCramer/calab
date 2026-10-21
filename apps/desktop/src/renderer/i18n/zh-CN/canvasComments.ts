@@ -8,6 +8,8 @@ export const zhCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.toggleCount': { other: '评论：{n} 个未解决' },
   'canvasComments.onlyOpen': '仅未解决',
   'canvasComments.loading': '加载中…',
+  'canvasComments.loadFailed': '无法加载评论',
+  'canvasComments.retry': '重试',
   'canvasComments.empty': '暂无评论',
   'canvasComments.emptyWrite': '暂无评论。选择“评论”(⌥C)，然后点击对象或画布。',
   'canvasComments.newPlaceholder': '新评论 — 输入 @ 提及',

@@ -158,7 +158,7 @@ export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.help.comment': 'Comentario ⌥C — haz clic en un objeto o en el lienzo para fijar un comentario',
   'canvasBoard.status.connecting': 'Conectando…',
   'canvasBoard.status.offline': 'Reconectando…',
-  'canvasBoard.status.offlineHint': 'Tus cambios se guardan y se enviarán al conectar',
+  'canvasBoard.status.offlineHint': 'Los cambios se enviarán al conectar: no cierres el lienzo',
   'canvasBoard.status.viewOnly': 'Solo lectura',
   'canvasBoard.status.viewOnlyHint': 'Solo puedes ver este lienzo',
   'canvasBoard.status.newerSchema': 'Solo lectura: este lienzo se creó en una versión más reciente de Calab',

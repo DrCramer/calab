@@ -6,7 +6,7 @@ import { memo, useMemo, useState, useSyncExternalStore, type ReactNode } from 'r
 import { cx } from '../../../components/ui';
 import { plural, t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
-import type { Arrow, ObjectPatch, RouteKind } from '../../../lib/canvas/types';
+import type { Arrow, ObjectKind, ObjectPatch, RouteKind } from '../../../lib/canvas/types';
 import { readableInk, type CanvasEngine, type CanvasPalette } from '../engine';
 import { keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
@@ -66,7 +66,7 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
   if (m === null && panel !== null) setPanel(null);
   if (!m && !multi) return null;
 
-  const patch = (p: ObjectPatch): void => engine.updateSelected(p);
+  const patch = (p: ObjectPatch, kinds?: readonly ObjectKind[]): void => engine.updateSelected(p, kinds);
   const run = (fn: () => unknown) => (): void => {
     fn();
     focusCanvas();
@@ -80,7 +80,7 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
 
   return (
     <div className={cx(SHEET, 'flex flex-col')} role="toolbar" aria-label={t('canvasBoard.props.label')} data-testid="canvas-phone-props">
-      {m && panel ? <PanelGrid id={panel} m={m} palette={palette} engine={engine} onPatch={(p) => { patch(p); setPanel(null); }} onDone={() => setPanel(null)} pickColor={pickColor} /> : null}
+      {m && panel ? <PanelGrid id={panel} m={m} palette={palette} engine={engine} onPatch={(p) => { patch(p, panel === 'sticky' ? ['sticky'] : panel === 'ink' ? ['text'] : undefined); setPanel(null); }} onDone={() => setPanel(null)} pickColor={pickColor} /> : null}
       <div className="flex items-center gap-0.5 overflow-x-auto px-1 py-1" data-testid="canvas-phone-props-row">
         {m ? (
           <span className="shrink-0 px-2 text-control tabular-nums text-muted" data-testid="canvas-phone-count">
@@ -187,7 +187,7 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
             title={t('canvasBoard.props.delete')}
             onMouseDown={keepFocus}
             onClick={run(() => engine.deleteSelection())}
-            className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] text-danger-text outline-none active:bg-active"
+            className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] text-danger-text active:bg-active"
             data-testid="canvas-prop-delete"
           >
             <Trash2 className={ICON} strokeWidth={1.75} aria-hidden />
@@ -277,7 +277,7 @@ function PanelGrid({
             aria-label={colorLabel(tok)}
             onMouseDown={keepFocus}
             onClick={pickColor({ [def.field]: tok })}
-            className={cx('grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] outline-none active:bg-active', selected && 'bg-active')}
+            className={cx('grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] active:bg-active', selected && 'bg-active')}
             data-testid={`canvas-phone-color-${tok}`}
           >
             <span className="relative grid place-items-center">

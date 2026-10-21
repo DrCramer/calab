@@ -58,6 +58,7 @@ const inflight = new Map<string, Promise<void>>();
 export function loadComments(canvasId: string): Promise<void> {
   const running = inflight.get(canvasId);
   if (running) return running;
+  useCanvasComments.getState().setFailed(canvasId, false);
   const p = (async () => {
     const all: CanvasComment[] = [];
     let cursor: string | undefined;
@@ -69,7 +70,7 @@ export function loadComments(canvasId: string): Promise<void> {
     }
     useCanvasComments.getState().setCanvas(canvasId, all);
   })()
-    .catch(() => undefined) // the panel shows what it has; the next open asks again
+    .catch(() => useCanvasComments.getState().setFailed(canvasId, true)) // the panel offers a retry
     .finally(() => inflight.delete(canvasId));
   inflight.set(canvasId, p);
   return p;

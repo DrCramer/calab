@@ -334,7 +334,7 @@ function CanvasScreenView({ workspaceId, itemId }: { workspaceId: string; itemId
             </div>
           }
         >
-          <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} phone phoneEdit={on} onOpenHistory={noop} onShare={noop} />
+          <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} phone phoneEdit={on} onOpenHistory={noop} onShare={noop} onFatal={() => void loadItem(workspaceId, itemId)} />
         </Suspense>
       </div>
     </section>

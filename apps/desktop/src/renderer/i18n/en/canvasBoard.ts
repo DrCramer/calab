@@ -158,7 +158,7 @@ export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.help.comment': 'Comment ⌥C — click an object or the field to pin a comment',
   'canvasBoard.status.connecting': 'Connecting…',
   'canvasBoard.status.offline': 'Reconnecting…',
-  'canvasBoard.status.offlineHint': 'Your changes are kept and will be sent once connected',
+  'canvasBoard.status.offlineHint': 'Your changes will be sent once connected — keep the canvas open',
   'canvasBoard.status.viewOnly': 'View only',
   'canvasBoard.status.viewOnlyHint': 'You can only view this canvas',
   'canvasBoard.status.newerSchema': 'View only: this canvas was made in a newer version of Calab',

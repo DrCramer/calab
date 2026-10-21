@@ -7,6 +7,8 @@ export const ruCanvasComments = {
   'canvasComments.toggleCount': { one: 'Комментарии: {n} открытая ветка', few: 'Комментарии: {n} открытые ветки', many: 'Комментарии: {n} открытых веток', other: 'Комментарии: {n} открытой ветки' },
   'canvasComments.onlyOpen': 'Только открытые',
   'canvasComments.loading': 'Загрузка…',
+  'canvasComments.loadFailed': 'Не удалось загрузить комментарии',
+  'canvasComments.retry': 'Повторить',
   'canvasComments.empty': 'Комментариев нет',
   'canvasComments.emptyWrite': 'Комментариев нет. Выберите «Комментарий» (⌥C) и щёлкните по объекту или полю.',
   'canvasComments.newPlaceholder': 'Новый комментарий — @ упомянуть',
