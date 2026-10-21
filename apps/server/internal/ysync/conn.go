@@ -56,6 +56,7 @@ type conn struct {
 	awAccumMu          sync.Mutex
 	awAccum            map[uint64]awarenessEntry
 	testPauseAwareness atomic.Bool
+	parsedAwareness    atomic.Uint64
 
 	// The writer's position: the highest seq the client has (snapshot or update); -1 = nothing
 	// sent yet. Writer goroutine only.
@@ -796,55 +797,85 @@ func (c *conn) onAwareness(b []byte) bool {
 	if !c.write.Load() || len(b) > 1+MaxUpdate {
 		return true
 	}
-	if c.h.prof.BatchAwareness {
-		if entries, err := parseAwarenessUpdate(b[1:]); err == nil && len(entries) > 0 {
-			if c.clientID.Load() == 0 {
+
+	// Farewell frames (state null) bypass budget so peers immediately learn the client left.
+	if bytes.Contains(b[1:], []byte("null")) {
+		if entries, err := parseAwarenessUpdate(b[1:]); err == nil && isFarewell(entries) {
+			c.parsedAwareness.Add(1)
+			if c.clientID.Load() == 0 && len(entries) > 0 {
 				c.clientID.Store(entries[0].clientID)
 			}
-			if isFarewell(entries) {
+			if c.h.prof.BatchAwareness {
 				c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)
-				return true
+			} else {
+				c.h.broadcast(c.ctx, c.doc, c, b)
 			}
-			c.h.enqueueAwareness(c.doc, entries)
 			return true
 		}
 	}
 
 	c.awMu.Lock()
-	defer c.awMu.Unlock()
 	switch {
 	case c.awPending != nil:
 		c.h.m.dropAwareness.Inc()
 		c.awPending = b
+		c.awMu.Unlock()
 	case c.awareness.take():
-		c.h.broadcast(c.ctx, c.doc, c, b)
+		c.awMu.Unlock()
+		c.forwardAwareness(b)
 	case !c.h.prof.CoalesceAwareness: // over the budget: dropped, as the Wiki's relay did
 		c.h.m.dropAwareness.Inc()
+		c.awMu.Unlock()
 	default:
 		c.awPending = b
 		c.awTimer = time.AfterFunc(c.awareness.wait(), c.flushAwareness)
+		c.awMu.Unlock()
 	}
 	return true
+}
+
+func (c *conn) forwardAwareness(b []byte) {
+	if !c.h.prof.BatchAwareness {
+		c.h.broadcast(c.ctx, c.doc, c, b)
+		return
+	}
+	entries, err := parseAwarenessUpdate(b[1:])
+	if err != nil || len(entries) == 0 {
+		c.h.broadcast(c.ctx, c.doc, c, b)
+		return
+	}
+	c.parsedAwareness.Add(1)
+	if c.clientID.Load() == 0 {
+		c.clientID.Store(entries[0].clientID)
+	}
+	if isFarewell(entries) {
+		c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)
+		return
+	}
+	c.h.enqueueAwareness(c.doc, entries)
 }
 
 // flushAwareness sends the waiting awareness frame when its token is there (awTimer).
 func (c *conn) flushAwareness() {
 	c.awMu.Lock()
-	defer c.awMu.Unlock()
 	if c.awPending == nil || c.ctx.Err() != nil {
+		c.awMu.Unlock()
 		return // nothing, or the socket is ending: endAwareness sends it
 	}
 	if !c.write.Load() { // read-only since
 		c.awPending = nil
+		c.awMu.Unlock()
 		return
 	}
 	if !c.awareness.take() { // early by a rounding: wait again
 		c.awTimer = time.AfterFunc(c.awareness.wait(), c.flushAwareness)
+		c.awMu.Unlock()
 		return
 	}
 	f := c.awPending
 	c.awPending = nil
-	c.h.broadcast(c.ctx, c.doc, c, f)
+	c.awMu.Unlock()
+	c.forwardAwareness(f)
 }
 
 // endAwareness sends the waiting awareness frame of a socket that is ending, over the budget: it
@@ -852,18 +883,14 @@ func (c *conn) flushAwareness() {
 // ghost cursor until their timeout without it.
 func (c *conn) endAwareness() {
 	c.awMu.Lock()
-	defer c.awMu.Unlock()
 	if c.awTimer != nil {
 		c.awTimer.Stop()
 	}
 	f := c.awPending
 	c.awPending = nil
+	c.awMu.Unlock()
 	if f != nil && c.write.Load() {
-		if c.h.prof.BatchAwareness {
-			c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, f)
-		} else {
-			c.h.broadcast(c.ctx, c.doc, c, f)
-		}
+		c.forwardAwareness(f)
 	}
 }
 

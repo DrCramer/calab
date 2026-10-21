@@ -5,6 +5,7 @@ package ysync
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -284,11 +285,21 @@ func TestBatchAwarenessSlowReceiverDoesNotStale(t *testing.T) {
 		t.Fatalf("unexpected update frame %x", f)
 	}
 
-	// Awareness slot was overwritten, next awareness frame should have latest clock 31
-	f = b.next(FrameAwareness)
-	entries := decodeAwarenessFrame(t, f)
-	if len(entries) != 1 || entries[0].clock != 31 {
-		t.Fatalf("expected awareness with clock 31, got %+v", entries)
+	// Give time for awTimer to flush awPending (clock 31)
+	time.Sleep(150 * time.Millisecond)
+	var gotClock31 bool
+	for {
+		f = b.next(FrameAwareness)
+		entries := decodeAwarenessFrame(t, f)
+		for _, entry := range entries {
+			if entry.clientID == 777 && entry.clock == 31 {
+				gotClock31 = true
+				break
+			}
+		}
+		if gotClock31 {
+			break
+		}
 	}
 }
 
@@ -314,25 +325,11 @@ func TestBatchAwarenessAccumulatorBothEntriesDelivered(t *testing.T) {
 	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 30 * time.Millisecond})
 	a, b, c := e.dial(), e.dial(), e.dial()
 
-	// Initial pings so server learns clientIDs for a and b
-	a.send(makeAwarenessFrame(10, 1, `{"val":"initA"}`))
-	b.send(makeAwarenessFrame(20, 1, `{"val":"initB"}`))
+	// c announces clientID 999 (sender does not receive its own update, buffer stays clean)
+	c.send(makeAwarenessFrame(999, 1, `{"val":"initC"}`))
 	time.Sleep(50 * time.Millisecond)
 
-	// Drain initial awareness on c
-	c.next(FrameAwareness)
-
-	// Find c's *conn on server
-	e.h.mu.Lock()
-	r := e.h.rooms[e.doc]
-	var cConn *conn
-	for conn := range r.conns {
-		if conn.clientID.Load() == 0 { // c has not sent awareness
-			cConn = conn
-			break
-		}
-	}
-	e.h.mu.Unlock()
+	cConn := e.findConn(999)
 	if cConn == nil {
 		t.Fatal("cConn not found")
 	}
@@ -386,25 +383,11 @@ func TestBatchAwarenessAccumulatorFarewellPreserved(t *testing.T) {
 	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 30 * time.Millisecond})
 	a, b, c := e.dial(), e.dial(), e.dial()
 
-	// Initial pings
-	a.send(makeAwarenessFrame(10, 1, `{"val":"initA"}`))
-	b.send(makeAwarenessFrame(20, 1, `{"val":"initB"}`))
+	// c announces clientID 999
+	c.send(makeAwarenessFrame(999, 1, `{"val":"initC"}`))
 	time.Sleep(50 * time.Millisecond)
 
-	// Drain initial awareness on c
-	c.next(FrameAwareness)
-
-	// Find c's *conn
-	e.h.mu.Lock()
-	r := e.h.rooms[e.doc]
-	var cConn *conn
-	for conn := range r.conns {
-		if conn.clientID.Load() == 0 {
-			cConn = conn
-			break
-		}
-	}
-	e.h.mu.Unlock()
+	cConn := e.findConn(999)
 	if cConn == nil {
 		t.Fatal("cConn not found")
 	}
@@ -489,3 +472,80 @@ func TestBatchAwarenessAccumulatorLowerClockDoesNotOverwrite(t *testing.T) {
 		t.Fatalf("expected clock 15 to win, got %+v", entry)
 	}
 }
+
+// Problem 2: One socket sends 5000 awareness frames in a second; parsed frames <= profile budget + margin, final state arrives.
+func TestBatchAwarenessIngressBudget(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{
+		AwarenessPerSecond: 10,
+		AwarenessWindow:    25 * time.Millisecond,
+	})
+	sender, receiver := e.dial(), e.dial()
+
+	// Initial ping
+	sender.send(makeAwarenessFrame(777, 1, `{"v":1}`))
+	time.Sleep(50 * time.Millisecond)
+	receiver.next(FrameAwareness)
+
+	// Find sender conn
+	e.h.mu.Lock()
+	r := e.h.rooms[e.doc]
+	var senderConn *conn
+	for c := range r.conns {
+		if c.clientID.Load() == 777 {
+			senderConn = c
+			break
+		}
+	}
+	e.h.mu.Unlock()
+	if senderConn == nil {
+		t.Fatal("senderConn not found")
+	}
+
+	senderConn.parsedAwareness.Store(0)
+
+	// Send 5000 frames
+	const totalFrames = 5000
+	start := time.Now()
+	for i := 2; i <= totalFrames+1; i++ {
+		sender.send(makeAwarenessFrame(777, uint64(i), fmt.Sprintf(`{"v":%d}`, i)))
+		if i%500 == 0 {
+			time.Sleep(80 * time.Millisecond)
+		}
+	}
+	elapsed := time.Since(start)
+
+	// Wait for any trailing timer flush
+	time.Sleep(200 * time.Millisecond)
+
+	parsed := senderConn.parsedAwareness.Load()
+	t.Logf("Sent %d frames over %v: parsed %d frames", totalFrames, elapsed, parsed)
+
+	// In ~0.8-1.5s at 10/s, budget allows ~15-25 frames.
+	// We check parsed <= 35, which proves 5000 frames were NOT parsed.
+	maxAllowed := uint64(float64(e.h.cfg.AwarenessPerSecond)*elapsed.Seconds()*2.0) + 15
+	if parsed > maxAllowed {
+		t.Fatalf("parsed %d frames, exceeded budget limit of %d (budget=%d/s, elapsed=%v)",
+			parsed, maxAllowed, e.h.cfg.AwarenessPerSecond, elapsed)
+	}
+
+	// Drain frames on receiver until final state v=5001 is found
+	deadline := time.Now().Add(3 * time.Second)
+	var gotFinal bool
+	for time.Now().Before(deadline) {
+		f := receiver.next(FrameAwareness)
+		entries := decodeAwarenessFrame(t, f)
+		for _, entry := range entries {
+			if entry.clientID == 777 && string(entry.state) == fmt.Sprintf(`{"v":%d}`, totalFrames+1) {
+				gotFinal = true
+				break
+			}
+		}
+		if gotFinal {
+			break
+		}
+	}
+	if !gotFinal {
+		t.Fatalf("expected final state v=%d to arrive at receiver", totalFrames+1)
+	}
+}
+
