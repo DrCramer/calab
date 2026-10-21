@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
@@ -273,4 +274,40 @@ func TestOnBehalfOfMember(t *testing.T) {
 	carol.must(200, "POST", "/api/invites/"+invite(t, o, ws2)+"/join", nil, &j)
 	wantReason(t, oc, oc.do("GET", "/api/workspaces/"+ws2+"/rooms", nil, nil), 403, "ON_BEHALF_NO_CONSENT")
 	createTask(t, oc, board.GetId(), newTask, 201)
+}
+
+// TestOnBehalfOfMemberCreateTaskRights (CBF-46): a card on behalf of a member needs both her own
+// CREATE_TASKS on the board and her consent; the bot's own CREATE_TASKS never stands in for hers.
+// With both the card is hers, with the attachments she uploaded on behalf.
+func TestOnBehalfOfMemberCreateTaskRights(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	carol := register(t, invite(t, o, wid))
+	bt := createBot(t, o, wid, "opsa-cbf46")
+	giveBot(t, o, wid, bt, "tasks", perm.ViewBoard|perm.CreateTasks)
+	oc := asMember(bt, carol.id)
+	board := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Invoices", Key: "INV"}, 201)
+	tasksPath := "/api/boards/" + board.GetId() + "/tasks"
+	grantPath := "/api/workspaces/" + wid + "/bots/" + bt.id + "/delegations/" + carol.id
+	carol.must(200, "PUT", grantPath, nil, nil)
+
+	// Her right and her consent: 201, she is the author, her on-behalf upload is accepted.
+	file := uploadOnBehalf(t, bt, carol.id, "/api/workspaces/"+wid+"/files")
+	task := createTask(t, oc, board.GetId(), &v1.CreateTaskRequest{Title: "Счёт 42", AttachmentIds: []string{file.GetId()}}, 201)
+	if got := getTask(t, o, task.GetId()).GetTask(); got.GetCreatedBy() != carol.id || len(got.GetAttachments()) != 1 {
+		t.Fatalf("task on behalf: created_by %s attachments %d", got.GetCreatedBy(), len(got.GetAttachments()))
+	}
+
+	// Without her CREATE_TASKS (she still sees the board; the bot keeps the bit): 403.
+	setBoardPerms(o, board.GetId(), 200, userOv(carol.id, 0, perm.CreateTasks))
+	resetBotLimit(t, bt.id)
+	if st := oc.do("POST", tasksPath, &v1.CreateTaskRequest{Title: "без права"}, nil); st != 403 || !bytes.Contains(oc.lastBody, []byte("CREATE_TASKS required")) {
+		t.Fatalf("without the member's right: %d %s", st, oc.lastBody)
+	}
+	createTask(t, bt, board.GetId(), &v1.CreateTaskRequest{Title: "от бота"}, 201)
+
+	// Her right back, consent revoked: 403 ON_BEHALF_NO_CONSENT.
+	setBoardPerms(o, board.GetId(), 200)
+	carol.must(200, "DELETE", grantPath, nil, nil)
+	wantReason(t, oc, oc.do("POST", tasksPath, &v1.CreateTaskRequest{Title: "без согласия"}, nil), 403, "ON_BEHALF_NO_CONSENT")
 }
