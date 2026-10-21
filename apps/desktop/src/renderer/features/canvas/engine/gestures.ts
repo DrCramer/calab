@@ -341,7 +341,8 @@ export class ResizeGesture implements Gesture {
       const next = resizeRect(this.group, handle, p, { keepAspect, minW, minH });
       for (const [id, o] of this.items) {
         const r = mapRect(o, this.group, next);
-        patches.set(id, o.kind === 'text' ? { x: r.x, w: r.w } : { x: r.x, y: r.y, w: r.w, h: r.h });
+        // A text's height follows its content, but its top moves with the group like everyone else's.
+        patches.set(id, o.kind === 'text' ? { x: r.x, y: r.y, w: r.w } : { x: r.x, y: r.y, w: r.w, h: r.h });
       }
     }
     this.core.live.preview(patches);

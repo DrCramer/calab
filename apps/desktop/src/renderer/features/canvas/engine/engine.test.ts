@@ -207,6 +207,19 @@ describe('selection, move, resize', () => {
     expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 0, w: 200 });
     expect(objs(r).snapshot(b ?? '')).toMatchObject({ x: 200, w: 200 });
   });
+  it('a text in a multi-selection moves with the group when the top handle is dragged', () => {
+    const r = rig();
+    const [box, txt] = r.make(sticky(100, 100, { w: 100, h: 100 }), { init: { kind: 'text' as const, x: 100, y: 300, w: 200, text: 'hi' } });
+    r.engine.selectAll();
+    const f = r.engine.selectionFrame();
+    if (!f) throw new Error('no frame');
+    const g = f.rect;
+    r.drag([g.x + g.w / 2, g.y], [g.x + g.w / 2, g.y - 100]);
+    expect(objs(r).snapshot(box ?? '')).toMatchObject({ y: 0 });
+    // The group's top went up by 100 and it grew by as much: the text keeps its relative place.
+    const y = (g.y - 100) + ((300 - g.y) * (g.h + 100)) / g.h;
+    expect(objs(r).snapshot(txt ?? '')?.y).toBeCloseTo(y, 6);
+  });
   it('Escape during a drag restores the position', () => {
     const r = rig();
     const [a] = r.make(sticky(100, 100));
