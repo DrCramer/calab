@@ -412,13 +412,18 @@ export class RotateGesture implements Gesture {
       patches.set(id, p);
     }
     this.core.doc.patchMany(patches);
+    const only = this.boxes.length === 1 ? this.boxes[0] : undefined;
+    // One box: its absolute angle; several: the signed turn. `+ 0` folds a rounded -0 into 0.
+    this.core.setOverlay({ angle: { at: w, deg: (Math.round(only ? normRot(only.rot + d) : d) % 360) + 0 } });
   }
 
   end(): void {
+    this.core.setOverlay({ angle: null });
     if (this.began) this.core.doc.endGesture();
   }
 
   cancel(): void {
+    this.core.setOverlay({ angle: null });
     if (!this.began) return;
     this.core.doc.endGesture();
     this.core.doc.undo.undo();

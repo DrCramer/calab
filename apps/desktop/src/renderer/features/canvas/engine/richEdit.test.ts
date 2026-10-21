@@ -139,7 +139,7 @@ describe('formatting while editing', () => {
     const [a, b] = r.make({ init: { kind: 'sticky', x: 0, y: 0 } }, { init: { kind: 'sticky', x: 400, y: 0 } });
     const [c] = r.make({ init: { kind: 'connector', from: { id: a ?? '', side: 'right' }, to: { id: b ?? '', side: 'left' }, label: 'go' } });
     r.engine.startTextEdit(c);
-    expect(r.engine.editor.getSnapshot()).toMatchObject({ open: true, rich: false, token: null });
+    expect(r.engine.editor.getSnapshot()).toMatchObject({ open: true, rich: false, size: null });
     const ta = r.host.querySelector('textarea');
     if (ta) {
       select(ta, 0, 2);
@@ -148,18 +148,37 @@ describe('formatting while editing', () => {
     expect(r.engine.editor.getSnapshot().bold).toBe(false);
     r.engine.editor.commit();
   });
-  it('the size buttons change the object and the textarea follows', () => {
+  it('the size field changes the object and the textarea follows', () => {
     const r = rig();
     const { id, ta } = open(r, 'big');
     const before = parseFloat(ta.style.fontSize);
-    r.engine.setEditFontSize('xl');
+    expect(r.engine.editor.getSnapshot().size).toBe(18);
+    r.engine.setEditFontSize(38);
     expect(r.engine.scene.get(id)).toMatchObject({ fontSize: 'xl' });
     expect(parseFloat(ta.style.fontSize)).toBeGreaterThan(before);
-    expect(r.engine.editor.getSnapshot().token).toBe('xl');
+    expect(r.engine.editor.getSnapshot().size).toBe(38);
+    r.engine.setEditFontSize(30);
+    expect(r.engine.scene.get(id)).toMatchObject({ fontSize: 'l', fontPx: 30 });
+    expect(r.engine.editor.getSnapshot().size).toBe(30);
     r.engine.editor.commit();
     const t = open(r, 'free', 'text');
-    r.engine.setEditFontSize('l');
+    r.engine.setEditFontSize(32);
     expect(r.engine.scene.get(t.id)).toMatchObject({ size: 32 });
+    r.engine.setEditFontSize(31);
+    expect(r.engine.scene.get(t.id)).toMatchObject({ size: 31 });
+    r.engine.editor.commit();
+  });
+  it('the focus moving into the size field is still editing; anywhere else ends it', () => {
+    const r = rig();
+    open(r, 'big');
+    const field = document.createElement('div');
+    field.setAttribute('data-keeps-editing', '');
+    const inner = document.createElement('input');
+    field.appendChild(inner);
+    expect(r.engine.editor.keepsEditing(inner)).toBe(true);
+    expect(r.engine.editor.keepsEditing(r.host.querySelector('textarea'))).toBe(true);
+    expect(r.engine.editor.keepsEditing(document.createElement('input'))).toBe(false);
+    expect(r.engine.editor.keepsEditing(null)).toBe(false);
     r.engine.editor.commit();
   });
   it('the editor opens with the formatting the object has and writes it back when only the text changes', () => {

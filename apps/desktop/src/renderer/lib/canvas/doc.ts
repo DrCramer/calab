@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { clamp, normRot, type Point } from './geometry';
 import { after, before, between, isValidKey } from './fracIndex';
 import { fmtFromDelta, fmtToDelta, formatChanges, rawText, type Fmt } from './richText';
-import { isFontToken } from './textLayout';
+import { fontFields, isFontToken } from './textLayout';
 import {
   DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
   type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
@@ -84,16 +84,16 @@ export function applyTextDiff(yt: Y.Text, next: string): void {
 export type PlainObject = { id: string; kind: ObjectKind; z: string } & Record<string, unknown>;
 
 const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'rot', 'locked', 'group'],
+  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
 };
 
 const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'rot', 'locked', 'group'],
+  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
 };
 
@@ -107,7 +107,10 @@ function extraFields(init: ObjectInit): Record<string, unknown> {
   if (rot !== 0) out.rot = rot;
   if (init.locked === true) out.locked = true;
   if (isGroupId(init.group)) out.group = init.group;
-  if ((init.kind === 'sticky' || init.kind === 'shape') && isFontToken(init.fontSize) && init.fontSize !== 'm') out.fontSize = init.fontSize;
+  if (init.kind === 'sticky' || init.kind === 'shape') {
+    if (typeof init.fontPx === 'number' && Number.isFinite(init.fontPx)) Object.assign(out, fontFields(init.kind, clamp(init.fontPx, DEFAULTS.minTextSize, DEFAULTS.maxTextSize)));
+    else if (isFontToken(init.fontSize) && init.fontSize !== 'm') out.fontSize = init.fontSize;
+  }
   return out;
 }
 
@@ -161,6 +164,23 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
 /** Patch value meaning "remove the key" (a default is stored as absence, never as a value). */
 const REMOVE = Symbol('remove');
 
+/**
+ * Spells a `fontPx` / `fontSize` patch out in stored fields: a text object's `size`; a sticky's or shape's token and exact size
+ * (`fontFields`). A plain token write drops the exact size it overrides, so a token set by older code is never shadowed.
+ */
+function expandFont(kind: ObjectKind, patch: ObjectPatch): ObjectPatch {
+  if (kind === 'connector') return patch;
+  const px = patch.fontPx;
+  if (typeof px === 'number' && Number.isFinite(px)) {
+    const v = clamp(px, DEFAULTS.minTextSize, DEFAULTS.maxTextSize);
+    if (kind === 'text') return { ...patch, size: v };
+    const f = fontFields(kind, v);
+    return { ...patch, fontSize: f.fontSize ?? 'm', fontPx: f.fontPx ?? null };
+  }
+  if (kind !== 'text' && 'fontSize' in patch && !('fontPx' in patch)) return { ...patch, fontPx: null };
+  return patch;
+}
+
 /** Normalizes a stored field before it is written by a patch; undefined = reject. */
 function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unknown {
   switch (key) {
@@ -168,6 +188,7 @@ function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unkno
     case 'locked': return typeof v === 'boolean' ? (v ? true : REMOVE) : undefined;
     case 'group': return v === null ? REMOVE : isGroupId(v) ? v : undefined;
     case 'fontSize': return isFontToken(v) ? (v === 'm' ? REMOVE : v) : undefined;
+    case 'fontPx': return v === null ? REMOVE : typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minTextSize, DEFAULTS.maxTextSize) : undefined;
     case 'x': case 'y': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, -MAX_COORD, MAX_COORD) : undefined;
     case 'w': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'text' ? DEFAULTS.minTextW : DEFAULTS.minBox, MAX_SIZE) : undefined;
     case 'h': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minBox, MAX_SIZE) : undefined;
@@ -356,11 +377,12 @@ export class CanvasDoc {
   patchMany(patches: ReadonlyMap<string, ObjectPatch>): void {
     if (patches.size === 0) return;
     this.transact(() => {
-      for (const [id, patch] of patches) {
+      for (const [id, raw] of patches) {
         const m = this.objects.get(id);
         if (!m) continue;
         const kind = m.get('kind');
         if (!isKind(kind)) continue;
+        const patch = expandFont(kind, raw);
         for (const key of PATCH_KEYS[kind]) {
           if (!(key in patch)) continue;
           const v = patchValue(kind, key, patch[key]);

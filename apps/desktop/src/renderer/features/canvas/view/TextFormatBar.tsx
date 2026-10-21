@@ -4,8 +4,8 @@ import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import { F_BOLD, F_ITALIC, F_STRIKE } from '../../../lib/canvas/richText';
 import type { CanvasEngine } from '../engine';
+import { FontSizeField } from './FontSizeField';
 import { DIVIDER, PANEL, keepFocus } from './chrome';
-import { FONT_SIZE_DEFS } from './model';
 
 const ICON = 'size-4';
 /** Gap between the bar and the text box, and the least distance from the work area's edge. */
@@ -15,7 +15,7 @@ const GAP = 8;
  * The format bar over the text being edited (ADR-0115): bold, italic, strike-through, bullet / numbered list and
  * the text size. It is a leaf with its own subscription to the editor, mounted for the whole session but
  * rendering nothing while no text is open; its buttons never take the focus (`keepFocus`), so the textarea
- * keeps its selection and does not commit.
+ * keeps its selection and does not commit (the size field does, and says so with `data-keeps-editing`).
  */
 export const TextFormatBar = memo(function TextFormatBar({ engine }: { engine: CanvasEngine }): ReactNode {
   useLocale();
@@ -57,7 +57,10 @@ export const TextFormatBar = memo(function TextFormatBar({ engine }: { engine: C
       role="toolbar"
       aria-label={t('canvasBoard.format.bar')}
       data-testid="canvas-format-bar"
-      onMouseDown={keepFocus}
+      // The size field is the one control that takes the focus (to type in); the editor knows it as part of editing.
+      onMouseDown={(e) => {
+        if (!(e.target instanceof HTMLInputElement)) keepFocus(e);
+      }}
       className={cx(PANEL, 'absolute z-10 flex w-max items-center gap-0.5')}
       style={{ left: st.x, top: st.y }}
     >
@@ -87,25 +90,19 @@ export const TextFormatBar = memo(function TextFormatBar({ engine }: { engine: C
       >
         <ListOrdered className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
-      {st.token !== null ? (
+      {st.size !== null ? (
         <>
           <div className={DIVIDER} aria-hidden />
-          <div role="group" aria-label={t('canvasBoard.props.textSize')} className="flex items-center gap-0.5">
-            {FONT_SIZE_DEFS.map((d) => (
-              <IconButton
-                key={d.token}
-                label={t(d.label)}
-                size="sm"
-                active={st.token === d.token}
-                className={cx(st.token === d.token && 'bg-active text-fg')}
-                onMouseDown={keepFocus}
-                onClick={() => engine.setEditFontSize(d.token)}
-                data-testid={`canvas-format-size-${d.token}`}
-              >
-                <span className="text-caption font-semibold">{d.glyph}</span>
-              </IconButton>
-            ))}
-          </div>
+          <FontSizeField
+            keepsEditing
+            value={st.size}
+            onCommit={(px) => engine.setEditFontSize(px)}
+            release={() => ed.refocus()}
+            leave={(to) => {
+              if (!ed.keepsEditing(to)) ed.commit();
+            }}
+            testId="canvas-format-size"
+          />
         </>
       ) : null}
     </div>

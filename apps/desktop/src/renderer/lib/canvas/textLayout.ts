@@ -19,16 +19,51 @@ export const STICKY_FONT: Readonly<Record<FontToken, number>> = { s: 14, m: STIC
 export const SHAPE_FONT: Readonly<Record<FontToken, number>> = { s: 12, m: SHAPE_TEXT_SIZE, l: 24, xl: 34 };
 export const TEXT_FONT: Readonly<Record<FontToken, number>> = { s: 14, m: 20, l: 32, xl: 48 };
 
-/** The size of an object's text in world units. */
+/** The size of an object's text in world units: a sticky's or shape's exact `fontPx` when it has one, else its token's preset. */
 export function boxFontSize(o: BoxRec): number {
   switch (o.kind) {
     case 'text':
       return o.size;
     case 'sticky':
-      return STICKY_FONT[o.fontSize ?? 'm'];
+      return o.fontPx ?? STICKY_FONT[o.fontSize ?? 'm'];
     case 'shape':
-      return SHAPE_FONT[o.fontSize ?? 'm'];
+      return o.fontPx ?? SHAPE_FONT[o.fontSize ?? 'm'];
   }
+}
+
+/** Kinds that carry a text size, and their token → px tables. */
+export type SizedKind = BoxRec['kind'];
+const FONT_TABLE: Readonly<Record<SizedKind, Readonly<Record<FontToken, number>>>> = { sticky: STICKY_FONT, shape: SHAPE_FONT, text: TEXT_FONT };
+
+/** The token of `kind` whose preset is nearest to `px`. */
+export function nearestFontToken(kind: SizedKind, px: number): FontToken {
+  const table = FONT_TABLE[kind];
+  let best: FontToken = 'm';
+  for (const t of FONT_TOKENS) if (Math.abs(table[t] - px) < Math.abs(table[best] - px)) best = t;
+  return best;
+}
+
+/**
+ * What a sticky or shape stores for a text size of `px` (ADR-0115): a size equal to a preset is just that token
+ * (`m` = nothing at all); any other is the exact `fontPx` next to the nearest token, so a client that only knows
+ * tokens still shows a close size. `fontPx` is trusted only while its token is still the nearest one (see `storedFontPx`).
+ */
+export function fontFields(kind: 'sticky' | 'shape', px: number): { fontSize?: FontToken; fontPx?: number } {
+  const table = FONT_TABLE[kind];
+  const exact = FONT_TOKENS.find((t) => table[t] === px);
+  if (exact) return exact === 'm' ? {} : { fontSize: exact };
+  const token = nearestFontToken(kind, px);
+  return token === 'm' ? { fontPx: px } : { fontSize: token, fontPx: px };
+}
+
+/**
+ * The exact size stored next to a token, or undefined when it is absent, not a number, or stale: an older client that
+ * changed only the token leaves a `fontPx` whose nearest token differs from the stored one — the token then wins.
+ */
+export function storedFontPx(kind: 'sticky' | 'shape', px: unknown, token: FontToken, min: number, max: number): number | undefined {
+  if (typeof px !== 'number' || !Number.isFinite(px)) return undefined;
+  const v = Math.min(max, Math.max(min, px));
+  return nearestFontToken(kind, v) === token && FONT_TABLE[kind][token] !== v ? v : undefined;
 }
 
 /** The token whose preset is nearest to a text object's size. */

@@ -857,13 +857,15 @@ describe('transform controls (ADR-0115)', () => {
     expect(m.host.querySelector('textarea')).toBe(ta); // the button did not steal the focus: the editor is still open
     act(() => m.q('canvas-format-bullet')?.click());
     expect(m.q('canvas-format-bullet')?.getAttribute('aria-pressed')).toBe('true');
-    act(() => m.q('canvas-format-size-xl')?.click());
-    expect(m.q('canvas-format-size-xl')?.getAttribute('aria-pressed')).toBe('true');
+    act(() => m.q('canvas-format-size-more')?.click());
+    expect(m.q('canvas-format-size-input')?.getAttribute('aria-valuenow')).toBe('19');
+    expect(m.host.querySelector('textarea')).toBe(ta); // nor did the size field's button
     escapeEditor(m);
     await settle(400);
     expect(m.q('canvas-format-bar')).toBeNull();
     const o = [...relay.doc.getMap<Y.Map<unknown>>('objects').values()][0];
-    expect(o?.get('fontSize')).toBe('xl');
+    expect(o?.get('fontPx')).toBe(19);
+    expect(o?.has('fontSize')).toBe(false); // 19 px is still nearest to M, which is the absence of the field
     const delta = (o?.get('text') as Y.Text).toDelta() as { insert: string; attributes?: object }[];
     expect(delta[0]).toEqual({ insert: 'xxxxx', attributes: { bold: true } });
     expect(delta[delta.length - 1]).toEqual({ insert: '\n', attributes: { list: 'bullet' } });

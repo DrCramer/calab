@@ -119,6 +119,55 @@ describe('formatted text in the document', () => {
     d.objects.get('o3')?.set('fontSize', 'huge');
     expect('fontSize' in (sceneOf(d).get('o3') as unknown as Record<string, unknown>)).toBe(false);
   });
+  it('fontPx: a preset is only its token, any other px is stored next to the nearest token, a text object keeps `size`', () => {
+    const d = makeDoc();
+    d.createMany([
+      { init: { kind: 'sticky', x: 0, y: 0 } },
+      { init: { kind: 'text', x: 0, y: 0 } },
+      { init: { kind: 'shape', x: 0, y: 0 } },
+    ]);
+    d.patch('o1', { fontPx: 30 });
+    expect(d.objects.get('o1')?.get('fontSize')).toBe('l');
+    expect(d.objects.get('o1')?.get('fontPx')).toBe(30);
+    d.patch('o1', { fontPx: 38 });
+    expect(d.objects.get('o1')?.get('fontSize')).toBe('xl');
+    expect(d.objects.get('o1')?.has('fontPx')).toBe(false);
+    d.patch('o1', { fontPx: 19 });
+    expect(d.objects.get('o1')?.has('fontSize')).toBe(false);
+    expect(d.objects.get('o1')?.get('fontPx')).toBe(19);
+    d.patch('o1', { fontPx: 18 });
+    expect(d.objects.get('o1')?.has('fontSize')).toBe(false);
+    expect(d.objects.get('o1')?.has('fontPx')).toBe(false);
+    d.patch('o3', { fontPx: 300 });
+    expect(d.objects.get('o3')?.get('fontPx')).toBe(200);
+    expect(sceneOf(d).get('o3')).toMatchObject({ fontSize: 'xl', fontPx: 200 });
+    d.patch('o2', { fontPx: 44 });
+    expect(d.objects.get('o2')?.get('size')).toBe(44);
+    expect(d.objects.get('o2')?.has('fontPx')).toBe(false);
+    // A plain token write (older code) drops the exact size.
+    d.patch('o3', { fontPx: 30 });
+    d.patch('o3', { fontSize: 's' });
+    expect(d.objects.get('o3')?.has('fontPx')).toBe(false);
+  });
+  it('fontPx is read only while its token is still the nearest: an older client that changed the token wins', () => {
+    const d = makeDoc();
+    d.create({ kind: 'sticky', x: 0, y: 0, fontPx: 30 });
+    expect(sceneOf(d).get('o1')).toMatchObject({ fontSize: 'l', fontPx: 30 });
+    d.objects.get('o1')?.set('fontSize', 'xl'); // what a token-only client writes
+    const rec = sceneOf(d).get('o1') as unknown as Record<string, unknown>;
+    expect(rec['fontSize']).toBe('xl');
+    expect('fontPx' in rec).toBe(false);
+    d.objects.get('o1')?.set('fontPx', 'big'); // garbage is ignored
+    expect('fontPx' in (sceneOf(d).get('o1') as unknown as Record<string, unknown>)).toBe(false);
+  });
+  it('fontPx survives copy and paste', () => {
+    const d = makeDoc();
+    d.create({ kind: 'sticky', x: 0, y: 0, fontPx: 30 });
+    const payload = parse(serialize(sceneOf(d), d, ['o1']) ?? '');
+    expect(payload?.objects[0]).toMatchObject({ fontSize: 'l', fontPx: 30 });
+    const inits = payload ? toInits(payload, 30, 30, () => 'n1') : [];
+    expect(inits[0]?.init).toMatchObject({ fontSize: 'l', fontPx: 30 });
+  });
 });
 
 describe('scene', () => {

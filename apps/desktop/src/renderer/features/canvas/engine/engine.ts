@@ -10,7 +10,7 @@ import { boundsOf, rectCenter, rectInflate, type Point, type Rect } from '../../
 import { Scene, visualBounds } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
 import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
-import { LABEL_SIZE, TEXT_FONT, TextLayouter, boxFontSize, estimateMeasure, fontOf, nearestToken, type FontToken, type MeasureFn } from '../../../lib/canvas/textLayout';
+import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import {
   DEFAULTS, aabb, isConnector,
@@ -1006,9 +1006,9 @@ export class CanvasEngine implements Core {
     const box = contentRect(o);
     const turn = o.rot ? { rot: o.rot, center: rectCenter(o) } : {};
     switch (o.kind) {
-      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, rich: true, token: o.fontSize ?? 'm', ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
-      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, rich: true, token: nearestToken(o.size), ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
-      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, token: o.fontSize ?? 'm', ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
     }
   }
 
@@ -1077,14 +1077,14 @@ export class CanvasEngine implements Core {
     return ids;
   }
 
-  /** The text size of the object under edit (the format bar's S / M / L / XL): the object changes, the textarea follows. */
-  setEditFontSize(token: FontToken): void {
+  /** The text size in px of the object under edit (the format bar's size field): the object changes, the textarea follows. */
+  setEditFontSize(px: number): void {
     const id = this.editingId;
     const o = id ? this.scene.get(id) : undefined;
     if (!id || !o || isConnector(o) || o.locked || !this.canEdit() || !this.editor.isOpen) return;
-    this.doc.patch(id, { fontSize: token, size: TEXT_FONT[token] });
+    this.doc.patch(id, { fontPx: px });
     const now = this.scene.get(id);
-    if (now && !isConnector(now)) this.editor.setSize(boxFontSize(now), token);
+    if (now && !isConnector(now)) this.editor.setSize(boxFontSize(now));
   }
 
   /** Double-click on empty canvas: a new text object, in edit mode. */

@@ -57,6 +57,8 @@ export interface StickyRec extends BaseRec, RichFields {
   readonly text: string;
   /** Text size token; absent = M (ADR-0115). */
   readonly fontSize?: FontToken;
+  /** Exact text size in px when it is not a preset's (ADR-0115): wins over `fontSize` (kept as the nearest token). */
+  readonly fontPx?: number;
 }
 
 export interface TextRec extends BaseRec, RichFields {
@@ -70,6 +72,8 @@ export interface ShapeRec extends BaseRec, RichFields {
   readonly kind: 'shape';
   /** Text size token; absent = M (ADR-0115). */
   readonly fontSize?: FontToken;
+  /** Exact text size in px when it is not a preset's (ADR-0115): wins over `fontSize` (kept as the nearest token). */
+  readonly fontPx?: number;
   readonly shape: ShapeKind;
   readonly fill: string;
   readonly stroke: string;
@@ -132,6 +136,8 @@ export interface InitExtras {
   fmt?: Fmt;
   /** Text size token of a sticky or shape (ignored by the others). */
   fontSize?: FontToken;
+  /** Exact text size in px of a sticky or shape; wins over `fontSize`. */
+  fontPx?: number;
 }
 
 /** Fields a creation call may set (kind-specific; unknown ones are ignored). */
@@ -150,8 +156,13 @@ export interface ObjectPatch {
   locked?: boolean;
   /** null removes the field. */
   group?: string | null;
-  /** Text size token of a sticky or shape; 'm' removes the field. */
+  /** Text size token of a sticky or shape; 'm' removes the field. A plain token also drops an exact `fontPx`. */
   fontSize?: FontToken;
+  /**
+   * Text size in px of any text-bearing kind (a text object's `size`; a sticky's or shape's token + exact size, see `fontFields`).
+   * `null` removes a sticky's or shape's exact size.
+   */
+  fontPx?: number | null;
   x?: number;
   y?: number;
   w?: number;

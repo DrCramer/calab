@@ -6,12 +6,12 @@ import { memo, useMemo, useState, useSyncExternalStore, type ReactNode } from 'r
 import { cx } from '../../../components/ui';
 import { plural, t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
-import { TEXT_FONT } from '../../../lib/canvas/textLayout';
 import type { Arrow, ObjectPatch, RouteKind } from '../../../lib/canvas/types';
 import { readableInk, type CanvasEngine, type CanvasPalette } from '../engine';
 import { keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
-import { ARROW_DEFS, FILL_COLORS, FONT_SIZE_DEFS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS } from './model';
+import { ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS } from './model';
+import { FontSizeField } from './FontSizeField';
 import { PhoneBtn, SHEET } from './PhoneEditBar';
 import { Swatch, colorLabel, swatchCss } from './PropsPanel';
 import { ShapeIcon } from './ShapeIcon';
@@ -121,14 +121,7 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
           </PhoneBtn>
         ) : null}
         {free && (m.hasText || m.hasSticky || m.hasShape) ? (
-          <Seg
-            label={t('canvasBoard.props.textSize')}
-            testId="canvas-prop-size"
-            value={m.fontToken}
-            items={FONT_SIZE_DEFS.map((d) => ({ id: d.token, label: t(d.label), node: <span className="text-control font-semibold">{d.glyph}</span> }))}
-            // A text object takes the preset as its pixel size, a sticky or shape as its token; the patch carries both and each kind keeps its own.
-            onPick={(token) => patch({ fontSize: token, size: TEXT_FONT[token] })}
-          />
+          <FontSizeField touch value={m.fontPx} onCommit={(px) => patch({ fontPx: px })} release={focusCanvas} testId="canvas-prop-size" />
         ) : null}
         {free && (m.hasShape || m.hasConnector) ? (
           <Seg

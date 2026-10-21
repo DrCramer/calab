@@ -6,7 +6,7 @@
  */
 import { arrangeUnits } from '../../../lib/canvas/arrange';
 import type { Scene } from '../../../lib/canvas/scene';
-import { nearestToken, type FontToken } from '../../../lib/canvas/textLayout';
+import { boxFontSize } from '../../../lib/canvas/textLayout';
 import type { Arrow, ObjectRec, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import type { CanvasEngine } from '../engine';
 
@@ -28,8 +28,8 @@ export interface PanelModel {
   stickyColor?: string;
   textColor?: string;
   textSize?: number;
-  /** Size token shared by all selected texts, stickies and shapes (a text object by its nearest preset). */
-  fontToken?: FontToken;
+  /** Text size in px shared by all selected texts, stickies and shapes; undefined when they differ. */
+  fontPx?: number;
   shape?: ShapeKind;
   fill?: string;
   stroke?: string;
@@ -68,7 +68,7 @@ export function panelModelOf(objs: readonly ObjectRec[], groupSize: (gid: string
   set('stickyColor', uniform(sticky.map((o) => o.color)));
   set('textColor', uniform(text.map((o) => o.color)));
   set('textSize', uniform(text.map((o) => o.size)));
-  set('fontToken', uniform<FontToken>([...text.map((o) => nearestToken(o.size)), ...sticky.map((o) => o.fontSize ?? 'm'), ...shape.map((o) => o.fontSize ?? 'm')]));
+  set('fontPx', uniform([...text, ...sticky, ...shape].map(boxFontSize)));
   set('shape', uniform(shape.map((o) => o.shape)));
   set('fill', uniform(shape.map((o) => o.fill)));
   set('stroke', uniform([...shape.map((o) => o.stroke), ...conn.map((o) => o.stroke)]));
@@ -79,7 +79,7 @@ export function panelModelOf(objs: readonly ObjectRec[], groupSize: (gid: string
 }
 
 const KEYS: readonly (keyof PanelModel)[] = [
-  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'fontToken', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route',
+  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'fontPx', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route',
 ];
 
 export const samePanelModel = (a: PanelModel | null, b: PanelModel | null): boolean =>

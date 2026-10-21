@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { serialize } from '../../../lib/canvas/clipboard';
-import { handlePointRot } from '../../../lib/canvas/geometry';
+import { handlePointRot, rotateHandlePoint } from '../../../lib/canvas/geometry';
 import { anchorOf } from '../../../lib/canvas/route';
 import { isBox, type BoxRec } from '../../../lib/canvas/types';
 import { drawObject, drawObjects } from './draw';
@@ -118,6 +118,29 @@ describe('rotation', () => {
     const nw2 = handlePointRot(n, 40, 'nw');
     expect(nw2.x).toBeCloseTo(nw.x);
     expect(nw2.y).toBeCloseTo(nw.y);
+  });
+  it('an angle badge hangs by the cursor while turning (a box: its angle, several: the turn) and goes with the gesture', () => {
+    const r = rig();
+    const [a] = r.make(sticky(400, 300, { rot: 30 }));
+    r.click(450, 350);
+    // The knob of a box turned by 30° hangs 26 px out from its (turned) top side.
+    const knob = rotateHandlePoint({ x: 400, y: 300, w: 100, h: 100 }, 30, KNOB);
+    r.down(knob.x, knob.y);
+    r.move(550, 350);
+    expect(r.engine['overlay'].angle).toEqual({ at: { x: 550, y: 350 }, deg: 90 });
+    r.up(550, 350);
+    expect(r.engine['overlay'].angle).toBeNull();
+    expect(rec(r, a).rot).toBe(90);
+    const r2 = rig();
+    r2.make(sticky(0, 0), sticky(300, 0));
+    r2.engine.selectAll();
+    r2.down(200, -KNOB);
+    r2.move(400, 50);
+    expect(r2.engine['overlay'].angle?.deg).toBe(90);
+    r2.move(0, 50);
+    expect(r2.engine['overlay'].angle?.deg).toBe(-90);
+    r2.up(0, 50);
+    expect(r2.engine['overlay'].angle).toBeNull();
   });
   it('rotates several boxes about the center of their joint bounds; each keeps its place in the turned arrangement', () => {
     const r = rig();

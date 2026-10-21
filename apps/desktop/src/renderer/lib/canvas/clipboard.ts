@@ -105,6 +105,7 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
     const extras: InitExtras = {};
     if (fmt && o.kind !== 'connector') extras.fmt = fmt;
     if ((o.kind === 'sticky' || o.kind === 'shape') && isFontToken(o.fontSize)) extras.fontSize = o.fontSize;
+    if ((o.kind === 'sticky' || o.kind === 'shape') && typeof o.fontPx === 'number') extras.fontPx = o.fontPx;
     if (o.kind !== 'connector' && typeof o.rot === 'number') extras.rot = o.rot;
     if (o.locked === true) extras.locked = true;
     const g = isGroupId(o.group) ? groups.get(o.group) : undefined;

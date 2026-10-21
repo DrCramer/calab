@@ -1,5 +1,4 @@
 /** Static tables of the Canvas screen: tools, hotkeys, swatches (ADR-0114 §5). No React. */
-import type { FontToken } from '../../../lib/canvas/textLayout';
 import type { Arrow, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { HUE_IDS, INK_EXTRA_IDS, STICKY_IDS, type Tool } from '../engine';
 
@@ -51,30 +50,11 @@ export const INK_COLORS: readonly string[] = ['text', ...HUE_IDS, ...INK_EXTRA_I
 export const STROKE_COLORS: readonly string[] = ['stroke', ...HUE_IDS, ...INK_EXTRA_IDS];
 export const FILL_COLORS: readonly string[] = ['none', 'white', ...HUE_IDS];
 
-export const TEXT_SIZES: readonly { size: number; label: `canvasBoard.size.${'s' | 'm' | 'l' | 'xl'}`; glyph: string }[] = [
-  { size: 14, label: 'canvasBoard.size.s', glyph: 'S' },
-  { size: 20, label: 'canvasBoard.size.m', glyph: 'M' },
-  { size: 32, label: 'canvasBoard.size.l', glyph: 'L' },
-  { size: 48, label: 'canvasBoard.size.xl', glyph: 'XL' },
-];
-
-/** The text size buttons (format bar, properties panel): the token is what is stored for stickies and shapes; a text object stores its own pixel size. */
-export const FONT_SIZE_DEFS: readonly { token: FontToken; label: `canvasBoard.size.${FontToken}`; glyph: string }[] = [
-  { token: 's', label: 'canvasBoard.size.s', glyph: 'S' },
-  { token: 'm', label: 'canvasBoard.size.m', glyph: 'M' },
-  { token: 'l', label: 'canvasBoard.size.l', glyph: 'L' },
-  { token: 'xl', label: 'canvasBoard.size.xl', glyph: 'XL' },
-];
+/** Text sizes (px) offered by the size field's list; any whole number in `DEFAULTS.minTextSize`..`maxTextSize` can be typed. */
+export const FONT_PRESETS: readonly number[] = [12, 14, 18, 24, 36, 48, 64, 96];
 
 export const STROKE_WIDTHS: readonly { width: number; label: `canvasBoard.width.${'thin' | 'medium' | 'thick'}` }[] = [
   { width: 1, label: 'canvasBoard.width.thin' },
   { width: 2, label: 'canvasBoard.width.medium' },
   { width: 4, label: 'canvasBoard.width.thick' },
 ];
-
-/** The text size button that covers `size` (the nearest preset). */
-export function nearestTextSize(size: number): number {
-  let best = TEXT_SIZES[0]?.size ?? 20;
-  for (const s of TEXT_SIZES) if (Math.abs(s.size - size) < Math.abs(best - size)) best = s.size;
-  return best;
-}

@@ -9,15 +9,15 @@ import { rotateHandlePoint } from '../../../lib/canvas/geometry';
 import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
+import { FontSizeField } from './FontSizeField';
 import { ShapeIcon } from './ShapeIcon';
-import { TEXT_FONT } from '../../../lib/canvas/textLayout';
 import type { Arrow, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { ROTATE_OFFSET_PX } from '../engine/overlay';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { NO_INSETS, placePanel, type Insets } from './layout';
 import {
-  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, FONT_SIZE_DEFS, STROKE_WIDTHS,
+  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS,
 } from './model';
 import { createSelectionModel } from './selectionModel';
 
@@ -457,14 +457,8 @@ export const PropsPanel = memo(function PropsPanel({
         </>
       ) : null}
       {!m.locked && (m.hasText || m.hasSticky || m.hasShape) ? (
-        <Seg
-          label={t('canvasBoard.props.textSize')}
-          testId="canvas-prop-size"
-          value={m.fontToken}
-          items={FONT_SIZE_DEFS.map((d) => ({ id: d.token, label: t(d.label), node: <span className="text-caption font-semibold">{d.glyph}</span> }))}
-          // A text object takes the preset as its pixel size, a sticky or shape as its token; the patch carries both and each kind keeps its own.
-          onPick={(token) => patch({ fontSize: token, size: TEXT_FONT[token] })}
-        />
+        // One px for all kinds: the doc spells it as a text object's size or a sticky's / shape's token + exact size.
+        <FontSizeField value={m.fontPx} onCommit={(px) => patch({ fontPx: px })} release={focusCanvas} testId="canvas-prop-size" />
       ) : null}
       {!m.locked && m.hasShape ? (
         <>
