@@ -291,3 +291,201 @@ func TestBatchAwarenessSlowReceiverDoesNotStale(t *testing.T) {
 		t.Fatalf("expected awareness with clock 31, got %+v", entries)
 	}
 }
+
+func (e *profEnv) findConn(clientID uint64) *conn {
+	e.t.Helper()
+	e.h.mu.Lock()
+	defer e.h.mu.Unlock()
+	r := e.h.rooms[e.doc]
+	if r == nil {
+		return nil
+	}
+	for c := range r.conns {
+		if c.clientID.Load() == clientID {
+			return c
+		}
+	}
+	return nil
+}
+
+// Problem 1 tests:
+// (a) Writer blocked: socket receives entry A in window 1, then entry B in window 2; after unblocking receives BOTH.
+func TestBatchAwarenessAccumulatorBothEntriesDelivered(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 30 * time.Millisecond})
+	a, b, c := e.dial(), e.dial(), e.dial()
+
+	// Initial pings so server learns clientIDs for a and b
+	a.send(makeAwarenessFrame(10, 1, `{"val":"initA"}`))
+	b.send(makeAwarenessFrame(20, 1, `{"val":"initB"}`))
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain initial awareness on c
+	c.next(FrameAwareness)
+
+	// Find c's *conn on server
+	e.h.mu.Lock()
+	r := e.h.rooms[e.doc]
+	var cConn *conn
+	for conn := range r.conns {
+		if conn.clientID.Load() == 0 { // c has not sent awareness
+			cConn = conn
+			break
+		}
+	}
+	e.h.mu.Unlock()
+	if cConn == nil {
+		t.Fatal("cConn not found")
+	}
+
+	// Pause awareness delivery on c
+	cConn.testPauseAwareness.Store(true)
+
+	// Send record A from socket a (window 1)
+	a.send(makeAwarenessFrame(10, 2, `{"val":"stateA"}`))
+	time.Sleep(50 * time.Millisecond) // window 1 flushes, merges into cConn.awAccum
+
+	// Send record B from socket b (window 2)
+	b.send(makeAwarenessFrame(20, 2, `{"val":"stateB"}`))
+	time.Sleep(50 * time.Millisecond) // window 2 flushes, merges into cConn.awAccum
+
+	// Verify cConn.awAccum has both entries before unblocking
+	cConn.awAccumMu.Lock()
+	has10 := cConn.awAccum[10].clock == 2
+	has20 := cConn.awAccum[20].clock == 2
+	cConn.awAccumMu.Unlock()
+	if !has10 || !has20 {
+		t.Fatalf("expected both 10 and 20 in accumulator, got has10=%v has20=%v", has10, has20)
+	}
+
+	// Unpause writer and kick it
+	cConn.testPauseAwareness.Store(false)
+	select {
+	case cConn.kick <- struct{}{}:
+	default:
+	}
+
+	// c receives one combined awareness frame with BOTH records
+	f := c.next(FrameAwareness)
+	entries := decodeAwarenessFrame(t, f)
+	var gotA, gotB bool
+	for _, entry := range entries {
+		if entry.clientID == 10 && entry.clock == 2 && string(entry.state) == `{"val":"stateA"}` {
+			gotA = true
+		}
+		if entry.clientID == 20 && entry.clock == 2 && string(entry.state) == `{"val":"stateB"}` {
+			gotB = true
+		}
+	}
+	if !gotA || !gotB {
+		t.Fatalf("expected both A and B after unblock, got entries: %+v", entries)
+	}
+}
+
+// (b) Farewell record A (null) followed by record B reaches slow receiver.
+func TestBatchAwarenessAccumulatorFarewellPreserved(t *testing.T) {
+	e := newProfEnv(t, batchProfile, Config{AwarenessWindow: 30 * time.Millisecond})
+	a, b, c := e.dial(), e.dial(), e.dial()
+
+	// Initial pings
+	a.send(makeAwarenessFrame(10, 1, `{"val":"initA"}`))
+	b.send(makeAwarenessFrame(20, 1, `{"val":"initB"}`))
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain initial awareness on c
+	c.next(FrameAwareness)
+
+	// Find c's *conn
+	e.h.mu.Lock()
+	r := e.h.rooms[e.doc]
+	var cConn *conn
+	for conn := range r.conns {
+		if conn.clientID.Load() == 0 {
+			cConn = conn
+			break
+		}
+	}
+	e.h.mu.Unlock()
+	if cConn == nil {
+		t.Fatal("cConn not found")
+	}
+
+	// Pause awareness delivery on c
+	cConn.testPauseAwareness.Store(true)
+
+	// Send farewell record A (null)
+	a.send(makeAwarenessFrame(10, 2, "null"))
+	time.Sleep(40 * time.Millisecond)
+
+	// Send record B
+	b.send(makeAwarenessFrame(20, 2, `{"val":"stateB"}`))
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify cConn.awAccum has both entries before unpausing
+	cConn.awAccumMu.Lock()
+	has10Null := cConn.awAccum[10].clock == 2 && string(cConn.awAccum[10].state) == "null"
+	has20 := cConn.awAccum[20].clock == 2
+	cConn.awAccumMu.Unlock()
+	if !has10Null || !has20 {
+		t.Fatalf("expected farewell A and 20 in accumulator, got has10Null=%v has20=%v", has10Null, has20)
+	}
+
+	// Unpause writer and kick it
+	cConn.testPauseAwareness.Store(false)
+	select {
+	case cConn.kick <- struct{}{}:
+	default:
+	}
+
+	// c receives frame with both A (null) and B
+	f := c.next(FrameAwareness)
+	entries := decodeAwarenessFrame(t, f)
+	var gotANull, gotB bool
+	for _, entry := range entries {
+		if entry.clientID == 10 && entry.clock == 2 && string(entry.state) == "null" {
+			gotANull = true
+		}
+		if entry.clientID == 20 && entry.clock == 2 && string(entry.state) == `{"val":"stateB"}` {
+			gotB = true
+		}
+	}
+	if !gotANull || !gotB {
+		t.Fatalf("expected farewell A(null) and state B, got: %+v", entries)
+	}
+}
+
+// (c) Record with smaller clock does not overwrite a larger one.
+func TestBatchAwarenessAccumulatorLowerClockDoesNotOverwrite(t *testing.T) {
+	c := &conn{
+		h:       &Hub{m: newMetrics("test")},
+		awAccum: make(map[uint64]awarenessEntry),
+	}
+
+	// Deliver entry with clock 10
+	c.deliverAwarenessEntries([]awarenessEntry{
+		{clientID: 42, clock: 10, state: []byte(`{"v":10}`)},
+	})
+
+	// Deliver entry with clock 5 (stale)
+	c.deliverAwarenessEntries([]awarenessEntry{
+		{clientID: 42, clock: 5, state: []byte(`{"v":5}`)},
+	})
+
+	c.awAccumMu.Lock()
+	entry := c.awAccum[42]
+	c.awAccumMu.Unlock()
+	if entry.clock != 10 || string(entry.state) != `{"v":10}` {
+		t.Fatalf("expected clock 10 to be preserved, got %+v", entry)
+	}
+
+	// Deliver entry with clock 15 (newer)
+	c.deliverAwarenessEntries([]awarenessEntry{
+		{clientID: 42, clock: 15, state: []byte(`{"v":15}`)},
+	})
+
+	c.awAccumMu.Lock()
+	entry = c.awAccum[42]
+	c.awAccumMu.Unlock()
+	if entry.clock != 15 || string(entry.state) != `{"v":15}` {
+		t.Fatalf("expected clock 15 to win, got %+v", entry)
+	}
+}

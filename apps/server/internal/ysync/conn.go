@@ -52,8 +52,10 @@ type conn struct {
 	closed  sync.Once
 
 	// Awareness batching (Canvas profile)
-	clientID atomic.Uint64
-	awSlot   atomic.Pointer[[]byte]
+	clientID           atomic.Uint64
+	awAccumMu          sync.Mutex
+	awAccum            map[uint64]awarenessEntry
+	testPauseAwareness atomic.Bool
 
 	// The writer's position: the highest seq the client has (snapshot or update); -1 = nothing
 	// sent yet. Writer goroutine only.
@@ -89,16 +91,65 @@ func (c *conn) enqueue(frame []byte) {
 	}
 }
 
-// deliverAwareness stores frame into the dedicated awareness slot (Canvas profile).
-// If an older frame is already waiting, it is overwritten without causing queue drops or marksStale.
+// deliverAwareness parses frame and merges its awareness entries into the socket's accumulator map (Canvas profile).
+// If the frame cannot be parsed, it is preserved by putting it into the standard out queue.
 func (c *conn) deliverAwareness(frame []byte) {
-	if old := c.awSlot.Swap(&frame); old != nil {
-		c.h.m.overwrittenSlots.Inc()
+	if len(frame) < 2 {
+		c.enqueue(frame)
+		return
 	}
+	entries, err := parseAwarenessUpdate(frame[1:])
+	if err != nil {
+		c.enqueue(frame)
+		return
+	}
+	c.deliverAwarenessEntries(entries)
+}
+
+// deliverAwarenessEntries merges awareness entries into the socket's accumulator map.
+func (c *conn) deliverAwarenessEntries(entries []awarenessEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	c.awAccumMu.Lock()
+	if c.awAccum == nil {
+		c.awAccum = make(map[uint64]awarenessEntry)
+	}
+	for _, e := range entries {
+		existing, ok := c.awAccum[e.clientID]
+		if !ok {
+			c.awAccum[e.clientID] = e
+		} else {
+			c.h.m.overwrittenSlots.Inc()
+			eNull := bytes.Equal(e.state, []byte("null"))
+			existingNull := bytes.Equal(existing.state, []byte("null"))
+			if e.clock > existing.clock || (e.clock == existing.clock && eNull && !existingNull) {
+				c.awAccum[e.clientID] = e
+			}
+		}
+	}
+	c.awAccumMu.Unlock()
+
 	select {
 	case c.kick <- struct{}{}:
 	default:
 	}
+}
+
+// popAwareness drains all accumulated awareness entries and encodes them into a single frame.
+func (c *conn) popAwareness() []byte {
+	c.awAccumMu.Lock()
+	if len(c.awAccum) == 0 {
+		c.awAccumMu.Unlock()
+		return nil
+	}
+	entries := make([]awarenessEntry, 0, len(c.awAccum))
+	for _, e := range c.awAccum {
+		entries = append(entries, e)
+	}
+	c.awAccum = make(map[uint64]awarenessEntry)
+	c.awAccumMu.Unlock()
+	return encodeAwarenessUpdate(entries)
 }
 
 // markStale makes the writer catch up from the database.
@@ -465,12 +516,14 @@ func (c *conn) writeLoop() {
 			return
 		}
 
-		// When c.out is empty, send the latest awareness frame if slot is non-empty
-		if slot := c.awSlot.Swap(nil); slot != nil {
-			if !c.send(*slot) {
-				return
+		// When c.out is empty, collect and send all accumulated awareness entries
+		if !c.testPauseAwareness.Load() {
+			if frame := c.popAwareness(); len(frame) > 0 {
+				if !c.send(frame) {
+					return
+				}
+				continue
 			}
-			continue
 		}
 
 		// When both are empty, wait for incoming frames or wakeups

@@ -184,6 +184,7 @@ type profEnv struct {
 	b   *memBackend
 	srv *httptest.Server
 	rc  rueidis.Client
+	h   *Hub
 	doc uuid.UUID
 }
 
@@ -204,7 +205,7 @@ func newProfEnv(t *testing.T, prof Profile, cfg Config) *profEnv {
 	mux.HandleFunc("GET /sync/{id}", h.Serve)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return &profEnv{t: t, b: b, srv: srv, rc: rc, doc: uuid.New()}
+	return &profEnv{t: t, b: b, srv: srv, rc: rc, h: h, doc: uuid.New()}
 }
 
 type profClient struct {

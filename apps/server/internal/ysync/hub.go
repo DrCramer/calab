@@ -399,12 +399,12 @@ func (h *Hub) flushRoomAwareness(r *room) {
 					}
 				}
 				if len(filtered) > 0 {
-					c.deliverAwareness(encodeAwarenessUpdate(filtered))
+					c.deliverAwarenessEntries(filtered)
 				}
 				continue
 			}
 		}
-		c.deliverAwareness(fullFrame)
+		c.deliverAwarenessEntries(merged)
 	}
 
 	// Publish fullFrame to Valkey outside h.mu
