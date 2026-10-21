@@ -231,6 +231,9 @@ export function parseMetrics(text) {
     droppedFrames: {},
     catchups: 0,
     ceilingHits: 0,
+    batchedFrames: 0,
+    coalescedEntries: 0,
+    overwrittenSlots: 0,
     closes: {}
   };
   for (const line of text.split('\n')) {
@@ -243,6 +246,12 @@ export function parseMetrics(text) {
       result.catchups = parseFloat(line.split(' ')[1]) || 0;
     } else if (line.startsWith('calaba_ysync_ceiling_hits_total{section="canvas"}')) {
       result.ceilingHits = parseFloat(line.split(' ')[1]) || 0;
+    } else if (line.startsWith('calaba_ysync_batched_frames_total{section="canvas"}')) {
+      result.batchedFrames = parseFloat(line.split(' ')[1]) || 0;
+    } else if (line.startsWith('calaba_ysync_coalesced_entries_total{section="canvas"}')) {
+      result.coalescedEntries = parseFloat(line.split(' ')[1]) || 0;
+    } else if (line.startsWith('calaba_ysync_overwritten_slots_total{section="canvas"}')) {
+      result.overwrittenSlots = parseFloat(line.split(' ')[1]) || 0;
     } else if (line.startsWith('calaba_ysync_dropped_frames_total{')) {
       const match = line.match(/reason="([^"]+)"/);
       if (match) {
@@ -318,6 +327,8 @@ export class CanvasSyncClient {
     this.closeReason = '';
     this.receivedFrames = 0;
     this.latencies = [];
+    this.updateLatencies = [];
+    this.awarenessLatencies = [];
     this.ws = null;
     this.highestSeq = 0;
     this.compactRequestsCount = 0;
@@ -326,12 +337,15 @@ export class CanvasSyncClient {
     if (!skipDocApply) {
       this.liveMap = this.doc.getMap('live');
       this.liveMap.observe((event) => {
+        if (event.transaction.origin === 'local') return;
         for (const [key, change] of event.changes.keys) {
+          if (key === String(this.doc.clientID)) continue;
           if (change.action === 'add' || change.action === 'update') {
             const val = this.liveMap.get(key);
             if (val && typeof val.ts === 'number') {
               const lat = Date.now() - val.ts;
               if (lat >= 0 && lat < 60000) {
+                this.updateLatencies.push(lat);
                 this.latencies.push(lat);
               }
             }
@@ -340,6 +354,21 @@ export class CanvasSyncClient {
       });
       this.objectsMap = this.doc.getMap('objects');
     }
+
+    this.awareness.on('change', ({ added, updated }) => {
+      const states = this.awareness.getStates();
+      const now = Date.now();
+      for (const clientID of [...added, ...updated]) {
+        if (clientID === this.doc.clientID) continue;
+        const st = states.get(clientID);
+        if (st && typeof st.ts === 'number') {
+          const lat = now - st.ts;
+          if (lat >= 0 && lat < 60000) {
+            this.awarenessLatencies.push(lat);
+          }
+        }
+      }
+    });
   }
 
   async connect(timeoutMs = 10000) {
@@ -595,6 +624,7 @@ export async function runS1Worker() {
             token: cfg.token,
             clientId: cfg.clientId
           });
+          c.isGesture = cfg.isGesture !== false;
           c.onCompactRequest = () => {
             c.sendSnapshotPost({ plain_text: 'S1 snapshot', title: 'S1 Hot Canvas', preview: '', objects: 0 });
           };
@@ -636,22 +666,25 @@ export async function runS1Worker() {
             w.sendAwareness({
               cursor: { x: (step * 7) % 1000, y: (step * 13) % 1000 },
               selection: [],
-              view: { x: 0, y: 0, zoom: 1 }
+              view: { x: 0, y: 0, zoom: 1 },
+              ts: now
             });
-            w.sendUpdate(() => {
-              const live = w.doc.getMap('live');
-              const k = String(w.doc.clientID);
-              live.set(k, {
-                ts: now,
-                patches: {
-                  o1: { x: (step * 3) % 500, y: (step * 5) % 500 },
-                  o2: { x: (step * 4) % 500, y: (step * 6) % 500 },
-                  o3: { x: (step * 5) % 500, y: (step * 7) % 500 },
-                  o4: { x: (step * 6) % 500, y: (step * 8) % 500 },
-                  o5: { x: (step * 7) % 500, y: (step * 9) % 500 }
-                }
+            if (w.isGesture) {
+              w.sendUpdate(() => {
+                const live = w.doc.getMap('live');
+                const k = String(w.doc.clientID);
+                live.set(k, {
+                  ts: now,
+                  patches: {
+                    o1: { x: (step * 3) % 500, y: (step * 5) % 500 },
+                    o2: { x: (step * 4) % 500, y: (step * 6) % 500 },
+                    o3: { x: (step * 5) % 500, y: (step * 7) % 500 },
+                    o4: { x: (step * 6) % 500, y: (step * 8) % 500 },
+                    o5: { x: (step * 7) % 500, y: (step * 9) % 500 }
+                  }
+                });
               });
-            });
+            }
           }
         }, 100);
       } else if (msg.type === 'stop') {
@@ -667,9 +700,13 @@ export async function runS1Worker() {
         const elP99 = Math.round(elh.percentile(99) / 1e6);
 
         const latencies = [];
+        const updateLatencies = [];
+        const awarenessLatencies = [];
         const frameCounts = [];
         for (const c of [...readers, ...writers]) {
           latencies.push(...c.latencies);
+          updateLatencies.push(...c.updateLatencies);
+          awarenessLatencies.push(...c.awarenessLatencies);
           frameCounts.push(c.receivedFrames);
         }
 
@@ -693,6 +730,8 @@ export async function runS1Worker() {
         process.send({
           type: 'done',
           latencies,
+          updateLatencies,
+          awarenessLatencies,
           frameCounts,
           cpuPercent,
           eventLoopDelayMs: { p50: elP50, p95: elP95, p99: elP99 },
@@ -738,7 +777,7 @@ export async function runS1(opts = {}) {
   const writerConfigs = [];
   for (let i = 0; i < numWriters; i++) {
     const user = users[i % users.length];
-    writerConfigs.push({ token: user.token, clientId: 1000 + i });
+    writerConfigs.push({ token: user.token, clientId: 1000 + i, isGesture: true });
   }
 
   const readerConfigs = [];
@@ -847,7 +886,7 @@ export async function runS1(opts = {}) {
     const donePromise = new Promise((resolve) => {
       const timer = setTimeout(() => {
         cleanup();
-        resolve({ latencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+        resolve({ latencies: [], updateLatencies: [], awarenessLatencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
       }, 7000);
       const onMsg = (msg) => {
         if (msg.type === 'done') {
@@ -855,12 +894,12 @@ export async function runS1(opts = {}) {
           resolve(msg);
         } else if (msg.type === 'error') {
           cleanup();
-          resolve({ latencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+          resolve({ latencies: [], updateLatencies: [], awarenessLatencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
         }
       };
       const onExit = () => {
         cleanup();
-        resolve({ latencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+        resolve({ latencies: [], updateLatencies: [], awarenessLatencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
       };
       function cleanup() {
         clearTimeout(timer);
@@ -879,16 +918,26 @@ export async function runS1(opts = {}) {
   const metricsEnd = await client.getMetrics();
 
   // Aggregate stats
-  const allLatencies = [];
+  const allUpdateLatencies = [];
+  const allAwarenessLatencies = [];
   const framesPerSecPerClient = [];
   const workerReports = [];
   let slowStatus = null;
 
   for (let w = 0; w < numWorkers; w++) {
     const r = workerResults[w] || {};
-    if (r.latencies && Array.isArray(r.latencies)) {
+    if (r.updateLatencies && Array.isArray(r.updateLatencies)) {
+      for (let i = 0; i < r.updateLatencies.length; i++) {
+        allUpdateLatencies.push(r.updateLatencies[i]);
+      }
+    } else if (r.latencies && Array.isArray(r.latencies)) {
       for (let i = 0; i < r.latencies.length; i++) {
-        allLatencies.push(r.latencies[i]);
+        allUpdateLatencies.push(r.latencies[i]);
+      }
+    }
+    if (r.awarenessLatencies && Array.isArray(r.awarenessLatencies)) {
+      for (let i = 0; i < r.awarenessLatencies.length; i++) {
+        allAwarenessLatencies.push(r.awarenessLatencies[i]);
       }
     }
     for (const fc of (r.frameCounts || [])) {
@@ -905,9 +954,13 @@ export async function runS1(opts = {}) {
     });
   }
 
-  const p50 = percentile(allLatencies, 50);
-  const p95 = percentile(allLatencies, 95);
-  const p99 = percentile(allLatencies, 99);
+  const p50 = percentile(allUpdateLatencies, 50);
+  const p95 = percentile(allUpdateLatencies, 95);
+  const p99 = percentile(allUpdateLatencies, 99);
+
+  const awP50 = percentile(allAwarenessLatencies, 50);
+  const awP95 = percentile(allAwarenessLatencies, 95);
+  const awP99 = percentile(allAwarenessLatencies, 99);
 
   const fpsMedian = percentile(framesPerSecPerClient, 50);
   const fpsP99 = percentile(framesPerSecPerClient, 99);
@@ -918,6 +971,10 @@ export async function runS1(opts = {}) {
   const droppedQueue = (metricsEnd.droppedFrames?.queue || 0) - (metricsStart.droppedFrames?.queue || 0);
   const droppedAwareness = (metricsEnd.droppedFrames?.awareness || 0) - (metricsStart.droppedFrames?.awareness || 0);
   const droppedCeiling = (metricsEnd.droppedFrames?.ceiling || 0) - (metricsStart.droppedFrames?.ceiling || 0);
+
+  const batchedFrames = (metricsEnd.batchedFrames || 0) - (metricsStart.batchedFrames || 0);
+  const coalescedEntries = (metricsEnd.coalescedEntries || 0) - (metricsStart.coalescedEntries || 0);
+  const overwrittenSlots = (metricsEnd.overwrittenSlots || 0) - (metricsStart.overwrittenSlots || 0);
 
   const closes4000 = (metricsEnd.closes?.['4000'] || 0) - (metricsStart.closes?.['4000'] || 0);
   const closes4008 = (metricsEnd.closes?.['4008'] || 0) - (metricsStart.closes?.['4008'] || 0);
@@ -947,6 +1004,8 @@ export async function runS1(opts = {}) {
       p99: Math.round(fpsP99 * 10) / 10
     },
     deliveryLatencyMs: {
+      update: { p50, p95, p99 },
+      awareness: { p50: awP50, p95: awP95, p99: awP99 },
       p50,
       p95,
       p99
@@ -956,6 +1015,9 @@ export async function runS1(opts = {}) {
       awareness: droppedAwareness,
       ceiling: droppedCeiling
     },
+    batchedFrames,
+    coalescedEntries,
+    overwrittenSlots,
     closes: {
       code4000: closes4000,
       code4008: closes4008,
@@ -973,6 +1035,306 @@ export async function runS1(opts = {}) {
       ? 'Generator worker event loop saturation (elDelay p99 > 200ms)'
       : 'Generator event loops healthy. Measured latency reflects true server/transport delivery.',
     pass: p99 < 500 && isSlowClosed && droppedQueue === 0 && closes4008 === 0
+  };
+
+  return result;
+}
+
+export async function runS1b(opts = {}) {
+  const host = opts.host || 'http://127.0.0.1:3191';
+  const scale = opts.scale || 1.0;
+  const durationSec = opts.duration || 30;
+  const numWriters = Math.max(2, Math.round(100 * scale));
+  const numGestureWriters = Math.max(1, Math.round(5 * scale));
+  const numReaders = Math.max(1, Math.round(20 * scale));
+  const numWorkers = opts.workers || 4;
+  const client = new CalabaClient(host);
+
+  console.log(`[S1b Realistic Hot Board Multi-Process] Scale: ${scale} (${numWriters} awareness writers, ${numGestureWriters} gesture writers, ${numReaders} readers, 1 slow client across ${numWorkers} worker processes). Duration: ${durationSec}s`);
+
+  // Check load average
+  const load = checkLoadAverage();
+  if (load > 8) {
+    console.warn(`[WARN] System load average is ${load.toFixed(2)} (> 8). Waiting 15s for cooldown...`);
+    await sleep(15000);
+  }
+
+  const pid = opts.serverPid || ServerManager.findPidByPort(3191);
+  const metricsStart = await client.getMetrics();
+  const procStart = sampleProcess(pid);
+
+  // Setup workspace & canvas
+  const numUsers = Math.min(25, Math.ceil((numWriters + numReaders) / 6) + 2);
+  const { wsId, users, adminToken } = await setupWorkspaceWithUsers(client, numUsers);
+  const canvasId = await client.createCanvas(adminToken, wsId, 'S1b Hot Canvas');
+
+  // Build writer and reader configs
+  const writerConfigs = [];
+  for (let i = 0; i < numWriters; i++) {
+    const user = users[i % users.length];
+    writerConfigs.push({
+      token: user.token,
+      clientId: 1000 + i,
+      isGesture: i < numGestureWriters
+    });
+  }
+
+  const readerConfigs = [];
+  for (let i = 0; i < numReaders; i++) {
+    const user = users[(i + numWriters) % users.length];
+    readerConfigs.push({ token: user.token, clientId: 5000 + i });
+  }
+
+  // Partition configs across workers
+  const workerAssignments = [];
+  for (let w = 0; w < numWorkers; w++) {
+    workerAssignments.push({
+      writers: [],
+      readers: [],
+      hasSlowClient: w === 0,
+      slowToken: adminToken
+    });
+  }
+  writerConfigs.forEach((c, idx) => {
+    workerAssignments[idx % numWorkers].writers.push(c);
+  });
+  readerConfigs.forEach((c, idx) => {
+    workerAssignments[idx % numWorkers].readers.push(c);
+  });
+
+  console.log(`[S1b] Spawning ${numWorkers} worker processes...`);
+  const workerProcs = [];
+  const workerPids = [];
+  const readyPromises = [];
+
+  for (let w = 0; w < numWorkers; w++) {
+    const cp = fork(fileURLToPath(import.meta.url), ['--worker-s1'], {
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc']
+    });
+    workerProcs.push(cp);
+    workerPids.push(cp.pid);
+
+    const readyPromise = new Promise((resolve, reject) => {
+      const onMsg = (msg) => {
+        if (msg.type === 'ready') {
+          cp.off('message', onMsg);
+          resolve();
+        } else if (msg.type === 'error') {
+          reject(new Error(`Worker ${w} error: ${msg.error}`));
+        }
+      };
+      cp.on('message', onMsg);
+    });
+    readyPromises.push(readyPromise);
+
+    cp.send({
+      type: 'init',
+      host,
+      canvasId,
+      writers: workerAssignments[w].writers,
+      readers: workerAssignments[w].readers,
+      hasSlowClient: workerAssignments[w].hasSlowClient,
+      slowToken: workerAssignments[w].slowToken,
+      duration: durationSec
+    });
+  }
+
+  console.log(`[S1b] Waiting for all ${numWorkers} workers to connect their sockets...`);
+  await Promise.all(readyPromises);
+  console.log(`[S1b] All workers ready. Starting ${durationSec}s load test across ${numWorkers} processes...`);
+
+  for (const cp of workerProcs) {
+    cp.send({ type: 'start' });
+  }
+
+  const rssSamples = [];
+  const cpuSamples = [];
+  const workerCpuSamples = workerPids.map(() => []);
+  const startMs = Date.now();
+  const durationMs = durationSec * 1000;
+
+  // Sampler interval
+  const sampleTimer = setInterval(() => {
+    const p = sampleProcess(pid);
+    if (p) {
+      rssSamples.push(p.rssMB);
+      cpuSamples.push(p.cpuPercent);
+    }
+    for (let i = 0; i < workerPids.length; i++) {
+      const wp = sampleProcess(workerPids[i]);
+      if (wp) workerCpuSamples[i].push(wp.cpuPercent);
+    }
+  }, 2000);
+
+  // Monitor loop
+  while (Date.now() - startMs < durationMs) {
+    await sleep(1000);
+    const currLoad = checkLoadAverage();
+    if (currLoad > 12) {
+      console.error(`[EMERGENCY] System load average reached ${currLoad.toFixed(2)} (> 12). Aborting scenario!`);
+      break;
+    }
+  }
+
+  clearInterval(sampleTimer);
+
+  console.log(`[S1b] Duration reached. Stopping workers and collecting metrics...`);
+  const donePromises = [];
+  for (let w = 0; w < numWorkers; w++) {
+    const cp = workerProcs[w];
+    const donePromise = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve({ latencies: [], updateLatencies: [], awarenessLatencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+      }, 7000);
+      const onMsg = (msg) => {
+        if (msg.type === 'done') {
+          cleanup();
+          resolve(msg);
+        } else if (msg.type === 'error') {
+          cleanup();
+          resolve({ latencies: [], updateLatencies: [], awarenessLatencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+        }
+      };
+      const onExit = () => {
+        cleanup();
+        resolve({ latencies: [], updateLatencies: [], awarenessLatencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+      };
+      function cleanup() {
+        clearTimeout(timer);
+        cp.off('message', onMsg);
+        cp.off('exit', onExit);
+      }
+      cp.on('message', onMsg);
+      cp.on('exit', onExit);
+    });
+    donePromises.push(donePromise);
+    try { cp.send({ type: 'stop' }); } catch {}
+  }
+
+  const workerResults = await Promise.all(donePromises);
+  const procEnd = sampleProcess(pid);
+  const metricsEnd = await client.getMetrics();
+
+  // Aggregate stats
+  const allUpdateLatencies = [];
+  const allAwarenessLatencies = [];
+  const framesPerSecPerClient = [];
+  const workerReports = [];
+  let slowStatus = null;
+
+  for (let w = 0; w < numWorkers; w++) {
+    const r = workerResults[w] || {};
+    if (r.updateLatencies && Array.isArray(r.updateLatencies)) {
+      for (let i = 0; i < r.updateLatencies.length; i++) {
+        allUpdateLatencies.push(r.updateLatencies[i]);
+      }
+    } else if (r.latencies && Array.isArray(r.latencies)) {
+      for (let i = 0; i < r.latencies.length; i++) {
+        allUpdateLatencies.push(r.latencies[i]);
+      }
+    }
+    if (r.awarenessLatencies && Array.isArray(r.awarenessLatencies)) {
+      for (let i = 0; i < r.awarenessLatencies.length; i++) {
+        allAwarenessLatencies.push(r.awarenessLatencies[i]);
+      }
+    }
+    for (const fc of (r.frameCounts || [])) {
+      framesPerSecPerClient.push(fc / durationSec);
+    }
+    if (r.slowStatus) slowStatus = r.slowStatus;
+    const avgWorkerCpu = workerCpuSamples[w].length ? Math.round(workerCpuSamples[w].reduce((a,b)=>a+b,0)/workerCpuSamples[w].length) : r.cpuPercent;
+    workerReports.push({
+      workerId: w,
+      pid: workerPids[w],
+      cpuPercent: avgWorkerCpu,
+      eventLoopDelayMs: r.eventLoopDelayMs,
+      sockets: workerAssignments[w].writers.length + workerAssignments[w].readers.length + (workerAssignments[w].hasSlowClient ? 1 : 0)
+    });
+  }
+
+  const p50 = percentile(allUpdateLatencies, 50);
+  const p95 = percentile(allUpdateLatencies, 95);
+  const p99 = percentile(allUpdateLatencies, 99);
+
+  const awP50 = percentile(allAwarenessLatencies, 50);
+  const awP95 = percentile(allAwarenessLatencies, 95);
+  const awP99 = percentile(allAwarenessLatencies, 99);
+
+  const fpsMedian = percentile(framesPerSecPerClient, 50);
+  const fpsP99 = percentile(framesPerSecPerClient, 99);
+
+  const peakRss = rssSamples.length ? Math.max(...rssSamples) : (procEnd?.rssMB || 0);
+  const peakCpu = cpuSamples.length ? Math.max(...cpuSamples) : (procEnd?.cpuPercent || 0);
+
+  const droppedQueue = (metricsEnd.droppedFrames?.queue || 0) - (metricsStart.droppedFrames?.queue || 0);
+  const droppedAwareness = (metricsEnd.droppedFrames?.awareness || 0) - (metricsStart.droppedFrames?.awareness || 0);
+  const droppedCeiling = (metricsEnd.droppedFrames?.ceiling || 0) - (metricsStart.droppedFrames?.ceiling || 0);
+
+  const batchedFrames = (metricsEnd.batchedFrames || 0) - (metricsStart.batchedFrames || 0);
+  const coalescedEntries = (metricsEnd.coalescedEntries || 0) - (metricsStart.coalescedEntries || 0);
+  const overwrittenSlots = (metricsEnd.overwrittenSlots || 0) - (metricsStart.overwrittenSlots || 0);
+
+  const closes4000 = (metricsEnd.closes?.['4000'] || 0) - (metricsStart.closes?.['4000'] || 0);
+  const closes4008 = (metricsEnd.closes?.['4008'] || 0) - (metricsStart.closes?.['4008'] || 0);
+  const closes4012 = (metricsEnd.closes?.['4012'] || 0) - (metricsStart.closes?.['4012'] || 0);
+  const closes4014 = (metricsEnd.closes?.['4014'] || 0) - (metricsStart.closes?.['4014'] || 0);
+
+  const isSlowClosed = slowStatus?.closed || closes4000 > 0;
+
+  const maxWorkerElP99 = Math.max(...workerReports.map(w => w.eventLoopDelayMs?.p99 || 0));
+  const generatorBottleneck = maxWorkerElP99 > 200;
+
+  const result = {
+    scenario: 'S1b',
+    scale,
+    numWriters,
+    numGestureWriters,
+    numReaders,
+    numWorkers,
+    durationSec,
+    server: {
+      startRssMB: procStart?.rssMB || 0,
+      peakRssMB: peakRss,
+      endRssMB: procEnd?.rssMB || 0,
+      peakCpuPercent: peakCpu
+    },
+    clientFramesPerSec: {
+      median: Math.round(fpsMedian * 10) / 10,
+      p99: Math.round(fpsP99 * 10) / 10
+    },
+    deliveryLatencyMs: {
+      update: { p50, p95, p99 },
+      awareness: { p50: awP50, p95: awP95, p99: awP99 },
+      p50,
+      p95,
+      p99
+    },
+    droppedFrames: {
+      queue: droppedQueue,
+      awareness: droppedAwareness,
+      ceiling: droppedCeiling
+    },
+    batchedFrames,
+    coalescedEntries,
+    overwrittenSlots,
+    closes: {
+      code4000: closes4000,
+      code4008: closes4008,
+      code4012: closes4012,
+      code4014: closes4014
+    },
+    slowClient: {
+      closedByServer: isSlowClosed,
+      closeCode: slowStatus?.closeCode || (isSlowClosed ? 4000 : null),
+      closeReason: slowStatus?.closeReason || (isSlowClosed ? 'write timeout' : '')
+    },
+    generatorWorkers: workerReports,
+    generatorBottleneck,
+    bottleneckAnalysis: generatorBottleneck
+      ? 'Generator worker event loop saturation (elDelay p99 > 200ms)'
+      : 'Generator event loops healthy. Measured latency reflects true server/transport delivery.',
+    pass: p99 < 500 && isSlowClosed && droppedQueue === 0 && closes4008 === 0 && (closes4000 <= 1)
   };
 
   return result;
@@ -2167,10 +2529,10 @@ async function main() {
     else if (args[i] === '--json') opts.json = true;
   }
 
-  if (!scenario || ['s1', 's2', 's3', 's4', 's5', 's5b', 's6', 's7', 'sigkill-conns', 'all'].indexOf(scenario) === -1) {
+  if (!scenario || ['s1', 's1b', 's2', 's3', 's4', 's5', 's5b', 's6', 's7', 'sigkill-conns', 'all'].indexOf(scenario) === -1) {
     console.log(`
 Usage:
-  nice -n 19 node tools/load-canvas.mjs <s1|s2|s3|s4|s5|s5b|s6|s7|sigkill-conns|all> [options]
+  nice -n 19 node tools/load-canvas.mjs <s1|s1b|s2|s3|s4|s5|s5b|s6|s7|sigkill-conns|all> [options]
 `);
     process.exit(1);
   }
@@ -2189,6 +2551,7 @@ Usage:
 
   const runnerMap = {
     s1: runS1,
+    s1b: runS1b,
     s2: runS2,
     s3: runS3,
     s4: runS4,
