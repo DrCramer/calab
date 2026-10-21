@@ -405,6 +405,11 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/events/{id}/comments/{comment_id}",
 	}},
 
+	// MCP for bots (CBF-48), closed on behalf: the endpoint is the bot itself.
+	{access: botAllow, onBehalf: onBehalfClosed, why: "MCP for bots (CBF-48): bot tokens only (the handler refuses people); every tool calls a REST route of this table in process with the same token, so it has exactly the bot's rights", routes: []string{
+		"/api/mcp",
+	}},
+
 	// ---------------------------------------------------------------- deny: people only
 	{access: botDeny, why: "account security: a bot has no password, email, sessions, push devices or nickname of its own; it authenticates with its token only (ADR-0031 §2)", routes: []string{
 		"GET /api/me/sessions",
