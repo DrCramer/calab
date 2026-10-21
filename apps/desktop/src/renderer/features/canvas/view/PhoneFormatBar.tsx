@@ -5,7 +5,7 @@ import { t, useLocale } from '../../../i18n';
 import { F_BOLD, F_ITALIC, F_STRIKE } from '../../../lib/canvas/richText';
 import type { CanvasEngine } from '../engine';
 import { DIVIDER, PANEL } from './chrome';
-import { FONT_SIZE_DEFS } from './model';
+import { FontSizeField } from './FontSizeField';
 import { PhoneBtn } from './PhoneEditBar';
 
 const ICON = 'size-[22px]';
@@ -50,16 +50,20 @@ export const PhoneFormatBar = memo(function PhoneFormatBar({ engine }: { engine:
             </PhoneBtn>
           </>
         ) : null}
-        {st.rich && st.token !== null ? (
+        {st.rich && st.size !== null ? (
           <>
             <div className={DIVIDER} aria-hidden />
-            <div role="group" aria-label={t('canvasBoard.props.textSize')} className="flex items-center gap-0.5">
-              {FONT_SIZE_DEFS.map((d) => (
-                <PhoneBtn key={d.token} label={t(d.label)} active={st.token === d.token} onClick={() => engine.setEditFontSize(d.token)} testId={`canvas-format-size-${d.token}`}>
-                  <span className="text-control font-semibold">{d.glyph}</span>
-                </PhoneBtn>
-              ))}
-            </div>
+            <FontSizeField
+              touch
+              keepsEditing
+              value={st.size}
+              onCommit={(px) => engine.setEditFontSize(px)}
+              release={() => ed.refocus()}
+              leave={(to) => {
+                if (!ed.keepsEditing(to)) ed.commit();
+              }}
+              testId="canvas-format-size"
+            />
           </>
         ) : null}
       </div>

@@ -5,7 +5,7 @@ import {
   type Fmt, type ListKind,
 } from '../../../lib/canvas/richText';
 import { MAX_TEXT } from '../../../lib/canvas/types';
-import { LINE_HEIGHT, type FontToken } from '../../../lib/canvas/textLayout';
+import { LINE_HEIGHT } from '../../../lib/canvas/textLayout';
 
 export interface EditSpec {
   /** Where the text lives, world units. */
@@ -26,8 +26,8 @@ export interface EditSpec {
   fmt?: Fmt;
   /** Bold / italic / strike / lists are available (not for a connector label). */
   rich?: boolean;
-  /** Size token shown in the format bar (null: the object has none, e.g. a label). */
-  token?: FontToken | null;
+  /** The object has a text size the format bar can change (false: e.g. a connector label). */
+  sized?: boolean;
 }
 
 /** What the format bar shows: replaced (not mutated) whenever any of it changes, so it is a `useSyncExternalStore` snapshot. */
@@ -38,7 +38,8 @@ export interface FormatState {
   readonly italic: boolean;
   readonly strike: boolean;
   readonly list: ListKind | null;
-  readonly token: FontToken | null;
+  /** The text size in px the format bar's size field shows (null: this text has none to change). */
+  readonly size: number | null;
   /** The textarea's box in CSS px of the editor host, for placing the bar. */
   readonly x: number;
   readonly y: number;
@@ -48,7 +49,7 @@ export interface FormatState {
   readonly kbd: number;
 }
 
-const CLOSED: FormatState = { open: false, rich: false, bold: false, italic: false, strike: false, list: null, token: null, x: 0, y: 0, w: 0, h: 0, kbd: 0 };
+const CLOSED: FormatState = { open: false, rich: false, bold: false, italic: false, strike: false, list: null, size: null, x: 0, y: 0, w: 0, h: 0, kbd: 0 };
 
 /** Keeping the text clear of the on-screen keyboard (the phone's edit mode, ADR-0115 wave 5b). */
 export interface PhoneKeyboard {
@@ -230,11 +231,21 @@ export class TextEditor {
     this.refresh();
   }
 
-  /** The object's text size changed while editing (the format bar's size buttons). */
-  setSize(size: number, token: FontToken | null): void {
+  /** The object's text size changed while editing (the format bar's size field). */
+  setSize(size: number): void {
     if (!this.spec) return;
-    this.spec = { ...this.spec, size, token };
+    this.spec = { ...this.spec, size };
     this.reposition();
+  }
+
+  /** Hands the focus back to the textarea (after the format bar's size field took it to type a number). */
+  refocus(): void {
+    this.ta?.focus({ preventScroll: true });
+  }
+
+  /** The focus moved to `el`: still part of editing (the textarea, or a control of the format bar that marks itself `data-keeps-editing`). */
+  keepsEditing(el: EventTarget | null): boolean {
+    return el !== null && (el === this.ta || (el instanceof Element && el.closest('[data-keeps-editing]') !== null));
   }
 
   private fit(): void {
@@ -358,7 +369,9 @@ export class TextEditor {
     return true;
   }
 
-  private readonly onBlur = (): void => {
+  private readonly onBlur = (e: FocusEvent): void => {
+    // The format bar's size field takes the focus to type a number: that is still editing.
+    if (this.keepsEditing(e.relatedTarget)) return;
     this.commit();
   };
 
@@ -383,7 +396,7 @@ export class TextEditor {
       italic: (flags & F_ITALIC) !== 0,
       strike: (flags & F_STRIKE) !== 0,
       list: rich ? listIn(this.fmt, this.text, from, to) : null,
-      token: spec.token ?? null,
+      size: spec.sized ? spec.size : null,
       x: r(x),
       y: r(y),
       w: r(parseFloat(ta.style.width) || 0),
@@ -397,7 +410,7 @@ export class TextEditor {
     const a = this.snap;
     if (
       a.open === next.open && a.rich === next.rich && a.bold === next.bold && a.italic === next.italic && a.strike === next.strike &&
-      a.list === next.list && a.token === next.token && a.x === next.x && a.y === next.y && a.w === next.w && a.h === next.h && a.kbd === next.kbd
+      a.list === next.list && a.size === next.size && a.x === next.x && a.y === next.y && a.w === next.w && a.h === next.h && a.kbd === next.kbd
     ) return;
     this.snap = next;
     for (const fn of [...this.listeners]) fn();

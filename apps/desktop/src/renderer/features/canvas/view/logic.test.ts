@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ObjectRec } from '../../../lib/canvas/types';
 import { placePanel } from './layout';
 import { exportScale, pngFileName, MAX_EXPORT_PIXELS, MAX_EXPORT_SIDE } from './exportPng';
-import { nearestTextSize } from './model';
 import { PresenceStore } from './presenceStore';
 import { createSelectionModel, panelModelOf } from './selectionModel';
 
@@ -12,15 +11,17 @@ const shape = (id: string, over: Partial<{ fill: string; stroke: string; strokeW
   ...base, id, kind: 'shape', shape: 'rect', fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '', ...over,
 });
 
-describe('panelModelOf: text size token', () => {
+describe('panelModelOf: text size in px', () => {
   const text = (id: string, size: number): ObjectRec => ({ ...base, id, kind: 'text', size, color: 'text', text: '' });
-  it('stickies and shapes show their token, a text object its nearest preset, and a mix shows none', () => {
-    expect(panelModelOf([sticky('a', 'yellow')])?.fontToken).toBe('m');
-    expect(panelModelOf([{ ...sticky('a', 'yellow'), fontSize: 'xl' } as ObjectRec])?.fontToken).toBe('xl');
-    expect(panelModelOf([text('t', 31)])?.fontToken).toBe('l');
-    expect(panelModelOf([text('t', 20), sticky('a', 'yellow')])?.fontToken).toBe('m');
-    expect(panelModelOf([text('t', 48), sticky('a', 'yellow')])?.fontToken).toBeUndefined();
-    expect(panelModelOf([{ ...shape('s'), fontSize: 's' } as ObjectRec])?.fontToken).toBe('s');
+  it('every kind shows its real px; a mix shows none', () => {
+    expect(panelModelOf([sticky('a', 'yellow')])?.fontPx).toBe(18);
+    expect(panelModelOf([{ ...sticky('a', 'yellow'), fontSize: 'xl' } as ObjectRec])?.fontPx).toBe(38);
+    expect(panelModelOf([{ ...sticky('a', 'yellow'), fontSize: 'l', fontPx: 30 } as ObjectRec])?.fontPx).toBe(30);
+    expect(panelModelOf([text('t', 31)])?.fontPx).toBe(31);
+    expect(panelModelOf([{ ...shape('s'), fontSize: 's' } as ObjectRec])?.fontPx).toBe(12);
+    expect(panelModelOf([shape('s')])?.fontPx).toBe(16);
+    expect(panelModelOf([text('t', 18), sticky('a', 'yellow')])?.fontPx).toBe(18);
+    expect(panelModelOf([text('t', 20), sticky('a', 'yellow')])?.fontPx).toBeUndefined();
   });
 });
 
@@ -106,13 +107,6 @@ describe('properties panel model', () => {
     hook.fire?.(objs);
     expect(cb).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()?.stickyColor).toBe('blue');
-  });
-
-  it('maps text sizes to the nearest preset', () => {
-    expect(nearestTextSize(20)).toBe(20);
-    expect(nearestTextSize(25)).toBe(20);
-    expect(nearestTextSize(28)).toBe(32);
-    expect(nearestTextSize(200)).toBe(48);
   });
 });
 

@@ -416,14 +416,14 @@ describe('the properties sheet', () => {
     const token = first?.dataset['testid']?.replace('canvas-phone-color-', '');
     act(() => first?.click());
     expect(m.q('canvas-phone-panel')).toBeNull();
-    click(m, 'canvas-prop-size-l');
+    click(m, 'canvas-prop-size-more');
     click(m, 'canvas-prop-lock');
     await settle(600);
     expect(objects(m)).toHaveLength(1);
-    expect(objects(m)[0]).toMatchObject({ color: token, fontSize: 'l', locked: true });
+    expect(objects(m)[0]).toMatchObject({ color: token, fontPx: 19, locked: true });
     // A locked selection offers no color or size, only «unlock», duplicate and delete.
     expect(m.q('canvas-prop-sticky-color')).toBeNull();
-    expect(m.q('canvas-prop-size-l')).toBeNull();
+    expect(m.q('canvas-prop-size')).toBeNull();
     click(m, 'canvas-prop-lock');
     click(m, 'canvas-prop-duplicate');
     await settle(600);
@@ -498,7 +498,7 @@ describe('the properties sheet', () => {
     await settle(600);
     const conn = objects(m).find((o) => o['kind'] === 'connector');
     expect(conn).toMatchObject({ arrow: 'both', route: 'elbow' });
-    expect(m.q('canvas-prop-size-m')).toBeNull();
+    expect(m.q('canvas-prop-size')).toBeNull();
   });
 });
 
@@ -604,8 +604,9 @@ describe('touch editing in the viewer', () => {
     expect(down.defaultPrevented).toBe(true);
     click(m, 'canvas-format-bold');
     expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('true');
-    click(m, 'canvas-format-size-l');
-    expect(m.q('canvas-format-size-l')?.getAttribute('aria-pressed')).toBe('true');
+    expect(m.q('canvas-format-size-input')?.getAttribute('inputmode')).toBe('numeric');
+    click(m, 'canvas-format-size-more');
+    expect(m.q('canvas-format-size-input')?.getAttribute('aria-valuenow')).toBe('19');
     ta.value = 'Привет';
     act(() => void ta.dispatchEvent(new Event('input', { bubbles: true })));
     click(m, 'canvas-format-done');

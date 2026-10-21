@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { F_BOLD, F_ITALIC, toggleFlag, toggleList } from './richText';
-import { LINE_HEIGHT, TextLayouter, boxFontSize, nearestToken } from './textLayout';
+import { LINE_HEIGHT, TextLayouter, boxFontSize, fontFields, nearestFontToken, nearestToken, storedFontPx } from './textLayout';
 import type { BoxRec } from './types';
 
 // 10 px per character at size 20 → 0.5 em.
@@ -131,6 +131,26 @@ describe('font tokens', () => {
     expect(boxFontSize(sticky('xl'))).toBe(38);
     expect(boxFontSize({ kind: 'shape', id: 's', z: 'a', x: 0, y: 0, w: 1, h: 1, shape: 'rect', fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '', fontSize: 's' })).toBe(12);
     expect(boxFontSize({ kind: 'text', id: 't', z: 'a', x: 0, y: 0, w: 1, h: 1, size: 27, color: 'text', text: '' })).toBe(27);
+  });
+  it('an exact fontPx wins over the token', () => {
+    expect(boxFontSize({ ...sticky('xl'), fontPx: 30 } as BoxRec)).toBe(30);
+    expect(boxFontSize({ kind: 'shape', id: 's', z: 'a', x: 0, y: 0, w: 1, h: 1, shape: 'rect', fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '', fontPx: 14 })).toBe(14);
+  });
+  it('fontFields: a preset is a token (M nothing), another px is kept exactly next to the nearest token', () => {
+    expect(fontFields('sticky', 18)).toEqual({});
+    expect(fontFields('sticky', 38)).toEqual({ fontSize: 'xl' });
+    expect(fontFields('shape', 12)).toEqual({ fontSize: 's' });
+    expect(fontFields('sticky', 30)).toEqual({ fontSize: 'l', fontPx: 30 });
+    expect(fontFields('sticky', 19)).toEqual({ fontPx: 19 });
+    expect(nearestFontToken('shape', 20)).toBe('m');
+    expect(nearestFontToken('text', 41)).toBe('xl');
+  });
+  it('storedFontPx trusts the number only for the token it was written with', () => {
+    expect(storedFontPx('sticky', 30, 'l', 8, 200)).toBe(30);
+    expect(storedFontPx('sticky', 30, 'xl', 8, 200)).toBeUndefined();
+    expect(storedFontPx('sticky', 26, 'l', 8, 200)).toBeUndefined();
+    expect(storedFontPx('sticky', 'x', 'm', 8, 200)).toBeUndefined();
+    expect(storedFontPx('sticky', 500, 'xl', 8, 200)).toBe(200);
   });
   it('a free size maps to the nearest token', () => {
     expect(nearestToken(20)).toBe('m');

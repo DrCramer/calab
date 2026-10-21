@@ -9,7 +9,7 @@ import { SpatialGrid } from './grid';
 import { RouteCache, routeConnector } from './route';
 import { pointInShape } from './shapes';
 import { fmtFromDelta, type Fmt } from './richText';
-import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter, isFontToken, type FontToken } from './textLayout';
+import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter, isFontToken, storedFontPx, type FontToken } from './textLayout';
 import {
   DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector,
   type BoxRec, type ConnectorRec, type Endpoint, type ObjectRec, type RouteKind, type Arrow,
@@ -495,16 +495,18 @@ export class Scene {
       return r.text;
     };
     const rich = (): { fmt?: Fmt } => (cell.fmt ? { fmt: cell.fmt } : {});
-    const fontSizeOf = (): { fontSize?: FontToken } => {
+    const fontSizeOf = (kind: 'sticky' | 'shape'): { fontSize?: FontToken; fontPx?: number } => {
       const v = m.get('fontSize');
-      return isFontToken(v) && v !== 'm' ? { fontSize: v } : {};
+      const token: FontToken = isFontToken(v) ? v : 'm';
+      const px = storedFontPx(kind, m.get('fontPx'), token, DEFAULTS.minTextSize, DEFAULTS.maxTextSize);
+      return { ...(token !== 'm' ? { fontSize: token } : {}), ...(px !== undefined ? { fontPx: px } : {}) };
     };
     switch (kind) {
       case 'sticky':
         return {
           kind, id, z, x, y,
           w: num(m.get('w'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
-          color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...rich(), ...fontSizeOf(), ...this.extras(m, true),
+          color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...rich(), ...fontSizeOf('sticky'), ...this.extras(m, true),
         };
       case 'text': {
         const w = num(m.get('w'), DEFAULTS.textW, DEFAULTS.minTextW, MAX_SIZE);
@@ -521,7 +523,7 @@ export class Scene {
           w: num(m.get('w'), DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
           shape: isShapeKind(shape) ? shape : 'rect',
           fill: color(m.get('fill'), DEFAULTS.shapeFill), stroke: color(m.get('stroke'), DEFAULTS.shapeStroke),
-          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf(), ...this.extras(m, true),
+          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf('shape'), ...this.extras(m, true),
         };
       }
       default:
