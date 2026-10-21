@@ -55,3 +55,26 @@ func TestFormCapabilitiesNeverAppearInHTTPLogs(t *testing.T) {
 		t.Fatal("form capability leaked")
 	}
 }
+
+func TestCanvasCodesNeverAppearInHTTPLogs(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+	marker := "canvas-code-sentinel"
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/public/canvas/{code}", HandlerFunc(func(http.ResponseWriter, *http.Request) error { return fmt.Errorf("database %s", marker) }))
+	handler := Observe(mux)
+	for _, raw := range []string{"/api/public/canvas/" + marker, "/api/public/canvas/" + marker + "/sync", "/api/public/canvas/" + marker + "/other", "/api/public//canvas/" + marker, "/api/public/canvas%2F" + marker} {
+		req := httptest.NewRequestWithContext(context.Background(), "GET", raw, nil)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		WriteError(httptest.NewRecorder(), req, fmt.Errorf("source %s", marker))
+	}
+	if strings.Contains(logs.String(), marker) {
+		t.Fatalf("canvas code leaked: %s", logs.String())
+	}
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/public/canvas/x/sync", nil)
+	if got := safeLogPath(req); got != "/api/public/canvas/{code}" {
+		t.Fatalf("safeLogPath = %q", got)
+	}
+}
