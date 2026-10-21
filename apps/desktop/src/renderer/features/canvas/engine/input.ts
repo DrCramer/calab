@@ -6,6 +6,7 @@ import {
   type Mods,
 } from './gestures';
 import { HANDLE_PX, ROTATE_OFFSET_PX, TOUCH_HIT_PX, TOUCH_ROTATE_OFFSET_PX, type SelFrame } from './overlay';
+import { keyIs } from './keys';
 import { WheelClassifier } from './wheel';
 import { clampScale } from '../../../lib/canvas/camera';
 
@@ -22,6 +23,7 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
   mod: e.ctrlKey || e.metaKey,
 });
 
+const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1 };
 const NO_MODS: Mods = { shift: false, alt: false, mod: false };
 /** Touch editing (ADR-0115 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
 const LONG_PRESS_MS = 500;
@@ -107,7 +109,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     if (engine.selection.size !== 1) return null;
     const id = [...engine.selection][0];
     const c = id ? engine.scene.get(id) : undefined;
-    if (!c || !isConnector(c) || c.points.length < 4) return null;
+    if (!c || !isConnector(c) || c.locked || c.points.length < 4) return null;
     const r = engine.px(engine.touch ? TOUCH_HIT_PX : HANDLE_PX);
     const a = { x: c.points[0] ?? 0, y: c.points[1] ?? 0 };
     const b = { x: c.points[c.points.length - 2] ?? 0, y: c.points[c.points.length - 1] ?? 0 };
@@ -449,6 +451,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     if (e.isComposing || e.target !== canvas) return;
     const mod = e.metaKey || e.ctrlKey;
     const k = e.key.toLowerCase();
+    const is = (l: string): boolean => keyIs(e, l);
     if (e.key === ' ' && !spaceDown) {
       spaceDown = true;
       setCursor('grab');
@@ -472,15 +475,15 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     }
     if (mod) {
       switch (true) {
-        case k === 'a': engine.selectAll(); break;
-        case k === 'c': void engine.copy(); break;
-        case k === 'x': void engine.cut(); break;
-        case k === 'v': void engine.paste(); break;
-        case k === 'z': if (e.shiftKey) engine.redo(); else engine.undo(); break;
-        case k === 'y': engine.redo(); break;
-        case k === 'd': engine.duplicateSelection(); break;
-        case k === 'g': if (e.shiftKey) engine.ungroupSelection(); else engine.groupSelection(); break;
-        case k === 'l' && e.shiftKey: engine.toggleLock(); break;
+        case is('a'): engine.selectAll(); break;
+        case is('c'): void engine.copy(); break;
+        case is('x'): void engine.cut(); break;
+        case is('v'): void engine.paste(); break;
+        case is('z'): if (e.shiftKey) engine.redo(); else engine.undo(); break;
+        case is('y'): engine.redo(); break;
+        case is('d'): engine.duplicateSelection(); break;
+        case is('g'): if (e.shiftKey) engine.ungroupSelection(); else engine.groupSelection(); break;
+        case is('l') && e.shiftKey: engine.toggleLock(); break;
         case e.code === 'BracketRight': engine.reorder(1, e.shiftKey); break;
         case e.code === 'BracketLeft': engine.reorder(-1, e.shiftKey); break;
         case k === '0': engine.zoomTo(100); break;
@@ -504,7 +507,16 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         case 'Delete':
         case 'Backspace': engine.deleteSelection(); break;
         case 'Enter': if (!engine.startTextEdit()) return; break;
-        case 'Tab': engine.cycleSelection(e.shiftKey ? -1 : 1); break;
+        case 'Tab': {
+          // Tab walks the objects; past the last (or first) one, or on an empty canvas, it leaves for the browser.
+          const order = engine.scene.orderedIds();
+          const cur = engine.getState().selectedId;
+          const i = cur === null ? -1 : order.indexOf(cur);
+          const dir = e.shiftKey ? -1 : 1;
+          if (order.length === 0 || (dir > 0 && i === order.length - 1) || (dir < 0 && i <= 0 && cur !== null)) return;
+          engine.cycleSelection(dir);
+          break;
+        }
         case 'ArrowLeft': engine.nudge(e.shiftKey ? -10 : -1, 0); break;
         case 'ArrowRight': engine.nudge(e.shiftKey ? 10 : 1, 0); break;
         case 'ArrowUp': engine.nudge(0, e.shiftKey ? -10 : -1); break;
@@ -515,7 +527,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         case '_': engine.zoomStep(-1); break;
         default:
           if (e.shiftKey || e.altKey) return;
-          switch (k) {
+          switch (Object.keys(TOOL_KEYS).find((l) => is(l))) {
             case 'v': engine.setTool('select'); break;
             case 's': if (engine.readOnly) return; engine.setTool('sticky'); break;
             case 't': if (engine.readOnly) return; engine.setTool('text'); break;

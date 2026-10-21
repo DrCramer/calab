@@ -22,7 +22,7 @@ import type { TimerStore } from './timerStore';
  */
 
 const ICON = 'size-[22px]';
-const BTN = 'grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] text-fg outline-none active:bg-active disabled:opacity-40 disabled:active:bg-transparent';
+const BTN = 'grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] text-fg active:bg-active disabled:opacity-40 disabled:active:bg-transparent';
 /** The sheets above the bar: popover material, square at the bottom, scroll inside when the content is taller than the screen allows. */
 export const SHEET = 'mat-popover pointer-events-auto max-h-[min(55vh,420px)] overflow-y-auto overscroll-contain rounded-t-[var(--radius-card)] border-x-0 border-b-0';
 
@@ -198,8 +198,8 @@ function ShapesSheet({ engine, shapeKind, onDone }: { engine: CanvasEngine; shap
   );
 }
 
-const ROW = 'flex min-h-12 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-left outline-none active:bg-active';
-const CHIP = 'h-11 min-w-11 rounded-[var(--radius-control)] bg-[var(--color-fill)] px-3 text-body text-fg outline-none active:bg-active disabled:opacity-40';
+const ROW = 'flex min-h-12 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-left active:bg-active';
+const CHIP = 'h-11 min-w-11 rounded-[var(--radius-control)] bg-[var(--color-fill)] px-3 text-body text-fg active:bg-active disabled:opacity-40';
 
 /** «+»: the templates (inserted at the center of the view), then the vote and the countdown with their quick actions. */
 function PlusSheet({ engine, timer, focusCanvas, onDone }: { engine: CanvasEngine; timer: TimerStore; focusCanvas: () => void; onDone: () => void }): ReactNode {

@@ -13,7 +13,7 @@ import { PANEL, keepFocus } from './chrome';
  */
 
 const MENU_W = 196;
-const ROW = 'flex h-11 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-left text-body text-fg outline-none active:bg-active';
+const ROW = 'flex h-11 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-left text-body text-fg active:bg-active';
 
 interface Open {
   s: Point;
