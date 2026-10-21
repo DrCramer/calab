@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { CircleHelp, Focus, Map as MapIcon, Maximize, Minus, Plus } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
-import { IconButton, MOD, Tip, cx } from '../../../components/ui';
+import { ALT, IconButton, MOD, Tip, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { CanvasEngine } from '../engine';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
@@ -79,7 +79,7 @@ function Help({ focusCanvas, canWrite, open, onOpenChange }: { focusCanvas: () =
           <h2 className="mb-2 text-body font-semibold text-fg">{t('canvasBoard.help.title')}</h2>
           <ul className="flex flex-col gap-1.5 text-caption text-muted">
             {rows.map((k) => (
-              <li key={k}>{t(k, { mod: MOD })}</li>
+              <li key={k}>{t(k, { mod: MOD, alt: ALT })}</li>
             ))}
           </ul>
         </Popover.Content>

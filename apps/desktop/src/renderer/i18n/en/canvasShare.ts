@@ -8,7 +8,7 @@ export const enCanvasShare: DictShape<typeof ruCanvasShare> = {
   'canvasShare.tab.link': 'Link',
   'canvasShare.link.on': 'Access by link',
   'canvasShare.link.hint': 'Anyone with the link sees the canvas without signing in, but cannot edit it or see who is on it',
-  'canvasShare.link.private': 'A private canvas cannot be opened by link. Turn off «Selected people only» on the «Access» tab to switch the link on.',
+  'canvasShare.link.private': 'A private canvas cannot be opened by link. Turn off “Selected people only” on the “Access” tab to switch the link on.',
   'canvasShare.link.views': 'Views: {n}',
   'canvasShare.err.link': 'Could not change the link',
   'canvasShare.public.readOnly': 'View only',

@@ -29,7 +29,7 @@ describe('TextEditor', () => {
     expect(ed.isOpen).toBe(true);
     expect(ta?.style.left).toBe('210px'); // 100 * 2 + 10
     expect(ta?.style.top).toBe('120px'); // 50 * 2 + 20
-    // Laid out at world size, scaled by the camera.
+    // Laid out at world size, scaled by the camera (wraps like the canvas at any zoom).
     expect(ta?.style.width).toBe('200px');
     expect(ta?.style.fontSize).toBe('20px');
     expect(ta?.style.transform).toBe('scale(2)');

@@ -10,7 +10,7 @@ export const ruCanvasComments = {
   'canvasComments.loadFailed': 'Не удалось загрузить комментарии',
   'canvasComments.retry': 'Повторить',
   'canvasComments.empty': 'Комментариев нет',
-  'canvasComments.emptyWrite': 'Комментариев нет. Выберите «Комментарий» (⌥C) и щёлкните по объекту или полю.',
+  'canvasComments.emptyWrite': 'Комментариев нет. Выберите «Комментарий» ({alt}C) и щёлкните по объекту или полю.',
   'canvasComments.newPlaceholder': 'Новый комментарий — @ упомянуть',
   'canvasComments.replyPlaceholder': 'Ответить — @ упомянуть',
   'canvasComments.editPlaceholder': 'Текст комментария',
@@ -37,5 +37,5 @@ export const ruCanvasComments = {
   'canvasComments.err.resolve': 'Не удалось изменить статус ветки',
   'canvasComments.err.delete': 'Не удалось удалить комментарий',
   'canvasComments.notice.title': 'Холст «{name}»',
-  'canvasComments.notice.mentioned': '{name} упомянул(а) вас в комментарии',
+  'canvasComments.notice.mentioned': '{name} упоминает вас в комментарии',
 } as const;

@@ -84,6 +84,8 @@ export function CountBadge({
 
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
 export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
+/** Platform Alt label for shortcuts (⌥ on macOS, Alt elsewhere). */
+export const ALT = MOD === '⌘' ? '⌥' : 'Alt+';
 
 type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention' | 'record';
 

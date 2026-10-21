@@ -27,14 +27,17 @@ export const TimerChip = memo(function TimerChip({ store, engine }: { store: Tim
   return (
     <div
       role="timer"
-      aria-label={t('canvasBoard.timer.label', { time })}
+      aria-label={ended ? `${t('canvasBoard.timer.label', { time })}, ${t('canvasBoard.timer.ended')}` : t('canvasBoard.timer.label', { time })}
       data-testid="canvas-timer"
       data-phase={v.phase}
       className={cx(PANEL, 'flex items-center gap-1.5 rounded-full py-1 pl-3 text-control tabular-nums text-fg', editable ? 'pr-1' : 'pr-3', ended && ACTIVE_TOOL)}
     >
       <ChipIcon ended={ended} />
       <span className="min-w-10 text-title" data-testid="canvas-timer-time">{time}</span>
-      {ended ? <span data-testid="canvas-timer-ended">{t('canvasBoard.timer.ended')}</span> : null}
+      {/* Mounted while the plaque is, so a screen reader announces «time is up» when the text appears. */}
+      <span role="status" className={ended ? undefined : 'sr-only'}>
+        {ended ? <span data-testid="canvas-timer-ended">{t('canvasBoard.timer.ended')}</span> : null}
+      </span>
       {editable ? <TimerControls store={store} phase={v.phase} /> : null}
     </div>
   );
@@ -72,7 +75,9 @@ export const TimerButton = memo(function TimerButton({ store, focusCanvas }: { s
   useLocale();
   const phase = useSyncExternalStore(store.subscribe, () => store.getSnapshot().phase);
   const [open, setOpen] = useState(false);
-  const [custom, setCustom] = useState(15);
+  // A draft string, clamped on blur and on start: clamping on every keystroke would not let the field be cleared.
+  const [custom, setCustom] = useState('15');
+  const minutes = (): number => clampMinutes(Number.parseInt(custom, 10));
   const go = (minutes: number): void => {
     void store.start(minutes);
     setOpen(false);
@@ -114,13 +119,17 @@ export const TimerButton = memo(function TimerButton({ store, focusCanvas }: { s
               max={TIMER_MAX_MINUTES}
               step={1}
               value={custom}
-              onChange={(e) => setCustom(clampMinutes(e.target.valueAsNumber))}
+              onChange={(e) => setCustom(e.target.value)}
+              onBlur={() => setCustom(String(minutes()))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') go(minutes());
+              }}
               className="selectable h-7 w-16 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-center text-body tabular-nums text-fg"
               data-testid="canvas-timer-custom"
             />
           </label>
           <div className="flex justify-end">
-            <Button onClick={() => go(custom)} data-testid="canvas-timer-start">
+            <Button onClick={() => go(minutes())} data-testid="canvas-timer-start">
               {t('canvasBoard.timer.start')}
             </Button>
           </div>

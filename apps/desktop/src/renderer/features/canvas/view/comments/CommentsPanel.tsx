@@ -10,7 +10,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { Avatar } from '../../../../components/Avatar';
 import { confirmAction } from '../../../../components/Confirm';
-import { IconButton, Toggle, cx } from '../../../../components/ui';
+import { ALT, IconButton, Toggle, cx } from '../../../../components/ui';
 import { t, useLocale } from '../../../../i18n';
 import { bodyParts, mayChange, pinWorld, type CommentRights } from '../../../../lib/canvas/comments';
 import { fmt } from '../../../../lib/format';
@@ -130,7 +130,10 @@ const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): Reac
       data-resolved={resolved || undefined}
     >
       <div className="mb-1 flex items-center gap-1">
-        <button type="button" className="min-w-0 flex-1 text-left text-micro text-muted hover:text-fg" onClick={show} data-testid="canvas-comment-show">
+        <button type="button" className="min-w-0 flex-1 text-left text-micro text-muted hover:text-fg" onClick={show}
+          aria-label={resolved ? `${t('canvasComments.resolved')} · ${t('canvasComments.showPin')}` : undefined}
+          data-testid="canvas-comment-show"
+        >
           {resolved ? t('canvasComments.resolved') : t('canvasComments.showPin')}
         </button>
         {ctx.rights.write || ctx.rights.moderate ? (
@@ -214,6 +217,8 @@ export const CommentsPanel = memo(function CommentsPanel({
     st.setPanel(false);
     st.setDraft(null);
     st.setActive(null);
+    // The panel unmounts with the focused element: give focus back so the canvas hotkeys keep working.
+    engine.canvas.focus({ preventScroll: true });
   };
   return (
     <aside
@@ -230,8 +235,10 @@ export const CommentsPanel = memo(function CommentsPanel({
     >
       <header className="flex items-center gap-2 border-b border-line px-3 py-2">
         <h2 className="flex-1 text-body font-semibold text-fg">{t('canvasComments.title')}</h2>
-        <Toggle checked={filterOpen} onChange={(v) => useCanvasComments.getState().setFilterOpen(v)} label={t('canvasComments.onlyOpen')} />
-        <span className="text-caption text-muted">{t('canvasComments.onlyOpen')}</span>
+        <label className="flex items-center gap-2">
+          <Toggle checked={filterOpen} onChange={(v) => useCanvasComments.getState().setFilterOpen(v)} label={t('canvasComments.onlyOpen')} />
+          <span className="text-caption text-muted">{t('canvasComments.onlyOpen')}</span>
+        </label>
         <IconButton size="sm" label={t('common.close')} onClick={close} data-testid="canvas-comments-close">
           <X className="size-4" aria-hidden />
         </IconButton>
@@ -240,7 +247,7 @@ export const CommentsPanel = memo(function CommentsPanel({
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {ids.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">
-            {!loaded ? (failed ? t('canvasComments.loadFailed') : t('canvasComments.loading')) : rights.write ? t('canvasComments.emptyWrite') : t('canvasComments.empty')}
+            {!loaded ? (failed ? t('canvasComments.loadFailed') : t('canvasComments.loading')) : rights.write ? t('canvasComments.emptyWrite', { alt: ALT }) : t('canvasComments.empty')}
             {!loaded && failed ? (
               <button type="button" className="ml-2 text-accent underline" onClick={() => void loadComments(canvasId)} data-testid="canvas-comments-retry">
                 {t('canvasComments.retry')}
