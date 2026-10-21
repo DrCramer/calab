@@ -1,0 +1,65 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest';
+import { attachInput } from './input';
+import { keyIs } from './keys';
+import type { CanvasEngine } from './engine';
+
+function setup(order: string[], selectedId: string | null) {
+  const engine = {
+    selection: new Set(selectedId ? [selectedId] : []),
+    scene: { orderedIds: () => order, get: () => undefined },
+    getState: () => ({ selectedId }),
+    cycleSelection: vi.fn(),
+    selectAll: vi.fn(),
+    paste: vi.fn(),
+    setTool: vi.fn(),
+    readOnly: false,
+    touch: false,
+    flushCamera: vi.fn(),
+  } as unknown as CanvasEngine;
+  const canvas = document.createElement('canvas');
+  attachInput(engine, canvas);
+  const press = (init: KeyboardEventInit) => {
+    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    canvas.dispatchEvent(e);
+    return e;
+  };
+  return { engine, press };
+}
+
+describe('keyIs', () => {
+  it('matches by physical key on a Russian layout, and by letter without a code', () => {
+    expect(keyIs({ code: 'KeyV', key: 'м' }, 'v')).toBe(true);
+    expect(keyIs({ code: '', key: 'V' }, 'v')).toBe(true);
+    expect(keyIs({ code: 'KeyC', key: 'с' }, 'v')).toBe(false);
+  });
+});
+
+describe('canvas hotkeys', () => {
+  it('Ctrl+V works on a Russian layout', () => {
+    const { engine, press } = setup([], null);
+    const e = press({ code: 'KeyV', key: 'м', ctrlKey: true });
+    expect(engine.paste).toHaveBeenCalled();
+    expect(e.defaultPrevented).toBe(true);
+  });
+  it('tool letter works on a Russian layout', () => {
+    const { engine, press } = setup([], null);
+    press({ code: 'KeyS', key: 'ы' });
+    expect(engine.setTool).toHaveBeenCalledWith('sticky');
+  });
+  it('Tab walks objects but is left to the browser on an empty canvas and past the ends', () => {
+    let r = setup(['a', 'b'], 'a');
+    let e = r.press({ key: 'Tab', code: 'Tab' });
+    expect(r.engine.cycleSelection).toHaveBeenCalledWith(1);
+    expect(e.defaultPrevented).toBe(true);
+    r = setup([], null);
+    e = r.press({ key: 'Tab', code: 'Tab' });
+    expect(e.defaultPrevented).toBe(false);
+    r = setup(['a', 'b'], 'b');
+    e = r.press({ key: 'Tab', code: 'Tab' });
+    expect(e.defaultPrevented).toBe(false);
+    r = setup(['a', 'b'], 'a');
+    e = r.press({ key: 'Tab', code: 'Tab', shiftKey: true });
+    expect(e.defaultPrevented).toBe(false);
+  });
+});

@@ -1,3 +1,4 @@
+import { keyIs } from './keys';
 import type { Camera } from '../../../lib/canvas/camera';
 import type { Point, Rect } from '../../../lib/canvas/geometry';
 import {
@@ -342,10 +343,9 @@ export class TextEditor {
       e.preventDefault();
       this.commit();
     } else if (this.spec?.rich && (e.metaKey || e.ctrlKey) && !e.altKey) {
-      const k = e.key.toLowerCase();
-      if (k === 'b' && !e.shiftKey) this.hotkey(e, F_BOLD);
-      else if (k === 'i' && !e.shiftKey) this.hotkey(e, F_ITALIC);
-      else if (k === 'x' && e.shiftKey) this.hotkey(e, F_STRIKE);
+      if (keyIs(e, 'b') && !e.shiftKey) this.hotkey(e, F_BOLD);
+      else if (keyIs(e, 'i') && !e.shiftKey) this.hotkey(e, F_ITALIC);
+      else if (keyIs(e, 'x') && e.shiftKey) this.hotkey(e, F_STRIKE);
     } else if (e.key === 'Enter' && !e.shiftKey && this.spec?.rich && this.leaveEmptyItem()) {
       e.preventDefault();
     }
