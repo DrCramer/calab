@@ -26,12 +26,14 @@ import {
   type MailMessage,
   type MailOutgoing,
   type MailPage,
+  type MailRule,
   type MailSelection,
   type MailServerSettings,
   type MailSettings,
   type MailThreadRow,
   type MailVerified,
   type MailVerifyInput,
+  MAIL_RULES_MAX,
   mailMethods,
 } from '../../shared/mail';
 import { appPasswordUrl, discover, domainOf, providerByDomain, resolveLogin, STEP_TIMEOUT_MS, type DiscoverNet } from './discover';
@@ -197,6 +199,17 @@ function settingsPatch(v: unknown): Partial<MailSettings> {
     if (!isObj(s) || !Object.values(s).every((x) => isStr(x, 10_000))) throw invalid('signatures');
     out.signatures = s as Record<string, string>;
   }
+  if ('rules' in v) {
+    const l = v['rules'];
+    if (!Array.isArray(l) || l.length > MAIL_RULES_MAX) throw invalid('rules');
+    out.rules = l.map((x): MailRule => {
+      if (!isObj(x) || !isStr(x['id'], 64) || !isStr(x['accountId'], 64) || !isStr(x['contains'], 200) || !isStr(x['folderPath'], 500)) throw invalid('rules');
+      if (x['field'] !== 'from' && x['field'] !== 'subject') throw invalid('rules');
+      const contains = x['contains'].trim();
+      if (!contains || !x['folderPath']) throw invalid('rules');
+      return { id: x['id'], accountId: x['accountId'], field: x['field'], contains, folderPath: x['folderPath'] };
+    });
+  }
   if ('cacheLimitBytes' in v) {
     const n = v['cacheLimitBytes'];
     if (typeof n !== 'number' || !Number.isFinite(n) || n < 50 * 1024 * 1024 || n > 100 * 1024 ** 3) throw invalid('cacheLimitBytes');
@@ -243,6 +256,7 @@ export class MailEngine {
         delete sigs[id];
         this.saveSettings({ signatures: sigs });
       }
+      if (this.settingsCache.rules.some((r) => r.accountId === id)) this.saveSettings({ rules: this.settingsCache.rules.filter((r) => r.accountId !== id) });
       this.deps.emit({ type: 'account_state', accountId: id, account: null });
     }
     for (const cfg of list) {
@@ -321,6 +335,7 @@ export class MailEngine {
         if (acc.sync.state === 'idle') acc.outbox.kick();
       },
       cacheLimit: () => this.settingsCache.cacheLimitBytes,
+      rules: () => this.settingsCache.rules,
       now: this.now,
       log: this.log,
     });
@@ -678,6 +693,17 @@ export class MailEngine {
         if (p.virtual) throw invalid('only the trash and junk folders can be emptied');
         return this.account(p.accountId).sync.emptyFolder(p.row);
       },
+      'folders.create': async (accountId, name, parentId) => {
+        if (!isStr(name, 200)) throw invalid('bad folder name');
+        let parentRow: number | null = null;
+        if (parentId !== undefined && parentId !== null) {
+          const p = typeof parentId === 'string' ? parseFolderId(parentId) : null;
+          if (!p || p.virtual || p.accountId !== accountId) throw notFound('folder');
+          parentRow = p.row;
+        }
+        return this.account(accountId).sync.createFolder(name, parentRow);
+      },
+      'folders.applyRules': (accountId) => ({ moved: this.account(accountId).sync.applyRules() }),
       'messages.list': (q) => this.list(q),
       'messages.get': (id) => this.get(id),
       'messages.raw': (id) => this.raw(id),

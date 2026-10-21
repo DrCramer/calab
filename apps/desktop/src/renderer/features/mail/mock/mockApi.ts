@@ -451,6 +451,9 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         emitRows('messages_changed', touched, list.map((m) => m.id));
         emitFolders(f.accountId);
       },
+      // Folders and sorting rules are not simulated by the visual mock (CBF-39).
+      create: () => fail('INVALID', 'not simulated'),
+      applyRules: async () => ({ moved: 0 }),
     },
     messages: {
       list: async (q) => {
