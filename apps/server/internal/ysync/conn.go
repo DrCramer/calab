@@ -616,6 +616,9 @@ func (c *conn) send(f []byte) bool {
 	ctx, cancel := context.WithTimeout(c.ctx, c.h.cfg.WriteTimeout)
 	defer cancel()
 	if err := c.ws.Write(ctx, websocket.MessageBinary, f); err != nil {
+		if c.ctx.Err() == nil {
+			slog.Warn("sync: write failed", "doc", c.doc, "err", err)
+		}
 		c.close(CloseTryAgain, "write failed")
 		return false
 	}
