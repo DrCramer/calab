@@ -108,8 +108,8 @@ func storedUpdates(t *testing.T, e *env, id string, n int) [][]byte {
 }
 
 // WRITE vs view only: a member without WRITE receives but may not send; the limits of the
-// protocol: 20 updates a second, 2 snapshots at once, 64 KiB per update, 10 sockets per person;
-// a bot, a folder, a missing canvas.
+// protocol: 128 updates at once then 20 a second, 2 snapshots at once, 64 KiB per update, 10
+// sockets per person; a bot, a folder, a missing canvas.
 func TestCanvasSyncLimits(t *testing.T) {
 	e := newEnv(t, ysync.Config{})
 	p := e.create(e.alice, "", "Limits")
@@ -142,10 +142,10 @@ func TestCanvasSyncLimits(t *testing.T) {
 	if err := e.d.Pool.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM canvas_updates WHERE canvas_id = $1)::text, plain_text FROM canvas_items WHERE id = $1`, p.GetId()).Scan(&stored, &txt); err != nil || stored != "1" || txt != "" {
 		t.Fatalf("a view-only socket changed the canvas: %s %q %v", stored, txt, err)
 	}
-	// Flood.
+	// A flood of tiny frames.
 	w := e.dial(e.alice, p.GetId())
 	w.next(frameSnapshot)
-	for i := 0; i < 40; i++ {
+	for i := 0; i < 200; i++ {
 		if err := w.ws.Write(context.Background(), websocket.MessageBinary, updateFrame(0, []byte{byte(i)})); err != nil {
 			break
 		}
@@ -202,6 +202,50 @@ func TestCanvasSyncLimits(t *testing.T) {
 	again.next(frameUpdate)
 	e.must(200, e.alice, "PUT", item(p.GetId())+"/permissions", &v1.UpdateCanvasPermissionsRequest{Restricted: proto.Bool(true)}, nil)
 	again.closed(ysync.CloseForbidden)
+}
+
+// M1 of the second review: the UPDATE budget is in bytes as well as frames. A paste the size of a
+// whole canvas (the client cuts it into ≈ 40 KB transactions, one frame each) goes through at
+// once; a flood of tiny frames is still cut by the frame count, a flood of big ones by the bytes.
+func TestCanvasSyncLargePaste(t *testing.T) {
+	e := newEnv(t, ysync.Config{CompactBytes: 1 << 30})
+	flood := func(c *client, n, size int) {
+		for i := 0; i < n; i++ {
+			if err := c.ws.Write(context.Background(), websocket.MessageBinary, updateFrame(0, bytes.Repeat([]byte{byte(i)}, size))); err != nil {
+				return
+			}
+		}
+	}
+	// 88 frames of 40 KB = 3.5 MB (below MaxState): 5000 sticky notes with text. The frame count
+	// alone used to close at the 21st.
+	p := e.create(e.alice, "", "Paste")
+	a, b := e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
+	a.next(frameSnapshot)
+	b.next(frameSnapshot)
+	const frames, chunk = 88, 40_000
+	flood(a, frames, chunk)
+	for want := int64(1); want <= frames; want++ {
+		for _, c := range []*client{a, b} {
+			if f := c.next(frameUpdate); frameSeq(f) != want || len(f)-9 != chunk {
+				t.Fatalf("update %d: seq %d, %d bytes", want, frameSeq(f), len(f)-9)
+			}
+		}
+	}
+	var n int
+	if err := e.d.Pool.QueryRow(context.Background(), `SELECT count(*) FROM canvas_updates WHERE canvas_id = $1`, p.GetId()).Scan(&n); err != nil || n != frames {
+		t.Fatalf("stored %d %v", n, err)
+	}
+	// Tiny frames: past the 128 at once.
+	tiny := e.dial(e.alice, p.GetId())
+	tiny.next(frameSnapshot)
+	flood(tiny, 200, 1)
+	tiny.closed(ysync.CloseRate)
+	// 80 frames of 60 KB = 4.8 MB: fewer than 128 frames, more than MaxState of bytes.
+	q := e.create(e.alice, "", "Byte flood")
+	big := e.dial(e.alice, q.GetId())
+	big.next(frameSnapshot)
+	flood(big, 80, 60_000)
+	big.closed(ysync.CloseRate)
 }
 
 // COMPACT_REQUEST past the threshold; SNAPSHOT_POST compacts and updates the text, preview and

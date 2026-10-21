@@ -120,29 +120,37 @@ var ErrBadMeta = errors.New("ysync: bad snapshot meta")
 
 // Config tunes the sync socket; the zero value is production (tests shorten it).
 type Config struct {
-	AuthTimeout        time.Duration // the token frame must come within it (10 s)
-	SubscribeTimeout   time.Duration // the document's Redis subscription must be confirmed within it (5 s)
-	PingInterval       time.Duration // WebSocket ping (25 s)
-	IdleTimeout        time.Duration // no pong for this long closes 4009 (60 s)
-	RecheckInterval    time.Duration // access and session recheck (30 s)
-	UpdatesPerSecond   int           // inbound UPDATE frames per socket (20, over: close 4008)
-	AwarenessPerSecond int           // inbound AWARENESS per socket (10, over: dropped)
-	SnapshotEvery      time.Duration // inbound SNAPSHOT_POST per socket: 2 at once, then one per (2 s; over: close 4008)
-	MaxConnsPerUser    int           // sockets of one person on one document (10)
-	CompactUpdates     int           // COMPACT_REQUEST when more updates follow the snapshot (500)
-	CompactBytes       int64         // … or more bytes (1 MiB)
-	CompactCooldown    time.Duration // at most one COMPACT_REQUEST per document per (10 s)
-	CeilingUpdates     int           // hard ceiling: updates stored after the snapshot (10 000)
-	CeilingBytes       int64         // … or their bytes (16 MiB): over it an UPDATE is refused (see conn.admitUpdate)
-	CeilingGrace       time.Duration // a socket still sending past the ceiling this long after its first refused UPDATE is closed 4012 (10 s)
-	CompactCheckEvery  time.Duration // the threshold query at most this often per document (2 s; < 0 = always)
-	VersionEvery       time.Duration // a version at most this often per document (the Backend's default if 0)
-	WriteTimeout       time.Duration // one frame to the client (10 s)
-	ViewerMaxLife      time.Duration // a viewer socket is closed 4000 (reconnect) after this long (2 h)
+	AuthTimeout      time.Duration // the token frame must come within it (10 s)
+	SubscribeTimeout time.Duration // the document's Redis subscription must be confirmed within it (5 s)
+	PingInterval     time.Duration // WebSocket ping (25 s)
+	IdleTimeout      time.Duration // no pong for this long closes 4009 (60 s)
+	RecheckInterval  time.Duration // access and session recheck (30 s)
+	// Inbound UPDATEs per socket, two token buckets; over either: close 4008. Frames: UpdateBurst at
+	// once (128), then UpdatesPerSecond (20) — a flood of tiny frames is cut; the burst holds a paste
+	// of MaxState in the client's ≈ 40 KB chunks. Bytes: UpdateBytesBurst at once (the section's
+	// MaxState: the largest paste, a whole document), then UpdateBytesPerSecond (MaxState per 20 s).
+	UpdatesPerSecond     int
+	UpdateBurst          int
+	UpdateBytesPerSecond int64
+	UpdateBytesBurst     int64
+	AwarenessPerSecond   int           // inbound AWARENESS per socket (10, over: dropped)
+	SnapshotEvery        time.Duration // inbound SNAPSHOT_POST per socket: 2 at once, then one per (2 s; over: close 4008)
+	MaxConnsPerUser      int           // sockets of one person on one document (10)
+	CompactUpdates       int           // COMPACT_REQUEST when more updates follow the snapshot (500)
+	CompactBytes         int64         // … or more bytes (1 MiB)
+	CompactCooldown      time.Duration // at most one COMPACT_REQUEST per document per (10 s)
+	CeilingUpdates       int           // hard ceiling: updates stored after the snapshot (10 000)
+	CeilingBytes         int64         // … or their bytes (16 MiB): over it an UPDATE is refused (see conn.admitUpdate)
+	CeilingGrace         time.Duration // a socket still sending past the ceiling this long after its first refused UPDATE is closed 4012 (10 s)
+	CompactCheckEvery    time.Duration // the threshold query at most this often per document (2 s; < 0 = always)
+	VersionEvery         time.Duration // a version at most this often per document (the Backend's default if 0)
+	WriteTimeout         time.Duration // one frame to the client (10 s)
+	ViewerMaxLife        time.Duration // a viewer socket is closed 4000 (reconnect) after this long (2 h)
 }
 
 // WithDefaults fills the zero fields with the production values. VersionEvery is not defaulted
-// here: how often versions are written differs per section (Backend.PostSnapshot reads it).
+// here: how often versions are written differs per section (Backend.PostSnapshot reads it), nor
+// are the byte budgets of UPDATEs (NewHub: from the Backend's MaxState).
 func (c Config) WithDefaults() Config {
 	def := func(v *time.Duration, d time.Duration) {
 		if *v == 0 {
@@ -160,6 +168,9 @@ func (c Config) WithDefaults() Config {
 	def(&c.WriteTimeout, 10*time.Second)
 	if c.UpdatesPerSecond == 0 {
 		c.UpdatesPerSecond = 20
+	}
+	if c.UpdateBurst == 0 {
+		c.UpdateBurst = 128
 	}
 	if c.AwarenessPerSecond == 0 {
 		c.AwarenessPerSecond = 10

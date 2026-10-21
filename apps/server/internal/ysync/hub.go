@@ -62,7 +62,14 @@ type room struct {
 
 // NewHub creates the hub of a section.
 func NewHub(b Backend, o Options) *Hub {
-	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: o.Config.WithDefaults(), rooms: map[uuid.UUID]*room{}}
+	cfg := o.Config.WithDefaults()
+	if cfg.UpdateBytesBurst == 0 {
+		cfg.UpdateBytesBurst = int64(b.MaxState())
+	}
+	if cfg.UpdateBytesPerSecond == 0 {
+		cfg.UpdateBytesPerSecond = int64(b.MaxState()) / 20
+	}
+	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: cfg, rooms: map[uuid.UUID]*room{}}
 	h.instance = uuid.New()
 	return h
 }
@@ -394,13 +401,16 @@ func newBucket(burst, perSecond float64) bucket {
 	return bucket{tokens: burst, burst: burst, rate: perSecond, last: time.Now()}
 }
 
-func (b *bucket) take() bool {
+func (b *bucket) take() bool { return b.takeN(1) }
+
+// takeN spends n tokens, or none when fewer are left.
+func (b *bucket) takeN(n float64) bool {
 	now := time.Now()
 	b.tokens = min(b.burst, b.tokens+now.Sub(b.last).Seconds()*b.rate)
 	b.last = now
-	if b.tokens < 1 {
+	if b.tokens < n {
 		return false
 	}
-	b.tokens--
+	b.tokens -= n
 	return true
 }

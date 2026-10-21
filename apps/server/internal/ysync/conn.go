@@ -55,7 +55,7 @@ type conn struct {
 	lastSent int64
 
 	// Inbound budgets (reader goroutine only).
-	updates, awareness, snapshots bucket
+	updates, updateBytes, awareness, snapshots bucket
 	// refused: an UPDATE of this socket was refused at the ceiling and no stored snapshot of this
 	// socket carried it yet (the package doc: it is delivered by such a snapshot or by a reconnect).
 	// Set by the reader, read by the relay (ctlCompacted).
@@ -125,9 +125,10 @@ func (h *Hub) accept(w http.ResponseWriter, r *http.Request, doc uuid.UUID) (*co
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	return &conn{h: h, ws: ws, doc: doc, key: uuid.NewString(), ctx: ctx, cancel: cancel, lastSent: -1,
 		out: make(chan []byte, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
-		updates:   newBucket(float64(h.cfg.UpdatesPerSecond), float64(h.cfg.UpdatesPerSecond)),
-		awareness: newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
-		snapshots: newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}, true
+		updates:     newBucket(float64(h.cfg.UpdateBurst), float64(h.cfg.UpdatesPerSecond)),
+		updateBytes: newBucket(float64(h.cfg.UpdateBytesBurst), float64(h.cfg.UpdateBytesPerSecond)),
+		awareness:   newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
+		snapshots:   newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}, true
 }
 
 // ServeViewer is the anonymous receive-only socket of v.Doc (see the package doc): no token
@@ -516,7 +517,7 @@ func (c *conn) onUpdate(b []byte) bool {
 		c.close(CloseBadFrame, "bad update")
 		return false
 	}
-	if !c.updates.take() {
+	if !c.updates.take() || !c.updateBytes.takeN(float64(len(b)-headerSeq)) {
 		c.close(CloseRate, "rate limited")
 		return false
 	}

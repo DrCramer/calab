@@ -773,7 +773,8 @@ func TestWikiSyncExchange(t *testing.T) {
 	b.closed(closeNotFound)
 }
 
-// A read-only member receives but may not send; over 20 updates a second closes 4008.
+// A read-only member receives but may not send; over 128 updates at once (then 20 a second)
+// closes 4008.
 func TestWikiSyncLimits(t *testing.T) {
 	e := newEnv(t, SyncConfig{})
 	p := e.create(e.alice, "", "Limits")
@@ -791,7 +792,7 @@ func TestWikiSyncLimits(t *testing.T) {
 	// Flood.
 	w := e.dial(e.alice, p.GetId())
 	w.next(frameSnapshot)
-	for i := 0; i < 40; i++ {
+	for i := 0; i < 200; i++ {
 		if err := w.ws.Write(context.Background(), websocket.MessageBinary, updateFrame(0, []byte{byte(i)})); err != nil {
 			break
 		}
