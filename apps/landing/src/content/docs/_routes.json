@@ -322,6 +322,7 @@
 {"method":"POST","path":"/oidc/workspaces/{workspace}/token","decision":"deny","group":"oauth"},
 {"method":"GET","path":"/oidc/workspaces/{workspace}/userinfo","decision":"deny","group":"oauth"},
 {"method":"POST","path":"/oidc/workspaces/{workspace}/userinfo","decision":"deny","group":"oauth"},
+{"method":"*","path":"/api/mcp","decision":"allow","group":"other"},
 {"method":"GET","path":"/api/bots/me","decision":"allow","group":"profile"},
 {"method":"PATCH","path":"/api/bots/me","decision":"allow","group":"profile"},
 {"method":"PUT","path":"/api/bots/me/commands","decision":"allow","group":"profile"},

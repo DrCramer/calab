@@ -41,6 +41,7 @@ import (
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/mailbox"
+	"github.com/calaba/calaba/server/internal/mcp"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/notes"
@@ -559,6 +560,10 @@ func New(d Deps) *App {
 	} else {
 		rtc.DisabledRoutes(mux, private)
 	}
+	// MCP for bots (CBF-48): its tools call the routes above through the full chain (h) with
+	// the bot's own token, so a tool has exactly the bot's rights.
+	mcpHandler := mcp.New(buildinfo.Version)
+	mux.Handle(mcp.Path, private(mcpHandler))
 	mux.Handle("/api/", httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("route")
 	}))
@@ -571,6 +576,7 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
+	mcpHandler.API = h
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
 		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		dueTZ: boards.DueZone(d.Config.TasksDueTZ), Mailbox: mailboxSvc}

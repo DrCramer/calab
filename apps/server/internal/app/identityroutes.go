@@ -575,6 +575,9 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}":        scopeWorkspace,
 	"POST /api/workspaces/{id}/bots/{botId}/delegation-invites":            scopeWorkspace,
 	"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}": scopeWorkspace,
+	// MCP for bots (CBF-48): the endpoint itself reads and writes nothing; every tool's REST
+	// call goes through this gate again with its own route and scope.
+	"/api/mcp": scopePublic,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of
