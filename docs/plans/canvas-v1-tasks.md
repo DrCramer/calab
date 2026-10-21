@@ -1,6 +1,6 @@
 # Холст v1 — задачи
 
-ADR: [0114 Холст](../adr/0114-canvas.md). Ветка интеграции — `feat/canvas` (от `main`); задачи — в своих worktree и ветках, лид мержит в `feat/canvas`, затем одним PR в `main`. Образец разбиения — [wiki-v1-tasks.md](wiki-v1-tasks.md).
+ADR: [0114 Холст](../adr/0114-canvas.md). Ветка интеграции — `feat/canvas` (от `main`); задачи — в отдельных ветках, которые вливаются в `feat/canvas`, затем одним PR в `main`. Образец разбиения — [wiki-v1-tasks.md](wiki-v1-tasks.md).
 
 Объём v1 (решение владельца, 19.10): стикеры и текст, фигуры и коннекторы; дерево с папками и права как у Диска/Вики. Не входит: рисование от руки, картинки, фреймы, публичная ссылка, правка на телефоне (ADR §«Отложено»).
 
@@ -21,7 +21,7 @@ ADR: [0114 Холст](../adr/0114-canvas.md). Ветка интеграции �
 
 ## Правила для исполнителей
 - Перед работой прочитать CLAUDE.md, ADR-0114, docs/02 (медиа-правила не затрагиваются, но `<audio>` не трогать), docs/04, docs/08, docs/14.
-- Агенты работают в своих worktree от `feat/canvas`; свои порты и БД (`CALABA_VISUAL_MOCK_PORT`, `TEST_PG_URL`, `TEST_REDIS_URL`).
+- Каждая задача — в своём worktree от `feat/canvas`; свои порты и БД (`CALABA_VISUAL_MOCK_PORT`, `TEST_PG_URL`, `TEST_REDIS_URL`).
 - Проверки перед коммитом — как CI: `make gen` + `git diff --exit-code`, `make lint` (в `apps/server`), `go test -race` пакета, `pnpm -s typecheck && pnpm -s lint && pnpm -s test`; интеграционный тест только своего пакета, полный набор — один раз перед мержем ветки.
 - Minor-замечания ревью — строкой в `docs/09-ui-backlog.md` / `docs/12-tech-backlog.md`.
 
