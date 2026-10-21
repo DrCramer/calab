@@ -540,7 +540,7 @@ export class CreateGesture implements Gesture {
           ? doc.create({ kind: 'text', x: c.x - 8, y: c.y - DEFAULTS.textSize })
           : doc.create({ kind: 'shape', shape: this.core.shapeKind, x: c.x - DEFAULTS.shapeW / 2, y: c.y - DEFAULTS.shapeH / 2 });
     }
-    if (id) this.core.finishCreate([id], true);
+    this.core.finishCreate(id ? [id] : [], true);
   }
 
   cancel(): void {
@@ -623,7 +623,7 @@ export class WireGesture implements Gesture {
     const to = endpointOf(this.target, w);
     this.core.doc.checkpoint();
     const id = this.core.doc.create({ kind: 'connector', from, to, arrow: 'end', route: this.core.connectorRoute });
-    if (id) this.core.finishCreate([id], false);
+    this.core.finishCreate(id ? [id] : [], false);
   }
 
   cancel(): void {

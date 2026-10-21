@@ -518,7 +518,12 @@ export class CanvasEngine implements Core {
     this.emitLocal();
   }
 
+  /** After a create; no ids = the document refused it (the object or state limit), which is said, not swallowed. */
   finishCreate(ids: readonly string[], edit: boolean): void {
+    if (ids.length === 0) {
+      this.refused(1);
+      return;
+    }
     this.setSelection(ids);
     this.setTool('select');
     const id = ids[0];
@@ -951,6 +956,7 @@ export class CanvasEngine implements Core {
       this.doc.checkpoint();
       const id = this.doc.create({ kind: 'text', x: c.x - DEFAULTS.textW / 2, y: c.y - DEFAULTS.textSize, text: t });
       if (id) this.setSelection([id]);
+      else this.refused(1);
       return id ? [id] : [];
     }
     const boxes = payload.objects.filter((o) => o.kind !== 'connector');
@@ -1230,7 +1236,7 @@ export class CanvasEngine implements Core {
     if (!this.canEdit()) return null;
     this.doc.checkpoint();
     const id = this.doc.create({ kind: 'text', x: world.x - 8, y: world.y - DEFAULTS.textSize });
-    if (id) this.finishCreate([id], true);
+    this.finishCreate(id ? [id] : [], true);
     return id;
   }
 
