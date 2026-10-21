@@ -620,7 +620,7 @@ func (c *conn) send(f []byte) bool {
 	defer cancel()
 	if err := c.ws.Write(ctx, websocket.MessageBinary, f); err != nil {
 		if c.ctx.Err() == nil {
-			slog.Warn("sync: write failed", "doc", c.doc, "err", err)
+			c.h.writeLog.warn(c.h.b.Name()+" sync: write failed", c.h.b.LogKey(), c.doc, "err", err)
 		}
 		c.close(CloseTryAgain, "write failed")
 		return false

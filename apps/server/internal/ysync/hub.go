@@ -39,8 +39,8 @@ type Hub struct {
 	prof     Profile // the Backend's, read once
 	instance [16]byte
 	m        metrics
-	// Warn lines of a failing Valkey, one per logEvery each.
-	subLog, pubLog logLimit
+	// Warn lines of a failing Valkey and of failed socket writes, one per logEvery each.
+	subLog, pubLog, writeLog logLimit
 	// pubDown is when a publish last failed (UnixNano; 0 = it works): awareness is not published
 	// for pubBackoff after it.
 	pubDown atomic.Int64
