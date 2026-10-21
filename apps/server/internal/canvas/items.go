@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -101,9 +102,10 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.ListCanvasItemsResponse{}
 	w.Header().Set("Cache-Control", "no-store")
 	if t := qs.Get("trashed"); t == "1" || t == "true" {
-		p := sqlc.ListCanvasTrashParams{WorkspaceID: ws, Lim: lim}
+		// The first page: after every (trashed_at, id), see ListCanvasTrash.
+		p := sqlc.ListCanvasTrashParams{WorkspaceID: ws, Lim: lim, CursorTrashed: time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC), CursorID: uuid.Max}
 		if cur != nil {
-			p.CursorID, p.CursorTrashed = &cur.ID, cur.Trashed
+			p.CursorID, p.CursorTrashed = cur.ID, cur.Trashed
 		}
 		rows, err := q.ListCanvasTrash(ctx, p)
 		if err != nil {
@@ -220,7 +222,12 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		row, err := q.CreateCanvasItem(ctx, sqlc.CreateCanvasItemParams{WorkspaceID: ws, ParentID: parent, Kind: kind, Name: name, OwnerID: &c.uid})
+		pos, err := slot(ctx, q, ws, parent, uuid.Nil, nil)
+		if err != nil {
+			return err
+		}
+		row, err := q.CreateCanvasItem(ctx, sqlc.CreateCanvasItemParams{WorkspaceID: ws, ParentID: parent, Kind: kind, Name: name, OwnerID: &c.uid,
+			Position: pos})
 		if err != nil {
 			return err
 		}
@@ -316,7 +323,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	var before []perm.TreeNode
 	var a access
 	var det []moved
-	changed := false
+	changed, recheck := false, false
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		if a, err = resolve(r, q, id); err != nil {
 			return err
@@ -369,7 +376,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			it, changed = head(row), true
+			it, changed = sqlc.CanvasItemHead(row), true
 		}
 		moving := req.ParentId != nil && !sameParent(cur.ParentID, target)
 		if moving || req.Position != nil {
@@ -399,11 +406,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			if moving {
-				// The old siblings close the gap.
-				if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: ws, ParentID: cur.ParentID}); err != nil {
-					return err
-				}
+			if moving { // the old siblings keep the gap: the order is (position, id)
 				journal = append(journal, func(it sqlc.CanvasItemHead) error {
 					from, err := place(ctx, q, cur.ParentID)
 					if err != nil {
@@ -418,6 +421,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			}
 			it, changed = row, true
 		}
+		recheck = p.Restricted != nil || moving // a rename changes no one's access
 		if p.Restricted != nil || moving {
 			// Made private, or moved below a restricted folder: its public links go (ADR-0115 wave 5).
 			if err := dropLinks(ctx, q, id); err != nil {
@@ -437,47 +441,37 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	s.announceMoved(ctx, det)
 	if changed {
 		s.upserted(ctx, id, before)
+	}
+	if recheck {
 		s.recheckBelow(ctx, id) // the sync sockets of the item and of the canvases below it: restricted or a move may have closed them
 	}
-	ch, err := canvasacl.Load(ctx, s.db.Q, []uuid.UUID{id})
-	if err != nil {
-		return err
+	a.item = it
+	if ch, err := canvasacl.Load(ctx, s.db.Q, []uuid.UUID{id}); err == nil {
+		a.item, a.chain = ch.Item(id), ch
+		a.bits = ch.Bits(a.c.m, &id)
+		if !a.bits.Has(perm.CanvasView) { // made invisible to oneself (an override): answer what is known
+			httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: itemProto(a.item, false, false, a.bits)})
+			return nil
+		}
+	} else {
+		slog.WarnContext(ctx, "canvas: read after update", "item_id", id, "err", err)
 	}
-	a.item, a.chain = ch.Item(id), ch
-	a.bits = ch.Bits(a.c.m, &id)
-	if !a.bits.Has(perm.CanvasView) { // made invisible to oneself (an override): answer what is known
-		httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: itemProto(a.item, false, false, a.bits)})
-		return nil
-	}
-	out, err := one(ctx, s.db.Q, a)
-	if err != nil {
-		return err
-	}
-	httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: out})
+	httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: committed(ctx, s.db.Q, a)})
 	return nil
 }
 
 // place puts item it under parent (nil = the top level) at index position among the other live
-// siblings (nil = last), under LockCanvasTree: the item goes last and the siblings are
-// renumbered 0.., then it moves to the index, pushing the following ones down.
+// siblings (nil = last), under LockCanvasTree: one row is written (see slot).
 func (s *Service) place(ctx context.Context, q *sqlc.Queries, it sqlc.CanvasItemHead, parent *uuid.UUID, position *int32, by *uuid.UUID) (sqlc.CanvasItemHead, error) {
-	const last = 1 << 30
-	row, err := q.MoveCanvasItem(ctx, sqlc.MoveCanvasItemParams{ID: it.ID, ParentID: parent, Position: last, UpdatedBy: by})
+	pos, err := slot(ctx, q, it.WorkspaceID, parent, it.ID, position)
 	if err != nil {
 		return it, err
 	}
-	if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: it.WorkspaceID, ParentID: parent}); err != nil {
+	row, err := q.MoveCanvasItem(ctx, sqlc.MoveCanvasItemParams{ID: it.ID, ParentID: parent, Position: pos, UpdatedBy: by})
+	if err != nil {
 		return it, err
 	}
-	if position != nil {
-		if row, err = q.MoveCanvasItem(ctx, sqlc.MoveCanvasItemParams{ID: it.ID, ParentID: parent, Position: *position, UpdatedBy: by}); err != nil {
-			return it, err
-		}
-		if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{FirstID: &it.ID, WorkspaceID: it.WorkspaceID, ParentID: parent}); err != nil {
-			return it, err
-		}
-	}
-	return q.GetCanvasItem(ctx, row.ID)
+	return sqlc.CanvasItemHead(row), nil
 }
 
 func sameParent(a, b *uuid.UUID) bool {
@@ -531,9 +525,6 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 		if a.item, err = q.GetCanvasItem(ctx, id); err != nil {
 			return err
 		}
-		if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: a.item.WorkspaceID, ParentID: a.item.ParentID}); err != nil {
-			return err
-		}
 		pl, err := place(ctx, q, a.item.ParentID)
 		if err != nil {
 			return err
@@ -547,11 +538,7 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 	s.announceMoved(ctx, det)
 	s.kick(ctx, ids)
 	s.publish(ctx, a.item.WorkspaceID, []*v1.DispatchEvent{s.upsertEvent(ctx, a.item, a.nodes(), nil)})
-	out, err := one(ctx, s.db.Q, a)
-	if err != nil {
-		return err
-	}
-	httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: out})
+	httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: committed(ctx, s.db.Q, a)})
 	return nil
 }
 
@@ -605,7 +592,11 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
-		ids, err := q.RestoreCanvasSubtree(ctx, sqlc.RestoreCanvasSubtreeParams{ID: id, ParentID: parent})
+		pos, err := slot(ctx, q, ws, parent, id, nil)
+		if err != nil {
+			return err
+		}
+		ids, err := q.RestoreCanvasSubtree(ctx, sqlc.RestoreCanvasSubtreeParams{ID: id, ParentID: parent, Position: pos})
 		if err != nil {
 			return err
 		}
@@ -626,16 +617,12 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.upserted(ctx, id, before)
-	ch, err := canvasacl.Load(ctx, s.db.Q, []uuid.UUID{id})
-	if err != nil {
-		return err
+	if ch, err := canvasacl.Load(ctx, s.db.Q, []uuid.UUID{id}); err == nil {
+		a.item, a.chain, a.bits = ch.Item(id), ch, ch.Bits(a.c.m, &id)
+	} else {
+		slog.WarnContext(ctx, "canvas: read after restore", "item_id", id, "err", err)
 	}
-	a.item, a.chain, a.bits = ch.Item(id), ch, ch.Bits(a.c.m, &id)
-	out, err := one(ctx, s.db.Q, a)
-	if err != nil {
-		return err
-	}
-	httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: out})
+	httpx.Write(w, http.StatusOK, &v1.CanvasItemResponse{Item: committed(ctx, s.db.Q, a)})
 	return nil
 }
 
@@ -771,15 +758,24 @@ func (s *Service) emptyTrash(w http.ResponseWriter, r *http.Request) error {
 		var d deleted
 		err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 			a, err := resolve(r, q, p.ID)
-			if err != nil || !a.item.TrashedRoot || !a.structure() {
+			if err == errNoItem { //nolint:errorlint // sentinel returned as is
+				return errSkip // deleted meanwhile, or no longer seen
+			}
+			if err != nil {
+				return err
+			}
+			if !a.item.TrashedRoot || !a.structure() {
 				return errSkip
 			}
 			if err := q.LockCanvasTree(ctx, ws); err != nil {
 				return err
 			}
 			cur, err := q.GetCanvasItemForUpdate(ctx, p.ID)
-			if err != nil || !cur.TrashedRoot { // gone or restored meanwhile
+			if db.IsNotFound(err) || (err == nil && !cur.TrashedRoot) { // gone or restored meanwhile
 				return errSkip
+			}
+			if err != nil {
+				return err
 			}
 			d, err = s.deleteTree(ctx, q, cur, a.nodes(), &c.uid, sees(c.m), &c.m, nil)
 			return err

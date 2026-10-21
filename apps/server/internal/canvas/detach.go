@@ -107,7 +107,11 @@ func (s *Service) detachHidden(ctx context.Context, q *sqlc.Queries, root sqlc.C
 			}
 		}
 		n := perm.Detached(perm.CanvasTree, chain, pin)
-		if _, err := q.DetachCanvasItem(ctx, sqlc.DetachCanvasItemParams{ID: p.ID, Restricted: n.Restricted}); err != nil {
+		pos, err := slot(ctx, q, p.WorkspaceID, nil, p.ID, nil)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := q.DetachCanvasItem(ctx, sqlc.DetachCanvasItemParams{ID: p.ID, Restricted: n.Restricted, Position: pos}); err != nil {
 			return nil, err
 		}
 		if !p.Restricted { // a restricted item keeps its own overrides (perm.Detached)
@@ -123,11 +127,6 @@ func (s *Service) detachHidden(ctx context.Context, q *sqlc.Queries, root sqlc.C
 		}
 		if retrash != nil && p.TrashedAt != nil {
 			if err := q.RetimeCanvasTrash(ctx, sqlc.RetimeCanvasTrashParams{ID: p.ID, TrashedAt: *retrash}); err != nil {
-				return nil, err
-			}
-		}
-		if p.TrashedAt == nil && p.ParentID != nil { // the old siblings close the gap
-			if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: p.WorkspaceID, ParentID: p.ParentID}); err != nil {
 				return nil, err
 			}
 		}

@@ -5,7 +5,8 @@
 -- 4 MiB, ≤ 50 versions per canvas.
 --
 -- canvas_items         one tree per workspace (parent_id NULL = top level), siblings ordered by
---                      position (0..; the API reindexes on a move). kind 'folder' holds items,
+--                      (position, id) with gaps (a move takes a free position between its
+--                      neighbours and writes one row; canvas/positions.go). kind 'folder' holds items,
 --                      'canvas' holds a document; a canvas has no children and a folder no
 --                      content (the API keeps the parent a folder, depth ≤ 32). plain_text /
 --                      preview / doc_size come from the last snapshot the client posted;
@@ -41,9 +42,6 @@
 -- +goose Up
 SET LOCAL lock_timeout = '10s';
 
-ALTER TABLE workspaces ADD COLUMN canvas_trash_days integer
-    CHECK (canvas_trash_days IS NULL OR canvas_trash_days BETWEEN 1 AND 3650);
-
 CREATE TABLE canvas_items (
     id           uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
@@ -66,9 +64,10 @@ CREATE TABLE canvas_items (
     CONSTRAINT canvas_items_trash_check CHECK (NOT trashed_root OR trashed_at IS NOT NULL),
     CONSTRAINT canvas_items_parent_check CHECK (parent_id IS DISTINCT FROM id),
     CONSTRAINT canvas_items_folder_check CHECK (kind = 'canvas' OR (plain_text = '' AND preview = '' AND doc_size = 0))
-);
+) WITH (fillfactor = 85); -- room on the page keeps the next_seq bump of every append a HOT update
 -- The tree: live children of a folder (or of the top level) in order.
-CREATE INDEX canvas_items_tree_idx ON canvas_items (workspace_id, parent_id, position) WHERE trashed_at IS NULL;
+-- With id: the listing's keyset (position, id) without a sort.
+CREATE INDEX canvas_items_tree_idx ON canvas_items (workspace_id, parent_id, position, id) WHERE trashed_at IS NULL;
 -- Subtrees (trash / restore / path CTEs, including trashed items), has_children and the CASCADE.
 CREATE INDEX canvas_items_parent_idx ON canvas_items (parent_id) WHERE parent_id IS NOT NULL;
 -- The trash: its roots by deletion time; the sweeper's candidates per workspace.
@@ -141,9 +140,12 @@ CREATE VIEW canvas_item_heads AS
            updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
     FROM canvas_items;
 
+-- The ALTERs of existing tables last: their ACCESS EXCLUSIVE locks are held to the commit.
 ALTER TABLE workspace_audit DROP CONSTRAINT workspace_audit_subject_type_check;
 ALTER TABLE workspace_audit ADD CONSTRAINT workspace_audit_subject_type_check
     CHECK (subject_type IN ('room', 'board', 'disk_item', 'wiki_page', 'canvas_item'));
+ALTER TABLE workspaces ADD COLUMN canvas_trash_days integer
+    CHECK (canvas_trash_days IS NULL OR canvas_trash_days BETWEEN 1 AND 3650);
 
 UPDATE workspace_roles SET permissions = permissions | 6597069766656 WHERE builtin = 'member';
 

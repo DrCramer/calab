@@ -46,3 +46,9 @@ WHERE l.code = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expire
 
 -- name: CountCanvasLinkView :exec
 UPDATE canvas_links SET views = views + 1 WHERE code = $1 AND revoked_at IS NULL;
+
+-- name: PurgeRevokedCanvasLinks :execrows
+-- Links revoked before the cutoff are dropped (the sweep, a batch at a time): a revoked code
+-- never works again, so the row only keeps its history, which the journal has.
+DELETE FROM canvas_links WHERE code IN (
+    SELECT l.code FROM canvas_links l WHERE l.revoked_at < sqlc.arg('cutoff')::timestamptz LIMIT 1000);

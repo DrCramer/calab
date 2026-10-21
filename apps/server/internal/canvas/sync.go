@@ -57,6 +57,7 @@ func (canvasBackend) Profile() ysync.Profile {
 		CoalesceAwareness: true,
 		RecheckJitter:     true,
 		PublishBackoff:    true,
+		RetryPublish:      true,
 		BatchAwareness:    true,
 	}
 }
@@ -231,7 +232,7 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 			return err
 		}
 		stored, previewChanged = true, cur.Preview != preview
-		return b.version(ctx, q, p, head(row), authors)
+		return b.version(ctx, q, p, sqlc.CanvasItemHead(row), authors)
 	})
 	if err != nil {
 		return ysync.Result{}, err

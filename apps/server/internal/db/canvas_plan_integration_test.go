@@ -94,11 +94,11 @@ func TestCanvasChildrenPlan(t *testing.T) {
 	t.Logf("top level, generic plan:\n%s", root)
 	t.Logf("a folder, generic plan:\n%s", sub)
 	// Each page is read through the tree index from its level and its cursor on: nothing of another
-	// level, nothing before the cursor filtered out.
+	// level, nothing before the cursor filtered out (the index has id: the keyset is its condition).
 	for name, plan := range map[string]string{"top level": root, "folder": sub} {
 		main := plan[:strings.Index(plan, "SubPlan")]
 		if !strings.Contains(main, "Index Scan using canvas_items_tree_idx on canvas_items") || !strings.Contains(main, "parent_id") ||
-			!strings.Contains(main, `"position" >= $`) || strings.Contains(main, "Rows Removed by Filter") || strings.Contains(main, "BitmapOr") {
+			!strings.Contains(main, `ROW("position", id) > ROW($`) || strings.Contains(main, "Rows Removed by Filter") || strings.Contains(main, "BitmapOr") {
 			t.Fatalf("%s: not a scan of its level from the cursor:\n%s", name, plan)
 		}
 	}

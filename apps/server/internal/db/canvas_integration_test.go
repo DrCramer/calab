@@ -65,7 +65,7 @@ func TestCanvasStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := q.CreateCanvasItem(ctx, sqlc.CreateCanvasItemParams{WorkspaceID: ws, ParentID: &folder.ID, Kind: "canvas", Name: "Retro", OwnerID: &user})
+	b, err := q.CreateCanvasItem(ctx, sqlc.CreateCanvasItemParams{WorkspaceID: ws, ParentID: &folder.ID, Kind: "canvas", Name: "Retro", OwnerID: &user, Position: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestCanvasStorage(t *testing.T) {
 	if _, err := q.AppendCanvasUpdate(ctx, sqlc.AppendCanvasUpdateParams{CanvasID: a.ID, Data: []byte{9}}); !db.IsNotFound(err) {
 		t.Fatalf("a trashed canvas takes no updates: %v", err)
 	}
-	roots, err := q.ListCanvasTrash(ctx, sqlc.ListCanvasTrashParams{WorkspaceID: ws, Lim: 10})
+	roots, err := q.ListCanvasTrash(ctx, sqlc.ListCanvasTrashParams{WorkspaceID: ws, Lim: 10, CursorTrashed: time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC), CursorID: uuid.Max})
 	if err != nil || len(roots) != 1 || roots[0].ID != folder.ID {
 		t.Fatalf("trash roots %+v %v", roots, err)
 	}
@@ -220,7 +220,7 @@ func TestCanvasStorage(t *testing.T) {
 	if got, err := q.LastCanvasActivity(ctx, &a.ID); err != nil || got.ID != act.ID {
 		t.Fatalf("last activity %+v %v", got, err)
 	}
-	if page, err := q.ListWorkspaceCanvasActivity(ctx, sqlc.ListWorkspaceCanvasActivityParams{WorkspaceID: ws, Lim: 10}); err != nil || len(page) != 1 {
+	if page, err := q.ListWorkspaceCanvasActivity(ctx, sqlc.ListWorkspaceCanvasActivityParams{WorkspaceID: ws, Cursor: uuid.Max, Lim: 10}); err != nil || len(page) != 1 {
 		t.Fatalf("workspace journal %+v %v", page, err)
 	}
 

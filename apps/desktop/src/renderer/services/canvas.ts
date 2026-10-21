@@ -317,9 +317,16 @@ export async function renameItem(id: string, name: string, prevName: string): Pr
 
 /** Moves an item (a tree drop, «Переместить»): optimistic, both lists refetched after. */
 export async function moveItem(id: string, parentId: string, position: number): Promise<void> {
-  const prev = useCanvas.getState().items[id];
+  const { items, lists } = useCanvas.getState();
+  const prev = items[id];
   if (!prev) return;
-  useCanvas.getState().upsert({ ...prev, parentId, position });
+  // position is an index among the new siblings; the store orders by the server's sparse
+  // positions, so the optimistic copy takes one between its new neighbours.
+  const sib = (lists[childKey(prev.workspaceId, parentId)] ?? []).filter((x) => x !== id).map((x) => items[x]?.position ?? 0);
+  const lo = position > 0 ? sib[Math.min(position, sib.length) - 1] : undefined;
+  const hi = position < sib.length ? sib[position] : undefined;
+  const at = lo === undefined ? (hi === undefined ? 0 : hi - 1) : hi === undefined ? lo + 1 : (lo + hi) / 2;
+  useCanvas.getState().upsert({ ...prev, parentId, position: at });
   try {
     const r = await canvasApi.update(id, { parentId, position });
     if (r.item) useCanvas.getState().upsert(r.item);

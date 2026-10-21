@@ -71,6 +71,22 @@ func (s *Service) setSettings(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// orMax / orNil: the first page of a descending / ascending keyset passes the max / nil uuid,
+// not NULL, so that the cursor stays an index condition of the query's generic plan.
+func orMax(cur *uuid.UUID) uuid.UUID {
+	if cur == nil {
+		return uuid.Max
+	}
+	return *cur
+}
+
+func orNil(cur *uuid.UUID) uuid.UUID {
+	if cur == nil {
+		return uuid.Nil
+	}
+	return *cur
+}
+
 // activityPage reads ?cursor= (the last entry id) and ?limit= (1..100, default 50).
 func activityPage(r *http.Request) (*uuid.UUID, int, error) {
 	cur, err := optUUID(r.URL.Query().Get("cursor"), "cursor")
@@ -105,7 +121,7 @@ func (s *Service) itemActivity(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Q.ListCanvasItemActivity(r.Context(), sqlc.ListCanvasItemActivityParams{ItemID: a.item.ID, Cursor: cur, Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
+	rows, err := s.db.Q.ListCanvasItemActivity(r.Context(), sqlc.ListCanvasItemActivityParams{ItemID: a.item.ID, Cursor: orMax(cur), Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
 	if err != nil {
 		return err
 	}
@@ -141,7 +157,7 @@ func (s *Service) workspaceActivity(w http.ResponseWriter, r *http.Request) erro
 	out := &v1.CanvasActivityPage{}
 	var shown []sqlc.CanvasActivity
 	for range activityRounds {
-		rows, err := q.ListWorkspaceCanvasActivity(ctx, sqlc.ListWorkspaceCanvasActivityParams{WorkspaceID: ws, ActorID: actor, Cursor: cur, Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
+		rows, err := q.ListWorkspaceCanvasActivity(ctx, sqlc.ListWorkspaceCanvasActivityParams{WorkspaceID: ws, ActorID: actor, Cursor: orMax(cur), Lim: int32(limit + 1)}) //nolint:gosec // ≤ 101
 		if err != nil {
 			return err
 		}

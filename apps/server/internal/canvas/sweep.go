@@ -18,6 +18,9 @@ import (
 // SweepInterval is how often TrashSweep runs (like the Disk's).
 const SweepInterval = time.Hour
 
+// revokedLinkDays: revoked public links are dropped this long after the revoke.
+const revokedLinkDays = 30
+
 // sweepBatch: trash roots deleted per transaction. Few: the transaction holds the workspace's
 // tree lock (creating and moving items there wait for it), and one root may carry MaxVersions
 // versions of up to MaxState each; the lock is free between batches.
@@ -148,6 +151,9 @@ func (s *Service) RunTrashSweep(ctx context.Context, interval time.Duration) {
 				slog.ErrorContext(ctx, "canvas trash sweep", "deleted", n, "err", err)
 			} else if n > 0 {
 				slog.InfoContext(ctx, "canvas trash swept", "deleted", n)
+			}
+			if _, err := s.db.Q.PurgeRevokedCanvasLinks(ctx, s.Now().Add(-revokedLinkDays*24*time.Hour)); err != nil {
+				slog.WarnContext(ctx, "canvas: purge revoked links", "err", err)
 			}
 		}
 	}

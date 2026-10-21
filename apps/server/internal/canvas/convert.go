@@ -3,6 +3,7 @@ package canvas
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -86,6 +87,17 @@ func decorated(ctx context.Context, q *sqlc.Queries, items []sqlc.CanvasItemHead
 		out[i] = itemProto(p, shared[p.ID], children[p.ID], bitsOf(p))
 	}
 	return out, nil
+}
+
+// committed is one for the answer to a change already committed: when the read fails it answers
+// what is known (logged) instead of a 500, which would make the client roll back what was applied.
+func committed(ctx context.Context, q *sqlc.Queries, a access) *v1.CanvasItem {
+	out, err := one(ctx, q, a)
+	if err != nil {
+		slog.WarnContext(ctx, "canvas: read after a change", "item_id", a.item.ID, "err", err)
+		return itemProto(a.item, false, false, a.bits)
+	}
+	return out
 }
 
 // one converts a single item for the caller.

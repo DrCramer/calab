@@ -233,6 +233,10 @@ type Profile struct {
 	// PublishBackoff: after a failed publish awareness is not published for pubBackoff (this
 	// instance's sockets still get it). Off: every frame is published.
 	PublishBackoff bool
+	// RetryPublish: a failed publish of an UPDATE or snapshot frame is tried once more, so that a
+	// blip of Redis does not leave the other instances' sockets behind until the next UPDATE shows
+	// them the gap. Off: one attempt.
+	RetryPublish bool
 	// BatchAwareness: coalesces awareness frames into one combined frame per AwarenessWindow
 	// (100 ms), delivers via a dedicated overwriteable slot on each socket, and publishes once
 	// to Valkey per window. Off: each awareness frame is relayed and published immediately.

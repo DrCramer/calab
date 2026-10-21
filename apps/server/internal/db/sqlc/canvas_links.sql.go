@@ -143,6 +143,21 @@ func (q *Queries) InsertCanvasLink(ctx context.Context, arg InsertCanvasLinkPara
 	return i, err
 }
 
+const purgeRevokedCanvasLinks = `-- name: PurgeRevokedCanvasLinks :execrows
+DELETE FROM canvas_links WHERE code IN (
+    SELECT l.code FROM canvas_links l WHERE l.revoked_at < $1::timestamptz LIMIT 1000)
+`
+
+// Links revoked before the cutoff are dropped (the sweep, a batch at a time): a revoked code
+// never works again, so the row only keeps its history, which the journal has.
+func (q *Queries) PurgeRevokedCanvasLinks(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeRevokedCanvasLinks, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeCanvasLink = `-- name: RevokeCanvasLink :execrows
 UPDATE canvas_links SET revoked_at = now() WHERE canvas_id = $1 AND revoked_at IS NULL
 `
