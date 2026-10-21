@@ -1057,8 +1057,12 @@ func TestWikiSyncCeiling(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	a.send(updateFrame(0, []byte("u6")))
 	a.closed(closeCeiling)
-	// A snapshot through 3 lifts the ceiling: the next update is stored under seq 4 and relayed.
+	// A snapshot through 3 lifts the ceiling and is relayed to the others (they never saw the
+	// refused updates); then the next update is stored under seq 4 and relayed.
 	a2.send(post(3, snapshotMeta{PlainText: "compacted"}, []byte("state")))
+	if f := ro.next(frameSnapshot); frameSeq(f) != 3 || string(f[9:]) != "state" {
+		t.Fatalf("snapshot after the refusals %x", f)
+	}
 	a2.send(updateFrame(0, []byte("u7")))
 	if f := a2.next(frameUpdate); frameSeq(f) != 4 || string(f[9:]) != "u7" {
 		t.Fatalf("update after the snapshot %x", f)

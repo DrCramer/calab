@@ -491,9 +491,10 @@ func TestCanvasSyncCeiling(t *testing.T) {
 	p := e.create(e.alice, "", "Ceiling")
 	e.must(200, e.alice, "PUT", item(p.GetId())+"/permissions", &v1.UpdateCanvasPermissionsRequest{Entries: []*v1.CanvasPermissionEntry{
 		{TargetType: user, TargetId: e.bob.String(), Deny: uint64(perm.CanvasWrite)}}}, nil)
-	a, a2, ro := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
+	a, a2, w, ro := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
 	a.next(frameSnapshot)
 	a2.next(frameSnapshot)
+	w.next(frameSnapshot)
 	ro.next(frameSnapshot)
 	count := func() int {
 		var n int
@@ -506,20 +507,24 @@ func TestCanvasSyncCeiling(t *testing.T) {
 		a.send(updateFrame(0, []byte{'u', byte(i)}))
 		a.next(frameUpdate)
 		a2.next(frameUpdate)
+		w.next(frameUpdate)
 		ro.next(frameUpdate)
 	}
-	// The 4th is over the ceiling: dropped, and both writers (not the view-only socket) are asked
+	// The 4th is over the ceiling: dropped, and the writers (not the view-only socket) are asked
 	// to compact.
 	a.send(updateFrame(0, []byte("u4")))
 	a.next(frameCompact)
 	a2.next(frameCompact)
+	w.next(frameCompact)
 	ro.quiet(a2) // nothing of the 4th update, no COMPACT_REQUEST
+	w.next(frameAwareness)
 	if n := count(); n != 3 {
 		t.Fatalf("updates stored at the ceiling: %d", n)
 	}
 	// Within the cooldown no second request, and the update is still refused.
 	a.send(updateFrame(0, []byte("u5")))
 	a2.quiet(a)
+	w.next(frameAwareness)
 	ro.next(frameAwareness) // the probe reaches the view-only socket too
 	if n := count(); n != 3 {
 		t.Fatalf("updates stored at the ceiling: %d", n)
@@ -528,13 +533,28 @@ func TestCanvasSyncCeiling(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	a.send(updateFrame(0, []byte("u6")))
 	a.closed(ysync.CloseCeiling)
-	// A snapshot through 3 lifts the ceiling: the next update is stored under seq 4 and relayed.
+	// A snapshot through 3 lifts the ceiling. Everyone else gets it: they never saw the refused
+	// updates, so without it the following ones would wait for them forever. It is sent once.
 	a2.send(post(3, snapshotMeta{PlainText: "compacted"}, []byte("state")))
+	for _, c := range []*client{w, ro} {
+		if f := c.next(frameSnapshot); frameSeq(f) != 3 || string(f[9:]) != "state" {
+			t.Fatalf("snapshot after the refusals %x", f)
+		}
+	}
+	// The next update is stored under seq 4 and relayed.
 	a2.send(updateFrame(0, []byte("u7")))
 	if f := a2.next(frameUpdate); frameSeq(f) != 4 || string(f[9:]) != "u7" {
 		t.Fatalf("update after the snapshot %x", f)
 	}
+	w.next(frameUpdate)
 	ro.next(frameUpdate)
+	// A later snapshot without a refusal in between is not relayed (nothing was missed).
+	a2.send(post(4, snapshotMeta{PlainText: "again"}, []byte("state2")))
+	a2.send(updateFrame(0, []byte("u8")))
+	a2.next(frameUpdate)
+	if f := w.next(frameUpdate); string(f[9:]) != "u8" {
+		t.Fatalf("snapshot relayed without a refusal: %x", f)
+	}
 	if n := count(); n != 1 {
 		t.Fatalf("updates after the snapshot: %d", n)
 	}

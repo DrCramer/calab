@@ -574,6 +574,9 @@ func (c *conn) admitUpdate(size int) admission {
 		c.close(CloseCeiling, "the document is over its update ceiling: compact it")
 		return admitClose
 	}
+	// Remember the refusal (any instance): the first snapshot stored after it is relayed to every
+	// socket, because the others never got the refused update and would not apply the next ones.
+	_ = h.rc.Do(c.ctx, h.rc.B().Set().Key(redisx.Key(h.b.Name()+":dropped:"+c.doc.String())).Value("1").Ex(droppedTTL).Build()).Error()
 	set, err := h.rc.Do(c.ctx, h.rc.B().Set().Key(redisx.Key(h.b.Name()+":ceiling:"+c.doc.String())).Value("1").Nx().
 		Px(h.cfg.CompactCooldown).Build()).AsBool()
 	if (err == nil || rueidis.IsRedisNil(err)) && set {
@@ -582,6 +585,17 @@ func (c *conn) admitUpdate(size int) admission {
 		h.broadcast(c.ctx, c.doc, nil, []byte{FrameCompact})
 	}
 	return admitDrop
+}
+
+// droppedTTL bounds the memory of a refused UPDATE: the snapshot that lifts the ceiling comes
+// within seconds of the COMPACT_REQUEST.
+const droppedTTL = time.Hour
+
+// refusedSince reports (and forgets) whether an UPDATE of the document was refused at the ceiling
+// since the last relayed snapshot.
+func (h *Hub) refusedSince(ctx context.Context, doc uuid.UUID) bool {
+	v, err := h.rc.Do(ctx, h.rc.B().Getdel().Key(redisx.Key(h.b.Name()+":dropped:"+doc.String())).Build()).ToString()
+	return err == nil && v != ""
 }
 
 // maybeCompact asks the sender for a snapshot when the updates after the stored one exceed the
@@ -671,8 +685,11 @@ func (c *conn) onSnapshot(b []byte) bool {
 	if res.Stored {
 		c.h.noteCompacted(c.doc)
 	}
+	// The first stored snapshot after a refused UPDATE (admitUpdate) goes to every other socket
+	// like a broadcast one: they hold neither the refused update nor its successors' base.
+	relay := res.Stored && c.h.refusedSince(c.ctx, c.doc)
 	switch {
-	case res.Stored && broadcast:
+	case res.Stored && (broadcast || relay):
 		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(through, state))
 	case !res.Stored && broadcast:
 		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(0, state))
