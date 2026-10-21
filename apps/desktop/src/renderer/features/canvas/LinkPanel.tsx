@@ -62,6 +62,8 @@ export function LinkPanel({ itemId, restricted }: { itemId: string; restricted: 
     setBusy(true);
     const err = (e: unknown): void => {
       toast.fail(e, t('canvasShare.err.link'));
+      // The list shows the link's real term again, not the one the server refused.
+      if (link) setExpiry(expiryOf(link));
       setBusy(false);
     };
     if (next.on) {
