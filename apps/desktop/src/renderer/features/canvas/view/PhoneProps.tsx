@@ -180,7 +180,7 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
         <PhoneBtn label={t('canvasPhone.multi')} active={multi} onClick={() => engine.setMultiSelect(!multi)} testId="canvas-phone-multi">
           <ListChecks className={ICON} strokeWidth={1.75} aria-hidden />
         </PhoneBtn>
-        {m ? (
+        {m && !m.locked ? (
           <button
             type="button"
             aria-label={t('canvasBoard.props.delete')}

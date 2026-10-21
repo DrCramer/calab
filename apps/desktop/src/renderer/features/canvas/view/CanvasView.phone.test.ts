@@ -421,9 +421,11 @@ describe('the properties sheet', () => {
     await settle(600);
     expect(objects(m)).toHaveLength(1);
     expect(objects(m)[0]).toMatchObject({ color: token, fontPx: 19, locked: true });
-    // A locked selection offers no color or size, only «unlock», duplicate and delete.
+    // A locked selection offers no color, size or delete, only «unlock» and duplicate.
     expect(m.q('canvas-prop-sticky-color')).toBeNull();
     expect(m.q('canvas-prop-size')).toBeNull();
+    expect(m.q('canvas-prop-delete')).toBeNull();
+    expect(m.q('canvas-prop-duplicate')).not.toBeNull();
     click(m, 'canvas-prop-lock');
     click(m, 'canvas-prop-duplicate');
     await settle(600);

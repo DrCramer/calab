@@ -778,9 +778,14 @@ export class CanvasEngine implements Core {
     }
   }
 
+  /**
+   * Deletes the selected objects except the locked ones: a lock protects from deletion by every path (keys, cut, menu,
+   * panels), and a member locked on its own stays when its group is deleted. Nothing to delete: no undo step.
+   */
   deleteSelection(): void {
     if (!this.canEdit() || this.sel.size === 0) return;
-    const ids = [...this.sel];
+    const ids = [...this.sel].filter((id) => !this.scene.get(id)?.locked);
+    if (ids.length === 0) return;
     this.doc.checkpoint();
     this.doc.remove(ids, (c, end) => this.scene.pointOf(c, end));
   }
@@ -809,6 +814,7 @@ export class CanvasEngine implements Core {
     return text;
   }
 
+  /** Copies the selection and deletes what may be deleted: on locked objects ⌘X is a plain copy. */
   async cut(): Promise<void> {
     if (!this.canEdit()) return;
     await this.copy();

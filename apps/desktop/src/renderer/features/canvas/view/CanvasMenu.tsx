@@ -51,7 +51,7 @@ export function CanvasMenu({
             <Item label={t('canvasBoard.menu.copy')} kbd={`${MOD}C`} onSelect={() => void engine.copy()} testId="canvas-menu-copy" />
             {editable ? (
               <>
-                <Item label={t('canvasBoard.menu.cut')} kbd={`${MOD}X`} onSelect={() => void engine.cut()} testId="canvas-menu-cut" />
+                {allLocked ? null : <Item label={t('canvasBoard.menu.cut')} kbd={`${MOD}X`} onSelect={() => void engine.cut()} testId="canvas-menu-cut" />}
                 <Item label={t('canvasBoard.menu.paste')} kbd={`${MOD}V`} onSelect={() => void engine.paste()} testId="canvas-menu-paste" />
                 <Item label={t('canvasBoard.menu.duplicate')} kbd={`${MOD}D`} onSelect={() => { engine.duplicateSelection(); }} testId="canvas-menu-duplicate" />
                 <ContextMenu.Separator className={SEP} />
@@ -61,8 +61,12 @@ export function CanvasMenu({
                 <ContextMenu.Separator className={SEP} />
                 <Item label={t('canvasBoard.menu.front')} kbd={`⇧${MOD}]`} onSelect={() => engine.reorder(1, true)} testId="canvas-menu-front" />
                 <Item label={t('canvasBoard.menu.back')} kbd={`⇧${MOD}[`} onSelect={() => engine.reorder(-1, true)} testId="canvas-menu-back" />
-                <ContextMenu.Separator className={SEP} />
-                <Item label={t('canvasBoard.menu.delete')} kbd="Del" danger onSelect={() => engine.deleteSelection()} testId="canvas-menu-delete" />
+                {allLocked ? null : (
+                  <>
+                    <ContextMenu.Separator className={SEP} />
+                    <Item label={t('canvasBoard.menu.delete')} kbd="Del" danger onSelect={() => engine.deleteSelection()} testId="canvas-menu-delete" />
+                  </>
+                )}
               </>
             ) : null}
           </>

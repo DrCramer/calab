@@ -16,7 +16,7 @@ export interface PanelModel {
   hasText: boolean;
   hasShape: boolean;
   hasConnector: boolean;
-  /** Every selected object is locked: nothing of the selection can be changed, only unlocked, grouped, ordered or deleted. */
+  /** Every selected object is locked: nothing of the selection can be changed or deleted, only unlocked, grouped, ordered or duplicated. */
   locked: boolean;
   /** Two or more objects that are not already exactly one group. */
   canGroup: boolean;

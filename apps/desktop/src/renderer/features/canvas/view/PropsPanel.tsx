@@ -529,9 +529,11 @@ export const PropsPanel = memo(function PropsPanel({
       <IconButton label={t('canvasBoard.props.duplicate')} shortcut="⌘D" size="sm" onMouseDown={keepFocus} onClick={run(() => engine.duplicateSelection())} data-testid="canvas-prop-duplicate">
         <CopyPlus className={ICON} strokeWidth={1.75} aria-hidden />
       </IconButton>
-      <IconButton label={t('canvasBoard.props.delete')} shortcut="Del" size="sm" danger onMouseDown={keepFocus} onClick={run(() => engine.deleteSelection())} data-testid="canvas-prop-delete">
-        <Trash2 className={ICON} strokeWidth={1.75} aria-hidden />
-      </IconButton>
+      {m.locked ? null : (
+        <IconButton label={t('canvasBoard.props.delete')} shortcut="Del" size="sm" danger onMouseDown={keepFocus} onClick={run(() => engine.deleteSelection())} data-testid="canvas-prop-delete">
+          <Trash2 className={ICON} strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      )}
     </div>
   );
 });

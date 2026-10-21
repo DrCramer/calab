@@ -768,7 +768,7 @@ describe('transform controls (ADR-0115)', () => {
   };
   const ys = (relay: MockRelay): number[] => [...relay.doc.getMap<Y.Map<unknown>>('objects').values()].map((o) => Number(o.get('y')));
 
-  it('a multi-selection offers group and align; a group offers ungroup, and a locked selection only the lock, order and delete', async () => {
+  it('a multi-selection offers group and align; a group offers ungroup, and a locked selection only the lock, order and duplicate', async () => {
     const relay = new MockRelay();
     const m = await twoStickies(relay);
     expect(m.q('canvas-prop-group')).not.toBeNull();
@@ -782,10 +782,12 @@ describe('transform controls (ADR-0115)', () => {
     act(() => m.q('canvas-prop-lock')?.click());
     expect(m.q('canvas-prop-locked-badge')).not.toBeNull();
     expect(m.q('canvas-prop-sticky-color')).toBeNull();
-    expect(m.q('canvas-prop-delete')).not.toBeNull();
+    expect(m.q('canvas-prop-delete')).toBeNull(); // a lock protects from deletion too
+    expect(m.q('canvas-prop-duplicate')).not.toBeNull();
     expect(m.q('canvas-prop-lock')?.getAttribute('aria-pressed')).toBe('true');
     act(() => m.q('canvas-prop-lock')?.click());
     expect(m.q('canvas-prop-locked-badge')).toBeNull();
+    expect(m.q('canvas-prop-delete')).not.toBeNull();
     expect(m.q('canvas-prop-sticky-color')).not.toBeNull();
     act(() => m.q('canvas-prop-ungroup')?.click());
     expect(m.q('canvas-prop-group')).not.toBeNull();
@@ -954,6 +956,20 @@ describe('transform controls (ADR-0115)', () => {
     expect(document.querySelector('[data-testid="canvas-menu-group"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="canvas-menu-lock"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="canvas-menu-ungroup"]')).toBeNull();
+  });
+
+  it('the right-click menu of a locked selection offers no cut or delete, copy stays', async () => {
+    const relay = new MockRelay();
+    const m = await twoStickies(relay);
+    act(() => m.q('canvas-prop-lock')?.click());
+    await act(async () => {
+      m.canvas.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200, button: 2 }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(document.querySelector('[data-testid="canvas-menu-copy"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="canvas-menu-lock"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="canvas-menu-cut"]')).toBeNull();
+    expect(document.querySelector('[data-testid="canvas-menu-delete"]')).toBeNull();
   });
 });
 

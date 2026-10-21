@@ -244,6 +244,40 @@ describe('selection, move, resize', () => {
   });
 });
 
+describe('a lock protects from deletion', () => {
+  it('Delete and Backspace leave the locked objects of a mixed selection, and an all-locked one adds no undo step', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(100, 100), sticky(400, 100, { locked: true }));
+    objs(r).checkpoint();
+    r.engine.setSelection([a ?? '', b ?? '']);
+    r.key('Delete');
+    expect(objs(r).objects.has(a ?? '')).toBe(false);
+    expect(objs(r).objects.has(b ?? '')).toBe(true);
+    const steps = objs(r).undo.undoStack.length;
+    r.engine.setSelection([b ?? '']);
+    r.key('Backspace');
+    r.engine.deleteSelection();
+    expect(objs(r).objects.has(b ?? '')).toBe(true);
+    expect(objs(r).undo.undoStack).toHaveLength(steps);
+  });
+  it('cut on a locked object is a plain copy', async () => {
+    const r = rig();
+    const [b] = r.make(sticky(400, 100, { locked: true, text: 'keep' }));
+    r.engine.setSelection([b ?? '']);
+    await r.engine.cut();
+    expect(r.clip.text.startsWith('calaba-canvas:')).toBe(true);
+    expect(objs(r).snapshot(b ?? '')).toMatchObject({ text: 'keep', locked: true });
+  });
+  it('deleting a group leaves a member locked on its own', () => {
+    const r = rig();
+    const [a, b, c] = r.make(sticky(100, 100, { group: 'g1' }), sticky(300, 100, { group: 'g1' }), sticky(500, 100, { group: 'g1', locked: true }));
+    r.engine.setSelection([a ?? '', b ?? '', c ?? '']);
+    r.engine.deleteSelection();
+    expect(objs(r).count).toBe(1);
+    expect(objs(r).snapshot(c ?? '')).toMatchObject({ locked: true });
+  });
+});
+
 describe('Escape on a gesture that changed nothing undoes nothing', () => {
   /** The user's last action is a creation; a cancelled no-op gesture must leave it (and its undo step) alone. */
   const expectUntouched = (r: Rig, steps: number, count: number): void => {
