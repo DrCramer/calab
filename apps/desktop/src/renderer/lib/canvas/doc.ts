@@ -4,7 +4,7 @@ import { after, before, between, isValidKey } from './fracIndex';
 import { fmtFromDelta, fmtToDelta, formatChanges, rawText, type Fmt } from './richText';
 import { fontFields, isFontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
+  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
   type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
 } from './types';
 
@@ -256,6 +256,14 @@ export class CanvasDoc {
   private static readonly OBJECT_BYTES = 260;
   private static readonly CHUNK_BYTES = 40_000;
 
+  /** What a batch adds to the encoded state: the fields of each object and its text in UTF-8. */
+  private static batchBytes(items: readonly { text: string | null }[]): number {
+    const enc = new TextEncoder();
+    let bytes = 0;
+    for (const { text } of items) bytes += CanvasDoc.OBJECT_BYTES + (text ? enc.encode(text).length : 0);
+    return bytes;
+  }
+
   constructor(ydoc: Y.Doc, opts: CanvasDocOptions = {}) {
     this.ydoc = ydoc;
     this.rng = opts.rng === undefined ? Math.random : opts.rng;
@@ -384,7 +392,8 @@ export class CanvasDoc {
   }
 
   /**
-   * Creates objects on top, in order. All-or-nothing against the object limit. Returns the new ids ([] if refused).
+   * Creates objects on top, in order. All-or-nothing against the object limit and, for a batch above one chunk,
+   * against MAX_STATE. Returns the new ids ([] if refused).
    * A big batch is written as several transactions of ≲ CHUNK_BYTES each (one undo step): the sync provider sends a
    * transaction above its 64 KiB frame as a snapshot of the whole document, to everyone — 500 stickies already
    * exceed it — while smaller updates travel as plain UPDATE frames.
@@ -408,6 +417,10 @@ export class CanvasDoc {
       bytes += est;
     }
     chunks.push(cur);
+    // Such a batch goes out as UPDATE chunks: past MAX_STATE the server takes about MAX_STATE of them (the socket's
+    // byte burst), and the rest — one diff above a frame after the reconnect — is a snapshot never posted, so the
+    // others would keep a part of it. The state is measured only for a batch this big.
+    if (chunks.length > 1 && Y.encodeStateAsUpdate(this.ydoc).length + CanvasDoc.batchBytes(prepared) > MAX_STATE) return [];
     const write = (chunk: typeof prepared): void => {
       this.transact(() => {
         for (const { item, fields, text, extra } of chunk) {

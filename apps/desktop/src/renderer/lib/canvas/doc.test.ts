@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { describe, expect, it } from 'vitest';
 import { CanvasDoc, LOCAL_ORIGIN, MAX_UNDO, applyTextDiff, clampText, color, endpoint } from './doc';
 import { REMOTE, makeDoc, pair } from './testing';
-import { MAX_OBJECTS, MAX_TEXT } from './types';
+import { MAX_OBJECTS, MAX_STATE, MAX_TEXT } from './types';
 
 describe('creation', () => {
   it('stores flat fields, a fractional z and Y.Text for text', () => {
@@ -98,6 +98,21 @@ describe('limits (ADR-0114 §3)', () => {
     expect([...zs].sort()).toEqual(zs); // still bottom → top in order
     d.undo.undo();
     expect(d.count).toBe(0);
+  });
+  it('refuses a batch above a chunk whole when the state would pass MAX_STATE', () => {
+    const y = new Y.Doc();
+    const d = new CanvasDoc(y, { rng: null });
+    const sizes: number[] = [];
+    y.on('update', (u: Uint8Array) => sizes.push(u.length));
+    const notes = (n: number) => Array.from({ length: n }, (_, i) => ({ init: { kind: 'sticky' as const, x: i, y: 0, text: 'q'.repeat(4900) } }));
+    expect(d.createMany(notes(1000))).toEqual([]); // ≈ 5 MB of text
+    expect(d.count).toBe(0);
+    expect(sizes).toEqual([]);
+    expect(d.createMany(notes(600))).toHaveLength(600); // ≈ 3 MB: fits
+    expect(Y.encodeStateAsUpdate(y).length).toBeLessThan(MAX_STATE);
+    expect(d.createMany(notes(300))).toEqual([]); // together above the limit
+    expect(d.count).toBe(600);
+    expect(d.createMany(notes(1))).toHaveLength(1); // one chunk is never measured
   });
   it('clamps text to 5000 characters on creation and on edit', () => {
     const d = makeDoc();

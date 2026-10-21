@@ -58,6 +58,8 @@ export interface SessionOptions {
   /** The canvas' name for the snapshot meta (read at call time). */
   title: () => string;
   onTooLarge: (bytes: number) => void;
+  /** A paste or a duplicate was refused whole (EngineOptions.onRefused). */
+  onRefused?: (why: 'objects' | 'size') => void;
   onFatal: (code: number) => void;
 }
 
@@ -89,6 +91,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     editorHost: o.editorHost,
     ...(o.editorLabel ? { editorLabel: o.editorLabel } : {}),
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
+    ...(o.onRefused ? { onRefused: o.onRefused } : {}),
   });
   const code = o.publicCode;
   const sync = createCanvasSync(ydoc, awareness, {

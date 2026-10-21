@@ -8,6 +8,8 @@ export const MAX_OBJECTS = 5000;
 export const MAX_TEXT = 5000;
 export const MAX_COORD = 1e7;
 export const MAX_SIZE = 1e5;
+/** Largest snapshot state of a canvas (ADR-0114 §3): the sync never posts a bigger one. */
+export const MAX_STATE = 4 * 1024 * 1024;
 
 export type ObjectKind = 'sticky' | 'text' | 'shape' | 'connector';
 export type ShapeKind =

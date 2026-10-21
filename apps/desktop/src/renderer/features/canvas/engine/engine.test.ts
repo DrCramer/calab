@@ -544,6 +544,22 @@ describe('keyboard', () => {
     await flush();
     expect(objs(r).count).toBe(4);
   });
+  it('a paste refused whole says why: the state limit, the object limit', () => {
+    const why: string[] = [];
+    const r = rig({ onRefused: (w) => why.push(w) });
+    const payload = (n: number, text: string) =>
+      'calaba-canvas:' + JSON.stringify({ v: 1, objects: Array.from({ length: n }, (_, i) => ({ id: `p${i}`, kind: 'sticky', x: i, y: 0, text })) });
+    expect(r.engine.pasteText(payload(1000, 'q'.repeat(4900)))).toEqual([]);
+    expect(why).toEqual(['size']);
+    expect(objs(r).count).toBe(0);
+    expect(r.engine.pasteText(payload(3, 'ok'))).toHaveLength(3);
+    expect(why).toEqual(['size']);
+    r.ydoc.transact(() => {
+      for (let i = 0; i < 4995; i++) objs(r).objects.set(`f${i}`, new Y.Map<unknown>());
+    });
+    expect(r.engine.pasteText(payload(3, 'ok'))).toEqual([]);
+    expect(why).toEqual(['size', 'objects']);
+  });
   it('⌘D puts the copy to the right of the selection, on the same line', () => {
     const r = rig();
     const [a, b] = r.make(sticky(0, 0), sticky(300, 40));

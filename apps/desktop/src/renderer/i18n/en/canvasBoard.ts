@@ -165,6 +165,8 @@ export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.status.gone': 'This canvas is unavailable or your access changed',
   'canvasBoard.status.retry': 'Reopen',
   'canvasBoard.tooLarge': 'The canvas is too large: changes may not be saved. Remove some objects',
+  'canvasBoard.pasteTooLarge': 'Not pasted: the canvas would go over 4 MB. Remove some objects',
+  'canvasBoard.pasteFull': 'Not pasted: the canvas is full (5000 objects)',
   'canvasBoard.textEditor': 'Canvas text',
   'canvasBoard.presence.title': 'On the canvas: {names}',
   'canvasBoard.presence.more': '{n} more',

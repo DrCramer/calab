@@ -573,26 +573,19 @@ describe.skipIf(!LIVE)("Canvas sync against a live server (H8)", () => {
     await arrival(a.ydoc, () => a.doc.objects.has(after));
     expect(a.fatal).toEqual([]);
     expect(b.fatal).toEqual([]);
-    // A state above 4 MiB (CANVAS_MAX_STATE): this client cannot post it, says so, and keeps working.
+    // A paste above the state limit (CANVAS_MAX_STATE): ~5 MB in 1000 objects is refused whole, so
+    // nothing of it leaves the client (in ≈ 40 KB UPDATE chunks the server would take only about
+    // 4 MiB of it, the others would keep a part). The over-the-limit snapshot: canvasSync.test.ts.
     const id2 = await mk("too large");
     const c = track(open(id2, alice));
     await synced(c);
-    // One pasted transaction of ~5 MB (1000 objects): above a frame, so it goes as a snapshot, and above the state limit.
-    c.doc.createMany(Array.from({ length: 1000 }, (_, i) => ({ init: { kind: "sticky" as const, x: i, y: 0, text: text("q") } })));
-    expect(Y.encodeStateAsUpdate(c.ydoc).length).toBeGreaterThan(4 * 1024 * 1024);
-    await waitFor("onTooLarge", () => c.tooLarge.length > 0, 10_000, 50);
-    expect(c.tooLarge[0]).toBeGreaterThan(4 * 1024 * 1024);
+    expect(c.doc.createMany(Array.from({ length: 1000 }, (_, i) => ({ init: { kind: "sticky" as const, x: i, y: 0, text: text("q") } })))).toEqual([]);
+    expect(c.doc.count).toBe(0);
     expect(c.sync.status).toBe("synced");
     expect(c.fatal).toEqual([]);
-    // The paste goes out in ≈ 40 KB UPDATE chunks: the server takes about MaxState of them (the
-    // socket's byte burst), closes 4008, and the rest — one diff above a frame after the
-    // reconnect — is a snapshot over the limit, never posted. The others keep the part the server
-    // took (docs/12: refuse such a paste whole instead).
     const watcher = track(open(id2, bob));
     await synced(watcher);
-    console.log(`PASTE above 4 MiB: the watcher has ${watcher.doc.count} of 1000 objects`);
-    expect(watcher.doc.count).toBeLessThanOrEqual(1000);
-    expect(watcher.fatal).toEqual([]);
+    expect(watcher.doc.count).toBe(0); // the server never got it
     // The server's side: a SNAPSHOT_POST of 4 MiB + 1 byte is refused by closing the socket, not by dying.
     const r = raw(id, alice.token);
     await waitFor("snapshot frame", () => r.frames.some((f) => f[0] === FRAME_SNAPSHOT));

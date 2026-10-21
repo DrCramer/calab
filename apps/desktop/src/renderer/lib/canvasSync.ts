@@ -19,6 +19,7 @@
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { canvasObjectCount, canvasPlainText } from "./canvas/plainText";
+import { MAX_STATE } from "./canvas/types";
 import type { SnapshotMeta } from "./wiki/frames";
 import { previewOf } from "./wiki/plainText";
 import { IDLE_SNAPSHOT_MS, YSyncProvider, type Visibility, type YSyncStatus } from "./ySync";
@@ -29,7 +30,7 @@ export type CanvasSyncStatus = "connecting" | "synced" | "readonly" | "offline";
 /** Awareness ≤ 20 frames/s (the engine throttles its own events to the same rate). */
 export const CANVAS_AWARENESS_MIN_GAP_MS = 50;
 /** Largest snapshot state of a canvas (ADR-0114 §3). */
-export const CANVAS_MAX_STATE = 4 * 1024 * 1024;
+export const CANVAS_MAX_STATE = MAX_STATE;
 
 /**
  * Idle compaction delay by state size: 3 s up to ≈ 60 KB, then ≈ 20 KB of state per second of quiet (400 KB → 20 s,

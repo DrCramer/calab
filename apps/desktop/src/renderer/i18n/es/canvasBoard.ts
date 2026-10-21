@@ -165,6 +165,8 @@ export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.status.gone': 'Este lienzo no está disponible o tu acceso cambió',
   'canvasBoard.status.retry': 'Reabrir',
   'canvasBoard.tooLarge': 'El lienzo es demasiado grande: puede que no se guarden los cambios. Elimina objetos',
+  'canvasBoard.pasteTooLarge': 'No se pegó: el lienzo superaría los 4 MB. Elimina objetos',
+  'canvasBoard.pasteFull': 'No se pegó: el lienzo está lleno (5000 objetos)',
   'canvasBoard.textEditor': 'Texto del lienzo',
   'canvasBoard.presence.title': 'En el lienzo: {names}',
   'canvasBoard.presence.more': '{n} más',

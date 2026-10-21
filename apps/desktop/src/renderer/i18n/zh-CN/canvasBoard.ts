@@ -165,6 +165,8 @@ export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.status.gone': '此画布不可用，或你的访问权限已变更',
   'canvasBoard.status.retry': '重新打开',
   'canvasBoard.tooLarge': '画布过大：更改可能无法保存，请删除部分对象',
+  'canvasBoard.pasteTooLarge': '未粘贴：画布将超过 4 MB，请删除部分对象',
+  'canvasBoard.pasteFull': '未粘贴：画布已满（5000 个对象）',
   'canvasBoard.textEditor': '画布文本',
   'canvasBoard.presence.title': '画布上：{names}',
   'canvasBoard.presence.more': '另有 {n} 人',

@@ -14,7 +14,7 @@ import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type Me
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import { LiveLayer } from '../../../lib/canvas/live';
 import {
-  DEFAULTS, aabb, isConnector,
+  DEFAULTS, MAX_OBJECTS, aabb, isConnector,
   type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
 import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
@@ -94,6 +94,8 @@ export interface EngineOptions {
   /** World grid step for snapping; 0 disables. */
   gridSize?: number;
   clipboard?: ClipboardPort;
+  /** A paste or ⌘D was refused whole: the object limit (`objects`) or the document's state limit (`size`). */
+  onRefused?: (why: 'objects' | 'size') => void;
   /** Positioned element the text editor is appended to (default: the canvas' parent). */
   editorHost?: HTMLElement;
   /** The text editor's accessible name, in the UI language (read at every open). */
@@ -797,7 +799,13 @@ export class CanvasEngine implements Core {
     const bb = boundsOf([...this.sel].flatMap((id) => { const o = this.scene.get(id); return o && !isConnector(o) ? [aabb(o)] : []; }));
     const ids = duplicate(this.scene, this.doc, this.sel, bb ? bb.w + 24 : 24, bb ? 0 : 24);
     if (ids.length > 0) this.setSelection(ids);
+    else this.refused(this.sel.size);
     return ids;
+  }
+
+  /** CanvasDoc.createMany refused `n` new objects: over the count limit, else over the state limit. */
+  private refused(n: number): void {
+    this.opts.onRefused?.(this.doc.count + n > MAX_OBJECTS ? 'objects' : 'size');
   }
 
   /** Writes the selection to the clipboard. Returns the text (also for callers with their own clipboard). */
@@ -854,8 +862,10 @@ export class CanvasEngine implements Core {
     }
     this.pasteCount++;
     this.doc.checkpoint();
-    const ids = this.doc.createMany(toInits(payload, dx, dy));
+    const inits = toInits(payload, dx, dy);
+    const ids = this.doc.createMany(inits);
     if (ids.length > 0) this.setSelection(ids);
+    else if (inits.length > 0) this.refused(inits.length);
     return ids;
   }
 

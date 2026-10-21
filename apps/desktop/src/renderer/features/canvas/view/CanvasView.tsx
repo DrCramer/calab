@@ -154,6 +154,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       color: (id) => cursorColor(id),
       title: () => live.current.name,
       onTooLarge: () => toast.error(t('canvasBoard.tooLarge')),
+      onRefused: (why) => toast.error(t(why === 'size' ? 'canvasBoard.pasteTooLarge' : 'canvasBoard.pasteFull')),
       onFatal: (code) => {
         setGone(true);
         live.current.onFatal?.(code);
