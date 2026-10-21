@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -283,12 +284,12 @@ func (c *conn) authorize() (int, string) {
 }
 
 // pingLoop pings the client (idle close), keeps the per-person registration alive and rechecks
-// the session and the access every RecheckInterval or when asked.
+// the session and the access every RecheckInterval ± 20 % (recheckDelay) or when asked.
 func (c *conn) pingLoop() {
 	h := c.h
 	ping := time.NewTicker(h.cfg.PingInterval)
 	defer ping.Stop()
-	recheck := time.NewTicker(h.cfg.RecheckInterval)
+	recheck := time.NewTimer(recheckDelay(h.cfg.RecheckInterval, rand.Float64()))
 	defer recheck.Stop()
 	// A viewer: the end of its access by itself (an expiry) and of its life.
 	var expiry, life <-chan time.Time
@@ -364,6 +365,7 @@ func (c *conn) pingLoop() {
 			if !check() {
 				return
 			}
+			recheck.Reset(recheckDelay(h.cfg.RecheckInterval, rand.Float64()))
 		case <-c.recheck:
 			if !check() {
 				return
@@ -377,6 +379,12 @@ func (c *conn) pingLoop() {
 			return
 		}
 	}
+}
+
+// recheckDelay is the time to a socket's next access recheck: every ± 20 % around (r in [0, 1)),
+// so that the sockets reconnected together after a restart (≈ 6 queries each) spread out.
+func recheckDelay(every time.Duration, r float64) time.Duration {
+	return time.Duration(float64(every) * (0.8 + 0.4*r))
 }
 
 // writeLoop sends the queued frames in order. Updates carry contiguous seqs per document: one at
