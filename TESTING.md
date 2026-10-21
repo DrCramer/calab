@@ -2280,3 +2280,12 @@ are not current phone evidence. Visual suites remain disabled.
 4. As a user who cannot edit the task: B is dimmed with «Позвать может тот, кто правит задачу», and Enter/click does not insert.
 5. Guests and bots without access are not listed; ordinary chats and DMs are unchanged.
 6. A commenter without board-management rights sees the same marks (the server answers who sees the board); typing @ruslan finds «Руслан», @shchukin finds «Щукин», in chats, DMs, tasks and ⌘K people.
+
+## MCP endpoint for bots (ADR-0114)
+
+1. Take a bot token (workspace settings → Bots) into `CALAB_BOT_TOKEN`; the bot needs a role with a board or a room. Not run here: there is no real server in this environment, so only `bash -n tools/mcp-smoke.sh` was checked.
+2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (six tools: find, read, create_task, comment_task, set_task_status, send_message), `tools/call` find (`boards`). The token is not printed.
+3. `read` a task by key from `find`, then `comment_task` and `set_task_status` with a status name of its board; both appear in the task (as the bot). A wrong status name returns `isError` with the board's statuses.
+4. `send_message` to a room the bot is not in or a private board task: `isError` with `404`/`403`, nothing is created.
+5. No header: `401`. A person's token or session: `403`. `GET /api/mcp`: `405`. A JSON array body: `400`.
+6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists six tools. Guide: `/ru/docs/bots/mcp`.
