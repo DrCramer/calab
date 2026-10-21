@@ -70,6 +70,7 @@ type room struct {
 	awMu      sync.Mutex
 	awBatch   map[uint64]awarenessEntry
 	awInCount int
+	awTimer   *time.Timer
 }
 
 // NewHub creates the hub of a section.
@@ -106,9 +107,6 @@ func (h *Hub) join(c *conn) *room {
 		h.rooms[c.doc] = r
 		h.m.rooms.Inc()
 		go h.listen(r)
-		if h.prof.BatchAwareness {
-			go h.awarenessLoop(r)
-		}
 	}
 	r.conns[c] = struct{}{}
 	h.m.sockets.Inc()
@@ -129,6 +127,14 @@ func (h *Hub) leave(c *conn) {
 		delete(h.rooms, c.doc)
 		h.m.rooms.Dec()
 		close(r.stop)
+		r.awMu.Lock()
+		if r.awTimer != nil {
+			r.awTimer.Stop()
+			r.awTimer = nil
+		}
+		r.awBatch = nil
+		r.awInCount = 0
+		r.awMu.Unlock()
 	}
 }
 
@@ -310,22 +316,11 @@ func (h *Hub) Kick(ctx context.Context, docs []uuid.UUID) {
 	}
 }
 
-func (h *Hub) awarenessLoop(r *room) {
-	ticker := time.NewTicker(h.cfg.AwarenessWindow)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.stop:
-			h.flushRoomAwareness(r)
-			return
-		case <-ticker.C:
-			h.flushRoomAwareness(r)
-		}
-	}
-}
-
 // enqueueAwareness adds entries to the room's current window batch.
 func (h *Hub) enqueueAwareness(doc uuid.UUID, entries []awarenessEntry) {
+	if len(entries) == 0 {
+		return
+	}
 	h.mu.Lock()
 	r := h.rooms[doc]
 	h.mu.Unlock()
@@ -334,6 +329,10 @@ func (h *Hub) enqueueAwareness(doc uuid.UUID, entries []awarenessEntry) {
 	}
 	r.awMu.Lock()
 	defer r.awMu.Unlock()
+	if r.awBatch == nil {
+		return
+	}
+	arm := len(r.awBatch) == 0
 	for _, e := range entries {
 		r.awInCount++
 		existing, ok := r.awBatch[e.clientID]
@@ -345,11 +344,23 @@ func (h *Hub) enqueueAwareness(doc uuid.UUID, entries []awarenessEntry) {
 			}
 		}
 	}
+	if arm {
+		if r.awTimer != nil {
+			r.awTimer.Stop()
+		}
+		r.awTimer = time.AfterFunc(h.cfg.AwarenessWindow, func() {
+			h.flushRoomAwareness(r)
+		})
+	}
 }
 
 // flushRoomAwareness coalesces and sends the room's batched awareness frames.
 func (h *Hub) flushRoomAwareness(r *room) {
 	r.awMu.Lock()
+	if r.awTimer != nil {
+		r.awTimer.Stop()
+		r.awTimer = nil
+	}
 	if len(r.awBatch) == 0 {
 		r.awMu.Unlock()
 		return

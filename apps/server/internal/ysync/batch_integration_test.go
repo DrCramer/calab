@@ -549,3 +549,101 @@ func TestBatchAwarenessIngressBudget(t *testing.T) {
 	}
 }
 
+// Problem 3: 1000 rooms connected in idle state; no per-room awareness ticker goroutines, no armed timers;
+// sending 1 entry delivers after window, and timer is disarmed again.
+func TestBatchAwarenessRoomTimerOnDemand(t *testing.T) {
+	cfg := Config{AwarenessWindow: 30 * time.Millisecond}
+	e := newProfEnv(t, batchProfile, cfg)
+
+	const numRooms = 1000
+	docs := make([]uuid.UUID, numRooms)
+	conns := make([]*conn, numRooms)
+
+	for i := 0; i < numRooms; i++ {
+		docs[i] = uuid.New()
+		conns[i] = &conn{
+			h:       e.h,
+			doc:     docs[i],
+			key:     uuid.NewString(),
+			ctx:     context.Background(),
+			out:     make(chan []byte, 16),
+			kick:    make(chan struct{}, 1),
+			awAccum: make(map[uint64]awarenessEntry),
+		}
+		conns[i].write.Store(true)
+		e.h.join(conns[i])
+	}
+
+	t.Cleanup(func() {
+		for i := 0; i < numRooms; i++ {
+			e.h.leave(conns[i])
+		}
+	})
+
+	// Verify all 1000 rooms in idle: no timers armed
+	e.h.mu.Lock()
+	if len(e.h.rooms) < numRooms {
+		e.h.mu.Unlock()
+		t.Fatalf("expected at least %d rooms, got %d", numRooms, len(e.h.rooms))
+	}
+	for _, doc := range docs {
+		r := e.h.rooms[doc]
+		if r == nil {
+			e.h.mu.Unlock()
+			t.Fatalf("room %v not found", doc)
+		}
+		r.awMu.Lock()
+		if r.awTimer != nil {
+			r.awMu.Unlock()
+			e.h.mu.Unlock()
+			t.Fatalf("expected idle room %v to have no armed timer", doc)
+		}
+		if len(r.awBatch) != 0 {
+			r.awMu.Unlock()
+			e.h.mu.Unlock()
+			t.Fatalf("expected idle room %v to have empty batch", doc)
+		}
+		r.awMu.Unlock()
+	}
+	e.h.mu.Unlock()
+
+	// Send one record to room 0
+	doc0 := docs[0]
+	e.h.mu.Lock()
+	r0 := e.h.rooms[doc0]
+	e.h.mu.Unlock()
+
+	entry := awarenessEntry{clientID: 101, clock: 1, state: []byte(`{"cursor":"active"}`)}
+	e.h.enqueueAwareness(doc0, []awarenessEntry{entry})
+
+	// Verify timer is armed immediately after enqueuing into empty batch
+	r0.awMu.Lock()
+	if r0.awTimer == nil {
+		r0.awMu.Unlock()
+		t.Fatal("expected awTimer to be armed after enqueue")
+	}
+	r0.awMu.Unlock()
+
+	// Wait for window to expire and flush
+	time.Sleep(cfg.AwarenessWindow + 30*time.Millisecond)
+
+	// Verify timer is cleared and batch is empty again
+	r0.awMu.Lock()
+	if r0.awTimer != nil {
+		r0.awMu.Unlock()
+		t.Fatal("expected awTimer to be disarmed after window flush")
+	}
+	if len(r0.awBatch) != 0 {
+		r0.awMu.Unlock()
+		t.Fatal("expected awBatch to be empty after window flush")
+	}
+	r0.awMu.Unlock()
+
+	// Verify connection 0 received the awareness frame in its accumulator
+	conns[0].awAccumMu.Lock()
+	rec := conns[0].awAccum[101]
+	conns[0].awAccumMu.Unlock()
+	if rec.clientID != 101 || rec.clock != 1 || string(rec.state) != `{"cursor":"active"}` {
+		t.Fatalf("expected entry delivered to accumulator, got: %+v", rec)
+	}
+}
