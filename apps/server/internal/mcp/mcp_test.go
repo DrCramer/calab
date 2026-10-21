@@ -157,3 +157,56 @@ func TestToolsCallRESTAsTheBot(t *testing.T) {
 		t.Fatal("create_task without arguments")
 	}
 }
+
+// Malformed input is refused before any tool runs: no REST call, a JSON-RPC error.
+func TestRefusesMalformedInput(t *testing.T) {
+	h := New("test")
+	h.API = &fakeAPI{reply: func(*http.Request) (int, proto.Message) { t.Fatal("API called"); return 0, nil }}
+	for _, c := range []struct {
+		name, body string
+		status     int
+		code       float64
+	}{
+		{"invalid JSON", `{"jsonrpc":`, http.StatusBadRequest, codeParse},
+		{"empty body", ``, http.StatusBadRequest, codeParse},
+		{"not 2.0", `{"jsonrpc":"1.0","id":1,"method":"ping"}`, http.StatusBadRequest, codeInvalidRequest},
+		{"no method", `{"jsonrpc":"2.0","id":1}`, http.StatusBadRequest, codeInvalidRequest},
+		{"too large", `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"x":"` + strings.Repeat("a", maxBody) + `"}}`, http.StatusRequestEntityTooLarge, codeInvalidRequest},
+		{"unknown tool", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"exec","arguments":{}}}`, http.StatusOK, codeInvalidParams},
+		{"bad params", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":[1]}`, http.StatusOK, codeInvalidParams},
+	} {
+		st, out := post(t, h, &botID, c.body)
+		e, _ := out["error"].(map[string]any)
+		if st != c.status || e == nil || e["code"].(float64) != c.code {
+			t.Errorf("%s: %d %v", c.name, st, out)
+		}
+	}
+	// A tools/call notification (no id) runs nothing.
+	if st, _ := post(t, h, &botID, `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"send_message","arguments":{"room":"r","text":"x"}}}`); st != http.StatusAccepted {
+		t.Fatalf("notification: %d", st)
+	}
+}
+
+// Arguments stay inside one path segment of the intended route (no other route, no query), and
+// the token never reaches a tool's answer.
+func TestArgumentsStayInTheirSegment(t *testing.T) {
+	f := &fakeAPI{}
+	f.reply = func(*http.Request) (int, proto.Message) {
+		return 404, &v1.ApiError{Code: v1.ErrorCode_ERROR_CODE_NOT_FOUND, Message: "room not found"}
+	}
+	h := New("test")
+	h.API = f
+	for _, room := range []string{"a/../../tasks/x", "x?limit=1000#y", "%2e%2e/x"} {
+		q, _ := json.Marshal(room)
+		text, isErr := call(t, h, "send_message", `{"room":`+string(q)+`,"text":"hi"}`)
+		if !isErr || strings.Contains(text, "calab_bot") {
+			t.Fatalf("%q: %v %s", room, isErr, text)
+		}
+		r := f.calls[len(f.calls)-1]
+		p, ok := strings.CutPrefix(r.URL.EscapedPath(), "/api/rooms/")
+		p, ok2 := strings.CutSuffix(p, "/messages")
+		if !ok || !ok2 || strings.Contains(p, "/") || r.URL.RawQuery != "" || r.URL.Fragment != "" {
+			t.Fatalf("%q became %s", room, r.URL.String())
+		}
+	}
+}
