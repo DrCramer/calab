@@ -547,6 +547,7 @@ export class CanvasEngine implements Core {
   private onSceneChange(ids: ReadonlySet<string>, order = false): void {
     // Objects came or went: votes for gone ones stop counting, the leaders and my remaining votes may differ.
     if (order && this.votes.active) this.votes.invalidate();
+    if (this.editingId !== null && (ids.has(this.editingId) || !this.scene.has(this.editingId))) this.followEditedObject(this.editingId);
     let touched = false;
     for (const id of this.sel) {
       if (!this.scene.has(id)) {
@@ -560,6 +561,22 @@ export class CanvasEngine implements Core {
       this.notifySelection();
     }
     if (ids.size > 0) this.sync();
+  }
+
+  /** A co-author deleted, locked or moved the object being edited: the editor closes (nothing to write into) or follows it. */
+  private followEditedObject(id: string): void {
+    const o = this.scene.get(id);
+    if (!o || o.locked) {
+      this.editor.cancel();
+      this.renderer.setHiddenText(null);
+      this.editingId = null;
+      this.endEditCamera();
+      this.refreshOverlay();
+      this.sync();
+      return;
+    }
+    const spec = this.editSpec(o);
+    if (spec) this.editor.moveTo(spec);
   }
 
   private notifySelection(): void {
@@ -1166,7 +1183,8 @@ export class CanvasEngine implements Core {
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();
-        if (cur.kind === 'text' && text.trim() === '') {
+        // Emptied, unless a co-author typed into it meanwhile (then the edit merges like any other).
+        if (cur.kind === 'text' && text.trim() === '' && this.doc.rawTextOf(oid) === original) {
           if (!this.doc.undoStep(created)) this.doc.remove([oid]);
         }
         else if (cur.kind === 'connector') this.doc.setText(oid, text);

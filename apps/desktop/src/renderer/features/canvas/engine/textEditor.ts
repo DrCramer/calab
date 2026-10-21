@@ -280,6 +280,17 @@ export class TextEditor {
     this.refresh();
   }
 
+  /** The object moved, resized or turned under the open editor (a co-author): the textarea follows it. */
+  moveTo(geom: Pick<EditSpec, 'box' | 'rot' | 'center'>): void {
+    if (!this.spec) return;
+    const next: EditSpec = { ...this.spec, box: geom.box };
+    delete next.rot;
+    delete next.center;
+    if (geom.rot && geom.center) Object.assign(next, { rot: geom.rot, center: geom.center });
+    this.spec = next;
+    this.reposition();
+  }
+
   /** The object's text size changed while editing (the format bar's size field). */
   setSize(size: number): void {
     if (!this.spec) return;
