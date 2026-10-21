@@ -77,6 +77,7 @@ func (c *conn) enqueue(frame []byte) {
 	select {
 	case c.out <- frame:
 	default:
+		c.h.m.dropQueue.Inc()
 		if t := frame[0]; t == FrameUpdate || t == FrameSnapshot {
 			c.markStale()
 		}
@@ -102,6 +103,7 @@ func (c *conn) recheckSoon() {
 // close ends the socket once with a close code.
 func (c *conn) close(code int, reason string) {
 	c.closed.Do(func() {
+		c.h.m.closed(code)
 		// The close handshake first: cancelling the context of a pending Read or Write drops the
 		// connection without a close frame.
 		go func() {
@@ -423,6 +425,7 @@ func (c *conn) handle(f []byte) bool {
 // the first call), then the stored updates after it, read in one repeatable-read transaction so
 // that a compaction in between loses nothing.
 func (c *conn) catchUp() bool {
+	c.h.m.catchUps.Inc()
 	var frames [][]byte
 	last := c.lastSent
 	st := c.h.b
@@ -596,9 +599,11 @@ func (c *conn) admitUpdate(size int) admission {
 		return admitClose
 	}
 	c.refused.Store(true)
+	h.m.dropCeiling.Inc()
 	set, err := h.rc.Do(c.ctx, h.rc.B().Set().Key(redisx.Key(h.b.Name()+":ceiling:"+c.doc.String())).Value("1").Nx().
 		Px(h.cfg.CompactCooldown).Build()).AsBool()
 	if (err == nil || rueidis.IsRedisNil(err)) && set {
+		h.m.ceilingHits.Inc()
 		//nolint:gosec // G706: the section name, ids and counts only (a viewer's slots carry its client IP, never logged)
 		slog.Warn(h.b.Name()+" sync: update ceiling reached", h.b.LogKey(), c.doc, "updates", updates, "bytes", total, "user_id", c.id.UserID)
 		h.broadcast(c.ctx, c.doc, nil, []byte{FrameCompact})
@@ -645,6 +650,7 @@ func (c *conn) onAwareness(b []byte) bool {
 	defer c.awMu.Unlock()
 	switch {
 	case c.awPending != nil:
+		c.h.m.dropAwareness.Inc()
 		c.awPending = b
 	case c.awareness.take():
 		c.h.broadcast(c.ctx, c.doc, c, b)

@@ -3,9 +3,9 @@ package ysync
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,6 +37,12 @@ type Hub struct {
 	origin   func(origin string, hasCookie bool) bool
 	cfg      Config
 	instance [16]byte
+	m        metrics
+	// Warn lines of a failing Valkey, one per logEvery each.
+	subLog, pubLog logLimit
+	// pubDown is when a publish last failed (UnixNano; 0 = it works): awareness is not published
+	// for pubBackoff after it.
+	pubDown atomic.Int64
 
 	mu    sync.Mutex
 	rooms map[uuid.UUID]*room
@@ -69,7 +75,8 @@ func NewHub(b Backend, o Options) *Hub {
 	if cfg.UpdateBytesPerSecond == 0 {
 		cfg.UpdateBytesPerSecond = int64(b.MaxState()) / 20
 	}
-	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: cfg, rooms: map[uuid.UUID]*room{}}
+	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: cfg, rooms: map[uuid.UUID]*room{},
+		m: newMetrics(b.Name())}
 	h.instance = uuid.New()
 	return h
 }
@@ -85,9 +92,11 @@ func (h *Hub) join(c *conn) *room {
 	if r == nil {
 		r = &room{id: c.doc, conns: map[*conn]struct{}{}, stop: make(chan struct{}), ready: make(chan struct{})}
 		h.rooms[c.doc] = r
+		h.m.rooms.Inc()
 		go h.listen(r)
 	}
 	r.conns[c] = struct{}{}
+	h.m.sockets.Inc()
 	return r
 }
 
@@ -100,8 +109,10 @@ func (h *Hub) leave(c *conn) {
 		return
 	}
 	delete(r.conns, c)
+	h.m.sockets.Dec()
 	if len(r.conns) == 0 {
 		delete(h.rooms, c.doc)
+		h.m.rooms.Dec()
 		close(r.stop)
 	}
 }
@@ -127,7 +138,7 @@ func (h *Hub) listen(r *room) {
 			break
 		}
 		if err != nil {
-			slog.Warn(h.b.Name()+" sync: subscription lost", h.b.LogKey(), r.id, "err", err)
+			h.subLog.warn(h.b.Name()+" sync: subscription lost", h.b.LogKey(), r.id, "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -224,15 +235,32 @@ func (h *Hub) relayCmd(doc uuid.UUID, frame []byte) rueidis.Completed {
 	return h.rc.B().Publish().Channel(h.channel(doc)).Message(rueidis.BinaryString(msg)).Build()
 }
 
+// pubBackoff: after a failed publish, awareness is not published for this long.
+const pubBackoff = time.Second
+
 // broadcast sends frame to the other sockets of the document here and, through Redis, on the
-// other instances (after the commit of what it carries).
+// other instances (after the commit of what it carries). While publishing fails, awareness goes
+// to this instance's sockets only: it is not worth the reader's wait of up to 3 s per frame, and
+// it is never logged.
 func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []byte) {
 	h.deliver(doc, from, frame)
+	aw := frame[0] == FrameAwareness
+	if down := h.pubDown.Load(); aw && down != 0 && time.Since(time.Unix(0, down)) < pubBackoff {
+		h.m.dropPub.Inc()
+		return
+	}
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	if err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error(); err != nil {
-		//nolint:gosec // G706: the section name, the document id and a Redis error only
-		slog.Warn(h.b.Name()+" sync: publish", h.b.LogKey(), doc, "err", err)
+		h.pubDown.Store(time.Now().UnixNano())
+		h.m.dropPub.Inc()
+		if !aw {
+			h.pubLog.warn(h.b.Name()+" sync: publish", h.b.LogKey(), doc, "err", err)
+		}
+		return
+	}
+	if h.pubDown.Load() != 0 {
+		h.pubDown.Store(0)
 	}
 }
 
@@ -252,7 +280,7 @@ func (h *Hub) Kick(ctx context.Context, docs []uuid.UUID) {
 	defer cancel()
 	for _, r := range h.rc.DoMulti(pctx, cmds...) {
 		if err := r.Error(); err != nil {
-			slog.Warn(h.b.Name()+" sync: publish", "err", err)
+			h.pubLog.warn(h.b.Name()+" sync: publish", "err", err)
 			return
 		}
 	}

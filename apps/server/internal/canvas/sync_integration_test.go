@@ -14,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -236,6 +237,7 @@ func TestCanvasSyncLargePaste(t *testing.T) {
 		t.Fatalf("stored %d %v", n, err)
 	}
 	// Tiny frames: past the 128 at once.
+	rated := metric(t, "calaba_ysync_closes_total", "section", "canvas", "code", "4008")
 	tiny := e.dial(e.alice, p.GetId())
 	tiny.next(frameSnapshot)
 	flood(tiny, 200, 1)
@@ -246,6 +248,39 @@ func TestCanvasSyncLargePaste(t *testing.T) {
 	big.next(frameSnapshot)
 	flood(big, 80, 60_000)
 	big.closed(ysync.CloseRate)
+	if n := metric(t, "calaba_ysync_closes_total", "section", "canvas", "code", "4008") - rated; n != 2 {
+		t.Fatalf("4008 closes counted: %v", n)
+	}
+}
+
+// metric is the value of a series of the default registry (GET /metrics) by its labels.
+func metric(t *testing.T, name string, labels ...string) float64 {
+	t.Helper()
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != name {
+			continue
+		}
+	series:
+		for _, m := range mf.GetMetric() {
+			for i := 0; i+1 < len(labels); i += 2 {
+				found := false
+				for _, l := range m.GetLabel() {
+					if l.GetName() == labels[i] && l.GetValue() == labels[i+1] {
+						found = true
+					}
+				}
+				if !found {
+					continue series
+				}
+			}
+			return m.GetCounter().GetValue() + m.GetGauge().GetValue()
+		}
+	}
+	return 0
 }
 
 // M2 of the second review: awareness over the budget (the Canvas's 20 a second) is not dropped
