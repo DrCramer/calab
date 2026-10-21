@@ -8,6 +8,8 @@ export const esCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.toggleCount': { one: 'Comentarios: {n} hilo abierto', many: 'Comentarios: {n} hilos abiertos', other: 'Comentarios: {n} hilos abiertos' },
   'canvasComments.onlyOpen': 'Solo abiertos',
   'canvasComments.loading': 'Cargando…',
+  'canvasComments.loadFailed': 'No se pudieron cargar los comentarios',
+  'canvasComments.retry': 'Reintentar',
   'canvasComments.empty': 'No hay comentarios',
   'canvasComments.emptyWrite': 'No hay comentarios. Elige «Comentario» (⌥C) y haz clic en un objeto o en el lienzo.',
   'canvasComments.newPlaceholder': 'Nuevo comentario — @ para mencionar',

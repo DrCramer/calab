@@ -7,7 +7,7 @@ import { Bar, BAR_GROUP } from '../../components/Bar';
 import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { ancestorsOf, canStructure } from '../../lib/canvas/tree';
-import { createItem, deleteForever, restoreItem } from '../../services/canvas';
+import { createItem, deleteForever, loadItem, restoreItem } from '../../services/canvas';
 import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { myUserId, useSession } from '../../stores/session';
@@ -73,7 +73,7 @@ function OpenCanvas({ workspaceId, itemId }: { workspaceId: string; itemId: stri
         </div>
       }
     >
-      <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} onOpenHistory={onOpenHistory} onShare={onShare} />
+      <CanvasViewLazy canvasId={itemId} workspaceId={workspaceId} bits={bits} name={name} onOpenHistory={onOpenHistory} onShare={onShare} onFatal={() => void loadItem(workspaceId, itemId)} />
     </Suspense>
   );
 }

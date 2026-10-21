@@ -62,9 +62,10 @@ export function newId(): string {
 }
 
 /** Applies `next` to `yt` as the smallest single delete+insert (keeps concurrent edits mergeable). */
-export function applyTextDiff(yt: Y.Text, next: string): void {
+export function applyTextDiff(yt: Y.Text, next: string, original?: string): void {
   const cur = yt.toJSON();
   if (cur === next) return;
+  if (original !== undefined && original !== cur && applyOriginalDiff(yt, cur, original, next)) return;
   let p = 0;
   const max = Math.min(cur.length, next.length);
   while (p < max && cur.charCodeAt(p) === next.charCodeAt(p)) p++;
@@ -82,6 +83,44 @@ export function applyTextDiff(yt: Y.Text, next: string): void {
     if (cur.length - p - s > 0) yt.delete(p, cur.length - p - s);
     if (next.length - p - s > 0) yt.insert(p, next.slice(p, next.length - s));
   }, LOCAL_ORIGIN);
+}
+
+/**
+ * Applies the original→next change onto a text that moved on since `original` (a co-author edited meanwhile), so
+ * their edit survives. Returns false when the edited range overlaps their change (caller falls back to cur→next).
+ */
+function applyOriginalDiff(yt: Y.Text, cur: string, original: string, next: string): boolean {
+  const max = Math.min(original.length, next.length);
+  let p = 0;
+  while (p < max && original.charCodeAt(p) === next.charCodeAt(p)) p++;
+  if (p > 0 && isHigh(original.charCodeAt(p - 1))) p--;
+  let s = 0;
+  while (s < max - p && original.charCodeAt(original.length - 1 - s) === next.charCodeAt(next.length - 1 - s)) s++;
+  if (s > 0 && isLow(original.charCodeAt(original.length - s))) s--;
+  const oe = original.length - s;
+  // Unchanged prefix/suffix between original and the current text.
+  const cmax = Math.min(original.length, cur.length);
+  let pc = 0;
+  while (pc < cmax && original.charCodeAt(pc) === cur.charCodeAt(pc)) pc++;
+  let sc = 0;
+  while (sc < cmax - pc && original.charCodeAt(original.length - 1 - sc) === cur.charCodeAt(cur.length - 1 - sc)) sc++;
+  const delta = cur.length - original.length;
+  const map = (i: number): number => (i <= pc ? i : i >= original.length - sc ? i + delta : -1);
+  const a = map(p);
+  const b = map(oe);
+  if (a < 0 || b < 0 || b < a) return false;
+  yt.doc?.transact(() => {
+    if (b - a > 0) yt.delete(a, b - a);
+    if (next.length - p - s > 0) yt.insert(a, next.slice(p, next.length - s));
+  }, LOCAL_ORIGIN);
+  return true;
+}
+
+function isHigh(c: number): boolean {
+  return c >= 0xd800 && c <= 0xdbff;
+}
+function isLow(c: number): boolean {
+  return c >= 0xdc00 && c <= 0xdfff;
 }
 
 /** Plain copy of one object (text as string), the shape the clipboard and tests work with. */
@@ -504,7 +543,7 @@ export class CanvasDoc {
    * attribute ranges that differ (`Y.Text.format`), so the parts nobody touched stay as concurrent editors left them.
    * `text` is plain text (no list terminator); a connector keeps only the plain label.
    */
-  setRich(id: string, text: string, fmt: Fmt | undefined): void {
+  setRich(id: string, text: string, fmt: Fmt | undefined, original?: string): void {
     const m = this.objects.get(id);
     if (!m) return;
     if (m.get('kind') === 'connector') {
@@ -519,9 +558,15 @@ export class CanvasDoc {
         m.set('text', yt);
       }
       if (!(yt instanceof Y.Text)) return;
-      applyTextDiff(yt, rawText(next, fmt));
+      applyTextDiff(yt, rawText(next, fmt), original);
       for (const c of formatChanges(yt.toDelta() as never, fmtToDelta(next, fmt))) yt.format(c.index, c.length, c.attrs);
     });
+  }
+
+  /** The raw Y.Text content of an object (what `setRich`'s `original` is compared against), '' when none. */
+  rawTextOf(id: string): string {
+    const t = this.objects.get(id)?.get('text');
+    return t instanceof Y.Text ? t.toJSON() : '';
   }
 
   /** An object's plain text and formatting (the list terminator of the last paragraph is not part of the text). */

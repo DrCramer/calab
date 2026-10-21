@@ -8,6 +8,8 @@ export const enCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.toggleCount': { one: 'Comments: {n} open thread', other: 'Comments: {n} open threads' },
   'canvasComments.onlyOpen': 'Open only',
   'canvasComments.loading': 'Loading…',
+  'canvasComments.loadFailed': 'Couldn't load comments',
+  'canvasComments.retry': 'Retry',
   'canvasComments.empty': 'No comments',
   'canvasComments.emptyWrite': 'No comments. Pick «Comment» (⌥C) and click an object or the field.',
   'canvasComments.newPlaceholder': 'New comment — @ to mention',

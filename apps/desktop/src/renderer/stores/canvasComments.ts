@@ -27,6 +27,9 @@ interface CanvasCommentsState {
   replies: Readonly<Record<string, readonly string[]>>;
   /** Canvases whose comments were read (events apply to them only). */
   loaded: Readonly<Record<string, true>>;
+  /** Canvases whose last read failed (the panel offers a retry instead of loading forever). */
+  failed: Readonly<Record<string, true>>;
+  setFailed: (canvasId: string, on: boolean) => void;
   /** Replaces a canvas's comments (a full read). */
   setCanvas: (canvasId: string, list: readonly CanvasComment[]) => void;
   /** A comment written, edited, resolved — ignored for a canvas that was not read. */
@@ -63,6 +66,12 @@ export const useCanvasComments = create<CanvasCommentsState>()((set) => ({
   threads: {},
   replies: {},
   loaded: {},
+  failed: {},
+  setFailed: (canvasId, on) =>
+    set((s) => {
+      if (!!s.failed[canvasId] === on) return s;
+      return { failed: on ? { ...s.failed, [canvasId]: true } : without(s.failed, [canvasId]) };
+    }),
   setCanvas: (canvasId, list) =>
     set((s) => {
       const gone = (s.threads[canvasId] ?? []).flatMap((r) => [r, ...(s.replies[r] ?? [])]);

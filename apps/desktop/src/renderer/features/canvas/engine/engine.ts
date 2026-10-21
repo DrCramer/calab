@@ -15,7 +15,7 @@ import { polylineMidpoint } from '../../../lib/canvas/geometry';
 import { LiveLayer } from '../../../lib/canvas/live';
 import {
   DEFAULTS, MAX_OBJECTS, aabb, isConnector,
-  type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
+  type ObjectKind, type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
 import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
 import { AwarenessLayer, sameView, type PeerState, type PeerView } from './awareness';
@@ -644,7 +644,8 @@ export class CanvasEngine implements Core {
   setReadOnly(on: boolean): void {
     this.readOnlyFlag = on;
     if (this.readOnly) {
-      this.editor.cancel();
+      // Commit, not drop: typed text must survive a role flip to read-only.
+      this.editor.commit();
       this.renderer.setHiddenText(null);
       this.editingId = null;
       this.endEditCamera();
@@ -978,11 +979,16 @@ export class CanvasEngine implements Core {
     this.doc.patchMany(patches);
   }
 
-  /** Applies plain-field changes (color, size, fill, arrow, …) to every selected object they apply to (not the locked ones). */
-  updateSelected(patch: ObjectPatch): void {
+  /** Applies plain-field changes (color, size, fill, arrow, …) to every selected object they apply to (not the locked ones); `kinds` limits it to those object kinds. */
+  updateSelected(patch: ObjectPatch, kinds?: readonly ObjectKind[]): void {
     if (!this.canEdit() || this.sel.size === 0) return;
     const patches = new Map<string, ObjectPatch>();
-    for (const id of this.sel) if (!this.scene.get(id)?.locked) patches.set(id, patch);
+    for (const id of this.sel) {
+      const o = this.scene.get(id);
+      if (o?.locked) continue;
+      if (kinds && (!o || !kinds.includes(o.kind))) continue;
+      patches.set(id, patch);
+    }
     this.doc.patchMany(patches);
   }
 
@@ -1133,6 +1139,7 @@ export class CanvasEngine implements Core {
     this.renderer.setHiddenText(oid);
     this.overlay = { ...this.overlay, group: null };
     this.editingId = oid;
+    const original = this.doc.rawTextOf(oid);
     this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
       this.editingId = null;
@@ -1142,7 +1149,7 @@ export class CanvasEngine implements Core {
         this.doc.checkpoint();
         if (cur.kind === 'text' && text.trim() === '') this.doc.remove([oid]);
         else if (cur.kind === 'connector') this.doc.setText(oid, text);
-        else if (changed || fmtChanged) this.doc.setRich(oid, text, fmt);
+        else if (changed || fmtChanged) this.doc.setRich(oid, text, fmt, original);
       }
       this.refreshOverlay();
       this.sync();

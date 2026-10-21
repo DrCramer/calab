@@ -476,3 +476,33 @@ describe('convergence of two Y.Docs', () => {
     expect(d.schema).toBe(1);
   });
 });
+
+describe('applyTextDiff against the text at open time', () => {
+  it('keeps a concurrent edit made at the other end', () => {
+    const d = makeDoc();
+    d.create({ kind: 'sticky', x: 0, y: 0, text: 'hello world' });
+    const yt = d.objects.get('o1')?.get('text') as Y.Text;
+    const original = yt.toJSON();
+    yt.insert(0, 'ALICE '); // co-author, while we type
+    applyTextDiff(yt, 'hello brave world', original);
+    expect(yt.toJSON()).toBe('ALICE hello brave world');
+  });
+  it('keeps a concurrent append after our change at the start', () => {
+    const d = makeDoc();
+    d.create({ kind: 'sticky', x: 0, y: 0, text: 'one two' });
+    const yt = d.objects.get('o1')?.get('text') as Y.Text;
+    const original = yt.toJSON();
+    yt.insert(yt.length, ' three');
+    applyTextDiff(yt, 'ONE two', original);
+    expect(yt.toJSON()).toBe('ONE two three');
+  });
+  it('falls back to cur→next when the edits overlap', () => {
+    const d = makeDoc();
+    d.create({ kind: 'sticky', x: 0, y: 0, text: 'abcdef' });
+    const yt = d.objects.get('o1')?.get('text') as Y.Text;
+    const original = yt.toJSON();
+    yt.delete(2, 2);
+    applyTextDiff(yt, 'abXXef', original);
+    expect(yt.toJSON()).toBe('abXXef');
+  });
+});

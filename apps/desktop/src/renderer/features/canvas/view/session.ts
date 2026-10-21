@@ -127,6 +127,13 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     playEnd: playTimerEnd,
   });
 
+  // Window closing: the open text edit is committed and the pending update sent before the page goes.
+  const onPageHide = (): void => {
+    if (engine.editor.isOpen) engine.editor.commit();
+    sync.flush();
+  };
+  window.addEventListener('pagehide', onPageHide);
+
   let closed = false;
   return {
     ydoc,
@@ -138,6 +145,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     destroy() {
       if (closed) return;
       closed = true;
+      window.removeEventListener('pagehide', onPageHide);
       if (engine.editor.isOpen) engine.editor.commit();
       timer.destroy();
       binding.destroy();
