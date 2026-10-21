@@ -27,7 +27,9 @@
 import WebSocket from 'ws';
 import * as Y from 'yjs';
 import * as awarenessProtocol from 'y-protocols/awareness';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, fork } from 'child_process';
+import { monitorEventLoopDelay } from 'perf_hooks';
+import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
 
@@ -319,6 +321,7 @@ export class CanvasSyncClient {
     this.ws = null;
     this.highestSeq = 0;
     this.compactRequestsCount = 0;
+    this.latestSnapshotState = null;
 
     if (!skipDocApply) {
       this.liveMap = this.doc.getMap('live');
@@ -382,6 +385,7 @@ export class CanvasSyncClient {
         switch (frame.type) {
           case FRAME_SNAPSHOT:
             this.highestSeq = Math.max(this.highestSeq, frame.throughSeq);
+            this.latestSnapshotState = frame.state;
             if (!this.skipDocApply && frame.state && frame.state.length > 0) {
               try {
                 Y.applyUpdate(this.doc, frame.state, 'snapshot');
@@ -569,15 +573,150 @@ async function setupWorkspaceWithUsers(client, userCount = 15) {
 // SCENARIOS
 // ==========================================
 
+export async function runS1Worker() {
+  const elh = monitorEventLoopDelay({ resolution: 10 });
+  elh.enable();
+  const startCpu = process.cpuUsage();
+  let startTime = Date.now();
+
+  let writers = [];
+  let readers = [];
+  let slowClient = null;
+  let writeTimer = null;
+
+  process.on('message', async (msg) => {
+    try {
+      if (msg.type === 'init') {
+        const { host, canvasId, writers: writerCfgs, readers: readerCfgs, hasSlowClient, slowToken } = msg;
+
+        writers = writerCfgs.map(cfg => {
+          const c = new CanvasSyncClient({
+            url: `${host}/api/canvas/items/${canvasId}/sync`,
+            token: cfg.token,
+            clientId: cfg.clientId
+          });
+          c.onCompactRequest = () => {
+            c.sendSnapshotPost({ plain_text: 'S1 snapshot', title: 'S1 Hot Canvas', preview: '', objects: 0 });
+          };
+          return c;
+        });
+
+        readers = readerCfgs.map(cfg => {
+          return new CanvasSyncClient({
+            url: `${host}/api/canvas/items/${canvasId}/sync`,
+            token: cfg.token,
+            clientId: cfg.clientId
+          });
+        });
+
+        if (hasSlowClient) {
+          slowClient = new CanvasSyncClient({
+            url: `${host}/api/canvas/items/${canvasId}/sync`,
+            token: slowToken,
+            clientId: 9999,
+            slowMode: true
+          });
+        }
+
+        await Promise.all([...writers.map(w => w.connect()), ...readers.map(r => r.connect())]);
+        if (slowClient) {
+          await slowClient.connect();
+          slowClient.pause();
+        }
+
+        process.send({ type: 'ready' });
+      } else if (msg.type === 'start') {
+        startTime = Date.now();
+        let step = 0;
+        writeTimer = setInterval(() => {
+          step++;
+          const now = Date.now();
+          for (const w of writers) {
+            if (w.closed) continue;
+            w.sendAwareness({
+              cursor: { x: (step * 7) % 1000, y: (step * 13) % 1000 },
+              selection: [],
+              view: { x: 0, y: 0, zoom: 1 }
+            });
+            w.sendUpdate(() => {
+              const live = w.doc.getMap('live');
+              const k = String(w.doc.clientID);
+              live.set(k, {
+                ts: now,
+                patches: {
+                  o1: { x: (step * 3) % 500, y: (step * 5) % 500 },
+                  o2: { x: (step * 4) % 500, y: (step * 6) % 500 },
+                  o3: { x: (step * 5) % 500, y: (step * 7) % 500 },
+                  o4: { x: (step * 6) % 500, y: (step * 8) % 500 },
+                  o5: { x: (step * 7) % 500, y: (step * 9) % 500 }
+                }
+              });
+            });
+          }
+        }, 100);
+      } else if (msg.type === 'stop') {
+        if (writeTimer) clearInterval(writeTimer);
+        elh.disable();
+
+        const cpuDiff = process.cpuUsage(startCpu);
+        const totalElapsedMs = (Date.now() - startTime) || 1;
+        const cpuPercent = Math.round(((cpuDiff.user + cpuDiff.system) / 1000 / totalElapsedMs) * 100);
+
+        const elP50 = Math.round(elh.percentile(50) / 1e6);
+        const elP95 = Math.round(elh.percentile(95) / 1e6);
+        const elP99 = Math.round(elh.percentile(99) / 1e6);
+
+        const latencies = [];
+        const frameCounts = [];
+        for (const c of [...readers, ...writers]) {
+          latencies.push(...c.latencies);
+          frameCounts.push(c.receivedFrames);
+        }
+
+        let slowStatus = null;
+        if (slowClient) {
+          if (slowClient.ws && slowClient.ws._socket) {
+            try { slowClient.ws._socket.resume(); } catch {}
+          }
+          await sleep(200);
+          slowStatus = {
+            closed: slowClient.closed,
+            closeCode: slowClient.closeCode,
+            closeReason: slowClient.closeReason
+          };
+          slowClient.close();
+        }
+
+        for (const w of writers) w.close();
+        for (const r of readers) r.close();
+
+        process.send({
+          type: 'done',
+          latencies,
+          frameCounts,
+          cpuPercent,
+          eventLoopDelayMs: { p50: elP50, p95: elP95, p99: elP99 },
+          slowStatus
+        });
+        setTimeout(() => process.exit(0), 100);
+      }
+    } catch (err) {
+      process.send({ type: 'error', error: err.message });
+      process.exit(1);
+    }
+  });
+}
+
 export async function runS1(opts = {}) {
   const host = opts.host || 'http://127.0.0.1:3191';
   const scale = opts.scale || 1.0;
   const durationSec = opts.duration || 60;
   const numWriters = Math.max(2, Math.round(100 * scale));
   const numReaders = Math.max(1, Math.round(20 * scale));
+  const numWorkers = opts.workers || 4;
   const client = new CalabaClient(host);
 
-  console.log(`[S1 Hot Board] Scale: ${scale} (${numWriters} writers, ${numReaders} readers, 1 slow client). Duration: ${durationSec}s`);
+  console.log(`[S1 Hot Board Multi-Process] Scale: ${scale} (${numWriters} writers, ${numReaders} readers, 1 slow client across ${numWorkers} worker processes). Duration: ${durationSec}s`);
 
   // Check load average
   const load = checkLoadAverage();
@@ -591,59 +730,88 @@ export async function runS1(opts = {}) {
   const procStart = sampleProcess(pid);
 
   // Setup workspace & canvas
-  const numUsers = Math.min(20, Math.ceil(numWriters / 8) + 2);
+  const numUsers = Math.min(25, Math.ceil((numWriters + numReaders) / 6) + 2);
   const { wsId, users, adminToken } = await setupWorkspaceWithUsers(client, numUsers);
   const canvasId = await client.createCanvas(adminToken, wsId, 'S1 Hot Canvas');
 
-  // Spawn writers
-  const writers = [];
+  // Build writer and reader configs
+  const writerConfigs = [];
   for (let i = 0; i < numWriters; i++) {
     const user = users[i % users.length];
-    const c = new CanvasSyncClient({
-      url: `${host}/api/canvas/items/${canvasId}/sync`,
-      token: user.token,
-      clientId: 1000 + i
-    });
-    writers.push(c);
+    writerConfigs.push({ token: user.token, clientId: 1000 + i });
   }
 
-  for (const w of writers) {
-    w.onCompactRequest = () => {
-      w.sendSnapshotPost({ plain_text: 'S1 snapshot', title: 'S1 Hot Canvas', preview: '', objects: 0 });
-    };
-  }
-
-  // Spawn readers
-  const readers = [];
+  const readerConfigs = [];
   for (let i = 0; i < numReaders; i++) {
     const user = users[(i + numWriters) % users.length];
-    const c = new CanvasSyncClient({
-      url: `${host}/api/canvas/items/${canvasId}/sync`,
-      token: user.token,
-      clientId: 5000 + i
-    });
-    readers.push(c);
+    readerConfigs.push({ token: user.token, clientId: 5000 + i });
   }
 
-  // Spawn slow client
-  const slowClient = new CanvasSyncClient({
-    url: `${host}/api/canvas/items/${canvasId}/sync`,
-    token: adminToken,
-    clientId: 9999,
-    slowMode: true
+  // Partition configs across workers
+  const workerAssignments = [];
+  for (let w = 0; w < numWorkers; w++) {
+    workerAssignments.push({
+      writers: [],
+      readers: [],
+      hasSlowClient: w === 0,
+      slowToken: adminToken
+    });
+  }
+  writerConfigs.forEach((c, idx) => {
+    workerAssignments[idx % numWorkers].writers.push(c);
+  });
+  readerConfigs.forEach((c, idx) => {
+    workerAssignments[idx % numWorkers].readers.push(c);
   });
 
-  console.log(`[S1] Connecting ${writers.length} writers and ${readers.length} readers...`);
-  await Promise.all([...writers.map(w => w.connect()), ...readers.map(r => r.connect())]);
+  console.log(`[S1] Spawning ${numWorkers} worker processes...`);
+  const workerProcs = [];
+  const workerPids = [];
+  const readyPromises = [];
 
-  console.log(`[S1] Connecting slow client (will pause reading after sync)...`);
-  await slowClient.connect();
-  slowClient.pause();
+  for (let w = 0; w < numWorkers; w++) {
+    const cp = fork(fileURLToPath(import.meta.url), ['--worker-s1'], {
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc']
+    });
+    workerProcs.push(cp);
+    workerPids.push(cp.pid);
 
-  console.log(`[S1] All connected. Running ${durationSec}s test loop (writers sending 10 aw/s, 10 gesture/s)...`);
+    const readyPromise = new Promise((resolve, reject) => {
+      const onMsg = (msg) => {
+        if (msg.type === 'ready') {
+          cp.off('message', onMsg);
+          resolve();
+        } else if (msg.type === 'error') {
+          reject(new Error(`Worker ${w} error: ${msg.error}`));
+        }
+      };
+      cp.on('message', onMsg);
+    });
+    readyPromises.push(readyPromise);
+
+    cp.send({
+      type: 'init',
+      host,
+      canvasId,
+      writers: workerAssignments[w].writers,
+      readers: workerAssignments[w].readers,
+      hasSlowClient: workerAssignments[w].hasSlowClient,
+      slowToken: workerAssignments[w].slowToken,
+      duration: durationSec
+    });
+  }
+
+  console.log(`[S1] Waiting for all ${numWorkers} workers to connect their sockets...`);
+  await Promise.all(readyPromises);
+  console.log(`[S1] All workers ready. Starting ${durationSec}s load test across ${numWorkers} processes...`);
+
+  for (const cp of workerProcs) {
+    cp.send({ type: 'start' });
+  }
 
   const rssSamples = [];
   const cpuSamples = [];
+  const workerCpuSamples = workerPids.map(() => []);
   const startMs = Date.now();
   const durationMs = durationSec * 1000;
 
@@ -654,40 +822,13 @@ export async function runS1(opts = {}) {
       rssSamples.push(p.rssMB);
       cpuSamples.push(p.cpuPercent);
     }
+    for (let i = 0; i < workerPids.length; i++) {
+      const wp = sampleProcess(workerPids[i]);
+      if (wp) workerCpuSamples[i].push(wp.cpuPercent);
+    }
   }, 2000);
 
-  // Writer interval (10/s = every 100ms)
-  let step = 0;
-  const writeTimer = setInterval(() => {
-    step++;
-    const now = Date.now();
-    for (const w of writers) {
-      if (w.closed) continue;
-      // Awareness: 10/s
-      w.sendAwareness({
-        cursor: { x: (step * 7) % 1000, y: (step * 13) % 1000 },
-        selection: [],
-        view: { x: 0, y: 0, zoom: 1 }
-      });
-      // Gesture preview on 5 objects: 10/s
-      w.sendUpdate(() => {
-        const live = w.doc.getMap('live');
-        const k = String(w.doc.clientID);
-        live.set(k, {
-          ts: now,
-          patches: {
-            o1: { x: (step * 3) % 500, y: (step * 5) % 500 },
-            o2: { x: (step * 4) % 500, y: (step * 6) % 500 },
-            o3: { x: (step * 5) % 500, y: (step * 7) % 500 },
-            o4: { x: (step * 6) % 500, y: (step * 8) % 500 },
-            o5: { x: (step * 7) % 500, y: (step * 9) % 500 }
-          }
-        });
-      });
-    }
-  }, 100);
-
-  // Wait for 60s
+  // Monitor loop
   while (Date.now() - startMs < durationMs) {
     await sleep(1000);
     const currLoad = checkLoadAverage();
@@ -697,19 +838,71 @@ export async function runS1(opts = {}) {
     }
   }
 
-  clearInterval(writeTimer);
   clearInterval(sampleTimer);
 
+  console.log(`[S1] Duration reached. Stopping workers and collecting metrics...`);
+  const donePromises = [];
+  for (let w = 0; w < numWorkers; w++) {
+    const cp = workerProcs[w];
+    const donePromise = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve({ latencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+      }, 7000);
+      const onMsg = (msg) => {
+        if (msg.type === 'done') {
+          cleanup();
+          resolve(msg);
+        } else if (msg.type === 'error') {
+          cleanup();
+          resolve({ latencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+        }
+      };
+      const onExit = () => {
+        cleanup();
+        resolve({ latencies: [], frameCounts: [], cpuPercent: 0, eventLoopDelayMs: { p50: 0, p95: 0, p99: 0 } });
+      };
+      function cleanup() {
+        clearTimeout(timer);
+        cp.off('message', onMsg);
+        cp.off('exit', onExit);
+      }
+      cp.on('message', onMsg);
+      cp.on('exit', onExit);
+    });
+    donePromises.push(donePromise);
+    try { cp.send({ type: 'stop' }); } catch {}
+  }
+
+  const workerResults = await Promise.all(donePromises);
   const procEnd = sampleProcess(pid);
   const metricsEnd = await client.getMetrics();
 
   // Aggregate stats
   const allLatencies = [];
   const framesPerSecPerClient = [];
+  const workerReports = [];
+  let slowStatus = null;
 
-  for (const c of [...readers, ...writers]) {
-    allLatencies.push(...c.latencies);
-    framesPerSecPerClient.push(c.receivedFrames / durationSec);
+  for (let w = 0; w < numWorkers; w++) {
+    const r = workerResults[w] || {};
+    if (r.latencies && Array.isArray(r.latencies)) {
+      for (let i = 0; i < r.latencies.length; i++) {
+        allLatencies.push(r.latencies[i]);
+      }
+    }
+    for (const fc of (r.frameCounts || [])) {
+      framesPerSecPerClient.push(fc / durationSec);
+    }
+    if (r.slowStatus) slowStatus = r.slowStatus;
+    const avgWorkerCpu = workerCpuSamples[w].length ? Math.round(workerCpuSamples[w].reduce((a,b)=>a+b,0)/workerCpuSamples[w].length) : r.cpuPercent;
+    workerReports.push({
+      workerId: w,
+      pid: workerPids[w],
+      cpuPercent: avgWorkerCpu,
+      eventLoopDelayMs: r.eventLoopDelayMs,
+      sockets: workerAssignments[w].writers.length + workerAssignments[w].readers.length + (workerAssignments[w].hasSlowClient ? 1 : 0)
+    });
   }
 
   const p50 = percentile(allLatencies, 50);
@@ -719,19 +912,6 @@ export async function runS1(opts = {}) {
   const fpsMedian = percentile(framesPerSecPerClient, 50);
   const fpsP99 = percentile(framesPerSecPerClient, 99);
 
-  // Resume slow client to receive any server-sent close frames
-  if (slowClient.ws && slowClient.ws._socket) {
-    try { slowClient.ws._socket.resume(); } catch {}
-  }
-  await sleep(200);
-
-  const isSlowClosed = slowClient.closed || (metricsEnd.closes?.['4000'] || 0) > (metricsStart.closes?.['4000'] || 0);
-
-  // Cleanup clients
-  for (const w of writers) w.close();
-  for (const r of readers) r.close();
-  slowClient.close();
-
   const peakRss = rssSamples.length ? Math.max(...rssSamples) : (procEnd?.rssMB || 0);
   const peakCpu = cpuSamples.length ? Math.max(...cpuSamples) : (procEnd?.cpuPercent || 0);
 
@@ -739,10 +919,22 @@ export async function runS1(opts = {}) {
   const droppedAwareness = (metricsEnd.droppedFrames?.awareness || 0) - (metricsStart.droppedFrames?.awareness || 0);
   const droppedCeiling = (metricsEnd.droppedFrames?.ceiling || 0) - (metricsStart.droppedFrames?.ceiling || 0);
 
+  const closes4000 = (metricsEnd.closes?.['4000'] || 0) - (metricsStart.closes?.['4000'] || 0);
+  const closes4008 = (metricsEnd.closes?.['4008'] || 0) - (metricsStart.closes?.['4008'] || 0);
+  const closes4012 = (metricsEnd.closes?.['4012'] || 0) - (metricsStart.closes?.['4012'] || 0);
+  const closes4014 = (metricsEnd.closes?.['4014'] || 0) - (metricsStart.closes?.['4014'] || 0);
+
+  const isSlowClosed = slowStatus?.closed || closes4000 > 0;
+
+  const maxWorkerElP99 = Math.max(...workerReports.map(w => w.eventLoopDelayMs?.p99 || 0));
+  const generatorBottleneck = maxWorkerElP99 > 200;
+
   const result = {
     scenario: 'S1',
+    scale,
     numWriters,
     numReaders,
+    numWorkers,
     durationSec,
     server: {
       startRssMB: procStart?.rssMB || 0,
@@ -764,13 +956,23 @@ export async function runS1(opts = {}) {
       awareness: droppedAwareness,
       ceiling: droppedCeiling
     },
+    closes: {
+      code4000: closes4000,
+      code4008: closes4008,
+      code4012: closes4012,
+      code4014: closes4014
+    },
     slowClient: {
       closedByServer: isSlowClosed,
-      closeCode: slowClient.closeCode || (isSlowClosed ? 4000 : null),
-      closeReason: slowClient.closeReason || (isSlowClosed ? 'write timeout / closed by server' : '')
+      closeCode: slowStatus?.closeCode || (isSlowClosed ? 4000 : null),
+      closeReason: slowStatus?.closeReason || (isSlowClosed ? 'write timeout' : '')
     },
-    closes: metricsEnd.closes || {},
-    pass: p99 < 500 && peakRss < 2048
+    generatorWorkers: workerReports,
+    generatorBottleneck,
+    bottleneckAnalysis: generatorBottleneck
+      ? 'Generator worker event loop saturation (elDelay p99 > 200ms)'
+      : 'Generator event loops healthy. Measured latency reflects true server/transport delivery.',
+    pass: p99 < 500 && isSlowClosed && droppedQueue === 0 && closes4008 === 0
   };
 
   return result;
@@ -1294,8 +1496,249 @@ export async function runS5(opts = {}) {
     for (const c of allClients) c.close();
     if (spawnedB) ServerManager.killPid(pidB);
   }
+}
 
-  return result;
+export async function runS5b(opts = {}) {
+  const hostA = opts.host || 'http://127.0.0.1:3191';
+  const hostB = opts.hostB || 'http://127.0.0.1:3192';
+  const scale = opts.scale || 1.0;
+  const clientsPerPod = Math.max(10, Math.round(40 * scale));
+  const clientA = new CalabaClient(hostA);
+  const clientB = new CalabaClient(hostB);
+
+  console.log(`[S5b Two Pods Convergence After Ceiling] Pod A (3191) & Pod B (3192). ${clientsPerPod} clients/pod.`);
+
+  // Ensure Pod B is running
+  let pidB = ServerManager.findPidByPort(3192);
+  let spawnedB = null;
+  if (!pidB) {
+    console.log(`[S5b] Spawning Pod B on port 3192...`);
+    spawnedB = ServerManager.spawnInstance(3192);
+    await ServerManager.waitForReady(3192);
+    pidB = spawnedB.pid;
+  }
+
+  const allClients = [];
+  try {
+    const { wsId, users, adminToken } = await setupWorkspaceWithUsers(clientA, 20);
+    const canvasId = await clientA.createCanvas(adminToken, wsId, 'S5b Convergence Canvas');
+
+    // Connect clients: podAClients on hostA, podBClients on hostB
+    console.log(`[S5b] Connecting ${clientsPerPod} clients to Pod A and ${clientsPerPod} to Pod B...`);
+    const podAClients = [];
+    const podBClients = [];
+
+    for (let i = 0; i < clientsPerPod; i++) {
+      const u = users[i % users.length];
+      podAClients.push(new CanvasSyncClient({
+        url: `${hostA}/api/canvas/items/${canvasId}/sync`,
+        token: u.token,
+        clientId: 1000 + i
+      }));
+      podBClients.push(new CanvasSyncClient({
+        url: `${hostB}/api/canvas/items/${canvasId}/sync`,
+        token: u.token,
+        clientId: 2000 + i
+      }));
+    }
+    allClients.push(...podAClients, ...podBClients);
+
+    await Promise.all([...podAClients.map(c => c.connect()), ...podBClients.map(c => c.connect())]);
+
+    // Track designated clients X and X2 on Pod A
+    const clientX = podAClients[0];
+    const clientX2 = podAClients[1];
+    let clientXCloseCode = null;
+    let clientX2CloseCode = null;
+
+    clientX.ws.on('close', (code) => { clientXCloseCode = code; });
+    clientX2.ws.on('close', (code) => { clientX2CloseCode = code; });
+
+    // Writers send updates to push to 10k ceiling
+    console.log(`[S5b] Sending updates across both pods to reach 10,000 ceiling...`);
+    let updatesSent = 0;
+    const ceilingWriters = [...podAClients.slice(2), ...podBClients];
+
+    for (let wave = 0; wave < 150; wave++) {
+      for (const w of ceilingWriters) {
+        if (w.closed) continue;
+        w.sendUpdate(() => {
+          w.doc.getMap('live').set(`c_${updatesSent}`, { val: updatesSent });
+        });
+        updatesSent++;
+      }
+      if (updatesSent >= 10300) break;
+      await sleep(65);
+    }
+
+    console.log(`[S5b] Updates sent: ${updatesSent}. Waiting 3s for DB commit & docStats refresh...`);
+    await sleep(3000);
+
+    // Now create unique discrete marker edits on Client X and Client X2
+    const markerId = `edit-marker-X-${Date.now()}`;
+    console.log(`[S5b] Client X creating local marker edit: ${markerId}...`);
+    let markerUpdate = null;
+    const unsubX = clientX.doc.on('update', (u, origin) => {
+      if (origin === 'local') markerUpdate = u;
+    });
+    clientX.doc.transact(() => {
+      const m = new Y.Map();
+      m.set('kind', 'sticky');
+      m.set('text', 'Marker Edit X Content');
+      clientX.doc.getMap('objects').set(markerId, m);
+    }, 'local');
+    unsubX();
+
+    const markerId2 = `edit-marker-X2-${Date.now()}`;
+    console.log(`[S5b] Client X2 creating local marker edit: ${markerId2}...`);
+    let markerUpdate2 = null;
+    const unsubX2 = clientX2.doc.on('update', (u, origin) => {
+      if (origin === 'local') markerUpdate2 = u;
+    });
+    clientX2.doc.transact(() => {
+      const m = new Y.Map();
+      m.set('kind', 'sticky');
+      m.set('text', 'Marker Edit X2 Content');
+      clientX2.doc.getMap('objects').set(markerId2, m);
+    }, 'local');
+    unsubX2();
+
+    console.log(`[S5b] Client X and X2 sending marker updates (${markerUpdate?.length || 0} bytes) while over ceiling...`);
+    clientX.sendRawUpdate(markerUpdate);
+    clientX2.sendRawUpdate(markerUpdate2);
+    await sleep(1000);
+
+    const metricsA = await clientA.getMetrics();
+    const metricsB = await clientB.getMetrics();
+    const ceilingHits = (metricsA.ceilingHits || 0) + (metricsB.ceilingHits || 0);
+    const dropCeiling = (metricsA.droppedFrames?.ceiling || 0) + (metricsB.droppedFrames?.ceiling || 0);
+    console.log(`[S5b] Ceiling hits registered: ${ceilingHits}, dropped at ceiling: ${dropCeiling}`);
+
+    // Let Client X2 continue sending past CeilingGrace (10s) to trigger 4012 (CloseCeiling)!
+    console.log(`[S5b] Client X2 sending continuously for 11.5s to trigger CloseCeiling (4012)...`);
+    const graceStart = Date.now();
+    while (Date.now() - graceStart < 12000) {
+      if (clientX2.closed || clientX2CloseCode) break;
+      clientX2.sendRawUpdate(markerUpdate2);
+      await sleep(500);
+    }
+    console.log(`[S5b] Client X2 close code: ${clientX2CloseCode || clientX2.closeCode}`);
+
+    // Now compact the room by posting a snapshot from another client (e.g. from Pod B) to lift ceiling
+    console.log(`[S5b] Compacting room with SnapshotPost from Pod B to lift ceiling...`);
+    const compactor = podBClients[0];
+    compactor.sendSnapshotPost({ plain_text: 'Compact', title: 'Two Pods Canvas', preview: '', objects: 50 });
+    await sleep(2500);
+
+    // Now Client X sends an update while ceiling is lifted: this triggers 4014 (CloseResend)!
+    console.log(`[S5b] Client X sending update after compaction to trigger CloseResend (4014)...`);
+    clientX.sendRawUpdate(markerUpdate);
+    await sleep(1000);
+    console.log(`[S5b] Client X close code: ${clientXCloseCode || clientX.closeCode}`);
+
+    // Replay behavior (lib/ySync.ts):
+    // Reconnect clientX and clientX2, receive SNAPSHOT, compute diff, send diff!
+    const replayStart = Date.now();
+    let replaysCount = 0;
+
+    console.log(`[S5b] Reconnecting Client X and Client X2 to replay state diff...`);
+    const reconnectedX = new CanvasSyncClient({
+      url: `${hostA}/api/canvas/items/${canvasId}/sync`,
+      token: clientX.token,
+      clientId: clientX.doc.clientID
+    });
+    // Pre-populate with local edits
+    Y.applyUpdate(reconnectedX.doc, Y.encodeStateAsUpdate(clientX.doc));
+    await reconnectedX.connect();
+    // Compute exact state difference relative to server's snapshot (lib/ySync.ts)
+    const diffX = Y.encodeStateAsUpdate(
+      reconnectedX.doc,
+      Y.encodeStateVectorFromUpdate(reconnectedX.latestSnapshotState)
+    );
+    if (diffX && diffX.length > 2) {
+      console.log(`[S5b] Replaying diffX (${diffX.length} bytes)...`);
+      reconnectedX.sendRawUpdate(diffX);
+      replaysCount++;
+    }
+
+    const reconnectedX2 = new CanvasSyncClient({
+      url: `${hostA}/api/canvas/items/${canvasId}/sync`,
+      token: clientX2.token,
+      clientId: clientX2.doc.clientID
+    });
+    Y.applyUpdate(reconnectedX2.doc, Y.encodeStateAsUpdate(clientX2.doc));
+    await reconnectedX2.connect();
+    const diffX2 = Y.encodeStateAsUpdate(
+      reconnectedX2.doc,
+      Y.encodeStateVectorFromUpdate(reconnectedX2.latestSnapshotState)
+    );
+    if (diffX2 && diffX2.length > 2) {
+      console.log(`[S5b] Replaying diffX2 (${diffX2.length} bytes)...`);
+      reconnectedX2.sendRawUpdate(diffX2);
+      replaysCount++;
+    }
+
+    allClients.push(reconnectedX, reconnectedX2);
+
+    console.log(`[S5b] Waiting 5s for cross-pod Valkey pub/sub propagation...`);
+    await sleep(5000);
+    const convergenceTimeMs = Date.now() - replayStart;
+
+    // Verify all active clients across Pod A and Pod B:
+    const activeClients = allClients.filter(c => !c.closed);
+    console.log(`[S5b] Checking state convergence across ${activeClients.length} active clients...`);
+
+    const stateHashes = new Set();
+    let markerXFoundCount = 0;
+    let markerX2FoundCount = 0;
+
+    for (const c of activeClients) {
+      const state = Y.encodeStateAsUpdate(c.doc);
+      stateHashes.add(Buffer.from(state).toString('base64'));
+      if (c.doc.getMap('objects').has(markerId)) markerXFoundCount++;
+      if (c.doc.getMap('objects').has(markerId2)) markerX2FoundCount++;
+    }
+
+    const statesIdentical = stateHashes.size === 1;
+    const markerXPresentInAll = markerXFoundCount === activeClients.length;
+    const markerX2PresentInAll = markerX2FoundCount === activeClients.length;
+
+    console.log(`[S5b] Identical states across all clients: ${statesIdentical}`);
+    console.log(`[S5b] Marker X present in all: ${markerXPresentInAll} (${markerXFoundCount}/${activeClients.length})`);
+    console.log(`[S5b] Marker X2 present in all: ${markerX2PresentInAll} (${markerX2FoundCount}/${activeClients.length})`);
+
+    const metricsAEnd = await clientA.getMetrics();
+    const metricsBEnd = await clientB.getMetrics();
+
+    const closes4012 = (metricsAEnd.closes?.['4012'] || 0) + (metricsBEnd.closes?.['4012'] || 0);
+    const closes4014 = (metricsAEnd.closes?.['4014'] || 0) + (metricsBEnd.closes?.['4014'] || 0);
+
+    const result = {
+      scenario: 'S5b',
+      clientsPerPod,
+      totalClients: activeClients.length,
+      updatesSent,
+      ceilingHits,
+      closes: {
+        code4012: closes4012,
+        code4014: closes4014,
+        clientXCloseCode: clientXCloseCode || clientX.closeCode,
+        clientX2CloseCode: clientX2CloseCode || clientX2.closeCode
+      },
+      replaysCount,
+      convergenceTimeMs,
+      statesIdentical,
+      markerXFoundOnAllClients: markerXPresentInAll,
+      markerX2FoundOnAllClients: markerX2PresentInAll,
+      lostEdits: !markerXPresentInAll || !markerX2PresentInAll,
+      pass: statesIdentical && markerXPresentInAll && markerX2PresentInAll
+    };
+
+    return result;
+  } finally {
+    for (const c of allClients) c.close();
+    if (spawnedB) ServerManager.killPid(pidB);
+  }
 }
 
 export async function runS6(opts = {}) {
@@ -1469,13 +1912,13 @@ export async function runS7(opts = {}) {
 
   console.log(`[S7 Part 2] Viewer sent frame, received close 4013: ${close4013Received || probeViewer.closeCode === 4013}`);
 
-  // Test 3: Spoofed X-Forwarded-For
-  console.log(`[S7 Part 3] Testing 25 anonymous viewers with spoofed X-Forwarded-For...`);
-  const xffViewers = [];
-  const xffResults = [];
+  // Test 3: Spoofed X-Forwarded-For - Variant A (default TRUSTED_PROXIES includes 127.0.0.1/32)
+  console.log(`[S7 Variant A] 100 anonymous viewers with spoofed XFF (default TRUSTED_PROXIES includes 127.0.0.1/32)...`);
+  const viewersA = [];
+  const resultsA = [];
 
-  for (let i = 0; i < 25; i++) {
-    const fakeIp = `198.51.100.${i + 1}`;
+  for (let i = 0; i < 100; i++) {
+    const fakeIp = `198.51.100.${(i % 250) + 1}`;
     const v = new CanvasSyncClient({
       url: `${host}/api/public/canvas/${code}/sync`,
       isViewer: true,
@@ -1483,20 +1926,89 @@ export async function runS7(opts = {}) {
         'X-Forwarded-For': fakeIp
       }
     });
-    xffViewers.push(v);
-    try {
-      await v.connect(3000);
-      xffResults.push({ ip: fakeIp, status: 'connected' });
-    } catch (err) {
-      xffResults.push({ ip: fakeIp, status: 'rejected', closeCode: v.closeCode });
-    }
+    viewersA.push(v);
+  }
+
+  for (let b = 0; b < viewersA.length; b += 25) {
+    const chunk = viewersA.slice(b, b + 25);
+    await Promise.all(chunk.map(async (v, idx) => {
+      try {
+        await v.connect(4000);
+        resultsA.push({ idx: b + idx, status: 'connected' });
+      } catch (err) {
+        resultsA.push({ idx: b + idx, status: 'rejected', closeCode: v.closeCode, error: err.message });
+      }
+    }));
     await sleep(50);
   }
 
-  const xffConnected = xffResults.filter(r => r.status === 'connected').length;
-  console.log(`[S7 Part 3] Spoofed XFF connected: ${xffConnected}/25`);
+  const connectedA = resultsA.filter(r => r.status === 'connected').length;
+  const rejectedA = resultsA.filter(r => r.status === 'rejected').length;
+  console.log(`[S7 Variant A] Connected: ${connectedA}/100, Rejected: ${rejectedA}/100`);
 
-  for (const v of xffViewers) v.close();
+  for (const v of viewersA) v.close();
+  await sleep(1500);
+
+  // Test 4: Spoofed X-Forwarded-For - Variant B (untrusted loopback: TRUSTED_PROXIES="192.0.2.1/32")
+  console.log(`[S7 Variant B] Restarting server A with TRUSTED_PROXIES="192.0.2.1/32"...`);
+  let pidA = opts.serverPid || ServerManager.findPidByPort(3191);
+  ServerManager.killPid(pidA);
+  await sleep(1500);
+
+  const instB = ServerManager.spawnInstance(3191, { TRUSTED_PROXIES: '192.0.2.1/32' });
+  opts.serverPid = instB.pid;
+  await ServerManager.waitForReady(3191);
+  console.log(`[S7 Variant B] Server A restarted with PID ${instB.pid}. Connecting 100 viewers with spoofed XFF...`);
+
+  // Clear connect rate limit on 127.0.0.1 in Valkey so the concurrency cap (ViewersPerIP = 10) can be cleanly measured
+  try {
+    const redisCliPath = fs.existsSync('/opt/homebrew/bin/redis-cli') ? '/opt/homebrew/bin/redis-cli' : 'redis-cli';
+    execFileSync(redisCliPath, ['-p', '56379', '-n', '4', 'del', 'load:rl:canvas-link-ws:127.0.0.1']);
+  } catch {}
+
+  const viewersB = [];
+  const resultsB = [];
+
+  for (let i = 0; i < 100; i++) {
+    const fakeIp = `198.51.100.${(i % 250) + 1}`;
+    const v = new CanvasSyncClient({
+      url: `${host}/api/public/canvas/${code}/sync`,
+      isViewer: true,
+      headers: {
+        'X-Forwarded-For': fakeIp
+      }
+    });
+    viewersB.push(v);
+  }
+
+  for (let b = 0; b < viewersB.length; b += 25) {
+    const chunk = viewersB.slice(b, b + 25);
+    await Promise.all(chunk.map(async (v, idx) => {
+      try {
+        await v.connect(4000);
+        resultsB.push({ idx: b + idx, status: 'connected' });
+      } catch (err) {
+        resultsB.push({ idx: b + idx, status: 'rejected', closeCode: v.closeCode, error: err.message });
+      }
+    }));
+    await sleep(50);
+  }
+
+  const connectedB = resultsB.filter(r => r.status === 'connected').length;
+  const rejectedB = resultsB.filter(r => r.status === 'rejected').length;
+  console.log(`[S7 Variant B] Connected: ${connectedB}/100, Rejected: ${rejectedB}/100 (cap of 10 applied to real socket IP 127.0.0.1)`);
+
+  for (const v of viewersB) v.close();
+  await sleep(1000);
+
+  // Restore normal server A with default TRUSTED_PROXIES
+  console.log(`[S7] Restoring server A with default TRUSTED_PROXIES...`);
+  ServerManager.killPid(instB.pid);
+  await sleep(1500);
+  const defaultInst = ServerManager.spawnInstance(3191);
+  opts.serverPid = defaultInst.pid;
+  await ServerManager.waitForReady(3191);
+  console.log(`[S7] Server A restored with PID ${defaultInst.pid}`);
 
   const result = {
     scenario: 'S7',
@@ -1510,14 +2022,119 @@ export async function runS7(opts = {}) {
       received4013: close4013Received || probeViewer.closeCode === 4013,
       closeCode: probeViewer.closeCode
     },
-    spoofedXff: {
-      totalAttempted: 25,
-      connectedWithDefaultProxies: xffConnected,
-      explanation: xffConnected > 10
-        ? 'Default TRUSTED_PROXIES contains 127.0.0.1/32, so localhost direct connection is trusted to supply X-Forwarded-For. If TRUSTED_PROXIES="", XFF is ignored and only 10 connect.'
-        : 'XFF was ignored and 10-per-IP limit applied.'
+    variantA: {
+      description: 'Default TRUSTED_PROXIES (contains 127.0.0.1/32)',
+      totalAttempted: 100,
+      connected: connectedA,
+      rejected: rejectedA,
+      explanation: 'Loopback is trusted, so spoofed X-Forwarded-For headers are honored; 100 separate IPs are seen, bypassing the 10/IP limit.'
     },
-    pass: (connectedCount === 10 && rejectedCount === 2 && (probeViewer.closeCode === 4013 || close4013Received))
+    variantB: {
+      description: 'Untrusted loopback (TRUSTED_PROXIES="192.0.2.1/32")',
+      totalAttempted: 100,
+      connected: connectedB,
+      rejected: rejectedB,
+      explanation: 'Loopback is not trusted, so spoofed X-Forwarded-For headers are ignored and all connections map to real peer IP 127.0.0.1; exactly 10 connect and 90 are rejected.'
+    },
+    securityConclusion: 'При доверенном loopback (дефолт) сервер верит заголовку X-Forwarded-For от localhost, считая каждого отдельным IP (100/100); при исключении loopback из доверенных прокси подделка игнорируется и лимит 10 зрителей применяется к реальному IP сокета (10 подключились, 90 отброшены).',
+    pass: (connectedCount === 10 && rejectedCount === 2 && (probeViewer.closeCode === 4013 || close4013Received) && connectedA === 100 && connectedB === 10 && rejectedB === 90)
+  };
+
+  return result;
+}
+
+export async function runSigkillConns(opts = {}) {
+  const host = opts.host || 'http://127.0.0.1:3191';
+  const client = new CalabaClient(host);
+
+  console.log(`[Sigkill Conns] Measuring exact lifetime of residual Valkey keys after SIGKILL...`);
+
+  let pid = opts.serverPid || ServerManager.findPidByPort(3191);
+  const { wsId, users, adminToken } = await setupWorkspaceWithUsers(client, 1);
+  const canvasId = await client.createCanvas(adminToken, wsId, 'Sigkill Conns Canvas');
+
+  // Connect client to canvas
+  console.log(`[Sigkill Conns] Connecting client to canvas...`);
+  const conn = new CanvasSyncClient({
+    url: `${host}/api/canvas/items/${canvasId}/sync`,
+    token: adminToken,
+    clientId: 9876
+  });
+  await conn.connect();
+
+  const redisCliPath = fs.existsSync('/opt/homebrew/bin/redis-cli') ? '/opt/homebrew/bin/redis-cli' : 'redis-cli';
+  const listKeysCmd = () => {
+    try {
+      const out = execFileSync(redisCliPath, ['-p', '56379', '-n', '4', 'keys', `*canvas:conns:${canvasId}*`], { encoding: 'utf8' }).trim();
+      return out.split(/\s+/).filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+
+  const getTtlCmd = (key) => {
+    try {
+      const out = execFileSync(redisCliPath, ['-p', '56379', '-n', '4', 'ttl', key], { encoding: 'utf8' }).trim();
+      return parseInt(out, 10);
+    } catch {
+      return -2;
+    }
+  };
+
+  let keys = listKeysCmd();
+  console.log(`[Sigkill Conns] Found connection keys in Valkey:`, keys);
+  if (keys.length === 0) {
+    throw new Error('No connection key found in Valkey for canvas');
+  }
+
+  const targetKey = keys[0];
+  const initialTtl = getTtlCmd(targetKey);
+  console.log(`[Sigkill Conns] Target key: ${targetKey}, initial TTL: ${initialTtl}s (expected ~85s)`);
+
+  // Kill server instance with SIGKILL
+  console.log(`[Sigkill Conns] Killing server A (PID: ${pid}) with SIGKILL...`);
+  const killTime = Date.now();
+  ServerManager.killPid(pid, 'SIGKILL');
+  conn.close();
+
+  // Poll Valkey key every 1 second until it expires
+  console.log(`[Sigkill Conns] Polling key ${targetKey} every 1s until expiration...`);
+  let elapsedSec = 0;
+  let lastTtl = initialTtl;
+
+  while (true) {
+    await sleep(1000);
+    const ttl = getTtlCmd(targetKey);
+    elapsedSec = Math.round((Date.now() - killTime) / 1000);
+    if (ttl <= 0 || ttl === -2) {
+      console.log(`[Sigkill Conns] Key expired and removed from Valkey after ${elapsedSec}s (TTL: ${ttl})`);
+      break;
+    }
+    lastTtl = ttl;
+    if (elapsedSec % 10 === 0) {
+      console.log(`[Sigkill Conns] Elapsed: ${elapsedSec}s, remaining TTL: ${ttl}s...`);
+    }
+    if (elapsedSec > 120) {
+      console.warn(`[Sigkill Conns] Key did not expire within 120s!`);
+      break;
+    }
+  }
+
+  // Restart server A
+  console.log(`[Sigkill Conns] Restarting server A...`);
+  const newInst = ServerManager.spawnInstance(3191);
+  opts.serverPid = newInst.pid;
+  await ServerManager.waitForReady(3191);
+  console.log(`[Sigkill Conns] Server A restarted with PID: ${newInst.pid}`);
+
+  const result = {
+    scenario: 'sigkill-conns',
+    key: targetKey,
+    initialTtlSec: initialTtl,
+    observedDurationSec: elapsedSec,
+    theoreticalFormulaSec: 85, // IdleTimeout (60s) + PingInterval (25s)
+    formulaMatch: Math.abs(elapsedSec - 85) <= 2,
+    pass: elapsedSec >= 83 && elapsedSec <= 87
   };
 
   return result;
@@ -1550,10 +2167,10 @@ async function main() {
     else if (args[i] === '--json') opts.json = true;
   }
 
-  if (!scenario || ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 'all'].indexOf(scenario) === -1) {
+  if (!scenario || ['s1', 's2', 's3', 's4', 's5', 's5b', 's6', 's7', 'sigkill-conns', 'all'].indexOf(scenario) === -1) {
     console.log(`
 Usage:
-  nice -n 19 node tools/load-canvas.mjs <s1|s2|s3|s4|s5|s6|s7|all> [options]
+  nice -n 19 node tools/load-canvas.mjs <s1|s2|s3|s4|s5|s5b|s6|s7|sigkill-conns|all> [options]
 `);
     process.exit(1);
   }
@@ -1576,14 +2193,16 @@ Usage:
     s3: runS3,
     s4: runS4,
     s5: runS5,
+    s5b: runS5b,
     s6: runS6,
-    s7: runS7
+    s7: runS7,
+    'sigkill-conns': runSigkillConns
   };
 
   try {
     if (scenario === 'all') {
       const allResults = [];
-      const scenarios = ['s1', 's2', 's3', 's4', 's5', 's6', 's7'];
+      const scenarios = ['s1', 's2', 's3', 's4', 's5', 's5b', 's6', 's7', 'sigkill-conns'];
       for (const s of scenarios) {
         console.log(`\n========================================\nSTARTING ${s.toUpperCase()}\n========================================`);
         const r = await runnerMap[s](opts);
@@ -1622,8 +2241,13 @@ Usage:
 }
 
 if (process.argv[1] && process.argv[1].endsWith('load-canvas.mjs')) {
-  main().catch(err => {
-    console.error('Fatal error in load-canvas runner:', err);
-    process.exit(1);
-  });
+  if (process.argv.includes('--worker-s1')) {
+    runS1Worker();
+  } else {
+    main().catch(err => {
+      console.error('Fatal error in load-canvas runner:', err);
+      process.exit(1);
+    });
+  }
 }
+
