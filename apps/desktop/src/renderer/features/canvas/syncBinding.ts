@@ -115,12 +115,19 @@ export function bindCanvasSync(opts: {
   onMeta();
   applyMode();
 
-  // A fresh document gets its schema once, after the first sync, by a writer.
+  // A fresh document gets its schema once, after the first sync, by a writer: a read-only client must not write
+  // anything (its local write would never reach the others, and a later grant would leave a causality gap).
+  let synced = false;
   let schemaChecked = false;
-  const onStatus = (s: CanvasSyncStatus): void => {
-    if (s !== 'synced' || schemaChecked) return;
+  const initSchema = (): void => {
+    if (!synced || schemaChecked || grantRO || future) return;
     schemaChecked = true;
-    if (!future && meta.get('schema') === undefined) doc.transact(() => meta.set('schema', SCHEMA_VERSION), 'canvas-init');
+    if (meta.get('schema') === undefined) doc.transact(() => meta.set('schema', SCHEMA_VERSION), 'canvas-init');
+  };
+  const onStatus = (s: CanvasSyncStatus): void => {
+    if (s !== 'synced') return;
+    synced = true;
+    initSchema();
   };
   const unsubStatus = sync.subscribe(onStatus);
   onStatus(sync.getStatus());
@@ -155,6 +162,7 @@ export function bindCanvasSync(opts: {
       if (on === grantRO) return;
       grantRO = on;
       applyMode();
+      initSchema();
     },
     destroy() {
       if (done) return;

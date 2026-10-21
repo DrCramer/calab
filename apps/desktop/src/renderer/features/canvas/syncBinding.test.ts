@@ -4,7 +4,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { CanvasDoc } from '../../lib/canvas/doc';
 import { ids, seededRng } from '../../lib/canvas/testing';
 import { SCHEMA_VERSION } from '../../lib/canvas/types';
-import { canvasSyncUrl, CanvasSync } from '../../lib/canvasSync';
+import { canvasSyncUrl, CanvasSync, type CanvasSyncStatus } from '../../lib/canvasSync';
 import { MockRelay } from '../../lib/ySyncMock';
 import type { PeerState, PeerView } from './engine/awareness';
 import type { CanvasEngine } from './engine';
@@ -222,6 +222,57 @@ describe('bindCanvasSync', () => {
     expect(r.sync.status).toBe('readonly');
     expect(r.engine.readOnly).toBe(true);
     r.sync.destroy();
+  });
+
+  it('a read-only binding writes no schema even when the status reads synced; it writes it once when it becomes writable', () => {
+    const ydoc = new Y.Doc();
+    const meta = ydoc.getMap('meta');
+    let status: CanvasSyncStatus = 'synced';
+    const sync = {
+      setReadOnly: () => undefined,
+      getStatus: () => status,
+      subscribe: (cb: (s: CanvasSyncStatus) => void) => {
+        cb(status);
+        return () => undefined;
+      },
+    } as unknown as CanvasSync;
+    const binding = bindCanvasSync({
+      doc: ydoc,
+      awareness: new Awareness(ydoc),
+      sync,
+      engine: new StubEngine(),
+      user: { id: 'u-r', name: 'Rae', color: '#ff0000' },
+      readOnly: true,
+    });
+    expect(meta.get('schema')).toBeUndefined();
+    expect(Y.encodeStateAsUpdate(ydoc).length).toBe(Y.encodeStateAsUpdate(new Y.Doc()).length);
+    let updates = 0;
+    ydoc.on('update', () => updates++);
+    binding.setReadOnly(false);
+    expect(meta.get('schema')).toBe(SCHEMA_VERSION);
+    expect(updates).toBe(1);
+    binding.setReadOnly(true);
+    binding.setReadOnly(false);
+    expect(updates).toBe(1);
+    status = 'offline';
+    binding.destroy();
+  });
+
+  it('a client granted write later in the session gets its edits and the schema delivered', async () => {
+    const relay = new MockRelay();
+    const r = peer(relay, 'Rae', { readOnly: true });
+    const w = peer(relay, 'Wes');
+    await settle();
+    expect(r.sync.status).toBe('readonly');
+    r.binding.setReadOnly(false);
+    await settle();
+    r.doc.create({ kind: 'sticky', x: 0, y: 0, text: 'mine' });
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(relay.violations).toEqual([]);
+    expect(w.doc.orderedIds().map((id) => w.doc.getText(id))).toContain('mine');
+    r.sync.destroy();
+    w.sync.destroy();
   });
 
   it('a newer schema makes both the provider and the engine read-only', async () => {
