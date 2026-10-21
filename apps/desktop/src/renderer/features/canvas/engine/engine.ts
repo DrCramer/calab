@@ -163,6 +163,8 @@ export class CanvasEngine implements Core {
   private entered: string | null = null;
   private overlay: OverlayState = emptyOverlay();
   private gesture: Gesture | null = null;
+  /** False while the socket is down: the peer list is empty for the gap, not because people left. */
+  private peersSettled = true;
   private state: EngineState;
   private readonly listeners = new Set<() => void>();
   private readonly selListeners = new Set<(objs: readonly ObjectRec[]) => void>();
@@ -392,6 +394,8 @@ export class CanvasEngine implements Core {
     if (g === this.gesture) return;
     this.gesture = g;
     if (this.drag && this.drag.g !== g) this.drag = null;
+    // An edit under a moving camera would drag the object along with the leader's view: editing ends the follow.
+    if (g && g.kind !== 'pan' && g.kind !== 'pinch' && g.kind !== 'tap') this.stopFollow();
     this.emitView();
   }
 
@@ -1221,7 +1225,8 @@ export class CanvasEngine implements Core {
   // ── awareness ───────────────────────────────────────────────────────────────
 
   /** Remote participants from the sync layer; schedules at most one timer for the next cursor fade step. */
-  setPeers(peers: readonly PeerState[]): void {
+  setPeers(peers: readonly PeerState[], settled = true): void {
+    this.peersSettled = settled;
     this.live.setPresent(peers.map((p) => p.id));
     const changed = this.awareness.setPeers(peers, this.now());
     if (changed) this.renderer.requestRemoteFrame();
@@ -1321,7 +1326,8 @@ export class CanvasEngine implements Core {
     if (key === null) return;
     const peer = this.awareness.followTarget(key);
     if (!peer) {
-      this.stopFollow();
+      // Without a socket everyone is gone for a moment: the follow waits for the list after the reconnect.
+      if (this.peersSettled) this.stopFollow();
       return;
     }
     const v = peer.view;
