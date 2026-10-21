@@ -805,20 +805,11 @@ func (c *conn) onAwareness(b []byte) bool {
 	}
 
 	var entries []awarenessEntry
-	// Farewell frames (state null) bypass the budget so peers immediately learn the client left.
-	if bytes.Contains(b[1:], []byte("null")) {
-		if !c.h.prof.BatchAwareness {
-			if es, err := parseAwarenessUpdate(b[1:]); err == nil && isFarewell(es) {
-				c.parsedAwareness.Add(1)
-				if c.clientID.Load() == 0 && len(es) > 0 {
-					c.clientID.Store(es[0].clientID)
-				}
-				c.h.broadcast(c.ctx, c.doc, c, b)
-				return true
-			}
-		} else if es, ok := c.parseAwareness(b); ok {
-			// Canvas: only the socket's own farewell, and only a few per FarewellWindow, goes at once;
-			// anything else takes the ordinary way below, with the entries already parsed.
+	// Profile.BatchAwareness: the socket's own farewell (its state null), a few per FarewellWindow,
+	// goes at once past the budget, so the peers drop its cursor now. Only a frame of a farewell's
+	// size is parsed before the budget; anything else takes the ordinary way below.
+	if c.h.prof.BatchAwareness && len(b) <= maxFarewell && bytes.Contains(b[1:], []byte("null")) {
+		if es, ok := c.parseAwareness(b); ok {
 			entries = es
 			if isFarewell(es) && c.ownOnly(es) && c.farewells.take() {
 				c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)

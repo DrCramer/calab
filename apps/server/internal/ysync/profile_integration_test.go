@@ -31,7 +31,8 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(dbtest.Run(m)) }
 
-var fullProfile = Profile{Ceiling: true, ByteBudget: true, CoalesceAwareness: true, RecheckJitter: true, PublishBackoff: true}
+// fullProfile is canvasBackend.Profile().
+var fullProfile = Profile{Ceiling: true, ByteBudget: true, CoalesceAwareness: true, RecheckJitter: true, PublishBackoff: true, BatchAwareness: true}
 
 // memBackend keeps one document per id in memory; every socket may write.
 type memBackend struct {
@@ -385,13 +386,14 @@ func TestProfileCeiling(t *testing.T) {
 }
 
 // The Wiki's profile drops awareness over the budget (10 at once): of 15 frames sent together the
-// peer gets the first 10 and never the rest. The Canvas's profile delivers the newest one late.
+// peer gets the first 10 and never the rest. CoalesceAwareness delivers the newest one late (the
+// Canvas batches on top of it, batch_integration_test.go).
 func TestProfileAwareness(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		prof Profile
 		want int
-	}{{"wiki", Profile{}, 10}, {"canvas", fullProfile, 11}} {
+	}{{"wiki", Profile{}, 10}, {"canvas", Profile{CoalesceAwareness: true}, 11}} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newProfEnv(t, tc.prof, Config{AwarenessPerSecond: 10})
 			a, b := e.dial(), e.dial()
@@ -416,6 +418,27 @@ func TestProfileAwareness(t *testing.T) {
 				t.Fatalf("the late frame is %d, want the newest (14)", got[10])
 			}
 		})
+	}
+}
+
+// The Wiki's relay knows no farewell: a frame with the state null is awareness like any other, and
+// of 15 such frames sent together the peer gets 10, as on origin/main.
+func TestProfileAwarenessFarewellWiki(t *testing.T) {
+	e := newProfEnv(t, Profile{}, Config{AwarenessPerSecond: 10})
+	a, b := e.dial(), e.dial()
+	for i := 1; i <= 15; i++ {
+		a.send(encodeAwarenessUpdate([]awarenessEntry{{clientID: 7, clock: uint64(i), state: []byte("null")}}))
+	}
+	got := 0
+	for {
+		f, _ := b.read(500 * time.Millisecond)
+		if f == nil {
+			break
+		}
+		got++
+	}
+	if got != 10 {
+		t.Fatalf("peer got %d farewell frames, want 10", got)
 	}
 }
 
