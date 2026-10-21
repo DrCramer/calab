@@ -65,6 +65,11 @@ type room struct {
 	// is lost (a frame after the read arrives through Redis; one before it is in the database).
 	ready      chan struct{}
 	subscribed bool // hub.mu
+
+	// Awareness batching (Canvas profile)
+	awMu      sync.Mutex
+	awBatch   map[uint64]awarenessEntry
+	awInCount int
 }
 
 // NewHub creates the hub of a section.
@@ -91,10 +96,19 @@ func (h *Hub) join(c *conn) *room {
 	defer h.mu.Unlock()
 	r := h.rooms[c.doc]
 	if r == nil {
-		r = &room{id: c.doc, conns: map[*conn]struct{}{}, stop: make(chan struct{}), ready: make(chan struct{})}
+		r = &room{
+			id:      c.doc,
+			conns:   map[*conn]struct{}{},
+			stop:    make(chan struct{}),
+			ready:   make(chan struct{}),
+			awBatch: make(map[uint64]awarenessEntry),
+		}
 		h.rooms[c.doc] = r
 		h.m.rooms.Inc()
 		go h.listen(r)
+		if h.prof.BatchAwareness {
+			go h.awarenessLoop(r)
+		}
 	}
 	r.conns[c] = struct{}{}
 	h.m.sockets.Inc()
@@ -209,7 +223,15 @@ func (c *conn) deliverFrame(frame []byte) {
 			c.close(CloseResend, "the update ceiling is lifted: resend")
 		}
 	case frame[0] == FrameCompact && !c.write.Load():
-	case frame[0] == FrameAwareness && c.viewer != nil:
+	case frame[0] == FrameAwareness:
+		if c.viewer != nil {
+			return
+		}
+		if c.h.prof.BatchAwareness {
+			c.deliverAwareness(frame)
+			return
+		}
+		c.enqueue(frame)
 	default:
 		c.enqueue(frame)
 	}
@@ -285,6 +307,169 @@ func (h *Hub) Kick(ctx context.Context, docs []uuid.UUID) {
 			h.pubLog.warn(h.b.Name()+" sync: publish", h.b.LogKey(), docs[i], "err", err)
 			return
 		}
+	}
+}
+
+func (h *Hub) awarenessLoop(r *room) {
+	ticker := time.NewTicker(h.cfg.AwarenessWindow)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.stop:
+			h.flushRoomAwareness(r)
+			return
+		case <-ticker.C:
+			h.flushRoomAwareness(r)
+		}
+	}
+}
+
+// enqueueAwareness adds entries to the room's current window batch.
+func (h *Hub) enqueueAwareness(doc uuid.UUID, entries []awarenessEntry) {
+	h.mu.Lock()
+	r := h.rooms[doc]
+	h.mu.Unlock()
+	if r == nil {
+		return
+	}
+	r.awMu.Lock()
+	defer r.awMu.Unlock()
+	for _, e := range entries {
+		r.awInCount++
+		existing, ok := r.awBatch[e.clientID]
+		if !ok {
+			r.awBatch[e.clientID] = e
+		} else {
+			if e.clock > existing.clock || (e.clock == existing.clock && bytes.Equal(e.state, []byte("null"))) {
+				r.awBatch[e.clientID] = e
+			}
+		}
+	}
+}
+
+// flushRoomAwareness coalesces and sends the room's batched awareness frames.
+func (h *Hub) flushRoomAwareness(r *room) {
+	r.awMu.Lock()
+	if len(r.awBatch) == 0 {
+		r.awMu.Unlock()
+		return
+	}
+	batch := r.awBatch
+	inCount := r.awInCount
+	r.awBatch = make(map[uint64]awarenessEntry)
+	r.awInCount = 0
+	r.awMu.Unlock()
+
+	coalesced := inCount - len(batch)
+	if coalesced > 0 {
+		h.m.coalescedEntries.Add(float64(coalesced))
+	}
+
+	merged := make([]awarenessEntry, 0, len(batch))
+	senders := make(map[uint64]struct{}, len(batch))
+	for _, e := range batch {
+		merged = append(merged, e)
+		senders[e.clientID] = struct{}{}
+	}
+
+	fullFrame := encodeAwarenessUpdate(merged)
+	h.m.batchedFrames.Inc()
+
+	// Snapshot sockets under h.mu
+	h.mu.Lock()
+	roomConns := make([]*conn, 0, len(r.conns))
+	for c := range r.conns {
+		roomConns = append(roomConns, c)
+	}
+	h.mu.Unlock()
+
+	// Deliver to local sockets outside h.mu
+	for _, c := range roomConns {
+		if c.viewer != nil {
+			continue
+		}
+		cid := c.clientID.Load()
+		if cid != 0 {
+			if _, sent := senders[cid]; sent {
+				// Filter out recipient's own clientID
+				filtered := make([]awarenessEntry, 0, len(merged)-1)
+				for _, e := range merged {
+					if e.clientID != cid {
+						filtered = append(filtered, e)
+					}
+				}
+				if len(filtered) > 0 {
+					c.deliverAwareness(encodeAwarenessUpdate(filtered))
+				}
+				continue
+			}
+		}
+		c.deliverAwareness(fullFrame)
+	}
+
+	// Publish fullFrame to Valkey outside h.mu
+	if h.rc == nil {
+		return
+	}
+	if down := h.pubDown.Load(); h.prof.PublishBackoff && down != 0 && time.Since(time.Unix(0, down)) < pubBackoff {
+		h.m.dropPub.Inc()
+		return
+	}
+	pctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := h.rc.Do(pctx, h.relayCmd(r.id, fullFrame)).Error(); err != nil {
+		h.pubDown.Store(time.Now().UnixNano())
+		h.m.dropPub.Inc()
+	} else if h.pubDown.Load() != 0 {
+		h.pubDown.Store(0)
+	}
+}
+
+// broadcastAwarenessImmediate sends a farewell awareness frame immediately without batching.
+func (h *Hub) broadcastAwarenessImmediate(ctx context.Context, doc uuid.UUID, from *conn, frame []byte) {
+	h.mu.Lock()
+	r := h.rooms[doc]
+	var roomConns []*conn
+	if r != nil {
+		roomConns = make([]*conn, 0, len(r.conns))
+		for c := range r.conns {
+			roomConns = append(roomConns, c)
+		}
+	}
+	h.mu.Unlock()
+
+	if r != nil {
+		if from != nil {
+			if cid := from.clientID.Load(); cid != 0 {
+				r.awMu.Lock()
+				delete(r.awBatch, cid)
+				r.awMu.Unlock()
+			}
+		}
+
+		for _, c := range roomConns {
+			if c == from || c.viewer != nil {
+				continue
+			}
+			c.deliverAwareness(frame)
+		}
+	}
+
+	// Publish immediately to Valkey
+	if h.rc == nil {
+		return
+	}
+	if down := h.pubDown.Load(); h.prof.PublishBackoff && down != 0 && time.Since(time.Unix(0, down)) < pubBackoff {
+		h.m.dropPub.Inc()
+		return
+	}
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	if err := h.rc.Do(pctx, h.relayCmd(doc, frame)).Error(); err != nil {
+		h.pubDown.Store(time.Now().UnixNano())
+		h.m.dropPub.Inc()
+	} else if h.pubDown.Load() != 0 {
+		h.pubDown.Store(0)
 	}
 }
 

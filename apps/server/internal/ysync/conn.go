@@ -51,6 +51,10 @@ type conn struct {
 	recheck chan struct{} // an access recheck was asked for (ctlRecheck)
 	closed  sync.Once
 
+	// Awareness batching (Canvas profile)
+	clientID atomic.Uint64
+	awSlot   atomic.Pointer[[]byte]
+
 	// The writer's position: the highest seq the client has (snapshot or update); -1 = nothing
 	// sent yet. Writer goroutine only.
 	lastSent int64
@@ -82,6 +86,18 @@ func (c *conn) enqueue(frame []byte) {
 		if t := frame[0]; t == FrameUpdate || t == FrameSnapshot {
 			c.markStale()
 		}
+	}
+}
+
+// deliverAwareness stores frame into the dedicated awareness slot (Canvas profile).
+// If an older frame is already waiting, it is overwritten without causing queue drops or marksStale.
+func (c *conn) deliverAwareness(frame []byte) {
+	if old := c.awSlot.Swap(&frame); old != nil {
+		c.h.m.overwrittenSlots.Inc()
+	}
+	select {
+	case c.kick <- struct{}{}:
+	default:
 	}
 }
 
@@ -409,7 +425,55 @@ func recheckDelay(every time.Duration, r float64) time.Duration {
 // or below what the client has is skipped, a gap (a frame lost in Redis, or published before this
 // socket subscribed) is filled from the database first.
 func (c *conn) writeLoop() {
+	if !c.h.prof.BatchAwareness {
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case f := <-c.out:
+				if !c.handle(f) {
+					return
+				}
+			case <-c.kick:
+			}
+			if c.stale.Swap(false) && !c.catchUp() {
+				return
+			}
+		}
+	}
+
 	for {
+		// Priority: drain all document updates / control frames from c.out first
+		drained := false
+		for !drained {
+			select {
+			case <-c.ctx.Done():
+				return
+			case f := <-c.out:
+				if !c.handle(f) {
+					return
+				}
+				if c.stale.Swap(false) && !c.catchUp() {
+					return
+				}
+			default:
+				drained = true
+			}
+		}
+
+		if c.stale.Swap(false) && !c.catchUp() {
+			return
+		}
+
+		// When c.out is empty, send the latest awareness frame if slot is non-empty
+		if slot := c.awSlot.Swap(nil); slot != nil {
+			if !c.send(*slot) {
+				return
+			}
+			continue
+		}
+
+		// When both are empty, wait for incoming frames or wakeups
 		select {
 		case <-c.ctx.Done():
 			return
@@ -679,6 +743,20 @@ func (c *conn) onAwareness(b []byte) bool {
 	if !c.write.Load() || len(b) > 1+MaxUpdate {
 		return true
 	}
+	if c.h.prof.BatchAwareness {
+		if entries, err := parseAwarenessUpdate(b[1:]); err == nil && len(entries) > 0 {
+			if c.clientID.Load() == 0 {
+				c.clientID.Store(entries[0].clientID)
+			}
+			if isFarewell(entries) {
+				c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, b)
+				return true
+			}
+			c.h.enqueueAwareness(c.doc, entries)
+			return true
+		}
+	}
+
 	c.awMu.Lock()
 	defer c.awMu.Unlock()
 	switch {
@@ -728,7 +806,11 @@ func (c *conn) endAwareness() {
 	f := c.awPending
 	c.awPending = nil
 	if f != nil && c.write.Load() {
-		c.h.broadcast(c.ctx, c.doc, c, f)
+		if c.h.prof.BatchAwareness {
+			c.h.broadcastAwarenessImmediate(c.ctx, c.doc, c, f)
+		} else {
+			c.h.broadcast(c.ctx, c.doc, c, f)
+		}
 	}
 }
 

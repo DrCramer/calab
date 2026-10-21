@@ -28,21 +28,42 @@ var (
 		Help: "Documents found at their update ceiling (at most once per CompactCooldown each)."}, []string{"section"})
 	closes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "calaba", Subsystem: "ysync", Name: "closes_total", Help: "Server-initiated socket closes by code (4000 and up)."}, []string{"section", "code"})
+	batchedFrames = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "calaba", Subsystem: "ysync", Name: "batched_frames_total",
+		Help: "Batched awareness frames sent per window."}, []string{"section"})
+	coalescedEntries = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "calaba", Subsystem: "ysync", Name: "coalesced_entries_total",
+		Help: "Awareness entries coalesced within batching windows."}, []string{"section"})
+	overwrittenSlots = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "calaba", Subsystem: "ysync", Name: "overwritten_slots_total",
+		Help: "Awareness slots overwritten on a socket before delivery."}, []string{"section"})
 )
 
 // metrics are a hub's series, resolved once (the frame paths only add).
 type metrics struct {
-	section                                        string
-	rooms, sockets                                 prometheus.Gauge
-	dropQueue, dropAwareness, dropCeiling, dropPub prometheus.Counter
-	catchUps, ceilingHits                          prometheus.Counter
+	section                                           string
+	rooms, sockets                                    prometheus.Gauge
+	dropQueue, dropAwareness, dropCeiling, dropPub    prometheus.Counter
+	catchUps, ceilingHits                             prometheus.Counter
+	batchedFrames, coalescedEntries, overwrittenSlots prometheus.Counter
 }
 
 func newMetrics(section string) metrics {
 	drop := func(reason string) prometheus.Counter { return droppedFrames.WithLabelValues(section, reason) }
-	return metrics{section: section, rooms: roomsGauge.WithLabelValues(section), sockets: socketsGauge.WithLabelValues(section),
-		dropQueue: drop("queue"), dropAwareness: drop("awareness"), dropCeiling: drop("ceiling"), dropPub: drop("publish"),
-		catchUps: catchUps.WithLabelValues(section), ceilingHits: ceilingHits.WithLabelValues(section)}
+	return metrics{
+		section:          section,
+		rooms:            roomsGauge.WithLabelValues(section),
+		sockets:          socketsGauge.WithLabelValues(section),
+		dropQueue:        drop("queue"),
+		dropAwareness:    drop("awareness"),
+		dropCeiling:      drop("ceiling"),
+		dropPub:          drop("publish"),
+		catchUps:         catchUps.WithLabelValues(section),
+		ceilingHits:      ceilingHits.WithLabelValues(section),
+		batchedFrames:    batchedFrames.WithLabelValues(section),
+		coalescedEntries: coalescedEntries.WithLabelValues(section),
+		overwrittenSlots: overwrittenSlots.WithLabelValues(section),
+	}
 }
 
 func (m *metrics) closed(code int) {

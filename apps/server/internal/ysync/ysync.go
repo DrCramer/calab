@@ -158,6 +158,7 @@ type Config struct {
 	VersionEvery         time.Duration // a version at most this often per document (the Backend's default if 0)
 	WriteTimeout         time.Duration // one frame to the client (10 s)
 	ViewerMaxLife        time.Duration // a viewer socket is closed 4000 (reconnect) after this long (2 h)
+	AwarenessWindow      time.Duration // batching window for awareness (100 ms)
 }
 
 // WithDefaults fills the zero fields with the production values. VersionEvery is not defaulted
@@ -178,6 +179,7 @@ func (c Config) WithDefaults() Config {
 	def(&c.SnapshotEvery, 2*time.Second)
 	def(&c.CompactCheckEvery, 2*time.Second)
 	def(&c.WriteTimeout, 10*time.Second)
+	def(&c.AwarenessWindow, 100*time.Millisecond)
 	if c.UpdatesPerSecond == 0 {
 		c.UpdatesPerSecond = 20
 	}
@@ -225,6 +227,10 @@ type Profile struct {
 	// PublishBackoff: after a failed publish awareness is not published for pubBackoff (this
 	// instance's sockets still get it). Off: every frame is published.
 	PublishBackoff bool
+	// BatchAwareness: coalesces awareness frames into one combined frame per AwarenessWindow
+	// (100 ms), delivers via a dedicated overwriteable slot on each socket, and publishes once
+	// to Valkey per window. Off: each awareness frame is relayed and published immediately.
+	BatchAwareness bool
 }
 
 // Viewer is an anonymous receive-only socket on a document (Hub.ServeViewer): the section has
