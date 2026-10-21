@@ -95,6 +95,22 @@ describe("YSyncProvider", () => {
     },
   );
 
+  it("replays again when the socket dies after a replay, before a snapshot", async () => {
+    const { doc, last } = setup();
+    await connect(last(), serverState("base"));
+    last().drop(1006);
+    type(doc, "offline edit");
+    vi.advanceTimersByTime(500);
+    await connect(last(), serverState("base"));
+    last().drop(1006); // the replay may never have reached the server
+    vi.advanceTimersByTime(500);
+    await connect(last(), serverState("base"));
+    const ups = last()
+      .frames()
+      .filter((f) => f.type === FRAME_UPDATE);
+    expect(ups).toHaveLength(1);
+  });
+
   it.each([
     [false, 0, 1],
     [true, 1, 0],
