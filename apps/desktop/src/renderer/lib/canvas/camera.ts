@@ -27,6 +27,25 @@ export function visibleRect(c: Camera, v: Viewport): Rect {
 
 export const panBy = (c: Camera, dx: number, dy: number): Camera => ({ tx: c.tx + dx, ty: c.ty + dy, scale: c.scale });
 
+/** Edge pan of a drag (Miro): the zone along each edge of the view, px, and the speed at its outer edge and past it, px/s. */
+export const EDGE_PAN_PX = 32;
+export const EDGE_PAN_SPEED = 1200;
+
+/**
+ * How fast the view moves (screen px/s, +x = to the right) with a drag's pointer at `s`: toward the edge whose zone the
+ * pointer is in, faster the deeper (ease-in), full speed at the edge and past it. Zero away from the edges and on a view
+ * too small for a zone.
+ */
+export function edgePanVelocity(s: Point, v: Viewport): Point {
+  const axis = (p: number, size: number): number => {
+    if (size < EDGE_PAN_PX * 4) return 0;
+    const depth = p < EDGE_PAN_PX ? p - EDGE_PAN_PX : p > size - EDGE_PAN_PX ? p - (size - EDGE_PAN_PX) : 0;
+    const k = Math.min(1, Math.abs(depth) / EDGE_PAN_PX);
+    return depth === 0 ? 0 : Math.sign(depth) * k * k * EDGE_PAN_SPEED;
+  };
+  return { x: axis(s.x, v.w), y: axis(s.y, v.h) };
+}
+
 /** Zoom by `factor` keeping the world point under screen point `at` fixed. */
 export function zoomAt(c: Camera, factor: number, at: Point): Camera {
   const scale = clampScale(c.scale * factor);

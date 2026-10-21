@@ -1095,3 +1095,81 @@ describe('export and options', () => {
     expect(r.engine.renderer.devicePixelRatio).toBe(1);
   });
 });
+
+describe('edge pan of a drag (frame, move, resize)', () => {
+  /** n frames of `ms` each on the rig's clock. */
+  const frames = (r: Rig, n: number, ms = 16): void => {
+    for (let i = 0; i < n; i++) {
+      r.clock.t += ms;
+      r.raf.flush();
+    }
+  };
+  it('a frame dragged to the edge pans the view and takes what comes into it; the release stops it', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(600, 300), sticky(1600, 300));
+    r.down(500, 280);
+    r.move(800, 400);
+    r.move(995, 400); // 5 px from the right edge of a 1000 px view
+    frames(r, 60);
+    expect(r.engine.camera.tx).toBeLessThan(-600);
+    expect(r.engine.selection.has(b ?? '')).toBe(true); // without a pointer move
+    r.up(995, 400);
+    const tx = r.engine.camera.tx;
+    frames(r, 10);
+    expect(r.engine.camera.tx).toBe(tx);
+    expect(r.raf.pending).toBe(0);
+    expect([...r.engine.selection].sort()).toEqual([a, b].sort());
+  });
+  it('a press near the edge, or a drag that starts there and goes away from it, does not pan', () => {
+    const r = rig();
+    r.down(990, 400);
+    frames(r, 10);
+    r.move(991, 401); // within the slop
+    frames(r, 10);
+    expect(r.engine.camera).toMatchObject({ tx: 0, ty: 0 });
+    r.move(900, 400); // out of the zone
+    frames(r, 10);
+    expect(r.engine.camera.tx).toBe(0);
+    r.move(995, 400); // back in: now it pans
+    frames(r, 10);
+    expect(r.engine.camera.tx).toBeLessThan(0);
+    r.up(995, 400);
+  });
+  it('a moved object follows the pointer while the view pans and lands under it', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100));
+    r.down(150, 150);
+    r.move(600, 150);
+    r.move(996, 150);
+    frames(r, 30);
+    const tx = r.engine.camera.tx;
+    expect(tx).toBeLessThan(-200);
+    r.up(996, 150);
+    // The pointer keeps the point it grabbed, 50 px into the sticky, in the world it panned to.
+    expect(Math.abs(Number(objs(r).snapshot(a ?? '')?.x) - (996 - tx - 50))).toBeLessThanOrEqual(1);
+  });
+  it('a resize at the bottom edge pans down and keeps growing the box', () => {
+    const r = rig();
+    const [a] = r.make(sticky(100, 100, { w: 200, h: 100 }));
+    r.click(150, 150);
+    r.down(300, 200); // se handle
+    r.move(300, 500);
+    r.move(300, 797);
+    frames(r, 30);
+    const ty = r.engine.camera.ty;
+    expect(ty).toBeLessThan(-200);
+    r.up(300, 797);
+    expect(Math.abs(Number(objs(r).snapshot(a ?? '')?.h) - (797 - ty - 100))).toBeLessThanOrEqual(1);
+  });
+  it('a frame follows its pointer when the camera moves under it (the wheel), with no pointer move', () => {
+    const r = rig();
+    const [b] = r.make(sticky(600, 200));
+    r.down(100, 100);
+    r.move(300, 300);
+    expect(r.engine.selection.has(b ?? '')).toBe(false);
+    r.engine.steerPan(-400, 0);
+    frames(r, 1);
+    expect(r.engine.selection.has(b ?? '')).toBe(true);
+    r.up(300, 300);
+  });
+});

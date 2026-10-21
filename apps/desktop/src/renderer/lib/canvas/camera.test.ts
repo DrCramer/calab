@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_SCALE, MIN_SCALE, clampScale, fitRect, lerpCamera, nextZoomStep, panBy, pinchStep, screenToWorld, snapCamera, visibleRect, worldToScreen, zoomAt, zoomTo,
+  EDGE_PAN_PX, EDGE_PAN_SPEED, MAX_SCALE, MIN_SCALE, clampScale, edgePanVelocity, fitRect, lerpCamera, nextZoomStep, panBy, pinchStep, screenToWorld, snapCamera, visibleRect, worldToScreen, zoomAt, zoomTo,
 } from './camera';
 
 const cam = { tx: 100, ty: -50, scale: 2 };
@@ -103,5 +103,15 @@ describe('pinchStep', () => {
     expect(next.scale).toBe(1);
     expect(next.tx).toBeCloseTo(10 + 25 - 1);
     expect(next.ty).toBeCloseTo(20);
+  });
+  it('edge pan: nothing inside, toward the edge in its zone, faster the deeper, full speed at and past it', () => {
+    const v = { w: 1000, h: 800 };
+    expect(edgePanVelocity({ x: 500, y: 400 }, v)).toEqual({ x: 0, y: 0 });
+    expect(edgePanVelocity({ x: 1000 - EDGE_PAN_PX, y: 400 }, v).x).toBe(0);
+    expect(edgePanVelocity({ x: 1000 - EDGE_PAN_PX / 2, y: 400 }, v).x).toBeCloseTo(EDGE_PAN_SPEED / 4);
+    expect(edgePanVelocity({ x: 1000, y: 400 }, v).x).toBe(EDGE_PAN_SPEED);
+    expect(edgePanVelocity({ x: 1300, y: 400 }, v).x).toBe(EDGE_PAN_SPEED);
+    expect(edgePanVelocity({ x: -50, y: -50 }, v)).toEqual({ x: -EDGE_PAN_SPEED, y: -EDGE_PAN_SPEED });
+    expect(edgePanVelocity({ x: 5, y: 400 }, { w: 100, h: 800 }).x).toBe(0); // no room for a zone
   });
 });

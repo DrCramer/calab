@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
 import {
-  DEFAULT_CAMERA, clampScale, fitRect, lerpCamera, nextZoomStep, sameCamera, screenToWorld, visibleRect, zoomAt,
+  DEFAULT_CAMERA, clampScale, edgePanVelocity, fitRect, lerpCamera, nextZoomStep, panBy, sameCamera, screenToWorld, visibleRect, zoomAt,
   type Camera,
 } from '../../../lib/canvas/camera';
 import { duplicate, parse, serialize, toInits } from '../../../lib/canvas/clipboard';
@@ -19,7 +19,7 @@ import {
 } from '../../../lib/canvas/types';
 import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
 import { AwarenessLayer, sameView, type PeerState, type PeerView } from './awareness';
-import type { Core, Gesture } from './gestures';
+import type { Core, Gesture, Mods } from './gestures';
 import { attachInput } from './input';
 import { emptyOverlay, type Outline, type OverlayState, type SelFrame } from './overlay';
 import { resolveColor, resolveSticky, type CanvasPalette } from './palette';
@@ -110,6 +110,12 @@ export interface EngineOptions {
 
 const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote', 'multiSelect'];
 const LOCAL_AWARENESS_MS = 50;
+/** Gestures that follow their pointer when the camera moves under it, and pan the view at its edge. */
+const FOLLOW_KINDS: ReadonlySet<Gesture['kind']> = new Set(['marquee', 'move', 'resize']);
+/** The edge pan arms once the pointer has moved this far (px) from where it went down. */
+const EDGE_SLOP_PX = 3;
+/** One step of the edge pan covers at most this long (s): a stalled frame does not make the view jump. */
+const EDGE_PAN_MAX_DT = 0.05;
 /** Our camera goes out at most this often (5/s), and only when it moved. */
 const LOCAL_VIEW_MS = 200;
 const ANIM_MS = 180;
@@ -194,6 +200,11 @@ export class CanvasEngine implements Core {
   private animToken = 0;
   private animRaf = 0;
   private pending: Camera | null = null;
+  /**
+   * The drag that follows its pointer (a frame, a move, a resize): where the pointer went down and is now, its modifiers,
+   * the camera of its last `move`, and the edge pan (`armed`; `base`, `left`: how it may arm; `at`: the last step).
+   */
+  private drag: { g: Gesture; from: Point; s: Point; m: Mods; cam: Camera; base: number; left: boolean; armed: boolean; at: number } | null = null;
   private readonly userId: string;
   private readonly clipboardPort: ClipboardPort | null;
   private readonly now: () => number;
@@ -228,7 +239,7 @@ export class CanvasEngine implements Core {
       palette: this.palette,
       getCamera: () => this.cam,
       getOverlay: () => this.overlay,
-      beforeFrame: () => this.flushCamera(),
+      beforeFrame: () => this.frameStart(),
       awareness: this.awareness,
       getVotes: () => (this.votes.active ? this.votes : undefined),
       maxDpr: this.lowPower ? 1 : 2,
@@ -380,6 +391,7 @@ export class CanvasEngine implements Core {
   set activeGesture(g: Gesture | null) {
     if (g === this.gesture) return;
     this.gesture = g;
+    if (this.drag && this.drag.g !== g) this.drag = null;
     this.emitView();
   }
 
@@ -408,6 +420,62 @@ export class CanvasEngine implements Core {
     if (sameCamera(next, this.liveCamera)) return;
     this.pending = next;
     this.renderer.requestFrame();
+  }
+
+  /**
+   * Input: the pointer of the active gesture moved to `s` (`from`: where it went down). A frame, a move or a resize then
+   * follows the pointer when the camera moves under it (the wheel) and, with `edge` (mouse and pen; a finger keeps the
+   * system's edge swipes), pans the view toward the edge of the viewport the pointer is at.
+   */
+  dragPointer(from: Point, s: Point, m: Mods, edge: boolean): void {
+    const g = this.gesture;
+    if (!g || !FOLLOW_KINDS.has(g.kind)) {
+      this.drag = null;
+      return;
+    }
+    const speed = (p: Point): number => {
+      const v = edgePanVelocity(p, this.viewport);
+      return Math.hypot(v.x, v.y);
+    };
+    let d = this.drag;
+    if (!d || d.g !== g) d = this.drag = { g, from, s, m, cam: this.liveCamera, base: speed(from), left: false, armed: false, at: 0 };
+    d.s = s;
+    d.m = m;
+    d.cam = this.liveCamera;
+    if (!edge) return;
+    const v = speed(s);
+    if (!d.armed) {
+      // It pans once the pointer has really moved; one that went down in a zone only after leaving it or going deeper:
+      // a click near the edge, or a drag away from it, never scrolls.
+      if (v === 0) d.left = true;
+      d.armed = Math.hypot(s.x - from.x, s.y - from.y) >= EDGE_SLOP_PX && (d.base === 0 || d.left || v > d.base);
+    }
+    if (d.armed && v > 0) this.renderer.requestFrame();
+  }
+
+  /**
+   * Frame start: the edge pan's step (the first frame in a zone only starts its clock), the queued camera, then the drag
+   * re-run where its pointer now is in the world. `true` while the pan goes on: the renderer runs the next frame.
+   */
+  private frameStart(): boolean {
+    const d = this.drag && this.drag.g === this.gesture ? this.drag : null;
+    let more = false;
+    if (d?.armed) {
+      const v = edgePanVelocity(d.s, this.viewport);
+      if (v.x !== 0 || v.y !== 0) {
+        const now = this.now();
+        const dt = d.at ? Math.min(EDGE_PAN_MAX_DT, (now - d.at) / 1000) : 0;
+        d.at = now;
+        more = true;
+        if (dt > 0) this.steerCamera(panBy(this.liveCamera, -v.x * dt, -v.y * dt));
+      } else d.at = 0;
+    }
+    this.flushCamera();
+    if (d && !sameCamera(d.cam, this.cam)) {
+      d.cam = this.cam;
+      d.g.move(screenToWorld(this.cam, d.s), d.s, d.m);
+    }
+    return more;
   }
 
   /** Applies queued gesture input now (gesture end, explicit commands, the frame start). */

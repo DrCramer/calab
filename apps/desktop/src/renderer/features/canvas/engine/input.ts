@@ -46,6 +46,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   /** A Safari pinch in progress: the camera and world point at its start. */
   let gesture: { scale: number; wx: number; wy: number } | null = null;
   let cursor = '';
+  /** Where the first pointer of the current gesture went down (screen): the edge pan arms from it. */
+  let downAt: Point | null = null;
   /** Touch editing: the long press in progress (one at most) and the last tap, for the double tap. */
   let press: { id: number; timer: ReturnType<typeof setTimeout>; s: Point; w: Point; g: TapPanGesture } | null = null;
   let lastTap: { id: string; at: number } | null = null;
@@ -228,6 +230,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       else lost?.cancel();
     }
     pointers.set(e.pointerId, s);
+    if (pointers.size === 1) downAt = s;
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -339,7 +342,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     }
     const g = engine.activeGesture;
     if (g) {
-      g.move(w, s, mods(e));
+      const m = mods(e);
+      g.move(w, s, m);
+      if (downAt) engine.dragPointer(downAt, s, m, e.pointerType !== 'touch');
       return;
     }
     engine.setLocalCursor(w);
