@@ -7,6 +7,9 @@
  * Awareness state of a participant: `{ user: {id, name, color}, canvas: {cursor, selection} }`
  * (`user` as on the wiki socket), plus `view: {x, y, zoom}` — the center of the visible area in world units and
  * the zoom — sent by the engine at most 5 times a second and only when the camera moved. The frame rate is the provider's job (≤ 20/s, none while hidden).
+ *
+ * Incoming: each awareness change re-reads only the clients it names (not every peer), and the peer list goes to
+ * the engine at most every PEERS_GAP_MS (100 peers moving 10 times a second: 1000 reads, ≤ 20 lists a second).
  */
 import * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
@@ -39,6 +42,8 @@ export interface SyncBinding {
 
 const MAX_SELECTION = 1000;
 const MAX_ID = 64;
+/** The peer list goes to the engine (and the presence bar) at most this often: ≤ 20 times a second. */
+export const PEERS_GAP_MS = 50;
 
 /** One remote awareness state → a peer, null if it is not a well-formed canvas state. */
 export function peerOf(clientId: number, state: unknown): PeerState | null {
@@ -132,17 +137,45 @@ export function bindCanvasSync(opts: {
   const unsubStatus = sync.subscribe(onStatus);
   onStatus(sync.getStatus());
 
-  const pushPeers = (): void => {
-    const peers: PeerState[] = [];
-    awareness.getStates().forEach((st, client) => {
-      if (client === awareness.clientID) return;
-      const p = peerOf(client, st);
-      if (p) peers.push(p);
-    });
-    engine.setPeers(peers);
+  // The peers by client id, kept up to date from each change event: only the clients it names are read
+  // again (a busy board sends ≈ 1000 events a second, one per cursor move). The list goes to the engine at
+  // most every PEERS_GAP_MS: the first change after a quiet gap at once, the rest at the end of the gap; a
+  // peer gone goes at once.
+  const peers = new Map<number, PeerState>();
+  let publishedAt = Number.NEGATIVE_INFINITY;
+  let publishTimer: ReturnType<typeof setTimeout> | null = null;
+  const publish = (): void => {
+    if (publishTimer) clearTimeout(publishTimer);
+    publishTimer = null;
+    publishedAt = Date.now();
+    engine.setPeers([...peers.values()]);
   };
-  awareness.on('change', pushPeers);
-  pushPeers();
+  /** Reads one client's state again; false for ourselves (our own moves change no peer). */
+  const read = (client: number): boolean => {
+    if (client === awareness.clientID) return false;
+    const p = peerOf(client, awareness.getStates().get(client));
+    if (p) peers.set(client, p);
+    else peers.delete(client);
+    return true;
+  };
+  const onChange = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }): void => {
+    let touched = false;
+    let gone = false;
+    for (const c of added) touched = read(c) || touched;
+    for (const c of updated) touched = read(c) || touched;
+    for (const c of removed) gone = peers.delete(c) || gone;
+    if (gone) {
+      publish(); // someone left (or our socket dropped): no ghost waits for the gap
+      return;
+    }
+    if (!touched || publishTimer) return;
+    const wait = publishedAt + PEERS_GAP_MS - Date.now();
+    if (wait <= 0) publish();
+    else publishTimer = setTimeout(publish, wait);
+  };
+  awareness.on('change', onChange);
+  awareness.getStates().forEach((_, client) => read(client));
+  publish();
 
   const unsubLocal = engine.onLocalAwareness((a) => {
     if (done || sameLocal(last, a)) return;
@@ -170,7 +203,9 @@ export function bindCanvasSync(opts: {
       unsubLocal();
       unsubView?.();
       unsubStatus();
-      awareness.off('change', pushPeers);
+      awareness.off('change', onChange);
+      if (publishTimer) clearTimeout(publishTimer);
+      publishTimer = null;
       meta.unobserve(onMeta);
       engine.setPeers([]);
     },

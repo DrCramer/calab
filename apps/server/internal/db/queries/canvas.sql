@@ -5,18 +5,33 @@
 
 -- ---- tree ----
 
--- name: ListCanvasChildren :many
--- The live children of a folder (parent_id NULL = the top level) in order, with whether each has
--- live children of its own (the tree expands lazily). Cursor: the last row's (position, id);
--- cursor_id NULL = the first page.
+-- name: ListCanvasRootChildren :many
+-- The live items of the top level in order, with whether each has live children of its own (the
+-- tree expands lazily). Cursor: the last row's (position, id); the zero cursor (0, the nil uuid) is
+-- the first page (positions are ≥ 0, ids above the nil uuid).
+-- Two queries without an OR, not one with «parent_id = $2 OR ($2 IS NULL AND parent_id IS NULL)»
+-- and «cursor IS NULL OR …»: the generic plan of that one read both levels, then filtered and sorted
+-- them whole on every page (second review, minor 13). Each of these starts on canvas_items_tree_idx
+-- at the cursor of its level.
 SELECT sqlc.embed(p),
     EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
 FROM canvas_item_heads p
 WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid
-  AND (p.parent_id = sqlc.narg('parent_id')::uuid OR (sqlc.narg('parent_id')::uuid IS NULL AND p.parent_id IS NULL))
+  AND p.parent_id IS NULL
   AND p.trashed_at IS NULL
-  AND (sqlc.narg('cursor_id')::uuid IS NULL
-       OR (p.position, p.id) > (sqlc.arg('cursor_position')::int, sqlc.narg('cursor_id')::uuid))
+  AND (p.position, p.id) > (sqlc.arg('cursor_position')::int, sqlc.arg('cursor_id')::uuid)
+ORDER BY p.position, p.id
+LIMIT sqlc.arg('lim');
+
+-- name: ListCanvasFolderChildren :many
+-- The live children of a folder, like ListCanvasRootChildren.
+SELECT sqlc.embed(p),
+    EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
+FROM canvas_item_heads p
+WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid
+  AND p.parent_id = sqlc.arg('parent_id')::uuid
+  AND p.trashed_at IS NULL
+  AND (p.position, p.id) > (sqlc.arg('cursor_position')::int, sqlc.arg('cursor_id')::uuid)
 ORDER BY p.position, p.id
 LIMIT sqlc.arg('lim');
 
@@ -210,11 +225,13 @@ DELETE FROM canvas_items WHERE id = $1;
 -- ---- trash retention ----
 
 -- name: ListCanvasSweepWorkspaces :many
--- Workspaces with a trash retention and at least one expired trash root (the hourly sweeper).
+-- Workspaces with a trash retention and at least one expired trash root (the hourly sweeper), in a
+-- fixed order.
 SELECT w.id, w.canvas_trash_days::int AS days FROM workspaces w
 WHERE w.canvas_trash_days IS NOT NULL AND EXISTS (
     SELECT 1 FROM canvas_items p WHERE p.workspace_id = w.id AND p.trashed_root
-      AND p.trashed_at < sqlc.arg('now')::timestamptz - make_interval(days => w.canvas_trash_days));
+      AND p.trashed_at < sqlc.arg('now')::timestamptz - make_interval(days => w.canvas_trash_days))
+ORDER BY w.id;
 
 -- name: ListCanvasTrashRootsBefore :many
 -- The sweeper's batch of one workspace: its trash roots deleted before the cutoff, oldest first.
@@ -299,15 +316,21 @@ DELETE FROM canvas_activity WHERE id = $1;
 -- ---- versions ----
 
 -- name: InsertCanvasVersion :one
-INSERT INTO canvas_versions (canvas_id, state, authors)
-VALUES (sqlc.arg('canvas_id'), sqlc.arg('state'), sqlc.arg('authors')::uuid[])
+INSERT INTO canvas_versions (canvas_id, state, authors, state_hash)
+VALUES (sqlc.arg('canvas_id'), sqlc.arg('state'), sqlc.arg('authors')::uuid[], sha256(sqlc.arg('state')))
 RETURNING id, canvas_id, authors, created_at, octet_length(state)::int AS size;
 
 -- name: LastCanvasVersion :one
 -- The newest version of a canvas without its state: the 10-minute rule and the «content
--- changed» check of ADR-0114 §1 (state_hash against sha256 of the new state).
-SELECT id, created_at, sha256(state) AS state_hash FROM canvas_versions
+-- changed» check of ADR-0114 §1 (state_hash against sha256 of the new state; NULL for a version
+-- stored before 00111, see SetCanvasVersionHash).
+SELECT id, created_at, state_hash FROM canvas_versions
 WHERE canvas_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1;
+
+-- name: SetCanvasVersionHash :one
+-- The state_hash of a version stored before 00111, computed once and kept.
+UPDATE canvas_versions SET state_hash = coalesce(state_hash, sha256(state)) WHERE id = $1
+RETURNING state_hash::bytea;
 
 -- name: ListCanvasVersions :many
 -- A canvas's versions without their state, the newest first; cursor: the last id (versions are

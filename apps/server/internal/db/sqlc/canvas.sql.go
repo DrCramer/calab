@@ -507,7 +507,7 @@ func (q *Queries) GetCanvasTrashDays(ctx context.Context, id uuid.UUID) (*int32,
 }
 
 const getCanvasVersion = `-- name: GetCanvasVersion :one
-SELECT id, canvas_id, state, authors, created_at FROM canvas_versions WHERE id = $1 AND canvas_id = $2
+SELECT id, canvas_id, state, authors, created_at, state_hash FROM canvas_versions WHERE id = $1 AND canvas_id = $2
 `
 
 type GetCanvasVersionParams struct {
@@ -525,6 +525,7 @@ func (q *Queries) GetCanvasVersion(ctx context.Context, arg GetCanvasVersionPara
 		&i.State,
 		&i.Authors,
 		&i.CreatedAt,
+		&i.StateHash,
 	)
 	return i, err
 }
@@ -601,8 +602,8 @@ func (q *Queries) InsertCanvasPermission(ctx context.Context, arg InsertCanvasPe
 
 const insertCanvasVersion = `-- name: InsertCanvasVersion :one
 
-INSERT INTO canvas_versions (canvas_id, state, authors)
-VALUES ($1, $2, $3::uuid[])
+INSERT INTO canvas_versions (canvas_id, state, authors, state_hash)
+VALUES ($1, $2, $3::uuid[], sha256($2))
 RETURNING id, canvas_id, authors, created_at, octet_length(state)::int AS size
 `
 
@@ -658,7 +659,7 @@ func (q *Queries) LastCanvasActivity(ctx context.Context, itemID *uuid.UUID) (Ca
 }
 
 const lastCanvasVersion = `-- name: LastCanvasVersion :one
-SELECT id, created_at, sha256(state) AS state_hash FROM canvas_versions
+SELECT id, created_at, state_hash FROM canvas_versions
 WHERE canvas_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1
 `
 
@@ -669,7 +670,8 @@ type LastCanvasVersionRow struct {
 }
 
 // The newest version of a canvas without its state: the 10-minute rule and the «content
-// changed» check of ADR-0114 §1 (state_hash against sha256 of the new state).
+// changed» check of ADR-0114 §1 (state_hash against sha256 of the new state; NULL for a version
+// stored before 00111, see SetCanvasVersionHash).
 func (q *Queries) LastCanvasVersion(ctx context.Context, canvasID uuid.UUID) (LastCanvasVersionRow, error) {
 	row := q.db.QueryRow(ctx, lastCanvasVersion, canvasID)
 	var i LastCanvasVersionRow
@@ -735,57 +737,47 @@ func (q *Queries) ListCanvasBranch(ctx context.Context, id uuid.UUID) ([]ListCan
 	return items, nil
 }
 
-const listCanvasChildren = `-- name: ListCanvasChildren :many
-
-
+const listCanvasFolderChildren = `-- name: ListCanvasFolderChildren :many
 SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root,
     EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
 FROM canvas_item_heads p
 WHERE p.workspace_id = $1::uuid
-  AND (p.parent_id = $2::uuid OR ($2::uuid IS NULL AND p.parent_id IS NULL))
+  AND p.parent_id = $2::uuid
   AND p.trashed_at IS NULL
-  AND ($3::uuid IS NULL
-       OR (p.position, p.id) > ($4::int, $3::uuid))
+  AND (p.position, p.id) > ($3::int, $4::uuid)
 ORDER BY p.position, p.id
 LIMIT $5
 `
 
-type ListCanvasChildrenParams struct {
+type ListCanvasFolderChildrenParams struct {
 	WorkspaceID    uuid.UUID
-	ParentID       *uuid.UUID
-	CursorID       *uuid.UUID
+	ParentID       uuid.UUID
 	CursorPosition int32
+	CursorID       uuid.UUID
 	Lim            int32
 }
 
-type ListCanvasChildrenRow struct {
+type ListCanvasFolderChildrenRow struct {
 	CanvasItemHead CanvasItemHead
 	HasChildren    bool
 }
 
-// Canvas (ADR-0114). Access is computed in Go (perm.ComputeCanvasItem over CanvasItemPath /
-// CanvasItemPaths and the overrides of the levels); these queries return what is stored, visible
-// or not. The content (Yjs updates and snapshots) is opaque bytes. Mirror of queries/wiki.sql
-// without icons, covers, files, public links and search (the search section comes with H2).
-// ---- tree ----
-// The live children of a folder (parent_id NULL = the top level) in order, with whether each has
-// live children of its own (the tree expands lazily). Cursor: the last row's (position, id);
-// cursor_id NULL = the first page.
-func (q *Queries) ListCanvasChildren(ctx context.Context, arg ListCanvasChildrenParams) ([]ListCanvasChildrenRow, error) {
-	rows, err := q.db.Query(ctx, listCanvasChildren,
+// The live children of a folder, like ListCanvasRootChildren.
+func (q *Queries) ListCanvasFolderChildren(ctx context.Context, arg ListCanvasFolderChildrenParams) ([]ListCanvasFolderChildrenRow, error) {
+	rows, err := q.db.Query(ctx, listCanvasFolderChildren,
 		arg.WorkspaceID,
 		arg.ParentID,
-		arg.CursorID,
 		arg.CursorPosition,
+		arg.CursorID,
 		arg.Lim,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListCanvasChildrenRow{}
+	items := []ListCanvasFolderChildrenRow{}
 	for rows.Next() {
-		var i ListCanvasChildrenRow
+		var i ListCanvasFolderChildrenRow
 		if err := rows.Scan(
 			&i.CanvasItemHead.ID,
 			&i.CanvasItemHead.WorkspaceID,
@@ -993,6 +985,88 @@ func (q *Queries) ListCanvasPermissionsForItems(ctx context.Context, ids []uuid.
 	return items, nil
 }
 
+const listCanvasRootChildren = `-- name: ListCanvasRootChildren :many
+
+
+SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root,
+    EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
+FROM canvas_item_heads p
+WHERE p.workspace_id = $1::uuid
+  AND p.parent_id IS NULL
+  AND p.trashed_at IS NULL
+  AND (p.position, p.id) > ($2::int, $3::uuid)
+ORDER BY p.position, p.id
+LIMIT $4
+`
+
+type ListCanvasRootChildrenParams struct {
+	WorkspaceID    uuid.UUID
+	CursorPosition int32
+	CursorID       uuid.UUID
+	Lim            int32
+}
+
+type ListCanvasRootChildrenRow struct {
+	CanvasItemHead CanvasItemHead
+	HasChildren    bool
+}
+
+// Canvas (ADR-0114). Access is computed in Go (perm.ComputeCanvasItem over CanvasItemPath /
+// CanvasItemPaths and the overrides of the levels); these queries return what is stored, visible
+// or not. The content (Yjs updates and snapshots) is opaque bytes. Mirror of queries/wiki.sql
+// without icons, covers, files, public links and search (the search section comes with H2).
+// ---- tree ----
+// The live items of the top level in order, with whether each has live children of its own (the
+// tree expands lazily). Cursor: the last row's (position, id); the zero cursor (0, the nil uuid) is
+// the first page (positions are ≥ 0, ids above the nil uuid).
+// Two queries without an OR, not one with «parent_id = $2 OR ($2 IS NULL AND parent_id IS NULL)»
+// and «cursor IS NULL OR …»: the generic plan of that one read both levels, then filtered and sorted
+// them whole on every page (second review, minor 13). Each of these starts on canvas_items_tree_idx
+// at the cursor of its level.
+func (q *Queries) ListCanvasRootChildren(ctx context.Context, arg ListCanvasRootChildrenParams) ([]ListCanvasRootChildrenRow, error) {
+	rows, err := q.db.Query(ctx, listCanvasRootChildren,
+		arg.WorkspaceID,
+		arg.CursorPosition,
+		arg.CursorID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCanvasRootChildrenRow{}
+	for rows.Next() {
+		var i ListCanvasRootChildrenRow
+		if err := rows.Scan(
+			&i.CanvasItemHead.ID,
+			&i.CanvasItemHead.WorkspaceID,
+			&i.CanvasItemHead.ParentID,
+			&i.CanvasItemHead.Kind,
+			&i.CanvasItemHead.Name,
+			&i.CanvasItemHead.Position,
+			&i.CanvasItemHead.OwnerID,
+			&i.CanvasItemHead.Restricted,
+			&i.CanvasItemHead.Preview,
+			&i.CanvasItemHead.DocSize,
+			&i.CanvasItemHead.NextSeq,
+			&i.CanvasItemHead.UpdatedBy,
+			&i.CanvasItemHead.CreatedAt,
+			&i.CanvasItemHead.UpdatedAt,
+			&i.CanvasItemHead.TrashedAt,
+			&i.CanvasItemHead.TrashedBy,
+			&i.CanvasItemHead.TrashedRoot,
+			&i.HasChildren,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCanvasSubtree = `-- name: ListCanvasSubtree :many
 WITH RECURSIVE down (id, depth) AS (
     SELECT c.id, 1 FROM canvas_items c WHERE c.parent_id = $1::uuid
@@ -1057,6 +1131,7 @@ SELECT w.id, w.canvas_trash_days::int AS days FROM workspaces w
 WHERE w.canvas_trash_days IS NOT NULL AND EXISTS (
     SELECT 1 FROM canvas_items p WHERE p.workspace_id = w.id AND p.trashed_root
       AND p.trashed_at < $1::timestamptz - make_interval(days => w.canvas_trash_days))
+ORDER BY w.id
 `
 
 type ListCanvasSweepWorkspacesRow struct {
@@ -1065,7 +1140,8 @@ type ListCanvasSweepWorkspacesRow struct {
 }
 
 // ---- trash retention ----
-// Workspaces with a trash retention and at least one expired trash root (the hourly sweeper).
+// Workspaces with a trash retention and at least one expired trash root (the hourly sweeper), in a
+// fixed order.
 func (q *Queries) ListCanvasSweepWorkspaces(ctx context.Context, now time.Time) ([]ListCanvasSweepWorkspacesRow, error) {
 	rows, err := q.db.Query(ctx, listCanvasSweepWorkspaces, now)
 	if err != nil {
@@ -1785,6 +1861,19 @@ type SetCanvasTrashDaysParams struct {
 func (q *Queries) SetCanvasTrashDays(ctx context.Context, arg SetCanvasTrashDaysParams) error {
 	_, err := q.db.Exec(ctx, setCanvasTrashDays, arg.Days, arg.ID)
 	return err
+}
+
+const setCanvasVersionHash = `-- name: SetCanvasVersionHash :one
+UPDATE canvas_versions SET state_hash = coalesce(state_hash, sha256(state)) WHERE id = $1
+RETURNING state_hash::bytea
+`
+
+// The state_hash of a version stored before 00111, computed once and kept.
+func (q *Queries) SetCanvasVersionHash(ctx context.Context, id uuid.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, setCanvasVersionHash, id)
+	var state_hash []byte
+	err := row.Scan(&state_hash)
+	return state_hash, err
 }
 
 const trashCanvasSubtree = `-- name: TrashCanvasSubtree :many
