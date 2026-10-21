@@ -403,6 +403,15 @@ func newBucket(burst, perSecond float64) bucket {
 
 func (b *bucket) take() bool { return b.takeN(1) }
 
+// wait is how long until a token is there (0: now).
+func (b *bucket) wait() time.Duration {
+	t := min(b.burst, b.tokens+time.Since(b.last).Seconds()*b.rate)
+	if t >= 1 {
+		return 0
+	}
+	return time.Duration((1 - t) / b.rate * float64(time.Second))
+}
+
 // takeN spends n tokens, or none when fewer are left.
 func (b *bucket) takeN(n float64) bool {
 	now := time.Now()

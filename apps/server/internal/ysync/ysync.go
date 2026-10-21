@@ -133,7 +133,7 @@ type Config struct {
 	UpdateBurst          int
 	UpdateBytesPerSecond int64
 	UpdateBytesBurst     int64
-	AwarenessPerSecond   int           // inbound AWARENESS per socket (10, over: dropped)
+	AwarenessPerSecond   int           // inbound AWARENESS relayed per socket (10; over: the newest waits for a token, older ones are dropped)
 	SnapshotEvery        time.Duration // inbound SNAPSHOT_POST per socket: 2 at once, then one per (2 s; over: close 4008)
 	MaxConnsPerUser      int           // sockets of one person on one document (10)
 	CompactUpdates       int           // COMPACT_REQUEST when more updates follow the snapshot (500)

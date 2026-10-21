@@ -55,7 +55,13 @@ type conn struct {
 	lastSent int64
 
 	// Inbound budgets (reader goroutine only).
-	updates, updateBytes, awareness, snapshots bucket
+	updates, updateBytes, snapshots bucket
+	// The awareness budget and the newest frame over it, waiting for a token (awTimer sends it);
+	// awMu guards the three (the reader and the timer).
+	awMu      sync.Mutex
+	awareness bucket
+	awPending []byte
+	awTimer   *time.Timer
 	// refused: an UPDATE of this socket was refused at the ceiling and no stored snapshot of this
 	// socket carried it yet (the package doc: it is delivered by such a snapshot or by a reconnect).
 	// Set by the reader, read by the relay (ctlCompacted).
@@ -479,6 +485,7 @@ func (c *conn) readLoop() {
 		}
 		return
 	}
+	defer c.endAwareness()
 	for {
 		typ, b, err := c.ws.Read(c.ctx)
 		if err != nil {
@@ -626,13 +633,62 @@ func (c *conn) maybeCompact() {
 }
 
 // onAwareness relays a cursor / presence update to the other sockets of the document (never
-// stored). Read-only sockets and frames over the budget are dropped.
+// stored); a read-only socket's is dropped. Over the budget the newest frame waits for the next
+// token and replaces any older one waiting (a client sends its whole state each time), so the
+// last state — the final view, the new selection — always arrives, and a flood still relays no
+// more than the budget. b is the reader's own (ws.Read allocates every message).
 func (c *conn) onAwareness(b []byte) bool {
-	if !c.write.Load() || len(b) > 1+MaxUpdate || !c.awareness.take() {
+	if !c.write.Load() || len(b) > 1+MaxUpdate {
 		return true
 	}
-	c.h.broadcast(c.ctx, c.doc, c, bytes.Clone(b))
+	c.awMu.Lock()
+	defer c.awMu.Unlock()
+	switch {
+	case c.awPending != nil:
+		c.awPending = b
+	case c.awareness.take():
+		c.h.broadcast(c.ctx, c.doc, c, b)
+	default:
+		c.awPending = b
+		c.awTimer = time.AfterFunc(c.awareness.wait(), c.flushAwareness)
+	}
 	return true
+}
+
+// flushAwareness sends the waiting awareness frame when its token is there (awTimer).
+func (c *conn) flushAwareness() {
+	c.awMu.Lock()
+	defer c.awMu.Unlock()
+	if c.awPending == nil || c.ctx.Err() != nil {
+		return // nothing, or the socket is ending: endAwareness sends it
+	}
+	if !c.write.Load() { // read-only since
+		c.awPending = nil
+		return
+	}
+	if !c.awareness.take() { // early by a rounding: wait again
+		c.awTimer = time.AfterFunc(c.awareness.wait(), c.flushAwareness)
+		return
+	}
+	f := c.awPending
+	c.awPending = nil
+	c.h.broadcast(c.ctx, c.doc, c, f)
+}
+
+// endAwareness sends the waiting awareness frame of a socket that is ending, over the budget: it
+// is often the farewell (the client's own state removed before it closes), and peers would show a
+// ghost cursor until their timeout without it.
+func (c *conn) endAwareness() {
+	c.awMu.Lock()
+	defer c.awMu.Unlock()
+	if c.awTimer != nil {
+		c.awTimer.Stop()
+	}
+	f := c.awPending
+	c.awPending = nil
+	if f != nil && c.write.Load() {
+		c.h.broadcast(c.ctx, c.doc, c, f)
+	}
 }
 
 // onSnapshot handles a SNAPSHOT_POST (ADR-0096 §4): the Backend stores it in one transaction.

@@ -248,6 +248,56 @@ func TestCanvasSyncLargePaste(t *testing.T) {
 	big.closed(ysync.CloseRate)
 }
 
+// M2 of the second review: awareness over the budget (the Canvas's 20 a second) is not dropped
+// but coalesced, the newest frame waits for a token: after a burst the last state arrives, a
+// flood relays no more than the budget, and a socket's farewell arrives even over it.
+func TestCanvasSyncAwarenessLastWins(t *testing.T) {
+	e := newEnv(t, ysync.Config{})
+	p := e.create(e.alice, "", "Cursors")
+	a, b := e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
+	a.next(frameSnapshot)
+	b.next(frameSnapshot)
+	// burst sends n frames {2, i, i>>8} at once; b reads until the last and counts what came.
+	burst := func(from *client, n int) int {
+		for i := 0; i < n; i++ {
+			from.send([]byte{frameAwareness, byte(i), byte(i >> 8)})
+		}
+		got, prev := 0, -1
+		for {
+			f := b.next(frameAwareness)
+			i := int(f[1]) | int(f[2])<<8
+			if i <= prev {
+				t.Fatalf("awareness %d after %d", i, prev)
+			}
+			got, prev = got+1, i
+			if i == n-1 {
+				return got
+			}
+		}
+	}
+	if got := burst(a, 60); got < CanvasAwarenessBurst || got > CanvasAwarenessBurst+5 {
+		t.Fatalf("relayed %d of a burst of 60, want the budget (%d) and the last", got, CanvasAwarenessBurst)
+	}
+	time.Sleep(time.Second) // the bucket refills
+	if got := burst(a, 600); got > CanvasAwarenessBurst+5 {
+		t.Fatalf("a flood relayed %d", got)
+	}
+	// The farewell over the budget: the socket closes right after it.
+	for i := 0; i < 40; i++ {
+		a.send([]byte{frameAwareness, byte(i), 0})
+	}
+	a.send([]byte{frameAwareness, 0xFF, 0xFF})
+	_ = a.ws.Close(websocket.StatusNormalClosure, "")
+	for {
+		if f := b.next(frameAwareness); f[1] == 0xFF && f[2] == 0xFF {
+			break
+		}
+	}
+}
+
+// CanvasAwarenessBurst is the Canvas's awareness budget at once (a bucket of one second).
+const CanvasAwarenessBurst = AwarenessPerSecond
+
 // COMPACT_REQUEST past the threshold; SNAPSHOT_POST compacts and updates the text, preview and
 // size; versions at most every VersionEvery and only for a changed state, at most 50; a stale
 // snapshot is ignored; a snapshot over 4 MiB is dropped, one over 2 MiB (the Wiki's limit) is

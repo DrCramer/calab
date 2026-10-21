@@ -596,6 +596,30 @@ describe("CanvasSync", () => {
       c.sync.destroy();
     });
 
+    it("sends the last state of a burst once the gap is over (trailing edge)", async () => {
+      const relay = new MockRelay();
+      const a = client(relay);
+      const b = client(relay);
+      await settle();
+      vi.advanceTimersByTime(CANVAS_AWARENESS_MIN_GAP_MS);
+      const base = frames(a, FRAME_AWARENESS).length;
+      // The first move goes at once, the next ones inside the gap as one frame of the latest state at its end.
+      for (let x = 1; x <= 5; x++) {
+        a.awareness.setLocalStateField("canvas", { cursor: { x, y: 0 }, selection: x === 5 ? ["s5"] : [] });
+        vi.advanceTimersByTime(5);
+      }
+      expect(frames(a, FRAME_AWARENESS).length).toBe(base + 1);
+      vi.advanceTimersByTime(CANVAS_AWARENESS_MIN_GAP_MS);
+      expect(frames(a, FRAME_AWARENESS).length).toBe(base + 2);
+      const seen = [...b.awareness.getStates().values()].find((s) => (s as { canvas?: unknown }).canvas);
+      expect(seen).toEqual({ canvas: { cursor: { x: 5, y: 0 }, selection: ["s5"] } });
+      // Nothing more without a change.
+      vi.advanceTimersByTime(10 * CANVAS_AWARENESS_MIN_GAP_MS);
+      expect(frames(a, FRAME_AWARENESS).length).toBe(base + 2);
+      a.sync.destroy();
+      b.sync.destroy();
+    });
+
     it("shows peers' cursors and forgets them when the socket drops", async () => {
       const relay = new MockRelay();
       const a = client(relay);

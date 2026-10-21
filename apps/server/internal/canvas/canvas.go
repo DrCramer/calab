@@ -91,10 +91,19 @@ func New(d *db.DB, ev events.Publisher) *Service {
 
 // EnableSync turns the sync socket on: rc relays the frames between instances (channel
 // canvas:<id>), a authenticates the socket's first frame like the gateway's IDENTIFY, origin
-// decides the WebSocket upgrade (gateway.OriginAllowed with the web client's origins).
+// decides the WebSocket upgrade (gateway.OriginAllowed with the web client's origins). A zero
+// cfg.AwarenessPerSecond is AwarenessPerSecond.
 func (s *Service) EnableSync(rc rueidis.Client, a ysync.Authenticator, origin func(origin string, hasCookie bool) bool, cfg ysync.Config) {
+	if cfg.AwarenessPerSecond == 0 {
+		cfg.AwarenessPerSecond = AwarenessPerSecond
+	}
 	s.sync = ysync.NewHub(canvasBackend{s: s, auth: a}, ysync.Options{DB: s.db, Redis: rc, Auth: a, Origin: origin, Config: cfg})
 }
+
+// AwarenessPerSecond is the Canvas's awareness budget per socket: the client sends its cursor and
+// selection at most every 50 ms (lib/canvasSync.ts CANVAS_AWARENESS_MIN_GAP_MS); the Wiki keeps
+// ysync's 10.
+const AwarenessPerSecond = 20
 
 // Routes registers the routes; wrap applies auth + the permission resolver. The sync socket
 // (in-band auth) is registered without it.
