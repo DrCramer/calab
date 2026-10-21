@@ -1,6 +1,6 @@
 module github.com/calaba/calaba/server
 
-go 1.26.9
+go 1.26.10
 
 tool google.golang.org/protobuf/cmd/protoc-gen-go
 
