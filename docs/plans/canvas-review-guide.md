@@ -117,3 +117,9 @@
 ### 9. Клиент
 - `lib/ySync.ts` `anonymous`: `send()` возвращается сразу (вторая страховка поверх `readOnly`), `setReadOnly(false)` игнорируется, нет токена в `onopen`, входящая awareness отбрасывается, 4013 — без переподключения. Тест `canvasSync.public.test.ts`: после правок, awareness, `compact`, `COMPACT_REQUEST`, `destroy` — `sent` пуст; в покое 0 таймеров.
 - `CanvasView publicCode`: без `CommentsLayer`, `Presence`, `VoteChip`, мини-карты, контекстного меню, `setCanvasDocHandle`; `bits` игнорируются (тест монтирует с `WRITE`, клавиши правки не шлют ничего). Страница `/c/{code}` не отдаёт и не хранит реальный id холста (`canvasId = 'public'`).
+
+## Склейка awareness (`Profile.BatchAwareness`, только Холст)
+
+- `ysync/awareness.go` `parseAwarenessUpdate` — единственный разбор байтов клиента в ретрансляторе: число записей не больше, чем вмещает кадр (≥ 3 байта на запись), иначе ошибка; иначе `make` на число клиента роняло процесс из таймера `flushAwareness` (там нет `recover`). Тесты `TestParseAwarenessUpdate`, `FuzzParseAwarenessUpdate`, `TestBatchAwarenessMalformedCountHeldBack`.
+- `conn.go` `onAwareness`: до бюджета разбирается только кадр размера прощального (`maxFarewell`), и только у профиля Холста; у Вики прощальный кадр под бюджетом, как в main (`TestProfileAwarenessFarewellWiki`).
+- Код, который выполняется вне горутины обработчика (`time.AfterFunc`: `flushAwareness`, `flushRoomAwareness`; `listen`), не должен паниковать на данных клиента: `net/http` ловит панику только в горутине обработчика.
