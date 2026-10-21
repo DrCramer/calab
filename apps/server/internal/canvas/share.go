@@ -104,9 +104,13 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		if _, err := q.GetCanvasItemForUpdate(ctx, id); err != nil {
+		// The switch is read under the lock: a.item was read before it, and a concurrent PUT may
+		// have turned the privacy on since (writing the stale value back would drop it).
+		locked, err := q.GetCanvasItemForUpdate(ctx, id)
+		if err != nil {
 			return err
 		}
+		wasRestricted := locked.Restricted
 		var roles map[string]sqlc.WorkspaceRole
 		for _, e := range entries {
 			switch e.tt {
@@ -148,7 +152,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		restricted := a.item.Restricted
+		restricted := wasRestricted
 		if req.Restricted != nil {
 			restricted = req.GetRestricted()
 		}
@@ -156,7 +160,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if restricted && !a.item.Restricted {
+		if restricted && !wasRestricted {
 			if err := dropLinks(ctx, q, id); err != nil { // made private: its public links go (ADR-0115 wave 5)
 				return err
 			}
@@ -165,7 +169,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		b, err := sharing(ctx, q, ws, a.item.Restricted, oldOvs)
+		b, err := sharing(ctx, q, ws, wasRestricted, oldOvs)
 		if err != nil {
 			return err
 		}
