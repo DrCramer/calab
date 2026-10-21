@@ -223,7 +223,6 @@ export class TextEditor {
     if (Math.abs(dy) >= 1) phone.keepVisible(dy);
   };
 
-  /** Follows the camera (call after any pan/zoom while open). */
   /**
    * A wheel or trackpad over the open text: scrolls the text when it is taller than the card (the textarea hides its
    * scrollbar but scrolls), otherwise — and for a pinch — pans / zooms the canvas.
@@ -253,6 +252,11 @@ export class TextEditor {
     this.o.canvas.dispatchEvent(copy);
   };
 
+  /**
+   * Follows the camera (call after any pan/zoom while open). The textarea is laid out at the object's world size and
+   * scaled by a transform, so it wraps lines exactly like the canvas at any zoom (a font scaled to a few px wraps
+   * differently: hinting and the minimum font size).
+   */
   reposition(): void {
     const { ta, spec } = this;
     if (!ta || !spec) return;
@@ -262,11 +266,15 @@ export class TextEditor {
     const st = ta.style;
     st.left = `${left + spec.box.x * cam.scale + cam.tx}px`;
     st.top = `${top + spec.box.y * cam.scale + cam.ty}px`;
-    st.width = `${spec.box.w * cam.scale}px`;
-    st.fontSize = `${spec.size * cam.scale}px`;
+    st.width = `${spec.box.w}px`;
+    st.fontSize = `${spec.size}px`;
+    st.transformOrigin = '0 0';
     if (spec.rot && spec.center) {
-      st.transformOrigin = `${(spec.center.x - spec.box.x) * cam.scale}px ${(spec.center.y - spec.box.y) * cam.scale}px`;
-      st.transform = `rotate(${spec.rot}deg)`;
+      const cx = spec.center.x - spec.box.x;
+      const cy = spec.center.y - spec.box.y;
+      st.transform = `scale(${cam.scale}) translate(${cx}px, ${cy}px) rotate(${spec.rot}deg) translate(${-cx}px, ${-cy}px)`;
+    } else {
+      st.transform = `scale(${cam.scale})`;
     }
     this.fit();
     this.refresh();
@@ -292,13 +300,12 @@ export class TextEditor {
   private fit(): void {
     const { ta, spec } = this;
     if (!ta || !spec) return;
-    const cam = this.o.getCamera();
-    const boxH = spec.box.h * cam.scale;
+    const boxH = spec.box.h;
     ta.style.paddingTop = '0px';
     ta.style.height = 'auto';
     const content = ta.scrollHeight;
     if (spec.autoHeight) {
-      ta.style.height = `${Math.max(content, spec.size * cam.scale * LINE_HEIGHT)}px`;
+      ta.style.height = `${Math.max(content, spec.size * LINE_HEIGHT)}px`;
       return;
     }
     ta.style.height = `${boxH}px`;
