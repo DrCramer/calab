@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { fmt } from '../../lib/format';
+import { log } from '../../lib/log';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
 import { Bar } from '../../components/Bar';
@@ -43,6 +44,7 @@ import {
   loadTask,
   moveTaskToBoard,
   restoreTask,
+  searchAllTasks,
   setAssignees,
   setRelation,
   setSubscription,
@@ -77,7 +79,7 @@ import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
-import { taskChoices } from './taskChoices';
+import { linkChoices, taskChoices } from './taskChoices';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
@@ -705,6 +707,52 @@ function useTaskChoices(boardId: string, exclude: string, open: boolean): Choice
   return useMemo(() => taskChoices(tasks, boardId, exclude), [tasks, boardId, exclude]);
 }
 
+/** Typing pause before a relation search request: one query per word, not per key. */
+const LINK_DEBOUNCE_MS = 250;
+
+/**
+ * The relation picker's choices (CBF-47): the board's tasks at once, and for the typed text the
+ * workspace search (GET …/tasks/search — the server keeps only the boards the caller sees) over
+ * every board, its hits first; each row names its board. `loading` — the board or the search.
+ */
+function useLinkChoices(task: Task, open: boolean): { choices: Choice[]; loading: boolean; onInput: (text: string) => void } {
+  const tasks = useBoards((s) => (open ? s.tasks : null));
+  const boardLoading = useBoards((s) => open && s.load[task.boardId] === 'loading');
+  const names = useBoards(useShallow((s) => (open ? workspaceBoards(s.boards, task.workspaceId).map((b) => `${b.id}\u0000${b.emoji || '📋'} ${b.name}`) : NO_NAMES)));
+  const [q, setQ] = useState('');
+  const [found, setFound] = useState<{ q: string; ids: string[] } | null>(null);
+  const query = open ? q.trim() : '';
+  useEffect(() => {
+    if (open) void ensureBoardTasks(task.boardId);
+  }, [open, task.boardId]);
+  useEffect(() => {
+    if (!query) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      searchAllTasks(task.workspaceId, query, 'all', ctl.signal).then(
+        (ids) => setFound({ q: query, ids }),
+        (e: unknown) => {
+          if (ctl.signal.aborted) return;
+          log.warn('relation search failed', e);
+          setFound({ q: query, ids: [] });
+        },
+      );
+    }, LINK_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [task.workspaceId, query]);
+  const ids = query && found ? found.ids : NO_NAMES;
+  const choices = useMemo(() => {
+    const nameOf = new Map(names.map((x) => x.split('\u0000') as [string, string]));
+    return linkChoices(tasks, task.boardId, task.id, ids, (b) => nameOf.get(b) ?? '');
+  }, [tasks, task.boardId, task.id, ids, names]);
+  return { choices, loading: boardLoading || (!!query && found?.q !== query), onInput: setQ };
+}
+
+const NO_NAMES: string[] = [];
+
 function ParentMenu({ task, children }: { task: Task; children: ReactNode }): ReactNode {
   const [open, setOpen] = useState(false);
   const choices = useTaskChoices(task.boardId, task.id, open);
@@ -920,8 +968,7 @@ const REL_GROUPS: ReadonlyArray<{ key: 'blocks' | 'blocked' | 'relates' | 'dupli
 
 export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: boolean }): ReactNode {
   const [kind, setKind] = useState<TaskRelationKind | null>(null);
-  const choices = useTaskChoices(task.boardId, task.id, kind !== null);
-  const loading = useBoards((s) => kind !== null && s.load[task.boardId] === 'loading');
+  const { choices, loading, onInput } = useLinkChoices(task, kind !== null);
   const groups = useMemo(() => {
     const g: Record<string, Array<{ other: string; kind: TaskRelationKind }>> = { blocks: [], blocked: [], relates: [], duplicates: [] };
     for (const r of task.relations) {
@@ -978,7 +1025,15 @@ export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdi
         </Dropdown.Root>
       ) : null}
       {kind !== null ? (
-        <ChoiceMenu open onOpenChange={(v) => !v && setKind(null)} groups={[{ id: 't', label: '', items: choices }]} width={320} onPick={(c) => void setRelation(task.id, c.id, kind, true)} placeholder={t('boards.menu.task')} label={t('boards.addRelation')} loading={loading} emptyText={t('boards.noTasksToLink')}>
+        <ChoiceMenu
+          open
+          onOpenChange={(v) => {
+            if (v) return;
+            setKind(null);
+            onInput('');
+          }}
+          groups={[{ id: 't', label: '', items: choices }]}
+          width={380} onPick={(c) => void setRelation(task.id, c.id, kind, true)} onInput={onInput} placeholder={t('boards.menu.task')} label={t('boards.addRelation')} loading={loading} emptyText={t('boards.noTasksToLink')}>
           <span className="block h-0" />
         </ChoiceMenu>
       ) : null}
