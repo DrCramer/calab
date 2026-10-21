@@ -4,6 +4,7 @@ import { MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { CanvasEngine } from '../engine';
 import { MENU_BOX, MENU_ITEM } from './chrome';
+import { panelModelOf } from './selectionModel';
 
 export type MenuMode = 'object' | 'empty';
 
@@ -42,6 +43,8 @@ export function CanvasMenu({
   const selected = engine.getSelected();
   const allLocked = selected.length > 0 && selected.every((o) => o.locked);
   const grouped = selected.some((o) => o.group !== undefined);
+  // As the panel and ⌘G: several units (a grouped object among them) join into one group.
+  const canGroup = panelModelOf(selected, (gid) => engine.scene.groupMembers(gid).size)?.canGroup === true;
   return (
     <ContextMenu.Portal>
       <ContextMenu.Content className={MENU_BOX} onCloseAutoFocus={(e) => { e.preventDefault(); focusCanvas(); }} data-testid="canvas-menu">
@@ -55,7 +58,7 @@ export function CanvasMenu({
                 <Item label={t('canvasBoard.menu.paste')} kbd={`${MOD}V`} onSelect={() => void engine.paste()} testId="canvas-menu-paste" />
                 <Item label={t('canvasBoard.menu.duplicate')} kbd={`${MOD}D`} onSelect={() => { engine.duplicateSelection(); }} testId="canvas-menu-duplicate" />
                 <ContextMenu.Separator className={SEP} />
-                {s.selectionCount > 1 && !grouped ? <Item label={t('canvasBoard.menu.group')} kbd={`${MOD}G`} onSelect={() => { engine.groupSelection(); }} testId="canvas-menu-group" /> : null}
+                {canGroup ? <Item label={t('canvasBoard.menu.group')} kbd={`${MOD}G`} onSelect={() => { engine.groupSelection(); }} testId="canvas-menu-group" /> : null}
                 {grouped ? <Item label={t('canvasBoard.menu.ungroup')} kbd={`⇧${MOD}G`} onSelect={() => engine.ungroupSelection()} testId="canvas-menu-ungroup" /> : null}
                 <Item label={t(allLocked ? 'canvasBoard.menu.unlock' : 'canvasBoard.menu.lock')} kbd={`⇧${MOD}L`} onSelect={() => engine.toggleLock()} testId="canvas-menu-lock" />
                 <ContextMenu.Separator className={SEP} />
