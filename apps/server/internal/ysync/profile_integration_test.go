@@ -154,7 +154,7 @@ func (*memBackend) Authorize(context.Context, auth.Identity, uuid.UUID) (bool, i
 	return true, 0, ""
 }
 
-func (*memBackend) DecodeMeta(raw []byte) (any, bool, error) { return nil, false, nil }
+func (*memBackend) DecodeMeta([]byte) (any, bool, error) { return nil, false, nil }
 
 func (b *memBackend) PostSnapshot(ctx context.Context, p Post) (Result, error) {
 	ok, through, _, err := StoreSnapshot(ctx, b, nil, p, b.nextSeq(p.Doc))
@@ -290,8 +290,8 @@ func postFrame(through int64, state []byte) []byte {
 	meta := []byte("{}")
 	out := make([]byte, headerPost+len(meta)+len(state))
 	out[0] = FrameSnapshotPost
-	binary.BigEndian.PutUint64(out[1:9], uint64(through)) //nolint:gosec // test values
-	binary.BigEndian.PutUint32(out[9:13], uint32(len(meta)))
+	binary.BigEndian.PutUint64(out[1:9], uint64(through))    //nolint:gosec // test values
+	binary.BigEndian.PutUint32(out[9:13], uint32(len(meta))) //nolint:gosec // 2 bytes
 	copy(out[headerPost:], meta)
 	copy(out[headerPost+len(meta):], state)
 	return out
