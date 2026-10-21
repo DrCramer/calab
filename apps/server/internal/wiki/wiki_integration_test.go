@@ -773,8 +773,7 @@ func TestWikiSyncExchange(t *testing.T) {
 	b.closed(closeNotFound)
 }
 
-// A read-only member receives but may not send; over 128 updates at once (then 20 a second)
-// closes 4008.
+// A read-only member receives but may not send; over 20 updates a second closes 4008.
 func TestWikiSyncLimits(t *testing.T) {
 	e := newEnv(t, SyncConfig{})
 	p := e.create(e.alice, "", "Limits")
@@ -792,7 +791,7 @@ func TestWikiSyncLimits(t *testing.T) {
 	// Flood.
 	w := e.dial(e.alice, p.GetId())
 	w.next(frameSnapshot)
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 40; i++ {
 		if err := w.ws.Write(context.Background(), websocket.MessageBinary, updateFrame(0, []byte{byte(i)})); err != nil {
 			break
 		}
@@ -1009,93 +1008,4 @@ func TestWikiSyncGapCatchUp(t *testing.T) {
 			t.Fatalf("seq %d, want %d", frameSeq(f), want)
 		}
 	}
-}
-
-// The hard ceiling of the updates after the snapshot (ysync Config.CeilingUpdates / CeilingBytes,
-// shared with the Canvas): at it an UPDATE is dropped (not stored, not relayed), every socket with
-// WRITE — not a view-only one — gets COMPACT_REQUEST once per cooldown, a snapshot lifts it, and a
-// socket that keeps sending past CeilingGrace is closed 4012.
-func TestWikiSyncCeiling(t *testing.T) {
-	e := newEnv(t, SyncConfig{CeilingUpdates: 3, CeilingGrace: 400 * time.Millisecond, CompactCheckEvery: -1, SnapshotEvery: time.Microsecond})
-	ctx := context.Background()
-	p := e.create(e.alice, "", "Ceiling")
-	e.must(200, e.alice, "PUT", page(p.GetId())+"/permissions", &v1.UpdateWikiPermissionsRequest{Entries: []*v1.WikiPermissionEntry{
-		{TargetType: user, TargetId: e.bob.String(), Deny: uint64(perm.WikiWrite)}}}, nil)
-	a, a2, ro := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId()), e.dial(e.bob, p.GetId())
-	a.next(frameSnapshot)
-	a2.next(frameSnapshot)
-	ro.next(frameSnapshot)
-	count := func() int {
-		var n int
-		if err := e.d.Pool.QueryRow(ctx, `SELECT count(*) FROM wiki_page_updates WHERE page_id = $1`, p.GetId()).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	for i := 1; i <= 3; i++ {
-		a.send(updateFrame(0, []byte{'u', byte(i)}))
-		a.next(frameUpdate)
-		a2.next(frameUpdate)
-		ro.next(frameUpdate)
-	}
-	// The 4th is over the ceiling: dropped, and both writers (not the view-only socket) are asked
-	// to compact.
-	a.send(updateFrame(0, []byte("u4")))
-	a.next(frameCompact)
-	a2.next(frameCompact)
-	ro.quiet(a2) // nothing of the 4th update, no COMPACT_REQUEST
-	if n := count(); n != 3 {
-		t.Fatalf("updates stored at the ceiling: %d", n)
-	}
-	// Within the cooldown no second request, and the update is still refused.
-	a.send(updateFrame(0, []byte("u5")))
-	a2.quiet(a)
-	ro.next(frameAwareness) // the probe reaches the view-only socket too
-	if n := count(); n != 3 {
-		t.Fatalf("updates stored at the ceiling: %d", n)
-	}
-	// Past the grace the socket that keeps sending is closed.
-	time.Sleep(500 * time.Millisecond)
-	a.send(updateFrame(0, []byte("u6")))
-	a.closed(closeCeiling)
-	// A snapshot through 3 of a socket without refused updates lifts the ceiling silently (it holds
-	// nothing the others lack; the refused updates come back with their socket's reconnect); then
-	// the next update is stored under seq 4 and relayed.
-	a2.send(post(3, snapshotMeta{PlainText: "compacted"}, []byte("state")))
-	ro.quiet(a2)
-	a2.send(updateFrame(0, []byte("u7")))
-	if f := a2.next(frameUpdate); frameSeq(f) != 4 || string(f[9:]) != "u7" {
-		t.Fatalf("update after the snapshot %x", f)
-	}
-	ro.next(frameUpdate)
-	if n := count(); n != 1 {
-		t.Fatalf("updates after the snapshot: %d", n)
-	}
-}
-
-// The byte ceiling: an update that would take the stored bytes past it is refused; one that fits
-// is stored (from a socket without a refused update: the refused one's next update reconnects it).
-func TestWikiSyncCeilingBytes(t *testing.T) {
-	e := newEnv(t, SyncConfig{CeilingBytes: 10, CompactCheckEvery: -1})
-	p := e.create(e.alice, "", "Ceiling bytes")
-	a, b := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId())
-	a.next(frameSnapshot)
-	b.next(frameSnapshot)
-	for i := 0; i < 2; i++ {
-		a.send(updateFrame(0, []byte("1234")))
-		a.next(frameUpdate)
-		b.next(frameUpdate)
-	}
-	a.send(updateFrame(0, []byte("1234"))) // 12 > 10
-	a.next(frameCompact)
-	b.next(frameCompact)
-	b.send(updateFrame(0, []byte("12"))) // 10 fits
-	if f := b.next(frameUpdate); frameSeq(f) != 3 {
-		t.Fatalf("update %x", f)
-	}
-	// A snapshot lifts the ceiling: the socket with the refused update is told to reconnect (its
-	// replay resends it).
-	a.next(frameUpdate)
-	b.send(post(3, snapshotMeta{PlainText: "x"}, []byte("state")))
-	a.closed(closeResend)
 }

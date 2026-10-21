@@ -132,9 +132,14 @@ func (h *Hub) accept(w http.ResponseWriter, r *http.Request, doc uuid.UUID) (*co
 	}
 	ws.SetReadLimit(readLimitRO)
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	// Without the byte budget the frame bucket bursts its rate, as the Wiki's relay did.
+	burst := h.cfg.UpdatesPerSecond
+	if h.prof.ByteBudget {
+		burst = h.cfg.UpdateBurst
+	}
 	return &conn{h: h, ws: ws, doc: doc, key: uuid.NewString(), ctx: ctx, cancel: cancel, lastSent: -1,
 		out: make(chan []byte, 256), kick: make(chan struct{}, 1), recheck: make(chan struct{}, 1),
-		updates:     newBucket(float64(h.cfg.UpdateBurst), float64(h.cfg.UpdatesPerSecond)),
+		updates:     newBucket(float64(burst), float64(h.cfg.UpdatesPerSecond)),
 		updateBytes: newBucket(float64(h.cfg.UpdateBytesBurst), float64(h.cfg.UpdateBytesPerSecond)),
 		awareness:   newBucket(float64(h.cfg.AwarenessPerSecond), float64(h.cfg.AwarenessPerSecond)),
 		snapshots:   newBucket(2, 1/h.cfg.SnapshotEvery.Seconds())}, true
@@ -172,7 +177,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		httpx.WriteError(w, r, httpx.NotFound("document"))
+		httpx.WriteError(w, r, httpx.NotFound(h.b.Noun()))
 		return
 	}
 	c, ok := h.accept(w, r, doc)
@@ -232,7 +237,7 @@ func (h *Hub) run(c *conn) {
 		return
 	}
 	if !ok {
-		c.close(CloseRate, "too many connections to the document")
+		c.close(CloseRate, "too many connections to the "+h.b.Noun())
 		return
 	}
 	defer h.release(c)
@@ -284,12 +289,13 @@ func (c *conn) authorize() (int, string) {
 }
 
 // pingLoop pings the client (idle close), keeps the per-person registration alive and rechecks
-// the session and the access every RecheckInterval ± 20 % (recheckDelay) or when asked.
+// the session and the access every RecheckInterval (± 20 % with Profile.RecheckJitter,
+// Hub.nextRecheck) or when asked.
 func (c *conn) pingLoop() {
 	h := c.h
 	ping := time.NewTicker(h.cfg.PingInterval)
 	defer ping.Stop()
-	recheck := time.NewTimer(recheckDelay(h.cfg.RecheckInterval, rand.Float64())) //nolint:gosec // jitter
+	recheck := time.NewTicker(h.nextRecheck())
 	defer recheck.Stop()
 	// A viewer: the end of its access by itself (an expiry) and of its life.
 	var expiry, life <-chan time.Time
@@ -365,7 +371,10 @@ func (c *conn) pingLoop() {
 			if !check() {
 				return
 			}
-			recheck.Reset(recheckDelay(h.cfg.RecheckInterval, rand.Float64())) //nolint:gosec // jitter
+			// Without the jitter the ticker keeps its period, as the Wiki's relay did.
+			if h.prof.RecheckJitter {
+				recheck.Reset(h.nextRecheck())
+			}
 		case <-c.recheck:
 			if !check() {
 				return
@@ -379,6 +388,15 @@ func (c *conn) pingLoop() {
 			return
 		}
 	}
+}
+
+// nextRecheck is the time to a socket's next access recheck: RecheckInterval, jittered with
+// Profile.RecheckJitter.
+func (h *Hub) nextRecheck() time.Duration {
+	if !h.prof.RecheckJitter {
+		return h.cfg.RecheckInterval
+	}
+	return recheckDelay(h.cfg.RecheckInterval, rand.Float64()) //nolint:gosec // jitter
 }
 
 // recheckDelay is the time to a socket's next access recheck: every ± 20 % around (r in [0, 1)),
@@ -535,22 +553,26 @@ func (c *conn) onUpdate(b []byte) bool {
 		c.close(CloseBadFrame, "bad update")
 		return false
 	}
-	if !c.updates.take() || !c.updateBytes.takeN(float64(len(b)-headerSeq)) {
+	// Without the byte budget only the frame bucket counts, as the Wiki's relay did.
+	if !c.updates.take() || (c.h.prof.ByteBudget && !c.updateBytes.takeN(float64(len(b)-headerSeq))) {
 		c.close(CloseRate, "rate limited")
 		return false
 	}
-	switch c.admitUpdate(len(b) - headerSeq) {
-	case admitDrop:
-		return true
-	case admitClose:
-		return false
+	// Without the ceiling every update is stored, as the Wiki's relay did.
+	if c.h.prof.Ceiling {
+		switch c.admitUpdate(len(b) - headerSeq) {
+		case admitDrop:
+			return true
+		case admitClose:
+			return false
+		}
 	}
 	data := bytes.Clone(b[headerSeq:])
 	seq, err := db.GuardValue(c.ctx, c.h.db, func(q *sqlc.Queries) (int64, error) {
 		return c.h.b.AppendUpdate(c.ctx, q, c.doc, data, &c.id.UserID)
 	})
 	if db.IsNotFound(err) {
-		c.close(CloseNotFound, "the document is gone or in the trash")
+		c.close(CloseNotFound, "the "+c.h.b.Noun()+" is gone or in the trash")
 		return false
 	}
 	if err != nil {
@@ -560,7 +582,9 @@ func (c *conn) onUpdate(b []byte) bool {
 		}
 		return false
 	}
-	c.h.noteStored(c.doc, len(data))
+	if c.h.prof.Ceiling { // the ceiling's count of the backlog
+		c.h.noteStored(c.doc, len(data))
+	}
 	f := UpdateFrame(seq, data)
 	c.enqueue(f)
 	c.h.broadcast(c.ctx, c.doc, c, f)
@@ -646,10 +670,11 @@ func (c *conn) maybeCompact() {
 }
 
 // onAwareness relays a cursor / presence update to the other sockets of the document (never
-// stored); a read-only socket's is dropped. Over the budget the newest frame waits for the next
-// token and replaces any older one waiting (a client sends its whole state each time), so the
-// last state — the final view, the new selection — always arrives, and a flood still relays no
-// more than the budget. b is the reader's own (ws.Read allocates every message).
+// stored); a read-only socket's is dropped. Over the budget the frame is dropped, or with
+// Profile.CoalesceAwareness the newest frame waits for the next token and replaces any older one
+// waiting (a client sends its whole state each time), so the last state — the final view, the new
+// selection — always arrives, and a flood still relays no more than the budget. b is the reader's
+// own (ws.Read allocates every message).
 func (c *conn) onAwareness(b []byte) bool {
 	if !c.write.Load() || len(b) > 1+MaxUpdate {
 		return true
@@ -662,6 +687,8 @@ func (c *conn) onAwareness(b []byte) bool {
 		c.awPending = b
 	case c.awareness.take():
 		c.h.broadcast(c.ctx, c.doc, c, b)
+	case !c.h.prof.CoalesceAwareness: // over the budget: dropped, as the Wiki's relay did
+		c.h.m.dropAwareness.Inc()
 	default:
 		c.awPending = b
 		c.awTimer = time.AfterFunc(c.awareness.wait(), c.flushAwareness)
@@ -711,8 +738,8 @@ func (c *conn) endAwareness() {
 // (through below the stored snapshot, or past the counter) is not stored but still relayed, with
 // through 0 so that no socket's position moves, and the poster is asked for a fresh snapshot.
 // The post of a socket with refused updates (conn.refused) is relayed the same way, and when stored
-// (under a seq of its own, StoreSnapshot) the poster gets that seq as an empty UPDATE. A stored
-// snapshot tells every instance (ctlCompacted).
+// (under a seq of its own, StoreSnapshot) the poster gets that seq as an empty UPDATE. With
+// Profile.Ceiling a stored snapshot tells every instance (ctlCompacted).
 func (c *conn) onSnapshot(b []byte) bool {
 	if !c.write.Load() {
 		c.close(CloseForbidden, "read only")
@@ -747,7 +774,7 @@ func (c *conn) onSnapshot(b []byte) bool {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrGone):
-			c.close(CloseNotFound, "the document is gone or in the trash")
+			c.close(CloseNotFound, "the "+c.h.b.Noun()+" is gone or in the trash")
 		case errors.Is(err, ErrBadMeta):
 			c.close(CloseBadFrame, "bad snapshot meta")
 		case c.ctx.Err() == nil:
@@ -774,7 +801,8 @@ func (c *conn) onSnapshot(b []byte) bool {
 		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(0, state))
 		c.enqueue([]byte{FrameCompact})
 	}
-	if res.Stored {
+	// Without the ceiling nothing listens for it: no control message beyond the Wiki relay's own.
+	if res.Stored && c.h.prof.Ceiling {
 		c.h.broadcast(c.ctx, c.doc, c, []byte{ctlCompacted})
 	}
 	if res.After != nil {

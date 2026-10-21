@@ -19,7 +19,7 @@ var (
 	droppedFrames = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "calaba", Subsystem: "ysync", Name: "dropped_frames_total",
 		Help: "Frames not delivered: queue (a socket's queue full; an update or snapshot is caught up from the database), " +
-			"awareness (replaced by a newer one over the budget), ceiling (an UPDATE refused at the update ceiling), " +
+			"awareness (over the budget: dropped, or replaced by a newer one), ceiling (an UPDATE refused at the update ceiling), " +
 			"publish (not published to the other instances)."}, []string{"section", "reason"})
 	catchUps = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "calaba", Subsystem: "ysync", Name: "catchups_total", Help: "Catch-ups of a socket from the database (its first frames included)."}, []string{"section"})

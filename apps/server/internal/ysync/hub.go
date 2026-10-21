@@ -36,6 +36,7 @@ type Hub struct {
 	auth     Authenticator
 	origin   func(origin string, hasCookie bool) bool
 	cfg      Config
+	prof     Profile // the Backend's, read once
 	instance [16]byte
 	m        metrics
 	// Warn lines of a failing Valkey, one per logEvery each.
@@ -75,7 +76,7 @@ func NewHub(b Backend, o Options) *Hub {
 	if cfg.UpdateBytesPerSecond == 0 {
 		cfg.UpdateBytesPerSecond = int64(b.MaxState()) / 20
 	}
-	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: cfg, rooms: map[uuid.UUID]*room{},
+	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: cfg, prof: b.Profile(), rooms: map[uuid.UUID]*room{},
 		m: newMetrics(b.Name())}
 	h.instance = uuid.New()
 	return h
@@ -239,13 +240,14 @@ func (h *Hub) relayCmd(doc uuid.UUID, frame []byte) rueidis.Completed {
 const pubBackoff = time.Second
 
 // broadcast sends frame to the other sockets of the document here and, through Redis, on the
-// other instances (after the commit of what it carries). While publishing fails, awareness goes
-// to this instance's sockets only: it is not worth the reader's wait of up to 3 s per frame, and
-// it is never logged.
+// other instances (after the commit of what it carries). A failed awareness publish is never
+// logged; with Profile.PublishBackoff, while publishing fails, awareness goes to this instance's
+// sockets only: it is not worth the reader's wait of up to 3 s per frame.
 func (h *Hub) broadcast(ctx context.Context, doc uuid.UUID, from *conn, frame []byte) {
 	h.deliver(doc, from, frame)
 	aw := frame[0] == FrameAwareness
-	if down := h.pubDown.Load(); aw && down != 0 && time.Since(time.Unix(0, down)) < pubBackoff {
+	// Without the profile's backoff every awareness frame is published, as the Wiki's relay did.
+	if down := h.pubDown.Load(); aw && h.prof.PublishBackoff && down != 0 && time.Since(time.Unix(0, down)) < pubBackoff {
 		h.m.dropPub.Inc()
 		return
 	}
@@ -278,9 +280,9 @@ func (h *Hub) Kick(ctx context.Context, docs []uuid.UUID) {
 	}
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	for _, r := range h.rc.DoMulti(pctx, cmds...) {
+	for i, r := range h.rc.DoMulti(pctx, cmds...) {
 		if err := r.Error(); err != nil {
-			h.pubLog.warn(h.b.Name()+" sync: publish", "err", err)
+			h.pubLog.warn(h.b.Name()+" sync: publish", h.b.LogKey(), docs[i], "err", err)
 			return
 		}
 	}

@@ -49,8 +49,6 @@ const (
 	closeIdle      = ysync.CloseIdle
 	closeRevoked   = ysync.CloseRevoked
 	closeNotFound  = ysync.CloseNotFound
-	closeCeiling   = ysync.CloseCeiling
-	closeResend    = ysync.CloseResend
 )
 
 var (
@@ -77,7 +75,12 @@ type wikiBackend struct {
 
 func (wikiBackend) Name() string   { return "wiki" }
 func (wikiBackend) LogKey() string { return "page_id" }
+func (wikiBackend) Noun() string   { return "page" }
 func (wikiBackend) MaxState() int  { return MaxState }
+
+// Profile: the zero Profile, the relay as the Wiki had it before the extraction (none of the
+// behaviours added for the Canvas).
+func (wikiBackend) Profile() ysync.Profile { return ysync.Profile{} }
 
 func (b wikiBackend) GetSnapshot(ctx context.Context, q *sqlc.Queries, doc uuid.UUID) (int64, []byte, error) {
 	s, err := q.GetWikiSnapshot(ctx, doc)

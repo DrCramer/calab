@@ -17,9 +17,11 @@ import (
 // stubBackend is a Backend for the hub alone (nothing of the Store is called).
 type stubBackend struct{ Backend }
 
-func (stubBackend) Name() string   { return "ytest" }
-func (stubBackend) LogKey() string { return "doc_id" }
-func (stubBackend) MaxState() int  { return 1 << 20 }
+func (stubBackend) Name() string     { return "ytest" }
+func (stubBackend) LogKey() string   { return "doc_id" }
+func (stubBackend) Noun() string     { return "document" }
+func (stubBackend) MaxState() int    { return 1 << 20 }
+func (stubBackend) Profile() Profile { return Profile{PublishBackoff: true} }
 
 // A failing Valkey (here a closed client): every frame not published is counted, an UPDATE's
 // failure is logged once per logEvery, awareness never, and after a failure awareness is not

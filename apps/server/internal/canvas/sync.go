@@ -46,7 +46,13 @@ type canvasBackend struct {
 
 func (canvasBackend) Name() string   { return "canvas" }
 func (canvasBackend) LogKey() string { return "doc_id" }
+func (canvasBackend) Noun() string   { return "document" }
 func (canvasBackend) MaxState() int  { return MaxState }
+
+// Profile: every behaviour built for the Canvas on top of the Wiki's relay (docs/05 «Лимиты»).
+func (canvasBackend) Profile() ysync.Profile {
+	return ysync.Profile{Ceiling: true, ByteBudget: true, CoalesceAwareness: true, RecheckJitter: true, PublishBackoff: true}
+}
 
 func (canvasBackend) GetSnapshot(ctx context.Context, q *sqlc.Queries, doc uuid.UUID) (int64, []byte, error) {
 	s, err := q.GetCanvasSnapshot(ctx, doc)

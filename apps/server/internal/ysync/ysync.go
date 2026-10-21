@@ -24,7 +24,12 @@
 // broadcast post is still relayed (through_seq 0, not stored) and the poster gets a
 // COMPACT_REQUEST to persist it with a newer through_seq.
 //
-// Hard ceiling: when the updates after the snapshot reach Config.CeilingUpdates (10 000) or
+// What a section's sockets do beyond the relay the Wiki shipped with is its Profile
+// (Backend.Profile): the zero Profile is that relay, the Wiki's; the Canvas turns on everything
+// below — the hard ceiling, the UPDATE byte budget, awareness coalescing, the recheck jitter and
+// the awareness publish backoff.
+//
+// Hard ceiling (Profile.Ceiling): when the updates after the snapshot reach Config.CeilingUpdates (10 000) or
 // CeilingBytes (16 MiB) the server stops storing UPDATEs of the document (they are dropped, not
 // relayed) and sends COMPACT_REQUEST to every socket with WRITE; the first SNAPSHOT_POST that
 // absorbs enough of the updates lifts it. A socket that keeps sending for CeilingGrace (10 s) after
@@ -130,21 +135,23 @@ type Config struct {
 	PingInterval     time.Duration // WebSocket ping (25 s)
 	IdleTimeout      time.Duration // no pong for this long closes 4009 (60 s)
 	RecheckInterval  time.Duration // access and session recheck (30 s)
-	// Inbound UPDATEs per socket, two token buckets; over either: close 4008. Frames: UpdateBurst at
-	// once (128), then UpdatesPerSecond (20) — a flood of tiny frames is cut; the burst holds a paste
-	// of MaxState in the client's ≈ 40 KB chunks. Bytes: UpdateBytesBurst at once (the section's
-	// MaxState: the largest paste, a whole document), then UpdateBytesPerSecond (MaxState per 20 s).
+	// Inbound UPDATEs per socket; over the budget: close 4008. Without Profile.ByteBudget one
+	// bucket of UpdatesPerSecond (20) frames at once and per second. With it, two: frames
+	// UpdateBurst at once (128), then UpdatesPerSecond — a flood of tiny frames is cut; the burst
+	// holds a paste of MaxState in the client's ≈ 40 KB chunks — and bytes UpdateBytesBurst at once
+	// (the section's MaxState: the largest paste, a whole document), then UpdateBytesPerSecond
+	// (MaxState per 20 s).
 	UpdatesPerSecond     int
 	UpdateBurst          int
 	UpdateBytesPerSecond int64
 	UpdateBytesBurst     int64
-	AwarenessPerSecond   int           // inbound AWARENESS relayed per socket (10; over: the newest waits for a token, older ones are dropped)
+	AwarenessPerSecond   int           // inbound AWARENESS relayed per socket (10; over: dropped, or with Profile.CoalesceAwareness the newest waits for a token)
 	SnapshotEvery        time.Duration // inbound SNAPSHOT_POST per socket: 2 at once, then one per (2 s; over: close 4008)
 	MaxConnsPerUser      int           // sockets of one person on one document (10)
 	CompactUpdates       int           // COMPACT_REQUEST when more updates follow the snapshot (500)
 	CompactBytes         int64         // … or more bytes (1 MiB)
 	CompactCooldown      time.Duration // at most one COMPACT_REQUEST per document per (10 s)
-	CeilingUpdates       int           // hard ceiling: updates stored after the snapshot (10 000)
+	CeilingUpdates       int           // hard ceiling (Profile.Ceiling): updates stored after the snapshot (10 000)
 	CeilingBytes         int64         // … or their bytes (16 MiB): over it an UPDATE is refused (see conn.admitUpdate)
 	CeilingGrace         time.Duration // a socket still sending past the ceiling this long after its first refused UPDATE is closed 4012 (10 s)
 	CompactCheckEvery    time.Duration // the threshold query at most this often per document (2 s; < 0 = always)
@@ -198,6 +205,26 @@ func (c Config) WithDefaults() Config {
 	def(&c.CeilingGrace, 10*time.Second)
 	def(&c.ViewerMaxLife, 2*time.Hour)
 	return c
+}
+
+// Profile is what a section's sockets do beyond the relay the Wiki shipped with (before the
+// Canvas, ADR-0114 §3 addendum). The zero Profile is exactly that relay; every field turns on one
+// behaviour added since.
+type Profile struct {
+	// Ceiling: the hard ceiling of the updates after the snapshot (Config.Ceiling*, CloseCeiling,
+	// CloseResend, ctlCompacted, Post.Refused). Off: every UPDATE is stored, whatever the backlog.
+	Ceiling bool
+	// ByteBudget: the UPDATE frame bucket bursts Config.UpdateBurst and a second bucket limits the
+	// bytes (Config.UpdateBytes*). Off: one bucket of UpdatesPerSecond frames at once and per second.
+	ByteBudget bool
+	// CoalesceAwareness: over the budget the newest awareness frame waits for a token (and a closing
+	// socket's waiting frame is sent). Off: a frame over the budget is dropped.
+	CoalesceAwareness bool
+	// RecheckJitter: the access recheck every RecheckInterval ± 20 %. Off: every RecheckInterval.
+	RecheckJitter bool
+	// PublishBackoff: after a failed publish awareness is not published for pubBackoff (this
+	// instance's sockets still get it). Off: every frame is published.
+	PublishBackoff bool
 }
 
 // Viewer is an anonymous receive-only socket on a document (Hub.ServeViewer): the section has
@@ -272,7 +299,7 @@ type Post struct {
 	// VersionEvery is Config.VersionEvery (0 = the section's own default).
 	VersionEvery time.Duration
 	// Refused: an UPDATE of the poster was refused at the ceiling since its last stored snapshot, the
-	// state carries edits no stored update has (StoreSnapshot).
+	// state carries edits no stored update has (StoreSnapshot). Always false without Profile.Ceiling.
 	Refused bool
 }
 
@@ -294,6 +321,11 @@ type Backend interface {
 	// LogKey is the attribute name of the document id in the log lines ("page_id" for the Wiki,
 	// the key its production log queries use; "doc_id" for the others).
 	LogKey() string
+	// Noun is the word for a document in close reasons and the 404 of a bad id ("page" for the
+	// Wiki, as its relay said before the extraction; "document" for the others).
+	Noun() string
+	// Profile is what the section's sockets do beyond the Wiki's original relay (zero: nothing).
+	Profile() Profile
 	// MaxState is the largest snapshot state in bytes; a larger post is dropped.
 	MaxState() int
 	// Authorize resolves the identity's access to the document (at connect, and on every
