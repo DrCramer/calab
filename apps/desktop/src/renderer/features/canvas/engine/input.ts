@@ -158,7 +158,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       }
     }
     const multi = engine.multiSelect;
-    const hit = engine.hitAt(w, TOUCH_PICK_PX);
+    const hit = engine.hitAt(w, TOUCH_PICK_PX, TOUCH_PICK_PX);
     if (!hit) {
       // Empty place: a tap clears the selection, a drag pans, a press that stays put opens the menu.
       const g = new TapPanGesture(engine, s, () => engine.clearSelection());

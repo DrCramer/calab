@@ -230,10 +230,11 @@ export class Scene {
 
   /**
    * Topmost object at a world point; `tol` is the pick radius in world units. An unfilled, textless shape is picked
-   * by its outline only, so a big empty frame never swallows the clicks (and the marquee) inside it.
+   * by its outline only, so a big empty frame never swallows the clicks (and the marquee) inside it. `boxTol` widens
+   * a sticky / text / frame by that much around its edge (a finger's slack; the mouse picks them exactly).
    */
-  hit(p: Point, tol: number, accept?: (o: ObjectRec) => boolean): ObjectRec | null {
-    return this.pick(p, tol, accept, false);
+  hit(p: Point, tol: number, accept?: (o: ObjectRec) => boolean, boxTol = 0): ObjectRec | null {
+    return this.pick(p, tol, accept, false, boxTol);
   }
 
   /**
@@ -241,20 +242,21 @@ export class Scene {
    * edge counted in. For wiring connectors, not for selection: releasing a wire anywhere inside a frame glues to it.
    */
   hitArea(p: Point, tol: number, accept?: (o: ObjectRec) => boolean): ObjectRec | null {
-    return this.pick(p, tol, accept, true);
+    return this.pick(p, tol, accept, true, 0);
   }
 
-  private pick(p: Point, tol: number, accept: ((o: ObjectRec) => boolean) | undefined, area: boolean): ObjectRec | null {
-    const cands = this.query({ x: p.x - tol, y: p.y - tol, w: 2 * tol, h: 2 * tol });
+  private pick(p: Point, tol: number, accept: ((o: ObjectRec) => boolean) | undefined, area: boolean, boxTol: number): ObjectRec | null {
+    const r = Math.max(tol, boxTol);
+    const cands = this.query({ x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r });
     for (let i = cands.length - 1; i >= 0; i--) {
       const o = cands[i];
       if (!o || (accept && !accept(o))) continue;
-      if (this.hitsObject(o, p, tol, area)) return o;
+      if (this.hitsObject(o, p, tol, area, boxTol)) return o;
     }
     return null;
   }
 
-  private hitsObject(o: ObjectRec, p: Point, tol: number, area: boolean): boolean {
+  private hitsObject(o: ObjectRec, p: Point, tol: number, area: boolean, boxTol: number): boolean {
     if (isConnector(o)) {
       if (distToPolyline(p, o.points) <= tol) return true;
       if (o.label) {
@@ -265,7 +267,7 @@ export class Scene {
     }
     // A rotated box is tested in its own frame: the point is turned back about the center.
     const q = o.rot ? rotatePoint(p, rectCenter(o), -o.rot) : p;
-    if (o.kind !== 'shape') return rectContainsPoint(o, q, 0);
+    if (o.kind !== 'shape') return rectContainsPoint(o, q, boxTol);
     if (!pointInShape(o.shape, rectInflate(o, tol), q)) return false;
     if (area || o.fill !== 'none' || o.text !== '') return pointInShape(o.shape, o, q) || distNearOutline(o, q, tol);
     // Unfilled and empty: only the outline picks.

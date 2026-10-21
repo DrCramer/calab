@@ -1195,9 +1195,10 @@ export class CanvasEngine implements Core {
     return id;
   }
 
-  /** Hit-test a world point with a screen-pixel radius. */
-  hitAt(world: Point, px = 6): ObjectRec | null {
-    return this.scene.hit(world, this.px(px));
+  /** Hit-test a world point with a screen-pixel radius; `boxPx` (a finger) also picks a box that close when nothing is hit exactly. */
+  hitAt(world: Point, px = 6, boxPx = 0): ObjectRec | null {
+    const hit = this.scene.hit(world, this.px(px));
+    return hit || boxPx === 0 ? hit : this.scene.hit(world, this.px(px), undefined, this.px(boxPx));
   }
 
   // ── awareness ───────────────────────────────────────────────────────────────
