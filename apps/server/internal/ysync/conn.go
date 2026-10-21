@@ -56,9 +56,13 @@ type conn struct {
 
 	// Inbound budgets (reader goroutine only).
 	updates, awareness, snapshots bucket
-	// overSince is when this socket's first UPDATE was refused at the ceiling (zero: none since
-	// its last accepted one). Reader goroutine only.
-	overSince time.Time
+	// refused: an UPDATE of this socket was refused at the ceiling and no stored snapshot of this
+	// socket carried it yet (the package doc: it is delivered by such a snapshot or by a reconnect).
+	// Set by the reader, read by the relay (ctlCompacted).
+	refused atomic.Bool
+	// overSince is the first refused UPDATE of the current run of refusals, lastOver the latest one
+	// (zero: none). Reader goroutine only.
+	overSince, lastOver time.Time
 }
 
 // enqueue hands a frame to the writer without blocking. A full queue drops it: an awareness
@@ -554,29 +558,36 @@ const (
 )
 
 // admitUpdate is the hard ceiling of the updates after the snapshot (Config.CeilingUpdates /
-// CeilingBytes). At it an UPDATE is neither stored nor relayed (the client still holds it and a
-// snapshot carries it), every socket with WRITE is asked to compact (COMPACT_REQUEST, at most
-// once per CompactCooldown per document across instances) and a socket still sending
-// CeilingGrace after its first refused UPDATE is closed 4012. The ceiling lifts by itself when a
-// snapshot removes enough updates (seen by the next database read of the room's count).
+// CeilingBytes). At it an UPDATE is neither stored nor relayed (the client still holds it; the
+// package doc says how it is delivered), every socket with WRITE is asked to compact
+// (COMPACT_REQUEST, at most once per CompactCooldown per document across instances) and a socket
+// still sending CeilingGrace after the first refusal of a run is closed 4012 (a run ends after
+// 2 × CeilingGrace without a refusal: a socket refused long ago gets the whole grace again). The
+// ceiling lifts by itself when a snapshot removes enough updates (seen by the next database read
+// of the room's count).
 func (c *conn) admitUpdate(size int) admission {
 	h := c.h
 	updates, total, err := h.docStats(c.ctx, c.doc)
 	if err != nil || (updates < int64(h.cfg.CeilingUpdates) && total+int64(size) <= h.cfg.CeilingBytes) {
 		// A failing count is not a reason to refuse: the append reports a database failure itself.
-		c.overSince = time.Time{}
+		if c.refused.Load() {
+			// This update may build on the refused ones, which the others never got: storing it
+			// would leave it pending on every replica. The reconnect's replay resends them all.
+			c.close(CloseTryAgain, "the update ceiling is lifted: reconnect")
+			return admitClose
+		}
 		return admitStore
 	}
 	now := time.Now()
-	if c.overSince.IsZero() {
+	if c.overSince.IsZero() || now.Sub(c.lastOver) > 2*h.cfg.CeilingGrace {
 		c.overSince = now
-	} else if now.Sub(c.overSince) >= h.cfg.CeilingGrace {
+	}
+	c.lastOver = now
+	if now.Sub(c.overSince) >= h.cfg.CeilingGrace {
 		c.close(CloseCeiling, "the document is over its update ceiling: compact it")
 		return admitClose
 	}
-	// Remember the refusal (any instance): the first snapshot stored after it is relayed to every
-	// socket, because the others never got the refused update and would not apply the next ones.
-	_ = h.rc.Do(c.ctx, h.rc.B().Set().Key(redisx.Key(h.b.Name()+":dropped:"+c.doc.String())).Value("1").Ex(droppedTTL).Build()).Error()
+	c.refused.Store(true)
 	set, err := h.rc.Do(c.ctx, h.rc.B().Set().Key(redisx.Key(h.b.Name()+":ceiling:"+c.doc.String())).Value("1").Nx().
 		Px(h.cfg.CompactCooldown).Build()).AsBool()
 	if (err == nil || rueidis.IsRedisNil(err)) && set {
@@ -585,17 +596,6 @@ func (c *conn) admitUpdate(size int) admission {
 		h.broadcast(c.ctx, c.doc, nil, []byte{FrameCompact})
 	}
 	return admitDrop
-}
-
-// droppedTTL bounds the memory of a refused UPDATE: the snapshot that lifts the ceiling comes
-// within seconds of the COMPACT_REQUEST.
-const droppedTTL = time.Hour
-
-// refusedSince reports (and forgets) whether an UPDATE of the document was refused at the ceiling
-// since the last relayed snapshot.
-func (h *Hub) refusedSince(ctx context.Context, doc uuid.UUID) bool {
-	v, err := h.rc.Do(ctx, h.rc.B().Getdel().Key(redisx.Key(h.b.Name()+":dropped:"+doc.String())).Build()).ToString()
-	return err == nil && v != ""
 }
 
 // maybeCompact asks the sender for a snapshot when the updates after the stored one exceed the
@@ -639,6 +639,9 @@ func (c *conn) onAwareness(b []byte) bool {
 // for one frame) the other sockets of the document get the state as a SNAPSHOT; a stale one
 // (through below the stored snapshot, or past the counter) is not stored but still relayed, with
 // through 0 so that no socket's position moves, and the poster is asked for a fresh snapshot.
+// The post of a socket with refused updates (conn.refused) is relayed the same way, and when stored
+// (under a seq of its own, StoreSnapshot) the poster gets that seq as an empty UPDATE. A stored
+// snapshot tells every instance (ctlCompacted).
 func (c *conn) onSnapshot(b []byte) bool {
 	if !c.write.Load() {
 		c.close(CloseForbidden, "read only")
@@ -667,8 +670,9 @@ func (c *conn) onSnapshot(b []byte) bool {
 	if len(state) == 0 || len(state) > c.h.b.MaxState() {
 		return true // the client warns about a document over the limit; nothing is stored
 	}
+	refused := c.refused.Load()
 	res, err := c.h.b.PostSnapshot(c.ctx, Post{Doc: c.doc, Through: through, Meta: meta, State: state, By: c.id.UserID,
-		VersionEvery: c.h.cfg.VersionEvery})
+		VersionEvery: c.h.cfg.VersionEvery, Refused: refused})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrGone):
@@ -684,16 +688,23 @@ func (c *conn) onSnapshot(b []byte) bool {
 	}
 	if res.Stored {
 		c.h.noteCompacted(c.doc)
+		if refused {
+			c.refused.Store(false)
+			c.overSince, c.lastOver = time.Time{}, time.Time{}
+		}
 	}
-	// The first stored snapshot after a refused UPDATE (admitUpdate) goes to every other socket
-	// like a broadcast one: they hold neither the refused update nor its successors' base.
-	relay := res.Stored && c.h.refusedSince(c.ctx, c.doc)
 	switch {
-	case res.Stored && (broadcast || relay):
-		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(through, state))
-	case !res.Stored && broadcast:
+	case res.Stored && refused:
+		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(res.Through, state))
+		c.enqueue(UpdateFrame(res.Through, EmptyState)) // the poster's position, not its own state back
+	case res.Stored && broadcast:
+		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(res.Through, state))
+	case !res.Stored && (broadcast || refused):
 		c.h.broadcast(c.ctx, c.doc, c, SnapshotFrame(0, state))
 		c.enqueue([]byte{FrameCompact})
+	}
+	if res.Stored {
+		c.h.broadcast(c.ctx, c.doc, c, []byte{ctlCompacted})
 	}
 	if res.After != nil {
 		res.After()

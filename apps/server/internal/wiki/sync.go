@@ -197,6 +197,7 @@ func (b wikiBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Resu
 		return r
 	}, strings.TrimSpace(meta.Title)), MaxTitle)
 	stored, renamed := false, false
+	var through int64
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		cur, err := q.GetWikiPageForUpdate(ctx, page)
 		if db.IsNotFound(err) {
@@ -208,10 +209,11 @@ func (b wikiBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Resu
 		if cur.TrashedAt != nil {
 			return ysync.ErrGone
 		}
-		ok, authors, err := ysync.StoreSnapshot(ctx, b, q, page, cur.NextSeq, p.Through, state, &uid)
+		ok, seq, authors, err := ysync.StoreSnapshot(ctx, b, q, p, cur.NextSeq)
 		if err != nil || !ok {
 			return err
 		}
+		through = seq
 		row, err := q.SetWikiPageContent(ctx, sqlc.SetWikiPageContentParams{ID: page, PlainText: text, Preview: preview,
 			DocSize: int32(len(state)), UpdatedBy: &uid}) //nolint:gosec // ≤ MaxState
 		if err != nil {
@@ -234,7 +236,7 @@ func (b wikiBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Resu
 	if err != nil {
 		return ysync.Result{}, err
 	}
-	res := ysync.Result{Stored: stored}
+	res := ysync.Result{Stored: stored, Through: through}
 	if renamed {
 		res.After = func() { s.upserted(ctx, page, nil) }
 	}

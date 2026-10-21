@@ -174,6 +174,7 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 	text := clipBytes(noNUL(meta.PlainText), MaxText)
 	preview := clip(strings.Join(strings.Fields(noNUL(meta.Preview)), " "), 200)
 	stored, previewChanged := false, false
+	var through int64
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		cur, err := q.GetCanvasItemForUpdate(ctx, id)
 		if db.IsNotFound(err) {
@@ -185,10 +186,11 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 		if cur.TrashedAt != nil || cur.Kind != kindCanvas {
 			return ysync.ErrGone
 		}
-		ok, authors, err := ysync.StoreSnapshot(ctx, b, q, id, cur.NextSeq, p.Through, state, &uid)
+		ok, seq, authors, err := ysync.StoreSnapshot(ctx, b, q, p, cur.NextSeq)
 		if err != nil || !ok {
 			return err
 		}
+		through = seq
 		row, err := q.SetCanvasContent(ctx, sqlc.SetCanvasContentParams{ID: id, PlainText: text, Preview: preview,
 			DocSize: int32(len(state)), UpdatedBy: &uid}) //nolint:gosec // ≤ MaxState
 		if err != nil {
@@ -200,7 +202,7 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 	if err != nil {
 		return ysync.Result{}, err
 	}
-	res := ysync.Result{Stored: stored}
+	res := ysync.Result{Stored: stored, Through: through}
 	if previewChanged {
 		// The tree shows the preview: whoever sees the canvas gets the new one.
 		res.After = func() { s.upserted(ctx, id, nil) }

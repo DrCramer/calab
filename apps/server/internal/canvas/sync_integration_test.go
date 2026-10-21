@@ -533,14 +533,11 @@ func TestCanvasSyncCeiling(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	a.send(updateFrame(0, []byte("u6")))
 	a.closed(ysync.CloseCeiling)
-	// A snapshot through 3 lifts the ceiling. Everyone else gets it: they never saw the refused
-	// updates, so without it the following ones would wait for them forever. It is sent once.
+	// A snapshot through 3 of a socket without refused updates lifts the ceiling silently: it holds
+	// nothing the others lack (the refused updates come back with their socket's reconnect).
 	a2.send(post(3, snapshotMeta{PlainText: "compacted"}, []byte("state")))
-	for _, c := range []*client{w, ro} {
-		if f := c.next(frameSnapshot); frameSeq(f) != 3 || string(f[9:]) != "state" {
-			t.Fatalf("snapshot after the refusals %x", f)
-		}
-	}
+	ro.quiet(a2)
+	w.next(frameAwareness)
 	// The next update is stored under seq 4 and relayed.
 	a2.send(updateFrame(0, []byte("u7")))
 	if f := a2.next(frameUpdate); frameSeq(f) != 4 || string(f[9:]) != "u7" {
@@ -548,7 +545,7 @@ func TestCanvasSyncCeiling(t *testing.T) {
 	}
 	w.next(frameUpdate)
 	ro.next(frameUpdate)
-	// A later snapshot without a refusal in between is not relayed (nothing was missed).
+	// A later snapshot is not relayed either.
 	a2.send(post(4, snapshotMeta{PlainText: "again"}, []byte("state2")))
 	a2.send(updateFrame(0, []byte("u8")))
 	a2.next(frameUpdate)
@@ -560,21 +557,218 @@ func TestCanvasSyncCeiling(t *testing.T) {
 	}
 }
 
-// The byte ceiling: an update that would take the stored bytes past it is refused.
+// The byte ceiling: an update that would take the stored bytes past it is refused; one that fits
+// is stored (from a socket without a refused update: the refused one's next update reconnects it,
+// TestCanvasSyncCeilingRefusedWriters).
 func TestCanvasSyncCeilingBytes(t *testing.T) {
 	e := newEnv(t, ysync.Config{CeilingBytes: 10, CompactCheckEvery: -1})
 	p := e.create(e.alice, "", "Ceiling bytes")
-	a := e.dial(e.alice, p.GetId())
+	a, b := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId())
 	a.next(frameSnapshot)
-	a.send(updateFrame(0, []byte("1234")))
-	a.next(frameUpdate)
-	a.send(updateFrame(0, []byte("1234")))
-	a.next(frameUpdate)
+	b.next(frameSnapshot)
+	for i := 0; i < 2; i++ {
+		a.send(updateFrame(0, []byte("1234")))
+		a.next(frameUpdate)
+		b.next(frameUpdate)
+	}
 	a.send(updateFrame(0, []byte("1234"))) // 12 > 10
 	a.next(frameCompact)
-	a.send(updateFrame(0, []byte("12"))) // 10 fits
-	if f := a.next(frameUpdate); frameSeq(f) != 3 {
+	b.next(frameCompact)
+	b.send(updateFrame(0, []byte("12"))) // 10 fits
+	if f := b.next(frameUpdate); frameSeq(f) != 3 {
 		t.Fatalf("update %x", f)
+	}
+}
+
+// ceilingRoom is a canvas at its update ceiling (CeilingUpdates 3) with two writers A (alice) and
+// B (the owner) and a reader C (bob without CANVAS_WRITE): A's three updates are stored, its fourth
+// ("a4") is refused and both writers are asked to compact.
+func (e *env) ceilingRoom(name string) (id string, a, b, c *client) {
+	e.t.Helper()
+	p := e.create(e.alice, "", name)
+	id = p.GetId()
+	e.must(200, e.alice, "PUT", item(id)+"/permissions", &v1.UpdateCanvasPermissionsRequest{Entries: []*v1.CanvasPermissionEntry{
+		{TargetType: user, TargetId: e.bob.String(), Deny: uint64(perm.CanvasWrite)}}}, nil)
+	a, b, c = e.dial(e.alice, id), e.dial(e.owner, id), e.dial(e.bob, id)
+	for _, x := range []*client{a, b, c} {
+		x.next(frameSnapshot)
+	}
+	for i := 1; i <= 3; i++ {
+		a.send(updateFrame(0, []byte(fmt.Sprintf("u%d", i))))
+		for _, x := range []*client{a, b, c} {
+			x.next(frameUpdate)
+		}
+	}
+	a.send(updateFrame(0, []byte("a4")))
+	a.next(frameCompact)
+	b.next(frameCompact)
+	c.quiet(b) // the reader gets neither "a4" nor a COMPACT_REQUEST
+	a.next(frameAwareness)
+	return id, a, b, c
+}
+
+// wantFrame reads the next frame of c and checks its type, seq and body.
+func wantFrame(c *client, typ byte, seq int64, body string) {
+	c.t.Helper()
+	if f := c.next(typ); frameSeq(f) != seq || string(f[9:]) != body {
+		c.t.Fatalf("frame %d seq %d %q, want seq %d %q", f[0], frameSeq(f), f[9:], seq, body)
+	}
+}
+
+// M3 of the second review: an UPDATE refused at the ceiling reaches every socket and the storage
+// however the writers' snapshots interleave. The states are opaque here: "stateA" holds A's refused
+// "a4", "stateB" does not.
+func TestCanvasSyncCeilingRefusedWriters(t *testing.T) {
+	e := newEnv(t, ysync.Config{CeilingUpdates: 3, CompactCheckEvery: -1, SnapshotEvery: time.Microsecond})
+	ctx := context.Background()
+	// storeBehind stores a snapshot through 3 as another instance would whose ctlCompacted never
+	// arrived: the ceiling is lifted and A was not told.
+	storeBehind := func(id string) {
+		t.Helper()
+		doc := uuid.MustParse(id)
+		if _, err := e.d.Q.UpsertCanvasSnapshot(ctx, sqlc.UpsertCanvasSnapshotParams{CanvasID: doc, State: []byte("stateB"), ThroughSeq: 3}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.d.Q.DeleteCanvasUpdatesThrough(ctx, sqlc.DeleteCanvasUpdatesThroughParams{CanvasID: doc, ThroughSeq: 3}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("the other writer's snapshot first", func(t *testing.T) {
+		id, a, b, c := e.ceilingRoom("B first")
+		// B's snapshot lifts the ceiling silently; A is told to reconnect.
+		b.send(post(3, snapshotMeta{PlainText: "b"}, []byte("stateB")))
+		a.closed(ysync.CloseTryAgain)
+		c.quiet(b)
+		// The client's replay after the reconnect: what the stored snapshot lacks.
+		a2 := e.dial(e.alice, id)
+		wantFrame(a2, frameSnapshot, 3, "stateB")
+		a2.send(updateFrame(0, []byte("a4")))
+		for _, x := range []*client{a2, b, c} {
+			wantFrame(x, frameUpdate, 4, "a4")
+		}
+		late := e.dial(e.alice, id)
+		wantFrame(late, frameSnapshot, 3, "stateB")
+		wantFrame(late, frameUpdate, 4, "a4")
+	})
+	t.Run("its own snapshot first", func(t *testing.T) {
+		id, a, b, c := e.ceilingRoom("A first")
+		// A's snapshot is stored under a seq of its own (4) and relayed; A gets the seq alone.
+		a.send(post(3, snapshotMeta{PlainText: "a"}, []byte("stateA")))
+		if f := a.next(frameUpdate); frameSeq(f) != 4 || !bytes.Equal(f[9:], ysync.EmptyState) {
+			t.Fatalf("the poster's position %x", f)
+		}
+		wantFrame(b, frameSnapshot, 4, "stateA")
+		wantFrame(c, frameSnapshot, 4, "stateA")
+		// B's snapshot from the older base (posted before it got A's) is stale: the storage keeps a4.
+		b.send(post(3, snapshotMeta{PlainText: "b"}, []byte("stateB")))
+		c.quiet(b)
+		a.next(frameAwareness)
+		wantFrame(e.dial(e.bob, id), frameSnapshot, 4, "stateA")
+		// A is an ordinary writer again.
+		a.send(updateFrame(0, []byte("a5")))
+		for _, x := range []*client{a, b, c} {
+			wantFrame(x, frameUpdate, 5, "a5")
+		}
+	})
+	t.Run("the other's snapshot stored, then its own", func(t *testing.T) {
+		id, a, b, c := e.ceilingRoom("B stored, A after")
+		storeBehind(id)
+		// A's post from before B's snapshot is behind it: relayed (the others get a4 now) with
+		// through 0, not stored, and A is asked again.
+		a.send(post(2, snapshotMeta{PlainText: "a"}, []byte("stateA")))
+		wantFrame(b, frameSnapshot, 0, "stateA")
+		wantFrame(c, frameSnapshot, 0, "stateA")
+		a.next(frameCompact)
+		// Its next one holds every stored update: stored under seq 4 and relayed.
+		a.send(post(3, snapshotMeta{PlainText: "a"}, []byte("stateA")))
+		if f := a.next(frameUpdate); frameSeq(f) != 4 {
+			t.Fatalf("the poster's position %x", f)
+		}
+		wantFrame(b, frameSnapshot, 4, "stateA")
+		wantFrame(c, frameSnapshot, 4, "stateA")
+		wantFrame(e.dial(e.bob, id), frameSnapshot, 4, "stateA")
+	})
+	t.Run("the ceiling lifted, then its next update", func(t *testing.T) {
+		id, a, b, c := e.ceilingRoom("A updates after the lift")
+		storeBehind(id)
+		// "a5" may build on the refused "a4": not stored, A reconnects and replays both.
+		a.send(updateFrame(0, []byte("a5")))
+		a.closed(ysync.CloseTryAgain)
+		c.quiet(b)
+		a2 := e.dial(e.alice, id)
+		wantFrame(a2, frameSnapshot, 3, "stateB")
+		a2.send(updateFrame(0, []byte("a4a5")))
+		for _, x := range []*client{a2, b, c} {
+			wantFrame(x, frameUpdate, 4, "a4a5")
+		}
+	})
+}
+
+// A run of refusals ends after 2 × CeilingGrace without one: a socket refused long ago gets the
+// whole grace again before 4012.
+func TestCanvasSyncCeilingGraceRun(t *testing.T) {
+	e := newEnv(t, ysync.Config{CeilingUpdates: 1, CeilingGrace: 400 * time.Millisecond, CompactCheckEvery: -1})
+	p := e.create(e.alice, "", "Grace")
+	a, b := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	b.next(frameSnapshot)
+	a.send(updateFrame(0, []byte("u1")))
+	a.next(frameUpdate)
+	b.next(frameUpdate)
+	a.send(updateFrame(0, []byte("u2"))) // refused: the run starts
+	a.next(frameCompact)
+	b.next(frameCompact)
+	time.Sleep(1000 * time.Millisecond)  // quiet for longer than twice the grace: the run is over
+	a.send(updateFrame(0, []byte("u3"))) // refused, a new run (no 4012)
+	a.quiet(b)
+	time.Sleep(200 * time.Millisecond)
+	a.send(updateFrame(0, []byte("u4"))) // still inside the new run's grace
+	a.quiet(b)
+	time.Sleep(250 * time.Millisecond)
+	a.send(updateFrame(0, []byte("u5"))) // the same run, past its grace
+	a.closed(ysync.CloseCeiling)
+}
+
+// Another instance's count of the updates is forgotten when a snapshot is stored elsewhere
+// (ctlCompacted): within its 2 s cache it no longer refuses what the lifted ceiling admits, and its
+// socket with a refused update reconnects and resends it.
+func TestCanvasSyncCeilingLiftedAcrossInstances(t *testing.T) {
+	cfg := ysync.Config{CeilingUpdates: 3, CompactCheckEvery: 2 * time.Second, SnapshotEvery: time.Microsecond}
+	e := newEnv(t, cfg)
+	p := e.create(e.alice, "", "Lifted")
+	other := New(e.d, e.ev)
+	other.EnableSync(e.rc, fakeAuth{}, nil, cfg)
+	mux := http.NewServeMux()
+	other.Routes(mux, func(h http.Handler) http.Handler { return h })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	a := e.dial(e.alice, p.GetId())
+	a.next(frameSnapshot)
+	b, b2 := e.dialToken(srv, e.bob.String(), p.GetId()), e.dialToken(srv, e.bob.String(), p.GetId())
+	b.next(frameSnapshot)
+	b2.next(frameSnapshot)
+	for i := 1; i <= 3; i++ {
+		a.send(updateFrame(0, []byte(fmt.Sprintf("u%d", i))))
+		for _, x := range []*client{a, b, b2} {
+			x.next(frameUpdate)
+		}
+	}
+	b.send(updateFrame(0, []byte("b4"))) // the second instance reads 3 and caches it: refused
+	for _, x := range []*client{a, b, b2} {
+		x.next(frameCompact)
+	}
+	a.send(post(3, snapshotMeta{PlainText: "a"}, []byte("stateA")))
+	b.closed(ysync.CloseTryAgain) // the second instance heard of the snapshot
+	b2.send(updateFrame(0, []byte("b5")))
+	wantFrame(b2, frameUpdate, 4, "b5")
+	wantFrame(a, frameUpdate, 4, "b5")
+	// B's replay.
+	b3 := e.dialToken(srv, e.bob.String(), p.GetId())
+	wantFrame(b3, frameSnapshot, 3, "stateA")
+	wantFrame(b3, frameUpdate, 4, "b5")
+	b3.send(updateFrame(0, []byte("b4")))
+	for _, x := range []*client{a, b2, b3} {
+		wantFrame(x, frameUpdate, 5, "b4")
 	}
 }
 

@@ -163,6 +163,9 @@ func (h *Hub) onRelay(r *room, msg []byte) {
 	}
 	frame := msg[16:]
 	h.mu.Lock()
+	if frame[0] == ctlCompacted {
+		r.statsAt = time.Time{} // another instance stored a snapshot: the count is read again
+	}
 	conns := make([]*conn, 0, len(r.conns))
 	for c := range r.conns {
 		conns = append(conns, c)
@@ -173,13 +176,19 @@ func (h *Hub) onRelay(r *room, msg []byte) {
 	}
 }
 
-// deliverFrame hands a relayed frame to c: a recheck control to its checker, a COMPACT_REQUEST
-// only to a socket that may write (a read-only client has nothing to post), AWARENESS never to
-// a viewer (an anonymous link does not see who is on the document), the rest queued.
+// deliverFrame hands a relayed frame to c: a recheck control to its checker, a stored snapshot
+// (ctlCompacted) closes a socket with refused updates (it reconnects and resends them), a
+// COMPACT_REQUEST only to a socket that may write (a read-only client has nothing to post),
+// AWARENESS never to a viewer (an anonymous link does not see who is on the document), the rest
+// queued.
 func (c *conn) deliverFrame(frame []byte) {
 	switch {
 	case frame[0] == ctlRecheck:
 		c.recheckSoon()
+	case frame[0] == ctlCompacted:
+		if c.refused.Load() {
+			c.close(CloseTryAgain, "the update ceiling is lifted: reconnect")
+		}
 	case frame[0] == FrameCompact && !c.write.Load():
 	case frame[0] == FrameAwareness && c.viewer != nil:
 	default:

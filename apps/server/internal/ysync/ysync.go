@@ -28,7 +28,13 @@
 // CeilingBytes (16 MiB) the server stops storing UPDATEs of the document (they are dropped, not
 // relayed) and sends COMPACT_REQUEST to every socket with WRITE; the first SNAPSHOT_POST that
 // absorbs enough of the updates lifts it. A socket that keeps sending for CeilingGrace (10 s) after
-// its first refused UPDATE is closed with 4012 (CloseCeiling).
+// its first refused UPDATE is closed with 4012 (CloseCeiling). The refused updates are still on
+// their client, and nothing the others got builds on them; a socket with refused updates delivers
+// them in one of two ways. Its own SNAPSHOT_POST, when it holds every stored update, is stored
+// under a seq of its own (StoreSnapshot) and relayed to every other socket: no snapshot from an
+// older base can replace it. Otherwise it is closed 4000 as soon as the ceiling no longer stops
+// it — its next UPDATE that would be stored, or any snapshot stored by another socket (ctlCompacted,
+// on every instance) — and the client's replay after the reconnect resends what was refused.
 //
 // The client's first message is a text frame with its access token (like the gateway's
 // IDENTIFY) — a person's access token or a bot token. The server then sends one SNAPSHOT
@@ -70,6 +76,10 @@ const (
 	// ctlRecheck travels only between instances (Redis): every socket of the document checks its
 	// access again now (trash, overrides, restricted).
 	ctlRecheck byte = 0xF0
+	// ctlCompacted travels only between instances: a snapshot of the document was stored. Every
+	// instance forgets its count of the updates after the snapshot; a socket with an UPDATE refused at
+	// the ceiling reconnects (see the package doc).
+	ctlCompacted byte = 0xF1
 )
 
 // Limits of the protocol (ADR-0096 §4, ADR-0114 §3). MaxState is per section (Backend.MaxState).
@@ -245,12 +255,17 @@ type Post struct {
 	By      uuid.UUID
 	// VersionEvery is Config.VersionEvery (0 = the section's own default).
 	VersionEvery time.Duration
+	// Refused: an UPDATE of the poster was refused at the ceiling since its last stored snapshot, the
+	// state carries edits no stored update has (StoreSnapshot).
+	Refused bool
 }
 
 // Result is what a Backend did with a Post.
 type Result struct {
 	// Stored: the snapshot was saved (not stale).
 	Stored bool
+	// Through is the seq it was stored under (StoreSnapshot's through).
+	Through int64
 	// After runs once the post is committed and answered (events about a renamed document).
 	After func()
 }
@@ -349,28 +364,43 @@ func EachUpdate(ctx context.Context, st Store, q *sqlc.Queries, doc uuid.UUID, a
 
 // StoreSnapshot is the generic part of a Backend.PostSnapshot, inside its transaction and under
 // the document row lock: it ignores a stale post (through below the stored snapshot, or past the
-// counter nextSeq - 1), saves the snapshot and drops the updates it contains. authors are those
-// of the updates the snapshot absorbed; stored is false for a stale post.
-func StoreSnapshot(ctx context.Context, st Store, q *sqlc.Queries, doc uuid.UUID, nextSeq, through int64, state []byte, by *uuid.UUID) (stored bool, authors []uuid.UUID, err error) {
-	prev, err := SnapshotSeq(ctx, st, q, doc)
+// counter nextSeq - 1), saves the snapshot and drops the updates it contains.
+//
+// A Refused post carries edits no stored update has. It is stored only when it holds every stored
+// update (through = nextSeq - 1), and then under a seq of its own: an empty update is appended for
+// it and absorbed at once. A snapshot posted from an older base — without those edits, by a socket
+// that did not get the relayed state yet — has a through below that seq and is stale, so the edits
+// stay stored; a socket's position reaches the seq only through the relayed state (or the catch-up
+// of the gap before a later update).
+//
+// through is the seq the snapshot was stored under; authors are those of the updates it absorbed;
+// stored is false for a stale post.
+func StoreSnapshot(ctx context.Context, st Store, q *sqlc.Queries, p Post, nextSeq int64) (stored bool, through int64, authors []uuid.UUID, err error) {
+	prev, err := SnapshotSeq(ctx, st, q, p.Doc)
 	if err != nil {
-		return false, nil, err
+		return false, 0, nil, err
 	}
-	if through < prev || through > nextSeq-1 {
-		return false, nil, nil // stale (or ahead of the counter): ignored
+	through = p.Through
+	if through < prev || through > nextSeq-1 || (p.Refused && through != nextSeq-1) {
+		return false, 0, nil, nil // stale (or ahead of the counter): ignored
 	}
-	since, err := st.UpdatesSince(ctx, q, doc, prev)
+	since, err := st.UpdatesSince(ctx, q, p.Doc, prev)
 	if err != nil {
-		return false, nil, err
+		return false, 0, nil, err
 	}
-	n, err := st.UpsertSnapshot(ctx, q, doc, state, through, by)
+	if p.Refused {
+		if through, err = st.AppendUpdate(ctx, q, p.Doc, EmptyState, nil); err != nil {
+			return false, 0, nil, err
+		}
+	}
+	n, err := st.UpsertSnapshot(ctx, q, p.Doc, p.State, through, &p.By)
 	if err != nil || n == 0 {
-		return false, nil, err
+		return false, 0, nil, err
 	}
-	if err := st.DeleteUpdatesThrough(ctx, q, doc, through); err != nil {
-		return false, nil, err
+	if err := st.DeleteUpdatesThrough(ctx, q, p.Doc, through); err != nil {
+		return false, 0, nil, err
 	}
-	return true, since.Authors, nil
+	return true, through, since.Authors, nil
 }
 
 // IsRefusal reports an API refusal (an identity policy, a suspension), not a dependency failure.

@@ -1057,12 +1057,11 @@ func TestWikiSyncCeiling(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	a.send(updateFrame(0, []byte("u6")))
 	a.closed(closeCeiling)
-	// A snapshot through 3 lifts the ceiling and is relayed to the others (they never saw the
-	// refused updates); then the next update is stored under seq 4 and relayed.
+	// A snapshot through 3 of a socket without refused updates lifts the ceiling silently (it holds
+	// nothing the others lack; the refused updates come back with their socket's reconnect); then
+	// the next update is stored under seq 4 and relayed.
 	a2.send(post(3, snapshotMeta{PlainText: "compacted"}, []byte("state")))
-	if f := ro.next(frameSnapshot); frameSeq(f) != 3 || string(f[9:]) != "state" {
-		t.Fatalf("snapshot after the refusals %x", f)
-	}
+	ro.quiet(a2)
 	a2.send(updateFrame(0, []byte("u7")))
 	if f := a2.next(frameUpdate); frameSeq(f) != 4 || string(f[9:]) != "u7" {
 		t.Fatalf("update after the snapshot %x", f)
@@ -1073,20 +1072,29 @@ func TestWikiSyncCeiling(t *testing.T) {
 	}
 }
 
-// The byte ceiling: an update that would take the stored bytes past it is refused.
+// The byte ceiling: an update that would take the stored bytes past it is refused; one that fits
+// is stored (from a socket without a refused update: the refused one's next update reconnects it).
 func TestWikiSyncCeilingBytes(t *testing.T) {
 	e := newEnv(t, SyncConfig{CeilingBytes: 10, CompactCheckEvery: -1})
 	p := e.create(e.alice, "", "Ceiling bytes")
-	a := e.dial(e.alice, p.GetId())
+	a, b := e.dial(e.alice, p.GetId()), e.dial(e.alice, p.GetId())
 	a.next(frameSnapshot)
-	a.send(updateFrame(0, []byte("1234")))
-	a.next(frameUpdate)
-	a.send(updateFrame(0, []byte("1234")))
-	a.next(frameUpdate)
+	b.next(frameSnapshot)
+	for i := 0; i < 2; i++ {
+		a.send(updateFrame(0, []byte("1234")))
+		a.next(frameUpdate)
+		b.next(frameUpdate)
+	}
 	a.send(updateFrame(0, []byte("1234"))) // 12 > 10
 	a.next(frameCompact)
-	a.send(updateFrame(0, []byte("12"))) // 10 fits
-	if f := a.next(frameUpdate); frameSeq(f) != 3 {
+	b.next(frameCompact)
+	b.send(updateFrame(0, []byte("12"))) // 10 fits
+	if f := b.next(frameUpdate); frameSeq(f) != 3 {
 		t.Fatalf("update %x", f)
 	}
+	// A snapshot lifts the ceiling: the socket with the refused update is told to reconnect (its
+	// replay resends it).
+	a.next(frameUpdate)
+	b.send(post(3, snapshotMeta{PlainText: "x"}, []byte("state")))
+	a.closed(closeTryAgain)
 }
