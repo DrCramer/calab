@@ -211,8 +211,8 @@ func (b canvasBackend) PostSnapshot(ctx context.Context, p ysync.Post) (ysync.Re
 }
 
 // version writes a version of the canvas when due (ADR-0114 §1): at most one per VersionEvery,
-// only when the state changed since the last one (compared by its sha256) and the document has
-// objects (meta.objects ≠ 0); then thins the history to MaxVersions.
+// only when the state changed since the last one (compared by its sha256, kept with the version)
+// and the document has objects (meta.objects ≠ 0); then thins the history to MaxVersions.
 func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Post, it sqlc.CanvasItemHead, authors []uuid.UUID) error {
 	if o := p.Meta.(snapshotMeta).Objects; o != nil && *o == 0 {
 		return nil // the client says the document is empty: no version (the snapshot itself is kept)
@@ -231,8 +231,17 @@ func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Pos
 	case err != nil:
 		return err
 	default:
-		sum := sha256.Sum256(p.State)
-		if now.Sub(last.CreatedAt) < every || bytes.Equal(last.StateHash, sum[:]) {
+		// The interval first: inside the canvas's row lock nothing is hashed until a version is due.
+		if now.Sub(last.CreatedAt) < every {
+			return nil
+		}
+		prev := last.StateHash
+		if prev == nil { // stored before the column (00111)
+			if prev, err = q.SetCanvasVersionHash(ctx, last.ID); err != nil {
+				return err
+			}
+		}
+		if sum := sha256.Sum256(p.State); bytes.Equal(prev, sum[:]) {
 			return nil
 		}
 	}

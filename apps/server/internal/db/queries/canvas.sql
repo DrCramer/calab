@@ -301,15 +301,21 @@ DELETE FROM canvas_activity WHERE id = $1;
 -- ---- versions ----
 
 -- name: InsertCanvasVersion :one
-INSERT INTO canvas_versions (canvas_id, state, authors)
-VALUES (sqlc.arg('canvas_id'), sqlc.arg('state'), sqlc.arg('authors')::uuid[])
+INSERT INTO canvas_versions (canvas_id, state, authors, state_hash)
+VALUES (sqlc.arg('canvas_id'), sqlc.arg('state'), sqlc.arg('authors')::uuid[], sha256(sqlc.arg('state')))
 RETURNING id, canvas_id, authors, created_at, octet_length(state)::int AS size;
 
 -- name: LastCanvasVersion :one
 -- The newest version of a canvas without its state: the 10-minute rule and the «content
--- changed» check of ADR-0114 §1 (state_hash against sha256 of the new state).
-SELECT id, created_at, sha256(state) AS state_hash FROM canvas_versions
+-- changed» check of ADR-0114 §1 (state_hash against sha256 of the new state; NULL for a version
+-- stored before 00111, see SetCanvasVersionHash).
+SELECT id, created_at, state_hash FROM canvas_versions
 WHERE canvas_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1;
+
+-- name: SetCanvasVersionHash :one
+-- The state_hash of a version stored before 00111, computed once and kept.
+UPDATE canvas_versions SET state_hash = coalesce(state_hash, sha256(state)) WHERE id = $1
+RETURNING state_hash::bytea;
 
 -- name: ListCanvasVersions :many
 -- A canvas's versions without their state, the newest first; cursor: the last id (versions are

@@ -507,7 +507,7 @@ func (q *Queries) GetCanvasTrashDays(ctx context.Context, id uuid.UUID) (*int32,
 }
 
 const getCanvasVersion = `-- name: GetCanvasVersion :one
-SELECT id, canvas_id, state, authors, created_at FROM canvas_versions WHERE id = $1 AND canvas_id = $2
+SELECT id, canvas_id, state, authors, created_at, state_hash FROM canvas_versions WHERE id = $1 AND canvas_id = $2
 `
 
 type GetCanvasVersionParams struct {
@@ -525,6 +525,7 @@ func (q *Queries) GetCanvasVersion(ctx context.Context, arg GetCanvasVersionPara
 		&i.State,
 		&i.Authors,
 		&i.CreatedAt,
+		&i.StateHash,
 	)
 	return i, err
 }
@@ -601,8 +602,8 @@ func (q *Queries) InsertCanvasPermission(ctx context.Context, arg InsertCanvasPe
 
 const insertCanvasVersion = `-- name: InsertCanvasVersion :one
 
-INSERT INTO canvas_versions (canvas_id, state, authors)
-VALUES ($1, $2, $3::uuid[])
+INSERT INTO canvas_versions (canvas_id, state, authors, state_hash)
+VALUES ($1, $2, $3::uuid[], sha256($2))
 RETURNING id, canvas_id, authors, created_at, octet_length(state)::int AS size
 `
 
@@ -658,7 +659,7 @@ func (q *Queries) LastCanvasActivity(ctx context.Context, itemID *uuid.UUID) (Ca
 }
 
 const lastCanvasVersion = `-- name: LastCanvasVersion :one
-SELECT id, created_at, sha256(state) AS state_hash FROM canvas_versions
+SELECT id, created_at, state_hash FROM canvas_versions
 WHERE canvas_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1
 `
 
@@ -669,7 +670,8 @@ type LastCanvasVersionRow struct {
 }
 
 // The newest version of a canvas without its state: the 10-minute rule and the «content
-// changed» check of ADR-0114 §1 (state_hash against sha256 of the new state).
+// changed» check of ADR-0114 §1 (state_hash against sha256 of the new state; NULL for a version
+// stored before 00111, see SetCanvasVersionHash).
 func (q *Queries) LastCanvasVersion(ctx context.Context, canvasID uuid.UUID) (LastCanvasVersionRow, error) {
 	row := q.db.QueryRow(ctx, lastCanvasVersion, canvasID)
 	var i LastCanvasVersionRow
@@ -1787,6 +1789,19 @@ type SetCanvasTrashDaysParams struct {
 func (q *Queries) SetCanvasTrashDays(ctx context.Context, arg SetCanvasTrashDaysParams) error {
 	_, err := q.db.Exec(ctx, setCanvasTrashDays, arg.Days, arg.ID)
 	return err
+}
+
+const setCanvasVersionHash = `-- name: SetCanvasVersionHash :one
+UPDATE canvas_versions SET state_hash = coalesce(state_hash, sha256(state)) WHERE id = $1
+RETURNING state_hash::bytea
+`
+
+// The state_hash of a version stored before 00111, computed once and kept.
+func (q *Queries) SetCanvasVersionHash(ctx context.Context, id uuid.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, setCanvasVersionHash, id)
+	var state_hash []byte
+	err := row.Scan(&state_hash)
+	return state_hash, err
 }
 
 const trashCanvasSubtree = `-- name: TrashCanvasSubtree :many

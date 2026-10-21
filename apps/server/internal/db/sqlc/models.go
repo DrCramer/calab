@@ -769,6 +769,7 @@ type CanvasVersion struct {
 	State     []byte
 	Authors   []uuid.UUID
 	CreatedAt time.Time
+	StateHash []byte
 }
 
 type DirectoryObject struct {
