@@ -249,12 +249,12 @@ export function PhoneCanvasScreen({ workspaceId, itemId }: { workspaceId: string
   const known = useCanvas((s) => !!s.items[itemId]);
   const folder = useCanvas((s) => s.items[itemId]?.kind === CanvasItemKind.FOLDER);
   const trashed = useCanvas((s) => !!s.items[itemId]?.trashedAt);
-  const [tried, setTried] = useState(false);
+  const [tried, setTried] = useState<boolean | 'failed'>(false);
   const seen = useRef(false);
   useEffect(() => {
     if (useCanvas.getState().items[itemId]) return undefined;
     let live = true;
-    void loadItem(workspaceId, itemId).finally(() => live && setTried(true));
+    void loadItem(workspaceId, itemId).then((r) => live && setTried(r === 'failed' ? 'failed' : true));
     return () => {
       live = false;
     };
@@ -272,7 +272,7 @@ export function PhoneCanvasScreen({ workspaceId, itemId }: { workspaceId: string
         <PhoneHeader title={t('canvas.section')} icon={<HeaderIcon><CanvasIdleIcon className="size-5" /></HeaderIcon>} />
         {tried ? (
           <div className="grid min-h-0 flex-1 place-items-center px-6 text-center text-body text-muted" role="status" data-testid="phone-canvas-gone">
-            <p>{t('canvasBoard.status.gone')}</p>
+            <p>{t(tried === 'failed' ? 'canvas.loadFailed' : 'canvasBoard.status.gone')}</p>
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 place-items-center">

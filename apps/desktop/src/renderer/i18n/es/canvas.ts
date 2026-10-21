@@ -81,4 +81,5 @@ export const esCanvas: DictShape<typeof ruCanvas> = {
   'canvas.err.restoreVersion': 'No se pudo restaurar la versión',
   'canvas.err.settings': 'No se pudo guardar la configuración del lienzo',
   'canvas.searchFailed': 'La búsqueda de contenido no respondió: solo se muestran los elementos cargados',
+  'canvas.loadFailed': 'No se pudo cargar el lienzo. Comprueba la conexión',
 };

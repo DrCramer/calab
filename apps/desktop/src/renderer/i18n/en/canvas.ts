@@ -81,4 +81,5 @@ export const enCanvas: DictShape<typeof ruCanvas> = {
   'canvas.err.restoreVersion': 'Could not restore the version',
   'canvas.err.settings': 'Could not save the canvas settings',
   'canvas.searchFailed': 'Content search did not answer: only loaded items are shown',
+  'canvas.loadFailed': 'Could not load the canvas. Check the connection',
 };

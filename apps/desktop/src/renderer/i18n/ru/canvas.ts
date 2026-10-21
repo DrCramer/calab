@@ -82,4 +82,5 @@ export const ruCanvas = {
   'canvas.err.restoreVersion': 'Не удалось восстановить версию',
   'canvas.err.settings': 'Не удалось сохранить настройки холста',
   'canvas.searchFailed': 'Поиск по содержимому не ответил: показаны только загруженные',
+  'canvas.loadFailed': 'Не удалось загрузить холст. Проверьте соединение',
 } as const;

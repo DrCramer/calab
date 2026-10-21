@@ -138,10 +138,11 @@ export async function loadTrash(ws: string): Promise<void> {
 
 /**
  * The open canvas (its own bits) and its ancestors (the crumbs; their nodes expand so the canvas is
- * visible in the tree). A canvas that is gone or hidden from me closes.
+ * visible in the tree). A canvas that is gone or hidden from me closes. `failed`: the read did not get an answer
+ * (the network), so whoever waits for it can offer a retry.
  */
-export async function loadItem(ws: string, id: string): Promise<void> {
-  if (!id) return;
+export async function loadItem(ws: string, id: string): Promise<'ok' | 'gone' | 'failed'> {
+  if (!id) return 'gone';
   try {
     const [r, path] = await Promise.all([canvasApi.get(id), canvasApi.path(id).catch(() => null)]);
     if (path) useCanvas.getState().put(path.items.filter((i) => i.id !== id));
@@ -150,11 +151,14 @@ export async function loadItem(ws: string, id: string): Promise<void> {
       const ui = useCanvasUi.getState();
       for (const a of ancestorsOf(useCanvas.getState().items, id)) ui.setExpanded(a, true);
     }
+    return r.item ? 'ok' : 'gone';
   } catch (e) {
     if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
       useCanvas.getState().remove(id);
       if (itemOf(useCanvasUi.getState(), ws) === id) useCanvasUi.getState().openItem(ws, '');
+      return 'gone';
     }
+    return 'failed';
   }
 }
 
