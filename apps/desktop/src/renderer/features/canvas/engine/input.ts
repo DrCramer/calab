@@ -1,4 +1,4 @@
-import { dist, hitHandleRot, resizeCursorAt, rotateHandlePoint, type HandleId, type Point } from '../../../lib/canvas/geometry';
+import { ROTATE_CURSOR, dist, hitHandleRot, resizeCursorAt, rotateHandlePoint, type HandleId, type Point } from '../../../lib/canvas/geometry';
 import { isConnector } from '../../../lib/canvas/types';
 import type { CanvasEngine } from './engine';
 import {
@@ -75,7 +75,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const hoverCursor = (w: Point): string => {
     if (engine.tool !== 'select') return 'crosshair';
     if (engine.readOnly) return 'grab';
-    if (rotateHandleAt(w)) return 'grab';
+    if (rotateHandleAt(w)) return ROTATE_CURSOR;
     const g = resizeHandleAt(w);
     if (g) return resizeCursorAt(g, engine.selectionFrame()?.rot ?? 0);
     if (connectorEndAt(w)) return 'pointer';
@@ -278,6 +278,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     // Select tool.
     if (rotateHandleAt(w)) {
       engine.activeGesture = new RotateGesture(engine, engine.selection, w);
+      // The turn keeps its cursor while the pointer leaves the knob (moves do not touch it during a gesture).
+      if (e.pointerType === 'mouse') setCursor(ROTATE_CURSOR);
       return;
     }
     const handle = resizeHandleAt(w);

@@ -356,3 +356,13 @@ export function resizeCursorAt(h: HandleId, rot: number): string {
   const a = Math.round(((((base[h] + rot) % 180) + 180) % 180) / 45) % 4;
   return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][a] ?? 'default';
 }
+
+const ROTATE_CURSOR_SVG =
+  "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linejoin='round'>" +
+  "<path d='M12 5A7 7 0 1 1 5 12' stroke='#1b1b1f' stroke-width='4.4'/>" +
+  "<path d='M5 7.5 1.6 12.4h6.8z' fill='#fff' stroke='#1b1b1f' stroke-width='1.6'/>" +
+  "<path d='M12 5A7 7 0 1 1 5 12' stroke='#fff' stroke-width='2'/>" +
+  '</svg>';
+
+/** The turn cursor over the rotation handle: a clockwise arrow, white with a dark rim to read on any fill; `grab` as the fallback. Built once. */
+export const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(ROTATE_CURSOR_SVG)}") 12 12, grab`;
