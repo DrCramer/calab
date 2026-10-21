@@ -782,7 +782,9 @@ export class CanvasEngine implements Core {
   duplicateSelection(): string[] {
     if (!this.canEdit() || this.sel.size === 0) return [];
     this.doc.checkpoint();
-    const ids = duplicate(this.scene, this.doc, this.sel, 24, 24);
+    // The copy lands to the right of the selection (a gap of 24), on the same line; a lone connector has no box to go beside and keeps the small diagonal step.
+    const bb = boundsOf([...this.sel].flatMap((id) => { const o = this.scene.get(id); return o && !isConnector(o) ? [aabb(o)] : []; }));
+    const ids = duplicate(this.scene, this.doc, this.sel, bb ? bb.w + 24 : 24, bb ? 0 : 24);
     if (ids.length > 0) this.setSelection(ids);
     return ids;
   }

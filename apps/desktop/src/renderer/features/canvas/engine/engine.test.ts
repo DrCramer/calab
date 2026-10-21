@@ -435,6 +435,22 @@ describe('keyboard', () => {
     await flush();
     expect(objs(r).count).toBe(4);
   });
+  it('⌘D puts the copy to the right of the selection, on the same line', () => {
+    const r = rig();
+    const [a, b] = r.make(sticky(0, 0), sticky(300, 40));
+    const box = (id: string | undefined) => r.engine.scene.get(id ?? '') as unknown as { x: number; y: number; w: number };
+    r.engine.setSelection([a ?? '']);
+    r.key('d', { metaKey: true });
+    const copy = [...r.engine.selection][0];
+    expect(copy).not.toBe(a);
+    expect(box(copy)).toMatchObject({ x: box(a).w + 24, y: 0 });
+    r.engine.setSelection([a ?? '', b ?? '']);
+    r.key('d', { metaKey: true });
+    const copies = [...r.engine.selection].map(box);
+    // Joint bounds end at 300 + w: the pair moves as one, keeping its arrangement.
+    expect(Math.min(...copies.map((c) => c.x))).toBeGreaterThanOrEqual(300 + box(b).w + 24);
+    expect(copies.map((c) => c.y).sort((p, q) => p - q)).toEqual([0, 40]);
+  });
   it('pasting plain text makes a text object', async () => {
     const r = rig();
     r.clip.text = 'just words';
