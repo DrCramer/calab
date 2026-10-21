@@ -221,9 +221,17 @@ export class TextEditor {
   };
 
   /** Follows the camera (call after any pan/zoom while open). */
-  /** The textarea never scrolls (it grows with the text): a wheel or trackpad over it pans / zooms the canvas instead. */
+  /**
+   * A wheel or trackpad over the open text: scrolls the text when it is taller than the card (the textarea hides its
+   * scrollbar but scrolls), otherwise — and for a pinch — pans / zooms the canvas.
+   */
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    const ta = this.ta;
+    if (ta && !e.ctrlKey && ta.scrollHeight > ta.clientHeight + 1) {
+      ta.scrollTop += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      return;
+    }
     this.o.canvas.dispatchEvent(new WheelEvent('wheel', e));
   };
 
