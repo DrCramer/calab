@@ -120,13 +120,10 @@ ORDER BY down.depth, wp.position, wp.id;
 SELECT pg_advisory_xact_lock(hashtext('calaba.canvas.' || sqlc.arg('workspace_id')::uuid::text));
 
 -- name: CreateCanvasItem :one
--- A new item goes last among its live siblings (under LockCanvasTree).
+-- A new item at position (under LockCanvasTree: the caller takes the slot after its last sibling).
 INSERT INTO canvas_items (workspace_id, parent_id, kind, name, owner_id, updated_by, position)
 VALUES (sqlc.arg('workspace_id'), sqlc.narg('parent_id'), sqlc.arg('kind'), sqlc.arg('name'), sqlc.narg('owner_id'),
-        sqlc.narg('owner_id'),
-        (SELECT coalesce(max(s.position) + 1, 0) FROM canvas_items s
-         WHERE s.workspace_id = sqlc.arg('workspace_id')::uuid AND s.trashed_at IS NULL
-           AND (s.parent_id = sqlc.narg('parent_id')::uuid OR (sqlc.narg('parent_id')::uuid IS NULL AND s.parent_id IS NULL))))
+        sqlc.narg('owner_id'), sqlc.arg('position'))
 RETURNING *;
 
 -- name: UpdateCanvasItem :one
@@ -137,30 +134,68 @@ UPDATE canvas_items SET
     updated_by = sqlc.narg('updated_by'),
     updated_at = now()
 WHERE id = sqlc.arg('id')
-RETURNING *;
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root;
 
 -- name: MoveCanvasItem :one
--- A move (under LockCanvasTree): the item goes under parent_id (NULL = the top level) at
--- position; ReindexCanvasSiblings of the new and the old parent follows.
+-- A move (under LockCanvasTree): the item goes under parent_id (NULL = the top level) at position
+-- (a free slot between its new neighbours, see canvas.slot). The old siblings keep their gap.
+-- Returns the head columns (CanvasItemHead): the text stays where it is.
 UPDATE canvas_items SET
     parent_id  = sqlc.narg('parent_id')::uuid,
     position   = sqlc.arg('position')::int,
     updated_by = sqlc.narg('updated_by'),
     updated_at = now()
 WHERE id = sqlc.arg('id')
-RETURNING *;
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root;
 
--- name: ReindexCanvasSiblings :exec
--- Renumbers the live children of a parent (NULL = the top level) 0.. in their order; on a tie
--- first_id goes first (the item just moved to that position pushes the others down).
+-- name: LastCanvasRootPosition :one
+-- The highest position among the live top-level items other than exclude_id, -1 when none.
+SELECT coalesce(max(position), -1)::int FROM canvas_items
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND parent_id IS NULL AND trashed_at IS NULL
+  AND id <> sqlc.arg('exclude_id')::uuid;
+
+-- name: LastCanvasFolderPosition :one
+-- LastCanvasRootPosition for the live children of a folder.
+SELECT coalesce(max(position), -1)::int FROM canvas_items
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND parent_id = sqlc.arg('parent_id')::uuid AND trashed_at IS NULL
+  AND id <> sqlc.arg('exclude_id')::uuid;
+
+-- name: CanvasRootSiblingPositions :many
+-- The positions of the live top-level items other than exclude_id from index off on, in order:
+-- the neighbours of a move to an index. Two queries without an OR, like the listings.
+SELECT position FROM canvas_items
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND parent_id IS NULL AND trashed_at IS NULL
+  AND id <> sqlc.arg('exclude_id')::uuid
+ORDER BY position, id
+OFFSET sqlc.arg('off') LIMIT sqlc.arg('lim');
+
+-- name: CanvasFolderSiblingPositions :many
+-- CanvasRootSiblingPositions for the live children of a folder.
+SELECT position FROM canvas_items
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND parent_id = sqlc.arg('parent_id')::uuid AND trashed_at IS NULL
+  AND id <> sqlc.arg('exclude_id')::uuid
+ORDER BY position, id
+OFFSET sqlc.arg('off') LIMIT sqlc.arg('lim');
+
+-- name: SpreadCanvasSiblings :exec
+-- Only when two neighbours have no free position between them (or the last one is near the int
+-- limit): renumbers the live children of a parent (NULL = the top level) other than exclude_id
+-- to 0, step, 2·step.. in their order, leaving the slot at index hole free (hole < 0: none).
 WITH ordered AS (
-    SELECT s.id, (row_number() OVER (ORDER BY s.position, (s.id = sqlc.narg('first_id')::uuid) DESC, s.id) - 1)::int AS pos
+    SELECT s.id, (row_number() OVER (ORDER BY s.position, s.id) - 1)::int AS rn
     FROM canvas_items s
     WHERE s.workspace_id = sqlc.arg('workspace_id')::uuid AND s.trashed_at IS NULL
       AND (s.parent_id = sqlc.narg('parent_id')::uuid OR (sqlc.narg('parent_id')::uuid IS NULL AND s.parent_id IS NULL))
+      AND s.id <> sqlc.arg('exclude_id')::uuid
+), spread AS (
+    SELECT id, (CASE WHEN sqlc.arg('hole')::int >= 0 AND rn >= sqlc.arg('hole')::int THEN rn + 1 ELSE rn END)
+               * sqlc.arg('step')::int AS pos
+    FROM ordered
 )
-UPDATE canvas_items w SET position = ordered.pos
-FROM ordered WHERE w.id = ordered.id AND w.position <> ordered.pos;
+UPDATE canvas_items w SET position = spread.pos
+FROM spread WHERE w.id = spread.id AND w.position <> spread.pos;
 
 -- name: SetCanvasContent :one
 -- After a snapshot (ADR-0114 §3 SNAPSHOT_POST): the text for search, the preview and the size;
@@ -172,7 +207,8 @@ UPDATE canvas_items SET
     updated_by = sqlc.narg('updated_by'),
     updated_at = now()
 WHERE id = sqlc.arg('id') AND kind = 'canvas'
-RETURNING *;
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root;
 
 -- name: TrashCanvasSubtree :many
 -- Moves an item and its live subtree to the trash in one UPDATE: one timestamp for all, the item
@@ -193,8 +229,8 @@ RETURNING w.id;
 -- name: RestoreCanvasSubtree :many
 -- Restores a trash root and the part of its subtree trashed with it (same trashed_at, not a
 -- root of its own). parent_id: where the root goes back (the caller picks the top level when the
--- old parent is gone or in the trash); the root goes last among its new siblings (under
--- LockCanvasTree). Returns the ids.
+-- old parent is gone or in the trash); the root goes to position (the caller's slot after the
+-- last sibling, under LockCanvasTree). Returns the ids.
 WITH RECURSIVE root AS (
     SELECT r.id, r.workspace_id, r.trashed_at FROM canvas_items r WHERE r.id = sqlc.arg('id')::uuid AND r.trashed_root
 ), sub (id) AS (
@@ -202,17 +238,13 @@ WITH RECURSIVE root AS (
     UNION ALL
     SELECT c.id FROM canvas_items c JOIN sub ON c.parent_id = sub.id
     WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
-), last AS (
-    SELECT coalesce(max(s.position) + 1, 0)::int AS pos FROM canvas_items s, root
-    WHERE s.workspace_id = root.workspace_id AND s.trashed_at IS NULL
-      AND (s.parent_id = sqlc.narg('parent_id')::uuid OR (sqlc.narg('parent_id')::uuid IS NULL AND s.parent_id IS NULL))
 )
 UPDATE canvas_items w SET
     trashed_at   = NULL,
     trashed_by   = NULL,
     trashed_root = false,
     parent_id    = CASE WHEN w.id = sqlc.arg('id')::uuid THEN sqlc.narg('parent_id')::uuid ELSE w.parent_id END,
-    position     = CASE WHEN w.id = sqlc.arg('id')::uuid THEN (SELECT last.pos FROM last) ELSE w.position END,
+    position     = CASE WHEN w.id = sqlc.arg('id')::uuid THEN sqlc.arg('position')::int ELSE w.position END,
     updated_at   = CASE WHEN w.id = sqlc.arg('id')::uuid THEN now() ELSE w.updated_at END
 FROM sub WHERE w.id = sub.id
 RETURNING w.id;
@@ -429,16 +461,14 @@ FROM down JOIN canvas_item_heads wp ON wp.id = down.id
 ORDER BY down.depth, wp.id;
 
 -- name: DetachCanvasItem :one
--- Detaches an item (with its subtree) to the top level, last among the live top-level items
--- (under LockCanvasTree), with the flag that keeps its access (perm.Detached); in the trash it
+-- Detaches an item (with its subtree) to the top level at position (the caller's slot after the
+-- last live top-level item, under LockCanvasTree), with the flag that keeps its access (perm.Detached); in the trash it
 -- becomes a trash root of its own.
 UPDATE canvas_items w SET
     parent_id    = NULL,
     restricted   = sqlc.arg('restricted'),
     trashed_root = w.trashed_at IS NOT NULL,
-    position     = CASE WHEN w.trashed_at IS NULL THEN (
-        SELECT coalesce(max(s.position) + 1, 0) FROM canvas_items s
-        WHERE s.workspace_id = w.workspace_id AND s.trashed_at IS NULL AND s.parent_id IS NULL) ELSE w.position END,
+    position     = CASE WHEN w.trashed_at IS NULL THEN sqlc.arg('position')::int ELSE w.position END,
     updated_at   = now()
 WHERE w.id = sqlc.arg('id')
 RETURNING w.id;

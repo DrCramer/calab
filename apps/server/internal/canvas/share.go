@@ -177,7 +177,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if err := s.journal(ctx, q, head(row), &a.c.uid, "share", b, af); err != nil {
+		if err := s.journal(ctx, q, sqlc.CanvasItemHead(row), &a.c.uid, "share", b, af); err != nil {
 			return err
 		}
 		out = &v1.CanvasPermissionsResponse{Restricted: row.Restricted}

@@ -220,7 +220,12 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		row, err := q.CreateCanvasItem(ctx, sqlc.CreateCanvasItemParams{WorkspaceID: ws, ParentID: parent, Kind: kind, Name: name, OwnerID: &c.uid})
+		pos, err := slot(ctx, q, ws, parent, uuid.Nil, nil)
+		if err != nil {
+			return err
+		}
+		row, err := q.CreateCanvasItem(ctx, sqlc.CreateCanvasItemParams{WorkspaceID: ws, ParentID: parent, Kind: kind, Name: name, OwnerID: &c.uid,
+			Position: pos})
 		if err != nil {
 			return err
 		}
@@ -369,7 +374,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			it, changed = head(row), true
+			it, changed = sqlc.CanvasItemHead(row), true
 		}
 		moving := req.ParentId != nil && !sameParent(cur.ParentID, target)
 		if moving || req.Position != nil {
@@ -399,11 +404,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			if moving {
-				// The old siblings close the gap.
-				if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: ws, ParentID: cur.ParentID}); err != nil {
-					return err
-				}
+			if moving { // the old siblings keep the gap: the order is (position, id)
 				journal = append(journal, func(it sqlc.CanvasItemHead) error {
 					from, err := place(ctx, q, cur.ParentID)
 					if err != nil {
@@ -458,26 +459,17 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 }
 
 // place puts item it under parent (nil = the top level) at index position among the other live
-// siblings (nil = last), under LockCanvasTree: the item goes last and the siblings are
-// renumbered 0.., then it moves to the index, pushing the following ones down.
+// siblings (nil = last), under LockCanvasTree: one row is written (see slot).
 func (s *Service) place(ctx context.Context, q *sqlc.Queries, it sqlc.CanvasItemHead, parent *uuid.UUID, position *int32, by *uuid.UUID) (sqlc.CanvasItemHead, error) {
-	const last = 1 << 30
-	row, err := q.MoveCanvasItem(ctx, sqlc.MoveCanvasItemParams{ID: it.ID, ParentID: parent, Position: last, UpdatedBy: by})
+	pos, err := slot(ctx, q, it.WorkspaceID, parent, it.ID, position)
 	if err != nil {
 		return it, err
 	}
-	if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: it.WorkspaceID, ParentID: parent}); err != nil {
+	row, err := q.MoveCanvasItem(ctx, sqlc.MoveCanvasItemParams{ID: it.ID, ParentID: parent, Position: pos, UpdatedBy: by})
+	if err != nil {
 		return it, err
 	}
-	if position != nil {
-		if row, err = q.MoveCanvasItem(ctx, sqlc.MoveCanvasItemParams{ID: it.ID, ParentID: parent, Position: *position, UpdatedBy: by}); err != nil {
-			return it, err
-		}
-		if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{FirstID: &it.ID, WorkspaceID: it.WorkspaceID, ParentID: parent}); err != nil {
-			return it, err
-		}
-	}
-	return q.GetCanvasItem(ctx, row.ID)
+	return sqlc.CanvasItemHead(row), nil
 }
 
 func sameParent(a, b *uuid.UUID) bool {
@@ -529,9 +521,6 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if a.item, err = q.GetCanvasItem(ctx, id); err != nil {
-			return err
-		}
-		if err := q.ReindexCanvasSiblings(ctx, sqlc.ReindexCanvasSiblingsParams{WorkspaceID: a.item.WorkspaceID, ParentID: a.item.ParentID}); err != nil {
 			return err
 		}
 		pl, err := place(ctx, q, a.item.ParentID)
@@ -605,7 +594,11 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
-		ids, err := q.RestoreCanvasSubtree(ctx, sqlc.RestoreCanvasSubtreeParams{ID: id, ParentID: parent})
+		pos, err := slot(ctx, q, ws, parent, id, nil)
+		if err != nil {
+			return err
+		}
+		ids, err := q.RestoreCanvasSubtree(ctx, sqlc.RestoreCanvasSubtreeParams{ID: id, ParentID: parent, Position: pos})
 		if err != nil {
 			return err
 		}

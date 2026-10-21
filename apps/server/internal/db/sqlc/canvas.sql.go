@@ -46,6 +46,49 @@ func (q *Queries) AppendCanvasUpdate(ctx context.Context, arg AppendCanvasUpdate
 	return i, err
 }
 
+const canvasFolderSiblingPositions = `-- name: CanvasFolderSiblingPositions :many
+SELECT position FROM canvas_items
+WHERE workspace_id = $1::uuid AND parent_id = $2::uuid AND trashed_at IS NULL
+  AND id <> $3::uuid
+ORDER BY position, id
+OFFSET $4 LIMIT $5
+`
+
+type CanvasFolderSiblingPositionsParams struct {
+	WorkspaceID uuid.UUID
+	ParentID    uuid.UUID
+	ExcludeID   uuid.UUID
+	Off         int32
+	Lim         int32
+}
+
+// CanvasRootSiblingPositions for the live children of a folder.
+func (q *Queries) CanvasFolderSiblingPositions(ctx context.Context, arg CanvasFolderSiblingPositionsParams) ([]int32, error) {
+	rows, err := q.db.Query(ctx, canvasFolderSiblingPositions,
+		arg.WorkspaceID,
+		arg.ParentID,
+		arg.ExcludeID,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var position int32
+		if err := rows.Scan(&position); err != nil {
+			return nil, err
+		}
+		items = append(items, position)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const canvasItemPath = `-- name: CanvasItemPath :many
 WITH RECURSIVE up (id, parent_id, depth) AS (
     SELECT w.id, w.parent_id, 0 FROM canvas_items w WHERE w.id = $1::uuid
@@ -162,6 +205,48 @@ func (q *Queries) CanvasItemPaths(ctx context.Context, ids []uuid.UUID) ([]Canva
 	return items, nil
 }
 
+const canvasRootSiblingPositions = `-- name: CanvasRootSiblingPositions :many
+SELECT position FROM canvas_items
+WHERE workspace_id = $1::uuid AND parent_id IS NULL AND trashed_at IS NULL
+  AND id <> $2::uuid
+ORDER BY position, id
+OFFSET $3 LIMIT $4
+`
+
+type CanvasRootSiblingPositionsParams struct {
+	WorkspaceID uuid.UUID
+	ExcludeID   uuid.UUID
+	Off         int32
+	Lim         int32
+}
+
+// The positions of the live top-level items other than exclude_id from index off on, in order:
+// the neighbours of a move to an index. Two queries without an OR, like the listings.
+func (q *Queries) CanvasRootSiblingPositions(ctx context.Context, arg CanvasRootSiblingPositionsParams) ([]int32, error) {
+	rows, err := q.db.Query(ctx, canvasRootSiblingPositions,
+		arg.WorkspaceID,
+		arg.ExcludeID,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var position int32
+		if err := rows.Scan(&position); err != nil {
+			return nil, err
+		}
+		items = append(items, position)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const canvasSearchHeadlines = `-- name: CanvasSearchHeadlines :many
 SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.name),
     to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text),
@@ -250,10 +335,7 @@ func (q *Queries) CountCanvasSubtreeDepth(ctx context.Context, id uuid.UUID) (in
 const createCanvasItem = `-- name: CreateCanvasItem :one
 INSERT INTO canvas_items (workspace_id, parent_id, kind, name, owner_id, updated_by, position)
 VALUES ($1, $2, $3, $4, $5,
-        $5,
-        (SELECT coalesce(max(s.position) + 1, 0) FROM canvas_items s
-         WHERE s.workspace_id = $1::uuid AND s.trashed_at IS NULL
-           AND (s.parent_id = $2::uuid OR ($2::uuid IS NULL AND s.parent_id IS NULL))))
+        $5, $6)
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
 `
 
@@ -263,9 +345,10 @@ type CreateCanvasItemParams struct {
 	Kind        string
 	Name        string
 	OwnerID     *uuid.UUID
+	Position    int32
 }
 
-// A new item goes last among its live siblings (under LockCanvasTree).
+// A new item at position (under LockCanvasTree: the caller takes the slot after its last sibling).
 func (q *Queries) CreateCanvasItem(ctx context.Context, arg CreateCanvasItemParams) (CanvasItem, error) {
 	row := q.db.QueryRow(ctx, createCanvasItem,
 		arg.WorkspaceID,
@@ -273,6 +356,7 @@ func (q *Queries) CreateCanvasItem(ctx context.Context, arg CreateCanvasItemPara
 		arg.Kind,
 		arg.Name,
 		arg.OwnerID,
+		arg.Position,
 	)
 	var i CanvasItem
 	err := row.Scan(
@@ -353,24 +437,23 @@ UPDATE canvas_items w SET
     parent_id    = NULL,
     restricted   = $1,
     trashed_root = w.trashed_at IS NOT NULL,
-    position     = CASE WHEN w.trashed_at IS NULL THEN (
-        SELECT coalesce(max(s.position) + 1, 0) FROM canvas_items s
-        WHERE s.workspace_id = w.workspace_id AND s.trashed_at IS NULL AND s.parent_id IS NULL) ELSE w.position END,
+    position     = CASE WHEN w.trashed_at IS NULL THEN $2::int ELSE w.position END,
     updated_at   = now()
-WHERE w.id = $2
+WHERE w.id = $3
 RETURNING w.id
 `
 
 type DetachCanvasItemParams struct {
 	Restricted bool
+	Position   int32
 	ID         uuid.UUID
 }
 
-// Detaches an item (with its subtree) to the top level, last among the live top-level items
-// (under LockCanvasTree), with the flag that keeps its access (perm.Detached); in the trash it
+// Detaches an item (with its subtree) to the top level at position (the caller's slot after the
+// last live top-level item, under LockCanvasTree), with the flag that keeps its access (perm.Detached); in the trash it
 // becomes a trash root of its own.
 func (q *Queries) DetachCanvasItem(ctx context.Context, arg DetachCanvasItemParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, detachCanvasItem, arg.Restricted, arg.ID)
+	row := q.db.QueryRow(ctx, detachCanvasItem, arg.Restricted, arg.Position, arg.ID)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -656,6 +739,45 @@ func (q *Queries) LastCanvasActivity(ctx context.Context, itemID *uuid.UUID) (Ca
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const lastCanvasFolderPosition = `-- name: LastCanvasFolderPosition :one
+SELECT coalesce(max(position), -1)::int FROM canvas_items
+WHERE workspace_id = $1::uuid AND parent_id = $2::uuid AND trashed_at IS NULL
+  AND id <> $3::uuid
+`
+
+type LastCanvasFolderPositionParams struct {
+	WorkspaceID uuid.UUID
+	ParentID    uuid.UUID
+	ExcludeID   uuid.UUID
+}
+
+// LastCanvasRootPosition for the live children of a folder.
+func (q *Queries) LastCanvasFolderPosition(ctx context.Context, arg LastCanvasFolderPositionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, lastCanvasFolderPosition, arg.WorkspaceID, arg.ParentID, arg.ExcludeID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const lastCanvasRootPosition = `-- name: LastCanvasRootPosition :one
+SELECT coalesce(max(position), -1)::int FROM canvas_items
+WHERE workspace_id = $1::uuid AND parent_id IS NULL AND trashed_at IS NULL
+  AND id <> $2::uuid
+`
+
+type LastCanvasRootPositionParams struct {
+	WorkspaceID uuid.UUID
+	ExcludeID   uuid.UUID
+}
+
+// The highest position among the live top-level items other than exclude_id, -1 when none.
+func (q *Queries) LastCanvasRootPosition(ctx context.Context, arg LastCanvasRootPositionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, lastCanvasRootPosition, arg.WorkspaceID, arg.ExcludeID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const lastCanvasVersion = `-- name: LastCanvasVersion :one
@@ -1534,7 +1656,8 @@ UPDATE canvas_items SET
     updated_by = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
 `
 
 type MoveCanvasItemParams struct {
@@ -1544,16 +1667,37 @@ type MoveCanvasItemParams struct {
 	ID        uuid.UUID
 }
 
-// A move (under LockCanvasTree): the item goes under parent_id (NULL = the top level) at
-// position; ReindexCanvasSiblings of the new and the old parent follows.
-func (q *Queries) MoveCanvasItem(ctx context.Context, arg MoveCanvasItemParams) (CanvasItem, error) {
+type MoveCanvasItemRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+// A move (under LockCanvasTree): the item goes under parent_id (NULL = the top level) at position
+// (a free slot between its new neighbours, see canvas.slot). The old siblings keep their gap.
+// Returns the head columns (CanvasItemHead): the text stays where it is.
+func (q *Queries) MoveCanvasItem(ctx context.Context, arg MoveCanvasItemParams) (MoveCanvasItemRow, error) {
 	row := q.db.QueryRow(ctx, moveCanvasItem,
 		arg.ParentID,
 		arg.Position,
 		arg.UpdatedBy,
 		arg.ID,
 	)
-	var i CanvasItem
+	var i MoveCanvasItemRow
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
@@ -1563,7 +1707,6 @@ func (q *Queries) MoveCanvasItem(ctx context.Context, arg MoveCanvasItemParams) 
 		&i.Position,
 		&i.OwnerID,
 		&i.Restricted,
-		&i.PlainText,
 		&i.Preview,
 		&i.DocSize,
 		&i.NextSeq,
@@ -1594,30 +1737,6 @@ func (q *Queries) PruneCanvasVersions(ctx context.Context, canvasID uuid.UUID) (
 	return result.RowsAffected(), nil
 }
 
-const reindexCanvasSiblings = `-- name: ReindexCanvasSiblings :exec
-WITH ordered AS (
-    SELECT s.id, (row_number() OVER (ORDER BY s.position, (s.id = $1::uuid) DESC, s.id) - 1)::int AS pos
-    FROM canvas_items s
-    WHERE s.workspace_id = $2::uuid AND s.trashed_at IS NULL
-      AND (s.parent_id = $3::uuid OR ($3::uuid IS NULL AND s.parent_id IS NULL))
-)
-UPDATE canvas_items w SET position = ordered.pos
-FROM ordered WHERE w.id = ordered.id AND w.position <> ordered.pos
-`
-
-type ReindexCanvasSiblingsParams struct {
-	FirstID     *uuid.UUID
-	WorkspaceID uuid.UUID
-	ParentID    *uuid.UUID
-}
-
-// Renumbers the live children of a parent (NULL = the top level) 0.. in their order; on a tie
-// first_id goes first (the item just moved to that position pushes the others down).
-func (q *Queries) ReindexCanvasSiblings(ctx context.Context, arg ReindexCanvasSiblingsParams) error {
-	_, err := q.db.Exec(ctx, reindexCanvasSiblings, arg.FirstID, arg.WorkspaceID, arg.ParentID)
-	return err
-}
-
 const restoreCanvasSubtree = `-- name: RestoreCanvasSubtree :many
 WITH RECURSIVE root AS (
     SELECT r.id, r.workspace_id, r.trashed_at FROM canvas_items r WHERE r.id = $1::uuid AND r.trashed_root
@@ -1626,17 +1745,13 @@ WITH RECURSIVE root AS (
     UNION ALL
     SELECT c.id FROM canvas_items c JOIN sub ON c.parent_id = sub.id
     WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
-), last AS (
-    SELECT coalesce(max(s.position) + 1, 0)::int AS pos FROM canvas_items s, root
-    WHERE s.workspace_id = root.workspace_id AND s.trashed_at IS NULL
-      AND (s.parent_id = $2::uuid OR ($2::uuid IS NULL AND s.parent_id IS NULL))
 )
 UPDATE canvas_items w SET
     trashed_at   = NULL,
     trashed_by   = NULL,
     trashed_root = false,
     parent_id    = CASE WHEN w.id = $1::uuid THEN $2::uuid ELSE w.parent_id END,
-    position     = CASE WHEN w.id = $1::uuid THEN (SELECT last.pos FROM last) ELSE w.position END,
+    position     = CASE WHEN w.id = $1::uuid THEN $3::int ELSE w.position END,
     updated_at   = CASE WHEN w.id = $1::uuid THEN now() ELSE w.updated_at END
 FROM sub WHERE w.id = sub.id
 RETURNING w.id
@@ -1645,14 +1760,15 @@ RETURNING w.id
 type RestoreCanvasSubtreeParams struct {
 	ID       uuid.UUID
 	ParentID *uuid.UUID
+	Position int32
 }
 
 // Restores a trash root and the part of its subtree trashed with it (same trashed_at, not a
 // root of its own). parent_id: where the root goes back (the caller picks the top level when the
-// old parent is gone or in the trash); the root goes last among its new siblings (under
-// LockCanvasTree). Returns the ids.
+// old parent is gone or in the trash); the root goes to position (the caller's slot after the
+// last sibling, under LockCanvasTree). Returns the ids.
 func (q *Queries) RestoreCanvasSubtree(ctx context.Context, arg RestoreCanvasSubtreeParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, restoreCanvasSubtree, arg.ID, arg.ParentID)
+	rows, err := q.db.Query(ctx, restoreCanvasSubtree, arg.ID, arg.ParentID, arg.Position)
 	if err != nil {
 		return nil, err
 	}
@@ -1786,7 +1902,8 @@ UPDATE canvas_items SET
     updated_by = $4,
     updated_at = now()
 WHERE id = $5 AND kind = 'canvas'
-RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
 `
 
 type SetCanvasContentParams struct {
@@ -1797,9 +1914,29 @@ type SetCanvasContentParams struct {
 	ID        uuid.UUID
 }
 
+type SetCanvasContentRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
 // After a snapshot (ADR-0114 §3 SNAPSHOT_POST): the text for search, the preview and the size;
 // the client caps plain_text at 256 KiB and preview at 200 characters. Canvases only.
-func (q *Queries) SetCanvasContent(ctx context.Context, arg SetCanvasContentParams) (CanvasItem, error) {
+func (q *Queries) SetCanvasContent(ctx context.Context, arg SetCanvasContentParams) (SetCanvasContentRow, error) {
 	row := q.db.QueryRow(ctx, setCanvasContent,
 		arg.PlainText,
 		arg.Preview,
@@ -1807,7 +1944,7 @@ func (q *Queries) SetCanvasContent(ctx context.Context, arg SetCanvasContentPara
 		arg.UpdatedBy,
 		arg.ID,
 	)
-	var i CanvasItem
+	var i SetCanvasContentRow
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
@@ -1817,7 +1954,6 @@ func (q *Queries) SetCanvasContent(ctx context.Context, arg SetCanvasContentPara
 		&i.Position,
 		&i.OwnerID,
 		&i.Restricted,
-		&i.PlainText,
 		&i.Preview,
 		&i.DocSize,
 		&i.NextSeq,
@@ -1874,6 +2010,44 @@ func (q *Queries) SetCanvasVersionHash(ctx context.Context, id uuid.UUID) ([]byt
 	var state_hash []byte
 	err := row.Scan(&state_hash)
 	return state_hash, err
+}
+
+const spreadCanvasSiblings = `-- name: SpreadCanvasSiblings :exec
+WITH ordered AS (
+    SELECT s.id, (row_number() OVER (ORDER BY s.position, s.id) - 1)::int AS rn
+    FROM canvas_items s
+    WHERE s.workspace_id = $1::uuid AND s.trashed_at IS NULL
+      AND (s.parent_id = $2::uuid OR ($2::uuid IS NULL AND s.parent_id IS NULL))
+      AND s.id <> $3::uuid
+), spread AS (
+    SELECT id, (CASE WHEN $4::int >= 0 AND rn >= $4::int THEN rn + 1 ELSE rn END)
+               * $5::int AS pos
+    FROM ordered
+)
+UPDATE canvas_items w SET position = spread.pos
+FROM spread WHERE w.id = spread.id AND w.position <> spread.pos
+`
+
+type SpreadCanvasSiblingsParams struct {
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	ExcludeID   uuid.UUID
+	Hole        int32
+	Step        int32
+}
+
+// Only when two neighbours have no free position between them (or the last one is near the int
+// limit): renumbers the live children of a parent (NULL = the top level) other than exclude_id
+// to 0, step, 2·step.. in their order, leaving the slot at index hole free (hole < 0: none).
+func (q *Queries) SpreadCanvasSiblings(ctx context.Context, arg SpreadCanvasSiblingsParams) error {
+	_, err := q.db.Exec(ctx, spreadCanvasSiblings,
+		arg.WorkspaceID,
+		arg.ParentID,
+		arg.ExcludeID,
+		arg.Hole,
+		arg.Step,
+	)
+	return err
 }
 
 const trashCanvasSubtree = `-- name: TrashCanvasSubtree :many
@@ -1942,7 +2116,8 @@ UPDATE canvas_items SET
     updated_by = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
 `
 
 type UpdateCanvasItemParams struct {
@@ -1952,15 +2127,35 @@ type UpdateCanvasItemParams struct {
 	ID         uuid.UUID
 }
 
+type UpdateCanvasItemRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
 // Rename (name) and the restricted switch.
-func (q *Queries) UpdateCanvasItem(ctx context.Context, arg UpdateCanvasItemParams) (CanvasItem, error) {
+func (q *Queries) UpdateCanvasItem(ctx context.Context, arg UpdateCanvasItemParams) (UpdateCanvasItemRow, error) {
 	row := q.db.QueryRow(ctx, updateCanvasItem,
 		arg.Name,
 		arg.Restricted,
 		arg.UpdatedBy,
 		arg.ID,
 	)
-	var i CanvasItem
+	var i UpdateCanvasItemRow
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
@@ -1970,7 +2165,6 @@ func (q *Queries) UpdateCanvasItem(ctx context.Context, arg UpdateCanvasItemPara
 		&i.Position,
 		&i.OwnerID,
 		&i.Restricted,
-		&i.PlainText,
 		&i.Preview,
 		&i.DocSize,
 		&i.NextSeq,

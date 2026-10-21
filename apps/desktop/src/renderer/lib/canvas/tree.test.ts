@@ -13,7 +13,7 @@ const folder = (id: string, parentId = '', extra: Omit<Partial<CanvasItem>, '$ty
 /** a/ → (a1, a2/ → (a21)), b, c (a canvas); all lists loaded. */
 function tree(): CanvasData {
   let s: CanvasData = { items: {}, lists: {} };
-  s = applyList(s, childKey(WS, ''), [folder('a'), item('b'), item('c')]);
+  s = applyList(s, childKey(WS, ''), [folder('a', '', { position: 0 }), item('b', '', { position: 1024 }), item('c', '', { position: 2048 })]);
   s = applyList(s, childKey(WS, 'a'), [item('a1', 'a'), folder('a2', 'a')]);
   s = applyList(s, childKey(WS, 'a2'), [item('a21', 'a2')]);
   return s;
@@ -21,7 +21,7 @@ function tree(): CanvasData {
 
 describe('canvas tree reducers', () => {
   it('upsert moves an item between loaded lists at its position', () => {
-    const s = applyUpsert(tree(), item('a21', '', { position: 1 }));
+    const s = applyUpsert(tree(), item('a21', '', { position: 512 }));
     expect(s.lists[childKey(WS, 'a2')]).toEqual([]);
     expect(s.lists[childKey(WS, '')]).toEqual(['a', 'a21', 'b', 'c']);
   });

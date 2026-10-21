@@ -49,8 +49,8 @@ const without = (ids: readonly string[], id: string): readonly string[] => (ids.
 
 /**
  * CANVAS_ITEM_UPSERT or a local answer: the item is stored and moved between the loaded lists of
- * its workspace — out of every list it no longer belongs to, into its parent's list at its
- * position (or the trash's front, for a trash root). The parent folder learns it has children.
+ * its workspace — out of every list it no longer belongs to, into its parent's list before the
+ * first sibling ordered after it by (position, id) (or the trash's front, for a trash root). The parent folder learns it has children.
  */
 export function applyUpsert(s: CanvasData, item: CanvasItem, fromEvent = false): CanvasData {
   const prev = s.items[item.id];
@@ -64,12 +64,20 @@ export function applyUpsert(s: CanvasData, item: CanvasItem, fromEvent = false):
       lists[key] = ids;
       continue;
     }
-    let next = key === home ? ids : without(ids, item.id);
+    let next = key === home && key === trashKey(ws) ? ids : without(ids, item.id);
     if (key === home && !next.includes(item.id)) {
       if (key === trashKey(ws)) next = [item.id, ...next];
       else {
-        const at = Math.max(0, Math.min(next.length, item.position));
+        // The server's order is (position, id) with gaps between positions, not an index; a
+        // reorder among the same siblings moves the item too.
+        const after = (id: string): boolean => {
+          const o = s.items[id];
+          return !!o && (o.position > item.position || (o.position === item.position && o.id > item.id));
+        };
+        const i = next.findIndex(after);
+        const at = i < 0 ? next.length : i;
         next = [...next.slice(0, at), item.id, ...next.slice(at)];
+        if (next.length === ids.length && next.every((x, j) => x === ids[j])) next = ids;
       }
     }
     if (next !== ids) changed = true;
