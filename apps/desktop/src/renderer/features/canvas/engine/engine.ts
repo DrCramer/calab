@@ -894,8 +894,13 @@ export class CanvasEngine implements Core {
   /** Copies the selection and deletes what may be deleted: on locked objects ⌘X is a plain copy. */
   async cut(): Promise<void> {
     if (!this.canEdit()) return;
+    // What was copied is what goes: the selection may change while the clipboard write is awaited.
+    const ids = [...this.sel].filter((id) => !this.scene.get(id)?.locked);
     await this.copy();
-    this.deleteSelection();
+    const alive = ids.filter((id) => this.scene.get(id));
+    if (!this.canEdit() || alive.length === 0) return;
+    this.doc.checkpoint();
+    this.doc.remove(alive, (c, end) => this.scene.pointOf(c, end));
   }
 
   async paste(): Promise<string[]> {
