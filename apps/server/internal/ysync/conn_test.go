@@ -24,3 +24,17 @@ func TestRecheckDelay(t *testing.T) {
 		t.Fatalf("1000 sockets recheck between %v and %v", lo, hi)
 	}
 }
+
+// Without Profile.RecheckJitter every recheck is exactly RecheckInterval (the Wiki's relay).
+func TestNextRecheckWithoutJitter(t *testing.T) {
+	h := &Hub{cfg: Config{RecheckInterval: 30 * time.Second}}
+	for i := 0; i < 100; i++ {
+		if d := h.nextRecheck(); d != 30*time.Second {
+			t.Fatalf("nextRecheck %v", d)
+		}
+	}
+	h.prof.RecheckJitter = true
+	if d := h.nextRecheck(); d < 24*time.Second || d >= 36*time.Second {
+		t.Fatalf("jittered %v", d)
+	}
+}
