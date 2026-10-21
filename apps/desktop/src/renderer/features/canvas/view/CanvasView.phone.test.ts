@@ -614,7 +614,9 @@ describe('touch editing in the viewer', () => {
     expect(m.q('canvas-format-bar')).toBeNull();
     expect(m.q('canvas-phone-toolbar')).not.toBeNull();
     await settle(600);
-    expect(objects(m)[0]).toMatchObject({ text: 'Привет', fontSize: 'l' });
+    // One step up from the sticky's 18 px: an exact size next to the nearest token («m», stored as absence).
+    expect(objects(m)[0]).toMatchObject({ text: 'Привет', fontPx: 19 });
+    expect(objects(m)[0]).not.toHaveProperty('fontSize');
   });
 
   it('has no format bar in view mode', async () => {
