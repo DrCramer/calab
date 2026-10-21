@@ -170,22 +170,22 @@ export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { e
                 data-testid="canvas-shape-menu"
               >
                 {SHAPE_DEFS.map((d) => (
-                  <Dropdown.Item
-                    key={d.kind}
-                    aria-label={t(d.label)}
-                    title={t(d.label)}
-                    data-testid={`canvas-shape-${d.kind}`}
-                    className={cx(
-                      'grid size-9 cursor-default place-items-center rounded-[6px] text-fg outline-none data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg',
-                      shapeKind === d.kind && 'bg-active',
-                    )}
-                    onSelect={() => {
-                      engine.setShapeKind(d.kind);
-                      pick('shape');
-                    }}
-                  >
-                    {shapeIcon(d.kind)}
-                  </Dropdown.Item>
+                  <Tip key={d.kind} label={t(d.label)} side="bottom">
+                    <Dropdown.Item
+                      aria-label={t(d.label)}
+                      data-testid={`canvas-shape-${d.kind}`}
+                      className={cx(
+                        'grid size-9 cursor-default place-items-center rounded-[6px] text-fg outline-none data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg',
+                        shapeKind === d.kind && 'bg-active',
+                      )}
+                      onSelect={() => {
+                        engine.setShapeKind(d.kind);
+                        pick('shape');
+                      }}
+                    >
+                      {shapeIcon(d.kind)}
+                    </Dropdown.Item>
+                  </Tip>
                 ))}
               </Dropdown.Content>
             </Dropdown.Portal>

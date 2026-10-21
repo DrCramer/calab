@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { CircleHelp, Focus, Map as MapIcon, Maximize, Minus, Plus } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
-import { IconButton, MOD, cx } from '../../../components/ui';
+import { IconButton, MOD, Tip, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { CanvasEngine } from '../engine';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
@@ -16,20 +16,21 @@ const ZoomPct = memo(function ZoomPct({ engine, focusCanvas }: { engine: CanvasE
   useLocale();
   const pct = useEngineValue(engine, (s) => s.zoomPct);
   return (
-    <button
-      type="button"
-      onMouseDown={keepFocus}
-      onClick={() => {
-        engine.zoomTo(100);
-        focusCanvas();
-      }}
-      aria-label={t('canvasBoard.zoom.reset')}
-      title={t('canvasBoard.zoom.reset')}
-      data-testid="canvas-zoom-pct"
-      className="h-8 min-w-12 rounded-[var(--radius-icon)] px-1.5 text-center text-control tabular-nums text-muted hover:bg-hover hover:text-fg"
-    >
-      {t('canvasBoard.zoom.value', { pct })}
-    </button>
+    <Tip label={t('canvasBoard.zoom.reset')} shortcut="0">
+      <button
+        type="button"
+        onMouseDown={keepFocus}
+        onClick={() => {
+          engine.zoomTo(100);
+          focusCanvas();
+        }}
+        aria-label={t('canvasBoard.zoom.reset')}
+        data-testid="canvas-zoom-pct"
+        className="h-8 min-w-12 rounded-[var(--radius-icon)] px-1.5 text-center text-control tabular-nums text-muted hover:bg-hover hover:text-fg"
+      >
+        {t('canvasBoard.zoom.value', { pct })}
+      </button>
+    </Tip>
   );
 });
 
