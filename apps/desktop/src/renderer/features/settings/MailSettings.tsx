@@ -1,5 +1,5 @@
 import { TriangleAlert } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { isMailError, MAIL_RULES_MAX, type MailAccount, type MailCertInfo, type MailRule } from '../../../shared/mail';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Input, Modal, PasswordInput, Row, Segmented, Select, TextArea, Toggle } from '../../components/ui';
@@ -7,11 +7,11 @@ import { plural, t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { mailApi, setGrouping, updateSettings, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
-import { toast } from '../../stores/toasts';
+import { toast, useToasts } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { accountCertIssues, CertNotice, certTitle, pinTail, unpin } from '../mail/CertNotice';
 import { platform } from '../../platform';
-import { APP_PASSWORD_URL, mailErrorText } from '../mail/format';
+import { APP_PASSWORD_URL, folderLabel, folderNameIssue, mailErrorText } from '../mail/format';
 import { openSection } from '../shell/sectionNav';
 import { CommitInput } from './CommitInput';
 
@@ -252,83 +252,129 @@ function FolderRows({ id }: { id: string }): ReactNode {
   const folders = useMail((s) => s.folders[id]);
   const allRules = useMail((s) => s.settings.rules);
   const rules = useMemo(() => allRules.filter((r) => r.accountId === id), [allRules, id]);
-  const targets = useMemo(() => (folders ?? []).filter((f) => f.path !== '' && f.role !== 'inbox' && f.role !== 'drafts'), [folders]);
+  // Rule targets: the user's own folders first (the likely choice, and the default), then archive / sent / junk / trash.
+  const targets = useMemo(() => {
+    const real = (folders ?? []).filter((f) => f.path !== '' && f.role !== 'inbox' && f.role !== 'drafts' && f.role !== 'starred');
+    return [...real.filter((f) => !f.role).sort((a, b) => a.path.localeCompare(b.path)), ...real.filter((f) => f.role)];
+  }, [folders]);
+  const nameId = useId();
   const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [field, setField] = useState<MailRule['field']>('from');
   const [text, setText] = useState('');
   const [dest, setDest] = useState('');
   const destPath = targets.some((f) => f.path === dest) ? dest : (targets[0]?.path ?? '');
+  const issue = folderNameIssue(name, folders ?? []);
+  const full = allRules.length >= MAIL_RULES_MAX;
   const create = async (): Promise<void> => {
     const api = mailApi();
-    if (!api || busy || !name.trim()) return;
-    setBusy(true);
+    const clean = name.trim();
+    if (!api || creating || !clean || issue) return;
+    setCreating(true);
     try {
-      const f = await api.folders.create(id, name.trim());
+      const f = await api.folders.create(id, clean);
       setName('');
+      // The rule form below offers the new folder at once.
       setDest(f.path);
-      toast.success(t('mbox.folders.created'));
+      toast.success(t('mbox.folders.created', { name: f.name }));
     } catch (e) {
-      toast.error(errText(e));
+      const code = isMailError(e) ? e.code : null;
+      toast.error(code === 'INVALID' ? t('mbox.folders.errRefused') : code === 'NETWORK' || code === 'TIMEOUT' ? t('mbox.folders.errOffline') : errText(e));
     } finally {
-      setBusy(false);
+      setCreating(false);
     }
   };
   const addRule = (): void => {
-    if (!text.trim() || !destPath || allRules.length >= MAIL_RULES_MAX) return;
-    const rule: MailRule = { id: crypto.randomUUID(), accountId: id, field, contains: text.trim(), folderPath: destPath };
+    const contains = text.trim();
+    if (!contains || !destPath || full) return;
+    if (rules.some((r) => r.field === field && r.folderPath === destPath && r.contains.toLowerCase() === contains.toLowerCase())) {
+      toast.info(t('mbox.rules.duplicate'));
+      return;
+    }
+    const rule: MailRule = { id: crypto.randomUUID(), accountId: id, field, contains, folderPath: destPath };
     void updateSettings({ rules: [...allRules, rule] });
     setText('');
   };
+  // No confirmation (docs/08: only for the irreversible) — the toast offers «Отменить» instead.
+  const removeRule = (rule: MailRule): void => {
+    const at = allRules.findIndex((x) => x.id === rule.id);
+    void updateSettings({ rules: allRules.filter((x) => x.id !== rule.id) });
+    useToasts.getState().push('info', t('mbox.rules.removed'), {
+      label: t('mbox.rules.undo'),
+      run: () => {
+        const cur = useMail.getState().settings.rules;
+        if (cur.some((x) => x.id === rule.id) || cur.length >= MAIL_RULES_MAX) return;
+        void updateSettings({ rules: [...cur.slice(0, at), rule, ...cur.slice(at)] });
+      },
+    });
+  };
   const apply = async (): Promise<void> => {
     const api = mailApi();
-    if (!api || busy) return;
-    setBusy(true);
+    if (!api || applying) return;
+    setApplying(true);
     try {
       const r = await api.folders.applyRules(id);
-      toast.success(plural('mbox.folders.applied', r.moved));
+      if (r.moved) toast.success(plural('mbox.folders.applied', r.moved));
+      else toast.info(t('mbox.rules.appliedNone'));
     } catch (e) {
       toast.error(errText(e));
     } finally {
-      setBusy(false);
+      setApplying(false);
     }
   };
-  const folderName = (path: string): string => targets.find((f) => f.path === path)?.name ?? path;
+  const ruleHint = (path: string): ReactNode => {
+    const f = folders?.find((x) => x.path === path);
+    // A folder gone on the server (or renamed elsewhere): the rule stays but files nothing.
+    if (folders && !f) return <span className="text-danger-text">{t('mbox.rules.missing', { folder: path })}</span>;
+    return t('mbox.rules.to', { folder: f ? folderLabel(f) : path });
+  };
+  const ruleLabel = (r: MailRule, i: number): string => {
+    const s = t(r.field === 'from' ? 'mbox.rules.fromRow' : 'mbox.rules.subjectRow', { text: r.contains });
+    // Numbered when there are several: the first match wins, so the order matters.
+    return rules.length > 1 ? `${String(i + 1)}. ${s}` : s;
+  };
+  const enter = (e: KeyboardEvent<HTMLInputElement>, run: () => void): void => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) run();
+  };
   return (
     <>
-      <Row label={t('mbox.folders.new')} hint={t('mbox.folders.newHint')}>
-        <Input value={name} maxLength={100} aria-label={t('mbox.folders.new')} placeholder={t('mbox.folders.namePlaceholder')} className="w-44" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void create()} />
-        <Button size="sm" variant="secondary" busy={busy} disabled={!name.trim()} onClick={() => void create()} data-testid="settings-mail-folder-create">
+      <Row label={t('mbox.folders.new')} htmlFor={nameId} hint={issue ? <span className="text-danger-text" role="alert">{t(issue === 'exists' ? 'mbox.folders.errExists' : 'mbox.folders.errName')}</span> : t('mbox.folders.newHint')}>
+        <Input id={nameId} value={name} maxLength={100} placeholder={t('mbox.folders.namePlaceholder')} className="w-44" aria-invalid={issue ? true : undefined} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => enter(e, () => void create())} />
+        <Button size="sm" variant="secondary" busy={creating} disabled={!name.trim() || !!issue} onClick={() => void create()} data-testid="settings-mail-folder-create">
           {t('mbox.folders.create')}
         </Button>
       </Row>
-      {rules.map((r) => (
-        <Row key={r.id} label={t(r.field === 'from' ? 'mbox.rules.fromRow' : 'mbox.rules.subjectRow', { text: r.contains })} hint={t('mbox.rules.to', { folder: folderName(r.folderPath) })}>
-          <Button size="sm" variant="ghost" onClick={() => void updateSettings({ rules: allRules.filter((x) => x.id !== r.id) })}>
-            {t('mbox.settings.remove')}
-          </Button>
-        </Row>
-      ))}
-      <Row label={t('mbox.rules.add')} hint={targets.length ? t('mbox.rules.addHint') : t('mbox.rules.noFolders')}>
+      {rules.map((r, i) => {
+        const label = ruleLabel(r, i);
+        return (
+          <Row key={r.id} label={label} hint={ruleHint(r.folderPath)}>
+            <Button size="sm" variant="ghost" aria-label={t('mbox.rules.removeLabel', { rule: label })} onClick={() => removeRule(r)} data-testid="settings-mail-rule-remove">
+              {t('mbox.settings.remove')}
+            </Button>
+          </Row>
+        );
+      })}
+      <Row label={t('mbox.rules.add')} hint={full ? t('mbox.rules.max', { n: MAIL_RULES_MAX }) : targets.length ? t('mbox.rules.addHint') : t('mbox.rules.noFolders')}>
         <Select value={field} onChange={(e) => setField(e.target.value === 'subject' ? 'subject' : 'from')} aria-label={t('mbox.rules.field')} className="w-32">
           <option value="from">{t('mbox.rules.from')}</option>
           <option value="subject">{t('mbox.rules.subject')}</option>
         </Select>
-        <Input value={text} maxLength={200} aria-label={t('mbox.rules.text')} placeholder={t('mbox.rules.textPlaceholder')} className="w-40" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addRule()} />
+        <Input value={text} maxLength={200} aria-label={t('mbox.rules.text')} placeholder={t(field === 'from' ? 'mbox.rules.textPlaceholder' : 'mbox.rules.subjectPlaceholder')} className="w-40" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => enter(e, addRule)} />
         <Select value={destPath} onChange={(e) => setDest(e.target.value)} aria-label={t('mbox.rules.folder')} className="w-36" disabled={!targets.length}>
           {targets.map((f) => (
             <option key={f.id} value={f.path}>
-              {f.name}
+              {folderLabel(f)}
             </option>
           ))}
         </Select>
-        <Button size="sm" variant="secondary" disabled={!text.trim() || !destPath} onClick={addRule} data-testid="settings-mail-rule-add">
+        <Button size="sm" variant="secondary" disabled={!text.trim() || !destPath || full} onClick={addRule} data-testid="settings-mail-rule-add">
           {t('mbox.rules.addButton')}
         </Button>
       </Row>
       {rules.length ? (
         <Row label={t('mbox.rules.apply')} hint={t('mbox.rules.applyHint')}>
-          <Button size="sm" variant="secondary" busy={busy} onClick={() => void apply()} data-testid="settings-mail-rules-apply">
+          <Button size="sm" variant="secondary" busy={applying} onClick={() => void apply()} data-testid="settings-mail-rules-apply">
             {t('mbox.rules.applyButton')}
           </Button>
         </Row>

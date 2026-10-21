@@ -671,15 +671,18 @@ export class AccountSync {
     // eslint-disable-next-line no-control-regex
     if (!clean || clean.length > 100 || /[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.includes(delimiter) || clean.startsWith('.')) throw invalid('bad folder name');
     let path: string;
+    let parentPath = parent?.path ?? '';
     if (parent) path = `${parent.path}${delimiter}${clean}`;
     else {
       const ns = all.some((f) => f.role !== 'inbox' && f.path.startsWith(`INBOX${delimiter}`));
       path = ns ? `INBOX${delimiter}${clean}` : clean;
+      // The parent LIST reports for `INBOX.x`: the new folder sits where the next sync puts it.
+      if (ns) parentPath = 'INBOX';
     }
     if (all.some((f) => f.path.toLowerCase() === path.toLowerCase())) throw invalid('the folder already exists');
     await this.run((s) => s.createFolder(path));
     if (this.halted()) throw mailError('NETWORK', 'the account is offline');
-    const row = this.store.upsertFolder({ path, name: clean, delimiter, parentPath: parent?.path ?? '', role: null, specialUse: null });
+    const row = this.store.upsertFolder({ path, name: clean, delimiter, parentPath, role: null, specialUse: null });
     this.emitFolders();
     const out = this.folders().find((f) => f.id === folderId(this.host.accountId, row));
     if (!out) throw notFound('folder');
