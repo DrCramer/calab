@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { CanvasDoc, color, endpoint, isGroupId, isKind, isShapeKind, num } from './doc';
+import { CanvasDoc, color, endpoint, isGroupId, isKind, isShapeKind, num, type StoredFields } from './doc';
 import {
   boundsOf, distToPolyline, normRot, pointsBounds, polylineMidpoint, rectCenter, rectContainsPoint, rectInflate,
   rotatePoint, rotatedRectHitsRect, type Point, type Rect,
@@ -24,6 +24,11 @@ export interface SceneChange {
   readonly full: boolean;
   /** Added / removed objects or z changed (the draw order may differ). */
   readonly order: boolean;
+}
+
+/** Where a record's fields are read from: the object's Y.Map, or the map with a gesture preview over it. */
+interface FieldSource {
+  get(key: string): unknown;
 }
 
 const FULL_REPAINT_OVER = 256;
@@ -88,6 +93,8 @@ export class Scene {
   private order: string[] | null = null;
   private ranks: Map<string, number> | null = null;
   private readonly listeners = new Set<(c: SceneChange) => void>();
+  /** Gesture previews (lib/canvas/live.ts): fields shown instead of the stored ones, by object id. */
+  private overrides: ReadonlyMap<string, StoredFields> = new Map();
   /** Bumped on every update; renderers use it to invalidate caches. */
   version = 0;
   private readonly onDeep: (events: Y.YEvent<Y.AbstractType<unknown>>[]) => void;
@@ -113,6 +120,25 @@ export class Scene {
 
   get size(): number {
     return this.recs.size;
+  }
+
+  /**
+   * Replaces the previewed fields (by object id; `undefined` = the stored key reads as absent) and rebuilds the objects
+   * whose entry changed, by identity: an unchanged entry must be passed as the same map.
+   */
+  setOverrides(next: ReadonlyMap<string, StoredFields>): void {
+    const prev = this.overrides;
+    if (prev.size === 0 && next.size === 0) return;
+    this.overrides = next;
+    const ids = new Set<string>();
+    for (const [id, f] of prev) if (next.get(id) !== f) ids.add(id);
+    for (const [id, f] of next) if (prev.get(id) !== f) ids.add(id);
+    if (ids.size > 0) this.refresh(ids);
+  }
+
+  private source(id: string, m: Y.Map<unknown>): FieldSource {
+    const ov = this.overrides.get(id);
+    return ov ? { get: (k) => (ov.has(k) ? ov.get(k) : m.get(k)) } : m;
   }
 
   get(id: string): ObjectRec | undefined {
@@ -458,13 +484,13 @@ export class Scene {
     }
   }
 
-  private zOf(m: Y.Map<unknown>): string {
+  private zOf(m: FieldSource): string {
     const z = m.get('z');
     return isValidKey(z) ? z : '';
   }
 
   /** Optional transform fields as they are in the doc; defaults stay absent so unchanged documents build the same records. */
-  private extras(m: Y.Map<unknown>, box: boolean): { rot?: number; locked?: boolean; group?: string } {
+  private extras(m: FieldSource, box: boolean): { rot?: number; locked?: boolean; group?: string } {
     const out: { rot?: number; locked?: boolean; group?: string } = {};
     const rot = box ? normRot(num(m.get('rot'), 0, -1e6, 1e6)) : 0;
     if (rot !== 0) out.rot = rot;
@@ -474,7 +500,8 @@ export class Scene {
     return out;
   }
 
-  private buildBox(id: string, m: Y.Map<unknown>): BoxRec | null {
+  private buildBox(id: string, ym: Y.Map<unknown>): BoxRec | null {
+    const m = this.source(id, ym);
     const kind = m.get('kind');
     const z = this.zOf(m);
     const x = num(m.get('x'), 0);
@@ -483,7 +510,7 @@ export class Scene {
     // a lock or a move (which rebuild it) never look like a text change.
     const cell: { fmt?: Fmt } = {};
     const textOf = (): string => {
-      const t = m.get('text');
+      const t = ym.get('text');
       if (!(t instanceof Y.Text)) return '';
       const r = fmtFromDelta(t.toDelta() as never);
       let f = r.fmt;
@@ -531,7 +558,8 @@ export class Scene {
     }
   }
 
-  private putConnector(id: string, m: Y.Map<unknown>): ConnectorRec | null {
+  private putConnector(id: string, ym: Y.Map<unknown>): ConnectorRec | null {
+    const m = this.source(id, ym);
     const old = this.recs.get(id);
     if (old && isConnector(old)) this.unlinkConnector(old);
     const from = endpoint(m.get('from')) ?? { x: 0, y: 0 };

@@ -157,9 +157,10 @@ describe('selection, move, resize', () => {
     r.move(0 + 160 + 4 + 80, 100);
     // the dragged sticky's left edge would sit at 164 → attracted to the first one's right edge (160)
     const second = [...r.engine.selection][0] ?? '';
-    expect(objs(r).snapshot(second)?.x).toBe(160);
+    expect(r.engine.scene.get(second)?.x).toBe(160);
     expect(r.engine['overlay'].guides.length).toBeGreaterThan(0);
     r.up(244, 100);
+    expect(objs(r).snapshot(second)?.x).toBe(160);
     expect(r.engine['overlay'].guides).toEqual([]);
   });
   it('snaps to the grid, and ⌘/Ctrl turns snapping off', () => {
@@ -211,11 +212,14 @@ describe('selection, move, resize', () => {
     const [a] = r.make(sticky(100, 100));
     r.down(150, 150);
     r.move(250, 250);
-    expect(objs(r).snapshot(a ?? '')?.x).toBe(200);
+    // Shown where the pointer is; the document is written on release only.
+    expect(r.engine.scene.get(a ?? '')?.x).toBe(200);
+    expect(objs(r).snapshot(a ?? '')?.x).toBe(100);
     r.key('Escape');
-    expect(objs(r).snapshot(a ?? '')).toMatchObject({ x: 100, y: 100 });
+    expect(r.engine.scene.get(a ?? '')).toMatchObject({ x: 100, y: 100 });
     r.up(250, 250);
     expect(objs(r).snapshot(a ?? '')?.x).toBe(100);
+    expect(r.engine.getState().canUndo).toBe(true); // the creation, untouched
   });
   it('arrow keys nudge, Shift by 10', () => {
     const r = rig();

@@ -10,6 +10,8 @@ import {
 
 /** Transaction origin of this client's own edits: the only one the UndoManager tracks. */
 export const LOCAL_ORIGIN: object = Object.freeze({ canvas: 'local' });
+/** Origin of the gesture preview written to `live` (lib/canvas/live.ts): never tracked, never undone. */
+export const LIVE_ORIGIN: object = Object.freeze({ canvas: 'live' });
 /** Undo steps kept; the oldest is dropped (and the values it held are freed) past this. */
 export const MAX_UNDO = 100;
 
@@ -208,6 +210,22 @@ function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unkno
   }
 }
 
+/** A patch as it would be stored: field → value, `undefined` = the key is removed (a default is stored as absence). */
+export type StoredFields = ReadonlyMap<string, unknown>;
+
+/** The fields `patchMany` would write for `raw` on an object of `kind` (only keys valid for it, values normalized). */
+export function normalizePatch(kind: ObjectKind, raw: ObjectPatch): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  const patch = expandFont(kind, raw);
+  for (const key of PATCH_KEYS[kind]) {
+    if (!(key in patch)) continue;
+    const v = patchValue(kind, key, patch[key]);
+    if (v === REMOVE) out.set(key, undefined);
+    else if (v !== undefined) out.set(key, v);
+  }
+  return out;
+}
+
 const same = (a: unknown, b: unknown): boolean => a === b || (typeof a === 'object' && typeof b === 'object' && JSON.stringify(a) === JSON.stringify(b));
 
 export interface CanvasDocOptions {
@@ -225,10 +243,14 @@ export class CanvasDoc {
   readonly ydoc: Y.Doc;
   readonly objects: Y.Map<Y.Map<unknown>>;
   readonly meta: Y.Map<unknown>;
+  /** Gesture previews by client id (lib/canvas/live.ts): outside the undo scope, each entry overwritten in place. */
+  readonly live: Y.Map<unknown>;
   readonly undo: Y.UndoManager;
   private readonly rng: (() => number) | null;
   private readonly makeId: () => string;
   private gesture = 0;
+  /** The undo step the current gesture opened (null while it has written nothing). */
+  private gestureStep: unknown = null;
   private static readonly CAPTURE_MS = 500;
   /** Rough encoded size of an object without its text (measured ≈ 230 bytes for a sticky) and the per-transaction budget. */
   private static readonly OBJECT_BYTES = 260;
@@ -240,9 +262,15 @@ export class CanvasDoc {
     this.makeId = opts.makeId ?? newId;
     this.objects = ydoc.getMap<Y.Map<unknown>>('objects');
     this.meta = ydoc.getMap<unknown>('meta');
+    this.live = ydoc.getMap<unknown>('live');
     this.undo = new Y.UndoManager(this.objects, { trackedOrigins: new Set([LOCAL_ORIGIN]), captureTimeout: CanvasDoc.CAPTURE_MS });
+    this.undo.on('stack-item-added', this.onStepAdded);
     ydoc.on('afterAllTransactions', this.trimUndo);
   }
+
+  private readonly onStepAdded = (e: { stackItem: unknown; origin: unknown; type: 'undo' | 'redo' }): void => {
+    if (this.gesture > 0 && e.type === 'undo' && e.origin === LOCAL_ORIGIN) this.gestureStep = e.stackItem;
+  };
 
   /**
    * Keeps at most MAX_UNDO steps. The UndoManager keeps every value a step overwrote, content and all, in the doc (and so
@@ -313,14 +341,27 @@ export class CanvasDoc {
   /** One drag = one undo step, however long it pauses. */
   beginGesture(): void {
     if (this.gesture++ > 0) return;
+    this.gestureStep = null;
     this.undo.stopCapturing();
     this.undo.captureTimeout = 1e12;
   }
 
   endGesture(): void {
     if (this.gesture === 0 || --this.gesture > 0) return;
+    this.gestureStep = null;
     this.undo.captureTimeout = CanvasDoc.CAPTURE_MS;
     this.undo.stopCapturing();
+  }
+
+  /**
+   * Ends the gesture and takes back what it wrote. A gesture that wrote nothing undoes nothing: the step on top of the
+   * stack is then an earlier action of the user (the sticky just created, a text edit), not this gesture.
+   */
+  cancelGesture(): void {
+    if (this.gesture === 0) return;
+    const step = this.gesture === 1 ? this.gestureStep : null;
+    this.endGesture();
+    if (step !== null && this.undo.undoStack[this.undo.undoStack.length - 1] === step) this.undo.undo();
   }
 
   /** Highest z key currently in the doc. */
@@ -415,13 +456,10 @@ export class CanvasDoc {
         if (!m) continue;
         const kind = m.get('kind');
         if (!isKind(kind)) continue;
-        const patch = expandFont(kind, raw);
-        for (const key of PATCH_KEYS[kind]) {
-          if (!(key in patch)) continue;
-          const v = patchValue(kind, key, patch[key]);
-          if (v === REMOVE) {
+        for (const [key, v] of normalizePatch(kind, raw)) {
+          if (v === undefined) {
             if (m.has(key)) m.delete(key);
-          } else if (v !== undefined && !same(m.get(key), v)) m.set(key, v);
+          } else if (!same(m.get(key), v)) m.set(key, v);
         }
       }
     });
@@ -619,6 +657,7 @@ export class CanvasDoc {
 
   destroy(): void {
     this.ydoc.off('afterAllTransactions', this.trimUndo);
+    this.undo.off('stack-item-added', this.onStepAdded);
     this.undo.destroy();
   }
 }

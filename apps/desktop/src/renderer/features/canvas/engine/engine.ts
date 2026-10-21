@@ -12,6 +12,7 @@ import { contentRect } from '../../../lib/canvas/shapes';
 import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
 import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type MeasureFn } from '../../../lib/canvas/textLayout';
 import { polylineMidpoint } from '../../../lib/canvas/geometry';
+import { LiveLayer } from '../../../lib/canvas/live';
 import {
   DEFAULTS, aabb, isConnector,
   type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
@@ -135,6 +136,7 @@ function makeCanvasMeasure(family: () => string): MeasureFn {
 export class CanvasEngine implements Core {
   readonly doc: CanvasDoc;
   readonly scene: Scene;
+  readonly live: LiveLayer;
   /** Voting on stickies and shapes (ADR-0115): the numbers behind the badges. */
   readonly votes: VoteBook;
   readonly awareness = new AwarenessLayer();
@@ -209,6 +211,7 @@ export class CanvasEngine implements Core {
     this.doc = new CanvasDoc(opts.doc);
     const layouter = new TextLayouter(opts.measure ?? makeCanvasMeasure(() => this.palette.fontFamily));
     this.scene = new Scene(this.doc, layouter);
+    this.live = new LiveLayer(this.doc, this.scene, { now: this.now });
     this.userId = opts.userId ?? '';
     this.votes = new VoteBook(opts.doc, this.userId, (id) => {
       const o = this.scene.get(id);
@@ -1107,6 +1110,7 @@ export class CanvasEngine implements Core {
 
   /** Remote participants from the sync layer; schedules at most one timer for the next cursor fade step. */
   setPeers(peers: readonly PeerState[]): void {
+    this.live.setPresent(peers.map((p) => p.id));
     const changed = this.awareness.setPeers(peers, this.now());
     if (changed) this.renderer.requestRemoteFrame();
     this.scheduleAwarenessStep();
@@ -1353,6 +1357,7 @@ export class CanvasEngine implements Core {
     this.clearViewTimer();
     for (const d of this.disposers.splice(0)) d();
     this.renderer.destroy();
+    this.live.destroy();
     this.scene.destroy();
     this.doc.destroy();
     this.listeners.clear();

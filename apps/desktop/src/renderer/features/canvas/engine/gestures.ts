@@ -1,6 +1,7 @@
 import { pinchStep, type Camera } from '../../../lib/canvas/camera';
 import { duplicate } from '../../../lib/canvas/clipboard';
 import type { CanvasDoc } from '../../../lib/canvas/doc';
+import type { LiveLayer } from '../../../lib/canvas/live';
 import {
   ROT_STEP, angleToward, boundsOf, dist, mapRect, normRot, rectCenter, rectFromPoints, rectInflate, resizeRect, resizeRotated, rotatePoint, snapAngle, snapTo,
   type HandleId, type Point, type Rect,
@@ -25,6 +26,8 @@ export interface Mods {
 export interface Core {
   readonly doc: CanvasDoc;
   readonly scene: Scene;
+  /** Where a gesture shows its fields while it runs; the document is written once, on release (`commit`). */
+  readonly live: LiveLayer;
   readonly camera: Camera;
   /** The camera including queued gesture input; continuous gestures (pan, pinch) build on it. */
   readonly liveCamera: Camera;
@@ -171,7 +174,6 @@ export class MoveGesture implements Gesture {
   readonly kind = 'move';
   private ids: string[];
   private started = false;
-  private wrote = false;
   private boxStart = new Map<string, Point>();
   private freeStart = new Map<string, { from?: Point; to?: Point }>();
   private startRect: Rect | null = null;
@@ -248,8 +250,7 @@ export class MoveGesture implements Gesture {
       if (f.to) p.to = { x: f.to.x + dx, y: f.to.y + dy };
       patches.set(id, p);
     }
-    this.core.doc.patchMany(patches);
-    this.wrote = true;
+    this.core.live.preview(patches);
     this.core.setOverlay({ guides });
   }
 
@@ -259,14 +260,16 @@ export class MoveGesture implements Gesture {
       return;
     }
     if (this.ids.length === 0) return;
+    this.core.live.commit();
     this.core.doc.endGesture();
     this.core.setOverlay({ guides: [] });
   }
 
   cancel(): void {
     if (!this.started || this.ids.length === 0) return;
-    this.core.doc.endGesture();
-    if (this.wrote) this.core.doc.undo.undo();
+    this.core.live.drop();
+    // Takes back the Alt-copies, if any; the move itself was never written.
+    this.core.doc.cancelGesture();
     this.core.setOverlay({ guides: [] });
   }
 }
@@ -329,19 +332,22 @@ export class ResizeGesture implements Gesture {
         patches.set(id, o.kind === 'text' ? { x: r.x, w: r.w } : { x: r.x, y: r.y, w: r.w, h: r.h });
       }
     }
-    this.core.doc.patchMany(patches);
+    this.core.live.preview(patches);
     this.core.setOverlay({ guides });
   }
 
   end(): void {
-    if (this.began) this.core.doc.endGesture();
+    if (this.began) {
+      this.core.live.commit();
+      this.core.doc.endGesture();
+    }
     this.core.setOverlay({ guides: [] });
   }
 
   cancel(): void {
     if (!this.began) return;
-    this.core.doc.endGesture();
-    this.core.doc.undo.undo();
+    this.core.live.drop();
+    this.core.doc.cancelGesture();
     this.core.setOverlay({ guides: [] });
   }
 }
@@ -411,7 +417,7 @@ export class RotateGesture implements Gesture {
       if (f.to) p.to = rotatePoint(f.to, this.pivot, d);
       patches.set(id, p);
     }
-    this.core.doc.patchMany(patches);
+    this.core.live.preview(patches);
     const only = this.boxes.length === 1 ? this.boxes[0] : undefined;
     // One box: its absolute angle; several: the signed turn. `+ 0` folds a rounded -0 into 0.
     this.core.setOverlay({ angle: { at: w, deg: (Math.round(only ? normRot(only.rot + d) : d) % 360) + 0 } });
@@ -419,14 +425,16 @@ export class RotateGesture implements Gesture {
 
   end(): void {
     this.core.setOverlay({ angle: null });
-    if (this.began) this.core.doc.endGesture();
+    if (!this.began) return;
+    this.core.live.commit();
+    this.core.doc.endGesture();
   }
 
   cancel(): void {
     this.core.setOverlay({ angle: null });
     if (!this.began) return;
-    this.core.doc.endGesture();
-    this.core.doc.undo.undo();
+    this.core.live.drop();
+    this.core.doc.cancelGesture();
   }
 }
 
@@ -598,7 +606,6 @@ export class WireGesture implements Gesture {
 export class EndpointGesture implements Gesture {
   readonly kind = 'endpoint';
   private began = false;
-  private wrote = false;
   private readonly other: string | undefined;
 
   constructor(private readonly core: Core, private readonly conn: ConnectorRec, private readonly end_: 'from' | 'to') {
@@ -613,20 +620,22 @@ export class EndpointGesture implements Gesture {
     }
     const g = glueAt(this.core, w, this.other);
     const e = endpointOf(g, w);
-    this.core.doc.patch(this.conn.id, this.end_ === 'from' ? { from: e } : { to: e });
-    this.wrote = true;
+    this.core.live.preview(new Map([[this.conn.id, this.end_ === 'from' ? { from: e } : { to: e }]]));
     this.core.setOverlay(glueOverlay(g));
   }
 
   end(): void {
-    if (this.began) this.core.doc.endGesture();
+    if (this.began) {
+      this.core.live.commit();
+      this.core.doc.endGesture();
+    }
     this.core.setOverlay({ glue: null });
   }
 
   cancel(): void {
     if (this.began) {
-      this.core.doc.endGesture();
-      if (this.wrote) this.core.doc.undo.undo();
+      this.core.live.drop();
+      this.core.doc.cancelGesture();
     }
     this.core.setOverlay({ glue: null });
   }
