@@ -80,4 +80,5 @@ export const zhCanvas: DictShape<typeof ruCanvas> = {
   'canvas.err.versions': '无法加载版本历史',
   'canvas.err.restoreVersion': '无法恢复该版本',
   'canvas.err.settings': '无法保存画布设置',
+  'canvas.searchFailed': '内容搜索未响应：仅显示已加载的项目',
 };

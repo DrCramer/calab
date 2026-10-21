@@ -282,6 +282,7 @@ function SearchResults({ workspaceId, query }: { workspaceId: string; query: str
   const local = useCanvas(useShallow((s) => filterItems(s.items, workspaceId, query)));
   const [remote, setRemote] = useState<Hit[]>([]);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const q = query.trim();
   useEffect(() => {
     if (q.length < 2) return;
@@ -291,9 +292,14 @@ function SearchResults({ workspaceId, query }: { workspaceId: string; query: str
       searchItems(workspaceId, q, ctl.signal).then(
         (r) => {
           setRemote(r);
+          setFailed(false);
           setBusy(false);
         },
-        () => setBusy(false),
+        () => {
+          // Not «nothing found»: the server's part is missing, said under the local matches.
+          if (!ctl.signal.aborted) setFailed(true);
+          setBusy(false);
+        },
       );
     }, 250);
     return () => {
@@ -327,7 +333,9 @@ function SearchResults({ workspaceId, query }: { workspaceId: string; query: str
           <Spinner className="size-3.5" />
         </div>
       ) : !local.length && !extra.length ? (
-        <p className="px-2 py-3 text-caption text-muted">{t('canvas.searchEmpty')}</p>
+        <p className="px-2 py-3 text-caption text-muted">{t(failed ? 'canvas.searchFailed' : 'canvas.searchEmpty')}</p>
+      ) : failed && q.length >= 2 ? (
+        <p className="px-2 py-3 text-caption text-muted">{t('canvas.searchFailed')}</p>
       ) : null}
     </div>
   );
