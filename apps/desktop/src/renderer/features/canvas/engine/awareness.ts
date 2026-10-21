@@ -60,6 +60,10 @@ export class AwarenessLayer {
     const out = new Map<string, Tracked>();
     for (const s of next) {
       const prev = this.peers.get(s.id);
+      if (prev?.state === s) {
+        out.set(s.id, prev); // the sync layer hands an unchanged peer again as the same object
+        continue;
+      }
       const moved = !prev || !sameCursor(prev.state.cursor, s.cursor);
       if (!prev || moved || prev.state.color !== s.color || prev.state.name !== s.name || !sameSel(prev.state.selection, s.selection)) changed = true;
       out.set(s.id, {

@@ -6,10 +6,11 @@ import { ids, seededRng } from '../../lib/canvas/testing';
 import { SCHEMA_VERSION } from '../../lib/canvas/types';
 import { canvasSyncUrl, CanvasSync, type CanvasSyncStatus } from '../../lib/canvasSync';
 import { MockRelay } from '../../lib/ySyncMock';
-import type { PeerState, PeerView } from './engine/awareness';
+import { AwarenessLayer, type PeerState, type PeerView } from './engine/awareness';
 import type { CanvasEngine } from './engine';
 import type { LocalAwareness } from './engine/engine';
 import { bindCanvasSync, peerOf, type SyncBinding, type SyncEnginePort } from './syncBinding';
+import { PresenceStore } from './view/presenceStore';
 
 // Compile-time check: the real engine fits the port.
 export const enginePort = (e: CanvasEngine): SyncEnginePort => e;
@@ -324,5 +325,76 @@ describe('bindCanvasSync', () => {
     a.binding.destroy(); // idempotent
     a.sync.destroy();
     b.sync.destroy();
+  });
+});
+
+// The second review's M5: a busy board's awareness. 100 peers each move their cursor 10 times a second,
+// 1000 change events in that second; each one used to parse every peer again (10⁵ reads of a state a
+// second) and hand the engine and the presence store a fresh list. Now only the changed peer is read and
+// the list goes out at most 20 times a second.
+const realClock = process.hrtime.bigint.bind(process.hrtime); // taken before the fake timers replace it
+
+/** What the session wires behind the port: the engine's cursor layer and the presence bar's store. */
+class LayeredEngine extends StubEngine {
+  readonly layer = new AwarenessLayer();
+  readonly presence = new PresenceStore();
+  override setPeers(p: readonly PeerState[]): void {
+    super.setPeers(p);
+    this.layer.setPeers(p, Date.now());
+    this.presence.set(p);
+  }
+}
+
+describe('bindCanvasSync with 100 peers', () => {
+  it('reads only the changed peer and publishes ≤ 20 times a second', () => {
+    const awareness = new Awareness(new Y.Doc());
+    const engine = new LayeredEngine();
+    const sync = {
+      subscribe: () => () => undefined,
+      getStatus: (): CanvasSyncStatus => 'connecting',
+      setReadOnly: () => undefined,
+    } as unknown as CanvasSync;
+    const binding = bindCanvasSync({ doc: new Y.Doc(), awareness, sync, engine, user: { id: 'me', name: 'Me', color: '#ff0000' } });
+    const PEERS = 100;
+    let reads = 0;
+    const state = (i: number, x: number): unknown => {
+      const user = { id: `u${i}`, name: `P${i}`, color: '#00ff00' };
+      return Object.defineProperty({ canvas: { cursor: { x, y: i }, selection: [] } }, 'user', {
+        enumerable: true,
+        get: () => (reads++, user),
+      });
+    };
+    const set = (i: number, x: number): void => {
+      awareness.states.set(1000 + i, state(i, x) as Record<string, unknown>);
+      awareness.meta.set(1000 + i, { clock: x, lastUpdated: Date.now() });
+    };
+    for (let i = 0; i < PEERS; i++) set(i, 0);
+    awareness.emit('change', [{ added: Array.from({ length: PEERS }, (_, i) => 1000 + i), updated: [], removed: [] }, 'remote']);
+    vi.advanceTimersByTime(100);
+    expect(engine.peers).toHaveLength(PEERS);
+    reads = 0;
+    const calls = engine.setPeersCalls;
+    const t0 = realClock();
+    for (let k = 0; k < 10 * PEERS; k++) {
+      const i = k % PEERS;
+      set(i, k + 1);
+      awareness.emit('change', [{ added: [], updated: [1000 + i], removed: [] }, 'remote']);
+      vi.advanceTimersByTime(1);
+    }
+    vi.advanceTimersByTime(50);
+    const ms = Number(realClock() - t0) / 1e6;
+    const published = engine.setPeersCalls - calls;
+    console.info(`100 peers x 10/s: ${reads} state reads, ${published} publishes, ${ms.toFixed(1)} ms in 1 s`);
+    expect(reads).toBe(10 * PEERS);
+    expect(published).toBeLessThanOrEqual(21);
+    expect(engine.peers.find((p) => p.id === '1099')?.cursor).toEqual({ x: 10 * PEERS, y: 99 });
+    // A peer gone is gone from the list; quiet again: no timer left.
+    awareness.states.delete(1000);
+    awareness.emit('change', [{ added: [], updated: [], removed: [1000] }, 'remote']);
+    vi.advanceTimersByTime(50);
+    expect(engine.peers).toHaveLength(PEERS - 1);
+    awareness.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+    binding.destroy();
   });
 });
