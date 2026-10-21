@@ -185,6 +185,8 @@ export class MoveGesture implements Gesture {
   private boxStart = new Map<string, Point>();
   private freeStart = new Map<string, { from?: Point; to?: Point }>();
   private startRect: Rect | null = null;
+  /** The selection before an Alt-drag moved it onto the copies; Esc gives it back. */
+  private selectedBefore: string[] | null = null;
 
   /** `onClickOnly` runs on release if the pointer never moved beyond the drag threshold. */
   constructor(
@@ -230,6 +232,7 @@ export class MoveGesture implements Gesture {
       if (m.alt) {
         const copies = duplicate(this.core.scene, this.core.doc, this.ids, 0, 0);
         if (copies.length > 0) {
+          this.selectedBefore = [...this.core.selection];
           this.ids = copies;
           this.core.setSelection(copies);
           this.capture();
@@ -278,6 +281,7 @@ export class MoveGesture implements Gesture {
     this.core.live.drop();
     // Takes back the Alt-copies, if any; the move itself was never written.
     this.core.doc.cancelGesture();
+    if (this.selectedBefore) this.core.setSelection(this.selectedBefore);
     this.core.setOverlay({ guides: [] });
   }
 
@@ -464,7 +468,10 @@ export class RotateGesture implements Gesture {
 export class MarqueeGesture implements Gesture {
   readonly kind = 'marquee';
   private readonly base: Set<string>;
+  /** Esc gives back what was selected before the frame. */
+  private readonly before: string[];
   constructor(private readonly core: Core, private readonly from: Point, additive: boolean) {
+    this.before = [...core.selection];
     this.base = additive ? new Set(core.selection) : new Set();
     if (!additive) core.setSelection([]);
   }
@@ -479,6 +486,7 @@ export class MarqueeGesture implements Gesture {
     this.core.setOverlay({ marquee: null });
   }
   cancel(): void {
+    this.core.setSelection(this.before);
     this.core.setOverlay({ marquee: null });
   }
 }
