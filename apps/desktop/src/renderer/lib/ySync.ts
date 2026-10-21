@@ -120,6 +120,11 @@ export interface YSyncDeps {
   idleSnapshotMs?: (stateBytes: number) => number;
   /** Largest snapshot state the server takes; default MAX_STATE (canvases: 4 MiB, ADR-0114 §3). */
   maxState?: number;
+  /**
+   * Over maxState, re-encode the state from a fresh doc before giving up (deleted content an UndoManager keeps is
+   * collected there). Off (the wiki, as before the canvas): over the limit is onTooLarge at once.
+   */
+  collectOverLimit?: boolean;
   /** The Yjs state outgrew maxState: the server will not take a snapshot; the UI warns. */
   onTooLarge?: (bytes: number) => void;
   /** 4003 / 4404: the document is gone or no longer visible to me. */
@@ -524,7 +529,7 @@ export class YSyncProvider {
     const max = this.deps.maxState ?? MAX_STATE;
     let state = Y.encodeStateAsUpdate(this.doc);
     // Over the limit, it may be our undo history (deleted content the UndoManager keeps, not part of the document).
-    if (state.length > max) state = collected(state);
+    if (state.length > max && this.deps.collectOverLimit) state = collected(state);
     if (state.length > max) {
       this.deps.onTooLarge?.(state.length);
       return;

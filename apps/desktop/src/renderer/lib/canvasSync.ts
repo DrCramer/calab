@@ -115,6 +115,7 @@ export class CanvasSync {
       meta: () => canvasMeta(doc, deps.title?.() ?? ""),
       awarenessMinGapMs: CANVAS_AWARENESS_MIN_GAP_MS,
       maxState: CANVAS_MAX_STATE,
+      collectOverLimit: true,
       idleSnapshotMs: canvasIdleSnapshotMs,
       ...(onTooLarge
         ? {
