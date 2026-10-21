@@ -86,6 +86,8 @@ export class VoteBook {
     private readonly ydoc: Y.Doc,
     private readonly userId: string,
     private readonly votable: (id: string) => boolean,
+    /** False while the canvas is read-only: the background clean-ups (`purgeOwn`, `repair`) write nothing then. */
+    private readonly canWrite: () => boolean = () => true,
   ) {
     this.cells = ydoc.getMap<Y.Map<number>>('votes');
     this.meta = ydoc.getMap<unknown>('meta');
@@ -270,7 +272,7 @@ export class VoteBook {
   private purgeOwn(): void {
     const ids = [...this.intent.keys()].filter((id) => this.cells.get(id)?.has(this.userId));
     this.intent.clear();
-    if (ids.length === 0 || !this.userId) return;
+    if (ids.length === 0 || !this.userId || !this.canWrite()) return;
     this.ydoc.transact(() => {
       for (const id of ids) this.cells.get(id)?.delete(this.userId);
     }, VOTE_ORIGIN);
@@ -314,7 +316,7 @@ export class VoteBook {
 
   /** Puts my cells back when a remote update replaced the map they lived in. */
   private repair(): void {
-    if (!this.sess?.open || !this.userId || this.intent.size === 0) return;
+    if (!this.sess?.open || !this.userId || this.intent.size === 0 || !this.canWrite()) return;
     for (const [id, n] of this.intent) {
       if (this.own(id) !== n) this.write(id, n);
     }

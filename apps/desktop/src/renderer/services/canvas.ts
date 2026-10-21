@@ -398,7 +398,8 @@ export async function restoreVersion(canvasId: string, versionId: string): Promi
   }
   try {
     const state = await canvasApi.versionState(canvasId, versionId);
-    if (!h.restore(state)) {
+    // The canvas may have closed or turned read-only while the version loaded.
+    if (canvasDocHandle(canvasId) !== h || !h.writable() || !h.restore(state)) {
       toast.error(t('canvas.err.restoreVersion'));
       return false;
     }

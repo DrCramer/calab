@@ -231,7 +231,7 @@ export class CanvasEngine implements Core {
     this.votes = new VoteBook(opts.doc, this.userId, (id) => {
       const o = this.scene.get(id);
       return o?.kind === 'sticky' || o?.kind === 'shape';
-    });
+    }, () => !this.readOnly);
     this.renderer = new Renderer({
       canvas: opts.canvas,
       ...(opts.remoteCanvas ? { remoteCanvas: opts.remoteCanvas } : {}),
@@ -649,6 +649,12 @@ export class CanvasEngine implements Core {
       this.renderer.setHiddenText(null);
       this.editingId = null;
       this.endEditCamera();
+      // An edit drag in progress is dropped (its release would write into a doc that no longer syncs); a pan goes on.
+      const g = this.gesture;
+      if (g && g.kind !== 'pan' && g.kind !== 'pinch' && g.kind !== 'tap') {
+        this.activeGesture = null;
+        g.cancel();
+      }
     }
     this.refreshOverlay();
     this.sync();
