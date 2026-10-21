@@ -2,9 +2,13 @@ import * as Y from 'yjs';
 import type { CanvasDoc } from './doc';
 import { MAX_OBJECTS } from './types';
 
-/** A Y.Map field copied for another document: a Y.Text becomes a new Y.Text, JSON values are copied by value. */
+/** A Y.Map field copied for another document: a Y.Text becomes a new Y.Text with the same formatting, JSON values are copied by value. */
 function cloneField(v: unknown): unknown {
-  if (v instanceof Y.Text) return new Y.Text(v.toJSON());
+  if (v instanceof Y.Text) {
+    const t = new Y.Text();
+    t.applyDelta(v.toDelta() as never);
+    return t;
+  }
   return typeof v === 'object' && v !== null ? JSON.parse(JSON.stringify(v)) : v;
 }
 
@@ -14,7 +18,21 @@ function cloneObject(src: Y.Map<unknown>): Y.Map<unknown> {
   return m;
 }
 
-const sameObject = (a: Y.Map<unknown>, b: Y.Map<unknown>): boolean => JSON.stringify(a.toJSON()) === JSON.stringify(b.toJSON());
+/** JSON with sorted keys; a Y.Text is its delta, so attribute (bold, list…) changes count as changes. */
+function canon(v: unknown): string {
+  if (v instanceof Y.Text) return `T${canon(v.toDelta())}`;
+  if (Array.isArray(v)) return `[${v.map(canon).join(',')}]`;
+  if (typeof v === 'object' && v !== null) {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canon(o[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+const sameObject = (a: Y.Map<unknown>, b: Y.Map<unknown>): boolean => canon(Object.fromEntries(a)) === canon(Object.fromEntries(b));
 
 /**
  * «Восстановить» a version (ADR-0114 §3): the live document's objects become the version's, in ONE

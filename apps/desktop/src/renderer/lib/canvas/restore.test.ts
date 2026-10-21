@@ -66,4 +66,51 @@ describe('restoreCanvasState', () => {
     expect(restoreCanvasState(d, Uint8Array.of(1, 2, 3, 4, 5))).toBe(false);
     expect(texts(d)).toEqual(['keep']);
   });
+
+  describe('rich text', () => {
+    const deltaOf = (d: CanvasDoc, id: string): unknown => (d.objects.get(id)?.get('text') as Y.Text).toDelta();
+    const richDelta = [
+      { insert: 'brave ', attributes: { bold: true } },
+      { insert: 'new', attributes: { italic: true, strike: true } },
+      { insert: ' world' },
+      { insert: '\n', attributes: { list: 'bullet' } },
+      { insert: 'second item' },
+      { insert: '\n', attributes: { list: 'bullet' } },
+    ];
+    const withRich = (): { version: Uint8Array; d: CanvasDoc; id: string } => {
+      const d = live();
+      const id = d.create({ kind: 'sticky', x: 0, y: 0, text: '' }) as string;
+      (d.objects.get(id)?.get('text') as Y.Text).applyDelta(richDelta);
+      return { version: Y.encodeStateAsUpdate(d.ydoc), d, id };
+    };
+
+    it('brings back bold, italic, strike and lists with the exact delta (no extra empty line)', () => {
+      const { version, d, id } = withRich();
+      const want = deltaOf(d, id);
+      d.setText(id, 'plain rewrite');
+      expect(restoreCanvasState(d, version)).toBe(true);
+      expect(deltaOf(d, id)).toEqual(want);
+      expect(deltaOf(d, id)).toEqual(richDelta);
+    });
+
+    it('rolls back a style-only change made after the version', () => {
+      const { version, d, id } = withRich();
+      const yt = d.objects.get(id)?.get('text') as Y.Text;
+      yt.format(0, 5, { bold: null });
+      yt.format(0, 5, { italic: true });
+      expect(deltaOf(d, id)).not.toEqual(richDelta);
+      expect(restoreCanvasState(d, version)).toBe(true);
+      expect(deltaOf(d, id)).toEqual(richDelta);
+    });
+
+    it('restoring unchanged rich text writes nothing', () => {
+      const { version, d } = withRich();
+      const before = Y.encodeStateAsUpdate(d.ydoc);
+      let updates = 0;
+      d.ydoc.on('update', () => updates++);
+      expect(restoreCanvasState(d, version)).toBe(true);
+      expect(updates).toBe(0);
+      expect(Y.encodeStateAsUpdate(d.ydoc)).toEqual(before);
+    });
+  });
 });
