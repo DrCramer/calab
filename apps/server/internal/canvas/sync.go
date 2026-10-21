@@ -148,10 +148,31 @@ func (b canvasBackend) Authorize(ctx context.Context, id auth.Identity, item uui
 	if p.Kind != kindCanvas {
 		return false, ysync.CloseNotFound, "not a canvas"
 	}
-	write := bits.Has(perm.CanvasWrite) &&
-		b.auth.CheckWorkspace(ctx, id, p.WorkspaceID, identitypolicy.WorkspaceWrite) == nil &&
-		writable(ctx, q, p.WorkspaceID) == nil
-	return write, 0, ""
+	if !bits.Has(perm.CanvasWrite) {
+		return false, 0, ""
+	}
+	return writeVerdict(
+		b.auth.CheckWorkspace(ctx, id, p.WorkspaceID, identitypolicy.WorkspaceWrite),
+		func() error { return writable(ctx, q, p.WorkspaceID) },
+	)
+}
+
+// writeVerdict turns the write checks into the socket mode: only a refusal makes the socket
+// read-only; any other error (a database hiccup) is "try again", never a silent downgrade.
+func writeVerdict(policyErr error, writableFn func() error) (bool, int, string) {
+	if policyErr != nil {
+		if ysync.IsRefusal(policyErr) {
+			return false, 0, ""
+		}
+		return false, ysync.CloseTryAgain, "try again"
+	}
+	if err := writableFn(); err != nil {
+		if ysync.IsRefusal(err) {
+			return false, 0, ""
+		}
+		return false, ysync.CloseTryAgain, "try again"
+	}
+	return true, 0, ""
 }
 
 // snapshotMeta is the JSON of a SNAPSHOT_POST: the text on the canvas for search and the preview
