@@ -10,7 +10,7 @@ Calab is a team messenger where voice comes first. You join a room and hear your
 
 - Clients: desktop app (Electron) for macOS (Apple Silicon and Intel, signed and notarized), Windows 10/11 (the installer is not code-signed yet, so SmartScreen shows "Unknown publisher" on first launch) and Linux (AppImage and .deb, x64). A web app works in Chrome, Edge, Safari and Firefox, adapts to phones and installs to the home screen. The desktop app updates itself.
 - Server: Go, PostgreSQL (17 or 18), Valkey/Redis, LiveKit for media, Caddy for TLS and the single public entry point.
-- Target size of the current version: teams of up to 20–30 people online at once and up to three screen shares per room. Horizontal scaling is on the roadmap of the project; a rough sizing for a 30-person team is about 4 vCPUs and 8 GB of RAM.
+- Target size of the current version: teams of up to 20–30 people online at once and a handful of simultaneous screen shares per room (plan limits: 1 on Free, 2 on Team, 5 on Business). Horizontal scaling is on the roadmap of the project; a rough sizing for a 30-person team is about 4 vCPUs and 8 GB of RAM.
 - Interface languages: Russian, English, Spanish and Chinese on the site; the app itself is localized as well.
 
 ## Voice rooms, video, screen sharing
@@ -24,7 +24,7 @@ Calab is a team messenger where voice comes first. You join a room and hear your
 - One-on-one calls in direct messages, with ringing, camera and screen sharing.
 - Soundboard: sounds (built-in plus workspace sounds uploaded by admins) played to everyone in the room; each client plays the clip locally, so the voice track is never degraded.
 - Moderation: server-side mute, disconnect, move a participant to another room by drag and drop; statuses.
-- Temporary rooms: a room for an hour or a day that any member can create (name, lifetime, visible to everyone or only to chosen people), with a guest link ready immediately and an optional calendar meeting. Expired rooms cannot be joined and stay in the archive. This covers quick calls with customers without a separate conferencing tool.
+- Temporary rooms: a room that any member can create for up to 30 days (name, lifetime, visible to everyone or only to chosen people; live rooms per person: Free 3, Team 10, Business 50), with a guest link ready immediately and an optional calendar meeting. Expired rooms cannot be joined and stay in the archive. This covers quick calls with customers without a separate conferencing tool.
 - Recording and transcripts: the server records a meeting, the workspace's GPTunneL connection transcribes it, and a card with the summary, the audio and the full transcript arrives in the room chat. The workspace connects to GPTunneL once, with a code in the settings; the audio is kept as the card's attachment for 30 days; recording can be disabled in the room settings. Guests cannot record.
 
 ## Audio quality
@@ -122,6 +122,7 @@ An admin pins site shortcuts (Grafana, a wiki, a CRM) under the workspace icon i
 - It can read and write chat in rooms and DMs, reply, react, send files and stickers, register `/commands` (suggested in the composer), and attach buttons under messages (up to 5 rows of 5; a press reaches only that bot as an event).
 - Tasks: create, edit, comment, assign, search.
 - Voice: a bot joins a voice room through LiveKit (Node, Python, Go), hears participants and speaks (text to speech, echo, music, recording).
+- MCP: `POST /api/mcp` is a Model Context Protocol server for LLM clients. It accepts only a bot token (people's tokens get 403) and calls the regular API with that token, so a tool has exactly the bot's rights and limits. Six tools: find, read, create_task, comment_task, set_task_status, send_message; short descriptions and compact answers save the model's tokens. Docs: https://calab.io/en/docs/bots/sdk/#mcp-for-llm-clients
 - Bot API v2: calendar (create, move and cancel meetings as the organizer, free/busy, find a time), member profiles with open tasks, renaming, invitations by link and email, badges and sounds, guest admission, starting and stopping meeting recording.
 - Events arrive over a WebSocket gateway or as a webhook: a POST with an HMAC-SHA256 signature, retries with backoff for up to a day, and dedupe by delivery id.
 - Limits: 30 requests per second per bot, 20 messages per minute, messages up to 4000 characters. The number of bots depends on the plan.
@@ -179,6 +180,8 @@ Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/l
 | Files | 5 GB | 300 GB | 1 TB | unlimited |
 | Bots | 1 | 5 | 20 | unlimited |
 | Task boards | 3 | 30 | 50 | unlimited |
+| Temporary rooms per person (up to 30 days) | 3 | 10 | 50 | unlimited |
+| Wiki pages | 10 | 50 | 500 | unlimited |
 | Simultaneous screen shares per room | 1 | 2 | 5 | unlimited |
 | Simultaneous cameras per room | 3 | 10 | 25 | unlimited |
 | Musician mode | no (locked) | yes | yes | yes |
