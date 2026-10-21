@@ -1526,7 +1526,7 @@ function rectInView(r: Rect, view: Rect): boolean {
 
 /** The text color the renderer uses on a shape (readable on its fill), so the editor matches it. */
 function shapeInk(p: CanvasPalette, fillToken: string | undefined): string {
-  const fill = resolveColor(p, fillToken);
+  const fill = fillToken ? resolveColor(p, fillToken) : undefined;
   const ink = resolveColor(p, 'text') ?? p.ink;
   return fill ? readableInk(fill, ink) : ink;
 }
