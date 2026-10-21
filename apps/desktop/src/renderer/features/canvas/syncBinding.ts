@@ -20,7 +20,8 @@ import type { LocalAwareness } from './engine/engine';
 
 /** The part of CanvasEngine the binding needs (the engine satisfies it structurally). */
 export interface SyncEnginePort {
-  setPeers(peers: readonly PeerState[]): void;
+  /** `settled` false: the socket is down and the list is empty for that reason (a follow waits). */
+  setPeers(peers: readonly PeerState[], settled?: boolean): void;
   onLocalAwareness(fn: (a: LocalAwareness) => void): () => void;
   /** Our camera (center, zoom), already throttled to 5/s and silent while hidden; optional so older ports still fit. */
   onLocalView?(fn: (v: PeerView) => void): () => void;
@@ -44,6 +45,10 @@ const MAX_SELECTION = 1000;
 const MAX_ID = 64;
 /** The peer list goes to the engine (and the presence bar) at most this often: ≤ 20 times a second. */
 export const PEERS_GAP_MS = 50;
+/** After a reconnect the others' states come back within a few awareness frames; a peer still missing then has left. */
+export const PEERS_SETTLE_MS = 3000;
+
+const isConnected = (s: CanvasSyncStatus): boolean => s === 'synced' || s === 'readonly';
 
 /** One remote awareness state → a peer, null if it is not a well-formed canvas state. */
 export function peerOf(clientId: number, state: unknown): PeerState | null {
@@ -129,7 +134,19 @@ export function bindCanvasSync(opts: {
     schemaChecked = true;
     if (meta.get('schema') === undefined) doc.transact(() => meta.set('schema', SCHEMA_VERSION), 'canvas-init');
   };
+  let connected = isConnected(sync.getStatus());
+  let settleTimer: ReturnType<typeof setTimeout> | null = null;
   const onStatus = (s: CanvasSyncStatus): void => {
+    const was = connected;
+    connected = isConnected(s);
+    // Back online: the list is published as settled once the others had time to announce themselves again.
+    if (connected && !was && !done) {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        settleTimer = null;
+        publish();
+      }, PEERS_SETTLE_MS);
+    }
     if (s !== 'synced') return;
     synced = true;
     initSchema();
@@ -148,7 +165,7 @@ export function bindCanvasSync(opts: {
     if (publishTimer) clearTimeout(publishTimer);
     publishTimer = null;
     publishedAt = Date.now();
-    engine.setPeers([...peers.values()]);
+    engine.setPeers([...peers.values()], connected && settleTimer === null);
   };
   /** Reads one client's state again; false for ourselves (our own moves change no peer). */
   const read = (client: number): boolean => {
@@ -206,6 +223,8 @@ export function bindCanvasSync(opts: {
       awareness.off('change', onChange);
       if (publishTimer) clearTimeout(publishTimer);
       publishTimer = null;
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = null;
       meta.unobserve(onMeta);
       engine.setPeers([]);
     },

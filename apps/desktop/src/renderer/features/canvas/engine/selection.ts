@@ -14,7 +14,7 @@ export function selectionFrame(recs: readonly ObjectRec[]): SelFrame | null {
   if (!first) return null;
   const locked = recs.some((r) => r.locked);
   if (boxes.length === 1) {
-    return { rect: { x: first.x, y: first.y, w: first.w, h: first.h }, rot: first.rot ?? 0, resize: !locked, rotate: !locked };
+    return { rect: { x: first.x, y: first.y, w: first.w, h: first.h }, rot: first.rot ?? 0, resize: !locked, rotate: !locked, widthOnly: first.kind === 'text' };
   }
   const rect = boundsOf(boxes.map(aabb));
   if (!rect) return null;

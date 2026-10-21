@@ -411,6 +411,19 @@ export class CanvasDoc {
     if (step !== null && this.undo.undoStack[this.undo.undoStack.length - 1] === step) this.undo.undo();
   }
 
+  /** The undo step on top of the stack (to take back with `undoStep` if nothing came after it). */
+  topStep(): unknown {
+    return this.undo.undoStack[this.undo.undoStack.length - 1] ?? null;
+  }
+
+  /** Undoes `step` if it is still on top of the stack (and drops it from history); false otherwise. */
+  undoStep(step: unknown): boolean {
+    if (step === null || this.topStep() !== step) return false;
+    this.undo.undo();
+    this.undo.redoStack.pop();
+    return true;
+  }
+
   /** Highest z key currently in the doc. */
   maxZ(): string | null {
     let best: string | null = null;

@@ -50,7 +50,10 @@ export function CommentInput({ canvasId, workspaceId, initial = '', placeholder,
     let live = true;
     const ids = Object.values(members ?? {}).flatMap((m) => (m.user && m.user.id !== me && !users[m.user.id]?.isBot ? [m.user.id] : []));
     void canvasMentionAccess(canvasId, ids).then((v) => {
-      if (live && v) setSee(v);
+      if (!live) return;
+      // A failed ask is asked again the next time the field is used, not never.
+      if (v) setSee(v);
+      else setAsked(false);
     });
     return () => {
       live = false;

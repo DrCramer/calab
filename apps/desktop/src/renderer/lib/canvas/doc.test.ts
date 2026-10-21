@@ -398,6 +398,22 @@ describe('undo (own edits only)', () => {
     expect(d.snapshot('o1')?.x).toBe(0);
     expect(d.count).toBe(1);
   });
+  it('undoStep takes back only the step still on top', () => {
+    const d = makeDoc();
+    d.checkpoint();
+    const id = d.create({ kind: 'text', x: 0, y: 0 });
+    const step = d.topStep();
+    expect(d.undoStep(step)).toBe(true);
+    expect(id && d.snapshot(id)).toBeFalsy();
+    expect(d.undo.undoStack.length + d.undo.redoStack.length).toBe(0);
+    d.checkpoint();
+    d.create({ kind: 'text', x: 0, y: 0 });
+    const first = d.topStep();
+    d.checkpoint();
+    d.create({ kind: 'sticky', x: 0, y: 0 });
+    expect(d.undoStep(first)).toBe(false);
+    expect(d.count).toBe(2);
+  });
   it('uses the LOCAL origin', () => {
     const d = makeDoc();
     const origins: unknown[] = [];

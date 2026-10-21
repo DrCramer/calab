@@ -53,12 +53,18 @@ export const COMMENT_MAX = 2000;
 export const COMMENT_MENTIONS_MAX = 10;
 
 const inflight = new Map<string, Promise<void>>();
+/**
+ * Events that came while a canvas's list was being read: the list may predate them. After the read, a comment the
+ * list lacks is added and a deleted one goes (an edit of one it holds may be older than the list: not replayed).
+ */
+const missed = new Map<string, Array<{ upsert: CanvasComment } | { remove: string }>>();
 
 /** Reads every thread of a canvas (once at a time per canvas). */
 export function loadComments(canvasId: string): Promise<void> {
   const running = inflight.get(canvasId);
   if (running) return running;
   useCanvasComments.getState().setFailed(canvasId, false);
+  missed.set(canvasId, []);
   const p = (async () => {
     const all: CanvasComment[] = [];
     let cursor: string | undefined;
@@ -68,10 +74,18 @@ export function loadComments(canvasId: string): Promise<void> {
       if (!page.nextCursor) break;
       cursor = page.nextCursor;
     }
-    useCanvasComments.getState().setCanvas(canvasId, all);
+    const st = useCanvasComments.getState();
+    st.setCanvas(canvasId, all);
+    for (const m of missed.get(canvasId) ?? []) {
+      if ('remove' in m) st.remove(canvasId, m.remove);
+      else if (!useCanvasComments.getState().byId[m.upsert.id]) st.upsert(m.upsert);
+    }
   })()
     .catch(() => useCanvasComments.getState().setFailed(canvasId, true)) // the panel offers a retry
-    .finally(() => inflight.delete(canvasId));
+    .finally(() => {
+      inflight.delete(canvasId);
+      missed.delete(canvasId);
+    });
   inflight.set(canvasId, p);
   return p;
 }
@@ -180,11 +194,14 @@ export async function openCanvasComment(ws: string, canvasId: string, threadId: 
 
 /** CANVAS_COMMENT_UPSERT: to a canvas whose comments are held (the others read fresh when opened). */
 export function onCanvasCommentUpsert(e: CanvasCommentUpsert): void {
-  if (e.comment) useCanvasComments.getState().upsert(e.comment);
+  if (!e.comment) return;
+  missed.get(e.comment.canvasId)?.push({ upsert: e.comment });
+  useCanvasComments.getState().upsert(e.comment);
 }
 
 /** CANVAS_COMMENT_DELETE. */
 export function onCanvasCommentDelete(e: CanvasCommentDelete): void {
+  missed.get(e.canvasId)?.push({ remove: e.commentId });
   useCanvasComments.getState().remove(e.canvasId, e.commentId);
 }
 

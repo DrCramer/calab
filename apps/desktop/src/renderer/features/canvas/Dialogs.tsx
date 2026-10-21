@@ -1,12 +1,12 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { CanvasItemKind, CANVAS_BITS, type CanvasVersion } from '@calaba/protocol';
 import { ChevronRight, Folder } from 'lucide-react';
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, MOD, Modal, Segmented, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { canvasDocHandle } from '../../lib/canvas/docHandle';
+import { canvasDocHandle, subscribeCanvasDocHandle } from '../../lib/canvas/docHandle';
 import { ancestorsOf, childKey, isInSubtree, mergeById, TOP } from '../../lib/canvas/tree';
 import { canvasApi, loadChildren, moveItem, restoreVersion } from '../../services/canvas';
 import { toast } from '../../stores/toasts';
@@ -190,7 +190,8 @@ export function VersionsDialog({ workspaceId, canvasId, onClose }: { workspaceId
     };
   }, [fetchPage]);
   const version = list.find((v) => v.id === picked) ?? null;
-  const writable = canvasDocHandle(canvasId)?.writable() ?? false;
+  // Live: the dialog may open while the socket still connects or reconnects.
+  const writable = useSyncExternalStore(subscribeCanvasDocHandle, () => canvasDocHandle(canvasId)?.writable() ?? false);
   return (
     <Modal
       open

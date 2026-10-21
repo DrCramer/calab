@@ -28,6 +28,9 @@ import { selectionFrame } from './selection';
 import { TextEditor, type EditSpec } from './textEditor';
 import { BADGE_MARGIN_PX, hitBadge } from './voteDraw';
 
+/** Why an action did nothing: a paste or ⌘D over the object (`objects`) or state (`size`) limit, a create at the limit, the clipboard denied. */
+export type RefusedWhy = 'objects' | 'size' | 'create' | 'clipboard';
+
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment';
 
 /** A click (tap) of the «Комментарий» tool (ADR-0115 wave 4): where, and the object under it (null = the field). */
@@ -95,7 +98,7 @@ export interface EngineOptions {
   gridSize?: number;
   clipboard?: ClipboardPort;
   /** A paste or ⌘D was refused whole: the object limit (`objects`) or the document's state limit (`size`). */
-  onRefused?: (why: 'objects' | 'size') => void;
+  onRefused?: (why: RefusedWhy) => void;
   /** Positioned element the text editor is appended to (default: the canvas' parent). */
   editorHost?: HTMLElement;
   /** The text editor's accessible name, in the UI language (read at every open). */
@@ -163,6 +166,8 @@ export class CanvasEngine implements Core {
   private entered: string | null = null;
   private overlay: OverlayState = emptyOverlay();
   private gesture: Gesture | null = null;
+  /** False while the socket is down: the peer list is empty for the gap, not because people left. */
+  private peersSettled = true;
   private state: EngineState;
   private readonly listeners = new Set<() => void>();
   private readonly selListeners = new Set<(objs: readonly ObjectRec[]) => void>();
@@ -231,7 +236,7 @@ export class CanvasEngine implements Core {
     this.votes = new VoteBook(opts.doc, this.userId, (id) => {
       const o = this.scene.get(id);
       return o?.kind === 'sticky' || o?.kind === 'shape';
-    });
+    }, () => !this.readOnly);
     this.renderer = new Renderer({
       canvas: opts.canvas,
       ...(opts.remoteCanvas ? { remoteCanvas: opts.remoteCanvas } : {}),
@@ -392,6 +397,8 @@ export class CanvasEngine implements Core {
     if (g === this.gesture) return;
     this.gesture = g;
     if (this.drag && this.drag.g !== g) this.drag = null;
+    // An edit under a moving camera would drag the object along with the leader's view: editing ends the follow.
+    if (g && g.kind !== 'pan' && g.kind !== 'pinch' && g.kind !== 'tap') this.stopFollow();
     this.emitView();
   }
 
@@ -514,11 +521,16 @@ export class CanvasEngine implements Core {
     this.emitLocal();
   }
 
+  /** After a create; no ids = the document refused it (the object or state limit), which is said, not swallowed. */
   finishCreate(ids: readonly string[], edit: boolean): void {
+    if (ids.length === 0) {
+      this.opts.onRefused?.('create');
+      return;
+    }
     this.setSelection(ids);
     this.setTool('select');
     const id = ids[0];
-    if (edit && id) this.startTextEdit(id);
+    if (edit && id) this.startTextEdit(id, true);
   }
 
   /** Decoration for the current selection (outlines, the frame with its handles, connector ends). */
@@ -543,6 +555,7 @@ export class CanvasEngine implements Core {
   private onSceneChange(ids: ReadonlySet<string>, order = false): void {
     // Objects came or went: votes for gone ones stop counting, the leaders and my remaining votes may differ.
     if (order && this.votes.active) this.votes.invalidate();
+    if (this.editingId !== null && (ids.has(this.editingId) || !this.scene.has(this.editingId))) this.followEditedObject(this.editingId);
     let touched = false;
     for (const id of this.sel) {
       if (!this.scene.has(id)) {
@@ -556,6 +569,22 @@ export class CanvasEngine implements Core {
       this.notifySelection();
     }
     if (ids.size > 0) this.sync();
+  }
+
+  /** A co-author deleted, locked or moved the object being edited: the editor closes (nothing to write into) or follows it. */
+  private followEditedObject(id: string): void {
+    const o = this.scene.get(id);
+    if (!o || o.locked) {
+      this.editor.cancel();
+      this.renderer.setHiddenText(null);
+      this.editingId = null;
+      this.endEditCamera();
+      this.refreshOverlay();
+      this.sync();
+      return;
+    }
+    const spec = this.editSpec(o);
+    if (spec) this.editor.moveTo(spec);
   }
 
   private notifySelection(): void {
@@ -649,6 +678,12 @@ export class CanvasEngine implements Core {
       this.renderer.setHiddenText(null);
       this.editingId = null;
       this.endEditCamera();
+      // An edit drag in progress is dropped (its release would write into a doc that no longer syncs); a pan goes on.
+      const g = this.gesture;
+      if (g && g.kind !== 'pan' && g.kind !== 'pinch' && g.kind !== 'tap') {
+        this.activeGesture = null;
+        g.cancel();
+      }
     }
     this.refreshOverlay();
     this.sync();
@@ -885,6 +920,7 @@ export class CanvasEngine implements Core {
         await this.clipboardPort.writeText(text);
       } catch {
         // Clipboard access can be denied; the text is still returned.
+        this.opts.onRefused?.('clipboard');
       }
     }
     this.pasteCount = 0;
@@ -894,17 +930,26 @@ export class CanvasEngine implements Core {
   /** Copies the selection and deletes what may be deleted: on locked objects ⌘X is a plain copy. */
   async cut(): Promise<void> {
     if (!this.canEdit()) return;
+    // What was copied is what goes: the selection may change while the clipboard write is awaited.
+    const ids = [...this.sel].filter((id) => !this.scene.get(id)?.locked);
     await this.copy();
-    this.deleteSelection();
+    const alive = ids.filter((id) => this.scene.get(id));
+    if (!this.canEdit() || alive.length === 0) return;
+    this.doc.checkpoint();
+    this.doc.remove(alive, (c, end) => this.scene.pointOf(c, end));
   }
 
   async paste(): Promise<string[]> {
     if (!this.canEdit() || !this.clipboardPort) return [];
+    let text: string;
     try {
-      return this.pasteText(await this.clipboardPort.readText());
+      text = await this.clipboardPort.readText();
     } catch {
+      // Reading can be denied (the web asks first): said, not a silent nothing.
+      this.opts.onRefused?.('clipboard');
       return [];
     }
+    return this.pasteText(text);
   }
 
   /** Pastes our JSON (placed visibly, offset on repeats) or plain text as a text object at the view center. */
@@ -919,6 +964,7 @@ export class CanvasEngine implements Core {
       this.doc.checkpoint();
       const id = this.doc.create({ kind: 'text', x: c.x - DEFAULTS.textW / 2, y: c.y - DEFAULTS.textSize, text: t });
       if (id) this.setSelection([id]);
+      else this.refused(1);
       return id ? [id] : [];
     }
     const boxes = payload.objects.filter((o) => o.kind !== 'connector');
@@ -1128,8 +1174,10 @@ export class CanvasEngine implements Core {
   }
 
   /** Opens the textarea over an object (default: the single selected one). */
-  startTextEdit(id?: string): boolean {
+  startTextEdit(id?: string, fresh = false): boolean {
     if (!this.canEdit()) return false;
+    // A previous edit still open (a size list held the focus) ends first, so its close does not reset this one.
+    if (this.editor.isOpen) this.editor.commit();
     const target = id ?? this.state.selectedId;
     const o = target ? this.scene.get(target) : undefined;
     if (!o || o.locked) return false;
@@ -1140,6 +1188,8 @@ export class CanvasEngine implements Core {
     this.overlay = { ...this.overlay, group: null };
     this.editingId = oid;
     const original = this.doc.rawTextOf(oid);
+    // An object created for this edit: left empty, it goes with its creation step instead of two silent undo steps.
+    const created = fresh ? this.doc.topStep() : null;
     this.editor.open(spec, (text, changed, fmt, fmtChanged) => {
       this.renderer.setHiddenText(null);
       this.editingId = null;
@@ -1147,7 +1197,10 @@ export class CanvasEngine implements Core {
       const cur = this.scene.get(oid);
       if (cur) {
         this.doc.checkpoint();
-        if (cur.kind === 'text' && text.trim() === '') this.doc.remove([oid]);
+        // Emptied, unless a co-author typed into it meanwhile (then the edit merges like any other).
+        if (cur.kind === 'text' && text.trim() === '' && this.doc.rawTextOf(oid) === original) {
+          if (!this.doc.undoStep(created)) this.doc.remove([oid]);
+        }
         else if (cur.kind === 'connector') this.doc.setText(oid, text);
         else if (changed || fmtChanged) this.doc.setRich(oid, text, fmt, original);
       }
@@ -1191,19 +1244,21 @@ export class CanvasEngine implements Core {
     if (!this.canEdit()) return null;
     this.doc.checkpoint();
     const id = this.doc.create({ kind: 'text', x: world.x - 8, y: world.y - DEFAULTS.textSize });
-    if (id) this.finishCreate([id], true);
+    this.finishCreate(id ? [id] : [], true);
     return id;
   }
 
-  /** Hit-test a world point with a screen-pixel radius. */
-  hitAt(world: Point, px = 6): ObjectRec | null {
-    return this.scene.hit(world, this.px(px));
+  /** Hit-test a world point with a screen-pixel radius; `boxPx` (a finger) also picks a box that close when nothing is hit exactly. */
+  hitAt(world: Point, px = 6, boxPx = 0): ObjectRec | null {
+    const hit = this.scene.hit(world, this.px(px));
+    return hit || boxPx === 0 ? hit : this.scene.hit(world, this.px(px), undefined, this.px(boxPx));
   }
 
   // ── awareness ───────────────────────────────────────────────────────────────
 
   /** Remote participants from the sync layer; schedules at most one timer for the next cursor fade step. */
-  setPeers(peers: readonly PeerState[]): void {
+  setPeers(peers: readonly PeerState[], settled = true): void {
+    this.peersSettled = settled;
     this.live.setPresent(peers.map((p) => p.id));
     const changed = this.awareness.setPeers(peers, this.now());
     if (changed) this.renderer.requestRemoteFrame();
@@ -1303,7 +1358,8 @@ export class CanvasEngine implements Core {
     if (key === null) return;
     const peer = this.awareness.followTarget(key);
     if (!peer) {
-      this.stopFollow();
+      // Without a socket everyone is gone for a moment: the follow waits for the list after the reconnect.
+      if (this.peersSettled) this.stopFollow();
       return;
     }
     const v = peer.view;

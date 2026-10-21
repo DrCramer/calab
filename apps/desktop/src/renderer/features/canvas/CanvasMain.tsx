@@ -1,7 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { CanvasItemKind } from '@calaba/protocol';
 import { ChevronRight, Ellipsis, Shapes, Share2, Trash2 } from 'lucide-react';
-import { memo, Suspense, useCallback, type ReactNode } from 'react';
+import { memo, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar, BAR_GROUP } from '../../components/Bar';
 import { Button, IconButton, Spinner, cx } from '../../components/ui';
@@ -35,13 +35,41 @@ export function CanvasMain({ workspaceId, canCreate }: { workspaceId: string; ca
         {openId ? (
           <OpenCanvas key={openId} workspaceId={workspaceId} itemId={openId} />
         ) : itemId && !known ? (
-          <div className="grid h-full place-items-center">
-            <Spinner />
-          </div>
+          <PendingCanvas key={itemId} workspaceId={workspaceId} itemId={itemId} />
         ) : (
           <NoCanvas workspaceId={workspaceId} canCreate={canCreate} />
         )}
       </div>
+    </div>
+  );
+}
+
+/** A remembered canvas not in the store yet: a spinner while it is read, a retry when the read got no answer. */
+function PendingCanvas({ workspaceId, itemId }: { workspaceId: string; itemId: string }): ReactNode {
+  useLocale();
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void loadItem(workspaceId, itemId).then((r) => live && setFailed(r === 'failed'));
+    return () => {
+      live = false;
+    };
+  }, [workspaceId, itemId, attempt]);
+  if (!failed) {
+    return (
+      <div className="grid h-full place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-body text-muted" role="status" data-testid="canvas-load-failed">
+      <p>{t('canvas.loadFailed')}</p>
+      <Button variant="secondary" onClick={() => {
+          setFailed(false);
+          setAttempt((n) => n + 1);
+        }}>{t('toast.retry')}</Button>
     </div>
   );
 }

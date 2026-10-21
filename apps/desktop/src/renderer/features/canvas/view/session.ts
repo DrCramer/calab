@@ -9,7 +9,7 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { canvasPublicSyncUrl, canvasSyncUrl, createCanvasSync, type CanvasSync } from '../../../lib/canvasSync';
 import type { SocketLike } from '../../../lib/gateway/client';
-import { CanvasEngine, type CanvasPalette, type ClipboardPort } from '../engine';
+import { CanvasEngine, type CanvasPalette, type ClipboardPort, type RefusedWhy } from '../engine';
 import { bindCanvasSync, type CanvasUser, type SyncBinding, type SyncEnginePort } from '../syncBinding';
 import type { PresenceStore } from './presenceStore';
 import { playTimerEnd } from './timerSound';
@@ -58,8 +58,8 @@ export interface SessionOptions {
   /** The canvas' name for the snapshot meta (read at call time). */
   title: () => string;
   onTooLarge: (bytes: number) => void;
-  /** A paste or a duplicate was refused whole (EngineOptions.onRefused). */
-  onRefused?: (why: 'objects' | 'size') => void;
+  /** An action was refused (EngineOptions.onRefused). */
+  onRefused?: (why: RefusedWhy) => void;
   onFatal: (code: number) => void;
 }
 

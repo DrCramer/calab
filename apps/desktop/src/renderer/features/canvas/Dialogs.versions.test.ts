@@ -12,7 +12,7 @@ vi.mock('../../services/canvas', async (orig) => ({
   ...(await orig<typeof import('../../services/canvas')>()),
   canvasApi: { versions },
 }));
-vi.mock('../../lib/canvas/docHandle', () => ({ canvasDocHandle: () => null }));
+vi.mock('../../lib/canvas/docHandle', () => ({ canvasDocHandle: () => null, subscribeCanvasDocHandle: () => () => undefined }));
 
 const { VersionsDialog } = await import('./Dialogs');
 

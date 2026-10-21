@@ -102,7 +102,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   /** A resize handle of the selection frame under the pointer (none on a locked or grouped selection). */
   const resizeHandleAt = (w: Point): HandleId | null => {
     const f = engine.selectionFrame();
-    return f && f.resize ? hitHandleRot(f.rect, f.rot, w, engine.px(engine.touch ? touchRadius(f) : HANDLE_PX)) : null;
+    const h = f && f.resize ? hitHandleRot(f.rect, f.rot, w, engine.px(engine.touch ? touchRadius(f) : HANDLE_PX)) : null;
+    return f?.widthOnly && (h === 'n' || h === 's') ? null : h;
   };
 
   const connectorEndAt = (w: Point): 'from' | 'to' | null => {
@@ -158,7 +159,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       }
     }
     const multi = engine.multiSelect;
-    const hit = engine.hitAt(w, TOUCH_PICK_PX);
+    const hit = engine.hitAt(w, TOUCH_PICK_PX, TOUCH_PICK_PX);
     if (!hit) {
       // Empty place: a tap clears the selection, a drag pans, a press that stays put opens the menu.
       const g = new TapPanGesture(engine, s, () => engine.clearSelection());
@@ -396,6 +397,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const onDouble = (e: MouseEvent): void => {
     if (engine.readOnly || engine.tool !== 'select') return;
     const { w } = local(e);
+    // A double-click on a handle of the frame is two presses on the handle, not a new text.
+    if (rotateHandleAt(w) || resizeHandleAt(w)) return;
     const hit = engine.hitAt(w);
     if (hit) {
       // While voting a double-click is two votes, not a text edit.

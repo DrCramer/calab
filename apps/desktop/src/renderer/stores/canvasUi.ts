@@ -82,7 +82,9 @@ export const useCanvasUi = create<CanvasUiState>()(
       query: '',
       setQuery: (query) => set({ query }),
       renaming: null,
-      setRenaming: (renaming) => set((s) => (s.renaming === renaming ? s : { renaming })),
+      // The rename field lives in the tree row: a filter or the trash in its place is put away first.
+      setRenaming: (renaming) =>
+        set((s) => (s.renaming === renaming ? s : renaming === null ? { renaming } : { renaming, query: '', trashOf: {} })),
       dialog: null,
       openDialog: (dialog) => set({ dialog }),
     }),

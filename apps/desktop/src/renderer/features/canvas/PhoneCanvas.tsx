@@ -184,6 +184,7 @@ function SearchResults({ workspaceId, query, onOpen }: { workspaceId: string; qu
   const local = useCanvas(useShallow((s) => filterItems(s.items, workspaceId, query)));
   const [remote, setRemote] = useState<Array<{ id: string; name: string; folder: boolean }>>([]);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const q = query.trim();
   useEffect(() => {
     if (q.length < 2) return;
@@ -193,9 +194,14 @@ function SearchResults({ workspaceId, query, onOpen }: { workspaceId: string; qu
       searchItems(workspaceId, q, ctl.signal).then(
         (r) => {
           setRemote(r);
+          setFailed(false);
           setBusy(false);
         },
-        () => setBusy(false),
+        () => {
+          // Not «nothing found»: the server's part is missing, said under the local matches.
+          if (!ctl.signal.aborted) setFailed(true);
+          setBusy(false);
+        },
       );
     }, 250);
     return () => {
@@ -223,7 +229,9 @@ function SearchResults({ workspaceId, query, onOpen }: { workspaceId: string; qu
           <Spinner className="size-4" />
         </div>
       ) : !local.length && !extra.length ? (
-        <p className="px-4 py-6 text-center text-body text-muted">{t('canvas.searchEmpty')}</p>
+        <p className="px-4 py-6 text-center text-body text-muted">{t(failed ? 'canvas.searchFailed' : 'canvas.searchEmpty')}</p>
+      ) : failed && q.length >= 2 ? (
+        <p className="px-4 py-6 text-center text-body text-muted">{t('canvas.searchFailed')}</p>
       ) : null}
     </div>
   );
@@ -241,12 +249,12 @@ export function PhoneCanvasScreen({ workspaceId, itemId }: { workspaceId: string
   const known = useCanvas((s) => !!s.items[itemId]);
   const folder = useCanvas((s) => s.items[itemId]?.kind === CanvasItemKind.FOLDER);
   const trashed = useCanvas((s) => !!s.items[itemId]?.trashedAt);
-  const [tried, setTried] = useState(false);
+  const [tried, setTried] = useState<boolean | 'failed'>(false);
   const seen = useRef(false);
   useEffect(() => {
     if (useCanvas.getState().items[itemId]) return undefined;
     let live = true;
-    void loadItem(workspaceId, itemId).finally(() => live && setTried(true));
+    void loadItem(workspaceId, itemId).then((r) => live && setTried(r === 'failed' ? 'failed' : true));
     return () => {
       live = false;
     };
@@ -264,7 +272,7 @@ export function PhoneCanvasScreen({ workspaceId, itemId }: { workspaceId: string
         <PhoneHeader title={t('canvas.section')} icon={<HeaderIcon><CanvasIdleIcon className="size-5" /></HeaderIcon>} />
         {tried ? (
           <div className="grid min-h-0 flex-1 place-items-center px-6 text-center text-body text-muted" role="status" data-testid="phone-canvas-gone">
-            <p>{t('canvasBoard.status.gone')}</p>
+            <p>{t(tried === 'failed' ? 'canvas.loadFailed' : 'canvasBoard.status.gone')}</p>
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 place-items-center">

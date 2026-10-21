@@ -315,6 +315,9 @@ export class YSyncProvider {
     // The server refused some of our updates at the document's ceiling (docs/05 «Потолок обновлений»), perhaps the
     // replay of this very session: the next one replays whatever its snapshot lacks.
     if (code === CLOSE_CEILING || code === CLOSE_RESEND) this.replayNeeded = true;
+    // Edits since our last snapshot may have died with this socket (a replay sent just before it closed among them):
+    // the next session replays what its snapshot lacks (an empty diff when the server had it all).
+    if (this.dirty) this.replayNeeded = true;
     if (this.stopped) return;
     if (code === CLOSE_FORBIDDEN || code === CLOSE_NOT_FOUND || code === CLOSE_RECEIVE_ONLY) {
       this.stopped = true;

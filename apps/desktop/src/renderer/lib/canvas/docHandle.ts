@@ -14,12 +14,31 @@ export interface CanvasDocHandle {
   restore(state: Uint8Array): boolean;
   /** Whether the document may be changed by me (CANVAS_WRITE, not in the trash, synced). */
   writable(): boolean;
+  /** Calls `fn` when `writable()` may have changed (the socket's status); returns the unsubscribe. */
+  subscribe?(fn: () => void): () => void;
 }
 
 let current: CanvasDocHandle | null = null;
+const listeners = new Set<() => void>();
 
 export function setCanvasDocHandle(h: CanvasDocHandle | null): void {
   current = h;
+  for (const fn of listeners) fn();
+}
+
+/** For useSyncExternalStore: `fn` runs when the handle comes, goes, or its `writable()` may have changed. */
+export function subscribeCanvasDocHandle(fn: () => void): () => void {
+  let inner = current?.subscribe?.(fn);
+  const onSet = (): void => {
+    inner?.();
+    inner = current?.subscribe?.(fn);
+    fn();
+  };
+  listeners.add(onSet);
+  return () => {
+    listeners.delete(onSet);
+    inner?.();
+  };
 }
 
 /** The handle of `canvasId` when that canvas's document is mounted. */
