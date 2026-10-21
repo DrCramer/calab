@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { describe, expect, it } from 'vitest';
-import { CanvasDoc, LOCAL_ORIGIN, applyTextDiff, clampText, color, endpoint } from './doc';
+import { CanvasDoc, LOCAL_ORIGIN, MAX_UNDO, applyTextDiff, clampText, color, endpoint } from './doc';
 import { REMOTE, makeDoc, pair } from './testing';
 import { MAX_OBJECTS, MAX_TEXT } from './types';
 
@@ -345,6 +345,29 @@ describe('undo (own edits only)', () => {
     expect(d.count).toBe(0);
     d.undo.undo();
     expect(d.snapshot('o1')).toMatchObject({ x: 7, y: 8, text: 'keep' });
+  });
+  it('keeps the last MAX_UNDO steps and frees what the dropped ones held', () => {
+    const { a, b } = pair();
+    a.createMany(Array.from({ length: 20 }, (_, i) => ({ init: { kind: 'sticky' as const, x: i, y: 0 } })));
+    const ids = a.orderedIds();
+    const moveAll = (s: number): void => {
+      a.checkpoint();
+      a.patchMany(new Map(ids.map((id) => [id, { x: s * 10 + 0.5, y: s * 3 + 0.25 }])));
+    };
+    for (let s = 1; s <= MAX_UNDO + 50; s++) moveAll(s);
+    expect(a.undo.undoStack).toHaveLength(MAX_UNDO);
+    // Overwritten values that still hold content: only those of the steps that can be undone (2 fields × 20 objects each).
+    let held = 0;
+    for (const structs of a.ydoc.store.clients.values()) {
+      for (const st of structs) if (st instanceof Y.Item && st.deleted && !(st.content instanceof Y.ContentDeleted) && st.parentSub !== null) held++;
+    }
+    expect(held).toBe(MAX_UNDO * 2 * 20);
+    // The collaborator still converges, and undo walks back exactly MAX_UNDO steps.
+    expect(Y.encodeStateVector(b.ydoc)).toEqual(Y.encodeStateVector(a.ydoc));
+    for (let i = 0; i < MAX_UNDO + 10; i++) a.undo.undo();
+    expect(a.snapshot(ids[3] ?? '')).toMatchObject({ x: 50 * 10 + 0.5, y: 50 * 3 + 0.25 });
+    expect(b.snapshot(ids[3] ?? '')).toMatchObject({ x: 50 * 10 + 0.5, y: 50 * 3 + 0.25 });
+    expect(a.count).toBe(20);
   });
   it('uses the LOCAL origin', () => {
     const d = makeDoc();

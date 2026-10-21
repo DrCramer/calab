@@ -10,6 +10,8 @@ import {
 
 /** Transaction origin of this client's own edits: the only one the UndoManager tracks. */
 export const LOCAL_ORIGIN: object = Object.freeze({ canvas: 'local' });
+/** Undo steps kept; the oldest is dropped (and the values it held are freed) past this. */
+export const MAX_UNDO = 100;
 
 const KINDS: readonly ObjectKind[] = ['sticky', 'text', 'shape', 'connector'];
 const SIDE_SET = new Set<string>(['auto', 'top', 'right', 'bottom', 'left']);
@@ -164,6 +166,9 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
 /** Patch value meaning "remove the key" (a default is stored as absence, never as a value). */
 const REMOVE = Symbol('remove');
 
+/** What an undo step deleted (yjs does not export the type). */
+type DeleteSet = Y.UndoManager['undoStack'][number]['deletions'];
+
 /**
  * Spells a `fontPx` / `fontSize` patch out in stored fields: a text object's `size`; a sticky's or shape's token and exact size
  * (`fontFields`). A plain token write drops the exact size it overrides, so a token set by older code is never shadowed.
@@ -236,6 +241,34 @@ export class CanvasDoc {
     this.objects = ydoc.getMap<Y.Map<unknown>>('objects');
     this.meta = ydoc.getMap<unknown>('meta');
     this.undo = new Y.UndoManager(this.objects, { trackedOrigins: new Set([LOCAL_ORIGIN]), captureTimeout: CanvasDoc.CAPTURE_MS });
+    ydoc.on('afterAllTransactions', this.trimUndo);
+  }
+
+  /**
+   * Keeps at most MAX_UNDO steps. The UndoManager keeps every value a step overwrote, content and all, in the doc (and so
+   * in its encoded state) for as long as the step exists; a dropped step lets them go: unkept and collected right away.
+   * Runs after the transaction's `update` went out, so it never touches structs being encoded.
+   */
+  private readonly trimUndo = (): void => {
+    const stack = this.undo.undoStack;
+    if (stack.length <= MAX_UNDO) return;
+    for (const old of stack.splice(0, stack.length - MAX_UNDO)) this.release(old.deletions);
+  };
+
+  private release(ds: DeleteSet): void {
+    const store = this.ydoc.store;
+    ds.clients.forEach((dels, client) => {
+      const structs = store.clients.get(client);
+      if (!structs) return;
+      for (const d of dels) {
+        for (let i = Y.findIndexSS(structs, d.clock); i < structs.length; i++) {
+          const s = structs[i];
+          if (!s || s.id.clock >= d.clock + d.len) break;
+          if (s instanceof Y.Item && s.keep && Y.isParentOf(this.objects, s)) s.keep = false;
+        }
+      }
+    });
+    if (this.ydoc.gc) Y.tryGc(ds, store, this.ydoc.gcFilter);
   }
 
   /** Schema stored in the doc (0 = not initialized yet). */
@@ -585,6 +618,7 @@ export class CanvasDoc {
   }
 
   destroy(): void {
+    this.ydoc.off('afterAllTransactions', this.trimUndo);
     this.undo.destroy();
   }
 }

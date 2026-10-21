@@ -481,6 +481,30 @@ describe("CanvasSync", () => {
       expect(relay.posts).toHaveLength(0);
       c.sync.destroy();
     });
+
+    it("posts a state that is over 4 MiB only by the undo history, collected", async () => {
+      const relay = new MockRelay();
+      const onTooLarge = vi.fn();
+      const c = client(relay, { onTooLarge });
+      await settle();
+      const id = c.doc.create({ kind: "connector", from: { x: 0, y: 0 }, to: { x: 9, y: 9 } }) ?? "";
+      // One undo step that overwrote a 5000-char label 900 times: the UndoManager keeps every old label.
+      c.doc.beginGesture();
+      for (let i = 0; i < 900; i++) {
+        c.doc.patch(id, { label: noise(4999, i) });
+        if (i % 12 === 11) vi.advanceTimersByTime(BATCH_MS);
+      }
+      c.doc.endGesture();
+      vi.advanceTimersByTime(BATCH_MS);
+      expect(Y.encodeStateAsUpdate(c.ydoc).length).toBeGreaterThan(4 * 1024 * 1024);
+      relay.requestCompaction();
+      expect(onTooLarge).not.toHaveBeenCalled();
+      expect(relay.posts).toHaveLength(1);
+      expect(relay.doc.getMap<Y.Map<unknown>>("objects").get(id)?.get("label")).toBe(noise(4999, 899));
+      c.doc.undo.undo();
+      expect(c.doc.snapshot(id)?.label).toBe("");
+      c.sync.destroy();
+    });
   });
 
   describe("read-only", () => {

@@ -133,6 +133,17 @@ export function quietAwareness(awareness: Awareness): Awareness {
 
 type Timer = ReturnType<typeof setTimeout>;
 
+/** The state as a fresh doc encodes it: deleted content is collected there, nothing is kept for an undo. */
+function collected(state: Uint8Array): Uint8Array {
+  const d = new Y.Doc();
+  try {
+    Y.applyUpdate(d, state);
+    return Y.encodeStateAsUpdate(d);
+  } finally {
+    d.destroy();
+  }
+}
+
 export class YSyncProvider {
   readonly doc: Y.Doc;
   readonly awareness: Awareness;
@@ -500,8 +511,11 @@ export class YSyncProvider {
     }
     const broadcast = this.postBroadcast;
     this.postBroadcast = false;
-    const state = Y.encodeStateAsUpdate(this.doc);
-    if (state.length > (this.deps.maxState ?? MAX_STATE)) {
+    const max = this.deps.maxState ?? MAX_STATE;
+    let state = Y.encodeStateAsUpdate(this.doc);
+    // Over the limit, it may be our undo history (deleted content the UndoManager keeps, not part of the document).
+    if (state.length > max) state = collected(state);
+    if (state.length > max) {
       this.deps.onTooLarge?.(state.length);
       return;
     }
