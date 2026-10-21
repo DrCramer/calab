@@ -217,4 +217,6 @@ export const ruCanvasBoard = {
   'canvasBoard.timer.reset': 'Сбросить таймер',
   'canvasBoard.timer.label': 'Таймер: {time}',
   'canvasBoard.timer.ended': 'Время вышло',
+  'canvasBoard.createFull': 'Не создано: на холсте не осталось места',
+  'canvasBoard.clipboardFailed': 'Нет доступа к буферу обмена',
 } as const;

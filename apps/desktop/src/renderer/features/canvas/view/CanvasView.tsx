@@ -13,12 +13,12 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { CANVAS_BITS } from '@calaba/protocol';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from 'react';
-import { t, useLocale } from '../../../i18n';
+import { t, useLocale, type MessageKey } from '../../../i18n';
 import { fitRect } from '../../../lib/canvas/camera';
 import { canvasDocHandle, setCanvasDocHandle } from '../../../lib/canvas/docHandle';
 import { restoreCanvasState } from '../../../lib/canvas/restore';
 import { toast } from '../../../stores/toasts';
-import type { CanvasPalette } from '../engine';
+import type { CanvasPalette, RefusedWhy } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { CommentsLayer, CommentsToggle } from './comments/CommentsLayer';
 import { ZoomBar } from './Controls';
@@ -79,6 +79,13 @@ interface Env {
   lowPower: boolean;
   reducedMotion: boolean;
 }
+
+const REFUSED: Record<RefusedWhy, MessageKey> = {
+  objects: 'canvasBoard.pasteFull',
+  size: 'canvasBoard.pasteTooLarge',
+  create: 'canvasBoard.createFull',
+  clipboard: 'canvasBoard.clipboardFailed',
+};
 
 function readEnv(): Env {
   return {
@@ -154,7 +161,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       color: (id) => cursorColor(id),
       title: () => live.current.name,
       onTooLarge: () => toast.error(t('canvasBoard.tooLarge')),
-      onRefused: (why) => toast.error(t(why === 'size' ? 'canvasBoard.pasteTooLarge' : 'canvasBoard.pasteFull')),
+      onRefused: (why) => toast.error(t(REFUSED[why])),
       onFatal: (code) => {
         setGone(true);
         live.current.onFatal?.(code);

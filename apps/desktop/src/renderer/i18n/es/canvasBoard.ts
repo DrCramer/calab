@@ -217,4 +217,6 @@ export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.timer.reset': 'Restablecer el temporizador',
   'canvasBoard.timer.label': 'Temporizador: {time}',
   'canvasBoard.timer.ended': 'Se acabó el tiempo',
+  'canvasBoard.createFull': 'No se creó: el lienzo está lleno',
+  'canvasBoard.clipboardFailed': 'El portapapeles no está disponible',
 };

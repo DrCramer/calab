@@ -28,6 +28,9 @@ import { selectionFrame } from './selection';
 import { TextEditor, type EditSpec } from './textEditor';
 import { BADGE_MARGIN_PX, hitBadge } from './voteDraw';
 
+/** Why an action did nothing: a paste or ⌘D over the object (`objects`) or state (`size`) limit, a create at the limit, the clipboard denied. */
+export type RefusedWhy = 'objects' | 'size' | 'create' | 'clipboard';
+
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment';
 
 /** A click (tap) of the «Комментарий» tool (ADR-0115 wave 4): where, and the object under it (null = the field). */
@@ -95,7 +98,7 @@ export interface EngineOptions {
   gridSize?: number;
   clipboard?: ClipboardPort;
   /** A paste or ⌘D was refused whole: the object limit (`objects`) or the document's state limit (`size`). */
-  onRefused?: (why: 'objects' | 'size') => void;
+  onRefused?: (why: RefusedWhy) => void;
   /** Positioned element the text editor is appended to (default: the canvas' parent). */
   editorHost?: HTMLElement;
   /** The text editor's accessible name, in the UI language (read at every open). */
@@ -521,7 +524,7 @@ export class CanvasEngine implements Core {
   /** After a create; no ids = the document refused it (the object or state limit), which is said, not swallowed. */
   finishCreate(ids: readonly string[], edit: boolean): void {
     if (ids.length === 0) {
-      this.refused(1);
+      this.opts.onRefused?.('create');
       return;
     }
     this.setSelection(ids);
@@ -917,6 +920,7 @@ export class CanvasEngine implements Core {
         await this.clipboardPort.writeText(text);
       } catch {
         // Clipboard access can be denied; the text is still returned.
+        this.opts.onRefused?.('clipboard');
       }
     }
     this.pasteCount = 0;
@@ -937,11 +941,15 @@ export class CanvasEngine implements Core {
 
   async paste(): Promise<string[]> {
     if (!this.canEdit() || !this.clipboardPort) return [];
+    let text: string;
     try {
-      return this.pasteText(await this.clipboardPort.readText());
+      text = await this.clipboardPort.readText();
     } catch {
+      // Reading can be denied (the web asks first): said, not a silent nothing.
+      this.opts.onRefused?.('clipboard');
       return [];
     }
+    return this.pasteText(text);
   }
 
   /** Pastes our JSON (placed visibly, offset on repeats) or plain text as a text object at the view center. */

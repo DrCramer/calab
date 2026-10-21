@@ -217,4 +217,6 @@ export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.timer.reset': 'Reset the timer',
   'canvasBoard.timer.label': 'Timer: {time}',
   'canvasBoard.timer.ended': 'Time is up',
+  'canvasBoard.createFull': 'Not created: the canvas is full',
+  'canvasBoard.clipboardFailed': 'The clipboard is not available',
 };

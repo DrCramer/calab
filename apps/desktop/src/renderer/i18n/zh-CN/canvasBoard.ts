@@ -217,4 +217,6 @@ export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.timer.reset': '重置计时器',
   'canvasBoard.timer.label': '计时器：{time}',
   'canvasBoard.timer.ended': '时间到',
+  'canvasBoard.createFull': '未创建：画布已满',
+  'canvasBoard.clipboardFailed': '无法访问剪贴板',
 };
