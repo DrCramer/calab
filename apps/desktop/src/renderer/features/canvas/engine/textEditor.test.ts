@@ -34,6 +34,18 @@ describe('TextEditor', () => {
     expect(document.activeElement).toBe(ta);
     expect(ta?.selectionStart).toBe(5);
   });
+  it('takes its accessible name from the option, read at every open', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let name = 'Текст на холсте';
+    const ed = new TextEditor({ host, canvas: document.createElement('canvas'), getCamera: () => ({ tx: 0, ty: 0, scale: 1 }), label: () => name });
+    ed.open(spec(), vi.fn());
+    expect(host.querySelector('textarea')?.getAttribute('aria-label')).toBe('Текст на холсте');
+    ed.commit();
+    name = 'Canvas text';
+    ed.open(spec(), vi.fn());
+    expect(host.querySelector('textarea')?.getAttribute('aria-label')).toBe('Canvas text');
+  });
   it('follows the camera', () => {
     const { ed, host, state } = setup();
     ed.open(spec(), vi.fn());

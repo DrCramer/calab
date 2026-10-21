@@ -142,6 +142,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       canvas: cv,
       remoteCanvas: remote.current,
       editorHost: host,
+      editorLabel: () => t('canvasBoard.textEditor'),
       deps: live.current.deps,
       palette: live.current.palette,
       readOnly: !live.current.canWrite,

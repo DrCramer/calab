@@ -96,6 +96,8 @@ export interface EngineOptions {
   clipboard?: ClipboardPort;
   /** Positioned element the text editor is appended to (default: the canvas' parent). */
   editorHost?: HTMLElement;
+  /** The text editor's accessible name, in the UI language (read at every open). */
+  editorLabel?: () => string;
   /** Text measuring (tests / non-DOM). Default: a hidden 2D context. */
   measure?: MeasureFn;
   /** Clock and frame scheduler, for tests. */
@@ -237,6 +239,7 @@ export class CanvasEngine implements Core {
       host: host ?? opts.canvas,
       canvas: opts.canvas,
       getCamera: () => this.cam,
+      ...(opts.editorLabel ? { label: opts.editorLabel } : {}),
       ...(this.touch ? { phone: { keepVisible: (dy: number) => this.keepEditVisible(dy), reserve: PHONE_FORMAT_BAR_PX, top: PHONE_TOP_BARS_PX } } : {}),
     });
     this.renderer.onFrame = () => {

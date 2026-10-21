@@ -38,6 +38,8 @@ export interface SessionOptions {
   /** The transparent layer over `canvas` for other people's cursors. */
   remoteCanvas?: HTMLCanvasElement | null;
   editorHost: HTMLElement;
+  /** The text editor's accessible name (read at every open, so it follows the UI language). */
+  editorLabel?: () => string;
   deps: CanvasViewDeps;
   palette: CanvasPalette;
   /** No CANVAS_WRITE. */
@@ -85,6 +87,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     reducedMotion: o.reducedMotion,
     ...(o.touch ? { touch: true } : {}),
     editorHost: o.editorHost,
+    ...(o.editorLabel ? { editorLabel: o.editorLabel } : {}),
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
   });
   const code = o.publicCode;

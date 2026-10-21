@@ -4,6 +4,7 @@ import { Profiler, act, createElement, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { t } from '../../../i18n';
 import { CanvasDoc } from '../../../lib/canvas/doc';
 import { canvasDocHandle } from '../../../lib/canvas/docHandle';
 import { MockRelay } from '../../../lib/ySyncMock';
@@ -189,6 +190,8 @@ describe('toolbar and hotkeys', () => {
     m.ptr('pointerdown', 200, 200);
     m.ptr('pointerup', 200, 200);
     expect(pressed(m, 'canvas-tool-select')).toBe('true');
+    // The text editor that opens is named in the UI language.
+    expect(m.host.querySelector('textarea')?.getAttribute('aria-label')).toBe(t('canvasBoard.textEditor'));
   });
 
   it('a double click pins the tool: it stays after creating an object; V releases it', async () => {

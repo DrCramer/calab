@@ -165,6 +165,7 @@ export const ruCanvasBoard = {
   'canvasBoard.status.gone': 'Холст недоступен или доступ к нему изменился',
   'canvasBoard.status.retry': 'Открыть заново',
   'canvasBoard.tooLarge': 'Холст слишком большой: изменения могут не сохраниться. Удалите лишнее',
+  'canvasBoard.textEditor': 'Текст на холсте',
   'canvasBoard.presence.title': 'На холсте: {names}',
   'canvasBoard.presence.more': 'Ещё {n}',
   'canvasBoard.menu.copy': 'Копировать',

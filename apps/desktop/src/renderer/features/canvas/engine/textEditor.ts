@@ -73,6 +73,8 @@ export interface TextEditorOptions {
   getCamera: () => Camera;
   /** The phone: follow `window.visualViewport` while a text is open and keep the text above the keyboard. */
   phone?: PhoneKeyboard;
+  /** The textarea's accessible name, read at every open (the engine has no i18n of its own). */
+  label?: () => string;
 }
 
 /**
@@ -134,7 +136,8 @@ export class TextEditor {
     ta.value = spec.text;
     ta.maxLength = MAX_TEXT;
     ta.spellcheck = true;
-    ta.setAttribute('aria-label', 'Canvas text');
+    const label = this.o.label?.();
+    if (label) ta.setAttribute('aria-label', label);
     ta.dataset.canvasEditor = '1';
     const st = ta.style;
     st.position = 'absolute';
