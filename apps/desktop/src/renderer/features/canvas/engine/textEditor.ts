@@ -174,6 +174,9 @@ export class TextEditor {
     ta.addEventListener('keydown', this.onKey);
     ta.addEventListener('blur', this.onBlur);
     ta.addEventListener('wheel', this.onWheel, { passive: false });
+    ta.addEventListener('gestureend', this.onGesture);
+    ta.addEventListener('gesturechange', this.onGesture);
+    ta.addEventListener('gesturestart', this.onGesture);
     ta.addEventListener('keyup', this.onCaret);
     ta.addEventListener('mouseup', this.onCaret);
     ta.ownerDocument.addEventListener('selectionchange', this.onCaret);
@@ -232,7 +235,22 @@ export class TextEditor {
       ta.scrollTop += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
       return;
     }
-    this.o.canvas.dispatchEvent(new WheelEvent('wheel', e));
+    this.o.canvas.dispatchEvent(
+      new WheelEvent('wheel', {
+        deltaX: e.deltaX, deltaY: e.deltaY, deltaZ: e.deltaZ, deltaMode: e.deltaMode,
+        clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY,
+        ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, cancelable: true,
+      }),
+    );
+  };
+
+  /** Safari's trackpad pinch (gesture events) over the open text: handed to the canvas, which zooms. */
+  private readonly onGesture = (e: Event): void => {
+    e.preventDefault();
+    const g = e as Event & { scale?: number; clientX?: number; clientY?: number };
+    const copy = new Event(e.type, { cancelable: true });
+    Object.defineProperties(copy, { scale: { value: g.scale }, clientX: { value: g.clientX }, clientY: { value: g.clientY } });
+    this.o.canvas.dispatchEvent(copy);
   };
 
   reposition(): void {
@@ -443,6 +461,9 @@ export class TextEditor {
     ta.removeEventListener('keydown', this.onKey);
     ta.removeEventListener('blur', this.onBlur);
     ta.removeEventListener('wheel', this.onWheel);
+    ta.removeEventListener('gestureend', this.onGesture);
+    ta.removeEventListener('gesturechange', this.onGesture);
+    ta.removeEventListener('gesturestart', this.onGesture);
     ta.removeEventListener('keyup', this.onCaret);
     ta.removeEventListener('mouseup', this.onCaret);
     ta.ownerDocument.removeEventListener('selectionchange', this.onCaret);
