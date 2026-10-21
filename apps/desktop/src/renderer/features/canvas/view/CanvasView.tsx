@@ -297,7 +297,8 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
     const r = cv.getBoundingClientRect();
     const hit = engine.hitAt(engine.toWorld({ x: e.clientX - r.left, y: e.clientY - r.top }));
     if (hit) {
-      if (!engine.selection.has(hit.id)) engine.setSelection([hit.id]);
+      // The menu acts on what a click would select: a group member brings its whole group.
+      if (!engine.selection.has(hit.id)) engine.setSelection(engine.unitAt(hit.id));
       setMenuMode('object');
     } else {
       engine.clearSelection();
