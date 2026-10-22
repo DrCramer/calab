@@ -1,12 +1,15 @@
+import { IDS } from '../e2e-support/mock-server';
 import { expect, test } from './app';
-import { checkpoint } from './harness';
+import { checkpoint, settle } from './harness';
 
 /**
  * «Настройки пространства → Телефония» — the exchange (ADR-0117 step 1, docs/08 «Телефония»):
  * «Внутренние номера» (103 unassigned), «Группы» («Поддержка» with a deleted fallback),
  * «Автоответ» (a menu with a recording and keys, key 9 leading to a deleted menu), the inline forms
- * of a number, a group and a menu. Fixture: mock-server seedSipExchange. Projects
- * `telephony-dark-960` (all) and `telephony-light-960` (the menu form only); run with -g:
+ * of a number, a group and a menu. Fixture: mock-server seedSipExchange. And the incoming phone
+ * call (ADR-0117 step 2): the sheet with the caller's number and the menu it came through. Projects
+ * `telephony-dark-960` (all) and `telephony-light-960` (the menu form and the incoming call); run
+ * with -g:
  *
  *   CALABA_VISUAL_MOCK_PORT=4513 MOCK_LIVEKIT_ROOM_PREFIX=tel_ \
  *     pnpm -F @calaba/desktop e2e:visual -g "telephony-"
@@ -73,4 +76,19 @@ test('telephony-menu', async ({ open, win, mock, shot }) => {
   await expect(form.getByTestId('sip-menu-key-9')).toHaveValue('missing');
   await form.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-menu-form');
+});
+
+// ADR-0117 step 2: an inbound call rings me — the number, «Входящий на номер · <группа>», the
+// buttons; «Отклонить» closes it.
+test('telephony-incoming', async ({ open, win, mock, shot }) => {
+  await open();
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  const modal = win.getByTestId('sip-incoming');
+  await expect(modal).toContainText('+7 916 123-45-67');
+  await expect(modal).toContainText('Входящий на номер · Отдел продаж');
+  await expect(modal.getByRole('button', { name: 'Принять' })).toBeFocused();
+  await settle(win);
+  await checkpoint(shot, 'telephony-incoming');
+  await modal.getByRole('button', { name: 'Отклонить' }).click();
+  await expect(modal).toHaveCount(0);
 });

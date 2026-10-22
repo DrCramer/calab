@@ -1593,6 +1593,13 @@ test('m-telephony', async ({ page }) => {
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
   await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-menu');
+  // ADR-0117 step 2: an inbound call rings me — the sheet takes the whole screen.
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  const ring = page.getByTestId('sip-incoming');
+  await expect(ring).toContainText('Входящий на номер · Отдел продаж');
+  await checkpoint(page, 'm-sip-incoming');
+  await ring.getByRole('button', { name: 'Отклонить' }).tap();
+  await expect(ring).toHaveCount(0);
 });
 
 // ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of

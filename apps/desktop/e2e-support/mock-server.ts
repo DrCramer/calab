@@ -712,6 +712,12 @@ export interface MockServer {
    */
   seedSipExchange(): void;
   /**
+   * ADR-0117 step 2: an inbound phone call from `number` rings `toUserId` in «Команда Calab»
+   * (SIP_INBOUND_RING; `via` — the menu / group it came through). Decline (POST
+   * /api/sip/inbound/{cid}/decline) ends it «declined» with SIP_CALL_UPDATE.
+   */
+  ringSipInbound(toUserId: string, number: string, via: string): SipCall;
+  /**
    * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
    * status never advances by itself (unlike a stop through the API).
    */
@@ -893,6 +899,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     placeSipCall: (roomId, by, number, status, ago) => impl.placeSipCall(roomId, by, number, status, ago),
     setSipCallStatus: (id, status, reason) => impl.setSipCallStatus(id, status, reason),
     seedSipExchange: () => impl.seedSipExchange(),
+    ringSipInbound: (to, number, via) => impl.ringSipInbound(to, number, via),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
@@ -2640,6 +2647,20 @@ class MockImpl {
         sendMsg(c.res, 200, CallActionResponseSchema, { call });
       });
     }
+    // Inbound phone calls (ADR-0117): the callee refuses.
+    this.route('POST', '/api/sip/inbound/:id/decline', (c) => {
+      const call = this.state.sipCalls.get(c.params[0] ?? '');
+      const me = this.uid(c);
+      if (!call || call.direction !== SipCallDirection.IN || !call.ringingUserIds.includes(me)) throw notFound('call not found');
+      call.ringingUserIds = call.ringingUserIds.filter((u) => u !== me);
+      if (call.ringingUserIds.length === 0) {
+        call.status = SipCallStatus.ENDED;
+        call.reason = 'declined';
+        call.endedAt = timestampFromMs(Date.now());
+      }
+      this.toUser(me, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      noContent(c.res);
+    });
     // Control endpoints (tests in another process): ringCall / callAction.
     const ctl = (c: Ctx): Record<string, string> => (c.raw.length ? (JSON.parse(c.raw.toString('utf8')) as Record<string, string>) : {});
     this.route('POST', '/__mock/call/ring', (c) => {
@@ -6000,6 +6021,25 @@ class MockImpl {
       this.pbxDo(() => pbxDeleteMenu(p, c.params[1] ?? ''));
       noContent(c.res);
     });
+  }
+
+  ringSipInbound(toUserId: string, number: string, via: string): SipCall {
+    const id = nextId(this.state, 'file');
+    const c = create(SipCallSchema, {
+      id,
+      workspaceId: IDS.workspaces.main,
+      number,
+      direction: SipCallDirection.IN,
+      status: SipCallStatus.RINGING,
+      startedAt: timestampFromMs(Date.now()),
+      participantIdentity: `sip_${number}`,
+      ringingUserIds: [toUserId],
+      via,
+      route: 'menu',
+    });
+    this.state.sipCalls.set(id, c);
+    this.toUser(toUserId, { event: { case: 'sipInboundRing', value: { call: clone(SipCallSchema, c) } } });
+    return clone(SipCallSchema, c);
   }
 
   private announceSipCall(c: SipCall): void {
