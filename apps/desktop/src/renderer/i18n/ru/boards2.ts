@@ -4,6 +4,7 @@
  */
 export const ruBoards2 = {
   // categories
+  'boards.createBoard': 'Создать доску',
   'boards.cat.new': 'Новая категория',
   'boards.cat.none': 'Без категории',
   'boards.cat.moveTo': 'В категорию',

@@ -17,9 +17,7 @@ import { useSearchPanel } from '../../stores/searchPanel';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
-import { useBoardsUi } from '../../stores/boardsUi';
-import { mayCreateBoards } from '../../lib/permissions';
+import { useWorkspaces } from '../../stores/workspaces';
 import { useIdentity } from '../../stores/identity';
 import { lockScreen } from '../identity/model';
 import { WorkspaceLock } from '../identity/WorkspaceLock';
@@ -34,6 +32,7 @@ import { DmSidebar } from '../dm/DmSidebar';
 import { DayView } from '../calendar/DayView';
 import { EventPanel } from '../calendar/EventCard';
 import { BoardsList } from '../boards/BoardsList';
+import { BoardsCreateMenu } from '../boards/BoardsCreateMenu';
 import { BoardsView } from '../boards/BoardsView';
 import { PhoneDisk } from '../disk/PhoneDisk';
 import { PhoneWiki, PhoneWikiPage, PhoneWikiTrash } from '../wiki/PhoneWiki';
@@ -189,13 +188,11 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
   const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const creator = mayCreateBoards(useMemberRoles(ws ?? '', me));
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
       <RootTitle title={t('shell.modeBoards')} icon={<HeaderIcon icon={SquareKanban} />} search>
-        {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
+        <BoardsCreateMenu workspaceId={ws} />
       </RootTitle>
       <BoardsList workspaceId={ws} />
     </section>
