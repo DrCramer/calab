@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,8 +34,20 @@ const (
 	soundBitrate        = "96k"
 )
 
+// Voice menu prompts (ADR-0117): the same conversion with a larger source, a 3-minute cap and a
+// speech bitrate; ~700 KB for 3 minutes.
+const (
+	MaxPromptSourceBytes = 10 << 20
+	MaxPromptMs          = 180_000
+	MaxPromptBytes       = 2 << 20
+	promptTimeout        = 60 * time.Second
+	promptBitrate        = "32k"
+)
+
 var (
 	errBadAudio = errors.New("files: not a readable MP3, Ogg or WAV clip")
+	// ErrAudioTooLong: the prompt plays longer than MaxPromptMs.
+	ErrAudioTooLong = errors.New("files: the audio is too long")
 	// ErrNoFFmpeg means FFMPEG_PATH does not name a runnable ffmpeg: sounds cannot be added.
 	ErrNoFFmpeg = errors.New("files: ffmpeg is not available")
 )
@@ -109,13 +122,24 @@ func OggOpusDurationMs(b []byte) (ms int64, ok bool) {
 // first audio stream, mono 48 kHz, EBU R128 loudness −16 LUFS (true peak −1.5 dBTP), Opus in
 // Ogg without metadata. format is the demuxer of in (AudioFormat): it is forced, not probed.
 func SoundArgs(format, in, out string) []string {
+	return audioArgs(format, in, out, "5", soundBitrate, "audio")
+}
+
+// PromptArgs are SoundArgs for the prompt of a voice menu (ADR-0117): at most one second past
+// MaxPromptMs (so a longer upload is seen and refused, not cut silently), 32 kbit/s Opus tuned
+// for speech — the phone line carries G.711 anyway.
+func PromptArgs(format, in, out string) []string {
+	return audioArgs(format, in, out, strconv.Itoa(MaxPromptMs/1000+1), promptBitrate, "voip")
+}
+
+func audioArgs(format, in, out, maxSec, bitrate, application string) []string {
 	return []string{
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-		"-f", format, "-t", "5", "-i", in,
+		"-f", format, "-t", maxSec, "-i", in,
 		"-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
 		"-af", "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000",
 		"-ac", "1", "-ar", "48000",
-		"-c:a", "libopus", "-b:a", soundBitrate, "-application", "audio",
+		"-c:a", "libopus", "-b:a", bitrate, "-application", application,
 		"-f", "ogg", out,
 	}
 }
@@ -143,7 +167,7 @@ func (s *Service) PrepareSound(ctx context.Context, src sqlc.File) (*PreparedFil
 	if len(data) > MaxSoundSourceBytes || format == "" {
 		return nil, 0, errBadAudio
 	}
-	clip, err := s.convertSound(ctx, format, data)
+	clip, err := s.convertAudio(ctx, data, SoundArgs(format, "in", "out.ogg"), soundTimeout)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -165,10 +189,16 @@ func (s *Service) PrepareSound(ctx context.Context, src sqlc.File) (*PreparedFil
 	return &PreparedFile{st: st, workspaceID: *src.WorkspaceID, uploader: src.UploaderID}, int32(ms), nil //nolint:gosec // ≤ MaxSoundMs
 }
 
-// convertSound runs ffmpeg (demuxer format) on data in a private temp dir, in the single
-// conversion slot, within soundTimeout. A failing conversion is errBadAudio (the input is what fails, as a rule).
+// convertSound makes a soundboard clip of data (demuxer format); see convertAudio.
 func (s *Service) convertSound(ctx context.Context, format string, data []byte) ([]byte, error) {
-	cctx, cancel := context.WithTimeout(ctx, soundTimeout)
+	return s.convertAudio(ctx, data, SoundArgs(format, "in", "out.ogg"), soundTimeout)
+}
+
+// convertAudio runs ffmpeg with args (input "in", output "out.ogg", relative to a private temp
+// dir holding data as "in"), in the single conversion slot, within timeout. A failing
+// conversion is errBadAudio (the input is what fails, as a rule).
+func (s *Service) convertAudio(ctx context.Context, data []byte, args []string, timeout time.Duration) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	select {
 	case s.conv.slot <- struct{}{}:
@@ -185,7 +215,7 @@ func (s *Service) convertSound(ctx context.Context, format string, data []byte) 
 	if err := os.WriteFile(in, data, 0o600); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(cctx, s.conv.ffmpeg, SoundArgs(format, in, out)...) //nolint:gosec // FFMPEG_PATH is operator configuration
+	cmd := exec.CommandContext(cctx, s.conv.ffmpeg, args...) //nolint:gosec // FFMPEG_PATH is operator configuration
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -200,4 +230,54 @@ func (s *Service) convertSound(ctx context.Context, format string, data []byte) 
 		return nil, fmt.Errorf("%w: %w", errBadAudio, err)
 	}
 	return clip, nil
+}
+
+// PreparePrompt makes the prompt of a voice menu (ADR-0117 §6) from the audio file src (a
+// workspace file; the caller checked who may use it) and stores it as a new file of that
+// workspace: not encrypted (every caller hears it), counted in the quota by InsertPrepared. A
+// source that is not MP3 / Ogg / WAV (by content), is larger than MaxPromptSourceBytes or
+// gives no sound is IsBadAudio; one longer than MaxPromptMs is ErrAudioTooLong; without ffmpeg
+// the error is ErrNoFFmpeg.
+func (s *Service) PreparePrompt(ctx context.Context, src sqlc.File) (*PreparedFile, int32, error) {
+	if src.WorkspaceID == nil || src.Size > MaxPromptSourceBytes {
+		return nil, 0, errBadAudio
+	}
+	if s.conv == nil {
+		return nil, 0, ErrNoFFmpeg
+	}
+	rc, _, err := s.store.Get(ctx, src.Key)
+	if err != nil {
+		return nil, 0, err
+	}
+	data, err := io.ReadAll(io.LimitReader(rc, MaxPromptSourceBytes+1))
+	_ = rc.Close()
+	if err != nil {
+		return nil, 0, err
+	}
+	format := AudioFormat(data)
+	if len(data) > MaxPromptSourceBytes || format == "" {
+		return nil, 0, errBadAudio
+	}
+	out, err := s.convertAudio(ctx, data, PromptArgs(format, "in", "out.ogg"), promptTimeout)
+	if err != nil {
+		return nil, 0, err
+	}
+	ms, ok := OggOpusDurationMs(out)
+	if !ok || ms < 1 || len(out) > MaxPromptBytes {
+		return nil, 0, errBadAudio
+	}
+	if ms > MaxPromptMs {
+		return nil, 0, ErrAudioTooLong
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, 0, err
+	}
+	sum := sha256.Sum256(out)
+	st := &stored{id: id, key: blob.FileKey(*src.WorkspaceID, id), name: "prompt.ogg", mime: SoundMime,
+		size: int64(len(out)), sha256: hex.EncodeToString(sum[:])}
+	if err := s.store.Put(ctx, st.key, bytes.NewReader(out), st.size, SoundMime); err != nil {
+		return nil, 0, fmt.Errorf("store prompt: %w", err)
+	}
+	return &PreparedFile{st: st, workspaceID: *src.WorkspaceID, uploader: src.UploaderID}, int32(ms), nil //nolint:gosec // ≤ MaxPromptMs
 }

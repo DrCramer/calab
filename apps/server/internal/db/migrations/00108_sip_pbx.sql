@@ -140,7 +140,25 @@ CREATE INDEX sip_ivr_items_action_group_idx ON sip_ivr_items (workspace_id, acti
 
 ALTER TABLE workspace_members ADD COLUMN sip_extension text NOT NULL DEFAULT '';
 
+-- Guests never have a number: a member made a guest (on any path) loses it — the number stays
+-- unassigned, like when the member leaves.
+-- +goose StatementBegin
+CREATE FUNCTION sip_extension_guest() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.role = 'guest' AND OLD.role <> 'guest' THEN
+        NEW.sip_extension := '';
+        UPDATE sip_extensions SET user_id = NULL WHERE workspace_id = NEW.workspace_id AND user_id = NEW.user_id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+CREATE TRIGGER workspace_members_sip_extension_guest BEFORE UPDATE OF role ON workspace_members
+    FOR EACH ROW EXECUTE FUNCTION sip_extension_guest();
+
 -- +goose Down
+DROP TRIGGER workspace_members_sip_extension_guest ON workspace_members;
+DROP FUNCTION sip_extension_guest();
 ALTER TABLE workspace_members DROP COLUMN sip_extension;
 DROP TABLE sip_ivr_items;
 ALTER TABLE sip_groups DROP COLUMN on_fail_menu_id, DROP COLUMN on_fail_extension_id, DROP COLUMN on_fail_group_id;
