@@ -9,8 +9,9 @@ import { checkpoint, settle } from './harness';
  * of a number, a group and a menu, «Входящие» over a registration at the provider (ADR-0121:
  * registered / a refused password). Fixture: mock-server seedSipExchange. And the incoming phone
  * call (ADR-0117 step 2): the sheet with the caller's number and the menu it came through; a
- * group's fallback off / on (ADR-0124). Projects `telephony-dark-960` (all) and
- * `telephony-light-960` (the group fallback, the menu form and the incoming call); run with -g:
+ * group's fallback off / on (ADR-0124); an exchange from scratch (empty cards, a new menu that stays
+ * open for its greeting: refused files, the conversion). Projects `telephony-dark-960` (all) and
+ * `telephony-light-960` (telephony-menu and the incoming call); run with -g:
  *
  *   CALABA_VISUAL_MOCK_PORT=4513 MOCK_LIVEKIT_ROOM_PREFIX=tel_ \
  *     pnpm -F @calaba/desktop e2e:visual -g "telephony-"
@@ -84,9 +85,54 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
 });
 
 test('telephony-menu', async ({ open, win, mock, shot }) => {
+  // An exchange set up from scratch: empty cards; a group has nobody to add until people get numbers.
+  await open();
+  mock.seedSipExchange(true);
+  let dialog = await openTelephony(win);
+  await expect(dialog.getByTestId('sip-ext-empty')).toBeVisible();
+  await expect(dialog.getByTestId('sip-menu-empty')).toBeVisible();
+  await dialog.getByTestId('sip-group-add').click();
+  await expect(dialog.getByTestId('sip-group-form')).toContainText('сначала дайте сотрудникам или ботам номера');
+  await dialog.getByTestId('sip-menu-list').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-empty');
+  await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).click();
+
+  // A new menu stays open after «Сохранить» — the greeting is uploaded right there: a wrong
+  // format and a file over 10 MB are refused at once, the server's refusal under the row, the
+  // conversion shows «Обрабатываем запись…», then the length and ▶.
+  await dialog.getByTestId('sip-menu-add').click();
+  let menu = dialog.getByTestId('sip-menu-form');
+  await menu.getByTestId('sip-menu-name').fill('Приветствие');
+  await menu.getByTestId('sip-menu-save').click();
+  menu = dialog.getByTestId('sip-menu-form');
+  await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Загрузить запись');
+  await expect(menu).toContainText('Пока записи нет, меню не звучит');
+  // «Сохранено» sits over the form's foot (outside the modal): close it by a DOM click.
+  await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').evaluate((b) => (b as HTMLButtonElement).click());
+  await expect(win.getByTestId('toast')).toHaveCount(0);
+  const file = menu.getByTestId('sip-menu-prompt-file');
+  const prompt = menu.getByTestId('sip-menu-prompt-error');
+  await file.setInputFiles({ name: 'big.wav', mimeType: 'audio/wav', buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
+  await expect(prompt).toHaveText('Файл больше 10 МБ — сожмите или укоротите запись');
+  await file.setInputFiles({ name: 'notes.mp3', mimeType: 'text/plain', buffer: Buffer.from('not audio') });
+  await expect(prompt).toHaveText('Нужен свой файл MP3, WAV или OGG до 10 МБ и до 3 минут');
+  await file.setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
+  await expect(prompt).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
+  await menu.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-prompt-error');
+  const release = mock.holdSipPrompt();
+  await file.setInputFiles({ name: 'greeting.mp3', mimeType: 'audio/mpeg', buffer: Buffer.alloc(4096, 1) });
+  await expect(menu.getByTestId('sip-menu-prompt')).toContainText('Обрабатываем запись…');
+  await expect(prompt).toHaveCount(0);
+  await checkpoint(shot, 'telephony-prompt-processing');
+  release();
+  await expect(menu.getByTestId('sip-menu-listen')).toBeVisible();
+  await expect(menu.getByTestId('sip-menu-prompt')).toContainText('0:42');
+  await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Заменить');
+
   await open();
   mock.seedSipExchange();
-  const dialog = await openTelephony(win);
+  dialog = await openTelephony(win);
   await expect(dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' })).toContainText('переадресация через 45 с');
 
   // ADR-0124: a new group rings until somebody answers (the fallback off); switched on — after

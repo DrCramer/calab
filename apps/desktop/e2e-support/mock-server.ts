@@ -714,15 +714,20 @@ export interface MockServer {
    * ADR-0117: «Команда Calab» on a plan with telephony, a saved SIP account and an exchange — four
    * numbers (103 unassigned, Григорий without one), groups «Отдел продаж» (round robin, forwards to 100 after 45 s) and
    * «Поддержка» (forwards after 30 s to a deleted menu; ADR-0124), menus «Главное меню» (a 42 s prompt, keys 1 2 3 0 * 9 — 9 leads to a deleted menu) and
-   * «Ночной режим» (no prompt).
+   * «Ночной режим» (no prompt). `empty`: the plan and the account only — no numbers, groups or menus.
    */
-  seedSipExchange(): void;
+  seedSipExchange(empty?: boolean): void;
   /**
    * ADR-0121: inbound calls of «Команда Calab» over a registration at the provider (call it after
    * seedSipExchange), to the group «Отдел продаж»: `registered` (until now + 10 min, the masked
    * contact) or `failed` (the provider refused the password).
    */
   setSipRegistration(state: 'registered' | 'failed'): void;
+  /**
+   * ADR-0117 §6: the next menu prompt saves (PATCH …/sip/ivr/{mid} with a prompt) wait until the
+   * returned release is called — the «Обрабатываем запись…» state stays on screen.
+   */
+  holdSipPrompt(): () => void;
   /**
    * ADR-0117 step 2: an inbound phone call from `number` rings `toUserId` in «Команда Calab»
    * (SIP_INBOUND_RING; `via` — the menu / group it came through). Decline (POST
@@ -910,8 +915,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setSip: (ws, patch) => impl.setSip(ws, patch),
     placeSipCall: (roomId, by, number, status, ago) => impl.placeSipCall(roomId, by, number, status, ago),
     setSipCallStatus: (id, status, reason) => impl.setSipCallStatus(id, status, reason),
-    seedSipExchange: () => impl.seedSipExchange(),
+    seedSipExchange: (empty) => impl.seedSipExchange(empty),
     setSipRegistration: (st) => impl.setSipRegistration(st),
+    holdSipPrompt: () => impl.holdSipPrompt(),
     ringSipInbound: (to, number, via) => impl.ringSipInbound(to, number, via),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
@@ -5913,7 +5919,7 @@ class MockImpl {
     return { wsId, me, p: this.pbxOf(wsId) };
   }
 
-  seedSipExchange(): void {
+  seedSipExchange(empty = false): void {
     const wsId = IDS.workspaces.main;
     const ws = this.state.workspaces.get(wsId);
     if (ws?.plan?.limits) {
@@ -5923,6 +5929,10 @@ class MockImpl {
     this.setSip(wsId, {});
     const p = emptyPbx();
     this.state.sipPbx.set(wsId, p);
+    if (empty) {
+      this.syncExtensions(wsId);
+      return;
+    }
     const m = this.pbxMembers(wsId);
     const at = tick(this.state);
     const ext = (number: string, userId: string, description: string): string =>
@@ -5964,6 +5974,19 @@ class MockImpl {
     pbxDeleteMenu(p, night.id);
     pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, { name: 'Выходные' }));
     this.syncExtensions(wsId);
+  }
+
+  private sipPromptHold: Promise<void> | null = null;
+
+  holdSipPrompt(): () => void {
+    let release = (): void => undefined;
+    this.sipPromptHold = new Promise<void>((r) => {
+      release = () => {
+        this.sipPromptHold = null;
+        r();
+      };
+    });
+    return release;
   }
 
   setSipRegistration(state: 'registered' | 'failed'): void {
@@ -6059,9 +6082,18 @@ class MockImpl {
       const m = this.pbxDo(() => pbxCreateMenu(p, wsId, nextId(this.state, 'file'), me, tick(this.state), b));
       sendMsg(c.res, 201, SipIvrMenuResponseSchema, { menu: outMenu(p, m) });
     });
-    this.route('PATCH', '/api/workspaces/:id/sip/ivr/:mid', (c) => {
-      const { me, p } = this.pbxAdmin(c);
+    this.route('PATCH', '/api/workspaces/:id/sip/ivr/:mid', async (c) => {
+      const { wsId, me, p } = this.pbxAdmin(c);
       const b = parseBody(c, UpdateSipIvrMenuRequestSchema);
+      if (b.promptSourceFileId) {
+        // The server's check (sip/pbx.go promptSource, files.PreparePrompt): an audio file of this
+        // workspace, at most 10 MB; the conversion takes a while (holdSipPrompt).
+        const f = this.state.files.get(b.promptSourceFileId)?.meta;
+        if (!f || f.workspaceId !== wsId || !f.mime.startsWith('audio/') || f.size > 10n * 1024n * 1024n) {
+          throw new HttpError(422, ErrorCode.VALIDATION, 'an MP3, Ogg or WAV file you uploaded to this workspace, at most 10 MB', 'promptSourceFileId');
+        }
+        if (this.sipPromptHold) await this.sipPromptHold;
+      }
       const m = this.pbxDo(() => pbxUpdateMenu(p, c.params[1] ?? '', me, tick(this.state), b));
       sendMsg(c.res, 200, SipIvrMenuResponseSchema, { menu: outMenu(p, m) });
     });
