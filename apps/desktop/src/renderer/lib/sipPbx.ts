@@ -66,6 +66,13 @@ const FIELD_ERR: Record<string, MessageKey> = {
   promptSourceFileId: 'pbx.err.prompt',
   target: 'pbx.err.target',
   allowedCidrs: 'pbx.err.cidrs',
+  registrar: 'pbx.err.registrar',
+  domain: 'pbx.err.domain',
+  expiresSec: 'pbx.err.expires',
+  keepaliveSec: 'pbx.err.keepalive',
+  regAuthUsername: 'pbx.err.regAuthUsername',
+  regPassword: 'pbx.err.regPassword',
+  username: 'pbx.err.regUsername',
 };
 
 export function fieldError(e: unknown): { field: string; text: string } | null {

@@ -6,7 +6,8 @@ import { checkpoint, settle } from './harness';
  * «Настройки пространства → Телефония» — the exchange (ADR-0117 step 1, docs/08 «Телефония»):
  * «Внутренние номера» (103 unassigned), «Группы» («Поддержка» with a deleted fallback),
  * «Автоответ» (a menu with a recording and keys, key 9 leading to a deleted menu), the inline forms
- * of a number, a group and a menu. Fixture: mock-server seedSipExchange. And the incoming phone
+ * of a number, a group and a menu, «Входящие» over a registration at the provider (ADR-0121:
+ * registered / a refused password). Fixture: mock-server seedSipExchange. And the incoming phone
  * call (ADR-0117 step 2): the sheet with the caller's number and the menu it came through. Projects
  * `telephony-dark-960` (all) and `telephony-light-960` (the menu form and the incoming call); run
  * with -g:
@@ -30,6 +31,7 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   test.skip(!DARK(theme), 'dark only');
   await open();
   mock.seedSipExchange();
+  mock.setSipRegistration('registered');
   const dialog = await openTelephony(win);
   await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
   await expect(dialog.getByTestId('sip-group-row')).toHaveCount(2);
@@ -64,6 +66,21 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   await group.scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-group-form');
   await group.getByRole('button', { name: 'Отмена' }).click();
+
+  // ADR-0121: inbound calls over a registration at the provider — the mode, the state line
+  // (registered until …, the masked contact) with the registrar fields open; then the provider
+  // refuses the password: saving re-reads the settings and the line turns into the error.
+  const inbound = dialog.getByTestId('sip-inbound');
+  await expect(dialog.getByTestId('sip-reg-status')).toHaveText('Зарегистрировано до 13:39 · контакт sip:c…@141.105.69.177:5080');
+  await expect(dialog.getByTestId('sip-inbound-mode').getByRole('radio', { name: 'По регистрации' })).toHaveAttribute('aria-checked', 'true');
+  await dialog.getByTestId('sip-reg-advanced').click();
+  await inbound.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-inbound-register');
+  mock.setSipRegistration('failed');
+  await dialog.getByTestId('sip-inbound-save').click();
+  await expect(dialog.getByTestId('sip-reg-status')).toHaveText('Ошибка регистрации: провайдер не принял логин или пароль');
+  await inbound.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-inbound-register-failed');
 });
 
 test('telephony-menu', async ({ open, win, mock, shot }) => {

@@ -3,6 +3,7 @@ import { timestampDate, timestampMs } from '@bufbuild/protobuf/wkt';
 import {
   GetSipSettingsResponseSchema,
   SipCallStatus,
+  SipInboundMode,
   SipTransport,
   type PutSipSettingsRequestSchema,
   type SipCall,
@@ -64,7 +65,13 @@ const FIELD_ERROR: Record<string, MessageKey> = {
 };
 
 export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNode {
-  const q = useQuery({ queryKey: settingsKey(workspaceId), queryFn: () => api.sip.settings(workspaceId) });
+  // REGISTER mode (ADR-0121): the registration's state is re-read every 15 s while the window is
+  // visible (react-query pauses intervals in the background); no gateway event for it.
+  const q = useQuery({
+    queryKey: settingsKey(workspaceId),
+    queryFn: () => api.sip.settings(workspaceId),
+    refetchInterval: (query) => (query.state.data?.settings?.inboundMode === SipInboundMode.REGISTER && query.state.data.settings.inboundEnabled ? 15_000 : false),
+  });
   const settings = q.data?.settings;
   const allowed = useWorkspaces((s) => planHas(s.byId[workspaceId]?.ws.plan, 'telephony'));
   const setup = settings ? (

@@ -212,6 +212,8 @@ import {
   PlaceSipCallRequestSchema,
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
+  PutSipInboundRequestSchema,
+  PutSipInboundResponseSchema,
   SipCallDirection,
   SipCallResponseSchema,
   SipCallSchema,
@@ -228,6 +230,10 @@ import {
   SipGroupStrategy,
   SipIvrMenuResponseSchema,
   SipRouteKind,
+  SipInboundMode,
+  SipRegistrationStatus,
+  SipRegistrationSchema,
+  SipRouteTargetSchema,
   UpdateSipExtensionRequestSchema,
   UpdateSipGroupRequestSchema,
   UpdateSipIvrMenuRequestSchema,
@@ -712,6 +718,12 @@ export interface MockServer {
    */
   seedSipExchange(): void;
   /**
+   * ADR-0121: inbound calls of «Команда Calab» over a registration at the provider (call it after
+   * seedSipExchange), to the group «Отдел продаж»: `registered` (until now + 10 min, the masked
+   * contact) or `failed` (the provider refused the password).
+   */
+  setSipRegistration(state: 'registered' | 'failed'): void;
+  /**
    * ADR-0117 step 2: an inbound phone call from `number` rings `toUserId` in «Команда Calab»
    * (SIP_INBOUND_RING; `via` — the menu / group it came through). Decline (POST
    * /api/sip/inbound/{cid}/decline) ends it «declined» with SIP_CALL_UPDATE.
@@ -899,6 +911,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     placeSipCall: (roomId, by, number, status, ago) => impl.placeSipCall(roomId, by, number, status, ago),
     setSipCallStatus: (id, status, reason) => impl.setSipCallStatus(id, status, reason),
     seedSipExchange: () => impl.seedSipExchange(),
+    setSipRegistration: (st) => impl.setSipRegistration(st),
     ringSipInbound: (to, number, via) => impl.ringSipInbound(to, number, via),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
@@ -5951,6 +5964,40 @@ class MockImpl {
     this.syncExtensions(wsId);
   }
 
+  setSipRegistration(state: 'registered' | 'failed'): void {
+    const wsId = IDS.workspaces.main;
+    const sales = this.pbxOf(wsId).groups.find((g) => g.name === 'Отдел продаж');
+    const ok = state === 'registered';
+    const cur = this.sipSettingsOf(wsId);
+    this.state.sipSettings.set(
+      wsId,
+      create(SipSettingsSchema, {
+        ...cur,
+        inboundAvailable: true,
+        registrationAvailable: true,
+        inboundEnabled: true,
+        inboundSaved: true,
+        inboundMode: SipInboundMode.REGISTER,
+        inboundTarget: create(SipRouteTargetSchema, { kind: SipRouteKind.GROUP, id: sales?.id ?? '' }),
+        registration: create(SipRegistrationSchema, {
+          ...cur.registration,
+          expiresSec: cur.registration?.expiresSec || 600,
+          keepaliveSec: 30,
+          status: ok ? SipRegistrationStatus.REGISTERED : SipRegistrationStatus.FAILED,
+          error: ok ? '' : 'auth: the provider refused the login or password',
+          ...(ok
+            ? {
+                // The visual tests' clock (13:30 MSK): registered at 13:29, until 13:39.
+                registeredAt: timestampFromMs(Date.parse('2026-01-15T13:29:00+03:00')),
+                expiresAt: timestampFromMs(Date.parse('2026-01-15T13:39:00+03:00')),
+                contactMasked: 'sip:c…@141.105.69.177:5080',
+              }
+            : {}),
+        }),
+      }),
+    );
+  }
+
   private pbxRoutes(): void {
     this.route('GET', '/api/workspaces/:id/sip/extensions', (c) => {
       const me = this.uid(c);
@@ -6130,6 +6177,45 @@ class MockImpl {
       );
       this.syncSipEnabled(wsId);
       sendMsg(c.res, 200, PutSipSettingsResponseSchema, { settings: this.sipSettingsOf(wsId) });
+    });
+
+    // ADR-0117/0121: the inbound settings as sent; the registration's state stays what the
+    // fixture set (setSipRegistration).
+    this.route('PUT', '/api/workspaces/:id/sip/inbound', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      const b = parseBody(c, PutSipInboundRequestSchema);
+      const cur = this.sipSettingsOf(wsId);
+      if (b.enabled && !cur.enabled) throw new HttpError(409, ErrorCode.SIP_DISABLED, 'switch telephony on first');
+      const mode = b.mode || cur.inboundMode || SipInboundMode.DIRECT;
+      const r = b.registration;
+      this.state.sipSettings.set(
+        wsId,
+        create(SipSettingsSchema, {
+          ...cur,
+          inboundEnabled: b.enabled,
+          inboundSaved: b.enabled,
+          inboundTarget: b.target ? create(SipRouteTargetSchema, b.target) : undefined,
+          inboundAllowedCidrs: b.allowedCidrs,
+          inboundMode: mode,
+          registration:
+            mode === SipInboundMode.REGISTER
+              ? create(SipRegistrationSchema, {
+                  ...cur.registration,
+                  ...(r
+                    ? {
+                        registrar: r.registrar,
+                        domain: r.domain,
+                        expiresSec: r.expiresSec || 600,
+                        keepaliveSec: r.keepaliveSec,
+                        authUsername: r.authUsername,
+                        hasPassword: r.password === undefined ? (cur.registration?.hasPassword ?? false) : r.password !== '',
+                      }
+                    : {}),
+                })
+              : undefined,
+        }),
+      );
+      sendMsg(c.res, 200, PutSipInboundResponseSchema, { settings: this.sipSettingsOf(wsId) });
     });
 
     this.route('POST', '/api/workspaces/:id/sip/test', (c) => {

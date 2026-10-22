@@ -1,11 +1,15 @@
+import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
   SipExtensionKind,
   SipGroupStrategy,
+  SipInboundMode,
   SipPromptStatus,
+  SipRegistrationStatus,
   WorkspaceRole,
   type SipExtension,
   type SipGroup,
   type SipIvrMenu,
+  type SipRegistration,
   type SipRouteTarget,
   type SipSettings,
   type WorkspaceMember,
@@ -15,9 +19,10 @@ import { ArrowDown, ArrowUp, Pause, Pencil, Play, Trash2, TriangleAlert, X } fro
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, IconButton, Input, Row, Segmented, Select, Spinner, Switch, cx } from '../../components/ui';
+import { Button, Card, IconButton, Input, PasswordInput, Row, Segmented, Select, Spinner, Switch, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { describeError } from '../../lib/api/errors';
+import { fmt } from '../../lib/format';
 import { api, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
 import { formatPhone } from '../../lib/sip';
@@ -34,8 +39,9 @@ import { formatDuration } from '../shell/voiceFormat';
  * MANAGE_INTEGRATIONS): «Внутренние номера» (number · member or bot · description), «Группы»
  * (number, all at once / one by one, members in order, «если никто не ответил»), «Автоответ»
  * (voice menus: the recorded prompt, what each key 1–9 * 0 # does, «нет нажатия»). Each card is
- * a list; a row opens its inline form. «Входящие» (step 2, shown when the server has SIP_INBOUND):
- * the switch, where calls go and the provider's addresses, saved with PUT …/sip/inbound. Rows are memo'd with primitive props; the lists change only
+ * a list; a row opens its inline form. «Входящие» (step 2, shown when the server can take inbound
+ * calls): the switch, how calls arrive (to our address with the provider's addresses, or over a
+ * registration at the provider — ADR-0121, its state line), where calls go, saved with PUT …/sip/inbound. Rows are memo'd with primitive props; the lists change only
  * by the admin's own saves (react-query), never by a live event.
  */
 
@@ -150,7 +156,7 @@ export function Exchange({ workspaceId, settings }: { workspaceId: string; setti
       )}
       {inboundAvailable ? (
         <InboundCard
-          key={`${settings.inboundEnabled}:${settings.inboundSaved}:${settings.inboundTarget?.id ?? ''}:${settings.inboundAllowedCidrs.join(',')}`}
+          key={`${settings.inboundEnabled}:${settings.inboundSaved}:${settings.inboundTarget?.id ?? ''}:${settings.inboundAllowedCidrs.join(',')}:${settings.inboundMode}:${regKey(settings)}`}
           workspaceId={workspaceId}
           settings={settings}
           exts={x.exts}
@@ -163,6 +169,12 @@ export function Exchange({ workspaceId, settings }: { workspaceId: string; setti
       <MenusCard workspaceId={workspaceId} exts={x.exts} groups={x.groups} menus={x.menus} />
     </div>
   );
+}
+
+/** The saved registration fields (not its live state: the 15 s re-read must not reset the form). */
+function regKey(s: SipSettings): string {
+  const r = s.registration;
+  return r ? `${r.registrar}|${r.domain}|${r.expiresSec}|${r.authUsername}|${r.hasPassword}` : '';
 }
 
 // ---------------------------------------------------------------- numbers
@@ -475,7 +487,7 @@ function MissingNote({ target }: { target: SipRouteTarget | undefined }): ReactN
 
 // ---------------------------------------------------------------- inbound calls
 
-/** «Входящие» (ADR-0117 step 2): answer calls to the Caller ID, where they go, provider addresses. */
+/** «Входящие» (ADR-0117 step 2, ADR-0121): answer calls to the Caller ID, how they arrive (to our address or over a registration at the provider), where they go. */
 function InboundCard({
   workspaceId,
   settings,
@@ -490,11 +502,23 @@ function InboundCard({
   menus: SipIvrMenu[];
 }): ReactNode {
   const qc = useQueryClient();
+  const reg = settings.registration;
   const [on, setOn] = useState(settings.inboundEnabled);
   const [target, setTarget] = useState(targetValue(settings.inboundTarget) || 'hangup');
   const [cidrs, setCidrs] = useState(settings.inboundAllowedCidrs.join(', '));
+  const [mode, setMode] = useState<'direct' | 'register'>(settings.inboundMode === SipInboundMode.REGISTER ? 'register' : 'direct');
+  const [registrar, setRegistrar] = useState(reg?.registrar ?? '');
+  const [domain, setDomain] = useState(reg?.domain ?? '');
+  const [expires, setExpires] = useState(reg?.expiresSec ? String(reg.expiresSec) : '600');
+  const [authUser, setAuthUser] = useState(reg?.authUsername ?? '');
+  const [password, setPassword] = useState('');
+  const [advanced, setAdvanced] = useState(Boolean(reg?.registrar || reg?.domain || (reg && reg.expiresSec !== 600)));
+  const [own, setOwn] = useState(Boolean(reg?.authUsername || reg?.hasPassword));
   const errs = useFormErrors(workspaceId);
   const cidrId = useId();
+  const f = useId();
+  const showMode = settings.registrationAvailable || settings.inboundMode === SipInboundMode.REGISTER;
+  const register = mode === 'register';
   const save = useMutation({
     mutationFn: () =>
       api.sip.saveInbound(workspaceId, {
@@ -504,6 +528,18 @@ function InboundCard({
           .split(/[\s,;]+/)
           .map((c) => c.trim())
           .filter(Boolean),
+        mode: register ? SipInboundMode.REGISTER : SipInboundMode.DIRECT,
+        registration: register
+          ? {
+              registrar: advanced ? registrar.trim() : '',
+              domain: advanced ? domain.trim() : '',
+              expiresSec: advanced ? Number(expires) || 0 : 600,
+              keepaliveSec: reg?.keepaliveSec ?? 30,
+              authUsername: own ? authUser.trim() : '',
+              // Unset keeps the stored password; turning «own» off drops a stored one.
+              ...(own ? (password ? { password } : {}) : reg?.hasPassword ? { password: '' } : {}),
+            }
+          : undefined,
       }),
     onSuccess: () => {
       toast.info(t('pbx.saved'));
@@ -512,8 +548,9 @@ function InboundCard({
     onError: errs.report,
   });
   const live = settings.inboundEnabled && settings.inboundSaved;
+  const field = (id: string): string => `${f}-${id}`;
   return (
-    <Card title={t('pbx.in.title')} footer={t('pbx.in.footer')}>
+    <Card title={t('pbx.in.title')} footer={register ? t('pbx.in.footerRegister') : t('pbx.in.footer')}>
       <div className="px-3 py-1.5" data-testid="sip-inbound">
         <Switch
           checked={on}
@@ -526,6 +563,31 @@ function InboundCard({
           disabled={!settings.enabled && !on}
         />
       </div>
+      {showMode ? (
+        <Row label={t('pbx.in.mode')} hint={t('pbx.in.modeHint')}>
+          <span className="flex min-w-0 flex-col items-end gap-1">
+            <Segmented<'direct' | 'register'>
+              label={t('pbx.in.mode')}
+              value={mode}
+              onChange={(v) => {
+                setMode(v);
+                errs.clear();
+              }}
+              options={[
+                { value: 'direct', label: t('pbx.in.modeDirect') },
+                { value: 'register', label: t('pbx.in.modeRegister') },
+              ]}
+              testId="sip-inbound-mode"
+            />
+            {register && !settings.registrationAvailable ? <span className="text-caption text-muted">{t('pbx.in.reg.noAgent')}</span> : null}
+          </span>
+        </Row>
+      ) : null}
+      {register && settings.inboundMode === SipInboundMode.REGISTER ? (
+        <Row label={t('pbx.in.reg.status')}>
+          <RegistrationStatus reg={reg} />
+        </Row>
+      ) : null}
       <Row label={t('pbx.in.target')}>
         <span className="flex min-w-0 flex-col items-end gap-1">
           <TargetSelect
@@ -544,22 +606,131 @@ function InboundCard({
           <ErrLine text={errs.field.target} />
         </span>
       </Row>
-      <Row label={t('pbx.in.cidrs')} hint={t('pbx.in.cidrsHint')} htmlFor={cidrId}>
-        <span className="flex min-w-0 flex-col items-end gap-1">
-          <Input
-            id={cidrId}
-            value={cidrs}
-            spellCheck={false}
-            placeholder="203.0.113.0/24"
-            onChange={(e) => {
-              setCidrs(e.target.value);
-              errs.clear('allowedCidrs');
-            }}
-            data-testid="sip-inbound-cidrs"
-          />
-          <ErrLine text={errs.field.allowedCidrs} />
-        </span>
-      </Row>
+      {register ? (
+        <>
+          <div className="px-3 py-1.5">
+            <Switch checked={own} onChange={setOwn} label={t('pbx.in.reg.own')} hint={t('pbx.in.reg.ownHint')} />
+          </div>
+          {own ? (
+            <>
+              <Row label={t('pbx.in.reg.authUser')} htmlFor={field('user')}>
+                <span className="flex min-w-0 flex-col items-end gap-1">
+                  <Input
+                    id={field('user')}
+                    value={authUser}
+                    maxLength={128}
+                    spellCheck={false}
+                    autoComplete="off"
+                    onChange={(e) => {
+                      setAuthUser(e.target.value);
+                      errs.clear('regAuthUsername');
+                    }}
+                    data-testid="sip-reg-auth-user"
+                  />
+                  <ErrLine text={errs.field.regAuthUsername} />
+                </span>
+              </Row>
+              <Row label={t('pbx.in.reg.password')} htmlFor={field('pw')}>
+                <span className="flex min-w-0 flex-col items-end gap-1">
+                  <PasswordInput
+                    id={field('pw')}
+                    value={password}
+                    maxLength={256}
+                    autoComplete="new-password"
+                    placeholder={reg?.hasPassword ? t('sip.passwordSaved') : ''}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      errs.clear('regPassword');
+                    }}
+                    data-testid="sip-reg-password"
+                  />
+                </span>
+              </Row>
+            </>
+          ) : null}
+          <ErrRow text={errs.field.regPassword ?? errs.field.username} />
+          <div className="px-3 py-1.5">
+            <button
+              type="button"
+              className="text-caption font-medium text-accent-text hover:underline"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced((v) => !v)}
+              data-testid="sip-reg-advanced"
+            >
+              {t('pbx.in.reg.advanced')}
+            </button>
+          </div>
+          {advanced ? (
+            <>
+              <Row label={t('pbx.in.reg.registrar')} hint={t('pbx.in.reg.registrarHint')} htmlFor={field('registrar')}>
+                <span className="flex min-w-0 flex-col items-end gap-1">
+                  <Input
+                    id={field('registrar')}
+                    value={registrar}
+                    spellCheck={false}
+                    placeholder={settings.host || 'sip.example.com'}
+                    onChange={(e) => {
+                      setRegistrar(e.target.value);
+                      errs.clear('registrar');
+                    }}
+                    data-testid="sip-reg-registrar"
+                  />
+                  <ErrLine text={errs.field.registrar} />
+                </span>
+              </Row>
+              <Row label={t('pbx.in.reg.domain')} hint={t('pbx.in.reg.domainHint')} htmlFor={field('domain')}>
+                <span className="flex min-w-0 flex-col items-end gap-1">
+                  <Input
+                    id={field('domain')}
+                    value={domain}
+                    spellCheck={false}
+                    placeholder={settings.host || 'sip.example.com'}
+                    onChange={(e) => {
+                      setDomain(e.target.value);
+                      errs.clear('domain');
+                    }}
+                    data-testid="sip-reg-domain"
+                  />
+                  <ErrLine text={errs.field.domain} />
+                </span>
+              </Row>
+              <Row label={t('pbx.in.reg.expires')} htmlFor={field('expires')}>
+                <span className="flex min-w-0 flex-col items-end gap-1">
+                  <Input
+                    id={field('expires')}
+                    value={expires}
+                    inputMode="numeric"
+                    className="w-24 tabular-nums"
+                    onChange={(e) => {
+                      setExpires(e.target.value.replace(/\D/g, '').slice(0, 4));
+                      errs.clear('expiresSec');
+                    }}
+                    data-testid="sip-reg-expires"
+                  />
+                  <ErrLine text={errs.field.expiresSec ?? errs.field.keepaliveSec} />
+                </span>
+              </Row>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <Row label={t('pbx.in.cidrs')} hint={t('pbx.in.cidrsHint')} htmlFor={cidrId}>
+          <span className="flex min-w-0 flex-col items-end gap-1">
+            <Input
+              id={cidrId}
+              value={cidrs}
+              spellCheck={false}
+              placeholder="203.0.113.0/24"
+              onChange={(e) => {
+                setCidrs(e.target.value);
+                errs.clear('allowedCidrs');
+              }}
+              data-testid="sip-inbound-cidrs"
+            />
+            <ErrLine text={errs.field.allowedCidrs} />
+          </span>
+        </Row>
+      )}
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
         <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="sip-inbound-save">
           {t('pbx.save')}
@@ -567,6 +738,48 @@ function InboundCard({
         <ErrLine text={errs.form} testId="sip-inbound-error" />
       </div>
     </Card>
+  );
+}
+
+function ErrRow({ text }: { text: string | undefined }): ReactNode {
+  return text ? (
+    <div className="px-3 pb-1.5 text-right">
+      <ErrLine text={text} />
+    </div>
+  ) : null;
+}
+
+/** The registration's state line (ADR-0121 §8); re-read with the settings every 15 s while visible. */
+function RegistrationStatus({ reg }: { reg: SipRegistration | undefined }): ReactNode {
+  const status = reg?.status ?? SipRegistrationStatus.OFF;
+  let text: string;
+  let tone = 'text-muted';
+  switch (status) {
+    case SipRegistrationStatus.REGISTERED: {
+      const until = reg?.expiresAt ? fmt.time(timestampDate(reg.expiresAt)) : '—';
+      text = t('pbx.in.reg.registered', { time: until });
+      if (reg?.contactMasked) text += ` · ${t('pbx.in.reg.contact', { contact: reg.contactMasked })}`;
+      tone = 'text-ok';
+      break;
+    }
+    case SipRegistrationStatus.REGISTERING:
+      text = t('pbx.in.reg.registering');
+      break;
+    case SipRegistrationStatus.FAILED:
+      text = t('pbx.in.reg.failed', { error: reg?.error.startsWith('auth') ? t('pbx.in.reg.failedAuth') : reg?.error || '—' });
+      tone = 'text-danger-text';
+      break;
+    case SipRegistrationStatus.UNAVAILABLE:
+      text = t('pbx.in.reg.unavailable');
+      tone = 'text-danger-text';
+      break;
+    default:
+      text = t('pbx.in.reg.off');
+  }
+  return (
+    <span className={cx('min-w-0 text-right text-caption [overflow-wrap:anywhere]', tone)} role="status" data-testid="sip-reg-status">
+      {text}
+    </span>
   );
 }
 
