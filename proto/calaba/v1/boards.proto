@@ -12,8 +12,8 @@ import "calaba/v1/room.proto";
 // Access: a board is computed like a room (computePermissions with the board's overrides,
 // BOARD_ONLY bits): VIEW_BOARD sees the board, its tasks and comments and may comment;
 // CREATE_TASKS creates tasks and edits the ones it created or is assigned to; EDIT_TASKS edits,
-// moves and archives any task and moderates comments; MANAGE_BOARD manages statuses, labels,
-// milestones, settings, access and the board's archive. A private board (is_private) is seen
+// moves and archives any task, moderates comments and manages statuses, labels and milestones
+// (CBF-73); MANAGE_BOARD manages settings, access and the board's archive. A private board (is_private) is seen
 // only by those with VIEW_BOARD from an override (a role's or their own); ADMINISTRATOR sees
 // everything. Guests never see boards. A board the caller cannot see answers 404.
 //

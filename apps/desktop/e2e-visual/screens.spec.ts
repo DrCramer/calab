@@ -4168,6 +4168,19 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');
+  // CBF-73: an editor (EDIT_TASKS without MANAGE_BOARD) — «Настройки» opens on «Статусы» with only
+  // the statuses, labels and milestones; no «Доступ» in the menu.
+  await win.keyboard.press('Escape');
+  const dev = [...mock.boards.boards.values()].find((r) => r.board.key === 'CAL');
+  if (!dev) throw new Error('board CAL');
+  mock.boards.setViewerBits(dev.board.id, IDS.users.anna, PERMISSION_BITS.VIEW_BOARD | PERMISSION_BITS.CREATE_TASKS | PERMISSION_BITS.EDIT_TASKS);
+  await win.getByTestId('board-more').click();
+  await expect(win.getByRole('menuitem', { name: 'Доступ' })).toHaveCount(0);
+  await win.getByTestId('board-settings').click();
+  await expect(win.getByRole('tablist', { name: 'Разработка' }).getByRole('tab')).toHaveText(['Статусы', 'Лейблы', 'Вехи']);
+  await expect(win.getByRole('tab', { name: 'Статусы' })).toHaveAttribute('aria-selected', 'true');
+  await checkpoint(shot, 'boards-settings-editor');
+  mock.boards.setViewerBits(dev.board.id, IDS.users.anna, null);
 });
 
 /** Board settings → «Статусы», the colour picker of the first status open (ADR-0093): a 6-wide grid over the rows. */

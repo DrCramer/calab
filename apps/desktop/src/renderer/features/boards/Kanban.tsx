@@ -19,7 +19,7 @@ import { myUserId } from '../../stores/session';
 import { prefsOf, useBoardsUi, type BoardPrefs } from '../../stores/boardsUi';
 import { toast } from '../../stores/toasts';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { columnsOf, hasBit, visibleColumn, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { columnsOf, hasBit, mayEditBoardItems, visibleColumn, CREATE_TASKS } from './model';
 import { TaskCard } from './TaskCard';
 import { sortColumnIds } from './columnSort';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
@@ -72,7 +72,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
     sortedRef.current = sorted;
   }, [sorted]);
   const cols = useMemo(() => columnsOf({ statuses } as never, prefs), [statuses, prefs]);
-  const manage = hasBit(perms, MANAGE_BOARD);
+  const manage = mayEditBoardItems(perms); // CBF-73: columns are statuses — EDIT_TASKS
   const canCreate = hasBit(perms, CREATE_TASKS);
 
   const scroller = useRef<HTMLDivElement>(null);

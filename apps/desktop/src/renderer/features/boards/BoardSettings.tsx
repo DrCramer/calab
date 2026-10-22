@@ -72,7 +72,7 @@ import { TriToggle } from '../workspace/RoomDialogs';
 import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
 import { RulesTab } from './Rules';
-import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, sortedStatuses } from './model';
+import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, settingsTabShown, sortedStatuses } from './model';
 import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /**
@@ -97,7 +97,8 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
   // «Вебхук» (ADR-0058 §4): MANAGE_BOARD (this window) and MANAGE_INTEGRATIONS of the workspace.
   const integrations = mayManageIntegrations(useMemberRoles(board?.workspaceId, myUserId()));
   if (!board) return null;
-  const sections: SettingsSection[] = [
+  // CBF-73: «Статусы», «Лейблы», «Вехи» — EDIT_TASKS; every other section — MANAGE_BOARD.
+  const all: SettingsSection[] = [
     { id: 'general', label: t('boards.set.general'), icon: Settings2, content: <GeneralTab board={board} /> },
     { id: 'features', label: t('boards.set.features'), icon: ToggleRight, content: <FeaturesTab board={board} /> },
     { id: 'statuses', label: t('boards.set.statuses'), icon: CircleDot, content: <StatusesTab board={board} /> },
@@ -110,7 +111,11 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
     ...(integrations ? [{ id: 'webhook', label: t('boards.set.webhook'), icon: Webhook, content: <WebhookTab board={board} /> }] : []),
     { id: 'danger', label: t('boards.set.danger'), icon: Archive, content: <DangerTab board={board} onDone={onClose} />, destructive: true },
   ];
-  return <SettingsWindow title={board.name} titleIcon={<span className="text-headline leading-none">{board.emoji || '📋'}</span>} sections={sections} initial={tab ?? 'general'} onClose={onClose} />;
+  const sections = all.filter((s) => settingsTabShown(s.id, board.permissions));
+  const first = sections[0];
+  if (!first) return null;
+  const initial = sections.some((s) => s.id === tab) ? (tab as string) : first.id;
+  return <SettingsWindow title={board.name} titleIcon={<span className="text-headline leading-none">{board.emoji || '📋'}</span>} sections={sections} initial={initial} onClose={onClose} />;
 }
 
 async function patch(boardId: string, init: Parameters<typeof updateBoard>[1]): Promise<void> {

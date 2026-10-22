@@ -863,12 +863,12 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, actor perm.BoardAcc
 	return out, nil
 }
 
-// ---- statuses, labels, milestones ----
+// ---- statuses, labels, milestones (EDIT_TASKS, CBF-73) ----
 
 func pathSub(r *http.Request) (uuid.UUID, error) { return httpx.PathUUID(r, "sid", "item") }
 
 func (s *Service) createStatus(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -956,7 +956,7 @@ func milestonePos(q *sqlc.Queries) func(context.Context, uuid.UUID, int32) error
 }
 
 func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1035,7 +1035,7 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 
 // deleteStatus: DELETE …/statuses/{sid}?move_to=<sid> — its tasks move to move_to first.
 func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1120,9 +1120,9 @@ func (s *Service) createLabel(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// CREATE_TASKS may create a label on the fly (the picker) — a viewer's, not a create-only
-	// member's (ADR-0115: nothing of the board itself); the rest needs MANAGE_BOARD.
-	if !acc.Bits.Has(perm.ManageBoard) && !acc.Bits.Has(perm.ViewBoard|perm.CreateTasks) {
-		return httpx.Forbidden("MANAGE_BOARD or CREATE_TASKS required")
+	// member's (ADR-0115: nothing of the board itself); the rest needs EDIT_TASKS (CBF-73).
+	if !acc.Bits.Has(perm.EditTasks) && !acc.Bits.Has(perm.ViewBoard|perm.CreateTasks) {
+		return httpx.Forbidden("EDIT_TASKS or CREATE_TASKS required")
 	}
 	if err := writable(acc); err != nil {
 		return err
@@ -1170,7 +1170,7 @@ func (s *Service) createLabel(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) updateLabel(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1227,7 +1227,7 @@ func (s *Service) updateLabel(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) deleteLabel(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1248,7 +1248,7 @@ func (s *Service) deleteLabel(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) createMilestone(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1292,7 +1292,7 @@ func (s *Service) createMilestone(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Service) updateMilestone(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1346,7 +1346,7 @@ func (s *Service) updateMilestone(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Service) deleteMilestone(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}

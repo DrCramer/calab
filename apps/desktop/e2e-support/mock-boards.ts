@@ -377,8 +377,22 @@ export class BoardsMock {
 
   // ---------------------------------------------------------------- permissions
 
+  /** Test hook: board bits forced for one viewer (`${boardId}:${userId}`), e.g. an editor without MANAGE_BOARD. */
+  private forcedBits = new Map<string, bigint>();
+
+  /** Forces (or with null clears) `userId`'s bits on a board and pushes the board to its viewers. */
+  setViewerBits(boardId: string, userId: string, bits: bigint | null): void {
+    const rec = this.boards.get(boardId);
+    if (!rec) throw notFound('board not found');
+    if (bits === null) this.forcedBits.delete(`${boardId}:${userId}`);
+    else this.forcedBits.set(`${boardId}:${userId}`, bits);
+    this.emitBoard(rec, 'boardUpdate');
+  }
+
   /** The viewer's board bits (0 = the board is hidden from them). */
   perms(b: Board, userId: string): bigint {
+    const forced = this.forcedBits.get(`${b.id}:${userId}`);
+    if (forced !== undefined) return forced;
     const m = this.host.member(b.workspaceId, userId);
     if (!m || m.role === WorkspaceRole.GUEST) return 0n;
     const roles = this.host.rolesOf(m);
@@ -809,7 +823,7 @@ export class BoardsMock {
 
   createStatus(id: string, userId: string, req: { name: string; type: BoardStatusType; color: number; position?: number | undefined; isDefault: boolean; icon?: string | undefined }): Board {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     const b = rec.board;
     const name = req.name.trim();
     if (!name || chars(name) > 32) throw invalid('name', 'name must be 1..32 characters');
@@ -831,7 +845,7 @@ export class BoardsMock {
     req: { name?: string | undefined; type?: BoardStatusType | undefined; color?: number | undefined; position?: number | undefined; isDefault?: boolean | undefined; icon?: string | undefined },
   ): Board {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     const s = rec.board.statuses.find((x) => x.id === sid);
     if (!s) throw notFound('status not found');
     if (req.name !== undefined) {
@@ -853,7 +867,7 @@ export class BoardsMock {
 
   deleteStatus(id: string, userId: string, sid: string, moveTo: string): void {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     const s = rec.board.statuses.find((x) => x.id === sid);
     if (!s) throw notFound('status not found');
     if (s.isDefault) throw conflict('the default status cannot be deleted');
@@ -874,7 +888,7 @@ export class BoardsMock {
   createLabel(id: string, userId: string, req: { name: string; color: number; position?: number | undefined }): Board {
     const rec = this.boardFor(id, userId);
     // CREATE_TASKS may create a label on the fly (the picker's «Создать лейбл»).
-    this.need(rec, userId, CREATE_TASKS | MANAGE_BOARD);
+    this.need(rec, userId, CREATE_TASKS | EDIT_TASKS);
     const name = req.name.trim();
     if (!name || chars(name) > 32) throw invalid('name', 'name must be 1..32 characters');
     if (rec.board.labels.length >= 50) throw conflict('at most 50 labels');
@@ -888,7 +902,7 @@ export class BoardsMock {
 
   updateLabel(id: string, userId: string, lid: string, req: { name?: string | undefined; color?: number | undefined; position?: number | undefined }): Board {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     const l = rec.board.labels.find((x) => x.id === lid);
     if (!l) throw notFound('label not found');
     if (req.name !== undefined) l.name = req.name.trim().slice(0, 32) || l.name;
@@ -900,7 +914,7 @@ export class BoardsMock {
 
   deleteLabel(id: string, userId: string, lid: string): void {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     if (!rec.board.labels.some((x) => x.id === lid)) throw notFound('label not found');
     rec.board.labels = rec.board.labels.filter((x) => x.id !== lid);
     for (const t of this.tasks.values()) {
@@ -914,7 +928,7 @@ export class BoardsMock {
 
   createMilestone(id: string, userId: string, req: { name: string; dueOn: string; position?: number | undefined }): Board {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     const name = req.name.trim();
     if (!name || chars(name) > 60) throw invalid('name', 'name must be 1..60 characters');
     const ms = create(BoardMilestoneSchema, { id: this.id('milestone'), name, dueOn: req.dueOn, position: rec.board.milestones.length });
@@ -926,7 +940,7 @@ export class BoardsMock {
 
   updateMilestone(id: string, userId: string, mid: string, req: { name?: string | undefined; dueOn?: string | undefined; position?: number | undefined }): Board {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     const ms = rec.board.milestones.find((x) => x.id === mid);
     if (!ms) throw notFound('milestone not found');
     if (req.name !== undefined) ms.name = req.name.trim().slice(0, 60) || ms.name;
@@ -938,7 +952,7 @@ export class BoardsMock {
 
   deleteMilestone(id: string, userId: string, mid: string): void {
     const rec = this.boardFor(id, userId);
-    this.need(rec, userId, MANAGE_BOARD);
+    this.need(rec, userId, EDIT_TASKS); // CBF-73
     if (!rec.board.milestones.some((x) => x.id === mid)) throw notFound('milestone not found');
     rec.board.milestones = rec.board.milestones.filter((x) => x.id !== mid);
     for (const t of this.tasks.values()) {

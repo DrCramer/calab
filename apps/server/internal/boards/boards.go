@@ -236,6 +236,19 @@ func manageBoard(r *http.Request, archivedOK bool) (uuid.UUID, perm.BoardAccess,
 	return id, acc, writable(acc)
 }
 
+// editBoard resolves a board whose statuses, labels and milestones the caller may change
+// (CBF-73: EDIT_TASKS, «edit any task»; MANAGE_BOARD keeps the settings and the access).
+func editBoard(r *http.Request) (uuid.UUID, perm.BoardAccess, error) {
+	id, acc, err := pathBoard(r, false)
+	if err != nil {
+		return id, acc, err
+	}
+	if !acc.Bits.Has(perm.EditTasks) {
+		return id, acc, httpx.Forbidden("EDIT_TASKS required")
+	}
+	return id, acc, writable(acc)
+}
+
 // member resolves the caller's membership of a workspace (404 for non-members, 403 for guests).
 func member(r *http.Request, wsID uuid.UUID) (perm.Member, error) {
 	m, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, uid(r))

@@ -33,7 +33,7 @@ import { myUserId, useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { hasBit, MANAGE_BOARD } from './model';
+import { hasBit, settingsEntryTab, MANAGE_BOARD } from './model';
 import { useFeatureOn } from './useBoardView';
 
 /**
@@ -403,6 +403,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
   const manage = hasBit(perms, MANAGE_BOARD);
+  const entry = settingsEntryTab(perms); // CBF-73: an editor gets «Настройки» on «Статусы»
   const [forms, setForms] = useState(false);
   const formsOn = useFeatureOn(id, BoardFeature.FORMS);
   // Phone: a long press on the row opens its «…» menu (the same one, docs/08 «Свайпы и долгое нажатие»).
@@ -449,15 +450,15 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           </Dropdown.Trigger>
           <Dropdown.Portal>
             <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
+              {entry ? (
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: entry })}>
+                  <Settings className="size-4" aria-hidden /> {t('boards.settings')}
+                </Dropdown.Item>
+              ) : null}
               {manage ? (
-                <>
-                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
-                    <Settings className="size-4" aria-hidden /> {t('boards.settings')}
-                  </Dropdown.Item>
-                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
-                    <Shield className="size-4" aria-hidden /> {t('boards.access')}
-                  </Dropdown.Item>
-                </>
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
+                  <Shield className="size-4" aria-hidden /> {t('boards.access')}
+                </Dropdown.Item>
               ) : null}
               {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
               <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>

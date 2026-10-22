@@ -259,14 +259,15 @@ export enum Permission {
   CREATE_TASKS = 262144,
 
   /**
-   * 1 << 19: edit, move and archive any task; moderate comments.
+   * 1 << 19: edit, move and archive any task; moderate comments; the board's statuses,
+   * labels and milestones (CBF-73).
    *
    * @generated from enum value: PERMISSION_EDIT_TASKS = 524288;
    */
   EDIT_TASKS = 524288,
 
   /**
-   * 1 << 20: statuses, labels, milestones, settings, access and archive of the board.
+   * 1 << 20: settings, access and archive of the board.
    *
    * @generated from enum value: PERMISSION_MANAGE_BOARD = 1048576;
    */
