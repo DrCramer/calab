@@ -295,6 +295,17 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 				sipCalls = append(sipCalls, pbconv.SipCall(c))
 			}
 		}
+		// Inbound calls (ADR-0117) that ring the recipient or that the recipient answered:
+		// the ringing modal / the call after a reconnect. Never for guests (they have no number).
+		if me.Role != perm.RoleGuest {
+			in, err := q.ListLiveInboundCallsForUser(ctx, sqlc.ListLiveInboundCallsForUserParams{WorkspaceID: ws.ID, UserID: userID})
+			if err != nil {
+				return nil, err
+			}
+			for _, c := range in {
+				sipCalls = append(sipCalls, pbconv.SipCall(c))
+			}
+		}
 	}
 	// Task boards (ADR-0042 §4): the visible ones with the recipient's bits, and their unread tasks.
 	bs, unread, err := boards.Snapshot(ctx, q, ws.ID, me)

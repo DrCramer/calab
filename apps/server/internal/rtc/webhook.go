@@ -77,6 +77,13 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 	if ev.Room == nil {
 		return nil
 	}
+	// An inbound phone call's own room (ADR-0117): never voice state.
+	if IsInboundRoom(ev.Room.Name) {
+		if s.SIP == nil {
+			return nil
+		}
+		return s.SIP.Inbound(ctx, ev.Event, ev.Room.Name, ev.Participant)
+	}
 	wid, rid, ok := voice.ParseRoomName(ev.Room.Name)
 	if !ok {
 		return nil // not a Calaba room

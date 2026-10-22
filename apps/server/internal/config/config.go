@@ -116,6 +116,12 @@ type Config struct {
 	// Inbound calls on the SIP number (ADR-0117): routing through the workspace's exchange.
 	// Off by default; the exchange can be set up either way.
 	SIPInbound bool `env:"SIP_INBOUND"`
+	// IVR worker (cmd/ivr, ADR-0117 §2): the shared token of its WebSocket to the API (both sides'
+	// env). Empty = no worker: inbound calls cannot be switched on.
+	IVRAgentToken string `env:"IVR_AGENT_TOKEN"`
+	// Provider addresses (IPs / CIDRs) every inbound trunk accepts besides the resolved provider
+	// host and the workspace's own list, e.g. the provider's signalling pool.
+	SIPInboundAllowedAddresses []string `env:"SIP_INBOUND_ALLOWED_ADDRESSES" envSeparator:","`
 
 	// Native push is inert unless a complete transport is explicitly configured.
 	PushVoIPEnabled           bool   `env:"PUSH_VOIP_ENABLED"`

@@ -81,13 +81,41 @@ type SIPParticipant struct {
 	SIPCallID     string `json:"sip_call_id"`
 }
 
+// SIPInboundTrunk is livekit.SIPInboundTrunkInfo (the fields we set, ADR-0117): calls to
+// Numbers from AllowedAddresses (IP / CIDR; LiveKit takes no host names) are accepted.
+type SIPInboundTrunk struct {
+	ID               string   `json:"sip_trunk_id,omitempty"`
+	Name             string   `json:"name"`
+	Metadata         string   `json:"metadata,omitempty"`
+	Numbers          []string `json:"numbers"`
+	AllowedAddresses []string `json:"allowed_addresses"`
+	MaxCallDuration  string   `json:"max_call_duration,omitempty"` // protojson Duration, "7200s"
+}
+
+// SIPDispatchRule is a livekit.SIPDispatchRuleInfo with SIPDispatchRuleIndividual: every call of
+// TrunkIDs gets a room of its own named RoomPrefix + "_" + the caller's number + "_" + a random
+// suffix (livekit/protocol sip.EvaluateDispatchRule).
+type SIPDispatchRule struct {
+	Name            string
+	Metadata        string
+	TrunkIDs        []string
+	RoomPrefix      string
+	EmptyTimeout    uint32 // s: the room closes this long after the last participant left
+	MaxParticipants uint32
+}
+
 // SIP is the subset of the LiveKit SIP API the server uses (mockable in tests).
 type SIP interface {
 	CreateSIPOutboundTrunk(ctx context.Context, t SIPTrunk) (SIPTrunk, error)
 	// UpdateSIPOutboundTrunk replaces the trunk id with t.
 	UpdateSIPOutboundTrunk(ctx context.Context, id string, t SIPTrunk) (SIPTrunk, error)
+	// DeleteSIPTrunk deletes an outbound or an inbound trunk.
 	DeleteSIPTrunk(ctx context.Context, id string) error
 	CreateSIPParticipant(ctx context.Context, c SIPCall) (SIPParticipant, error)
+	// Inbound calls (ADR-0117).
+	CreateSIPInboundTrunk(ctx context.Context, t SIPInboundTrunk) (SIPInboundTrunk, error)
+	CreateSIPDispatchRule(ctx context.Context, r SIPDispatchRule) (string, error)
+	DeleteSIPDispatchRule(ctx context.Context, id string) error
 }
 
 // SIPStatus returns the SIP response code LiveKit attached to a CreateSIPParticipant error
@@ -151,6 +179,40 @@ func (c *sipClient) DeleteSIPTrunk(ctx context.Context, id string) error {
 	return c.do(ctx, c.hc, "DeleteSIPTrunk", sipGrant{Admin: true}, map[string]any{"sip_trunk_id": id}, nil)
 }
 
+func (c *sipClient) CreateSIPInboundTrunk(ctx context.Context, t SIPInboundTrunk) (SIPInboundTrunk, error) {
+	t.ID = ""
+	var out SIPInboundTrunk
+	err := c.do(ctx, c.hc, "CreateSIPInboundTrunk", sipGrant{Admin: true}, map[string]any{"trunk": t}, &out)
+	return out, err
+}
+
+// dispatchRuleBody is the JSON of livekit.CreateSIPDispatchRuleRequest in its legacy flat form
+// (rule, trunk_ids… at the top level): livekit-server v1.13 reads it, newer servers too.
+func dispatchRuleBody(r SIPDispatchRule) map[string]any {
+	in := map[string]any{
+		"rule":      map[string]any{"dispatch_rule_individual": map[string]any{"room_prefix": r.RoomPrefix}},
+		"trunk_ids": r.TrunkIDs,
+		"name":      r.Name,
+		"metadata":  r.Metadata,
+	}
+	if r.EmptyTimeout > 0 || r.MaxParticipants > 0 {
+		in["room_config"] = map[string]any{"empty_timeout": r.EmptyTimeout, "max_participants": r.MaxParticipants}
+	}
+	return in
+}
+
+func (c *sipClient) CreateSIPDispatchRule(ctx context.Context, r SIPDispatchRule) (string, error) {
+	var out struct {
+		ID string `json:"sip_dispatch_rule_id"`
+	}
+	err := c.do(ctx, c.hc, "CreateSIPDispatchRule", sipGrant{Admin: true}, dispatchRuleBody(r), &out)
+	return out.ID, err
+}
+
+func (c *sipClient) DeleteSIPDispatchRule(ctx context.Context, id string) error {
+	return c.do(ctx, c.hc, "DeleteSIPDispatchRule", sipGrant{Admin: true}, map[string]any{"sip_dispatch_rule_id": id}, nil)
+}
+
 // sipCallBody is the JSON of livekit.CreateSIPParticipantRequest.
 func sipCallBody(r SIPCall) map[string]any {
 	in := map[string]any{
@@ -199,4 +261,8 @@ type SIPHook interface {
 	PersonLeft(ctx context.Context, wid, rid uuid.UUID)
 	// SIPRoomFinished: LiveKit closed rid's room; its phone call is over.
 	SIPRoomFinished(ctx context.Context, rid uuid.UUID)
+	// Inbound: an event of the LiveKit room of an inbound call («sipin_…», ADR-0117) —
+	// participant_joined / _left of the line, the IVR worker or the member who answered, and
+	// room_finished (p nil). An error makes LiveKit redeliver the event.
+	Inbound(ctx context.Context, event, room string, p *Participant) error
 }

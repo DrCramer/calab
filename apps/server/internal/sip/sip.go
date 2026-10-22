@@ -72,6 +72,8 @@ type Options struct {
 	SweepInterval time.Duration
 	// Inbound: the server routes inbound calls (env SIP_INBOUND, ADR-0117; off by default).
 	Inbound bool
+	// InboundTick: how often inbound deadlines are looked at (0 = 5 s).
+	InboundTick time.Duration
 }
 
 // Service is telephony.
@@ -86,8 +88,14 @@ type Service struct {
 	box    *sealbox.Box
 	files  *files.Service // voice menu prompts (ADR-0117); nil = prompts answer 503
 	opts   Options
-	// CallLimit / TestLimit: per workspace (CallsPerHour, TestsPerHour).
-	CallLimit, TestLimit *redisx.RateLimiter
+	// CallLimit / TestLimit: per workspace (CallsPerHour, TestsPerHour); InboundLimit: inbound
+	// calls per workspace (InboundPerHour).
+	CallLimit, TestLimit, InboundLimit *redisx.RateLimiter
+	// Inbound calls (ADR-0117 step 2): the IVR worker and the token config (SetInbound).
+	agent rtc.IVRAgent
+	inCfg InboundConfig
+	// Presence announces a user's presence after on_call changed (the gateway).
+	Presence func(ctx context.Context, u uuid.UUID)
 }
 
 // New wires the service. lk and s may be nil (no LiveKit): settings still work, calls and the
@@ -111,8 +119,9 @@ func New(d *db.DB, r rueidis.Client, lk rtc.LiveKit, s rtc.SIP, pub events.Publi
 	return &Service{
 		db: d, redis: r, voice: voice.Store{C: r}, lk: lk, sip: s, events: pub, plans: pl,
 		box: sealbox.New("calaba/sip-password/v1", secret), opts: o,
-		CallLimit: redisx.NewRateLimiter(r, "rl:sip-call:", CallsPerHour, float64(CallsPerHour)/60),
-		TestLimit: redisx.NewRateLimiter(r, "rl:sip-test:", TestsPerHour, float64(TestsPerHour)/60),
+		CallLimit:    redisx.NewRateLimiter(r, "rl:sip-call:", CallsPerHour, float64(CallsPerHour)/60),
+		TestLimit:    redisx.NewRateLimiter(r, "rl:sip-test:", TestsPerHour, float64(TestsPerHour)/60),
+		InboundLimit: redisx.NewRateLimiter(r, "rl:sip-in:", InboundPerHour, float64(InboundPerHour)/60),
 	}
 }
 
@@ -137,6 +146,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("POST /api/rooms/{id}/calls", wrap(httpx.HandlerFunc(s.place)))
 	mux.Handle("DELETE /api/rooms/{id}/calls/{cid}", wrap(httpx.HandlerFunc(s.hangup)))
 	s.pbxRoutes(mux, wrap)
+	s.inboundRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -236,6 +246,11 @@ func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := settingsPB(a, saved || a.LastError != "")
 	out.InboundAvailable = s.opts.Inbound
+	ex, err := loadExchange(r.Context(), s.db.Q, wsID)
+	if err != nil {
+		return err
+	}
+	fillInbound(out, a, ex)
 	httpx.Write(w, http.StatusOK, &v1.GetSipSettingsResponse{Settings: out})
 	return nil
 }
@@ -447,6 +462,11 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		// Inbound calls follow (ADR-0117): the trunk takes the new caller ID / host, or goes
+		// with telephony switched off.
+		if saved, err = s.syncInbound(ctx, q, saved); err != nil {
+			return err
+		}
 		disabled = cur.Enabled && !in.enabled
 		ws, err = q.SetWorkspaceSipEnabled(ctx, sqlc.SetWorkspaceSipEnabledParams{ID: wsID, SipEnabled: in.enabled && trunkID != ""})
 		return err
@@ -475,6 +495,10 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := settingsPB(saved, true)
 	out.InboundAvailable = s.opts.Inbound
+	fillInbound(out, saved, nil)
+	if ex, err := loadExchange(ctx, s.db.Q, wsID); err == nil {
+		fillInbound(out, saved, ex)
+	}
 	httpx.Write(w, http.StatusOK, &v1.PutSipSettingsResponse{Settings: out})
 	return nil
 }

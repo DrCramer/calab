@@ -80,6 +80,10 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/wiki/pages/{id}/sync",
 		"GET /api/stickers/builtin/{name}",
 	}},
+	{access: botPublic, why: "the IVR worker (ADR-0117 §2): its own bearer token (IVR_AGENT_TOKEN), never a user's or a bot's", routes: []string{
+		"GET /api/internal/ivr-agent",
+		"GET /api/internal/ivr-agent/files/{id}",
+	}},
 	{access: botPublic, why: "signed deliveries of LiveKit, the payment providers and the repository hosting; public offers and the checkout return page", routes: []string{
 		"POST /api/rtc/webhook",
 		"POST /api/billing/stripe/webhook",
@@ -380,6 +384,7 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/workspaces/{id}/integrations/gptunnel",
 		"GET /api/workspaces/{id}/sip",
 		"PUT /api/workspaces/{id}/sip",
+		"PUT /api/workspaces/{id}/sip/inbound",
 		"POST /api/workspaces/{id}/sip/test",
 		"POST /api/workspaces/{id}/sip/extensions",
 		"PATCH /api/workspaces/{id}/sip/extensions/{eid}",
@@ -397,6 +402,12 @@ var botRouteGroups = []botRouteGroup{
 		"PUT /api/workspaces/{id}/ai",
 		"POST /api/workspaces/{id}/ai/check",
 		"GET /api/workspaces/{id}/calls",
+	}},
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0117 §5: an inbound phone call is taken by whom it rings — a bot with a number answers it like a person (accept / decline / join / hang up check that the call rings or was answered by the caller; hanging up someone else's needs MANAGE_INTEGRATIONS); closed on behalf", routes: []string{
+		"POST /api/sip/inbound/{cid}/accept",
+		"POST /api/sip/inbound/{cid}/join",
+		"POST /api/sip/inbound/{cid}/decline",
+		"DELETE /api/sip/inbound/{cid}",
 	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace content — camera backgrounds (MANAGE_WORKSPACE; members read them), the achievements catalog (MANAGE_WORKSPACE) and grants (MANAGE_MEMBERS; never to a bot or oneself)", routes: []string{
 		"GET /api/workspaces/{id}/backgrounds",
@@ -707,6 +718,7 @@ var botAudited = map[string]bool{
 	"POST /api/workspaces/{id}/integrations/gptunnel":                     true,
 	"DELETE /api/workspaces/{id}/integrations/gptunnel":                   true,
 	"PUT /api/workspaces/{id}/sip":                                        true,
+	"PUT /api/workspaces/{id}/sip/inbound":                                true,
 	"POST /api/workspaces/{id}/sip/test":                                  true, // a real call billed to the workspace
 	"POST /api/workspaces/{id}/sip/extensions":                            true,
 	"PATCH /api/workspaces/{id}/sip/extensions/{eid}":                     true,

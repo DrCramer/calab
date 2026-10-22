@@ -1252,7 +1252,7 @@ func (ex *exchange) routing() *PBX {
 		p.Extensions[e.ID] = x
 	}
 	for _, g := range ex.groups {
-		grp := Group{ID: g.ID, RoundRobin: g.Strategy == "round_robin", RingSec: int(g.RingSec), MemberRingSec: int(g.MemberRingSec),
+		grp := Group{ID: g.ID, Name: g.Name, RoundRobin: g.Strategy == "round_robin", RingSec: int(g.RingSec), MemberRingSec: int(g.MemberRingSec),
 			NextPosition: int(g.NextPosition), OnFail: routeTarget(g.OnFailKind, g.OnFailMenuID, g.OnFailExtensionID, g.OnFailGroupID)}
 		for _, m := range ex.members[g.ID] {
 			grp.Members = append(grp.Members, GroupMember{Extension: m.ExtensionID, Position: int(m.Position)})
@@ -1260,8 +1260,11 @@ func (ex *exchange) routing() *PBX {
 		p.Groups[g.ID] = grp
 	}
 	for _, m := range ex.menus {
-		mn := Menu{ID: m.ID, HasPrompt: m.PromptFileID != nil, InputTimeoutSec: int(m.InputTimeoutSec), Repeats: int(m.Repeats),
+		mn := Menu{ID: m.ID, Name: m.Name, HasPrompt: m.PromptFileID != nil, PromptMs: int(m.PromptDurationMs), InputTimeoutSec: int(m.InputTimeoutSec), Repeats: int(m.Repeats),
 			OnNoInput: routeTarget(m.NoInputKind, m.NoInputMenuID, m.NoInputExtensionID, m.NoInputGroupID), Items: map[byte]Target{}}
+		if m.PromptFileID != nil {
+			mn.Prompt = *m.PromptFileID
+		}
 		for _, it := range ex.items[m.ID] {
 			mn.Items[it.Digit[0]] = routeTarget(it.ActionKind, it.ActionMenuID, it.ActionExtensionID, it.ActionGroupID)
 		}

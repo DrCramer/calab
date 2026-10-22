@@ -47,6 +47,7 @@ type GroupMember struct {
 // Group is a call group.
 type Group struct {
 	ID            uuid.UUID
+	Name          string
 	RoundRobin    bool
 	RingSec       int
 	MemberRingSec int
@@ -58,7 +59,10 @@ type Group struct {
 // Menu is a voice menu.
 type Menu struct {
 	ID              uuid.UUID
+	Name            string
 	HasPrompt       bool
+	Prompt          uuid.UUID // the prompt file (HasPrompt)
+	PromptMs        int       // its duration
 	InputTimeoutSec int
 	Repeats         int
 	OnNoInput       Target
