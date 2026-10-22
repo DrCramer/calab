@@ -938,7 +938,7 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		}
 		sessions = filtered
 	}
-	if ev.GetContactShared() != nil { // a person's contact: bot sessions only (ADR-0100)
+	if ev.GetContactShared() != nil || ev.GetBotDelegation() != nil { // to the bot only (ADR-0100, ADR-0119)
 		filtered := make([]*Session, 0, len(sessions))
 		for _, s := range sessions {
 			if s.bot {

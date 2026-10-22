@@ -464,4 +464,27 @@ describe('contact requests (ADR-0100)', () => {
     expect(parseWebhookUpdate(body).event?.event.case).toBe('contactShared');
     expect(got).toEqual(['share-1:person:+79990001122:false:olga@example.test:true:1,2', 'share-1:person:+79990001122:false:olga@example.test:true:1,2']);
   });
+
+  it('asks for its own consent and emits botDelegation (ADR-0119)', async () => {
+    const secret = 'delegation-secret-for-testing';
+    const bot = newBot(TOKEN, { webhookSecret: secret });
+    const got: string[] = [];
+    bot.on('botDelegation', (d) => { got.push(`${d.id}:${d.workspaceId}:${d.userId}:${d.state}`); });
+    await bot.start();
+    srv.route(`POST /api/workspaces/ws1/bots/${BOT_ID}/delegation-invites`, () => ({
+      json: { sent: [{ userId: 'person', messageId: 'm1', roomId: 'dm1', url: 'https://app.test/m/dm1/m1', created: true }] },
+    }));
+    const r = await bot.inviteDelegation('ws1', ['person'], 'why');
+    expect(srv.requests.at(-1)?.json).toEqual({ userIds: ['person'], reason: 'why' });
+    expect(r.sent[0]?.url).toBe('https://app.test/m/dm1/m1');
+    const change = { id: 'd1', botUserId: BOT_ID, workspaceId: 'ws1', userId: 'person', state: 'granted' };
+    srv.dispatch(create(DispatchEventSchema, { event: { case: 'botDelegation', value: change } }));
+    await waitFor(() => got.length === 1);
+    // Another bot's change is never emitted.
+    srv.dispatch(create(DispatchEventSchema, { event: { case: 'botDelegation', value: { ...change, id: 'd2', botUserId: 'other-bot' } } }));
+    const body = JSON.stringify({ id: 'd3', botUserId: BOT_ID, event: { botDelegation: { ...change, id: 'd3', state: 'declined' } } });
+    expect(bot.handleWebhook(body, { 'X-Calab-Signature': signWebhook(secret, body) })).toBe(true);
+    await waitFor(() => got.length === 2);
+    expect(got).toEqual(['d1:ws1:person:granted', 'd3:ws1:person:declined']);
+  });
 });

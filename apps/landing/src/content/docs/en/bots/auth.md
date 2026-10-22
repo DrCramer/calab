@@ -151,6 +151,27 @@ curl -s https://app.example.com/api/workspaces/$WS/bots/$BOT_ID -H "Authorizatio
 # → {"bot": {…}, "onBehalfUserIds": ["…"], "delegations": [{"userId": "…", "since": "…"}], "invites": [...]}
 ```
 
+The bot may also ask for the permission itself — with the same DM invitation, whose text names only the bot:
+
+```sh
+curl -s -X POST https://app.example.com/api/workspaces/$WS/bots/$BOT_ID/delegation-invites \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"userIds":["…"],"reason":"so that requests through the bot go under your name"}'
+# → {…, "sent": [{"userId": "…", "messageId": "…", "roomId": "…", "url": "https://app.example.com/m/…/…", "created": true}]}
+```
+
+- Only for itself (`$BOT_ID` is the bot) and never on behalf of someone; targets are people with a non-guest role (not the bot, not other bots), up to 20 at once, limited to 20 at once and 30 an hour per bot. Members who already allowed it or are already invited are skipped; for a pending invitation `sent` holds the same message with `created: false`.
+- `reason` — up to 200 characters of plain text (mentions, links and markup are removed), shown as «Why, in the bot's words: …».
+- `url` links to the message with the buttons and holds no token: hand it to the person in another messenger — only they can open it.
+- After «Decline» nobody invites that person for 7 days: if everyone in the request declined recently — `409 DELEGATION_INVITE_DECLINED` with `Retry-After`.
+- The bot cannot press «Accept», cancel an invitation, or give or revoke the permission — only the person can. The bot learns the answer from the `botDelegation` event (gateway and webhook, to that bot only):
+
+```json
+{ "botDelegation": { "id": "…", "botUserId": "…", "workspaceId": "…", "userId": "…", "state": "granted", "at": "…" } }
+```
+
+`state`: `granted` — allowed (`Calab-On-Behalf` now works), `revoked` — taken back, `declined` — declined. When the permission stops counting for another reason (the member left, became a guest) there is no event — the bot rereads `GET …/bots/$BOT_ID`. In the SDK: `bot.inviteDelegation(workspaceId, [userId], reason)` and `bot.on('botDelegation', …)`.
+
 A request on behalf of a member carries `Calab-On-Behalf` with their id:
 
 ```sh
@@ -166,7 +187,7 @@ curl -s -X POST https://app.example.com/api/boards/$BOARD/tasks \
 - Routes are the same as [on behalf of the owner](#on-behalf-of-the-owner): tasks, comments, attachments, watchers, the approval vote and everything else open to bots; the account, bot management, billing, voice and calls are closed. On behalf of a member, the workspace's access control is closed too: its settings, members and their roles, roles, bans, invitations, and the permissions of rooms, wiki pages and the Disk.
 - **Only inside the workspace of the permission**: the member's direct messages, their profile (`GET /api/me`) and summaries across workspaces (`/api/me/tasks`, mentions) are `403 ON_BEHALF_ROUTE`.
 - Revoking works at once, including for a request already running.
-- The gateway and the webhook do not change; the limits are the bot's.
+- The gateway and the webhook do not change (except for the `botDelegation` event); the limits are the bot's.
 
 | Response | `reason` | Why |
 |---|---|---|

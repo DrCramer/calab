@@ -123,19 +123,57 @@ message BotDelegationInvite {
 // ON_BEHALF_SELF_ONLY: nobody, admins and the bot's owner included, gives or takes it for
 // another member). People with a non-guest role only; bots and requests on behalf get 403.
 // POST /api/workspaces/{id}/bots/{botId}/delegation-invites (InviteBotDelegationRequest): the
-// bot DMs each listed member a suggestion naming the caller. DELETE
-// …/delegation-invites/{userId}: cancels a pending invitation, by its inviter or the invitee.
+// bot DMs each listed member a suggestion naming the caller. The bot itself may call it for
+// its own {botId} (ADR-0119): the suggestion then names the bot; another bot, or the bot on
+// behalf of someone, gets 403. DELETE …/delegation-invites/{userId}: cancels a pending
+// invitation, by its inviter or the invitee (people only).
 message GetBotResponse {
   Bot bot = 1;
   repeated string on_behalf_user_ids = 2;
   repeated BotDelegation delegations = 3;
   repeated BotDelegationInvite invites = 4;
+  // Only in the answer of POST …/delegation-invites: the DM messages of the invitations this
+  // request sent, and (when the caller is the bot) of the requested members' invitations that
+  // were already pending.
+  repeated BotDelegationInviteMessage sent = 5;
+}
+
+// The bot's DM that carries an invitation (ADR-0119). url opens that message in Calab (the
+// app when it is installed, the web client otherwise): PUBLIC_APP_URL/m/<room_id>/<message_id>,
+// empty when the server has no PUBLIC_APP_URL. It holds no token: only the invitee, who is a
+// member of the DM, can open the message and press «Принять».
+message BotDelegationInviteMessage {
+  string user_id = 1;
+  string message_id = 2;
+  string room_id = 3;
+  string url = 4;
+  bool created = 5; // false: an invitation already pending, sent earlier
 }
 
 // At most 20 members of the workspace with a non-guest role, people, not the caller. Members
-// who already consented or are invited are skipped.
+// who already consented or are invited are skipped, and so are members who declined an
+// invitation to this bot here within the last 7 days; when every listed member declined so,
+// 409 CONFLICT reason DELEGATION_INVITE_DECLINED with Retry-After (seconds), used = seconds
+// left, limit = the cooldown in seconds. reason (optional, at most 200 characters, plain text:
+// one line, no mentions, links or markup) is shown in the DM as the inviter's words.
 message InviteBotDelegationRequest {
   repeated string user_ids = 1;
+  string reason = 2;
+}
+
+// ADR-0119: a member's consent for the bot changed (BOT_DELEGATION). To that bot only, over
+// gateway (its user channel) and its webhook. state: "granted" (the member allowed it: PUT
+// …/delegations/{userId} or «Принять» in the bot's DM), "revoked" (the member took it back:
+// DELETE …/delegations/{userId}), "declined" (the member pressed «Отказаться» or declined the
+// invitation in the dialog). A consent that stops counting for another reason (the member
+// left, became a guest) sends nothing: the bot reads GET …/bots/{botId}.
+message BotDelegationChange {
+  string id = 1; // stable across transports and webhook retries; dedupe by it
+  string bot_user_id = 2;
+  string workspace_id = 3;
+  string user_id = 4; // the member, from the authentication of their own request
+  string state = 5;
+  google.protobuf.Timestamp at = 6;
 }
 
 // POST /api/workspaces/{id}/bots/add (MANAGE_BOTS of that workspace): adds an existing

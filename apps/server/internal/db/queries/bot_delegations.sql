@@ -77,3 +77,18 @@ RETURNING *;
 -- name: GetBotDelegationInviteByMessage :one
 -- The invitation a bot's DM carries (the click on its buttons), locked.
 SELECT * FROM bot_delegation_invites WHERE message_id = sqlc.arg('message_id') FOR UPDATE;
+
+-- name: UpsertBotDelegationDecline :exec
+-- The member declined an invitation (CBF-41): re-inviting them waits a cooldown.
+INSERT INTO bot_delegation_declines (workspace_id, bot_id, user_id)
+VALUES (sqlc.arg('workspace_id'), sqlc.arg('bot_id'), sqlc.arg('user_id'))
+ON CONFLICT (workspace_id, bot_id, user_id) DO UPDATE SET declined_at = now();
+
+-- name: DeleteBotDelegationDecline :exec
+DELETE FROM bot_delegation_declines
+WHERE workspace_id = sqlc.arg('workspace_id') AND bot_id = sqlc.arg('bot_id') AND user_id = sqlc.arg('user_id');
+
+-- name: ListBotDelegationDeclines :many
+-- The declines of a bot's invitations in a workspace newer than since.
+SELECT user_id, declined_at FROM bot_delegation_declines
+WHERE workspace_id = sqlc.arg('workspace_id') AND bot_id = sqlc.arg('bot_id') AND declined_at > sqlc.arg('since')::timestamptz;

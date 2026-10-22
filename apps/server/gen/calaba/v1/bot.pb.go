@@ -790,16 +790,22 @@ func (x *BotDelegationInvite) GetCreatedAt() *timestamppb.Timestamp {
 // ON_BEHALF_SELF_ONLY: nobody, admins and the bot's owner included, gives or takes it for
 // another member). People with a non-guest role only; bots and requests on behalf get 403.
 // POST /api/workspaces/{id}/bots/{botId}/delegation-invites (InviteBotDelegationRequest): the
-// bot DMs each listed member a suggestion naming the caller. DELETE
-// …/delegation-invites/{userId}: cancels a pending invitation, by its inviter or the invitee.
+// bot DMs each listed member a suggestion naming the caller. The bot itself may call it for
+// its own {botId} (ADR-0119): the suggestion then names the bot; another bot, or the bot on
+// behalf of someone, gets 403. DELETE …/delegation-invites/{userId}: cancels a pending
+// invitation, by its inviter or the invitee (people only).
 type GetBotResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Bot             *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`
 	OnBehalfUserIds []string               `protobuf:"bytes,2,rep,name=on_behalf_user_ids,json=onBehalfUserIds,proto3" json:"on_behalf_user_ids,omitempty"`
 	Delegations     []*BotDelegation       `protobuf:"bytes,3,rep,name=delegations,proto3" json:"delegations,omitempty"`
 	Invites         []*BotDelegationInvite `protobuf:"bytes,4,rep,name=invites,proto3" json:"invites,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Only in the answer of POST …/delegation-invites: the DM messages of the invitations this
+	// request sent, and (when the caller is the bot) of the requested members' invitations that
+	// were already pending.
+	Sent          []*BotDelegationInviteMessage `protobuf:"bytes,5,rep,name=sent,proto3" json:"sent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetBotResponse) Reset() {
@@ -860,18 +866,110 @@ func (x *GetBotResponse) GetInvites() []*BotDelegationInvite {
 	return nil
 }
 
+func (x *GetBotResponse) GetSent() []*BotDelegationInviteMessage {
+	if x != nil {
+		return x.Sent
+	}
+	return nil
+}
+
+// The bot's DM that carries an invitation (ADR-0119). url opens that message in Calab (the
+// app when it is installed, the web client otherwise): PUBLIC_APP_URL/m/<room_id>/<message_id>,
+// empty when the server has no PUBLIC_APP_URL. It holds no token: only the invitee, who is a
+// member of the DM, can open the message and press «Принять».
+type BotDelegationInviteMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	MessageId     string                 `protobuf:"bytes,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	RoomId        string                 `protobuf:"bytes,3,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	Created       bool                   `protobuf:"varint,5,opt,name=created,proto3" json:"created,omitempty"` // false: an invitation already pending, sent earlier
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BotDelegationInviteMessage) Reset() {
+	*x = BotDelegationInviteMessage{}
+	mi := &file_calaba_v1_bot_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BotDelegationInviteMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BotDelegationInviteMessage) ProtoMessage() {}
+
+func (x *BotDelegationInviteMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_bot_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BotDelegationInviteMessage.ProtoReflect.Descriptor instead.
+func (*BotDelegationInviteMessage) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *BotDelegationInviteMessage) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *BotDelegationInviteMessage) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *BotDelegationInviteMessage) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *BotDelegationInviteMessage) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *BotDelegationInviteMessage) GetCreated() bool {
+	if x != nil {
+		return x.Created
+	}
+	return false
+}
+
 // At most 20 members of the workspace with a non-guest role, people, not the caller. Members
-// who already consented or are invited are skipped.
+// who already consented or are invited are skipped, and so are members who declined an
+// invitation to this bot here within the last 7 days; when every listed member declined so,
+// 409 CONFLICT reason DELEGATION_INVITE_DECLINED with Retry-After (seconds), used = seconds
+// left, limit = the cooldown in seconds. reason (optional, at most 200 characters, plain text:
+// one line, no mentions, links or markup) is shown in the DM as the inviter's words.
 type InviteBotDelegationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserIds       []string               `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InviteBotDelegationRequest) Reset() {
 	*x = InviteBotDelegationRequest{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[13]
+	mi := &file_calaba_v1_bot_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -883,7 +981,7 @@ func (x *InviteBotDelegationRequest) String() string {
 func (*InviteBotDelegationRequest) ProtoMessage() {}
 
 func (x *InviteBotDelegationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[13]
+	mi := &file_calaba_v1_bot_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -896,12 +994,109 @@ func (x *InviteBotDelegationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteBotDelegationRequest.ProtoReflect.Descriptor instead.
 func (*InviteBotDelegationRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *InviteBotDelegationRequest) GetUserIds() []string {
 	if x != nil {
 		return x.UserIds
+	}
+	return nil
+}
+
+func (x *InviteBotDelegationRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// ADR-0119: a member's consent for the bot changed (BOT_DELEGATION). To that bot only, over
+// gateway (its user channel) and its webhook. state: "granted" (the member allowed it: PUT
+// …/delegations/{userId} or «Принять» in the bot's DM), "revoked" (the member took it back:
+// DELETE …/delegations/{userId}), "declined" (the member pressed «Отказаться» or declined the
+// invitation in the dialog). A consent that stops counting for another reason (the member
+// left, became a guest) sends nothing: the bot reads GET …/bots/{botId}.
+type BotDelegationChange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // stable across transports and webhook retries; dedupe by it
+	BotUserId     string                 `protobuf:"bytes,2,opt,name=bot_user_id,json=botUserId,proto3" json:"bot_user_id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // the member, from the authentication of their own request
+	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
+	At            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BotDelegationChange) Reset() {
+	*x = BotDelegationChange{}
+	mi := &file_calaba_v1_bot_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BotDelegationChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BotDelegationChange) ProtoMessage() {}
+
+func (x *BotDelegationChange) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_bot_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BotDelegationChange.ProtoReflect.Descriptor instead.
+func (*BotDelegationChange) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *BotDelegationChange) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *BotDelegationChange) GetBotUserId() string {
+	if x != nil {
+		return x.BotUserId
+	}
+	return ""
+}
+
+func (x *BotDelegationChange) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *BotDelegationChange) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *BotDelegationChange) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *BotDelegationChange) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
 	}
 	return nil
 }
@@ -918,7 +1113,7 @@ type AddBotRequest struct {
 
 func (x *AddBotRequest) Reset() {
 	*x = AddBotRequest{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[14]
+	mi := &file_calaba_v1_bot_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1125,7 @@ func (x *AddBotRequest) String() string {
 func (*AddBotRequest) ProtoMessage() {}
 
 func (x *AddBotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[14]
+	mi := &file_calaba_v1_bot_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1138,7 @@ func (x *AddBotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddBotRequest.ProtoReflect.Descriptor instead.
 func (*AddBotRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{14}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *AddBotRequest) GetBotUserId() string {
@@ -969,7 +1164,7 @@ type AddBotResponse struct {
 
 func (x *AddBotResponse) Reset() {
 	*x = AddBotResponse{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[15]
+	mi := &file_calaba_v1_bot_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -981,7 +1176,7 @@ func (x *AddBotResponse) String() string {
 func (*AddBotResponse) ProtoMessage() {}
 
 func (x *AddBotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[15]
+	mi := &file_calaba_v1_bot_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -994,7 +1189,7 @@ func (x *AddBotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddBotResponse.ProtoReflect.Descriptor instead.
 func (*AddBotResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AddBotResponse) GetBot() *Bot {
@@ -1016,7 +1211,7 @@ type GetBotMeResponse struct {
 
 func (x *GetBotMeResponse) Reset() {
 	*x = GetBotMeResponse{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[16]
+	mi := &file_calaba_v1_bot_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1028,7 +1223,7 @@ func (x *GetBotMeResponse) String() string {
 func (*GetBotMeResponse) ProtoMessage() {}
 
 func (x *GetBotMeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[16]
+	mi := &file_calaba_v1_bot_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1041,7 +1236,7 @@ func (x *GetBotMeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBotMeResponse.ProtoReflect.Descriptor instead.
 func (*GetBotMeResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{16}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetBotMeResponse) GetBot() *Bot {
@@ -1062,7 +1257,7 @@ type UpdateBotMeRequest struct {
 
 func (x *UpdateBotMeRequest) Reset() {
 	*x = UpdateBotMeRequest{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[17]
+	mi := &file_calaba_v1_bot_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1074,7 +1269,7 @@ func (x *UpdateBotMeRequest) String() string {
 func (*UpdateBotMeRequest) ProtoMessage() {}
 
 func (x *UpdateBotMeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[17]
+	mi := &file_calaba_v1_bot_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1087,7 +1282,7 @@ func (x *UpdateBotMeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBotMeRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBotMeRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UpdateBotMeRequest) GetDisplayName() string {
@@ -1114,7 +1309,7 @@ type SetBotCommandsRequest struct {
 
 func (x *SetBotCommandsRequest) Reset() {
 	*x = SetBotCommandsRequest{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[18]
+	mi := &file_calaba_v1_bot_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1321,7 @@ func (x *SetBotCommandsRequest) String() string {
 func (*SetBotCommandsRequest) ProtoMessage() {}
 
 func (x *SetBotCommandsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[18]
+	mi := &file_calaba_v1_bot_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1334,7 @@ func (x *SetBotCommandsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotCommandsRequest.ProtoReflect.Descriptor instead.
 func (*SetBotCommandsRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SetBotCommandsRequest) GetCommands() []*BotCommand {
@@ -1158,7 +1353,7 @@ type SetBotCommandsResponse struct {
 
 func (x *SetBotCommandsResponse) Reset() {
 	*x = SetBotCommandsResponse{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[19]
+	mi := &file_calaba_v1_bot_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1170,7 +1365,7 @@ func (x *SetBotCommandsResponse) String() string {
 func (*SetBotCommandsResponse) ProtoMessage() {}
 
 func (x *SetBotCommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[19]
+	mi := &file_calaba_v1_bot_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1183,7 +1378,7 @@ func (x *SetBotCommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotCommandsResponse.ProtoReflect.Descriptor instead.
 func (*SetBotCommandsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{19}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SetBotCommandsResponse) GetCommands() []*BotCommand {
@@ -1205,7 +1400,7 @@ type SetBotWebhookRequest struct {
 
 func (x *SetBotWebhookRequest) Reset() {
 	*x = SetBotWebhookRequest{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[20]
+	mi := &file_calaba_v1_bot_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +1412,7 @@ func (x *SetBotWebhookRequest) String() string {
 func (*SetBotWebhookRequest) ProtoMessage() {}
 
 func (x *SetBotWebhookRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[20]
+	mi := &file_calaba_v1_bot_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +1425,7 @@ func (x *SetBotWebhookRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBotWebhookRequest.ProtoReflect.Descriptor instead.
 func (*SetBotWebhookRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SetBotWebhookRequest) GetUrl() string {
@@ -1257,7 +1452,7 @@ type BotWebhookResponse struct {
 
 func (x *BotWebhookResponse) Reset() {
 	*x = BotWebhookResponse{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[21]
+	mi := &file_calaba_v1_bot_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1269,7 +1464,7 @@ func (x *BotWebhookResponse) String() string {
 func (*BotWebhookResponse) ProtoMessage() {}
 
 func (x *BotWebhookResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[21]
+	mi := &file_calaba_v1_bot_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1282,7 +1477,7 @@ func (x *BotWebhookResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BotWebhookResponse.ProtoReflect.Descriptor instead.
 func (*BotWebhookResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *BotWebhookResponse) GetWebhook() *BotWebhook {
@@ -1304,7 +1499,7 @@ type RoomBotCommands struct {
 
 func (x *RoomBotCommands) Reset() {
 	*x = RoomBotCommands{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[22]
+	mi := &file_calaba_v1_bot_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1316,7 +1511,7 @@ func (x *RoomBotCommands) String() string {
 func (*RoomBotCommands) ProtoMessage() {}
 
 func (x *RoomBotCommands) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[22]
+	mi := &file_calaba_v1_bot_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1329,7 +1524,7 @@ func (x *RoomBotCommands) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomBotCommands.ProtoReflect.Descriptor instead.
 func (*RoomBotCommands) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{22}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RoomBotCommands) GetBotUserId() string {
@@ -1362,7 +1557,7 @@ type ListRoomBotCommandsResponse struct {
 
 func (x *ListRoomBotCommandsResponse) Reset() {
 	*x = ListRoomBotCommandsResponse{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[23]
+	mi := &file_calaba_v1_bot_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1569,7 @@ func (x *ListRoomBotCommandsResponse) String() string {
 func (*ListRoomBotCommandsResponse) ProtoMessage() {}
 
 func (x *ListRoomBotCommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[23]
+	mi := &file_calaba_v1_bot_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1582,7 @@ func (x *ListRoomBotCommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoomBotCommandsResponse.ProtoReflect.Descriptor instead.
 func (*ListRoomBotCommandsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{23}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListRoomBotCommandsResponse) GetBots() []*RoomBotCommands {
@@ -1408,7 +1603,7 @@ type ListBlockedBotsResponse struct {
 
 func (x *ListBlockedBotsResponse) Reset() {
 	*x = ListBlockedBotsResponse{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[24]
+	mi := &file_calaba_v1_bot_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1420,7 +1615,7 @@ func (x *ListBlockedBotsResponse) String() string {
 func (*ListBlockedBotsResponse) ProtoMessage() {}
 
 func (x *ListBlockedBotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[24]
+	mi := &file_calaba_v1_bot_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1433,7 +1628,7 @@ func (x *ListBlockedBotsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBlockedBotsResponse.ProtoReflect.Descriptor instead.
 func (*ListBlockedBotsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{24}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListBlockedBotsResponse) GetBotUserIds() []string {
@@ -1455,7 +1650,7 @@ type BotCreate struct {
 
 func (x *BotCreate) Reset() {
 	*x = BotCreate{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[25]
+	mi := &file_calaba_v1_bot_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1662,7 @@ func (x *BotCreate) String() string {
 func (*BotCreate) ProtoMessage() {}
 
 func (x *BotCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[25]
+	mi := &file_calaba_v1_bot_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1675,7 @@ func (x *BotCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BotCreate.ProtoReflect.Descriptor instead.
 func (*BotCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{25}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BotCreate) GetWorkspaceId() string {
@@ -1507,7 +1702,7 @@ type BotUpdate struct {
 
 func (x *BotUpdate) Reset() {
 	*x = BotUpdate{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[26]
+	mi := &file_calaba_v1_bot_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1519,7 +1714,7 @@ func (x *BotUpdate) String() string {
 func (*BotUpdate) ProtoMessage() {}
 
 func (x *BotUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[26]
+	mi := &file_calaba_v1_bot_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1532,7 +1727,7 @@ func (x *BotUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BotUpdate.ProtoReflect.Descriptor instead.
 func (*BotUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{26}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *BotUpdate) GetWorkspaceId() string {
@@ -1560,7 +1755,7 @@ type BotDelete struct {
 
 func (x *BotDelete) Reset() {
 	*x = BotDelete{}
-	mi := &file_calaba_v1_bot_proto_msgTypes[27]
+	mi := &file_calaba_v1_bot_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1572,7 +1767,7 @@ func (x *BotDelete) String() string {
 func (*BotDelete) ProtoMessage() {}
 
 func (x *BotDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_bot_proto_msgTypes[27]
+	mi := &file_calaba_v1_bot_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1585,7 +1780,7 @@ func (x *BotDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BotDelete.ProtoReflect.Descriptor instead.
 func (*BotDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_bot_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *BotDelete) GetWorkspaceId() string {
@@ -1666,14 +1861,30 @@ const file_calaba_v1_bot_proto_rawDesc = "" +
 	"\n" +
 	"invited_by\x18\x02 \x01(\tR\tinvitedBy\x129\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xd5\x01\n" +
+	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x90\x02\n" +
 	"\x0eGetBotResponse\x12 \n" +
 	"\x03bot\x18\x01 \x01(\v2\x0e.calaba.v1.BotR\x03bot\x12+\n" +
 	"\x12on_behalf_user_ids\x18\x02 \x03(\tR\x0fonBehalfUserIds\x12:\n" +
 	"\vdelegations\x18\x03 \x03(\v2\x18.calaba.v1.BotDelegationR\vdelegations\x128\n" +
-	"\ainvites\x18\x04 \x03(\v2\x1e.calaba.v1.BotDelegationInviteR\ainvites\"7\n" +
+	"\ainvites\x18\x04 \x03(\v2\x1e.calaba.v1.BotDelegationInviteR\ainvites\x129\n" +
+	"\x04sent\x18\x05 \x03(\v2%.calaba.v1.BotDelegationInviteMessageR\x04sent\"\x99\x01\n" +
+	"\x1aBotDelegationInviteMessage\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x02 \x01(\tR\tmessageId\x12\x17\n" +
+	"\aroom_id\x18\x03 \x01(\tR\x06roomId\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\x12\x18\n" +
+	"\acreated\x18\x05 \x01(\bR\acreated\"O\n" +
 	"\x1aInviteBotDelegationRequest\x12\x19\n" +
-	"\buser_ids\x18\x01 \x03(\tR\auserIds\"K\n" +
+	"\buser_ids\x18\x01 \x03(\tR\auserIds\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xc3\x01\n" +
+	"\x13BotDelegationChange\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1e\n" +
+	"\vbot_user_id\x18\x02 \x01(\tR\tbotUserId\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12*\n" +
+	"\x02at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"K\n" +
 	"\rAddBotRequest\x12\x1e\n" +
 	"\vbot_user_id\x18\x01 \x01(\tR\tbotUserId\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\"2\n" +
@@ -1728,7 +1939,7 @@ func file_calaba_v1_bot_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_bot_proto_rawDescData
 }
 
-var file_calaba_v1_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_calaba_v1_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_calaba_v1_bot_proto_goTypes = []any{
 	(*BotCommand)(nil),                  // 0: calaba.v1.BotCommand
 	(*BotWebhook)(nil),                  // 1: calaba.v1.BotWebhook
@@ -1743,58 +1954,62 @@ var file_calaba_v1_bot_proto_goTypes = []any{
 	(*BotDelegation)(nil),               // 10: calaba.v1.BotDelegation
 	(*BotDelegationInvite)(nil),         // 11: calaba.v1.BotDelegationInvite
 	(*GetBotResponse)(nil),              // 12: calaba.v1.GetBotResponse
-	(*InviteBotDelegationRequest)(nil),  // 13: calaba.v1.InviteBotDelegationRequest
-	(*AddBotRequest)(nil),               // 14: calaba.v1.AddBotRequest
-	(*AddBotResponse)(nil),              // 15: calaba.v1.AddBotResponse
-	(*GetBotMeResponse)(nil),            // 16: calaba.v1.GetBotMeResponse
-	(*UpdateBotMeRequest)(nil),          // 17: calaba.v1.UpdateBotMeRequest
-	(*SetBotCommandsRequest)(nil),       // 18: calaba.v1.SetBotCommandsRequest
-	(*SetBotCommandsResponse)(nil),      // 19: calaba.v1.SetBotCommandsResponse
-	(*SetBotWebhookRequest)(nil),        // 20: calaba.v1.SetBotWebhookRequest
-	(*BotWebhookResponse)(nil),          // 21: calaba.v1.BotWebhookResponse
-	(*RoomBotCommands)(nil),             // 22: calaba.v1.RoomBotCommands
-	(*ListRoomBotCommandsResponse)(nil), // 23: calaba.v1.ListRoomBotCommandsResponse
-	(*ListBlockedBotsResponse)(nil),     // 24: calaba.v1.ListBlockedBotsResponse
-	(*BotCreate)(nil),                   // 25: calaba.v1.BotCreate
-	(*BotUpdate)(nil),                   // 26: calaba.v1.BotUpdate
-	(*BotDelete)(nil),                   // 27: calaba.v1.BotDelete
-	(*timestamppb.Timestamp)(nil),       // 28: google.protobuf.Timestamp
-	(*User)(nil),                        // 29: calaba.v1.User
+	(*BotDelegationInviteMessage)(nil),  // 13: calaba.v1.BotDelegationInviteMessage
+	(*InviteBotDelegationRequest)(nil),  // 14: calaba.v1.InviteBotDelegationRequest
+	(*BotDelegationChange)(nil),         // 15: calaba.v1.BotDelegationChange
+	(*AddBotRequest)(nil),               // 16: calaba.v1.AddBotRequest
+	(*AddBotResponse)(nil),              // 17: calaba.v1.AddBotResponse
+	(*GetBotMeResponse)(nil),            // 18: calaba.v1.GetBotMeResponse
+	(*UpdateBotMeRequest)(nil),          // 19: calaba.v1.UpdateBotMeRequest
+	(*SetBotCommandsRequest)(nil),       // 20: calaba.v1.SetBotCommandsRequest
+	(*SetBotCommandsResponse)(nil),      // 21: calaba.v1.SetBotCommandsResponse
+	(*SetBotWebhookRequest)(nil),        // 22: calaba.v1.SetBotWebhookRequest
+	(*BotWebhookResponse)(nil),          // 23: calaba.v1.BotWebhookResponse
+	(*RoomBotCommands)(nil),             // 24: calaba.v1.RoomBotCommands
+	(*ListRoomBotCommandsResponse)(nil), // 25: calaba.v1.ListRoomBotCommandsResponse
+	(*ListBlockedBotsResponse)(nil),     // 26: calaba.v1.ListBlockedBotsResponse
+	(*BotCreate)(nil),                   // 27: calaba.v1.BotCreate
+	(*BotUpdate)(nil),                   // 28: calaba.v1.BotUpdate
+	(*BotDelete)(nil),                   // 29: calaba.v1.BotDelete
+	(*timestamppb.Timestamp)(nil),       // 30: google.protobuf.Timestamp
+	(*User)(nil),                        // 31: calaba.v1.User
 }
 var file_calaba_v1_bot_proto_depIdxs = []int32{
-	28, // 0: calaba.v1.BotWebhook.disabled_at:type_name -> google.protobuf.Timestamp
-	28, // 1: calaba.v1.BotWebhook.failing_since:type_name -> google.protobuf.Timestamp
-	28, // 2: calaba.v1.BotWebhook.last_ok_at:type_name -> google.protobuf.Timestamp
-	29, // 3: calaba.v1.Bot.user:type_name -> calaba.v1.User
+	30, // 0: calaba.v1.BotWebhook.disabled_at:type_name -> google.protobuf.Timestamp
+	30, // 1: calaba.v1.BotWebhook.failing_since:type_name -> google.protobuf.Timestamp
+	30, // 2: calaba.v1.BotWebhook.last_ok_at:type_name -> google.protobuf.Timestamp
+	31, // 3: calaba.v1.Bot.user:type_name -> calaba.v1.User
 	0,  // 4: calaba.v1.Bot.commands:type_name -> calaba.v1.BotCommand
-	28, // 5: calaba.v1.Bot.created_at:type_name -> google.protobuf.Timestamp
-	28, // 6: calaba.v1.Bot.revoked_at:type_name -> google.protobuf.Timestamp
+	30, // 5: calaba.v1.Bot.created_at:type_name -> google.protobuf.Timestamp
+	30, // 6: calaba.v1.Bot.revoked_at:type_name -> google.protobuf.Timestamp
 	1,  // 7: calaba.v1.Bot.webhook:type_name -> calaba.v1.BotWebhook
-	28, // 8: calaba.v1.Bot.acts_as_owner_since:type_name -> google.protobuf.Timestamp
+	30, // 8: calaba.v1.Bot.acts_as_owner_since:type_name -> google.protobuf.Timestamp
 	2,  // 9: calaba.v1.CreateBotResponse.bot:type_name -> calaba.v1.Bot
 	2,  // 10: calaba.v1.ListBotsResponse.bots:type_name -> calaba.v1.Bot
 	2,  // 11: calaba.v1.ReissueBotTokenResponse.bot:type_name -> calaba.v1.Bot
 	2,  // 12: calaba.v1.SetBotAvatarResponse.bot:type_name -> calaba.v1.Bot
 	2,  // 13: calaba.v1.UpdateBotResponse.bot:type_name -> calaba.v1.Bot
-	28, // 14: calaba.v1.BotDelegation.since:type_name -> google.protobuf.Timestamp
-	28, // 15: calaba.v1.BotDelegationInvite.created_at:type_name -> google.protobuf.Timestamp
+	30, // 14: calaba.v1.BotDelegation.since:type_name -> google.protobuf.Timestamp
+	30, // 15: calaba.v1.BotDelegationInvite.created_at:type_name -> google.protobuf.Timestamp
 	2,  // 16: calaba.v1.GetBotResponse.bot:type_name -> calaba.v1.Bot
 	10, // 17: calaba.v1.GetBotResponse.delegations:type_name -> calaba.v1.BotDelegation
 	11, // 18: calaba.v1.GetBotResponse.invites:type_name -> calaba.v1.BotDelegationInvite
-	2,  // 19: calaba.v1.AddBotResponse.bot:type_name -> calaba.v1.Bot
-	2,  // 20: calaba.v1.GetBotMeResponse.bot:type_name -> calaba.v1.Bot
-	0,  // 21: calaba.v1.SetBotCommandsRequest.commands:type_name -> calaba.v1.BotCommand
-	0,  // 22: calaba.v1.SetBotCommandsResponse.commands:type_name -> calaba.v1.BotCommand
-	1,  // 23: calaba.v1.BotWebhookResponse.webhook:type_name -> calaba.v1.BotWebhook
-	0,  // 24: calaba.v1.RoomBotCommands.commands:type_name -> calaba.v1.BotCommand
-	22, // 25: calaba.v1.ListRoomBotCommandsResponse.bots:type_name -> calaba.v1.RoomBotCommands
-	2,  // 26: calaba.v1.BotCreate.bot:type_name -> calaba.v1.Bot
-	2,  // 27: calaba.v1.BotUpdate.bot:type_name -> calaba.v1.Bot
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	13, // 19: calaba.v1.GetBotResponse.sent:type_name -> calaba.v1.BotDelegationInviteMessage
+	30, // 20: calaba.v1.BotDelegationChange.at:type_name -> google.protobuf.Timestamp
+	2,  // 21: calaba.v1.AddBotResponse.bot:type_name -> calaba.v1.Bot
+	2,  // 22: calaba.v1.GetBotMeResponse.bot:type_name -> calaba.v1.Bot
+	0,  // 23: calaba.v1.SetBotCommandsRequest.commands:type_name -> calaba.v1.BotCommand
+	0,  // 24: calaba.v1.SetBotCommandsResponse.commands:type_name -> calaba.v1.BotCommand
+	1,  // 25: calaba.v1.BotWebhookResponse.webhook:type_name -> calaba.v1.BotWebhook
+	0,  // 26: calaba.v1.RoomBotCommands.commands:type_name -> calaba.v1.BotCommand
+	24, // 27: calaba.v1.ListRoomBotCommandsResponse.bots:type_name -> calaba.v1.RoomBotCommands
+	2,  // 28: calaba.v1.BotCreate.bot:type_name -> calaba.v1.Bot
+	2,  // 29: calaba.v1.BotUpdate.bot:type_name -> calaba.v1.Bot
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_bot_proto_init() }
@@ -1804,14 +2019,14 @@ func file_calaba_v1_bot_proto_init() {
 	}
 	file_calaba_v1_user_proto_init()
 	file_calaba_v1_bot_proto_msgTypes[8].OneofWrappers = []any{}
-	file_calaba_v1_bot_proto_msgTypes[17].OneofWrappers = []any{}
+	file_calaba_v1_bot_proto_msgTypes[19].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_bot_proto_rawDesc), len(file_calaba_v1_bot_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -576,11 +576,13 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/me/blocked-bots/{id}",
 		"DELETE /api/me/blocked-bots/{id}",
 	}},
-	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision; suggesting it to others is a person's request too", routes: []string{
+	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision (giving, revoking, declining or cancelling an invitation)", routes: []string{
 		"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
 		"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
-		"POST /api/workspaces/{id}/bots/{botId}/delegation-invites",
 		"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}",
+	}},
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0119: the bot asks members for its own consent ({botId} = the bot itself, a non-guest role; another bot gets 403); only the invitee's own click in their DM grants it; closed on behalf", routes: []string{
+		"POST /api/workspaces/{id}/bots/{botId}/delegation-invites",
 	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0111: the bot reads whom it may act for (members of the workspace read it too; another bot gets 403); closed on behalf", routes: []string{
 		"GET /api/workspaces/{id}/bots/{botId}",

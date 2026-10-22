@@ -303,6 +303,9 @@ message DispatchEvent {
     // Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
     CalendarEventCommentUpsert event_comment_upsert = 103;
     CalendarEventCommentDelete event_comment_delete = 104;
+    // A member's consent for a bot changed (ADR-0119): to that bot's user channel (gateway)
+    // and webhook only.
+    BotDelegationChange bot_delegation = 105;
   }
 }
 
@@ -310,7 +313,8 @@ message DispatchEvent {
 // with X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)> and X-Calab-Delivery: <id>.
 // Delivered events: MESSAGE_CREATE / UPDATE / DELETE and MESSAGE_REACTION_ADD / REMOVE of
 // rooms the bot can view and of its DMs, plus private BOT_CALLBACK (ADR-0047), TASK_NOTICE of
-// the users who chose the bot (ADR-0090) and CONTACT_SHARED (ADR-0100).
+// the users who chose the bot (ADR-0090), CONTACT_SHARED (ADR-0100) and BOT_DELEGATION
+// (ADR-0119).
 // A delivery may repeat (retries): dedupe by id.
 message BotWebhookUpdate {
   string id = 1;

@@ -102,6 +102,7 @@ An event is the `dispatch` field of a `DISPATCH` frame (exactly one per frame). 
 | `messageReactionAdd` · `messageReactionRemove` | reactions |
 | `botCallback` | a person pressed a button under the bot's message — to that bot only; see [Commands and buttons](./commands-buttons) |
 | `contactShared` | a person shared their contact through a contact request button — to that bot only; see [Commands and buttons](./commands-buttons#contact-request) |
+| `botDelegation` | a member allowed, revoked or declined the bot acting on their behalf — to that bot only; see [Authorization](./auth#on-behalf-of-a-member) |
 | `voiceStateUpdate` · `voiceStreamStart` / `voiceStreamStop` · `voiceCameraStop` · `voiceMoved` | voice: who is in which room, mute, streams |
 | `presenceUpdate` · `userUpdate` | presence and profiles |
 | `roomCreate` / `roomUpdate` / `roomDelete` · `roomPermissionsUpdate` · `categoryCreate` / `categoryUpdate` / `categoryDelete` | rooms and categories |
