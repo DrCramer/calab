@@ -293,6 +293,9 @@ var eventScope = map[protoreflect.Name]bool{
 	// Comments on a meeting (ADR-0104): workspace channel; routed by routeEventComment to the
 	// event's audience (as EVENT_UPDATE, not guests or bots).
 	"event_comment_upsert": true, "event_comment_delete": true,
+	// An inbound phone call rings the recipient (ADR-0117): the recipient's user channel only
+	// (and a bot's webhook); not workspace-lease-gated.
+	"sip_inbound_ring": false,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

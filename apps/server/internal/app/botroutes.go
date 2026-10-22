@@ -84,6 +84,9 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/internal/ivr-agent",
 		"GET /api/internal/ivr-agent/files/{id}",
 	}},
+	{access: botPublic, why: "the SIP registration agent (ADR-0121): its own bearer token (SIPREG_AGENT_TOKEN), never a user's or a bot's", routes: []string{
+		"GET /api/internal/sipreg-agent",
+	}},
 	{access: botPublic, why: "signed deliveries of LiveKit, the payment providers and the repository hosting; public offers and the checkout return page", routes: []string{
 		"POST /api/rtc/webhook",
 		"POST /api/billing/stripe/webhook",
