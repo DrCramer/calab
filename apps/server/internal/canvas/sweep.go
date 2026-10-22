@@ -152,7 +152,11 @@ func (s *Service) RunTrashSweep(ctx context.Context, interval time.Duration) {
 			} else if n > 0 {
 				slog.InfoContext(ctx, "canvas trash swept", "deleted", n)
 			}
-			if _, err := s.db.Q.PurgeRevokedCanvasLinks(ctx, s.Now().Add(-revokedLinkDays*24*time.Hour)); err != nil {
+			// Through Tx like every other write (identity admission covers writes, not s.db.Q).
+			if err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
+				_, err := q.PurgeRevokedCanvasLinks(ctx, s.Now().Add(-revokedLinkDays*24*time.Hour))
+				return err
+			}); err != nil {
 				slog.WarnContext(ctx, "canvas: purge revoked links", "err", err)
 			}
 		}
