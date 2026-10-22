@@ -47,6 +47,7 @@ type leg struct {
 	cseq         uint32
 	transport    string
 	viaHost      string
+	viaPort      int
 	dest         string // host:port in-dialog requests are sent to
 	contact      sip.Uri
 	lastSDP      []byte // the last SDP the other end of this leg sent
@@ -256,10 +257,11 @@ func (ag *agent) onInvite(req *sip.Request, tx sip.ServerTransaction) {
 func (ag *agent) newCall(acc *account, req *sip.Request) *call {
 	c := &call{ag: ag, acc: acc, acked: make(chan struct{}), src: req.Source()}
 	from, to := req.From(), req.To()
+	viaHost, viaPort := acc.reg.sentBy()
 	c.a = leg{
 		callID: string(*req.CallID()), localTag: sip.GenerateTagN(16), remoteTag: fromTag(req),
 		localURI: to.Address, remoteURI: from.Address, cseq: uint32(rand.IntN(10000)) + 1, //nolint:gosec // not a secret
-		transport: req.Transport(), viaHost: ag.publicIP(), contact: acc.reg.contactURI(),
+		transport: req.Transport(), viaHost: viaHost, viaPort: viaPort, contact: acc.reg.contactURI(),
 		lastSDP: req.Body(), contentType: contentType(req),
 	}
 	if ct := req.Contact(); ct != nil {
@@ -289,7 +291,7 @@ func (ag *agent) newCall(acc *account, req *sip.Request) *call {
 	cp.Add("transport", "udp")
 	c.b = leg{
 		callID: uuid.NewString(), localTag: sip.GenerateTagN(16), localURI: from.Address, remoteURI: callee, remoteTarget: callee,
-		cseq: 1, transport: "UDP", viaHost: ag.lkLocal, dest: ag.lkAddr,
+		cseq: 1, transport: "UDP", viaHost: ag.lkLocal, viaPort: ag.port, dest: ag.lkAddr,
 		contact: sip.Uri{Scheme: "sip", User: "b" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16], Host: ag.lkLocal, Port: ag.port, UriParams: cp},
 	}
 	c.b.localURI.UriParams, c.b.localURI.Headers = nil, nil
@@ -300,9 +302,14 @@ func (ag *agent) newCall(acc *account, req *sip.Request) *call {
 	return c
 }
 
-// legADest: where requests to the provider go — its Contact (or first route) when that is one
-// of the account's addresses, else the address the INVITE came from (never a third host).
+// legADest: where requests to the provider go. In flow mode back over the flow the INVITE came
+// on (RFC 5626 §5.3: the NAT lets nothing else in, and a TCP flow is the only connection);
+// otherwise its Contact (or first route) when that is one of the account's addresses, else the
+// address the INVITE came from (never a third host).
 func (c *call) legADest() string {
+	if c.ag.flowMode {
+		return c.src
+	}
 	target := c.a.remoteTarget
 	if len(c.a.routes) > 0 {
 		target = c.a.routes[0]
@@ -329,7 +336,7 @@ func (c *call) request(l *leg, method sip.RequestMethod, body []byte, ctype stri
 	req := sip.NewRequest(method, l.remoteTarget)
 	req.SetTransport(l.transport)
 	req.SetDestination(l.dest)
-	req.AppendHeader(c.ag.newVia(l.transport, l.viaHost))
+	req.AppendHeader(newVia(l.transport, l.viaHost, l.viaPort))
 	mf := sip.MaxForwardsHeader(70)
 	req.AppendHeader(&mf)
 	fp := sip.NewParams()
@@ -370,7 +377,7 @@ func (c *call) run(aReq *sip.Request, aTx sip.ServerTransaction) {
 	breq := sip.NewRequest(sip.INVITE, c.b.remoteTarget)
 	breq.SetTransport("UDP")
 	breq.SetDestination(ag.lkAddr)
-	breq.AppendHeader(ag.newVia("UDP", c.b.viaHost))
+	breq.AppendHeader(newVia("UDP", c.b.viaHost, c.b.viaPort))
 	mf := sip.MaxForwardsHeader(70)
 	breq.AppendHeader(&mf)
 	fp := sip.NewParams()
@@ -464,7 +471,7 @@ func (c *call) inviteB(aReq *sip.Request, aTx sip.ServerTransaction, breq *sip.R
 			breq.CSeq().SeqNo = c.b.cseq
 			c.mu.Unlock()
 			breq.RemoveHeader("Via")
-			breq.PrependHeader(ag.newVia("UDP", c.b.viaHost))
+			breq.PrependHeader(newVia("UDP", c.b.viaHost, c.b.viaPort))
 			c.mu.Lock()
 			cancelled := c.cancelled
 			c.mu.Unlock()
@@ -634,7 +641,7 @@ func (c *call) ackB(res *sip.Response) {
 		ack = sip.NewRequest(sip.ACK, c.b.remoteTarget)
 		ack.SetTransport("UDP")
 		ack.SetDestination(c.ag.lkAddr)
-		ack.AppendHeader(c.ag.newVia("UDP", c.b.viaHost))
+		ack.AppendHeader(newVia("UDP", c.b.viaHost, c.b.viaPort))
 		mf := sip.MaxForwardsHeader(70)
 		ack.AppendHeader(&mf)
 		fp := sip.NewParams()

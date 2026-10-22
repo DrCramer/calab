@@ -10,8 +10,8 @@ import (
 )
 
 // stunPublicIP asks a STUN server (RFC 5389 Binding) for this host's public IPv4 — the address
-// Contact and Via carry when SIP_REGISTRAR_PUBLIC_IP is not set (like use_external_ip of
-// LiveKit SIP).
+// Contact and Via carry in forward mode with SIP_REGISTRAR_STUN instead of
+// SIP_REGISTRAR_PUBLIC_IP (like use_external_ip of LiveKit SIP). Flow mode needs none of it.
 func stunPublicIP(ctx context.Context, server string, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
