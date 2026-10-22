@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -341,6 +342,61 @@ func TestSIPExchange(t *testing.T) {
 	o.must(200, "GET", base, nil, &s)
 	if s.GetSettings().GetInboundAvailable() {
 		t.Fatal("inbound_available without SIP_INBOUND")
+	}
+}
+
+// TestSIPExtensionHiddenFromGuests (ADR-0117 §3): WorkspaceMember.extension is for the members
+// who are not guests — a guest who sees a colleague (REST list and member, READY, the
+// WORKSPACE_MEMBER_UPDATE of the new number) never gets the colleague's number.
+func TestSIPExtensionHiddenFromGuests(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	rid := textRoom(t, o, wid, "general", false)
+	link := roomLink(t, o, rid, &v1.CreateRoomInviteRequest{})
+	other := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	carol := register(t, invite(t, o, other.GetId()))
+	carol.must(200, "POST", "/api/room-invites/"+link.GetCode()+"/join", nil, nil)
+	send(t, bob, rid, "привет", "") // bob becomes visible to the guest
+
+	og, cg := dialGW(t), dialGW(t)
+	og.identify(o.token)
+	cg.identify(carol.token)
+	o.must(201, "POST", "/api/workspaces/"+wid+"/sip/extensions", &v1.CreateSipExtensionRequest{Number: "101", UserId: bob.id}, nil)
+	og.wait("member's WORKSPACE_MEMBER_UPDATE with the number", func(e *v1.DispatchEvent) bool {
+		m := e.GetWorkspaceMemberUpdate().GetMember()
+		return m.GetUser().GetId() == bob.id && m.GetExtension() == "101"
+	})
+	cg.wait("guest's WORKSPACE_MEMBER_UPDATE", func(e *v1.DispatchEvent) bool {
+		m := e.GetWorkspaceMemberUpdate().GetMember()
+		return m.GetUser().GetId() == bob.id && m.GetExtension() == ""
+	})
+	cg.quiet("guest: no copy with the number", 300*time.Millisecond, func(e *v1.DispatchEvent) bool {
+		return e.GetWorkspaceMemberUpdate().GetMember().GetExtension() != ""
+	})
+
+	extOf := func(ms []*v1.WorkspaceMember) (string, bool) {
+		for _, m := range ms {
+			if m.GetUser().GetId() == bob.id {
+				return m.GetExtension(), true
+			}
+		}
+		return "", false
+	}
+	if ext, ok := extOf(listMembers(t, o.client, wid)); !ok || ext != "101" {
+		t.Fatalf("member's list: %q %v", ext, ok)
+	}
+	if ext, ok := extOf(listMembers(t, carol.client, wid)); !ok || ext != "" {
+		t.Fatalf("guest's list: %q %v", ext, ok)
+	}
+	if got := memberExtension(t, carol, wid, bob.id); got != "" {
+		t.Fatalf("guest's GET member: %q", got)
+	}
+	if ext, ok := extOf(guestSnapshot(t, dialGW(t).identify(carol.token), wid).GetMembers()); !ok || ext != "" {
+		t.Fatalf("guest's READY: %q %v", ext, ok)
+	}
+	if ext, _ := extOf(guestSnapshot(t, dialGW(t).identify(o.token), wid).GetMembers()); ext != "101" {
+		t.Fatalf("member's READY: %q", ext)
 	}
 }
 
