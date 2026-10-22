@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -100,6 +101,8 @@ type fakeProvider struct {
 	contact   sip.Uri
 	options   int
 	dropOpts  bool
+	nat       string // received:rport the answers report ("" = the real source)
+	tcp       bool
 
 	regs chan *sip.Request // accepted REGISTERs
 	byes chan *sip.Request
@@ -107,7 +110,101 @@ type fakeProvider struct {
 }
 
 func newProvider(t *testing.T) *fakeProvider {
-	p := &fakeProvider{endpoint: newEndpoint(t), t: t, mode: "ok", expires: 60, regs: make(chan *sip.Request, 32), byes: make(chan *sip.Request, 8)}
+	e := newEndpoint(t)
+	p := setupProvider(t, e)
+	e.serve()
+	return p
+}
+
+// tcpProbe is the TCP provider's listener: it keeps the accepted connections (to drop them)
+// and counts the agent's CRLF pings, swallowing them on demand (no pong).
+type tcpProbe struct {
+	net.Listener
+	mu      sync.Mutex
+	conns   []net.Conn
+	pings   atomic.Int32
+	swallow atomic.Bool
+}
+
+func (l *tcpProbe) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	pc := &probeConn{Conn: c, l: l}
+	l.mu.Lock()
+	l.conns = append(l.conns, pc)
+	l.mu.Unlock()
+	return pc, nil
+}
+
+func (l *tcpProbe) accepted() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.conns)
+}
+
+// dropAll closes every connection the agent opened (the provider or a NAT drops the flow).
+func (l *tcpProbe) dropAll() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, c := range l.conns {
+		_ = c.Close()
+	}
+}
+
+type probeConn struct {
+	net.Conn
+	l *tcpProbe
+}
+
+func (c *probeConn) Read(b []byte) (int, error) {
+	for {
+		n, err := c.Conn.Read(b)
+		if n == 4 && string(b[:4]) == "\r\n\r\n" {
+			c.l.pings.Add(1)
+			if c.l.swallow.Load() && err == nil {
+				continue
+			}
+		}
+		return n, err
+	}
+}
+
+// newTCPProvider is a provider on TCP only: it can reach the agent solely over the connection
+// the agent dialed (the agent listens on no TCP port in flow mode).
+func newTCPProvider(t *testing.T) (*fakeProvider, *tcpProbe) {
+	t.Helper()
+	var lc net.ListenConfig
+	l, err := lc.Listen(t.Context(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ua, err := sipgo.NewUA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := sipgo.NewServer(ua)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := sipgo.NewClient(ua, sipgo.WithClientHostname("127.0.0.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	_, ps, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(ps)
+	probe := &tcpProbe{Listener: l}
+	t.Cleanup(func() { _ = l.Close(); _ = ua.Close() })
+	p := setupProvider(t, &endpoint{ua: ua, srv: srv, cli: cli, addr: addr, port: port})
+	p.tcp = true
+	go func() { _ = srv.ServeTCP(probe) }()
+	return p, probe
+}
+
+func setupProvider(t *testing.T, e *endpoint) *fakeProvider {
+	p := &fakeProvider{endpoint: e, t: t, mode: "ok", expires: 60, regs: make(chan *sip.Request, 32), byes: make(chan *sip.Request, 8)}
 	p.dua = &sipgo.DialogUA{Client: p.cli, ContactHDR: sip.ContactHeader{Address: sip.Uri{Scheme: "sip", User: "prov", Host: "127.0.0.1", Port: p.port}}}
 	p.srv.OnRegister(p.onRegister)
 	p.srv.OnOptions(func(req *sip.Request, tx sip.ServerTransaction) {
@@ -116,15 +213,36 @@ func newProvider(t *testing.T) *fakeProvider {
 		drop := p.dropOpts
 		p.mu.Unlock()
 		if !drop {
-			_ = tx.Respond(sip.NewResponseFromRequest(req, 200, "OK", nil))
+			_ = tx.Respond(p.natted(sip.NewResponseFromRequest(req, 200, "OK", nil)))
 		}
 	})
 	p.srv.OnBye(func(req *sip.Request, tx sip.ServerTransaction) {
 		_ = tx.Respond(sip.NewResponseFromRequest(req, 200, "OK", nil))
 		p.byes <- req
 	})
-	p.serve()
 	return p
+}
+
+// natted makes the answer say the request came from p.nat (a NAT in front of the agent).
+func (p *fakeProvider) natted(res *sip.Response) *sip.Response {
+	p.mu.Lock()
+	nat := p.nat
+	p.mu.Unlock()
+	if nat == "" {
+		return res
+	}
+	host, port, _ := net.SplitHostPort(nat)
+	if via := res.Via(); via != nil {
+		via.Params.Add("received", host)
+		via.Params.Add("rport", port)
+	}
+	return res
+}
+
+func (p *fakeProvider) setNAT(addr string) {
+	p.mu.Lock()
+	p.nat = addr
+	p.mu.Unlock()
 }
 
 func (p *fakeProvider) onRegister(req *sip.Request, tx sip.ServerTransaction) {
@@ -150,14 +268,21 @@ func (p *fakeProvider) onRegister(req *sip.Request, tx sip.ServerTransaction) {
 		return
 	}
 	res := sip.NewResponseFromRequest(req, 200, "OK", nil)
-	if ct := req.Contact(); ct != nil {
+	for _, h := range req.GetHeaders("Contact") {
+		ct, ok := h.(*sip.ContactHeader)
+		if !ok {
+			continue
+		}
+		if v, _ := ct.Params.Get("expires"); v == "0" {
+			continue
+		}
 		p.contact = ct.Address
 		c := &sip.ContactHeader{Address: ct.Address, Params: sip.NewParams()}
 		c.Params.Add("expires", strconv.Itoa(p.expires))
 		res.AppendHeader(c)
 	}
 	p.mu.Unlock()
-	_ = tx.Respond(res)
+	_ = tx.Respond(p.natted(res))
 	p.regs <- req
 }
 
@@ -184,6 +309,10 @@ func (p *fakeProvider) call(ctx context.Context, t *testing.T) *sipgo.DialogClie
 	t.Helper()
 	contact := p.registeredContact()
 	contact.UriParams = nil
+	if p.tcp {
+		contact.UriParams = sip.NewParams()
+		contact.UriParams.Add("transport", "tcp")
+	}
 	fp := sip.NewParams()
 	fp.Add("tag", sip.GenerateTagN(10))
 	from := &sip.FromHeader{Address: sip.Uri{Scheme: "sip", User: caller, Host: "voice.plusofon.test"}, Params: fp}
@@ -288,6 +417,7 @@ func fastTimings() *timings {
 	t.legBNoAnswer, t.legBFinal, t.authRetry = 400*time.Millisecond, 5*time.Second, time.Hour
 	t.backoffMin, t.backoffMax, t.minRefresh = 100*time.Millisecond, 400*time.Millisecond, 200*time.Millisecond
 	t.ackWait, t.requestWait = 3*time.Second, 2*time.Second
+	t.natKeepalive, t.pongWait = 300*time.Millisecond, 300*time.Millisecond
 	return &t
 }
 
@@ -296,9 +426,21 @@ type testAgent struct {
 	events chan sipregwire.Event
 }
 
+// newTestAgent is an agent in flow mode (ADR-0125, the default); newForwardAgent one with a
+// public address (forward mode).
 func newTestAgent(t *testing.T, lk *fakeLiveKit) *testAgent {
 	t.Helper()
-	ag, err := newAgent(agentConfig{bind: "127.0.0.1", port: 0, publicIP: "127.0.0.1", livekit: lk.addr, timings: fastTimings()})
+	return startAgent(t, agentConfig{bind: "127.0.0.1", livekit: lk.addr, outbound: true, timings: fastTimings()})
+}
+
+func newForwardAgent(t *testing.T, lk *fakeLiveKit) *testAgent {
+	t.Helper()
+	return startAgent(t, agentConfig{bind: "127.0.0.1", publicIP: "127.0.0.1", livekit: lk.addr, tcp: true, timings: fastTimings()})
+}
+
+func startAgent(t *testing.T, cfg agentConfig) *testAgent {
+	t.Helper()
+	ag, err := newAgent(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,6 +35,8 @@ type timings struct {
 	ackWait       time.Duration // how long the 2xx to the provider is retransmitted without an ACK
 	requestWait   time.Duration // one non-INVITE transaction
 	resolveEvery  time.Duration // the registrar's addresses are re-resolved
+	natKeepalive  time.Duration // flow mode: keepalives at least this often (NAT bindings, ADR-0125)
+	pongWait      time.Duration // a CRLF ping's pong on a TCP flow
 	invitesPerMin int           // per source address
 	pendingMax    int           // unfinished INVITEs per account
 	notFoundPerS  int           // 404 answers per second and source address
@@ -45,16 +47,18 @@ func defaultTimings() timings {
 		legBNoAnswer: 8 * time.Second, legBFinal: 60 * time.Second, authRetry: 5 * time.Minute,
 		backoffMin: 5 * time.Second, backoffMax: 300 * time.Second, minRefresh: 30 * time.Second, heartbeat: 10 * time.Minute,
 		ackWait: 32 * time.Second, requestWait: 10 * time.Second, resolveEvery: 24 * time.Hour,
+		natKeepalive: 20 * time.Second, pongWait: 10 * time.Second,
 		invitesPerMin: 60, pendingMax: 10, notFoundPerS: 10,
 	}
 }
 
 type agentConfig struct {
 	bind     string
-	port     int // 0 = any (tests)
-	publicIP string
-	livekit  string // LiveKit SIP host:port
-	tcp      bool
+	port     int      // 0 = any (tests)
+	publicIP string   // "" = flow mode (ADR-0125): Contact from what the registrar sees
+	livekit  string   // LiveKit SIP host:port
+	tcp      bool     // forward mode: listen on TCP too
+	outbound bool     // flow mode: RFC 5626 Contact parameters (reg-id, +sip.instance, ob)
 	timings  *timings // nil = defaultTimings
 }
 
@@ -80,17 +84,20 @@ func (a *account) allows(ip netip.Addr) bool {
 	return false
 }
 
-// agent is the SIP side: one UDP (and TCP) listener for the registrations, the provider's
-// INVITEs and leg B to LiveKit SIP.
+// agent is the SIP side: one UDP socket for the registrations over UDP, the provider's INVITEs
+// over them and leg B to LiveKit SIP; TCP flows to the registrars (flow.go); in forward mode a
+// TCP listener as well.
 type agent struct {
-	cfg  agentConfig
-	t    timings
-	ua   *sipgo.UserAgent
-	srv  *sipgo.Server
-	cli  *sipgo.Client
-	udp  net.PacketConn
-	tcpL net.Listener
-	port int
+	cfg      agentConfig
+	flowMode bool // no public address configured: we are a NATed client (ADR-0125)
+	flows    *flowSet
+	t        timings
+	ua       *sipgo.UserAgent
+	srv      *sipgo.Server
+	cli      *sipgo.Client
+	udp      net.PacketConn
+	tcpL     net.Listener
+	port     int
 	// laddr: the listener's local address, so every request leaves from the registered port.
 	laddr   sip.Addr
 	lkAddr  string // LiveKit SIP host:port
@@ -109,21 +116,36 @@ type agent struct {
 	noise     *rateWindow                    // 404 answers and dropped-INVITE logs (kept apart: a flood there never refuses an INVITE)
 }
 
+var quietOnce = sync.OnceValue(func() *slog.Logger {
+	l := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sip.SetDefaultLogger(l) // a global of sipgo, read by its goroutines: set once, before any
+	return l
+})
+
+// quietSIPLogs silences sipgo: it logs whole messages, never ours (digest answers, numbers).
+func quietSIPLogs() *slog.Logger { return quietOnce() }
+
 func newAgent(cfg agentConfig) (*agent, error) {
 	t := defaultTimings()
 	if cfg.timings != nil {
 		t = *cfg.timings
 	}
-	quiet := slog.New(slog.NewTextHandler(io.Discard, nil)) // sipgo logs whole messages: never ours
-	sip.SetDefaultLogger(quiet)
+	quiet := quietSIPLogs()
 	ctx, cancel := context.WithCancel(context.Background())
 	ag := &agent{cfg: cfg, t: t, accounts: map[string]*account{}, byContact: map[string]*account{}, calls: map[string]*call{},
 		lkAddr: cfg.livekit, ctx: ctx, cancel: cancel, rate: newRateWindow(), noise: newRateWindow(), emit: func(sipregwire.Event) {}}
 	ag.public.Store(cfg.publicIP)
+	ag.flowMode = cfg.publicIP == ""
+	ag.flows = newFlowSet(ag)
 	empty := []netip.Prefix{}
 	ag.allow.Store(&empty)
+	tlOpts := []sip.TransportLayerOption{sip.WithTransportLayerReadFilter(ag.readFilter), sip.WithTransportLayerLogger(quiet)}
+	if ag.flowMode {
+		// After the read filter option: the transports take it over when they are set.
+		tlOpts = append(tlOpts, sip.WithTransportLayerTransports(sip.TransportsConfig{TCP: &sip.TransportTCP{DialerCreate: refuseDial}}))
+	}
 	ua, err := sipgo.NewUA(sipgo.WithUserAgent(userAgent),
-		sipgo.WithUserAgentTransportLayerOptions(sip.WithTransportLayerReadFilter(ag.readFilter), sip.WithTransportLayerLogger(quiet)),
+		sipgo.WithUserAgentTransportLayerOptions(tlOpts...),
 		sipgo.WithUserAgentTransactionLayerOptions(sip.WithTransactionLayerLogger(quiet), sip.WithTransactionLayerUnhandledResponseHandler(ag.strayResponse)))
 	if err != nil {
 		cancel()
@@ -142,6 +164,8 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	ag.lkLocal = cfg.publicIP
 	if a, err := netip.ParseAddr(lkHost); err == nil && a.IsLoopback() {
 		ag.lkLocal = lkHost
+	} else if ag.flowMode {
+		ag.lkLocal = localIPToward(cfg.bind, cfg.livekit)
 	}
 	ag.routes()
 	var lc net.ListenConfig
@@ -156,7 +180,8 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	ag.laddr = sip.Addr{IP: la.IP, Port: la.Port}
 	go func() { _ = ag.srv.ServeUDP(udp) }()
 	ag.awaitListener(la.String())
-	if cfg.tcp {
+	go func() { _ = ag.srv.ServeTCP(ag.flows.l) }()
+	if cfg.tcp && !ag.flowMode {
 		l, err := lc.Listen(ctx, "tcp4", net.JoinHostPort(cfg.bind, strconv.Itoa(ag.port)))
 		if err != nil {
 			_ = udp.Close()
@@ -182,7 +207,11 @@ func (ag *agent) awaitListener(addr string) {
 
 func (ag *agent) listenAddr() string { return ag.udp.LocalAddr().String() }
 
-func (ag *agent) publicIP() string { return ag.public.Load().(string) }
+// publicIP is the configured (or STUN) public address of forward mode, "" in flow mode.
+func (ag *agent) publicIP() string {
+	s, _ := ag.public.Load().(string)
+	return s
+}
 
 // shutdown unregisters every account (best effort, a few seconds) and closes the listeners.
 func (ag *agent) shutdown() {
@@ -201,6 +230,7 @@ func (ag *agent) shutdown() {
 	}
 	wg.Wait()
 	ag.cancel()
+	ag.flows.closeAll()
 	_ = ag.udp.Close()
 	if ag.tcpL != nil {
 		_ = ag.tcpL.Close()
@@ -470,8 +500,8 @@ func (ag *agent) delAccountQuiet(ws string) {
 // ---------------------------------------------------------------- requests
 
 // prebuilt sends a request exactly as built here; over UDP from the listener's address (the
-// registered port: the provider's NAT binding and source checks see one address). TCP dials
-// out from an ephemeral port and the connection is reused for the answers.
+// registered port: the provider's NAT binding and source checks see one address). TCP goes
+// over the registrar's flow (flow.go), found by its remote address.
 func (ag *agent) prebuilt(_ *sipgo.Client, r *sip.Request) error {
 	if sip.NetworkToLower(r.Transport()) == "udp" {
 		r.Laddr = ag.laddr
@@ -479,12 +509,30 @@ func (ag *agent) prebuilt(_ *sipgo.Client, r *sip.Request) error {
 	return nil
 }
 
-// newVia is our Via for a request towards host (the provider or LiveKit SIP).
-func (ag *agent) newVia(transport, host string) *sip.ViaHeader {
+// newVia is our Via with sent-by host:port (towards the provider or LiveKit SIP).
+func newVia(transport, host string, port int) *sip.ViaHeader {
 	p := sip.NewParams()
 	p.Add("branch", sip.GenerateBranch())
 	p.Add("rport", "")
-	return &sip.ViaHeader{ProtocolName: "SIP", ProtocolVersion: "2.0", Transport: transport, Host: host, Port: ag.port, Params: p}
+	return &sip.ViaHeader{ProtocolName: "SIP", ProtocolVersion: "2.0", Transport: transport, Host: host, Port: port, Params: p}
+}
+
+// localIPToward is our local IPv4 on the route to dest (no packet is sent): what Contact and
+// Via carry in flow mode until the registrar says which address it sees.
+func localIPToward(bind, dest string) string {
+	if a, err := netip.ParseAddr(bind); err == nil && !a.IsUnspecified() {
+		return a.String()
+	}
+	var d net.Dialer
+	c, err := d.Dial("udp4", dest)
+	if err != nil {
+		return "127.0.0.1"
+	}
+	defer func() { _ = c.Close() }()
+	if ap, err := netip.ParseAddrPort(c.LocalAddr().String()); err == nil {
+		return ap.Addr().Unmap().String()
+	}
+	return "127.0.0.1"
 }
 
 // do runs a non-INVITE (or a whole INVITE) client transaction until its final response.
