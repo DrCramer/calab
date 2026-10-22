@@ -163,6 +163,7 @@ type budget struct {
 func (p *Preparer) Prepare(ctx context.Context, srcs []Source) Prepared {
 	p.init()
 	l := p.Limits
+	p.warm(ctx, srcs)
 	if l.MaxTime > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, l.MaxTime)
@@ -190,6 +191,27 @@ func (p *Preparer) Prepare(ctx context.Context, srcs []Source) Prepared {
 		out.Files = append(out.Files, f)
 	}
 	return out
+}
+
+// warmer is a PDF renderer with a cold start (PDFium: the runtime's compile).
+type warmer interface {
+	Warm(ctx context.Context) error
+}
+
+// warm makes the PDF renderer ready before MaxTime starts when srcs have a PDF: a cold start
+// (seconds, more on a slow node) is not the files' time. ctx (the request) bounds the wait; a
+// failure leaves the PDFs to fail on their own (by name).
+func (p *Preparer) warm(ctx context.Context, srcs []Source) {
+	w, ok := p.PDF.(warmer)
+	if !ok {
+		return
+	}
+	for _, src := range srcs {
+		if kindOf(baseMime(src.Mime), src.Name) == kindPDF && src.Size <= p.Limits.MaxSource {
+			_ = w.Warm(ctx)
+			return
+		}
+	}
 }
 
 // PrepareFor is Prepare for one owner (a person): their requests are prepared one after

@@ -19,20 +19,29 @@ import (
 )
 
 // PDFium renders PDF pages with PDFium compiled to WebAssembly (go-pdfium on wazero): pure Go,
-// no cgo, no extra binary in the image (ADR-0123). The runtime is compiled on the first PDF and
-// closed after Idle without one, so a server that never sees a PDF never pays for it. One
-// document at a time, each in a fresh module instance (no state carried between documents),
-// with no filesystem, bounded memory and a deadline (Timeout).
+// no cgo, no extra binary in the image (ADR-0123). The runtime is compiled on the first PDF
+// (Warm) and closed after Idle without one, so a server that never sees a PDF never pays for
+// it. The compile is a cold start, not a document's time: it runs in the background, is shared
+// by every waiter and is never cut by a request's deadline (a slow node finishes it for the next
+// request). One document at a time, each in a fresh module instance (no state carried between
+// documents), with no filesystem, bounded memory and a deadline (Timeout) that kills it.
 type PDFium struct {
 	Timeout time.Duration // one document; 0 = 20 s
 	Idle    time.Duration // the runtime is closed after this long unused; 0 = 5 min
 
 	mu    sync.Mutex
-	pool  pdfium.Pool
+	cur   *runtimeGen // the runtime being compiled or ready; nil = none
 	users int
 	idle  *time.Timer
 	one   chan struct{} // one document at a time
 	once  sync.Once
+}
+
+// runtimeGen is one compile of the runtime: done closes when pool or err is set.
+type runtimeGen struct {
+	done chan struct{}
+	pool pdfium.Pool
+	err  error
 }
 
 // memoryPages bounds the module's memory: 4096 × 64 KiB = 256 MiB.
@@ -41,8 +50,90 @@ const memoryPages = 4096
 // errBusy: another document is being rendered for longer than the caller waits.
 var errBusy = errors.New("aifiles: PDF renderer busy")
 
+// initRuntime compiles the runtime (a variable for tests).
+var initRuntime = func() (pdfium.Pool, error) {
+	return webassembly.Init(webassembly.Config{
+		MinIdle: 0, MaxIdle: 1, MaxTotal: 1,
+		FSConfig: wazero.NewFSConfig(), // no host directory is mounted
+		RuntimeConfig: wazero.NewRuntimeConfig().
+			WithCoreFeatures(api.CoreFeaturesV2 | experimental.CoreFeaturesExceptionHandling).
+			WithMemoryLimitPages(memoryPages).
+			WithCloseOnContextDone(true),
+		Stdout: io.Discard, Stderr: io.Discard,
+	})
+}
+
+// startLocked returns the current compile, starting one when there is none (p.mu held).
+func (p *PDFium) startLocked() *runtimeGen {
+	if p.cur != nil {
+		return p.cur
+	}
+	g := &runtimeGen{done: make(chan struct{})}
+	p.cur = g
+	go func() {
+		pool, err := initRuntime()
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		g.pool, g.err = pool, err
+		close(g.done)
+		switch {
+		case err != nil:
+			if p.cur == g {
+				p.cur = nil // the next PDF tries again
+			}
+		case p.cur != g: // closed while compiling
+			_ = pool.Close()
+		case p.users == 0:
+			p.armIdleLocked()
+		}
+	}()
+	return g
+}
+
+// ready waits for a compiled runtime (ctx bounds the wait, not the compile); with use, it is
+// taken (users) under the same lock, so it cannot be closed as idle before it is used.
+func (p *PDFium) ready(ctx context.Context, use bool) (pdfium.Pool, error) {
+	for {
+		p.mu.Lock()
+		g := p.startLocked()
+		select {
+		case <-g.done:
+			if g.err != nil {
+				p.mu.Unlock()
+				return nil, g.err
+			}
+			if use {
+				if p.idle != nil {
+					p.idle.Stop()
+				}
+				p.users++
+			}
+			p.mu.Unlock()
+			return g.pool, nil
+		default:
+		}
+		p.mu.Unlock()
+		select {
+		case <-g.done: // look again: it may have failed or been closed meanwhile
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+// Warm compiles the runtime if it is not compiled; ctx bounds only the wait (the compile goes
+// on in the background).
+func (p *PDFium) Warm(ctx context.Context) error {
+	_, err := p.ready(ctx, false)
+	return err
+}
+
 func (p *PDFium) acquire(ctx context.Context) (pdfium.Pool, error) {
 	p.once.Do(func() { p.one = make(chan struct{}, 1) })
+	// A cold start first, outside the document's slot and its deadline.
+	if err := p.Warm(ctx); err != nil {
+		return nil, err
+	}
 	wait, cancel := context.WithTimeout(ctx, p.timeout())
 	defer cancel()
 	select {
@@ -50,51 +141,58 @@ func (p *PDFium) acquire(ctx context.Context) (pdfium.Pool, error) {
 	case <-wait.Done():
 		return nil, errBusy
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	pool, err := p.ready(ctx, true)
+	if err != nil {
+		<-p.one
+		return nil, err
+	}
+	return pool, nil
+}
+
+// armIdleLocked closes the runtime after Idle unused (p.mu held).
+func (p *PDFium) armIdleLocked() {
+	idle := p.Idle
+	if idle <= 0 {
+		idle = 5 * time.Minute
+	}
 	if p.idle != nil {
 		p.idle.Stop()
 	}
-	if p.pool == nil {
-		pool, err := webassembly.Init(webassembly.Config{
-			MinIdle: 0, MaxIdle: 1, MaxTotal: 1,
-			FSConfig: wazero.NewFSConfig(), // no host directory is mounted
-			RuntimeConfig: wazero.NewRuntimeConfig().
-				WithCoreFeatures(api.CoreFeaturesV2 | experimental.CoreFeaturesExceptionHandling).
-				WithMemoryLimitPages(memoryPages).
-				WithCloseOnContextDone(true),
-			Stdout: io.Discard, Stderr: io.Discard,
-		})
-		if err != nil {
-			<-p.one
-			return nil, err
-		}
-		p.pool = pool
-	}
-	p.users++
-	return p.pool, nil
+	p.idle = time.AfterFunc(idle, p.closeIdle)
 }
 
 func (p *PDFium) release() {
 	p.mu.Lock()
 	p.users--
-	if p.users == 0 && p.pool != nil {
-		idle := p.Idle
-		if idle <= 0 {
-			idle = 5 * time.Minute
-		}
-		p.idle = time.AfterFunc(idle, p.closeIdle)
+	if p.users == 0 && p.cur != nil {
+		p.armIdleLocked()
 	}
 	p.mu.Unlock()
 	<-p.one
 }
 
+// closeLocked closes a compiled runtime (p.mu held); one still compiling is closed by its
+// goroutine when it is done.
+func (p *PDFium) closeLocked() {
+	g := p.cur
+	if g == nil {
+		return
+	}
+	p.cur = nil
+	select {
+	case <-g.done:
+		if g.pool != nil {
+			_ = g.pool.Close()
+		}
+	default:
+	}
+}
+
 func (p *PDFium) closeIdle() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.users == 0 && p.pool != nil {
-		_ = p.pool.Close()
-		p.pool = nil
+	if p.users == 0 {
+		p.closeLocked()
 	}
 }
 
@@ -105,10 +203,7 @@ func (p *PDFium) Close() {
 	if p.idle != nil {
 		p.idle.Stop()
 	}
-	if p.pool != nil {
-		_ = p.pool.Close()
-		p.pool = nil
-	}
+	p.closeLocked()
 }
 
 func (p *PDFium) timeout() time.Duration {

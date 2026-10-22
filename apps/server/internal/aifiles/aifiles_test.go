@@ -3,6 +3,7 @@ package aifiles
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -10,8 +11,11 @@ import (
 	"image/png"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/klippa-app/go-pdfium"
 )
 
 // makePDF builds a PDF whose page i is filled with colors[i] (r, g, b in 0..1).
@@ -122,7 +126,11 @@ func TestPreparePDF(t *testing.T) {
 		t.Skip("PDFium runtime")
 	}
 	defer renderer.Close()
-	p := &Preparer{Limits: Default, PDF: renderer}
+	// The content limits of production; no time budget (a slow -race runner renders slowly,
+	// TestPrepareWarmNotCounted and TestPDFiumDeadlineKills cover the deadlines).
+	l := Default
+	l.MaxTime = 0
+	p := &Preparer{Limits: l, PDF: renderer}
 	red, green, blue := [3]float64{1, 0, 0}, [3]float64{0, 1, 0}, [3]float64{0, 0, 1}
 	ctx := context.Background()
 
@@ -275,6 +283,66 @@ func TestPDFiumDeadlineKills(t *testing.T) {
 	n, pages, err := r.FirstLast(ctx, makePDF([][3]float64{{1, 0, 0}, {0, 0, 1}}), 100, 2)
 	if err != nil || n != 2 || len(pages) != 2 {
 		t.Fatalf("after a kill: %d %d %v", n, len(pages), err)
+	}
+}
+
+// slowPDF is a renderer whose cold start takes warm; rendering is instant.
+type slowPDF struct {
+	warm   time.Duration
+	warmed bool
+}
+
+func (s *slowPDF) Warm(ctx context.Context) error {
+	select {
+	case <-time.After(s.warm):
+		s.warmed = true
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *slowPDF) FirstLast(ctx context.Context, _ []byte, _, _ int) (int, []image.Image, error) {
+	if !s.warmed || ctx.Err() != nil {
+		return 0, nil, errors.New("not ready")
+	}
+	return 1, []image.Image{image.NewRGBA(image.Rect(0, 0, 10, 10))}, nil
+}
+
+// The renderer's cold start is not the files' time: a warm-up longer than MaxTime still renders.
+func TestPrepareWarmNotCounted(t *testing.T) {
+	r := &slowPDF{warm: 300 * time.Millisecond}
+	p := &Preparer{Limits: Limits{MaxImages: 4, MaxImageBytes: 5 << 20, MaxSide: 100, MaxSource: 1 << 20, MaxPixels: 1 << 20, MaxTime: 100 * time.Millisecond}, PDF: r}
+	out := p.Prepare(context.Background(), []Source{src("a.pdf", "application/pdf", []byte("%PDF"))})
+	if f := out.Files[0]; f.Content != ContentPages || len(out.Images) != 1 {
+		t.Fatalf("%+v", f)
+	}
+}
+
+// A request that gives up waiting for the compile does not stop it: the next one finds the
+// runtime ready, compiled once.
+func TestPDFiumColdStartOutlivesRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("PDFium runtime")
+	}
+	orig := initRuntime
+	var compiles atomic.Int32
+	initRuntime = func() (pdfium.Pool, error) {
+		compiles.Add(1)
+		time.Sleep(300 * time.Millisecond)
+		return orig()
+	}
+	defer func() { initRuntime = orig }()
+	r := &PDFium{Timeout: 60 * time.Second}
+	defer r.Close()
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, _, err := r.FirstLast(short, makePDF([][3]float64{{1, 0, 0}}), 100, 1); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a request shorter than the cold start: %v", err)
+	}
+	n, pages, err := r.FirstLast(context.Background(), makePDF([][3]float64{{1, 0, 0}, {0, 0, 1}}), 100, 2)
+	if err != nil || n != 2 || len(pages) != 2 || compiles.Load() != 1 {
+		t.Fatalf("after: %d %d %v, %d compiles", n, len(pages), err, compiles.Load())
 	}
 }
 
