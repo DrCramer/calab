@@ -53,12 +53,13 @@ func (f *fakeIVR) has(c string) bool {
 	return slices.Contains(f.cmds, c)
 }
 
-// inboundApp is a second API instance with SIP_INBOUND on (the shared one runs without it),
-// on the same Postgres and Valkey: its events reach the gateways of the shared instance.
+// inboundApp is a second API instance with an IVR worker (the shared one runs without a worker
+// token, so it takes no inbound calls), on the same Postgres and Valkey: its events reach the
+// gateways of the shared instance.
 func inboundApp(t *testing.T) (*app.App, *httptest.Server, *fakeSIP, *fakeIVR) {
 	t.Helper()
 	cfg := *testCfg
-	cfg.SIPInbound, cfg.IVRAgentToken = true, "it-ivr-token"
+	cfg.IVRAgentToken = "it-ivr-token"
 	fs, agent := &fakeSIP{}, &fakeIVR{}
 	a := app.New(app.Deps{Config: &cfg, DB: testDB, Redis: testRedis, Events: events.Redis{C: testRedis}, Blob: testStore, LiveKit: lkRec,
 		Mail: testMail, SIP: fs, IVRAgent: agent, UnfurlAllowAddr: func(netip.Addr) bool { return true }})
@@ -75,8 +76,8 @@ func inboundLine(number string) *rtc.Participant {
 
 // TestSIPInboundCall (ADR-0117 §4): the inbound settings, a call to a person's number — the
 // ring on the member's devices, accept with a token for the call's room only, the caller
-// hanging up — a decline, inbound switched off with a call ringing, and refusals without the
-// server switch.
+// hanging up — a decline, inbound switched off with a call ringing, and refusals on a server
+// without an IVR worker.
 func TestSIPInboundCall(t *testing.T) {
 	ctx := context.Background()
 	a, server, fs, agent := inboundApp(t)
@@ -94,7 +95,7 @@ func TestSIPInboundCall(t *testing.T) {
 	o.must(201, "POST", base+"/extensions", &v1.CreateSipExtensionRequest{Number: "101", UserId: bob.id}, &ext)
 	toBob := &v1.SipRouteTarget{Kind: v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, Id: ext.GetExtension().GetId()}
 
-	// The shared instance has no SIP_INBOUND: inbound cannot be switched on, a call is refused
+	// The shared instance has no IVR worker: inbound cannot be switched on, a call is refused
 	// without a journal row.
 	o.wantErr(409, v1.ErrorCode_ERROR_CODE_SIP_DISABLED, "PUT", base+"/inbound", &v1.PutSipInboundRequest{Enabled: true, Target: toBob})
 	refused := rtc.InboundRoomPrefix(uuid.MustParse(wid)) + "_+79160000000_" + uniq("")
@@ -102,7 +103,7 @@ func TestSIPInboundCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := testDB.Q.GetSipCallByLKRoom(ctx, refused); err == nil {
-		t.Fatal("a call without SIP_INBOUND was journaled")
+		t.Fatal("a call on a server without an IVR worker was journaled")
 	}
 
 	// Settings: MANAGE_INTEGRATIONS only; a target is required; no open ranges.

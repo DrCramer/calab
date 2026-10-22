@@ -27,6 +27,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rtc"
+	"github.com/calaba/calaba/server/internal/sipregwire"
 )
 
 // Inbound calls on the workspace's number (ADR-0117 §4), step 2. LiveKit SIP takes the
@@ -36,7 +37,10 @@ import (
 // the IVR worker joins the room, and the entry point is followed by the state machine
 // (machine.go). Every later event — the worker's «played» / a key, a deadline of the 5 s tick,
 // accept / decline / hang up, the line or the member leaving — runs one transition under the
-// call's lock and carries out its Effects. Only with SIP_INBOUND (Options.Inbound).
+// call's lock and carries out its Effects. Only in workspaces whose admin switched inbound
+// calls on, on a server with LiveKit and the IVR worker token (inboundReady); the provider's
+// INVITE comes either straight from the provider (mode direct) or from the registration agent
+// (mode register, ADR-0121, register.go).
 //
 // Valkey keys (inside the namespace):
 //
@@ -85,9 +89,9 @@ func (s *Service) inboundRoutes(mux httpx.Router, wrap func(http.Handler) http.H
 	mux.Handle("DELETE /api/sip/inbound/{cid}", wrap(httpx.HandlerFunc(s.hangupInbound)))
 }
 
-// inboundReady: the server takes inbound calls at all (the switch, LiveKit, a worker token).
+// inboundReady: the server can take inbound calls at all (LiveKit, a worker token).
 func (s *Service) inboundReady() bool {
-	return s.opts.Inbound && s.sip != nil && s.lk != nil && s.agent != nil && s.inCfg.Secret != ""
+	return s.sip != nil && s.lk != nil && s.agent != nil && s.inCfg.Secret != ""
 }
 
 // ---------------------------------------------------------------- settings
@@ -228,10 +232,14 @@ func numberFree(ctx context.Context, q *sqlc.Queries, a sqlc.SipAccount) error {
 	return nil
 }
 
-// inboundTaken maps the unique index of inbound caller IDs (a concurrent save won) to 409.
+// inboundTaken maps the unique indexes of inbound caller IDs and of registrations (a concurrent
+// save won) to 409.
 func inboundTaken(err error) error {
-	if db.UniqueViolation(err) == "sip_accounts_inbound_caller_idx" {
+	switch db.UniqueViolation(err) {
+	case "sip_accounts_inbound_caller_idx":
 		return errNumberTaken()
+	case "sip_accounts_reg_account_idx":
+		return errRegTaken()
 	}
 	return err
 }
@@ -243,13 +251,25 @@ func (s *Service) makeInboundLK(ctx context.Context, q *sqlc.Queries, a sqlc.Sip
 	if err := numberFree(ctx, q, a); err != nil {
 		return "", "", err
 	}
-	addrs, err := s.inboundAddresses(ctx, a.Host, a.InboundAllowedCidrs)
-	if err != nil {
-		return "", "", err
-	}
 	ws := a.WorkspaceID.String()
-	t, err := s.sip.CreateSIPInboundTrunk(ctx, rtc.SIPInboundTrunk{Name: "calab-in-" + ws, Metadata: ws, Numbers: inboundNumbers(a.CallerID),
-		AllowedAddresses: addrs, MaxCallDuration: fmt.Sprintf("%ds", int64(s.opts.MaxCallTime/time.Second))})
+	trunk := rtc.SIPInboundTrunk{Name: "calab-in-" + ws, Metadata: ws, Numbers: inboundNumbers(a.CallerID),
+		MaxCallDuration: fmt.Sprintf("%ds", int64(s.opts.MaxCallTime/time.Second))}
+	if a.InboundMode == modeRegister {
+		// The agent brings the INVITEs over loopback, authenticated with the trunk's own digest.
+		if err := regFree(ctx, q, a); err != nil {
+			return "", "", err
+		}
+		if err := s.registerTrunk(a, &trunk); err != nil {
+			return "", "", err
+		}
+	} else {
+		addrs, err := s.inboundAddresses(ctx, a.Host, a.InboundAllowedCidrs)
+		if err != nil {
+			return "", "", err
+		}
+		trunk.AllowedAddresses = addrs
+	}
+	t, err := s.sip.CreateSIPInboundTrunk(ctx, trunk)
 	if err != nil {
 		return "", "", lkError(err)
 	}
@@ -275,7 +295,7 @@ func (s *Service) makeInboundLK(ctx context.Context, q *sqlc.Queries, a sqlc.Sip
 // syncInbound re-makes the LiveKit objects of a saved account in the transaction q (telephony
 // saved: the caller ID or the host may have changed). Off: they are deleted.
 func (s *Service) syncInbound(ctx context.Context, q *sqlc.Queries, a sqlc.SipAccount) (sqlc.SipAccount, error) {
-	want := a.Enabled && a.InboundEnabled && s.inboundReady()
+	want := a.Enabled && a.InboundEnabled && s.inboundReady() && (a.InboundMode != modeRegister || s.registerReady())
 	if a.InboundTrunkID == "" && a.InboundRuleID == "" && !want {
 		return a, nil
 	}
@@ -288,7 +308,7 @@ func (s *Service) syncInbound(ctx context.Context, q *sqlc.Queries, a sqlc.SipAc
 		return a, err
 	}
 	a.InboundTrunkID, a.InboundRuleID = "", ""
-	if a.Enabled && a.InboundEnabled && s.inboundReady() {
+	if want {
 		var err error
 		if a.InboundTrunkID, a.InboundRuleID, err = s.makeInboundLK(ctx, q, a); err != nil {
 			return a, err
@@ -318,12 +338,16 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if !s.inboundReady() {
-			return errInboundOff("this server does not take inbound calls (SIP_INBOUND, IVR worker token)")
+			return errInboundOff("this server does not take inbound calls (LiveKit, IVR worker token)")
 		}
 	}
 	cidrs, err := parseCIDRs(req.GetAllowedCidrs(), s.opts.AllowAddr)
 	if err != nil {
 		return err
+	}
+	mode, modeSet := modeToDB[req.GetMode()]
+	if !modeSet && req.GetMode() != v1.SipInboundMode_SIP_INBOUND_MODE_UNSPECIFIED {
+		return httpx.Validation("mode", "mode is DIRECT or REGISTER")
 	}
 	var saved, before sqlc.SipAccount
 	var ex *exchange
@@ -358,6 +382,9 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 		next := cur
 		next.InboundEnabled, next.InboundKind, next.InboundAllowedCidrs = enabled, t.kind, cidrs
 		next.InboundMenuID, next.InboundExtensionID, next.InboundGroupID = t.menu, t.ext, t.group
+		if err := s.nextRegistration(ctx, cur, &next, mode, modeSet, req.GetRegistration()); err != nil {
+			return err
+		}
 		if enabled {
 			if err := numberFree(ctx, q, next); err != nil {
 				return err
@@ -372,10 +399,25 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		saved, err = q.SetSipInbound(ctx, sqlc.SetSipInboundParams{
+		if _, err = q.SetSipInbound(ctx, sqlc.SetSipInboundParams{
 			WorkspaceID: wsID, InboundEnabled: enabled, InboundKind: next.InboundKind, InboundMenuID: next.InboundMenuID,
 			InboundExtensionID: next.InboundExtensionID, InboundGroupID: next.InboundGroupID, InboundAllowedCidrs: cidrs,
 			InboundTrunkID: next.InboundTrunkID, InboundRuleID: next.InboundRuleID, UpdatedBy: &me,
+		}); err != nil {
+			return err
+		}
+		regStatus := "off"
+		if next.InboundMode == modeRegister && next.InboundTrunkID != "" {
+			regStatus = sipregwire.StatusRegistering
+			if !s.reg.Available(ctx) {
+				regStatus = "unavailable"
+			}
+		}
+		saved, err = q.SetSipRegistration(ctx, sqlc.SetSipRegistrationParams{
+			WorkspaceID: wsID, InboundMode: next.InboundMode, RegRegistrar: next.RegRegistrar, RegDomain: next.RegDomain,
+			RegExpires: next.RegExpires, RegKeepaliveSec: next.RegKeepaliveSec, RegContactUser: next.RegContactUser,
+			RegAuthUsername: next.RegAuthUsername, RegPasswordEnc: next.RegPasswordEnc, RegTrunkPasswordEnc: next.RegTrunkPasswordEnc,
+			RegStatus: regStatus,
 		})
 		return err
 	})
@@ -391,13 +433,16 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return inboundTaken(err)
 	}
-	slog.InfoContext(ctx, "sip: inbound saved", "workspace", wsID, "by", me, "enabled", saved.InboundEnabled, "trunk", saved.InboundTrunkID, "rule", saved.InboundRuleID)
+	slog.InfoContext(ctx, "sip: inbound saved", "workspace", wsID, "by", me, "enabled", saved.InboundEnabled, "mode", saved.InboundMode,
+		"trunk", saved.InboundTrunkID, "rule", saved.InboundRuleID)
 	if before.InboundEnabled && !enabled {
 		s.hangupInboundWorkspace(ctx, wsID, reasonUnwanted)
 	}
+	s.regChanged(ctx, before, saved)
 	out := settingsPB(saved, true)
-	out.InboundAvailable = s.opts.Inbound
+	out.InboundAvailable = s.inboundReady()
 	fillInbound(out, saved, ex)
+	s.fillRegistration(ctx, out, saved)
 	httpx.Write(w, http.StatusOK, &v1.PutSipInboundResponse{Settings: out})
 	return nil
 }
@@ -837,7 +882,14 @@ func (s *Service) inboundJoined(ctx context.Context, wid uuid.UUID, room string,
 	if err != nil {
 		return err
 	}
-	slog.InfoContext(ctx, "sip: inbound call", "workspace", wid, "call", id, "room", room)
+	if pc := clip(p.Attributes[rtc.AttrProviderCallID], 200); pc != "" && a.InboundMode == modeRegister {
+		if err := db.GuardExec(ctx, s.db, func(q *sqlc.Queries) error {
+			return q.SetSipCallProviderCallID(ctx, sqlc.SetSipCallProviderCallIDParams{ID: id, ProviderCallID: pc})
+		}); err != nil {
+			slog.WarnContext(ctx, "sip: journal the provider call id", "call", id, "err", err)
+		}
+	}
+	slog.InfoContext(ctx, "sip: inbound call", "workspace", wid, "call", id, "room", room, "mode", a.InboundMode)
 	rec := inRec{ID: id, WS: wid, Room: room, Line: p.Identity, InCall: InCall{Phase: PhaseMenu}}
 	if err := s.saveRec(ctx, &rec); err != nil {
 		s.endInbound(ctx, row, reasonError, nil)
@@ -904,9 +956,10 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 
 // ---------------------------------------------------------------- the tick
 
-// RunInbound runs the inbound deadlines every 5 s until ctx ends (only with SIP_INBOUND).
+// RunInbound runs the inbound deadlines every 5 s until ctx ends (only when the server can
+// take inbound calls: one ZRANGEBYSCORE per tick while none are live).
 func (s *Service) RunInbound(ctx context.Context) {
-	if !s.opts.Inbound {
+	if !s.inboundReady() {
 		return
 	}
 	every := s.opts.InboundTick

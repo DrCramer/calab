@@ -654,6 +654,7 @@ func (s *Service) Sweep(ctx context.Context) {
 		return
 	}
 	s.sweepInbound(ctx, now)
+	s.sweepRegistrations(ctx, now)
 	ringDeadline := now.Add(-(s.opts.RingingTimeout + 90*time.Second))
 	for _, c := range live {
 		if c.RoomID == nil { // a deleted room or an interrupted connection test

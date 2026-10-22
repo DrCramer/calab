@@ -90,7 +90,16 @@ type SIPInboundTrunk struct {
 	Numbers          []string `json:"numbers"`
 	AllowedAddresses []string `json:"allowed_addresses"`
 	MaxCallDuration  string   `json:"max_call_duration,omitempty"` // protojson Duration, "7200s"
+	// REGISTER mode (ADR-0121): LiveKit SIP challenges the agent's INVITE (407) and takes only
+	// these credentials; HeadersToAttributes copies SIP headers into the line's attributes.
+	AuthUsername        string            `json:"auth_username,omitempty"`
+	AuthPassword        string            `json:"auth_password,omitempty"`
+	HeadersToAttributes map[string]string `json:"headers_to_attributes,omitempty"`
 }
+
+// AttrProviderCallID is the line's attribute with the provider's Call-ID of an inbound call that
+// came over the registration agent (its X-Calab-Provider-Call-ID header, ADR-0121).
+const AttrProviderCallID = "calab.providerCallId"
 
 // SIPDispatchRule is a livekit.SIPDispatchRuleInfo with SIPDispatchRuleIndividual: every call of
 // TrunkIDs gets a room of its own named RoomPrefix + "_" + the caller's number + "_" + a random

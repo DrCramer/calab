@@ -70,8 +70,6 @@ type Options struct {
 	RingingTimeout, MaxCallTime time.Duration
 	// SweepInterval: how often lost calls are looked for (0 = 30 s).
 	SweepInterval time.Duration
-	// Inbound: the server routes inbound calls (env SIP_INBOUND, ADR-0117; off by default).
-	Inbound bool
 	// InboundTick: how often inbound deadlines are looked at (0 = 5 s).
 	InboundTick time.Duration
 }
@@ -86,14 +84,22 @@ type Service struct {
 	events events.Publisher
 	plans  *plans.Service
 	box    *sealbox.Box
+	regBox *sealbox.Box   // the registration's passwords (ADR-0121), another purpose than box
 	files  *files.Service // voice menu prompts (ADR-0117); nil = prompts answer 503
 	opts   Options
 	// CallLimit / TestLimit: per workspace (CallsPerHour, TestsPerHour); InboundLimit: inbound
 	// calls per workspace (InboundPerHour).
 	CallLimit, TestLimit, InboundLimit *redisx.RateLimiter
+	// RegLimit: mode / registration credential changes per workspace (RegChangesPerHour).
+	RegLimit *redisx.RateLimiter
 	// Inbound calls (ADR-0117 step 2): the IVR worker and the token config (SetInbound).
 	agent rtc.IVRAgent
 	inCfg InboundConfig
+	// The registration agent (ADR-0121, SetRegistrar) and its bookkeeping on this replica.
+	reg       Registrar
+	regLast   regState
+	regGone   time.Time // when the sweep first saw no agent (zero = connected)
+	regWarned bool
 	// Presence announces a user's presence after on_call changed (the gateway).
 	Presence func(ctx context.Context, u uuid.UUID)
 }
@@ -118,10 +124,11 @@ func New(d *db.DB, r rueidis.Client, lk rtc.LiveKit, s rtc.SIP, pub events.Publi
 	}
 	return &Service{
 		db: d, redis: r, voice: voice.Store{C: r}, lk: lk, sip: s, events: pub, plans: pl,
-		box: sealbox.New("calaba/sip-password/v1", secret), opts: o,
+		box: sealbox.New("calaba/sip-password/v1", secret), regBox: sealbox.New(regPurpose, secret), opts: o,
 		CallLimit:    redisx.NewRateLimiter(r, "rl:sip-call:", CallsPerHour, float64(CallsPerHour)/60),
 		TestLimit:    redisx.NewRateLimiter(r, "rl:sip-test:", TestsPerHour, float64(TestsPerHour)/60),
 		InboundLimit: redisx.NewRateLimiter(r, "rl:sip-in:", InboundPerHour, float64(InboundPerHour)/60),
+		RegLimit:     redisx.NewRateLimiter(r, "rl:sip-reg:", RegChangesPerHour, float64(RegChangesPerHour)/60),
 	}
 }
 
@@ -245,12 +252,13 @@ func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := settingsPB(a, saved || a.LastError != "")
-	out.InboundAvailable = s.opts.Inbound
+	out.InboundAvailable = s.inboundReady()
 	ex, err := loadExchange(r.Context(), s.db.Q, wsID)
 	if err != nil {
 		return err
 	}
 	fillInbound(out, a, ex)
+	s.fillRegistration(r.Context(), out, a)
 	httpx.Write(w, http.StatusOK, &v1.GetSipSettingsResponse{Settings: out})
 	return nil
 }
@@ -392,7 +400,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_SIP_DISABLED, "LiveKit is not configured on this server")
 	}
 	ctx, me := r.Context(), uid(r)
-	var saved sqlc.SipAccount
+	var saved, before sqlc.SipAccount
 	var ws sqlc.Workspace
 	disabled := false
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
@@ -403,6 +411,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		before = cur
 		sealed, plain := cur.PasswordEnc, ""
 		switch {
 		case in.password == nil && len(cur.PasswordEnc) > 0:
@@ -425,6 +434,13 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		if in.enabled && cur.InboundEnabled && s.inboundReady() {
 			if err := numberFree(ctx, q, sqlc.SipAccount{WorkspaceID: wsID, CallerID: in.callerID}); err != nil {
 				return err
+			}
+			if cur.InboundMode == modeRegister {
+				next := cur
+				next.Host, next.Username = in.host, in.username
+				if err := regFree(ctx, q, next); err != nil {
+					return err
+				}
 			}
 		}
 		if in.enabled {
@@ -500,12 +516,15 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	if disabled {
 		s.hangupWorkspace(ctx, wsID)
 	}
+	// The registration follows the credentials, the host and the switch (ADR-0121).
+	s.regChanged(ctx, before, saved)
 	out := settingsPB(saved, true)
-	out.InboundAvailable = s.opts.Inbound
+	out.InboundAvailable = s.inboundReady()
 	fillInbound(out, saved, nil)
 	if ex, err := loadExchange(ctx, s.db.Q, wsID); err == nil {
 		fillInbound(out, saved, ex)
 	}
+	s.fillRegistration(ctx, out, saved)
 	httpx.Write(w, http.StatusOK, &v1.PutSipSettingsResponse{Settings: out})
 	return nil
 }

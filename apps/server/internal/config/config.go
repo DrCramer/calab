@@ -113,12 +113,13 @@ type Config struct {
 	LiveKitAPIKey          string `env:"LIVEKIT_API_KEY"`
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
-	// Inbound calls on the SIP number (ADR-0117): routing through the workspace's exchange.
-	// Off by default; the exchange can be set up either way.
-	SIPInbound bool `env:"SIP_INBOUND"`
 	// IVR worker (cmd/ivr, ADR-0117 §2): the shared token of its WebSocket to the API (both sides'
-	// env). Empty = no worker: inbound calls cannot be switched on.
+	// env). Empty = no worker: inbound calls cannot be switched on. With it, inbound calls work in
+	// the workspaces whose admin switched them on (no server switch, ADR-0121).
 	IVRAgentToken string `env:"IVR_AGENT_TOKEN"`
+	// SIP registration agent (cmd/sipreg, ADR-0121): its own token (it gets the providers'
+	// passwords). Empty = no agent: the REGISTER mode of inbound calls cannot be chosen.
+	SIPRegAgentToken string `env:"SIPREG_AGENT_TOKEN"`
 	// Provider addresses (IPs / CIDRs) every inbound trunk accepts besides the resolved provider
 	// host and the workspace's own list, e.g. the provider's signalling pool.
 	SIPInboundAllowedAddresses []string `env:"SIP_INBOUND_ALLOWED_ADDRESSES" envSeparator:","`

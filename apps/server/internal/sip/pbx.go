@@ -43,7 +43,8 @@ const (
 var (
 	extNumberRe = regexp.MustCompile(`^[0-9]{2,6}$`)
 	digitRe     = regexp.MustCompile(`^[0-9*#]$`)
-	// ErrInboundDisabled means the server does not route inbound calls (SIP_INBOUND is off).
+	// ErrInboundDisabled means the server does not route inbound calls (no LiveKit or no IVR
+	// worker token).
 	ErrInboundDisabled = errors.New("sip: inbound calls are off on this server")
 )
 
@@ -1237,7 +1238,7 @@ func (s *Service) deleteMenu(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ---------------------------------------------------------------- routing (behind SIP_INBOUND)
+// ---------------------------------------------------------------- routing (inbound calls)
 
 // routing is the exchange of a workspace for Route: guests never ring (a number of a member who
 // became a guest behaves like one without a member).
@@ -1289,10 +1290,9 @@ func routeTarget(kind string, menu, ext, group *uuid.UUID) Target {
 }
 
 // RouteInbound is where the route t of the workspace's exchange leads now (ADR-0117 §4). Only
-// with SIP_INBOUND (ErrInboundDisabled otherwise); step 2 calls it from the inbound call
-// state machine.
+// when the server takes inbound calls (ErrInboundDisabled otherwise).
 func (s *Service) RouteInbound(ctx context.Context, wsID uuid.UUID, t Target, a Availability) (Decision, error) {
-	if !s.opts.Inbound {
+	if !s.inboundReady() {
 		return Decision{}, ErrInboundDisabled
 	}
 	ex, err := loadExchange(ctx, s.db.Q, wsID)

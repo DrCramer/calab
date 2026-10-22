@@ -57,6 +57,7 @@ import (
 	"github.com/calaba/calaba/server/internal/rtc"
 	"github.com/calaba/calaba/server/internal/search"
 	"github.com/calaba/calaba/server/internal/sip"
+	"github.com/calaba/calaba/server/internal/sipreg"
 	"github.com/calaba/calaba/server/internal/sounds"
 	"github.com/calaba/calaba/server/internal/sso"
 	"github.com/calaba/calaba/server/internal/stickers"
@@ -100,6 +101,9 @@ type Deps struct {
 	SIPOptions sip.Options
 	// IVRAgent overrides the IVR worker hub (tests); nil = the WebSocket hub (IVR_AGENT_TOKEN).
 	IVRAgent rtc.IVRAgent
+	// SIPRegistrar overrides the registration agent hub (tests); nil = the WebSocket hub
+	// (SIPREG_AGENT_TOKEN).
+	SIPRegistrar sip.Registrar
 	// Push transports override provider clients in local deterministic tests.
 	Push map[v1.PushProvider]push.Provider
 	// Seats is the paid-seat hook of admission (ADR-0080, billing.Seats). nil = billing.NoSeats;
@@ -160,6 +164,8 @@ type App struct {
 	SIP *sip.Service
 	// IVR: the IVR worker's endpoint (ADR-0117 §2).
 	IVR *ivr.Hub
+	// SIPReg: the SIP registration agent's endpoint (ADR-0121).
+	SIPReg *sipreg.Hub
 	// Mailbox: the bot-driven mailbox password recovery (ADR-0101).
 	Mailbox    *mailbox.Service
 	billing    *billingRuntime
@@ -208,8 +214,9 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.RunDueNotices(ctx, boards.DueNoticeInterval, a.dueTZ)  // due soon / overdue (ADR-0089)
 	go a.Rooms.RunTempRooms(ctx, a.redis)
 	go a.SIP.Run(ctx)
-	go a.SIP.RunInbound(ctx) // returns at once without SIP_INBOUND
+	go a.SIP.RunInbound(ctx) // returns at once without LiveKit / IVR_AGENT_TOKEN
 	go a.IVR.Run(ctx)        // returns at once without IVR_AGENT_TOKEN
+	go a.SIPReg.Run(ctx)     // returns at once without SIPREG_AGENT_TOKEN
 	go a.billing.Run(ctx)    // returns at once while BILLING_ENABLED=false
 	if a.OAuth != nil {
 		go a.OAuth.Run(ctx, a.redis, oauthprovider.SweepInterval) // provider retention
@@ -561,7 +568,6 @@ func New(d Deps) *App {
 	if sipOpts.AllowAddr == nil {
 		sipOpts.AllowAddr = unfurlPolicy(d)
 	}
-	sipOpts.Inbound = sipOpts.Inbound || d.Config.SIPInbound
 	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
 	sipSvc.SetFiles(filesSvc)
 	sipSvc.Presence = hub.PresenceChanged
@@ -577,6 +583,18 @@ func New(d Deps) *App {
 	if rtcSvc != nil && (ivrHub.Configured() || d.IVRAgent != nil) {
 		sipSvc.SetInbound(agent, sip.InboundConfig{PublicURL: d.Config.LiveKitURL, APIKey: d.Config.LiveKitAPIKey,
 			Secret: d.Config.LiveKitAPISecret, Allowed: d.Config.SIPInboundAllowedAddresses})
+	}
+	// Inbound calls over a registration at the provider (ADR-0121): the registration agent.
+	sipregHub := sipreg.New(d.Redis, d.Config.SIPRegAgentToken)
+	sipregHub.Source = sipSvc
+	sipregHub.OnEvent = sipSvc.RegistrarEvent
+	sipregHub.Routes(mux)
+	var registrar sip.Registrar = sipregHub
+	if d.SIPRegistrar != nil {
+		registrar = d.SIPRegistrar
+	}
+	if registrar.Configured() {
+		sipSvc.SetRegistrar(registrar)
 	}
 	sipSvc.Routes(mux, private)
 	// AI integration (CBF-60): the workspace's model provider and its check.
@@ -611,7 +629,7 @@ func New(d Deps) *App {
 	)
 	mcpHandler.API = h
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, IVR: ivrHub, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, IVR: ivrHub, SIPReg: sipregHub, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		dueTZ: boards.DueZone(d.Config.TasksDueTZ), Mailbox: mailboxSvc}
 }
 

@@ -334,14 +334,14 @@ func TestSIPExchange(t *testing.T) {
 		}
 	}
 
-	// Routing stays off without SIP_INBOUND.
+	// Routing stays off on a server without an IVR worker (the shared instance).
 	if _, err := testApp.SIP.RouteInbound(ctx, uuid.MustParse(wid), sip.Target{Kind: sip.RouteHangup}, nil); !errors.Is(err, sip.ErrInboundDisabled) {
-		t.Fatalf("RouteInbound without SIP_INBOUND: %v", err)
+		t.Fatalf("RouteInbound without an IVR worker: %v", err)
 	}
 	var s v1.GetSipSettingsResponse
 	o.must(200, "GET", base, nil, &s)
 	if s.GetSettings().GetInboundAvailable() {
-		t.Fatal("inbound_available without SIP_INBOUND")
+		t.Fatal("inbound_available without an IVR worker")
 	}
 }
 
