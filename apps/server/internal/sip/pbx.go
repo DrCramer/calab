@@ -43,7 +43,7 @@ const (
 var (
 	extNumberRe = regexp.MustCompile(`^[0-9]{2,6}$`)
 	digitRe     = regexp.MustCompile(`^[0-9*#]$`)
-	// ErrInboundDisabled: the server does not route inbound calls (SIP_INBOUND is off).
+	// ErrInboundDisabled means the server does not route inbound calls (SIP_INBOUND is off).
 	ErrInboundDisabled = errors.New("sip: inbound calls are off on this server")
 )
 

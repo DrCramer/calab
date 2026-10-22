@@ -1,6 +1,7 @@
 package sip
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -66,14 +67,8 @@ func users(rs []Ring) []uuid.UUID {
 
 func sameOrder(t *testing.T, got []Ring, want ...uuid.UUID) {
 	t.Helper()
-	g := users(got)
-	if len(g) != len(want) {
+	if g := users(got); !slices.Equal(g, want) {
 		t.Fatalf("ring %v, want %v", g, want)
-	}
-	for i := range g {
-		if g[i] != want[i] {
-			t.Fatalf("ring %v, want %v", g, want)
-		}
 	}
 }
 

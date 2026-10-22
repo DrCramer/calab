@@ -200,10 +200,14 @@ func TestSIPExchange(t *testing.T) {
 		}}}
 	}
 	for field, mut := range map[string]func(*v1.CreateSipIvrMenuRequest){
-		"digit":           func(r *v1.CreateSipIvrMenuRequest) { r.Items.Items[0].Digit = "a" },
-		"digit ":          func(r *v1.CreateSipIvrMenuRequest) { r.Items.Items[1].Digit = "1" },
-		"items":           func(r *v1.CreateSipIvrMenuRequest) { r.Items.Items[0].Action = routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_MENU, uuid.NewString()) },
-		"items ":          func(r *v1.CreateSipIvrMenuRequest) { r.Items.Items[0].Action = routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, foreign.GetExtension().GetId()) },
+		"digit":  func(r *v1.CreateSipIvrMenuRequest) { r.Items.Items[0].Digit = "a" },
+		"digit ": func(r *v1.CreateSipIvrMenuRequest) { r.Items.Items[1].Digit = "1" },
+		"items": func(r *v1.CreateSipIvrMenuRequest) {
+			r.Items.Items[0].Action = routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_MENU, uuid.NewString())
+		},
+		"items ": func(r *v1.CreateSipIvrMenuRequest) {
+			r.Items.Items[0].Action = routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, foreign.GetExtension().GetId())
+		},
 		"onNoInput":       func(r *v1.CreateSipIvrMenuRequest) { r.OnNoInput = routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_REPEAT, "") },
 		"inputTimeoutSec": func(r *v1.CreateSipIvrMenuRequest) { r.InputTimeoutSec = 30 },
 		"repeats":         func(r *v1.CreateSipIvrMenuRequest) { r.Repeats = 9 },

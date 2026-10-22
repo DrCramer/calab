@@ -46,7 +46,7 @@ const (
 
 var (
 	errBadAudio = errors.New("files: not a readable MP3, Ogg or WAV clip")
-	// ErrAudioTooLong: the prompt plays longer than MaxPromptMs.
+	// ErrAudioTooLong means the prompt plays longer than MaxPromptMs.
 	ErrAudioTooLong = errors.New("files: the audio is too long")
 	// ErrNoFFmpeg means FFMPEG_PATH does not name a runnable ffmpeg: sounds cannot be added.
 	ErrNoFFmpeg = errors.New("files: ffmpeg is not available")
