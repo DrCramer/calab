@@ -139,6 +139,30 @@ services:
       livekit: { condition: service_started }
     logging: *logging
 
+  # IVR worker of inbound calls (ADR-0117 §2): SIP_INBOUND=1 in .env adds the compose profile
+  # "ivr" (deploy.sh). It holds an outgoing WebSocket to the API (IVR_API_URL, by default the app
+  # host; prod: the k8s API) with IVR_AGENT_TOKEN — the same value as the API's — and joins
+  # inbound calls' rooms over the loopback LiveKit. No ports of its own.
+  ivr:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile.ivr
+    profiles: [ivr]
+    network_mode: host
+    restart: unless-stopped
+    <<: *hardening
+    tmpfs: [/tmp]                  # the prompt cache (≤ 200 MB, refetched after a restart)
+    environment:
+      - API_URL=${IVR_API_URL:-https://${APP_HOST:-${DOMAIN}}}
+      - IVR_AGENT_TOKEN=${IVR_AGENT_TOKEN:-}
+      - LIVEKIT_URL=ws://127.0.0.1:7880
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 256m }
+    depends_on:
+      livekit: { condition: service_started }
+    logging: *logging
+
   # One-shot: recordings_data belongs to the API user (distroless nonroot 65532), which creates
   # a world-writable directory per workspace for the egress user (1001) and deletes the files.
   # Reuses the Valkey image (already pulled) for its shell. FOWNER: from the second deploy on,
@@ -230,6 +254,10 @@ services:
       - BOT_MESSAGES_PER_MIN=${BOT_MESSAGES_PER_MIN:-20}
       # due notices of tasks at 09:00 of this IANA zone (ADR-0089)
       - TASKS_DUE_TZ=${TASKS_DUE_TZ:-Europe/Moscow}
+      # inbound calls on the SIP number (ADR-0117): off unless SIP_INBOUND=1; the IVR worker's token
+      - SIP_INBOUND=${SIP_INBOUND:-}
+      - IVR_AGENT_TOKEN=${IVR_AGENT_TOKEN:-}
+      - SIP_INBOUND_ALLOWED_ADDRESSES=${SIP_INBOUND_ALLOWED_ADDRESSES:-}
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files, /data/recordings
     tmpfs: [/tmp]
     volumes:
