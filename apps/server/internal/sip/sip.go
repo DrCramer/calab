@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -69,6 +70,8 @@ type Options struct {
 	RingingTimeout, MaxCallTime time.Duration
 	// SweepInterval: how often lost calls are looked for (0 = 30 s).
 	SweepInterval time.Duration
+	// Inbound: the server routes inbound calls (env SIP_INBOUND, ADR-0117; off by default).
+	Inbound bool
 }
 
 // Service is telephony.
@@ -81,6 +84,7 @@ type Service struct {
 	events events.Publisher
 	plans  *plans.Service
 	box    *sealbox.Box
+	files  *files.Service // voice menu prompts (ADR-0117); nil = prompts answer 503
 	opts   Options
 	// CallLimit / TestLimit: per workspace (CallsPerHour, TestsPerHour).
 	CallLimit, TestLimit *redisx.RateLimiter
@@ -121,6 +125,9 @@ func publicAddr(a netip.Addr) bool {
 		!netip.MustParsePrefix("100.64.0.0/10").Contains(a) && !netip.MustParsePrefix("0.0.0.0/8").Contains(a)
 }
 
+// SetFiles gives the service the file store for voice menu prompts (ADR-0117).
+func (s *Service) SetFiles(f *files.Service) { s.files = f }
+
 // Routes registers the telephony routes.
 func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/workspaces/{id}/sip", wrap(httpx.HandlerFunc(s.getSettings)))
@@ -129,6 +136,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("GET /api/workspaces/{id}/calls", wrap(httpx.HandlerFunc(s.journal)))
 	mux.Handle("POST /api/rooms/{id}/calls", wrap(httpx.HandlerFunc(s.place)))
 	mux.Handle("DELETE /api/rooms/{id}/calls/{cid}", wrap(httpx.HandlerFunc(s.hangup)))
+	s.pbxRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -226,7 +234,9 @@ func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetSipSettingsResponse{Settings: settingsPB(a, saved || a.LastError != "")})
+	out := settingsPB(a, saved || a.LastError != "")
+	out.InboundAvailable = s.opts.Inbound
+	httpx.Write(w, http.StatusOK, &v1.GetSipSettingsResponse{Settings: out})
 	return nil
 }
 
@@ -463,6 +473,8 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	if disabled {
 		s.hangupWorkspace(ctx, wsID)
 	}
-	httpx.Write(w, http.StatusOK, &v1.PutSipSettingsResponse{Settings: settingsPB(saved, true)})
+	out := settingsPB(saved, true)
+	out.InboundAvailable = s.opts.Inbound
+	httpx.Write(w, http.StatusOK, &v1.PutSipSettingsResponse{Settings: out})
 	return nil
 }

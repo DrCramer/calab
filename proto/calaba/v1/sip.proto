@@ -64,6 +64,9 @@ message SipSettings {
   // SIP authentication user when it differs from username (the From user); empty = username.
   string auth_username = 14;
   uint32 port = 15; // SIP signalling port of host, 1..65535 (5060 when never set)
+  // The server answers inbound calls (env SIP_INBOUND, ADR-0117; off by default). The exchange
+  // below can be set up either way.
+  bool inbound_available = 16;
 }
 
 // GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
@@ -184,4 +187,229 @@ message ListSipCallsResponse {
 // WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE).
 message SipCallUpdate {
   SipCall call = 1;
+}
+
+// ---------------------------------------------------------------- the exchange (ADR-0117)
+//
+// Internal numbers of people, bots and groups, call groups and voice menus (IVR) of the
+// workspace. Step 1: the data and the settings; answering inbound calls on the provider number
+// comes with step 2 behind the server switch SIP_INBOUND (SipSettings.inbound_available).
+//
+// Who: everything below needs MANAGE_INTEGRATIONS of the workspace and is never open to guests
+// (404 for non-members, 403 for guests and members without the bit); bots by the same bit
+// (ADR-0109). GET …/sip/extensions is open to every member but guests (the numbers are shown
+// to the team: WorkspaceMember.extension). Changes need the telephony plan (409 PLAN_LIMIT).
+// Deleting a member, a number, a group or a menu is never blocked by a route that points at
+// it: the route stays with missing = true and behaves like «hang up».
+
+// What a route does: the entry point (step 2), a key of a menu, «no key pressed», «nobody
+// answered».
+enum SipRouteKind {
+  SIP_ROUTE_KIND_UNSPECIFIED = 0; // in requests: HANGUP
+  SIP_ROUTE_KIND_HANGUP = 1;
+  SIP_ROUTE_KIND_REPEAT = 2;    // play the menu again; only a key of a menu
+  SIP_ROUTE_KIND_MENU = 3;      // another voice menu (id = SipIvrMenu.id)
+  SIP_ROUTE_KIND_EXTENSION = 4; // a person or a bot (id = SipExtension.id of kind USER or BOT)
+  SIP_ROUTE_KIND_GROUP = 5;     // a call group (id = SipGroup.id); a group's number is stored as GROUP
+}
+
+message SipRouteTarget {
+  SipRouteKind kind = 1;
+  string id = 2; // MENU / EXTENSION / GROUP; empty for HANGUP and REPEAT, and when the target was deleted
+  // Output only: the target of MENU / EXTENSION / GROUP was deleted, or the number has nobody
+  // (its member left). Such a route hangs up.
+  bool missing = 3;
+}
+
+enum SipExtensionKind {
+  SIP_EXTENSION_KIND_UNSPECIFIED = 0;
+  SIP_EXTENSION_KIND_USER = 1;  // a person (user_id; empty when the member left the workspace)
+  SIP_EXTENSION_KIND_BOT = 2;   // a bot member (user_id)
+  SIP_EXTENSION_KIND_GROUP = 3; // the number of a group (group_id); made and deleted with the group
+}
+
+// An internal number: one numbering plan per workspace for people, bots and groups.
+message SipExtension {
+  string id = 1;
+  string workspace_id = 2;
+  string number = 3; // 2..6 digits, a leading zero allowed («101», «1001»)
+  SipExtensionKind kind = 4;
+  string user_id = 5;     // USER / BOT; empty = nobody (the member left)
+  string group_id = 6;    // GROUP
+  string description = 7; // ≤ 64 characters, for reference («Бухгалтерия»)
+  google.protobuf.Timestamp created_at = 8;
+}
+
+enum SipGroupStrategy {
+  SIP_GROUP_STRATEGY_UNSPECIFIED = 0; // in requests: RING_ALL
+  // Every member rings at once for ring_sec (members who are not online ring too, with a push);
+  // the first who answers gets the call.
+  SIP_GROUP_STRATEGY_RING_ALL = 1;
+  // One member after another in their order for member_ring_sec each, starting after the one
+  // who answered last; members who are not online or busy are skipped; one full round.
+  SIP_GROUP_STRATEGY_ROUND_ROBIN = 2;
+}
+
+message SipGroupMember {
+  string extension_id = 1; // a number of kind USER or BOT
+  uint32 position = 2;     // 0..n-1, the round-robin order
+}
+
+message SipGroup {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;            // 1..64 characters
+  SipExtension extension = 4; // the group's own number (kind GROUP)
+  SipGroupStrategy strategy = 5;
+  uint32 ring_sec = 6;                 // RING_ALL: 10..60, default 30
+  uint32 member_ring_sec = 7;          // ROUND_ROBIN: 5..60 per member, default 15
+  SipRouteTarget on_fail = 8;          // nobody answered / nobody to ring; not REPEAT
+  repeated SipGroupMember members = 9; // by position, ≤ 20
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+enum SipPromptStatus {
+  SIP_PROMPT_STATUS_UNSPECIFIED = 0;
+  SIP_PROMPT_STATUS_NONE = 1;  // no prompt uploaded: the menu goes to on_no_input at once
+  SIP_PROMPT_STATUS_READY = 2; // prompt_file_id plays
+}
+
+message SipIvrItem {
+  string digit = 1; // one of 0-9 * #
+  SipRouteTarget action = 2;
+}
+
+// A voice menu: the prompt plays, the caller presses a key, the key's action follows. No key
+// within input_timeout_sec after the prompt (or a key without an item) plays it again; after
+// `repeats` plays on_no_input follows.
+message SipIvrMenu {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3; // 1..64 characters
+  // The prompt: Ogg/Opus 48 kHz mono 32 kbit/s made by the server from the upload (≤ 3 min);
+  // GET /api/files/{id} for MANAGE_INTEGRATIONS (listen in the settings). Empty = none.
+  string prompt_file_id = 4;
+  SipPromptStatus prompt_status = 5;
+  uint32 prompt_duration_ms = 6;
+  uint32 input_timeout_sec = 7;   // 3..15, default 5
+  uint32 repeats = 8;             // 1..5, default 3
+  SipRouteTarget on_no_input = 9; // not REPEAT
+  repeated SipIvrItem items = 10; // by digit, ≤ 12
+  google.protobuf.Timestamp updated_at = 11;
+  string updated_by = 12;
+}
+
+// GET /api/workspaces/{id}/sip/extensions (any member but guests) → 200: all numbers by number,
+// group numbers included.
+message ListSipExtensionsResponse {
+  repeated SipExtension extensions = 1;
+}
+
+// POST /api/workspaces/{id}/sip/extensions → 201 SipExtensionResponse: a number for a member
+// (a person or a bot, never a guest; ≤ 500 numbers per workspace). WORKSPACE_MEMBER_UPDATE
+// carries the member's new extension. Errors: 422 VALIDATION (number: 2..6 digits; userId: not
+// a member / a guest; description: ≤ 64 characters), 409 SIP_EXTENSION_TAKEN (field number: the
+// number is taken; field userId: the member already has a number), 409 CONFLICT (limit).
+message CreateSipExtensionRequest {
+  string number = 1;
+  string user_id = 2;
+  string description = 3;
+}
+
+// PATCH /api/workspaces/{id}/sip/extensions/{eid} → 200 SipExtensionResponse; unset fields stay.
+// user_id «» unassigns the number (it stays, routes to it hang up). A group's number changes
+// only its number and description (user_id → 422). Errors as POST; 404 unknown number.
+// DELETE …/extensions/{eid} → 204; a group's number is deleted with its group (422).
+message UpdateSipExtensionRequest {
+  optional string number = 1;
+  optional string user_id = 2;
+  optional string description = 3;
+}
+
+message SipExtensionResponse {
+  SipExtension extension = 1;
+}
+
+// GET /api/workspaces/{id}/sip/groups → 200.
+message ListSipGroupsResponse {
+  repeated SipGroup groups = 1;
+}
+
+// The members of a group in their order: SipExtension ids of kind USER or BOT, no repeats, ≤ 20.
+message SipGroupMembers {
+  repeated string extension_ids = 1;
+}
+
+// POST /api/workspaces/{id}/sip/groups → 201 SipGroupResponse (≤ 50 groups): the group and its
+// number. Errors: 422 VALIDATION (name, number, ringSec, memberRingSec, members, onFail), 409
+// SIP_EXTENSION_TAKEN (number), 409 CONFLICT (limit).
+message CreateSipGroupRequest {
+  string name = 1;
+  string number = 2;
+  SipGroupStrategy strategy = 3;
+  uint32 ring_sec = 4;        // 0 = 30
+  uint32 member_ring_sec = 5; // 0 = 15
+  SipRouteTarget on_fail = 6; // unset = HANGUP
+  SipGroupMembers members = 7;
+}
+
+// PATCH /api/workspaces/{id}/sip/groups/{gid} → 200 SipGroupResponse; unset fields stay, set
+// members replace the whole list with its order (the round-robin pointer starts over). DELETE
+// …/groups/{gid} → 204 with its number; routes to it remain missing.
+message UpdateSipGroupRequest {
+  optional string name = 1;
+  optional string number = 2;
+  optional SipGroupStrategy strategy = 3;
+  optional uint32 ring_sec = 4;
+  optional uint32 member_ring_sec = 5;
+  SipRouteTarget on_fail = 6;  // set = replace
+  SipGroupMembers members = 7; // set = replace
+}
+
+message SipGroupResponse {
+  SipGroup group = 1;
+}
+
+// GET /api/workspaces/{id}/sip/ivr → 200.
+message ListSipIvrMenusResponse {
+  repeated SipIvrMenu menus = 1;
+}
+
+// The keys of a menu: one item per digit, ≤ 12.
+message SipIvrItems {
+  repeated SipIvrItem items = 1;
+}
+
+// POST /api/workspaces/{id}/sip/ivr → 201 SipIvrMenuResponse (≤ 20 menus). Errors: 422
+// VALIDATION (name, inputTimeoutSec, repeats, onNoInput, items / digit, promptSourceFileId),
+// 409 CONFLICT (limit), 503 when the server has no ffmpeg.
+message CreateSipIvrMenuRequest {
+  string name = 1;
+  uint32 input_timeout_sec = 2; // 0 = 5
+  uint32 repeats = 3;           // 0 = 3
+  SipRouteTarget on_no_input = 4;
+  SipIvrItems items = 5;
+  // An audio file the caller uploaded to this workspace (POST /api/workspaces/{id}/files):
+  // MP3, Ogg or WAV by its content, ≤ 10 MB, ≤ 3 min. The server makes the prompt from it
+  // (Ogg/Opus 48 kHz mono 32 kbit/s, loudness −16 LUFS) as a file of the workspace counted in
+  // its quota, not encrypted; the upload itself goes with the orphan cleanup. The request then
+  // takes up to ~60 s. Empty = no prompt.
+  string prompt_source_file_id = 6;
+}
+
+// PATCH /api/workspaces/{id}/sip/ivr/{mid} → 200 SipIvrMenuResponse; unset fields stay, set
+// items replace all keys. prompt_source_file_id: a new upload replaces the prompt, «» removes
+// it (the old prompt file is deleted). DELETE …/ivr/{mid} → 204 with its prompt; routes to it
+// remain missing.
+message UpdateSipIvrMenuRequest {
+  optional string name = 1;
+  optional uint32 input_timeout_sec = 2;
+  optional uint32 repeats = 3;
+  SipRouteTarget on_no_input = 4; // set = replace
+  SipIvrItems items = 5;          // set = replace
+  optional string prompt_source_file_id = 6;
+}
+
+message SipIvrMenuResponse {
+  SipIvrMenu menu = 1;
 }

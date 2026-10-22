@@ -42,6 +42,7 @@ import { enGuests } from './guests';
 import { enTemp } from './temp';
 import { enContacts } from './contacts';
 import { enSip } from './sip';
+import { enPbx } from './pbx';
 import { enAi } from './ai';
 import { enSmartTask } from './smartTask';
 import { enWebApps } from './webapps';
@@ -62,6 +63,7 @@ export const en: Dict = {
   ...enTemp,
   ...enContacts,
   ...enSip,
+  ...enPbx,
   ...enAi,
   ...enSmartTask,
   ...enWebApps,

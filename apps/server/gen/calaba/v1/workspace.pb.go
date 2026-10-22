@@ -600,8 +600,12 @@ type WorkspaceMember struct {
 	// Live achievements of the member (ADR-0061; GET …/members/{userId}/achievements lists them).
 	// A grant or a revoke sends WORKSPACE_MEMBER_UPDATE with the new count.
 	AchievementCount uint32 `protobuf:"varint,8,opt,name=achievement_count,json=achievementCount,proto3" json:"achievement_count,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The member's internal telephone number (ADR-0117, «101»); empty = none. Set by
+	// MANAGE_INTEGRATIONS in the telephony settings; a change sends WORKSPACE_MEMBER_UPDATE.
+	// Guests never have one.
+	Extension     string `protobuf:"bytes,9,opt,name=extension,proto3" json:"extension,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkspaceMember) Reset() {
@@ -688,6 +692,13 @@ func (x *WorkspaceMember) GetAchievementCount() uint32 {
 		return x.AchievementCount
 	}
 	return 0
+}
+
+func (x *WorkspaceMember) GetExtension() string {
+	if x != nil {
+		return x.Extension
+	}
+	return ""
 }
 
 // A badge of the workspace's library (docs/09 #82): a small square picture an admin puts next to
@@ -4469,7 +4480,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1b\n" +
 	"\tbanned_by\x18\x05 \x01(\tR\bbannedBy\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xbf\x02\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xdd\x02\n" +
 	"\x0fWorkspaceMember\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12#\n" +
 	"\x04user\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12,\n" +
@@ -4478,7 +4489,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\tjoined_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x19\n" +
 	"\brole_ids\x18\x06 \x03(\tR\aroleIds\x12\x19\n" +
 	"\bbadge_id\x18\a \x01(\tR\abadgeId\x12+\n" +
-	"\x11achievement_count\x18\b \x01(\rR\x10achievementCount\"g\n" +
+	"\x11achievement_count\x18\b \x01(\rR\x10achievementCount\x12\x1c\n" +
+	"\textension\x18\t \x01(\tR\textension\"g\n" +
 	"\x05Badge\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +

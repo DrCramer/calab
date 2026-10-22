@@ -100,6 +100,9 @@ enum ErrorCode {
   ERROR_CODE_USERNAME_TAKEN = 68;
   // 422: PATCH /api/me {username} — bad format or a reserved nickname (ADR-0077).
   ERROR_CODE_USERNAME_INVALID = 69;
+  // 409: an internal telephone number of the workspace is taken (field "number"), or the member
+  // already has one (field "userId") (ADR-0117).
+  ERROR_CODE_SIP_EXTENSION_TAKEN = 70;
 }
 
 // Error body of every non-2xx REST response.

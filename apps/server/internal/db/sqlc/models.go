@@ -1433,6 +1433,68 @@ type SipCall struct {
 	EndedAt             *time.Time
 }
 
+type SipExtension struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Number      string
+	Kind        string
+	UserID      *uuid.UUID
+	GroupID     *uuid.UUID
+	Description string
+	CreatedAt   time.Time
+	CreatedBy   *uuid.UUID
+}
+
+type SipGroup struct {
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	Name              string
+	Strategy          string
+	RingSec           int32
+	MemberRingSec     int32
+	NextPosition      int32
+	OnFailKind        string
+	OnFailMenuID      *uuid.UUID
+	OnFailExtensionID *uuid.UUID
+	OnFailGroupID     *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type SipGroupMember struct {
+	WorkspaceID uuid.UUID
+	GroupID     uuid.UUID
+	ExtensionID uuid.UUID
+	Position    int32
+}
+
+type SipIvrItem struct {
+	WorkspaceID       uuid.UUID
+	MenuID            uuid.UUID
+	Digit             string
+	ActionKind        string
+	ActionMenuID      *uuid.UUID
+	ActionExtensionID *uuid.UUID
+	ActionGroupID     *uuid.UUID
+}
+
+type SipIvrMenu struct {
+	ID                 uuid.UUID
+	WorkspaceID        uuid.UUID
+	Name               string
+	PromptFileID       *uuid.UUID
+	PromptDurationMs   int32
+	InputTimeoutSec    int32
+	Repeats            int32
+	NoInputKind        string
+	NoInputMenuID      *uuid.UUID
+	NoInputExtensionID *uuid.UUID
+	NoInputGroupID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	UpdatedBy          *uuid.UUID
+}
+
 type Sticker struct {
 	ID        uuid.UUID
 	PackID    uuid.UUID
@@ -2024,6 +2086,7 @@ type WorkspaceMember struct {
 	BadgeID          *uuid.UUID
 	AchievementCount int32
 	LastActiveAt     *time.Time
+	SipExtension     string
 }
 
 type WorkspaceNotificationSetting struct {

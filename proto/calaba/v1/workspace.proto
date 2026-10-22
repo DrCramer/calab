@@ -96,6 +96,10 @@ message WorkspaceMember {
   // Live achievements of the member (ADR-0061; GET …/members/{userId}/achievements lists them).
   // A grant or a revoke sends WORKSPACE_MEMBER_UPDATE with the new count.
   uint32 achievement_count = 8;
+  // The member's internal telephone number (ADR-0117, «101»); empty = none. Set by
+  // MANAGE_INTEGRATIONS in the telephony settings; a change sends WORKSPACE_MEMBER_UPDATE.
+  // Guests never have one.
+  string extension = 9;
 }
 
 // A badge of the workspace's library (docs/09 #82): a small square picture an admin puts next to

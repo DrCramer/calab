@@ -1137,6 +1137,9 @@ func (h *Handlers) getMember(w http.ResponseWriter, r *http.Request) error {
 	if pbconv.ContactsVisible(role, auth.MustFromContext(r.Context()).IsBot, perm.Role(m.Role), u) { // ADR-0077
 		pbconv.WithContacts(pb.User, u)
 	}
+	if !pbconv.ExtensionVisible(role) { // ADR-0117: guests never see internal numbers
+		pb.Extension = ""
+	}
 	me, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, uid(r))
 	if err != nil {
 		return err
