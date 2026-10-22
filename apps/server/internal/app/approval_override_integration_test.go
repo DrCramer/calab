@@ -222,6 +222,13 @@ func TestApprovalOverrideOnBehalfOfOwner(t *testing.T) {
 	pid := createTask(t, o, priv.GetId(), &v1.CreateTaskRequest{Title: "Тайна", StatusId: ptodo, ApproverIds: []string{o.id}}, 201).GetId()
 	cob.must(404, "PATCH", "/api/tasks/"+pid, &v1.UpdateTaskRequest{StatusId: &pdoing, OverrideApproval: true}, nil)
 
+	// (е) A bot acting for a consenting member (ADR-0111) who manages the board: still refused.
+	o.must(200, "PUT", "/api/workspaces/"+wid+"/bots/"+cb.id+"/delegations/"+o.id, nil, nil)
+	mo := asMember(cb, o.id)
+	mo.must(409, "PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing}, nil) // the member's rights apply
+	wantReason(t, mo, mo.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "BOT_NOT_ALLOWED")
+	wantReason(t, ob, ob.do("POST", "/api/tasks/"+id+"/approval", &v1.TaskApprovalRequest{Decision: approve, OnBehalfOf: bob.id}, nil), 403, "BOT_NOT_ALLOWED")
+
 	// (а) The owner manages the board: the override on his behalf goes through.
 	ob.must(409, "PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing}, nil) // without the flag: the gate
 	var r v1.TaskResponse

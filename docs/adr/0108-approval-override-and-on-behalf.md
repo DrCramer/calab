@@ -82,11 +82,7 @@
 обход согласования — решение с подтверждением, которое не должно случаться от утёкшего токена. Таблицы
 `botRoutes`/`onBehalfRoutes` и маршруты лендинга не меняются.
 
-**Дополнение 2026-10-22 (CBF-74, решение владельца, хотфикс).** Обход согласования (`override_approval`)
-открыт боту **от имени владельца** (`Calab-On-Behalf: owner`, ADR-0106): принципал — владелец, решает его
-`MANAGE_BOARD` на доске (условия §2 те же); журнал `approval_override` — автор владелец, `via_bot_id` — бот;
-голоса не трогаются. Бот сам за себя и бот от имени участника (ADR-0111) — по-прежнему `BOT_NOT_ALLOWED`;
-согласование за другого (§3) «от имени» по-прежнему закрыто. Тест: `TestApprovalOverrideOnBehalfOfOwner`.
+Superseded for the owner-acting bot by [ADR-0122](0122-owner-bot-approval-override.md).
 
 ## Последствия
 - Протокол (`boards.proto`: `TaskApprover.recorded_by`/`on_behalf`, `UpdateTaskRequest.override_approval`,
