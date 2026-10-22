@@ -64,6 +64,12 @@ const (
 	maxDupDescription   = 300 // characters of each one's description
 )
 
+// SmartBudget bounds a smart task's file preparation and model calls together (≤ 30 s of
+// files, then up to two calls of ≤ 45 s with images and one retry without them): the route
+// answers within ~SmartBudget plus the task's creation (docs/06: the ingress read timeout of
+// POST /api/workspaces/{id}/smart-tasks must be longer).
+const SmartBudget = 100 * time.Second
+
 // Reasons of 409 CONFLICT of smart tasks (ApiError.reason).
 const (
 	ReasonAINotReady  = "AI_NOT_READY"
@@ -162,8 +168,8 @@ func (s *Service) smartFiles(ctx context.Context, wsID, me uuid.UUID, ids []uuid
 }
 
 // prepareFiles reads the files' content for the model (SmartFiles; nil = names, sizes and types
-// only).
-func (s *Service) prepareFiles(ctx context.Context, srcs []aifiles.Source) aifiles.Prepared {
+// only); one person's requests one at a time (PrepareFor).
+func (s *Service) prepareFiles(ctx context.Context, me uuid.UUID, srcs []aifiles.Source) aifiles.Prepared {
 	if s.SmartFiles == nil || s.Files == nil {
 		out := aifiles.Prepared{}
 		for _, f := range srcs {
@@ -171,7 +177,7 @@ func (s *Service) prepareFiles(ctx context.Context, srcs []aifiles.Source) aifil
 		}
 		return out
 	}
-	return s.SmartFiles.Prepare(ctx, srcs)
+	return s.SmartFiles.PrepareFor(ctx, me.String(), srcs)
 }
 
 // dupTask is a recent task of the board the model compares the request with.
@@ -616,12 +622,16 @@ func (s *Service) createSmartTask(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 	}
+	// The files and the model calls share one deadline (SmartBudget): the request never waits
+	// longer, whatever the retries (the ingress timeout of this route must exceed it, docs/06).
+	aiCtx, cancel := context.WithTimeout(ctx, SmartBudget)
+	defer cancel()
 	// The files' content, within the limits, only after the limits above (decoding and PDF
 	// rendering cost CPU).
-	call := &smartCall{s: s, wsID: wsID, files: s.prepareFiles(ctx, srcs)}
+	call := &smartCall{s: s, wsID: wsID, files: s.prepareFiles(aiCtx, me, srcs)}
 
 	// 1. The board (and a title), or a refusal.
-	raw, err := call.complete(ctx, "smart-task-board", pickSystem, map[string]any{"request": text, "boards": boards})
+	raw, err := call.complete(aiCtx, "smart-task-board", pickSystem, map[string]any{"request": text, "boards": boards})
 	if err != nil {
 		return err
 	}
@@ -683,7 +693,7 @@ func (s *Service) createSmartTask(w http.ResponseWriter, r *http.Request) error 
 		if len(recent) > 0 {
 			data["recent_tasks"] = recent
 		}
-		raw, err := call.complete(ctx, "smart-task-shape", shapeSystem, data)
+		raw, err := call.complete(aiCtx, "smart-task-shape", shapeSystem, data)
 		if err != nil {
 			return err
 		}
@@ -716,7 +726,7 @@ func (s *Service) createSmartTask(w http.ResponseWriter, r *http.Request) error 
 		}
 	} else if len(recent) > 0 {
 		// 2. Only the duplicate check.
-		raw, err := call.complete(ctx, "smart-task-duplicates", dupSystem, map[string]any{"board": boardRef, "request": text, "recent_tasks": recent})
+		raw, err := call.complete(aiCtx, "smart-task-duplicates", dupSystem, map[string]any{"board": boardRef, "request": text, "recent_tasks": recent})
 		if err != nil {
 			return err
 		}

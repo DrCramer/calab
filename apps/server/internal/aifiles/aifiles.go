@@ -21,6 +21,8 @@ import (
 	"mime"
 	"path"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -38,13 +40,24 @@ type Limits struct {
 	MaxSource     int64 // bytes of an image or PDF read (bigger ones: name only)
 	MaxTextRead   int64 // bytes of a text file read
 	MaxPixels     int   // pixels of a source image decoded (decompression bombs)
+	// MaxDecodeBytes bounds the memory of one decoded source image (pixels × bytes per pixel
+	// of its colour model): a 16-bit 50 MP PNG would need 400 MB.
+	MaxDecodeBytes int
+	// MaxReads is the images and PDFs read and decoded or rendered per request, failed ones
+	// included: a request of 20 hostile files cannot hold the decoder or the PDF renderer 20
+	// times (only successes spend MaxImages).
+	MaxReads int
+	// MaxTime bounds the whole Prepare; files left when it is up go by name (NoteLimit).
+	MaxTime time.Duration
 }
 
-// Default is the production limits: up to 4 images, ~5 MB of them, 1568 px; 20 000 characters of text, 8 000 a file.
+// Default is the production limits: up to 4 images, ~5 MB of them, 1568 px; 20 000 characters
+// of text, 8 000 a file; 6 images or PDFs read, 30 s in all.
 var Default = Limits{
 	MaxImages: 4, MaxImageBytes: 5 << 20, MaxSide: 1568,
 	MaxText: 20000, MaxFileText: 8000,
 	MaxSource: 25 << 20, MaxTextRead: 256 << 10, MaxPixels: 50_000_000,
+	MaxDecodeBytes: 256 << 20, MaxReads: 6, MaxTime: 30 * time.Second,
 }
 
 // Content kinds of File.Content.
@@ -119,31 +132,57 @@ type PDF interface {
 	FirstLast(ctx context.Context, data []byte, maxSide, want int) (int, []image.Image, error)
 }
 
-// Preparer prepares files; PDF nil = PDFs are names only.
+// Preparer prepares files; PDF nil = PDFs are names only. It is shared by all requests of the
+// process: one owner's requests are prepared one at a time (PrepareFor), and one image is
+// decoded at a time in the process (MaxDecodeBytes bounds it), so concurrent requests cannot
+// multiply the memory of decoding.
 type Preparer struct {
 	Limits Limits
 	PDF    PDF
+
+	once   sync.Once
+	decode chan struct{} // one image decoded at a time
+	mu     sync.Mutex
+	owners map[string]chan struct{} // the owners being prepared for
+}
+
+func (p *Preparer) init() {
+	p.once.Do(func() {
+		p.decode = make(chan struct{}, 1)
+		p.owners = map[string]chan struct{}{}
+	})
 }
 
 // budget is what is left of the request's limits.
 type budget struct {
-	images, imageBytes, text int
+	images, imageBytes, text, reads int
 }
 
 // Prepare reads srcs in order. A file that does not fit the limits left is sent by name (with a
 // Note); a failure to read one never fails the request.
 func (p *Preparer) Prepare(ctx context.Context, srcs []Source) Prepared {
+	p.init()
 	l := p.Limits
-	b := budget{images: l.MaxImages, imageBytes: l.MaxImageBytes, text: l.MaxText}
+	if l.MaxTime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, l.MaxTime)
+		defer cancel()
+	}
+	b := budget{images: l.MaxImages, imageBytes: l.MaxImageBytes, text: l.MaxText, reads: l.MaxReads}
+	if l.MaxReads <= 0 {
+		b.reads = len(srcs)
+	}
 	var out Prepared
 	for _, src := range srcs {
 		f := File{Name: src.Name, Size: src.Size, Type: baseMime(src.Mime), Content: ContentNone}
-		switch kindOf(f.Type, src.Name) {
-		case kindImage:
+		switch k := kindOf(f.Type, src.Name); {
+		case ctx.Err() != nil && k != kindOther:
+			f.Note = NoteLimit // the time is up
+		case k == kindImage:
 			p.image(ctx, src, &f, &b, &out)
-		case kindPDF:
+		case k == kindPDF:
 			p.pdf(ctx, src, &f, &b, &out)
-		case kindText:
+		case k == kindText:
 			p.text(ctx, src, &f, &b)
 		default:
 			f.Note = NoteUnsupported
@@ -153,17 +192,77 @@ func (p *Preparer) Prepare(ctx context.Context, srcs []Source) Prepared {
 	return out
 }
 
+// PrepareFor is Prepare for one owner (a person): their requests are prepared one after
+// another, so one person cannot occupy the decoder or the PDF renderer with many parallel
+// requests. A request that waits past Limits.MaxTime (or its context) sends the files by name.
+func (p *Preparer) PrepareFor(ctx context.Context, owner string, srcs []Source) Prepared {
+	p.init()
+	if len(srcs) == 0 {
+		return Prepared{}
+	}
+	wait := ctx
+	if p.Limits.MaxTime > 0 {
+		var cancel context.CancelFunc
+		wait, cancel = context.WithTimeout(ctx, p.Limits.MaxTime)
+		defer cancel()
+	}
+	for {
+		p.mu.Lock()
+		busy, ok := p.owners[owner]
+		if !ok {
+			done := make(chan struct{})
+			p.owners[owner] = done
+			p.mu.Unlock()
+			defer func() {
+				p.mu.Lock()
+				delete(p.owners, owner)
+				p.mu.Unlock()
+				close(done)
+			}()
+			return p.Prepare(ctx, srcs)
+		}
+		p.mu.Unlock()
+		select {
+		case <-busy:
+		case <-wait.Done():
+			return byName(srcs, NoteLimit)
+		}
+	}
+}
+
+// byName is srcs by name only, each with note (content kinds; the others NoteUnsupported).
+func byName(srcs []Source, note string) Prepared {
+	var out Prepared
+	for _, src := range srcs {
+		f := File{Name: src.Name, Size: src.Size, Type: baseMime(src.Mime), Content: ContentNone, Note: note}
+		if kindOf(f.Type, src.Name) == kindOther {
+			f.Note = NoteUnsupported
+		}
+		out.Files = append(out.Files, f)
+	}
+	return out
+}
+
 func (p *Preparer) image(ctx context.Context, src Source, f *File, b *budget, out *Prepared) {
-	if b.images < 1 {
+	if b.images < 1 || b.reads < 1 {
 		f.Note = NoteLimit
 		return
 	}
+	b.reads--
+	// One image in memory at a time in the process: read, decode, encode.
+	select {
+	case p.decode <- struct{}{}:
+	case <-ctx.Done():
+		f.Note = NoteLimit
+		return
+	}
+	defer func() { <-p.decode }()
 	data, note := p.read(ctx, src)
 	if note != "" {
 		f.Note = note
 		return
 	}
-	img, err := p.decode(data)
+	img, err := p.decodeImage(data)
 	if err != nil {
 		f.Note = NoteUnreadable
 		return
@@ -184,10 +283,11 @@ func (p *Preparer) pdf(ctx context.Context, src Source, f *File, b *budget, out 
 		f.Note = NoteUnsupported
 		return
 	}
-	if b.images < 1 {
+	if b.images < 1 || b.reads < 1 {
 		f.Note = NoteLimit
 		return
 	}
+	b.reads--
 	data, note := p.read(ctx, src)
 	if note != "" {
 		f.Note = note
@@ -282,8 +382,9 @@ func (p *Preparer) read(ctx context.Context, src Source) ([]byte, string) {
 
 var errTooBig = errors.New("aifiles: image too large")
 
-// decode decodes an image after checking its dimensions (no decompression bombs).
-func (p *Preparer) decode(data []byte) (image.Image, error) {
+// decodeImage decodes an image after checking its dimensions and the memory its decoding takes
+// (no decompression bombs).
+func (p *Preparer) decodeImage(data []byte) (image.Image, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
@@ -291,8 +392,61 @@ func (p *Preparer) decode(data []byte) (image.Image, error) {
 	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > 20000 || cfg.Height > 20000 || cfg.Width*cfg.Height > p.Limits.MaxPixels {
 		return nil, errTooBig
 	}
+	bpp := bytesPerPixel(cfg.ColorModel)
+	if progressiveJPEG(data) {
+		bpp *= 5 // image/jpeg keeps every component's coefficients too: 4 bytes a sample
+	}
+	if m := p.Limits.MaxDecodeBytes; m > 0 && cfg.Width*cfg.Height*bpp > m {
+		return nil, errTooBig
+	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	return img, err
+}
+
+// progressiveJPEG: data is a JPEG whose frame is progressive (SOF2, SOF6, SOF10, SOF14) — its
+// decoding holds the coefficients of the whole image.
+func progressiveJPEG(data []byte) bool {
+	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+		return false
+	}
+	for i := 2; i+3 < len(data); {
+		if data[i] != 0xFF {
+			return false
+		}
+		m := data[i+1]
+		switch {
+		case m == 0xFF: // fill byte
+			i++
+			continue
+		case m == 0xD8 || m == 0x01 || (m >= 0xD0 && m <= 0xD7): // no length
+			i += 2
+			continue
+		case m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC: // a frame
+			return m == 0xC2 || m == 0xC6 || m == 0xCA || m == 0xCE
+		case m == 0xDA || m == 0xD9: // scan or end before a frame
+			return false
+		}
+		i += 2 + (int(data[i+2])<<8 | int(data[i+3]))
+	}
+	return false
+}
+
+// bytesPerPixel is the memory per pixel of a decoded image of model (an upper bound).
+func bytesPerPixel(m color.Model) int {
+	switch m {
+	case color.RGBA64Model, color.NRGBA64Model:
+		return 8
+	case color.Gray16Model:
+		return 2
+	case color.GrayModel, color.AlphaModel:
+		return 1
+	case color.YCbCrModel:
+		return 3 // 4:4:4 at most
+	}
+	if _, ok := m.(color.Palette); ok {
+		return 1
+	}
+	return 4 // RGBA, NRGBA, CMYK, NYCbCrA (≤ 4), anything else
 }
 
 // fit encodes img as a JPEG data: URL no longer than room bytes: the longer side ≤ maxSide,

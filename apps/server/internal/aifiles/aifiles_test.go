@@ -238,3 +238,122 @@ func TestWithoutImages(t *testing.T) {
 		t.Fatal("the original changed")
 	}
 }
+
+// A document over the deadline kills its module: the call returns soon after the deadline, and
+// the next document renders in a fresh instance.
+func TestPDFiumDeadlineKills(t *testing.T) {
+	if testing.Short() {
+		t.Skip("PDFium runtime")
+	}
+	r := &PDFium{Timeout: 60 * time.Second}
+	defer r.Close()
+	ctx := context.Background()
+	if _, _, err := r.FirstLast(ctx, makePDF([][3]float64{{1, 0, 0}}), 100, 1); err != nil { // compile the runtime
+		t.Fatal(err)
+	}
+	// A page of 300 000 tiny filled paths: far longer to render than the deadline.
+	var s strings.Builder
+	s.WriteString("0 0 1 rg ")
+	for i := range 300_000 {
+		fmt.Fprintf(&s, "%d %d 0.5 0.5 re f ", i%600, (i/600)%800)
+	}
+	stream := s.String()
+	heavy := bytes.Replace(makePDF([][3]float64{{0, 0, 0}}), []byte("0.00 0.00 0.00 rg 0 0 200 300 re f"), []byte(stream), 1)
+	heavy = bytes.Replace(heavy, []byte(fmt.Sprintf("/Length %d", len("0.00 0.00 0.00 rg 0 0 200 300 re f"))), []byte(fmt.Sprintf("/Length %d", len(stream))), 1)
+	dl, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, _, err := r.FirstLast(dl, heavy, 1568, 1)
+	if err == nil {
+		t.Skip("the heavy page rendered within the deadline on this machine")
+	}
+	el := time.Since(start)
+	if el > 5*time.Second {
+		t.Fatalf("the render held %v past a 300 ms deadline", el)
+	}
+	t.Logf("killed after %v: %v", el, err)
+	n, pages, err := r.FirstLast(ctx, makePDF([][3]float64{{1, 0, 0}, {0, 0, 1}}), 100, 2)
+	if err != nil || n != 2 || len(pages) != 2 {
+		t.Fatalf("after a kill: %d %d %v", n, len(pages), err)
+	}
+}
+
+// Failed reads spend MaxReads too: 20 broken files cannot hold the decoder 20 times.
+func TestPrepareReadsBudget(t *testing.T) {
+	opened := 0
+	broken := Source{Name: "x.png", Mime: "image/png", Size: 10, Open: func(context.Context) (io.ReadCloser, error) {
+		opened++
+		return io.NopCloser(strings.NewReader("not a png!")), nil
+	}}
+	srcs := make([]Source, 20)
+	for i := range srcs {
+		srcs[i] = broken
+	}
+	srcs = append(srcs, src("ok.png", "image/png", pngOf(10, 10, color.White)))
+	p := &Preparer{Limits: Limits{MaxImages: 4, MaxImageBytes: 5 << 20, MaxSide: 100, MaxSource: 1 << 20, MaxPixels: 1 << 20, MaxReads: 3}}
+	out := p.Prepare(context.Background(), srcs)
+	if opened != 3 || len(out.Images) != 0 || out.Files[3].Note != NoteLimit || out.Files[20].Note != NoteLimit {
+		t.Fatalf("opened %d, images %d, %+v", opened, len(out.Images), out.Files[3])
+	}
+}
+
+// The decoded size counts the colour model: a 16-bit image needs 8 bytes a pixel.
+func TestPrepareDecodeBytes(t *testing.T) {
+	img := image.NewNRGBA64(image.Rect(0, 0, 100, 100))
+	var b bytes.Buffer
+	_ = png.Encode(&b, img)
+	p := &Preparer{Limits: Limits{MaxImages: 4, MaxImageBytes: 5 << 20, MaxSide: 100, MaxSource: 1 << 20, MaxPixels: 1 << 20, MaxDecodeBytes: 100 * 100 * 4}}
+	if out := p.Prepare(context.Background(), []Source{src("deep.png", "image/png", b.Bytes())}); out.Files[0].Note != NoteUnreadable {
+		t.Fatalf("16-bit %+v", out.Files[0])
+	}
+	if out := p.Prepare(context.Background(), []Source{src("rgba.png", "image/png", pngOf(100, 100, color.White))}); out.Files[0].Content != ContentImage {
+		t.Fatalf("8-bit %+v", out.Files[0])
+	}
+}
+
+func TestProgressiveJPEG(t *testing.T) {
+	app0 := []byte{0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0}
+	frame := func(sof byte) []byte {
+		b := append([]byte{0xFF, 0xD8}, app0...)
+		return append(b, 0xFF, sof, 0x00, 0x0B, 8, 0, 16, 0, 16, 1, 1, 0x11, 0, 0xFF, 0xD9)
+	}
+	if !progressiveJPEG(frame(0xC2)) || progressiveJPEG(frame(0xC0)) || progressiveJPEG([]byte("not a jpeg")) {
+		t.Fatal("progressive detection")
+	}
+	var b bytes.Buffer
+	_ = jpeg.Encode(&b, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil)
+	if progressiveJPEG(b.Bytes()) {
+		t.Fatal("a baseline JPEG of image/jpeg")
+	}
+}
+
+// One owner at a time: a second request of the same person waits and, past MaxTime, sends the
+// files by name; another person is not held.
+func TestPrepareForOwner(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{})
+	slow := Source{Name: "slow.png", Mime: "image/png", Size: 10, Open: func(context.Context) (io.ReadCloser, error) {
+		close(started)
+		<-release
+		return io.NopCloser(bytes.NewReader(pngOf(10, 10, color.White))), nil
+	}}
+	p := &Preparer{Limits: Limits{MaxImages: 4, MaxImageBytes: 5 << 20, MaxSide: 100, MaxSource: 1 << 20, MaxPixels: 1 << 20,
+		MaxText: 100, MaxFileText: 100, MaxTextRead: 100, MaxTime: 200 * time.Millisecond}}
+	done := make(chan Prepared)
+	go func() { done <- p.PrepareFor(context.Background(), "alice", []Source{slow}) }()
+	<-started
+	out := p.PrepareFor(context.Background(), "alice", []Source{src("a.png", "image/png", pngOf(10, 10, color.White))})
+	if out.Files[0].Note != NoteLimit || len(out.Images) != 0 {
+		t.Fatalf("second request of alice %+v", out.Files)
+	}
+	out = p.PrepareFor(context.Background(), "bob", []Source{src("b.txt", "text/plain", []byte("hi"))})
+	if out.Files[0].Text != "hi" {
+		t.Fatalf("bob %+v", out.Files)
+	}
+	close(release)
+	<-done
+	out = p.PrepareFor(context.Background(), "alice", []Source{src("a.txt", "text/plain", []byte("again"))})
+	if out.Files[0].Text != "again" {
+		t.Fatalf("alice after %+v", out.Files)
+	}
+}
