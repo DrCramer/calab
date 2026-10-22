@@ -410,11 +410,13 @@ type SipGroupStrategy int32
 
 const (
 	SipGroupStrategy_SIP_GROUP_STRATEGY_UNSPECIFIED SipGroupStrategy = 0 // in requests: RING_ALL
-	// Every member rings at once for ring_sec (members who are not online ring too, with a push);
-	// the first who answers gets the call.
+	// Every member rings at once (members who are not online ring too, with a push) until
+	// somebody answers, the caller hangs up or the fallback's time runs out (ADR-0124); the
+	// first who answers gets the call; members who become free meanwhile join the ringing.
 	SipGroupStrategy_SIP_GROUP_STRATEGY_RING_ALL SipGroupStrategy = 1
 	// One member after another in their order for member_ring_sec each, starting after the one
-	// who answered last; members who are not online or busy are skipped; one full round.
+	// who answered last; members who are not online or busy are skipped; round after round
+	// until somebody answers, the caller hangs up or the fallback's time runs out (ADR-0124).
 	SipGroupStrategy_SIP_GROUP_STRATEGY_ROUND_ROBIN SipGroupStrategy = 2
 )
 
@@ -1886,13 +1888,20 @@ type SipGroup struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`           // 1..64 characters
 	Extension     *SipExtension          `protobuf:"bytes,4,opt,name=extension,proto3" json:"extension,omitempty"` // the group's own number (kind GROUP)
 	Strategy      SipGroupStrategy       `protobuf:"varint,5,opt,name=strategy,proto3,enum=calaba.v1.SipGroupStrategy" json:"strategy,omitempty"`
-	RingSec       uint32                 `protobuf:"varint,6,opt,name=ring_sec,json=ringSec,proto3" json:"ring_sec,omitempty"`                     // RING_ALL: 10..60, default 30
+	RingSec       uint32                 `protobuf:"varint,6,opt,name=ring_sec,json=ringSec,proto3" json:"ring_sec,omitempty"`                     // unused since ADR-0124 (kept: 10..60, default 30)
 	MemberRingSec uint32                 `protobuf:"varint,7,opt,name=member_ring_sec,json=memberRingSec,proto3" json:"member_ring_sec,omitempty"` // ROUND_ROBIN: 5..60 per member, default 15
-	OnFail        *SipRouteTarget        `protobuf:"bytes,8,opt,name=on_fail,json=onFail,proto3" json:"on_fail,omitempty"`                         // nobody answered / nobody to ring; not REPEAT
+	OnFail        *SipRouteTarget        `protobuf:"bytes,8,opt,name=on_fail,json=onFail,proto3" json:"on_fail,omitempty"`                         // the fallback's action; not REPEAT; kept while it is off
 	Members       []*SipGroupMember      `protobuf:"bytes,9,rep,name=members,proto3" json:"members,omitempty"`                                     // by position, ≤ 20
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The fallback (ADR-0124). Off (default): the group rings until somebody answers or the
+	// caller hangs up; on_fail is not used. On: after fallback_sec seconds of ringing, when
+	// everybody who rang declined, or at once when nobody can ring, the call follows on_fail
+	// (another group, a person or a bot, a menu, hang up). At most 3 group fallbacks per call:
+	// the next one hangs up (reason loop).
+	FallbackEnabled bool   `protobuf:"varint,11,opt,name=fallback_enabled,json=fallbackEnabled,proto3" json:"fallback_enabled,omitempty"`
+	FallbackSec     uint32 `protobuf:"varint,12,opt,name=fallback_sec,json=fallbackSec,proto3" json:"fallback_sec,omitempty"` // 5..600, default 30
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SipGroup) Reset() {
@@ -1993,6 +2002,20 @@ func (x *SipGroup) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *SipGroup) GetFallbackEnabled() bool {
+	if x != nil {
+		return x.FallbackEnabled
+	}
+	return false
+}
+
+func (x *SipGroup) GetFallbackSec() uint32 {
+	if x != nil {
+		return x.FallbackSec
+	}
+	return 0
 }
 
 type SipIvrItem struct {
@@ -2494,19 +2517,22 @@ func (x *SipGroupMembers) GetExtensionIds() []string {
 }
 
 // POST /api/workspaces/{id}/sip/groups → 201 SipGroupResponse (≤ 50 groups): the group and its
-// number. Errors: 422 VALIDATION (name, number, ringSec, memberRingSec, members, onFail), 409
+// number. Errors: 422 VALIDATION (name, number, ringSec, memberRingSec, members, onFail — also a
+// fallback to the group itself or its own number, fallbackSec), 409
 // SIP_EXTENSION_TAKEN (number), 409 CONFLICT (limit).
 type CreateSipGroupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Number        string                 `protobuf:"bytes,2,opt,name=number,proto3" json:"number,omitempty"`
-	Strategy      SipGroupStrategy       `protobuf:"varint,3,opt,name=strategy,proto3,enum=calaba.v1.SipGroupStrategy" json:"strategy,omitempty"`
-	RingSec       uint32                 `protobuf:"varint,4,opt,name=ring_sec,json=ringSec,proto3" json:"ring_sec,omitempty"`                     // 0 = 30
-	MemberRingSec uint32                 `protobuf:"varint,5,opt,name=member_ring_sec,json=memberRingSec,proto3" json:"member_ring_sec,omitempty"` // 0 = 15
-	OnFail        *SipRouteTarget        `protobuf:"bytes,6,opt,name=on_fail,json=onFail,proto3" json:"on_fail,omitempty"`                         // unset = HANGUP
-	Members       *SipGroupMembers       `protobuf:"bytes,7,opt,name=members,proto3" json:"members,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Number          string                 `protobuf:"bytes,2,opt,name=number,proto3" json:"number,omitempty"`
+	Strategy        SipGroupStrategy       `protobuf:"varint,3,opt,name=strategy,proto3,enum=calaba.v1.SipGroupStrategy" json:"strategy,omitempty"`
+	RingSec         uint32                 `protobuf:"varint,4,opt,name=ring_sec,json=ringSec,proto3" json:"ring_sec,omitempty"`                     // 0 = 30
+	MemberRingSec   uint32                 `protobuf:"varint,5,opt,name=member_ring_sec,json=memberRingSec,proto3" json:"member_ring_sec,omitempty"` // 0 = 15
+	OnFail          *SipRouteTarget        `protobuf:"bytes,6,opt,name=on_fail,json=onFail,proto3" json:"on_fail,omitempty"`                         // unset = HANGUP
+	Members         *SipGroupMembers       `protobuf:"bytes,7,opt,name=members,proto3" json:"members,omitempty"`
+	FallbackEnabled bool                   `protobuf:"varint,8,opt,name=fallback_enabled,json=fallbackEnabled,proto3" json:"fallback_enabled,omitempty"` // ADR-0124; default off
+	FallbackSec     uint32                 `protobuf:"varint,9,opt,name=fallback_sec,json=fallbackSec,proto3" json:"fallback_sec,omitempty"`             // 0 = 30
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateSipGroupRequest) Reset() {
@@ -2588,20 +2614,36 @@ func (x *CreateSipGroupRequest) GetMembers() *SipGroupMembers {
 	return nil
 }
 
+func (x *CreateSipGroupRequest) GetFallbackEnabled() bool {
+	if x != nil {
+		return x.FallbackEnabled
+	}
+	return false
+}
+
+func (x *CreateSipGroupRequest) GetFallbackSec() uint32 {
+	if x != nil {
+		return x.FallbackSec
+	}
+	return 0
+}
+
 // PATCH /api/workspaces/{id}/sip/groups/{gid} → 200 SipGroupResponse; unset fields stay, set
 // members replace the whole list with its order (the round-robin pointer starts over). DELETE
 // …/groups/{gid} → 204 with its number; routes to it remain missing.
 type UpdateSipGroupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Number        *string                `protobuf:"bytes,2,opt,name=number,proto3,oneof" json:"number,omitempty"`
-	Strategy      *SipGroupStrategy      `protobuf:"varint,3,opt,name=strategy,proto3,enum=calaba.v1.SipGroupStrategy,oneof" json:"strategy,omitempty"`
-	RingSec       *uint32                `protobuf:"varint,4,opt,name=ring_sec,json=ringSec,proto3,oneof" json:"ring_sec,omitempty"`
-	MemberRingSec *uint32                `protobuf:"varint,5,opt,name=member_ring_sec,json=memberRingSec,proto3,oneof" json:"member_ring_sec,omitempty"`
-	OnFail        *SipRouteTarget        `protobuf:"bytes,6,opt,name=on_fail,json=onFail,proto3" json:"on_fail,omitempty"` // set = replace
-	Members       *SipGroupMembers       `protobuf:"bytes,7,opt,name=members,proto3" json:"members,omitempty"`             // set = replace
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Number          *string                `protobuf:"bytes,2,opt,name=number,proto3,oneof" json:"number,omitempty"`
+	Strategy        *SipGroupStrategy      `protobuf:"varint,3,opt,name=strategy,proto3,enum=calaba.v1.SipGroupStrategy,oneof" json:"strategy,omitempty"`
+	RingSec         *uint32                `protobuf:"varint,4,opt,name=ring_sec,json=ringSec,proto3,oneof" json:"ring_sec,omitempty"`
+	MemberRingSec   *uint32                `protobuf:"varint,5,opt,name=member_ring_sec,json=memberRingSec,proto3,oneof" json:"member_ring_sec,omitempty"`
+	OnFail          *SipRouteTarget        `protobuf:"bytes,6,opt,name=on_fail,json=onFail,proto3" json:"on_fail,omitempty"` // set = replace
+	Members         *SipGroupMembers       `protobuf:"bytes,7,opt,name=members,proto3" json:"members,omitempty"`             // set = replace
+	FallbackEnabled *bool                  `protobuf:"varint,8,opt,name=fallback_enabled,json=fallbackEnabled,proto3,oneof" json:"fallback_enabled,omitempty"`
+	FallbackSec     *uint32                `protobuf:"varint,9,opt,name=fallback_sec,json=fallbackSec,proto3,oneof" json:"fallback_sec,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UpdateSipGroupRequest) Reset() {
@@ -2681,6 +2723,20 @@ func (x *UpdateSipGroupRequest) GetMembers() *SipGroupMembers {
 		return x.Members
 	}
 	return nil
+}
+
+func (x *UpdateSipGroupRequest) GetFallbackEnabled() bool {
+	if x != nil && x.FallbackEnabled != nil {
+		return *x.FallbackEnabled
+	}
+	return false
+}
+
+func (x *UpdateSipGroupRequest) GetFallbackSec() uint32 {
+	if x != nil && x.FallbackSec != nil {
+		return *x.FallbackSec
+	}
+	return 0
 }
 
 type SipGroupResponse struct {
@@ -3417,7 +3473,7 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"O\n" +
 	"\x0eSipGroupMember\x12!\n" +
 	"\fextension_id\x18\x01 \x01(\tR\vextensionId\x12\x1a\n" +
-	"\bposition\x18\x02 \x01(\rR\bposition\"\xa8\x03\n" +
+	"\bposition\x18\x02 \x01(\rR\bposition\"\xf6\x03\n" +
 	"\bSipGroup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -3430,7 +3486,9 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\amembers\x18\t \x03(\v2\x19.calaba.v1.SipGroupMemberR\amembers\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"U\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12)\n" +
+	"\x10fallback_enabled\x18\v \x01(\bR\x0ffallbackEnabled\x12!\n" +
+	"\ffallback_sec\x18\f \x01(\rR\vfallbackSec\"U\n" +
 	"\n" +
 	"SipIvrItem\x12\x14\n" +
 	"\x05digit\x18\x01 \x01(\tR\x05digit\x121\n" +
@@ -3473,7 +3531,7 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x15ListSipGroupsResponse\x12+\n" +
 	"\x06groups\x18\x01 \x03(\v2\x13.calaba.v1.SipGroupR\x06groups\"6\n" +
 	"\x0fSipGroupMembers\x12#\n" +
-	"\rextension_ids\x18\x01 \x03(\tR\fextensionIds\"\xa9\x02\n" +
+	"\rextension_ids\x18\x01 \x03(\tR\fextensionIds\"\xf7\x02\n" +
 	"\x15CreateSipGroupRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06number\x18\x02 \x01(\tR\x06number\x127\n" +
@@ -3481,7 +3539,9 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\bring_sec\x18\x04 \x01(\rR\aringSec\x12&\n" +
 	"\x0fmember_ring_sec\x18\x05 \x01(\rR\rmemberRingSec\x122\n" +
 	"\aon_fail\x18\x06 \x01(\v2\x19.calaba.v1.SipRouteTargetR\x06onFail\x124\n" +
-	"\amembers\x18\a \x01(\v2\x1a.calaba.v1.SipGroupMembersR\amembers\"\x84\x03\n" +
+	"\amembers\x18\a \x01(\v2\x1a.calaba.v1.SipGroupMembersR\amembers\x12)\n" +
+	"\x10fallback_enabled\x18\b \x01(\bR\x0ffallbackEnabled\x12!\n" +
+	"\ffallback_sec\x18\t \x01(\rR\vfallbackSec\"\x82\x04\n" +
 	"\x15UpdateSipGroupRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1b\n" +
 	"\x06number\x18\x02 \x01(\tH\x01R\x06number\x88\x01\x01\x12<\n" +
@@ -3489,12 +3549,16 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\bring_sec\x18\x04 \x01(\rH\x03R\aringSec\x88\x01\x01\x12+\n" +
 	"\x0fmember_ring_sec\x18\x05 \x01(\rH\x04R\rmemberRingSec\x88\x01\x01\x122\n" +
 	"\aon_fail\x18\x06 \x01(\v2\x19.calaba.v1.SipRouteTargetR\x06onFail\x124\n" +
-	"\amembers\x18\a \x01(\v2\x1a.calaba.v1.SipGroupMembersR\amembersB\a\n" +
+	"\amembers\x18\a \x01(\v2\x1a.calaba.v1.SipGroupMembersR\amembers\x12.\n" +
+	"\x10fallback_enabled\x18\b \x01(\bH\x05R\x0ffallbackEnabled\x88\x01\x01\x12&\n" +
+	"\ffallback_sec\x18\t \x01(\rH\x06R\vfallbackSec\x88\x01\x01B\a\n" +
 	"\x05_nameB\t\n" +
 	"\a_numberB\v\n" +
 	"\t_strategyB\v\n" +
 	"\t_ring_secB\x12\n" +
-	"\x10_member_ring_sec\"=\n" +
+	"\x10_member_ring_secB\x13\n" +
+	"\x11_fallback_enabledB\x0f\n" +
+	"\r_fallback_sec\"=\n" +
 	"\x10SipGroupResponse\x12)\n" +
 	"\x05group\x18\x01 \x01(\v2\x13.calaba.v1.SipGroupR\x05group\"F\n" +
 	"\x17ListSipIvrMenusResponse\x12+\n" +

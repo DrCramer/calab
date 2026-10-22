@@ -53,8 +53,9 @@ func TestInboundMenuKeyToGroupRingAll(t *testing.T) {
 	if !slices.Equal(fx.Rings, []uuid.UUID{f.u1, f.u2, f.u3}) || !slices.Equal(c.Ringing, fx.Rings) {
 		t.Fatalf("ring all: %v", fx.Rings)
 	}
-	if c.Deadline != t0.Add(35*time.Second).UnixMilli() {
-		t.Fatalf("deadline: %d", c.Deadline)
+	// The fallback after 30 s; meanwhile a look for members who became free every 15 s.
+	if c.FallbackAt != t0.Add(35*time.Second).UnixMilli() || c.Deadline != t0.Add(20*time.Second).UnixMilli() {
+		t.Fatalf("deadline: %d %d", c.FallbackAt, c.Deadline)
 	}
 	// u2 answers: the others stop ringing; no pointer for ring_all.
 	fx = Effects{}
@@ -98,7 +99,7 @@ func TestInboundRoundRobinSkipsOfflineAndMovesPointer(t *testing.T) {
 func TestInboundRoundRobinNobodyAnswersGoesToFallback(t *testing.T) {
 	f := newFixture(true, 0).withPrompt()
 	g := f.p.Groups[f.group]
-	g.OnFail = Target{Kind: RouteHangup}
+	g.OnFail, g.FallbackSec = Target{Kind: RouteHangup}, 45 // one round of 3 × 15 s
 	f.p.Groups[f.group] = g
 	a := avail{}
 	var c InCall
@@ -278,6 +279,160 @@ func TestInboundDeclineRingAllAndRoundRobin(t *testing.T) {
 	_ = c.Decline(envAt(f, a, time.Second), f.u1, &fx)
 	if !slices.Equal(c.Ringing, []uuid.UUID{f.u2}) {
 		t.Fatalf("round-robin decline: %v", c.Ringing)
+	}
+}
+
+// ADR-0124: without a fallback a group that rings all at once never gives up; members who
+// become free join the ringing, a decliner is not rung again; everybody declined hangs up.
+func TestInboundGroupNoFallbackRingsUntilAnswer(t *testing.T) {
+	f := newFixture(false, 0).noFallback()
+	busy := set(f.u3)
+	a := avail{busy: busy}
+	var c InCall
+	var fx Effects
+	c.Enter(envAt(f, a, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
+	if c.FallbackAt != 0 || !slices.Equal(c.Ringing, []uuid.UUID{f.u1, f.u2}) {
+		t.Fatalf("start: %+v", c)
+	}
+	for _, at := range []time.Duration{15, 30, 120, 600} {
+		fx = Effects{}
+		c.Expire(envAt(f, a, at*time.Second), &fx)
+		if c.Phase != PhaseRing || fx.Hangup != "" || len(fx.Stopped) != 0 {
+			t.Fatalf("at %ds: %+v %+v", at, c, fx)
+		}
+	}
+	delete(busy, f.u3) // u3's other call ended
+	fx = Effects{}
+	c.Expire(envAt(f, a, 615*time.Second), &fx)
+	if !slices.Equal(fx.Rings, []uuid.UUID{f.u3}) || !slices.Equal(c.Ringing, []uuid.UUID{f.u1, f.u2, f.u3}) {
+		t.Fatalf("joined: %+v %+v", c, fx)
+	}
+	for _, u := range []uuid.UUID{f.u1, f.u2} {
+		if err := c.Decline(envAt(f, a, 620*time.Second), u, &Effects{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fx = Effects{}
+	c.Expire(envAt(f, a, 630*time.Second), &fx)
+	if len(fx.Rings) != 0 || !slices.Equal(c.Ringing, []uuid.UUID{f.u3}) {
+		t.Fatalf("decliners rang again: %+v", c)
+	}
+	fx = Effects{}
+	_ = c.Decline(envAt(f, a, 631*time.Second), f.u3, &fx)
+	if c.Phase != PhaseEnded || fx.Hangup != ReasonDeclined {
+		t.Fatalf("all declined: %+v %+v", c, fx)
+	}
+}
+
+// Without a fallback: everybody busy — the caller hears the ringback until somebody is free.
+func TestInboundGroupNoFallbackWaitsForFree(t *testing.T) {
+	f := newFixture(false, 0).noFallback()
+	busy := set(f.u1, f.u2, f.u3)
+	a := avail{busy: busy}
+	var c InCall
+	var fx Effects
+	c.Enter(envAt(f, a, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
+	if c.Phase != PhaseRing || len(c.Ringing) != 0 || fx.Play == nil || !fx.Play.Ringback || c.Deadline != t0.Add(ringRecheck).UnixMilli() {
+		t.Fatalf("wait: %+v %+v", c, fx)
+	}
+	delete(busy, f.u2)
+	fx = Effects{}
+	c.Expire(envAt(f, a, ringRecheck), &fx)
+	if !slices.Equal(fx.Rings, []uuid.UUID{f.u2}) {
+		t.Fatalf("free: %+v", fx)
+	}
+	// Round-robin waits the same way, then rings who came online.
+	f = newFixture(true, 0).noFallback()
+	off := set(f.u1, f.u2, f.u3)
+	a = avail{offline: off}
+	c, fx = InCall{}, Effects{}
+	c.Enter(envAt(f, a, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
+	if c.Phase != PhaseRing || len(c.Ringing) != 0 {
+		t.Fatalf("rr wait: %+v", c)
+	}
+	delete(off, f.u3)
+	fx = Effects{}
+	c.Expire(envAt(f, a, ringRecheck), &fx)
+	if !slices.Equal(c.Ringing, []uuid.UUID{f.u3}) {
+		t.Fatalf("rr online: %+v", c)
+	}
+}
+
+// Without a fallback round-robin goes round after round; the pointer does not move.
+func TestInboundRoundRobinNoFallbackRoundAfterRound(t *testing.T) {
+	f := newFixture(true, 0).noFallback()
+	a := avail{}
+	var c InCall
+	var fx Effects
+	c.Enter(envAt(f, a, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
+	want := []uuid.UUID{f.u2, f.u3, f.u1, f.u2, f.u3, f.u1, f.u2}
+	for i, u := range want {
+		fx = Effects{}
+		c.Expire(envAt(f, a, time.Duration(i+1)*15*time.Second), &fx)
+		if c.Phase != PhaseRing || !slices.Equal(c.Ringing, []uuid.UUID{u}) || fx.Advance != nil {
+			t.Fatalf("step %d: %+v %+v", i, c, fx)
+		}
+	}
+	if len(c.Rang) != 3 {
+		t.Fatalf("rang grows: %d", len(c.Rang))
+	}
+}
+
+// With a fallback: round-robin goes round until the fallback's time, then the fallback (101).
+func TestInboundRoundRobinFallbackAfterTime(t *testing.T) {
+	f := newFixture(true, 0)
+	g := f.p.Groups[f.group]
+	g.FallbackSec = 50
+	f.p.Groups[f.group] = g
+	a := avail{}
+	var c InCall
+	var fx Effects
+	c.Enter(envAt(f, a, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
+	for i, u := range []uuid.UUID{f.u2, f.u3, f.u1} {
+		fx = Effects{}
+		c.Expire(envAt(f, a, time.Duration(i+1)*15*time.Second), &fx)
+		if !slices.Equal(c.Ringing, []uuid.UUID{u}) {
+			t.Fatalf("step %d: %v", i, c.Ringing)
+		}
+	}
+	if c.Deadline != t0.Add(50*time.Second).UnixMilli() {
+		t.Fatalf("the member's ring is cut at the fallback: %d", c.Deadline)
+	}
+	fx = Effects{}
+	c.Expire(envAt(f, a, 50*time.Second), &fx)
+	if c.Phase != PhaseRing || c.Group != nil || !slices.Equal(c.Ringing, []uuid.UUID{f.u1}) || c.Fallbacks != 1 || fx.Advance == nil {
+		t.Fatalf("fallback: %+v %+v", c, fx)
+	}
+	if c.Route[len(c.Route)-1] != "ext:"+f.e1.String() {
+		t.Fatalf("route: %v", c.Route)
+	}
+}
+
+// A ↔ B fall back to each other: A, B, A, B ring for their time, then the call hangs up.
+func TestInboundGroupFallbackLoop(t *testing.T) {
+	f := newFixture(false, 0)
+	b := uuid.New()
+	ga := f.p.Groups[f.group]
+	ga.FallbackSec, ga.OnFail = 10, Target{Kind: RouteGroup, ID: ptr(b)}
+	f.p.Groups[f.group] = ga
+	f.p.Groups[b] = Group{ID: b, Name: "B", Fallback: true, FallbackSec: 10, OnFail: Target{Kind: RouteGroup, ID: ptr(f.group)},
+		Members: []GroupMember{{Extension: f.e2}}}
+	a := avail{}
+	var c InCall
+	var fx Effects
+	c.Enter(envAt(f, a, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
+	groups := []uuid.UUID{b, f.group, b}
+	for i, want := range groups {
+		fx = Effects{}
+		c.Expire(envAt(f, a, time.Duration(i+1)*10*time.Second), &fx)
+		if c.Phase != PhaseRing || c.Group == nil || *c.Group != want {
+			t.Fatalf("hop %d: %+v", i, c)
+		}
+	}
+	fx = Effects{}
+	c.Expire(envAt(f, a, 40*time.Second), &fx)
+	if c.Phase != PhaseEnded || fx.Hangup != ReasonLoop || c.Fallbacks != MaxFallbacks+1 {
+		t.Fatalf("loop: %+v %+v", c, fx)
 	}
 }
 

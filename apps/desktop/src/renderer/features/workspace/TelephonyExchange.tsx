@@ -37,7 +37,7 @@ import { formatDuration } from '../shell/voiceFormat';
 /*
  * Workspace settings → «Телефония» → the exchange (ADR-0117 step 1, docs/08 «Телефония»;
  * MANAGE_INTEGRATIONS): «Внутренние номера» (number · member or bot · description), «Группы»
- * (number, all at once / one by one, members in order, «если никто не ответил»), «Автоответ»
+ * (number, all at once / one by one, members in order, the optional fallback — ADR-0124), «Автоответ»
  * (voice menus: the recorded prompt, what each key 1–9 * 0 # does, «нет нажатия»). Each card is
  * a list; a row opens its inline form. «Входящие» (step 2, shown when the server can take inbound
  * calls): the switch, how calls arrive (to our address with the provider's addresses, or over a
@@ -808,7 +808,8 @@ function GroupsCard({ workspaceId, exts, groups, menus }: { workspaceId: string;
               number={g.extension?.number ?? ''}
               roundRobin={g.strategy === SipGroupStrategy.ROUND_ROBIN}
               members={g.members.length}
-              warn={!!g.onFail?.missing}
+              fallbackSec={g.fallbackEnabled ? g.fallbackSec : 0}
+              warn={g.fallbackEnabled && !!g.onFail?.missing}
               onEdit={setEditing}
             />
           ),
@@ -833,6 +834,7 @@ const GroupRow = memo(function GroupRow({
   number,
   roundRobin,
   members,
+  fallbackSec,
   warn,
   onEdit,
 }: {
@@ -841,6 +843,8 @@ const GroupRow = memo(function GroupRow({
   number: string;
   roundRobin: boolean;
   members: number;
+  /** 0 = no fallback: the group rings until somebody answers (ADR-0124). */
+  fallbackSec: number;
   warn: boolean;
   onEdit: (id: string) => void;
 }): ReactNode {
@@ -852,6 +856,7 @@ const GroupRow = memo(function GroupRow({
       </span>
       <span className="shrink-0 text-body text-muted">
         {t(roundRobin ? 'pbx.group.roundRobin' : 'pbx.group.ringAll')} · {plural('pbx.group.members', members)}
+        {fallbackSec ? ` · ${t('pbx.group.rowFallback', { sec: fallbackSec })}` : ''}
       </span>
       {warn ? <TriangleAlert className="size-4 shrink-0 text-[var(--color-yellow)]" aria-label={t('pbx.target.missingHint')} /> : null}
       <IconButton size="sm" label={t('pbx.edit')} onClick={() => onEdit(id)}>
@@ -882,9 +887,10 @@ function GroupForm({
   const [name, setName] = useState(group?.name ?? '');
   const [number, setNumber] = useState(group?.extension?.number ?? '');
   const [roundRobin, setRoundRobin] = useState(group?.strategy === SipGroupStrategy.ROUND_ROBIN);
-  const [ringSec, setRingSec] = useState(String(group?.ringSec || 30));
   const [memberSec, setMemberSec] = useState(String(group?.memberRingSec || 15));
   const [members, setMembers] = useState<string[]>(() => group?.members.map((m) => m.extensionId) ?? []);
+  const [fallback, setFallback] = useState(!!group?.fallbackEnabled);
+  const [fallbackSec, setFallbackSec] = useState(String(group?.fallbackSec || 30));
   const [onFail, setOnFail] = useState(targetValue(group?.onFail));
   const byId = useMemo(() => new Map(exts.map((e) => [e.id, e])), [exts]);
   const free = exts.filter((e) => e.kind !== SipExtensionKind.GROUP && !members.includes(e.id));
@@ -900,8 +906,9 @@ function GroupForm({
     name: name.trim(),
     number,
     strategy: roundRobin ? SipGroupStrategy.ROUND_ROBIN : SipGroupStrategy.RING_ALL,
-    ringSec: Number(ringSec) || 0,
     memberRingSec: Number(memberSec) || 0,
+    fallbackEnabled: fallback,
+    fallbackSec: Number(fallbackSec) || 0,
     onFail: targetInit(onFail),
     members: { extensionIds: members },
   };
@@ -923,7 +930,6 @@ function GroupForm({
     onError: errs.report,
   });
   const ready = !!name.trim() && numberValid(number);
-  const sec = roundRobin ? memberSec : ringSec;
   return (
     <form
       className="flex flex-col gap-3 px-3 py-3"
@@ -966,17 +972,22 @@ function GroupForm({
           ]}
           testId="sip-group-strategy"
         />
-        <label className="flex items-center gap-2 text-body">
-          <span className="text-muted">{t(roundRobin ? 'pbx.group.memberSec' : 'pbx.group.ringSec')}</span>
-          <Input
-            aria-label={t(roundRobin ? 'pbx.group.memberSec' : 'pbx.group.ringSec')}
-            value={sec}
-            inputMode="numeric"
-            className="w-16! tabular-nums"
-            onChange={(e) => (roundRobin ? setMemberSec : setRingSec)(e.target.value.replace(/\D/g, '').slice(0, 2))}
-          />
-          <span className="text-muted">{t('pbx.sec')}</span>
-        </label>
+        {roundRobin ? (
+          <label className="flex items-center gap-2 text-body">
+            <span className="text-muted">{t('pbx.group.memberSec')}</span>
+            <Input
+              aria-label={t('pbx.group.memberSec')}
+              value={memberSec}
+              inputMode="numeric"
+              className="w-16! tabular-nums"
+              onChange={(e) => {
+                setMemberSec(e.target.value.replace(/\D/g, '').slice(0, 2));
+                errs.clear('memberRingSec');
+              }}
+            />
+            <span className="text-muted">{t('pbx.sec')}</span>
+          </label>
+        ) : null}
       </div>
       <p className="text-caption text-faint">{t(roundRobin ? 'pbx.group.roundRobinHint' : 'pbx.group.ringAllHint')}</p>
       <ErrLine text={errs.field['ringSec'] ?? errs.field['memberRingSec']} />
@@ -1029,12 +1040,54 @@ function GroupForm({
         ) : null}
         <ErrLine text={errs.field['members']} />
       </div>
-      <label className="flex flex-wrap items-center gap-2 text-body">
-        <span className="text-muted">{t('pbx.group.onFail')}</span>
-        <TargetSelect value={onFail} onChange={setOnFail} exts={exts} groups={groups.filter((g) => g.id !== group?.id)} menus={menus} label={t('pbx.group.onFail')} className="w-64 mobile:w-full" testId="sip-group-onfail" />
-        <MissingNote target={onFail === 'missing' ? group?.onFail : undefined} />
-      </label>
-      <ErrLine text={errs.field['onFail']} />
+      {/* ADR-0124: off — the group rings until somebody answers; on — after N s the call goes on. */}
+      <div className="flex flex-col gap-2" data-testid="sip-group-fallback">
+        <Switch
+          checked={fallback}
+          onChange={(v) => {
+            setFallback(v);
+            errs.clear('onFail');
+            errs.clear('fallbackSec');
+          }}
+          label={t('pbx.group.fallback')}
+          hint={t(fallback ? 'pbx.group.fallbackOnHint' : 'pbx.group.fallbackOffHint')}
+        />
+        {fallback ? (
+          <div className="flex flex-wrap items-center gap-2 text-body">
+            <label className="flex items-center gap-2">
+              <span className="text-muted">{t('pbx.group.fallbackAfter')}</span>
+              <Input
+                aria-label={t('pbx.group.fallback')}
+                value={fallbackSec}
+                inputMode="numeric"
+                className="w-16! tabular-nums"
+                data-testid="sip-group-fallback-sec"
+                onChange={(e) => {
+                  setFallbackSec(e.target.value.replace(/\D/g, '').slice(0, 3));
+                  errs.clear('fallbackSec');
+                }}
+              />
+              <span className="text-muted">{t('pbx.sec')}</span>
+            </label>
+            <span className="text-muted">{t('pbx.group.fallbackTo')}</span>
+            <TargetSelect
+              value={onFail}
+              onChange={(v) => {
+                setOnFail(v);
+                errs.clear('onFail');
+              }}
+              exts={exts}
+              groups={groups.filter((g) => g.id !== group?.id)}
+              menus={menus}
+              label={t('pbx.group.onFail')}
+              className="w-64 mobile:w-full"
+              testId="sip-group-onfail"
+            />
+            <MissingNote target={onFail === 'missing' ? group?.onFail : undefined} />
+          </div>
+        ) : null}
+        <ErrLine text={errs.field['fallbackSec'] ?? errs.field['onFail']} />
+      </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <ErrLine text={errs.form} />
         {group ? (

@@ -52,8 +52,21 @@ type Group struct {
 	RingSec       int
 	MemberRingSec int
 	NextPosition  int
-	OnFail        Target
-	Members       []GroupMember // any order; sorted by Position when routed
+	// The fallback (ADR-0124): off — the group rings until somebody answers or the caller hangs
+	// up, OnFail is not used; on — after FallbackSec seconds of ringing (or at once when nobody
+	// can ring) the call follows OnFail.
+	Fallback    bool
+	FallbackSec int
+	OnFail      Target
+	Members     []GroupMember // any order; sorted by Position when routed
+}
+
+// fail is where a group's call goes when nobody answers: its fallback, or hang up when off.
+func (g Group) fail() Target {
+	if g.Fallback {
+		return g.OnFail
+	}
+	return Target{Kind: RouteHangup}
 }
 
 // Menu is a voice menu.
@@ -104,6 +117,11 @@ const (
 // MaxHops bounds the routes followed for one decision (menu → group → menu … without anybody).
 const MaxHops = 10
 
+// MaxFallbacks bounds the group fallbacks one call follows (ADR-0124): group A → B → A … rings
+// each for its time, so MaxHops alone would let a loop ring for minutes; the next one hangs up
+// with ReasonLoop.
+const MaxFallbacks = 3
+
 // Ring is one person to ring and how long (seconds).
 type Ring struct {
 	Extension uuid.UUID
@@ -117,72 +135,104 @@ type Decision struct {
 	Reason string // ActHangup
 	Menu   *Menu  // ActMenu
 	// ActRing: who rings. Sequential = round-robin, in this order, each for its Sec; else all
-	// at once for Ring[0].Sec.
+	// at once (a number: for Ring[0].Sec; a group: until FallbackSec or an answer). A group
+	// without a fallback whose members are all busy (or, round-robin, offline) rings nobody
+	// for now: Ring is empty and the caller hears the ringback until somebody is free.
 	Ring       []Ring
 	Sequential bool
 	Group      *uuid.UUID // the group that rings (ActRing from a group)
 	// OnFail: where the call goes when nobody answers (ActRing); the group's fallback, or
-	// hang up for a number.
+	// hang up for a number and for a group without one.
 	OnFail Target
-	Hops   int // routes followed
+	// FallbackSec: a group with a fallback rings this long in all (0 = until an answer).
+	FallbackSec int
+	Hops        int // routes followed
+	Fallbacks   int // group fallbacks followed (MaxFallbacks)
 }
 
 // Route resolves t: menus without a prompt go on to their «no input» route, groups with nobody
-// to ring go on to their fallback, a group's number is its group. Ringing a single number
+// to ring go on to their fallback (when it is on; else they wait, or hang up when they have
+// nobody at all), a group's number is its group. Ringing a single number
 // rings directSec seconds and falls back to hang up (the menu / entry point decides further
 // in step 2).
 func Route(p *PBX, t Target, a Availability, directSec int) Decision {
+	fallbacks := 0
 	for hops := 0; ; hops++ {
 		if hops >= MaxHops {
-			return Decision{Action: ActHangup, Reason: ReasonLoop, Hops: hops}
+			return Decision{Action: ActHangup, Reason: ReasonLoop, Hops: hops, Fallbacks: fallbacks}
 		}
 		if t.ID == nil && t.Kind != RouteHangup && t.Kind != RouteRepeat {
-			return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops}
+			return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops, Fallbacks: fallbacks}
 		}
 		switch t.Kind {
 		case RouteMenu:
 			m, ok := p.Menus[*t.ID]
 			if !ok {
-				return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops}
+				return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops, Fallbacks: fallbacks}
 			}
 			if !m.HasPrompt { // nothing to play: as if nobody pressed a key
 				t = m.OnNoInput
 				continue
 			}
-			return Decision{Action: ActMenu, Menu: &m, Hops: hops}
+			return Decision{Action: ActMenu, Menu: &m, Hops: hops, Fallbacks: fallbacks}
 		case RouteExtension:
 			e, ok := p.Extensions[*t.ID]
 			if !ok {
-				return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops}
+				return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops, Fallbacks: fallbacks}
 			}
 			if e.Group != nil {
 				t = Target{Kind: RouteGroup, ID: e.Group}
 				continue
 			}
 			if e.User == nil {
-				return Decision{Action: ActHangup, Reason: ReasonNoMembers, Hops: hops}
+				return Decision{Action: ActHangup, Reason: ReasonNoMembers, Hops: hops, Fallbacks: fallbacks}
 			}
 			if a.Busy(*e.User) {
-				return Decision{Action: ActHangup, Reason: ReasonBusy, Hops: hops}
+				return Decision{Action: ActHangup, Reason: ReasonBusy, Hops: hops, Fallbacks: fallbacks}
 			}
 			return Decision{Action: ActRing, Ring: []Ring{{Extension: e.ID, User: *e.User, Sec: directSec}},
-				OnFail: Target{Kind: RouteHangup}, Hops: hops}
+				OnFail: Target{Kind: RouteHangup}, Hops: hops, Fallbacks: fallbacks}
 		case RouteGroup:
 			g, ok := p.Groups[*t.ID]
 			if !ok {
-				return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops}
+				return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops, Fallbacks: fallbacks}
 			}
 			ring := groupRing(p, g, a)
-			if len(ring) == 0 {
-				t = g.OnFail
-				continue
-			}
 			id := g.ID
-			return Decision{Action: ActRing, Ring: ring, Sequential: g.RoundRobin, Group: &id, OnFail: g.OnFail, Hops: hops}
+			if len(ring) == 0 {
+				if g.Fallback { // nobody can ring now: the fallback at once
+					fallbacks++
+					if fallbacks > MaxFallbacks {
+						return Decision{Action: ActHangup, Reason: ReasonLoop, Hops: hops, Fallbacks: fallbacks}
+					}
+					t = g.OnFail
+					continue
+				}
+				if !hasPeople(p, g) { // nobody will ever answer
+					return Decision{Action: ActHangup, Reason: ReasonNoMembers, Hops: hops, Fallbacks: fallbacks}
+				}
+				// Everybody is busy (or offline, round-robin): wait for somebody with the ringback.
+				return Decision{Action: ActRing, Sequential: g.RoundRobin, Group: &id, OnFail: g.fail(), Hops: hops, Fallbacks: fallbacks}
+			}
+			d := Decision{Action: ActRing, Ring: ring, Sequential: g.RoundRobin, Group: &id, OnFail: g.fail(), Hops: hops, Fallbacks: fallbacks}
+			if g.Fallback {
+				d.FallbackSec = g.FallbackSec
+			}
+			return d
 		default: // hangup; repeat outside a menu key means nothing to repeat
-			return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops}
+			return Decision{Action: ActHangup, Reason: ReasonHangup, Hops: hops, Fallbacks: fallbacks}
 		}
 	}
+}
+
+// hasPeople: some member number of g has a person (or a bot) behind it.
+func hasPeople(p *PBX, g Group) bool {
+	for _, m := range g.Members {
+		if e, ok := p.Extensions[m.Extension]; ok && e.User != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // groupRing is who a group rings now. ring_all: every member with a person behind the number

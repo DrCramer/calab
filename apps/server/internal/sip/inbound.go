@@ -666,6 +666,10 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 			return q.UpdateSipInboundRinging(ctx, sqlc.UpdateSipInboundRingingParams{ID: r.ID, RingingUserIds: nonNil(r.Ringing),
 				Route: clip(strings.Join(r.Route, " → "), 500), Via: clip(r.Via, 64)})
 		})
+	case !fx.Answered && len(fx.Rings) == 0 && len(fx.Stopped) == 0:
+		// Nothing anybody sees changed (a group's look for free members found nobody, the
+		// prompt played): no journal read, no SIP_CALL_UPDATE.
+		return s.saveRec(ctx, r)
 	default:
 		row, err = s.db.Q.GetSipCall(ctx, r.ID)
 	}

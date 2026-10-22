@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -267,5 +268,57 @@ func TestSIPInboundCall(t *testing.T) {
 	}
 	if c, err := testDB.Q.GetSipCallByLKRoom(ctx, room4); err != nil || c.Status != "failed" || c.Reason != "disabled" {
 		t.Fatalf("a call with inbound off: %+v %v", c, err)
+	}
+}
+
+// TestSIPInboundGroupFallback (ADR-0124): a group with a fallback rings its members for
+// fallback_sec, then the call follows the fallback (here: another member's number) — the first
+// member stops ringing, the second one rings the same call.
+func TestSIPInboundGroupFallback(t *testing.T) {
+	ctx := context.Background()
+	a, server, _, _ := inboundApp(t)
+	o := owner(t)
+	wid := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	bob := register(t, invite(t, o, wid))
+	carol := register(t, invite(t, o, wid))
+	bobG, carolG := dialGW(t), dialGW(t)
+	bobG.identify(bob.token)
+	carolG.identify(carol.token)
+	base := "/api/workspaces/" + wid + "/sip"
+	o.must(200, "PUT", base, &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10", CallerId: "+74951234568"}, nil)
+	var bobExt, carolExt v1.SipExtensionResponse
+	o.must(201, "POST", base+"/extensions", &v1.CreateSipExtensionRequest{Number: "101", UserId: bob.id}, &bobExt)
+	o.must(201, "POST", base+"/extensions", &v1.CreateSipExtensionRequest{Number: "102", UserId: carol.id}, &carolExt)
+	var g v1.SipGroupResponse
+	o.must(201, "POST", base+"/groups", &v1.CreateSipGroupRequest{Name: "Продажи", Number: "1001",
+		Members: &v1.SipGroupMembers{ExtensionIds: []string{bobExt.GetExtension().GetId()}}, FallbackEnabled: true, FallbackSec: 5,
+		OnFail: &v1.SipRouteTarget{Kind: v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, Id: carolExt.GetExtension().GetId()}}, &g)
+	pushHTTP(t, server, o, 200, "PUT", base+"/inbound", &v1.PutSipInboundRequest{Enabled: true,
+		Target: &v1.SipRouteTarget{Kind: v1.SipRouteKind_SIP_ROUTE_KIND_GROUP, Id: g.GetGroup().GetId()}}, nil)
+
+	room := rtc.InboundRoomPrefix(uuid.MustParse(wid)) + "_+79165555555_" + uniq("")
+	if err := a.SIP.Inbound(ctx, rtc.EventParticipantJoined, room, inboundLine("+79165555555")); err != nil {
+		t.Fatal(err)
+	}
+	cid := bobG.wait("the group rings bob", func(e *v1.DispatchEvent) bool {
+		return e.GetSipInboundRing().GetCall().GetNumber() == "+79165555555"
+	}).GetSipInboundRing().GetCall().GetId()
+	// Before the fallback's time the tick changes nothing; after it the call goes to carol.
+	a.SIP.InboundTick(ctx)
+	if c, err := testDB.Q.GetSipCallByLKRoom(ctx, room); err != nil || c.Status != "ringing" || !slices.Equal(c.RingingUserIds, []uuid.UUID{uuid.MustParse(bob.id)}) {
+		t.Fatalf("before the fallback: %+v %v", c, err)
+	}
+	time.Sleep(5100 * time.Millisecond)
+	a.SIP.InboundTick(ctx)
+	carolG.wait("the fallback rings carol", func(e *v1.DispatchEvent) bool {
+		return e.GetSipInboundRing().GetCall().GetId() == cid
+	})
+	bobG.wait("bob stops ringing", func(e *v1.DispatchEvent) bool {
+		c := e.GetSipCallUpdate().GetCall()
+		return c.GetId() == cid && slices.Equal(c.GetRingingUserIds(), []string{carol.id})
+	})
+	if c, err := testDB.Q.GetSipCallByLKRoom(ctx, room); err != nil || !strings.Contains(c.Route, "group:") || !strings.Contains(c.Route, "ext:"+carolExt.GetExtension().GetId()) {
+		t.Fatalf("route: %+v %v", c, err)
 	}
 }
