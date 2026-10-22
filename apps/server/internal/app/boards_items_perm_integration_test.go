@@ -85,4 +85,15 @@ func TestBoardItemsUnderEditTasks(t *testing.T) {
 	manager.must(200, "PATCH", base, &v1.UpdateBoardRequest{Name: &name}, nil)
 	manager.must(200, "GET", base+"/permissions", nil, nil)
 	setBoardPerms(manager, bid, 200, userOv(manager.id, perm.ManageBoard, 0))
+
+	// The approval gate: turning a status into COMPLETED completes its tasks in place, so the
+	// editor (no override power, ADR-0108) is refused while a task there waits for approval;
+	// the owner (MANAGE_BOARD, a human) may, as before.
+	editor.must(201, "POST", base+"/statuses", &v1.CreateBoardStatusRequest{Name: "Проверка"}, &r)
+	gid, _, _ := find(&r, "Проверка")
+	createTask(t, editor, bid, &v1.CreateTaskRequest{Title: "Согласовать", StatusId: gid, ApproverIds: []string{bob.id}}, 201)
+	done := v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED
+	editor.must(409, "PATCH", base+"/statuses/"+gid, &v1.UpdateBoardStatusRequest{Type: &done}, nil)
+	editor.must(200, "PATCH", base+"/statuses/"+gid, &v1.UpdateBoardStatusRequest{Name: &renamed}, nil)
+	o.must(200, "PATCH", base+"/statuses/"+gid, &v1.UpdateBoardStatusRequest{Type: &done}, nil)
 }

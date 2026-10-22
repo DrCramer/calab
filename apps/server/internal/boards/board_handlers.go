@@ -996,9 +996,14 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Icon = req.Icon
 	}
-	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+	err = s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
 			return err
+		}
+		if p.Type != nil && *p.Type == "completed" {
+			if err := statusCompletionGate(r, q, tx, id, sid, acc); err != nil {
+				return err
+			}
 		}
 		if _, err := q.UpdateBoardStatus(r.Context(), p); err != nil {
 			if db.IsNotFound(err) {
@@ -1031,6 +1036,47 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
+}
+
+// statusCompletionGate (CBF-73): turning a status into COMPLETED completes its tasks in place —
+// a forward move of each (ADR-0049 §2). EDIT_TASKS now reaches the statuses, but only the
+// override power (ADR-0108, a human with MANAGE_BOARD) passes the approval gate: for anyone
+// else the change is refused while a task of the status waits for approval or was rejected.
+func statusCompletionGate(r *http.Request, q *sqlc.Queries, tx pgx.Tx, boardID, sid uuid.UUID, acc perm.BoardAccess) error {
+	if Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) || mayManageApprovals(r, acc, "") == nil {
+		return nil
+	}
+	ss, err := q.ListBoardStatuses(r.Context(), []uuid.UUID{boardID})
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, x := range ss {
+		if x.ID == sid {
+			if x.Type == "completed" {
+				return nil
+			}
+			found = true
+		}
+	}
+	if !found {
+		return httpx.NotFound("status")
+	}
+	// Row locks: a vote or an approvers change cannot slip in between the check and the update.
+	rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1 ORDER BY t.id FOR UPDATE OF t", sid)
+	if err != nil {
+		return err
+	}
+	tls, err := tallies(r.Context(), q, rows)
+	if err != nil {
+		return err
+	}
+	for _, x := range rows {
+		if t := tls[x.ID]; t.Blocks() {
+			return approvalRequired(t)
+		}
+	}
+	return nil
 }
 
 // deleteStatus: DELETE …/statuses/{sid}?move_to=<sid> — its tasks move to move_to first.
