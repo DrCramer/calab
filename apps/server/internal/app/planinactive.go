@@ -75,6 +75,8 @@ var planInactiveRoutes = map[string]string{
 	"PUT /api/boards/{id}/forms/{fid}":                plans.RestrictedConnect,
 	"PUT /api/workspaces/{id}/sip":                    plans.RestrictedConnect,
 	"POST /api/workspaces/{id}/sip/test":              plans.RestrictedConnect,
+	"PUT /api/workspaces/{id}/ai":                     plans.RestrictedConnect,
+	"POST /api/workspaces/{id}/ai/check":              plans.RestrictedConnect,
 	"POST /api/rooms/{id}/calls":                      plans.RestrictedConnect,
 	// voice: audio only (the LiveKit grants drop camera / screen too, rtc)
 	"POST /api/rooms/{id}/stream/request":              plans.RestrictedMedia,

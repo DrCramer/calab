@@ -1,5 +1,10 @@
 import {
   GetSipSettingsResponseSchema,
+  GetAiSettingsResponseSchema,
+  PutAiSettingsRequestSchema,
+  PutAiSettingsResponseSchema,
+  CheckAiRequestSchema,
+  CheckAiResponseSchema,
   ListSipCallsResponseSchema,
   PlaceSipCallRequestSchema,
   PutSipSettingsRequestSchema,
@@ -707,6 +712,18 @@ export const api = {
       call('GET', `/api/workspaces/${workspaceId}/calls${qs({ cursor })}`, ListSipCallsResponseSchema, undefined, signal),
     place: (roomId: string, number: string) => call('POST', `/api/rooms/${roomId}/calls`, SipCallResponseSchema, body(PlaceSipCallRequestSchema, { number })),
     hangup: (roomId: string, callId: string) => call('DELETE', `/api/rooms/${roomId}/calls/${callId}`, SipCallResponseSchema),
+  },
+  /**
+   * AI integration (CBF-60, ai.proto) — MANAGE_INTEGRATIONS. PUT replaces the form (api_key unset =
+   * keep the stored one for the same provider and address, "" = remove): 422 VALIDATION field.
+   * check sends «hi» to the model of the given form (up to ~30 s): 200 with ok / error, 429.
+   */
+  ai: {
+    settings: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/ai`, GetAiSettingsResponseSchema),
+    save: (workspaceId: string, init: MessageInitShape<typeof PutAiSettingsRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/ai`, PutAiSettingsResponseSchema, body(PutAiSettingsRequestSchema, init)),
+    check: (workspaceId: string, init: MessageInitShape<typeof CheckAiRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/ai/check`, CheckAiResponseSchema, body(CheckAiRequestSchema, init)),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

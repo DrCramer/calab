@@ -86,7 +86,7 @@ export const esRecording: DictShape<typeof ruRecording> = {
   'rec.tr.speaker': 'Hablante {n}',
   'rec.tr.file': 'Transcripción',
   'rec.tr.playFrom': 'Reproducir desde {time}',
-  'gpt.tab': 'GPTunneL',
+  'gpt.tab': 'Integración de IA',
   'gpt.card': 'Grabación y transcripción de reuniones',
   'gpt.intro':
     'Las grabaciones de reuniones van a GPTunneL, donde aparecen la transcripción y el resumen. Conecta el espacio una vez; después cualquier miembro inicia la grabación desde el menú «…» de una sala de voz.',

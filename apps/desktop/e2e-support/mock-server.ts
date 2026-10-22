@@ -189,6 +189,11 @@ import {
   VerifyEmailRequestSchema,
   VerifyEmailResponseSchema,
   GetGptunnelIntegrationResponseSchema,
+  GetAiSettingsResponseSchema,
+  PutAiSettingsRequestSchema,
+  PutAiSettingsResponseSchema,
+  CheckAiRequestSchema,
+  CheckAiResponseSchema,
   GptunnelIntegrationSchema,
   MessageKind,
   PairGptunnelRequestSchema,
@@ -6273,6 +6278,32 @@ class MockImpl {
       this.requireWsBit(m, 'MANAGE_INTEGRATIONS'); // ADR-0048
       this.setGptunnel(ws.id, null);
       noContent(c.res);
+    });
+
+    // AI integration (CBF-60): stateless — the defaults, PUT echoes the form, the check answers.
+    const aiAdmin = (c: Ctx): void => {
+      const { m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('not available to guests');
+      this.requireWsBit(m, 'MANAGE_INTEGRATIONS');
+    };
+    this.route('GET', '/api/workspaces/:id/ai', (c) => {
+      aiAdmin(c);
+      sendMsg(c.res, 200, GetAiSettingsResponseSchema, { settings: { model: 'gpt-6-astra' } });
+    });
+    this.route('PUT', '/api/workspaces/:id/ai', (c) => {
+      aiAdmin(c);
+      const b = parseBody(c, PutAiSettingsRequestSchema);
+      if (!b.model.trim()) throw invalid('model', 'model is required');
+      sendMsg(c.res, 200, PutAiSettingsResponseSchema, {
+        settings: { provider: b.provider, baseUrl: b.baseUrl, model: b.model.trim(), hasKey: !!b.apiKey, keyMask: b.apiKey ? '••••' + b.apiKey.slice(-4) : '', updatedAt: tick(this.state), updatedBy: this.uid(c) },
+      });
+    });
+    this.route('POST', '/api/workspaces/:id/ai/check', (c) => {
+      aiAdmin(c);
+      const b = parseBody(c, CheckAiRequestSchema);
+      if (!b.apiKey) throw invalid('apiKey', 'API key is required');
+      const ok = b.apiKey !== 'wrong';
+      sendMsg(c.res, 200, CheckAiResponseSchema, ok ? { ok, reply: 'Hello! How can I help?', httpStatus: 200, latencyMs: 1200 } : { ok, error: 'unauthorized', message: 'Unauthorized', httpStatus: 401, latencyMs: 300 });
     });
 
     this.route('POST', '/api/rooms/:id/recording/start', (c) => {
