@@ -72,7 +72,7 @@ export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNod
       {/* Re-mounted when the server's copy changes: the form starts from what is saved. */}
       <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
       <TestCard workspaceId={workspaceId} settings={settings} />
-      <Exchange workspaceId={workspaceId} inboundAvailable={settings.inboundAvailable} />
+      <Exchange workspaceId={workspaceId} settings={settings} />
     </>
   ) : null;
   return (

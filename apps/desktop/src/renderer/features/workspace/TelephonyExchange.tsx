@@ -7,6 +7,7 @@ import {
   type SipGroup,
   type SipIvrMenu,
   type SipRouteTarget,
+  type SipSettings,
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,11 +15,12 @@ import { ArrowDown, ArrowUp, Pause, Pencil, Play, Trash2, TriangleAlert, X } fro
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, IconButton, Input, Segmented, Select, Spinner, cx } from '../../components/ui';
+import { Button, Card, IconButton, Input, Row, Segmented, Select, Spinner, Switch, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { describeError } from '../../lib/api/errors';
 import { api, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
+import { formatPhone } from '../../lib/sip';
 import { cleanNumber, fieldError, numberValid, targetInit, targetValue } from '../../lib/sipPbx';
 import { reportPlanError } from '../../services/plan';
 import { toast } from '../../stores/toasts';
@@ -32,8 +34,8 @@ import { formatDuration } from '../shell/voiceFormat';
  * MANAGE_INTEGRATIONS): «Внутренние номера» (number · member or bot · description), «Группы»
  * (number, all at once / one by one, members in order, «если никто не ответил»), «Автоответ»
  * (voice menus: the recorded prompt, what each key 1–9 * 0 # does, «нет нажатия»). Each card is
- * a list; a row opens its inline form. Answering calls comes with step 2 (SIP_INBOUND), so the
- * cards are set up ahead of time. Rows are memo'd with primitive props; the lists change only
+ * a list; a row opens its inline form. «Входящие» (step 2, shown when the server has SIP_INBOUND):
+ * the switch, where calls go and the provider's addresses, saved with PUT …/sip/inbound. Rows are memo'd with primitive props; the lists change only
  * by the admin's own saves (react-query), never by a live event.
  */
 
@@ -115,7 +117,8 @@ function ErrLine({ text, testId }: { text: string | null | undefined; testId?: s
   ) : null;
 }
 
-export function Exchange({ workspaceId, inboundAvailable }: { workspaceId: string; inboundAvailable: boolean }): ReactNode {
+export function Exchange({ workspaceId, settings }: { workspaceId: string; settings: SipSettings }): ReactNode {
+  const inboundAvailable = settings.inboundAvailable;
   const x = useExchange(workspaceId);
   if (x.failed) {
     return (
@@ -145,6 +148,16 @@ export function Exchange({ workspaceId, inboundAvailable }: { workspaceId: strin
           {t('pbx.inboundOff')}
         </p>
       )}
+      {inboundAvailable ? (
+        <InboundCard
+          key={`${settings.inboundEnabled}:${settings.inboundSaved}:${settings.inboundTarget?.id ?? ''}:${settings.inboundAllowedCidrs.join(',')}`}
+          workspaceId={workspaceId}
+          settings={settings}
+          exts={x.exts}
+          groups={x.groups}
+          menus={x.menus}
+        />
+      ) : null}
       <ExtensionsCard workspaceId={workspaceId} exts={x.exts} />
       <GroupsCard workspaceId={workspaceId} exts={x.exts} groups={x.groups} menus={x.menus} />
       <MenusCard workspaceId={workspaceId} exts={x.exts} groups={x.groups} menus={x.menus} />
@@ -458,6 +471,103 @@ function MissingNote({ target }: { target: SipRouteTarget | undefined }): ReactN
       {t('pbx.target.missingHint')}
     </span>
   ) : null;
+}
+
+// ---------------------------------------------------------------- inbound calls
+
+/** «Входящие» (ADR-0117 step 2): answer calls to the Caller ID, where they go, provider addresses. */
+function InboundCard({
+  workspaceId,
+  settings,
+  exts,
+  groups,
+  menus,
+}: {
+  workspaceId: string;
+  settings: SipSettings;
+  exts: SipExtension[];
+  groups: SipGroup[];
+  menus: SipIvrMenu[];
+}): ReactNode {
+  const qc = useQueryClient();
+  const [on, setOn] = useState(settings.inboundEnabled);
+  const [target, setTarget] = useState(targetValue(settings.inboundTarget) || 'hangup');
+  const [cidrs, setCidrs] = useState(settings.inboundAllowedCidrs.join(', '));
+  const errs = useFormErrors(workspaceId);
+  const cidrId = useId();
+  const save = useMutation({
+    mutationFn: () =>
+      api.sip.saveInbound(workspaceId, {
+        enabled: on,
+        target: targetInit(target === 'missing' ? 'hangup' : target),
+        allowedCidrs: cidrs
+          .split(/[\s,;]+/)
+          .map((c) => c.trim())
+          .filter(Boolean),
+      }),
+    onSuccess: () => {
+      toast.info(t('pbx.saved'));
+      void qc.invalidateQueries({ queryKey: ['sip', workspaceId] });
+    },
+    onError: errs.report,
+  });
+  const live = settings.inboundEnabled && settings.inboundSaved;
+  return (
+    <Card title={t('pbx.in.title')} footer={t('pbx.in.footer')}>
+      <div className="px-3 py-1.5" data-testid="sip-inbound">
+        <Switch
+          checked={on}
+          onChange={(v) => {
+            setOn(v);
+            errs.clear();
+          }}
+          label={t('pbx.in.enabled', { number: settings.callerId ? formatPhone(settings.callerId) : '—' })}
+          hint={settings.enabled ? (live ? t('pbx.in.stateOn') : t('pbx.in.stateOff')) : t('pbx.in.enabledHint')}
+          disabled={!settings.enabled && !on}
+        />
+      </div>
+      <Row label={t('pbx.in.target')}>
+        <span className="flex min-w-0 flex-col items-end gap-1">
+          <TargetSelect
+            value={target}
+            onChange={(v) => {
+              setTarget(v);
+              errs.clear('target');
+            }}
+            exts={exts}
+            groups={groups}
+            menus={menus}
+            label={t('pbx.in.target')}
+            testId="sip-inbound-target"
+          />
+          <MissingNote target={settings.inboundTarget} />
+          <ErrLine text={errs.field.target} />
+        </span>
+      </Row>
+      <Row label={t('pbx.in.cidrs')} hint={t('pbx.in.cidrsHint')} htmlFor={cidrId}>
+        <span className="flex min-w-0 flex-col items-end gap-1">
+          <Input
+            id={cidrId}
+            value={cidrs}
+            spellCheck={false}
+            placeholder="203.0.113.0/24"
+            onChange={(e) => {
+              setCidrs(e.target.value);
+              errs.clear('allowedCidrs');
+            }}
+            data-testid="sip-inbound-cidrs"
+          />
+          <ErrLine text={errs.field.allowedCidrs} />
+        </span>
+      </Row>
+      <div className="flex flex-wrap items-center gap-3 px-3 py-2">
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="sip-inbound-save">
+          {t('pbx.save')}
+        </Button>
+        <ErrLine text={errs.form} testId="sip-inbound-error" />
+      </div>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------- groups

@@ -40,4 +40,12 @@ export const zhCall: DictShape<typeof ruCall> = {
   'call.log.cancelled': '已取消的通话',
   'call.log.busy': '忙线',
   'call.log.call': '通话',
+  // inbound phone calls (ADR-0117)
+  'call.sipIncoming': '号码来电',
+  'call.sipVia': '号码来电 · {via}',
+  'call.sipUnknown': '隐藏号码',
+  'call.sipFailed': '无法接听来电',
+  'call.sipTaken': '来电已被接听或已结束',
+  'call.sipNotify': '来自 {number} 的来电',
+  'call.sipPanel': '通话 · {number}',
 };

@@ -22,7 +22,10 @@ import {
   PlaceSipCallRequestSchema,
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
+  PutSipInboundRequestSchema,
+  PutSipInboundResponseSchema,
   SipCallResponseSchema,
+  SipInboundAcceptResponseSchema,
   TestSipResponseSchema,
   CreateNotesRequestSchema,
   CreateNotesResponseSchema,
@@ -748,6 +751,17 @@ export const api = {
     updateMenu: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipIvrMenuRequestSchema>) =>
       call('PATCH', `/api/workspaces/${workspaceId}/sip/ivr/${id}`, SipIvrMenuResponseSchema, body(UpdateSipIvrMenuRequestSchema, init)),
     removeMenu: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/ivr/${id}`),
+    /**
+     * Inbound calls (ADR-0117 step 2): the settings (MANAGE_INTEGRATIONS; 409 SIP_DISABLED without
+     * the server switch, 422 target / allowedCidrs), and a call that rings me — accept (a token for
+     * the call's room), join (a fresh token), decline, hang up.
+     */
+    saveInbound: (workspaceId: string, init: MessageInitShape<typeof PutSipInboundRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/sip/inbound`, PutSipInboundResponseSchema, body(PutSipInboundRequestSchema, init)),
+    acceptInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/accept`, SipInboundAcceptResponseSchema),
+    joinInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/join`, JoinVoiceResponseSchema),
+    declineInbound: (callId: string) => callEmpty('POST', `/api/sip/inbound/${callId}/decline`),
+    hangupInbound: (callId: string) => call('DELETE', `/api/sip/inbound/${callId}`, SipCallResponseSchema),
   },
   /**
    * AI integration (CBF-60, ai.proto) — MANAGE_INTEGRATIONS. PUT replaces the form (api_key unset =

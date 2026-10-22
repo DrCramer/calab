@@ -64,6 +64,8 @@ const FIELD_ERR: Record<string, MessageKey> = {
   items: 'pbx.err.target',
   digit: 'pbx.err.target',
   promptSourceFileId: 'pbx.err.prompt',
+  target: 'pbx.err.target',
+  allowedCidrs: 'pbx.err.cidrs',
 };
 
 export function fieldError(e: unknown): { field: string; text: string } | null {

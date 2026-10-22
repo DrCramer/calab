@@ -22,6 +22,7 @@ import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
+import { isPhoneRoom, phoneCallId, takePhoneJoin } from '../lib/sipInbound';
 import { log } from '../lib/log';
 import { isLapsed } from '../lib/billing/model';
 import { restrictedPerms, roomPerms, voiceCaps } from '../lib/permissions';
@@ -1051,6 +1052,11 @@ class VoiceEngine {
   }
 
   private async leaveStray(roomId: string): Promise<void> {
+    // A phone call's session (ADR-0117) is not a seat of the server's voice state.
+    if (isPhoneRoom(roomId)) {
+      this.strayRooms.delete(roomId);
+      return;
+    }
     try {
       await api.voice.leave(roomId);
       this.strayRooms.delete(roomId);
@@ -1200,7 +1206,10 @@ class VoiceEngine {
 
   /** POST /join, remembered as the /join in flight. */
   private sendJoin(roomId: string): ReturnType<typeof api.voice.join> {
-    const req = api.voice.join(roomId);
+    // An inbound phone call's session (ADR-0117): the accept's token once, then a fresh one
+    // for each reconnect — never the room /join.
+    const pre = isPhoneRoom(roomId) ? takePhoneJoin(roomId) : undefined;
+    const req = isPhoneRoom(roomId) ? (pre ? Promise.resolve(pre) : api.sip.joinInbound(phoneCallId(roomId))) : api.voice.join(roomId);
     const settled = req.then(
       () => undefined,
       () => undefined,
@@ -1214,6 +1223,7 @@ class VoiceEngine {
 
   /** POST /voice/leave in the background, after a /join still in flight (never rejects). */
   private sendLeave(roomId: string): void {
+    if (isPhoneRoom(roomId)) return; // the phone call hangs up by services/sipInbound.ts
     const joining = this.joinReq;
     this.leavingRooms.add(roomId);
     const run = (async (): Promise<void> => {
@@ -2590,6 +2600,7 @@ class VoiceEngine {
   /** Optimistic voice state for everyone (docs/05: PATCH /api/voice/self). */
   private pushSelfState(): void {
     if (!this.room && !this.nativeAudio) return;
+    if (isPhoneRoom(this.roomId)) return; // a phone call's session is in no voice list (ADR-0117)
     const v = useVoice.getState();
     const musician = prefs().musicianMode;
     void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
