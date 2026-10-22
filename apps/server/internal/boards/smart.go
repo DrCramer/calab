@@ -256,8 +256,14 @@ func contains(xs []string, x string) bool {
 var mentionRE = regexp.MustCompile(`(?i)@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|everyone|here)\b`)
 
 // stripMentions drops the @ of mentions a model wrote: only the person's own text may call
-// people to a card (ADR-0076 §5).
-func stripMentions(s string) string { return mentionRE.ReplaceAllString(s, "$1") }
+// people to a card (ADR-0076 §5). Repeated until none is left: dropping one @ of "@@everyone"
+// leaves "@everyone".
+func stripMentions(s string) string {
+	for mentionRE.MatchString(s) {
+		s = mentionRE.ReplaceAllString(s, "$1")
+	}
+	return s
+}
 
 // cleanTitle: one line without mentions, ≤ maxSmartTitle characters.
 func cleanTitle(s string) string {

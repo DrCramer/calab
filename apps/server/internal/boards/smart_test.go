@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
@@ -97,6 +98,17 @@ func TestSmartEligible(t *testing.T) {
 	} {
 		if got := smartEligible(c.acc); got != c.want {
 			t.Errorf("%s: %v", c.name, got)
+		}
+	}
+}
+
+// A model's mentions never survive, even nested ones that a single pass would uncover.
+func TestStripMentions(t *testing.T) {
+	id := "0b6f1a52-3c1e-4c55-9a9e-5d2f7b1c0e11"
+	for _, in := range []string{"@" + id, "@@" + id, "@@@everyone", "x @@here y", "@@@@" + id + " @@everyone"} {
+		out := stripMentions(in)
+		if users, everyone := messages.ParseMentions(out); len(users) > 0 || everyone {
+			t.Fatalf("%q -> %q still mentions", in, out)
 		}
 	}
 }
