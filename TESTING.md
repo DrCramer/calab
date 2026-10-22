@@ -2290,3 +2290,13 @@ are not current phone evidence. Visual suites remain disabled.
 4. `send_message` to a room the bot is not in or a private board task: `isError` with `404`/`403`, nothing is created.
 5. No header: `401`. A person's token or session: `403`. `GET /api/mcp`: `405`. A JSON array body: `400`.
 6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists six tools. Guide: `/ru/docs/bots/mcp`.
+
+## SIP inbound over a registration (ADR-0121)
+
+1. Without a provider: `go test -race ./cmd/sipreg ./internal/sipreg ./internal/sip` (fake provider and fake LiveKit SIP in-process). Manual end-to-end: `docker compose -f infra/docker/compose.dev.yml --profile sip --profile sip-dev up -d` (Asterisk as the provider, comments in compose.dev.yml).
+2. Stand: `SIPREG_AGENT_TOKEN` in `.env` and in the prod API env, two firewall rules 5080 udp/tcp, `deploy.sh`; API log «sipreg: agent connected».
+3. Settings → Телефония: telephony on (Plusofon host, login, password, Caller ID) → «Входящие» → «По регистрации», a target, save. Within seconds the line reads «Зарегистрировано до HH:MM · контакт sip:c…@<IP>:5080».
+4. Wrong password: the line turns «Ошибка регистрации: провайдер не принял логин или пароль»; the agent does not retry for 5 minutes.
+5. Call the Caller ID from a phone: the menu / group rings as in direct mode; the journal row has `provider_call_id`. Hang up on either side — the other side ends.
+6. Switch back to «На адрес сервера»: the agent unregisters (Expires: 0); the line disappears.
+7. `docker compose stop sipreg`: within 30 s the line reads «Регистратор недоступен»; start it — «Зарегистрировано» again.
