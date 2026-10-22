@@ -1495,6 +1495,8 @@ type SipGroup struct {
 	OnFailGroupID     *uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	FallbackEnabled   bool
+	FallbackSec       int32
 }
 
 type SipGroupMember struct {

@@ -1590,9 +1590,21 @@ test('m-telephony', async ({ page }) => {
   await expectNoFieldFocus(page, 'telephony');
   await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony');
+  // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
+  await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
+  await expect(dialog.getByTestId('sip-group-onfail')).toBeVisible();
+  await dialog.getByTestId('sip-group-fallback').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-group');
+  await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).tap();
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
   await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-menu');
+  // The greeting row on a phone: ▶, the length, «Заменить» / «Удалить запись», a refused file.
+  const promptRow = dialog.getByTestId('sip-menu-prompt');
+  await dialog.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
+  await expect(dialog.getByTestId('sip-menu-prompt-error')).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
+  await promptRow.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-prompt');
   // ADR-0117 step 2: an inbound call rings me — the sheet takes the whole screen.
   mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
   const ring = page.getByTestId('sip-incoming');

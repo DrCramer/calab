@@ -6,6 +6,7 @@ import {
   SipPromptStatus,
   SipRegistrationStatus,
   WorkspaceRole,
+  type ListSipIvrMenusResponse,
   type SipExtension,
   type SipGroup,
   type SipIvrMenu,
@@ -16,7 +17,7 @@ import {
 } from '@calaba/protocol';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, Pause, Pencil, Play, Trash2, TriangleAlert, X } from 'lucide-react';
-import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, IconButton, Input, PasswordInput, Row, Segmented, Select, Spinner, Switch, cx } from '../../components/ui';
@@ -37,7 +38,7 @@ import { formatDuration } from '../shell/voiceFormat';
 /*
  * Workspace settings → «Телефония» → the exchange (ADR-0117 step 1, docs/08 «Телефония»;
  * MANAGE_INTEGRATIONS): «Внутренние номера» (number · member or bot · description), «Группы»
- * (number, all at once / one by one, members in order, «если никто не ответил»), «Автоответ»
+ * (number, all at once / one by one, members in order, the optional fallback — ADR-0124), «Автоответ»
  * (voice menus: the recorded prompt, what each key 1–9 * 0 # does, «нет нажатия»). Each card is
  * a list; a row opens its inline form. «Входящие» (step 2, shown when the server can take inbound
  * calls): the switch, how calls arrive (to our address with the provider's addresses, or over a
@@ -48,6 +49,8 @@ import { formatDuration } from '../shell/voiceFormat';
 /** The prompt upload limit (sip.proto CreateSipIvrMenuRequest.prompt_source_file_id). */
 export const MAX_PROMPT_UPLOAD = 10 * 1024 * 1024;
 const PROMPT_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/opus,.mp3,.wav,.ogg,.oga,.opus';
+/** A file the server can make a prompt of, by its name or type (the server checks the content). */
+const promptFile = (f: File): boolean => /\.(mp3|wav|ogg|oga|opus)$/i.test(f.name) || /^audio\/(mpeg|mp3|wav|x-wav|wave|ogg|opus)$/.test(f.type);
 /** The keys of a menu in phone keypad order. */
 export const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as const;
 
@@ -808,7 +811,8 @@ function GroupsCard({ workspaceId, exts, groups, menus }: { workspaceId: string;
               number={g.extension?.number ?? ''}
               roundRobin={g.strategy === SipGroupStrategy.ROUND_ROBIN}
               members={g.members.length}
-              warn={!!g.onFail?.missing}
+              fallbackSec={g.fallbackEnabled ? g.fallbackSec : 0}
+              warn={g.fallbackEnabled && !!g.onFail?.missing}
               onEdit={setEditing}
             />
           ),
@@ -833,6 +837,7 @@ const GroupRow = memo(function GroupRow({
   number,
   roundRobin,
   members,
+  fallbackSec,
   warn,
   onEdit,
 }: {
@@ -841,6 +846,8 @@ const GroupRow = memo(function GroupRow({
   number: string;
   roundRobin: boolean;
   members: number;
+  /** 0 = no fallback: the group rings until somebody answers (ADR-0124). */
+  fallbackSec: number;
   warn: boolean;
   onEdit: (id: string) => void;
 }): ReactNode {
@@ -852,6 +859,7 @@ const GroupRow = memo(function GroupRow({
       </span>
       <span className="shrink-0 text-body text-muted">
         {t(roundRobin ? 'pbx.group.roundRobin' : 'pbx.group.ringAll')} · {plural('pbx.group.members', members)}
+        {fallbackSec ? ` · ${t('pbx.group.rowFallback', { sec: fallbackSec })}` : ''}
       </span>
       {warn ? <TriangleAlert className="size-4 shrink-0 text-[var(--color-yellow)]" aria-label={t('pbx.target.missingHint')} /> : null}
       <IconButton size="sm" label={t('pbx.edit')} onClick={() => onEdit(id)}>
@@ -882,9 +890,10 @@ function GroupForm({
   const [name, setName] = useState(group?.name ?? '');
   const [number, setNumber] = useState(group?.extension?.number ?? '');
   const [roundRobin, setRoundRobin] = useState(group?.strategy === SipGroupStrategy.ROUND_ROBIN);
-  const [ringSec, setRingSec] = useState(String(group?.ringSec || 30));
   const [memberSec, setMemberSec] = useState(String(group?.memberRingSec || 15));
   const [members, setMembers] = useState<string[]>(() => group?.members.map((m) => m.extensionId) ?? []);
+  const [fallback, setFallback] = useState(!!group?.fallbackEnabled);
+  const [fallbackSec, setFallbackSec] = useState(String(group?.fallbackSec || 30));
   const [onFail, setOnFail] = useState(targetValue(group?.onFail));
   const byId = useMemo(() => new Map(exts.map((e) => [e.id, e])), [exts]);
   const free = exts.filter((e) => e.kind !== SipExtensionKind.GROUP && !members.includes(e.id));
@@ -900,8 +909,9 @@ function GroupForm({
     name: name.trim(),
     number,
     strategy: roundRobin ? SipGroupStrategy.ROUND_ROBIN : SipGroupStrategy.RING_ALL,
-    ringSec: Number(ringSec) || 0,
     memberRingSec: Number(memberSec) || 0,
+    fallbackEnabled: fallback,
+    fallbackSec: Number(fallbackSec) || 0,
     onFail: targetInit(onFail),
     members: { extensionIds: members },
   };
@@ -923,7 +933,6 @@ function GroupForm({
     onError: errs.report,
   });
   const ready = !!name.trim() && numberValid(number);
-  const sec = roundRobin ? memberSec : ringSec;
   return (
     <form
       className="flex flex-col gap-3 px-3 py-3"
@@ -966,17 +975,22 @@ function GroupForm({
           ]}
           testId="sip-group-strategy"
         />
-        <label className="flex items-center gap-2 text-body">
-          <span className="text-muted">{t(roundRobin ? 'pbx.group.memberSec' : 'pbx.group.ringSec')}</span>
-          <Input
-            aria-label={t(roundRobin ? 'pbx.group.memberSec' : 'pbx.group.ringSec')}
-            value={sec}
-            inputMode="numeric"
-            className="w-16! tabular-nums"
-            onChange={(e) => (roundRobin ? setMemberSec : setRingSec)(e.target.value.replace(/\D/g, '').slice(0, 2))}
-          />
-          <span className="text-muted">{t('pbx.sec')}</span>
-        </label>
+        {roundRobin ? (
+          <label className="flex items-center gap-2 text-body">
+            <span className="text-muted">{t('pbx.group.memberSec')}</span>
+            <Input
+              aria-label={t('pbx.group.memberSec')}
+              value={memberSec}
+              inputMode="numeric"
+              className="w-16! tabular-nums"
+              onChange={(e) => {
+                setMemberSec(e.target.value.replace(/\D/g, '').slice(0, 2));
+                errs.clear('memberRingSec');
+              }}
+            />
+            <span className="text-muted">{t('pbx.sec')}</span>
+          </label>
+        ) : null}
       </div>
       <p className="text-caption text-faint">{t(roundRobin ? 'pbx.group.roundRobinHint' : 'pbx.group.ringAllHint')}</p>
       <ErrLine text={errs.field['ringSec'] ?? errs.field['memberRingSec']} />
@@ -1007,7 +1021,7 @@ function GroupForm({
             })}
           </ol>
         ) : (
-          <p className="text-body text-muted">{t('pbx.group.noMembers')}</p>
+          <p className="text-body text-muted">{t(free.length ? 'pbx.group.noMembers' : 'pbx.group.needNumbers')}</p>
         )}
         {free.length && members.length < 20 ? (
           <Select
@@ -1029,12 +1043,54 @@ function GroupForm({
         ) : null}
         <ErrLine text={errs.field['members']} />
       </div>
-      <label className="flex flex-wrap items-center gap-2 text-body">
-        <span className="text-muted">{t('pbx.group.onFail')}</span>
-        <TargetSelect value={onFail} onChange={setOnFail} exts={exts} groups={groups.filter((g) => g.id !== group?.id)} menus={menus} label={t('pbx.group.onFail')} className="w-64 mobile:w-full" testId="sip-group-onfail" />
-        <MissingNote target={onFail === 'missing' ? group?.onFail : undefined} />
-      </label>
-      <ErrLine text={errs.field['onFail']} />
+      {/* ADR-0124: off — the group rings until somebody answers; on — after N s the call goes on. */}
+      <div className="flex flex-col gap-2" data-testid="sip-group-fallback">
+        <Switch
+          checked={fallback}
+          onChange={(v) => {
+            setFallback(v);
+            errs.clear('onFail');
+            errs.clear('fallbackSec');
+          }}
+          label={t('pbx.group.fallback')}
+          hint={t(fallback ? 'pbx.group.fallbackOnHint' : 'pbx.group.fallbackOffHint')}
+        />
+        {fallback ? (
+          <div className="flex flex-wrap items-center gap-2 text-body">
+            <label className="flex items-center gap-2">
+              <span className="text-muted">{t('pbx.group.fallbackAfter')}</span>
+              <Input
+                aria-label={t('pbx.group.fallback')}
+                value={fallbackSec}
+                inputMode="numeric"
+                className="w-16! tabular-nums"
+                data-testid="sip-group-fallback-sec"
+                onChange={(e) => {
+                  setFallbackSec(e.target.value.replace(/\D/g, '').slice(0, 3));
+                  errs.clear('fallbackSec');
+                }}
+              />
+              <span className="text-muted">{t('pbx.sec')}</span>
+            </label>
+            <span className="text-muted">{t('pbx.group.fallbackTo')}</span>
+            <TargetSelect
+              value={onFail}
+              onChange={(v) => {
+                setOnFail(v);
+                errs.clear('onFail');
+              }}
+              exts={exts}
+              groups={groups.filter((g) => g.id !== group?.id)}
+              menus={menus}
+              label={t('pbx.group.onFail')}
+              className="w-64 mobile:w-full"
+              testId="sip-group-onfail"
+            />
+            <MissingNote target={onFail === 'missing' ? group?.onFail : undefined} />
+          </div>
+        ) : null}
+        <ErrLine text={errs.field['fallbackSec'] ?? errs.field['onFail']} />
+      </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <ErrLine text={errs.form} />
         {group ? (
@@ -1072,6 +1128,15 @@ function ExtOption({ workspaceId, ext }: { workspaceId: string; ext: SipExtensio
 
 function MenusCard({ workspaceId, exts, groups, menus }: { workspaceId: string; exts: SipExtension[]; groups: SipGroup[]; menus: SipIvrMenu[] }): ReactNode {
   const [editing, setEditing] = useState<string | null>(null);
+  const qc = useQueryClient();
+  // A new menu stays open after «Сохранить»: its greeting is uploaded right there (it needs the id).
+  const created = useCallback(
+    (m: SipIvrMenu) => {
+      qc.setQueryData<ListSipIvrMenusResponse>(menuKey(workspaceId), (cur) => (cur && !cur.menus.some((x) => x.id === m.id) ? { ...cur, menus: [...cur.menus, m] } : cur));
+      setEditing(m.id);
+    },
+    [qc, workspaceId],
+  );
   return (
     <Card title={t('pbx.menu.title')} footer={t('pbx.menu.footer')}>
       {menus.length === 0 && editing !== 'new' ? (
@@ -1099,7 +1164,7 @@ function MenusCard({ workspaceId, exts, groups, menus }: { workspaceId: string; 
         )}
       </ul>
       {editing === 'new' ? (
-        <MenuForm workspaceId={workspaceId} exts={exts} groups={groups} menus={menus} onDone={() => setEditing(null)} />
+        <MenuForm workspaceId={workspaceId} exts={exts} groups={groups} menus={menus} onDone={() => setEditing(null)} onCreated={created} />
       ) : (
         <div className="px-3 py-2">
           <Button variant="secondary" size="sm" onClick={() => setEditing('new')} data-testid="sip-menu-add">
@@ -1179,11 +1244,19 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
   const refresh = useRefresh(workspaceId);
   const input = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Upload progress in whole percent (null: not uploading — the server converts the file then).
+  const [pct, setPct] = useState<number | null>(null);
   const ready = menu.promptStatus === SipPromptStatus.READY && !!menu.promptFileId;
   const upload = useMutation({
     mutationFn: async (file: File) => {
-      const meta = await uploadFile(uploadPath(workspaceId, ''), file, file.name, () => undefined).promise;
-      return api.sip.updateMenu(workspaceId, menu.id, { promptSourceFileId: meta.id });
+      setPct(0);
+      try {
+        const meta = await uploadFile(uploadPath(workspaceId, ''), file, file.name, (f) => setPct((cur) => (cur === null ? cur : Math.min(99, Math.round(f * 100))))).promise;
+        setPct(null);
+        return await api.sip.updateMenu(workspaceId, menu.id, { promptSourceFileId: meta.id });
+      } finally {
+        setPct(null);
+      }
     },
     onMutate: () => setErr(null),
     onSuccess: () => {
@@ -1208,7 +1281,7 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
       <div className="flex flex-wrap items-center gap-2" data-testid="sip-menu-prompt">
         {ready ? <PromptPlayer fileId={menu.promptFileId} /> : null}
         <span className={cx('text-body', ready ? 'tabular-nums' : 'text-muted')}>
-          {upload.isPending ? t('pbx.menu.processing') : ready ? formatDuration(menu.promptDurationMs) : t('pbx.menu.noPrompt')}
+          {upload.isPending ? (pct !== null ? t('pbx.menu.uploading', { pct }) : t('pbx.menu.processing')) : ready ? formatDuration(menu.promptDurationMs) : t('pbx.menu.noPrompt')}
         </span>
         <input
           ref={input}
@@ -1220,8 +1293,12 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
             const f = e.target.files?.[0];
             e.target.value = '';
             if (!f) return;
+            if (!promptFile(f)) {
+              setErr(t('pbx.err.promptFormat'));
+              return;
+            }
             if (f.size > MAX_PROMPT_UPLOAD) {
-              setErr(t('pbx.err.prompt'));
+              setErr(t('pbx.err.promptTooBig'));
               return;
             }
             upload.mutate(f);
@@ -1237,6 +1314,7 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
         ) : null}
       </div>
       <span className="text-caption text-faint">{t('pbx.menu.promptHint')}</span>
+      {ready || upload.isPending ? null : <span className="text-caption text-muted">{t('pbx.menu.noPromptHint')}</span>}
       <ErrLine text={err} testId="sip-menu-prompt-error" />
     </div>
   );
@@ -1249,6 +1327,7 @@ function MenuForm({
   groups,
   menus,
   onDone,
+  onCreated,
 }: {
   workspaceId: string;
   menu?: SipIvrMenu;
@@ -1256,6 +1335,8 @@ function MenuForm({
   groups: SipGroup[];
   menus: SipIvrMenu[];
   onDone: () => void;
+  /** A new menu was saved: the form reopens on it (the greeting can be uploaded only then). */
+  onCreated?: (m: SipIvrMenu) => void;
 }): ReactNode {
   const refresh = useRefresh(workspaceId);
   const errs = useFormErrors(workspaceId);
@@ -1277,10 +1358,11 @@ function MenuForm({
   };
   const save = useMutation({
     mutationFn: () => (menu ? api.sip.updateMenu(workspaceId, menu.id, body) : api.sip.createMenu(workspaceId, body)),
-    onSuccess: () => {
+    onSuccess: (r) => {
       refresh();
       toast.success(t('pbx.saved'));
-      onDone();
+      if (!menu && r.menu && onCreated) onCreated(r.menu);
+      else onDone();
     },
     onError: errs.report,
   });

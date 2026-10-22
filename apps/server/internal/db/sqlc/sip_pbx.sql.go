@@ -165,7 +165,7 @@ func (q *Queries) GetSipExtension(ctx context.Context, arg GetSipExtensionParams
 }
 
 const getSipGroup = `-- name: GetSipGroup :one
-SELECT id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at FROM sip_groups WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at, fallback_enabled, fallback_sec FROM sip_groups WHERE id = $1 AND workspace_id = $2
 `
 
 type GetSipGroupParams struct {
@@ -190,6 +190,8 @@ func (q *Queries) GetSipGroup(ctx context.Context, arg GetSipGroupParams) (SipGr
 		&i.OnFailGroupID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FallbackEnabled,
+		&i.FallbackSec,
 	)
 	return i, err
 }
@@ -268,9 +270,10 @@ func (q *Queries) InsertSipExtension(ctx context.Context, arg InsertSipExtension
 
 const insertSipGroup = `-- name: InsertSipGroup :one
 INSERT INTO sip_groups (workspace_id, name, strategy, ring_sec, member_ring_sec,
-                        on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at
+                        on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id,
+                        fallback_enabled, fallback_sec)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at, fallback_enabled, fallback_sec
 `
 
 type InsertSipGroupParams struct {
@@ -283,6 +286,8 @@ type InsertSipGroupParams struct {
 	OnFailMenuID      *uuid.UUID
 	OnFailExtensionID *uuid.UUID
 	OnFailGroupID     *uuid.UUID
+	FallbackEnabled   bool
+	FallbackSec       int32
 }
 
 func (q *Queries) InsertSipGroup(ctx context.Context, arg InsertSipGroupParams) (SipGroup, error) {
@@ -296,6 +301,8 @@ func (q *Queries) InsertSipGroup(ctx context.Context, arg InsertSipGroupParams) 
 		arg.OnFailMenuID,
 		arg.OnFailExtensionID,
 		arg.OnFailGroupID,
+		arg.FallbackEnabled,
+		arg.FallbackSec,
 	)
 	var i SipGroup
 	err := row.Scan(
@@ -312,6 +319,8 @@ func (q *Queries) InsertSipGroup(ctx context.Context, arg InsertSipGroupParams) 
 		&i.OnFailGroupID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FallbackEnabled,
+		&i.FallbackSec,
 	)
 	return i, err
 }
@@ -525,7 +534,7 @@ func (q *Queries) ListSipGroupMembersOf(ctx context.Context, groupID uuid.UUID) 
 }
 
 const listSipGroups = `-- name: ListSipGroups :many
-SELECT id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at FROM sip_groups WHERE workspace_id = $1 ORDER BY id
+SELECT id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at, fallback_enabled, fallback_sec FROM sip_groups WHERE workspace_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListSipGroups(ctx context.Context, workspaceID uuid.UUID) ([]SipGroup, error) {
@@ -551,6 +560,8 @@ func (q *Queries) ListSipGroups(ctx context.Context, workspaceID uuid.UUID) ([]S
 			&i.OnFailGroupID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.FallbackEnabled,
+			&i.FallbackSec,
 		); err != nil {
 			return nil, err
 		}
@@ -789,10 +800,11 @@ const updateSipGroup = `-- name: UpdateSipGroup :one
 UPDATE sip_groups
 SET name = $3, strategy = $4, ring_sec = $5, member_ring_sec = $6, on_fail_kind = $7,
     on_fail_menu_id = $8, on_fail_extension_id = $9, on_fail_group_id = $10,
-    next_position = CASE WHEN $11::boolean THEN 0 ELSE next_position END,
+    fallback_enabled = $11, fallback_sec = $12,
+    next_position = CASE WHEN $13::boolean THEN 0 ELSE next_position END,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at
+RETURNING id, workspace_id, name, strategy, ring_sec, member_ring_sec, next_position, on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id, created_at, updated_at, fallback_enabled, fallback_sec
 `
 
 type UpdateSipGroupParams struct {
@@ -806,6 +818,8 @@ type UpdateSipGroupParams struct {
 	OnFailMenuID      *uuid.UUID
 	OnFailExtensionID *uuid.UUID
 	OnFailGroupID     *uuid.UUID
+	FallbackEnabled   bool
+	FallbackSec       int32
 	ResetPosition     bool
 }
 
@@ -821,6 +835,8 @@ func (q *Queries) UpdateSipGroup(ctx context.Context, arg UpdateSipGroupParams) 
 		arg.OnFailMenuID,
 		arg.OnFailExtensionID,
 		arg.OnFailGroupID,
+		arg.FallbackEnabled,
+		arg.FallbackSec,
 		arg.ResetPosition,
 	)
 	var i SipGroup
@@ -838,6 +854,8 @@ func (q *Queries) UpdateSipGroup(ctx context.Context, arg UpdateSipGroupParams) 
 		&i.OnFailGroupID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FallbackEnabled,
+		&i.FallbackSec,
 	)
 	return i, err
 }

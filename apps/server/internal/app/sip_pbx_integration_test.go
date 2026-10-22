@@ -156,6 +156,8 @@ func TestSIPExchange(t *testing.T) {
 		{group("1001", ids(&foreign)), v1.ErrorCode_ERROR_CODE_VALIDATION, "members"},
 		{&v1.CreateSipGroupRequest{Name: " ", Number: "1001"}, v1.ErrorCode_ERROR_CODE_VALIDATION, "name"},
 		{&v1.CreateSipGroupRequest{Name: "x", Number: "1001", RingSec: 5}, v1.ErrorCode_ERROR_CODE_VALIDATION, "ringSec"},
+		{&v1.CreateSipGroupRequest{Name: "x", Number: "1001", FallbackEnabled: true, FallbackSec: 4}, v1.ErrorCode_ERROR_CODE_VALIDATION, "fallbackSec"},
+		{&v1.CreateSipGroupRequest{Name: "x", Number: "1001", FallbackSec: 601}, v1.ErrorCode_ERROR_CODE_VALIDATION, "fallbackSec"},
 		{&v1.CreateSipGroupRequest{Name: "x", Number: "1001", OnFail: routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_REPEAT, "")}, v1.ErrorCode_ERROR_CODE_VALIDATION, "onFail"},
 		{&v1.CreateSipGroupRequest{Name: "x", Number: "1001", OnFail: routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, foreign.GetExtension().GetId())}, v1.ErrorCode_ERROR_CODE_VALIDATION, "onFail"},
 	} {
@@ -186,6 +188,25 @@ func TestSIPExchange(t *testing.T) {
 	if sales.GetGroup().GetExtension().GetNumber() != "2001" || len(sales.GetGroup().GetMembers()) != 2 ||
 		sales.GetGroup().GetMembers()[0].GetExtensionId() != botExt.GetExtension().GetId() {
 		t.Fatalf("patched group: %v", sales.GetGroup())
+	}
+	// The fallback (ADR-0124): off by default, 30 s; switched on with its time; never the group
+	// itself or its own number.
+	if sales.GetGroup().GetFallbackEnabled() || sales.GetGroup().GetFallbackSec() != 30 {
+		t.Fatalf("fallback default: %v", sales.GetGroup())
+	}
+	on, sec := true, uint32(45)
+	o.must(200, "PATCH", base+"/groups/"+sg.GetId(), &v1.UpdateSipGroupRequest{FallbackEnabled: &on, FallbackSec: &sec}, &sales)
+	if !sales.GetGroup().GetFallbackEnabled() || sales.GetGroup().GetFallbackSec() != 45 || sales.GetGroup().GetOnFail().GetId() != bobExt.GetExtension().GetId() {
+		t.Fatalf("fallback on: %v", sales.GetGroup())
+	}
+	for _, self := range []*v1.SipRouteTarget{routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_GROUP, sg.GetId()), routeTo(v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, sg.GetExtension().GetId())} {
+		if st, e := o.apiErrBody("PATCH", base+"/groups/"+sg.GetId(), &v1.UpdateSipGroupRequest{OnFail: self}); st != 422 || e.GetField() != "onFail" {
+			t.Fatalf("fallback to itself: %d %v", st, e)
+		}
+	}
+	bad := uint32(700)
+	if st, e := o.apiErrBody("PATCH", base+"/groups/"+sg.GetId(), &v1.UpdateSipGroupRequest{FallbackSec: &bad}); st != 422 || e.GetField() != "fallbackSec" {
+		t.Fatalf("fallback seconds: %d %v", st, e)
 	}
 
 	// Menus: keys 0-9 * #, each once; REPEAT only on keys; targets of this workspace; a group's

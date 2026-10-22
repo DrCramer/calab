@@ -259,7 +259,8 @@ func (ex *exchange) groupPB(g sqlc.SipGroup) *v1.SipGroup {
 		Strategy: v1.SipGroupStrategy_SIP_GROUP_STRATEGY_RING_ALL, RingSec: uint32(max(g.RingSec, 0)), //nolint:gosec // 10..60
 		MemberRingSec: uint32(max(g.MemberRingSec, 0)), //nolint:gosec // 5..60
 		OnFail:        ex.targetPB(g.OnFailKind, g.OnFailMenuID, g.OnFailExtensionID, g.OnFailGroupID),
-		Members:       []*v1.SipGroupMember{}, UpdatedAt: timestamppb.New(g.UpdatedAt)}
+		Members:       []*v1.SipGroupMember{}, UpdatedAt: timestamppb.New(g.UpdatedAt),
+		FallbackEnabled: g.FallbackEnabled, FallbackSec: uint32(max(g.FallbackSec, 0))} //nolint:gosec // 5..600
 	if g.Strategy == "round_robin" {
 		out.Strategy = v1.SipGroupStrategy_SIP_GROUP_STRATEGY_ROUND_ROBIN
 	}
@@ -403,6 +404,32 @@ func (ex *exchange) assignable(ctx context.Context, q *sqlc.Queries, wsID uuid.U
 		return u, extTaken("userId", "this member already has a number")
 	}
 	return u, nil
+}
+
+// Fallback timeout of a group (ADR-0124), seconds.
+const (
+	fallbackSecDefault = 30
+	fallbackSecMin     = 5
+	fallbackSecMax     = 600
+)
+
+// groupFallback validates a group's fallback action: a route of the workspace (parseTarget),
+// never the group itself or its own number (it would only ring the same people again).
+func (ex *exchange) groupFallback(t *v1.SipRouteTarget, self *uuid.UUID) (dbTarget, error) {
+	fail, err := ex.parseTarget(t, "onFail", false)
+	if err != nil {
+		return fail, err
+	}
+	if self != nil {
+		own := fail.group != nil && *fail.group == *self
+		if e, ok := ex.groupExt[*self]; ok && fail.ext != nil && *fail.ext == e.ID {
+			own = true
+		}
+		if own {
+			return fail, httpx.Validation("onFail", "a group cannot fall back to itself")
+		}
+	}
+	return fail, nil
 }
 
 func ringSec(v uint32, def, lo, hi int32, field string) (int32, error) {
@@ -749,6 +776,10 @@ func (s *Service) createGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	fbSec, err := ringSec(req.GetFallbackSec(), fallbackSecDefault, fallbackSecMin, fallbackSecMax, "fallbackSec")
+	if err != nil {
+		return err
+	}
 	ctx, me := r.Context(), uid(r)
 	var created sqlc.SipGroup
 	err = s.change(ctx, wsID, func(q *sqlc.Queries, ex *exchange) error {
@@ -761,7 +792,7 @@ func (s *Service) createGroup(w http.ResponseWriter, r *http.Request) error {
 		if err := ex.numberFree(number, nil); err != nil {
 			return err
 		}
-		fail, err := ex.parseTarget(req.GetOnFail(), "onFail", false)
+		fail, err := ex.groupFallback(req.GetOnFail(), nil)
 		if err != nil {
 			return err
 		}
@@ -771,7 +802,7 @@ func (s *Service) createGroup(w http.ResponseWriter, r *http.Request) error {
 		}
 		if created, err = q.InsertSipGroup(ctx, sqlc.InsertSipGroupParams{WorkspaceID: wsID, Name: name, Strategy: strategy,
 			RingSec: all, MemberRingSec: each, OnFailKind: fail.kind, OnFailMenuID: fail.menu, OnFailExtensionID: fail.ext,
-			OnFailGroupID: fail.group}); err != nil {
+			OnFailGroupID: fail.group, FallbackEnabled: req.GetFallbackEnabled(), FallbackSec: fbSec}); err != nil {
 			return err
 		}
 		if _, err := q.InsertSipExtension(ctx, sqlc.InsertSipExtensionParams{WorkspaceID: wsID, Number: number, Kind: "group",
@@ -821,7 +852,8 @@ func (s *Service) updateGroup(w http.ResponseWriter, r *http.Request) error {
 		}
 		p := sqlc.UpdateSipGroupParams{ID: id, WorkspaceID: wsID, Name: cur.Name, Strategy: cur.Strategy, RingSec: cur.RingSec,
 			MemberRingSec: cur.MemberRingSec, OnFailKind: cur.OnFailKind, OnFailMenuID: cur.OnFailMenuID,
-			OnFailExtensionID: cur.OnFailExtensionID, OnFailGroupID: cur.OnFailGroupID}
+			OnFailExtensionID: cur.OnFailExtensionID, OnFailGroupID: cur.OnFailGroupID,
+			FallbackEnabled: cur.FallbackEnabled, FallbackSec: cur.FallbackSec}
 		var err error
 		if req.Name != nil {
 			if p.Name, err = pbxName(req.GetName()); err != nil {
@@ -844,8 +876,16 @@ func (s *Service) updateGroup(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+		if req.FallbackEnabled != nil {
+			p.FallbackEnabled = req.GetFallbackEnabled()
+		}
+		if req.FallbackSec != nil {
+			if p.FallbackSec, err = ringSec(req.GetFallbackSec(), fallbackSecDefault, fallbackSecMin, fallbackSecMax, "fallbackSec"); err != nil {
+				return err
+			}
+		}
 		if req.OnFail != nil {
-			fail, err := ex.parseTarget(req.GetOnFail(), "onFail", false)
+			fail, err := ex.groupFallback(req.GetOnFail(), &id)
 			if err != nil {
 				return err
 			}
@@ -1254,7 +1294,8 @@ func (ex *exchange) routing() *PBX {
 	}
 	for _, g := range ex.groups {
 		grp := Group{ID: g.ID, Name: g.Name, RoundRobin: g.Strategy == "round_robin", RingSec: int(g.RingSec), MemberRingSec: int(g.MemberRingSec),
-			NextPosition: int(g.NextPosition), OnFail: routeTarget(g.OnFailKind, g.OnFailMenuID, g.OnFailExtensionID, g.OnFailGroupID)}
+			NextPosition: int(g.NextPosition), OnFail: routeTarget(g.OnFailKind, g.OnFailMenuID, g.OnFailExtensionID, g.OnFailGroupID),
+			Fallback: g.FallbackEnabled, FallbackSec: int(g.FallbackSec)}
 		for _, m := range ex.members[g.ID] {
 			grp.Members = append(grp.Members, GroupMember{Extension: m.ExtensionID, Position: int(m.Position)})
 		}
