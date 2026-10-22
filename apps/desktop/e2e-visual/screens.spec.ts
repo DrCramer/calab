@@ -4007,6 +4007,16 @@ test('boards-smart-task', async ({ open, win, mock, shot }) => {
   await expect(dialog).toBeVisible();
   await dialog.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы\nСумма 120 000 ₽, реквизиты в письме бухгалтерии.');
   await checkpoint(shot, 'boards-smart-dialog');
+  // CBF-75: the model declines (a duplicate): the reason and the task inline, the text stays.
+  const text = dialog.getByTestId('smart-task-text');
+  await text.fill('Оплатить счёт поставщика — похоже, дубль\nСумма 120 000 ₽.');
+  await win.getByTestId('smart-task-submit').click();
+  await expect(dialog.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
+  await expect(dialog.getByTestId('smart-task-duplicate')).toHaveText('Открыть CAL-3');
+  await expect(text).toHaveValue('Оплатить счёт поставщика — похоже, дубль\nСумма 120 000 ₽.');
+  await checkpoint(shot, 'boards-smart-refused');
+  await text.fill('Оплатить счёт поставщика до пятницы\nСумма 120 000 ₽, реквизиты в письме бухгалтерии.');
+  await expect(dialog.getByTestId('smart-task-refusal')).toHaveCount(0);
   await win.getByTestId('smart-task-submit').click();
   await expect(dialog).toHaveCount(0);
   await expect(win.getByTestId('task-panel')).toContainText('Оплатить счёт поставщика до пятницы');
@@ -4161,7 +4171,12 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
   await expect(win.getByTestId('board-ai-instruction-plan')).toHaveCount(0);
   await instr.fill('Заголовок — «Баг: где и что». В описании — шаги воспроизведения и ожидаемое поведение. Метка «Баг», приоритет высокий, если сломан вход.');
-  await win.getByTestId('board-ai-instruction').scrollIntoViewIfNeeded();
+  // CBF-75: «Искать дубли за 2 недели» under the instruction, off by default.
+  const dup = win.getByRole('switch', { name: 'Искать дубли за 2 недели' });
+  await expect(dup).toHaveAttribute('aria-checked', 'false');
+  await dup.click();
+  await expect(dup).toHaveAttribute('aria-checked', 'true');
+  await dup.scrollIntoViewIfNeeded();
   await checkpoint(shot, 'boards-settings-ai');
   await win.getByTestId('board-ai-instruction-save').click();
   await expect(win.getByTestId('board-ai-instruction-save')).toBeDisabled();
