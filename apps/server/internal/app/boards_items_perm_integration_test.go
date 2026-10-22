@@ -19,7 +19,7 @@ func TestBoardItemsUnderEditTasks(t *testing.T) {
 	manager := register(t, invite(t, o, wid))
 	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Права пунктов", Key: "PIT"}, 201)
 	bid := b.GetId()
-	setBoardPerms(o, bid, 200, userOv(editor.id, perm.EditTasks, 0), userOv(manager.id, perm.ManageBoard, 0))
+	setBoardPerms(o, bid, 200, creatorOv(o), userOv(editor.id, perm.EditTasks, 0), userOv(manager.id, perm.ManageBoard, 0))
 	base := "/api/boards/" + bid
 
 	find := func(r *v1.BoardResponse, name string) (status, label, milestone string) {
@@ -84,7 +84,8 @@ func TestBoardItemsUnderEditTasks(t *testing.T) {
 	setBoardPerms(editor, bid, 403, userOv(editor.id, perm.EditTasks|perm.ManageBoard, 0))
 	manager.must(200, "PATCH", base, &v1.UpdateBoardRequest{Name: &name}, nil)
 	manager.must(200, "GET", base+"/permissions", nil, nil)
-	setBoardPerms(manager, bid, 200, userOv(manager.id, perm.ManageBoard, 0))
+	// A PUT replaces the list and a manager cannot drop bits they lack, so it resends it unchanged.
+	setBoardPerms(manager, bid, 200, creatorOv(o), userOv(editor.id, perm.EditTasks, 0), userOv(manager.id, perm.ManageBoard, 0))
 
 	// The approval gate: turning a status into COMPLETED completes its tasks in place, so the
 	// editor (no override power, ADR-0108) is refused while a task there waits for approval;
