@@ -113,6 +113,9 @@ type Config struct {
 	LiveKitAPIKey          string `env:"LIVEKIT_API_KEY"`
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
+	// Inbound calls on the SIP number (ADR-0117): routing through the workspace's exchange.
+	// Off by default; the exchange can be set up either way.
+	SIPInbound bool `env:"SIP_INBOUND"`
 
 	// Native push is inert unless a complete transport is explicitly configured.
 	PushVoIPEnabled           bool   `env:"PUSH_VOIP_ENABLED"`

@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/bot.proto.
  */
 export const file_calaba_v1_bot: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvYm90LnByb3RvEgljYWxhYmEudjEiLwoKQm90Q29tbWFuZBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIuMBCgpCb3RXZWJob29rEgsKA3VybBgBIAEoCRIPCgdlbmFibGVkGAIgASgIEi8KC2Rpc2FibGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1mYWlsaW5nX3NpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpsYXN0X29rX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpsYXN0X2Vycm9yGAYgASgJEg8KB3BlbmRpbmcYByABKA0ijwMKA0JvdBIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISEAoIdXNlcm5hbWUYAiABKAkSFQoNb3duZXJfdXNlcl9pZBgDIAEoCRIUCgx3b3Jrc3BhY2VfaWQYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSJwoIY29tbWFuZHMYBiADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZBIUCgx0b2tlbl9wcmVmaXgYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKcmV2b2tlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoHd2ViaG9vaxgKIAEoCzIVLmNhbGFiYS52MS5Cb3RXZWJob29rEhUKDWFjdHNfYXNfb3duZXIYCyABKAgSNwoTYWN0c19hc19vd25lcl9zaW5jZRgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTwoQQ3JlYXRlQm90UmVxdWVzdBIUCgxkaXNwbGF5X25hbWUYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkiPwoRQ3JlYXRlQm90UmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdBINCgV0b2tlbhgCIAEoCSIwChBMaXN0Qm90c1Jlc3BvbnNlEhwKBGJvdHMYASADKAsyDi5jYWxhYmEudjEuQm90IkUKF1JlaXNzdWVCb3RUb2tlblJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QSDQoFdG9rZW4YAiABKAkiMwoUU2V0Qm90QXZhdGFyUmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdCJAChBVcGRhdGVCb3RSZXF1ZXN0EhoKDWFjdHNfYXNfb3duZXIYASABKAhIAIgBAUIQCg5fYWN0c19hc19vd25lciIwChFVcGRhdGVCb3RSZXNwb25zZRIbCgNib3QYASABKAsyDi5jYWxhYmEudjEuQm90IksKDUJvdERlbGVnYXRpb24SDwoHdXNlcl9pZBgBIAEoCRIpCgVzaW5jZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiagoTQm90RGVsZWdhdGlvbkludml0ZRIPCgd1c2VyX2lkGAEgASgJEhIKCmludml0ZWRfYnkYAiABKAkSLgoKY3JlYXRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiqQEKDkdldEJvdFJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QSGgoSb25fYmVoYWxmX3VzZXJfaWRzGAIgAygJEi0KC2RlbGVnYXRpb25zGAMgAygLMhguY2FsYWJhLnYxLkJvdERlbGVnYXRpb24SLwoHaW52aXRlcxgEIAMoCzIeLmNhbGFiYS52MS5Cb3REZWxlZ2F0aW9uSW52aXRlIi4KGkludml0ZUJvdERlbGVnYXRpb25SZXF1ZXN0EhAKCHVzZXJfaWRzGAEgAygJIjYKDUFkZEJvdFJlcXVlc3QSEwoLYm90X3VzZXJfaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkiLQoOQWRkQm90UmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdCIvChBHZXRCb3RNZVJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QiagoSVXBkYXRlQm90TWVSZXF1ZXN0EhkKDGRpc3BsYXlfbmFtZRgBIAEoCUgAiAEBEhgKC2Rlc2NyaXB0aW9uGAIgASgJSAGIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfZGVzY3JpcHRpb24iQAoVU2V0Qm90Q29tbWFuZHNSZXF1ZXN0EicKCGNvbW1hbmRzGAEgAygLMhUuY2FsYWJhLnYxLkJvdENvbW1hbmQiQQoWU2V0Qm90Q29tbWFuZHNSZXNwb25zZRInCghjb21tYW5kcxgBIAMoCzIVLmNhbGFiYS52MS5Cb3RDb21tYW5kIjMKFFNldEJvdFdlYmhvb2tSZXF1ZXN0EgsKA3VybBgBIAEoCRIOCgZzZWNyZXQYAiABKAkiPAoSQm90V2ViaG9va1Jlc3BvbnNlEiYKB3dlYmhvb2sYASABKAsyFS5jYWxhYmEudjEuQm90V2ViaG9vayJhCg9Sb29tQm90Q29tbWFuZHMSEwoLYm90X3VzZXJfaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSJwoIY29tbWFuZHMYAyADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZCJHChtMaXN0Um9vbUJvdENvbW1hbmRzUmVzcG9uc2USKAoEYm90cxgBIAMoCzIaLmNhbGFiYS52MS5Sb29tQm90Q29tbWFuZHMiLwoXTGlzdEJsb2NrZWRCb3RzUmVzcG9uc2USFAoMYm90X3VzZXJfaWRzGAEgAygJIj4KCUJvdENyZWF0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSGwoDYm90GAIgASgLMg4uY2FsYWJhLnYxLkJvdCI+CglCb3RVcGRhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhsKA2JvdBgCIAEoCzIOLmNhbGFiYS52MS5Cb3QiNgoJQm90RGVsZXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRITCgtib3RfdXNlcl9pZBgCIAEoCUKWAQoNY29tLmNhbGFiYS52MUIIQm90UHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChNjYWxhYmEvdjEvYm90LnByb3RvEgljYWxhYmEudjEiLwoKQm90Q29tbWFuZBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIuMBCgpCb3RXZWJob29rEgsKA3VybBgBIAEoCRIPCgdlbmFibGVkGAIgASgIEi8KC2Rpc2FibGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1mYWlsaW5nX3NpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpsYXN0X29rX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpsYXN0X2Vycm9yGAYgASgJEg8KB3BlbmRpbmcYByABKA0ijwMKA0JvdBIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISEAoIdXNlcm5hbWUYAiABKAkSFQoNb3duZXJfdXNlcl9pZBgDIAEoCRIUCgx3b3Jrc3BhY2VfaWQYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSJwoIY29tbWFuZHMYBiADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZBIUCgx0b2tlbl9wcmVmaXgYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKcmV2b2tlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoHd2ViaG9vaxgKIAEoCzIVLmNhbGFiYS52MS5Cb3RXZWJob29rEhUKDWFjdHNfYXNfb3duZXIYCyABKAgSNwoTYWN0c19hc19vd25lcl9zaW5jZRgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTwoQQ3JlYXRlQm90UmVxdWVzdBIUCgxkaXNwbGF5X25hbWUYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkiPwoRQ3JlYXRlQm90UmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdBINCgV0b2tlbhgCIAEoCSIwChBMaXN0Qm90c1Jlc3BvbnNlEhwKBGJvdHMYASADKAsyDi5jYWxhYmEudjEuQm90IkUKF1JlaXNzdWVCb3RUb2tlblJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QSDQoFdG9rZW4YAiABKAkiMwoUU2V0Qm90QXZhdGFyUmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdCJAChBVcGRhdGVCb3RSZXF1ZXN0EhoKDWFjdHNfYXNfb3duZXIYASABKAhIAIgBAUIQCg5fYWN0c19hc19vd25lciIwChFVcGRhdGVCb3RSZXNwb25zZRIbCgNib3QYASABKAsyDi5jYWxhYmEudjEuQm90IksKDUJvdERlbGVnYXRpb24SDwoHdXNlcl9pZBgBIAEoCRIpCgVzaW5jZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiagoTQm90RGVsZWdhdGlvbkludml0ZRIPCgd1c2VyX2lkGAEgASgJEhIKCmludml0ZWRfYnkYAiABKAkSLgoKY3JlYXRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi3gEKDkdldEJvdFJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QSGgoSb25fYmVoYWxmX3VzZXJfaWRzGAIgAygJEi0KC2RlbGVnYXRpb25zGAMgAygLMhguY2FsYWJhLnYxLkJvdERlbGVnYXRpb24SLwoHaW52aXRlcxgEIAMoCzIeLmNhbGFiYS52MS5Cb3REZWxlZ2F0aW9uSW52aXRlEjMKBHNlbnQYBSADKAsyJS5jYWxhYmEudjEuQm90RGVsZWdhdGlvbkludml0ZU1lc3NhZ2UicAoaQm90RGVsZWdhdGlvbkludml0ZU1lc3NhZ2USDwoHdXNlcl9pZBgBIAEoCRISCgptZXNzYWdlX2lkGAIgASgJEg8KB3Jvb21faWQYAyABKAkSCwoDdXJsGAQgASgJEg8KB2NyZWF0ZWQYBSABKAgiPgoaSW52aXRlQm90RGVsZWdhdGlvblJlcXVlc3QSEAoIdXNlcl9pZHMYASADKAkSDgoGcmVhc29uGAIgASgJIpQBChNCb3REZWxlZ2F0aW9uQ2hhbmdlEgoKAmlkGAEgASgJEhMKC2JvdF91c2VyX2lkGAIgASgJEhQKDHdvcmtzcGFjZV9pZBgDIAEoCRIPCgd1c2VyX2lkGAQgASgJEg0KBXN0YXRlGAUgASgJEiYKAmF0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI2Cg1BZGRCb3RSZXF1ZXN0EhMKC2JvdF91c2VyX2lkGAEgASgJEhAKCHVzZXJuYW1lGAIgASgJIi0KDkFkZEJvdFJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QiLwoQR2V0Qm90TWVSZXNwb25zZRIbCgNib3QYASABKAsyDi5jYWxhYmEudjEuQm90ImoKElVwZGF0ZUJvdE1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtkZXNjcmlwdGlvbhgCIAEoCUgBiAEBQg8KDV9kaXNwbGF5X25hbWVCDgoMX2Rlc2NyaXB0aW9uIkAKFVNldEJvdENvbW1hbmRzUmVxdWVzdBInCghjb21tYW5kcxgBIAMoCzIVLmNhbGFiYS52MS5Cb3RDb21tYW5kIkEKFlNldEJvdENvbW1hbmRzUmVzcG9uc2USJwoIY29tbWFuZHMYASADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZCIzChRTZXRCb3RXZWJob29rUmVxdWVzdBILCgN1cmwYASABKAkSDgoGc2VjcmV0GAIgASgJIjwKEkJvdFdlYmhvb2tSZXNwb25zZRImCgd3ZWJob29rGAEgASgLMhUuY2FsYWJhLnYxLkJvdFdlYmhvb2siYQoPUm9vbUJvdENvbW1hbmRzEhMKC2JvdF91c2VyX2lkGAEgASgJEhAKCHVzZXJuYW1lGAIgASgJEicKCGNvbW1hbmRzGAMgAygLMhUuY2FsYWJhLnYxLkJvdENvbW1hbmQiRwobTGlzdFJvb21Cb3RDb21tYW5kc1Jlc3BvbnNlEigKBGJvdHMYASADKAsyGi5jYWxhYmEudjEuUm9vbUJvdENvbW1hbmRzIi8KF0xpc3RCbG9ja2VkQm90c1Jlc3BvbnNlEhQKDGJvdF91c2VyX2lkcxgBIAMoCSI+CglCb3RDcmVhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhsKA2JvdBgCIAEoCzIOLmNhbGFiYS52MS5Cb3QiPgoJQm90VXBkYXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIbCgNib3QYAiABKAsyDi5jYWxhYmEudjEuQm90IjYKCUJvdERlbGV0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSEwoLYm90X3VzZXJfaWQYAiABKAlClgEKDWNvbS5jYWxhYmEudjFCCEJvdFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * A command a bot understands, shown by the composer when "/" is typed.
@@ -424,8 +424,10 @@ export const BotDelegationInviteSchema: GenMessage<BotDelegationInvite> = /*@__P
  * ON_BEHALF_SELF_ONLY: nobody, admins and the bot's owner included, gives or takes it for
  * another member). People with a non-guest role only; bots and requests on behalf get 403.
  * POST /api/workspaces/{id}/bots/{botId}/delegation-invites (InviteBotDelegationRequest): the
- * bot DMs each listed member a suggestion naming the caller. DELETE
- * …/delegation-invites/{userId}: cancels a pending invitation, by its inviter or the invitee.
+ * bot DMs each listed member a suggestion naming the caller. The bot itself may call it for
+ * its own {botId} (ADR-0119): the suggestion then names the bot; another bot, or the bot on
+ * behalf of someone, gets 403. DELETE …/delegation-invites/{userId}: cancels a pending
+ * invitation, by its inviter or the invitee (people only).
  *
  * @generated from message calaba.v1.GetBotResponse
  */
@@ -449,6 +451,15 @@ export type GetBotResponse = Message<"calaba.v1.GetBotResponse"> & {
    * @generated from field: repeated calaba.v1.BotDelegationInvite invites = 4;
    */
   invites: BotDelegationInvite[];
+
+  /**
+   * Only in the answer of POST …/delegation-invites: the DM messages of the invitations this
+   * request sent, and (when the caller is the bot) of the requested members' invitations that
+   * were already pending.
+   *
+   * @generated from field: repeated calaba.v1.BotDelegationInviteMessage sent = 5;
+   */
+  sent: BotDelegationInviteMessage[];
 };
 
 /**
@@ -459,8 +470,56 @@ export const GetBotResponseSchema: GenMessage<GetBotResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_bot, 12);
 
 /**
+ * The bot's DM that carries an invitation (ADR-0119). url opens that message in Calab (the
+ * app when it is installed, the web client otherwise): PUBLIC_APP_URL/m/<room_id>/<message_id>,
+ * empty when the server has no PUBLIC_APP_URL. It holds no token: only the invitee, who is a
+ * member of the DM, can open the message and press «Принять».
+ *
+ * @generated from message calaba.v1.BotDelegationInviteMessage
+ */
+export type BotDelegationInviteMessage = Message<"calaba.v1.BotDelegationInviteMessage"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string message_id = 2;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string room_id = 3;
+   */
+  roomId: string;
+
+  /**
+   * @generated from field: string url = 4;
+   */
+  url: string;
+
+  /**
+   * false: an invitation already pending, sent earlier
+   *
+   * @generated from field: bool created = 5;
+   */
+  created: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.BotDelegationInviteMessage.
+ * Use `create(BotDelegationInviteMessageSchema)` to create a new message.
+ */
+export const BotDelegationInviteMessageSchema: GenMessage<BotDelegationInviteMessage> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_bot, 13);
+
+/**
  * At most 20 members of the workspace with a non-guest role, people, not the caller. Members
- * who already consented or are invited are skipped.
+ * who already consented or are invited are skipped, and so are members who declined an
+ * invitation to this bot here within the last 7 days; when every listed member declined so,
+ * 409 CONFLICT reason DELEGATION_INVITE_DECLINED with Retry-After (seconds), used = seconds
+ * left, limit = the cooldown in seconds. reason (optional, at most 200 characters, plain text:
+ * one line, no mentions, links or markup) is shown in the DM as the inviter's words.
  *
  * @generated from message calaba.v1.InviteBotDelegationRequest
  */
@@ -469,6 +528,11 @@ export type InviteBotDelegationRequest = Message<"calaba.v1.InviteBotDelegationR
    * @generated from field: repeated string user_ids = 1;
    */
   userIds: string[];
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
 };
 
 /**
@@ -476,7 +540,60 @@ export type InviteBotDelegationRequest = Message<"calaba.v1.InviteBotDelegationR
  * Use `create(InviteBotDelegationRequestSchema)` to create a new message.
  */
 export const InviteBotDelegationRequestSchema: GenMessage<InviteBotDelegationRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 13);
+  messageDesc(file_calaba_v1_bot, 14);
+
+/**
+ * ADR-0119: a member's consent for the bot changed (BOT_DELEGATION). To that bot only, over
+ * gateway (its user channel) and its webhook. state: "granted" (the member allowed it: PUT
+ * …/delegations/{userId} or «Принять» in the bot's DM), "revoked" (the member took it back:
+ * DELETE …/delegations/{userId}), "declined" (the member pressed «Отказаться» or declined the
+ * invitation in the dialog). A consent that stops counting for another reason (the member
+ * left, became a guest) sends nothing: the bot reads GET …/bots/{botId}.
+ *
+ * @generated from message calaba.v1.BotDelegationChange
+ */
+export type BotDelegationChange = Message<"calaba.v1.BotDelegationChange"> & {
+  /**
+   * stable across transports and webhook retries; dedupe by it
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string bot_user_id = 2;
+   */
+  botUserId: string;
+
+  /**
+   * @generated from field: string workspace_id = 3;
+   */
+  workspaceId: string;
+
+  /**
+   * the member, from the authentication of their own request
+   *
+   * @generated from field: string user_id = 4;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string state = 5;
+   */
+  state: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp at = 6;
+   */
+  at?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.BotDelegationChange.
+ * Use `create(BotDelegationChangeSchema)` to create a new message.
+ */
+export const BotDelegationChangeSchema: GenMessage<BotDelegationChange> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_bot, 15);
 
 /**
  * POST /api/workspaces/{id}/bots/add (MANAGE_BOTS of that workspace): adds an existing
@@ -503,7 +620,7 @@ export type AddBotRequest = Message<"calaba.v1.AddBotRequest"> & {
  * Use `create(AddBotRequestSchema)` to create a new message.
  */
 export const AddBotRequestSchema: GenMessage<AddBotRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 14);
+  messageDesc(file_calaba_v1_bot, 16);
 
 /**
  * @generated from message calaba.v1.AddBotResponse
@@ -520,7 +637,7 @@ export type AddBotResponse = Message<"calaba.v1.AddBotResponse"> & {
  * Use `create(AddBotResponseSchema)` to create a new message.
  */
 export const AddBotResponseSchema: GenMessage<AddBotResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 15);
+  messageDesc(file_calaba_v1_bot, 17);
 
 /**
  * GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
@@ -541,7 +658,7 @@ export type GetBotMeResponse = Message<"calaba.v1.GetBotMeResponse"> & {
  * Use `create(GetBotMeResponseSchema)` to create a new message.
  */
 export const GetBotMeResponseSchema: GenMessage<GetBotMeResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 16);
+  messageDesc(file_calaba_v1_bot, 18);
 
 /**
  * PATCH /api/bots/me: unset fields stay. → GetBotMeResponse.
@@ -569,7 +686,7 @@ export type UpdateBotMeRequest = Message<"calaba.v1.UpdateBotMeRequest"> & {
  * Use `create(UpdateBotMeRequestSchema)` to create a new message.
  */
 export const UpdateBotMeRequestSchema: GenMessage<UpdateBotMeRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 17);
+  messageDesc(file_calaba_v1_bot, 19);
 
 /**
  * PUT /api/bots/me/commands: replaces all commands (≤ 100, unique names).
@@ -588,7 +705,7 @@ export type SetBotCommandsRequest = Message<"calaba.v1.SetBotCommandsRequest"> &
  * Use `create(SetBotCommandsRequestSchema)` to create a new message.
  */
 export const SetBotCommandsRequestSchema: GenMessage<SetBotCommandsRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 18);
+  messageDesc(file_calaba_v1_bot, 20);
 
 /**
  * @generated from message calaba.v1.SetBotCommandsResponse
@@ -605,7 +722,7 @@ export type SetBotCommandsResponse = Message<"calaba.v1.SetBotCommandsResponse">
  * Use `create(SetBotCommandsResponseSchema)` to create a new message.
  */
 export const SetBotCommandsResponseSchema: GenMessage<SetBotCommandsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 19);
+  messageDesc(file_calaba_v1_bot, 21);
 
 /**
  * PUT /api/bots/me/webhook: https only, public addresses only; secret 16..256 characters signs
@@ -630,7 +747,7 @@ export type SetBotWebhookRequest = Message<"calaba.v1.SetBotWebhookRequest"> & {
  * Use `create(SetBotWebhookRequestSchema)` to create a new message.
  */
 export const SetBotWebhookRequestSchema: GenMessage<SetBotWebhookRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 20);
+  messageDesc(file_calaba_v1_bot, 22);
 
 /**
  * PUT and GET /api/bots/me/webhook.
@@ -649,7 +766,7 @@ export type BotWebhookResponse = Message<"calaba.v1.BotWebhookResponse"> & {
  * Use `create(BotWebhookResponseSchema)` to create a new message.
  */
 export const BotWebhookResponseSchema: GenMessage<BotWebhookResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 21);
+  messageDesc(file_calaba_v1_bot, 23);
 
 /**
  * Commands of the bots in a room (GET /api/rooms/{id}/bot-commands, VIEW_ROOM): composer hints.
@@ -678,7 +795,7 @@ export type RoomBotCommands = Message<"calaba.v1.RoomBotCommands"> & {
  * Use `create(RoomBotCommandsSchema)` to create a new message.
  */
 export const RoomBotCommandsSchema: GenMessage<RoomBotCommands> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 22);
+  messageDesc(file_calaba_v1_bot, 24);
 
 /**
  * @generated from message calaba.v1.ListRoomBotCommandsResponse
@@ -695,7 +812,7 @@ export type ListRoomBotCommandsResponse = Message<"calaba.v1.ListRoomBotCommands
  * Use `create(ListRoomBotCommandsResponseSchema)` to create a new message.
  */
 export const ListRoomBotCommandsResponseSchema: GenMessage<ListRoomBotCommandsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 23);
+  messageDesc(file_calaba_v1_bot, 25);
 
 /**
  * GET /api/me/blocked-bots; POST / DELETE /api/me/blocked-bots/{id} → 204 (people only). A
@@ -715,7 +832,7 @@ export type ListBlockedBotsResponse = Message<"calaba.v1.ListBlockedBotsResponse
  * Use `create(ListBlockedBotsResponseSchema)` to create a new message.
  */
 export const ListBlockedBotsResponseSchema: GenMessage<ListBlockedBotsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 24);
+  messageDesc(file_calaba_v1_bot, 26);
 
 /**
  * BOT_CREATE / BOT_UPDATE: a bot joined the workspace / changed (profile, commands, token,
@@ -740,7 +857,7 @@ export type BotCreate = Message<"calaba.v1.BotCreate"> & {
  * Use `create(BotCreateSchema)` to create a new message.
  */
 export const BotCreateSchema: GenMessage<BotCreate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 25);
+  messageDesc(file_calaba_v1_bot, 27);
 
 /**
  * @generated from message calaba.v1.BotUpdate
@@ -762,7 +879,7 @@ export type BotUpdate = Message<"calaba.v1.BotUpdate"> & {
  * Use `create(BotUpdateSchema)` to create a new message.
  */
 export const BotUpdateSchema: GenMessage<BotUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 26);
+  messageDesc(file_calaba_v1_bot, 28);
 
 /**
  * BOT_DELETE: the bot was deleted or removed from the workspace.
@@ -786,5 +903,5 @@ export type BotDelete = Message<"calaba.v1.BotDelete"> & {
  * Use `create(BotDeleteSchema)` to create a new message.
  */
 export const BotDeleteSchema: GenMessage<BotDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 27);
+  messageDesc(file_calaba_v1_bot, 29);
 

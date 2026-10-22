@@ -678,6 +678,7 @@ func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.
 //   - a workspace icon, badge picture (docs/09 #82), camera background (ADR-0035), soundboard
 //     clip (ADR-0036) or achievement picture (ADR-0061): members of the workspace (guests too);
 //   - a web app icon (ADR-0050): members of the workspace except guests;
+//   - the prompt of a voice menu (ADR-0117): MANAGE_INTEGRATIONS of the workspace, not guests;
 //   - a sticker (ADR-0030): members of its workspace, or VIEW_ROOM in a room where a live
 //     message shows it;
 //   - a file attached to a live message: VIEW_ROOM in that room;
@@ -825,6 +826,20 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		if appIcon {
 			role, err := res.Role(ctx, *f.WorkspaceID, uid)
 			if err == nil && role != perm.RoleGuest {
+				return true, nil
+			}
+			if err := candidate(err); err != nil {
+				return false, err
+			}
+		}
+		// The prompt of a voice menu (ADR-0117 §6): whoever manages the telephony settings.
+		prompt, err := s.db.Q.IsSipPromptFile(ctx, &f.ID)
+		if err != nil {
+			return false, err
+		}
+		if prompt {
+			bits, role, err := res.Workspace(ctx, *f.WorkspaceID, uid)
+			if err == nil && role != perm.RoleGuest && bits.Has(perm.ManageIntegrations) {
 				return true, nil
 			}
 			if err := candidate(err); err != nil {

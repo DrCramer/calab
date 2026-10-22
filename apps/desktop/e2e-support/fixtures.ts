@@ -75,6 +75,7 @@ import {
 } from '@calaba/protocol';
 import { buildMarketingState } from './fixtures-marketing';
 import type { AdmissionRec } from './mock-admissions';
+import type { MockPbx } from './mock-pbx';
 import { avatarPicture, cardPicture, encodePng } from './png';
 
 /**
@@ -359,6 +360,8 @@ export interface MemberRec {
   nickname: string;
   /** Member badge (docs/09 #82): an id of `MockState.badges`; unset = none. */
   badgeId?: string;
+  /** Internal telephone number (ADR-0117, WorkspaceMember.extension); kept by mock-pbx routes. */
+  extension?: string;
   joinedAt: Timestamp;
 }
 
@@ -458,6 +461,8 @@ export interface MockState {
   sipPasswords: Map<string, string>;
   /** Phone calls by id in creation order (live and journal). */
   sipCalls: Map<string, SipCall>;
+  /** The telephony exchange per workspace (ADR-0117, mock-pbx.ts); absent = empty. */
+  sipPbx: Map<string, MockPbx>;
   /** Sticker packs by id (ADR-0030), live stickers inside in order; deleted stickers stay in `deletedStickers`. */
   stickerPacks: Map<string, StickerPack>;
   /** Stickers removed from a pack that messages still show, by id. */
@@ -835,6 +840,7 @@ export function buildState(scenario: Scenario): MockState {
     sipSettings: new Map(),
     sipPasswords: new Map(),
     sipCalls: new Map(),
+    sipPbx: new Map(),
     stickerPacks: new Map(),
     deletedStickers: new Map(),
     userStickerPacks: new Map(),

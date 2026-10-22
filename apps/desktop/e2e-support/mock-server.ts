@@ -217,6 +217,20 @@ import {
   SipCallSchema,
   SipCallStatus,
   SipSettingsSchema,
+  CreateSipExtensionRequestSchema,
+  CreateSipGroupRequestSchema,
+  CreateSipIvrMenuRequestSchema,
+  ListSipExtensionsResponseSchema,
+  ListSipGroupsResponseSchema,
+  ListSipIvrMenusResponseSchema,
+  SipExtensionResponseSchema,
+  SipGroupResponseSchema,
+  SipGroupStrategy,
+  SipIvrMenuResponseSchema,
+  SipRouteKind,
+  UpdateSipExtensionRequestSchema,
+  UpdateSipGroupRequestSchema,
+  UpdateSipIvrMenuRequestSchema,
   TestSipResponseSchema,
   type SipCall,
   RoomRecordingState,
@@ -493,6 +507,23 @@ import {
   SCENARIOS,
 } from './fixtures';
 import { MARKETING_UNFURLS } from './fixtures-marketing';
+import {
+  PbxError,
+  createExtension as pbxCreateExtension,
+  createGroup as pbxCreateGroup,
+  createMenu as pbxCreateMenu,
+  deleteExtension as pbxDeleteExtension,
+  deleteGroup as pbxDeleteGroup,
+  deleteMenu as pbxDeleteMenu,
+  emptyPbx,
+  outGroup,
+  outMenu,
+  updateExtension as pbxUpdateExtension,
+  updateGroup as pbxUpdateGroup,
+  updateMenu as pbxUpdateMenu,
+  type MockPbx,
+  type PbxMembers,
+} from './mock-pbx';
 import { MOCK_SIP_RATE_NUMBER, MOCK_SIP_REFUSED_HOST, MOCK_SIP_UNREACHABLE_HOST, defaultSipSettings, isLiveSipStatus, normalizeCallee, numberAllowed, sipSettingsError } from './mock-sip';
 import {
   ACTIVE_BEFORE_MS,
@@ -674,6 +705,13 @@ export interface MockServer {
   /** ADR-0046: moves a call (RINGING / ACTIVE / ENDED / FAILED with `reason`) → SIP_CALL_UPDATE. */
   setSipCallStatus(callId: string, status: SipCallStatus, reason?: string): void;
   /**
+   * ADR-0117: «Команда Calab» on a plan with telephony, a saved SIP account and an exchange — four
+   * numbers (103 unassigned, Григорий without one), groups «Отдел продаж» (round robin) and «Поддержка» (its fallback
+   * deleted), menus «Главное меню» (a 42 s prompt, keys 1 2 3 0 * 9 — 9 leads to a deleted menu) and
+   * «Ночной режим» (no prompt).
+   */
+  seedSipExchange(): void;
+  /**
    * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
    * status never advances by itself (unlike a stop through the API).
    */
@@ -854,6 +892,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setSip: (ws, patch) => impl.setSip(ws, patch),
     placeSipCall: (roomId, by, number, status, ago) => impl.placeSipCall(roomId, by, number, status, ago),
     setSipCallStatus: (id, status, reason) => impl.setSipCallStatus(id, status, reason),
+    seedSipExchange: () => impl.seedSipExchange(),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
@@ -1674,6 +1713,7 @@ class MockImpl {
       nickname: m.nickname,
       joinedAt: m.joinedAt,
       badgeId: m.badgeId ?? '',
+      extension: m.role === WorkspaceRole.GUEST ? '' : (m.extension ?? ''),
     });
   }
 
@@ -5793,6 +5833,175 @@ class MockImpl {
     this.syncSipEnabled(workspaceId);
   }
 
+  // ------------------------------------------------ the exchange (ADR-0117, mock-pbx.ts)
+
+  private pbxOf(wsId: string): MockPbx {
+    let p = this.state.sipPbx.get(wsId);
+    if (!p) {
+      p = emptyPbx();
+      this.state.sipPbx.set(wsId, p);
+    }
+    return p;
+  }
+
+  private pbxMembers(wsId: string): PbxMembers {
+    return {
+      eligible: (u) => {
+        const m = this.member(wsId, u);
+        return !!m && m.role !== WorkspaceRole.GUEST;
+      },
+      isBot: (u) => !!this.state.users.get(u)?.user.isBot,
+    };
+  }
+
+  /** WorkspaceMember.extension follows the numbers → WORKSPACE_MEMBER_UPDATE. */
+  private syncExtensions(wsId: string): void {
+    const p = this.pbxOf(wsId);
+    for (const m of this.membersOf(wsId)) {
+      const number = m.role === WorkspaceRole.GUEST ? '' : (p.exts.find((e) => e.userId === m.userId)?.number ?? '');
+      if ((m.extension ?? '') === number) continue;
+      m.extension = number;
+      this.toWorkspace(wsId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+    }
+  }
+
+  private pbxDo<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (e) {
+      if (e instanceof PbxError) throw new HttpError(e.status, e.code, e.message, e.field);
+      throw e;
+    }
+  }
+
+  private pbxAdmin(c: Ctx): { wsId: string; me: string; p: MockPbx } {
+    const { wsId, me } = this.sipAdmin(c);
+    return { wsId, me, p: this.pbxOf(wsId) };
+  }
+
+  seedSipExchange(): void {
+    const wsId = IDS.workspaces.main;
+    const ws = this.state.workspaces.get(wsId);
+    if (ws?.plan?.limits) {
+      ws.plan.limits.telephonyDisabled = false;
+      this.toWorkspace(wsId, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+    }
+    this.setSip(wsId, {});
+    const p = emptyPbx();
+    this.state.sipPbx.set(wsId, p);
+    const m = this.pbxMembers(wsId);
+    const at = tick(this.state);
+    const ext = (number: string, userId: string, description: string): string =>
+      pbxCreateExtension(p, m, wsId, nextId(this.state, 'file'), at, create(CreateSipExtensionRequestSchema, { number, userId, description })).id;
+    // 103 «Склад» belonged to a member who left: the number stays, unassigned; Григорий has none.
+    pbxUpdateExtension(p, m, ext('103', IDS.users.anna, 'Склад'), create(UpdateSipExtensionRequestSchema, { userId: '' }));
+    const anna = ext('100', IDS.users.anna, 'Директор');
+    const boris = ext('101', IDS.users.boris, 'Бухгалтерия');
+    const vera = ext('102', IDS.users.vera, '');
+    const group = (name: string, number: string, roundRobin: boolean, members: string[], onFail: { kind: SipRouteKind; id?: string }): string =>
+      pbxCreateGroup(p, wsId, { group: nextId(this.state, 'file'), ext: nextId(this.state, 'file') }, at, create(CreateSipGroupRequestSchema, {
+        name,
+        number,
+        strategy: roundRobin ? SipGroupStrategy.ROUND_ROBIN : SipGroupStrategy.RING_ALL,
+        members: { extensionIds: members },
+        onFail,
+      })).id;
+    const sales = group('Отдел продаж', '1001', true, [vera, boris, anna], { kind: SipRouteKind.EXTENSION, id: anna });
+    const night = pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, { name: 'Ночной режим' }));
+    const support = group('Поддержка', '1002', false, [boris], { kind: SipRouteKind.MENU, id: night.id });
+    pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, {
+      name: 'Главное меню',
+      promptSourceFileId: nextId(this.state, 'file'),
+      onNoInput: { kind: SipRouteKind.GROUP, id: sales },
+      items: {
+        items: [
+          { digit: '1', action: { kind: SipRouteKind.GROUP, id: sales } },
+          { digit: '2', action: { kind: SipRouteKind.EXTENSION, id: boris } },
+          { digit: '3', action: { kind: SipRouteKind.GROUP, id: support } },
+          { digit: '9', action: { kind: SipRouteKind.MENU, id: night.id } },
+          { digit: '*', action: { kind: SipRouteKind.REPEAT } },
+          { digit: '0', action: { kind: SipRouteKind.HANGUP } },
+        ],
+      },
+    }));
+    // «Ночной режим» goes: «Поддержка» falls back to nothing, key 9 of the main menu is missing.
+    pbxDeleteMenu(p, night.id);
+    pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, { name: 'Выходные' }));
+    this.syncExtensions(wsId);
+  }
+
+  private pbxRoutes(): void {
+    this.route('GET', '/api/workspaces/:id/sip/extensions', (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('guests do not see the numbers');
+      const p = this.pbxOf(ws.id);
+      sendMsg(c.res, 200, ListSipExtensionsResponseSchema, { extensions: [...p.exts].sort((a, b) => a.number.localeCompare(b.number)) });
+    });
+    this.route('POST', '/api/workspaces/:id/sip/extensions', (c) => {
+      const { wsId, p } = this.pbxAdmin(c);
+      const b = parseBody(c, CreateSipExtensionRequestSchema);
+      const e = this.pbxDo(() => pbxCreateExtension(p, this.pbxMembers(wsId), wsId, nextId(this.state, 'file'), tick(this.state), b));
+      this.syncExtensions(wsId);
+      sendMsg(c.res, 201, SipExtensionResponseSchema, { extension: e });
+    });
+    this.route('PATCH', '/api/workspaces/:id/sip/extensions/:eid', (c) => {
+      const { wsId, p } = this.pbxAdmin(c);
+      const b = parseBody(c, UpdateSipExtensionRequestSchema);
+      const e = this.pbxDo(() => pbxUpdateExtension(p, this.pbxMembers(wsId), c.params[1] ?? '', b));
+      this.syncExtensions(wsId);
+      sendMsg(c.res, 200, SipExtensionResponseSchema, { extension: e });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sip/extensions/:eid', (c) => {
+      const { wsId, p } = this.pbxAdmin(c);
+      this.pbxDo(() => pbxDeleteExtension(p, c.params[1] ?? ''));
+      this.syncExtensions(wsId);
+      noContent(c.res);
+    });
+    this.route('GET', '/api/workspaces/:id/sip/groups', (c) => {
+      const { p } = this.pbxAdmin(c);
+      sendMsg(c.res, 200, ListSipGroupsResponseSchema, { groups: p.groups.map((g) => outGroup(p, g)) });
+    });
+    this.route('POST', '/api/workspaces/:id/sip/groups', (c) => {
+      const { wsId, p } = this.pbxAdmin(c);
+      const b = parseBody(c, CreateSipGroupRequestSchema);
+      const g = this.pbxDo(() => pbxCreateGroup(p, wsId, { group: nextId(this.state, 'file'), ext: nextId(this.state, 'file') }, tick(this.state), b));
+      sendMsg(c.res, 201, SipGroupResponseSchema, { group: outGroup(p, g) });
+    });
+    this.route('PATCH', '/api/workspaces/:id/sip/groups/:gid', (c) => {
+      const { p } = this.pbxAdmin(c);
+      const b = parseBody(c, UpdateSipGroupRequestSchema);
+      const g = this.pbxDo(() => pbxUpdateGroup(p, c.params[1] ?? '', tick(this.state), b));
+      sendMsg(c.res, 200, SipGroupResponseSchema, { group: outGroup(p, g) });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sip/groups/:gid', (c) => {
+      const { p } = this.pbxAdmin(c);
+      this.pbxDo(() => pbxDeleteGroup(p, c.params[1] ?? ''));
+      noContent(c.res);
+    });
+    this.route('GET', '/api/workspaces/:id/sip/ivr', (c) => {
+      const { p } = this.pbxAdmin(c);
+      sendMsg(c.res, 200, ListSipIvrMenusResponseSchema, { menus: p.menus.map((m) => outMenu(p, m)) });
+    });
+    this.route('POST', '/api/workspaces/:id/sip/ivr', (c) => {
+      const { wsId, me, p } = this.pbxAdmin(c);
+      const b = parseBody(c, CreateSipIvrMenuRequestSchema);
+      const m = this.pbxDo(() => pbxCreateMenu(p, wsId, nextId(this.state, 'file'), me, tick(this.state), b));
+      sendMsg(c.res, 201, SipIvrMenuResponseSchema, { menu: outMenu(p, m) });
+    });
+    this.route('PATCH', '/api/workspaces/:id/sip/ivr/:mid', (c) => {
+      const { me, p } = this.pbxAdmin(c);
+      const b = parseBody(c, UpdateSipIvrMenuRequestSchema);
+      const m = this.pbxDo(() => pbxUpdateMenu(p, c.params[1] ?? '', me, tick(this.state), b));
+      sendMsg(c.res, 200, SipIvrMenuResponseSchema, { menu: outMenu(p, m) });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sip/ivr/:mid', (c) => {
+      const { p } = this.pbxAdmin(c);
+      this.pbxDo(() => pbxDeleteMenu(p, c.params[1] ?? ''));
+      noContent(c.res);
+    });
+  }
+
   private announceSipCall(c: SipCall): void {
     if (c.roomId) this.toWorkspace(c.workspaceId, { event: { case: 'sipCallUpdate', value: { call: c } } }, c.roomId);
   }
@@ -5838,6 +6047,7 @@ class MockImpl {
   }
 
   private sipRoutes(): void {
+    this.pbxRoutes();
     this.route('GET', '/api/workspaces/:id/sip', (c) => {
       const { wsId } = this.sipAdmin(c);
       sendMsg(c.res, 200, GetSipSettingsResponseSchema, { settings: this.sipSettingsOf(wsId) });

@@ -44,6 +44,7 @@ await bot.webhook.set('https://bot.example.com/calab', process.env.WEBHOOK_SECRE
 - `botCallback` — нажатия кнопок под сообщениями бота (см. [Команды и кнопки](./commands-buttons)).
 - `contactShared` — контакты, которыми люди поделились с ботом (см. [Команды и кнопки](./commands-buttons#запрос-контакта)).
 - `taskNotice` — уведомления людей, выбравших этого бота (см. [Уведомления о задачах](./task-notices)).
+- `botDelegation` — участник разрешил, отозвал или отклонил действия бота от своего имени (см. [Авторизация](./auth#от-имени-участника)).
 
 События голоса (`voiceStateUpdate` и другие) приходят **только** через gateway.
 

@@ -138,11 +138,12 @@ export const IDLE_TIMEOUT_MS = 30_000;
 
 /**
  * Requests the server answers only after a long wait by design: the SIP connection test (ADR-0046,
- * `POST /api/workspaces/{id}/sip/test`) places a real call and replies within ~25 s. Both
- * deadlines stretch to this for them (the fixed 20 s headers deadline would cut every slow test).
+ * `POST /api/workspaces/{id}/sip/test`) places a real call and replies within ~25 s; a voice menu
+ * with a new prompt (ADR-0117, `POST …/sip/ivr`, `PATCH …/sip/ivr/{id}`) waits for ffmpeg up to
+ * 60 s. Both deadlines stretch to this for them (the fixed 20 s headers deadline would cut them).
  */
-export const SLOW_REQUEST_MS = 45_000;
-const SLOW_PATHS = [/^\/api\/workspaces\/[^/]+\/sip\/test$/];
+export const SLOW_REQUEST_MS = 75_000;
+const SLOW_PATHS = [/^\/api\/workspaces\/[^/]+\/sip\/test$/, /^\/api\/workspaces\/[^/]+\/sip\/ivr(\/[^/]+)?$/];
 
 /** The headers / idle deadline of a request to `pathname`. */
 export function deadlinesFor(pathname: string): { headers: number; idle: number } {

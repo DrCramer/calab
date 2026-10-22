@@ -369,7 +369,7 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/boards/{id}/webhook/ping",
 		"PUT /api/boards/{id}/permissions",
 	}},
-	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned) and the exchange — internal numbers, groups, voice menus (ADR-0117; the list of numbers is open to every member but guests), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
 		"GET /api/workspaces/{id}/apps",
 		"POST /api/workspaces/{id}/apps",
 		"PATCH /api/workspace-apps/{appId}",
@@ -381,6 +381,18 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/sip",
 		"PUT /api/workspaces/{id}/sip",
 		"POST /api/workspaces/{id}/sip/test",
+		"POST /api/workspaces/{id}/sip/extensions",
+		"PATCH /api/workspaces/{id}/sip/extensions/{eid}",
+		"DELETE /api/workspaces/{id}/sip/extensions/{eid}",
+		"GET /api/workspaces/{id}/sip/groups",
+		"POST /api/workspaces/{id}/sip/groups",
+		"PATCH /api/workspaces/{id}/sip/groups/{gid}",
+		"DELETE /api/workspaces/{id}/sip/groups/{gid}",
+		"GET /api/workspaces/{id}/sip/ivr",
+		"POST /api/workspaces/{id}/sip/ivr",
+		"PATCH /api/workspaces/{id}/sip/ivr/{mid}",
+		"DELETE /api/workspaces/{id}/sip/ivr/{mid}",
+		"GET /api/workspaces/{id}/sip/extensions",
 		"GET /api/workspaces/{id}/ai",
 		"PUT /api/workspaces/{id}/ai",
 		"POST /api/workspaces/{id}/ai/check",
@@ -564,11 +576,13 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/me/blocked-bots/{id}",
 		"DELETE /api/me/blocked-bots/{id}",
 	}},
-	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision; suggesting it to others is a person's request too", routes: []string{
+	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision (giving, revoking, declining or cancelling an invitation)", routes: []string{
 		"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
 		"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
-		"POST /api/workspaces/{id}/bots/{botId}/delegation-invites",
 		"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}",
+	}},
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0119: the bot asks members for its own consent ({botId} = the bot itself, a non-guest role; another bot gets 403); only the invitee's own click in their DM grants it; closed on behalf", routes: []string{
+		"POST /api/workspaces/{id}/bots/{botId}/delegation-invites",
 	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0111: the bot reads whom it may act for (members of the workspace read it too; another bot gets 403); closed on behalf", routes: []string{
 		"GET /api/workspaces/{id}/bots/{botId}",
@@ -694,6 +708,15 @@ var botAudited = map[string]bool{
 	"DELETE /api/workspaces/{id}/integrations/gptunnel":                   true,
 	"PUT /api/workspaces/{id}/sip":                                        true,
 	"POST /api/workspaces/{id}/sip/test":                                  true, // a real call billed to the workspace
+	"POST /api/workspaces/{id}/sip/extensions":                            true,
+	"PATCH /api/workspaces/{id}/sip/extensions/{eid}":                     true,
+	"DELETE /api/workspaces/{id}/sip/extensions/{eid}":                    true,
+	"POST /api/workspaces/{id}/sip/groups":                                true,
+	"PATCH /api/workspaces/{id}/sip/groups/{gid}":                         true,
+	"DELETE /api/workspaces/{id}/sip/groups/{gid}":                        true,
+	"POST /api/workspaces/{id}/sip/ivr":                                   true,
+	"PATCH /api/workspaces/{id}/sip/ivr/{mid}":                            true,
+	"DELETE /api/workspaces/{id}/sip/ivr/{mid}":                           true,
 	"PUT /api/workspaces/{id}/ai":                                         true,
 	"POST /api/workspaces/{id}/ai/check":                                  true, // a model call billed to the key
 	"POST /api/workspaces/{id}/backgrounds":                               true,

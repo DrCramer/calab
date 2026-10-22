@@ -13,7 +13,7 @@ import (
 
 const clearBadgeFromMembers = `-- name: ClearBadgeFromMembers :many
 UPDATE workspace_members SET badge_id = NULL WHERE badge_id = $1
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 // The members that had the badge, now without it (before the badge row goes).
@@ -35,6 +35,7 @@ func (q *Queries) ClearBadgeFromMembers(ctx context.Context, badgeID *uuid.UUID)
 			&i.BadgeID,
 			&i.AchievementCount,
 			&i.LastActiveAt,
+			&i.SipExtension,
 		); err != nil {
 			return nil, err
 		}
@@ -181,7 +182,7 @@ func (q *Queries) LockWorkspaceBadges(ctx context.Context, workspaceID uuid.UUID
 const setMemberBadge = `-- name: SetMemberBadge :one
 UPDATE workspace_members SET badge_id = $1
 WHERE workspace_id = $2 AND user_id = $3
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type SetMemberBadgeParams struct {
@@ -202,6 +203,7 @@ func (q *Queries) SetMemberBadge(ctx context.Context, arg SetMemberBadgeParams) 
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }

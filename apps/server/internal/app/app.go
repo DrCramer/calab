@@ -281,6 +281,7 @@ func New(d Deps) *App {
 		whOpts.AllowAddr = unfurlPolicy(d)
 	}
 	botSvc := bots.New(d.DB, d.Redis, nil, planSvc, []byte(d.Config.JWTSecret), whOpts)
+	botSvc.PublicURL = d.Config.PublicAppURL
 	pub = bots.Publisher{Publisher: pub, S: botSvc}
 	botSvc.SetEvents(pub)
 
@@ -553,7 +554,9 @@ func New(d Deps) *App {
 	if sipOpts.AllowAddr == nil {
 		sipOpts.AllowAddr = unfurlPolicy(d)
 	}
+	sipOpts.Inbound = sipOpts.Inbound || d.Config.SIPInbound
 	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
+	sipSvc.SetFiles(filesSvc)
 	sipSvc.Routes(mux, private)
 	// AI integration (CBF-60): the workspace's model provider and its check.
 	aiSvc := ai.New(d.DB, d.Redis, []byte(d.Config.JWTSecret), d.Config.GPTunnelAIURL, unfurlPolicy(d))

@@ -69,6 +69,8 @@ type Service struct {
 	hooks   hookCache
 	relays  relayCache
 	wh      webhookWorker
+	// PublicURL is PUBLIC_APP_URL: links to the bot's DM messages (delegation invitations).
+	PublicURL string
 }
 
 // New creates the service. SetEvents must be called before serving (the publisher wraps the

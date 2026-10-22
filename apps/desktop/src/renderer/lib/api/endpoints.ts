@@ -1,5 +1,17 @@
 import {
   GetSipSettingsResponseSchema,
+  CreateSipExtensionRequestSchema,
+  CreateSipGroupRequestSchema,
+  CreateSipIvrMenuRequestSchema,
+  ListSipExtensionsResponseSchema,
+  ListSipGroupsResponseSchema,
+  ListSipIvrMenusResponseSchema,
+  SipExtensionResponseSchema,
+  SipGroupResponseSchema,
+  SipIvrMenuResponseSchema,
+  UpdateSipExtensionRequestSchema,
+  UpdateSipGroupRequestSchema,
+  UpdateSipIvrMenuRequestSchema,
   GetAiSettingsResponseSchema,
   GetAiStatusResponseSchema,
   PutAiSettingsRequestSchema,
@@ -713,6 +725,29 @@ export const api = {
       call('GET', `/api/workspaces/${workspaceId}/calls${qs({ cursor })}`, ListSipCallsResponseSchema, undefined, signal),
     place: (roomId: string, number: string) => call('POST', `/api/rooms/${roomId}/calls`, SipCallResponseSchema, body(PlaceSipCallRequestSchema, { number })),
     hangup: (roomId: string, callId: string) => call('DELETE', `/api/rooms/${roomId}/calls/${callId}`, SipCallResponseSchema),
+    /**
+     * The exchange (ADR-0117): internal numbers (list — any member but guests), groups and voice
+     * menus — MANAGE_INTEGRATIONS. 409 SIP_EXTENSION_TAKEN (field number / userId), 422 VALIDATION
+     * field; a menu with promptSourceFileId (my upload, ≤ 10 MB, ≤ 3 min) waits for ffmpeg ≤ 60 s.
+     */
+    extensions: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip/extensions`, ListSipExtensionsResponseSchema),
+    createExtension: (workspaceId: string, init: MessageInitShape<typeof CreateSipExtensionRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/extensions`, SipExtensionResponseSchema, body(CreateSipExtensionRequestSchema, init)),
+    updateExtension: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipExtensionRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sip/extensions/${id}`, SipExtensionResponseSchema, body(UpdateSipExtensionRequestSchema, init)),
+    removeExtension: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/extensions/${id}`),
+    groups: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip/groups`, ListSipGroupsResponseSchema),
+    createGroup: (workspaceId: string, init: MessageInitShape<typeof CreateSipGroupRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/groups`, SipGroupResponseSchema, body(CreateSipGroupRequestSchema, init)),
+    updateGroup: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipGroupRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sip/groups/${id}`, SipGroupResponseSchema, body(UpdateSipGroupRequestSchema, init)),
+    removeGroup: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/groups/${id}`),
+    menus: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip/ivr`, ListSipIvrMenusResponseSchema),
+    createMenu: (workspaceId: string, init: MessageInitShape<typeof CreateSipIvrMenuRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/ivr`, SipIvrMenuResponseSchema, body(CreateSipIvrMenuRequestSchema, init)),
+    updateMenu: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipIvrMenuRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sip/ivr/${id}`, SipIvrMenuResponseSchema, body(UpdateSipIvrMenuRequestSchema, init)),
+    removeMenu: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/ivr/${id}`),
   },
   /**
    * AI integration (CBF-60, ai.proto) — MANAGE_INTEGRATIONS. PUT replaces the form (api_key unset =

@@ -369,7 +369,16 @@ func Member(m sqlc.WorkspaceMember, u sqlc.User, roleIDs []uuid.UUID) *v1.Worksp
 		BadgeId:     idp(m.BadgeID),
 		// ADR-0061: kept by the grant / revoke transaction, never negative.
 		AchievementCount: uint32(max(m.AchievementCount, 0)), //nolint:gosec // a count
+		// ADR-0117: kept with the member's sip_extensions row; guests never have one.
+		Extension: memberExtension(m),
 	}
+}
+
+func memberExtension(m sqlc.WorkspaceMember) string {
+	if perm.Role(m.Role) == perm.RoleGuest {
+		return ""
+	}
+	return m.SipExtension
 }
 
 // Badge converts a workspace badge row (docs/09 #82).
