@@ -6,7 +6,7 @@ import { restoreCanvasState } from '../src/renderer/lib/canvas/restore';
 import { decodeFrame, encodeUpdate, FRAME_SNAPSHOT, FRAME_UPDATE, type Frame } from '../src/renderer/lib/wiki/frames';
 import { IDS, startMockServer, type MockServer } from './mock-server';
 
-// The Canvas in the mock (ADR-0114): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts mock-canvas
+// The Canvas in the mock (ADR-0115): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts mock-canvas
 
 let server: MockServer;
 
@@ -59,7 +59,7 @@ function sync(canvasId: string, token: string): Promise<{ ws: WebSocket; next: (
   });
 }
 
-describe('canvas (ADR-0114)', () => {
+describe('canvas (ADR-0115)', () => {
   it('the top level, lazy children, the restricted canvas only for the listed, the trash', async () => {
     const anna = await login('owner@calaba.test');
     const top = await list(anna);

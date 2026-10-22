@@ -6,7 +6,7 @@ import { expect, test } from './app';
 import { checkpoint } from './harness';
 
 /**
- * «Холст» on the desktop (ADR-0114 §5, docs/08 «Холст»): one test, one `checkpoint` per state —
+ * «Холст» on the desktop (ADR-0115 §5, docs/08 «Холст»): one test, one `checkpoint` per state —
  * the empty section, the tree + an open canvas (stickies, shapes, connectors, a text), a selected
  * object with its properties panel, «только просмотр», the history dialog, the «Доступ» dialog and
  * the trash. Fixture (e2e-support/mock-server seedCanvas): «Команда Calab» — «Продукт» (→ «Дорожная

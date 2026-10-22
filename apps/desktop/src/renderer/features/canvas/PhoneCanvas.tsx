@@ -17,11 +17,11 @@ import { useCanvasUi } from '../../stores/canvasUi';
 import { CanvasViewLazy } from './lazy';
 
 /**
- * «Холст» on the phone (ADR-0114 §5, ADR-0095: a section behind «Ещё»; view by default): the tab
+ * «Холст» on the phone (ADR-0115 §5, ADR-0095: a section behind «Ещё»; view by default): the tab
  * root lists the top-level folders and canvases (56 px rows, a name filter behind the magnifier), a
  * folder and a canvas are pushed screens (`{kind:'canvas'}`, lib/phoneNav.ts) with the standard header.
  * The canvas screen is the desktop's lazy `CanvasView` in its `phone` mode: pan with one finger, pinch
- * with two, zoom bar. A person with CANVAS_WRITE turns on «Править» in the header (touch editing, ADR-0115 wave 5b).
+ * with two, zoom bar. A person with CANVAS_WRITE turns on «Править» in the header (touch editing, ADR-0116 wave 5b).
  * No trash, no creating of canvases, no menus. Data comes from the
  * same stores and services as the desktop section. Only the top screen is mounted, so leaving a
  * canvas closes its sync socket; rows are `memo` and read their item by id; no timers.
@@ -307,7 +307,7 @@ const noop = (): void => undefined;
 
 /**
  * The canvas: the header (name, «изменён …», «Править» for a person with CANVAS_WRITE) and the lazy viewer filling the
- * rest. The viewer opens in view mode; «Править» turns on touch editing (ADR-0115 wave 5b) until «Готово» or until the
+ * rest. The viewer opens in view mode; «Править» turns on touch editing (ADR-0116 wave 5b) until «Готово» or until the
  * screen closes — the flag is the screen's state, not stored anywhere.
  */
 function CanvasScreenView({ workspaceId, itemId }: { workspaceId: string; itemId: string }): ReactNode {

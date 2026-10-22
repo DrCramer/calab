@@ -19,7 +19,7 @@ import (
 // the sqlc query SearchCanvasItems (queries/canvas.sql) spells it out too.
 const CanvasVector = "(to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text))"
 
-// canvas is the section of Canvas items (ADR-0114 §6): the candidates come from sqlc
+// canvas is the section of Canvas items (ADR-0115 §6): the candidates come from sqlc
 // SearchCanvasItems (full text over name and text, trigram / substring over the name, ranked by
 // relevance × freshness), the access filter is the item rule itself (perm.ComputeCanvasItemIn
 // over the candidates' chains, canvasacl) and the snippets are ts_headline of the canvas's text.

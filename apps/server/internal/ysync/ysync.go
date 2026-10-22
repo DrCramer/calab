@@ -1,5 +1,5 @@
 // Package ysync is the server side of the Yjs sync socket shared by the Wiki (ADR-0096 §4) and
-// the Canvas (ADR-0114 §3): GET /api/<section>/.../sync. The server never parses a Yjs document;
+// the Canvas (ADR-0115 §3): GET /api/<section>/.../sync. The server never parses a Yjs document;
 // it stores the last snapshot plus the updates after it and relays frames between the sockets of
 // one document, on this instance directly and across instances through the Redis channel
 // <name>:<docId>.
@@ -47,7 +47,7 @@
 // (through_seq 0 and the empty Yjs update 0x00 0x00 for a document without one) and every
 // UPDATE after it, then relays.
 //
-// A viewer socket (Hub.ServeViewer, the Canvas's public link, ADR-0115 wave 5) is anonymous and
+// A viewer socket (Hub.ServeViewer, the Canvas's public link, ADR-0116 wave 5) is anonymous and
 // receive-only: no token frame — the section resolved the credential (the link code) before the
 // upgrade and gives a Viewer with its access rule and its socket limits. It gets the SNAPSHOT,
 // the UPDATEs and relayed SNAPSHOTs like a read-only socket, never AWARENESS (who is on the
@@ -88,7 +88,7 @@ const (
 	ctlCompacted byte = 0xF1
 )
 
-// Limits of the protocol (ADR-0096 §4, ADR-0114 §3). MaxState is per section (Backend.MaxState).
+// Limits of the protocol (ADR-0096 §4, ADR-0115 §3). MaxState is per section (Backend.MaxState).
 const (
 	MaxUpdate   = 64 << 10 // bytes of one Yjs update (and of one awareness update)
 	MaxMeta     = 1 << 20  // bytes of a snapshot's meta JSON (plain_text ≤ 256 KiB, escaped)
@@ -216,7 +216,7 @@ func (c Config) WithDefaults() Config {
 }
 
 // Profile is what a section's sockets do beyond the relay the Wiki shipped with (before the
-// Canvas, ADR-0114 §3 addendum). The zero Profile is exactly that relay; every field turns on one
+// Canvas, ADR-0115 §3 addendum). The zero Profile is exactly that relay; every field turns on one
 // behaviour added since.
 type Profile struct {
 	// Ceiling: the hard ceiling of the updates after the snapshot (Config.Ceiling*, CloseCeiling,

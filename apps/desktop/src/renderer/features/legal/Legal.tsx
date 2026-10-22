@@ -12,7 +12,7 @@ import { platform } from '../../platform';
  */
 export const VENDOR = 'GPTunneL';
 export const VENDOR_URL = 'https://gptunnel.ai';
-export const LICENSE_EMAIL = 'it@gptunnel.ai';
+export const LICENSE_EMAIL = 'support@calab.io';
 
 /** «© 2026 GPTunneL · Powered by GPTunneL» — the vendor name opens the site. */
 export function Attribution({ className }: { className?: string }): ReactNode {

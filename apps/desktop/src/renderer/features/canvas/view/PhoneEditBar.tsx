@@ -15,7 +15,7 @@ import { TEMPLATE_ICON, useInsertTemplate } from './Templates';
 import type { TimerStore } from './timerStore';
 
 /**
- * The phone's edit mode, bottom dock (ADR-0115 wave 5b): the tool bar — select, sticky, text, shape, connector, «+», undo,
+ * The phone's edit mode, bottom dock (ADR-0116 wave 5b): the tool bar — select, sticky, text, shape, connector, «+», undo,
  * redo — with a sheet above it (shapes grid, templates / vote / timer, later the properties sheet). Every target is
  * 44×44 px, the bar clears the home indicator itself (`--safe-bottom`), nothing animates and nothing runs at rest: the
  * buttons are leaves that read one engine primitive each. Hidden while a text is edited (the format bar takes its place).

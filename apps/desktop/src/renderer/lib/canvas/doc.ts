@@ -274,7 +274,7 @@ export interface CanvasDocOptions {
 }
 
 /**
- * The canvas document on a Y.Doc (ADR-0114 §3): `objects: Y.Map<id, Y.Map>` with flat fields, `z` a
+ * The canvas document on a Y.Doc (ADR-0115 §3): `objects: Y.Map<id, Y.Map>` with flat fields, `z` a
  * fractional key, text in `Y.Text`, `meta.schema`. All local edits are one transaction each with
  * `LOCAL_ORIGIN`; the UndoManager tracks only that origin, so undo never reverts someone else's edit.
  */

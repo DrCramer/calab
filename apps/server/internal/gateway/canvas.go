@@ -9,7 +9,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// Canvas events (ADR-0114 §6), routed like the Wiki's (wiki.go): each CANVAS_ITEM_* event
+// Canvas events (ADR-0115 §6), routed like the Wiki's (wiki.go): each CANVAS_ITEM_* event
 // carries the item's access chain (server-internal, stripped here) and every recipient's bits
 // come from it and their roles (perm.ComputeCanvasItemIn). Without CANVAS_VIEW on the item
 // nothing is delivered; who saw the item before a change of its chain (move, restricted,
@@ -17,7 +17,7 @@ import (
 // canvases never travels here (the sync socket, internal/canvas).
 
 // canvasBits is member uid's canvas bits on an item with this chain (mu held); 0 = not a member,
-// a bot (the Canvas is for people in v1, ADR-0114) or no chain.
+// a bot (the Canvas is for people in v1, ADR-0115) or no chain.
 func (s *wsState) canvasBits(uid uuid.UUID, chain []perm.TreeNode) perm.Bits {
 	m, ok := s.members[uid]
 	if !ok || len(chain) == 0 || s.bots[uid] {
@@ -78,7 +78,7 @@ func (h *Hub) routeCanvas(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 			}
 		}
 	case *v1.DispatchEvent_CanvasCommentUpsert:
-		// Comments (ADR-0115 wave 4): the whole comment to who sees the canvas, the chain stripped.
+		// Comments (ADR-0116 wave 4): the whole comment to who sees the canvas, the chain stripped.
 		x := e.CanvasCommentUpsert
 		h.canvasToViewers(st, wid, id, sessions, canvasacl.FromLevels(x.GetAccess()), &v1.DispatchEvent{Event: &v1.DispatchEvent_CanvasCommentUpsert{
 			CanvasCommentUpsert: &v1.CanvasCommentUpsert{WorkspaceId: x.GetWorkspaceId(), Comment: x.GetComment()}}})

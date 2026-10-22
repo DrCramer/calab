@@ -1,5 +1,5 @@
 /**
- * `serverNow − localNow` in ms for the canvas timer (ADR-0115): one light request, the server's `Date` (whole seconds;
+ * `serverNow − localNow` in ms for the canvas timer (ADR-0116): one light request, the server's `Date` (whole seconds;
  * +½ s) against our clock around the round trip; null when the header is missing. `/api/version` is anonymous, so the
  * public link's viewer uses it too.
  */

@@ -35,7 +35,7 @@ function canon(v: unknown): string {
 const sameObject = (a: Y.Map<unknown>, b: Y.Map<unknown>): boolean => canon(Object.fromEntries(a)) === canon(Object.fromEntries(b));
 
 /**
- * «Восстановить» a version (ADR-0114 §3): the live document's objects become the version's, in ONE
+ * «Восстановить» a version (ADR-0115 §3): the live document's objects become the version's, in ONE
  * local transaction — objects the version lacks are deleted, new and changed ones are written (an
  * unchanged object is left alone, so a co-author's concurrent edit of it is not rewritten), `meta`
  * stays. The state is read through a scratch Y.Doc; the live one never applies it as an update (that

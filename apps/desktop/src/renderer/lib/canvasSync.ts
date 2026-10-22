@@ -1,5 +1,5 @@
 /**
- * Client side of the canvas sync socket `GET /api/canvas/items/{id}/sync` (ADR-0114 §3): the generic Yjs
+ * Client side of the canvas sync socket `GET /api/canvas/items/{id}/sync` (ADR-0115 §3): the generic Yjs
  * provider (lib/ySync.ts; frames 0–4 as on the wiki socket, docs/05) with the canvas's settings.
  *
  * - Updates are batched for 200 ms, an update above 64 KiB goes up as a snapshot (ySync).
@@ -11,7 +11,7 @@
  * - Reconnect (backoff 1 s → 30 s): the server sends the snapshot and the updates after it again, and
  *   whatever this doc has beyond them goes up as one update.
  * - Read-only (no CANVAS_WRITE, or a newer document schema): nothing is sent; setReadOnly flips it.
- * - Anonymous (the public link `/c/{code}`, ADR-0115 wave 5): `GET /api/public/canvas/{code}/sync`, no token,
+ * - Anonymous (the public link `/c/{code}`, ADR-0116 wave 5): `GET /api/public/canvas/{code}/sync`, no token,
  *   nothing is ever sent, no awareness either way (canvasPublicSyncUrl).
  *
  * The status is a primitive for the UI: connecting | synced | readonly | offline.
@@ -29,7 +29,7 @@ export type CanvasSyncStatus = "connecting" | "synced" | "readonly" | "offline";
 
 /** Awareness ≤ 20 frames/s (the engine throttles its own events to the same rate). */
 export const CANVAS_AWARENESS_MIN_GAP_MS = 50;
-/** Largest snapshot state of a canvas (ADR-0114 §3). */
+/** Largest snapshot state of a canvas (ADR-0115 §3). */
 export const CANVAS_MAX_STATE = MAX_STATE;
 
 /**

@@ -803,7 +803,7 @@ describe('plans and the superadmin API (ADR-0024)', () => {
     gw.ws.close(1000);
     if (ready?.case !== 'ready') throw new Error('no READY');
     expect(ready.value.me?.isSuperadmin).toBe(true);
-    expect(ready.value.planContact).toBe('mailto:it@gptunnel.ai');
+    expect(ready.value.planContact).toBe('mailto:support@calab.io');
     const plans: Record<string, string> = {};
     for (const w of ready.value.workspaces) plans[w.workspace?.slug ?? ''] = Plan[w.workspace?.plan?.plan ?? Plan.UNSPECIFIED];
     expect(plans).toEqual({ calaba: 'TEAM', design: 'FREE' });

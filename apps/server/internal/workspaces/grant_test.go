@@ -41,7 +41,7 @@ func TestCheckGrantDiskBits(t *testing.T) {
 	if err := checkGrant(admin, member, member|perm.WikiManage); err != nil {
 		t.Fatalf("an admin grants WIKI_MANAGE: %v", err)
 	}
-	// And for the canvas bits (ADR-0114).
+	// And for the canvas bits (ADR-0115).
 	if err := checkGrant(mgr, 0, perm.CanvasManage); err == nil {
 		t.Fatal("cannot grant CANVAS_MANAGE without holding it")
 	}

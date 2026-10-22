@@ -1833,7 +1833,7 @@ test('m-wiki-trash', async ({ page }) => {
   await checkpoint(page, 'm-wiki-trash', { snapshot: false });
 });
 
-// ADR-0114 §5 / ADR-0115 wave 5b: «Холст» on the phone — the section behind «Ещё», the tree as 56 px rows, a
+// ADR-0115 §5 / ADR-0116 wave 5b: «Холст» on the phone — the section behind «Ещё», the tree as 56 px rows, a
 // folder and a canvas as pushed screens; the canvas opens in view mode (pans with a finger, pinches, has the
 // zoom bar; no tools or panels) and «Править» in the header turns on the edit mode (m-canvas-edit).
 test('m-canvas-root', async ({ page }) => {
@@ -1909,7 +1909,7 @@ test('m-canvas-view', async ({ page }) => {
   await checkpoint(page, 'm-canvas-view-zoom', { snapshot: false });
 });
 
-// ADR-0115 wave 5b: the edit mode — the bottom tool bar, the shapes grid, «+», a new sticky with its text editor and
+// ADR-0116 wave 5b: the edit mode — the bottom tool bar, the shapes grid, «+», a new sticky with its text editor and
 // the format bar, the properties sheet, «Выбрать несколько», and «Готово» back to view mode. Written, not run (no WebKit).
 test('m-canvas-edit', async ({ page }) => {
   await signedIn(page);

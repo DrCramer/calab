@@ -77,6 +77,22 @@ const ERROR_KEY: Record<MailErrorCode, MessageKey> = {
 /** The UI's text for a contract error code (the engine's English `message` goes to details only). */
 export const mailErrorText = (code: MailErrorCode): string => t(ERROR_KEY[code]);
 
+/**
+ * Why a new top-level folder name would be refused (CBF-39), checked before the engine does so the
+ * user reads the reason under the field instead of a generic «Проверьте данные»: `name` for the
+ * characters the engine rejects (sync.ts `createFolder`), `exists` for a folder of that name at the
+ * top level (or under the `INBOX.` namespace). The engine keeps the last word (delimiter, path case).
+ */
+export function folderNameIssue(name: string, folders: readonly MailFolder[]): 'name' | 'exists' | null {
+  const clean = name.trim();
+  if (!clean) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.startsWith('.')) return 'name';
+  const inbox = folders.find((f) => f.role === 'inbox')?.id ?? null;
+  const low = clean.toLowerCase();
+  return folders.some((f) => f.path !== '' && (f.parentId === null || f.parentId === inbox) && f.name.toLowerCase() === low) ? 'exists' : null;
+}
+
 /** App-password help pages (§4): the provider's own instructions. */
 export const APP_PASSWORD_URL: Partial<Record<MailProvider, string>> = {
   gmail: 'https://support.google.com/accounts/answer/185833',

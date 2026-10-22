@@ -161,7 +161,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if restricted && !wasRestricted {
-			if err := dropLinks(ctx, q, id); err != nil { // made private: its public links go (ADR-0115 wave 5)
+			if err := dropLinks(ctx, q, id); err != nil { // made private: its public links go (ADR-0116 wave 5)
 				return err
 			}
 		}

@@ -58,7 +58,7 @@ describe("canvasPublicSyncUrl", () => {
   });
 });
 
-describe("CanvasSync anonymous (the public link, ADR-0115 wave 5)", () => {
+describe("CanvasSync anonymous (the public link, ADR-0116 wave 5)", () => {
   it("reads the snapshot and the writers' updates without a token, and sends nothing at all", async () => {
     const relay = new MockRelay();
     new CanvasDoc(relay.doc, { rng: seededRng(7), makeId: ids("srv") }).create(sticky(0, "from server"));

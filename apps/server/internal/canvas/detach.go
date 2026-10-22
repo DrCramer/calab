@@ -12,7 +12,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// Detaching (addendum 2026-10-14 of ADR-0096 §2, ADR-0114 §2; as on the Disk and in the Wiki): a
+// Detaching (addendum 2026-10-14 of ADR-0096 §2, ADR-0115 §2; as on the Disk and in the Wiki): a
 // private item is seen only by its owner and those let in, and nobody else's operation may
 // destroy or carry it away. Before an item is trashed, deleted forever or moved, every item of
 // its subtree the actor does not see (the topmost of each hidden branch, with what is below it)

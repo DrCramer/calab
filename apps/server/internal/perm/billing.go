@@ -31,7 +31,7 @@ const (
 	// Billing are the three billing bits.
 	Billing = BillingView | BillingTopup | BillingManage
 	// Known are every bit a role may carry (the disk bits, ADR-0094, the wiki bits, ADR-0096,
-	// and the canvas bits, ADR-0114, included).
+	// and the canvas bits, ADR-0115, included).
 	Known = All | Billing | Disk | Wiki | Canvas
 )
 

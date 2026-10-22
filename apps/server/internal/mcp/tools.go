@@ -1,0 +1,544 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+)
+
+// Token economy: few general tools, one-line descriptions, compact answers (only non-empty
+// fields, short names); the full API object only on request (read full=true).
+
+// args is the union of the tools' arguments (JSON names as in the schemas).
+type args struct {
+	Q           string `json:"q"`
+	Kind        string `json:"kind"`
+	Workspace   string `json:"workspace"`
+	Task        string `json:"task"`
+	Room        string `json:"room"`
+	Board       string `json:"board"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	Text        string `json:"text"`
+	ReplyTo     string `json:"reply_to"`
+	Before      string `json:"before"`
+	Limit       int    `json:"limit"`
+	Full        bool   `json:"full"`
+}
+
+type tool struct {
+	def map[string]any
+	run func(ctx context.Context, c *api, a args) (any, error)
+}
+
+func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+func schema(required []string, props map[string]any) map[string]any {
+	s := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		s["required"] = required
+	}
+	return s
+}
+
+func def(name, desc string, input map[string]any) map[string]any {
+	return map[string]any{"name": name, "description": desc, "inputSchema": input}
+}
+
+var taskArg = str("task id or key (ABC-12)")
+
+var toolDefs = []tool{
+	{def("find", "Find tasks, messages, rooms or boards the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
+		"q":         str("words; for rooms/boards a name part, empty = all"),
+		"kind":      map[string]any{"type": "string", "enum": []string{"tasks", "messages", "rooms", "boards"}, "description": "default: all kinds"},
+		"workspace": str("workspace id; default all"),
+		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
+	})), find},
+	{def("read", "Read a task (with its board's statuses) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
+		"task":   taskArg,
+		"room":   str("room id (a task's comments: its room)"),
+		"limit":  map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
+		"before": str("message id: older history"),
+		"full":   map[string]any{"type": "boolean", "description": "the full API object"},
+	})), read},
+	{def("create_task", "Create a task on a board.", schema([]string{"board", "title"}, map[string]any{
+		"board":       str("board id"),
+		"title":       str("1-200 chars"),
+		"description": str("markdown"),
+		"status":      str("status name or id; default the board's"),
+	})), createTask},
+	{def("comment_task", "Comment on a task.", schema([]string{"task", "text"}, map[string]any{
+		"task": taskArg,
+		"text": str("comment, markdown"),
+	})), commentTask},
+	{def("set_task_status", "Move a task to another status of its board.", schema([]string{"task", "status"}, map[string]any{
+		"task":   taskArg,
+		"status": str("status name or id"),
+	})), setTaskStatus},
+	{def("send_message", "Send a message to a room or DM.", schema([]string{"room", "text"}, map[string]any{
+		"room":     str("room id"),
+		"text":     str("markdown, up to 4000 chars"),
+		"reply_to": str("message id"),
+	})), sendMessage},
+}
+
+var (
+	tools    = map[string]tool{}
+	toolList []map[string]any
+)
+
+func init() {
+	for _, t := range toolDefs {
+		name := t.def["name"].(string)
+		tools[name] = t
+		toolList = append(toolList, t.def)
+	}
+}
+
+// ToolNames lists the tools (tests).
+func ToolNames() []string {
+	out := make([]string, 0, len(toolList))
+	for _, t := range toolList {
+		out = append(out, t["name"].(string))
+	}
+	return out
+}
+
+func clamp(n, def, hi int) int {
+	if n <= 0 {
+		return def
+	}
+	return min(n, hi)
+}
+
+func need(name, v string) error {
+	if strings.TrimSpace(v) == "" {
+		return errors.New(name + " is required")
+	}
+	return nil
+}
+
+// ---- find ----
+
+func find(ctx context.Context, c *api, a args) (any, error) {
+	kinds := []string{"tasks", "messages", "rooms", "boards"}
+	if a.Kind != "" {
+		if !slices.Contains(kinds, a.Kind) {
+			return nil, errors.New("kind must be tasks, messages, rooms or boards")
+		}
+		kinds = []string{a.Kind}
+	}
+	limit := clamp(a.Limit, 10, 20)
+	q := strings.TrimSpace(a.Q)
+	out := map[string]any{}
+	searchTasks, searchMsgs := slices.Contains(kinds, "tasks"), slices.Contains(kinds, "messages")
+	if (searchTasks || searchMsgs) && q == "" {
+		if a.Kind != "" {
+			return nil, errors.New("q is required for " + a.Kind)
+		}
+		searchTasks, searchMsgs = false, false
+	}
+	if searchTasks || searchMsgs {
+		var types []string
+		if searchTasks {
+			types = append(types, "tasks")
+		}
+		if searchMsgs {
+			types = append(types, "messages", "task_comments")
+		}
+		scope := "all"
+		if a.Workspace != "" {
+			scope = strings.TrimSpace(a.Workspace)
+		}
+		var r v1.SearchResponse
+		qs := url.Values{"q": {q}, "scope": {scope}, "types": {strings.Join(types, ",")}, "limit": {strconv.Itoa(limit)}}
+		if err := c.call(ctx, http.MethodGet, "/api/search", qs, nil, &r); err != nil {
+			return nil, err
+		}
+		var tasks, msgs []map[string]any
+		for _, s := range r.GetSections() {
+			for _, h := range s.GetItems() {
+				switch {
+				case h.GetTask() != nil:
+					t := h.GetTask()
+					tasks = append(tasks, compact(map[string]any{"id": t.GetTaskId(), "key": t.GetKey(), "title": h.GetTitle(),
+						"status": enum(t.GetStatusType().String(), "BOARD_STATUS_TYPE_"), "board": t.GetBoardId()}))
+				case h.GetMessage() != nil:
+					m := h.GetMessage()
+					msgs = append(msgs, compact(map[string]any{"id": m.GetMessageId(), "room": m.GetRoomId(), "text": snippet(h.GetSnippet()),
+						"author": h.GetAuthorId(), "at": ts(h.GetAt())}))
+				case h.GetTaskComment() != nil:
+					m := h.GetTaskComment()
+					msgs = append(msgs, compact(map[string]any{"id": m.GetMessageId(), "room": m.GetRoomId(), "task": m.GetTaskKey(),
+						"text": snippet(h.GetSnippet()), "author": h.GetAuthorId(), "at": ts(h.GetAt())}))
+				}
+			}
+		}
+		if tasks != nil {
+			out["tasks"] = tasks
+		}
+		if msgs != nil {
+			out["messages"] = msgs
+		}
+	}
+	wantRooms, wantBoards := slices.Contains(kinds, "rooms"), slices.Contains(kinds, "boards")
+	if wantRooms || wantBoards {
+		wss, err := workspaceIDs(ctx, c, a.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		low := strings.ToLower(q)
+		var rooms, boards []map[string]any
+		for _, ws := range wss {
+			if wantRooms && len(rooms) < limit {
+				var r v1.ListRoomsResponse
+				if err := c.call(ctx, http.MethodGet, "/api/workspaces/"+seg(ws)+"/rooms", nil, nil, &r); err != nil {
+					return nil, err
+				}
+				for _, x := range r.GetRooms() {
+					if len(rooms) < limit && strings.Contains(strings.ToLower(x.GetName()), low) {
+						rooms = append(rooms, compact(map[string]any{"id": x.GetId(), "name": x.GetName(),
+							"type": enum(x.GetType().String(), "ROOM_TYPE_"), "workspace": ws}))
+					}
+				}
+			}
+			if wantBoards && len(boards) < limit {
+				var r v1.ListBoardsResponse
+				if err := c.call(ctx, http.MethodGet, "/api/workspaces/"+seg(ws)+"/boards", nil, nil, &r); err != nil {
+					// a workspace whose roles give no boards (403) is skipped, not fatal
+					var ae *apiError
+					if errors.As(err, &ae) && ae.status == http.StatusForbidden {
+						continue
+					}
+					return nil, err
+				}
+				for _, b := range r.GetBoards() {
+					if len(boards) < limit && (strings.Contains(strings.ToLower(b.GetName()), low) || strings.EqualFold(b.GetKey(), q)) {
+						boards = append(boards, compact(map[string]any{"id": b.GetId(), "key": b.GetKey(), "name": b.GetName(), "workspace": ws}))
+					}
+				}
+			}
+		}
+		if rooms != nil {
+			out["rooms"] = rooms
+		}
+		if boards != nil {
+			out["boards"] = boards
+		}
+	}
+	if len(out) == 0 {
+		return map[string]any{"found": 0}, nil
+	}
+	return out, nil
+}
+
+func workspaceIDs(ctx context.Context, c *api, ws string) ([]string, error) {
+	if ws = strings.TrimSpace(ws); ws != "" {
+		return []string{ws}, nil
+	}
+	var r v1.ListWorkspacesResponse
+	if err := c.call(ctx, http.MethodGet, "/api/workspaces", nil, nil, &r); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(r.GetWorkspaces()))
+	for _, w := range r.GetWorkspaces() {
+		out = append(out, w.GetId())
+	}
+	return out, nil
+}
+
+// ---- read ----
+
+func read(ctx context.Context, c *api, a args) (any, error) {
+	switch {
+	case strings.TrimSpace(a.Task) != "":
+		tr, board, err := loadTask(ctx, c, a.Task)
+		if err != nil {
+			return nil, err
+		}
+		if a.Full {
+			return raw(tr)
+		}
+		t := tr.GetTask()
+		var assignees []string
+		for _, x := range t.GetAssignees() {
+			assignees = append(assignees, x.GetUserId())
+		}
+		var subs []map[string]any
+		for _, s := range tr.GetSubtasks() {
+			subs = append(subs, compact(map[string]any{"id": s.GetId(), "key": s.GetKey(), "title": s.GetTitle(), "status": statusName(board, s.GetStatusId())}))
+		}
+		var statuses []string
+		for _, s := range board.GetStatuses() {
+			statuses = append(statuses, s.GetName())
+		}
+		out := map[string]any{
+			"id": t.GetId(), "key": t.GetKey(), "title": t.GetTitle(), "description": t.GetDescription(),
+			"status": statusName(board, t.GetStatusId()), "statuses": statuses,
+			"priority": enum(t.GetPriority().String(), "TASK_PRIORITY_"), "assignees": assignees,
+			"start": t.GetStartOn(), "due": t.GetDueOn(), "board": compact(map[string]any{"id": board.GetId(), "name": board.GetName()}),
+			"workspace": t.GetWorkspaceId(), "room": t.GetRoomId(), "comments": t.GetCommentCount(), "subtasks": subs,
+			"created_by": t.GetCreatedBy(), "updated": ts(t.GetUpdatedAt()),
+		}
+		if p := tr.GetParent(); p != nil {
+			out["parent"] = compact(map[string]any{"id": p.GetId(), "key": p.GetKey(), "title": p.GetTitle()})
+		}
+		return compact(out), nil
+	case strings.TrimSpace(a.Room) != "":
+		var room v1.GetRoomResponse
+		if err := c.call(ctx, http.MethodGet, "/api/rooms/"+seg(a.Room), nil, nil, &room); err != nil {
+			return nil, err
+		}
+		qs := url.Values{"limit": {strconv.Itoa(clamp(a.Limit, 20, 50))}}
+		if a.Before != "" {
+			qs.Set("before", a.Before)
+		}
+		var ms v1.ListMessagesResponse
+		if err := c.call(ctx, http.MethodGet, "/api/rooms/"+seg(a.Room)+"/messages", qs, nil, &ms); err != nil {
+			return nil, err
+		}
+		if a.Full {
+			return raw(&ms)
+		}
+		r := room.GetRoom()
+		list := make([]map[string]any, 0, len(ms.GetMessages()))
+		for _, m := range slices.Backward(ms.GetMessages()) { // newest first in the API, oldest first here
+			list = append(list, message(m))
+		}
+		return compact(map[string]any{
+			"room": compact(map[string]any{"id": r.GetId(), "name": r.GetName(), "type": enum(r.GetType().String(), "ROOM_TYPE_"),
+				"topic": r.GetTopic(), "workspace": r.GetWorkspaceId()}),
+			"messages": list, "more": ms.GetHasMore(),
+		}), nil
+	}
+	return nil, errors.New("give task or room")
+}
+
+func message(m *v1.Message) map[string]any {
+	text := m.GetContent()
+	switch {
+	case m.GetKind() == v1.MessageKind_MESSAGE_KIND_SYSTEM:
+		text = "[system]"
+	case m.GetSticker() != nil:
+		text = "[sticker " + m.GetSticker().GetEmoji() + "]"
+	}
+	var files []string
+	for _, f := range m.GetAttachments() {
+		files = append(files, f.GetName())
+	}
+	return compact(map[string]any{"id": m.GetId(), "author": m.GetAuthorId(), "text": text, "at": ts(m.GetCreatedAt()),
+		"reply_to": m.GetReplyToId(), "files": files})
+}
+
+// taskByRef reads a task by id or by key (GET /api/t/{key} over the bot's workspaces).
+func taskByRef(ctx context.Context, c *api, ref string) (*v1.TaskResponse, error) {
+	ref = strings.TrimSpace(ref)
+	var tr v1.TaskResponse
+	path := "/api/tasks/" + seg(ref)
+	if _, err := uuid.Parse(ref); err != nil {
+		path = "/api/t/" + seg(strings.ToUpper(ref))
+	}
+	if err := c.call(ctx, http.MethodGet, path, nil, nil, &tr); err != nil {
+		return nil, err
+	}
+	if tr.GetTask() == nil {
+		return nil, errors.New("task not found")
+	}
+	return &tr, nil
+}
+
+// loadTask reads a task by id or key with its board (statuses).
+func loadTask(ctx context.Context, c *api, ref string) (*v1.TaskResponse, *v1.Board, error) {
+	tr, err := taskByRef(ctx, c, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	if b := tr.GetBoard(); b != nil {
+		return tr, b, nil
+	}
+	b, err := loadBoard(ctx, c, tr.GetTask().GetBoardId())
+	return tr, b, err
+}
+
+func loadBoard(ctx context.Context, c *api, id string) (*v1.Board, error) {
+	var br v1.BoardResponse
+	if err := c.call(ctx, http.MethodGet, "/api/boards/"+seg(id), nil, nil, &br); err != nil {
+		return nil, err
+	}
+	return br.GetBoard(), nil
+}
+
+func statusName(b *v1.Board, id string) string {
+	for _, s := range b.GetStatuses() {
+		if s.GetId() == id {
+			return s.GetName()
+		}
+	}
+	return id
+}
+
+// statusID resolves a status of the board by id or name (case-insensitive).
+func statusID(b *v1.Board, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	names := make([]string, 0, len(b.GetStatuses()))
+	for _, s := range b.GetStatuses() {
+		if s.GetId() == ref || strings.EqualFold(s.GetName(), ref) {
+			return s.GetId(), nil
+		}
+		names = append(names, s.GetName())
+	}
+	return "", errors.New("no status " + strconv.Quote(ref) + "; statuses: " + strings.Join(names, ", "))
+}
+
+// ---- actions ----
+
+func createTask(ctx context.Context, c *api, a args) (any, error) {
+	if err := errors.Join(need("board", a.Board), need("title", a.Title)); err != nil {
+		return nil, err
+	}
+	req := &v1.CreateTaskRequest{Title: a.Title, Description: a.Description}
+	var board *v1.Board
+	if a.Status != "" {
+		b, err := loadBoard(ctx, c, a.Board)
+		if err != nil {
+			return nil, err
+		}
+		if req.StatusId, err = statusID(b, a.Status); err != nil {
+			return nil, err
+		}
+		board = b
+	}
+	var tr v1.TaskResponse
+	if err := c.call(ctx, http.MethodPost, "/api/boards/"+seg(a.Board)+"/tasks", nil, req, &tr); err != nil {
+		return nil, err
+	}
+	t := tr.GetTask()
+	out := map[string]any{"id": t.GetId(), "key": t.GetKey(), "room": t.GetRoomId()}
+	if board != nil {
+		out["status"] = statusName(board, t.GetStatusId())
+	}
+	return out, nil
+}
+
+func commentTask(ctx context.Context, c *api, a args) (any, error) {
+	if err := errors.Join(need("task", a.Task), need("text", a.Text)); err != nil {
+		return nil, err
+	}
+	tr, err := taskByRef(ctx, c, a.Task)
+	if err != nil {
+		return nil, err
+	}
+	return send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+}
+
+func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
+	if err := errors.Join(need("task", a.Task), need("status", a.Status)); err != nil {
+		return nil, err
+	}
+	tr, board, err := loadTask(ctx, c, a.Task)
+	if err != nil {
+		return nil, err
+	}
+	sid, err := statusID(board, a.Status)
+	if err != nil {
+		return nil, err
+	}
+	var out v1.TaskResponse
+	if err := c.call(ctx, http.MethodPatch, "/api/tasks/"+seg(tr.GetTask().GetId()), nil, &v1.UpdateTaskRequest{StatusId: &sid}, &out); err != nil {
+		return nil, err
+	}
+	return map[string]any{"key": out.GetTask().GetKey(), "status": statusName(board, out.GetTask().GetStatusId())}, nil
+}
+
+func sendMessage(ctx context.Context, c *api, a args) (any, error) {
+	if err := errors.Join(need("room", a.Room), need("text", a.Text)); err != nil {
+		return nil, err
+	}
+	return send(ctx, c, a.Room, a.Text, a.ReplyTo)
+}
+
+func send(ctx context.Context, c *api, room, text, replyTo string) (any, error) {
+	var r v1.CreateMessageResponse
+	req := &v1.CreateMessageRequest{Content: text, ReplyToId: strings.TrimSpace(replyTo), Nonce: uuid.NewString()}
+	if err := c.call(ctx, http.MethodPost, "/api/rooms/"+seg(room)+"/messages", nil, req, &r); err != nil {
+		return nil, err
+	}
+	return map[string]any{"id": r.GetMessage().GetId(), "room": r.GetMessage().GetRoomId()}, nil
+}
+
+// ---- compact answers ----
+
+// raw is the API object as protojson without default values (read full=true).
+func raw(m proto.Message) (any, error) {
+	b, err := marshal.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(b), nil
+}
+
+// compact drops empty values: "", 0, false, nil and empty lists / maps.
+func compact(m map[string]any) map[string]any {
+	for k, v := range m {
+		switch x := v.(type) {
+		case string:
+			if x == "" {
+				delete(m, k)
+			}
+		case bool:
+			if !x {
+				delete(m, k)
+			}
+		case uint32:
+			if x == 0 {
+				delete(m, k)
+			}
+		case []string:
+			if len(x) == 0 {
+				delete(m, k)
+			}
+		case []map[string]any:
+			if len(x) == 0 {
+				delete(m, k)
+			}
+		case map[string]any:
+			if len(x) == 0 {
+				delete(m, k)
+			}
+		case nil:
+			delete(m, k)
+		}
+	}
+	return m
+}
+
+// enum is an enum name in lower case without its prefix; "" for the unspecified value.
+func enum(name, prefix string) string {
+	s := strings.ToLower(strings.TrimPrefix(name, prefix))
+	if s == "unspecified" {
+		return ""
+	}
+	return s
+}
+
+// snippet removes the highlight marks of search snippets (U+0002 / U+0003).
+func snippet(s string) string { return strings.NewReplacer("\x02", "", "\x03", "").Replace(s) }
+
+func ts(t *timestamppb.Timestamp) string {
+	if t == nil {
+		return ""
+	}
+	return t.AsTime().UTC().Format("2006-01-02T15:04Z")
+}

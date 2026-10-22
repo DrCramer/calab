@@ -1,7 +1,7 @@
 import type { ruCanvasBoard } from '../ru/canvasBoard';
 import type { DictShape } from '../types';
 
-/** Simplified Chinese UI strings — 画布界面 (ADR-0114 §5). Same keys and placeholders as ru/canvasBoard.ts. */
+/** Simplified Chinese UI strings — 画布界面 (ADR-0115 §5). Same keys and placeholders as ru/canvasBoard.ts. */
 export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.label': '画布',
   'canvasBoard.toolbar': '工具',

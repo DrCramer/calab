@@ -9,7 +9,7 @@ beforeEach(() => {
   useCanvasComments.setState({ byId: {}, threads: {}, replies: {}, loaded: {}, panel: false, active: null, draft: null, focus: null, filterOpen: false });
 });
 
-describe('canvas comments store (ADR-0115 wave 4)', () => {
+describe('canvas comments store (ADR-0116 wave 4)', () => {
   it('holds threads of a read canvas; events for others are dropped', () => {
     const st = useCanvasComments.getState();
     st.upsert(c('x'));

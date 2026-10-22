@@ -1,5 +1,5 @@
 /**
- * Canvas comments, the pure part (ADR-0115 wave 4): where a pin is, who may do what (the server decides;
+ * Canvas comments, the pure part (ADR-0116 wave 4): where a pin is, who may do what (the server decides;
  * this only hides what it would refuse), the text with mentions as names. No React, no stores.
  */
 import { CANVAS_BITS, type CanvasComment } from '@calaba/protocol';

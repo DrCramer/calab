@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { fitsAttachments, forwardSubject, MAX_ATTACH_BYTES, replyRecipients, replySubject, resolveLogin, suggest } from './compose';
-import { mailInitials, mailListTime, providerOf } from './format';
+import type { MailFolder } from '../../../shared/mail';
+import { folderNameIssue, mailInitials, mailListTime, providerOf } from './format';
+
+describe('folderNameIssue (CBF-39)', () => {
+  const f = (o: Partial<MailFolder>): MailFolder => ({ id: 'a/x', accountId: 'a', path: 'X', name: 'X', role: null, parentId: null, unread: 0, total: 0, ...o });
+  const list = [
+    f({ id: 'a/inbox', path: 'INBOX', name: 'INBOX', role: 'inbox' }),
+    f({ id: 'a/p', path: 'INBOX.Projects', name: 'Projects', parentId: 'a/inbox' }),
+    f({ id: 'a/n', path: 'Deep.Nested', name: 'Nested', parentId: 'a/d' }),
+    f({ id: 'a/v', path: '', name: 'Starred', role: 'starred' }),
+  ];
+  it('flags characters the engine rejects', () => {
+    expect(folderNameIssue('a/b', list)).toBe('name');
+    expect(folderNameIssue('.hidden', list)).toBe('name');
+    expect(folderNameIssue('50%', list)).toBe('name');
+  });
+  it('flags a top-level (or INBOX-namespace) duplicate case-insensitively', () => {
+    expect(folderNameIssue(' projects ', list)).toBe('exists');
+    expect(folderNameIssue('inbox', list)).toBe('exists');
+  });
+  it('ignores nested and virtual folders and empty input', () => {
+    expect(folderNameIssue('Nested', list)).toBeNull();
+    expect(folderNameIssue('Starred', list)).toBeNull();
+    expect(folderNameIssue('  ', list)).toBeNull();
+    expect(folderNameIssue('Счета 2026', list)).toBeNull();
+  });
+});
 
 describe('mailListTime (Apple Mail)', () => {
   const now = new Date(2026, 9, 12, 15, 0);

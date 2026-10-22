@@ -55,9 +55,9 @@ const (
 	scopeDiskItem
 	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
 	scopeWikiPage
-	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0114), the item's workspace.
+	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0115), the item's workspace.
 	scopeCanvasItem
-	// scopeCanvasComment: /api/canvas/comments/{id} (ADR-0115 wave 4), the workspace of the
+	// scopeCanvasComment: /api/canvas/comments/{id} (ADR-0116 wave 4), the workspace of the
 	// comment's canvas.
 	scopeCanvasComment
 )
@@ -517,7 +517,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/wiki/{code}":                scopePublic,
 	"GET /api/public/wiki/{code}/state":          scopePublic,
 	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
-	// Canvas (ADR-0114 §7). The sync socket authenticates in-band like the Wiki's.
+	// Canvas (ADR-0115 §7). The sync socket authenticates in-band like the Wiki's.
 	"GET /api/workspaces/{id}/canvas/items":        scopeWorkspace,
 	"POST /api/workspaces/{id}/canvas/items":       scopeWorkspace,
 	"POST /api/workspaces/{id}/canvas/trash/empty": scopeWorkspace,
@@ -537,13 +537,13 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/canvas/items/{id}/versions":          scopeCanvasItem,
 	"GET /api/canvas/items/{id}/versions/{vid}":    scopeCanvasItem,
 	"GET /api/canvas/items/{id}/sync":              scopePublic,
-	// Canvas comments (ADR-0115 wave 4).
+	// Canvas comments (ADR-0116 wave 4).
 	"GET /api/canvas/items/{id}/comments":                scopeCanvasItem,
 	"POST /api/canvas/items/{id}/comments":               scopeCanvasItem,
 	"GET /api/canvas/items/{id}/comments/mention-access": scopeCanvasItem,
 	"PATCH /api/canvas/comments/{id}":                    scopeCanvasComment,
 	"DELETE /api/canvas/comments/{id}":                   scopeCanvasComment,
-	// Canvas public link (ADR-0115 wave 5): managed by people of the canvas's workspace; the
+	// Canvas public link (ADR-0116 wave 5): managed by people of the canvas's workspace; the
 	// public name and the anonymous receive-only socket take no session at all.
 	"GET /api/canvas/items/{id}/link":    scopeCanvasItem,
 	"POST /api/canvas/items/{id}/link":   scopeCanvasItem,
@@ -613,6 +613,9 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}":        scopeWorkspace,
 	"POST /api/workspaces/{id}/bots/{botId}/delegation-invites":            scopeWorkspace,
 	"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}": scopeWorkspace,
+	// MCP for bots (CBF-48): the endpoint itself reads and writes nothing; every tool's REST
+	// call goes through this gate again with its own route and scope.
+	"/api/mcp": scopePublic,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of

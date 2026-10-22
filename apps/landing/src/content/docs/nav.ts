@@ -50,6 +50,7 @@ export const nav: DocsNavSection[] = [
       { slug: 'task-notices', ru: 'Уведомления о задачах', en: 'Task notifications' },
       { slug: 'rest-mailbox', ru: 'Почтовый ящик', en: 'Mailbox' },
       { slug: 'sdk', ru: 'SDK для Node.js', en: 'Node.js SDK' },
+      { slug: 'mcp', ru: 'MCP для LLM-клиентов', en: 'MCP for LLM clients' },
       { slug: 'errors-limits', ru: 'Ошибки и лимиты', en: 'Errors and limits' },
       { slug: 'changelog', ru: 'Журнал изменений', en: 'Changelog' },
     ],

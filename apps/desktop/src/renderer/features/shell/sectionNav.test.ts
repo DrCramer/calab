@@ -119,7 +119,7 @@ describe('desktop sections (ADR-0074)', () => {
     expect(useWikiUi.getState().active).toBe(false);
   });
 
-  it('«Холст» is exclusive with the Disk, the Wiki, the boards and the rooms, and remembered per workspace (ADR-0114 §5)', async () => {
+  it('«Холст» is exclusive with the Disk, the Wiki, the boards and the rooms, and remembered per workspace (ADR-0115 §5)', async () => {
     openSection('wiki');
     openSection('canvas');
     expect(useCanvasUi.getState().active).toBe(true);

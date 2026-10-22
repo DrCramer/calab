@@ -64,7 +64,7 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/workspaces/{id}/sounds":        plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/disk/folders":  plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/wiki/pages":    plans.RestrictedCreate, // ADR-0096
-	"POST /api/workspaces/{id}/canvas/items":  plans.RestrictedCreate, // ADR-0114
+	"POST /api/workspaces/{id}/canvas/items":  plans.RestrictedCreate, // ADR-0115
 	// integrations: apps, GPTunneL, bot tokens, board webhooks / Git / rules / forms, telephony
 	"POST /api/workspaces/{id}/apps":                  plans.RestrictedConnect,
 	"POST /api/workspaces/{id}/integrations/gptunnel": plans.RestrictedConnect,

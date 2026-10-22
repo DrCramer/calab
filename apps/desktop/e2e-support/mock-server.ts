@@ -821,7 +821,7 @@ export interface MockServer {
   readonly disk: DiskMock;
   /** Wiki (ADR-0096, mock-wiki.ts): the live pages, documents and sync sockets (marketing scenes replace the fixture). */
   readonly wiki: WikiMock;
-  /** Canvas (ADR-0114, mock-canvas.ts): the live tree, documents and sync sockets. */
+  /** Canvas (ADR-0115, mock-canvas.ts): the live tree, documents and sync sockets. */
   readonly canvas: CanvasMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
   updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
@@ -956,7 +956,7 @@ class HttpError extends Error {
 }
 
 /** Plan contact of the mock (READY.plan_contact; the server's default). */
-export const MOCK_PLAN_CONTACT = 'mailto:it@gptunnel.ai';
+export const MOCK_PLAN_CONTACT = 'mailto:support@calab.io';
 
 /** 429 with Retry-After (seconds), like the server's limits. */
 const tooMany = (what: string, seconds: number): HttpError =>
@@ -1237,7 +1237,7 @@ class MockImpl {
   wiki: WikiMock;
   /** The wiki sync sockets (snapshots up to 2 MiB: not the gateway's 64 KiB limit). */
   private readonly wikiWss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
-  /** Canvas (ADR-0114); rebuilt with the state. */
+  /** Canvas (ADR-0115); rebuilt with the state. */
   canvas: CanvasMock;
   /** The canvas sync sockets (snapshots up to 4 MiB). */
   private readonly canvasWss = new WebSocketServer({ noServer: true, maxPayload: 5 * 1024 * 1024 });
@@ -7915,7 +7915,7 @@ class MockImpl {
     });
   }
 
-  // ------------------------------------------------ Canvas (ADR-0114, mock-canvas.ts)
+  // ------------------------------------------------ Canvas (ADR-0115, mock-canvas.ts)
 
   private newCanvas(): CanvasMock {
     return new CanvasMock({

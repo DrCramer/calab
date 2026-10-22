@@ -451,6 +451,38 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         emitRows('messages_changed', touched, list.map((m) => m.id));
         emitFolders(f.accountId);
       },
+      // CBF-39: a top-level folder (the engine's name checks, simplified); offline account → NETWORK.
+      create: async (accountId, name) => {
+        const a = account(accountId);
+        if (a.state === 'offline') fail('NETWORK', 'the account is offline');
+        const clean = name.trim();
+        // eslint-disable-next-line no-control-regex
+        if (!clean || clean.length > 100 || /[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.startsWith('.')) fail('INVALID', 'bad folder name');
+        if ([...folders.values()].some((f) => f.accountId === accountId && f.path.toLowerCase() === clean.toLowerCase())) fail('INVALID', 'the folder already exists');
+        const f: MailFolder = { id: folderId(accountId, nextId('folder')), accountId, path: clean, name: clean, role: null, parentId: null, unread: 0, total: 0 };
+        folders.set(f.id, f);
+        emitFolders(accountId);
+        return clone(f);
+      },
+      // Sorting rules: first match by sender (name / address) or subject, inbox only.
+      applyRules: async (accountId) => {
+        const rules = settings.rules.filter((r) => r.accountId === accountId && r.contains.trim());
+        const inbox = byRole(accountId, 'inbox');
+        const byFolder = new Map<string, MockMessage[]>();
+        for (const m of inFolder(inbox)) {
+          const from = `${m.from.name}\n${m.from.address}`.toLowerCase();
+          const r = rules.find((x) => (x.field === 'from' ? from : m.subject.toLowerCase()).includes(x.contains.trim().toLowerCase()));
+          const dest = r ? [...folders.values()].find((f) => f.accountId === accountId && f.path === r.folderPath) : undefined;
+          if (!dest || dest.id === inbox.id) continue;
+          byFolder.set(dest.id, [...(byFolder.get(dest.id) ?? []), m]);
+        }
+        let moved = 0;
+        for (const [id, list] of byFolder) {
+          moveTo(list, folder(id));
+          moved += list.length;
+        }
+        return { moved };
+      },
     },
     messages: {
       list: async (q) => {

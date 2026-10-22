@@ -10,7 +10,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// ADR-0114 §6: CANVAS_ITEM_* reach only members who see the item; the access chains are stripped;
+// ADR-0115 §6: CANVAS_ITEM_* reach only members who see the item; the access chains are stripped;
 // who lost the item with a change gets CANVAS_ITEM_REMOVE.
 func TestCanvasEventsPerRecipient(t *testing.T) {
 	wid := uuid.New()
@@ -88,7 +88,7 @@ func TestCanvasEventsPerRecipient(t *testing.T) {
 	}
 }
 
-// ADR-0115 wave 4: CANVAS_COMMENT_* reach only members who see the canvas (not bots), without
+// ADR-0116 wave 4: CANVAS_COMMENT_* reach only members who see the canvas (not bots), without
 // the chain; a private canvas's comments reach only who was let in.
 func TestCanvasCommentEventsPerRecipient(t *testing.T) {
 	wid := uuid.New()

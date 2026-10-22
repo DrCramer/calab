@@ -61,7 +61,7 @@ function mountTree(): { commits: { n: number }; names: () => string[] } {
   return { commits, names: () => [...el.querySelectorAll('[data-testid="canvas-node"]')].map((n) => n.textContent) };
 }
 
-describe('CanvasTree renders (CLAUDE.md «Ререндеры под контролем», ADR-0114 §4)', () => {
+describe('CanvasTree renders (CLAUDE.md «Ререндеры под контролем», ADR-0115 §4)', () => {
   beforeEach(() => {
     rowRenders.clear();
     useCanvas.setState({ items: {}, lists: {}, load: {} });

@@ -41,7 +41,7 @@ import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
 
 /**
- * Canvas REST (ADR-0114 §7, proto/calaba/v1/canvas.proto) and the section's actions: the one module
+ * Canvas REST (ADR-0115 §7, proto/calaba/v1/canvas.proto) and the section's actions: the one module
  * that knows the routes; the screen (features/canvas) calls the actions, the stores hold the result.
  * Rights are the server's: a refusal comes back as a toast and an optimistic change is rolled back.
  * The canvas content never goes through here — only through the sync socket (lib/canvasSync.ts).
@@ -79,7 +79,7 @@ export const canvasApi = {
   /** GET / PUT …/canvas/settings — `CanvasSettings { trash_days }` (0 = never; PUT needs CANVAS_MANAGE). */
   trashDays: async (ws: string): Promise<number> => (await call('GET', `${W(ws)}/settings`, CanvasSettingsSchema)).trashDays,
   setTrashDays: (ws: string, days: number) => callEmpty('PUT', `${W(ws)}/settings`, body(CanvasSettingsSchema, { trashDays: days })),
-  /** The public read-only link (ADR-0115 wave 5; the owner or CANVAS_MANAGE): `link` unset when there is none. */
+  /** The public read-only link (ADR-0116 wave 5; the owner or CANVAS_MANAGE): `link` unset when there is none. */
   link: (id: string): Promise<CanvasLinkResponse> => call('GET', `${C(id)}/link`, CanvasLinkResponseSchema),
   /** Makes the link, or changes the expiry of the live one (its code stays). `days` 0 = never, 1, 7, 30. */
   createLink: (id: string, days: number): Promise<CanvasLinkResponse> =>
@@ -183,13 +183,13 @@ export function openCanvas(ws: string, id: string): void {
   if (useUi.getState().phone.on) openPhoneItem(id);
 }
 
-/** The phone pushes a folder or a canvas as a screen over the «Холст» tab (view only, ADR-0114 §5). */
+/** The phone pushes a folder or a canvas as a screen over the «Холст» tab (view only, ADR-0115 §5). */
 export function openPhoneItem(id: string): void {
   useUi.getState().setPhone((n) => pushOnTab(n, 'canvas', { kind: 'canvas', itemId: id }));
 }
 
 /**
- * A ⌘K hit (ADR-0114 §6): the Canvas section of the hit's workspace with the canvas open, or — for a
+ * A ⌘K hit (ADR-0115 §6): the Canvas section of the hit's workspace with the canvas open, or — for a
  * folder — the tree with the folder and everything above it expanded. An item that is gone, trashed or
  * hidden from me says so. Guests have no Canvas section: nothing to open. The phone has none yet (H6):
  * the choice is remembered for when it opens.
@@ -271,7 +271,7 @@ export function onCanvasItemRemove(e: CanvasItemRemove): void {
   const ui = useCanvasUi.getState();
   const open = itemOf(ui, e.workspaceId);
   if (open && (open === e.itemId || ancestorsOf(st.items, open).includes(e.itemId))) ui.openItem(e.workspaceId, '');
-  // The comments of the item and of every canvas below it that are held go with it (ADR-0115 wave 4).
+  // The comments of the item and of every canvas below it that are held go with it (ADR-0116 wave 4).
   const cs = useCanvasComments.getState();
   for (const id of Object.keys(cs.loaded)) if (id === e.itemId || ancestorsOf(st.items, id).includes(e.itemId)) cs.forget(id);
   st.remove(e.itemId);
@@ -422,7 +422,7 @@ export async function restoreVersion(canvasId: string, versionId: string): Promi
   }
 }
 
-/** Server search of names and text (ADR-0114 §6, `GET /api/search?type=canvas`): the tree's filter for items not loaded yet. */
+/** Server search of names and text (ADR-0115 §6, `GET /api/search?type=canvas`): the tree's filter for items not loaded yet. */
 export async function searchItems(ws: string, q: string, signal?: AbortSignal): Promise<Array<{ id: string; name: string; folder: boolean }>> {
   const r = await api.search({ q, scope: ws, type: 'canvas', limit: '20' }, signal);
   const out: Array<{ id: string; name: string; folder: boolean }> = [];

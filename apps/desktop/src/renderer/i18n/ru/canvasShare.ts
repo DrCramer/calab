@@ -1,5 +1,5 @@
 /**
- * Russian UI strings — the public read-only link of a canvas (ADR-0115 wave 5): the «Ссылка» tab of «Доступ» and
+ * Russian UI strings — the public read-only link of a canvas (ADR-0116 wave 5): the «Ссылка» tab of «Доступ» and
  * the page `/c/{code}`. Flat dotted keys, `{param}` placeholders. The address, copy and expiry reuse `disk.link.*`.
  */
 export const ruCanvasShare = {

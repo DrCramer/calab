@@ -33,7 +33,7 @@ type vector struct {
 		Mandatory      bool   `json:"mandatory"`
 		Off            bool   `json:"off"`
 	} `json:"task"`
-	// ADR-0115 wave 4: a canvas @mention vector; text = the notice may carry the comment.
+	// ADR-0116 wave 4: a canvas @mention vector; text = the notice may carry the comment.
 	Canvas *struct {
 		Level          string `json:"level"`
 		WorkspaceMuted bool   `json:"workspaceMuted"`

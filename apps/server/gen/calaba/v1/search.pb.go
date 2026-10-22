@@ -1247,7 +1247,7 @@ func (x *SearchDiskRef) GetPath() []string {
 	return nil
 }
 
-// A canvas or a Canvas folder (ADR-0114 §6): open it; the snippet is of the text on the canvas
+// A canvas or a Canvas folder (ADR-0115 §6): open it; the snippet is of the text on the canvas
 // (or the name), title is the item's name.
 type SearchCanvasRef struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`

@@ -1,5 +1,5 @@
 /**
- * Canvas in the mock (ADR-0114, proto/calaba/v1/canvas.proto): the tree of folders and canvases of
+ * Canvas in the mock (ADR-0115, proto/calaba/v1/canvas.proto): the tree of folders and canvases of
  * a workspace with per-item access (the real TS rule `canvasItemPermissions` over the item's chain),
  * the trash, versions, take-over, the trash retention — and the sync socket
  * `GET /api/canvas/items/{id}/sync` speaking lib/wiki/frames.ts (the same frames 0–4 as the Wiki):

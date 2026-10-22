@@ -343,6 +343,7 @@
 {"method":"POST","path":"/api/canvas/items/{id}/trash","decision":"deny","group":"other"},
 {"method":"GET","path":"/api/canvas/items/{id}/versions","decision":"deny","group":"other"},
 {"method":"GET","path":"/api/canvas/items/{id}/versions/{vid}","decision":"deny","group":"other"},
+{"method":"*","path":"/api/mcp","decision":"allow","group":"other"},
 {"method":"GET","path":"/api/public/canvas/{code}","decision":"public","group":"other"},
 {"method":"GET","path":"/api/public/canvas/{code}/sync","decision":"public","group":"other"},
 {"method":"GET","path":"/api/bots/me","decision":"allow","group":"profile"},

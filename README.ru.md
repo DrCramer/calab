@@ -242,7 +242,7 @@ pnpm -F @calaba/desktop dev                       # Electron
 | Телефония (SIP) | — | — | ✓ | ✓ |
 | On-prem (свой сервер) | — | — | — | ✓ |
 | Поддержка | — | поддержка | приоритетная | ✓ |
-| Цена | бесплатно | по запросу (**it@gptunnel.ai**) | по запросу (**it@gptunnel.ai**) | бесплатно для некоммерческого использования (BSL 1.1, «Powered by GPTunneL»); коммерческая лицензия — по запросу |
+| Цена | бесплатно | по запросу (**support@calab.io**) | по запросу (**support@calab.io**) | бесплатно для некоммерческого использования (BSL 1.1, «Powered by GPTunneL»); коммерческая лицензия — по запросу |
 
 Free, Team и Business — облачные тарифы пространства ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise — Calab на вашем собственном сервере (on-prem), без ограничений. Подробности — [calab.io/ru/#pricing](https://calab.io/ru/#pricing) и [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
@@ -253,13 +253,13 @@ Free, Team и Business — облачные тарифы пространств�
 **Business Source License 1.1** — [LICENSE](LICENSE).
 
 - Некоммерческое использование (личное, НКО, образование, оценка до 30 дней) — **бесплатно**, с упоминанием «Powered by GPTunneL» в интерфейсе и сохранением [NOTICE](NOTICE).
-- Коммерческое использование — по лицензии GPTunneL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), **it@gptunnel.ai**.
+- Коммерческое использование — по лицензии GPTunneL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), **support@calab.io**.
 - Каждая версия становится Apache-2.0 через четыре года после выпуска.
 
 Названия и логотипы Calab и GPTunneL — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Участие и безопасность
 
-Правки принимаются через pull request с CLA — [CONTRIBUTING.md](CONTRIBUTING.md). Уязвимости — приватно на **it@gptunnel.ai**, см. [SECURITY.md](SECURITY.md).
+Правки принимаются через pull request с CLA — [CONTRIBUTING.md](CONTRIBUTING.md). Уязвимости — приватно на **support@calab.io**, см. [SECURITY.md](SECURITY.md).
 
 <p align="center"><sub>© 2026 GPTunneL · Powered by <a href="https://gptunnel.ai">GPTunneL</a></sub></p>

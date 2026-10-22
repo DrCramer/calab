@@ -161,4 +161,22 @@ describe('mock MailApi', () => {
     await api.accounts.remove(a.id);
     expect((await api.accounts.list()).map((x) => x.id)).not.toContain(a.id);
   });
+
+  it('folders (CBF-39): create rejects bad and taken names; rules file the inbox', async () => {
+    const api = make();
+    await expect(api.folders.create('acc-work', 'a/b')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(api.folders.create('acc-work', 'проекты')).rejects.toMatchObject({ code: 'INVALID' });
+    const f = await api.folders.create('acc-work', ' Уведомления ');
+    expect(f).toMatchObject({ path: 'Уведомления', role: null, parentId: null });
+    expect((await api.folders.list('acc-work')).map((x) => x.id)).toContain(f.id);
+    const inbox = { scope: 'acc-work', folder: 'inbox' as const, limit: 200 };
+    const before = (await api.messages.list(inbox)).rows;
+    const sender = before[0]?.from.address ?? '';
+    const fromSender = before.filter((r) => r.from.address === sender).length;
+    expect(fromSender).toBeGreaterThan(0);
+    await api.settings.set({ rules: [{ id: 'r1', accountId: 'acc-work', field: 'from', contains: sender.toUpperCase(), folderPath: f.path }] });
+    expect((await api.folders.applyRules('acc-work')).moved).toBeGreaterThanOrEqual(fromSender);
+    expect((await api.messages.list(inbox)).rows.filter((r) => r.from.address === sender)).toEqual([]);
+    expect((await api.messages.list({ scope: 'acc-work', folder: { id: f.id }, limit: 200 })).rows).toHaveLength(fromSender);
+  });
 });

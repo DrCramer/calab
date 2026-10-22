@@ -40,7 +40,7 @@
 | [2.13 Эхо на колонках E.1–E.3](#213-эхо-на-колонках-e1e3-ветка-featecho-hardening) | «собеседник слышит себя»: предупреждение, режимы «Динамики»/«Авто», «Проверка эха», флаги AEC | 2 машины (у одной — колонки, без наушников), 2 человека, сборка из `feat/echo-hardening` | 30 мин |
 | [2.13а Режим музыканта MU.1–MU.4](#213а-режим-музыканта-mu1mu4-adr-0052-ветка-featmusician-mode) | живой инструмент/пение без обработки, предупреждение про динамики, замок на Free | 2 машины, 2 человека, наушники у обоих, инструмент или голос; пространство Team и Free | 20 мин |
 | [2.18 REST не зависает во время звонка AT.1–AT.4](#218-rest-не-зависает-во-время-звонка-at1at4-docs09-146) | видео-превью с перемоткой, смена Wi‑Fi, сон, блокировка API → всё грузится без перезапуска | Mac, сборка из ветки, стенд, видео ≥ 15 МБ | 20 мин |
-| [2.21 Холст CV.1–CV.15 (ADR-0114, ADR-0115)](#221-холст-cv115-adr-0114-adr-0115) | дерево, объекты, два человека, «только просмотр», версии, корзина, PNG, ⌘K, телефон, публичная ссылка, вращение/группы, шаблоны, мини-карта, голосование, таймер, комментарии | два пользователя (А, Б, В) и телефон; стенд или локальный API | 45 мин |
+| [2.21 Холст CV.1–CV.15 (ADR-0115, ADR-0116)](#221-холст-cv115-adr-0114-adr-0115) | дерево, объекты, два человека, «только просмотр», версии, корзина, PNG, ⌘K, телефон, публичная ссылка, вращение/группы, шаблоны, мини-карта, голосование, таймер, комментарии | два пользователя (А, Б, В) и телефон; стенд или локальный API | 45 мин |
 | [3.1 Сервер: базовый прогон](#31-базовый-прогон-контракт-go-интеграционные-тесты-curl-образ) | proto, линт, unit/integration, curl: регистрация, права, refresh, rate limit | Docker, Go, buf, sqlc, jq | 20 мин |
 | [3.2 Сервер: gateway, сообщения, файлы, rtc](#32-gateway-сообщения-файлы-rtc) | READY/RESUME, история, файлы, join/webhook, cookie/CSRF | как 3.1 + Node ≥ 22, LiveKit dev | 20 мин |
 | [3.3 Сервер: сценарии против стенда](#33-сценарии-api-против-стенда-https) | 3.1 шаг 4 и 3.2 шаг 2 по HTTPS | jq, Node; инвайт из 0.2 | 20 мин |
@@ -546,7 +546,7 @@ docker compose -f infra/docker/compose.dev.yml --profile mail down
 Ставит релиз на `windows-latest`, запускает, входит в mock-API (все разделы и вкладки настроек, скриншоты), гоняет почтовый движок против фейка, опционально — автообновление и кириллические пути.
 Ожидается в `summary.txt`: `alive processes>0`, `main alive=true`, ответы `mail: … ok:true`, без `EXITED`/`CRASHED`; `events.txt` пустой. Падение — смотреть `renderer gone` / `child process gone` в `*-logs/main.log` и `Faulting module` в `events.txt`.
 
-### 2.21 Холст CV.1–CV.15 (ADR-0114, ADR-0115)
+### 2.21 Холст CV.1–CV.15 (ADR-0115, ADR-0116)
 Авто: `go test -race -tags integration ./internal/canvas ./internal/canvasacl`; живая сходимость — `docs/plans/canvas-v1-tasks.md`, «Проверка H8».
 | # | Проверка | Ожидается |
 |---|---|---|
@@ -1235,7 +1235,7 @@ go test -race -count=1 ./internal/plans/
 TEST_REDIS_URL=redis://localhost:56379/1 TEST_RTC_REDIS_DB=13 go test -race -tags integration -count=1 -v -run 'TestPlan|TestAdminPlans' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
 ```
 Ожидается: 4 `--- PASS` и `ok` (`TestPlanRoomMembersLimit`, `TestPlanMediaCaps` — `SKIP` без dev-LiveKit / `lk`). Проверяется: 6-й в комнате (и владелец) → `409 ROOM_FULL` `reason PLAN_LIMIT`; 1080p → `H720`/15 в `/stream/request`, `/camera/request`, `/join` (`media`, `planLimits`) и `Workspace.plan` в READY; `storage_mb` → `413` c `used`/`limit`; admin: не-суперадмин → 404, поиск (slug/имя/email), 422 на неверный план, `WORKSPACE_UPDATE` с лимитами, журнал; `me.isSuperadmin`, `planContact`.
-Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:it@gptunnel.ai"`.
+Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:support@calab.io"`.
 
 Клиент (`feat/plans-client`):
 ```sh
@@ -2302,3 +2302,12 @@ are not current phone evidence. Visual suites remain disabled.
 4. As a user who cannot edit the task: B is dimmed with «Позвать может тот, кто правит задачу», and Enter/click does not insert.
 5. Guests and bots without access are not listed; ordinary chats and DMs are unchanged.
 6. A commenter without board-management rights sees the same marks (the server answers who sees the board); typing @ruslan finds «Руслан», @shchukin finds «Щукин», in chats, DMs, tasks and ⌘K people.
+
+## MCP endpoint for bots (ADR-0114)
+
+1. Take a bot token (workspace settings → Bots) into `CALAB_BOT_TOKEN`; the bot needs a role with a board or a room. Not run here: there is no real server in this environment, so only `bash -n tools/mcp-smoke.sh` was checked.
+2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (six tools: find, read, create_task, comment_task, set_task_status, send_message), `tools/call` find (`boards`). The token is not printed.
+3. `read` a task by key from `find`, then `comment_task` and `set_task_status` with a status name of its board; both appear in the task (as the bot). A wrong status name returns `isError` with the board's statuses.
+4. `send_message` to a room the bot is not in or a private board task: `isError` with `404`/`403`, nothing is created.
+5. No header: `401`. A person's token or session: `403`. `GET /api/mcp`: `405`. A JSON array body: `400`.
+6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists six tools. Guide: `/ru/docs/bots/mcp`.

@@ -65,7 +65,7 @@ export function populate(doc: CanvasDoc, n: number): void {
   for (let i = 0; i < inits.length; i += 500) doc.createMany(inits.slice(i, i + 500));
 }
 
-/** Bold / italic / strike spans and a bullet list over `text` (ADR-0115 wave 2): what a formatted note stores. */
+/** Bold / italic / strike spans and a bullet list over `text` (ADR-0116 wave 2): what a formatted note stores. */
 function richOf(text: string, k: number): { text: string; fmt: Fmt | undefined } {
   const words = text.split(' ');
   const ops: DeltaOp[] = [];
@@ -79,7 +79,7 @@ function richOf(text: string, k: number): { text: string; fmt: Fmt | undefined }
 }
 
 /**
- * The second iteration's mix (ADR-0115) on the same lattice and the same kinds as `populate`: half of the boxes
+ * The second iteration's mix (ADR-0116) on the same lattice and the same kinds as `populate`: half of the boxes
  * rotated, a third of them in groups of 5, 40 % of the texts formatted (runs and lists), shapes over all 11
  * kinds, a quarter of the stickies with a non-default font size. `rot: false` / `fmt: false` (mixes `v2-norot`,
  * `v2-nofmt`) leave one of them out, the same objects otherwise — to tell what costs what; `v2-rot10` turns 10 % of the
@@ -316,7 +316,7 @@ export async function run(n: number, dprLabel: number, mix: 'h9' | 'v2' | 'v2-no
     fire('pointerup', sx + 180, sy + 120);
   }
 
-  // Second-iteration commands over many objects (ADR-0115): templates, align / distribute, group, group rotation.
+  // Second-iteration commands over many objects (ADR-0116): templates, align / distribute, group, group rotation.
   let ops: BenchResult['ops'];
   if (mix !== 'h9') {
     const sizes: number[] = [];

@@ -89,7 +89,7 @@ DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
 
 -- name: DeleteUserOverridesInWorkspace :exec
 -- A member leaves: their room, board (ADR-0042), disk (ADR-0094), wiki (ADR-0096) and canvas
--- (ADR-0114) overrides go.
+-- (ADR-0115) overrides go.
 WITH boards_gone AS (
     DELETE FROM board_permissions bp USING boards bb
     WHERE bp.board_id = bb.id AND bb.workspace_id = sqlc.arg('workspace_id')::uuid

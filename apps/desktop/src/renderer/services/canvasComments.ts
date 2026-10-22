@@ -26,7 +26,7 @@ import { memberName } from '../stores/workspaces';
 import { openCanvasHit, openPhoneItem } from './canvas';
 
 /**
- * Canvas comments (ADR-0115 wave 4, proto/calaba/v1/canvas.proto «comments»): the REST routes, the
+ * Canvas comments (ADR-0116 wave 4, proto/calaba/v1/canvas.proto «comments»): the REST routes, the
  * CANVAS_COMMENT_* events and the @mention notice. Rights are the server's (CANVAS_VIEW reads,
  * CANVAS_WRITE writes, the author / the owner of the canvas / CANVAS_MANAGE edit and delete): a
  * refusal comes back as a toast. The text holds mentions as `@<user_id>` like a chat message.

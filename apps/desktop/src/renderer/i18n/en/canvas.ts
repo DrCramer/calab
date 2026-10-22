@@ -1,7 +1,7 @@
 import type { ruCanvas } from '../ru/canvas';
 import type { DictShape } from '../types';
 
-/** English UI strings — the Canvas section (ADR-0114 §5). Same keys and placeholders as ru/canvas.ts. */
+/** English UI strings — the Canvas section (ADR-0115 §5). Same keys and placeholders as ru/canvas.ts. */
 export const enCanvas: DictShape<typeof ruCanvas> = {
   'canvas.section': 'Canvas',
   'canvas.untitled': 'Untitled',

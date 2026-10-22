@@ -42,6 +42,7 @@ import (
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/mailbox"
+	"github.com/calaba/calaba/server/internal/mcp"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/notes"
@@ -153,7 +154,7 @@ type App struct {
 	Disk *disk.Service
 	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
 	Wiki *wiki.Service
-	// Canvas: the workspace Canvas (ADR-0114) with its sync socket and the hourly trash sweeper.
+	// Canvas: the workspace Canvas (ADR-0115) with its sync socket and the hourly trash sweeper.
 	Canvas *canvas.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP *sip.Service
@@ -474,9 +475,9 @@ func New(d Deps) *App {
 	wikiSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, wiki.SyncConfig{})
 	wikiSvc.Routes(mux, private)
 	canvasSvc := canvas.New(d.DB, pub)
-	canvasSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-comment:", 20, 20) // ADR-0115 wave 4: 20 at once, 20 per minute
+	canvasSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-comment:", 20, 20) // ADR-0116 wave 4: 20 at once, 20 per minute
 	canvasSvc.PublicURL = d.Config.PublicAppURL
-	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0115 wave 5: the public name, 60 per minute per IP
+	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0116 wave 5: the public name, 60 per minute per IP
 	canvasSvc.LinkSyncLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link-ws:", 20, 10) // … the anonymous socket's connects: 20 at once, 10 per minute per IP
 	canvasSvc.Billing = planSvc
 	canvasSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, ysync.Config{})
@@ -572,6 +573,10 @@ func New(d Deps) *App {
 	} else {
 		rtc.DisabledRoutes(mux, private)
 	}
+	// MCP for bots (CBF-48): its tools call the routes above through the full chain (h) with
+	// the bot's own token, so a tool has exactly the bot's rights.
+	mcpHandler := mcp.New(buildinfo.Version)
+	mux.Handle(mcp.Path, private(mcpHandler))
 	mux.Handle("/api/", httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("route")
 	}))
@@ -584,6 +589,7 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
+	mcpHandler.API = h
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
 		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Canvas: canvasSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		dueTZ: boards.DueZone(d.Config.TasksDueTZ), Mailbox: mailboxSvc}

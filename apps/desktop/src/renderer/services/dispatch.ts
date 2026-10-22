@@ -174,7 +174,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWebApps.getState().reset();
       // Meeting comments missed while away (ADR-0104): an open card refetches its thread.
       useEventComments.getState().reset();
-      // Canvas comments missed while away (ADR-0115 wave 4): the held canvases read theirs again.
+      // Canvas comments missed while away (ADR-0116 wave 4): the held canvases read theirs again.
       resyncCanvasComments();
       // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
       useReadReceipts.getState().reset();
@@ -340,14 +340,14 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'wikiPageRemove':
       onWikiPageRemove(e.value);
       return;
-    // Canvas (ADR-0114 §6): the tree's structure follows; the content only through /sync.
+    // Canvas (ADR-0115 §6): the tree's structure follows; the content only through /sync.
     case 'canvasItemUpsert':
       onCanvasItemUpsert(e.value);
       return;
     case 'canvasItemRemove':
       onCanvasItemRemove(e.value);
       return;
-    // Canvas comments (ADR-0115 wave 4): only for canvases whose comments are held; the @mention notice.
+    // Canvas comments (ADR-0116 wave 4): only for canvases whose comments are held; the @mention notice.
     case 'canvasCommentUpsert':
       onCanvasCommentUpsert(e.value);
       return;

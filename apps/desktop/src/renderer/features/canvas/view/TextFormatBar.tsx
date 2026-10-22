@@ -12,7 +12,7 @@ const ICON = 'size-4';
 const GAP = 8;
 
 /**
- * The format bar over the text being edited (ADR-0115): bold, italic, strike-through, bullet / numbered list and
+ * The format bar over the text being edited (ADR-0116): bold, italic, strike-through, bullet / numbered list and
  * the text size. It is a leaf with its own subscription to the editor, mounted for the whole session but
  * rendering nothing while no text is open; its buttons never take the focus (`keepFocus`), so the textarea
  * keeps its selection and does not commit (the size field does, and says so with `data-keeps-editing`).

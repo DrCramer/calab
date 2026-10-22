@@ -1,4 +1,4 @@
-/** Static tables of the Canvas screen: tools, hotkeys, swatches (ADR-0114 §5). No React. */
+/** Static tables of the Canvas screen: tools, hotkeys, swatches (ADR-0115 §5). No React. */
 import type { Arrow, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { HUE_IDS, INK_EXTRA_IDS, STICKY_IDS, type Tool } from '../engine';
 

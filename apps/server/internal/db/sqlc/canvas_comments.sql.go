@@ -314,7 +314,7 @@ const lockCanvasComments = `-- name: LockCanvasComments :exec
 SELECT pg_advisory_xact_lock(hashtext('calaba.canvas.comments.' || $1::uuid::text))
 `
 
-// Canvas comments (ADR-0115 wave 4, migration 00109). Access is checked by the handlers
+// Canvas comments (ADR-0116 wave 4, migration 00109). Access is checked by the handlers
 // (internal/canvas/comments.go) on the canvas before any of these run.
 // Serializes the comment writes of one canvas (the live count under its limit). Taken inside
 // the transaction, never with LockCanvasTree.

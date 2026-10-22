@@ -1,7 +1,7 @@
 import type { ruCanvasBoard } from '../ru/canvasBoard';
 import type { DictShape } from '../types';
 
-/** English UI strings — Canvas screen (ADR-0114 §5). Same keys and placeholders as ru/canvasBoard.ts. */
+/** English UI strings — Canvas screen (ADR-0115 §5). Same keys and placeholders as ru/canvasBoard.ts. */
 export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.label': 'Canvas',
   'canvasBoard.toolbar': 'Tools',

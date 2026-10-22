@@ -250,7 +250,7 @@ function WikiRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return <PhoneWiki workspaceId={ws} />;
 }
 
-/** «Холст» (ADR-0114 §5, view only on the phone): the top level of the open workspace; a folder or a canvas is a pushed screen (guests have no tab). */
+/** «Холст» (ADR-0115 §5, view only on the phone): the top level of the open workspace; a folder or a canvas is a pushed screen (guests have no tab). */
 function CanvasRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));

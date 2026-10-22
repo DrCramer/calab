@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { applyList, applyRemove, applyUpsert, dropWorkspace, type CanvasData } from '../lib/canvas/tree';
 
 /**
- * Canvas data (ADR-0114), normalized like the Disk and the Wiki (docs/08 «Производительность»):
+ * Canvas data (ADR-0115), normalized like the Disk and the Wiki (docs/08 «Производительность»):
  * items by id, child lists as ordered id lists per folder (loaded lazily when a node is expanded;
  * lib/canvas/tree childKey) and the trash per workspace (trashKey), with each list's load state.
  * A tree row reads its item by id and its children's ids (useShallow) — an upsert re-renders that

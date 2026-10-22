@@ -1,4 +1,4 @@
--- Canvas (ADR-0114). Access is computed in Go (perm.ComputeCanvasItem over CanvasItemPath /
+-- Canvas (ADR-0115). Access is computed in Go (perm.ComputeCanvasItem over CanvasItemPath /
 -- CanvasItemPaths and the overrides of the levels); these queries return what is stored, visible
 -- or not. The content (Yjs updates and snapshots) is opaque bytes. Mirror of queries/wiki.sql
 -- without icons, covers, files, public links and search (the search section comes with H2).
@@ -186,7 +186,7 @@ UPDATE canvas_items w SET position = spread.pos
 FROM spread WHERE w.id = spread.id AND w.position <> spread.pos;
 
 -- name: SetCanvasContent :one
--- After a snapshot (ADR-0114 §3 SNAPSHOT_POST): the text for search, the preview and the size;
+-- After a snapshot (ADR-0115 §3 SNAPSHOT_POST): the text for search, the preview and the size;
 -- the client caps plain_text at 256 KiB and preview at 200 characters. Canvases only.
 UPDATE canvas_items SET
     plain_text = sqlc.arg('plain_text'),
@@ -294,7 +294,7 @@ VALUES (sqlc.arg('workspace_id'), sqlc.narg('item_id'), sqlc.arg('item_name'), s
 RETURNING *;
 
 -- name: MarkCanvasSubtreeActivityPrivate :exec
--- Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2, ADR-0114 §2): the
+-- Before a delete forever (addendum 2026-10-14 of ADR-0094 / ADR-0096 §2, ADR-0115 §2): the
 -- journal entries of every node of the subtree that lies under a restricted node (restricted:
 -- the root's chain has one) become private — the workspace journal cannot check a chain that is
 -- gone.
@@ -342,7 +342,7 @@ RETURNING id, canvas_id, authors, created_at, octet_length(state)::int AS size;
 
 -- name: LastCanvasVersion :one
 -- The newest version of a canvas without its state: the 10-minute rule and the «content
--- changed» check of ADR-0114 §1 (state_hash against sha256 of the new state; NULL for a version
+-- changed» check of ADR-0115 §1 (state_hash against sha256 of the new state; NULL for a version
 -- stored before 00111, see SetCanvasVersionHash).
 SELECT id, created_at, state_hash FROM canvas_versions
 WHERE canvas_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1;
@@ -438,7 +438,7 @@ WHERE id = sqlc.arg('id');
 -- name: ListCanvasSubtree :many
 -- The items below an item (not the item itself), parents before children, trashed or not: a
 -- trash, delete forever or move first detaches what the actor does not see (addendum 2026-10-14
--- of ADR-0096 §2, ADR-0114 §2). Bounded at 64 levels.
+-- of ADR-0096 §2, ADR-0115 §2). Bounded at 64 levels.
 WITH RECURSIVE down (id, depth) AS (
     SELECT c.id, 1 FROM canvas_items c WHERE c.parent_id = sqlc.arg('id')::uuid
     UNION ALL
@@ -477,7 +477,7 @@ UPDATE canvas_items w SET trashed_at = sqlc.arg('trashed_at')::timestamptz FROM 
 -- ---- search ----
 
 -- name: SearchCanvasItems :many
--- Search candidates (ADR-0114 §6, the shape of SearchWikiPages): live canvases and folders of the
+-- Search candidates (ADR-0115 §6, the shape of SearchWikiPages): live canvases and folders of the
 -- given workspaces matching the full-text query (tsq: searchq.Query.TS, over
 -- canvas_items_search_idx; the expression is search.CanvasVector) or, by name, the words with
 -- typos or as substrings (words: searchq.Query.Text, phrase: searchq.Like(Query.Text), over

@@ -256,7 +256,7 @@ const (
 	role = v1.PermissionTargetType_PERMISSION_TARGET_TYPE_ROLE
 )
 
-// ADR-0114 §2: members see and write every item that is not restricted, guests and outsiders
+// ADR-0115 §2: members see and write every item that is not restricted, guests and outsiders
 // nothing; CANVAS_WRITE edits content and adds items to a folder, the structure takes the owner or
 // CANVAS_MANAGE; restricted + overrides; 404 for what one does not see, 403 for what one sees but
 // may not do.
@@ -419,7 +419,7 @@ func TestCanvasMoveAndOrder(t *testing.T) {
 	e.must(409, e.alice, "PATCH", item(c.GetId()), &v1.UpdateCanvasItemRequest{ParentId: proto.String(parent)}, nil)
 }
 
-// Trash, restore and delete forever, empty trash and the sweeper (ADR-0114 §1).
+// Trash, restore and delete forever, empty trash and the sweeper (ADR-0115 §1).
 func TestCanvasTrashRestoreDelete(t *testing.T) {
 	e := newEnv(t, ysync.Config{})
 	ctx := context.Background()
@@ -499,7 +499,7 @@ func TestCanvasTrashRestoreDelete(t *testing.T) {
 	e.must(403, e.alice, "POST", ws+"/canvas/items", &v1.CreateCanvasItemRequest{Kind: board, Name: "x"}, nil)
 }
 
-// The search section (ADR-0114 §6): name and text, folders by name, the access filter, the hit
+// The search section (ADR-0115 §6): name and text, folders by name, the access filter, the hit
 // reference.
 func TestSearchCanvasAccess(t *testing.T) {
 	e := newEnv(t, ysync.Config{})

@@ -1,6 +1,6 @@
 import { clamp, type Point, type Rect } from './geometry';
 
-/** screen = world * scale + (tx, ty), in CSS pixels. Zoom range 10–400 % (ADR-0114 §4). */
+/** screen = world * scale + (tx, ty), in CSS pixels. Zoom range 10–400 % (ADR-0115 §4). */
 export interface Camera {
   tx: number;
   ty: number;

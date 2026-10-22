@@ -1104,7 +1104,7 @@ export type DispatchEvent = Message<"calaba.v1.DispatchEvent"> & {
     case: "eventCommentDelete";
   } | {
     /**
-     * Canvas (ADR-0114 §6): workspace channel, routed per recipient like the Wiki
+     * Canvas (ADR-0115 §6): workspace channel, routed per recipient like the Wiki
      * (CANVAS_VIEW on the item); the tree structure only, the content goes through the
      * canvas's /sync socket.
      *
@@ -1120,7 +1120,7 @@ export type DispatchEvent = Message<"calaba.v1.DispatchEvent"> & {
     case: "canvasItemRemove";
   } | {
     /**
-     * Canvas comments (ADR-0115 wave 4): workspace channel, routed per recipient like the
+     * Canvas comments (ADR-0116 wave 4): workspace channel, routed per recipient like the
      * items (CANVAS_VIEW on the canvas).
      *
      * @generated from field: calaba.v1.CanvasCommentUpsert canvas_comment_upsert = 107;

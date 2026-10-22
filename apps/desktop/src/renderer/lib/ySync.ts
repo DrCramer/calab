@@ -1,5 +1,5 @@
 /**
- * Client side of a Yjs sync socket (ADR-0096 §4 for the wiki, ADR-0114 §3 for canvases; frame layout
+ * Client side of a Yjs sync socket (ADR-0096 §4 for the wiki, ADR-0115 §3 for canvases; frame layout
  * in lib/wiki/frames.ts — the same frames 0–4 on both sockets). lib/wikiSync.ts and lib/canvasSync.ts
  * are the two consumers: they supply the URL, the doc, the awareness, the snapshot meta and the
  * awareness rate.
@@ -28,7 +28,7 @@
  *   the token first; 4003 / 4404 stop for good (status «offline»). After 4012 / 4014 (updates refused
  *   at the document's ceiling) the next SNAPSHOT is followed by a replay even if that session only
  *   replayed: the refused updates are still only here.
- * - Anonymous (a canvas's public link, ADR-0115 wave 5): the URL carries the credential, no token frame;
+ * - Anonymous (a canvas's public link, ADR-0116 wave 5): the URL carries the credential, no token frame;
  *   read-only for good, nothing at all is ever sent (the server closes such a socket 4013 on any frame),
  *   awareness from the server is ignored; 4013 stops for good too.
  */
@@ -118,7 +118,7 @@ export interface YSyncDeps {
    * would otherwise be re-uploaded whole after every pause of 3 s.
    */
   idleSnapshotMs?: (stateBytes: number) => number;
-  /** Largest snapshot state the server takes; default MAX_STATE (canvases: 4 MiB, ADR-0114 §3). */
+  /** Largest snapshot state the server takes; default MAX_STATE (canvases: 4 MiB, ADR-0115 §3). */
   maxState?: number;
   /**
    * Over maxState, re-encode the state from a fresh doc before giving up (deleted content an UndoManager keeps is

@@ -15,7 +15,7 @@ import { CanvasTree, DragChip, useCanvasDrag } from './CanvasTree';
 import { preloadCanvasView } from './lazy';
 
 /**
- * «Холст» on the desktop (ADR-0114 §5, docs/08): one panel in place of the column and the centre —
+ * «Холст» on the desktop (ADR-0115 §5, docs/08): one panel in place of the column and the centre —
  * the tree column (resizable 220–360 px) and the open canvas. Mounted only while the section is
  * open: a hidden section holds no subscriptions, no timers and no sync socket.
  */

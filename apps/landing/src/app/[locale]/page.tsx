@@ -5,6 +5,7 @@ import { StoryMotion } from '@/components/story-motion';
 import { FeatureCatalog } from '@/components/feature-catalog';
 import { MobileSoon } from '@/components/mobile-soon';
 import { Notifications } from '@/components/notifications';
+import { McpSection } from '@/components/mcp-section';
 import { ControlInfographic } from '@/components/control-infographic';
 import { Container } from '@/components/ui';
 import { StickerFinale } from '@/components/sticker-finale';
@@ -55,6 +56,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
         <Hero t={t.hero} locale={locale} />
         <FeatureCatalog locale={locale} />
         <Notifications locale={locale} />
+        <McpSection locale={locale} />
         <MobileSoon locale={locale} />
         <ConferenceStrip locale={locale} />
         <section id="control" className="story-section control-section" aria-labelledby="control-title">

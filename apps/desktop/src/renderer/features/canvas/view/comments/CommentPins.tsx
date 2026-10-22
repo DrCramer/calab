@@ -1,5 +1,5 @@
 /**
- * The comment pins of a canvas (ADR-0115 wave 4): a DOM layer over the canvas, never the canvas itself — a
+ * The comment pins of a canvas (ADR-0116 wave 4): a DOM layer over the canvas, never the canvas itself — a
  * comment written by someone else re-renders its own pin, not the canvas nor the React tree above.
  *
  * Positions follow the camera without React: the layer's transform and its `--s` (scale) are set from the

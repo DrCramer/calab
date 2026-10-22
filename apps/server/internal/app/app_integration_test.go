@@ -177,7 +177,7 @@ func run(m *testing.M) int {
 		// Plans (ADR-0024): no plan limits by default, so other tests see room settings only;
 		// plans_integration_test sets the free limits it needs.
 		PlanFreeLimits:        unlimitedPlan,
-		PlanContactEmail:      "it@gptunnel.ai",
+		PlanContactEmail:      "support@calab.io",
 		SuperadminEmails:      []string{superadminEmail, superadminEmail2},
 		MailPerAddressPerHour: 3,
 		MailPerHour:           1 << 20, // every test user gets a verification code

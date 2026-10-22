@@ -101,7 +101,7 @@ func (s *Service) sweepBatch(ctx context.Context, ws uuid.UUID, cutoff time.Time
 			}
 			// The sweeper deletes what the root's deleter saw: a private item swept in from
 			// someone else's item is detached as a trash root of its own, with its own retention
-			// from now (addendum 2026-10-14 of ADR-0096 §2, ADR-0114 §2).
+			// from now (addendum 2026-10-14 of ADR-0096 §2, ADR-0115 §2).
 			v, err := s.sweepViewer(ctx, q, cur, ch.Nodes(p.ID))
 			if err != nil {
 				return err
