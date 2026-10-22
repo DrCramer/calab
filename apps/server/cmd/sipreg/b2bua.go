@@ -73,23 +73,40 @@ type call struct {
 }
 
 func (ag *agent) routes() {
-	ag.srv.OnInvite(ag.onInvite)
-	ag.srv.OnAck(ag.onAck)
-	ag.srv.OnBye(ag.onBye)
-	ag.srv.OnInfo(ag.onForward)
-	ag.srv.OnUpdate(ag.onUpdate)
-	ag.srv.OnOptions(ag.onOK)
-	ag.srv.OnNotify(ag.onOK)
+	ag.srv.OnInvite(guard(ag.onInvite))
+	ag.srv.OnAck(guard(ag.onAck))
+	ag.srv.OnBye(guard(ag.onBye))
+	ag.srv.OnInfo(guard(ag.onForward))
+	ag.srv.OnUpdate(guard(ag.onUpdate))
+	ag.srv.OnOptions(guard(ag.onOK))
+	ag.srv.OnNotify(guard(ag.onOK))
 	// Not a registrar for anybody: silence (the transaction just times out).
 	ag.srv.OnRegister(func(*sip.Request, sip.ServerTransaction) {})
-	ag.srv.OnCancel(func(req *sip.Request, tx sip.ServerTransaction) {
+	ag.srv.OnCancel(guard(func(req *sip.Request, tx sip.ServerTransaction) {
 		ag.respond(req, tx, 481, "Call/Transaction Does Not Exist")
-	})
-	ag.srv.OnNoRoute(func(req *sip.Request, tx sip.ServerTransaction) {
+	}))
+	ag.srv.OnNoRoute(guard(func(req *sip.Request, tx sip.ServerTransaction) {
 		if ag.providerSource(req) {
 			ag.respond(req, tx, 405, "Method Not Allowed")
 		}
-	})
+	}))
+}
+
+// guard drops requests without the headers every handler relies on (sipgo makes a transaction
+// from Via and CSeq alone, so From / To / Call-ID may be missing) and keeps a panic in one
+// request from taking the agent — every workspace's registration — down.
+func guard(h func(*sip.Request, sip.ServerTransaction)) func(*sip.Request, sip.ServerTransaction) {
+	return func(req *sip.Request, tx sip.ServerTransaction) {
+		if req.From() == nil || req.To() == nil || req.CallID() == nil || req.CSeq() == nil || req.Via() == nil {
+			return
+		}
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("sipreg: request handler panicked", "method", string(req.Method), "source", srcAddr(req).String(), "panic", p)
+			}
+		}()
+		h(req, tx)
+	}
 }
 
 func srcAddr(req *sip.Request) netip.Addr {
@@ -126,6 +143,10 @@ func (ag *agent) onOK(req *sip.Request, tx sip.ServerTransaction) {
 	_ = tx.Respond(res)
 }
 
+// callByID finds the call of an in-dialog request and the leg it came on. The Call-ID alone is
+// not enough: leg A's requests must come from the account's provider addresses and leg B's from
+// LiveKit SIP, so another tenant's «provider» or a process on the host that learnt a Call-ID can
+// neither hang up a call nor send a re-INVITE (new SDP) to the provider in our name.
 func (ag *agent) callByID(req *sip.Request) (*call, *leg, *leg) {
 	cid := req.CallID()
 	if cid == nil {
@@ -137,10 +158,34 @@ func (ag *agent) callByID(req *sip.Request) (*call, *leg, *leg) {
 	if c == nil {
 		return nil, nil, nil
 	}
+	src := srcAddr(req)
 	if c.a.callID == string(*cid) {
+		if !c.acc.allows(src) {
+			return nil, nil, nil
+		}
 		return c, &c.a, &c.b
 	}
+	if !ag.fromLiveKit(src) {
+		return nil, nil, nil
+	}
 	return c, &c.b, &c.a
+}
+
+// fromLiveKit: src is LiveKit SIP's address (any loopback address when it is on loopback).
+func (ag *agent) fromLiveKit(src netip.Addr) bool {
+	host, _, err := net.SplitHostPort(ag.lkAddr)
+	if err != nil {
+		return false
+	}
+	lk, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	lk = lk.Unmap()
+	if lk.IsLoopback() {
+		return src.IsLoopback()
+	}
+	return src == lk
 }
 
 func toTag(req *sip.Request) string {
@@ -180,7 +225,7 @@ func (ag *agent) onInvite(req *sip.Request, tx sip.ServerTransaction) {
 	if acc == nil || !acc.allows(src) {
 		// A provider's INVITE to somebody we do not register: 404, at most 10 per second per
 		// address. Anything else (loopback) gets nothing.
-		if ag.providerSource(req) && ag.rate.allow("404:"+src.String(), ag.t.notFoundPerS, time.Second) {
+		if ag.providerSource(req) && ag.noise.allow("404:"+src.String(), ag.t.notFoundPerS, time.Second) {
 			ag.respond(req, tx, 404, "Not Found")
 		}
 		return

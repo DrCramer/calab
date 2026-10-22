@@ -35,6 +35,7 @@ type registration struct {
 	contact    string
 	lastReport time.Time
 	learned    string // the address the registrar saw (received / rport), "" = our public one
+	dest       string // the registrar's pinned ip:port (resolve), "" = none usable
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -49,6 +50,8 @@ func newRegistration(ag *agent, a sipregwire.Account) *registration {
 var (
 	errAuth    = errors.New("auth")
 	errTimeout = errors.New("timeout")
+	// errNoAddress: the registrar's name gives no public address (yet).
+	errNoAddress = errors.New("dns: the registrar has no public address")
 )
 
 // codeError is a final failure answer of the registrar.
@@ -86,11 +89,15 @@ func (r *registration) run(ctx context.Context) {
 	nextResolve := time.Time{}
 	r.report(sipregwire.StatusRegistering, "", time.Time{}, "")
 	for ctx.Err() == nil {
-		if time.Now().After(nextResolve) {
-			r.resolve(ctx)
+		if time.Now().After(nextResolve) && r.resolve(ctx) {
 			nextResolve = time.Now().Add(r.ag.t.resolveEvery)
 		}
-		granted, contact, err := r.register(ctx, r.acc.Expires)
+		var granted time.Duration
+		var contact string
+		err := errNoAddress
+		if r.destination() != "" {
+			granted, contact, err = r.register(ctx, r.acc.Expires)
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -207,7 +214,7 @@ func (r *registration) request(method sip.RequestMethod) *sip.Request {
 	ruri := sip.Uri{Scheme: "sip", Host: r.acc.Domain}
 	req := sip.NewRequest(method, ruri)
 	req.SetTransport(r.transport())
-	req.SetDestination(r.acc.Registrar)
+	req.SetDestination(r.destination())
 	req.AppendHeader(r.ag.newVia(r.transport(), r.ag.publicIP()))
 	mf := sip.MaxForwardsHeader(70)
 	req.AppendHeader(&mf)
@@ -359,24 +366,64 @@ func (r *registration) keepalive(ctx context.Context) bool {
 	return err == nil
 }
 
-// resolve adds the registrar's addresses to the account's allowed sources.
-func (r *registration) resolve(ctx context.Context) {
-	host, _, err := net.SplitHostPort(r.acc.Registrar)
+// resolve pins the registrar's address and adds its addresses to the account's allowed
+// sources; false = no usable answer (the last pinned address stays). A literal IP is the API's
+// (checked there); a name is re-resolved here, so only public addresses are taken: a name that
+// later points at loopback or a private network (DNS rebinding) never gets our REGISTER, nor
+// becomes an allowed source.
+func (r *registration) resolve(ctx context.Context) bool {
+	host, port, err := net.SplitHostPort(r.acc.Registrar)
 	if err != nil {
-		return
+		return false
 	}
 	if a, err := netip.ParseAddr(host); err == nil {
+		r.setDest(r.acc.Registrar)
 		r.ag.setResolved(r.acc.WS, []netip.Addr{a})
-		return
+		return true
 	}
 	lctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	addrs, err := net.DefaultResolver.LookupNetIP(lctx, "ip4", host)
 	if err != nil {
 		slog.Info("sipreg: resolve registrar", "ws", r.acc.WS, "host", host, "error", err.Error())
-		return
+		return false
 	}
-	r.ag.setResolved(r.acc.WS, addrs)
+	public := addrs[:0]
+	for _, a := range addrs {
+		if a = a.Unmap(); publicAddr(a) {
+			public = append(public, a)
+		}
+	}
+	if len(public) == 0 {
+		slog.Warn("sipreg: the registrar resolves to no public address", "ws", r.acc.WS, "host", host)
+		r.setDest("")
+		r.ag.setResolved(r.acc.WS, nil)
+		return false
+	}
+	r.setDest(net.JoinHostPort(public[0].String(), port))
+	r.ag.setResolved(r.acc.WS, public)
+	return true
+}
+
+func (r *registration) setDest(d string) {
+	r.mu.Lock()
+	r.dest = d
+	r.mu.Unlock()
+}
+
+func (r *registration) destination() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.dest
+}
+
+// publicAddr: a globally routable unicast address (not loopback, private, link-local, CGNAT,
+// multicast or unspecified) — the API's rule for provider addresses (internal/sip).
+func publicAddr(a netip.Addr) bool {
+	a = a.Unmap()
+	return a.IsValid() && !a.IsLoopback() && !a.IsPrivate() && !a.IsLinkLocalUnicast() && !a.IsLinkLocalMulticast() &&
+		!a.IsInterfaceLocalMulticast() && !a.IsMulticast() && !a.IsUnspecified() &&
+		!netip.MustParsePrefix("100.64.0.0/10").Contains(a) && !netip.MustParsePrefix("0.0.0.0/8").Contains(a)
 }
 
 // report sends the state to the API on a change, and the same state again after heartbeat.

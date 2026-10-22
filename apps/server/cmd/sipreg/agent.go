@@ -61,14 +61,18 @@ type agentConfig struct {
 // account is one registered SIP account and what INVITEs over it may come from.
 type account struct {
 	sipregwire.Account
-	allow    []netip.Prefix // AllowedSources ∪ the registrar's resolved addresses
+	allow    atomic.Pointer[[]netip.Prefix] // AllowedSources ∪ the registrar's resolved addresses (read without ag.mu)
 	reg      *registration
 	pending  atomic.Int32 // unfinished INVITE transactions
 	resolved []netip.Prefix
 }
 
 func (a *account) allows(ip netip.Addr) bool {
-	for _, p := range a.allow {
+	p := a.allow.Load()
+	if p == nil {
+		return false
+	}
+	for _, p := range *p {
 		if p.Contains(ip) {
 			return true
 		}
@@ -101,7 +105,8 @@ type agent struct {
 	byContact map[string]*account
 	allow     atomic.Pointer[[]netip.Prefix] // the union the read filter checks
 	calls     map[string]*call               // by either leg's Call-ID
-	rate      *rateWindow
+	rate      *rateWindow                    // INVITEs of accounts per source
+	noise     *rateWindow                    // 404 answers and dropped-INVITE logs (kept apart: a flood there never refuses an INVITE)
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -113,7 +118,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	sip.SetDefaultLogger(quiet)
 	ctx, cancel := context.WithCancel(context.Background())
 	ag := &agent{cfg: cfg, t: t, accounts: map[string]*account{}, byContact: map[string]*account{}, calls: map[string]*call{},
-		lkAddr: cfg.livekit, ctx: ctx, cancel: cancel, rate: newRateWindow(), emit: func(sipregwire.Event) {}}
+		lkAddr: cfg.livekit, ctx: ctx, cancel: cancel, rate: newRateWindow(), noise: newRateWindow(), emit: func(sipregwire.Event) {}}
 	ag.public.Store(cfg.publicIP)
 	empty := []netip.Prefix{}
 	ag.allow.Store(&empty)
@@ -219,7 +224,8 @@ func (ag *agent) readFilter(p sip.TransportReadProps, data []byte) ([]byte, erro
 		// A provider calling from an address it did not register from would be lost silently:
 		// name the source of a dropped INVITE (once a minute per address, ten a minute in all),
 		// so it can be added to the workspace's provider addresses.
-		if bytes.HasPrefix(data, []byte("INVITE ")) && ag.rate.allow("drop:"+ap.Addr().String(), 1, time.Minute) && ag.rate.allow("drop:*", 10, time.Minute) {
+		// The global budget first: a spoofed flood from many addresses adds no keys.
+		if bytes.HasPrefix(data, []byte("INVITE ")) && ag.noise.allow("drop:*", 10, time.Minute) && ag.noise.allow("drop:"+ap.Addr().String(), 1, time.Minute) {
 			slog.Info("sipreg: INVITE from an unknown address dropped", "source", ap.Addr().String())
 		}
 		return nil, nil
@@ -263,8 +269,9 @@ func parsePrefixes(srcs []string) []netip.Prefix {
 func (ag *agent) rebuildAllow() {
 	all := []netip.Prefix{}
 	for _, a := range ag.accounts {
-		a.allow = append(append([]netip.Prefix{}, parsePrefixes(a.AllowedSources)...), a.resolved...)
-		all = append(all, a.allow...)
+		list := append(parsePrefixes(a.AllowedSources), a.resolved...)
+		a.allow.Store(&list)
+		all = append(all, list...)
 	}
 	ag.allow.Store(&all)
 }
@@ -498,13 +505,14 @@ func (ag *agent) do(ctx context.Context, req *sip.Request, wait time.Duration) (
 // strayResponse: a 2xx of a leg-B INVITE retransmitted after its transaction: ACK again.
 func (ag *agent) strayResponse(res *sip.Response) {
 	cs := res.CSeq()
-	if cs == nil || cs.MethodName != sip.INVITE || !res.IsSuccess() || res.CallID() == nil {
+	if cs == nil || cs.MethodName != sip.INVITE || !res.IsSuccess() || res.CallID() == nil || res.To() == nil {
 		return
 	}
 	ag.mu.Lock()
 	c := ag.calls[string(*res.CallID())]
 	ag.mu.Unlock()
-	if c != nil && c.b.callID == string(*res.CallID()) {
+	src, err := netip.ParseAddrPort(res.Source())
+	if c != nil && c.b.callID == string(*res.CallID()) && err == nil && ag.fromLiveKit(src.Addr().Unmap()) {
 		c.ackB(res)
 	}
 }
@@ -513,14 +521,19 @@ func (ag *agent) strayResponse(res *sip.Response) {
 
 // rateWindow counts events per key in fixed windows (INVITEs per minute, 404s per second).
 type rateWindow struct {
-	mu   sync.Mutex
-	hits map[string]*rateCount
+	mu        sync.Mutex
+	hits      map[string]*rateCount
+	lastSweep time.Time
 }
 
 type rateCount struct {
 	start time.Time
 	n     int
 }
+
+// rateKeysMax bounds the keys a window holds: a flood from many (spoofed) addresses must not
+// grow it without end; past it, new keys are refused until the next sweep.
+const rateKeysMax = 16384
 
 func newRateWindow() *rateWindow { return &rateWindow{hits: map[string]*rateCount{}} }
 
@@ -529,7 +542,10 @@ func (w *rateWindow) allow(key string, limit int, window time.Duration) bool {
 	now := time.Now()
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if len(w.hits) > 4096 {
+	// Old keys are swept at most once a second (not on every event: a flood would make each
+	// event a scan of the whole map).
+	if len(w.hits) > 4096 && now.Sub(w.lastSweep) >= time.Second {
+		w.lastSweep = now
 		for k, c := range w.hits {
 			if now.Sub(c.start) > time.Minute {
 				delete(w.hits, k)
@@ -537,6 +553,9 @@ func (w *rateWindow) allow(key string, limit int, window time.Duration) bool {
 		}
 	}
 	c, ok := w.hits[key]
+	if !ok && len(w.hits) >= rateKeysMax {
+		return false
+	}
 	if !ok || now.Sub(c.start) >= window {
 		w.hits[key] = &rateCount{start: now, n: 1}
 		return true

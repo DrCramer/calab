@@ -292,6 +292,11 @@ func (c *Config) Validate() error {
 	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
 		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
 	}
+	// The registration agent gets the providers' passwords: the IVR worker's token must not open
+	// its socket (ADR-0121 §4).
+	if c.SIPRegAgentToken != "" && c.SIPRegAgentToken == c.IVRAgentToken {
+		errs = append(errs, errors.New("SIPREG_AGENT_TOKEN must differ from IVR_AGENT_TOKEN"))
+	}
 	lk := []string{c.LiveKitURL, c.LiveKitInternalURL, c.LiveKitAPIKey, c.LiveKitAPISecret}
 	if n := countSet(lk); n != 0 && n != len(lk) {
 		errs = append(errs, errors.New("LIVEKIT_URL, LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set together"))
