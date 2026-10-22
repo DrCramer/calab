@@ -236,6 +236,14 @@ export class ImapFlowSession implements ImapSession {
     await this.c.mailboxCreate(path);
   }
 
+  async renameFolder(path: string, newPath: string): Promise<void> {
+    await this.c.mailboxRename(path, newPath);
+  }
+
+  async deleteFolder(path: string): Promise<void> {
+    await this.c.mailboxDelete(path);
+  }
+
   async rest(inboxPath: string): Promise<void> {
     if (this.c.mailbox && this.c.mailbox.path === inboxPath) return;
     await this.c.mailboxOpen(inboxPath);

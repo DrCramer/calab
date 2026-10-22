@@ -1,24 +1,18 @@
 /**
  * Mail sorting rules (CBF-39): which folder an inbox message belongs in. A pure function, so
- * the sync, «apply to existing» and tests share one decision.
+ * the sync, «apply to existing» and tests share one decision; the matching itself is shared with
+ * smart folders (CBF-56, shared/mailMatch.ts).
  */
 import type { MailRule } from '../../shared/mail';
+import { conditionHit, type MatchSubject } from '../../shared/mailMatch';
 
-export interface RuleSubject {
-  fromName: string;
-  fromAddress: string;
-  subject: string;
-}
+export type RuleSubject = Omit<MatchSubject, 'to'>;
 
 /** The folder path of the first rule of `accountId` the message matches, else null. */
 export function matchRule(rules: readonly MailRule[], accountId: string, m: RuleSubject): string | null {
-  const from = `${m.fromName}\n${m.fromAddress}`.toLowerCase();
-  const subject = m.subject.toLowerCase();
   for (const r of rules) {
     if (r.accountId !== accountId) continue;
-    const needle = r.contains.trim().toLowerCase();
-    if (!needle) continue;
-    if ((r.field === 'from' ? from : subject).includes(needle)) return r.folderPath;
+    if (conditionHit(r, m)) return r.folderPath;
   }
   return null;
 }

@@ -25,6 +25,7 @@
     "e2e:visual": "pnpm build:app && pnpm build:web && playwright test --config playwright.visual.config.ts",
     "screenshots:marketing": "playwright test --config playwright.marketing.config.ts",
     "e2e:media": "playwright test --config playwright.media.config.ts",
+    "e2e:visual:mail": "CALABA_MAIL_MOCK=1 pnpm build:app && playwright test --config playwright.visual.config.ts --project mail-dark-960",
     "e2e:visual:mobile": "pnpm build:web && playwright test --config playwright.mobile.config.ts",
     "e2e:visual:mobile:update": "pnpm build:web && playwright test --config playwright.mobile.config.ts --update-snapshots=all",
     "e2e:visual:billing": "VITE_BILLING_MOCK=1 pnpm build:web && playwright test --config playwright.visual.config.ts -g billing",

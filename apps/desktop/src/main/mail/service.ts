@@ -11,6 +11,7 @@ import {
   MAIL_CERT_FINGERPRINT_RE,
   type MailAccount,
   type MailCertInfo,
+  type MailCondition,
   type MailAddress,
   type MailAttachmentData,
   type MailCursor,
@@ -30,10 +31,13 @@ import {
   type MailSelection,
   type MailServerSettings,
   type MailSettings,
+  type MailSmartFolder,
   type MailThreadRow,
   type MailVerified,
   type MailVerifyInput,
   MAIL_RULES_MAX,
+  MAIL_SMART_CONDITIONS_MAX,
+  MAIL_SMART_MAX,
   mailMethods,
 } from '../../shared/mail';
 import { appPasswordUrl, discover, domainOf, providerByDomain, resolveLogin, STEP_TIMEOUT_MS, type DiscoverNet } from './discover';
@@ -106,6 +110,7 @@ function limitOf(v: unknown): number {
 function folderRef(v: unknown): MailFolderRef {
   if (typeof v === 'string' && ROLES.has(v)) return v as MailFolderRole;
   if (isObj(v) && isStr(v['id'], 100)) return { id: v['id'] };
+  if (isObj(v) && isStr(v['smart'], 64)) return { smart: v['smart'] };
   throw invalid('bad folder');
 }
 
@@ -210,6 +215,24 @@ function settingsPatch(v: unknown): Partial<MailSettings> {
       return { id: x['id'], accountId: x['accountId'], field: x['field'], contains, folderPath: x['folderPath'] };
     });
   }
+  if ('smartFolders' in v) {
+    const l = v['smartFolders'];
+    if (!Array.isArray(l) || l.length > MAIL_SMART_MAX) throw invalid('smartFolders');
+    out.smartFolders = l.map((x): MailSmartFolder => {
+      if (!isObj(x) || !isStr(x['id'], 64) || !isStr(x['name'], 100) || !x['name'].trim()) throw invalid('smartFolders');
+      const acc = x['accountId'];
+      if (acc !== null && !isStr(acc, 64)) throw invalid('smartFolders');
+      if (x['match'] !== 'all' && x['match'] !== 'any') throw invalid('smartFolders');
+      const cs = x['conditions'];
+      if (!Array.isArray(cs) || !cs.length || cs.length > MAIL_SMART_CONDITIONS_MAX) throw invalid('smartFolders');
+      const conditions = cs.map((c): MailCondition => {
+        if (!isObj(c) || !isStr(c['contains'], 200) || !c['contains'].trim()) throw invalid('smartFolders');
+        if (c['field'] !== 'from' && c['field'] !== 'subject' && c['field'] !== 'to') throw invalid('smartFolders');
+        return { field: c['field'], contains: c['contains'].trim() };
+      });
+      return { id: x['id'], name: x['name'].trim(), accountId: acc, match: x['match'], conditions };
+    });
+  }
   if ('cacheLimitBytes' in v) {
     const n = v['cacheLimitBytes'];
     if (typeof n !== 'number' || !Number.isFinite(n) || n < 50 * 1024 * 1024 || n > 100 * 1024 ** 3) throw invalid('cacheLimitBytes');
@@ -257,6 +280,7 @@ export class MailEngine {
         this.saveSettings({ signatures: sigs });
       }
       if (this.settingsCache.rules.some((r) => r.accountId === id)) this.saveSettings({ rules: this.settingsCache.rules.filter((r) => r.accountId !== id) });
+      if (this.settingsCache.smartFolders.some((f) => f.accountId === id)) this.saveSettings({ smartFolders: this.settingsCache.smartFolders.filter((f) => f.accountId !== id) });
       this.deps.emit({ type: 'account_state', accountId: id, account: null });
     }
     for (const cfg of list) {
@@ -458,6 +482,13 @@ export class MailEngine {
   // ------------------------------------------------------------ folders & lists
 
   private resolveFolder(acc: Account, ref: MailFolderRef): { scope: Scope; rowFolder?: string; virtual?: 'drafts' | 'outbox'; row?: number } | null {
+    if (typeof ref !== 'string' && 'smart' in ref) {
+      const sf = this.settingsCache.smartFolders.find((x) => x.id === ref.smart);
+      if (!sf) throw notFound('smart folder');
+      if (sf.accountId !== null && sf.accountId !== acc.cfg.id) return null;
+      const exclude = (['junk', 'trash'] as const).map((r) => acc.store.folderByRole(r)?.row).filter((x): x is number => x !== undefined);
+      return { scope: { kind: 'smart', exclude, query: JSON.stringify({ match: sf.match, conditions: sf.conditions }) } };
+    }
     if (typeof ref === 'string') {
       if (ref === 'drafts' || ref === 'outbox') return { scope: { kind: 'all', exclude: [] }, virtual: ref };
       const f = acc.store.folderByRole(ref);
@@ -475,7 +506,7 @@ export class MailEngine {
 
   private accountsFor(scope: unknown, ref: MailFolderRef | undefined): Account[] {
     if (scope === 'all') {
-      if (ref !== undefined && typeof ref !== 'string') throw invalid("scope 'all' takes a folder role");
+      if (ref !== undefined && typeof ref !== 'string' && !('smart' in ref)) throw invalid("scope 'all' takes a folder role or a smart folder");
       return [...this.accounts.values()];
     }
     return [this.account(scope)];
@@ -672,6 +703,20 @@ export class MailEngine {
     return structuredClone(this.settingsCache);
   }
 
+  /** A folder renamed (CBF-56): the account's sorting rules into it (or a subfolder) follow the new path. */
+  private moveRules(accountId: string, from: string, to: string): void {
+    if (from === to) return;
+    const cur = this.settingsCache.rules;
+    const rules = cur.map((r) => {
+      if (r.accountId !== accountId) return r;
+      if (r.folderPath === from) return { ...r, folderPath: to };
+      // A subfolder: a delimiter right after the old path.
+      const rest = r.folderPath.startsWith(from) ? r.folderPath.slice(from.length) : '';
+      return rest && /^[./]/.test(rest) ? { ...r, folderPath: to + rest } : r;
+    });
+    if (rules.some((r, i) => r !== cur[i])) this.saveSettings({ rules });
+  }
+
   // ------------------------------------------------------------ the handler table
 
   handlers(): MailHandlers {
@@ -702,6 +747,23 @@ export class MailEngine {
           parentRow = p.row;
         }
         return this.account(accountId).sync.createFolder(name, parentRow);
+      },
+      'folders.rename': async (fid, name) => {
+        if (!isStr(name, 200)) throw invalid('bad folder name');
+        const p = typeof fid === 'string' ? parseFolderId(fid) : null;
+        if (!p) throw notFound('folder');
+        if (p.virtual) throw invalid('virtual folders cannot be renamed');
+        const r = await this.account(p.accountId).sync.renameFolder(p.row, name);
+        this.moveRules(p.accountId, r.from, r.to);
+        return r.folder;
+      },
+      'folders.remove': async (fid) => {
+        const p = typeof fid === 'string' ? parseFolderId(fid) : null;
+        if (!p) throw notFound('folder');
+        if (p.virtual) throw invalid('virtual folders cannot be deleted');
+        const gone = new Set(await this.account(p.accountId).sync.removeFolder(p.row));
+        const rules = this.settingsCache.rules.filter((r) => !(r.accountId === p.accountId && gone.has(r.folderPath)));
+        if (rules.length !== this.settingsCache.rules.length) this.saveSettings({ rules });
       },
       'folders.applyRules': (accountId) => ({ moved: this.account(accountId).sync.applyRules() }),
       'messages.list': (q) => this.list(q),

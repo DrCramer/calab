@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqlite';
-import type { MailAddress, MailAttachment, MailCursor, MailFlags, MailFolderRole, MailHeader, MailThreadRow } from '../../shared/mail';
+import type { MailAddress, MailAttachment, MailCursor, MailFlags, MailFolderRole, MailHeader, MailSmartFolder, MailThreadRow } from '../../shared/mail';
+import { matchSmart } from '../../shared/mailMatch';
 import { repairUtf8AsCp1251 } from './charset';
 import { folderId, messageId } from './ids';
 import { htmlToText, makeSnippet } from './mime';
@@ -214,8 +215,11 @@ export interface StoredBody {
   remoteImages: boolean;
 }
 
-/** Which messages a list / search runs over. */
-export type Scope = { kind: 'folder'; row: number } | { kind: 'flagged'; exclude: number[] } | { kind: 'all'; exclude: number[] };
+/**
+ * Which messages a list / search runs over. `smart` (CBF-56): a smart folder's conditions, as the
+ * JSON `{match, conditions}` handed to the `mail_smart` SQL function (shared/mailMatch.ts).
+ */
+export type Scope = { kind: 'folder'; row: number } | { kind: 'flagged'; exclude: number[] } | { kind: 'all'; exclude: number[] } | { kind: 'smart'; exclude: number[]; query: string };
 
 export interface OutgoingRecord {
   n: number;
@@ -255,6 +259,7 @@ export class MailStore {
     this.blobDir = join(dir, 'blobs');
     mkdirSync(this.blobDir, { recursive: true });
     this.db = openDb(join(dir, 'mail.sqlite'));
+    registerSmartMatch(this.db);
     migrate(this.db);
     this.repairSnippets();
   }
@@ -386,6 +391,26 @@ export class MailStore {
     const keys = Object.keys(cols);
     if (!keys.length) return;
     this.db.prepare(`UPDATE folders SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE row = ?`).run(...keys.map((k) => cols[k] ?? null), row);
+  }
+
+  /**
+   * A folder renamed on the server (CBF-56): its row keeps the messages (ids are by row), the path
+   * of it and of its subfolders (`old` + delimiter + …) is rewritten.
+   */
+  renameFolderPath(row: number, path: string, name: string, parentPath: string): void {
+    const f = this.folder(row);
+    if (!f) return;
+    const old = f.path;
+    const delim = f.delimiter || '/';
+    this.tx(() => {
+      this.db.prepare('UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE row = ?').run(path, name, parentPath, row);
+      for (const c of this.folders()) {
+        if (c.row === row || !c.path.startsWith(old + delim)) continue;
+        const np = path + c.path.slice(old.length);
+        const pp = c.parentPath === old || c.parentPath.startsWith(old + delim) ? path + c.parentPath.slice(old.length) : c.parentPath;
+        this.db.prepare('UPDATE folders SET path = ?, parent_path = ? WHERE row = ?').run(np, pp, c.row);
+      }
+    });
   }
 
   /** Drops a folder (gone from the server) with its messages; returns the removed message ids. */
@@ -922,7 +947,31 @@ export function scopeSql(a: string, scope: Scope): { sql: string; args: SQLInput
   if (scope.kind === 'folder') return { sql: `${a}.folder_row = ?`, args: [scope.row] };
   const ex = scope.exclude.length ? ` AND ${a}.folder_row NOT IN (${scope.exclude.map(() => '?').join(',')})` : '';
   if (scope.kind === 'flagged') return { sql: `${a}.flagged = 1${ex}`, args: [...scope.exclude] };
+  if (scope.kind === 'smart') return { sql: `mail_smart(?, ${a}.from_name, ${a}.from_addr, ${a}.subject, ${a}.to_json, ${a}.cc_json) = 1${ex}`, args: [scope.query, ...scope.exclude] };
   return { sql: `1 = 1${ex}`, args: [...scope.exclude] };
+}
+
+/**
+ * `mail_smart(query, from_name, from_addr, subject, to_json, cc_json)` → 1 / 0: a smart folder's
+ * test (CBF-56) with the same pure matcher as the renderer (SQLite's own lower() is ASCII-only).
+ * The query JSON is parsed once per distinct string (one smart folder at a time is listed).
+ */
+function registerSmartMatch(db: DatabaseSync): void {
+  let lastQ = '';
+  let last: Pick<MailSmartFolder, 'match' | 'conditions'> = { match: 'all', conditions: [] };
+  db.function('mail_smart', { deterministic: true }, (q, fromName, fromAddr, subject, to, cc) => {
+    if (typeof q !== 'string') return 0;
+    if (q !== lastQ) {
+      try {
+        last = JSON.parse(q) as typeof last;
+      } catch {
+        last = { match: 'all', conditions: [] };
+      }
+      lastQ = q;
+    }
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    return matchSmart(last, { fromName: text(fromName), fromAddress: text(fromAddr), subject: text(subject), to: `${text(to)}\n${text(cc)}` }) ? 1 : 0;
+  });
 }
 
 /** Free text → an FTS5 query: every word as a quoted prefix term (no operators from the user). */

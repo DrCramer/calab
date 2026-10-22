@@ -179,4 +179,36 @@ describe('mock MailApi', () => {
     expect((await api.messages.list(inbox)).rows.filter((r) => r.from.address === sender)).toEqual([]);
     expect((await api.messages.list({ scope: 'acc-work', folder: { id: f.id }, limit: 200 })).rows).toHaveLength(fromSender);
   });
+
+  it('folders (CBF-56): subfolders, rename (rules follow), delete with the subtree; role folders refused', async () => {
+    const api = make();
+    const top = await api.folders.create('acc-work', 'Клиенты');
+    const sub = await api.folders.create('acc-work', 'Acme', top.id);
+    expect(sub).toMatchObject({ path: 'Клиенты/Acme', parentId: top.id });
+    await api.settings.set({ rules: [{ id: 'r1', accountId: 'acc-work', field: 'from', contains: 'x', folderPath: 'Клиенты' }] });
+    const renamed = await api.folders.rename(top.id, 'Партнёры');
+    expect(renamed).toMatchObject({ path: 'Партнёры', name: 'Партнёры' });
+    expect((await api.folders.list('acc-work')).find((x) => x.id === sub.id)?.path).toBe('Партнёры/Acme');
+    expect((await api.settings.get()).rules[0]?.folderPath).toBe('Партнёры');
+    const inbox = (await api.folders.list('acc-work')).find((x) => x.role === 'inbox');
+    if (!inbox) throw new Error('no inbox');
+    await expect(api.folders.rename(inbox.id, 'X')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(api.folders.remove(inbox.id)).rejects.toMatchObject({ code: 'INVALID' });
+    await api.folders.remove(top.id);
+    const left = (await api.folders.list('acc-work')).map((x) => x.id);
+    expect(left).not.toContain(top.id);
+    expect(left).not.toContain(sub.id);
+    expect((await api.settings.get()).rules).toEqual([]);
+  });
+
+  it('smart folders (CBF-56): list the matching mail of the account, junk / trash excluded', async () => {
+    const api = make();
+    const all = (await api.messages.list({ scope: 'acc-work', folder: 'inbox', limit: 200 })).rows;
+    const sender = all[0]?.from.address ?? '';
+    await api.settings.set({ smartFolders: [{ id: 's1', name: 'От одного', accountId: 'acc-work', match: 'all', conditions: [{ field: 'from', contains: sender.toUpperCase() }] }] });
+    const rows = (await api.messages.list({ scope: 'acc-work', folder: { smart: 's1' }, limit: 200 })).rows;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.from.address === sender && !/\/(junk|trash)$/.test(r.folderId))).toBe(true);
+    await expect(api.messages.list({ scope: 'acc-work', folder: { smart: 'nope' }, limit: 10 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
 });
