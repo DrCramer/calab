@@ -22,6 +22,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/icholy/digest v1.1.0
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/klippa-app/go-pdfium v1.21.0
 	github.com/livekit/protocol v1.52.1
 	github.com/livekit/server-sdk-go/v2 v2.19.0
 	github.com/pion/rtp v1.10.5
@@ -30,6 +31,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/redis/rueidis v1.0.78
 	github.com/stripe/stripe-go/v86 v86.4.2
+	github.com/tetratelabs/wazero v1.12.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
@@ -74,6 +76,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
+	github.com/jolestar/go-commons-pool/v2 v2.1.2 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect

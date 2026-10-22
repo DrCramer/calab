@@ -33,14 +33,14 @@ func TestParsePick(t *testing.T) {
 		{name: "wrong type", raw: `{"board_key":7,"title":"x"}`, bad: true},
 		{name: "empty", raw: ``, bad: true},
 	} {
-		i, title, err := parsePick(c.raw, smartList)
+		i, title, ref, err := parsePick(c.raw, smartList)
 		if c.bad {
 			if !errors.Is(err, errBadAnswer) {
 				t.Errorf("%s: want a bad answer, got %d %q %v", c.name, i, title, err)
 			}
 			continue
 		}
-		if err != nil || i != c.idx || title != c.title {
+		if err != nil || ref != nil || i != c.idx || title != c.title {
 			t.Errorf("%s: %d %q %v", c.name, i, title, err)
 		}
 	}
@@ -48,8 +48,8 @@ func TestParsePick(t *testing.T) {
 
 func TestParseShape(t *testing.T) {
 	all := []string{"none", "low", "medium", "high", "urgent"}
-	sh, err := parseShape(`{"title":"Счёт №5","description":"Сумма: 100\n@11111111-2222-3333-4444-555555555555 проверить","labels":["счёт","Чужая","Счёт"],"priority":"HIGH"}`,
-		smartList[1].Labels, all)
+	sh, _, err := parseShape(`{"title":"Счёт №5","description":"Сумма: 100\n@11111111-2222-3333-4444-555555555555 проверить","labels":["счёт","Чужая","Счёт"],"priority":"HIGH"}`,
+		smartList[1].Labels, all, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestParseShape(t *testing.T) {
 		t.Fatalf("a mention the model wrote survived: %q", sh.description)
 	}
 	// Priority off on the board: only "none" (or nothing) is accepted.
-	if sh, err := parseShape(`{"title":"t","description":"","labels":[],"priority":""}`, nil, []string{"none"}); err != nil || sh.priority != v1.TaskPriority_TASK_PRIORITY_NONE {
+	if sh, _, err := parseShape(`{"title":"t","description":"","labels":[],"priority":""}`, nil, []string{"none"}, nil); err != nil || sh.priority != v1.TaskPriority_TASK_PRIORITY_NONE {
 		t.Fatalf("no priority: %+v %v", sh, err)
 	}
 	for name, raw := range map[string]string{
@@ -70,13 +70,13 @@ func TestParseShape(t *testing.T) {
 		"extra field":          `{"title":"t","description":"d","labels":[],"priority":"none","board_key":"DEV"}`,
 		"garbage":              `not json`,
 	} {
-		if _, err := parseShape(raw, nil, []string{"none"}); !errors.Is(err, errBadAnswer) {
+		if _, _, err := parseShape(raw, nil, []string{"none"}, nil); !errors.Is(err, errBadAnswer) {
 			t.Errorf("%s: want a bad answer, got %v", name, err)
 		}
 	}
 	// Long texts are clipped.
 	long := strings.Repeat("я", 9000)
-	sh, err = parseShape(`{"title":"`+long+`","description":"`+long+`","labels":[],"priority":"none"}`, nil, all)
+	sh, _, err = parseShape(`{"title":"`+long+`","description":"`+long+`","labels":[],"priority":"none"}`, nil, all, nil)
 	if err != nil || len([]rune(sh.title)) > maxSmartTitle || len([]rune(sh.description)) > maxSmartDescription {
 		t.Fatalf("clipped: %d %d %v", len([]rune(sh.title)), len([]rune(sh.description)), err)
 	}

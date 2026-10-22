@@ -37,6 +37,10 @@ const (
 // CheckTimeout bounds one check call (the client waits up to ~30 s).
 const CheckTimeout = 30 * time.Second
 
+// VisionTimeout bounds a call whose messages carry images (CBF-75): uploading and reading them
+// takes the provider longer.
+const VisionTimeout = 45 * time.Second
+
 const (
 	maxAnswer = 1 << 20 // bytes of a provider answer read
 	maxReply  = 200     // characters of the model's reply returned by the check
@@ -67,7 +71,7 @@ func NewChat(allow func(netip.Addr) bool) *Chat {
 	}
 	return &Chat{HTTP: &http.Client{
 		Transport:     tr,
-		Timeout:       CheckTimeout,
+		Timeout:       VisionTimeout, // each call bounds itself (Send)
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 }
@@ -75,6 +79,42 @@ func NewChat(allow func(netip.Addr) bool) *Chat {
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Parts, when set, are sent as the content instead of Content (a vision message of
+	// Chat Completions: text and image_url parts, CBF-75).
+	Parts []Part `json:"-"`
+}
+
+// MarshalJSON sends Parts as the content array when there are any, Content otherwise.
+func (m chatMessage) MarshalJSON() ([]byte, error) {
+	if len(m.Parts) == 0 {
+		type plain chatMessage
+		return json.Marshal(plain(m))
+	}
+	return json.Marshal(struct {
+		Role    string `json:"role"`
+		Content []Part `json:"content"`
+	}{m.Role, m.Parts})
+}
+
+// Part is one part of a message's content: {"type":"text","text"} or
+// {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,…"}}.
+type Part struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+// ImageURL is the image of a Part (a data: URL; never a link the provider would fetch).
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+// TextPart / ImagePart build parts.
+func TextPart(s string) Part { return Part{Type: "text", Text: s} }
+
+// ImagePart is a JPEG given as a data: URL.
+func ImagePart(dataURL string) Part {
+	return Part{Type: "image_url", ImageURL: &ImageURL{URL: dataURL}}
 }
 
 type chatRequest struct {
@@ -120,10 +160,17 @@ func (c *Chat) Hello(ctx context.Context, baseURL, key, model string) Result {
 // Message is one Chat Completions message (role system | user | assistant).
 type Message = chatMessage
 
-// Send sends messages to model at baseURL with the Bearer key (one call, ≤ CheckTimeout) and
-// returns the answer's text in Reply (≤ MaxCompletion characters, the key scrubbed).
+// Send sends messages to model at baseURL with the Bearer key (one call, ≤ CheckTimeout, ≤
+// VisionTimeout with images) and returns the answer's text in Reply (≤ MaxCompletion
+// characters, the key scrubbed).
 func (c *Chat) Send(ctx context.Context, baseURL, key, model string, msgs []Message) Result {
-	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
+	timeout := CheckTimeout
+	for _, m := range msgs {
+		if len(m.Parts) > 0 {
+			timeout = VisionTimeout
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	body, _ := json.Marshal(chatRequest{Model: model, Messages: msgs})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/chat/completions", bytes.NewReader(body)) //nolint:gosec // G704: a user URL goes through the SSRF-safe dialer (NewChat)

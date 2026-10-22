@@ -16,6 +16,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/achievements"
 	"github.com/calaba/calaba/server/internal/ai"
+	"github.com/calaba/calaba/server/internal/aifiles"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/birthdays"
@@ -605,6 +606,9 @@ func New(d Deps) *App {
 	boardSvc.AI = aiSvc
 	boardSvc.SmartUserLimit = redisx.NewRateLimiter(d.Redis, "rl:smart-task:", 10, 5)         // 10 at once, then 5 per minute per person
 	boardSvc.SmartWorkspaceLimit = redisx.NewRateLimiter(d.Redis, "rl:smart-task-ws:", 60, 1) // 60 per hour per workspace
+	// CBF-75: the files' content for the model (images, a PDF's first and last page, text).
+	boardSvc.SmartFiles = &aifiles.Preparer{Limits: aifiles.Default, PDF: &aifiles.PDFium{}}
+	boardSvc.Files = blobFiles{d.Blob}
 	if rtcSvc != nil {
 		rtcSvc.SIP = sipSvc
 		rtcSvc.Routes(mux, private)

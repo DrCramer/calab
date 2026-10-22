@@ -453,6 +453,7 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.AiInstruction = &in
 	}
+	p.AiFindDuplicates = req.AiFindDuplicates
 	if req.Emoji != nil {
 		e, err := validEmoji(req.GetEmoji())
 		if err != nil {
