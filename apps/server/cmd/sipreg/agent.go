@@ -100,8 +100,9 @@ type agent struct {
 	port     int
 	// laddr: the listener's local address, so every request leaves from the registered port.
 	laddr   sip.Addr
-	lkAddr  string // LiveKit SIP host:port
-	lkLocal string // our address as LiveKit SIP sees it (loopback)
+	lkAddr  string     // LiveKit SIP ip:port (a name is resolved once at the start)
+	lkIP    netip.Addr // LiveKit SIP's address: its packets pass the source filter
+	lkLocal string     // our address as LiveKit SIP sees it (loopback)
 	public  atomic.Value
 	emit    func(sipregwire.Event)
 	ctx     context.Context
@@ -160,12 +161,15 @@ func newAgent(cfg agentConfig) (*agent, error) {
 		cancel()
 		return nil, err
 	}
-	lkHost, _, _ := net.SplitHostPort(cfg.livekit)
+	if ag.lkIP, ag.lkAddr, err = resolveLiveKit(ctx, cfg.livekit); err != nil {
+		cancel()
+		return nil, err
+	}
 	ag.lkLocal = cfg.publicIP
-	if a, err := netip.ParseAddr(lkHost); err == nil && a.IsLoopback() {
-		ag.lkLocal = lkHost
+	if ag.lkIP.IsLoopback() {
+		ag.lkLocal = ag.lkIP.String()
 	} else if ag.flowMode {
-		ag.lkLocal = localIPToward(cfg.bind, cfg.livekit)
+		ag.lkLocal = localIPToward(cfg.bind, ag.lkAddr)
 	}
 	ag.routes()
 	var lc net.ListenConfig
@@ -240,10 +244,11 @@ func (ag *agent) shutdown() {
 
 // ---------------------------------------------------------------- the source filter
 
-// sourceAllowed: a provider's address (some account's sources) or loopback (LiveKit SIP).
+// sourceAllowed: a provider's address (some account's sources), loopback or LiveKit SIP's
+// address (it may run on another host or pod: its answers and BYEs must pass too).
 func (ag *agent) sourceAllowed(ip netip.Addr) bool {
 	ip = ip.Unmap()
-	if ip.IsLoopback() {
+	if ip.IsLoopback() || ip == ag.lkIP {
 		return true
 	}
 	for _, p := range *ag.allow.Load() {
@@ -515,6 +520,27 @@ func newVia(transport, host string, port int) *sip.ViaHeader {
 	p.Add("branch", sip.GenerateBranch())
 	p.Add("rport", "")
 	return &sip.ViaHeader{ProtocolName: "SIP", ProtocolVersion: "2.0", Transport: transport, Host: host, Port: port, Params: p}
+}
+
+// resolveLiveKit pins LiveKit SIP's address: a name is resolved once (IPv4), so the source
+// filter and the in-dialog checks compare against the address its packets come from.
+func resolveLiveKit(ctx context.Context, hostport string) (netip.Addr, string, error) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return netip.Addr{}, "", err
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		a = a.Unmap()
+		return a, net.JoinHostPort(a.String(), port), nil
+	}
+	lctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupNetIP(lctx, "ip4", host)
+	if err != nil || len(addrs) == 0 {
+		return netip.Addr{}, "", fmt.Errorf("LIVEKIT_SIP_ADDR: resolve %s: %w", host, err)
+	}
+	a := addrs[0].Unmap()
+	return a, net.JoinHostPort(a.String(), port), nil
 }
 
 // localIPToward is our local IPv4 on the route to dest (no packet is sent): what Contact and

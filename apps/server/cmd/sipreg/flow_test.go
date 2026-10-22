@@ -269,3 +269,47 @@ func TestForwardMode(t *testing.T) {
 	}
 	recv(t, lk.byes, "BYE on leg B")
 }
+
+// Two accounts on one registrar share one flow; the agent's port takes no TCP connection; when
+// one account goes, the other keeps the flow (no new connection) and still gets its calls.
+func TestTCPFlowShared(t *testing.T) {
+	p, probe := newTCPProvider(t)
+	lk := newLiveKit(t)
+	ag := newTestAgent(t, lk)
+	var d net.Dialer
+	if c, err := d.DialContext(t.Context(), "tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(ag.port))); err == nil {
+		_ = c.Close()
+		t.Fatal("the agent's port accepts TCP in flow mode")
+	}
+	a1, a2 := tcpAccount(p), tcpAccount(p)
+	a2.WS, a2.ContactUser = "0190e4a1-0000-7000-8000-000000000002", "c2bcdefghijklmnopqrstuvwxyz"
+	seen := map[string]sip.Uri{}
+	// One after the other: the fake keeps a single digest nonce.
+	for _, a := range []sipregwire.Account{a1, a2} {
+		ag.apply(context.Background(), sipregwire.Command{Op: sipregwire.OpAccountSet, Account: &a})
+		c := bindingOf(recv(t, p.regs, "REGISTER")).Address
+		seen[c.User] = c
+	}
+	if _, ok := seen[a1.ContactUser]; !ok || len(seen) != 2 || probe.accepted() != 1 {
+		t.Fatalf("registered %v over %d connections", seen, probe.accepted())
+	}
+	ag.apply(context.Background(), sipregwire.Command{Op: sipregwire.OpAccountDel, WS: a1.WS})
+	off := recv(t, p.regs, "REGISTER taking a1 off")
+	if h := off.GetHeader("Expires"); h == nil || h.Value() != "0" || off.Contact().Address.User != a1.ContactUser {
+		t.Fatalf("not a1's removal: %v / %v", h, off.Contact())
+	}
+	p.mu.Lock()
+	p.contact = seen[a2.ContactUser]
+	p.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sess := p.call(ctx, t)
+	if err := sess.WaitAnswer(ctx, sipgo.AnswerOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	_ = sess.Ack(ctx)
+	recv(t, lk.invites, "INVITE on leg B")
+	if n := probe.accepted(); n != 1 {
+		t.Fatalf("%d connections after a1 left", n)
+	}
+}

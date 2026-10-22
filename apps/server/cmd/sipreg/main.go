@@ -31,7 +31,7 @@
 //	SIP_REGISTRAR_PUBLIC_IP  forward mode: the public IPv4 put into Contact / Via (default: none = flow mode)
 //	SIP_REGISTRAR_STUN       forward mode via STUN: a STUN server finding the public IP (default none; off = none)
 //	SIP_REGISTRAR_OUTBOUND   flow mode: off = no RFC 5626 Contact parameters (reg-id, +sip.instance, ob)
-//	LIVEKIT_SIP_ADDR         LiveKit SIP's signalling address (default 127.0.0.1:5060)
+//	LIVEKIT_SIP_ADDR         LiveKit SIP's signalling address (default 127.0.0.1:5060; a name is resolved once at the start)
 package main
 
 import (

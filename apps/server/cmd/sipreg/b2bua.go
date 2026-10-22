@@ -174,19 +174,10 @@ func (ag *agent) callByID(req *sip.Request) (*call, *leg, *leg) {
 
 // fromLiveKit: src is LiveKit SIP's address (any loopback address when it is on loopback).
 func (ag *agent) fromLiveKit(src netip.Addr) bool {
-	host, _, err := net.SplitHostPort(ag.lkAddr)
-	if err != nil {
-		return false
-	}
-	lk, err := netip.ParseAddr(host)
-	if err != nil {
-		return false
-	}
-	lk = lk.Unmap()
-	if lk.IsLoopback() {
+	if ag.lkIP.IsLoopback() {
 		return src.IsLoopback()
 	}
-	return src == lk
+	return ag.lkIP.IsValid() && src.Unmap() == ag.lkIP
 }
 
 func toTag(req *sip.Request) string {
