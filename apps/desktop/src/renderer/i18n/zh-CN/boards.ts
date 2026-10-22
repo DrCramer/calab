@@ -378,6 +378,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.propsResize': '属性栏宽度',
   'boards.properties': '属性',
   'boards.assignees': '指派人',
+  'boards.needEditRight': '需要此看板的“编辑任意任务”权限(或为任务创建者/负责人)。请联系看板所有者',
   'boards.addAssignee': '添加',
   'boards.lead': '负责人',
   'boards.makeLead': '设为负责人',

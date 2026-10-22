@@ -385,6 +385,7 @@ export const ruBoards = {
   'boards.propsResize': 'Ширина колонки свойств',
   'boards.properties': 'Свойства',
   'boards.assignees': 'Исполнители',
+  'boards.needEditRight': 'Нужно право «Править любые задачи» на доске (или быть автором/исполнителем задачи). Обратитесь к владельцу доски',
   'boards.addAssignee': 'Добавить',
   'boards.lead': 'Ответственный',
   'boards.makeLead': 'Сделать ответственным',

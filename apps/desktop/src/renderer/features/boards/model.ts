@@ -17,6 +17,11 @@ export const MANAGE_BOARD = BigInt(Permission.MANAGE_BOARD);
 
 export const hasBit = (perms: bigint | undefined, bit: bigint): boolean => ((perms ?? 0n) & bit) === bit;
 
+/** Why edit controls are locked (tooltip of a disabled «Добавить»): archived task, or no right to edit it. */
+export function editLockKey(archived: boolean): 'boards.err.archivedTask' | 'boards.needEditRight' {
+  return archived ? 'boards.err.archivedTask' : 'boards.needEditRight';
+}
+
 /** CREATE_TASKS edits tasks one created or is assigned to; EDIT_TASKS any (boards.proto). */
 export function mayEditTask(t: Pick<Task, 'createdBy' | 'assignees' | 'archivedAt'>, perms: bigint | undefined, me: string): boolean {
   if (t.archivedAt) return false;

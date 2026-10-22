@@ -378,6 +378,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.propsResize': 'Ancho de la columna de propiedades',
   'boards.properties': 'Propiedades',
   'boards.assignees': 'Asignados',
+  'boards.needEditRight': 'Requiere el permiso de editar cualquier tarea en el tablero (o ser autor/responsable de la tarea). Consulte al propietario del tablero',
   'boards.addAssignee': 'Añadir',
   'boards.lead': 'Responsable',
   'boards.makeLead': 'Hacer responsable',

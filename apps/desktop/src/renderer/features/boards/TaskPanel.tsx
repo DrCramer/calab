@@ -80,7 +80,7 @@ import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
 import { linkChoices, taskChoices } from './taskChoices';
-import { doneType, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { doneType, editLockKey, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
@@ -797,7 +797,7 @@ function Assignees({ task, canEdit, req, stacked = false }: { task: Task; canEdi
           onNone={() => void setAssignees(task.id, [])}
           {...req}
         >
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, 'self-start text-muted')} data-testid="assignee-add">
+          <button type="button" disabled={!canEdit} {...(canEdit ? {} : { title: t(editLockKey(!!task.archivedAt)) })} className={cx(valueBtn, 'self-start text-muted')} data-testid="assignee-add">
             <Plus className="size-3.5" aria-hidden /> {t('boards.addAssignee')}
           </button>
         </AssigneeMenu>

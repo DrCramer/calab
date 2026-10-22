@@ -378,6 +378,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.propsResize': 'Properties column width',
   'boards.properties': 'Properties',
   'boards.assignees': 'Assignees',
+  'boards.needEditRight': 'Requires the “Edit any tasks” right on this board (or being the task author/assignee). Ask the board owner',
   'boards.addAssignee': 'Add',
   'boards.lead': 'Lead',
   'boards.makeLead': 'Make lead',
