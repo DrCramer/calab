@@ -97,6 +97,13 @@ SET inbound_enabled = sqlc.arg('inbound_enabled'), inbound_kind = sqlc.arg('inbo
 WHERE workspace_id = sqlc.arg('workspace_id')
 RETURNING *;
 
+-- name: SipInboundNumberTaken :one
+-- Another workspace already takes inbound calls on this caller ID (sip_accounts_inbound_caller_idx).
+SELECT EXISTS (
+    SELECT 1 FROM sip_accounts
+    WHERE caller_id = sqlc.arg('caller_id') AND workspace_id <> sqlc.arg('workspace_id') AND inbound_trunk_id <> ''
+);
+
 -- name: SetSipInboundLiveKit :exec
 -- The LiveKit inbound trunk / dispatch rule ids alone (telephony switched off: both deleted).
 UPDATE sip_accounts SET inbound_trunk_id = $2, inbound_rule_id = $3 WHERE workspace_id = $1;

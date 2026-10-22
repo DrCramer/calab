@@ -420,6 +420,13 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 			plain = *in.password
 		}
 		trunkID := cur.TrunkID
+		// The inbound trunk follows the caller ID (syncInbound): refuse a number another
+		// workspace takes inbound calls on before any LiveKit object changes.
+		if in.enabled && cur.InboundEnabled && s.inboundReady() {
+			if err := numberFree(ctx, q, sqlc.SipAccount{WorkspaceID: wsID, CallerID: in.callerID}); err != nil {
+				return err
+			}
+		}
 		if in.enabled {
 			authUser := in.authUsername
 			if authUser == "" {
@@ -482,7 +489,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	if err != nil {
-		return err
+		return inboundTaken(err)
 	}
 	slog.InfoContext(ctx, "sip: settings saved", "workspace", wsID, "by", me, "enabled", saved.Enabled, "trunk", saved.TrunkID)
 	pw := pbconv.Workspace(ws)

@@ -130,6 +130,27 @@ func TestSIPInboundCall(t *testing.T) {
 		}
 	}
 	fs.mu.Unlock()
+	// An IPv4-mapped range is an IPv4 range: «::ffff:128.0.0.0/97» is 128.0.0.0/1.
+	pushHTTP(t, server, o, 422, "PUT", base+"/inbound", &v1.PutSipInboundRequest{Enabled: true, Target: toBob, AllowedCidrs: []string{"::ffff:128.0.0.0/97"}}, nil)
+	// Another workspace cannot take inbound calls on this number (it would take this one's calls),
+	// neither by switching inbound on nor by moving its caller ID onto it later.
+	ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	setPlan(t, ws2, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	base2 := "/api/workspaces/" + ws2 + "/sip"
+	o.must(200, "PUT", base2, &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10", CallerId: "+74951234567"}, nil)
+	var ext2 v1.SipExtensionResponse
+	o.must(201, "POST", base2+"/extensions", &v1.CreateSipExtensionRequest{Number: "101", UserId: o.id}, &ext2)
+	toO := &v1.SipRouteTarget{Kind: v1.SipRouteKind_SIP_ROUTE_KIND_EXTENSION, Id: ext2.GetExtension().GetId()}
+	pushHTTP(t, server, o, 409, "PUT", base2+"/inbound", &v1.PutSipInboundRequest{Enabled: true, Target: toO}, nil)
+	pushHTTP(t, server, o, 200, "PUT", base2, &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10", CallerId: "+74957654321"}, nil)
+	pushHTTP(t, server, o, 200, "PUT", base2+"/inbound", &v1.PutSipInboundRequest{Enabled: true, Target: toO}, nil)
+	pushHTTP(t, server, o, 409, "PUT", base2, &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10", CallerId: "+74951234567"}, nil)
+	pushHTTP(t, server, o, 200, "PUT", base2+"/inbound", &v1.PutSipInboundRequest{Enabled: false}, nil)
+	fs.mu.Lock()
+	if len(fs.inTrunks) != 1 || len(fs.rules) != 1 {
+		t.Fatalf("LiveKit objects after the second workspace: %v %v", fs.inTrunks, fs.rules)
+	}
+	fs.mu.Unlock()
 
 	// A call rings bob.
 	room := rtc.InboundRoomPrefix(uuid.MustParse(wid)) + "_+79161234567_" + uniq("")

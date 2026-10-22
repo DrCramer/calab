@@ -1006,6 +1006,26 @@ func (q *Queries) SetWorkspaceSipEnabled(ctx context.Context, arg SetWorkspaceSi
 	return i, err
 }
 
+const sipInboundNumberTaken = `-- name: SipInboundNumberTaken :one
+SELECT EXISTS (
+    SELECT 1 FROM sip_accounts
+    WHERE caller_id = $1 AND workspace_id <> $2 AND inbound_trunk_id <> ''
+)
+`
+
+type SipInboundNumberTakenParams struct {
+	CallerID    string
+	WorkspaceID uuid.UUID
+}
+
+// Another workspace already takes inbound calls on this caller ID (sip_accounts_inbound_caller_idx).
+func (q *Queries) SipInboundNumberTaken(ctx context.Context, arg SipInboundNumberTakenParams) (bool, error) {
+	row := q.db.QueryRow(ctx, sipInboundNumberTaken, arg.CallerID, arg.WorkspaceID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const updateSipInboundRinging = `-- name: UpdateSipInboundRinging :one
 UPDATE sip_calls SET ringing_user_ids = $2, route = $3, via = $4
 WHERE id = $1 AND direction = 'in' AND status = 'ringing'

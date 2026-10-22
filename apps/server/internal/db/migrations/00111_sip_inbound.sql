@@ -31,6 +31,10 @@ ALTER TABLE sip_accounts
 CREATE INDEX sip_accounts_inbound_menu_idx ON sip_accounts (workspace_id, inbound_menu_id) WHERE inbound_menu_id IS NOT NULL;
 CREATE INDEX sip_accounts_inbound_extension_idx ON sip_accounts (workspace_id, inbound_extension_id) WHERE inbound_extension_id IS NOT NULL;
 CREATE INDEX sip_accounts_inbound_group_idx ON sip_accounts (workspace_id, inbound_group_id) WHERE inbound_group_id IS NOT NULL;
+-- A number takes inbound calls in one workspace of the whole server: LiveKit routes an INVITE by
+-- the called number (and the provider's address), so a second trunk with another workspace's
+-- caller ID would take that workspace's calls.
+CREATE UNIQUE INDEX sip_accounts_inbound_caller_idx ON sip_accounts (caller_id) WHERE inbound_trunk_id <> '';
 
 ALTER TABLE sip_calls
     ADD COLUMN lk_room          text NOT NULL DEFAULT '',
@@ -46,6 +50,7 @@ CREATE INDEX sip_calls_inbound_live_idx ON sip_calls (workspace_id)
     WHERE direction = 'in' AND status IN ('dialing', 'ringing', 'active');
 
 -- +goose Down
+DROP INDEX sip_accounts_inbound_caller_idx;
 DROP INDEX sip_calls_inbound_live_idx;
 DROP INDEX sip_calls_answered_by_idx;
 DROP INDEX sip_calls_lk_room_idx;

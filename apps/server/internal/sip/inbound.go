@@ -122,6 +122,14 @@ func parseCIDRs(raw []string, allow func(netip.Addr) bool) ([]string, error) {
 		} else if p, err = netip.ParsePrefix(r); err != nil {
 			return nil, httpx.Validation("allowedCidrs", "each address is an IP address or a CIDR range, e.g. 203.0.113.0/24")
 		}
+		// An IPv4-mapped range (::ffff:a.b.c.d/n) is the IPv4 range /n-96: «::ffff:128.0.0.0/97»
+		// would otherwise pass as a narrow IPv6 range while covering half of the IPv4 internet.
+		if p.Addr().Is4In6() {
+			if p.Bits() < 96 {
+				return nil, httpx.Validation("allowedCidrs", "addresses must be public and ranges no wider than /16 (IPv6: /32)")
+			}
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+		}
 		p = p.Masked()
 		minBits := 16
 		if p.Addr().Is6() {
@@ -202,8 +210,39 @@ func (s *Service) dropInboundLK(ctx context.Context, a sqlc.SipAccount) error {
 	return nil
 }
 
-// makeInboundLK creates the inbound trunk and its dispatch rule from the account.
-func (s *Service) makeInboundLK(ctx context.Context, a sqlc.SipAccount) (trunkID, ruleID string, err error) {
+// errNumberTaken: the caller ID already takes inbound calls in another workspace.
+func errNumberTaken() *httpx.Error {
+	return httpx.Conflict("this number already takes inbound calls in another workspace")
+}
+
+// numberFree checks before the LiveKit objects are touched that no other workspace takes
+// inbound calls on a's caller ID.
+func numberFree(ctx context.Context, q *sqlc.Queries, a sqlc.SipAccount) error {
+	taken, err := q.SipInboundNumberTaken(ctx, sqlc.SipInboundNumberTakenParams{CallerID: a.CallerID, WorkspaceID: a.WorkspaceID})
+	if err != nil {
+		return err
+	}
+	if taken {
+		return errNumberTaken()
+	}
+	return nil
+}
+
+// inboundTaken maps the unique index of inbound caller IDs (a concurrent save won) to 409.
+func inboundTaken(err error) error {
+	if db.UniqueViolation(err) == "sip_accounts_inbound_caller_idx" {
+		return errNumberTaken()
+	}
+	return err
+}
+
+// makeInboundLK creates the inbound trunk and its dispatch rule from the account (in the
+// transaction q). A caller ID takes inbound calls in one workspace of the server only: LiveKit
+// matches an INVITE by the called number, so another workspace's number would take its calls.
+func (s *Service) makeInboundLK(ctx context.Context, q *sqlc.Queries, a sqlc.SipAccount) (trunkID, ruleID string, err error) {
+	if err := numberFree(ctx, q, a); err != nil {
+		return "", "", err
+	}
 	addrs, err := s.inboundAddresses(ctx, a.Host, a.InboundAllowedCidrs)
 	if err != nil {
 		return "", "", err
@@ -240,13 +279,18 @@ func (s *Service) syncInbound(ctx context.Context, q *sqlc.Queries, a sqlc.SipAc
 	if a.InboundTrunkID == "" && a.InboundRuleID == "" && !want {
 		return a, nil
 	}
+	if want {
+		if err := numberFree(ctx, q, a); err != nil {
+			return a, err
+		}
+	}
 	if err := s.dropInboundLK(ctx, a); err != nil {
 		return a, err
 	}
 	a.InboundTrunkID, a.InboundRuleID = "", ""
 	if a.Enabled && a.InboundEnabled && s.inboundReady() {
 		var err error
-		if a.InboundTrunkID, a.InboundRuleID, err = s.makeInboundLK(ctx, a); err != nil {
+		if a.InboundTrunkID, a.InboundRuleID, err = s.makeInboundLK(ctx, q, a); err != nil {
 			return a, err
 		}
 	}
@@ -314,12 +358,17 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 		next := cur
 		next.InboundEnabled, next.InboundKind, next.InboundAllowedCidrs = enabled, t.kind, cidrs
 		next.InboundMenuID, next.InboundExtensionID, next.InboundGroupID = t.menu, t.ext, t.group
+		if enabled {
+			if err := numberFree(ctx, q, next); err != nil {
+				return err
+			}
+		}
 		if err := s.dropInboundLK(ctx, cur); err != nil {
 			return err
 		}
 		next.InboundTrunkID, next.InboundRuleID = "", ""
 		if enabled {
-			if next.InboundTrunkID, next.InboundRuleID, err = s.makeInboundLK(ctx, next); err != nil {
+			if next.InboundTrunkID, next.InboundRuleID, err = s.makeInboundLK(ctx, q, next); err != nil {
 				return err
 			}
 		}
@@ -340,7 +389,7 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Coded(http.StatusBadGateway, v1.ErrorCode_ERROR_CODE_SIP_PROVIDER_ERROR, pe.msg)
 	}
 	if err != nil {
-		return err
+		return inboundTaken(err)
 	}
 	slog.InfoContext(ctx, "sip: inbound saved", "workspace", wsID, "by", me, "enabled", saved.InboundEnabled, "trunk", saved.InboundTrunkID, "rule", saved.InboundRuleID)
 	if before.InboundEnabled && !enabled {
