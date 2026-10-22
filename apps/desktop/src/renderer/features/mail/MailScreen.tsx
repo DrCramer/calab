@@ -10,13 +10,15 @@ import { ForwardDialog } from '../chat/ForwardDialog';
 import { AddAccountCard } from './AddAccountCard';
 import { BatchView } from './BatchView';
 import { ComposeSheet } from './ComposeSheet';
+import { FolderDialog } from './FolderDialog';
 import { MailColumn } from './MailColumn';
+import { MailSidebar } from './MailSidebar';
 import { MailThread } from './MailThread';
 import { sendMailToChats } from './toChat';
 
 /**
- * «Почта» (ADR-0088 §8, Apple Mail): the list column and the thread in the centre of the inset
- * panel; no right panel. Without accounts — the add-account card; the composer is a sheet over the
+ * «Почта» (ADR-0088 §8, Apple Mail): the mailbox sidebar (CBF-56, can be hidden), the list column
+ * and the thread in the centre of the inset panel; no right panel. Without accounts — the add-account card; the composer is a sheet over the
  * centre. Reads three booleans: an event about one message never re-renders this.
  */
 export function MailScreen(): ReactNode {
@@ -39,6 +41,7 @@ export function MailScreen(): ReactNode {
         </div>
       ) : (
         <>
+          <MailSidebar />
           <MailColumn />
           <div className="mat-content relative flex min-w-0 flex-1 flex-col">
             {adding ? (
@@ -53,6 +56,7 @@ export function MailScreen(): ReactNode {
           </div>
         </>
       )}
+      {hasAccounts ? <FolderDialog /> : null}
       {compose && hasAccounts ? <ComposeSheet key={compose.seq} req={compose} /> : null}
       {toChat ? (
         <ForwardDialog
@@ -81,7 +85,7 @@ function useMailHotkeys(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.isComposing || typing(e.target)) return;
-      if (useUi.getState().dialog || useMailUi.getState().compose || useMailUi.getState().adding || useMailUi.getState().toChat) return;
+      if (useUi.getState().dialog || useMailUi.getState().compose || useMailUi.getState().adding || useMailUi.getState().toChat || useMailUi.getState().folderDialog) return;
       const mod = e.metaKey || e.ctrlKey;
       const letter = shortcutLetter(e);
       let act: (() => void) | null = null;

@@ -171,9 +171,9 @@ function AccountRows({ id }: { id: string }): ReactNode {
           }}
         />
       </Row>
-      <Row label={t('mbox.settings.signature')}>
+      <StackRow label={t('mbox.settings.signature')}>
         <SignatureField id={id} value={signature} />
-      </Row>
+      </StackRow>
       <FolderRows id={id} />
       {password ? <PasswordDialog account={account} onClose={() => setPassword(false)} /> : null}
       {certOpen ? <CertDialog account={account} kind={certOpen.kind} cert={certOpen.cert} onClose={() => setCertOpen(null)} /> : null}
@@ -339,12 +339,12 @@ function FolderRows({ id }: { id: string }): ReactNode {
   };
   return (
     <>
-      <Row label={t('mbox.folders.new')} htmlFor={nameId} hint={issue ? <span className="text-danger-text" role="alert">{t(issue === 'exists' ? 'mbox.folders.errExists' : 'mbox.folders.errName')}</span> : t('mbox.folders.newHint')}>
-        <Input id={nameId} value={name} maxLength={100} placeholder={t('mbox.folders.namePlaceholder')} className="w-44" aria-invalid={issue ? true : undefined} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => enter(e, () => void create())} />
+      <StackRow label={t('mbox.folders.new')} htmlFor={nameId} hint={issue ? <span className="text-danger-text" role="alert">{t(issue === 'exists' ? 'mbox.folders.errExists' : 'mbox.folders.errName')}</span> : t('mbox.folders.newHint')}>
+        <Input id={nameId} value={name} maxLength={100} placeholder={t('mbox.folders.namePlaceholder')} className="min-w-[12rem] flex-1" aria-invalid={issue ? true : undefined} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => enter(e, () => void create())} />
         <Button size="sm" variant="secondary" busy={creating} disabled={!name.trim() || !!issue} onClick={() => void create()} data-testid="settings-mail-folder-create">
           {t('mbox.folders.create')}
         </Button>
-      </Row>
+      </StackRow>
       {rules.map((r, i) => {
         const label = ruleLabel(r, i);
         return (
@@ -355,13 +355,13 @@ function FolderRows({ id }: { id: string }): ReactNode {
           </Row>
         );
       })}
-      <Row label={t('mbox.rules.add')} hint={full ? t('mbox.rules.max', { n: MAIL_RULES_MAX }) : targets.length ? t('mbox.rules.addHint') : t('mbox.rules.noFolders')}>
-        <Select value={field} onChange={(e) => setField(e.target.value === 'subject' ? 'subject' : 'from')} aria-label={t('mbox.rules.field')} className="w-32">
+      <StackRow label={t('mbox.rules.add')} hint={full ? t('mbox.rules.max', { n: MAIL_RULES_MAX }) : targets.length ? t('mbox.rules.addHint') : t('mbox.rules.noFolders')}>
+        <Select value={field} onChange={(e) => setField(e.target.value === 'subject' ? 'subject' : 'from')} aria-label={t('mbox.rules.field')} className="w-36 shrink-0">
           <option value="from">{t('mbox.rules.from')}</option>
           <option value="subject">{t('mbox.rules.subject')}</option>
         </Select>
-        <Input value={text} maxLength={200} aria-label={t('mbox.rules.text')} placeholder={t(field === 'from' ? 'mbox.rules.textPlaceholder' : 'mbox.rules.subjectPlaceholder')} className="w-40" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => enter(e, addRule)} />
-        <Select value={destPath} onChange={(e) => setDest(e.target.value)} aria-label={t('mbox.rules.folder')} className="w-36" disabled={!targets.length}>
+        <Input value={text} maxLength={200} aria-label={t('mbox.rules.text')} placeholder={t(field === 'from' ? 'mbox.rules.textPlaceholder' : 'mbox.rules.subjectPlaceholder')} className="min-w-[10rem] flex-[2_1_12rem]" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => enter(e, addRule)} />
+        <Select value={destPath} onChange={(e) => setDest(e.target.value)} aria-label={t('mbox.rules.folder')} className="min-w-[9rem] flex-[1_1_9rem]" disabled={!targets.length}>
           {targets.map((f) => (
             <option key={f.id} value={f.path}>
               {folderLabel(f)}
@@ -371,7 +371,7 @@ function FolderRows({ id }: { id: string }): ReactNode {
         <Button size="sm" variant="secondary" disabled={!text.trim() || !destPath || full} onClick={addRule} data-testid="settings-mail-rule-add">
           {t('mbox.rules.addButton')}
         </Button>
-      </Row>
+      </StackRow>
       {rules.length ? (
         <Row label={t('mbox.rules.apply')} hint={t('mbox.rules.applyHint')}>
           <Button size="sm" variant="secondary" busy={applying} onClick={() => void apply()} data-testid="settings-mail-rules-apply">
@@ -380,6 +380,30 @@ function FolderRows({ id }: { id: string }): ReactNode {
         </Row>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A settings row whose controls need the width (CBF-56: the rule form, the new folder, the
+ * signature): the title on its own line, the controls under it wrapping onto more lines when the
+ * window is narrow, the hint under the controls — never squeezed into a narrow label column.
+ */
+function StackRow({ label, hint, htmlFor, children }: { label: string; hint?: ReactNode; htmlFor?: string; children: ReactNode }): ReactNode {
+  const searchHint = typeof hint === 'string' ? hint : undefined;
+  return (
+    <div className="flex flex-col gap-2 px-3 py-2.5" data-settings-row data-testid="settings-stack-row">
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="text-body" data-settings-label data-settings-hint={searchHint}>
+          {label}
+        </label>
+      ) : (
+        <span className="text-body" data-settings-label data-settings-hint={searchHint}>
+          {label}
+        </span>
+      )}
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      {hint ? <span className="text-caption text-faint">{hint}</span> : null}
+    </div>
   );
 }
 
@@ -403,7 +427,7 @@ function SignatureField({ id, value }: { id: string; value: string }): ReactNode
         if (v === value) return;
         void updateSettings({ signatures: { ...useMail.getState().settings.signatures, [id]: v } });
       }}
-      className="w-60 py-1"
+      className="w-full py-1"
     />
   );
 }
