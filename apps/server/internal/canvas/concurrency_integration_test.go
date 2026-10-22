@@ -102,9 +102,10 @@ func TestCanvasConcurrentStructureStaysConsistent(t *testing.T) {
 	}
 	if err := e.d.Pool.QueryRow(ctx, `
 		SELECT count(*) FROM (
-			SELECT parent_id, count(*) AS n, max(position) AS top, count(DISTINCT position) AS d FROM canvas_items
+			SELECT parent_id, count(*) AS n, count(DISTINCT position) AS d FROM canvas_items
 			WHERE workspace_id = $1 AND trashed_at IS NULL GROUP BY parent_id) s
-		WHERE s.top <> s.n - 1 OR s.d <> s.n`, e.ws).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("sibling positions with a gap or a duplicate: %d %v", n, err)
+		WHERE s.d <> s.n`, e.ws).Scan(&n); err != nil || n != 0 {
+		// Gaps are fine (a move takes a free position between neighbours); a duplicate is not.
+		t.Fatalf("sibling positions with a duplicate: %d %v", n, err)
 	}
 }
