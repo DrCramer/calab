@@ -80,6 +80,7 @@ Hitting a rate limit returns `429 ERROR_CODE_RATE_LIMITED` with a `Retry-After` 
 | Checklists | — | yes | yes |
 | Board webhook, telephony | — | — | yes |
 | Board automations | — | yes | yes |
+| AI features (workspace AI settings) | — | — | yes |
 
 On a self-hosted server (Enterprise) the operator sets the limits.
 

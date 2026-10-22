@@ -1749,6 +1749,11 @@ test('settings-gptunnel', async ({ open, win, mock, shot }) => {
   await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'AI интеграция' }).click();
+  // CBF-69: the fixture's main workspace is Team — the form stays visible under the Business lock.
+  await expect(dialog.getByTestId('ai-plan-lock')).toContainText('Доступно на тарифе Business и выше');
+  await checkpoint(shot, 'settings-gptunnel-ai-plan');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await expect(dialog.getByTestId('ai-plan-lock')).toHaveCount(0);
   const aiForm = dialog.getByTestId('ai-form');
   await expect(aiForm.getByTestId('ai-status')).toHaveText('Не выбран');
   await expect(aiForm.getByTestId('ai-model')).toHaveValue('gpt-6-astra');
@@ -3968,6 +3973,13 @@ test('boards-smart-task', async ({ open, win, mock, shot }) => {
   await boardsMode(win, mock);
   await win.getByTestId('section-create-board').click();
   const menu = win.getByTestId('boards-create-menu');
+  // CBF-69: on Team (the fixture) the item is off for the plan, whatever the AI state.
+  await expect(menu.getByTestId('boards-create-smart-hint')).toHaveText('Доступно на тарифе Business');
+  await expect(menu.getByTestId('boards-create-smart')).toHaveAttribute('data-disabled', '');
+  await checkpoint(shot, 'boards-smart-plan');
+  await win.keyboard.press('Escape');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await win.getByTestId('section-create-board').click();
   await expect(menu.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
   await expect(menu.getByTestId('boards-create-smart')).toHaveAttribute('data-disabled', '');
   await checkpoint(shot, 'boards-smart-off');
@@ -4112,9 +4124,15 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await boardsMode(win, mock);
   await win.getByTestId('board-more').click();
   await win.getByTestId('board-settings').click();
-  // CBF-68: «Основное» → «Инструкция для ИИ», typed and saved.
+  // CBF-68: «Основное» → «Инструкция для ИИ», typed and saved. CBF-69: on Team (the fixture) it
+  // is writable with the Business line under the label.
   const instr = win.getByTestId('board-ai-instruction-text');
   await expect(instr).toHaveValue('');
+  await expect(win.getByTestId('board-ai-instruction-plan')).toHaveText('Умные задачи работают на тарифе Business — инструкцию можно написать заранее');
+  await win.getByTestId('board-ai-instruction').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-settings-ai-plan');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await expect(win.getByTestId('board-ai-instruction-plan')).toHaveCount(0);
   await instr.fill('Заголовок — «Баг: где и что». В описании — шаги воспроизведения и ожидаемое поведение. Метка «Баг», приоритет высокий, если сломан вход.');
   await win.getByTestId('board-ai-instruction').scrollIntoViewIfNeeded();
   await checkpoint(shot, 'boards-settings-ai');

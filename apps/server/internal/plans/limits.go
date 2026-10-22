@@ -60,6 +60,13 @@ type Limits struct {
 	// cannot change it): the identity gate reads it from workspace_plans in SQL
 	// (identitypolicy.PlanGrantsIdentity).
 	CorporateIdentity bool
+	// AI: the AI features — the workspace's AI integration, smart tasks and the boards' AI
+	// instruction run by the model (CBF-69) — are part of the plan (owner, 22.10: Business only).
+	// A positive flag like CorporateIdentity: Limits{}, a key a client did not send and an older
+	// custom row mean «no». It follows the plan kind (PLAN_*_LIMITS may set it: the operator's own
+	// tariffs) or a custom plan; a superadmin override of Team / Business cannot change it
+	// (validatePlan refuses, overriddenLocked ignores a stored key).
+	AI bool
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS override them key by key.
@@ -84,13 +91,14 @@ var (
 	// DefaultBusiness (owner, 30.09) is the cloud tier stored as PLAN_ENTERPRISE: 50 in a room,
 	// 500 members, 20 bots, 50 boards (the hard cap), 5 streams and 25 cameras per room, 1 TiB of files; voice and video quality unlimited.
 	DefaultBusiness = Limits{BoardFormsPerBoard: 20, RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, WikiPages: 500, TempRooms: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25,
-		CorporateIdentity: true}
+		CorporateIdentity: true, AI: true}
 )
 
 // CustomBase is what a stored PLAN_CUSTOM row means for a key it lacks (rows written before the
 // key existed): no limit, except flags that are off unless granted (ADR-0058 §5: board webhooks
 // and ADR-0046: telephony are Business only, so an older Custom row does not gain them silently;
-// checklists default on; ADR-0113: corporate identity, a positive flag, is off unless granted).
+// checklists default on; ADR-0113: corporate identity, a positive flag, is off unless granted;
+// CBF-69: AI, a positive flag too, is off unless granted).
 var CustomBase = Limits{BoardWebhooksDisabled: true, TelephonyDisabled: true}
 
 // Upper bounds of every limit (validation of env and admin input).
@@ -158,6 +166,7 @@ type limitsJSON struct {
 	Telephony          *bool   `json:"telephony_disabled,omitempty"`
 	Automations        *bool   `json:"automations_disabled,omitempty"`
 	Identity           *bool   `json:"corporate_identity,omitempty"`
+	AI                 *bool   `json:"ai,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -225,6 +234,9 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	if j.Identity != nil {
 		l.CorporateIdentity = *j.Identity
 	}
+	if j.AI != nil {
+		l.AI = *j.AI
+	}
 	for _, p := range []struct {
 		dst  *v1.ScreenSharePreset
 		v    *string
@@ -257,7 +269,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
 		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards, WikiPages: &l.WikiPages, CalDAVDisabled: &l.CalDAVDisabled, MusicianDisabled: &l.MusicianDisabled,
 		Checklists: &l.ChecklistsDisabled, BoardWebhooks: &l.BoardWebhooksDisabled, Telephony: &l.TelephonyDisabled,
-		Automations: &l.AutomationsDisabled, Identity: &l.CorporateIdentity,
+		Automations: &l.AutomationsDisabled, Identity: &l.CorporateIdentity, AI: &l.AI,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -334,7 +346,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
 		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards, WikiPages: l.WikiPages, CaldavDisabled: l.CalDAVDisabled, MusicianDisabled: l.MusicianDisabled,
 		ChecklistsDisabled: l.ChecklistsDisabled, BoardWebhooksDisabled: l.BoardWebhooksDisabled, TelephonyDisabled: l.TelephonyDisabled,
-		AutomationsDisabled: l.AutomationsDisabled, CorporateIdentity: l.CorporateIdentity,
+		AutomationsDisabled: l.AutomationsDisabled, CorporateIdentity: l.CorporateIdentity, Ai: l.AI,
 	}
 }
 
@@ -346,7 +358,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
 		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(), WikiPages: p.GetWikiPages(), CalDAVDisabled: p.GetCaldavDisabled(), MusicianDisabled: p.GetMusicianDisabled(),
 		ChecklistsDisabled: p.GetChecklistsDisabled(), BoardWebhooksDisabled: p.GetBoardWebhooksDisabled(), BoardFormsDisabled: p.GetBoardFormsDisabled(), BoardFormsPerBoard: p.GetBoardFormsPerBoard(), TelephonyDisabled: p.GetTelephonyDisabled(),
-		AutomationsDisabled: p.GetAutomationsDisabled(), CorporateIdentity: p.GetCorporateIdentity(),
+		AutomationsDisabled: p.GetAutomationsDisabled(), CorporateIdentity: p.GetCorporateIdentity(), AI: p.GetAi(),
 	}
 }
 

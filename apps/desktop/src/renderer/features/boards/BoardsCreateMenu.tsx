@@ -10,11 +10,12 @@ import { t } from '../../i18n';
 import { aiStatusKey, smartOffKey } from '../../lib/ai';
 import { api } from '../../lib/api/endpoints';
 import { mayCreateBoards } from '../../lib/permissions';
+import { planHasAI } from '../../lib/plan';
 import { openBoard } from '../../services/boards';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
-import { useMemberRoles } from '../../stores/workspaces';
+import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { NewCategoryDialog } from './BoardsList';
 import { createMenuPlan, pickTaskBoard } from './createMenuModel';
@@ -87,13 +88,15 @@ export function BoardsCreateMenu({ workspaceId }: { workspaceId: string }): Reac
 }
 
 /**
- * «Создать умную задачу» (CBF-68): on only when the workspace's AI is connected and its last
- * check passed (GET …/ai/status, read while the menu is open); otherwise off with the reason
- * under it. The server refuses anything but READY too — this only spares a useless dialog.
+ * «Создать умную задачу» (CBF-68): on only when the plan includes AI (CBF-69: Business), the
+ * workspace's AI is connected and its last check passed (GET …/ai/status, read while the menu is
+ * open — not at all without the plan); otherwise off with the reason under it. The server refuses
+ * all of it too — this only spares a useless dialog.
  */
 function SmartItem({ workspaceId, open }: { workspaceId: string; open: boolean }): ReactNode {
-  const q = useQuery({ queryKey: aiStatusKey(workspaceId), queryFn: ({ signal }) => api.ai.status(workspaceId, signal), enabled: open, staleTime: 0 });
-  const off = smartOffKey(q.isError ? AiState.UNSPECIFIED : q.data?.state);
+  const planAI = useWorkspaces((s) => planHasAI(s.byId[workspaceId]?.ws.plan));
+  const q = useQuery({ queryKey: aiStatusKey(workspaceId), queryFn: ({ signal }) => api.ai.status(workspaceId, signal), enabled: open && planAI, staleTime: 0 });
+  const off = smartOffKey(q.isError ? AiState.UNSPECIFIED : q.data?.state, planAI);
   return (
     <Dropdown.Item
       className={cx(menuItem, off && 'h-auto min-h-8 items-start py-1.5 data-[disabled]:opacity-100')}

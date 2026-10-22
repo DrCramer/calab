@@ -541,6 +541,8 @@ export const ENTERPRISE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   streamsPerRoom: 5,
   camerasPerRoom: 25,
   storageMb: 1024n * 1024n,
+  // CBF-69: AI features are Business only.
+  ai: true,
 });
 
 export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride | undefined): RoomMediaSettings {

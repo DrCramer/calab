@@ -76,6 +76,7 @@ order: 3
 | `ON_BEHALF_*` | `FORBIDDEN`, `BAD_REQUEST` | запрос от имени владельца отклонён — см. [Токен и права](../bots/auth#от-имени-владельца) |
 | `PLAN_LIMIT` | `CONFLICT`, `ROOM_FULL`, `FILE_QUOTA_EXCEEDED` | лимит тарифа; `used` / `limit` |
 | `PLAN_LIMITS_EXCEEDED` | `CONFLICT` | смена тарифа отклонена: пространство использует больше, чем позволяет новый тариф |
+| `AI_PLAN_REQUIRED` | `CONFLICT` | AI-функции (настройки AI, проверка, умная задача) есть только в Business |
 | `REACTION_LIMIT` | `CONFLICT` | не больше 3 разных реакций одного участника на сообщение |
 | `FEATURE_DISABLED` | `CONFLICT` | функция доски выключена; `field` — поле |
 | `CHECKLIST_LIMIT` · `CHECKLIST_ITEM_LIMIT` · `BOARD_CATEGORY_LIMIT` | `CONFLICT` | 10 чек-листов на задачу · 100 пунктов в чек-листе · 50 категорий досок |

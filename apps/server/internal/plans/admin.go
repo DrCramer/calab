@@ -265,6 +265,10 @@ func (a *Admin) validatePlan(req *v1.AdminSetPlanRequest, now time.Time) (plan s
 		if err := l.Validate(); err != nil {
 			return "", Limits{}, nil, nil, httpx.Validation("limits", err.Error())
 		}
+		// CBF-69: AI is part of the plan kind (Business) or of a custom plan, not an override.
+		if overridable && l.AI != defaults.AI {
+			return "", Limits{}, nil, nil, httpx.Validation("limits", "ai follows the plan and cannot be overridden for PLAN_TEAM or PLAN_ENTERPRISE")
+		}
 	}
 	if req.ValidUntil != nil {
 		if err := req.GetValidUntil().CheckValid(); err != nil || !req.GetValidUntil().AsTime().After(now) {

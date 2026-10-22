@@ -201,6 +201,8 @@ export function describeError(e: unknown): HumanError {
     // The restricted mode «тариф не активен» (ADR-0086 amendment): one plain reason everywhere.
     if (e.reason === 'WORKSPACE_PLAN_INACTIVE')
       return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), retry: false, generic: false };
+    // CBF-69: an AI route on a plan without AI (Free / Team).
+    if (e.reason === 'AI_PLAN_REQUIRED') return { text: t('plan.lockedFrom', { plan: t('plan.name.enterprise') }), retry: false, generic: false };
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
       const sticker = e.field ? stickerField(e.field, e.message) : null;

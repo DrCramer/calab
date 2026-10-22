@@ -12,6 +12,12 @@ describe('smart task (CBF-68)', () => {
     expect(smartOffKey(AiState.FAILED)).toBe('smart.off.failed');
     expect(smartOffKey(undefined)).toBe('smart.off.loading');
   });
+  it('CBF-69: off on a plan without AI (Free / Team), whatever the AI state', () => {
+    for (const st of [AiState.READY, AiState.NO_KEY, AiState.FAILED, undefined]) expect(smartOffKey(st, false)).toBe('smart.off.plan');
+    expect(smartOffKey(AiState.READY, true)).toBeNull();
+    expect(smartOffKey(AiState.UNCHECKED, true)).toBe('smart.off.unchecked');
+    expect(smartErrorText({ status: 409, reason: 'AI_PLAN_REQUIRED', message: '' }).key).toBe('smart.off.plan');
+  });
   it('explains a refusal', () => {
     expect(smartErrorText({ status: 409, reason: 'AI_BAD_ANSWER', message: '' }).key).toBe('smart.err.badAnswer');
     expect(smartErrorText({ status: 409, reason: 'AI_FAILED', message: 'insufficient_balance' })).toEqual({ key: 'smart.err.failed', reason: 'ai.reason.insufficient_balance' });

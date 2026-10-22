@@ -5,6 +5,7 @@ export const enSmartTask = {
   'smart.off.unchecked': 'Check the connection in the settings',
   'smart.off.failed': 'The connection does not work — check the key',
   'smart.off.loading': 'Checking the AI connection…',
+  'smart.off.plan': 'Available on the Business plan',
   'smart.title': 'Smart task',
   'smart.intro': 'Describe the task in your own words — AI picks the board and writes the task. You can edit it afterwards.',
   'smart.text': 'Task text',
@@ -28,6 +29,7 @@ export const enSmartTask = {
   'smart.instruction.placeholder': 'E.g.: title — «Invoice: supplier, amount». Description — payment details and the due date. Label «Invoice», high priority when due in less than a week.',
   'smart.instruction.hint':
     'AI reads the instruction when it picks this board for a smart task. Whoever sees the board sees it; it also shapes the tasks of members who may only create tasks — do not put secrets here.',
+  'smart.instruction.plan': 'Smart tasks work on the Business plan — you can write the instruction in advance',
   'smart.instruction.save': 'Save',
   'smart.instruction.saved': 'Instruction saved',
   'smart.instruction.count': '{n} of 4000',

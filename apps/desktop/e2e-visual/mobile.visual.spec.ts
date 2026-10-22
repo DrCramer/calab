@@ -2,7 +2,7 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { AiState, FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { AiState, FormerMemberReason, Plan, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
@@ -1019,6 +1019,12 @@ test('m-boards-create', async ({ page }) => {
 test('m-boards-smart', async ({ page }) => {
   await signedIn(page);
   await tab(page, 'boards');
+  await page.getByTestId('section-create-board').tap();
+  // CBF-69: Team (the fixture) — off for the plan; then Business.
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Доступно на тарифе Business');
+  await checkpoint(page, 'm-boards-smart-plan');
+  await page.keyboard.press('Escape');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
   await page.getByTestId('section-create-board').tap();
   await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
   await checkpoint(page, 'm-boards-smart-off');

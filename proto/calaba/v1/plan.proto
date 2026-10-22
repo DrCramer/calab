@@ -48,6 +48,12 @@ message PlanLimits {
   // (custom plan, or an override of Team / Business). Field 40: 35-39 are left for the limits being
   // added in parallel.
   bool corporate_identity = 40;
+  // AI features (the workspace's AI integration, «Создать умную задачу», the boards' AI
+  // instruction run by the model; CBF-69) are Business only (owner, 22.10). A positive flag like
+  // corporate_identity: zero, a client that does not know the field and an older custom plan mean
+  // «no». Set by the plan kind (PLAN_*_LIMITS on the operator's server) or a custom plan; a
+  // superadmin override of Team / Business cannot change it.
+  bool ai = 41;
   // Removed flags (an older telephony flag, web apps, approvals per plan): never reuse their numbers.
   reserved 24, 25, 26;
 }

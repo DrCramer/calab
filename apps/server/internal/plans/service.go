@@ -190,6 +190,16 @@ func (s *Service) AllowsMusician(ctx context.Context, wsID uuid.UUID, dm bool, u
 	return !s.PlanLimits(v1.Plan_PLAN_FREE).MusicianDisabled, nil
 }
 
+// AllowsAI reports whether the AI features (CBF-69) are part of the workspace's plan: Business
+// (or a custom plan granting them); an expired plan reads as Free. A nil service allows them.
+func (s *Service) AllowsAI(ctx context.Context, wsID uuid.UUID) (bool, error) {
+	if s == nil {
+		return true, nil
+	}
+	l, err := s.Effective(ctx, wsID)
+	return l.AI, err
+}
+
 // Effective returns the effective limits of a workspace.
 func (s *Service) Effective(ctx context.Context, wsID uuid.UUID) (Limits, error) {
 	i, err := s.Info(ctx, wsID)
@@ -298,6 +308,7 @@ func (s *Service) overriddenLocked(ctx context.Context, row sqlc.WorkspacePlan, 
 		slog.WarnContext(ctx, "invalid plan overrides, using the plan's defaults", "workspace", row.WorkspaceID, "err", err)
 		return base
 	}
+	l.AI = base.AI // CBF-69: AI follows the plan, never an override
 	return l
 }
 

@@ -560,6 +560,7 @@ func New(d Deps) *App {
 	sipSvc.Routes(mux, private)
 	// AI integration (CBF-60): the workspace's model provider and its check.
 	aiSvc := ai.New(d.DB, d.Redis, []byte(d.Config.JWTSecret), d.Config.GPTunnelAIURL, unfurlPolicy(d))
+	aiSvc.Plans = planSvc // CBF-69: AI features are Business only
 	aiSvc.Routes(mux, private)
 	// Smart tasks (CBF-68): the boards' «Создать умную задачу» calls the workspace's model.
 	boardSvc.AI = aiSvc
