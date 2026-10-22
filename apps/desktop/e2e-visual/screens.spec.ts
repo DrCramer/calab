@@ -1735,7 +1735,9 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
 });
 
 /**
- * Workspace settings → «GPTunneL» (ADR-0025) for the owner, not connected: the code typed through
+ * Workspace settings → «AI интеграция» (CBF-60) for the owner: the AI card first (provider tabs,
+ * empty state without a key, the key typed masked, model, «Проверить» and its answer), then the
+ * GPTunneL connection (ADR-0025) below it, not connected: the code typed through
  * the ABCD-EFGH mask, a wrong code's inline error, the hint with the GPTunneL link. Then the
  * right code connects (device, account, «Открыть в GPTunneL», «Отключить»).
  */
@@ -1745,7 +1747,18 @@ test('settings-gptunnel', async ({ open, win, mock, shot }) => {
   await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
   const dialog = win.getByRole('dialog');
-  await dialog.getByRole('tab', { name: 'GPTunneL' }).click();
+  await dialog.getByRole('tab', { name: 'AI интеграция' }).click();
+  const aiForm = dialog.getByTestId('ai-form');
+  await expect(aiForm.getByTestId('ai-status')).toHaveText('Не выбран');
+  await expect(aiForm.getByTestId('ai-model')).toHaveValue('gpt-6-astra');
+  await expect(aiForm.getByTestId('ai-key')).toHaveValue('');
+  await expect(aiForm.getByRole('button', { name: 'Проверить' })).toBeVisible();
+  await checkpoint(shot, 'settings-gptunnel-ai-empty');
+  await aiForm.getByTestId('ai-key').fill('sk-test-1234567890');
+  await expect(aiForm.getByTestId('ai-key')).toHaveAttribute('type', 'password');
+  await aiForm.getByRole('button', { name: 'Проверить' }).click();
+  await expect(aiForm.getByTestId('ai-check-result')).toContainText('Ответ получен');
+  await checkpoint(shot, 'settings-gptunnel-ai-checked');
   await expect(dialog.getByTestId('gptunnel-status')).toHaveText('Не подключено');
   const code = dialog.getByTestId('gptunnel-code');
   await code.pressSequentially('wxyz1234');
