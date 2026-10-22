@@ -2278,7 +2278,7 @@ are not current phone evidence. Visual suites remain disabled.
 1. Task on a board where member B has no access; you can edit the task. Type `@` in the task comment field.
 2. B is listed after members with access, with an eye-off icon and «Нет доступа — откроем эту карточку»; at 390 px the caption truncates, the row stays one line.
 3. Pick B, send: the mention chip renders as usual; the task's «Наблюдатели» gains B, B gets «вас упомянули» and sees the card.
-4. As a user who cannot edit the task: B is dimmed with «Позвать может тот, кто правит задачу», and Enter/click does not insert.
+4. As a commenter who cannot edit the task (CBF-53): B is listed and callable exactly the same; B becomes a watcher and gets «вас упомянули».
 5. Guests and bots without access are not listed; ordinary chats and DMs are unchanged.
 6. A commenter without board-management rights sees the same marks (the server answers who sees the board); typing @ruslan finds «Руслан», @shchukin finds «Щукин», in chats, DMs, tasks and ⌘K people.
 

@@ -309,11 +309,9 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 		mentioned, _ := messages.ParseMentions(msg.Content)
 		// A forwarded message carries someone else's text: its @mentions notify, never invite.
 		if len(mentioned) > 0 && msg.ForwardedFrom == nil {
-			editor, err := authorEdits(ctx, q, t, msg.AuthorID)
-			if err != nil {
-				return err
-			}
-			if _, err := mentionWatchers(ctx, q, t, msg.AuthorID, editor, mentioned, &c); err != nil {
+			// Any commenter may call a workspace member (CBF-53, ADR-0076 §5): the right to
+			// comment is the right to mention; editing the task is not required.
+			if _, err := mentionWatchers(ctx, q, t, msg.AuthorID, mentioned, &c); err != nil {
 				return err
 			}
 		}

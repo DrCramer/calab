@@ -82,12 +82,11 @@ func addWatchers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUI
 	return added, c.record(ctx, q, t, actor, "watchers", map[string]any{"user_ids": idsJSON(cur)}, map[string]any{"user_ids": idsJSON(next)})
 }
 
-// mentionWatchers (ADR-0076 §5): the members @mentioned by an editor of the task — humans,
-// not guests — become its watchers (and subscribers), so those without board access see the
-// card. A mention by someone who cannot edit the task makes no watchers (notifyDirect still
-// notifies the mentioned who see the task). Returns the new watchers.
-func mentionWatchers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, editor bool, mentioned []uuid.UUID, c *change) ([]uuid.UUID, error) {
-	if !editor || len(mentioned) == 0 || t.ArchivedAt != nil {
+// mentionWatchers (ADR-0076 §5, CBF-53): the members @mentioned by anyone who writes in the
+// task (the caller has checked the right to comment or edit) — humans, not guests — become its
+// watchers (and subscribers), so those without board access see the card. Returns the new watchers.
+func mentionWatchers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, mentioned []uuid.UUID, c *change) ([]uuid.UUID, error) {
+	if len(mentioned) == 0 || t.ArchivedAt != nil {
 		return nil, nil
 	}
 	res := perm.NewResolver(q)
@@ -105,25 +104,6 @@ func mentionWatchers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid
 		}
 	}
 	return addWatchers(ctx, q, t, actor, ok, c)
-}
-
-// authorEdits reports whether the author of a comment may edit the task (ADR-0076 §4–5: only
-// their mentions make watchers): their bits on the task (perm.TaskBits), then canEdit.
-func authorEdits(ctx context.Context, q *sqlc.Queries, t taskRow, author uuid.UUID) (bool, error) {
-	acc, err := perm.NewResolver(q).Board(ctx, t.BoardID, author)
-	if err != nil {
-		if err == perm.ErrNoBoard { //nolint:errorlint // sentinel from the resolver
-			return false, nil
-		}
-		return false, err
-	}
-	if acc.Archived || acc.Suspended || t.ArchivedAt != nil {
-		return false, nil
-	}
-	if acc.Bits, err = taskBitsOf(ctx, q, acc, t, author); err != nil {
-		return false, err
-	}
-	return canEdit(ctx, q, acc, t, author)
 }
 
 // addWatcher: PUT /api/tasks/{id}/watchers {user_id} — by whoever may edit the task.

@@ -103,17 +103,13 @@ func TestTaskWatchers(t *testing.T) {
 		t.Fatal("watcher again: subscribed, not muted")
 	}
 
-	// Mentions: by someone who cannot edit the task — no watcher, no access; by an editor —
-	// the mentioned become watchers, see the card and get MENTIONED.
-	send(t, bob, a.GetRoomId(), "позову @"+eve.id, uniq("m"))
-	time.Sleep(200 * time.Millisecond)
-	if slices.Contains(watchersOf(t, o, a.GetId()), eve.id) {
-		t.Fatal("a non-editor's mention made a watcher")
-	}
+	// Mentions (CBF-53): anyone who writes in the task may call a member, editing rights are not
+	// required — bob (a watcher who cannot edit) calls eve: she becomes a watcher, sees the card
+	// and gets MENTIONED.
 	eve.must(404, "GET", "/api/tasks/"+a.GetId(), nil, nil)
 	ge := dialGW(t)
 	ge.identify(eve.token)
-	send(t, o, a.GetRoomId(), "смотри @"+eve.id, uniq("m"))
+	send(t, bob, a.GetRoomId(), "позову @"+eve.id, uniq("m"))
 	eventually(t, "eve becomes a watcher", func() bool { return slices.Contains(watchersOf(t, o, a.GetId()), eve.id) })
 	ge.wait("MENTIONED notice", func(e *v1.DispatchEvent) bool {
 		return e.GetTaskUpdate().GetNotice().GetKind() == v1.TaskNoticeKind_TASK_NOTICE_KIND_MENTIONED && e.GetTaskUpdate().GetTask().GetId() == a.GetId()
