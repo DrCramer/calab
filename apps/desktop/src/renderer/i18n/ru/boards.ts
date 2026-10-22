@@ -393,6 +393,8 @@ export const ruBoards = {
   'boards.noteOf': 'За что отвечает {name}',
   'boards.removeAssignee': 'Убрать {name}',
   'boards.addLabel': 'Лейбл',
+  'boards.insertImage': 'Картинка в тексте',
+  'boards.imageGone': 'Картинка удалена из вложений',
   'boards.attach': 'Прикрепить',
   'boards.removeAttachment': 'Убрать {name}',
   'boards.addSubtask': 'Добавить подзадачу',

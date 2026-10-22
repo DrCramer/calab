@@ -409,6 +409,7 @@ export const es: Dict = {
   'voice.mode': 'Modo de entrada',
   'voice.modeVad': 'Activación por voz',
   'voice.modePtt': 'Pulsar para hablar',
+  'voice.pttIdleState': 'Pulsar para hablar: esperando la tecla',
   'voice.threshold': 'Umbral de activación: {db} dB',
   'voice.thresholdHint': 'Tu micrófono se activa cuando hablas más fuerte que el umbral y se apaga tras una breve pausa.',
   'voice.pttKey': 'Tecla de pulsar para hablar',

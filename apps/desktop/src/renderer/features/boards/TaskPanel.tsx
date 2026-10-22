@@ -12,6 +12,7 @@ import {
   FolderInput,
   GitFork,
   Link2,
+  ImagePlus,
   Paperclip,
   Plus,
   X,
@@ -31,7 +32,7 @@ import { Markdown } from '../../lib/markdown/Markdown';
 import type { ActivityTab } from '../../lib/boards/activity';
 import { approvalsWouldReset, blockedStatusIds, decidedApprovers, gateReason } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, replaceAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
-import { uploadFile } from '../../lib/api/endpoints';
+import { thumbnailPath, uploadFile } from '../../lib/api/endpoints';
 import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
 import { useChatView } from '../chat/chatView';
 import { subscribeRooms } from '../../services/gateway';
@@ -75,6 +76,10 @@ import { ApprovalsSection } from './Approvals';
 import { WatchersSection } from './Watchers';
 import { GitSection } from './GitLinks';
 import { AttachmentChip } from './AttachmentChip';
+import { imageToken, insertImage, splitDescription } from './inlineImages';
+import { MediaImg } from '../../components/MediaImg';
+import { THUMB_LARGE, thumbWidthPath } from '../../lib/thumbs';
+import { openAttachment } from '../../services/files';
 import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
@@ -387,12 +392,29 @@ export function TitleEditor({ task, canEdit, large = false }: { task: Task; canE
   );
 }
 
+/** A picture of the description (CBF-59): the task's attachment shown in place; a click opens the Lightbox. */
+const DescriptionImage = memo(function DescriptionImage({ id, name, list }: { id: string; name: string; list: readonly FileMeta[] }): ReactNode {
+  const f = list.find((x) => x.id === id);
+  if (!f) return <span className="block text-caption text-faint">{name || t('boards.imageGone')}</span>;
+  return (
+    // Not a <button>: the description is itself a button («edit»); the chip below the text is the keyboard path.
+    <div
+      onClick={(e) => { e.stopPropagation(); openAttachment(f, list); }}
+      className="my-1 w-fit max-w-full cursor-zoom-in rounded-[var(--radius-card)] border border-line"
+      data-testid="task-description-img"
+    >
+      <MediaImg path={thumbWidthPath(thumbnailPath(f.id), THUMB_LARGE)} alt={name} loading="lazy" className="block max-h-[420px] max-w-full rounded-[var(--radius-card)] object-contain" />
+    </div>
+  );
+});
+
 export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit: boolean; attachments: boolean }): ReactNode {
   const { guard, dialog } = useResetGuard(task);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(task.description);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
+  const pic = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const [prev, setPrev] = useState(task.description);
   if (prev !== task.description && !editing) {
@@ -424,6 +446,37 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
       setBusy(false);
     }
   };
+  // CBF-59: a picture pasted / dropped / picked in the editor is uploaded as an attachment of the
+  // task and referenced from the draft at the caret (the text itself is saved with «Save»).
+  const insertPictures = async (list: File[]): Promise<void> => {
+    const pics = list.filter((f) => f.type.startsWith('image/')).slice(0, Math.max(0, 20 - task.attachments.length));
+    if (!pics.length) return;
+    let caret = ref.current?.selectionStart ?? v.length;
+    setBusy(true);
+    try {
+      const ids = task.attachments.map((a) => a.id);
+      const tokens: string[] = [];
+      for (const f of pics) {
+        const up = await uploadFile(boardsApi.uploadPath(task.boardId), f, f.name || 'image.png', () => undefined).promise;
+        ids.push(up.id);
+        tokens.push(imageToken(up.id, f.name || 'image.png'));
+      }
+      await setTaskAttachments(task.id, ids);
+      setV((cur) => {
+        let text = cur;
+        for (const tk of tokens) {
+          const r = insertImage(text, caret, tk);
+          text = r.text;
+          caret = r.caret;
+        }
+        return text;
+      });
+    } catch (e) {
+      toast.fail(e, t('boards.err.save'));
+    } finally {
+      setBusy(false);
+    }
+  };
   const removeAttachment = (f: FileMeta): void => guard(() => void setTaskAttachments(task.id, task.attachments.filter((x) => x.id !== f.id).map((x) => x.id)));
   const mention = useCallback((val: string, key: string) => <span key={key} className="font-medium text-accent-text">@{memberName(task.workspaceId, val)}</span>, [task.workspaceId]);
   return (
@@ -436,6 +489,18 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
             value={v}
             maxLength={DESCRIPTION_MAX}
             onChange={(e) => setV(e.target.value)}
+            onPaste={(e) => {
+              const pics = attachments ? [...e.clipboardData.files].filter((f) => f.type.startsWith('image/')) : [];
+              if (!pics.length) return;
+              e.preventDefault();
+              void insertPictures(pics);
+            }}
+            onDrop={(e) => {
+              const pics = attachments ? [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')) : [];
+              if (!pics.length) return;
+              e.preventDefault();
+              void insertPictures(pics);
+            }}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -453,6 +518,14 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
           />
           <div className="flex items-center justify-end gap-2">
             <span className="mr-auto text-caption text-faint">{t('boards.markdownHint')}</span>
+            {attachments ? (
+              <>
+                <Button variant="ghost" size="sm" busy={busy} onClick={() => pic.current?.click()} data-testid="task-description-image">
+                  <ImagePlus className="size-3.5" aria-hidden /> {t('boards.insertImage')}
+                </Button>
+                <input ref={pic} type="file" accept="image/*" multiple hidden onChange={(e) => { void insertPictures([...(e.target.files ?? [])]); e.target.value = ''; }} />
+              </>
+            ) : null}
             <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>
               {t('common.cancel')}
             </Button>
@@ -470,7 +543,7 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
           className={cx('selectable min-h-8 whitespace-pre-wrap break-words rounded-[var(--radius-row)] text-body', canEdit && 'cursor-text hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]', !task.description && 'text-faint')}
           data-testid="task-description"
         >
-          {task.description ? <Markdown text={task.description} mention={mention} /> : canEdit ? t('boards.descriptionPlaceholder') : t('boards.noDescription')}
+          {task.description ? splitDescription(task.description).map((seg, i) => seg.k === 'text' ? <Markdown key={i} text={seg.v} mention={mention} /> : <DescriptionImage key={i} id={seg.id} name={seg.name} list={task.attachments} />) : canEdit ? t('boards.descriptionPlaceholder') : t('boards.noDescription')}
         </div>
       )}
       {attachments && (task.attachments.length || canEdit) ? (

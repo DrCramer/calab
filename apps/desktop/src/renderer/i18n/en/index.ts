@@ -409,6 +409,7 @@ export const en: Dict = {
   'voice.mode': 'Input mode',
   'voice.modeVad': 'Voice activity',
   'voice.modePtt': 'Push-to-talk',
+  'voice.pttIdleState': 'Push-to-talk: waiting for the key',
   'voice.threshold': 'Activation threshold: {db} dB',
   'voice.thresholdHint': 'Your mic turns on when you speak louder than the threshold and off after a short pause.',
   'voice.pttKey': 'Push‑to‑talk key',

@@ -185,7 +185,6 @@ export function Composer({
 
   const pick = (o: MentionOption): void => {
     if (!mq) return;
-    if (o.kind === 'member' && o.outsider === 'locked') return;
     const name = o.kind === 'member' ? o.c.name : o.v;
     const next = applyMention(text, mq.start, caret, name);
     setText(next.text);

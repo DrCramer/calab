@@ -1024,7 +1024,7 @@ func (s *Service) insertTask(r *http.Request, boardID uuid.UUID, acc perm.BoardA
 		}
 		mentioned, _ := messages.ParseMentions(desc)
 		invited, _ := messages.ParseMentions(own)
-		if _, err := mentionWatchers(r.Context(), q, t, me, true, invited, &c); err != nil {
+		if _, err := mentionWatchers(r.Context(), q, t, me, invited, &c); err != nil {
 			return err
 		}
 		return s.notifyDirect(r.Context(), q, t, me, fresh, mentioned, uuid.Nil, &c)
@@ -1632,7 +1632,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			}
 			// The caller edits the task (requireEdit above): the new mentions become watchers
 			// (ADR-0076 §5).
-			if _, err := mentionWatchers(r.Context(), q, t, me, true, added, &c); err != nil {
+			if _, err := mentionWatchers(r.Context(), q, t, me, added, &c); err != nil {
 				return err
 			}
 			if err := s.notifyDirect(r.Context(), q, t, me, nil, added, uuid.Nil, &c); err != nil {
