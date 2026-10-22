@@ -2,6 +2,7 @@ import type { DiskItem } from '@calaba/protocol';
 import type { ForwardItem } from '../features/chat/forwardModel';
 import { plural, t } from '../i18n';
 import { ApiError } from '../lib/api/client';
+import { isFolder } from '../lib/disk';
 import { log } from '../lib/log';
 import { useDisk } from '../stores/disk';
 import { useDiskRefs } from '../stores/diskRefs';
@@ -43,6 +44,7 @@ export function resolveDiskItem(id: string): Promise<DiskItem | null> {
           return null;
         }
         useDisk.getState().upsert(r.item);
+        if (isFolder(r.item)) useDiskRefs.getState().setCounts(id, { files: r.item.folderFiles, folders: r.item.folderFolders });
         useDiskRefs.getState().set(id, 'ok');
         return r.item;
       },
@@ -55,6 +57,22 @@ export function resolveDiskItem(id: string): Promise<DiskItem | null> {
     .finally(() => resolving.delete(id));
   resolving.set(id, p);
   return p;
+}
+
+/**
+ * The item's address in the app (`/disk/<id>`, the one a chat chip / card opens) to the clipboard —
+ * a file's card and a folder's menu use it. `okKey`: the toast text.
+ */
+export function copyDiskItemAddress(id: string, okKey: 'disk.card.linkCopied' | 'disk.folder.linkCopied'): void {
+  const url = diskItemUrl(id);
+  if (!url) {
+    toast.error(t('disk.err.link'));
+    return;
+  }
+  void navigator.clipboard.writeText(url).then(
+    () => toast.success(t(okKey)),
+    (e: unknown) => toast.fail(e),
+  );
 }
 
 /** Resolves a referenced item unless it is already known (a mount of a chip). */

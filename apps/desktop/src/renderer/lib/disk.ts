@@ -26,6 +26,17 @@ export const ROOT = '';
 export const folderKey = (wsId: string, parentId: string): string => `${wsId}/${parentId || 'root'}`;
 export const trashKey = (wsId: string): string => `${wsId}/trash`;
 
+/**
+ * What a folder card says about the contents (CBF-66): the non-zero counters in the order files,
+ * folders; an empty list = an empty folder. Pure — the card turns each part into a plural string.
+ */
+export function folderCountParts(files: number, folders: number): { kind: 'files' | 'folders'; n: number }[] {
+  const out: { kind: 'files' | 'folders'; n: number }[] = [];
+  if (files > 0) out.push({ kind: 'files', n: files });
+  if (folders > 0) out.push({ kind: 'folders', n: folders });
+  return out;
+}
+
 export const isFolder = (i: Pick<DiskItem, 'kind'>): boolean => i.kind === DiskItemKind.FOLDER;
 
 const ms = (ts: DiskItem['updatedAt']): number => (ts ? timestampMs(ts) : 0);

@@ -459,6 +459,21 @@ test('m-chat-image', async ({ page }) => {
   await checkpoint(page, 'm-chat-image', { main: true });
 });
 
+// CBF-66: a Disk folder link in a chat is its own card — name, who shared, what is inside, «Открыть».
+test('m-chat-folder-card', async ({ page }) => {
+  await signedInRoom(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  const folder = [...mock.disk.items.values()].find((i) => i.name === 'Проекты');
+  expect(folder).toBeTruthy();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: `Материалы по проектам ${new URL(page.url()).origin}/disk/${folder?.id ?? ''}` });
+  const card = page.getByTestId('disk-folder-card');
+  await expect(card.getByTestId('disk-folder-card-summary')).toContainText('папка');
+  await feedToBottom(page);
+  await page.mouse.move(0, 0);
+  await expectFeedFits(page);
+  await checkpoint(page, 'm-chat-folder-card', { main: true });
+});
+
 // A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
 // the actions wrap; 44 px targets; the REC circle plays (#88), no «Готово» row.
 test('m-chat-recording', async ({ page }) => {
