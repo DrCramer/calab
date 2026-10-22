@@ -103,6 +103,9 @@ enum ErrorCode {
   // 409: an internal telephone number of the workspace is taken (field "number"), or the member
   // already has one (field "userId") (ADR-0117).
   ERROR_CODE_SIP_EXTENSION_TAKEN = 70;
+  // 409: PUT /api/workspaces/{id}/sip/inbound in REGISTER mode — another workspace already
+  // registers the same SIP account (domain + username) at the provider (ADR-0121).
+  ERROR_CODE_SIP_REGISTRATION_TAKEN = 71;
 }
 
 // Error body of every non-2xx REST response.

@@ -1429,6 +1429,21 @@ type SipAccount struct {
 	InboundAllowedCidrs []string
 	InboundTrunkID      string
 	InboundRuleID       string
+	InboundMode         string
+	RegRegistrar        string
+	RegDomain           string
+	RegExpires          int32
+	RegKeepaliveSec     int32
+	RegContactUser      string
+	RegAuthUsername     string
+	RegPasswordEnc      []byte
+	RegTrunkPasswordEnc []byte
+	RegStatus           string
+	RegError            string
+	RegRegisteredAt     *time.Time
+	RegExpiresAt        *time.Time
+	RegContact          string
+	RegStatusAt         *time.Time
 }
 
 type SipCall struct {
@@ -1451,6 +1466,7 @@ type SipCall struct {
 	Route               string
 	RingingUserIds      []uuid.UUID
 	Via                 string
+	ProviderCallID      string
 }
 
 type SipExtension struct {

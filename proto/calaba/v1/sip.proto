@@ -65,15 +65,72 @@ message SipSettings {
   // SIP authentication user when it differs from username (the From user); empty = username.
   string auth_username = 14;
   uint32 port = 15; // SIP signalling port of host, 1..65535 (5060 when never set)
-  // The server answers inbound calls (env SIP_INBOUND, ADR-0117; off by default). The exchange
-  // below can be set up either way.
+  // The server can answer inbound calls: LiveKit and the IVR worker token are configured
+  // (ADR-0117; no server switch since ADR-0121). The exchange below can be set up either way.
   bool inbound_available = 16;
   // Inbound calls on caller_id (ADR-0117, PUT /api/workspaces/{id}/sip/inbound). Calls are
-  // answered when inbound_enabled and inbound_saved are set and the server has SIP_INBOUND.
+  // answered when inbound_enabled and inbound_saved are set; a workspace that never switched
+  // inbound calls on takes none.
   bool inbound_enabled = 17;
   SipRouteTarget inbound_target = 18;         // the entry point: a menu, a number or a group
   repeated string inbound_allowed_cidrs = 19; // provider addresses beyond the resolved host
   bool inbound_saved = 20;                    // LiveKit holds the inbound trunk and its dispatch rule
+  // How inbound calls reach us (ADR-0121): DIRECT (the provider sends INVITE to our address) or
+  // REGISTER (the registration agent registers at the provider and hands its calls over).
+  SipInboundMode inbound_mode = 21;
+  // The registration at the provider (REGISTER mode; unset otherwise).
+  SipRegistration registration = 22;
+  // The server has the registration agent (SIPREG_AGENT_TOKEN): REGISTER mode can be chosen.
+  bool registration_available = 23;
+}
+
+// How inbound calls reach the server (ADR-0121). UNSPECIFIED in PutSipInboundRequest = keep the
+// saved mode (clients before ADR-0121).
+enum SipInboundMode {
+  SIP_INBOUND_MODE_UNSPECIFIED = 0;
+  SIP_INBOUND_MODE_DIRECT = 1;   // the provider sends INVITE to our IP (ADR-0117)
+  SIP_INBOUND_MODE_REGISTER = 2; // we register at the provider; calls come over the registration
+}
+
+// The state of the registration at the provider (ADR-0121 §3).
+enum SipRegistrationStatus {
+  SIP_REGISTRATION_STATUS_UNSPECIFIED = 0;
+  SIP_REGISTRATION_STATUS_OFF = 1;         // not in REGISTER mode, or inbound calls off
+  SIP_REGISTRATION_STATUS_UNAVAILABLE = 2; // the registration agent is not connected
+  SIP_REGISTRATION_STATUS_REGISTERING = 3;
+  SIP_REGISTRATION_STATUS_REGISTERED = 4;
+  SIP_REGISTRATION_STATUS_FAILED = 5; // error says why ("auth", "403", "timeout", …)
+}
+
+// The registration at the provider (REGISTER mode, ADR-0121). The password is never sent back.
+message SipRegistration {
+  // Registrar / outbound proxy «host[:port]»; empty = the account's host and port.
+  string registrar = 1;
+  // SIP domain of the address of record; empty = the account's host.
+  string domain = 2;
+  uint32 expires_sec = 3;   // the requested registration interval, 60..3600 (600)
+  uint32 keepalive_sec = 4; // OPTIONS / CRLF keepalive, 0 = off or 15..120 (30)
+  // Credentials of the registration when they differ from the account's; empty = the account's
+  // auth username (or username) and password.
+  string auth_username = 5;
+  bool has_password = 6;
+  SipRegistrationStatus status = 7;
+  string error = 8; // a code or a reason without secrets; empty = none
+  google.protobuf.Timestamp registered_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  // The registered contact with the user part masked: «sip:c…@203.0.113.7:5080».
+  string contact_masked = 11;
+}
+
+// The registration fields of PutSipInboundRequest (REGISTER mode).
+message SipRegistrationInput {
+  string registrar = 1;
+  string domain = 2;
+  uint32 expires_sec = 3;   // 0 = 600
+  uint32 keepalive_sec = 4; // 0 = off
+  string auth_username = 5;
+  // Unset = keep the stored one; "" = drop it (the account's password is used).
+  optional string password = 6;
 }
 
 // GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
@@ -162,6 +219,9 @@ message SipCall {
   string route = 15;                     // the path for the journal: «menu:<id>/2 → group:<id>»
   repeated string ringing_user_ids = 16; // who rings right now
   string via = 17;                       // the name of the menu or group the call came through
+  // The provider's Call-ID of an inbound call that came over the registration (ADR-0121); empty
+  // for DIRECT inbound and outbound calls.
+  string provider_call_id = 18;
 }
 
 // POST /api/rooms/{id}/calls (PLACE_CALLS + VIEW_ROOM + CONNECT in the room, not a guest; a
@@ -435,24 +495,32 @@ message SipIvrMenuResponse {
 //
 // The provider sends INVITE for caller_id to LiveKit SIP; LiveKit puts the line into a room of
 // its own («sipin_<workspace id>_…») and the server walks the entry point: a voice menu plays
-// through the IVR worker, a number or a group rings its people. Only with the server switch
-// SIP_INBOUND (SipSettings.inbound_available), the telephony plan and telephony switched on.
+// through the IVR worker, a number or a group rings its people. Only when the workspace switched
+// inbound calls on, the server can take them (SipSettings.inbound_available), the telephony plan
+// and telephony switched on. In REGISTER mode (ADR-0121) the registration agent calab-sipreg
+// registers at the provider and hands the calls to LiveKit SIP over loopback.
 
 // PUT /api/workspaces/{id}/sip/inbound (MANAGE_INTEGRATIONS, people) → 200 PutSipInboundResponse.
 // enabled = true needs telephony on (SipSettings.enabled), a target other than HANGUP / REPEAT and
-// the server switch; the server creates or replaces the LiveKit inbound trunk (numbers =
-// caller_id, allowed addresses = the provider host's A/AAAA records now, the server's
-// SIP_INBOUND_ALLOWED_ADDRESSES and allowed_cidrs) and a dispatch rule that makes a room per
-// call. enabled = false deletes both; live inbound calls end ("disabled"). Errors: 422
-// VALIDATION (target, allowedCidrs), 409 SIP_DISABLED (telephony off, no SIP_INBOUND, no IVR
-// worker token on the server), 502 SIP_PROVIDER_ERROR (LiveKit refused; last_error), 409
-// PLAN_LIMIT.
+// a server that can take inbound calls; the server creates or replaces the LiveKit inbound trunk
+// (numbers = caller_id; DIRECT: allowed addresses = the provider host's A/AAAA records now, the
+// server's SIP_INBOUND_ALLOWED_ADDRESSES and allowed_cidrs; REGISTER: 127.0.0.1 and an internal
+// digest password) and a dispatch rule that makes a room per call. enabled = false deletes both;
+// live inbound calls end ("disabled"). Errors: 422 VALIDATION (target, allowedCidrs, registrar,
+// domain, expiresSec, keepaliveSec, regAuthUsername, regPassword), 409 SIP_DISABLED (telephony
+// off, no IVR worker token; REGISTER: no registration agent token on the server), 409
+// SIP_REGISTRATION_TAKEN (another workspace registers the same account), 429 SIP_RATE_LIMITED
+// (more than 10 mode / credential changes per hour), 502 SIP_PROVIDER_ERROR (LiveKit refused;
+// last_error), 409 PLAN_LIMIT.
 message PutSipInboundRequest {
   bool enabled = 1;
   SipRouteTarget target = 2;
   // IPv4 / IPv6 addresses or CIDR ranges of the provider («203.0.113.0/24»), ≤ 20; for providers
-  // that send calls from a pool rather than from their host's address.
+  // that send calls from a pool rather than from their host's address. REGISTER mode: the
+  // sources the agent takes INVITEs from beyond the registrar's and the host's addresses.
   repeated string allowed_cidrs = 3;
+  SipInboundMode mode = 4; // UNSPECIFIED = keep the saved mode
+  SipRegistrationInput registration = 5; // REGISTER mode; unset = keep the saved fields
 }
 
 message PutSipInboundResponse {
