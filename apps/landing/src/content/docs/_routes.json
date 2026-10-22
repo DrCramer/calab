@@ -155,7 +155,7 @@
 {"method":"DELETE","path":"/api/workspaces/{id}/bots/{botId}","decision":"deny","group":"bots"},
 {"method":"POST","path":"/api/workspaces/{id}/bots/{botId}/avatar","decision":"deny","group":"bots"},
 {"method":"DELETE","path":"/api/workspaces/{id}/bots/{botId}/avatar","decision":"deny","group":"bots"},
-{"method":"POST","path":"/api/workspaces/{id}/bots/{botId}/delegation-invites","decision":"deny","group":"bots"},
+{"method":"POST","path":"/api/workspaces/{id}/bots/{botId}/delegation-invites","decision":"allow","group":"bots"},
 {"method":"DELETE","path":"/api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}","decision":"deny","group":"bots"},
 {"method":"PUT","path":"/api/workspaces/{id}/bots/{botId}/delegations/{userId}","decision":"deny","group":"bots"},
 {"method":"DELETE","path":"/api/workspaces/{id}/bots/{botId}/delegations/{userId}","decision":"deny","group":"bots"},

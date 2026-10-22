@@ -38,6 +38,17 @@ func TestBotRouteGroups(t *testing.T) {
 			t.Errorf("%q: want botAllow and closed on behalf", p)
 		}
 	}
+	// ADR-0119: the bot asks for its own consent, never on behalf; the consent itself, a decline
+	// and a cancellation stay a person's.
+	if p := "POST /api/workspaces/{id}/bots/{botId}/delegation-invites"; botRoutes[p] != botAllow || onBehalfAllowed(p) {
+		t.Errorf("%q: want botAllow and closed on behalf", p)
+	}
+	for _, p := range []string{"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}", "DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
+		"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}", "POST /api/messages/{id}/interactions"} {
+		if botRoutes[p] != botDeny {
+			t.Errorf("%q: want botDeny", p)
+		}
+	}
 	// Kept people only whatever the roles (ADR-0109 §2).
 	for _, p := range []string{"POST /api/tasks/{id}/approval", "POST /api/workspaces/{id}/bots/{botId}/token",
 		"PATCH /api/workspaces/{id}/bots/{botId}", "DELETE /api/workspaces/{id}", "GET /api/workspaces/{id}/billing",

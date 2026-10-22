@@ -281,6 +281,7 @@ func New(d Deps) *App {
 		whOpts.AllowAddr = unfurlPolicy(d)
 	}
 	botSvc := bots.New(d.DB, d.Redis, nil, planSvc, []byte(d.Config.JWTSecret), whOpts)
+	botSvc.PublicURL = d.Config.PublicAppURL
 	pub = bots.Publisher{Publisher: pub, S: botSvc}
 	botSvc.SetEvents(pub)
 

@@ -63,6 +63,10 @@ import {
   type BotCallback,
   type TaskNoticeRelay,
   type ContactShared,
+  type BotDelegationChange,
+  type GetBotResponse,
+  GetBotResponseSchema,
+  InviteBotDelegationRequestSchema,
   ContactField,
   InlineButtonKind,
   CreateTaskRequestSchema,
@@ -310,6 +314,11 @@ export interface BotEvents {
    * in their profile; `emailVerified` / `phoneVerified` say whether the value was confirmed. Dedupe by id.
    */
   contactShared: ContactShared;
+  /**
+   * A member's consent for this bot changed (ADR-0119): `state` is `granted` (they allowed it —
+   * now `bot.asMember(userId)` works in `workspaceId`), `revoked` or `declined`. Dedupe by id.
+   */
+  botDelegation: BotDelegationChange;
   voiceState: VoiceState;
   /** Every gateway / webhook event, raw. */
   dispatch: DispatchEvent;
@@ -414,6 +423,26 @@ export class Bot extends Emitter<BotEvents> {
   asMember(userId: string): Bot {
     if (this.opts.onBehalfOf === userId) return this;
     return new Bot(this.token, { ...this.opts, onBehalfOfOwner: false, onBehalfOf: userId });
+  }
+
+  /**
+   * Asks members to let this bot act on their behalf in a workspace (ADR-0119): the server DMs each
+   * of them an invitation from the bot with «Принять» / «Отказаться»; only their own click grants it,
+   * and the bot then gets `botDelegation` with `state: 'granted'`. Members who already consented or
+   * are invited are skipped; `sent` holds the DM message of each invitation with `url` (a link to it
+   * in Calab, no token) to hand to the member elsewhere. 409 DELEGATION_INVITE_DECLINED: they all
+   * declined within the last 7 days (Retry-After). `reason` (≤ 200 characters, plain text) is shown
+   * in the DM as the bot's words.
+   *
+   * ```ts
+   * const { sent } = await bot.inviteDelegation(workspaceId, [userId], 'чтобы заявки шли под вашим именем');
+   * ```
+   */
+  async inviteDelegation(workspaceId: string, userIds: string[], reason = ''): Promise<GetBotResponse> {
+    if (!this.botUserId) await this.fetchMe();
+    return this.rest.call(GetBotResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/bots/${enc(this.botUserId)}/delegation-invites`, {
+      json: Rest.body(InviteBotDelegationRequestSchema, { userIds, reason }),
+    });
   }
 
   /** Connects the gateway; resolves with READY. Rejects if the token is refused. */
@@ -1139,6 +1168,9 @@ export class Bot extends Emitter<BotEvents> {
         return;
       case 'contactShared':
         if (e.value.botUserId === this.botUserId || !this.botUserId) this.emit('contactShared', e.value);
+        return;
+      case 'botDelegation':
+        if (e.value.botUserId === this.botUserId || !this.botUserId) this.emit('botDelegation', e.value);
         return;
       case 'messageUpdate':
         if (e.value.message && !this.isOwn(e.value.message.authorId)) this.emit('messageUpdate', e.value.message);

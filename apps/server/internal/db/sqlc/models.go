@@ -610,6 +610,13 @@ type BotDelegation struct {
 	Since       time.Time
 }
 
+type BotDelegationDecline struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+	DeclinedAt  time.Time
+}
+
 type BotDelegationInvite struct {
 	WorkspaceID      uuid.UUID
 	BotID            uuid.UUID

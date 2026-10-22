@@ -137,36 +137,40 @@ func (s *System) publishEdited(ctx context.Context, m sqlc.Message) error {
 // the invitee's own click counts (the identity of the request, never the request body), on the
 // message exactly as the server wrote it (any edit by the bot changes keyboard_revision and voids
 // it). «Принять» records the consent (delegation.Grant re-checks who may give it), «Отказаться»
-// drops the invitation; either closes the message.
-func delegationClick(ctx context.Context, q *sqlc.Queries, m sqlc.Message, inv sqlc.BotDelegationInvite, user uuid.UUID, button string) (sqlc.Message, error) {
+// drops the invitation (and remembers the decline); either closes the message. ev is
+// BOT_DELEGATION for the bot's user channel (its webhook delivery is queued in q's transaction),
+// nil when nothing changed for the bot.
+func delegationClick(ctx context.Context, q *sqlc.Queries, m sqlc.Message, inv sqlc.BotDelegationInvite, user uuid.UUID, button string) (sqlc.Message, *v1.DispatchEvent, error) {
 	if inv.UserID != user {
-		return sqlc.Message{}, httpx.Forbidden("this keyboard belongs to another user")
+		return sqlc.Message{}, nil, httpx.Forbidden("this keyboard belongs to another user")
 	}
 	if inv.KeyboardRevision != m.KeyboardRevision || inv.BotID != m.AuthorID {
-		return sqlc.Message{}, httpx.Conflict("the invitation changed; it is no longer valid").WithDetails("KEYBOARD_STALE", 0, 0)
+		return sqlc.Message{}, nil, httpx.Conflict("the invitation changed; it is no longer valid").WithDetails("KEYBOARD_STALE", 0, 0)
 	}
 	u, err := q.GetUser(ctx, user)
 	if err != nil {
-		return sqlc.Message{}, err
+		return sqlc.Message{}, nil, err
 	}
 	outcome := delegation.Declined
+	var ev *v1.DispatchEvent
 	switch button {
 	case delegation.ButtonAccept:
-		if _, err := delegation.Grant(ctx, q, inv.WorkspaceID, inv.BotID, user); err != nil {
-			return sqlc.Message{}, err
+		if _, ev, err = delegation.Grant(ctx, q, inv.WorkspaceID, inv.BotID, user); err != nil {
+			return sqlc.Message{}, nil, err
 		}
 		outcome = delegation.Accepted
 		// The same audit line as PUT …/delegations/{userId} (bots.grant), marked as the click.
 		slog.InfoContext(ctx, "bot delegation", "workspace_id", inv.WorkspaceID, "bot_id", inv.BotID, "member_id", user, "on", true, "via", "invite", "invited_by", inv.InvitedBy)
 	case delegation.ButtonDecline:
-		if _, err := delegation.DropInvite(ctx, q, inv.WorkspaceID, inv.BotID, user); err != nil {
-			return sqlc.Message{}, err
+		if _, ev, err = delegation.Decline(ctx, q, inv.WorkspaceID, inv.BotID, user); err != nil {
+			return sqlc.Message{}, nil, err
 		}
 		slog.InfoContext(ctx, "bot delegation invite declined", "workspace_id", inv.WorkspaceID, "bot_id", inv.BotID, "member_id", user, "invited_by", inv.InvitedBy)
 	default:
-		return sqlc.Message{}, httpx.Conflict("button is unavailable").WithDetails("BUTTON_UNAVAILABLE", 0, 0)
+		return sqlc.Message{}, nil, httpx.Conflict("button is unavailable").WithDetails("BUTTON_UNAVAILABLE", 0, 0)
 	}
-	return closePrompt(ctx, q, m, delegation.OutcomeText(u.Locale, outcome))
+	edited, err := closePrompt(ctx, q, m, delegation.OutcomeText(u.Locale, outcome))
+	return edited, ev, err
 }
 
 // delegationInvite returns the consent invitation m carries (ok=false: a bot's own message).

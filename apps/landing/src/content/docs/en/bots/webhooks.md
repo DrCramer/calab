@@ -44,6 +44,7 @@ await bot.webhook.set('https://bot.example.com/calab', process.env.WEBHOOK_SECRE
 - `botCallback` — presses of buttons under the bot's messages (see [Commands and buttons](./commands-buttons)).
 - `contactShared` — contacts people shared with the bot (see [Commands and buttons](./commands-buttons#contact-request)).
 - `taskNotice` — notifications of people who chose this bot (see [Task notifications](./task-notices)).
+- `botDelegation` — a member allowed, revoked or declined the bot acting on their behalf (see [Authorization](./auth#on-behalf-of-a-member)).
 
 Voice events (`voiceStateUpdate` and others) arrive **only** over the gateway.
 
