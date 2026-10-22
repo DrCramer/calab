@@ -62,6 +62,9 @@ func (s *Service) respondBoard(w http.ResponseWriter, r *http.Request, id uuid.U
 	if err != nil {
 		return err
 	}
+	if err := s.withInstruction(r.Context(), b, acc); err != nil {
+		return err
+	}
 	s.publishBoard(r.Context(), acc.WorkspaceID, id, status == http.StatusCreated)
 	httpx.Write(w, status, &v1.BoardResponse{Board: b})
 	return nil
@@ -389,7 +392,24 @@ func (s *Service) getBoard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.withInstruction(r.Context(), b, acc); err != nil {
+		return err
+	}
 	httpx.Write(w, http.StatusOK, &v1.BoardResponse{Board: b})
+	return nil
+}
+
+// withInstruction adds the board's «Инструкция для ИИ» (CBF-68) for a caller with VIEW_BOARD:
+// only GET /api/boards/{id} and the caller's own answers carry it, never lists or events.
+func (s *Service) withInstruction(ctx context.Context, b *v1.Board, acc perm.BoardAccess) error {
+	if !acc.Bits.Has(perm.ViewBoard) {
+		return nil
+	}
+	row, err := s.db.Q.GetBoard(ctx, uuid.MustParse(b.GetId()))
+	if err != nil {
+		return err
+	}
+	b.AiInstruction = row.AiInstruction
 	return nil
 }
 
@@ -425,6 +445,13 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Validation("description", "description must be at most 2000 characters")
 		}
 		p.Description = &d
+	}
+	if req.AiInstruction != nil {
+		in := strings.TrimSpace(req.GetAiInstruction())
+		if utf8.RuneCountInString(in) > MaxAiInstruction {
+			return httpx.Validation("aiInstruction", "the AI instruction must be at most 4000 characters")
+		}
+		p.AiInstruction = &in
 	}
 	if req.Emoji != nil {
 		e, err := validEmoji(req.GetEmoji())

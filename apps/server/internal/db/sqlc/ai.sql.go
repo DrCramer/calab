@@ -31,6 +31,23 @@ func (q *Queries) GetWorkspaceAi(ctx context.Context, workspaceID uuid.UUID) (Wo
 	return i, err
 }
 
+const getWorkspaceAiCheck = `-- name: GetWorkspaceAiCheck :one
+SELECT workspace_id, fingerprint, ok, error, checked_at FROM workspace_ai_check WHERE workspace_id = $1
+`
+
+func (q *Queries) GetWorkspaceAiCheck(ctx context.Context, workspaceID uuid.UUID) (WorkspaceAiCheck, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceAiCheck, workspaceID)
+	var i WorkspaceAiCheck
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Fingerprint,
+		&i.Ok,
+		&i.Error,
+		&i.CheckedAt,
+	)
+	return i, err
+}
+
 const lockWorkspaceAi = `-- name: LockWorkspaceAi :exec
 
 SELECT pg_advisory_xact_lock(hashtext('calaba.ai.' || $1::uuid::text))
@@ -85,4 +102,29 @@ func (q *Queries) PutWorkspaceAi(ctx context.Context, arg PutWorkspaceAiParams) 
 		&i.UpdatedBy,
 	)
 	return i, err
+}
+
+const putWorkspaceAiCheck = `-- name: PutWorkspaceAiCheck :exec
+INSERT INTO workspace_ai_check (workspace_id, fingerprint, ok, error, checked_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (workspace_id) DO UPDATE
+SET fingerprint = excluded.fingerprint, ok = excluded.ok, error = excluded.error, checked_at = now()
+`
+
+type PutWorkspaceAiCheckParams struct {
+	WorkspaceID uuid.UUID
+	Fingerprint []byte
+	Ok          bool
+	Error       string
+}
+
+// CBF-68: the outcome of the last check (fingerprint of the checked provider, URL, model, key).
+func (q *Queries) PutWorkspaceAiCheck(ctx context.Context, arg PutWorkspaceAiCheckParams) error {
+	_, err := q.db.Exec(ctx, putWorkspaceAiCheck,
+		arg.WorkspaceID,
+		arg.Fingerprint,
+		arg.Ok,
+		arg.Error,
+	)
+	return err
 }

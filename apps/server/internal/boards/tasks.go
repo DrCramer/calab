@@ -794,13 +794,36 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 	if err := writable(acc); err != nil {
 		return err
 	}
-	if err := take(r, s.CreateLimit); err != nil {
-		return err
-	}
 	var req v1.CreateTaskRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	taskID, err := s.create(r, boardID, acc, &req, nil)
+	if err != nil {
+		return err
+	}
+	return s.respondTask(w, r, taskID, http.StatusCreated, false)
+}
+
+// create creates a task on a board the caller has CREATE_TASKS on (acc, checked by the caller)
+// as POST /api/boards/{id}/tasks does: every check, limit and notice. own (nil = the
+// description) is the text the author wrote themselves: only its @mentions invite (ADR-0076 §5).
+func (s *Service) create(r *http.Request, boardID uuid.UUID, acc perm.BoardAccess, req *v1.CreateTaskRequest, own *string) (uuid.UUID, error) {
+	if !acc.Bits.Has(perm.CreateTasks) {
+		return uuid.Nil, httpx.Forbidden("CREATE_TASKS required")
+	}
+	if err := writable(acc); err != nil {
+		return uuid.Nil, err
+	}
+	if err := take(r, s.CreateLimit); err != nil {
+		return uuid.Nil, err
+	}
+	var taskID uuid.UUID
+	err := s.insertTask(r, boardID, acc, req, own, &taskID)
+	return taskID, err
+}
+
+func (s *Service) insertTask(r *http.Request, boardID uuid.UUID, acc perm.BoardAccess, req *v1.CreateTaskRequest, ownText *string, out *uuid.UUID) error {
 	title, err := validTitle(req.GetTitle())
 	if err != nil {
 		return err
@@ -812,6 +835,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 	// Only the author's own text invites by mention (ADR-0076 §5): the @mentions of a quoted
 	// message were written by someone else and must not open the card to those people.
 	own := desc
+	if ownText != nil {
+		own = *ownText
+	}
 	var fromMsg *uuid.UUID
 	if req.GetFromMessageId() != "" {
 		if desc, fromMsg, err = s.quoteMessage(r, req.GetFromMessageId(), desc); err != nil {
@@ -865,7 +891,7 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if n >= MaxTasks {
 			return httpx.Conflict("at most 5000 live tasks per board; archive finished ones").WithDetails(ReasonBoardTaskLimit, uint64(max(n, 0)), MaxTasks)
 		}
-		if err := createFeatures(b, &req, est); err != nil {
+		if err := createFeatures(b, req, est); err != nil {
 			return err
 		}
 		it, err := items(r.Context(), q, boardID)
@@ -1007,7 +1033,8 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.publish(r.Context(), taskID, &c, true)
-	return s.respondTask(w, r, taskID, http.StatusCreated, false)
+	*out = taskID
+	return nil
 }
 
 // createFeatures checks a new task against the board's features (ADR-0058 §3): every field

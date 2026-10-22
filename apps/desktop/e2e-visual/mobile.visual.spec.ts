@@ -2,7 +2,7 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { AiState, FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
@@ -1013,6 +1013,22 @@ test('m-boards-create', async ({ page }) => {
   await expect(page.getByTestId('create-start')).toBeVisible();
   await page.getByTestId('create-task-title').fill('Задача с датой начала');
   await checkpoint(page, 'm-boards-create');
+});
+
+// CBF-68: «Создать умную задачу» from the boards tab's «+»: off with the reason, then the dialog.
+test('m-boards-smart', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'boards');
+  await page.getByTestId('section-create-board').tap();
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
+  await checkpoint(page, 'm-boards-smart-off');
+  await page.keyboard.press('Escape');
+  mock.setAiState(IDS.workspaces.main, AiState.READY);
+  await page.getByTestId('section-create-board').tap();
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveCount(0);
+  await page.getByTestId('boards-create-smart').tap();
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы');
+  await checkpoint(page, 'm-boards-smart-dialog', { keyboard: true });
 });
 
 test('m-boards-task', async ({ page }) => {

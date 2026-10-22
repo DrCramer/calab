@@ -158,6 +158,8 @@ export interface BoardRec {
   nextNumber: number;
   /** personal views: author id → views (shared ones live in board.views). */
   personal: Map<string, BoardView[]>;
+  /** CBF-68: «Инструкция для ИИ» — only in GET / PATCH answers, never in lists or events. */
+  aiInstruction?: string;
 }
 
 export interface TaskRec {
@@ -625,7 +627,14 @@ export class BoardsMock {
   }
 
   getBoard(id: string, userId: string): Board {
-    return this.boardOut(this.boardFor(id, userId), userId, { personal: true });
+    const rec = this.boardFor(id, userId);
+    return this.withInstruction(rec, userId, this.boardOut(rec, userId, { personal: true }));
+  }
+
+  /** CBF-68: the instruction for a viewer with VIEW_BOARD (the server's rule). */
+  private withInstruction(rec: BoardRec, userId: string, out: Board): Board {
+    if (this.perms(rec.board, userId) & VIEW_BOARD) out.aiInstruction = rec.aiInstruction ?? '';
+    return out;
   }
 
   updateBoard(
@@ -645,6 +654,7 @@ export class BoardsMock {
       disabledFeatures?: readonly BoardFeature[];
       estimateScale?: EstimateScale | undefined;
       approvalNotifyDelaySeconds?: number | undefined;
+      aiInstruction?: string | undefined;
     },
   ): Board {
     const rec = this.boardFor(id, userId);
@@ -665,6 +675,11 @@ export class BoardsMock {
     }
     if (req.emoji !== undefined) b.emoji = req.emoji;
     if (req.iconFileId !== undefined) b.iconFileId = req.iconFileId;
+    if (req.aiInstruction !== undefined) {
+      const v = req.aiInstruction.trim();
+      if (chars(v) > 4000) throw invalid('aiInstruction', 'the AI instruction must be at most 4000 characters');
+      rec.aiInstruction = v;
+    }
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
@@ -703,7 +718,7 @@ export class BoardsMock {
       b.restricted = true;
     }
     this.emitBoard(rec, 'boardUpdate', seen);
-    return this.boardOut(rec, userId, { personal: true });
+    return this.withInstruction(rec, userId, this.boardOut(rec, userId, { personal: true }));
   }
 
   private seers(rec: BoardRec): Set<string> {

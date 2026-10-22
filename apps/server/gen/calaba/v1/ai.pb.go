@@ -71,17 +71,78 @@ func (AiProvider) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{0}
 }
 
+// CBF-68: the readiness of the saved settings, by the last «Проверить». Any change of the
+// provider, base URL, model or key makes the settings UNCHECKED again (the server keeps a
+// fingerprint of the checked four, never the key). Smart tasks run only when READY.
+type AiState int32
+
+const (
+	AiState_AI_STATE_UNSPECIFIED AiState = 0
+	AiState_AI_STATE_NO_KEY      AiState = 1 // never saved or saved without a key: «Сначала подключите AI в настройках»
+	AiState_AI_STATE_UNCHECKED   AiState = 2 // not checked since the last change: «Проверьте подключение в настройках»
+	AiState_AI_STATE_FAILED      AiState = 3 // the last check failed: «Подключение не работает — проверьте ключ»
+	AiState_AI_STATE_READY       AiState = 4
+)
+
+// Enum value maps for AiState.
+var (
+	AiState_name = map[int32]string{
+		0: "AI_STATE_UNSPECIFIED",
+		1: "AI_STATE_NO_KEY",
+		2: "AI_STATE_UNCHECKED",
+		3: "AI_STATE_FAILED",
+		4: "AI_STATE_READY",
+	}
+	AiState_value = map[string]int32{
+		"AI_STATE_UNSPECIFIED": 0,
+		"AI_STATE_NO_KEY":      1,
+		"AI_STATE_UNCHECKED":   2,
+		"AI_STATE_FAILED":      3,
+		"AI_STATE_READY":       4,
+	}
+)
+
+func (x AiState) Enum() *AiState {
+	p := new(AiState)
+	*p = x
+	return p
+}
+
+func (x AiState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AiState) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_ai_proto_enumTypes[1].Descriptor()
+}
+
+func (AiState) Type() protoreflect.EnumType {
+	return &file_calaba_v1_ai_proto_enumTypes[1]
+}
+
+func (x AiState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AiState.Descriptor instead.
+func (AiState) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{1}
+}
+
 type AiSettings struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Provider AiProvider             `protobuf:"varint,1,opt,name=provider,proto3,enum=calaba.v1.AiProvider" json:"provider,omitempty"` // UNSPECIFIED = never saved (the client shows GPTunneL)
 	// OPENAI_COMPATIBLE: the API root, e.g. https://api.example.com/v1 (…/chat/completions is
 	// added). Empty for GPTunneL.
 	BaseUrl       string                 `protobuf:"bytes,2,opt,name=base_url,json=baseUrl,proto3" json:"base_url,omitempty"`
-	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`                          // model id; «gpt-6-astra» when never saved
-	HasKey        bool                   `protobuf:"varint,4,opt,name=has_key,json=hasKey,proto3" json:"has_key,omitempty"`         // a key is stored (it is never sent back)
-	KeyMask       string                 `protobuf:"bytes,5,opt,name=key_mask,json=keyMask,proto3" json:"key_mask,omitempty"`       // «••••» and the key's last 4 characters; empty without a key
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // unset = never saved
-	UpdatedBy     string                 `protobuf:"bytes,7,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"` // user id; empty = unknown / account gone
+	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`                              // model id; «gpt-6-astra» when never saved
+	HasKey        bool                   `protobuf:"varint,4,opt,name=has_key,json=hasKey,proto3" json:"has_key,omitempty"`             // a key is stored (it is never sent back)
+	KeyMask       string                 `protobuf:"bytes,5,opt,name=key_mask,json=keyMask,proto3" json:"key_mask,omitempty"`           // «••••» and the key's last 4 characters; empty without a key
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`     // unset = never saved
+	UpdatedBy     string                 `protobuf:"bytes,7,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`     // user id; empty = unknown / account gone
+	State         AiState                `protobuf:"varint,8,opt,name=state,proto3,enum=calaba.v1.AiState" json:"state,omitempty"`      // CBF-68: whether smart tasks can run
+	CheckedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=checked_at,json=checkedAt,proto3" json:"checked_at,omitempty"`     // the last check of these settings; unset = none
+	CheckError    string                 `protobuf:"bytes,10,opt,name=check_error,json=checkError,proto3" json:"check_error,omitempty"` // state FAILED: the check's error code
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -165,6 +226,73 @@ func (x *AiSettings) GetUpdatedBy() string {
 	return ""
 }
 
+func (x *AiSettings) GetState() AiState {
+	if x != nil {
+		return x.State
+	}
+	return AiState_AI_STATE_UNSPECIFIED
+}
+
+func (x *AiSettings) GetCheckedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CheckedAt
+	}
+	return nil
+}
+
+func (x *AiSettings) GetCheckError() string {
+	if x != nil {
+		return x.CheckError
+	}
+	return ""
+}
+
+// GET /api/workspaces/{id}/ai/status (any member but guests; people only) → 200. What the
+// «Создать умную задачу» item shows; never the key, the provider or the model.
+type GetAiStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         AiState                `protobuf:"varint,1,opt,name=state,proto3,enum=calaba.v1.AiState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAiStatusResponse) Reset() {
+	*x = GetAiStatusResponse{}
+	mi := &file_calaba_v1_ai_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAiStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAiStatusResponse) ProtoMessage() {}
+
+func (x *GetAiStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_ai_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAiStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetAiStatusResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetAiStatusResponse) GetState() AiState {
+	if x != nil {
+		return x.State
+	}
+	return AiState_AI_STATE_UNSPECIFIED
+}
+
 // GET /api/workspaces/{id}/ai (MANAGE_INTEGRATIONS) → 200 GetAiSettingsResponse; a workspace
 // that never saved gets provider UNSPECIFIED and the default model.
 type GetAiSettingsResponse struct {
@@ -176,7 +304,7 @@ type GetAiSettingsResponse struct {
 
 func (x *GetAiSettingsResponse) Reset() {
 	*x = GetAiSettingsResponse{}
-	mi := &file_calaba_v1_ai_proto_msgTypes[1]
+	mi := &file_calaba_v1_ai_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -188,7 +316,7 @@ func (x *GetAiSettingsResponse) String() string {
 func (*GetAiSettingsResponse) ProtoMessage() {}
 
 func (x *GetAiSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_ai_proto_msgTypes[1]
+	mi := &file_calaba_v1_ai_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -201,7 +329,7 @@ func (x *GetAiSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAiSettingsResponse.ProtoReflect.Descriptor instead.
 func (*GetAiSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetAiSettingsResponse) GetSettings() *AiSettings {
@@ -229,7 +357,7 @@ type PutAiSettingsRequest struct {
 
 func (x *PutAiSettingsRequest) Reset() {
 	*x = PutAiSettingsRequest{}
-	mi := &file_calaba_v1_ai_proto_msgTypes[2]
+	mi := &file_calaba_v1_ai_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -241,7 +369,7 @@ func (x *PutAiSettingsRequest) String() string {
 func (*PutAiSettingsRequest) ProtoMessage() {}
 
 func (x *PutAiSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_ai_proto_msgTypes[2]
+	mi := &file_calaba_v1_ai_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -254,7 +382,7 @@ func (x *PutAiSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutAiSettingsRequest.ProtoReflect.Descriptor instead.
 func (*PutAiSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PutAiSettingsRequest) GetProvider() AiProvider {
@@ -294,7 +422,7 @@ type PutAiSettingsResponse struct {
 
 func (x *PutAiSettingsResponse) Reset() {
 	*x = PutAiSettingsResponse{}
-	mi := &file_calaba_v1_ai_proto_msgTypes[3]
+	mi := &file_calaba_v1_ai_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -306,7 +434,7 @@ func (x *PutAiSettingsResponse) String() string {
 func (*PutAiSettingsResponse) ProtoMessage() {}
 
 func (x *PutAiSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_ai_proto_msgTypes[3]
+	mi := &file_calaba_v1_ai_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -319,7 +447,7 @@ func (x *PutAiSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutAiSettingsResponse.ProtoReflect.Descriptor instead.
 func (*PutAiSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PutAiSettingsResponse) GetSettings() *AiSettings {
@@ -331,7 +459,9 @@ func (x *PutAiSettingsResponse) GetSettings() *AiSettings {
 
 // POST /api/workspaces/{id}/ai/check (MANAGE_INTEGRATIONS; 10 per minute per workspace, else
 // 429 RATE_LIMITED) → 200 CheckAiResponse. Checks the given (unsaved) form: sends one user
-// message «hi» to the model and reports whether an answer came. api_key unset = the stored key,
+// message «hi» to the model and reports whether an answer came. The outcome is remembered for
+// the checked form (CBF-68): saving the same form afterwards keeps it, so AiSettings.state is
+// READY or FAILED; any other form is UNCHECKED. api_key unset = the stored key,
 // under the same rule as PUT; no key at all is 422 field apiKey. Validation errors as in PUT
 // (422). Takes up to ~30 s.
 type CheckAiRequest struct {
@@ -346,7 +476,7 @@ type CheckAiRequest struct {
 
 func (x *CheckAiRequest) Reset() {
 	*x = CheckAiRequest{}
-	mi := &file_calaba_v1_ai_proto_msgTypes[4]
+	mi := &file_calaba_v1_ai_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -358,7 +488,7 @@ func (x *CheckAiRequest) String() string {
 func (*CheckAiRequest) ProtoMessage() {}
 
 func (x *CheckAiRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_ai_proto_msgTypes[4]
+	mi := &file_calaba_v1_ai_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -371,7 +501,7 @@ func (x *CheckAiRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckAiRequest.ProtoReflect.Descriptor instead.
 func (*CheckAiRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CheckAiRequest) GetProvider() AiProvider {
@@ -411,17 +541,18 @@ type CheckAiResponse struct {
 	// (429), «provider_error» (5xx), «bad_request»
 	// (other 4xx), «bad_response» (not a Chat Completions answer), «timeout», «network»,
 	// «blocked_address» (the host is not a public address).
-	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
-	Message       string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`                          // the provider's own error text, if any (≤ 300 characters)
-	HttpStatus    uint32 `protobuf:"varint,5,opt,name=http_status,json=httpStatus,proto3" json:"http_status,omitempty"` // the provider's HTTP status, 0 = none
-	LatencyMs     uint32 `protobuf:"varint,6,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	Error         string  `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	Message       string  `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`                          // the provider's own error text, if any (≤ 300 characters)
+	HttpStatus    uint32  `protobuf:"varint,5,opt,name=http_status,json=httpStatus,proto3" json:"http_status,omitempty"` // the provider's HTTP status, 0 = none
+	LatencyMs     uint32  `protobuf:"varint,6,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	State         AiState `protobuf:"varint,7,opt,name=state,proto3,enum=calaba.v1.AiState" json:"state,omitempty"` // CBF-68: the saved settings' state after this check
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CheckAiResponse) Reset() {
 	*x = CheckAiResponse{}
-	mi := &file_calaba_v1_ai_proto_msgTypes[5]
+	mi := &file_calaba_v1_ai_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -433,7 +564,7 @@ func (x *CheckAiResponse) String() string {
 func (*CheckAiResponse) ProtoMessage() {}
 
 func (x *CheckAiResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_ai_proto_msgTypes[5]
+	mi := &file_calaba_v1_ai_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -446,7 +577,7 @@ func (x *CheckAiResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckAiResponse.ProtoReflect.Descriptor instead.
 func (*CheckAiResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_ai_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CheckAiResponse) GetOk() bool {
@@ -491,11 +622,18 @@ func (x *CheckAiResponse) GetLatencyMs() uint32 {
 	return 0
 }
 
+func (x *CheckAiResponse) GetState() AiState {
+	if x != nil {
+		return x.State
+	}
+	return AiState_AI_STATE_UNSPECIFIED
+}
+
 var File_calaba_v1_ai_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_ai_proto_rawDesc = "" +
 	"\n" +
-	"\x12calaba/v1/ai.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfe\x01\n" +
+	"\x12calaba/v1/ai.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x84\x03\n" +
 	"\n" +
 	"AiSettings\x121\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x15.calaba.v1.AiProviderR\bprovider\x12\x19\n" +
@@ -506,7 +644,15 @@ const file_calaba_v1_ai_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_by\x18\a \x01(\tR\tupdatedBy\"J\n" +
+	"updated_by\x18\a \x01(\tR\tupdatedBy\x12(\n" +
+	"\x05state\x18\b \x01(\x0e2\x12.calaba.v1.AiStateR\x05state\x129\n" +
+	"\n" +
+	"checked_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcheckedAt\x12\x1f\n" +
+	"\vcheck_error\x18\n" +
+	" \x01(\tR\n" +
+	"checkError\"?\n" +
+	"\x13GetAiStatusResponse\x12(\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x12.calaba.v1.AiStateR\x05state\"J\n" +
 	"\x15GetAiSettingsResponse\x121\n" +
 	"\bsettings\x18\x01 \x01(\v2\x15.calaba.v1.AiSettingsR\bsettings\"\xa4\x01\n" +
 	"\x14PutAiSettingsRequest\x121\n" +
@@ -524,7 +670,7 @@ const file_calaba_v1_ai_proto_rawDesc = "" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x1c\n" +
 	"\aapi_key\x18\x04 \x01(\tH\x00R\x06apiKey\x88\x01\x01B\n" +
 	"\n" +
-	"\b_api_key\"\xa7\x01\n" +
+	"\b_api_key\"\xd1\x01\n" +
 	"\x0fCheckAiResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05reply\x18\x02 \x01(\tR\x05reply\x12\x14\n" +
@@ -533,12 +679,19 @@ const file_calaba_v1_ai_proto_rawDesc = "" +
 	"\vhttp_status\x18\x05 \x01(\rR\n" +
 	"httpStatus\x12\x1d\n" +
 	"\n" +
-	"latency_ms\x18\x06 \x01(\rR\tlatencyMs*f\n" +
+	"latency_ms\x18\x06 \x01(\rR\tlatencyMs\x12(\n" +
+	"\x05state\x18\a \x01(\x0e2\x12.calaba.v1.AiStateR\x05state*f\n" +
 	"\n" +
 	"AiProvider\x12\x1b\n" +
 	"\x17AI_PROVIDER_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14AI_PROVIDER_GPTUNNEL\x10\x01\x12!\n" +
-	"\x1dAI_PROVIDER_OPENAI_COMPATIBLE\x10\x02B\x95\x01\n" +
+	"\x1dAI_PROVIDER_OPENAI_COMPATIBLE\x10\x02*y\n" +
+	"\aAiState\x12\x18\n" +
+	"\x14AI_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fAI_STATE_NO_KEY\x10\x01\x12\x16\n" +
+	"\x12AI_STATE_UNCHECKED\x10\x02\x12\x13\n" +
+	"\x0fAI_STATE_FAILED\x10\x03\x12\x12\n" +
+	"\x0eAI_STATE_READY\x10\x04B\x95\x01\n" +
 	"\rcom.calaba.v1B\aAiProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -554,30 +707,36 @@ func file_calaba_v1_ai_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_ai_proto_rawDescData
 }
 
-var file_calaba_v1_ai_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_calaba_v1_ai_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_calaba_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_calaba_v1_ai_proto_goTypes = []any{
 	(AiProvider)(0),               // 0: calaba.v1.AiProvider
-	(*AiSettings)(nil),            // 1: calaba.v1.AiSettings
-	(*GetAiSettingsResponse)(nil), // 2: calaba.v1.GetAiSettingsResponse
-	(*PutAiSettingsRequest)(nil),  // 3: calaba.v1.PutAiSettingsRequest
-	(*PutAiSettingsResponse)(nil), // 4: calaba.v1.PutAiSettingsResponse
-	(*CheckAiRequest)(nil),        // 5: calaba.v1.CheckAiRequest
-	(*CheckAiResponse)(nil),       // 6: calaba.v1.CheckAiResponse
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
+	(AiState)(0),                  // 1: calaba.v1.AiState
+	(*AiSettings)(nil),            // 2: calaba.v1.AiSettings
+	(*GetAiStatusResponse)(nil),   // 3: calaba.v1.GetAiStatusResponse
+	(*GetAiSettingsResponse)(nil), // 4: calaba.v1.GetAiSettingsResponse
+	(*PutAiSettingsRequest)(nil),  // 5: calaba.v1.PutAiSettingsRequest
+	(*PutAiSettingsResponse)(nil), // 6: calaba.v1.PutAiSettingsResponse
+	(*CheckAiRequest)(nil),        // 7: calaba.v1.CheckAiRequest
+	(*CheckAiResponse)(nil),       // 8: calaba.v1.CheckAiResponse
+	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
 }
 var file_calaba_v1_ai_proto_depIdxs = []int32{
-	0, // 0: calaba.v1.AiSettings.provider:type_name -> calaba.v1.AiProvider
-	7, // 1: calaba.v1.AiSettings.updated_at:type_name -> google.protobuf.Timestamp
-	1, // 2: calaba.v1.GetAiSettingsResponse.settings:type_name -> calaba.v1.AiSettings
-	0, // 3: calaba.v1.PutAiSettingsRequest.provider:type_name -> calaba.v1.AiProvider
-	1, // 4: calaba.v1.PutAiSettingsResponse.settings:type_name -> calaba.v1.AiSettings
-	0, // 5: calaba.v1.CheckAiRequest.provider:type_name -> calaba.v1.AiProvider
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: calaba.v1.AiSettings.provider:type_name -> calaba.v1.AiProvider
+	9,  // 1: calaba.v1.AiSettings.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 2: calaba.v1.AiSettings.state:type_name -> calaba.v1.AiState
+	9,  // 3: calaba.v1.AiSettings.checked_at:type_name -> google.protobuf.Timestamp
+	1,  // 4: calaba.v1.GetAiStatusResponse.state:type_name -> calaba.v1.AiState
+	2,  // 5: calaba.v1.GetAiSettingsResponse.settings:type_name -> calaba.v1.AiSettings
+	0,  // 6: calaba.v1.PutAiSettingsRequest.provider:type_name -> calaba.v1.AiProvider
+	2,  // 7: calaba.v1.PutAiSettingsResponse.settings:type_name -> calaba.v1.AiSettings
+	0,  // 8: calaba.v1.CheckAiRequest.provider:type_name -> calaba.v1.AiProvider
+	1,  // 9: calaba.v1.CheckAiResponse.state:type_name -> calaba.v1.AiState
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_ai_proto_init() }
@@ -585,15 +744,15 @@ func file_calaba_v1_ai_proto_init() {
 	if File_calaba_v1_ai_proto != nil {
 		return
 	}
-	file_calaba_v1_ai_proto_msgTypes[2].OneofWrappers = []any{}
-	file_calaba_v1_ai_proto_msgTypes[4].OneofWrappers = []any{}
+	file_calaba_v1_ai_proto_msgTypes[3].OneofWrappers = []any{}
+	file_calaba_v1_ai_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_ai_proto_rawDesc), len(file_calaba_v1_ai_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      2,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

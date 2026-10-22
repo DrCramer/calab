@@ -27,6 +27,26 @@ message AiSettings {
   string key_mask = 5; // «••••» and the key's last 4 characters; empty without a key
   google.protobuf.Timestamp updated_at = 6; // unset = never saved
   string updated_by = 7;                    // user id; empty = unknown / account gone
+  AiState state = 8;                        // CBF-68: whether smart tasks can run
+  google.protobuf.Timestamp checked_at = 9; // the last check of these settings; unset = none
+  string check_error = 10;                  // state FAILED: the check's error code
+}
+
+// CBF-68: the readiness of the saved settings, by the last «Проверить». Any change of the
+// provider, base URL, model or key makes the settings UNCHECKED again (the server keeps a
+// fingerprint of the checked four, never the key). Smart tasks run only when READY.
+enum AiState {
+  AI_STATE_UNSPECIFIED = 0;
+  AI_STATE_NO_KEY = 1;    // never saved or saved without a key: «Сначала подключите AI в настройках»
+  AI_STATE_UNCHECKED = 2; // not checked since the last change: «Проверьте подключение в настройках»
+  AI_STATE_FAILED = 3;    // the last check failed: «Подключение не работает — проверьте ключ»
+  AI_STATE_READY = 4;
+}
+
+// GET /api/workspaces/{id}/ai/status (any member but guests; people only) → 200. What the
+// «Создать умную задачу» item shows; never the key, the provider or the model.
+message GetAiStatusResponse {
+  AiState state = 1;
 }
 
 // GET /api/workspaces/{id}/ai (MANAGE_INTEGRATIONS) → 200 GetAiSettingsResponse; a workspace
@@ -54,7 +74,9 @@ message PutAiSettingsResponse {
 
 // POST /api/workspaces/{id}/ai/check (MANAGE_INTEGRATIONS; 10 per minute per workspace, else
 // 429 RATE_LIMITED) → 200 CheckAiResponse. Checks the given (unsaved) form: sends one user
-// message «hi» to the model and reports whether an answer came. api_key unset = the stored key,
+// message «hi» to the model and reports whether an answer came. The outcome is remembered for
+// the checked form (CBF-68): saving the same form afterwards keeps it, so AiSettings.state is
+// READY or FAILED; any other form is UNCHECKED. api_key unset = the stored key,
 // under the same rule as PUT; no key at all is 422 field apiKey. Validation errors as in PUT
 // (422). Takes up to ~30 s.
 message CheckAiRequest {
@@ -76,4 +98,5 @@ message CheckAiResponse {
   string message = 4;     // the provider's own error text, if any (≤ 300 characters)
   uint32 http_status = 5; // the provider's HTTP status, 0 = none
   uint32 latency_ms = 6;
+  AiState state = 7; // CBF-68: the saved settings' state after this check
 }

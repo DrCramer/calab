@@ -7,7 +7,7 @@ import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { describeError } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
-import { checkSeconds, draftError, draftOf, fieldErrorKey, keyApplies, reasonKey, requestOf, tabOf, type AiDraft, type AiTab } from '../../lib/ai';
+import { aiStatusKey, checkSeconds, draftError, draftOf, fieldErrorKey, keyApplies, reasonKey, requestOf, tabOf, type AiDraft, type AiTab } from '../../lib/ai';
 import { fmt } from '../../lib/format';
 import { toast } from '../../stores/toasts';
 
@@ -87,6 +87,7 @@ function AiForm({ workspaceId, settings }: { workspaceId: string; settings: AiSe
     mutationFn: () => api.ai.save(workspaceId, requestOf(d, tab)),
     onSuccess: (r) => {
       if (r.settings) qc.setQueryData(aiKey(workspaceId), create(GetAiSettingsResponseSchema, { settings: r.settings }));
+      void qc.invalidateQueries({ queryKey: aiStatusKey(workspaceId) });
       toast.success(t('ai.saved'));
     },
     onError: (e) => {
@@ -96,7 +97,10 @@ function AiForm({ workspaceId, settings }: { workspaceId: string; settings: AiSe
   const check = useMutation({
     mutationFn: () => api.ai.check(workspaceId, requestOf(d, tab)),
     onMutate: () => setResult(null),
-    onSuccess: (r: CheckAiResponse) => setResult(resultOf(r)),
+    onSuccess: (r: CheckAiResponse) => {
+      setResult(resultOf(r));
+      void qc.invalidateQueries({ queryKey: aiStatusKey(workspaceId) });
+    },
     onError: (e) => {
       if (serverField(e)) return;
       const rate = e instanceof ApiError && e.code === 'ERROR_CODE_RATE_LIMITED';

@@ -1,10 +1,14 @@
-import { FolderPlus, LayoutGrid, ListPlus, SquareKanban } from 'lucide-react';
+import { AiState } from '@calaba/protocol';
+import { useQuery } from '@tanstack/react-query';
+import { Bot, FolderPlus, LayoutGrid, ListPlus, SquareKanban } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { CreateButton } from '../../components/CreateButton';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { aiStatusKey, smartOffKey } from '../../lib/ai';
+import { api } from '../../lib/api/endpoints';
 import { mayCreateBoards } from '../../lib/permissions';
 import { openBoard } from '../../services/boards';
 import { useBoards, workspaceBoards } from '../../stores/boards';
@@ -34,11 +38,12 @@ export function BoardsCreateMenu({ workspaceId }: { workspaceId: string }): Reac
   // Ids only (a shallow-compared slice): a card move elsewhere does not re-render the menu.
   const taskBoards = useBoards(useShallow((s) => workspaceBoards(s.boards, workspaceId).filter((b) => hasBit(b.permissions, CREATE_TASKS)).map((b) => b.id)));
   const [newCat, setNewCat] = useState(false);
+  const [open, setOpen] = useState(false);
   const plan = createMenuPlan(creator, taskBoards);
   if (plan.empty) return null;
   return (
     <>
-      <Dropdown.Root modal={false}>
+      <Dropdown.Root modal={false} open={open} onOpenChange={setOpen}>
         <Dropdown.Trigger asChild>
           <CreateButton label={t('shell.create')} data-testid="section-create-board" />
         </Dropdown.Trigger>
@@ -56,6 +61,7 @@ export function BoardsCreateMenu({ workspaceId }: { workspaceId: string }): Reac
                 >
                   <ListPlus className="size-4" aria-hidden /> {t('shell.createTask')}
                 </Dropdown.Item>
+                <SmartItem workspaceId={workspaceId} open={open} />
                 {taskBoards.map((id) => (
                   <BoardItem key={id} workspaceId={workspaceId} boardId={id} />
                 ))}
@@ -77,6 +83,36 @@ export function BoardsCreateMenu({ workspaceId }: { workspaceId: string }): Reac
       </Dropdown.Root>
       {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
     </>
+  );
+}
+
+/**
+ * «Создать умную задачу» (CBF-68): on only when the workspace's AI is connected and its last
+ * check passed (GET …/ai/status, read while the menu is open); otherwise off with the reason
+ * under it. The server refuses anything but READY too — this only spares a useless dialog.
+ */
+function SmartItem({ workspaceId, open }: { workspaceId: string; open: boolean }): ReactNode {
+  const q = useQuery({ queryKey: aiStatusKey(workspaceId), queryFn: ({ signal }) => api.ai.status(workspaceId, signal), enabled: open, staleTime: 0 });
+  const off = smartOffKey(q.isError ? AiState.UNSPECIFIED : q.data?.state);
+  return (
+    <Dropdown.Item
+      className={cx(menuItem, off && 'h-auto min-h-8 items-start py-1.5 data-[disabled]:opacity-100')}
+      disabled={off !== null}
+      onSelect={() => useBoardsUi.getState().openSmart(workspaceId)}
+      data-testid="boards-create-smart"
+    >
+      <Bot className={cx('size-4 shrink-0', off && 'mt-0.5 text-faint')} aria-hidden />
+      {off ? (
+        <span className="flex min-w-0 flex-col">
+          <span className="text-faint">{t('smart.menu')}</span>
+          <span className="text-caption text-muted" data-testid="boards-create-smart-hint">
+            {t(off)}
+          </span>
+        </span>
+      ) : (
+        t('smart.menu')
+      )}
+    </Dropdown.Item>
   );
 }
 

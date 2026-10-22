@@ -1,7 +1,7 @@
 import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
-import { FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
+import { AiState, FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
@@ -3957,6 +3957,35 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'boards-voice-dock');
 });
 
+/**
+ * CBF-68: «Создать умную задачу» in the column's «+». Without a checked AI connection the item is
+ * off with the reason under it; once READY it opens the dialog (text, priority, files); «Создать»
+ * creates the task and opens it.
+ */
+test('boards-smart-task', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('section-create-board').click();
+  const menu = win.getByTestId('boards-create-menu');
+  await expect(menu.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
+  await expect(menu.getByTestId('boards-create-smart')).toHaveAttribute('data-disabled', '');
+  await checkpoint(shot, 'boards-smart-off');
+  await win.keyboard.press('Escape');
+
+  mock.setAiState(IDS.workspaces.main, AiState.READY);
+  await win.getByTestId('section-create-board').click();
+  await expect(menu.getByTestId('boards-create-smart-hint')).toHaveCount(0);
+  await menu.getByTestId('boards-create-smart').click();
+  const dialog = win.getByTestId('smart-task');
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы\nСумма 120 000 ₽, реквизиты в письме бухгалтерии.');
+  await checkpoint(shot, 'boards-smart-dialog');
+  await win.getByTestId('smart-task-submit').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(win.getByTestId('task-panel')).toContainText('Оплатить счёт поставщика до пятницы');
+});
+
 /** The task full screen over the board: properties, two assignees, relations, comments. */
 test('boards-task', async ({ open, win, mock, shot }) => {
   await open();
@@ -4083,6 +4112,14 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await boardsMode(win, mock);
   await win.getByTestId('board-more').click();
   await win.getByTestId('board-settings').click();
+  // CBF-68: «Основное» → «Инструкция для ИИ», typed and saved.
+  const instr = win.getByTestId('board-ai-instruction-text');
+  await expect(instr).toHaveValue('');
+  await instr.fill('Заголовок — «Баг: где и что». В описании — шаги воспроизведения и ожидаемое поведение. Метка «Баг», приоритет высокий, если сломан вход.');
+  await win.getByTestId('board-ai-instruction').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-settings-ai');
+  await win.getByTestId('board-ai-instruction-save').click();
+  await expect(win.getByTestId('board-ai-instruction-save')).toBeDisabled();
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');

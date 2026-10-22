@@ -38,9 +38,11 @@ const (
 const CheckTimeout = 30 * time.Second
 
 const (
-	maxAnswer  = 1 << 20 // bytes of a provider answer read
-	maxReply   = 200     // characters of the model's reply returned
-	maxMessage = 300     // characters of the provider's error text returned
+	maxAnswer = 1 << 20 // bytes of a provider answer read
+	maxReply  = 200     // characters of the model's reply returned by the check
+	// MaxCompletion bounds the text of an answer Send returns (characters).
+	MaxCompletion = 32000
+	maxMessage    = 300 // characters of the provider's error text returned
 )
 
 // Result is the outcome of one check call.
@@ -110,9 +112,20 @@ func (p *providerError) UnmarshalJSON(b []byte) error {
 // Hello sends one user message «hi» to model at baseURL (…/chat/completions is appended) with
 // the Bearer key and reports whether an answer came. It never returns the key in any field.
 func (c *Chat) Hello(ctx context.Context, baseURL, key, model string) Result {
+	out := c.Send(ctx, baseURL, key, model, []Message{{Role: "user", Content: "hi"}})
+	out.Reply = clip(out.Reply, maxReply)
+	return out
+}
+
+// Message is one Chat Completions message (role system | user | assistant).
+type Message = chatMessage
+
+// Send sends messages to model at baseURL with the Bearer key (one call, ≤ CheckTimeout) and
+// returns the answer's text in Reply (≤ MaxCompletion characters, the key scrubbed).
+func (c *Chat) Send(ctx context.Context, baseURL, key, model string, msgs []Message) Result {
 	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
 	defer cancel()
-	body, _ := json.Marshal(chatRequest{Model: model, Messages: []chatMessage{{Role: "user", Content: "hi"}}})
+	body, _ := json.Marshal(chatRequest{Model: model, Messages: msgs})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/chat/completions", bytes.NewReader(body)) //nolint:gosec // G704: a user URL goes through the SSRF-safe dialer (NewChat)
 	if err != nil {
 		return Result{Error: ErrBadRequest, Message: "invalid base URL"}
@@ -163,7 +176,7 @@ func (c *Chat) Hello(ctx context.Context, baseURL, key, model string) Result {
 		return out
 	}
 	out.OK = true
-	out.Reply = clip(scrub(strings.TrimSpace(contentText(cr.Choices[0].Message.Content)), key), maxReply)
+	out.Reply = clip(scrub(strings.TrimSpace(contentText(cr.Choices[0].Message.Content)), key), MaxCompletion)
 	return out
 }
 

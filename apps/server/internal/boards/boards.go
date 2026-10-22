@@ -63,6 +63,11 @@ type Service struct {
 	Now func() time.Time
 	// Relay passes the users' task notices on to the bots they chose (ADR-0090); nil = off.
 	Relay NoticeRelay
+	// AI is the workspace's model of smart tasks (CBF-68); nil = the route answers 404.
+	AI AI
+	// SmartUserLimit (per person) / SmartWorkspaceLimit (per workspace): smart tasks, each up
+	// to two model calls billed to the workspace's key. nil = none.
+	SmartUserLimit, SmartWorkspaceLimit Limiter
 }
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).
@@ -113,6 +118,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/boards/{id}/activity", s.boardActivity)
 	h("GET /api/boards/{id}/tasks", s.listTasks)
 	h("POST /api/boards/{id}/tasks", s.createTask)
+	h("POST /api/workspaces/{id}/smart-tasks", s.createSmartTask)
 	h("GET /api/tasks/{id}", s.getTask)
 	h("PATCH /api/tasks/{id}", s.updateTask)
 	h("POST /api/tasks/{id}/archive", func(w http.ResponseWriter, r *http.Request) error { return s.setArchived(w, r, true) })

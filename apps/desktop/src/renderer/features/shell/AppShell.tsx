@@ -37,6 +37,7 @@ import { MembersPanel } from './MembersPanel';
 import { DayView } from '../calendar/DayView';
 import { BoardsView } from '../boards/BoardsView';
 import { CreateTaskDialog } from '../boards/CreateTaskDialog';
+import { SmartTaskDialog } from '../boards/SmartTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useDiskUi } from '../../stores/diskUi';
 import { DiskScreen } from '../disk/DiskScreen';
@@ -143,6 +144,7 @@ function ShellLayout(): ReactNode {
           }
         />
         {ready ? <CreateTaskDialog /> : null}
+        {ready ? <SmartTaskDialog /> : null}
       </>
     );
   }
@@ -249,6 +251,7 @@ function ShellLayout(): ReactNode {
         )}
         {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
+        {ready ? <SmartTaskDialog /> : null}
       </div>
     </div>
   );
