@@ -6,10 +6,9 @@ import { t, useLocale } from '../../i18n';
 import { canShare } from '../../lib/disk';
 import { fmt } from '../../lib/format';
 import { copyItemLink, downloadItem, openSendToChat } from '../../services/disk';
-import { diskItemUrl } from '../../services/links';
+import { copyDiskItemAddress } from '../../services/diskLink';
 import { useDisk } from '../../stores/disk';
 import { myUserId } from '../../stores/session';
-import { toast } from '../../stores/toasts';
 import { useMemberName } from '../../stores/workspaces';
 import { LinkPanel } from './LinkPanel';
 import { ItemPicture } from './visuals';
@@ -29,17 +28,7 @@ export const FileCardPanel = memo(function FileCardPanel({ itemId, onNavigate }:
   if (!item?.file) return null;
   const share = canShare(item, myUserId());
   const changed = item.updatedAt ? fmt.stamp(timestampDate(item.updatedAt)) : '—';
-  const copyAddress = (): void => {
-    const url = diskItemUrl(item.id);
-    if (!url) {
-      toast.error(t('disk.err.link'));
-      return;
-    }
-    void navigator.clipboard.writeText(url).then(
-      () => toast.success(t('disk.card.linkCopied')),
-      (e: unknown) => toast.fail(e),
-    );
-  };
+  const copyAddress = (): void => copyDiskItemAddress(item.id, 'disk.card.linkCopied');
   return (
     <div className="flex flex-col gap-4" data-testid="disk-file-card">
       <div className="flex items-center gap-4">

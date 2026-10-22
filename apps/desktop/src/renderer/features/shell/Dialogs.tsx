@@ -11,7 +11,9 @@ import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { sendPageToChats } from '../../services/wiki';
+import { isFolder } from '../../lib/disk';
 import { sendDiskItemToChats } from '../../services/diskLink';
+import { useDisk } from '../../stores/disk';
 import { openSendToChat } from '../../services/disk';
 import { DiskViewDialog } from '../disk/DiskViewer';
 import { DiskFileDialog } from '../disk/FileCard';
@@ -31,6 +33,12 @@ import { AppDialog } from '../webapps/AppDialog';
 import { PlansDialog } from '../workspace/billing/PlansDialog';
 
 const RecordingResult = lazy(() => import('../chat/RecordingResult'));
+
+/** The send-to-chat dialog words itself by what is sent: a folder or a file. */
+const isFolderItem = (id: string): boolean => {
+  const it = useDisk.getState().items[id];
+  return !!it && isFolder(it);
+};
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
@@ -164,8 +172,8 @@ export function Dialogs(): ReactNode {
             roomId=""
             messageId=""
             onClose={close}
-            title={t('disk.send.title')}
-            description={t('disk.send.hint')}
+            title={isFolderItem(d.itemId) ? t('disk.send.titleFolder') : t('disk.send.title')}
+            description={isFolderItem(d.itemId) ? t('disk.send.hintFolder') : t('disk.send.hint')}
             comment
             onSend={(targets, comment) => sendDiskItemToChats(d.itemId, targets, comment)}
           />

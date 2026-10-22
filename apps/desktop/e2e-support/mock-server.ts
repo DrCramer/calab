@@ -7675,6 +7675,7 @@ class MockImpl {
       d().setSettings(p0(c), me, b.trashDays);
       sendMsg(c.res, 200, DiskSettingsSchema, { trashDays: d().settings(p0(c), me) });
     });
+    this.diskRoute('GET', '/api/disk/items/:id', (c, me) => sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().one(p0(c), me) }));
     this.diskRoute('PATCH', '/api/disk/items/:id', (c, me) => {
       const b = parseBody(c, UpdateDiskItemRequestSchema);
       sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().update(p0(c), me, b) });

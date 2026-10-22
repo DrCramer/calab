@@ -104,4 +104,18 @@ test('disk-share', async ({ open, win, shot }) => {
   await win.getByTestId('disk-card-send').click();
   await expect(win.getByTestId('forward-dialog')).toBeVisible();
   await checkpoint(shot, 'disk-send-to-chat');
+  // CBF-66: a folder has «Копировать ссылку» in its menu and goes to a chat as its own card.
+  await win.keyboard.press('Escape');
+  await win.getByTestId('disk-tile').filter({ hasText: 'Проекты' }).click({ button: 'right' });
+  await expect(win.getByTestId('disk-menu-copy-link')).toBeVisible();
+  await win.getByTestId('disk-menu-send').click();
+  await expect(win.getByTestId('forward-dialog')).toBeVisible();
+  await win.getByRole('option', { name: /#разработка/ }).click();
+  await win.getByTestId('forward-send').click();
+  await win.getByRole('button', { name: 'Открыть' }).first().click();
+  const card = win.getByTestId('disk-folder-card').last();
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('disk-folder-card-name')).toHaveText('Проекты');
+  await expect(card.getByTestId('disk-folder-card-summary')).toContainText('папка');
+  await checkpoint(shot, 'disk-folder-card');
 });

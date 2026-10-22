@@ -99,7 +99,17 @@ export class DiskMock {
 
   private out(it: DiskItem, uid: string): DiskItem {
     const link = this.links.get(it.id);
-    return create(DiskItemSchema, { ...it, myBits: this.bitsOf(it, it.workspaceId, uid), shared: (this.perms.get(it.id)?.length ?? 0) > 0, ...(link ? { link } : {}) });
+    // CBF-66: a folder's counters (the server fills them on the single GET only) — what the caller sees directly inside.
+    let folderFiles = 0;
+    let folderFolders = 0;
+    if (it.kind === DiskItemKind.FOLDER) {
+      for (const c of this.items.values()) {
+        if (c.parentId !== it.id || c.trashedAt || !(this.bitsOf(c, c.workspaceId, uid) & V)) continue;
+        if (c.kind === DiskItemKind.FOLDER) folderFolders++;
+        else folderFiles++;
+      }
+    }
+    return create(DiskItemSchema, { ...it, myBits: this.bitsOf(it, it.workspaceId, uid), shared: (this.perms.get(it.id)?.length ?? 0) > 0, folderFiles, folderFolders, ...(link ? { link } : {}) });
   }
 
   private visible(id: string, uid: string): DiskItem {
@@ -179,6 +189,11 @@ export class DiskMock {
     if (p.sort === 'updated') return shown.sort((a, b) => ms(b.updatedAt) - ms(a.updatedAt));
     if (p.sort === 'size') return shown.sort((a, b) => folder(a) - folder(b) || size(b) - size(a) || a.name.localeCompare(b.name));
     return shown.sort((a, b) => folder(a) - folder(b) || a.name.localeCompare(b.name, 'ru', { numeric: true }));
+  }
+
+  /** GET /api/disk/items/{id}: one item the caller sees (a chat card / chip resolves by id). */
+  one(id: string, uid: string): DiskItem {
+    return this.out(this.visible(id, uid), uid);
   }
 
   path(id: string, uid: string): DiskItem[] {
