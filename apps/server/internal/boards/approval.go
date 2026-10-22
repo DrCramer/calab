@@ -207,6 +207,10 @@ func mayManageApprovals(r *http.Request, acc perm.BoardAccess, reason string) er
 	if isBot(r) {
 		return auth.ErrBotNotAllowed
 	}
+	return manageBoardBits(acc, reason)
+}
+
+func manageBoardBits(acc perm.BoardAccess, reason string) error {
 	if err := writable(acc); err != nil {
 		return err
 	}
@@ -217,7 +221,14 @@ func mayManageApprovals(r *http.Request, acc perm.BoardAccess, reason string) er
 }
 
 // mayOverrideApproval: UpdateTaskRequest.override_approval when the gate holds the move.
+// CBF-74: a bot acting on behalf of its owner (Calab-On-Behalf: owner, ADR-0106) may override
+// too: the principal is the owner and acc is the owner's access, so the owner's MANAGE_BOARD
+// decides; the journal marks the entry via the bot. A bot on its own and a bot acting for a
+// consenting member (ADR-0111) stay refused; the vote on behalf (on_behalf_of) stays human-only.
 func mayOverrideApproval(r *http.Request, acc perm.BoardAccess) error {
+	if id := auth.MustFromContext(r.Context()); id.OnBehalf() && !id.IsBot && !id.ForMember {
+		return manageBoardBits(acc, ReasonApprovalOverrideDenied)
+	}
 	return mayManageApprovals(r, acc, ReasonApprovalOverrideDenied)
 }
 
