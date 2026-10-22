@@ -170,7 +170,7 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
           {files.items.length ? <span className="text-caption text-faint">{t('smart.filesNote')}</span> : null}
         </div>
         {refusal ? (
-          <div className="flex gap-2 rounded-lg border border-line bg-hover px-3 py-2.5" role="alert" data-testid="smart-task-refusal">
+          <div className="flex gap-2 rounded-lg border border-line px-3 py-2.5" role="alert" data-testid="smart-task-refusal">
             <Bot className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
             <div className="flex min-w-0 flex-col gap-1">
               <span className="text-control font-medium text-fg">{t('smart.refused')}</span>
