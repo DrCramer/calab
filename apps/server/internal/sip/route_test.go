@@ -23,7 +23,8 @@ func set(ids ...uuid.UUID) map[uuid.UUID]bool {
 func ptr(id uuid.UUID) *uuid.UUID { return &id }
 
 // fixture: numbers 101..103 of people u1..u3, 104 without a member (the member left), a group
-// «Продажи» (1001) of 101, 102, 103, 104 in that order, a menu «Главное» with 1 → group,
+// «Продажи» (1001) of 101, 102, 103, 104 in that order with a fallback to 101 after 30 s
+// (noFallback switches it off), a menu «Главное» with 1 → group,
 // 2 → 101, 0 → hang up, 9 → a deleted menu.
 type fixture struct {
 	p                      *PBX
@@ -45,7 +46,7 @@ func newFixture(roundRobin bool, next int) fixture {
 		},
 		Groups: map[uuid.UUID]Group{f.group: {
 			ID: f.group, RoundRobin: roundRobin, RingSec: 30, MemberRingSec: 15, NextPosition: next,
-			OnFail:  Target{Kind: RouteExtension, ID: ptr(f.e1)},
+			Fallback: true, FallbackSec: 30, OnFail: Target{Kind: RouteExtension, ID: ptr(f.e1)},
 			Members: []GroupMember{{Extension: f.e3, Position: 2}, {Extension: f.e1, Position: 0}, {Extension: f.e4, Position: 3}, {Extension: f.e2, Position: 1}},
 		}},
 		Menus: map[uuid.UUID]Menu{f.menu: {
@@ -54,6 +55,14 @@ func newFixture(roundRobin bool, next int) fixture {
 				'0': {Kind: RouteHangup}, '9': {Kind: RouteMenu}},
 		}},
 	}
+	return f
+}
+
+// noFallback: the group rings until somebody answers (the default of ADR-0124).
+func (f fixture) noFallback() fixture {
+	g := f.p.Groups[f.group]
+	g.Fallback = false
+	f.p.Groups[f.group] = g
 	return f
 }
 
@@ -145,6 +154,47 @@ func TestRouteNobodyToRing(t *testing.T) {
 	f.p.Groups[f.group] = g
 	if d := Route(f.p, Target{Kind: RouteGroup, ID: ptr(f.group)}, avail{}, 30); d.Action != ActHangup || d.Reason != ReasonHangup {
 		t.Fatalf("empty group: %+v", d)
+	}
+}
+
+func TestRouteGroupFallbackOnOff(t *testing.T) {
+	f := newFixture(false, 0)
+	d := Route(f.p, Target{Kind: RouteGroup, ID: ptr(f.group)}, avail{}, 30)
+	if d.FallbackSec != 30 || d.OnFail.Kind != RouteExtension {
+		t.Fatalf("on: %+v", d)
+	}
+	// Off: no time limit, nobody answering hangs up (the stored on_fail is kept but unused).
+	f = f.noFallback()
+	d = Route(f.p, Target{Kind: RouteGroup, ID: ptr(f.group)}, avail{}, 30)
+	if d.Action != ActRing || d.FallbackSec != 0 || d.OnFail.Kind != RouteHangup || len(d.Ring) != 3 {
+		t.Fatalf("off: %+v", d)
+	}
+	// Off and everybody busy: the group waits (rings nobody for now), it does not fall back.
+	d = Route(f.p, Target{Kind: RouteGroup, ID: ptr(f.group)}, avail{busy: set(f.u1, f.u2, f.u3)}, 30)
+	if d.Action != ActRing || len(d.Ring) != 0 || d.Group == nil || d.Fallbacks != 0 {
+		t.Fatalf("off, all busy: %+v", d)
+	}
+	// Off and nobody behind the numbers at all: hang up «no members».
+	g := f.p.Groups[f.group]
+	g.Members = []GroupMember{{Extension: f.e4}}
+	f.p.Groups[f.group] = g
+	if d := Route(f.p, Target{Kind: RouteGroup, ID: ptr(f.group)}, avail{}, 30); d.Action != ActHangup || d.Reason != ReasonNoMembers {
+		t.Fatalf("off, nobody: %+v", d)
+	}
+}
+
+func TestRouteGroupFallbackLoopCap(t *testing.T) {
+	// A ↔ B, everybody busy: each falls back at once; the 4th fallback hangs up.
+	f := newFixture(false, 0)
+	b := uuid.New()
+	a := f.p.Groups[f.group]
+	a.OnFail = Target{Kind: RouteGroup, ID: ptr(b)}
+	f.p.Groups[f.group] = a
+	f.p.Groups[b] = Group{ID: b, Fallback: true, FallbackSec: 10, OnFail: Target{Kind: RouteGroup, ID: ptr(f.group)},
+		Members: []GroupMember{{Extension: f.e2}}}
+	d := Route(f.p, Target{Kind: RouteGroup, ID: ptr(f.group)}, avail{busy: set(f.u1, f.u2, f.u3)}, 30)
+	if d.Action != ActHangup || d.Reason != ReasonLoop || d.Fallbacks != MaxFallbacks+1 {
+		t.Fatalf("%+v", d)
 	}
 }
 

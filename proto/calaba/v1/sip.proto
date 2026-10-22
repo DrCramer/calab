@@ -319,11 +319,13 @@ message SipExtension {
 
 enum SipGroupStrategy {
   SIP_GROUP_STRATEGY_UNSPECIFIED = 0; // in requests: RING_ALL
-  // Every member rings at once for ring_sec (members who are not online ring too, with a push);
-  // the first who answers gets the call.
+  // Every member rings at once (members who are not online ring too, with a push) until
+  // somebody answers, the caller hangs up or the fallback's time runs out (ADR-0124); the
+  // first who answers gets the call; members who become free meanwhile join the ringing.
   SIP_GROUP_STRATEGY_RING_ALL = 1;
   // One member after another in their order for member_ring_sec each, starting after the one
-  // who answered last; members who are not online or busy are skipped; one full round.
+  // who answered last; members who are not online or busy are skipped; round after round
+  // until somebody answers, the caller hangs up or the fallback's time runs out (ADR-0124).
   SIP_GROUP_STRATEGY_ROUND_ROBIN = 2;
 }
 
@@ -338,11 +340,18 @@ message SipGroup {
   string name = 3;            // 1..64 characters
   SipExtension extension = 4; // the group's own number (kind GROUP)
   SipGroupStrategy strategy = 5;
-  uint32 ring_sec = 6;                 // RING_ALL: 10..60, default 30
+  uint32 ring_sec = 6;                 // unused since ADR-0124 (kept: 10..60, default 30)
   uint32 member_ring_sec = 7;          // ROUND_ROBIN: 5..60 per member, default 15
-  SipRouteTarget on_fail = 8;          // nobody answered / nobody to ring; not REPEAT
+  SipRouteTarget on_fail = 8;          // the fallback's action; not REPEAT; kept while it is off
   repeated SipGroupMember members = 9; // by position, ≤ 20
   google.protobuf.Timestamp updated_at = 10;
+  // The fallback (ADR-0124). Off (default): the group rings until somebody answers or the
+  // caller hangs up; on_fail is not used. On: after fallback_sec seconds of ringing, when
+  // everybody who rang declined, or at once when nobody can ring, the call follows on_fail
+  // (another group, a person or a bot, a menu, hang up). At most 3 group fallbacks per call:
+  // the next one hangs up (reason loop).
+  bool fallback_enabled = 11;
+  uint32 fallback_sec = 12; // 5..600, default 30
 }
 
 enum SipPromptStatus {
@@ -418,7 +427,8 @@ message SipGroupMembers {
 }
 
 // POST /api/workspaces/{id}/sip/groups → 201 SipGroupResponse (≤ 50 groups): the group and its
-// number. Errors: 422 VALIDATION (name, number, ringSec, memberRingSec, members, onFail), 409
+// number. Errors: 422 VALIDATION (name, number, ringSec, memberRingSec, members, onFail — also a
+// fallback to the group itself or its own number, fallbackSec), 409
 // SIP_EXTENSION_TAKEN (number), 409 CONFLICT (limit).
 message CreateSipGroupRequest {
   string name = 1;
@@ -428,6 +438,8 @@ message CreateSipGroupRequest {
   uint32 member_ring_sec = 5; // 0 = 15
   SipRouteTarget on_fail = 6; // unset = HANGUP
   SipGroupMembers members = 7;
+  bool fallback_enabled = 8; // ADR-0124; default off
+  uint32 fallback_sec = 9;   // 0 = 30
 }
 
 // PATCH /api/workspaces/{id}/sip/groups/{gid} → 200 SipGroupResponse; unset fields stay, set
@@ -441,6 +453,8 @@ message UpdateSipGroupRequest {
   optional uint32 member_ring_sec = 5;
   SipRouteTarget on_fail = 6;  // set = replace
   SipGroupMembers members = 7; // set = replace
+  optional bool fallback_enabled = 8;
+  optional uint32 fallback_sec = 9;
 }
 
 message SipGroupResponse {

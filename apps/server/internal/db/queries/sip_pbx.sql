@@ -44,14 +44,16 @@ SELECT count(*)::integer FROM sip_groups WHERE workspace_id = $1;
 
 -- name: InsertSipGroup :one
 INSERT INTO sip_groups (workspace_id, name, strategy, ring_sec, member_ring_sec,
-                        on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        on_fail_kind, on_fail_menu_id, on_fail_extension_id, on_fail_group_id,
+                        fallback_enabled, fallback_sec)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: UpdateSipGroup :one
 UPDATE sip_groups
 SET name = $3, strategy = $4, ring_sec = $5, member_ring_sec = $6, on_fail_kind = $7,
     on_fail_menu_id = $8, on_fail_extension_id = $9, on_fail_group_id = $10,
+    fallback_enabled = $11, fallback_sec = $12,
     next_position = CASE WHEN sqlc.arg('reset_position')::boolean THEN 0 ELSE next_position END,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2

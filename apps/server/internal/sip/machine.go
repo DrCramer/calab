@@ -36,6 +36,10 @@ const (
 // lost (a deadline from the prompt's duration alone).
 const promptSlack = 3 * time.Second
 
+// ringRecheck: how often a group that rings all at once (or waits for somebody free) looks
+// for members who became free (ADR-0124: a group rings until somebody answers).
+const ringRecheck = 15 * time.Second
+
 // InCall is the state of one inbound call between events.
 type InCall struct {
 	Phase Phase `json:"phase"`
@@ -60,6 +64,12 @@ type InCall struct {
 	Via        string      `json:"via,omitempty"`
 	Answered   *uuid.UUID  `json:"answered,omitempty"`
 	Reason     string      `json:"reason,omitempty"`
+	// The group's fallback (ADR-0124): when it follows (ms; 0 = never — the group rings until
+	// an answer), the group fallbacks this call followed (MaxFallbacks), and who declined the
+	// group's call (not rung again).
+	FallbackAt int64       `json:"fallback_at,omitempty"`
+	Fallbacks  int         `json:"fallbacks,omitempty"`
+	Declined   []uuid.UUID `json:"declined,omitempty"`
 }
 
 // Effects of one transition.
@@ -106,8 +116,9 @@ func (c *InCall) Enter(e Env, t Target, fx *Effects) {
 	c.stopRinging(fx)
 	d := Route(e.PBX, t, e.Avail, DirectRingSec)
 	c.Hops += d.Hops + 1
+	c.Fallbacks += d.Fallbacks
 	c.step(routeLabel(t))
-	if c.Hops > MaxHops {
+	if c.Hops > MaxHops || c.Fallbacks > MaxFallbacks {
 		c.hangup(ReasonLoop, fx)
 		return
 	}
@@ -148,6 +159,7 @@ func (c *InCall) playMenu(e Env, m *Menu, attempt int, fx *Effects) {
 	id := m.ID
 	c.Phase, c.Menu, c.Attempts, c.Played = PhaseMenu, &id, attempt, false
 	c.Ring, c.Pos, c.Sequential, c.Group, c.Rang = nil, 0, false, nil, nil
+	c.FallbackAt, c.Declined = 0, nil
 	c.PromptEnds = e.ms(time.Duration(m.PromptMs) * time.Millisecond)
 	c.Deadline = c.PromptEnds + (time.Duration(m.InputTimeoutSec)*time.Second + promptSlack).Milliseconds()
 	if m.Name != "" && c.Via != m.Name {
@@ -160,6 +172,10 @@ func (c *InCall) playMenu(e Env, m *Menu, attempt int, fx *Effects) {
 func (c *InCall) ring(e Env, d Decision, fx *Effects) {
 	c.Phase, c.Menu, c.Attempts, c.Played, c.PromptEnds = PhaseRing, nil, 0, false, 0
 	c.Ring, c.Sequential, c.Group, c.OnFail, c.Pos, c.Rang = d.Ring, d.Sequential, d.Group, d.OnFail, 0, nil
+	c.FallbackAt, c.Declined = 0, nil
+	if d.FallbackSec > 0 {
+		c.FallbackAt = e.ms(time.Duration(d.FallbackSec) * time.Second)
+	}
 	if d.Group != nil {
 		if g, ok := e.PBX.Groups[*d.Group]; ok && g.Name != "" {
 			c.Via = g.Name
@@ -167,36 +183,128 @@ func (c *InCall) ring(e Env, d Decision, fx *Effects) {
 	}
 	fx.Play = &Play{Ringback: true}
 	fx.Changed = true
-	if c.Sequential {
+	switch {
+	case c.Sequential:
 		c.ringAt(e, 0, fx)
-		return
-	}
-	for _, r := range c.Ring {
+	case c.Group != nil:
+		c.ringAll(e, fx)
+	default: // a single number
+		r := c.Ring[0]
 		c.Ringing = append(c.Ringing, r.User)
 		fx.Rings = append(fx.Rings, r.User)
+		c.addRang(r)
+		c.Deadline = e.ms(time.Duration(r.Sec) * time.Second)
 	}
-	c.Rang = append(c.Rang, c.Ring...)
-	c.Deadline = e.ms(time.Duration(c.Ring[0].Sec) * time.Second)
+}
+
+// until is the deadline d from now, not past the group's fallback.
+func (c *InCall) until(e Env, d time.Duration) int64 {
+	t := e.ms(d)
+	if c.FallbackAt > 0 && c.FallbackAt < t {
+		return c.FallbackAt
+	}
+	return t
+}
+
+// addRang records that r rang (once per person: a group rings round after round).
+func (c *InCall) addRang(r Ring) {
+	if !slices.ContainsFunc(c.Rang, func(x Ring) bool { return x.User == r.User }) {
+		c.Rang = append(c.Rang, r)
+	}
+}
+
+func (c *InCall) group(e Env) (Group, bool) {
+	if c.Group == nil {
+		return Group{}, false
+	}
+	g, ok := e.PBX.Groups[*c.Group]
+	return g, ok
+}
+
+// fresh is who the group may ring now: available, and not among those who declined.
+func (c *InCall) fresh(e Env, g Group) []Ring {
+	return slices.DeleteFunc(groupRing(e.PBX, g, e.Avail), func(r Ring) bool { return slices.Contains(c.Declined, r.User) })
+}
+
+// ringAll rings every member of the group (all at once) who is free now and not ringing yet.
+func (c *InCall) ringAll(e Env, fx *Effects) {
+	g, ok := c.group(e)
+	if !ok { // the group was deleted meanwhile
+		c.failRing(e, ReasonNoAnswer, fx)
+		return
+	}
+	for _, r := range c.fresh(e, g) {
+		if slices.Contains(c.Ringing, r.User) {
+			continue
+		}
+		c.Ringing = append(c.Ringing, r.User)
+		fx.Rings = append(fx.Rings, r.User)
+		fx.Changed = true
+		c.addRang(r)
+	}
+	if len(c.Ringing) == 0 {
+		c.nobody(e, g, fx)
+		return
+	}
+	c.Deadline = c.until(e, ringRecheck)
 }
 
 // ringAt rings the round-robin member at position i or the next one still available (Route
-// checked them when the call came; somebody may have taken another call since).
+// checked them when the call came; somebody may have taken another call since). Past the end
+// of the circle the group starts the next round with who is available then.
 func (c *InCall) ringAt(e Env, i int, fx *Effects) {
 	c.stopRinging(fx)
-	for ; i < len(c.Ring); i++ {
-		r := c.Ring[i]
-		if i > 0 && (e.Avail.Busy(r.User) || !e.Avail.Online(r.User)) {
-			continue
+	for round := 0; round < 2; round++ {
+		for ; i < len(c.Ring); i++ {
+			r := c.Ring[i]
+			if slices.Contains(c.Declined, r.User) || (i > 0 && round == 0 && (e.Avail.Busy(r.User) || !e.Avail.Online(r.User))) {
+				continue
+			}
+			c.Pos = i
+			c.Ringing = []uuid.UUID{r.User}
+			c.addRang(r)
+			c.Deadline = c.until(e, time.Duration(r.Sec)*time.Second)
+			fx.Rings = append(fx.Rings, r.User)
+			fx.Changed = true
+			return
 		}
-		c.Pos = i
-		c.Ringing = []uuid.UUID{r.User}
-		c.Rang = append(c.Rang, r)
-		c.Deadline = e.ms(time.Duration(r.Sec) * time.Second)
-		fx.Rings = append(fx.Rings, r.User)
-		fx.Changed = true
+		if round > 0 {
+			break
+		}
+		g, ok := c.group(e)
+		if !ok {
+			c.failRing(e, ReasonNoAnswer, fx)
+			return
+		}
+		c.Ring, i = c.fresh(e, g), 0 // the next round (fresh checked who is available)
+	}
+	c.Pos = 0
+	g, _ := c.group(e)
+	c.nobody(e, g, fx)
+}
+
+// nobody: the group has nobody to ring right now. With a fallback it follows at once; without
+// one the caller hears the ringback while somebody may still become free, else the call ends.
+func (c *InCall) nobody(e Env, g Group, fx *Effects) {
+	may := false
+	for _, m := range g.Members {
+		if x, ok := e.PBX.Extensions[m.Extension]; ok && x.User != nil && !slices.Contains(c.Declined, *x.User) {
+			may = true
+			break
+		}
+	}
+	reason := ReasonNoAnswer
+	switch {
+	case !may && len(c.Declined) > 0:
+		reason = ReasonDeclined
+	case !may:
+		reason = ReasonNoMembers
+	}
+	if c.FallbackAt > 0 || !may {
+		c.failRing(e, reason, fx)
 		return
 	}
-	c.failRing(e, ReasonNoAnswer, fx)
+	c.Deadline = c.until(e, ringRecheck)
 }
 
 // failRing: nobody answered — the round-robin pointer moves on by one, then the fallback.
@@ -212,6 +320,14 @@ func (c *InCall) failRing(e Env, reason string, fx *Effects) {
 	if c.OnFail.Kind == RouteHangup || c.OnFail.Kind == RouteRepeat {
 		c.hangup(reason, fx)
 		return
+	}
+	if c.Group != nil { // a group's fallback (ADR-0124): A → B → A … ends after MaxFallbacks
+		c.Fallbacks++
+		if c.Fallbacks > MaxFallbacks {
+			c.step(routeLabel(c.OnFail))
+			c.hangup(ReasonLoop, fx)
+			return
+		}
 	}
 	c.Enter(e, c.OnFail, fx)
 }
@@ -247,9 +363,14 @@ func (c *InCall) Expire(e Env, fx *Effects) {
 	case PhaseMenu:
 		c.noInput(e, fx)
 	case PhaseRing:
-		if c.Sequential {
+		switch {
+		case c.FallbackAt > 0 && e.Now.UnixMilli() >= c.FallbackAt:
+			c.failRing(e, ReasonNoAnswer, fx)
+		case c.Sequential:
 			c.ringAt(e, c.Pos+1, fx)
-		} else {
+		case c.Group != nil:
+			c.ringAll(e, fx)
+		default:
 			c.failRing(e, ReasonNoAnswer, fx)
 		}
 	}
@@ -335,11 +456,16 @@ func (c *InCall) Digit(e Env, digit byte, fx *Effects) {
 	c.Enter(e, t, fx)
 }
 
-// Decline records that user refuses on one of their devices. All at once: when nobody is left ringing the
-// call goes on as if nobody answered; round-robin: the next member rings.
+// Decline records that user refuses on one of their devices; a group does not ring them again.
+// All at once: when nobody is left ringing the group rings who became free meanwhile, else the
+// call goes on as if nobody answered (everybody declined: the fallback, or hang up);
+// round-robin: the next member rings.
 func (c *InCall) Decline(e Env, user uuid.UUID, fx *Effects) error {
 	if c.Phase != PhaseRing || !slices.Contains(c.Ringing, user) {
 		return ErrNotRinging
+	}
+	if c.Group != nil {
+		c.Declined = append(c.Declined, user)
 	}
 	if c.Sequential {
 		c.ringAt(e, c.Pos+1, fx)
@@ -349,7 +475,11 @@ func (c *InCall) Decline(e Env, user uuid.UUID, fx *Effects) error {
 	fx.Stopped = append(fx.Stopped, user)
 	fx.Changed = true
 	if len(c.Ringing) == 0 {
-		c.failRing(e, ReasonDeclined, fx)
+		if c.Group != nil {
+			c.ringAll(e, fx)
+		} else {
+			c.failRing(e, ReasonDeclined, fx)
+		}
 	}
 	return nil
 }
@@ -380,7 +510,7 @@ func (c *InCall) Answer(e Env, user uuid.UUID, fx *Effects) error {
 		}
 	}
 	u := user
-	c.Phase, c.Answered, c.Deadline = PhaseActive, &u, 0
+	c.Phase, c.Answered, c.Deadline, c.FallbackAt = PhaseActive, &u, 0, 0
 	fx.Stop, fx.Answered, fx.Changed = true, true, true
 	return nil
 }
