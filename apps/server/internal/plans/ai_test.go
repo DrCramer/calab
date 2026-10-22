@@ -40,6 +40,9 @@ func TestAIPlanFlag(t *testing.T) {
 		{"older custom row", &sqlc.WorkspacePlan{Plan: "custom", Limits: []byte(`{"members":7}`)}, false},
 		{"custom with ai", &sqlc.WorkspacePlan{Plan: "custom", Limits: []byte(`{"members":7,"ai":true}`)}, true},
 		{"team with a stored ai key", &sqlc.WorkspacePlan{Plan: "team", Limits: []byte(`{"ai":true,"members":7}`)}, false},
+		// encoding/json matches keys case-insensitively: another spelling is still not an override.
+		{"team with a stored AI key in another case", &sqlc.WorkspacePlan{Plan: "team", Limits: []byte(`{"AI":true,"Ai":true}`)}, false},
+		{"free with a stored ai key", &sqlc.WorkspacePlan{Plan: "free", Limits: []byte(`{"ai":true}`)}, false},
 		{"business with a stored ai key", &sqlc.WorkspacePlan{Plan: "enterprise", Limits: []byte(`{"ai":false}`)}, true},
 	} {
 		id := uuid.New()
