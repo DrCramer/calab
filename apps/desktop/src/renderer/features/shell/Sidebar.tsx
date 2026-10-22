@@ -80,6 +80,7 @@ import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinButton, joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
+import { streamClickPlan } from './streamOpen';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { MemberContextMenu } from '../people/MemberContextMenu';
@@ -1676,7 +1677,12 @@ function VoiceMember({
       tabIndex={0}
       aria-label={draggable ? `${name}. ${t('shell.dragHint')}` : name}
       onClick={() => {
-        if (stream && inSameRoom) voice.watch(stream.trackSid);
+        const plan = streamClickPlan({ streaming: state.streaming, hasTrack: !!stream, inSameRoom });
+        if (plan.openRoom) useUi.getState().openRoom(workspaceId, room.id);
+        if (plan.watch && stream) {
+          voice.watch(stream.trackSid);
+          voice.setStage('expanded');
+        }
       }}
       className={cx(
         // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
