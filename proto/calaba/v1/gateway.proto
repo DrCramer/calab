@@ -306,6 +306,9 @@ message DispatchEvent {
     // A member's consent for a bot changed (ADR-0119): to that bot's user channel (gateway)
     // and webhook only.
     BotDelegationChange bot_delegation = 105;
+    // An inbound phone call rings the recipient (ADR-0117): to that user's channel (and a bot's
+    // webhook) only.
+    SipInboundRing sip_inbound_ring = 106;
   }
 }
 
@@ -413,7 +416,8 @@ message WorkspaceSnapshot {
   // Tasks with something unseen for the recipient (Task.unread; ≤ 999): the badge on the
   // boards icon. Changes come as TASK_UPDATE on the user channel.
   repeated string unread_task_ids = 17;
-  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms. Changes come as
+  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms, and inbound calls
+  // (ADR-0117) that ring the recipient or that the recipient answered. Changes come as
   // SIP_CALL_UPDATE.
   repeated SipCall sip_calls = 18;
   // Web apps of the workspace (ADR-0050), by position; empty for guests and bots. Changes come

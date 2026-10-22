@@ -1405,22 +1405,30 @@ type SessionWorkspaceAssurance struct {
 }
 
 type SipAccount struct {
-	WorkspaceID     uuid.UUID
-	Provider        string
-	Host            string
-	Transport       string
-	Username        string
-	AuthUsername    string
-	Port            int32
-	PasswordEnc     []byte
-	CallerID        string
-	OutboundPrefix  string
-	AllowedPrefixes []string
-	TrunkID         string
-	Enabled         bool
-	LastError       string
-	UpdatedAt       time.Time
-	UpdatedBy       *uuid.UUID
+	WorkspaceID         uuid.UUID
+	Provider            string
+	Host                string
+	Transport           string
+	Username            string
+	AuthUsername        string
+	Port                int32
+	PasswordEnc         []byte
+	CallerID            string
+	OutboundPrefix      string
+	AllowedPrefixes     []string
+	TrunkID             string
+	Enabled             bool
+	LastError           string
+	UpdatedAt           time.Time
+	UpdatedBy           *uuid.UUID
+	InboundEnabled      bool
+	InboundKind         string
+	InboundMenuID       *uuid.UUID
+	InboundExtensionID  *uuid.UUID
+	InboundGroupID      *uuid.UUID
+	InboundAllowedCidrs []string
+	InboundTrunkID      string
+	InboundRuleID       string
 }
 
 type SipCall struct {
@@ -1438,6 +1446,11 @@ type SipCall struct {
 	StartedAt           time.Time
 	AnsweredAt          *time.Time
 	EndedAt             *time.Time
+	LkRoom              string
+	AnsweredBy          *uuid.UUID
+	Route               string
+	RingingUserIds      []uuid.UUID
+	Via                 string
 }
 
 type SipExtension struct {

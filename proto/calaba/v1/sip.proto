@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/rtc.proto";
 
 // Telephony: outbound calls to phone numbers from a voice room over SIP (ADR-0046). The
 // workspace's SIP provider account becomes a LiveKit SIPOutboundTrunk; a call puts the phone
@@ -37,7 +38,7 @@ enum SipCallStatus {
 enum SipCallDirection {
   SIP_CALL_DIRECTION_UNSPECIFIED = 0;
   SIP_CALL_DIRECTION_OUT = 1;
-  SIP_CALL_DIRECTION_IN = 2; // reserved for inbound calls (1.4+); never produced yet
+  SIP_CALL_DIRECTION_IN = 2; // a call to the workspace's number (ADR-0117): room_id empty
 }
 
 // The workspace's SIP provider account (one per workspace). GET never returns the password.
@@ -67,6 +68,12 @@ message SipSettings {
   // The server answers inbound calls (env SIP_INBOUND, ADR-0117; off by default). The exchange
   // below can be set up either way.
   bool inbound_available = 16;
+  // Inbound calls on caller_id (ADR-0117, PUT /api/workspaces/{id}/sip/inbound). Calls are
+  // answered when inbound_enabled and inbound_saved are set and the server has SIP_INBOUND.
+  bool inbound_enabled = 17;
+  SipRouteTarget inbound_target = 18;         // the entry point: a menu, a number or a group
+  repeated string inbound_allowed_cidrs = 19; // provider addresses beyond the resolved host
+  bool inbound_saved = 20;                    // LiveKit holds the inbound trunk and its dispatch rule
 }
 
 // GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
@@ -146,6 +153,15 @@ message SipCall {
   // room's LiveKit participants to draw the phone tile.
   string participant_identity = 12;
   string ended_by = 13; // who hung up with DELETE; empty otherwise
+  // Inbound calls (direction IN, ADR-0117). number is the caller's number; status is RINGING
+  // from the moment the line got in (menu and ringing alike) until somebody answers (ACTIVE).
+  // More reasons: "hangup_menu" (a route to «hang up»), "no_input", "no_answer", "no_members",
+  // "loop", "declined" (everybody who rang declined), FAILED "busy_limit", "agent_unavailable",
+  // "plan", "disabled".
+  string answered_by = 14;               // the user who took the call
+  string route = 15;                     // the path for the journal: «menu:<id>/2 → group:<id>»
+  repeated string ringing_user_ids = 16; // who rings right now
+  string via = 17;                       // the name of the menu or group the call came through
 }
 
 // POST /api/rooms/{id}/calls (PLACE_CALLS + VIEW_ROOM + CONNECT in the room, not a guest; a
@@ -184,7 +200,8 @@ message ListSipCallsResponse {
 
 // SIP_CALL_UPDATE: a phone call of a room was placed or changed status. To everyone who can
 // view the room (guests too: they hear the line). Active calls are also in
-// WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE).
+// WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE). An inbound call (no room) goes to the
+// user channels of the people it rings, rang or who answered it instead.
 message SipCallUpdate {
   SipCall call = 1;
 }
@@ -412,4 +429,55 @@ message UpdateSipIvrMenuRequest {
 
 message SipIvrMenuResponse {
   SipIvrMenu menu = 1;
+}
+
+// ---------------------------------------------------------------- inbound calls (ADR-0117 step 2)
+//
+// The provider sends INVITE for caller_id to LiveKit SIP; LiveKit puts the line into a room of
+// its own («sipin_<workspace id>_…») and the server walks the entry point: a voice menu plays
+// through the IVR worker, a number or a group rings its people. Only with the server switch
+// SIP_INBOUND (SipSettings.inbound_available), the telephony plan and telephony switched on.
+
+// PUT /api/workspaces/{id}/sip/inbound (MANAGE_INTEGRATIONS, people) → 200 PutSipInboundResponse.
+// enabled = true needs telephony on (SipSettings.enabled), a target other than HANGUP / REPEAT and
+// the server switch; the server creates or replaces the LiveKit inbound trunk (numbers =
+// caller_id, allowed addresses = the provider host's A/AAAA records now, the server's
+// SIP_INBOUND_ALLOWED_ADDRESSES and allowed_cidrs) and a dispatch rule that makes a room per
+// call. enabled = false deletes both; live inbound calls end ("disabled"). Errors: 422
+// VALIDATION (target, allowedCidrs), 409 SIP_DISABLED (telephony off, no SIP_INBOUND, no IVR
+// worker token on the server), 502 SIP_PROVIDER_ERROR (LiveKit refused; last_error), 409
+// PLAN_LIMIT.
+message PutSipInboundRequest {
+  bool enabled = 1;
+  SipRouteTarget target = 2;
+  // IPv4 / IPv6 addresses or CIDR ranges of the provider («203.0.113.0/24»), ≤ 20; for providers
+  // that send calls from a pool rather than from their host's address.
+  repeated string allowed_cidrs = 3;
+}
+
+message PutSipInboundResponse {
+  SipSettings settings = 1;
+}
+
+// SIP_INBOUND_RING: an inbound call rings the recipient (a person or a bot): to every device of
+// the user (and to a bot's webhook). Answer with POST /api/sip/inbound/{cid}/accept, refuse with
+// …/decline. SIP_CALL_UPDATE follows on the user channel on every change (another member
+// answered, the caller hung up, the ringing moved on); the modal closes when the recipient is no
+// longer in ringing_user_ids. Ringing calls are also in WorkspaceSnapshot.sip_calls (READY).
+message SipInboundRing {
+  SipCall call = 1;
+}
+
+// POST /api/sip/inbound/{cid}/accept (a user the call rings now; bots too) → 200
+// SipInboundAcceptResponse: the call is ACTIVE with answered_by = the caller, and join holds a
+// LiveKit token for the call's room (microphone and listening only). Errors: 404 unknown call /
+// not ringing the caller, 409 CONFLICT (somebody else answered first, or the call ended).
+// POST /api/sip/inbound/{cid}/join (the user who answered) → 200 JoinVoiceResponse: a fresh token
+// (reconnects). POST /api/sip/inbound/{cid}/decline (a user it rings) → 204: this user stops
+// ringing; when nobody is left the route goes on as if nobody answered. DELETE
+// /api/sip/inbound/{cid} (the user who answered, or MANAGE_INTEGRATIONS of the workspace) → 200
+// SipCallResponse ENDED "hangup".
+message SipInboundAcceptResponse {
+  SipCall call = 1;
+  JoinVoiceResponse join = 2;
 }

@@ -140,7 +140,7 @@ type SipCallDirection int32
 const (
 	SipCallDirection_SIP_CALL_DIRECTION_UNSPECIFIED SipCallDirection = 0
 	SipCallDirection_SIP_CALL_DIRECTION_OUT         SipCallDirection = 1
-	SipCallDirection_SIP_CALL_DIRECTION_IN          SipCallDirection = 2 // reserved for inbound calls (1.4+); never produced yet
+	SipCallDirection_SIP_CALL_DIRECTION_IN          SipCallDirection = 2 // a call to the workspace's number (ADR-0117): room_id empty
 )
 
 // Enum value maps for SipCallDirection.
@@ -426,8 +426,14 @@ type SipSettings struct {
 	// The server answers inbound calls (env SIP_INBOUND, ADR-0117; off by default). The exchange
 	// below can be set up either way.
 	InboundAvailable bool `protobuf:"varint,16,opt,name=inbound_available,json=inboundAvailable,proto3" json:"inbound_available,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Inbound calls on caller_id (ADR-0117, PUT /api/workspaces/{id}/sip/inbound). Calls are
+	// answered when inbound_enabled and inbound_saved are set and the server has SIP_INBOUND.
+	InboundEnabled      bool            `protobuf:"varint,17,opt,name=inbound_enabled,json=inboundEnabled,proto3" json:"inbound_enabled,omitempty"`
+	InboundTarget       *SipRouteTarget `protobuf:"bytes,18,opt,name=inbound_target,json=inboundTarget,proto3" json:"inbound_target,omitempty"`                     // the entry point: a menu, a number or a group
+	InboundAllowedCidrs []string        `protobuf:"bytes,19,rep,name=inbound_allowed_cidrs,json=inboundAllowedCidrs,proto3" json:"inbound_allowed_cidrs,omitempty"` // provider addresses beyond the resolved host
+	InboundSaved        bool            `protobuf:"varint,20,opt,name=inbound_saved,json=inboundSaved,proto3" json:"inbound_saved,omitempty"`                       // LiveKit holds the inbound trunk and its dispatch rule
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *SipSettings) Reset() {
@@ -568,6 +574,34 @@ func (x *SipSettings) GetPort() uint32 {
 func (x *SipSettings) GetInboundAvailable() bool {
 	if x != nil {
 		return x.InboundAvailable
+	}
+	return false
+}
+
+func (x *SipSettings) GetInboundEnabled() bool {
+	if x != nil {
+		return x.InboundEnabled
+	}
+	return false
+}
+
+func (x *SipSettings) GetInboundTarget() *SipRouteTarget {
+	if x != nil {
+		return x.InboundTarget
+	}
+	return nil
+}
+
+func (x *SipSettings) GetInboundAllowedCidrs() []string {
+	if x != nil {
+		return x.InboundAllowedCidrs
+	}
+	return nil
+}
+
+func (x *SipSettings) GetInboundSaved() bool {
+	if x != nil {
+		return x.InboundSaved
 	}
 	return false
 }
@@ -894,8 +928,17 @@ type SipCall struct {
 	// room's LiveKit participants to draw the phone tile.
 	ParticipantIdentity string `protobuf:"bytes,12,opt,name=participant_identity,json=participantIdentity,proto3" json:"participant_identity,omitempty"`
 	EndedBy             string `protobuf:"bytes,13,opt,name=ended_by,json=endedBy,proto3" json:"ended_by,omitempty"` // who hung up with DELETE; empty otherwise
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Inbound calls (direction IN, ADR-0117). number is the caller's number; status is RINGING
+	// from the moment the line got in (menu and ringing alike) until somebody answers (ACTIVE).
+	// More reasons: "hangup_menu" (a route to «hang up»), "no_input", "no_answer", "no_members",
+	// "loop", "declined" (everybody who rang declined), FAILED "busy_limit", "agent_unavailable",
+	// "plan", "disabled".
+	AnsweredBy     string   `protobuf:"bytes,14,opt,name=answered_by,json=answeredBy,proto3" json:"answered_by,omitempty"`               // the user who took the call
+	Route          string   `protobuf:"bytes,15,opt,name=route,proto3" json:"route,omitempty"`                                           // the path for the journal: «menu:<id>/2 → group:<id>»
+	RingingUserIds []string `protobuf:"bytes,16,rep,name=ringing_user_ids,json=ringingUserIds,proto3" json:"ringing_user_ids,omitempty"` // who rings right now
+	Via            string   `protobuf:"bytes,17,opt,name=via,proto3" json:"via,omitempty"`                                               // the name of the menu or group the call came through
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SipCall) Reset() {
@@ -1015,6 +1058,34 @@ func (x *SipCall) GetParticipantIdentity() string {
 func (x *SipCall) GetEndedBy() string {
 	if x != nil {
 		return x.EndedBy
+	}
+	return ""
+}
+
+func (x *SipCall) GetAnsweredBy() string {
+	if x != nil {
+		return x.AnsweredBy
+	}
+	return ""
+}
+
+func (x *SipCall) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *SipCall) GetRingingUserIds() []string {
+	if x != nil {
+		return x.RingingUserIds
+	}
+	return nil
+}
+
+func (x *SipCall) GetVia() string {
+	if x != nil {
+		return x.Via
 	}
 	return ""
 }
@@ -1182,7 +1253,8 @@ func (x *ListSipCallsResponse) GetNextCursor() string {
 
 // SIP_CALL_UPDATE: a phone call of a room was placed or changed status. To everyone who can
 // view the room (guests too: they hear the line). Active calls are also in
-// WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE).
+// WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE). An inbound call (no room) goes to the
+// user channels of the people it rings, rang or who answered it instead.
 type SipCallUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Call          *SipCall               `protobuf:"bytes,1,opt,name=call,proto3" json:"call,omitempty"`
@@ -2604,11 +2676,236 @@ func (x *SipIvrMenuResponse) GetMenu() *SipIvrMenu {
 	return nil
 }
 
+// PUT /api/workspaces/{id}/sip/inbound (MANAGE_INTEGRATIONS, people) → 200 PutSipInboundResponse.
+// enabled = true needs telephony on (SipSettings.enabled), a target other than HANGUP / REPEAT and
+// the server switch; the server creates or replaces the LiveKit inbound trunk (numbers =
+// caller_id, allowed addresses = the provider host's A/AAAA records now, the server's
+// SIP_INBOUND_ALLOWED_ADDRESSES and allowed_cidrs) and a dispatch rule that makes a room per
+// call. enabled = false deletes both; live inbound calls end ("disabled"). Errors: 422
+// VALIDATION (target, allowedCidrs), 409 SIP_DISABLED (telephony off, no SIP_INBOUND, no IVR
+// worker token on the server), 502 SIP_PROVIDER_ERROR (LiveKit refused; last_error), 409
+// PLAN_LIMIT.
+type PutSipInboundRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Enabled bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Target  *SipRouteTarget        `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	// IPv4 / IPv6 addresses or CIDR ranges of the provider («203.0.113.0/24»), ≤ 20; for providers
+	// that send calls from a pool rather than from their host's address.
+	AllowedCidrs  []string `protobuf:"bytes,3,rep,name=allowed_cidrs,json=allowedCidrs,proto3" json:"allowed_cidrs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutSipInboundRequest) Reset() {
+	*x = PutSipInboundRequest{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutSipInboundRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutSipInboundRequest) ProtoMessage() {}
+
+func (x *PutSipInboundRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutSipInboundRequest.ProtoReflect.Descriptor instead.
+func (*PutSipInboundRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *PutSipInboundRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *PutSipInboundRequest) GetTarget() *SipRouteTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *PutSipInboundRequest) GetAllowedCidrs() []string {
+	if x != nil {
+		return x.AllowedCidrs
+	}
+	return nil
+}
+
+type PutSipInboundResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *SipSettings           `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutSipInboundResponse) Reset() {
+	*x = PutSipInboundResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutSipInboundResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutSipInboundResponse) ProtoMessage() {}
+
+func (x *PutSipInboundResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutSipInboundResponse.ProtoReflect.Descriptor instead.
+func (*PutSipInboundResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *PutSipInboundResponse) GetSettings() *SipSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+// SIP_INBOUND_RING: an inbound call rings the recipient (a person or a bot): to every device of
+// the user (and to a bot's webhook). Answer with POST /api/sip/inbound/{cid}/accept, refuse with
+// …/decline. SIP_CALL_UPDATE follows on the user channel on every change (another member
+// answered, the caller hung up, the ringing moved on); the modal closes when the recipient is no
+// longer in ringing_user_ids. Ringing calls are also in WorkspaceSnapshot.sip_calls (READY).
+type SipInboundRing struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Call          *SipCall               `protobuf:"bytes,1,opt,name=call,proto3" json:"call,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipInboundRing) Reset() {
+	*x = SipInboundRing{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipInboundRing) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipInboundRing) ProtoMessage() {}
+
+func (x *SipInboundRing) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipInboundRing.ProtoReflect.Descriptor instead.
+func (*SipInboundRing) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SipInboundRing) GetCall() *SipCall {
+	if x != nil {
+		return x.Call
+	}
+	return nil
+}
+
+// POST /api/sip/inbound/{cid}/accept (a user the call rings now; bots too) → 200
+// SipInboundAcceptResponse: the call is ACTIVE with answered_by = the caller, and join holds a
+// LiveKit token for the call's room (microphone and listening only). Errors: 404 unknown call /
+// not ringing the caller, 409 CONFLICT (somebody else answered first, or the call ended).
+// POST /api/sip/inbound/{cid}/join (the user who answered) → 200 JoinVoiceResponse: a fresh token
+// (reconnects). POST /api/sip/inbound/{cid}/decline (a user it rings) → 204: this user stops
+// ringing; when nobody is left the route goes on as if nobody answered. DELETE
+// /api/sip/inbound/{cid} (the user who answered, or MANAGE_INTEGRATIONS of the workspace) → 200
+// SipCallResponse ENDED "hangup".
+type SipInboundAcceptResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Call          *SipCall               `protobuf:"bytes,1,opt,name=call,proto3" json:"call,omitempty"`
+	Join          *JoinVoiceResponse     `protobuf:"bytes,2,opt,name=join,proto3" json:"join,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipInboundAcceptResponse) Reset() {
+	*x = SipInboundAcceptResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipInboundAcceptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipInboundAcceptResponse) ProtoMessage() {}
+
+func (x *SipInboundAcceptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipInboundAcceptResponse.ProtoReflect.Descriptor instead.
+func (*SipInboundAcceptResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *SipInboundAcceptResponse) GetCall() *SipCall {
+	if x != nil {
+		return x.Call
+	}
+	return nil
+}
+
+func (x *SipInboundAcceptResponse) GetJoin() *JoinVoiceResponse {
+	if x != nil {
+		return x.Join
+	}
+	return nil
+}
+
 var File_calaba_v1_sip_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/sip.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x04\n" +
+	"\x13calaba/v1/sip.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13calaba/v1/rtc.proto\"\x82\x06\n" +
 	"\vSipSettings\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x12\n" +
@@ -2630,7 +2927,11 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"trunkSaved\x12#\n" +
 	"\rauth_username\x18\x0e \x01(\tR\fauthUsername\x12\x12\n" +
 	"\x04port\x18\x0f \x01(\rR\x04port\x12+\n" +
-	"\x11inbound_available\x18\x10 \x01(\bR\x10inboundAvailable\"L\n" +
+	"\x11inbound_available\x18\x10 \x01(\bR\x10inboundAvailable\x12'\n" +
+	"\x0finbound_enabled\x18\x11 \x01(\bR\x0einboundEnabled\x12@\n" +
+	"\x0einbound_target\x18\x12 \x01(\v2\x19.calaba.v1.SipRouteTargetR\rinboundTarget\x122\n" +
+	"\x15inbound_allowed_cidrs\x18\x13 \x03(\tR\x13inboundAllowedCidrs\x12#\n" +
+	"\rinbound_saved\x18\x14 \x01(\bR\finboundSaved\"L\n" +
 	"\x16GetSipSettingsResponse\x122\n" +
 	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"\x8c\x03\n" +
 	"\x15PutSipSettingsRequest\x12\x18\n" +
@@ -2653,7 +2954,7 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1d\n" +
 	"\n" +
-	"sip_status\x18\x03 \x01(\rR\tsipStatus\"\x8e\x04\n" +
+	"sip_status\x18\x03 \x01(\rR\tsipStatus\"\x81\x05\n" +
 	"\aSipCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -2671,7 +2972,12 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"answeredAt\x125\n" +
 	"\bended_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x121\n" +
 	"\x14participant_identity\x18\f \x01(\tR\x13participantIdentity\x12\x19\n" +
-	"\bended_by\x18\r \x01(\tR\aendedBy\"-\n" +
+	"\bended_by\x18\r \x01(\tR\aendedBy\x12\x1f\n" +
+	"\vanswered_by\x18\x0e \x01(\tR\n" +
+	"answeredBy\x12\x14\n" +
+	"\x05route\x18\x0f \x01(\tR\x05route\x12(\n" +
+	"\x10ringing_user_ids\x18\x10 \x03(\tR\x0eringingUserIds\x12\x10\n" +
+	"\x03via\x18\x11 \x01(\tR\x03via\"-\n" +
 	"\x13PlaceSipCallRequest\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\tR\x06number\"9\n" +
 	"\x0fSipCallResponse\x12&\n" +
@@ -2802,7 +3108,18 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\b_repeatsB\x18\n" +
 	"\x16_prompt_source_file_id\"?\n" +
 	"\x12SipIvrMenuResponse\x12)\n" +
-	"\x04menu\x18\x01 \x01(\v2\x15.calaba.v1.SipIvrMenuR\x04menu*r\n" +
+	"\x04menu\x18\x01 \x01(\v2\x15.calaba.v1.SipIvrMenuR\x04menu\"\x88\x01\n" +
+	"\x14PutSipInboundRequest\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x121\n" +
+	"\x06target\x18\x02 \x01(\v2\x19.calaba.v1.SipRouteTargetR\x06target\x12#\n" +
+	"\rallowed_cidrs\x18\x03 \x03(\tR\fallowedCidrs\"K\n" +
+	"\x15PutSipInboundResponse\x122\n" +
+	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"8\n" +
+	"\x0eSipInboundRing\x12&\n" +
+	"\x04call\x18\x01 \x01(\v2\x12.calaba.v1.SipCallR\x04call\"t\n" +
+	"\x18SipInboundAcceptResponse\x12&\n" +
+	"\x04call\x18\x01 \x01(\v2\x12.calaba.v1.SipCallR\x04call\x120\n" +
+	"\x04join\x18\x02 \x01(\v2\x1c.calaba.v1.JoinVoiceResponseR\x04join*r\n" +
 	"\fSipTransport\x12\x1d\n" +
 	"\x19SIP_TRANSPORT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SIP_TRANSPORT_UDP\x10\x01\x12\x15\n" +
@@ -2855,7 +3172,7 @@ func file_calaba_v1_sip_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_sip_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_calaba_v1_sip_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_calaba_v1_sip_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_calaba_v1_sip_proto_goTypes = []any{
 	(SipTransport)(0),                 // 0: calaba.v1.SipTransport
 	(SipCallStatus)(0),                // 1: calaba.v1.SipCallStatus
@@ -2894,57 +3211,68 @@ var file_calaba_v1_sip_proto_goTypes = []any{
 	(*CreateSipIvrMenuRequest)(nil),   // 34: calaba.v1.CreateSipIvrMenuRequest
 	(*UpdateSipIvrMenuRequest)(nil),   // 35: calaba.v1.UpdateSipIvrMenuRequest
 	(*SipIvrMenuResponse)(nil),        // 36: calaba.v1.SipIvrMenuResponse
-	(*timestamppb.Timestamp)(nil),     // 37: google.protobuf.Timestamp
+	(*PutSipInboundRequest)(nil),      // 37: calaba.v1.PutSipInboundRequest
+	(*PutSipInboundResponse)(nil),     // 38: calaba.v1.PutSipInboundResponse
+	(*SipInboundRing)(nil),            // 39: calaba.v1.SipInboundRing
+	(*SipInboundAcceptResponse)(nil),  // 40: calaba.v1.SipInboundAcceptResponse
+	(*timestamppb.Timestamp)(nil),     // 41: google.protobuf.Timestamp
+	(*JoinVoiceResponse)(nil),         // 42: calaba.v1.JoinVoiceResponse
 }
 var file_calaba_v1_sip_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.SipSettings.transport:type_name -> calaba.v1.SipTransport
-	37, // 1: calaba.v1.SipSettings.updated_at:type_name -> google.protobuf.Timestamp
-	7,  // 2: calaba.v1.GetSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
-	0,  // 3: calaba.v1.PutSipSettingsRequest.transport:type_name -> calaba.v1.SipTransport
-	7,  // 4: calaba.v1.PutSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
-	2,  // 5: calaba.v1.SipCall.direction:type_name -> calaba.v1.SipCallDirection
-	1,  // 6: calaba.v1.SipCall.status:type_name -> calaba.v1.SipCallStatus
-	37, // 7: calaba.v1.SipCall.started_at:type_name -> google.protobuf.Timestamp
-	37, // 8: calaba.v1.SipCall.answered_at:type_name -> google.protobuf.Timestamp
-	37, // 9: calaba.v1.SipCall.ended_at:type_name -> google.protobuf.Timestamp
-	12, // 10: calaba.v1.SipCallResponse.call:type_name -> calaba.v1.SipCall
-	12, // 11: calaba.v1.ListSipCallsResponse.calls:type_name -> calaba.v1.SipCall
-	12, // 12: calaba.v1.SipCallUpdate.call:type_name -> calaba.v1.SipCall
-	3,  // 13: calaba.v1.SipRouteTarget.kind:type_name -> calaba.v1.SipRouteKind
-	4,  // 14: calaba.v1.SipExtension.kind:type_name -> calaba.v1.SipExtensionKind
-	37, // 15: calaba.v1.SipExtension.created_at:type_name -> google.protobuf.Timestamp
-	18, // 16: calaba.v1.SipGroup.extension:type_name -> calaba.v1.SipExtension
-	5,  // 17: calaba.v1.SipGroup.strategy:type_name -> calaba.v1.SipGroupStrategy
-	17, // 18: calaba.v1.SipGroup.on_fail:type_name -> calaba.v1.SipRouteTarget
-	19, // 19: calaba.v1.SipGroup.members:type_name -> calaba.v1.SipGroupMember
-	37, // 20: calaba.v1.SipGroup.updated_at:type_name -> google.protobuf.Timestamp
-	17, // 21: calaba.v1.SipIvrItem.action:type_name -> calaba.v1.SipRouteTarget
-	6,  // 22: calaba.v1.SipIvrMenu.prompt_status:type_name -> calaba.v1.SipPromptStatus
-	17, // 23: calaba.v1.SipIvrMenu.on_no_input:type_name -> calaba.v1.SipRouteTarget
-	21, // 24: calaba.v1.SipIvrMenu.items:type_name -> calaba.v1.SipIvrItem
-	37, // 25: calaba.v1.SipIvrMenu.updated_at:type_name -> google.protobuf.Timestamp
-	18, // 26: calaba.v1.ListSipExtensionsResponse.extensions:type_name -> calaba.v1.SipExtension
-	18, // 27: calaba.v1.SipExtensionResponse.extension:type_name -> calaba.v1.SipExtension
-	20, // 28: calaba.v1.ListSipGroupsResponse.groups:type_name -> calaba.v1.SipGroup
-	5,  // 29: calaba.v1.CreateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
-	17, // 30: calaba.v1.CreateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
-	28, // 31: calaba.v1.CreateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
-	5,  // 32: calaba.v1.UpdateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
-	17, // 33: calaba.v1.UpdateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
-	28, // 34: calaba.v1.UpdateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
-	20, // 35: calaba.v1.SipGroupResponse.group:type_name -> calaba.v1.SipGroup
-	22, // 36: calaba.v1.ListSipIvrMenusResponse.menus:type_name -> calaba.v1.SipIvrMenu
-	21, // 37: calaba.v1.SipIvrItems.items:type_name -> calaba.v1.SipIvrItem
-	17, // 38: calaba.v1.CreateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
-	33, // 39: calaba.v1.CreateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
-	17, // 40: calaba.v1.UpdateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
-	33, // 41: calaba.v1.UpdateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
-	22, // 42: calaba.v1.SipIvrMenuResponse.menu:type_name -> calaba.v1.SipIvrMenu
-	43, // [43:43] is the sub-list for method output_type
-	43, // [43:43] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	41, // 1: calaba.v1.SipSettings.updated_at:type_name -> google.protobuf.Timestamp
+	17, // 2: calaba.v1.SipSettings.inbound_target:type_name -> calaba.v1.SipRouteTarget
+	7,  // 3: calaba.v1.GetSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
+	0,  // 4: calaba.v1.PutSipSettingsRequest.transport:type_name -> calaba.v1.SipTransport
+	7,  // 5: calaba.v1.PutSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
+	2,  // 6: calaba.v1.SipCall.direction:type_name -> calaba.v1.SipCallDirection
+	1,  // 7: calaba.v1.SipCall.status:type_name -> calaba.v1.SipCallStatus
+	41, // 8: calaba.v1.SipCall.started_at:type_name -> google.protobuf.Timestamp
+	41, // 9: calaba.v1.SipCall.answered_at:type_name -> google.protobuf.Timestamp
+	41, // 10: calaba.v1.SipCall.ended_at:type_name -> google.protobuf.Timestamp
+	12, // 11: calaba.v1.SipCallResponse.call:type_name -> calaba.v1.SipCall
+	12, // 12: calaba.v1.ListSipCallsResponse.calls:type_name -> calaba.v1.SipCall
+	12, // 13: calaba.v1.SipCallUpdate.call:type_name -> calaba.v1.SipCall
+	3,  // 14: calaba.v1.SipRouteTarget.kind:type_name -> calaba.v1.SipRouteKind
+	4,  // 15: calaba.v1.SipExtension.kind:type_name -> calaba.v1.SipExtensionKind
+	41, // 16: calaba.v1.SipExtension.created_at:type_name -> google.protobuf.Timestamp
+	18, // 17: calaba.v1.SipGroup.extension:type_name -> calaba.v1.SipExtension
+	5,  // 18: calaba.v1.SipGroup.strategy:type_name -> calaba.v1.SipGroupStrategy
+	17, // 19: calaba.v1.SipGroup.on_fail:type_name -> calaba.v1.SipRouteTarget
+	19, // 20: calaba.v1.SipGroup.members:type_name -> calaba.v1.SipGroupMember
+	41, // 21: calaba.v1.SipGroup.updated_at:type_name -> google.protobuf.Timestamp
+	17, // 22: calaba.v1.SipIvrItem.action:type_name -> calaba.v1.SipRouteTarget
+	6,  // 23: calaba.v1.SipIvrMenu.prompt_status:type_name -> calaba.v1.SipPromptStatus
+	17, // 24: calaba.v1.SipIvrMenu.on_no_input:type_name -> calaba.v1.SipRouteTarget
+	21, // 25: calaba.v1.SipIvrMenu.items:type_name -> calaba.v1.SipIvrItem
+	41, // 26: calaba.v1.SipIvrMenu.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 27: calaba.v1.ListSipExtensionsResponse.extensions:type_name -> calaba.v1.SipExtension
+	18, // 28: calaba.v1.SipExtensionResponse.extension:type_name -> calaba.v1.SipExtension
+	20, // 29: calaba.v1.ListSipGroupsResponse.groups:type_name -> calaba.v1.SipGroup
+	5,  // 30: calaba.v1.CreateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
+	17, // 31: calaba.v1.CreateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
+	28, // 32: calaba.v1.CreateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
+	5,  // 33: calaba.v1.UpdateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
+	17, // 34: calaba.v1.UpdateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
+	28, // 35: calaba.v1.UpdateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
+	20, // 36: calaba.v1.SipGroupResponse.group:type_name -> calaba.v1.SipGroup
+	22, // 37: calaba.v1.ListSipIvrMenusResponse.menus:type_name -> calaba.v1.SipIvrMenu
+	21, // 38: calaba.v1.SipIvrItems.items:type_name -> calaba.v1.SipIvrItem
+	17, // 39: calaba.v1.CreateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
+	33, // 40: calaba.v1.CreateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
+	17, // 41: calaba.v1.UpdateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
+	33, // 42: calaba.v1.UpdateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
+	22, // 43: calaba.v1.SipIvrMenuResponse.menu:type_name -> calaba.v1.SipIvrMenu
+	17, // 44: calaba.v1.PutSipInboundRequest.target:type_name -> calaba.v1.SipRouteTarget
+	7,  // 45: calaba.v1.PutSipInboundResponse.settings:type_name -> calaba.v1.SipSettings
+	12, // 46: calaba.v1.SipInboundRing.call:type_name -> calaba.v1.SipCall
+	12, // 47: calaba.v1.SipInboundAcceptResponse.call:type_name -> calaba.v1.SipCall
+	42, // 48: calaba.v1.SipInboundAcceptResponse.join:type_name -> calaba.v1.JoinVoiceResponse
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_sip_proto_init() }
@@ -2952,6 +3280,7 @@ func file_calaba_v1_sip_proto_init() {
 	if File_calaba_v1_sip_proto != nil {
 		return
 	}
+	file_calaba_v1_rtc_proto_init()
 	file_calaba_v1_sip_proto_msgTypes[2].OneofWrappers = []any{}
 	file_calaba_v1_sip_proto_msgTypes[18].OneofWrappers = []any{}
 	file_calaba_v1_sip_proto_msgTypes[23].OneofWrappers = []any{}
@@ -2962,7 +3291,7 @@ func file_calaba_v1_sip_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_sip_proto_rawDesc), len(file_calaba_v1_sip_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   30,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
