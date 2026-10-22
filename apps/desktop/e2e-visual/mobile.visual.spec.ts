@@ -1035,6 +1035,12 @@ test('m-boards-smart', async ({ page }) => {
   await page.getByTestId('boards-create-smart').tap();
   await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы');
   await checkpoint(page, 'm-boards-smart-dialog', { keyboard: true });
+  // CBF-75: the model declines (a duplicate of CAL-3): the reason inline, the text stays.
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика — похоже, дубль');
+  await page.getByTestId('smart-task-submit').tap();
+  await expect(page.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
+  await expect(page.getByTestId('smart-task-text')).toHaveValue('Оплатить счёт поставщика — похоже, дубль');
+  await checkpoint(page, 'm-boards-smart-refused', { keyboard: true });
 });
 
 test('m-boards-task', async ({ page }) => {

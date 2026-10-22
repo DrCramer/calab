@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/calaba/calaba/server/internal/aifiles"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -68,6 +69,10 @@ type Service struct {
 	// SmartUserLimit (per person) / SmartWorkspaceLimit (per workspace): smart tasks, each up
 	// to two model calls billed to the workspace's key. nil = none.
 	SmartUserLimit, SmartWorkspaceLimit Limiter
+	// SmartFiles prepares the attached files' content for the model, read from Files (CBF-75);
+	// either nil = the model gets the files' names, sizes and types only.
+	SmartFiles *aifiles.Preparer
+	Files      FileStore
 }
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).

@@ -150,7 +150,7 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
           <CommitInput label={t('boards.set.description')} value={board.description} maxLength={2000} onCommit={(v) => patch(board.id, { description: v })} />
         </Row>
       </Card>
-      <AiInstructionCard boardId={board.id} workspaceId={board.workspaceId} />
+      <AiInstructionCard boardId={board.id} workspaceId={board.workspaceId} findDuplicates={board.aiFindDuplicates} />
       <Card title={t('boards.set.archiveCard')} footer={t('boards.set.autoArchiveHint')}>
         <Row label={t('boards.set.autoArchive')}>
           <Select value={String(board.autoArchiveDays)} onChange={(e) => void patch(board.id, { autoArchiveDays: Number(e.target.value) })} aria-label={t('boards.set.autoArchive')} data-testid="auto-archive">
@@ -172,9 +172,10 @@ const AI_INSTRUCTION_MAX = 4000;
  * «Инструкция для ИИ» (CBF-68, ADR-0118): how smart tasks of this board are written. It is not
  * in the board lists or events — GET /api/boards/{id} (VIEW_BOARD) — so the card loads it; one
  * PATCH on «Сохранить». Writable on any plan; smart tasks run on Business only (CBF-69), so
- * without it the card says so.
+ * without it the card says so. «Искать дубли за 2 недели» (CBF-75, ADR-0123) is a board field
+ * (in the lists too): one PATCH per switch.
  */
-function AiInstructionCard({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
+function AiInstructionCard({ boardId, workspaceId, findDuplicates }: { boardId: string; workspaceId: string; findDuplicates: boolean }): ReactNode {
   const planAI = useWorkspaces((s) => planHasAI(s.byId[workspaceId]?.ws.plan));
   const [saved, setSaved] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -239,6 +240,9 @@ function AiInstructionCard({ boardId, workspaceId }: { boardId: string; workspac
           </Button>
         </div>
       </div>
+      <Row label={t('smart.dup.label')} hint={t('smart.dup.hint')}>
+        <Toggle label={t('smart.dup.label')} checked={findDuplicates} onChange={(v) => void patch(boardId, { aiFindDuplicates: v })} />
+      </Row>
     </Card>
   );
 }

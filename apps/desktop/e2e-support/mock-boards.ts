@@ -669,6 +669,7 @@ export class BoardsMock {
       estimateScale?: EstimateScale | undefined;
       approvalNotifyDelaySeconds?: number | undefined;
       aiInstruction?: string | undefined;
+      aiFindDuplicates?: boolean | undefined;
     },
   ): Board {
     const rec = this.boardFor(id, userId);
@@ -694,6 +695,7 @@ export class BoardsMock {
       if (chars(v) > 4000) throw invalid('aiInstruction', 'the AI instruction must be at most 4000 characters');
       rec.aiInstruction = v;
     }
+    if (req.aiFindDuplicates !== undefined) b.aiFindDuplicates = req.aiFindDuplicates; // CBF-75
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
