@@ -80,6 +80,7 @@ const KEY = new Set([
   'chat-voice-recording-narrow',
   'chat-voice-bubble',
   'voice-room-speaking',
+  'voice-room-ptt-idle',
   'voice-room-pending',
   'voice-room-joined',
   'voice-stream',
@@ -2199,6 +2200,19 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
   await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
   await checkpoint(shot, 'voice-room-speaking');
+  // CBF-71: the mic is on and live (green dot on the island's mic); switched to push-to-talk it
+  // waits for the key - a pale crossed mic in my row, no dot.
+  await expect(win.getByTestId('mic-live-dot')).toHaveCount(0);
+  await win.keyboard.press(`${MOD}+Shift+m`);
+  await expect(win.getByTestId('mic-live-dot')).toBeVisible();
+  await win.getByRole('button', { name: 'Выбор микрофона' }).click();
+  await win.getByTestId('mic-menu').getByRole('menuitemradio', { name: 'Push-to-talk' }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('mic-menu')).toHaveCount(0);
+  await expect(win.getByTestId('mic-live-dot')).toHaveCount(0);
+  await expect(win.locator('aside').first().locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'voice-room-ptt-idle');
 });
 
 // Noise suppression popover (docs/09 #12): the wave button in the «Голос подключён» header opens

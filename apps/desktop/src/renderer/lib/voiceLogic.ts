@@ -54,6 +54,18 @@ export function micModeFor(pref: 'voice' | 'ptt', call: boolean): 'voice' | 'ptt
   return call ? 'voice' : pref;
 }
 
+/**
+ * Which mic glyph a user shows (CBF-71): `muted` — a crossed mic; `ptt-idle` — the mic is on but
+ * waits for the push-to-talk key (a pale crossed mic, no transmission); `live` — the mic carries
+ * sound (voice activation, or the PTT key is held).
+ */
+export type MicGlyph = 'muted' | 'ptt-idle' | 'live';
+
+export function micGlyph(i: { muted: boolean; deafened: boolean; ptt: boolean; talking: boolean }): MicGlyph {
+  if (i.muted || i.deafened) return 'muted';
+  return i.ptt && !i.talking ? 'ptt-idle' : 'live';
+}
+
 export interface TransmitInput extends SelfState {
   canSpeak: boolean;
   mode: 'voice' | 'ptt';

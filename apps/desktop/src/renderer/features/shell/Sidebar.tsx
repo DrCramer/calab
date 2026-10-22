@@ -89,7 +89,7 @@ import { joinedAtMs } from '../../lib/justJoined';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
-import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { MusicianIcon, SelfVoiceStateIcons, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { isMobileNow, useMobile } from '../../lib/mobile';
 import { useChatDrop } from '../chat/useChatDrop';
 import { applyChatDrop } from '../notes/dropActions';
@@ -1726,7 +1726,11 @@ function VoiceMember({
         )
       ) : null}
       {state.musician ? <MusicianIcon /> : null}
-      <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
+      {isMe ? (
+        <SelfVoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || serverMuted} />
+      ) : (
+        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} />
+      )}
     </li>
   );
   // Shared member menu (PEOPLE): profile (dialog), mention, volume, moderation, «Переместить в ›»…

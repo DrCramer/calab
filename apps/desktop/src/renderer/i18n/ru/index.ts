@@ -408,6 +408,7 @@ export const ru = {
   'voice.mode': 'Режим микрофона',
   'voice.modeVad': 'Активация голосом',
   'voice.modePtt': 'Push-to-talk',
+  'voice.pttIdleState': 'Push-to-talk: ждёт нажатия клавиши',
   'voice.threshold': 'Порог активации: {db} дБ',
   'voice.thresholdHint': 'Микрофон включается, когда вы говорите громче порога, и выключается после короткой паузы.',
   'voice.pttKey': 'Клавиша push‑to‑talk',
