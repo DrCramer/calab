@@ -155,6 +155,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	ag.port = la.Port
 	ag.laddr = sip.Addr{IP: la.IP, Port: la.Port}
 	go func() { _ = ag.srv.ServeUDP(udp) }()
+	ag.awaitListener(la.String())
 	if cfg.tcp {
 		l, err := lc.Listen(ctx, "tcp4", net.JoinHostPort(cfg.bind, strconv.Itoa(ag.port)))
 		if err != nil {
@@ -166,6 +167,17 @@ func newAgent(cfg agentConfig) (*agent, error) {
 		go func() { _ = ag.srv.ServeTCP(ag.tcpL) }()
 	}
 	return ag, nil
+}
+
+// awaitListener blocks until sipgo has put the UDP listener into its connection pool (ServeUDP
+// does it asynchronously). A request sent before that finds no connection for our laddr, tries
+// to listen on it itself and fails with «address already in use».
+func (ag *agent) awaitListener(addr string) {
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		if _, err := ag.ua.TransportLayer().GetConnection("udp", addr); err == nil {
+			return
+		}
+	}
 }
 
 func (ag *agent) listenAddr() string { return ag.udp.LocalAddr().String() }
