@@ -20,8 +20,9 @@ import (
 
 // Watchers (ADR-0076): an explicit role on a task, task_subscribers.watcher. A watcher is
 // always a subscriber; one who does not see the board sees this task (perm.TaskBits). Only
-// someone who may edit the task makes watchers (explicitly or by @mentioning); a watcher is
-// removed by such an editor or by themselves.
+// someone who may edit the task makes watchers explicitly or by @mentioning in the description;
+// any commenter does by @mentioning in a comment (ADR-0120); a watcher is removed by an editor
+// or by themselves.
 
 // MaxWatchers bounds the watchers of one task (mentions beyond it are only notified).
 const MaxWatchers = 50

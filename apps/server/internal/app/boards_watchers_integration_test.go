@@ -162,6 +162,14 @@ func TestTaskWatchers(t *testing.T) {
 		t.Fatal("a bot became a watcher by mention")
 	}
 	bt.must(404, "GET", "/api/tasks/"+b.GetId(), nil, nil)
+	// The same for a commenter who cannot edit (CBF-53 review): bob, a watcher by card on the
+	// restricted board, calls the guest and the bot — neither becomes a watcher nor sees the card.
+	send(t, bob, a.GetRoomId(), "гость @"+guest+" и бот @"+bt.id, uniq("gb"))
+	time.Sleep(200 * time.Millisecond)
+	if ws := watchersOf(t, o, a.GetId()); slices.Contains(ws, guest) || slices.Contains(ws, bt.id) {
+		t.Fatalf("a non-editor's mention made a guest or a bot a watcher: %v", ws)
+	}
+	bt.must(404, "GET", "/api/tasks/"+a.GetId(), nil, nil)
 
 	// A plain subscriber removed from the board does not keep the card.
 	pub := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Открытая", Key: "OPN"}, 201)

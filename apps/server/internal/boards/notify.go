@@ -272,8 +272,8 @@ func (s *Service) relayNotice(ctx context.Context, t taskRow, user uuid.UUID, ta
 
 // TaskHook runs after a comment is posted (or forwarded) into a task room (messages.Handlers
 // .TaskHook): the journal gets a "comment" entry (ADR-0091; the rule trigger comment_created,
-// ADR-0060, fires on it); the author subscribes; when the author may edit the task the
-// @mentioned members become watchers (ADR-0076 §5); the mentioned who see the task are
+// ADR-0060, fires on it); the author subscribes; the @mentioned members become watchers
+// (ADR-0076 §5, ADR-0120: any commenter); the mentioned who see the task are
 // subscribed and notified, the other subscribers get a COMMENT notice by their levels, and the
 // board gets TASK_UPDATE (comment_count) and TASK_ACTIVITY.
 func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message) {
