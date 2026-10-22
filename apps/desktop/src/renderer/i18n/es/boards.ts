@@ -520,6 +520,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.perm.viewHint': 'Tareas, comentarios, suscripciones',
   'boards.perm.create': 'Crear tareas',
   'boards.perm.createHint': 'Y editar las propias y las asignadas',
+  'boards.perm.createOnly': 'Crea y ve solo sus propias tarjetas',
   'boards.perm.edit': 'Editar cualquier tarea',
   'boards.perm.editHint': 'Mover, archivar, moderar comentarios',
   'boards.perm.manage': 'Gestionar el tablero',

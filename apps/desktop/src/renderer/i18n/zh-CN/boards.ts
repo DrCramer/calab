@@ -520,6 +520,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.perm.viewHint': '任务、评论、订阅',
   'boards.perm.create': '创建任务',
   'boards.perm.createHint': '并可编辑自己创建或被指派的任务',
+  'boards.perm.createOnly': '可创建任务，仅能看到自己的卡片',
   'boards.perm.edit': '编辑任意任务',
   'boards.perm.editHint': '移动、归档、管理评论',
   'boards.perm.manage': '管理看板',

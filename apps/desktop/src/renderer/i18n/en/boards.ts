@@ -520,6 +520,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.perm.viewHint': 'Tasks, comments, subscriptions',
   'boards.perm.create': 'Create tasks',
   'boards.perm.createHint': 'And edit own and assigned ones',
+  'boards.perm.createOnly': 'Creates and sees only own cards',
   'boards.perm.edit': 'Edit any task',
   'boards.perm.editHint': 'Move, archive, moderate comments',
   'boards.perm.manage': 'Manage the board',

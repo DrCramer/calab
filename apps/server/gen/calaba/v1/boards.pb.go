@@ -2025,7 +2025,8 @@ type Board struct {
 	// Task-scoped access (ADR-0059, ADR-0076): the recipient sees the board only through its
 	// tasks - those where they are an assignee, an approver or a watcher; permissions = 0 (task
 	// bits come from taskPermissions), permission_overrides empty, open_tasks 0. Restricted
-	// boards too (ADR-0076); never for guests or bots.
+	// boards too (ADR-0076); never for guests or bots. Create-only (ADR-0115): permissions =
+	// CREATE_TASKS - the recipient creates tasks and also sees the ones they authored.
 	TaskScoped bool `protobuf:"varint,28,opt,name=task_scoped,json=taskScoped,proto3" json:"task_scoped,omitempty"`
 	// Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
 	// created or deleted).

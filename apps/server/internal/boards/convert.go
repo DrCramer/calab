@@ -193,15 +193,19 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Boa
 		out.PermissionOverrides = append(out.PermissionOverrides, BoardOverride(o))
 	}
 	if scoped {
-		return ScopedForm(out)
+		return ScopedForm(out, bits)
 	}
 	return out
 }
 
-// ScopedForm turns a broadcast board into the form a task-scoped recipient gets (ADR-0064):
-// permissions 0, no access overrides, no board-wide task count. b is modified.
-func ScopedForm(b *v1.Board) *v1.Board {
+// ScopedForm turns a broadcast board into the form a task-scoped recipient with board bits bits
+// gets (ADR-0064): permissions 0 — CREATE_TASKS for a create-only member (ADR-0115) —, no
+// access overrides, no board-wide task count. b is modified.
+func ScopedForm(b *v1.Board, bits perm.Bits) *v1.Board {
 	b.Permissions, b.TaskScoped, b.OpenTasks, b.PermissionOverrides = 0, true, 0, nil
+	if perm.CreateOnly(bits) {
+		b.Permissions = uint64(perm.CreateTasks)
+	}
 	return b
 }
 
@@ -270,7 +274,11 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 	}
 	out := make([]*v1.Board, len(visible))
 	for i, b := range visible {
-		out[i] = boardProto(b, p, vis.Full[b.ID], vis.Scoped[b.ID])
+		bits := vis.Full[b.ID]
+		if vis.CreateOnly[b.ID] {
+			bits = perm.CreateTasks
+		}
+		out[i] = boardProto(b, p, bits, vis.Scoped[b.ID])
 	}
 	unread, err := q.UnreadTaskIDs(ctx, sqlc.UnreadTaskIDsParams{WorkspaceID: wsID, UserID: me})
 	if err != nil {

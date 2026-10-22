@@ -195,26 +195,44 @@ func taskOf(r *http.Request, q *sqlc.Queries, t taskRow) (perm.BoardAccess, erro
 	if acc.Bits.Has(perm.ViewBoard) {
 		return acc, nil
 	}
-	if t.ArchivedAt != nil { // invitations count on live tasks only
-		return perm.BoardAccess{}, httpx.NotFound("task")
-	}
-	inv, err := q.GetTaskInvite(r.Context(), sqlc.GetTaskInviteParams{TaskID: t.ID, UserID: uid(r)})
-	if err != nil {
+	if acc.Bits, err = taskBitsOf(r.Context(), q, acc, t, uid(r)); err != nil {
 		return perm.BoardAccess{}, err
 	}
-	if acc.Bits = perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher); acc.Bits == 0 {
+	if acc.Bits == 0 {
 		return perm.BoardAccess{}, httpx.NotFound("task")
 	}
 	return acc, nil
 }
 
+// taskBitsOf is user u's perm.TaskBits on task t given their board access acc (ADR-0059,
+// ADR-0076, ADR-0115): the board's bits for a viewer; otherwise, on a task-scoped board and a
+// live task, from their roles on it — assignee, approver, watcher and author (the last counts
+// only for a create-only member) —; 0 = the task is hidden from them.
+func taskBitsOf(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, t taskRow, u uuid.UUID) (perm.Bits, error) {
+	if acc.Bits.Has(perm.ViewBoard) {
+		return acc.Bits, nil
+	}
+	if !acc.TaskScoped || t.ArchivedAt != nil { // invitations count on live tasks only
+		return 0, nil
+	}
+	inv, err := q.GetTaskInvite(ctx, sqlc.GetTaskInviteParams{TaskID: t.ID, UserID: u})
+	if err != nil {
+		return 0, err
+	}
+	return perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher, t.CreatedBy != nil && *t.CreatedBy == u), nil
+}
+
 // invitedCond is the SQL condition over tasks t "user is an assignee, an approver or a watcher"
-// (ADR-0059, ADR-0076).
-func invitedCond(a *Args, user uuid.UUID) string {
+// (ADR-0059, ADR-0076) — with author, "or its author" (a create-only member, ADR-0115).
+func invitedCond(a *Args, user uuid.UUID, author bool) string {
 	u := a.Add(user)
-	return "(EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.task_id = t.id AND ia.user_id = " + u + ")" +
+	cond := "(EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.task_id = t.id AND ia.user_id = " + u + ")" +
 		" OR EXISTS (SELECT 1 FROM task_approvers ip WHERE ip.task_id = t.id AND ip.user_id = " + u + ")" +
-		" OR EXISTS (SELECT 1 FROM task_subscribers iw WHERE iw.task_id = t.id AND iw.user_id = " + u + " AND iw.watcher))"
+		" OR EXISTS (SELECT 1 FROM task_subscribers iw WHERE iw.task_id = t.id AND iw.user_id = " + u + " AND iw.watcher)"
+	if author {
+		cond += " OR t.created_by = " + u
+	}
+	return cond + ")"
 }
 
 // visibleTasks keeps the rows the viewer sees (order kept): tasks of live boards with
@@ -249,7 +267,9 @@ func visibleTasks(ctx context.Context, q *sqlc.Queries, rows []taskRow, me uuid.
 	}
 	out := make([]taskRow, 0, len(rows))
 	for _, x := range rows {
-		if acc := accs[x.BoardID]; (acc.Bits.Has(perm.ViewBoard) && !acc.Archived) || invited[x.ID] {
+		acc := accs[x.BoardID]
+		authored := acc.TaskScoped && perm.CreateOnly(acc.Bits) && x.ArchivedAt == nil && x.CreatedBy != nil && *x.CreatedBy == me
+		if (acc.Bits.Has(perm.ViewBoard) && !acc.Archived) || invited[x.ID] || authored {
 			out = append(out, x)
 		}
 	}
@@ -626,7 +646,7 @@ func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	qs := r.URL.Query()
-	scoped := !acc.Bits.Has(perm.ViewBoard) // ADR-0059: only the live tasks they are invited on
+	scoped := !acc.Bits.Has(perm.ViewBoard) // ADR-0059: only the live tasks they are invited on (ADR-0115: or authored)
 	if scoped && qs.Get("archived") == "1" {
 		httpx.Write(w, http.StatusOK, &v1.ListTasksResponse{})
 		return nil
@@ -654,7 +674,7 @@ func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
 		where = append(where, "t.archived_at IS NULL")
 	}
 	if scoped {
-		where = append(where, invitedCond(&a, uid(r)))
+		where = append(where, invitedCond(&a, uid(r), perm.CreateOnly(acc.Bits)))
 	}
 	if s := qs.Get("updated_after"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
@@ -873,6 +893,26 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		}
 		if ms != nil && !it.milestones[*ms] {
 			return httpx.Validation("milestoneId", "a milestone of this board is required")
+		}
+		if acc.TaskScoped { // create-only (ADR-0115): a parent or a neighbour only among the tasks they see
+			for _, ref := range []struct {
+				id    *uuid.UUID
+				field string
+			}{{parent, "parentId"}, {after, "afterTaskId"}} {
+				if ref.id == nil {
+					continue
+				}
+				x, ok, err := taskByID(r.Context(), tx, *ref.id, false)
+				if err != nil {
+					return err
+				}
+				if !ok || x.BoardID != boardID {
+					return httpx.Validation(ref.field, "a live task of this board is required")
+				}
+				if _, err := taskOf(r, q, x); err != nil {
+					return httpx.Validation(ref.field, "a live task of this board is required")
+				}
+			}
 		}
 		if parent != nil {
 			if err := checkParent(r.Context(), q, tx, boardID, *parent, uuid.Nil); err != nil {

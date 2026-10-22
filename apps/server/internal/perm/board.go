@@ -50,7 +50,9 @@ func BoardScopeOf(m Member, f BoardFlags) BoardScope {
 // ComputeBoard is the board form of the one permission rule (ADR-0042, ADR-0048, ADR-0058
 // addendum 2026-10-14): the order of ComputeOrdered (ADMINISTRATOR → everything, each role's
 // override lowest position first, then the user's), but the overrides touch only BoardOnly bits
-// and without VIEW_BOARD there is nothing. Guests get nothing. A private board has no bypass —
+// and without VIEW_BOARD there is nothing — but create-only (CBF-61, ADR-0115): CREATE_TASKS
+// alone when an allow override on the board grants it (the workspace roles' CREATE_TASKS does
+// not count) and no later override denies it. Guests get nothing. A private board has no bypass —
 // the owner with OwnerSeesPrivate alone gets everything —: ADMINISTRATOR and the roles'
 // VIEW_BOARD are dropped, only an allow override lets anyone in, and the creator always keeps
 // VIEW_BOARD. Mirror of computePermissions({board}) in packages/protocol.
@@ -66,22 +68,33 @@ func ComputeBoard(raw Bits, sc BoardScope, roleOvs []Override, userOv *Override)
 		return All
 	}
 	p := raw
+	granted := Bits(0) // CREATE_TASKS from the board's own overrides (create-only, CBF-61)
 	for _, o := range roleOvs {
 		p &^= o.Deny & BoardOnly
 		p |= o.Allow & BoardOnly
+		granted &^= o.Deny & CreateTasks
+		granted |= o.Allow & CreateTasks
 	}
 	if userOv != nil {
 		p &^= userOv.Deny & BoardOnly
 		p |= userOv.Allow & BoardOnly
+		granted &^= userOv.Deny & CreateTasks
+		granted |= userOv.Allow & CreateTasks
 	}
 	if sc.Private && sc.Creator {
 		p |= ViewBoard
 	}
 	if p&ViewBoard == 0 {
-		return 0
+		return granted
 	}
 	return p
 }
+
+// CreateOnly reports whether board bits b (ComputeBoard) are the create-only form (CBF-61,
+// ADR-0115): CREATE_TASKS without VIEW_BOARD. Such a member — a human, not a guest, on a live
+// board: BoardAccess.TaskScoped — sees the board through its cards (ADR-0059) and, besides,
+// creates tasks and sees the ones they authored (TaskBits); nothing else of the board.
+func CreateOnly(b Bits) bool { return b == CreateTasks }
 
 // ComputeBoardIn computes a member's board permissions from the board's flags and override list.
 func ComputeBoardIn(m Member, f BoardFlags, overrides []OverrideTarget) Bits {
@@ -118,18 +131,19 @@ func ComputeBoardRoles(roles []RoleBits, sc BoardScope, roleOvs map[string]Overr
 	return ComputeBoard(m.Raw(), sc, ovs, userOv)
 }
 
-// TaskBits is the caller's bits on one task (ADR-0059 §2, ADR-0076 §3): a viewer of the board
-// keeps the board's bits; on a task-scoped board an assignee gets VIEW_BOARD | CREATE_TASKS
-// (works on the task like a member on their assigned task: canEdit, never a new task —
-// createTask checks the board's bits), an approver or a watcher VIEW_BOARD (view, comment,
-// subscribe; an approver also votes); anyone else 0 (404). assignee / approver / watcher must
-// be on a live task. Mirror of taskPermissions in packages/protocol; the shared case table is
-// proto/testdata/task_bits.json.
-func TaskBits(acc BoardAccess, assignee, approver, watcher bool) Bits {
+// TaskBits is the caller's bits on one task (ADR-0059 §2, ADR-0076 §3, ADR-0115): a viewer of
+// the board keeps the board's bits; on a task-scoped board an assignee — and, for a create-only
+// member (CreateOnly), the task's author — gets VIEW_BOARD | CREATE_TASKS (works on the task
+// like a member on their own or assigned task: canEdit; a new task takes the board's bits), an
+// approver or a watcher VIEW_BOARD (view, comment, subscribe; an approver also votes); anyone
+// else 0 (404). Authorship counts only for a create-only member: an invitee who once wrote a
+// task does not see it through that. The roles must be on a live task. Mirror of
+// taskPermissions in packages/protocol; the shared case table is proto/testdata/task_bits.json.
+func TaskBits(acc BoardAccess, assignee, approver, watcher, author bool) Bits {
 	switch {
 	case acc.Bits.Has(ViewBoard):
 		return acc.Bits
-	case acc.TaskScoped && assignee:
+	case acc.TaskScoped && (assignee || (author && CreateOnly(acc.Bits))):
 		return ViewBoard | CreateTasks
 	case acc.TaskScoped && (approver || watcher):
 		return ViewBoard

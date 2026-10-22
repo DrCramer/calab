@@ -120,12 +120,8 @@ func authorEdits(ctx context.Context, q *sqlc.Queries, t taskRow, author uuid.UU
 	if acc.Archived || acc.Suspended || t.ArchivedAt != nil {
 		return false, nil
 	}
-	if !acc.Bits.Has(perm.ViewBoard) {
-		inv, err := q.GetTaskInvite(ctx, sqlc.GetTaskInviteParams{TaskID: t.ID, UserID: author})
-		if err != nil {
-			return false, err
-		}
-		acc.Bits = perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher)
+	if acc.Bits, err = taskBitsOf(ctx, q, acc, t, author); err != nil {
+		return false, err
 	}
 	return canEdit(ctx, q, acc, t, author)
 }
