@@ -39,6 +39,13 @@ func TestInviteByBot(t *testing.T) {
 	if len(kb.GetAllowedUserIds()) != 1 || kb.GetAllowedUserIds()[0] != "u1" || len(kb.GetRows()[0].GetButtons()) != 2 {
 		t.Fatalf("keyboard %v", kb)
 	}
+	// The bot names itself: its name carries no mention, link, markup or line break into the text.
+	for _, byBot := range []bool{true, false} {
+		text, _ = Invite(&ru, "Иван", "Опса\n\n@01a0da71-1b72-7cc1-bce3-c448b44aefe2 https://evil.example **x**", "Команда", "u1", byBot, "")
+		if strings.ContainsAny(text, "@/*\n") {
+			t.Fatalf("bot name passed through (byBot=%v): %q", byBot, text)
+		}
+	}
 	text, _ = Invite(nil, "Ivan", "Opsa", "Team", "u1", false, "")
 	if !strings.HasPrefix(text, "Ivan suggests") || strings.Contains(text, "Why") {
 		t.Fatalf("person's invitation: %q", text)

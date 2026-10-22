@@ -82,7 +82,9 @@ func Invite(locale *string, inviter, bot, ws string, invitee string, byBot bool,
 	if byBot {
 		tpl = t.inviteByBot
 	}
-	text := strings.NewReplacer("{inviter}", inviter, "{bot}", bot, "{ws}", ws).Replace(tpl)
+	// The bot names itself (PATCH /api/me): inside the server's text its name gets the reason's
+	// filter, so no mention, link, markup or line break in it poses as the server's words.
+	text := strings.NewReplacer("{inviter}", inviter, "{bot}", plainLine(bot), "{ws}", ws).Replace(tpl)
 	if reason != "" {
 		text += "\n\n" + strings.Replace(t.reason, "{reason}", reason, 1)
 	}
@@ -109,6 +111,11 @@ func CleanReason(raw string) (string, bool) {
 	if utf8.RuneCountInString(raw) > MaxReason {
 		return "", false
 	}
+	return plainLine(raw), true
+}
+
+// plainLine keeps of raw one line of letters, digits, marks, single spaces and reasonPunct.
+func plainLine(raw string) string {
 	var b strings.Builder
 	space := false
 	for _, r := range raw {
@@ -126,7 +133,7 @@ func CleanReason(raw string) (string, bool) {
 		space = false
 		b.WriteRune(r)
 	}
-	return b.String(), true
+	return b.String()
 }
 
 // Outcome is the line appended to the invitation when it closes: accepted, declined (by the
