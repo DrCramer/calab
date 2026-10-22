@@ -47,7 +47,7 @@ func TestInDialogSource(t *testing.T) {
 	acc.allow.Store(&list)
 	c := &call{acc: acc}
 	c.a.callID, c.b.callID = "leg-a", "leg-b"
-	ag := &agent{calls: map[string]*call{"leg-a": c, "leg-b": c}, lkAddr: "127.0.0.1:5060"}
+	ag := &agent{calls: map[string]*call{"leg-a": c, "leg-b": c}, lkAddr: "127.0.0.1:5060", lkIP: netip.MustParseAddr("127.0.0.1")}
 	bye := func(cid, src string) *sip.Request {
 		req := sip.NewRequest(sip.BYE, sip.Uri{Scheme: "sip", User: "x", Host: "127.0.0.1"})
 		h := sip.CallIDHeader(cid)

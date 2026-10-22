@@ -1,28 +1,37 @@
-// Command sipreg is the SIP registration agent of inbound phone calls (ADR-0121): for every
-// workspace account in REGISTER mode it holds a registration at the provider (REGISTER with
-// digest, refresh, OPTIONS keepalive) whose Contact points at this agent, and hands the INVITEs
-// that come over it to LiveKit SIP on loopback as a signalling-only B2BUA: two dialogs, the SDP
-// copied as it is, the media flowing directly between the provider and LiveKit SIP. From
-// LiveKit SIP on, a call is the same as in the direct mode (ADR-0117).
+// Command sipreg is the SIP registration agent of inbound phone calls (ADR-0121, ADR-0125): for
+// every workspace account in REGISTER mode it holds a registration at the provider (REGISTER
+// with digest, refresh, keepalive) and hands the INVITEs that come over it to LiveKit SIP as a
+// signalling-only B2BUA: two dialogs, the SDP copied as it is, the media flowing directly
+// between the provider and LiveKit SIP. From LiveKit SIP on, a call is the same as in the
+// direct mode (ADR-0117).
+//
+// By default it is a SIP client behind NAT, like a softphone behind a home router (flow mode,
+// ADR-0125): it keeps a flow to each registrar open — one long-lived TCP connection, or the UDP
+// binding of its socket kept alive every 20 s — registers the address the registrar sees
+// (Via received / rport), and the provider's INVITEs come back over that flow. No inbound port
+// forward and no public address are needed. With SIP_REGISTRAR_PUBLIC_IP (or SIP_REGISTRAR_STUN)
+// it runs in the older forward mode instead: Contact = that address:SIP_REGISTRAR_PORT, which
+// must be reachable from the provider (udp + tcp).
 //
 // It is the «hands» of the API: no database, rights or workspaces. It holds an outgoing
 // WebSocket to the API (GET /api/internal/sipreg-agent with SIPREG_AGENT_TOKEN), gets the
 // accounts there (passwords in memory only, never on disk or in logs) and reports registration
-// states and calls. It has no HTTP port. On its SIP port, packets from addresses that are not a
-// provider's are dropped before parsing, without an answer.
+// states and calls. It has no HTTP port. Packets from addresses that are not a provider's are
+// dropped before parsing, without an answer.
 //
 // The SIP stack is github.com/emiago/sipgo (pure Go; the API binary does not link it, ADR-0013).
-// One replica on the stand next to livekit/sip (compose profile sipreg, network_mode host).
+// One replica, where LiveKit SIP is reachable (LIVEKIT_SIP_ADDR) and reaches it back.
 //
 // Environment:
 //
 //	API_URL                  the API's public base URL, e.g. https://app.calab.io (required)
 //	SIPREG_AGENT_TOKEN       the shared token (required; the API's SIPREG_AGENT_TOKEN)
-//	SIP_REGISTRAR_PORT       the public SIP port of the agent, UDP and TCP (default 5080)
+//	SIP_REGISTRAR_PORT       the local UDP port (default 5080); in forward mode also TCP, and public
 //	SIP_REGISTRAR_BIND       the address to listen on (default 0.0.0.0)
-//	SIP_REGISTRAR_PUBLIC_IP  the public IPv4 put into Contact / Via (default: found via STUN)
-//	SIP_REGISTRAR_STUN       STUN server for the public IP (default stun.l.google.com:19302; off = none)
-//	LIVEKIT_SIP_ADDR         LiveKit SIP's signalling address (default 127.0.0.1:5060)
+//	SIP_REGISTRAR_PUBLIC_IP  forward mode: the public IPv4 put into Contact / Via (default: none = flow mode)
+//	SIP_REGISTRAR_STUN       forward mode via STUN: a STUN server finding the public IP (default none; off = none)
+//	SIP_REGISTRAR_OUTBOUND   flow mode: off = no RFC 5626 Contact parameters (reg-id, +sip.instance, ob)
+//	LIVEKIT_SIP_ADDR         LiveKit SIP's signalling address (default 127.0.0.1:5060; a name is resolved once at the start)
 package main
 
 import (
@@ -48,6 +57,7 @@ type config struct {
 	stun          string
 	livekit       string // host:port
 	tcp           bool
+	outbound      bool
 }
 
 func loadConfig() (config, error) {
@@ -55,11 +65,9 @@ func loadConfig() (config, error) {
 		apiURL: strings.TrimRight(os.Getenv("API_URL"), "/"), token: os.Getenv("SIPREG_AGENT_TOKEN"),
 		bind: os.Getenv("SIP_REGISTRAR_BIND"), publicIP: os.Getenv("SIP_REGISTRAR_PUBLIC_IP"),
 		stun: os.Getenv("SIP_REGISTRAR_STUN"), livekit: os.Getenv("LIVEKIT_SIP_ADDR"), port: 5080, tcp: true,
+		outbound: os.Getenv("SIP_REGISTRAR_OUTBOUND") != "off",
 	}
-	switch c.stun {
-	case "":
-		c.stun = "stun.l.google.com:19302"
-	case "off":
+	if c.stun == "off" {
 		c.stun = ""
 	}
 	if c.bind == "" {
@@ -106,20 +114,20 @@ func main() {
 	public := cfg.publicIP
 	if public == "" && cfg.stun != "" {
 		if public, err = stunPublicIP(ctx, cfg.stun, 5*time.Second); err != nil {
-			slog.Error("sipreg: no public IP (set SIP_REGISTRAR_PUBLIC_IP)", "err", err)
+			slog.Error("sipreg: no public IP from STUN (unset SIP_REGISTRAR_STUN for flow mode)", "err", err)
 			os.Exit(2)
 		}
 	}
-	if public == "" {
-		slog.Error("sipreg: no public IP: set SIP_REGISTRAR_PUBLIC_IP or SIP_REGISTRAR_STUN")
-		os.Exit(2)
-	}
-	ag, err := newAgent(agentConfig{bind: cfg.bind, port: cfg.port, publicIP: public, livekit: cfg.livekit, tcp: cfg.tcp})
+	ag, err := newAgent(agentConfig{bind: cfg.bind, port: cfg.port, publicIP: public, livekit: cfg.livekit, tcp: cfg.tcp, outbound: cfg.outbound})
 	if err != nil {
 		slog.Error("sipreg: listen", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("sipreg: listening", "addr", ag.listenAddr(), "public", public, "livekit", cfg.livekit)
+	mode := "flow"
+	if public != "" {
+		mode = "forward"
+	}
+	slog.Info("sipreg: listening", "mode", mode, "addr", ag.listenAddr(), "public", public, "livekit", cfg.livekit)
 	if cfg.publicIP == "" && cfg.stun != "" {
 		go ag.watchPublicIP(ctx, func(ctx context.Context) (string, error) { return stunPublicIP(ctx, cfg.stun, 5*time.Second) })
 	}

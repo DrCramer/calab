@@ -165,8 +165,9 @@ services:
 
   # SIP registration agent of inbound calls (ADR-0121): SIPREG_AGENT_TOKEN in .env (with
   # SIP_ENABLED=1) adds the compose profile "sipreg" (deploy.sh). It registers the workspaces'
-  # accounts at their providers with Contact = this host:SIP_REGISTRAR_PORT (5080 udp+tcp, open in
-  # the firewall, docs/03) and hands their INVITEs to LiveKit SIP on 127.0.0.1:5060. Outgoing
+  # accounts at their providers as a client behind NAT (ADR-0125: a flow to the registrar, no
+  # inbound port; SIP_REGISTRAR_PUBLIC_IP set = the older forward mode with 5080 udp+tcp open,
+  # docs/03) and hands their INVITEs to LiveKit SIP on 127.0.0.1:5060. Outgoing
   # WebSocket to the API (SIPREG_API_URL, by default the app host; prod: the k8s API) with its
   # own token; the providers' passwords stay in its memory. No HTTP ports.
   sipreg:

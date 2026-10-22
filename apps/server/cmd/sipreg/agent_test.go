@@ -348,6 +348,22 @@ func TestReadFilter(t *testing.T) {
 	if fl.ok(netip.MustParseAddr("192.0.2.1")) {
 		t.Fatal("TCP from an unknown source")
 	}
+
+	// LiveKit SIP on another host (flow mode in a pod): its address passes the filter and counts
+	// as leg B's source; loopback then does not.
+	if a, hp, err := resolveLiveKit(t.Context(), "localhost:5060"); err != nil || !a.IsLoopback() || hp != a.String()+":5060" {
+		t.Fatalf("resolve localhost: %v %q %v", a, hp, err)
+	}
+	far := startAgent(t, agentConfig{bind: "127.0.0.1", livekit: "192.0.2.50:5060", timings: fastTimings()})
+	if out, _ := far.readFilter(props("192.0.2.50:5060"), data); out == nil || !far.fromLiveKit(netip.MustParseAddr("192.0.2.50")) {
+		t.Fatal("LiveKit SIP's address dropped")
+	}
+	if out, _ := far.readFilter(props("192.0.2.51:5060"), data); out != nil {
+		t.Fatal("a neighbour of LiveKit SIP passed")
+	}
+	if far.fromLiveKit(netip.MustParseAddr("127.0.0.1")) || far.fromLiveKit(netip.MustParseAddr("192.0.2.51")) {
+		t.Fatal("another address taken for LiveKit SIP")
+	}
 }
 
 func TestHelpers(t *testing.T) {

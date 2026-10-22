@@ -18,9 +18,14 @@ import (
 	"github.com/calaba/calaba/server/internal/sipregwire"
 )
 
+// flowExpiresMax caps the registration time in flow mode (ADR-0125): a binding left behind by a
+// crashed pod (another NAT port) or a dead flow lives at most this long at the provider.
+const flowExpiresMax = 300
+
 // registration holds one account's binding at its provider (ADR-0121 §2): REGISTER with
-// digest, refresh at half of the granted time, OPTIONS keepalive, backoff on failures, a final
-// REGISTER with Expires: 0 when the account goes.
+// digest, refresh at half of the granted time, keepalives, backoff on failures, a final
+// REGISTER with Expires: 0 when the account goes. In flow mode (ADR-0125) its Contact is the
+// address the registrar sees, and the INVITEs come back over the same flow.
 type registration struct {
 	ag     *agent
 	acc    sipregwire.Account
@@ -34,8 +39,13 @@ type registration struct {
 	expiresAt  time.Time
 	contact    string
 	lastReport time.Time
-	learned    string // the address the registrar saw (received / rport), "" = our public one
+	learned    string // the address the registrar saw (received / rport), "" = not known
 	dest       string // the registrar's pinned ip:port (resolve), "" = none usable
+	localIP    string // our local address towards dest (flow mode, before learned)
+	flow       *tcpFlow
+	bound      sip.Uri // the Contact the registrar holds (to take it off when ours moves)
+	hasBound   bool
+	flowTimer  time.Duration // the registrar's Flow-Timer (RFC 5626 §4.4.1)
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -52,6 +62,8 @@ var (
 	errTimeout = errors.New("timeout")
 	// errNoAddress: the registrar's name gives no public address (yet).
 	errNoAddress = errors.New("dns: the registrar has no public address")
+	errConnect   = errors.New("tcp: no connection to the registrar")
+	errDropped   = errors.New("tcp: the registrar closed the connection")
 )
 
 // codeError is a final failure answer of the registrar.
@@ -96,7 +108,9 @@ func (r *registration) run(ctx context.Context) {
 		var contact string
 		err := errNoAddress
 		if r.destination() != "" {
-			granted, contact, err = r.register(ctx, r.acc.Expires)
+			if err = r.ensureFlow(ctx); err == nil {
+				granted, contact, err = r.register(ctx, r.expires())
+			}
 		}
 		if ctx.Err() != nil {
 			return
@@ -104,16 +118,29 @@ func (r *registration) run(ctx context.Context) {
 		var wait time.Duration
 		switch {
 		case err == nil:
-			backoff = r.ag.t.backoffMin
 			r.report(sipregwire.StatusRegistered, "", time.Now().Add(granted), contact)
-			if !r.hold(ctx, refreshIn(granted, r.ag.t.minRefresh)) {
+			since := time.Now()
+			res := r.hold(ctx, refreshIn(granted, r.ag.t.minRefresh))
+			if res == holdStop {
 				return
 			}
-			continue
+			// A flow that held a while is taken again at once; one that drops right after the
+			// registration backs off (a registrar closing every connection is not hammered).
+			if res == holdRefresh || time.Since(since) >= time.Minute {
+				backoff = r.ag.t.backoffMin
+				continue
+			}
+			err = errDropped
+			r.report(sipregwire.StatusFailed, err.Error(), time.Time{}, "")
+			wait = jitter(backoff)
+			backoff = min(backoff*2, r.ag.t.backoffMax)
 		case errors.Is(err, errAuth):
 			r.report(sipregwire.StatusFailed, "auth: the provider refused the login or password", time.Time{}, "")
 			wait = r.ag.t.authRetry
 		default:
+			if errors.Is(err, errTimeout) {
+				r.closeFlow() // a silent connection: the next attempt dials a new one
+			}
 			r.report(sipregwire.StatusFailed, err.Error(), time.Time{}, "")
 			wait = jitter(backoff)
 			backoff = min(backoff*2, r.ag.t.backoffMax)
@@ -127,37 +154,81 @@ func (r *registration) run(ctx context.Context) {
 	}
 }
 
-// hold waits until the refresh is due, sending keepalives; false = stopped.
-func (r *registration) hold(ctx context.Context, d time.Duration) bool {
+// expires is the registration time we ask for.
+func (r *registration) expires() int {
+	if r.ag.flowMode && r.acc.Expires > flowExpiresMax {
+		return flowExpiresMax
+	}
+	return r.acc.Expires
+}
+
+type holdResult int
+
+const (
+	holdStop     holdResult = iota // stopped
+	holdRefresh                    // register again now (due, keepalive lost, the address moved)
+	holdFlowDown                   // the TCP flow ended
+)
+
+// hold waits until the refresh is due, sending keepalives and watching the flow.
+func (r *registration) hold(ctx context.Context, d time.Duration) holdResult {
 	refresh := time.NewTimer(d)
 	defer refresh.Stop()
 	var tick <-chan time.Time
-	if r.acc.Keepalive > 0 {
-		t := time.NewTicker(time.Duration(r.acc.Keepalive) * time.Second)
+	if every := r.keepaliveEvery(); every > 0 {
+		t := time.NewTicker(every)
 		defer t.Stop()
 		tick = t.C
+	}
+	var down <-chan struct{}
+	if f := r.currentFlow(); f != nil {
+		down = f.down
 	}
 	misses := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return false
+			return holdStop
 		case <-refresh.C:
-			return true
+			return holdRefresh
 		case <-r.wake:
-			return true
+			return holdRefresh
+		case <-down:
+			slog.Info("sipreg: flow lost, connecting and registering again", "ws", r.acc.WS, "user", r.acc.Username)
+			return holdFlowDown
 		case <-tick:
-			if r.keepalive(ctx) {
+			alive, moved := r.keepalive(ctx)
+			if moved {
+				return holdRefresh
+			}
+			if alive {
 				misses = 0
 				r.heartbeat()
 				continue
 			}
 			if misses++; misses >= 2 {
 				slog.Info("sipreg: keepalive lost, registering again", "ws", r.acc.WS, "user", r.acc.Username)
-				return true
+				r.closeFlow()
+				return holdRefresh
 			}
 		}
 	}
+}
+
+// keepaliveEvery: the account's OPTIONS interval; in flow mode over UDP at most natKeepalive
+// (the NAT binding is the only way back to us), and within the registrar's Flow-Timer.
+func (r *registration) keepaliveEvery() time.Duration {
+	every := time.Duration(r.acc.Keepalive) * time.Second
+	if r.ag.flowMode && r.transport() == "UDP" && (every == 0 || every > r.ag.t.natKeepalive) {
+		every = r.ag.t.natKeepalive
+	}
+	r.mu.Lock()
+	ft := r.flowTimer
+	r.mu.Unlock()
+	if ft > 0 && (every == 0 || every > ft*4/5) {
+		every = ft * 4 / 5
+	}
+	return every
 }
 
 // stop ends the loop; unregister = take the binding off at the provider (Expires: 0).
@@ -169,12 +240,17 @@ func (r *registration) stop(unregister bool) {
 		cancel()
 		<-r.done
 	}
-	if !unregister {
+	defer r.releaseFlow()
+	if !unregister || r.destination() == "" {
 		return
 	}
 	ctx, done := context.WithTimeout(context.Background(), 4*time.Second)
 	defer done()
-	if _, _, err := r.register(ctx, 0); err != nil {
+	err := r.ensureFlow(ctx)
+	if err == nil {
+		_, _, err = r.register(ctx, 0)
+	}
+	if err != nil {
 		slog.Info("sipreg: unregister", "ws", r.acc.WS, "user", r.acc.Username, "error", err.Error())
 	}
 }
@@ -186,20 +262,104 @@ func (r *registration) transport() string {
 	return "UDP"
 }
 
-// contactURI is our Contact: the opaque user part at the public (or learned) address.
-func (r *registration) contactURI() sip.Uri {
-	host, port := r.ag.publicIP(), r.ag.port
+// ---------------------------------------------------------------- the flow and our address
+
+// ensureFlow makes sure a TCP registration has a live flow to its registrar (UDP needs none).
+func (r *registration) ensureFlow(ctx context.Context) error {
+	if r.transport() != "TCP" {
+		return nil
+	}
+	dest := r.destination()
 	r.mu.Lock()
+	cur := r.flow
+	r.mu.Unlock()
+	if cur != nil && cur.dest == dest && !cur.isDown() {
+		return nil
+	}
+	f, err := r.ag.flows.acquire(ctx, dest)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		slog.Info("sipreg: no flow to the registrar", "ws", r.acc.WS, "registrar", dest, "error", err.Error())
+		return errConnect
+	}
+	r.mu.Lock()
+	r.flow, r.learned = f, "" // a new connection is a new NAT mapping
+	r.mu.Unlock()
+	r.ag.flows.release(cur)
+	return nil
+}
+
+func (r *registration) currentFlow() *tcpFlow {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.flow
+}
+
+func (r *registration) closeFlow() {
+	if f := r.currentFlow(); f != nil {
+		f.close()
+	}
+}
+
+func (r *registration) releaseFlow() {
+	r.mu.Lock()
+	f := r.flow
+	r.flow = nil
+	r.mu.Unlock()
+	r.ag.flows.release(f)
+}
+
+// sentBy is the address our Contact and Via carry: the one the registrar saw (received /
+// rport), else the configured public address (forward mode), else our end of the flow.
+func (r *registration) sentBy() (string, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.learned != "" {
-		if h, p, err := net.SplitHostPort(r.learned); err == nil {
-			n, _ := strconv.Atoi(p)
-			host, port = h, n
+		if ap, err := netip.ParseAddrPort(r.learned); err == nil {
+			return ap.Addr().String(), int(ap.Port())
 		}
 	}
-	r.mu.Unlock()
+	if pub := r.ag.publicIP(); pub != "" {
+		return pub, r.ag.port
+	}
+	if r.transport() == "TCP" && r.flow != nil && r.flow.local.IsValid() {
+		return r.flow.local.Addr().String(), int(r.flow.local.Port())
+	}
+	if r.localIP != "" {
+		return r.localIP, r.ag.port
+	}
+	return "127.0.0.1", r.ag.port
+}
+
+// outbound: RFC 5626 parameters in our Contact (flow mode, unless switched off).
+func (r *registration) outbound() bool { return r.ag.flowMode && r.ag.cfg.outbound }
+
+// contactURI is our Contact: the opaque user part at the address the registrar reaches us at.
+func (r *registration) contactURI() sip.Uri {
+	host, port := r.sentBy()
 	params := sip.NewParams()
 	params.Add("transport", strings.ToLower(r.transport()))
+	if r.outbound() {
+		params.Add("ob", "")
+	}
 	return sip.Uri{Scheme: "sip", User: r.acc.ContactUser, Host: host, Port: port, UriParams: params}
+}
+
+// instanceID is stable across restarts (RFC 5626 §4.1): a restarted agent's binding replaces the
+// old one at a registrar that supports outbound.
+func (r *registration) instanceID() string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("calab-sipreg/"+r.acc.ContactUser)).String()
+}
+
+func (r *registration) contactHeader(u sip.Uri) *sip.ContactHeader {
+	p := sip.NewParams()
+	if r.outbound() {
+		p.Add("reg-id", "1")
+		p.Add("+sip.instance", `"<urn:uuid:`+r.instanceID()+`>"`)
+	}
+	return &sip.ContactHeader{Address: u, Params: p}
 }
 
 func (r *registration) nextCSeq() uint32 {
@@ -215,7 +375,8 @@ func (r *registration) request(method sip.RequestMethod) *sip.Request {
 	req := sip.NewRequest(method, ruri)
 	req.SetTransport(r.transport())
 	req.SetDestination(r.destination())
-	req.AppendHeader(r.ag.newVia(r.transport(), r.ag.publicIP()))
+	host, port := r.sentBy()
+	req.AppendHeader(newVia(r.transport(), host, port))
 	mf := sip.MaxForwardsHeader(70)
 	req.AppendHeader(&mf)
 	aor := sip.Uri{Scheme: "sip", User: r.acc.Username, Host: r.acc.Domain}
@@ -234,14 +395,34 @@ func (r *registration) request(method sip.RequestMethod) *sip.Request {
 }
 
 // register sends one REGISTER (answering a digest challenge, a stale nonce once more) and
-// returns the granted time and the registered Contact.
+// returns the granted time and the registered Contact. When the registrar sees us at another
+// address than the Contact carried, it registers that address once more (RFC 3581).
 func (r *registration) register(ctx context.Context, expires int) (time.Duration, string, error) {
+	return r.registerAt(ctx, expires, true)
+}
+
+func (r *registration) registerAt(ctx context.Context, expires int, mayLearn bool) (time.Duration, string, error) {
 	req := r.request(sip.REGISTER)
 	contact := r.contactURI()
-	req.AppendHeader(&sip.ContactHeader{Address: contact, Params: sip.NewParams()})
+	r.mu.Lock()
+	bound, hasBound := r.bound, r.hasBound
+	r.mu.Unlock()
+	if expires == 0 && hasBound {
+		contact = bound
+	}
+	req.AppendHeader(r.contactHeader(contact))
+	if expires > 0 && hasBound && bound.String() != contact.String() {
+		// The binding at the address we had would get INVITEs nobody receives: off with it.
+		sp := sip.NewParams()
+		sp.Add("expires", "0")
+		req.AppendHeader(&sip.ContactHeader{Address: bound, Params: sp})
+	}
 	exp := sip.ExpiresHeader(uint32(max(expires, 0))) //nolint:gosec // ≤ 3600
 	req.AppendHeader(&exp)
 	req.AppendHeader(sip.NewHeader("Allow", "INVITE, ACK, CANCEL, BYE, OPTIONS, INFO, UPDATE, NOTIFY"))
+	if r.outbound() {
+		req.AppendHeader(sip.NewHeader("Supported", "path, outbound"))
+	}
 	req.SetBody(nil)
 	answered := 0
 	for {
@@ -284,12 +465,17 @@ func (r *registration) register(ctx context.Context, expires int) (time.Duration
 			return 0, "", &codeError{code: res.StatusCode}
 		}
 		if expires == 0 {
+			r.mu.Lock()
+			r.hasBound = false
+			r.mu.Unlock()
 			return 0, "", nil
 		}
 		granted := grantedExpires(res, contact, expires)
-		if r.learn(res) {
-			// We are behind a NAT the registrar sees through: register the address it saw.
-			return r.register(ctx, expires)
+		r.mu.Lock()
+		r.bound, r.hasBound, r.flowTimer = contact, true, flowTimer(res)
+		r.mu.Unlock()
+		if mayLearn && r.learn(res) {
+			return r.registerAt(ctx, expires, false)
 		}
 		return granted, contact.String(), nil
 	}
@@ -299,22 +485,36 @@ func (r *registration) register(ctx context.Context, expires int) (time.Duration
 func (r *registration) renew(req *sip.Request) {
 	req.CSeq().SeqNo = r.nextCSeq()
 	req.RemoveHeader("Via")
-	req.PrependHeader(r.ag.newVia(r.transport(), r.ag.publicIP()))
+	host, port := r.sentBy()
+	req.PrependHeader(newVia(r.transport(), host, port))
 }
 
-// grantedExpires: the expires of our Contact in the answer, else its Expires header, else what
-// we asked for.
+// grantedExpires: the expires of our Contact in the answer (the same address, else the same
+// user part), else its Expires header, else what we asked for.
 func grantedExpires(res *sip.Response, ours sip.Uri, asked int) time.Duration {
+	var byUser time.Duration
 	for _, h := range res.GetHeaders("Contact") {
 		c, ok := h.(*sip.ContactHeader)
 		if !ok || c.Address.User != ours.User {
 			continue
 		}
-		if v, ok := c.Params.Get("expires"); ok {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				return time.Duration(n) * time.Second
-			}
+		v, ok := c.Params.Get("expires")
+		if !ok {
+			continue
 		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			continue
+		}
+		if c.Address.Host == ours.Host && c.Address.Port == ours.Port {
+			return time.Duration(n) * time.Second
+		}
+		if byUser == 0 {
+			byUser = time.Duration(n) * time.Second
+		}
+	}
+	if byUser > 0 {
+		return byUser
 	}
 	if h := res.GetHeader("Expires"); h != nil {
 		if n, err := strconv.Atoi(strings.TrimSpace(h.Value())); err == nil && n > 0 {
@@ -324,46 +524,72 @@ func grantedExpires(res *sip.Response, ours sip.Uri, asked int) time.Duration {
 	return time.Duration(asked) * time.Second
 }
 
-// learn takes received / rport of the answer's Via when they differ from what we registered
-// (RFC 3581): true = register again with that address.
+// flowTimer is the registrar's Flow-Timer (seconds between keepalives it wants), 0 = none.
+func flowTimer(res *sip.Response) time.Duration {
+	h := res.GetHeader("Flow-Timer")
+	if h == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(h.Value()))
+	if err != nil || n < 5 || n > 3600 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
+}
+
+// learn takes received / rport of an answer's Via (RFC 3581) when they differ from the address
+// we sent: true = register again with that address. Always in flow mode; over UDP only in
+// forward mode (a NAT the registrar sees through).
 func (r *registration) learn(res *sip.Response) bool {
+	if !r.ag.flowMode && r.transport() != "UDP" {
+		return false
+	}
 	via := res.Via()
-	if via == nil || r.transport() != "UDP" {
+	if via == nil {
 		return false
 	}
 	host, hok := via.Params.Get("received")
-	port, pok := via.Params.Get("rport")
 	if !hok || host == "" {
-		return false
+		host = via.Host
 	}
-	if _, err := netip.ParseAddr(host); err != nil {
-		return false
-	}
+	port, pok := via.Params.Get("rport")
 	if !pok || port == "" {
-		port = strconv.Itoa(r.ag.port)
+		if !hok || via.Port == 0 {
+			return false
+		}
+		port = strconv.Itoa(via.Port)
 	}
-	seen := net.JoinHostPort(host, port)
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	current := r.learned
-	if current == "" {
-		current = net.JoinHostPort(r.ag.publicIP(), strconv.Itoa(r.ag.port))
-	}
-	if seen == current {
+	a, err := netip.ParseAddr(host)
+	if err != nil {
 		return false
 	}
-	slog.Warn("sipreg: the registrar sees another address, registering it", "ws", r.acc.WS, "seen", seen)
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return false
+	}
+	seen := netip.AddrPortFrom(a.Unmap(), uint16(n)).String() //nolint:gosec // 1..65535
+	h, p := r.sentBy()
+	if seen == net.JoinHostPort(h, strconv.Itoa(p)) {
+		return false
+	}
+	slog.Info("sipreg: the registrar sees us at another address, registering it", "ws", r.acc.WS, "seen", seen)
+	r.mu.Lock()
 	r.learned = seen
+	r.mu.Unlock()
 	return true
 }
 
-// keepalive: OPTIONS to the registrar; any answer means it is alive.
-func (r *registration) keepalive(ctx context.Context) bool {
+// keepalive: OPTIONS to the registrar; any answer means it is alive, and its Via tells whether
+// the NAT moved us (moved = register the new address now).
+func (r *registration) keepalive(ctx context.Context) (alive, moved bool) {
 	req := r.request(sip.OPTIONS)
 	req.SetBody(nil)
 	// Not longer than the interval: two lost keepalives re-register within two intervals.
-	_, err := r.ag.do(ctx, req, min(r.ag.t.requestWait, time.Duration(r.acc.Keepalive)*time.Second))
-	return err == nil
+	res, err := r.ag.do(ctx, req, min(r.ag.t.requestWait, r.keepaliveEvery()))
+	if err != nil {
+		return false, false
+	}
+	return true, r.learn(res)
 }
 
 // resolve pins the registrar's address and adds its addresses to the account's allowed
@@ -406,8 +632,12 @@ func (r *registration) resolve(ctx context.Context) bool {
 }
 
 func (r *registration) setDest(d string) {
+	local := ""
+	if d != "" && r.ag.flowMode {
+		local = localIPToward(r.ag.cfg.bind, d)
+	}
 	r.mu.Lock()
-	r.dest = d
+	r.dest, r.localIP = d, local
 	r.mu.Unlock()
 }
 
@@ -439,7 +669,7 @@ func (r *registration) report(status, errText string, expiresAt time.Time, conta
 	r.mu.Unlock()
 	if changed && status == sipregwire.StatusRegistered {
 		slog.Info("sipreg: registered", "ws", r.acc.WS, "user", r.acc.Username, "status", status, "call_id", r.callID,
-			"expires_in", time.Until(expiresAt).Round(time.Second))
+			"contact", contact, "expires_in", time.Until(expiresAt).Round(time.Second))
 	}
 	if due {
 		r.ag.emit(ev)

@@ -2294,7 +2294,7 @@ are not current phone evidence. Visual suites remain disabled.
 ## SIP inbound over a registration (ADR-0121)
 
 1. Without a provider: `go test -race ./cmd/sipreg ./internal/sipreg ./internal/sip` (fake provider and fake LiveKit SIP in-process). Manual end-to-end: `docker compose -f infra/docker/compose.dev.yml --profile sip --profile sip-dev up -d` (Asterisk as the provider, comments in compose.dev.yml).
-2. Stand: `SIPREG_AGENT_TOKEN` in `.env` and in the prod API env, two firewall rules 5080 udp/tcp, `deploy.sh`; API log «sipreg: agent connected».
+2. Stand: `SIPREG_AGENT_TOKEN` in `.env` and in the prod API env, `SIP_REGISTRAR_PUBLIC_IP` empty (flow mode, ADR-0125: no inbound port), `deploy.sh`; API log «sipreg: agent connected», agent log `"mode":"flow"`.
 3. Settings → Телефония: telephony on (Plusofon host, login, password, Caller ID) → «Входящие» → «По регистрации», a target, save. Within seconds the line reads «Зарегистрировано до HH:MM · контакт sip:c…@<IP>:5080».
 4. Wrong password: the line turns «Ошибка регистрации: провайдер не принял логин или пароль»; the agent does not retry for 5 minutes.
 5. Call the Caller ID from a phone: the menu / group rings as in direct mode; the journal row has `provider_call_id`. Hang up on either side — the other side ends.
