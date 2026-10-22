@@ -18,7 +18,7 @@ WITH back AS (
 INSERT INTO workspace_members (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id, user_id) DO NOTHING
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type AddMemberParams struct {
@@ -40,6 +40,7 @@ func (q *Queries) AddMember(ctx context.Context, arg AddMemberParams) (Workspace
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }
@@ -150,7 +151,7 @@ func (q *Queries) DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const getMember = `-- name: GetMember :one
-SELECT workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at FROM workspace_members WHERE workspace_id = $1 AND user_id = $2
+SELECT workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension FROM workspace_members WHERE workspace_id = $1 AND user_id = $2
 `
 
 type GetMemberParams struct {
@@ -170,12 +171,13 @@ func (q *Queries) GetMember(ctx context.Context, arg GetMemberParams) (Workspace
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }
 
 const getMemberWithUser = `-- name: GetMemberWithUser :one
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, m.sip_extension, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
@@ -206,6 +208,7 @@ func (q *Queries) GetMemberWithUser(ctx context.Context, arg GetMemberWithUserPa
 		&i.WorkspaceMember.BadgeID,
 		&i.WorkspaceMember.AchievementCount,
 		&i.WorkspaceMember.LastActiveAt,
+		&i.WorkspaceMember.SipExtension,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,
@@ -319,7 +322,7 @@ func (q *Queries) ListMemberNames(ctx context.Context, arg ListMemberNamesParams
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, m.sip_extension, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
@@ -352,6 +355,7 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 			&i.WorkspaceMember.BadgeID,
 			&i.WorkspaceMember.AchievementCount,
 			&i.WorkspaceMember.LastActiveAt,
+			&i.WorkspaceMember.SipExtension,
 			&i.User.ID,
 			&i.User.Email,
 			&i.User.PasswordHash,
@@ -560,7 +564,7 @@ UPDATE workspace_members SET
     -- A member made a guest starts the guest inactivity clock now (ADR-0098).
     last_active_at = CASE WHEN $1::text = 'guest' AND role <> 'guest' THEN now() ELSE last_active_at END
 WHERE workspace_id = $3 AND user_id = $4
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type UpdateMemberParams struct {
@@ -587,6 +591,7 @@ func (q *Queries) UpdateMember(ctx context.Context, arg UpdateMemberParams) (Wor
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }
