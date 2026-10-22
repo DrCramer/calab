@@ -713,24 +713,24 @@ function InboundCard({
             </>
           ) : null}
         </>
-      ) : (
-        <Row label={t('pbx.in.cidrs')} hint={t('pbx.in.cidrsHint')} htmlFor={cidrId}>
-          <span className="flex min-w-0 flex-col items-end gap-1">
-            <Input
-              id={cidrId}
-              value={cidrs}
-              spellCheck={false}
-              placeholder="203.0.113.0/24"
-              onChange={(e) => {
-                setCidrs(e.target.value);
-                errs.clear('allowedCidrs');
-              }}
-              data-testid="sip-inbound-cidrs"
-            />
-            <ErrLine text={errs.field.allowedCidrs} />
-          </span>
-        </Row>
-      )}
+      ) : null}
+      {/* Both modes: over a registration the provider may still call from addresses other than its registrar's. */}
+      <Row label={t('pbx.in.cidrs')} hint={t('pbx.in.cidrsHint')} htmlFor={cidrId}>
+        <span className="flex min-w-0 flex-col items-end gap-1">
+          <Input
+            id={cidrId}
+            value={cidrs}
+            spellCheck={false}
+            placeholder="203.0.113.0/24"
+            onChange={(e) => {
+              setCidrs(e.target.value);
+              errs.clear('allowedCidrs');
+            }}
+            data-testid="sip-inbound-cidrs"
+          />
+          <ErrLine text={errs.field.allowedCidrs} />
+        </span>
+      </Row>
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
         <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="sip-inbound-save">
           {t('pbx.save')}

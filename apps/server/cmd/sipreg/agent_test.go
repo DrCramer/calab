@@ -111,13 +111,21 @@ func TestKeepalive(t *testing.T) {
 	ag.apply(context.Background(), sipregwire.Command{Op: sipregwire.OpAccountSet, Account: &acc})
 	ag.wait(t, "registered", isStatus(sipregwire.StatusRegistered))
 	recv(t, p.regs, "REGISTER")
-	time.Sleep(1200 * time.Millisecond)
-	p.mu.Lock()
-	opts := p.options
-	p.dropOpts = true
-	p.mu.Unlock()
-	if opts == 0 {
-		t.Fatal("no keepalive")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		p.mu.Lock()
+		opts := p.options
+		if opts > 0 {
+			p.dropOpts = true
+		}
+		p.mu.Unlock()
+		if opts > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no keepalive")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	recv(t, p.regs, "REGISTER after a lost keepalive")
 }

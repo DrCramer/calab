@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -211,7 +212,16 @@ func (ag *agent) sourceAllowed(ip netip.Addr) bool {
 // It never returns an error: that would stop the listener.
 func (ag *agent) readFilter(p sip.TransportReadProps, data []byte) ([]byte, error) {
 	ap, err := netip.ParseAddrPort(p.RemoteAddr.String())
-	if err != nil || !ag.sourceAllowed(ap.Addr()) {
+	if err != nil {
+		return nil, nil
+	}
+	if !ag.sourceAllowed(ap.Addr()) {
+		// A provider calling from an address it did not register from would be lost silently:
+		// name the source of a dropped INVITE (once a minute per address, ten a minute in all),
+		// so it can be added to the workspace's provider addresses.
+		if bytes.HasPrefix(data, []byte("INVITE ")) && ag.rate.allow("drop:"+ap.Addr().String(), 1, time.Minute) && ag.rate.allow("drop:*", 10, time.Minute) {
+			slog.Info("sipreg: INVITE from an unknown address dropped", "source", ap.Addr().String())
+		}
 		return nil, nil
 	}
 	return data, nil
