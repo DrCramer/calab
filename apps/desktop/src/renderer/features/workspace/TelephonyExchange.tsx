@@ -6,6 +6,7 @@ import {
   SipPromptStatus,
   SipRegistrationStatus,
   WorkspaceRole,
+  type ListSipIvrMenusResponse,
   type SipExtension,
   type SipGroup,
   type SipIvrMenu,
@@ -16,7 +17,7 @@ import {
 } from '@calaba/protocol';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, Pause, Pencil, Play, Trash2, TriangleAlert, X } from 'lucide-react';
-import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, IconButton, Input, PasswordInput, Row, Segmented, Select, Spinner, Switch, cx } from '../../components/ui';
@@ -48,6 +49,8 @@ import { formatDuration } from '../shell/voiceFormat';
 /** The prompt upload limit (sip.proto CreateSipIvrMenuRequest.prompt_source_file_id). */
 export const MAX_PROMPT_UPLOAD = 10 * 1024 * 1024;
 const PROMPT_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/opus,.mp3,.wav,.ogg,.oga,.opus';
+/** A file the server can make a prompt of, by its name or type (the server checks the content). */
+const promptFile = (f: File): boolean => /\.(mp3|wav|ogg|oga|opus)$/i.test(f.name) || /^audio\/(mpeg|mp3|wav|x-wav|wave|ogg|opus)$/.test(f.type);
 /** The keys of a menu in phone keypad order. */
 export const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as const;
 
@@ -1018,7 +1021,7 @@ function GroupForm({
             })}
           </ol>
         ) : (
-          <p className="text-body text-muted">{t('pbx.group.noMembers')}</p>
+          <p className="text-body text-muted">{t(free.length ? 'pbx.group.noMembers' : 'pbx.group.needNumbers')}</p>
         )}
         {free.length && members.length < 20 ? (
           <Select
@@ -1125,6 +1128,15 @@ function ExtOption({ workspaceId, ext }: { workspaceId: string; ext: SipExtensio
 
 function MenusCard({ workspaceId, exts, groups, menus }: { workspaceId: string; exts: SipExtension[]; groups: SipGroup[]; menus: SipIvrMenu[] }): ReactNode {
   const [editing, setEditing] = useState<string | null>(null);
+  const qc = useQueryClient();
+  // A new menu stays open after «Сохранить»: its greeting is uploaded right there (it needs the id).
+  const created = useCallback(
+    (m: SipIvrMenu) => {
+      qc.setQueryData<ListSipIvrMenusResponse>(menuKey(workspaceId), (cur) => (cur && !cur.menus.some((x) => x.id === m.id) ? { ...cur, menus: [...cur.menus, m] } : cur));
+      setEditing(m.id);
+    },
+    [qc, workspaceId],
+  );
   return (
     <Card title={t('pbx.menu.title')} footer={t('pbx.menu.footer')}>
       {menus.length === 0 && editing !== 'new' ? (
@@ -1152,7 +1164,7 @@ function MenusCard({ workspaceId, exts, groups, menus }: { workspaceId: string; 
         )}
       </ul>
       {editing === 'new' ? (
-        <MenuForm workspaceId={workspaceId} exts={exts} groups={groups} menus={menus} onDone={() => setEditing(null)} />
+        <MenuForm workspaceId={workspaceId} exts={exts} groups={groups} menus={menus} onDone={() => setEditing(null)} onCreated={created} />
       ) : (
         <div className="px-3 py-2">
           <Button variant="secondary" size="sm" onClick={() => setEditing('new')} data-testid="sip-menu-add">
@@ -1232,11 +1244,19 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
   const refresh = useRefresh(workspaceId);
   const input = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Upload progress in whole percent (null: not uploading — the server converts the file then).
+  const [pct, setPct] = useState<number | null>(null);
   const ready = menu.promptStatus === SipPromptStatus.READY && !!menu.promptFileId;
   const upload = useMutation({
     mutationFn: async (file: File) => {
-      const meta = await uploadFile(uploadPath(workspaceId, ''), file, file.name, () => undefined).promise;
-      return api.sip.updateMenu(workspaceId, menu.id, { promptSourceFileId: meta.id });
+      setPct(0);
+      try {
+        const meta = await uploadFile(uploadPath(workspaceId, ''), file, file.name, (f) => setPct((cur) => (cur === null ? cur : Math.min(99, Math.round(f * 100))))).promise;
+        setPct(null);
+        return await api.sip.updateMenu(workspaceId, menu.id, { promptSourceFileId: meta.id });
+      } finally {
+        setPct(null);
+      }
     },
     onMutate: () => setErr(null),
     onSuccess: () => {
@@ -1261,7 +1281,7 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
       <div className="flex flex-wrap items-center gap-2" data-testid="sip-menu-prompt">
         {ready ? <PromptPlayer fileId={menu.promptFileId} /> : null}
         <span className={cx('text-body', ready ? 'tabular-nums' : 'text-muted')}>
-          {upload.isPending ? t('pbx.menu.processing') : ready ? formatDuration(menu.promptDurationMs) : t('pbx.menu.noPrompt')}
+          {upload.isPending ? (pct !== null ? t('pbx.menu.uploading', { pct }) : t('pbx.menu.processing')) : ready ? formatDuration(menu.promptDurationMs) : t('pbx.menu.noPrompt')}
         </span>
         <input
           ref={input}
@@ -1273,8 +1293,12 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
             const f = e.target.files?.[0];
             e.target.value = '';
             if (!f) return;
+            if (!promptFile(f)) {
+              setErr(t('pbx.err.promptFormat'));
+              return;
+            }
             if (f.size > MAX_PROMPT_UPLOAD) {
-              setErr(t('pbx.err.prompt'));
+              setErr(t('pbx.err.promptTooBig'));
               return;
             }
             upload.mutate(f);
@@ -1290,6 +1314,7 @@ function PromptRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMen
         ) : null}
       </div>
       <span className="text-caption text-faint">{t('pbx.menu.promptHint')}</span>
+      {ready || upload.isPending ? null : <span className="text-caption text-muted">{t('pbx.menu.noPromptHint')}</span>}
       <ErrLine text={err} testId="sip-menu-prompt-error" />
     </div>
   );
@@ -1302,6 +1327,7 @@ function MenuForm({
   groups,
   menus,
   onDone,
+  onCreated,
 }: {
   workspaceId: string;
   menu?: SipIvrMenu;
@@ -1309,6 +1335,8 @@ function MenuForm({
   groups: SipGroup[];
   menus: SipIvrMenu[];
   onDone: () => void;
+  /** A new menu was saved: the form reopens on it (the greeting can be uploaded only then). */
+  onCreated?: (m: SipIvrMenu) => void;
 }): ReactNode {
   const refresh = useRefresh(workspaceId);
   const errs = useFormErrors(workspaceId);
@@ -1330,10 +1358,11 @@ function MenuForm({
   };
   const save = useMutation({
     mutationFn: () => (menu ? api.sip.updateMenu(workspaceId, menu.id, body) : api.sip.createMenu(workspaceId, body)),
-    onSuccess: () => {
+    onSuccess: (r) => {
       refresh();
       toast.success(t('pbx.saved'));
-      onDone();
+      if (!menu && r.menu && onCreated) onCreated(r.menu);
+      else onDone();
     },
     onError: errs.report,
   });
