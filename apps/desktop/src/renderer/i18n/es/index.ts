@@ -42,6 +42,7 @@ import { esGuests } from './guests';
 import { esTemp } from './temp';
 import { esContacts } from './contacts';
 import { esSip } from './sip';
+import { esPbx } from './pbx';
 import { esAi } from './ai';
 import { esWebApps } from './webapps';
 
@@ -61,6 +62,7 @@ export const es: Dict = {
   ...esTemp,
   ...esContacts,
   ...esSip,
+  ...esPbx,
   ...esAi,
   ...esWebApps,
   ...esDm,

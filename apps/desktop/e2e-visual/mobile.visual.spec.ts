@@ -1541,6 +1541,23 @@ test('m-settings-bots', async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 });
 
+// ADR-0117: «Телефония» → the exchange cards on a phone (numbers, groups, menus) and a menu form.
+test('m-telephony', async ({ page }) => {
+  await signedIn(page);
+  mock.seedSipExchange();
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
+  const dialog = page.getByTestId('settings-page');
+  await dialog.getByRole('tab', { name: 'Телефония' }).tap();
+  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(5);
+  await expectNoFieldFocus(page, 'telephony');
+  await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony');
+  await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
+  await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu');
+});
+
 // ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of
 // the outgoing screen is removed when the animation ends (only the top screen stays mounted). The
 // run's reduced-motion default is lifted here; the animations are paused mid-way for the shot.

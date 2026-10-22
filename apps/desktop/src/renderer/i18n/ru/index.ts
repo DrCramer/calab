@@ -41,6 +41,7 @@ import { ruGuests } from './guests';
 import { ruTemp } from './temp';
 import { ruContacts } from './contacts';
 import { ruSip } from './sip';
+import { ruPbx } from './pbx';
 import { ruAi } from './ai';
 import { ruWebApps } from './webapps';
 
@@ -60,6 +61,7 @@ export const ru = {
   ...ruTemp,
   ...ruContacts,
   ...ruSip,
+  ...ruPbx,
   ...ruAi,
   ...ruWebApps,
   ...ruDm,
