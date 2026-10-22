@@ -13,6 +13,7 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import type { FilterState, MatchCtx } from '../../lib/boards/filter';
 import { sortOn } from '../../lib/boards/features';
 import { dropIndex } from '../../lib/boards/position';
+import { wheelToScrollX } from '../../lib/boards/wheelX';
 import { createStatus, deleteStatus, gateText, moveStatus, moveTask, updateStatus } from '../../services/boards';
 import { taskPermsOf, useBoards } from '../../stores/boards';
 import { myUserId } from '../../stores/session';
@@ -235,6 +236,20 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
     // dropCard reads the store at drop time; statuses / boardId change the column math.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardTargetAt, colTargetAt, statuses, boardId]);
+
+  // No scrollbars are drawn, so a plain mouse wheel must reach the columns off to the right (CBF-62).
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      const dx = wheelToScrollX(e, el);
+      if (dx === 0) return;
+      e.preventDefault();
+      el.scrollLeft += dx;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Auto-scroll near the board's left / right edges and a column's top / bottom while dragging.
   useEffect(() => {
