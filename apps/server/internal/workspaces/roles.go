@@ -642,6 +642,7 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 // restrictedViews is who sees each restricted room (ADR-0029) and closed board (ADR-0048) of
 // the workspace, archived temporary rooms and archived boards included (their history stays
 // readable to whoever sees them), read through q (inside a transaction: including its own writes).
+// true: sees it; false (boards only): create-only (ADR-0115) — sees it partly.
 func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[uuid.UUID]map[uuid.UUID]bool, error) {
 	out := map[uuid.UUID]map[uuid.UUID]bool{}
 	var members map[uuid.UUID]perm.Member
@@ -730,8 +731,13 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 		}
 		seen := map[uuid.UUID]bool{}
 		for id, m := range members {
-			if perm.ComputeBoardIn(m, perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy), ovs).Has(perm.ViewBoard) {
+			// Create-only (ADR-0115) opens the board partly (listed, own cards, creating): present
+			// with false; VIEW_BOARD — true.
+			switch bits := perm.ComputeBoardIn(m, perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy), ovs); {
+			case bits.Has(perm.ViewBoard):
 				seen[id] = true
+			case perm.CreateOnly(bits):
+				seen[id] = false
 			}
 		}
 		out[b.ID] = seen
@@ -768,11 +774,11 @@ func (g restrictedGuard) check(ctx context.Context, q *sqlc.Queries, wsID uuid.U
 	}
 	for rid, seen := range after {
 		was := g.before[rid]
-		if was[g.actor] {
+		if was[g.actor] { // true only with full access: a create-only actor opens nothing
 			continue
 		}
-		for id := range seen {
-			if !was[id] {
+		for id, full := range seen {
+			if prev, had := was[id]; !had || (full && !prev) {
 				return httpx.Forbidden("the change would open a closed room or board you cannot see").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
 			}
 		}

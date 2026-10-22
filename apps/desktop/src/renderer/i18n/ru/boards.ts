@@ -530,6 +530,7 @@ export const ruBoards = {
   'boards.perm.viewHint': 'Задачи, комментарии, подписка',
   'boards.perm.create': 'Создавать задачи',
   'boards.perm.createHint': 'И править свои и назначенные на себя',
+  'boards.perm.createOnly': 'Создаёт и видит только свои карточки',
   'boards.perm.edit': 'Править любые задачи',
   'boards.perm.editHint': 'Двигать, архивировать, модерировать комментарии',
   'boards.perm.manage': 'Управлять доской',

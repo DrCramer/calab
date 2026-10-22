@@ -197,6 +197,82 @@ func TestTaskScopedTransitions(t *testing.T) {
 	}
 }
 
+// ADR-0115: a create-only member (CREATE_TASKS allowed on a private board, VIEW_BOARD not) sees
+// the board with no card, in the scoped form with CREATE_TASKS, and of its tasks only the ones
+// they authored or are invited on; authorship alone never makes anyone else task-scoped.
+func TestCreateOnlyRouting(t *testing.T) {
+	wid, bid := uuid.New(), uuid.New()
+	alice, erin, frank, bot := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	st := &wsState{rooms: map[uuid.UUID]*v1.Room{}, roleDefs: perm.Roles{
+		"member": {ID: "member", Position: perm.PosMember, Permissions: perm.RoleDefaults[perm.RoleMember]},
+	}}
+	for _, u := range []uuid.UUID{alice, erin, frank, bot} {
+		st.setMember(u, perm.RoleMember, []string{"member"})
+	}
+	st.setBot(bot, true)
+	user := v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER
+	board := &v1.Board{Id: bid.String(), WorkspaceId: wid.String(), IsPrivate: true, OpenTasks: 3,
+		PermissionOverrides: []*v1.RoomPermissionOverride{
+			{TargetType: user, TargetId: alice.String(), Allow: uint64(perm.ViewBoard | perm.CreateTasks)},
+			{TargetType: user, TargetId: erin.String(), Allow: uint64(perm.CreateTasks)},
+			{TargetType: user, TargetId: bot.String(), Allow: uint64(perm.CreateTasks)},
+		}}
+	st.setBoard(bid, board)
+	sessions := []*Session{{user: alice}, {user: erin}, {user: frank}, {user: bot}}
+
+	v := st.boardView(bid, erin)
+	if !v.visible() || !v.scoped || v.bits != perm.CreateTasks {
+		t.Fatalf("erin is create-only: %+v", v)
+	}
+	pb := forRecipient(&v1.DispatchEvent{Event: &v1.DispatchEvent_BoardUpdate{BoardUpdate: &v1.BoardUpdate{Board: board}}}, v).GetBoardUpdate().GetBoard()
+	if !pb.GetTaskScoped() || pb.GetPermissions() != uint64(perm.CreateTasks) || len(pb.GetPermissionOverrides()) != 0 || pb.GetOpenTasks() != 0 {
+		t.Fatalf("create-only form: %v", pb)
+	}
+	if st.boardView(bid, bot).visible() || st.boardView(bid, frank).visible() {
+		t.Fatal("a bot is never create-only; frank sees nothing")
+	}
+
+	t1, t2 := uuid.New(), uuid.New()
+	deliver := func(x *v1.Task) map[uuid.UUID][]string {
+		ev := &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskCreate{TaskCreate: &v1.TaskCreate{Task: x}}}
+		out := map[uuid.UUID][]string{}
+		for _, d := range taskDeliveries(st, wid, sessions, ev, parseID(x.GetId()), bid, st.invitesOf(x), func() { st.setTask(x) }) {
+			out[d.s.user] = kinds(d.events)
+		}
+		return out
+	}
+	// erin's own task: alice (viewer) and erin get it; no BOARD_CREATE — erin already had the board.
+	got := deliver(&v1.Task{Id: t1.String(), BoardId: bid.String(), RoomId: uuid.New().String(), CreatedBy: erin.String()})
+	if !same(got[erin], []string{"TaskCreate"}) || got[alice] == nil || got[frank] != nil || got[bot] != nil {
+		t.Fatalf("erin's task: %v", got)
+	}
+	if st.taskBits(bid, t1, erin) != perm.ViewBoard|perm.CreateTasks || st.scoped[erin][bid] != 0 {
+		t.Fatal("erin edits her task; authorship is not an invitation")
+	}
+	// alice's task: erin does not get it; frank as its author would not either (not create-only).
+	got = deliver(&v1.Task{Id: t2.String(), BoardId: bid.String(), RoomId: uuid.New().String(), CreatedBy: frank.String()})
+	if got[erin] != nil || got[frank] != nil || got[alice] == nil {
+		t.Fatalf("someone else's task: %v", got)
+	}
+	if st.taskBits(bid, t2, erin) != 0 || st.taskBits(bid, t2, frank) != 0 || st.boardView(bid, frank).visible() {
+		t.Fatal("an author without create-only sees nothing")
+	}
+	// erin loses create-only: the board goes; given VIEW_BOARD: delete + create in full form.
+	before := st.boardView(bid, erin)
+	closed := &v1.Board{Id: bid.String(), IsPrivate: true, PermissionOverrides: board.GetPermissionOverrides()[:1]}
+	st.setBoard(bid, closed)
+	if got := kinds(boardTransition(before, st.boardView(bid, erin), closed, wid, nil)); !same(got, []string{"BoardDelete"}) {
+		t.Fatalf("create-only removed: %v", got)
+	}
+	// Invited on t2 (scoped, bits 0), then create-only again: delete + create (her tasks appear).
+	st.setInvites(t2, bid, map[uuid.UUID]invite{frank: invAuthor, erin: invWatcher})
+	before = st.boardView(bid, erin)
+	st.setBoard(bid, board)
+	if got := kinds(boardTransition(before, st.boardView(bid, erin), board, wid, nil)); !same(got, []string{"BoardDelete", "BoardCreate(scoped)"}) {
+		t.Fatalf("invited → create-only: %v", got)
+	}
+}
+
 // TestTaskOfActivityEvent: a removed journal entry (ADR-0081, no activity) is routed by the
 // event's own task and board, else nobody would get it.
 func TestTaskOfActivityEvent(t *testing.T) {

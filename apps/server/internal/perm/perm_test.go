@@ -348,23 +348,54 @@ func TestTaskBits(t *testing.T) {
 	}
 	var table struct {
 		Cases []struct {
-			Name                        string
-			Bits                        Bits
-			Scoped                      bool
-			Assignee, Approver, Watcher bool
-			Want                        Bits
+			Name                                string
+			Bits                                Bits
+			Scoped                              bool
+			Assignee, Approver, Watcher, Author bool
+			Want                                Bits
 		}
 	}
 	if err := json.Unmarshal(raw, &table); err != nil {
 		t.Fatal(err)
 	}
-	if len(table.Cases) < 10 {
+	if len(table.Cases) < 20 {
 		t.Fatalf("task_bits.json: %d cases", len(table.Cases))
 	}
 	for _, c := range table.Cases {
 		acc := BoardAccess{Bits: c.Bits, TaskScoped: c.Scoped}
-		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher); got != c.Want {
+		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher, c.Author); got != c.Want {
 			t.Errorf("%s: TaskBits = %d, want %d", c.Name, got, c.Want)
 		}
+	}
+}
+
+// ADR-0115: the resolver's card-level access — create-only makes a board task-scoped without a
+// card, only for an eligible member (a human, not a guest, a live board); otherwise the
+// CREATE_TASKS bits are dropped, so a bot never creates on a board it does not see.
+func TestTaskScoped(t *testing.T) {
+	full := ViewBoard | CreateTasks
+	for _, c := range []struct {
+		name              string
+		bits              Bits
+		invited, eligible bool
+		wantScoped        bool
+		wantBits          Bits
+	}{
+		{"viewer", full, true, true, false, full},
+		{"viewer, not eligible (bot with VIEW_BOARD)", full, false, false, false, full},
+		{"invitee", 0, true, true, true, 0},
+		{"stranger", 0, false, true, false, 0},
+		{"create-only without a card", CreateTasks, false, true, true, CreateTasks},
+		{"create-only and invited", CreateTasks, true, true, true, CreateTasks},
+		{"create-only bot / guest / archived board", CreateTasks, false, false, false, 0},
+		{"invited bot / guest / archived board", 0, true, false, false, 0},
+	} {
+		scoped, bits := taskScoped(c.bits, c.invited, c.eligible)
+		if scoped != c.wantScoped || bits != c.wantBits {
+			t.Errorf("%s: taskScoped = %v, %d; want %v, %d", c.name, scoped, bits, c.wantScoped, c.wantBits)
+		}
+	}
+	if !CreateOnly(CreateTasks) || CreateOnly(full) || CreateOnly(0) || CreateOnly(CreateTasks|EditTasks) {
+		t.Error("CreateOnly: only CREATE_TASKS alone")
 	}
 }

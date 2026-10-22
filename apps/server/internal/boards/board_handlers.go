@@ -1092,8 +1092,9 @@ func (s *Service) createLabel(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// CREATE_TASKS may create a label on the fly (the picker); the rest needs MANAGE_BOARD.
-	if !acc.Bits.Has(perm.ManageBoard) && !acc.Bits.Has(perm.CreateTasks) {
+	// CREATE_TASKS may create a label on the fly (the picker) — a viewer's, not a create-only
+	// member's (ADR-0115: nothing of the board itself); the rest needs MANAGE_BOARD.
+	if !acc.Bits.Has(perm.ManageBoard) && !acc.Bits.Has(perm.ViewBoard|perm.CreateTasks) {
 		return httpx.Forbidden("MANAGE_BOARD or CREATE_TASKS required")
 	}
 	if err := writable(acc); err != nil {

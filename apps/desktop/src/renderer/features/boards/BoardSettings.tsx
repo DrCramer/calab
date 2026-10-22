@@ -590,6 +590,10 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   }, [roles, drafts, board.workspaceId, targetable]);
   const current = targets.find((x) => x.key === selected) ?? targets[0];
   const draft = drafts.find((d) => current && key(d) === current.key);
+  // «Создавать задачи» ✓ without «Видеть доску» (ADR-0115): neutral VIEW_BOARD gives nothing on a
+  // private board, a deny nowhere — the target creates and sees only their own cards.
+  const view = triOf(draft, VIEW_BOARD);
+  const createOnly = triOf(draft, CREATE_TASKS) === 'allow' && (view === 'deny' || (restricted && view === 'inherit'));
   const save = (next: OverrideDraft[]): void => {
     setDrafts(next);
     setBusy(true);
@@ -724,6 +728,11 @@ function AccessTab({ board }: { board: Board }): ReactNode {
                   <th scope="row" className="px-3 py-2 text-left font-normal">
                     <span data-settings-label>{t(b.label)}</span>
                     <span className="block text-caption text-muted">{t(b.hint)}</span>
+                    {b.bit === CREATE_TASKS && createOnly ? (
+                      <span className="block text-caption text-fg" data-testid="board-access-create-only">
+                        {t('boards.perm.createOnly')}
+                      </span>
+                    ) : null}
                   </th>
                   <td className="w-32 px-3 py-2 text-right">
                     <TriToggle label={t(b.label)} value={triOf(draft, b.bit)} onChange={(v) => setTri(b.bit, v)} />
