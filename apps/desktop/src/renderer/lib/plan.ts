@@ -107,6 +107,18 @@ export function planHasIdentity(p: WorkspacePlan | undefined): boolean {
   return p.limits ? p.limits.corporateIdentity : p.plan === Plan.ENTERPRISE;
 }
 
+/**
+ * Does the plan include the AI features — the AI integration, «Создать умную задачу», the boards'
+ * AI instruction run by the model (CBF-69: Business only)? PlanLimits.ai, a positive flag like
+ * corporateIdentity; expired = Free = no. No plan (an older server): the server decides. A hint
+ * only: the server refuses with 409 AI_PLAN_REQUIRED anyway.
+ */
+export function planHasAI(p: WorkspacePlan | undefined): boolean {
+  if (!p) return true;
+  if (p.expired) return false;
+  return p.limits ? p.limits.ai : p.plan === Plan.ENTERPRISE;
+}
+
 /** The stored plan (UNSPECIFIED reads as FREE: the server's default when none was ever set). */
 export const planKind = (p: WorkspacePlan | undefined): Plan => (!p || p.plan === Plan.UNSPECIFIED ? Plan.FREE : p.plan);
 
@@ -295,6 +307,8 @@ export interface LimitsForm {
   telephonyDisabled: boolean;
   automationsDisabled: boolean;
   corporateIdentity: boolean;
+  /** CBF-69: the AI features; set by the plan kind, editable on a custom plan only. */
+  ai: boolean;
 }
 
 /**
@@ -330,6 +344,7 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     telephonyDisabled: src ? src.telephonyDisabled : CUSTOM_DEFAULT_FLAGS.telephonyDisabled,
     automationsDisabled: src ? src.automationsDisabled : CUSTOM_DEFAULT_FLAGS.automationsDisabled,
     corporateIdentity: src ? src.corporateIdentity : CUSTOM_DEFAULT_FLAGS.corporateIdentity,
+    ai: src ? src.ai : CUSTOM_DEFAULT_FLAGS.ai,
   };
 }
 
@@ -346,6 +361,7 @@ export const CUSTOM_DEFAULT_FLAGS = {
   telephonyDisabled: true,
   automationsDisabled: false,
   corporateIdentity: false,
+  ai: false,
 } as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
@@ -397,6 +413,8 @@ export interface PlanLimitsInit {
   telephonyDisabled: boolean;
   automationsDisabled: boolean;
   corporateIdentity: boolean;
+  /** CBF-69: the AI features; set by the plan kind, editable on a custom plan only. */
+  ai: boolean;
 }
 
 /**
@@ -438,6 +456,7 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       telephonyDisabled: f.telephonyDisabled,
       automationsDisabled: f.automationsDisabled,
       corporateIdentity: f.corporateIdentity,
+      ai: f.ai,
     },
   };
 }

@@ -31,6 +31,8 @@ import (
 
 // AI is the workspace's language model (ai.Service).
 type AI interface {
+	// PlanAllows refuses a workspace whose plan does not include AI (409 AI_PLAN_REQUIRED, CBF-69).
+	PlanAllows(ctx context.Context, wsID uuid.UUID) error
 	State(ctx context.Context, wsID uuid.UUID) (v1.AiState, error)
 	Complete(ctx context.Context, wsID uuid.UUID, purpose string, msgs []ai.Message) (string, error)
 }
@@ -329,6 +331,10 @@ func (s *Service) createSmartTask(w http.ResponseWriter, r *http.Request) error 
 	}
 	if s.AI == nil {
 		return httpx.NotFound("route")
+	}
+	// CBF-69: Business only, before anything is read or a model is called.
+	if err := s.AI.PlanAllows(r.Context(), wsID); err != nil {
+		return err
 	}
 	var req v1.CreateSmartTaskRequest
 	if err := httpx.Decode(w, r, &req); err != nil {

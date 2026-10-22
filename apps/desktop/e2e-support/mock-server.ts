@@ -772,6 +772,8 @@ export interface MockServer {
   setBusy(userId: string, intervals: readonly ExternalSpan[]): void;
   /** CBF-68: the AI state of a workspace (default NO_KEY; a saved key → UNCHECKED, a check → READY / FAILED). */
   setAiState(workspaceId: string, state: AiState): void;
+  /** CBF-69: the plan kind of a workspace with its built-in limits (AI is Business only), pushed as WORKSPACE_UPDATE. */
+  setPlanKind(workspaceId: string, plan: Plan.FREE | Plan.TEAM | Plan.ENTERPRISE): void;
   /** ADR-0041 §4 / ADR-0045: a connected CalDAV account of `userId` (calendar «Работа», import on, synced at the clock). */
   setCalDav(userId: string, patch?: Partial<CalDavRec>): void;
   /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
@@ -877,6 +879,13 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setBusy: (u, list) => impl.calExternal.set(u, [...list]),
     setAiState: (ws, st) => impl.aiState.set(ws, st),
+    setPlanKind: (id, plan) => {
+      const ws = impl.state.workspaces.get(id);
+      if (!ws) throw notFound('workspace not found');
+      const limits = plan === Plan.ENTERPRISE ? ENTERPRISE_PLAN_LIMITS : plan === Plan.TEAM ? TEAM_PLAN_LIMITS : FREE_PLAN_LIMITS;
+      ws.plan = create(WorkspacePlanSchema, { plan, limits, expired: false });
+      impl.broadcast(create(DispatchEventSchema, { event: { case: 'workspaceUpdate', value: { workspace: ws } } }));
+    },
     setCalDav: (u, patch) => impl.seedCalDav(u, patch),
     setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
     setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
@@ -6291,11 +6300,16 @@ class MockImpl {
       noContent(c.res);
     });
 
+    // CBF-69: AI is Business only (PlanLimits.ai), after the rights like the server.
+    const aiPlan = (id: string): void => {
+      if (!this.state.workspaces.get(id)?.plan?.limits?.ai) throw conflictReason('AI_PLAN_REQUIRED', 'AI is not included in the plan: Business is required');
+    };
     // AI integration (CBF-60): stateless — the defaults, PUT echoes the form, the check answers.
     const aiAdmin = (c: Ctx): void => {
       const { m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       if (m.role === WorkspaceRole.GUEST) throw forbidden('not available to guests');
       this.requireWsBit(m, 'MANAGE_INTEGRATIONS');
+      aiPlan(c.params[0] ?? '');
     };
     this.route('GET', '/api/workspaces/:id/ai', (c) => {
       aiAdmin(c);
@@ -6324,6 +6338,7 @@ class MockImpl {
     this.route('GET', '/api/workspaces/:id/ai/status', (c) => {
       const { m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       if (m.role === WorkspaceRole.GUEST) throw forbidden('not available to guests');
+      aiPlan(c.params[0] ?? '');
       sendMsg(c.res, 200, GetAiStatusResponseSchema, { state: this.aiState.get(c.params[0] ?? '') ?? AiState.NO_KEY });
     });
 
@@ -7469,6 +7484,7 @@ class MockImpl {
       const ws = c.params[0] ?? '';
       const r = parseBody(c, CreateSmartTaskRequestSchema);
       const text = r.text.trim();
+      if (!this.state.workspaces.get(ws)?.plan?.limits?.ai) throw conflictReason('AI_PLAN_REQUIRED', 'AI is not included in the plan: Business is required');
       if (!text || text.length > 4000) throw invalid('text', 'text must be 1..4000 characters');
       if ((this.aiState.get(ws) ?? AiState.NO_KEY) !== AiState.READY) throw conflictReason('AI_NOT_READY', 'the AI integration is not connected or not checked');
       const board = b().listBoards(ws, me, false).find((x) => (x.permissions & CREATE_TASKS_BIT) !== 0n);

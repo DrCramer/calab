@@ -7,9 +7,12 @@ import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { describeError } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
+import { PlanLock } from '../../components/PlanLock';
 import { aiStatusKey, checkSeconds, draftError, draftOf, fieldErrorKey, keyApplies, reasonKey, requestOf, tabOf, type AiDraft, type AiTab } from '../../lib/ai';
 import { fmt } from '../../lib/format';
+import { planHasAI } from '../../lib/plan';
 import { toast } from '../../stores/toasts';
+import { useWorkspaces } from '../../stores/workspaces';
 
 const aiKey = (workspaceId: string): readonly unknown[] => ['ai', workspaceId];
 
@@ -17,9 +20,23 @@ const aiKey = (workspaceId: string): readonly unknown[] => ['ai', workspaceId];
  * Workspace settings → «AI интеграция» → the model (CBF-60, ai.proto): provider tabs «GPTunneL» /
  * «OpenAI compatible», API key (write-only: the saved one shows as a mask), model (gpt-6-astra by
  * default), «Проверить» (the server sends «hi» to the model of the form, even unsaved) and
- * «Сохранить». MANAGE_INTEGRATIONS only (the host renders it for `canManage`).
+ * «Сохранить». MANAGE_INTEGRATIONS only (the host renders it for `canManage`). Business only
+ * (CBF-69): on Free / Team the empty form stays visible under PlanLock and nothing is loaded (the
+ * server answers 409 AI_PLAN_REQUIRED; saved settings are kept for a later Business plan).
  */
 export function AiCard({ workspaceId }: { workspaceId: string }): ReactNode {
+  const planAI = useWorkspaces((s) => planHasAI(s.byId[workspaceId]?.ws.plan));
+  if (!planAI) {
+    return (
+      <PlanLock plan="business" testId="ai-plan-lock">
+        <AiForm workspaceId={workspaceId} settings={undefined} />
+      </PlanLock>
+    );
+  }
+  return <AiSettingsCard workspaceId={workspaceId} />;
+}
+
+function AiSettingsCard({ workspaceId }: { workspaceId: string }): ReactNode {
   const q = useQuery({ queryKey: aiKey(workspaceId), queryFn: () => api.ai.settings(workspaceId) });
   if (q.isPending) {
     return (

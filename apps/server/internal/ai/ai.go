@@ -64,6 +64,37 @@ type Service struct {
 	CheckLimit *redisx.RateLimiter
 	// fpKey keys the fingerprints of checked settings (state.go).
 	fpKey []byte
+	// Plans says whether the workspace's plan includes AI (CBF-69: Business only); nil = every
+	// plan does (tests).
+	Plans Plans
+}
+
+// Plans is the plan gate of the AI features (plans.Service).
+type Plans interface {
+	AllowsAI(ctx context.Context, wsID uuid.UUID) (bool, error)
+}
+
+// ReasonPlanRequired is ApiError.reason of an AI route refused by the plan (CBF-69).
+const ReasonPlanRequired = "AI_PLAN_REQUIRED"
+
+// ErrPlanRequired is the refusal when the workspace's plan does not include AI (Business only; owner, 22.10). The
+// stored settings stay (they work again once the plan includes AI); the provider is not called.
+var ErrPlanRequired = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, "AI is not included in the plan: Business is required").
+	WithDetails(ReasonPlanRequired, 0, 0)
+
+// PlanAllows refuses a workspace whose plan does not include AI with ErrPlanRequired.
+func (s *Service) PlanAllows(ctx context.Context, wsID uuid.UUID) error {
+	if s.Plans == nil {
+		return nil
+	}
+	ok, err := s.Plans.AllowsAI(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrPlanRequired
+	}
+	return nil
 }
 
 // New wires the service. allow is the address policy of user-given base URLs (nil =
@@ -95,7 +126,15 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
 
 // manage resolves the workspace of the path for a MANAGE_INTEGRATIONS member, never a guest
-// (ADR-0048; 404 for non-members).
+// (ADR-0048; 404 for non-members), whose plan includes AI (409 AI_PLAN_REQUIRED, CBF-69).
+func (s *Service) manage(r *http.Request) (uuid.UUID, error) {
+	wsID, err := manage(r)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return wsID, s.PlanAllows(r.Context(), wsID)
+}
+
 func manage(r *http.Request) (uuid.UUID, error) {
 	wsID, err := httpx.PathUUID(r, "id", "workspace")
 	if err != nil {
@@ -156,7 +195,7 @@ func (s *Service) settingsPB(ctx context.Context, q *sqlc.Queries, a sqlc.Worksp
 }
 
 func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
-	wsID, err := manage(r)
+	wsID, err := s.manage(r)
 	if err != nil {
 		return err
 	}
@@ -273,7 +312,7 @@ func sameTarget(cur sqlc.WorkspaceAi, in input) bool {
 }
 
 func (s *Service) put(w http.ResponseWriter, r *http.Request) error {
-	wsID, err := manage(r)
+	wsID, err := s.manage(r)
 	if err != nil {
 		return err
 	}
@@ -327,7 +366,7 @@ func (s *Service) put(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) check(w http.ResponseWriter, r *http.Request) error {
-	wsID, err := manage(r)
+	wsID, err := s.manage(r)
 	if err != nil {
 		return err
 	}

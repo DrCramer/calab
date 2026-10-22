@@ -5,6 +5,7 @@ export const esSmartTask = {
   'smart.off.unchecked': 'Comprueba la conexión en los ajustes',
   'smart.off.failed': 'La conexión no funciona: revisa la clave',
   'smart.off.loading': 'Comprobando la conexión de IA…',
+  'smart.off.plan': 'Disponible en el plan Business',
   'smart.title': 'Tarea inteligente',
   'smart.intro': 'Describe la tarea con tus palabras: la IA elige el tablero y redacta la tarea. Después puedes editarla.',
   'smart.text': 'Texto de la tarea',
@@ -28,6 +29,7 @@ export const esSmartTask = {
   'smart.instruction.placeholder': 'Por ejemplo: título — «Factura: proveedor, importe». En la descripción, los datos de pago y el plazo. Etiqueta «Factura», prioridad alta si vence en menos de una semana.',
   'smart.instruction.hint':
     'La IA lee la instrucción cuando elige este tablero para una tarea inteligente. La ve quien ve el tablero; también da forma a las tareas de quienes solo pueden crear tareas: no escribas secretos aquí.',
+  'smart.instruction.plan': 'Las tareas inteligentes funcionan en el plan Business; puedes escribir la instrucción de antemano',
   'smart.instruction.save': 'Guardar',
   'smart.instruction.saved': 'Instrucción guardada',
   'smart.instruction.count': '{n} de 4000',

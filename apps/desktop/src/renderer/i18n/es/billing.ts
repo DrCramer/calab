@@ -551,6 +551,7 @@ export const esBilling: DictShape<typeof ruBilling> = {
   'billing.plans.f.telephony': 'Telefonía (SIP)',
   'billing.plans.f.caldav': 'Sincronización de calendario (CalDAV)',
   'billing.plans.f.automations': 'Automatizaciones de tableros',
+  'billing.plans.f.ai': 'Funciones de IA: integración de IA y tareas inteligentes',
   'billing.pay.title': 'Contratar {plan}',
   'billing.pay.titleChange': 'Pasar a {plan}',
   'billing.pay.how': 'Recarga el saldo: el plan se activa al momento. Cobramos una vez al día y solo por las personas del equipo.',

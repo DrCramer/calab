@@ -110,8 +110,14 @@ type PlanLimits struct {
 	// (custom plan, or an override of Team / Business). Field 40: 35-39 are left for the limits being
 	// added in parallel.
 	CorporateIdentity bool `protobuf:"varint,40,opt,name=corporate_identity,json=corporateIdentity,proto3" json:"corporate_identity,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// AI features (the workspace's AI integration, «Создать умную задачу», the boards' AI
+	// instruction run by the model; CBF-69) are Business only (owner, 22.10). A positive flag like
+	// corporate_identity: zero, a client that does not know the field and an older custom plan mean
+	// «no». Set by the plan kind (PLAN_*_LIMITS on the operator's server) or a custom plan; a
+	// superadmin override of Team / Business cannot change it.
+	Ai            bool `protobuf:"varint,41,opt,name=ai,proto3" json:"ai,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PlanLimits) Reset() {
@@ -319,6 +325,13 @@ func (x *PlanLimits) GetCorporateIdentity() bool {
 	return false
 }
 
+func (x *PlanLimits) GetAi() bool {
+	if x != nil {
+		return x.Ai
+	}
+	return false
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state                protoimpl.MessageState         `protogen:"open.v1"`
@@ -419,7 +432,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xbd\b\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xcd\b\n" +
 	"\n" +
 	"PlanLimits\x120\n" +
 	"\x14board_forms_disabled\x18! \x01(\bR\x12boardFormsDisabled\x121\n" +
@@ -450,7 +463,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabled\x12\x1d\n" +
 	"\n" +
 	"temp_rooms\x18# \x01(\rR\ttempRooms\x12-\n" +
-	"\x12corporate_identity\x18( \x01(\bR\x11corporateIdentityJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
+	"\x12corporate_identity\x18( \x01(\bR\x11corporateIdentity\x12\x0e\n" +
+	"\x02ai\x18) \x01(\bR\x02aiJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

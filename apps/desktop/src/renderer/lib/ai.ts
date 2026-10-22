@@ -114,10 +114,12 @@ export const checkSeconds = (r: Pick<CheckAiResponse, 'latencyMs'>): number => M
 export const aiStatusKey = (workspaceId: string): readonly unknown[] => ['ai-status', workspaceId];
 
 /**
- * «Создать умную задачу» (CBF-68): why the item is off — null = it is on (READY). Unknown
- * (not loaded yet) shows the loading hint; the server refuses anything but READY anyway.
+ * «Создать умную задачу» (CBF-68): why the item is off — null = it is on (READY). A plan without
+ * AI (CBF-69: Free / Team) comes first: its status is not even asked. Unknown (not loaded yet)
+ * shows the loading hint; the server refuses anything but READY anyway.
  */
-export function smartOffKey(state: AiState | undefined): MessageKey | null {
+export function smartOffKey(state: AiState | undefined, planAI = true): MessageKey | null {
+  if (!planAI) return 'smart.off.plan';
   switch (state) {
     case AiState.READY:
       return null;
@@ -139,6 +141,8 @@ export function smartErrorText(e: { status: number; reason?: string | undefined;
   switch (e.reason) {
     case 'AI_NOT_READY':
       return { key: 'smart.err.notReady' };
+    case 'AI_PLAN_REQUIRED':
+      return { key: 'smart.off.plan' };
     case 'NO_BOARDS':
       return { key: 'smart.err.noBoards' };
     case 'AI_BAD_ANSWER':

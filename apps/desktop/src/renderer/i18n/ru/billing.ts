@@ -554,6 +554,7 @@ export const ruBilling = {
   'billing.plans.f.telephony': 'Телефония (SIP)',
   'billing.plans.f.caldav': 'Синхронизация календаря (CalDAV)',
   'billing.plans.f.automations': 'Автоматизации досок',
+  'billing.plans.f.ai': 'AI-функции: AI интеграция и умные задачи',
   'billing.pay.title': 'Подключить {plan}',
   'billing.pay.titleChange': 'Перейти на {plan}',
   'billing.pay.how': 'Пополните баланс — тариф подключится сразу. Списываем раз в сутки и только за тех, кто в команде.',

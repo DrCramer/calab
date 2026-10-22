@@ -33,6 +33,7 @@ const ROW_IDS = Object.keys({
   approvals: 0,
   webapps: 0,
   sip: 0,
+  ai: 0,
   webhook: 0,
   sso: 0,
   whitelabel: 0,

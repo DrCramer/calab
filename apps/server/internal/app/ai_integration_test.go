@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -19,6 +20,9 @@ import (
 // aiFakeKey is the only key the fake provider accepts (a fixture, not a real key).
 const aiFakeKey = "it-ai-key-0123456789abcd" //nolint:gosec // G101: a test fixture
 
+// aiFakeCalls counts the calls that reached the fake provider (CBF-69: a plan refusal never calls it).
+var aiFakeCalls atomic.Int64
+
 // aiFake is a fake OpenAI-compatible provider: GPTUNNEL_AI_URL of the test server is its /v1,
 // and the OpenAI-compatible tests point base_url at it too (loopback is allowed in tests).
 var aiFake = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +30,7 @@ var aiFake = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *
 		http.NotFound(w, r)
 		return
 	}
+	aiFakeCalls.Add(1)
 	w.Header().Set("Content-Type", "application/json")
 	if r.Header.Get("Authorization") != "Bearer "+aiFakeKey {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -55,6 +60,7 @@ var aiFake = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *
 func TestAIIntegration(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
 	wid := ws.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}) // CBF-69: AI is Business only
 	base := "/api/workspaces/" + wid + "/ai"
 	key := func(s string) *string { return &s }
 	gpt := v1.AiProvider_AI_PROVIDER_GPTUNNEL

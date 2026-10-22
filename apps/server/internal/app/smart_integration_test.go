@@ -67,6 +67,7 @@ func smartLastSeen() string {
 func TestSmartTasks(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
 	wid := ws.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}) // CBF-69: AI is Business only
 	base := "/api/workspaces/" + wid + "/ai"
 	smart := "/api/workspaces/" + wid + "/smart-tasks"
 	key := func(s string) *string { return &s }

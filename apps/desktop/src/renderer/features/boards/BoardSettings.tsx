@@ -17,7 +17,7 @@ import {
   resolveStatusIcon,
   type StatusIconToken,
 } from '@calaba/protocol';
-import { Archive, Check, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Lock, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ColorPicker, GridPicker } from '../../components/ColorPicker';
 import { confirmAction } from '../../components/Confirm';
@@ -31,7 +31,7 @@ import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
 import { accessLevelOf, accessSteps, compactDrafts, isPrivateObject, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
-import { planHas } from '../../lib/plan';
+import { planHas, planHasAI } from '../../lib/plan';
 import { isFullRole } from '../../lib/roles';
 import {
   createBoard,
@@ -145,7 +145,7 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
           <CommitInput label={t('boards.set.description')} value={board.description} maxLength={2000} onCommit={(v) => patch(board.id, { description: v })} />
         </Row>
       </Card>
-      <AiInstructionCard boardId={board.id} />
+      <AiInstructionCard boardId={board.id} workspaceId={board.workspaceId} />
       <Card title={t('boards.set.archiveCard')} footer={t('boards.set.autoArchiveHint')}>
         <Row label={t('boards.set.autoArchive')}>
           <Select value={String(board.autoArchiveDays)} onChange={(e) => void patch(board.id, { autoArchiveDays: Number(e.target.value) })} aria-label={t('boards.set.autoArchive')} data-testid="auto-archive">
@@ -166,9 +166,11 @@ const AI_INSTRUCTION_MAX = 4000;
 /**
  * «Инструкция для ИИ» (CBF-68, ADR-0118): how smart tasks of this board are written. It is not
  * in the board lists or events — GET /api/boards/{id} (VIEW_BOARD) — so the card loads it; one
- * PATCH on «Сохранить».
+ * PATCH on «Сохранить». Writable on any plan; smart tasks run on Business only (CBF-69), so
+ * without it the card says so.
  */
-function AiInstructionCard({ boardId }: { boardId: string }): ReactNode {
+function AiInstructionCard({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
+  const planAI = useWorkspaces((s) => planHasAI(s.byId[workspaceId]?.ws.plan));
   const [saved, setSaved] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -203,6 +205,12 @@ function AiInstructionCard({ boardId }: { boardId: string }): ReactNode {
         <label className="text-body" htmlFor={`ai-instr-${boardId}`}>
           {t('smart.instruction.label')}
         </label>
+        {planAI ? null : (
+          <span id={`ai-instr-plan-${boardId}`} className="inline-flex items-center gap-1.5 text-caption text-muted" data-testid="board-ai-instruction-plan">
+            <Lock className="size-3.5 shrink-0" aria-hidden />
+            {t('smart.instruction.plan')}
+          </span>
+        )}
         {saved === null ? (
           <div className="grid h-24 place-items-center">
             <Spinner />
@@ -210,6 +218,7 @@ function AiInstructionCard({ boardId }: { boardId: string }): ReactNode {
         ) : (
           <TextArea
             id={`ai-instr-${boardId}`}
+            aria-describedby={planAI ? undefined : `ai-instr-plan-${boardId}`}
             value={draft}
             maxLength={AI_INSTRUCTION_MAX}
             rows={5}

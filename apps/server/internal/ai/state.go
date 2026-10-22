@@ -122,10 +122,14 @@ type CallError struct{ Code string }
 
 func (e *CallError) Error() string { return "ai: " + e.Code }
 
-// Complete sends msgs to the workspace's model with its stored key — only when the saved
-// settings are READY (ErrNotReady otherwise) — and returns the answer's text. The key, the
-// messages and the answer are never logged; failures are *CallError.
+// Complete sends msgs to the workspace's model with its stored key — only when the plan includes
+// AI (ErrPlanRequired otherwise) and the saved settings are READY (ErrNotReady otherwise) — and
+// returns the answer's text. The key, the messages and the answer are never logged; failures are
+// *CallError.
 func (s *Service) Complete(ctx context.Context, wsID uuid.UUID, purpose string, msgs []Message) (string, error) {
+	if err := s.PlanAllows(ctx, wsID); err != nil {
+		return "", err
+	}
 	cur, err := s.load(ctx, s.db.Q, wsID)
 	if err != nil {
 		return "", err
@@ -150,7 +154,8 @@ func (s *Service) Complete(ctx context.Context, wsID uuid.UUID, purpose string, 
 	return res.Reply, nil
 }
 
-// status: GET /api/workspaces/{id}/ai/status — any member but guests, people only.
+// status: GET /api/workspaces/{id}/ai/status — any member but guests, people only; 409
+// AI_PLAN_REQUIRED when the plan does not include AI (CBF-69).
 func (s *Service) status(w http.ResponseWriter, r *http.Request) error {
 	if auth.MustFromContext(r.Context()).Machine() {
 		return auth.ErrBotNotAllowed
@@ -168,6 +173,9 @@ func (s *Service) status(w http.ResponseWriter, r *http.Request) error {
 	}
 	if role == perm.RoleGuest {
 		return httpx.Forbidden("not available to guests")
+	}
+	if err := s.PlanAllows(r.Context(), wsID); err != nil {
+		return err
 	}
 	st, err := s.State(r.Context(), wsID)
 	if err != nil {

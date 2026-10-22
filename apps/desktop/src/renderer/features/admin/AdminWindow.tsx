@@ -444,7 +444,7 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
                 </Row>
               ) : (
                 <>
-                  <CustomLimitsFields form={form.limits} onChange={setLimits} />
+                  <CustomLimitsFields form={form.limits} onChange={setLimits} aiFixed />
                   <Row label={t('admin.overridesDefaults')}>
                     <Button variant="secondary" size="sm" onClick={() => setUseDefaults(true)} data-testid="admin-plan-defaults">
                       {t('admin.overridesDefaultsAction')}
