@@ -1803,6 +1803,17 @@ type WorkspaceAdminLog struct {
 	CreatedAt   time.Time
 }
 
+type WorkspaceAi struct {
+	WorkspaceID uuid.UUID
+	Provider    string
+	BaseUrl     string
+	Model       string
+	KeyEnc      []byte
+	KeyHint     string
+	UpdatedAt   time.Time
+	UpdatedBy   *uuid.UUID
+}
+
 type WorkspaceApp struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

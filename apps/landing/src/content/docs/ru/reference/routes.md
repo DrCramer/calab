@@ -369,6 +369,9 @@ order: 1
 | `GET` | `/api/workspaces/{id}/sip` | по правам ролей |
 | `PUT` | `/api/workspaces/{id}/sip` | по правам ролей |
 | `POST` | `/api/workspaces/{id}/sip/test` | по правам ролей |
+| `GET` | `/api/workspaces/{id}/ai` | по правам ролей |
+| `PUT` | `/api/workspaces/{id}/ai` | по правам ролей |
+| `POST` | `/api/workspaces/{id}/ai/check` | по правам ролей |
 | `GET` | `/api/workspaces/{id}/users` | по правам ролей |
 <!-- /routes -->
 

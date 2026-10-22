@@ -190,8 +190,11 @@ type Config struct {
 	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
 	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
 	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
-	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
-	GPTunnelWebURL    string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelAPIURL string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelWebURL string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	// GPTUNNEL_AI_URL: the OpenAI-compatible API root of GPTunneL for the AI integration (CBF-60,
+	// ai.proto): the check and AI features call {GPTUNNEL_AI_URL}/chat/completions.
+	GPTunnelAIURL     string `env:"GPTUNNEL_AI_URL" envDefault:"https://gptunnel.ru/v1"`
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
 	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
 	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
@@ -387,6 +390,9 @@ func (c *Config) Validate() error {
 	}
 	if Origin(c.GPTunnelAPIURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
+	}
+	if Origin(c.GPTunnelAIURL) == "" {
+		errs = append(errs, fmt.Errorf("GPTUNNEL_AI_URL must be an absolute http(s) URL, got %q", c.GPTunnelAIURL))
 	}
 	if Origin(c.GPTunnelWebURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))

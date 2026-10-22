@@ -9,7 +9,7 @@ import { WikiSettingsTab } from '../wiki/WikiSettings';
 import { audioTierKbps, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -169,9 +169,10 @@ export function WorkspaceSettingsDialog({
     ...(wikiManage ? [{ id: 'wiki', label: t('wiki.section'), icon: BookOpen, keywords: t('wiki.settings.trash'), content: <WikiSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
-    // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).
+    // «AI интеграция» (CBF-60): the AI model (MANAGE_INTEGRATIONS) and the GPTunneL meeting recording
+    // connection (ADR-0025); guests don't see it (the API is 403).
     ...(entry.role !== WorkspaceRole.GUEST
-      ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={access.integrations} /> }]
+      ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: Sparkles, keywords: 'GPTunneL OpenAI', content: <GptunnelTab workspaceId={workspaceId} canManage={access.integrations} /> }]
       : []),
     // «Телефония» (ADR-0046): the SIP account, the connection test and the call journal — MANAGE_WORKSPACE.
     ...(admin ? [{ id: 'telephony', label: t('sip.tab'), icon: Phone, content: <TelephonyTab workspaceId={workspaceId} /> }] : []),

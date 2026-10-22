@@ -184,6 +184,7 @@ func run(m *testing.M) int {
 		// Recording (ADR-0025): fakes of GPTunneL and the egress, see recording_integration_test.
 		GPTunnelAPIURL:         gptFake.URL,
 		GPTunnelWebURL:         "https://gptunnel.ru",
+		GPTunnelAIURL:          aiFake.URL + "/v1", // ai_integration_test
 		RecordingKeepDays:      30,
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,

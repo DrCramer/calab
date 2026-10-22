@@ -14,6 +14,7 @@ import { formatPairCode, pairCodeComplete, pairErrorKey } from '../../lib/record
 import { platform } from '../../platform';
 import { toast } from '../../stores/toasts';
 import { useMemberName } from '../../stores/workspaces';
+import { AiCard } from './AiCard';
 
 /**
  * The product site when the server has not told us the account's web address yet (not paired):
@@ -24,8 +25,9 @@ const GPTUNNEL_SITE = 'https://gptunnel.ru';
 const queryKey = (workspaceId: string): readonly unknown[] => ['gptunnel', workspaceId];
 
 /**
- * Workspace settings → «GPTunneL» (ADR-0025, docs/08 «Запись встреч»): the connection that meeting
- * recordings are uploaded with. Not connected: the pairing code field (ABCD-EFGH mask) and where to
+ * Workspace settings → «AI интеграция» (CBF-60): on top the AI model (AiCard: provider tabs, key,
+ * model, check — MANAGE_INTEGRATIONS), below the GPTunneL connection (ADR-0025, docs/08 «Запись
+ * встреч») that meeting recordings are uploaded with. Not connected: the pairing code field (ABCD-EFGH mask) and where to
  * get the code; connected: device, account, who / when, «Открыть в GPTunneL», «Отключить». Only
  * MANAGE_INTEGRATIONS (ADR-0048) changes it (`canManage`); the other members see the status (guests: no tab).
  */
@@ -34,7 +36,9 @@ export function GptunnelTab({ workspaceId, canManage }: { workspaceId: string; c
   const it = q.data?.integration;
   return (
     <>
-      <p className="px-1 text-body text-muted">{t('gpt.intro')}</p>
+      <p className="px-1 text-body text-muted">{t('ai.intro')}</p>
+      {canManage ? <AiCard workspaceId={workspaceId} /> : <p className="px-1 text-caption text-faint">{t('ai.memberHint')}</p>}
+      <p className="mt-3 px-1 text-body text-muted">{t('gpt.intro')}</p>
       {q.isPending ? (
         <div className="grid place-items-center py-6">
           <Spinner />

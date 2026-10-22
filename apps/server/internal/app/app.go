@@ -15,6 +15,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/achievements"
+	"github.com/calaba/calaba/server/internal/ai"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/birthdays"
@@ -554,6 +555,8 @@ func New(d Deps) *App {
 	}
 	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
 	sipSvc.Routes(mux, private)
+	// AI integration (CBF-60): the workspace's model provider and its check.
+	ai.New(d.DB, d.Redis, []byte(d.Config.JWTSecret), d.Config.GPTunnelAIURL, unfurlPolicy(d)).Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.SIP = sipSvc
 		rtcSvc.Routes(mux, private)

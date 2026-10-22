@@ -42,6 +42,7 @@ import { zhGuests } from './guests';
 import { zhTemp } from './temp';
 import { zhContacts } from './contacts';
 import { zhSip } from './sip';
+import { zhAi } from './ai';
 import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -60,6 +61,7 @@ export const zhCN: Dict = {
   ...zhTemp,
   ...zhContacts,
   ...zhSip,
+  ...zhAi,
   ...zhWebApps,
   ...zhDm,
   ...zhNotes,

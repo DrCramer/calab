@@ -258,6 +258,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/workspaces/{id}/roles":                                      scopeWorkspace,
 	"GET /api/workspaces/{id}/rooms":                                      scopeWorkspace,
 	"GET /api/workspaces/{id}/sip":                                        scopeWorkspace,
+	"GET /api/workspaces/{id}/ai":                                         scopeWorkspace,
 	"GET /api/workspaces/{id}/sounds":                                     scopeWorkspace,
 	"GET /api/workspaces/{id}/sticker-packs":                              scopeWorkspace,
 	"GET /api/workspaces/{id}/tasks/search":                               scopeWorkspace,
@@ -390,6 +391,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/workspaces/{id}/rooms":                                     scopeWorkspace,
 	"POST /api/workspaces/{id}/rooms/temp":                                scopeWorkspace,
 	"POST /api/workspaces/{id}/sip/test":                                  scopeWorkspace,
+	"POST /api/workspaces/{id}/ai/check":                                  scopeWorkspace,
 	"POST /api/workspaces/{id}/sounds":                                    scopeWorkspace,
 	"POST /api/workspaces/{id}/sticker-packs":                             scopeWorkspace,
 	"PUT /api/admin/users/{id}/storage-quota":                             scopeAdmin,
@@ -426,6 +428,7 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/workspaces/{id}/roles/order":                                scopeWorkspace,
 	"PUT /api/workspaces/{id}/rooms/order":                                scopeWorkspace,
 	"PUT /api/workspaces/{id}/sip":                                        scopeWorkspace,
+	"PUT /api/workspaces/{id}/ai":                                         scopeWorkspace,
 	// Boards 2.0 (ADR-0058).
 	"GET /api/workspaces/{id}/board-categories":  scopeWorkspace,
 	"POST /api/workspaces/{id}/board-categories": scopeWorkspace,

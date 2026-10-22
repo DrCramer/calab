@@ -369,7 +369,7 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/boards/{id}/webhook/ping",
 		"PUT /api/boards/{id}/permissions",
 	}},
-	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
 		"GET /api/workspaces/{id}/apps",
 		"POST /api/workspaces/{id}/apps",
 		"PATCH /api/workspace-apps/{appId}",
@@ -381,6 +381,9 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/sip",
 		"PUT /api/workspaces/{id}/sip",
 		"POST /api/workspaces/{id}/sip/test",
+		"GET /api/workspaces/{id}/ai",
+		"PUT /api/workspaces/{id}/ai",
+		"POST /api/workspaces/{id}/ai/check",
 		"GET /api/workspaces/{id}/calls",
 	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace content — camera backgrounds (MANAGE_WORKSPACE; members read them), the achievements catalog (MANAGE_WORKSPACE) and grants (MANAGE_MEMBERS; never to a bot or oneself)", routes: []string{
@@ -687,6 +690,8 @@ var botAudited = map[string]bool{
 	"DELETE /api/workspaces/{id}/integrations/gptunnel":                   true,
 	"PUT /api/workspaces/{id}/sip":                                        true,
 	"POST /api/workspaces/{id}/sip/test":                                  true, // a real call billed to the workspace
+	"PUT /api/workspaces/{id}/ai":                                         true,
+	"POST /api/workspaces/{id}/ai/check":                                  true, // a model call billed to the key
 	"POST /api/workspaces/{id}/backgrounds":                               true,
 	"PATCH /api/workspaces/{id}/backgrounds/{bgId}":                       true,
 	"DELETE /api/workspaces/{id}/backgrounds/{bgId}":                      true,
