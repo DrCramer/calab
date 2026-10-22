@@ -354,7 +354,8 @@ func (r *registration) learn(res *sip.Response) bool {
 func (r *registration) keepalive(ctx context.Context) bool {
 	req := r.request(sip.OPTIONS)
 	req.SetBody(nil)
-	_, err := r.ag.do(ctx, req, r.ag.t.requestWait)
+	// Not longer than the interval: two lost keepalives re-register within two intervals.
+	_, err := r.ag.do(ctx, req, min(r.ag.t.requestWait, time.Duration(r.acc.Keepalive)*time.Second))
 	return err == nil
 }
 
