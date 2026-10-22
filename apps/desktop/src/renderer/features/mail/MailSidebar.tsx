@@ -27,7 +27,7 @@ export function MailSidebar(): ReactNode {
   const accountIds = useMail((s) => s.accountIds);
   if (!shown) return null;
   return (
-    <nav className="mat-sidebar mat-sidebar-window relative flex w-[clamp(200px,17vw,240px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.sidebar')} data-testid="mail-sidebar">
+    <nav className="mat-sidebar mat-sidebar-window relative flex w-[clamp(224px,19vw,260px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.sidebar')} data-testid="mail-sidebar">
       <ColumnHeader title={<ColumnTitle>{t('mbox.sidebar')}</ColumnTitle>}>
         <IconButton label={t('mbox.sidebar.hide')} onClick={() => useMailUi.getState().toggleSidebar()} data-testid="mail-sidebar-hide">
           <PanelLeft className="size-4" strokeWidth={1.75} />
@@ -242,7 +242,7 @@ const SideRow = memo(function SideRow({ scope, refStr, role, label, depth = 0, f
         data-testid="mail-sidebar-row"
       >
         <Icon className={cx('size-4 shrink-0', current ? 'text-fg' : 'text-accent-text')} strokeWidth={1.75} aria-hidden />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
         {count > 0 ? <span className="shrink-0 text-caption tabular-nums text-muted">{count}</span> : null}
       </button>
     </div>

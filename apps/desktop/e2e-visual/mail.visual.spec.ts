@@ -39,6 +39,10 @@ test('mail-folders', async ({ open, win, shot }) => {
   await win.getByTestId('mail-folder-dialog-submit').click();
   await expect(dialog).toHaveCount(0);
   await expect(work.getByTestId('mail-sidebar-row').filter({ hasText: 'Клиенты' })).toBeVisible();
+  // The toast stays clear of the list and the sidebar (anchored to the reading pane), then goes away.
+  await expect(win.getByRole('region', { name: 'Уведомления' })).toContainText('Папка «Клиенты» создана');
+  await checkpoint(shot, 'mail-toast');
+  await win.getByRole('button', { name: 'Закрыть уведомление' }).click();
 
   // A smart folder: two conditions, «любое условие».
   await sidebar.getByTestId('mail-sidebar-new-smart').click();

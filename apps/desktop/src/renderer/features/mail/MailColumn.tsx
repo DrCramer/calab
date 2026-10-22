@@ -155,7 +155,7 @@ function BoxSwitcher(): ReactNode {
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'max-h-[min(560px,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto')} sideOffset={4} align="start" collisionPadding={16} data-testid="mail-box-menu">
+        <Dropdown.Content className={cx(menuBox, 'max-h-[min(560px,var(--radix-dropdown-menu-content-available-height))] w-80 overflow-y-auto')} sideOffset={4} align="start" collisionPadding={16} data-testid="mail-box-menu">
           <SwitcherItems />
         </Dropdown.Content>
       </Dropdown.Portal>
@@ -204,14 +204,14 @@ function AccountSub({ accountId }: { accountId: string }): ReactNode {
   return (
     <Dropdown.Sub>
       <Dropdown.SubTrigger className={cx(menuItem, 'pr-2 data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="mail-box-account">
-        <span className="min-w-0 flex-1 truncate">{email}</span>
+        <span className="min-w-0 flex-1 truncate" title={email}>{email}</span>
         {state === 'auth_failed' || state === 'error' || state === 'offline' ? <TriangleAlert className="size-3 shrink-0 text-warn" aria-label={t(state === 'auth_failed' ? 'mbox.state.authFailed' : state === 'offline' ? 'mbox.state.offline' : 'mbox.state.error')} /> : null}
         {unread > 0 ? <span className="shrink-0 text-caption tabular-nums opacity-70">{unread}</span> : null}
         <Check className={cx('size-4 shrink-0', !here && 'invisible')} aria-hidden />
         <ChevronDown className="size-3.5 shrink-0 -rotate-90 opacity-60" aria-hidden />
       </Dropdown.SubTrigger>
       <Dropdown.Portal>
-        <Dropdown.SubContent className={cx(menuBox, 'max-h-[min(520px,var(--radix-dropdown-menu-content-available-height))] w-64 overflow-y-auto')} collisionPadding={16}>
+        <Dropdown.SubContent className={cx(menuBox, 'max-h-[min(520px,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto')} collisionPadding={16}>
           <AccountFolders accountId={accountId} />
         </Dropdown.SubContent>
       </Dropdown.Portal>
@@ -289,7 +289,7 @@ const BoxRow = forwardRef<HTMLDivElement, { box: MailBox; label: string; role: M
   return (
     // `rest`: the context menu trigger's handlers (the trash row).
     <Dropdown.Item {...rest} ref={ref} className={cx(menuItem, 'pr-2')} onSelect={() => selectBox(box)} data-testid="mail-box-item" style={depth ? { paddingLeft: 10 + depth * 14 } : undefined}>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
       {count > 0 ? <span className="shrink-0 text-caption tabular-nums opacity-70">{count}</span> : null}
       <Check className={cx('size-4 shrink-0', !current && 'invisible')} aria-hidden />
     </Dropdown.Item>
