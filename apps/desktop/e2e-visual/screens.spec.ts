@@ -4039,6 +4039,19 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(viewer).toBeHidden();
   await expect(panel).toBeVisible();
+
+  // CBF-59: a picture picked in the description editor is attached and shown inline, in place.
+  await panel.getByTestId('task-description').click();
+  const editor = panel.getByTestId('task-description-editor');
+  await editor.press('End');
+  const shotPng = encodePng(640, 360, (u, v) => (v < 0.15 ? [58, 124, 246] : u < 0.3 ? [235, 238, 245] : [250, 251, 253]));
+  const attached = win.waitForResponse((r) => r.request().method() === 'PATCH' && /\/api\/tasks\/[^/]+$/.test(r.url()));
+  await panel.locator('input[accept="image/*"]').setInputFiles({ name: 'screenshot.png', mimeType: 'image/png', buffer: shotPng });
+  expect((await attached).ok()).toBe(true);
+  await expect(editor).toHaveValue(/calaba-file:/);
+  await panel.getByTestId('task-description-save').click();
+  await expect(panel.getByTestId('task-description-img')).toBeVisible();
+  await checkpoint(shot, 'boards-task-inline-image');
 });
 
 /** CAL-3's panel at its lower section: the «Комментарии» tab (the default) with the composer. */
