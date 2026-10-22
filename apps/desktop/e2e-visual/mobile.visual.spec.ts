@@ -1549,7 +1549,7 @@ test('m-telephony', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
   const dialog = page.getByTestId('settings-page');
   await dialog.getByRole('tab', { name: 'Телефония' }).tap();
-  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(5);
+  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
   await expectNoFieldFocus(page, 'telephony');
   await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony');

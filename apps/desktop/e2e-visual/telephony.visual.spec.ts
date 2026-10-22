@@ -3,7 +3,7 @@ import { checkpoint } from './harness';
 
 /**
  * «Настройки пространства → Телефония» — the exchange (ADR-0117 step 1, docs/08 «Телефония»):
- * «Внутренние номера» (104 unassigned), «Группы» («Поддержка» with a deleted fallback),
+ * «Внутренние номера» (103 unassigned), «Группы» («Поддержка» with a deleted fallback),
  * «Автоответ» (a menu with a recording and keys, key 9 leading to a deleted menu), the inline forms
  * of a number, a group and a menu. Fixture: mock-server seedSipExchange. Projects
  * `telephony-dark-960` (all) and `telephony-light-960` (the menu form only); run with -g:
@@ -28,7 +28,7 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   await open();
   mock.seedSipExchange();
   const dialog = await openTelephony(win);
-  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(5);
+  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
   await expect(dialog.getByTestId('sip-group-row')).toHaveCount(2);
   await expect(dialog.getByTestId('sip-menu-row')).toHaveCount(2);
   await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
@@ -45,7 +45,7 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   await win.keyboard.press('Escape');
   await dialog.getByTestId('sip-ext-number').fill('101');
   await dialog.getByTestId('sip-ext-description').fill('Касса');
-  // A taken number: the server's 409 under the field (the picker is closed, the member unset → pick one).
+  // A taken number: the server's 409 under the field (Григорий is the one member without a number).
   await dialog.getByTestId('sip-ext-member').click();
   await win.getByTestId('sip-ext-picker').getByRole('option').first().click();
   await dialog.getByTestId('sip-ext-save').click();

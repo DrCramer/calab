@@ -232,16 +232,19 @@ const ExtensionRow = memo(function ExtensionRow({
     },
   });
   return (
-    <li className="group flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-testid="sip-ext-row">
+    <li className="flex min-h-11 items-center gap-3 px-3 py-2" data-testid="sip-ext-row">
       <NumberPill number={number} />
-      <span className="min-w-0 flex-1 text-body">
-        {userId ? <MemberLabel workspaceId={workspaceId} userId={userId} bot={bot} /> : <span className="text-muted">{t('pbx.ext.unassigned')}</span>}
-      </span>
-      {description ? (
-        <span className="min-w-0 max-w-[40%] truncate text-body text-muted" title={description}>
-          {description}
+      {/* Phone: the description goes under the name, the actions stay on the right. */}
+      <span className="flex min-w-0 flex-1 items-center gap-x-3 gap-y-0.5 text-body mobile:flex-col mobile:items-start">
+        <span className="min-w-0 flex-1 mobile:w-full">
+          {userId ? <MemberLabel workspaceId={workspaceId} userId={userId} bot={bot} /> : <span className="text-muted">{t('pbx.ext.unassigned')}</span>}
         </span>
-      ) : null}
+        {description ? (
+          <span className="min-w-0 max-w-[40%] truncate text-muted mobile:max-w-full mobile:text-caption" title={description}>
+            {description}
+          </span>
+        ) : null}
+      </span>
       <span className="flex shrink-0 items-center gap-0.5">
         <IconButton size="sm" label={t('pbx.edit')} onClick={() => onEdit(id)}>
           <Pencil className="size-3.5" aria-hidden />
@@ -521,7 +524,7 @@ const GroupRow = memo(function GroupRow({
   return (
     <li className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-testid="sip-group-row">
       <NumberPill number={number} />
-      <span className="min-w-0 flex-1 truncate text-body font-medium" title={name}>
+      <span className="min-w-24 flex-1 truncate text-body font-medium" title={name}>
         {name}
       </span>
       <span className="shrink-0 text-body text-muted">
@@ -802,7 +805,7 @@ const MenuRow = memo(function MenuRow({
 }): ReactNode {
   return (
     <li className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-testid="sip-menu-row">
-      <span className="min-w-0 flex-1 truncate text-body font-medium" title={name}>
+      <span className="min-w-24 flex-1 truncate text-body font-medium" title={name}>
         {name}
       </span>
       <span className={cx('shrink-0 text-body', promptMs ? 'text-muted' : 'text-muted')}>

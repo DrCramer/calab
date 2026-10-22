@@ -701,8 +701,8 @@ export interface MockServer {
   /** ADR-0046: moves a call (RINGING / ACTIVE / ENDED / FAILED with `reason`) → SIP_CALL_UPDATE. */
   setSipCallStatus(callId: string, status: SipCallStatus, reason?: string): void;
   /**
-   * ADR-0117: «Команда Calab» on a plan with telephony, a saved SIP account and an exchange — five
-   * numbers (104 unassigned), groups «Отдел продаж» (round robin) and «Поддержка» (its fallback
+   * ADR-0117: «Команда Calab» on a plan with telephony, a saved SIP account and an exchange — four
+   * numbers (103 unassigned, Григорий without one), groups «Отдел продаж» (round robin) and «Поддержка» (its fallback
    * deleted), menus «Главное меню» (a 42 s prompt, keys 1 2 3 0 * 9 — 9 leads to a deleted menu) and
    * «Ночной режим» (no prompt).
    */
@@ -5873,12 +5873,11 @@ class MockImpl {
     const at = tick(this.state);
     const ext = (number: string, userId: string, description: string): string =>
       pbxCreateExtension(p, m, wsId, nextId(this.state, 'file'), at, create(CreateSipExtensionRequestSchema, { number, userId, description })).id;
+    // 103 «Склад» belonged to a member who left: the number stays, unassigned; Григорий has none.
+    pbxUpdateExtension(p, m, ext('103', IDS.users.anna, 'Склад'), create(UpdateSipExtensionRequestSchema, { userId: '' }));
     const anna = ext('100', IDS.users.anna, 'Директор');
     const boris = ext('101', IDS.users.boris, 'Бухгалтерия');
-    const vera = ext('102', IDS.users.vera, 'Продажи');
-    const grigory = ext('103', IDS.users.grigory, '');
-    const store = ext('104', IDS.users.dina, 'Склад');
-    pbxUpdateExtension(p, m, store, create(UpdateSipExtensionRequestSchema, { userId: '' }));
+    const vera = ext('102', IDS.users.vera, '');
     const group = (name: string, number: string, roundRobin: boolean, members: string[], onFail: { kind: SipRouteKind; id?: string }): string =>
       pbxCreateGroup(p, wsId, { group: nextId(this.state, 'file'), ext: nextId(this.state, 'file') }, at, create(CreateSipGroupRequestSchema, {
         name,
@@ -5887,7 +5886,7 @@ class MockImpl {
         members: { extensionIds: members },
         onFail,
       })).id;
-    const sales = group('Отдел продаж', '1001', true, [vera, grigory, anna], { kind: SipRouteKind.EXTENSION, id: anna });
+    const sales = group('Отдел продаж', '1001', true, [vera, boris, anna], { kind: SipRouteKind.EXTENSION, id: anna });
     const night = pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, { name: 'Ночной режим' }));
     const support = group('Поддержка', '1002', false, [boris], { kind: SipRouteKind.MENU, id: night.id });
     pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, {
