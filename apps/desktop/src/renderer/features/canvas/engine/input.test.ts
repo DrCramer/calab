@@ -39,17 +39,20 @@ describe('canvas hotkeys', () => {
   it('Ctrl+V works on a Russian layout', () => {
     const { engine, press } = setup([], null);
     const e = press({ code: 'KeyV', key: 'м', ctrlKey: true });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- spy reference, not a call
     expect(engine.paste).toHaveBeenCalled();
     expect(e.defaultPrevented).toBe(true);
   });
   it('tool letter works on a Russian layout', () => {
     const { engine, press } = setup([], null);
     press({ code: 'KeyS', key: 'ы' });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- spy reference, not a call
     expect(engine.setTool).toHaveBeenCalledWith('sticky');
   });
   it('Tab walks objects but is left to the browser on an empty canvas and past the ends', () => {
     let r = setup(['a', 'b'], 'a');
     let e = r.press({ key: 'Tab', code: 'Tab' });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- spy reference, not a call
     expect(r.engine.cycleSelection).toHaveBeenCalledWith(1);
     expect(e.defaultPrevented).toBe(true);
     r = setup([], null);
