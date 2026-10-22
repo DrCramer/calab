@@ -4,6 +4,7 @@ package app_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -18,21 +19,41 @@ import (
 // «ROUTE=KEY», «GARBAGE» answers prose; the shaping step answers a fixed task («SHAPEBAD»: an
 // unknown priority). Every data message is recorded.
 var (
-	smartFakeMu   sync.Mutex
-	smartFakeSeen []string
-	smartRouteRE  = regexp.MustCompile(`ROUTE=([A-Z0-9]+)`)
+	smartFakeMu     sync.Mutex
+	smartFakeSeen   []string
+	smartFakeImages []int // images of each call (CBF-75)
+	smartRouteRE    = regexp.MustCompile(`ROUTE=([A-Z0-9]+)`)
+	smartDupRE      = regexp.MustCompile(`DUP=([A-Z0-9]+-[0-9]+)`)
 )
 
-func smartFakeAnswer(w http.ResponseWriter, system, user string) {
+// CBF-75 additions: «REFUSE» declines at the board step; «NOIMAGES» answers 400 to a call with
+// images (a model without vision); the duplicate check answers a duplicate of «DUP=KEY-N».
+func smartFakeAnswer(w http.ResponseWriter, system, user string, images int) {
 	smartFakeMu.Lock()
 	smartFakeSeen = append(smartFakeSeen, user)
+	smartFakeImages = append(smartFakeImages, images)
 	smartFakeMu.Unlock()
 	var data struct {
 		Request string `json:"request"`
 	}
 	_ = json.Unmarshal([]byte(user), &data)
+	if images > 0 && strings.Contains(data.Request, "NOIMAGES") {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"image input is not supported","type":"invalid_request_error"}}`)
+		return
+	}
 	content := ""
+	dup := ""
+	if m := smartDupRE.FindStringSubmatch(data.Request); m != nil {
+		dup = m[1]
+	}
 	switch {
+	case strings.Contains(system, `"board_key"`) && strings.Contains(data.Request, "REFUSE"):
+		content = `{"refuse":"Не хватает данных: **сумма**, см. https://evil.example @everyone"}`
+	case strings.Contains(system, "duplicates a task") && dup != "":
+		content = `{"refuse":"Это дубль задачи ` + dup + `","duplicate_of":"` + dup + `"}`
+	case strings.Contains(system, "duplicates a task"):
+		content = `{"duplicate_of":""}`
 	case strings.Contains(system, `"board_key"`) && strings.Contains(data.Request, "GARBAGE"):
 		content = "I would pick DEV."
 	case strings.Contains(system, `"board_key"`):

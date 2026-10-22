@@ -397,6 +397,7 @@ type Board struct {
 	EstimateScale              string
 	ApprovalNotifyDelaySeconds int32
 	AiInstruction              string
+	AiFindDuplicates           bool
 }
 
 type BoardCategory struct {

@@ -7859,6 +7859,11 @@ class MockImpl {
       if ((this.aiState.get(ws) ?? AiState.NO_KEY) !== AiState.READY) throw conflictReason('AI_NOT_READY', 'the AI integration is not connected or not checked');
       const board = b().listBoards(ws, me, false).find((x) => (x.permissions & CREATE_TASKS_BIT) !== 0n);
       if (!board) throw conflictReason('NO_BOARDS', 'no board where you may create tasks');
+      // CBF-75: a text with «дубль» is declined as a duplicate of CAL-3 (the model's refusal).
+      if (text.includes('дубль')) {
+        sendMsg(c.res, 200, CreateSmartTaskResponseSchema, { refusal: { reason: 'Похоже на дубль задачи CAL-3: там уже есть оплата этого счёта. Уточните, чем новая задача отличается.', duplicateKey: 'CAL-3' } });
+        return;
+      }
       const title = (text.split('\n')[0] ?? '').slice(0, 120);
       const t = b().createTask(board.id, me, {
         title, description: text, statusId: '', priority: r.priority, assignees: [], labelIds: [], startOn: '', dueOn: '', estimate: 0, parentId: '', milestoneId: '', afterTaskId: '',

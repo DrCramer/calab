@@ -1,12 +1,12 @@
 import { TaskPriority } from '@calaba/protocol';
-import { Paperclip, Sparkles } from 'lucide-react';
+import { Bot, Paperclip, Sparkles } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Button, Modal, MOD, TextArea, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { smartErrorText } from '../../lib/ai';
 import { ApiError } from '../../lib/api/client';
 import { isUploading, readyIds, roomLeft } from '../../lib/boards/pendingFiles';
-import { openTaskAnywhere } from '../../services/boards';
+import { openBoardLink, openTaskAnywhere } from '../../services/boards';
 import { boardsApi } from '../../services/boardsApi';
 import { useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -18,10 +18,12 @@ import { PRIORITY_LABEL, PriorityIcon } from './visuals';
 const MAX_TEXT = 4000;
 
 /**
- * «Создать умную задачу» (CBF-68, ADR-0118): the text, files (uploaded to the workspace at once;
- * the model sees only their names) and a priority («авто» lets the board's instruction decide).
- * «Создать» — the server picks the board with the model and creates the task as me; the task
- * then opens for editing. A refusal keeps the text and says why inline.
+ * «Создать умную задачу» (CBF-68, ADR-0118; CBF-75, ADR-0123): the text, files (uploaded to the
+ * workspace at once; the model sees images, a PDF's first and last page and text files' text)
+ * and a priority («авто» lets the board's instruction decide). «Создать» — the server picks the
+ * board with the model and creates the task as me; the task then opens for editing. An error or
+ * the model's refusal (missing data, a duplicate) keeps the text and the files and says why
+ * inline; the person edits and sends again.
  */
 export function SmartTaskDialog(): ReactNode {
   const ws = useBoardsUi((s) => s.smartFor);
@@ -35,6 +37,7 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.NONE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [refusal, setRefusal] = useState<{ reason: string; duplicateKey: string } | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const files = usePendingFiles(boardsApi.workspaceUploadPath(workspaceId));
@@ -45,8 +48,14 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
     if (!ready) return;
     setBusy(true);
     setError('');
+    setRefusal(null);
     try {
       const r = await boardsApi.createSmart(workspaceId, { text: text.trim(), priority, attachmentIds: readyIds(files.items) });
+      if (r.filesUnseen) toast.info(t('smart.filesUnseen'));
+      if (r.refusal) {
+        setRefusal({ reason: r.refusal.reason, duplicateKey: r.refusal.duplicateKey });
+        return;
+      }
       const task = r.task;
       if (!task) return;
       useBoards.getState().upsertTask(task);
@@ -121,6 +130,7 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
           onChange={(e) => {
             setText(e.target.value);
             if (error) setError('');
+            if (refusal) setRefusal(null);
           }}
           onPaste={(e) => {
             const pasted = [...e.clipboardData.files];
@@ -159,6 +169,29 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
           ) : null}
           {files.items.length ? <span className="text-caption text-faint">{t('smart.filesNote')}</span> : null}
         </div>
+        {refusal ? (
+          <div className="flex gap-2 rounded-lg border border-line px-3 py-2.5" role="alert" data-testid="smart-task-refusal">
+            <Bot className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-control font-medium text-fg">{t('smart.refused')}</span>
+              <span className="whitespace-pre-wrap break-words text-control text-muted">{refusal.reason}</span>
+              {refusal.duplicateKey ? (
+                <button
+                  type="button"
+                  className="self-start text-control text-accent-text hover:underline"
+                  onClick={() => {
+                    close();
+                    openBoardLink('task', refusal.duplicateKey);
+                  }}
+                  data-testid="smart-task-duplicate"
+                >
+                  {t('smart.openDuplicate', { key: refusal.duplicateKey })}
+                </button>
+              ) : null}
+              <span className="text-caption text-faint">{t('smart.refusedHint')}</span>
+            </div>
+          </div>
+        ) : null}
         {error ? (
           <p className="text-caption text-danger-text" role="alert" data-testid="smart-task-error">
             {error}

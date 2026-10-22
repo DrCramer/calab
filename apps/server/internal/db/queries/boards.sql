@@ -156,7 +156,8 @@ UPDATE boards SET
     default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END,
     restricted        = coalesce(sqlc.narg('restricted'), restricted),
     approval_notify_delay_seconds = coalesce(sqlc.narg('approval_notify_delay_seconds'), approval_notify_delay_seconds),
-    ai_instruction    = coalesce(sqlc.narg('ai_instruction'), ai_instruction)
+    ai_instruction    = coalesce(sqlc.narg('ai_instruction'), ai_instruction),
+    ai_find_duplicates = coalesce(sqlc.narg('ai_find_duplicates'), ai_find_duplicates)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

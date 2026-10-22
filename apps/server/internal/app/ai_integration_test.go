@@ -40,13 +40,40 @@ var aiFake = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *
 	var req struct {
 		Model    string `json:"model"`
 		Messages []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	// content: a string, or parts (CBF-75: the first text part is the data JSON, then images).
+	content := func(raw json.RawMessage) (string, int) {
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			return s, 0
+		}
+		var parts []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			ImageURL struct {
+				URL string `json:"url"`
+			} `json:"image_url"`
+		}
+		_ = json.Unmarshal(raw, &parts)
+		text, images := "", 0
+		for _, p := range parts {
+			switch {
+			case p.Type == "text" && text == "":
+				text = p.Text
+			case p.Type == "image_url" && strings.HasPrefix(p.ImageURL.URL, "data:image/jpeg;base64,"):
+				images++
+			}
+		}
+		return text, images
+	}
 	if len(req.Messages) == 2 && req.Messages[0].Role == "system" { // smart tasks (smart_integration_test)
-		smartFakeAnswer(w, req.Messages[0].Content, req.Messages[1].Content)
+		system, _ := content(req.Messages[0].Content)
+		user, images := content(req.Messages[1].Content)
+		smartFakeAnswer(w, system, user, images)
 		return
 	}
 	if req.Model == "missing" {
