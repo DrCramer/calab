@@ -621,6 +621,10 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/unfurl/image",
 		"POST /api/files/convert",
 	}},
+	{access: botDeny, why: "smart tasks (CBF-68, ADR-0118): a person's request sent to the workspace's model, billed to its key — a bot creates tasks with POST /api/boards/{id}/tasks itself; the AI status serves the person's «+» menu", routes: []string{
+		"POST /api/workspaces/{id}/smart-tasks",
+		"GET /api/workspaces/{id}/ai/status",
+	}},
 }
 
 // botRoutes indexes botRouteGroups by pattern.

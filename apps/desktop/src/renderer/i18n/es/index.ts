@@ -43,6 +43,7 @@ import { esTemp } from './temp';
 import { esContacts } from './contacts';
 import { esSip } from './sip';
 import { esAi } from './ai';
+import { esSmartTask } from './smartTask';
 import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -62,6 +63,7 @@ export const es: Dict = {
   ...esContacts,
   ...esSip,
   ...esAi,
+  ...esSmartTask,
   ...esWebApps,
   ...esDm,
   ...esNotes,

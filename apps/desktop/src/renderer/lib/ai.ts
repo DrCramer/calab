@@ -1,4 +1,4 @@
-import { AiProvider, type AiSettings, type CheckAiResponse } from '@calaba/protocol';
+import { AiProvider, AiState, type AiSettings, type CheckAiResponse } from '@calaba/protocol';
 import type { MessageKey } from '../i18n';
 
 /**
@@ -109,3 +109,43 @@ export function fieldErrorKey(field: string, s: AiSettings | undefined, typedKey
 
 /** Seconds of the check, one decimal («3,1» via the caller's number format). */
 export const checkSeconds = (r: Pick<CheckAiResponse, 'latencyMs'>): number => Math.round(r.latencyMs / 100) / 10;
+
+/** The react-query key of GET …/ai/status (the «+» menu reads it; save / check invalidate it). */
+export const aiStatusKey = (workspaceId: string): readonly unknown[] => ['ai-status', workspaceId];
+
+/**
+ * «Создать умную задачу» (CBF-68): why the item is off — null = it is on (READY). Unknown
+ * (not loaded yet) shows the loading hint; the server refuses anything but READY anyway.
+ */
+export function smartOffKey(state: AiState | undefined): MessageKey | null {
+  switch (state) {
+    case AiState.READY:
+      return null;
+    case undefined:
+      return 'smart.off.loading';
+    case AiState.UNCHECKED:
+      return 'smart.off.unchecked';
+    case AiState.FAILED:
+      return 'smart.off.failed';
+    default:
+      return 'smart.off.noKey';
+  }
+}
+
+/** A refused smart task (ApiError status / reason / field / message) → its text and the reason's. */
+export function smartErrorText(e: { status: number; reason?: string | undefined; field?: string | undefined; message: string }): { key: MessageKey; reason?: MessageKey } {
+  if (e.status === 429) return { key: 'smart.err.rate' };
+  if (e.status === 422 && e.field === 'text') return { key: 'smart.err.text' };
+  switch (e.reason) {
+    case 'AI_NOT_READY':
+      return { key: 'smart.err.notReady' };
+    case 'NO_BOARDS':
+      return { key: 'smart.err.noBoards' };
+    case 'AI_BAD_ANSWER':
+      return { key: 'smart.err.badAnswer' };
+    case 'AI_FAILED':
+      return { key: 'smart.err.failed', reason: reasonKey(e.message) };
+    default:
+      return { key: 'boards.err.save' };
+  }
+}

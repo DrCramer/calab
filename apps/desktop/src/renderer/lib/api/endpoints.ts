@@ -1,6 +1,7 @@
 import {
   GetSipSettingsResponseSchema,
   GetAiSettingsResponseSchema,
+  GetAiStatusResponseSchema,
   PutAiSettingsRequestSchema,
   PutAiSettingsResponseSchema,
   CheckAiRequestSchema,
@@ -724,6 +725,8 @@ export const api = {
       call('PUT', `/api/workspaces/${workspaceId}/ai`, PutAiSettingsResponseSchema, body(PutAiSettingsRequestSchema, init)),
     check: (workspaceId: string, init: MessageInitShape<typeof CheckAiRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/ai/check`, CheckAiResponseSchema, body(CheckAiRequestSchema, init)),
+    /** CBF-68: whether smart tasks can run (any member but guests). */
+    status: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/ai/status`, GetAiStatusResponseSchema, undefined, signal),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

@@ -263,6 +263,10 @@ message Board {
   // a change of the task) before the APPROVAL_REQUESTED notice goes out; one of 0 (immediately),
   // 60, 300, 900, 1800, 3600. An approver removed or a vote cast meanwhile cancels the notice.
   uint32 approval_notify_delay_seconds = 30;
+  // «Инструкция для ИИ» (CBF-68, ADR-0118): how the model shapes a smart task of this board,
+  // ≤ 4000 characters. Only in GET /api/boards/{id} and the PATCH answer, and only to a
+  // recipient with VIEW_BOARD; empty everywhere else (lists, READY, BOARD_* events).
+  string ai_instruction = 31;
 }
 
 message TaskAssignee {
@@ -584,6 +588,8 @@ message UpdateBoardRequest {
   // ADR-0082: one of 0, 60, 300, 900, 1800, 3600 (422 otherwise). Notices already scheduled
   // keep their time.
   optional uint32 approval_notify_delay_seconds = 13;
+  // CBF-68: «Инструкция для ИИ», ≤ 4000 characters (trimmed; "" = none), 422 field aiInstruction.
+  optional string ai_instruction = 14;
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -702,6 +708,35 @@ message CreateTaskRequest {
   repeated string attachment_ids = 14;
   repeated string approver_ids = 15;
   uint32 approval_required = 16;
+}
+
+// POST /api/workspaces/{id}/smart-tasks → 201 CreateSmartTaskResponse (CBF-68, ADR-0118):
+// «Создать умную задачу». People only, never guests; the workspace's AI must be READY
+// (GetAiStatusResponse), else 409 CONFLICT reason "AI_NOT_READY". The server sends the model the
+// text, the names and sizes of the files (never their content) and the boards where the caller
+// may create tasks (CREATE_TASKS: name, key, description, labels); the model picks one board,
+// which must be in that list. With the board's ai_instruction the model then shapes the task
+// (title, description, labels of the board, priority) by it; without one the description is
+// the text as is. The task is created as POST /api/boards/{id}/tasks by the caller (their
+// rights, limits and features of the board; the original text is kept in the description).
+// The model never sets assignees, approvers, watchers or access; @mentions it adds are dropped.
+// Errors: 422 VALIDATION text (1..4000 characters) | attachmentIds (≤ 20 unattached uploads of
+// the caller in the workspace, POST /api/workspaces/{id}/files) | priority; 409 CONFLICT reason
+// "NO_BOARDS" (no board to create on), "AI_FAILED" (the provider refused or did not answer;
+// message = the CheckAiResponse.error code), "AI_BAD_ANSWER" (not the JSON asked for, or a
+// board outside the list): no task is created. 429 RATE_LIMITED: 10 at once then 5 per minute
+// per person, 60 per hour per workspace. Takes up to ~60 s (two model calls).
+message CreateSmartTaskRequest {
+  string text = 1;
+  repeated string attachment_ids = 2;
+  // NONE = let the board's instruction decide (none without one); otherwise it wins.
+  TaskPriority priority = 3;
+}
+
+message CreateSmartTaskResponse {
+  Task task = 1;
+  bool used_instruction = 2;    // the board's ai_instruction shaped the task
+  bool attachments_dropped = 3; // the chosen board has attachments off: the files were not attached
 }
 
 // POST /tasks (201), GET /tasks/{id}, PATCH, archive / restore, relations, subscription,

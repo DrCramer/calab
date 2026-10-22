@@ -15,3 +15,13 @@ SET provider = excluded.provider, base_url = excluded.base_url, model = excluded
     key_enc = excluded.key_enc, key_hint = excluded.key_hint,
     updated_at = now(), updated_by = excluded.updated_by
 RETURNING *;
+
+-- name: GetWorkspaceAiCheck :one
+SELECT * FROM workspace_ai_check WHERE workspace_id = $1;
+
+-- name: PutWorkspaceAiCheck :exec
+-- CBF-68: the outcome of the last check (fingerprint of the checked provider, URL, model, key).
+INSERT INTO workspace_ai_check (workspace_id, fingerprint, ok, error, checked_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (workspace_id) DO UPDATE
+SET fingerprint = excluded.fingerprint, ok = excluded.ok, error = excluded.error, checked_at = now();

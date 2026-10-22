@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/ai.proto.
  */
 export const file_calaba_v1_ai: GenFile = /*@__PURE__*/
-  fileDesc("ChJjYWxhYmEvdjEvYWkucHJvdG8SCWNhbGFiYS52MSK9AQoKQWlTZXR0aW5ncxInCghwcm92aWRlchgBIAEoDjIVLmNhbGFiYS52MS5BaVByb3ZpZGVyEhAKCGJhc2VfdXJsGAIgASgJEg0KBW1vZGVsGAMgASgJEg8KB2hhc19rZXkYBCABKAgSEAoIa2V5X21hc2sYBSABKAkSLgoKdXBkYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKdXBkYXRlZF9ieRgHIAEoCSJAChVHZXRBaVNldHRpbmdzUmVzcG9uc2USJwoIc2V0dGluZ3MYASABKAsyFS5jYWxhYmEudjEuQWlTZXR0aW5ncyKCAQoUUHV0QWlTZXR0aW5nc1JlcXVlc3QSJwoIcHJvdmlkZXIYASABKA4yFS5jYWxhYmEudjEuQWlQcm92aWRlchIQCghiYXNlX3VybBgCIAEoCRINCgVtb2RlbBgDIAEoCRIUCgdhcGlfa2V5GAQgASgJSACIAQFCCgoIX2FwaV9rZXkiQAoVUHV0QWlTZXR0aW5nc1Jlc3BvbnNlEicKCHNldHRpbmdzGAEgASgLMhUuY2FsYWJhLnYxLkFpU2V0dGluZ3MifAoOQ2hlY2tBaVJlcXVlc3QSJwoIcHJvdmlkZXIYASABKA4yFS5jYWxhYmEudjEuQWlQcm92aWRlchIQCghiYXNlX3VybBgCIAEoCRINCgVtb2RlbBgDIAEoCRIUCgdhcGlfa2V5GAQgASgJSACIAQFCCgoIX2FwaV9rZXkidQoPQ2hlY2tBaVJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBXJlcGx5GAIgASgJEg0KBWVycm9yGAMgASgJEg8KB21lc3NhZ2UYBCABKAkSEwoLaHR0cF9zdGF0dXMYBSABKA0SEgoKbGF0ZW5jeV9tcxgGIAEoDSpmCgpBaVByb3ZpZGVyEhsKF0FJX1BST1ZJREVSX1VOU1BFQ0lGSUVEEAASGAoUQUlfUFJPVklERVJfR1BUVU5ORUwQARIhCh1BSV9QUk9WSURFUl9PUEVOQUlfQ09NUEFUSUJMRRACQpUBCg1jb20uY2FsYWJhLnYxQgdBaVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChJjYWxhYmEvdjEvYWkucHJvdG8SCWNhbGFiYS52MSKlAgoKQWlTZXR0aW5ncxInCghwcm92aWRlchgBIAEoDjIVLmNhbGFiYS52MS5BaVByb3ZpZGVyEhAKCGJhc2VfdXJsGAIgASgJEg0KBW1vZGVsGAMgASgJEg8KB2hhc19rZXkYBCABKAgSEAoIa2V5X21hc2sYBSABKAkSLgoKdXBkYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKdXBkYXRlZF9ieRgHIAEoCRIhCgVzdGF0ZRgIIAEoDjISLmNhbGFiYS52MS5BaVN0YXRlEi4KCmNoZWNrZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhMKC2NoZWNrX2Vycm9yGAogASgJIjgKE0dldEFpU3RhdHVzUmVzcG9uc2USIQoFc3RhdGUYASABKA4yEi5jYWxhYmEudjEuQWlTdGF0ZSJAChVHZXRBaVNldHRpbmdzUmVzcG9uc2USJwoIc2V0dGluZ3MYASABKAsyFS5jYWxhYmEudjEuQWlTZXR0aW5ncyKCAQoUUHV0QWlTZXR0aW5nc1JlcXVlc3QSJwoIcHJvdmlkZXIYASABKA4yFS5jYWxhYmEudjEuQWlQcm92aWRlchIQCghiYXNlX3VybBgCIAEoCRINCgVtb2RlbBgDIAEoCRIUCgdhcGlfa2V5GAQgASgJSACIAQFCCgoIX2FwaV9rZXkiQAoVUHV0QWlTZXR0aW5nc1Jlc3BvbnNlEicKCHNldHRpbmdzGAEgASgLMhUuY2FsYWJhLnYxLkFpU2V0dGluZ3MifAoOQ2hlY2tBaVJlcXVlc3QSJwoIcHJvdmlkZXIYASABKA4yFS5jYWxhYmEudjEuQWlQcm92aWRlchIQCghiYXNlX3VybBgCIAEoCRINCgVtb2RlbBgDIAEoCRIUCgdhcGlfa2V5GAQgASgJSACIAQFCCgoIX2FwaV9rZXkimAEKD0NoZWNrQWlSZXNwb25zZRIKCgJvaxgBIAEoCBINCgVyZXBseRgCIAEoCRINCgVlcnJvchgDIAEoCRIPCgdtZXNzYWdlGAQgASgJEhMKC2h0dHBfc3RhdHVzGAUgASgNEhIKCmxhdGVuY3lfbXMYBiABKA0SIQoFc3RhdGUYByABKA4yEi5jYWxhYmEudjEuQWlTdGF0ZSpmCgpBaVByb3ZpZGVyEhsKF0FJX1BST1ZJREVSX1VOU1BFQ0lGSUVEEAASGAoUQUlfUFJPVklERVJfR1BUVU5ORUwQARIhCh1BSV9QUk9WSURFUl9PUEVOQUlfQ09NUEFUSUJMRRACKnkKB0FpU3RhdGUSGAoUQUlfU1RBVEVfVU5TUEVDSUZJRUQQABITCg9BSV9TVEFURV9OT19LRVkQARIWChJBSV9TVEFURV9VTkNIRUNLRUQQAhITCg9BSV9TVEFURV9GQUlMRUQQAxISCg5BSV9TVEFURV9SRUFEWRAEQpUBCg1jb20uY2FsYWJhLnYxQgdBaVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message calaba.v1.AiSettings
@@ -67,6 +67,27 @@ export type AiSettings = Message<"calaba.v1.AiSettings"> & {
    * @generated from field: string updated_by = 7;
    */
   updatedBy: string;
+
+  /**
+   * CBF-68: whether smart tasks can run
+   *
+   * @generated from field: calaba.v1.AiState state = 8;
+   */
+  state: AiState;
+
+  /**
+   * the last check of these settings; unset = none
+   *
+   * @generated from field: google.protobuf.Timestamp checked_at = 9;
+   */
+  checkedAt?: Timestamp | undefined;
+
+  /**
+   * state FAILED: the check's error code
+   *
+   * @generated from field: string check_error = 10;
+   */
+  checkError: string;
 };
 
 /**
@@ -75,6 +96,26 @@ export type AiSettings = Message<"calaba.v1.AiSettings"> & {
  */
 export const AiSettingsSchema: GenMessage<AiSettings> = /*@__PURE__*/
   messageDesc(file_calaba_v1_ai, 0);
+
+/**
+ * GET /api/workspaces/{id}/ai/status (any member but guests; people only) → 200. What the
+ * «Создать умную задачу» item shows; never the key, the provider or the model.
+ *
+ * @generated from message calaba.v1.GetAiStatusResponse
+ */
+export type GetAiStatusResponse = Message<"calaba.v1.GetAiStatusResponse"> & {
+  /**
+   * @generated from field: calaba.v1.AiState state = 1;
+   */
+  state: AiState;
+};
+
+/**
+ * Describes the message calaba.v1.GetAiStatusResponse.
+ * Use `create(GetAiStatusResponseSchema)` to create a new message.
+ */
+export const GetAiStatusResponseSchema: GenMessage<GetAiStatusResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_ai, 1);
 
 /**
  * GET /api/workspaces/{id}/ai (MANAGE_INTEGRATIONS) → 200 GetAiSettingsResponse; a workspace
@@ -94,7 +135,7 @@ export type GetAiSettingsResponse = Message<"calaba.v1.GetAiSettingsResponse"> &
  * Use `create(GetAiSettingsResponseSchema)` to create a new message.
  */
 export const GetAiSettingsResponseSchema: GenMessage<GetAiSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_ai, 1);
+  messageDesc(file_calaba_v1_ai, 2);
 
 /**
  * PUT /api/workspaces/{id}/ai (MANAGE_INTEGRATIONS) → 200 PutAiSettingsResponse. The whole object
@@ -135,7 +176,7 @@ export type PutAiSettingsRequest = Message<"calaba.v1.PutAiSettingsRequest"> & {
  * Use `create(PutAiSettingsRequestSchema)` to create a new message.
  */
 export const PutAiSettingsRequestSchema: GenMessage<PutAiSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_ai, 2);
+  messageDesc(file_calaba_v1_ai, 3);
 
 /**
  * @generated from message calaba.v1.PutAiSettingsResponse
@@ -152,12 +193,14 @@ export type PutAiSettingsResponse = Message<"calaba.v1.PutAiSettingsResponse"> &
  * Use `create(PutAiSettingsResponseSchema)` to create a new message.
  */
 export const PutAiSettingsResponseSchema: GenMessage<PutAiSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_ai, 3);
+  messageDesc(file_calaba_v1_ai, 4);
 
 /**
  * POST /api/workspaces/{id}/ai/check (MANAGE_INTEGRATIONS; 10 per minute per workspace, else
  * 429 RATE_LIMITED) → 200 CheckAiResponse. Checks the given (unsaved) form: sends one user
- * message «hi» to the model and reports whether an answer came. api_key unset = the stored key,
+ * message «hi» to the model and reports whether an answer came. The outcome is remembered for
+ * the checked form (CBF-68): saving the same form afterwards keeps it, so AiSettings.state is
+ * READY or FAILED; any other form is UNCHECKED. api_key unset = the stored key,
  * under the same rule as PUT; no key at all is 422 field apiKey. Validation errors as in PUT
  * (422). Takes up to ~30 s.
  *
@@ -190,7 +233,7 @@ export type CheckAiRequest = Message<"calaba.v1.CheckAiRequest"> & {
  * Use `create(CheckAiRequestSchema)` to create a new message.
  */
 export const CheckAiRequestSchema: GenMessage<CheckAiRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_ai, 4);
+  messageDesc(file_calaba_v1_ai, 5);
 
 /**
  * @generated from message calaba.v1.CheckAiResponse
@@ -237,6 +280,13 @@ export type CheckAiResponse = Message<"calaba.v1.CheckAiResponse"> & {
    * @generated from field: uint32 latency_ms = 6;
    */
   latencyMs: number;
+
+  /**
+   * CBF-68: the saved settings' state after this check
+   *
+   * @generated from field: calaba.v1.AiState state = 7;
+   */
+  state: AiState;
 };
 
 /**
@@ -244,7 +294,7 @@ export type CheckAiResponse = Message<"calaba.v1.CheckAiResponse"> & {
  * Use `create(CheckAiResponseSchema)` to create a new message.
  */
 export const CheckAiResponseSchema: GenMessage<CheckAiResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_ai, 5);
+  messageDesc(file_calaba_v1_ai, 6);
 
 /**
  * @generated from enum calaba.v1.AiProvider
@@ -275,4 +325,50 @@ export enum AiProvider {
  */
 export const AiProviderSchema: GenEnum<AiProvider> = /*@__PURE__*/
   enumDesc(file_calaba_v1_ai, 0);
+
+/**
+ * CBF-68: the readiness of the saved settings, by the last «Проверить». Any change of the
+ * provider, base URL, model or key makes the settings UNCHECKED again (the server keeps a
+ * fingerprint of the checked four, never the key). Smart tasks run only when READY.
+ *
+ * @generated from enum calaba.v1.AiState
+ */
+export enum AiState {
+  /**
+   * @generated from enum value: AI_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * never saved or saved without a key: «Сначала подключите AI в настройках»
+   *
+   * @generated from enum value: AI_STATE_NO_KEY = 1;
+   */
+  NO_KEY = 1,
+
+  /**
+   * not checked since the last change: «Проверьте подключение в настройках»
+   *
+   * @generated from enum value: AI_STATE_UNCHECKED = 2;
+   */
+  UNCHECKED = 2,
+
+  /**
+   * the last check failed: «Подключение не работает — проверьте ключ»
+   *
+   * @generated from enum value: AI_STATE_FAILED = 3;
+   */
+  FAILED = 3,
+
+  /**
+   * @generated from enum value: AI_STATE_READY = 4;
+   */
+  READY = 4,
+}
+
+/**
+ * Describes the enum calaba.v1.AiState.
+ */
+export const AiStateSchema: GenEnum<AiState> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_ai, 1);
 

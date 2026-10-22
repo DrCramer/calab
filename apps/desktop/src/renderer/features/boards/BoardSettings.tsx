@@ -26,7 +26,7 @@ import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { useUi } from '../../stores/ui';
-import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, TextArea, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
@@ -145,9 +145,10 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
           <CommitInput label={t('boards.set.description')} value={board.description} maxLength={2000} onCommit={(v) => patch(board.id, { description: v })} />
         </Row>
       </Card>
+      <AiInstructionCard boardId={board.id} />
       <Card title={t('boards.set.archiveCard')} footer={t('boards.set.autoArchiveHint')}>
         <Row label={t('boards.set.autoArchive')}>
-          <Select value={String(board.autoArchiveDays)} onChange={(e) => void patch(board.id, { autoArchiveDays: Number(e.target.value) })} data-testid="auto-archive">
+          <Select value={String(board.autoArchiveDays)} onChange={(e) => void patch(board.id, { autoArchiveDays: Number(e.target.value) })} aria-label={t('boards.set.autoArchive')} data-testid="auto-archive">
             {[0, 7, 14, 30, 60, 90].map((d) => (
               <option key={d} value={d}>
                 {d ? t('boards.set.days', { n: d }) : t('boards.set.never')}
@@ -157,6 +158,74 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
         </Row>
       </Card>
     </>
+  );
+}
+
+const AI_INSTRUCTION_MAX = 4000;
+
+/**
+ * «Инструкция для ИИ» (CBF-68, ADR-0118): how smart tasks of this board are written. It is not
+ * in the board lists or events — GET /api/boards/{id} (VIEW_BOARD) — so the card loads it; one
+ * PATCH on «Сохранить».
+ */
+function AiInstructionCard({ boardId }: { boardId: string }): ReactNode {
+  const [saved, setSaved] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    boardsApi.get(boardId, ac.signal).then(
+      (r) => {
+        const v = r.board?.aiInstruction ?? '';
+        setSaved(v);
+        setDraft(v);
+      },
+      (e: unknown) => {
+        if (!ac.signal.aborted) toast.fail(e);
+      },
+    );
+    return () => ac.abort();
+  }, [boardId]);
+  const dirty = saved !== null && draft.trim() !== saved;
+  const save = async (): Promise<void> => {
+    if (!dirty || busy) return;
+    setBusy(true);
+    const b = await updateBoard(boardId, { aiInstruction: draft.trim() });
+    setBusy(false);
+    if (!b) return;
+    setSaved(b.aiInstruction);
+    setDraft(b.aiInstruction);
+    toast.success(t('smart.instruction.saved'));
+  };
+  return (
+    <Card title={t('smart.instruction.card')} footer={t('smart.instruction.hint')}>
+      <div className="flex flex-col gap-2 px-3 py-2.5" data-testid="board-ai-instruction">
+        <label className="text-body" htmlFor={`ai-instr-${boardId}`}>
+          {t('smart.instruction.label')}
+        </label>
+        {saved === null ? (
+          <div className="grid h-24 place-items-center">
+            <Spinner />
+          </div>
+        ) : (
+          <TextArea
+            id={`ai-instr-${boardId}`}
+            value={draft}
+            maxLength={AI_INSTRUCTION_MAX}
+            rows={5}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={t('smart.instruction.placeholder')}
+            data-testid="board-ai-instruction-text"
+          />
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-caption tabular-nums text-faint">{t('smart.instruction.count', { n: draft.length })}</span>
+          <Button size="sm" onClick={() => void save()} busy={busy} disabled={!dirty} data-testid="board-ai-instruction-save">
+            {t('smart.instruction.save')}
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }
 

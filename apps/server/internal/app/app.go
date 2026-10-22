@@ -556,7 +556,12 @@ func New(d Deps) *App {
 	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
 	sipSvc.Routes(mux, private)
 	// AI integration (CBF-60): the workspace's model provider and its check.
-	ai.New(d.DB, d.Redis, []byte(d.Config.JWTSecret), d.Config.GPTunnelAIURL, unfurlPolicy(d)).Routes(mux, private)
+	aiSvc := ai.New(d.DB, d.Redis, []byte(d.Config.JWTSecret), d.Config.GPTunnelAIURL, unfurlPolicy(d))
+	aiSvc.Routes(mux, private)
+	// Smart tasks (CBF-68): the boards' «Создать умную задачу» calls the workspace's model.
+	boardSvc.AI = aiSvc
+	boardSvc.SmartUserLimit = redisx.NewRateLimiter(d.Redis, "rl:smart-task:", 10, 5)         // 10 at once, then 5 per minute per person
+	boardSvc.SmartWorkspaceLimit = redisx.NewRateLimiter(d.Redis, "rl:smart-task-ws:", 60, 1) // 60 per hour per workspace
 	if rtcSvc != nil {
 		rtcSvc.SIP = sipSvc
 		rtcSvc.Routes(mux, private)

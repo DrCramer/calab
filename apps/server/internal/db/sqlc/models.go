@@ -396,6 +396,7 @@ type Board struct {
 	DisabledFeatures           int64
 	EstimateScale              string
 	ApprovalNotifyDelaySeconds int32
+	AiInstruction              string
 }
 
 type BoardCategory struct {
@@ -1812,6 +1813,14 @@ type WorkspaceAi struct {
 	KeyHint     string
 	UpdatedAt   time.Time
 	UpdatedBy   *uuid.UUID
+}
+
+type WorkspaceAiCheck struct {
+	WorkspaceID uuid.UUID
+	Fingerprint []byte
+	Ok          bool
+	Error       string
+	CheckedAt   time.Time
 }
 
 type WorkspaceApp struct {

@@ -245,6 +245,8 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 
 AI интеграция (CBF-60, `proto/calaba/v1/ai.proto`, `MANAGE_INTEGRATIONS`): `GET|PUT /api/workspaces/{id}/ai` (ключ: нет поля — оставить сохранённый того же провайдера и адреса, `""` — удалить; `422` поля `provider|baseUrl|model|apiKey`), `POST …/ai/check` — отправляет «hi» модели из формы (до ~30 с, 10 в минуту на пространство) → `200 { ok, reply, error, message, httpStatus, latencyMs }`, `error` — `unauthorized`, `model_not_found`, `not_found`, `insufficient_balance`, `rate_limited`, `provider_error`, `bad_request`, `bad_response`, `timeout`, `network`, `blocked_address`.
 
+Умные задачи (CBF-68, ADR-0118): `GET /api/workspaces/{id}/ai/status` → `{ state }` (участники, не гости); `POST /api/workspaces/{id}/smart-tasks { text, attachmentIds, priority }` → `201 { task, usedInstruction, attachmentsDropped }`, `409` с `reason` `AI_NOT_READY | NO_BOARDS | AI_FAILED | AI_BAD_ANSWER`, `422 text|attachmentIds`, `429`. Новых событий нет: созданная задача приходит обычным `TASK_CREATE`.
+
 REST и коды ошибок — `proto/calaba/v1/sip.proto` и ADR-0046 «Контракт для клиента». Кратко: настройки `GET|PUT /api/workspaces/{id}/sip`, проверка `POST …/sip/test`, журнал `GET /api/workspaces/{id}/calls` (всё — `MANAGE_WORKSPACE`, не боты); звонок `POST /api/rooms/{id}/calls {number}` и `DELETE /api/rooms/{id}/calls/{cid}`. Статусы — `SIP_CALL_UPDATE`; телефонная линия — участник LiveKit `sip:<call id>` с именем = номер.
 
 ## Дни рождения (docs/09 #76)

@@ -1,7 +1,26 @@
 import { create } from '@bufbuild/protobuf';
-import { AiProvider, AiSettingsSchema } from '@calaba/protocol';
+import { AiProvider, AiSettingsSchema, AiState } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_AI_MODEL, draftError, draftOf, fieldErrorKey, keyApplies, normalizeBaseUrl, reasonKey, requestOf, tabOf, validBaseUrl } from './ai';
+import { DEFAULT_AI_MODEL, draftError, draftOf, fieldErrorKey, keyApplies, normalizeBaseUrl, reasonKey, requestOf, smartErrorText, smartOffKey, tabOf, validBaseUrl } from './ai';
+
+describe('smart task (CBF-68)', () => {
+  it('is on only when READY, with the reason otherwise', () => {
+    expect(smartOffKey(AiState.READY)).toBeNull();
+    expect(smartOffKey(AiState.NO_KEY)).toBe('smart.off.noKey');
+    expect(smartOffKey(AiState.UNSPECIFIED)).toBe('smart.off.noKey');
+    expect(smartOffKey(AiState.UNCHECKED)).toBe('smart.off.unchecked');
+    expect(smartOffKey(AiState.FAILED)).toBe('smart.off.failed');
+    expect(smartOffKey(undefined)).toBe('smart.off.loading');
+  });
+  it('explains a refusal', () => {
+    expect(smartErrorText({ status: 409, reason: 'AI_BAD_ANSWER', message: '' }).key).toBe('smart.err.badAnswer');
+    expect(smartErrorText({ status: 409, reason: 'AI_FAILED', message: 'insufficient_balance' })).toEqual({ key: 'smart.err.failed', reason: 'ai.reason.insufficient_balance' });
+    expect(smartErrorText({ status: 409, reason: 'NO_BOARDS', message: '' }).key).toBe('smart.err.noBoards');
+    expect(smartErrorText({ status: 409, reason: 'AI_NOT_READY', message: '' }).key).toBe('smart.err.notReady');
+    expect(smartErrorText({ status: 429, message: '' }).key).toBe('smart.err.rate');
+    expect(smartErrorText({ status: 422, field: 'text', message: '' }).key).toBe('smart.err.text');
+  });
+});
 
 const savedGpt = create(AiSettingsSchema, { provider: AiProvider.GPTUNNEL, model: 'gpt-6-astra', hasKey: true, keyMask: '••••abcd' });
 const savedOai = create(AiSettingsSchema, { provider: AiProvider.OPENAI_COMPATIBLE, baseUrl: 'https://api.example.com/v1', model: 'm', hasKey: true });

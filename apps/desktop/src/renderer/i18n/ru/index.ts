@@ -42,6 +42,7 @@ import { ruTemp } from './temp';
 import { ruContacts } from './contacts';
 import { ruSip } from './sip';
 import { ruAi } from './ai';
+import { ruSmartTask } from './smartTask';
 import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
@@ -61,6 +62,7 @@ export const ru = {
   ...ruContacts,
   ...ruSip,
   ...ruAi,
+  ...ruSmartTask,
   ...ruWebApps,
   ...ruDm,
   ...ruNotes,

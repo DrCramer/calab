@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -61,6 +62,8 @@ type Service struct {
 	trusted, open *Chat
 	// CheckLimit: per workspace (ChecksPerMinute); nil = unlimited (tests).
 	CheckLimit *redisx.RateLimiter
+	// fpKey keys the fingerprints of checked settings (state.go).
+	fpKey []byte
 }
 
 // New wires the service. allow is the address policy of user-given base URLs (nil =
@@ -73,6 +76,8 @@ func New(d *db.DB, r rueidis.Client, secret []byte, gptunnelURL string, allow fu
 		db: d, box: sealbox.New("calaba/workspace-ai-key/v1", secret), gptunnelURL: gptunnelURL,
 		trusted: NewChat(nil), open: NewChat(allow),
 	}
+	fp := sha256.Sum256(append([]byte("calaba/workspace-ai-check/v1\x00"), secret...))
+	s.fpKey = fp[:]
 	if r != nil {
 		s.CheckLimit = redisx.NewRateLimiter(r, "rl:ai-check:", ChecksPerMinute, ChecksPerMinute)
 	}
@@ -84,6 +89,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("GET /api/workspaces/{id}/ai", wrap(httpx.HandlerFunc(s.get)))
 	mux.Handle("PUT /api/workspaces/{id}/ai", wrap(httpx.HandlerFunc(s.put)))
 	mux.Handle("POST /api/workspaces/{id}/ai/check", wrap(httpx.HandlerFunc(s.check)))
+	mux.Handle("GET /api/workspaces/{id}/ai/status", wrap(httpx.HandlerFunc(s.status)))
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -116,8 +122,27 @@ func (s *Service) row(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (sql
 	return a, err == nil, err
 }
 
-func settingsPB(a sqlc.WorkspaceAi, saved bool) *v1.AiSettings {
+func (s *Service) settingsPB(ctx context.Context, q *sqlc.Queries, a sqlc.WorkspaceAi, saved bool) (*v1.AiSettings, error) {
 	out := &v1.AiSettings{Provider: providerFromDB[a.Provider], BaseUrl: a.BaseUrl, Model: a.Model, HasKey: len(a.KeyEnc) > 0}
+	sv := stored{row: a, saved: saved}
+	if len(a.KeyEnc) > 0 {
+		p, err := s.box.Open(a.KeyEnc)
+		if err != nil {
+			return nil, err
+		}
+		sv.key = string(p)
+	}
+	st, c, err := s.stateOf(ctx, q, sv)
+	if err != nil {
+		return nil, err
+	}
+	out.State = st
+	if c != nil {
+		out.CheckedAt = timestamppb.New(c.CheckedAt)
+		if !c.Ok {
+			out.CheckError = c.Error
+		}
+	}
 	if out.HasKey {
 		out.KeyMask = "••••" + a.KeyHint
 	}
@@ -127,7 +152,7 @@ func settingsPB(a sqlc.WorkspaceAi, saved bool) *v1.AiSettings {
 			out.UpdatedBy = a.UpdatedBy.String()
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
@@ -139,7 +164,11 @@ func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetAiSettingsResponse{Settings: settingsPB(a, saved)})
+	pb, err := s.settingsPB(r.Context(), s.db.Q, a, saved)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.GetAiSettingsResponse{Settings: pb})
 	return nil
 }
 
@@ -289,7 +318,11 @@ func (s *Service) put(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	slog.InfoContext(ctx, "ai: settings saved", "workspace", wsID, "by", me, "provider", saved.Provider, "has_key", len(saved.KeyEnc) > 0)
-	httpx.Write(w, http.StatusOK, &v1.PutAiSettingsResponse{Settings: settingsPB(saved, true)})
+	pb, err := s.settingsPB(ctx, s.db.Q, saved, true)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.PutAiSettingsResponse{Settings: pb})
 	return nil
 }
 
@@ -339,11 +372,17 @@ func (s *Service) check(w http.ResponseWriter, r *http.Request) error {
 		chat, base = s.trusted, s.gptunnelURL
 	}
 	res := chat.Hello(ctx, base, key, in.model)
+	s.remember(ctx, wsID, in, key, res)
+	st, err := s.State(ctx, wsID)
+	if err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "ai: check", "workspace", wsID, "by", uid(r), "provider", in.provider, "model", in.model,
 		"ok", res.OK, "error", res.Error, "status", res.Status, "latency_ms", res.Latency.Milliseconds())
 	httpx.Write(w, http.StatusOK, &v1.CheckAiResponse{
 		Ok: res.OK, Reply: res.Reply, Error: res.Error, Message: res.Message,
 		HttpStatus: uint32(max(res.Status, 0)), LatencyMs: uint32(max(res.Latency.Milliseconds(), 0)), //nolint:gosec // bounded by CheckTimeout
+		State: st,
 	})
 	return nil
 }

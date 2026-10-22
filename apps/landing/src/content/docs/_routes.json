@@ -477,6 +477,7 @@
 {"method":"GET","path":"/api/workspaces/{id}/ai","decision":"allow","group":"workspaces"},
 {"method":"PUT","path":"/api/workspaces/{id}/ai","decision":"allow","group":"workspaces"},
 {"method":"POST","path":"/api/workspaces/{id}/ai/check","decision":"allow","group":"workspaces"},
+{"method":"GET","path":"/api/workspaces/{id}/ai/status","decision":"deny","group":"workspaces"},
 {"method":"GET","path":"/api/workspaces/{id}/apps","decision":"allow","group":"workspaces"},
 {"method":"POST","path":"/api/workspaces/{id}/apps","decision":"allow","group":"workspaces"},
 {"method":"GET","path":"/api/workspaces/{id}/audit","decision":"allow","group":"workspaces"},
@@ -494,6 +495,7 @@
 {"method":"GET","path":"/api/workspaces/{id}/sip","decision":"allow","group":"workspaces"},
 {"method":"PUT","path":"/api/workspaces/{id}/sip","decision":"allow","group":"workspaces"},
 {"method":"POST","path":"/api/workspaces/{id}/sip/test","decision":"allow","group":"workspaces"},
+{"method":"POST","path":"/api/workspaces/{id}/smart-tasks","decision":"deny","group":"workspaces"},
 {"method":"GET","path":"/api/workspaces/{id}/users","decision":"allow","group":"workspaces"},
 {"method":"GET","path":"/api/workspaces/discover","decision":"deny","group":"workspaces"}
 ]

@@ -33,9 +33,17 @@ var aiFake = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *
 		return
 	}
 	var req struct {
-		Model string `json:"model"`
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	if len(req.Messages) == 2 && req.Messages[0].Role == "system" { // smart tasks (smart_integration_test)
+		smartFakeAnswer(w, req.Messages[0].Content, req.Messages[1].Content)
+		return
+	}
 	if req.Model == "missing" {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = io.WriteString(w, `{"error":{"message":"The model 'missing' does not exist","code":"model_not_found"}}`)

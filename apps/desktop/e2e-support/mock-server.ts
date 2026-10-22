@@ -78,7 +78,7 @@ import {
   type TaskFilter,
   type TaskRelationKind,
 } from '@calaba/protocol';
-import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
+import { BoardError, BoardsMock, CREATE_TASKS as CREATE_TASKS_BIT, MANAGE_BOARD } from './mock-boards';
 import { DiskError, DiskMock } from './mock-disk';
 import { WikiError, WikiMock } from './mock-wiki';
 import {
@@ -190,6 +190,10 @@ import {
   VerifyEmailResponseSchema,
   GetGptunnelIntegrationResponseSchema,
   GetAiSettingsResponseSchema,
+  GetAiStatusResponseSchema,
+  AiState,
+  CreateSmartTaskRequestSchema,
+  CreateSmartTaskResponseSchema,
   PutAiSettingsRequestSchema,
   PutAiSettingsResponseSchema,
   CheckAiRequestSchema,
@@ -766,6 +770,8 @@ export interface MockServer {
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
   /** ADR-0041: `userId`'s busy time from an external calendar (free / busy kind EXTERNAL), replacing it. */
   setBusy(userId: string, intervals: readonly ExternalSpan[]): void;
+  /** CBF-68: the AI state of a workspace (default NO_KEY; a saved key → UNCHECKED, a check → READY / FAILED). */
+  setAiState(workspaceId: string, state: AiState): void;
   /** ADR-0041 §4 / ADR-0045: a connected CalDAV account of `userId` (calendar «Работа», import on, synced at the clock). */
   setCalDav(userId: string, patch?: Partial<CalDavRec>): void;
   /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
@@ -870,6 +876,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setBusy: (u, list) => impl.calExternal.set(u, [...list]),
+    setAiState: (ws, st) => impl.aiState.set(ws, st),
     setCalDav: (u, patch) => impl.seedCalDav(u, patch),
     setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
     setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
@@ -1019,6 +1026,7 @@ export function slowWebpAnimation(src: Buffer, frameMs: number): Buffer {
 /** The server's messages.MaxReactionsPerUser. */
 const MAX_REACTIONS_PER_USER = 3;
 const conflict = (what: string, field = ''): HttpError => new HttpError(409, ErrorCode.CONFLICT, what, field);
+const conflictReason = (reason: string, what: string): HttpError => new HttpError(409, ErrorCode.CONFLICT, what, '', { reason });
 
 // Mentions as the server parses them (apps/server/internal/messages/mentions.go).
 const MENTION_RE =
@@ -1218,6 +1226,8 @@ class MockImpl {
   /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
   readonly calWorkHours = new Map<string, WorkHoursRec>();
   readonly calExternal = new Map<string, ExternalSpan[]>();
+  /** CBF-68: AI state per workspace (absent = NO_KEY). */
+  readonly aiState = new Map<string, AiState>();
   readonly calDav = new Map<string, CalDavRec>();
   readonly calDavRemote = new Map<string, Span[]>();
   /** QA fixture (docs/09 #146 screen): room id → banked messages-GET failures left. */
@@ -1292,6 +1302,7 @@ class MockImpl {
 
   reset(scenario: Scenario): void {
     for (const t of this.timers) clearTimeout(t);
+    this.aiState.clear();
     this.timers.clear();
     this.releaseFiles();
     this.state = buildState(scenario);
@@ -6288,12 +6299,14 @@ class MockImpl {
     };
     this.route('GET', '/api/workspaces/:id/ai', (c) => {
       aiAdmin(c);
-      sendMsg(c.res, 200, GetAiSettingsResponseSchema, { settings: { model: 'gpt-6-astra' } });
+      sendMsg(c.res, 200, GetAiSettingsResponseSchema, { settings: { model: 'gpt-6-astra', state: this.aiState.get(c.params[0] ?? '') ?? AiState.NO_KEY } });
     });
     this.route('PUT', '/api/workspaces/:id/ai', (c) => {
       aiAdmin(c);
       const b = parseBody(c, PutAiSettingsRequestSchema);
       if (!b.model.trim()) throw invalid('model', 'model is required');
+      const ws = c.params[0] ?? '';
+      if (b.apiKey) this.aiState.set(ws, AiState.UNCHECKED);
       sendMsg(c.res, 200, PutAiSettingsResponseSchema, {
         settings: { provider: b.provider, baseUrl: b.baseUrl, model: b.model.trim(), hasKey: !!b.apiKey, keyMask: b.apiKey ? '••••' + b.apiKey.slice(-4) : '', updatedAt: tick(this.state), updatedBy: this.uid(c) },
       });
@@ -6303,7 +6316,15 @@ class MockImpl {
       const b = parseBody(c, CheckAiRequestSchema);
       if (!b.apiKey) throw invalid('apiKey', 'API key is required');
       const ok = b.apiKey !== 'wrong';
-      sendMsg(c.res, 200, CheckAiResponseSchema, ok ? { ok, reply: 'Hello! How can I help?', httpStatus: 200, latencyMs: 1200 } : { ok, error: 'unauthorized', message: 'Unauthorized', httpStatus: 401, latencyMs: 300 });
+      const state = ok ? AiState.READY : AiState.FAILED;
+      this.aiState.set(c.params[0] ?? '', state);
+      sendMsg(c.res, 200, CheckAiResponseSchema, ok ? { ok, reply: 'Hello! How can I help?', httpStatus: 200, latencyMs: 1200, state } : { ok, error: 'unauthorized', message: 'Unauthorized', httpStatus: 401, latencyMs: 300, state });
+    });
+    // CBF-68: the state any member reads (the «+» menu), set by the form above or setAiState.
+    this.route('GET', '/api/workspaces/:id/ai/status', (c) => {
+      const { m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('not available to guests');
+      sendMsg(c.res, 200, GetAiStatusResponseSchema, { state: this.aiState.get(c.params[0] ?? '') ?? AiState.NO_KEY });
     });
 
     this.route('POST', '/api/rooms/:id/recording/start', (c) => {
@@ -7441,6 +7462,22 @@ class MockImpl {
       const r = parseBody(c, CreateTaskRequestSchema);
       const t = b().createTask(c.params[0] ?? '', me, r);
       sendMsg(c.res, 201, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    // CBF-68: «Создать умную задачу» — the mock «model» takes the first board where I may create
+    // tasks; the title is the text's first line, the description the text.
+    this.boardRoute('POST', '/api/workspaces/:id/smart-tasks', (c, me) => {
+      const ws = c.params[0] ?? '';
+      const r = parseBody(c, CreateSmartTaskRequestSchema);
+      const text = r.text.trim();
+      if (!text || text.length > 4000) throw invalid('text', 'text must be 1..4000 characters');
+      if ((this.aiState.get(ws) ?? AiState.NO_KEY) !== AiState.READY) throw conflictReason('AI_NOT_READY', 'the AI integration is not connected or not checked');
+      const board = b().listBoards(ws, me, false).find((x) => (x.permissions & CREATE_TASKS_BIT) !== 0n);
+      if (!board) throw conflictReason('NO_BOARDS', 'no board where you may create tasks');
+      const title = (text.split('\n')[0] ?? '').slice(0, 120);
+      const t = b().createTask(board.id, me, {
+        title, description: text, statusId: '', priority: r.priority, assignees: [], labelIds: [], startOn: '', dueOn: '', estimate: 0, parentId: '', milestoneId: '', afterTaskId: '',
+      });
+      sendMsg(c.res, 201, CreateSmartTaskResponseSchema, { task: taskRes(t.task.id, me).task });
     });
     this.boardRoute('GET', '/api/tasks/:id', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(c.params[0] ?? '', me, true)));
     this.boardRoute('GET', '/api/t/:key', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().byKey(c.params[0] ?? '', me), me, true)));
