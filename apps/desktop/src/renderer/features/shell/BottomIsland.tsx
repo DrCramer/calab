@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { forwardRef, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useMobile } from '../../lib/mobile';
 import { useVoice } from '../../stores/voice';
 import { SelfPanel } from './SelfPanel';
@@ -27,22 +27,42 @@ export function BottomIsland(): ReactNode {
     };
   }, []);
   return (
+    <VoiceBlock
+      ref={ref}
+      testId="bottom-island"
+      island
+      className="absolute bottom-2 left-2 z-[var(--z-sticky)]"
+      style={{ width: 'calc(var(--rail-width) + var(--sidebar-width) - 16px)' }}
+    />
+  );
+}
+
+/**
+ * The one shell of the voice block (docs/08 «Нижний островок»): mat-toolbar plate, panel radius,
+ * island shadow, hairline-separated record prompt, VoiceBar and SelfPanel. The island and the
+ * work-section column both render it; they differ only in positioning and width (className/style).
+ */
+const VoiceBlock = forwardRef<
+  HTMLDivElement,
+  { testId: string; island?: boolean; className: string; style?: CSSProperties }
+>(function VoiceBlock({ testId, island, className, style }, ref) {
+  return (
     <div
       ref={ref}
-      data-testid="bottom-island"
-      data-island
-      className="mat-toolbar absolute bottom-2 left-2 z-[var(--z-sticky)] flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] shadow-[var(--shadow-island)]"
-      style={{ width: 'calc(var(--rail-width) + var(--sidebar-width) - 16px)' }}
+      data-testid={testId}
+      data-island={island ? true : undefined}
+      className={`mat-toolbar flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] shadow-[var(--shadow-island)] ${className}`}
+      style={style}
     >
       <MeetingRecordPrompt />
       <VoiceBar />
       <SelfPanel />
     </div>
   );
-}
+});
 
 /**
- * The same voice block and self panel as the island, in the flow at the foot of a work-section
+ * The same block as the island (`VoiceBlock`), in the flow at the foot of a work-section
  * column (Boards, Calendar, Wiki have no island - owner 02.10 - but a call must stay reachable:
  * bug board CBF-4). Only while in voice, desktop layout only (the phone has its call strip).
  */
@@ -50,10 +70,5 @@ export function ColumnVoice(): ReactNode {
   const inVoice = useVoice((s) => s.roomId !== null);
   const mobile = useMobile();
   if (!inVoice || mobile) return null;
-  return (
-    <div data-testid="voice-dock" className="mx-2 mb-2 mt-auto flex shrink-0 flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-fill)]">
-      <VoiceBar />
-      <SelfPanel />
-    </div>
-  );
+  return <VoiceBlock testId="voice-dock" className="mx-2 mb-2 mt-auto shrink-0" />;
 }
