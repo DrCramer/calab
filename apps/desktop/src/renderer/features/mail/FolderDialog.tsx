@@ -146,7 +146,7 @@ function FolderDialogBody({ req }: { req: FolderDialogReq }): ReactNode {
               <ul className="flex flex-col gap-2" data-testid="mail-smart-conditions">
                 {conds.map((c, i) => (
                   <li key={i} className="flex flex-wrap items-center gap-2">
-                    <Select value={c.field} onChange={(e) => setCond(i, { field: e.target.value === 'subject' ? 'subject' : e.target.value === 'to' ? 'to' : 'from' })} aria-label={t('mbox.rules.field')} className="w-48 shrink-0">
+                    <Select value={c.field} onChange={(e) => setCond(i, { field: e.target.value === 'subject' ? 'subject' : e.target.value === 'to' ? 'to' : 'from' })} aria-label={t('mbox.rules.field')} className="w-60 shrink-0">
                       <option value="from">{t('mbox.smart.field.from')}</option>
                       <option value="to">{t('mbox.smart.field.to')}</option>
                       <option value="subject">{t('mbox.smart.field.subject')}</option>

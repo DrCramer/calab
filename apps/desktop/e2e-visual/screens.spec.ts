@@ -170,6 +170,7 @@ const KEY = new Set([
   'members-admissions',
   // Task boards (ADR-0042 §5).
   'boards-kanban',
+  'boards-create-menu',
   'boards-task',
   // «Комментарии | История» of the task panel (ADR-0091).
   'boards-task-comments',
@@ -3917,6 +3918,16 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await boardsMode(win, mock);
   await checkpoint(shot, 'boards-kanban');
+
+  // CBF-58: the column's «+» — «Создать задачу», the boards to create in, a separator, category / board.
+  await win.getByTestId('section-create-board').click();
+  const createMenu = win.getByTestId('boards-create-menu');
+  await expect(createMenu).toBeVisible();
+  await expect(createMenu.getByTestId('boards-create-task')).toBeVisible();
+  await expect(createMenu.getByTestId('boards-create-board')).toBeVisible();
+  await checkpoint(shot, 'boards-create-menu');
+  await win.keyboard.press('Escape');
+  await expect(createMenu).toHaveCount(0);
 
   // Bug board #4 (needs the dev LiveKit): in voice, the boards column ends with the same voice
   // block as the rooms island; its mic mutes the call while the board stays on screen.
