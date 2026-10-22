@@ -712,8 +712,8 @@ export interface MockServer {
   setSipCallStatus(callId: string, status: SipCallStatus, reason?: string): void;
   /**
    * ADR-0117: «Команда Calab» on a plan with telephony, a saved SIP account and an exchange — four
-   * numbers (103 unassigned, Григорий without one), groups «Отдел продаж» (round robin) and «Поддержка» (its fallback
-   * deleted), menus «Главное меню» (a 42 s prompt, keys 1 2 3 0 * 9 — 9 leads to a deleted menu) and
+   * numbers (103 unassigned, Григорий without one), groups «Отдел продаж» (round robin, forwards to 100 after 45 s) and
+   * «Поддержка» (forwards after 30 s to a deleted menu; ADR-0124), menus «Главное меню» (a 42 s prompt, keys 1 2 3 0 * 9 — 9 leads to a deleted menu) and
    * «Ночной режим» (no prompt).
    */
   seedSipExchange(): void;
@@ -5939,6 +5939,8 @@ class MockImpl {
         strategy: roundRobin ? SipGroupStrategy.ROUND_ROBIN : SipGroupStrategy.RING_ALL,
         members: { extensionIds: members },
         onFail,
+        fallbackEnabled: true, // ADR-0124: both seeded groups forward when nobody answers
+        fallbackSec: roundRobin ? 45 : 30,
       })).id;
     const sales = group('Отдел продаж', '1001', true, [vera, boris, anna], { kind: SipRouteKind.EXTENSION, id: anna });
     const night = pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, { name: 'Ночной режим' }));

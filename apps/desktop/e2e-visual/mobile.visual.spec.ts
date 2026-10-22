@@ -1590,6 +1590,12 @@ test('m-telephony', async ({ page }) => {
   await expectNoFieldFocus(page, 'telephony');
   await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony');
+  // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
+  await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
+  await expect(dialog.getByTestId('sip-group-onfail')).toBeVisible();
+  await dialog.getByTestId('sip-group-fallback').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-group');
+  await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).tap();
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
   await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-menu');

@@ -205,6 +205,8 @@ export function createGroup(p: MockPbx, wsId: string, ids: { group: string; ext:
     strategy: b.strategy === SipGroupStrategy.ROUND_ROBIN ? SipGroupStrategy.ROUND_ROBIN : SipGroupStrategy.RING_ALL,
     ringSec: seconds(b.ringSec, 30, 10, 60, 'ringSec'),
     memberRingSec: seconds(b.memberRingSec, 15, 5, 60, 'memberRingSec'),
+    fallbackEnabled: b.fallbackEnabled,
+    fallbackSec: seconds(b.fallbackSec, 30, 5, 600, 'fallbackSec'),
     onFail: target(p, b.onFail, 'onFail', false),
     members: memberIds(p, b.members?.extensionIds ?? []).map((extensionId, position) => ({ extensionId, position })),
     updatedAt: now,
@@ -223,8 +225,12 @@ export function updateGroup(p: MockPbx, id: string, now: Timestamp, b: MessageSh
   const ringSec = b.ringSec !== undefined ? seconds(b.ringSec, 30, 10, 60, 'ringSec') : g.ringSec;
   const memberRingSec = b.memberRingSec !== undefined ? seconds(b.memberRingSec, 15, 5, 60, 'memberRingSec') : g.memberRingSec;
   const onFail = b.onFail ? target(p, b.onFail, 'onFail', false) : g.onFail;
+  if (b.onFail && ((onFail?.kind === SipRouteKind.GROUP && onFail.id === id) || (b.onFail.kind === SipRouteKind.EXTENSION && b.onFail.id === ext.id)))
+    throw invalid('onFail');
+  const fallbackSec = b.fallbackSec !== undefined ? seconds(b.fallbackSec, 30, 5, 600, 'fallbackSec') : g.fallbackSec;
+  const fallbackEnabled = b.fallbackEnabled ?? g.fallbackEnabled;
   const members = b.members ? memberIds(p, b.members.extensionIds).map((extensionId, position) => create(SipGroupMemberSchema, { extensionId, position })) : g.members;
-  Object.assign(g, { name, ringSec, memberRingSec, members, updatedAt: now, ...(onFail ? { onFail } : {}) });
+  Object.assign(g, { name, ringSec, memberRingSec, fallbackEnabled, fallbackSec, members, updatedAt: now, ...(onFail ? { onFail } : {}) });
   if (b.strategy !== undefined) g.strategy = b.strategy === SipGroupStrategy.ROUND_ROBIN ? SipGroupStrategy.ROUND_ROBIN : SipGroupStrategy.RING_ALL;
   if (b.number !== undefined) ext.number = b.number;
   return g;

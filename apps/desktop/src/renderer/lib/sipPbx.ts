@@ -57,6 +57,7 @@ const FIELD_ERR: Record<string, MessageKey> = {
   members: 'pbx.err.members',
   ringSec: 'pbx.err.seconds',
   memberRingSec: 'pbx.err.seconds',
+  fallbackSec: 'pbx.err.fallbackSec',
   inputTimeoutSec: 'pbx.err.timeout',
   repeats: 'pbx.err.repeats',
   onFail: 'pbx.err.target',

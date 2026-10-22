@@ -8,9 +8,9 @@ import { checkpoint, settle } from './harness';
  * «Автоответ» (a menu with a recording and keys, key 9 leading to a deleted menu), the inline forms
  * of a number, a group and a menu, «Входящие» over a registration at the provider (ADR-0121:
  * registered / a refused password). Fixture: mock-server seedSipExchange. And the incoming phone
- * call (ADR-0117 step 2): the sheet with the caller's number and the menu it came through. Projects
- * `telephony-dark-960` (all) and `telephony-light-960` (the menu form and the incoming call); run
- * with -g:
+ * call (ADR-0117 step 2): the sheet with the caller's number and the menu it came through; a
+ * group's fallback off / on (ADR-0124). Projects `telephony-dark-960` (all) and
+ * `telephony-light-960` (the group fallback, the menu form and the incoming call); run with -g:
  *
  *   CALABA_VISUAL_MOCK_PORT=4513 MOCK_LIVEKIT_ROOM_PREFIX=tel_ \
  *     pnpm -F @calaba/desktop e2e:visual -g "telephony-"
@@ -87,6 +87,27 @@ test('telephony-menu', async ({ open, win, mock, shot }) => {
   await open();
   mock.seedSipExchange();
   const dialog = await openTelephony(win);
+  await expect(dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' })).toContainText('переадресация через 45 с');
+
+  // ADR-0124: a new group rings until somebody answers (the fallback off); switched on — after
+  // N seconds the call goes to another group / a person / a bot / a menu / hangs up.
+  await dialog.getByTestId('sip-group-add').click();
+  const group = dialog.getByTestId('sip-group-form');
+  await group.getByTestId('sip-group-name').fill('Бухгалтерия');
+  await group.getByTestId('sip-group-number').fill('1003');
+  await group.getByTestId('sip-group-add-member').selectOption({ label: '102 · Вера Ким' });
+  const fallback = group.getByTestId('sip-group-fallback');
+  await expect(fallback).toContainText('пока кто-нибудь не ответит');
+  await expect(group.getByTestId('sip-group-onfail')).toHaveCount(0);
+  await fallback.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-group-fallback-off');
+  await fallback.getByRole('switch', { name: 'Переадресация, если никто не ответил' }).click();
+  await group.getByTestId('sip-group-fallback-sec').fill('20');
+  await group.getByTestId('sip-group-onfail').selectOption({ label: '1001 · Отдел продаж' });
+  await fallback.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-group-fallback');
+  await group.getByRole('button', { name: 'Отмена' }).click();
+
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).click();
   const form = dialog.getByTestId('sip-menu-form');
   await expect(form.getByTestId('sip-menu-listen')).toBeVisible();
