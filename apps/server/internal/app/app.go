@@ -585,6 +585,10 @@ func New(d Deps) *App {
 	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
 	sipSvc.SetFiles(filesSvc)
 	sipSvc.Presence = hub.PresenceChanged
+	// Phone call recording to the Disk (ADR-0131): the meeting recorder's egress and storage.
+	recLoc, _ := time.LoadLocation(d.Config.SIPRecordingTZ) // validated by config
+	recSvc.SetPhone(recording.PhoneConfig{Location: recLoc, MaxConcurrent: d.Config.SIPRecordingMaxConcurrent, Disk: diskSvc, MaxCall: sip.MaxCallTime})
+	sipSvc.SetRecorder(recSvc)
 	// Inbound calls (ADR-0117 step 2): the IVR worker's endpoint, its prompts and events.
 	ivrHub := ivr.New(d.Redis, d.Config.IVRAgentToken)
 	ivrHub.Routes(mux)

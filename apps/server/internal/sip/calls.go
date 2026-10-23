@@ -201,6 +201,7 @@ func (s *Service) dial(ctx context.Context, call sqlc.SipCall, a sqlc.SipAccount
 		switch {
 		case err == nil:
 			s.publish(ctx, row)
+			s.recConnected(ctx, row.ID) // ADR-0131
 		case db.IsNotFound(err): // ended while ringing: take the line out
 			s.removeLine(ctx, lkRoom, call.ParticipantIdentity)
 		default:
@@ -254,6 +255,7 @@ func (s *Service) finish(ctx context.Context, id uuid.UUID, status, reason strin
 		return row, false
 	}
 	s.publish(ctx, row)
+	s.recEnded(ctx, row.ID)
 	return row, true
 }
 
@@ -589,6 +591,9 @@ func (s *Service) SIPParticipant(ctx context.Context, event string, wid, rid uui
 			return err
 		}
 		s.publish(ctx, row)
+		if row.Status == pbconv.SipActive {
+			s.recConnected(ctx, row.ID) // ADR-0131 (a second «connected» records nothing more)
+		}
 	case rtc.EventParticipantLeft, rtc.EventParticipantAborted:
 		// Before the answer the dialing request reports the outcome (busy, no answer…); the
 		// sweeper covers a lost one.

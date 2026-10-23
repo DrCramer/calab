@@ -211,6 +211,11 @@ type Config struct {
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
+	// Phone call recording to the Disk (ADR-0131): the IANA zone of the day folders and file
+	// names (workspaces have no zone of their own), and how many calls record at once on this
+	// server (the egress is shared with meeting recordings).
+	SIPRecordingTZ            string `env:"SIP_RECORDING_TZ" envDefault:"UTC"`
+	SIPRecordingMaxConcurrent int    `env:"SIP_RECORDING_MAX_CONCURRENT" envDefault:"10"`
 
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
@@ -417,6 +422,14 @@ func (c *Config) Validate() error {
 	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
+	}
+	if c.SIPRecordingTZ != "" { // "" = UTC
+		if _, err := time.LoadLocation(c.SIPRecordingTZ); err != nil || c.SIPRecordingTZ == "Local" {
+			errs = append(errs, fmt.Errorf("SIP_RECORDING_TZ must be an IANA zone name, got %q", c.SIPRecordingTZ))
+		}
+	}
+	if c.SIPRecordingMaxConcurrent < 0 {
+		errs = append(errs, errors.New("SIP_RECORDING_MAX_CONCURRENT must not be negative (0 = 10)"))
 	}
 	if c.TasksDueTZ != "" {
 		if _, err := time.LoadLocation(c.TasksDueTZ); err != nil || c.TasksDueTZ == "Local" {

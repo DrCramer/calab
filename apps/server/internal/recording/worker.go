@@ -30,7 +30,8 @@ func (s *Service) HandleEgress(ctx context.Context, event string, info *rtc.Egre
 	}
 	rec, err := s.db.Q.GetRecordingByEgress(ctx, &info.EgressID)
 	if db.IsNotFound(err) {
-		return nil // not ours, or the start is not committed yet (reconcile takes it)
+		_, err := s.handlePhoneEgress(ctx, info) // a phone call's (ADR-0131)
+		return err                               // not ours, or the start is not committed yet (reconcile takes it)
 	}
 	if err != nil {
 		return err
@@ -535,7 +536,8 @@ func (s *Service) Maintain(ctx context.Context) {
 			}
 		}
 	}
-	if err := s.Reconcile(ctx); err != nil && ctx.Err() == nil {
+	phoneEgresses, phoneRooms := s.maintainPhone(ctx)
+	if err := s.reconcile(ctx, phoneEgresses, phoneRooms); err != nil && ctx.Err() == nil {
 		slog.WarnContext(ctx, "recording: reconcile", "err", err)
 	}
 }
@@ -553,6 +555,12 @@ func (s *Service) roomAllows(ctx context.Context, rid uuid.UUID) bool {
 // starts that never reached the egress fail, and our egresses without a running row are
 // stopped.
 func (s *Service) Reconcile(ctx context.Context) error {
+	return s.reconcile(ctx, nil, nil)
+}
+
+// reconcile is Reconcile that leaves alone the egresses of phone recordings (phone: their egress
+// ids; phoneRooms: rooms where a phone recording may not have stored its egress id yet).
+func (s *Service) reconcile(ctx context.Context, phone, phoneRooms map[string]bool) error {
 	rows, err := s.db.Q.ListActiveRecordings(ctx, nil)
 	if err != nil {
 		return err
@@ -612,6 +620,12 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		wid, rid, ok := voice.ParseRoomName(e.RoomName)
 		if !ok {
 			continue // not a Calaba room
+		}
+		if phone[id] || phoneRooms[e.RoomName] {
+			continue // a phone call's recording (ADR-0131)
+		}
+		if _, err := s.db.Q.GetSipRecordingByEgress(ctx, &id); err == nil || !db.IsNotFound(err) {
+			continue // a phone recording that started after maintainPhone listed them
 		}
 		rec, err := s.db.Q.GetRecordingByEgress(ctx, &id)
 		switch {
@@ -700,4 +714,5 @@ func (s *Service) Janitor(ctx context.Context) {
 		s.removeFile(ctx, rec)
 	}
 	s.store.sweep(ctx, before.Add(-24*time.Hour))
+	s.janitorPhone(ctx)
 }

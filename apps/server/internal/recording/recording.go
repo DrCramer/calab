@@ -80,7 +80,8 @@ type Service struct {
 	voice  voice.Store
 	pair   *redisx.RateLimiter
 	wake   chan struct{}
-	token  string // this instance's worker lock token
+	token  string       // this instance's worker lock token
+	phone  *PhoneConfig // phone call recording (ADR-0131, SetPhone); nil = off
 
 	// Tunables (tests shorten them).
 	Tick          time.Duration // worker loop period

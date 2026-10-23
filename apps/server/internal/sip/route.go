@@ -85,6 +85,10 @@ type Menu struct {
 	OnNoInput       Target
 	Items           map[byte]Target // '0'..'9', '*', '#'
 	DialExtensions  bool            // the caller may dial an internal number too (ADR-0129)
+	// Notice: the recording notice (ADR-0131), played before a key or a dialed number rings
+	// somebody; uuid.Nil = none. NoticeMs: its duration.
+	Notice   uuid.UUID
+	NoticeMs int
 }
 
 // PBX is the exchange of one workspace.
