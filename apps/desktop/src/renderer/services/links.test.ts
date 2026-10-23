@@ -218,3 +218,19 @@ describe('disk item links (CBF-20)', () => {
     expect(openOwnLink(`https://other.test/disk/${D}`)).toBe(false);
   });
 });
+
+describe('own-host links open in the app (CBF-63)', () => {
+  afterEach(() => {
+    session.settings = null;
+  });
+  it('claims every in-app route of this server, not unknown paths or other hosts', () => {
+    session.settings = { serverUrl: 'https://app.calab.io' };
+    const ID = '00000000-0000-7000-8003-000000000021';
+    for (const p of ['t/CBF-63', `dm/${ID}`, `e/${ID}`, 'r/AbCd1234', 'join/AbCd1234', `b/${ID}`]) {
+      expect(openOwnLink(`https://app.calab.io/${p}`), p).toBe(true);
+    }
+    expect(openOwnLink('https://app.calab.io/download/')).toBe(false);
+    expect(openOwnLink(`https://app.calab.io/e/${ID}/rsvp?t=x`)).toBe(false);
+    expect(openOwnLink('https://other.test/t/CBF-63')).toBe(false);
+  });
+});

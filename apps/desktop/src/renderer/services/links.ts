@@ -193,7 +193,9 @@ export function ownDiskItemId(href: string): string | null {
 export function openOwnLink(href: string): boolean {
   const origin = shareOrigin('');
   if (!origin || !href.startsWith(`${origin}/`)) return false;
-  if (!parseMessageLink(href) && !parseBoardLink(href) && !parseWikiLink(href) && !parseDiskLink(href)) return false;
+  // Every in-app route (CBF-63), the same set as shared/ownLink.ts in the main process.
+  const known = parseMessageLink(href) ?? parseBoardLink(href) ?? parseWikiLink(href) ?? parseDiskLink(href) ?? parseEventLink(href) ?? parseDmLink(href) ?? parseRoomInviteCode(href);
+  if (!known && !parseInviteCode(href)) return false;
   handleDeepLink(href);
   return true;
 }

@@ -30,7 +30,7 @@ export interface LaunchProbeOptions {
 }
 
 export const LAUNCH_TIMEOUT_MS = 1800;
-export const LAUNCH_LATE_MS = 10_000;
+export const LAUNCH_LATE_MS = 60_000; // Windows/Chrome: «Open Calab?» may wait for the user a long while
 
 export interface LaunchProbe {
   readonly state: LaunchState;
