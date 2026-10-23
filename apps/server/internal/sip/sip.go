@@ -158,6 +158,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("PUT /api/workspaces/{id}/sip/recording", wrap(httpx.HandlerFunc(s.putRecording)))
 	s.pbxRoutes(mux, wrap)
 	s.inboundRoutes(mux, wrap)
+	s.transferRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }

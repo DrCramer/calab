@@ -1,11 +1,11 @@
-import { PresenceStatus, type SipCall, type WorkspaceSnapshot } from '@calaba/protocol';
+import { PresenceStatus, SipCallStatus, type SipCall, type WorkspaceSnapshot } from '@calaba/protocol';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { holdNotification } from '../lib/notifyHold';
 import { log } from '../lib/log';
 import { formatPhone } from '../lib/sip';
-import { applyInbound, inboundOf, isPhoneRoom, phoneCallId, phoneRoomId, setPhoneJoin, type InboundState } from '../lib/sipInbound';
+import { applyInbound, inboundOf, isPhoneRoom, phoneCallId, phoneRoomId, setPhoneJoin, transferTargets, type InboundState } from '../lib/sipInbound';
 import { currentRing, startRing, stopRing } from '../lib/sounds';
 import { platform } from '../platform';
 import { useCall } from '../stores/call';
@@ -97,7 +97,20 @@ export function onSipInboundRing(c: SipCall | undefined): void {
 
 /** SIP_CALL_UPDATE of an inbound call (outbound ones belong to services/sip.ts). */
 export function onInboundCallUpdate(c: SipCall): void {
+  transferNews(useSipInbound.getState().active, c);
   set(applyInbound(useSipInbound.getState(), c, myUserId()));
+}
+
+/**
+ * How my transfer ended (ADR-0132), from the call's news: the target answered — the call is
+ * theirs (the effects leave its voice session); nobody took it — it stays with me. A transfer
+ * I cancelled myself says nothing.
+ */
+function transferNews(mine: SipCall | null, c: SipCall): void {
+  if (!mine || mine.id !== c.id || transferTargets(mine).length === 0) return;
+  const me = myUserId();
+  if (c.status === SipCallStatus.ACTIVE && c.answeredBy && c.answeredBy !== me) toast.success(t('call.sipTransferDone'));
+  else if (c.status === SipCallStatus.ACTIVE && c.answeredBy === me && transferTargets(c).length === 0 && !cancelled.delete(c.id)) toast.info(t('call.sipTransferBack'));
 }
 
 /** READY: the inbound calls in every workspace snapshot. */
@@ -172,6 +185,56 @@ export async function hangupInbound(callId: string): Promise<void> {
     if (!(e instanceof ApiError && e.status === 409)) log.warn('sip inbound: hang up failed', e);
   }
   if (useVoice.getState().roomId === phoneRoomId(callId)) await voice.leave();
+}
+
+/** Transfers I cancelled from this device: their end is no news. */
+const cancelled = new Set<string>();
+/** Transfer requests in flight from this device. */
+const transferring = new Set<string>();
+
+/** Who a transfer goes to (exactly one, sip.proto TransferSipCallRequest). */
+export type TransferTarget = { userId: string } | { extensionId: string } | { number: string };
+
+/**
+ * «Перевести» (ADR-0132): the target rings while I stay with the caller; the call's news
+ * (SIP_CALL_UPDATE) tells how it ends. Returns whether the transfer rings.
+ */
+export async function transferInbound(callId: string, to: TransferTarget): Promise<boolean> {
+  const c = useSipInbound.getState().active;
+  // Its own guard, not `busy`: the accept keeps that until the voice session connects, and a slow
+  // link must not block the transfer.
+  if (!c || c.id !== callId || transferring.has(callId)) return false;
+  transferring.add(callId);
+  try {
+    const r = await api.sip.transfer(c.workspaceId, callId, to);
+    if (r.call) set(applyInbound(useSipInbound.getState(), r.call, myUserId()));
+    return true;
+  } catch (e) {
+    log.warn('sip inbound: transfer failed', e);
+    const code = e instanceof ApiError ? e.code : '';
+    toast.error(code === 'ERROR_CODE_BUSY' ? t('call.sipTransferBusy') : e instanceof ApiError && e.status === 422 ? t('call.sipTransferNobody') : t('call.sipTransferFailed'));
+    return false;
+  } finally {
+    transferring.delete(callId);
+  }
+}
+
+/** «Отменить перевод»: the target stops ringing, the call stays mine. */
+export async function cancelTransferInbound(callId: string): Promise<void> {
+  const c = useSipInbound.getState().active;
+  if (!c || c.id !== callId) return;
+  cancelled.add(callId);
+  try {
+    const r = await api.sip.cancelTransfer(c.workspaceId, callId);
+    if (r.call) {
+      cancelled.delete(callId);
+      set(applyInbound(useSipInbound.getState(), r.call, myUserId()));
+    }
+  } catch (e) {
+    cancelled.delete(callId);
+    // 409: the target answered (or it came back) meanwhile — the call's news tells which.
+    if (!(e instanceof ApiError && e.status === 409)) log.warn('sip inbound: cancel transfer failed', e);
+  }
 }
 
 let installed = false;

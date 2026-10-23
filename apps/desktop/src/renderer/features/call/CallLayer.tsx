@@ -1,4 +1,5 @@
 import * as DialogP from '../../components/radix/dialog';
+import { SipCallStatus } from '@calaba/protocol';
 import { Phone } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -169,6 +170,13 @@ function IncomingCall(): ReactNode {
 function SipIncomingCall({ id }: { id: string }): ReactNode {
   const number = useSipInbound((s) => s.ringing.find((c) => c.id === id)?.number ?? '');
   const via = useSipInbound((s) => s.ringing.find((c) => c.id === id)?.via ?? '');
+  // A colleague transfers the call they answered (ADR-0132): «Переводит Имя».
+  const from = useSipInbound((s) => {
+    const c = s.ringing.find((x) => x.id === id);
+    return c?.status === SipCallStatus.ACTIVE ? c.answeredBy : '';
+  });
+  const wsId = useSipInbound((s) => s.ringing.find((c) => c.id === id)?.workspaceId ?? '');
+  const fromName = useMemberName(from ? wsId : null, from);
   const busy = useSipInbound((s) => s.busy);
   const title = number ? formatPhone(number) : t('call.sipUnknown');
   const phone = (
@@ -177,7 +185,7 @@ function SipIncomingCall({ id }: { id: string }): ReactNode {
     </span>
   );
   return (
-    <Sheet testId="sip-incoming" title={title} avatar={phone} subtitle={via ? t('call.sipVia', { via }) : t('call.sipIncoming')} onOutside={null}>
+    <Sheet testId="sip-incoming" title={title} avatar={phone} subtitle={from ? t('call.sipTransferFrom', { name: fromName }) : via ? t('call.sipVia', { via }) : t('call.sipIncoming')} onOutside={null}>
       <RoundAction label={t('call.decline')} tone="decline" onClick={() => void declineInbound(id)} disabled={busy} testId="sip-decline">
         <Phone className="size-6 rotate-[135deg]" aria-hidden />
       </RoundAction>

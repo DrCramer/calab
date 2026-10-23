@@ -459,6 +459,9 @@ type inRec struct {
 	EndedBy *uuid.UUID `json:"ended_by,omitempty"`
 	// AnswerLeft: when the member who answered left the room (ms; 0 = in it).
 	AnswerLeft int64 `json:"answer_left,omitempty"`
+	// Handover: the member who transferred the call, still with the caller until the target who
+	// answered connects to the room (ADR-0132; transfer_api.go).
+	Handover *uuid.UUID `json:"handover,omitempty"`
 	InCall
 }
 
@@ -616,7 +619,7 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 			slog.WarnContext(ctx, "sip: worker leave", "call", r.ID, "err", err)
 		}
 		s.closeRoom(ctx, r.Room)
-	case fx.Answered:
+	case fx.Answered && fx.Released == nil: // a transfer's answer: the worker left at the first one
 		if err := s.agent.Leave(ctx, r.ID); err != nil {
 			slog.WarnContext(ctx, "sip: worker leave", "call", r.ID, "err", err)
 		}
@@ -648,10 +651,15 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 		_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(*r.Answered)}, []string{r.ID.String()}).Error()
 		s.onCall(ctx, *r.Answered, r.ID, false)
 	}
+	if fx.Hangup != "" && r.Handover != nil { // ended while handed over (ADR-0132): them too
+		_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(*r.Handover)}, []string{r.ID.String()}).Error()
+		s.onCall(ctx, *r.Handover, r.ID, false)
+	}
 	if fx.Answered && r.Answered != nil {
 		s.onCall(ctx, *r.Answered, r.ID, true)
 		s.recConnected(ctx, r.ID) // ADR-0131: recorded from the answer, not during the menu
 	}
+	s.applyTransfer(ctx, r, fx)
 	if fx.Advance != nil {
 		if err := db.GuardExec(ctx, s.db, func(q *sqlc.Queries) error {
 			return q.SetSipGroupNextPosition(ctx, sqlc.SetSipGroupNextPositionParams{WorkspaceID: r.WS, ID: fx.Advance.Group, NextPosition: int32(fx.Advance.Position)}) //nolint:gosec // ≤ 20 members
@@ -668,6 +676,11 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 		})
 		s.recEnded(ctx, r.ID) // ADR-0131: after the row is final (a starting recording sees the end)
 		slog.InfoContext(ctx, "sip: inbound call ended", "call", r.ID, "reason", fx.Hangup, "route", strings.Join(r.Route, " → "))
+	case fx.Changed && !fx.Answered && (fx.Xfer || r.Xfer != nil): // a transfer rings / ended (ADR-0132)
+		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+			return q.UpdateSipInboundTransfer(ctx, sqlc.UpdateSipInboundTransferParams{ID: r.ID, RingingUserIds: nonNil(r.Ringing),
+				Route: clip(strings.Join(r.Route, " → "), 500)})
+		})
 	case fx.Changed && r.Phase != PhaseActive:
 		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
 			return q.UpdateSipInboundRinging(ctx, sqlc.UpdateSipInboundRingingParams{ID: r.ID, RingingUserIds: nonNil(r.Ringing),
@@ -710,6 +723,11 @@ func (s *Service) announce(ctx context.Context, row sqlc.SipCall, r *inRec, fx *
 	to := append(append([]uuid.UUID{}, fx.Stopped...), r.Ringing...)
 	if r.Answered != nil {
 		to = append(to, *r.Answered)
+	}
+	// The member who handed the call over hears of its end; of the target's answer only when the
+	// target connected (finishHandover) — until then they stay with the caller.
+	if fx.Hangup != "" && r.Handover != nil {
+		to = append(to, *r.Handover)
 	}
 	for _, u := range to {
 		if seen[u] {
@@ -776,6 +794,23 @@ func (s *Service) Inbound(ctx context.Context, event, room string, p *rtc.Partic
 			return nil
 		}
 		err = s.withCall(ctx, row.ID, func(r *inRec, e Env, _ *Effects) error {
+			if r.Xfer != nil && r.Answered != nil && *r.Answered == user {
+				// A transfer rings (ADR-0132): the deadline is the ringing's; the grace starts if
+				// the call comes back to the member (applyTransfer).
+				r.AnswerLeft = 0
+				if gone {
+					r.AnswerLeft = e.Now.UnixMilli()
+				}
+				return nil
+			}
+			if !gone && r.Phase == PhaseActive && r.Answered != nil && *r.Answered != user && (r.Handover == nil || *r.Handover != user) && s.lk != nil {
+				// Not whom the call is with (a transfer's target who connected after the call came
+				// back, a member it was handed from, ADR-0132): out of the room.
+				if err := s.lk.RemoveParticipant(ctx, room, p.Identity); err != nil && !rtc.IsNotFound(err) {
+					slog.WarnContext(ctx, "sip: remove a stray member", "call", r.ID, "err", err)
+				}
+				return nil
+			}
 			if r.Phase != PhaseActive || r.Answered == nil || *r.Answered != user {
 				return nil
 			}
@@ -784,6 +819,7 @@ func (s *Service) Inbound(ctx context.Context, event, room string, p *rtc.Partic
 				r.Deadline = e.Now.Add(answerGrace).UnixMilli()
 			} else {
 				r.AnswerLeft, r.Deadline = 0, 0
+				s.finishHandover(ctx, r) // the target of a transfer connected (ADR-0132)
 			}
 			return nil
 		})
@@ -967,7 +1003,7 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 		// room): before the answer the caller would hear silence — hang up.
 		slog.WarnContext(ctx, "sip: IVR worker", "call", id, "op", ev.Op, "error", ev.Error)
 		fn = func(r *inRec, _ Env, fx *Effects) error {
-			if r.Phase != PhaseActive {
+			if r.Phase != PhaseActive && !r.Transferring() { // answered: the worker is gone anyway
 				r.Hangup(reasonAgent, fx)
 			}
 			return nil
@@ -1042,11 +1078,15 @@ func (s *Service) expireCall(ctx context.Context, id uuid.UUID) {
 			if r.AnswerLeft == 0 || e.Now.UnixMilli() < r.Deadline {
 				return nil
 			}
-			// The member who answered did not come back within the grace.
+			// The member who answered did not come back within the grace (or, the target of a
+			// transfer, did not connect: the call goes back to who handed it over, ADR-0132).
 			if _, err := s.lk.GetParticipant(ctx, r.Room, rtc.AnswerIdentity(*r.Answered)); rtc.IsNotFound(err) {
-				r.Hangup(reasonLost, fx)
+				if !s.handBack(ctx, r, fx) {
+					r.Hangup(reasonLost, fx)
+				}
 			} else if err == nil {
 				r.AnswerLeft, r.Deadline = 0, 0
+				s.finishHandover(ctx, r)
 			}
 			return nil
 		}
@@ -1158,6 +1198,7 @@ func (s *Service) acceptInbound(w http.ResponseWriter, r *http.Request) error {
 	ctx, me := r.Context(), uid(r)
 	var room string
 	err = s.withCall(ctx, row.ID, func(rec *inRec, e Env, fx *Effects) error {
+		xfer := rec.Transferring()
 		if err := rec.Answer(e, me, fx); err != nil {
 			if rangUser(rec, me) {
 				return errCallOver()
@@ -1166,6 +1207,10 @@ func (s *Service) acceptInbound(w http.ResponseWriter, r *http.Request) error {
 		}
 		var err error
 		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+			if xfer { // ADR-0132: the call was answered; it is the target's now
+				return q.TransferSipInboundCall(ctx, sqlc.TransferSipInboundCallParams{ID: rec.ID, UserID: me,
+					Route: clip(strings.Join(rec.Route, " → "), 500)})
+			}
 			return q.AnswerSipInboundCall(ctx, sqlc.AnswerSipInboundCallParams{ID: rec.ID, UserID: me})
 		})
 		if db.IsNotFound(err) {

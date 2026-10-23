@@ -241,7 +241,9 @@ message SipCall {
   // "plan", "disabled".
   string answered_by = 14;               // the user who took the call
   string route = 15;                     // the path for the journal: «menu:<id>/2 → group:<id>»
-  repeated string ringing_user_ids = 16; // who rings right now
+  // Who rings right now. ACTIVE with ringing_user_ids: a transfer rings them (ADR-0132) while
+  // answered_by — who hands the call over — is still on it.
+  repeated string ringing_user_ids = 16;
   string via = 17;                       // the name of the menu or group the call came through
   // The provider's Call-ID of an inbound call that came over the registration (ADR-0121); empty
   // for DIRECT inbound and outbound calls.
@@ -343,6 +345,9 @@ message SipExtension {
   // «not found» to them). Routes an admin set (keys, the entry point, fallbacks) and groups
   // still ring it; internal calls are not affected. Always false on a GROUP number.
   bool external_blocked = 9;
+  // Output only: the name of the group of a GROUP number (the transfer picker of a member who may
+  // not read the groups, ADR-0132).
+  string group_name = 10;
 }
 
 enum SipGroupStrategy {
@@ -609,6 +614,31 @@ message SipInboundRing {
 message SipInboundAcceptResponse {
   SipCall call = 1;
   JoinVoiceResponse join = 2;
+}
+
+// POST /api/workspaces/{id}/sip/calls/{cid}/transfer (ADR-0132; the member connected to the
+// answered inbound call — answered_by — or MANAGE_INTEGRATIONS of the workspace; bots too) → 200
+// SipCallResponse: the call stays ACTIVE with the member (answered_by) and ringing_user_ids
+// ring the target (SIP_INBOUND_RING to them: the same ringing as a call to a number or a
+// group). The target answers (POST …/inbound/{cid}/accept) → the call is theirs; the
+// transferring member stays with the caller until the target is in the room, then hears
+// SIP_CALL_UPDATE (answered_by the target) and is taken out of it (the target does not connect
+// in 15 s: the call is the member's again, route «transfer:not_connected»); nobody answers in
+// 30 s (a group with a fallback: its
+// fallback_sec; the fallback itself is not followed), everybody declines or DELETE …/transfer
+// (the same callers) → 200 SipCallResponse: the transfer is over and the call stays with the
+// member. The caller is never dropped by a transfer. external_blocked does not apply (an
+// employee's transfer is internal). Exactly one target: user_id (a member, a person or a bot,
+// with or without a number), extension_id (a person's, a bot's or a group's number) or number
+// (as typed). Errors: 404 unknown call / not in this workspace, 403 neither on the call nor
+// MANAGE_INTEGRATIONS, 409 CONFLICT (not answered yet, over, a transfer already rings, routed
+// too many times; DELETE: no transfer rings), 409 BUSY (the target is in another call, its
+// group has nobody free), 422 VALIDATION target (none or several, unknown, a guest, a number
+// with nobody behind it, the member on the call themselves).
+message TransferSipCallRequest {
+  string user_id = 1;
+  string extension_id = 2;
+  string number = 3;
 }
 
 // ---------------------------------------------------------------- active calls (ADR-0128)

@@ -1652,6 +1652,27 @@ test('m-telephony', async ({ page }) => {
   await checkpoint(page, 'm-sip-incoming');
   await ring.getByRole('button', { name: 'Отклонить' }).tap();
   await expect(ring).toHaveCount(0);
+  // ADR-0132: the next call taken — the strip's round «Перевести» (in place of the camera) opens
+  // the picker as a centred card; a pick rings Борис: «Переводим: Борис» above the strip.
+  await toRoot(page);
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  await ring.getByRole('button', { name: 'Принять' }).tap();
+  const strip = page.getByTestId('mobile-voice-strip');
+  // The transfer does not wait for the media: WebKit's LiveKit link may still be connecting — masked.
+  const status = [strip.getByTestId('mobile-voice-status')];
+  await strip.getByTestId('sip-transfer').tap();
+  const picker = page.getByTestId('sip-transfer-picker');
+  await expect(picker.getByRole('option', { name: /Борис/ })).toBeVisible();
+  await expectNoFieldFocus(page, 'transfer picker');
+  await checkpoint(page, 'm-sip-transfer-picker', { mask: status });
+  await picker.getByRole('option', { name: /Борис/ }).tap();
+  const transferring = strip.getByTestId('sip-transferring');
+  await expect(transferring).toContainText('Переводим: Борис');
+  await checkpoint(page, 'm-sip-transferring', { mask: status });
+  await transferring.getByRole('button', { name: 'Отменить перевод' }).tap();
+  await expect(transferring).toHaveCount(0);
+  await strip.getByRole('button', { name: 'Отключиться' }).tap();
+  await expect(strip).toHaveCount(0);
 });
 
 // ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of

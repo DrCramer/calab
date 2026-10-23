@@ -78,6 +78,9 @@ type InCall struct {
 	// ends (the phase stays «menu»; keys are not taken meanwhile), NoticeAt when it began (ms).
 	Notice   *Target `json:"notice,omitempty"`
 	NoticeAt int64   `json:"notice_at,omitempty"`
+	// A transfer of the answered call rings (ADR-0132, transfer.go): Phase is ring, Answered the
+	// member still on the call.
+	Xfer *Xfer `json:"xfer,omitempty"`
 }
 
 // Effects of one transition.
@@ -90,6 +93,10 @@ type Effects struct {
 	Answered bool        // the call was answered (InCall.Answered)
 	Advance  *Advance    // move a round-robin pointer
 	Changed  bool        // ringing / route / via changed: update the journal row
+	// A transfer (ADR-0132) started or ended; Released: its target answered, the member who
+	// handed the call over leaves it.
+	Xfer     bool
+	Released *uuid.UUID
 }
 
 // Play is what the worker plays: a prompt file, or the ringback in a loop.
@@ -332,6 +339,10 @@ func (c *InCall) failRing(e Env, reason string, fx *Effects) {
 			}
 		}
 	}
+	if c.Xfer != nil { // a transfer nobody took: the call stays with the member (ADR-0132)
+		c.transferBack(e, reason, fx)
+		return
+	}
 	if c.OnFail.Kind == RouteHangup || c.OnFail.Kind == RouteRepeat {
 		c.hangup(reason, fx)
 		return
@@ -357,7 +368,7 @@ func (c *InCall) stopRinging(fx *Effects) {
 
 func (c *InCall) hangup(reason string, fx *Effects) {
 	c.stopRinging(fx)
-	c.Phase, c.Reason, c.Deadline = PhaseEnded, reason, 0
+	c.Phase, c.Reason, c.Deadline, c.Xfer = PhaseEnded, reason, 0, nil
 	fx.Hangup = reason
 	fx.Play = nil
 }
@@ -623,6 +634,9 @@ func (c *InCall) Answer(e Env, user uuid.UUID, fx *Effects) error {
 				}
 			}
 		}
+	}
+	if c.Xfer != nil {
+		c.transferTaken(fx)
 	}
 	u := user
 	c.Phase, c.Answered, c.Deadline, c.FallbackAt = PhaseActive, &u, 0, 0

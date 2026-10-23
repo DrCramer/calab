@@ -132,8 +132,15 @@ func activeCall(c sqlc.SipCall, rec *inRec, ex *exchange) *v1.SipActiveCall {
 		}
 		return a
 	}
-	switch rec.Phase {
-	case PhaseMenu:
+	switch {
+	case rec.Transferring(): // ADR-0132: still with the member while the target rings
+		a.Step = v1.SipActiveStep_SIP_ACTIVE_STEP_CONNECTED
+		a.Call.AnsweredBy = rec.Answered.String()
+		a.Call.RingingUserIds = make([]string, 0, len(rec.Ringing))
+		for _, u := range rec.Ringing {
+			a.Call.RingingUserIds = append(a.Call.RingingUserIds, u.String())
+		}
+	case rec.Phase == PhaseMenu:
 		a.Step = v1.SipActiveStep_SIP_ACTIVE_STEP_MENU
 		if rec.Menu != nil {
 			a.StepId = rec.Menu.String()
@@ -141,7 +148,7 @@ func activeCall(c sqlc.SipCall, rec *inRec, ex *exchange) *v1.SipActiveCall {
 				a.StepName = ex.menu[*rec.Menu].Name
 			}
 		}
-	case PhaseRing:
+	case rec.Phase == PhaseRing:
 		a.Step = v1.SipActiveStep_SIP_ACTIVE_STEP_RINGING
 		a.Call.RingingUserIds = make([]string, 0, len(rec.Ringing))
 		for _, u := range rec.Ringing {

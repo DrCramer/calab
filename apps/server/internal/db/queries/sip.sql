@@ -141,6 +141,28 @@ WHERE id = sqlc.arg('id') AND direction = 'in' AND status = 'ringing' AND answer
   AND sqlc.arg('user_id')::uuid = ANY (ringing_user_ids)
 RETURNING *;
 
+-- name: UpdateSipInboundTransfer :one
+-- A transfer of an answered call starts / ends (ADR-0132): who rings now and the route so far;
+-- the call stays active with answered_by.
+UPDATE sip_calls SET ringing_user_ids = $2, route = $3
+WHERE id = $1 AND direction = 'in' AND status = 'active'
+RETURNING *;
+
+-- name: TransferSipInboundCall :one
+-- The target of a transfer answers (ADR-0132): the call is theirs; only while it rings them.
+UPDATE sip_calls
+SET answered_by = sqlc.arg('user_id')::uuid, ringing_user_ids = '{}', route = sqlc.arg('route')
+WHERE id = sqlc.arg('id') AND direction = 'in' AND status = 'active'
+  AND sqlc.arg('user_id')::uuid = ANY (ringing_user_ids)
+RETURNING *;
+
+-- name: ReturnSipInboundTransfer :one
+-- The target of a transfer answered but never connected (ADR-0132): the call is back with the
+-- member who handed it over, still on it.
+UPDATE sip_calls SET answered_by = sqlc.arg('user_id')::uuid, ringing_user_ids = '{}', route = sqlc.arg('route')
+WHERE id = sqlc.arg('id') AND direction = 'in' AND status = 'active'
+RETURNING *;
+
 -- name: CountLiveInboundCalls :one
 SELECT count(*) FROM sip_calls
 WHERE workspace_id = $1 AND direction = 'in' AND status IN ('dialing', 'ringing', 'active');

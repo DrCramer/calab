@@ -456,6 +456,8 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/sip/inbound/{cid}/decline":                                 scopeGlobal,
 	"POST /api/sip/inbound/{cid}/join":                                    scopeGlobal,
 	"DELETE /api/sip/inbound/{cid}":                                       scopeGlobal,
+	"POST /api/workspaces/{id}/sip/calls/{cid}/transfer":                  scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/calls/{cid}/transfer":                scopeWorkspace,
 	"PUT /api/workspaces/{id}/sip":                                        scopeWorkspace,
 	"PUT /api/workspaces/{id}/ai":                                         scopeWorkspace,
 	// Boards 2.0 (ADR-0058).
