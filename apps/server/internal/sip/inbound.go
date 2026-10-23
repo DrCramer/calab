@@ -915,13 +915,19 @@ func (s *Service) inboundJoined(ctx context.Context, wid uuid.UUID, room string,
 		return nil
 	}
 	entry := routeTarget(a.InboundKind, a.InboundMenuID, a.InboundExtensionID, a.InboundGroupID)
+	var pause int64 // digits pressed before the entry point began a number (ADR-0129)
 	if err := s.withCall(ctx, id, func(r *inRec, e Env, fx *Effects) error {
 		r.Enter(e, entry, fx)
+		if r.Phase == PhaseMenu && r.Digits != "" {
+			pause = r.Deadline
+		}
 		return nil
 	}); err != nil {
 		slog.WarnContext(ctx, "sip: inbound entry point", "call", id, "err", err)
 		s.endInbound(ctx, row, reasonError, nil)
+		return nil
 	}
+	s.dialPause(ctx, id, pause)
 	return nil
 }
 
@@ -937,6 +943,7 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 		return
 	}
 	var fn func(r *inRec, e Env, fx *Effects) error
+	var pause int64 // a number is being dialed: its pause ends then (ms)
 	switch ev.Op {
 	case ivrwire.OpPlayed:
 		fn = func(r *inRec, e Env, _ *Effects) error { r.PromptDone(e); return nil }
@@ -944,7 +951,13 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 		if len(ev.Digit) != 1 || !digitRe.MatchString(ev.Digit) {
 			return
 		}
-		fn = func(r *inRec, e Env, fx *Effects) error { r.Digit(e, ev.Digit[0], fx); return nil }
+		fn = func(r *inRec, e Env, fx *Effects) error {
+			r.Digit(e, ev.Digit[0], fx)
+			if r.Phase == PhaseMenu && r.Digits != "" {
+				pause = r.Deadline
+			}
+			return nil
+		}
 	case ivrwire.OpError, ivrwire.OpLeft:
 		// The worker cannot play to the caller any more (a prompt it could not fetch, a lost
 		// room): before the answer the caller would hear silence — hang up.
@@ -960,7 +973,23 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 	}
 	if err := s.withCall(ctx, id, fn); err != nil && !errors.Is(err, errNoCall) {
 		slog.WarnContext(ctx, "sip: IVR event", "call", id, "op", ev.Op, "err", err)
+		return
 	}
+	s.dialPause(ctx, id, pause)
+}
+
+// dialPause resolves call id's number when the pause between its digits (deadline, ms; 0 =
+// none) runs out. The pause (3 s) is shorter than the tick (5 s): this replica resolves the
+// number on time; the tick still catches it if this replica goes away.
+func (s *Service) dialPause(ctx context.Context, id uuid.UUID, deadline int64) {
+	if deadline <= 0 {
+		return
+	}
+	time.AfterFunc(time.Until(time.UnixMilli(deadline))+50*time.Millisecond, func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		s.expireCall(ctx, id)
+	})
 }
 
 // ---------------------------------------------------------------- the tick
@@ -996,31 +1025,34 @@ func (s *Service) InboundTick(ctx context.Context) {
 		return
 	}
 	for _, v := range ids {
-		id, err := uuid.Parse(v)
-		if err != nil {
-			continue
+		if id, err := uuid.Parse(v); err == nil {
+			s.expireCall(ctx, id)
 		}
-		err = s.withCall(ctx, id, func(r *inRec, e Env, fx *Effects) error {
-			if r.Phase == PhaseActive {
-				if r.AnswerLeft == 0 || e.Now.UnixMilli() < r.Deadline {
-					return nil
-				}
-				// The member who answered did not come back within the grace.
-				if _, err := s.lk.GetParticipant(ctx, r.Room, rtc.AnswerIdentity(*r.Answered)); rtc.IsNotFound(err) {
-					r.Hangup(reasonLost, fx)
-				} else if err == nil {
-					r.AnswerLeft, r.Deadline = 0, 0
-				}
+	}
+}
+
+// expireCall runs call id's deadline when it passed (the tick, the pause between digits).
+func (s *Service) expireCall(ctx context.Context, id uuid.UUID) {
+	err := s.withCall(ctx, id, func(r *inRec, e Env, fx *Effects) error {
+		if r.Phase == PhaseActive {
+			if r.AnswerLeft == 0 || e.Now.UnixMilli() < r.Deadline {
 				return nil
 			}
-			r.Expire(e, fx)
+			// The member who answered did not come back within the grace.
+			if _, err := s.lk.GetParticipant(ctx, r.Room, rtc.AnswerIdentity(*r.Answered)); rtc.IsNotFound(err) {
+				r.Hangup(reasonLost, fx)
+			} else if err == nil {
+				r.AnswerLeft, r.Deadline = 0, 0
+			}
 			return nil
-		})
-		if errors.Is(err, errNoCall) {
-			_ = s.redis.Do(ctx, s.redis.B().Zrem().Key(inDueKey()).Member(v).Build()).Error()
-		} else if err != nil {
-			slog.WarnContext(ctx, "sip: inbound deadline", "call", id, "err", err)
 		}
+		r.Expire(e, fx)
+		return nil
+	})
+	if errors.Is(err, errNoCall) {
+		_ = s.redis.Do(ctx, s.redis.B().Zrem().Key(inDueKey()).Member(id.String()).Build()).Error()
+	} else if err != nil {
+		slog.WarnContext(ctx, "sip: inbound deadline", "call", id, "err", err)
 	}
 }
 

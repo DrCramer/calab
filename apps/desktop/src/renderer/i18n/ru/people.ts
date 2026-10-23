@@ -17,6 +17,7 @@ export const ruPeople = {
   // profile popover
   'people.profile.role': 'Роль',
   'people.profile.voice': 'Голос',
+  'people.profile.extension': 'Внутренний номер',
   'people.profile.joined': 'В пространстве с',
   'people.profile.name': 'Имя профиля',
   'people.profile.status': 'Статус',

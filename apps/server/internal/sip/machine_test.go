@@ -35,11 +35,13 @@ func TestInboundMenuKeyToGroupRingAll(t *testing.T) {
 	if c.Phase != PhaseMenu || fx.Play == nil || fx.Play.File != f.p.Menus[f.menu].Prompt || c.Via != "Главное" {
 		t.Fatalf("menu: %+v %+v", c, fx)
 	}
-	// A key while the prompt plays does not count (no barge-in, owner's default 6).
+	// A key while the prompt plays counts at once (barge-in, ADR-0129).
+	b := c
+	b.Route = slices.Clone(c.Route)
 	fx = Effects{}
-	c.Digit(envAt(f, a, time.Second), '1', &fx)
-	if c.Phase != PhaseMenu || fx.Play != nil {
-		t.Fatalf("barge-in: %+v", c)
+	b.Digit(envAt(f, a, time.Second), '1', &fx)
+	if b.Phase != PhaseRing || fx.Play == nil || !fx.Play.Ringback || len(fx.Rings) != 3 {
+		t.Fatalf("barge-in: %+v %+v", b, fx)
 	}
 	c.PromptDone(envAt(f, a, 4*time.Second))
 	if !c.Played || c.Deadline != t0.Add(9*time.Second).UnixMilli() {

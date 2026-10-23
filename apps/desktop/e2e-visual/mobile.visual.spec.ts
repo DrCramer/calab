@@ -727,10 +727,12 @@ test('m-members-page', async ({ page }) => {
 // a tel: link. Review shot only (no baseline).
 test('m-profile-member', async ({ page }) => {
   await signedInRoom(page);
+  mock.seedSipExchange(); // Борис gets the internal number 101 (ADR-0117)
   await page.getByRole('button', { name: 'Участники' }).tap();
   await page.getByTestId('members-page').getByRole('button', { name: /Борис Петров/ }).tap();
   const card = page.getByRole('dialog', { name: 'Борис Петров' });
   await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
+  await expect(card.getByTestId('profile-extension')).toContainText('101');
   await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
   await expect(card.getByRole('link', { name: '+7 912 555-02-02' })).toHaveAttribute('href', 'tel:+79125550202');
   await checkpoint(page, 'm-profile-member', { snapshot: false });
@@ -1612,6 +1614,11 @@ test('m-telephony', async ({ page }) => {
   await page.getByTestId('sip-tab-numbers').tap();
   await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
   await checkpoint(page, 'm-telephony');
+  // ADR-0129: a number closed to external callers — the switch in its form on a phone. Review shot.
+  await dialog.getByTestId('sip-ext-row').filter({ hasText: 'Борис' }).getByRole('button', { name: 'Изменить' }).tap();
+  await dialog.getByTestId('sip-ext-no-external-switch').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-number-no-external', { snapshot: false });
+  await dialog.getByTestId('sip-ext-form').getByRole('button', { name: 'Отмена' }).tap();
   // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
   await pick('groups');
   await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
@@ -1624,6 +1631,8 @@ test('m-telephony', async ({ page }) => {
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
   await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-menu');
+  await dialog.getByTestId('sip-menu-dial').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu-dial', { snapshot: false });
   // The greeting row on a phone: ▶, the length, «Заменить» / «Удалить запись», a refused file.
   const promptRow = dialog.getByTestId('sip-menu-prompt');
   await dialog.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });

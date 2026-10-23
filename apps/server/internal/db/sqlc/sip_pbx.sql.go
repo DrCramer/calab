@@ -46,7 +46,7 @@ func (q *Queries) CountSipIvrMenus(ctx context.Context, workspaceID uuid.UUID) (
 
 const deleteSipExtension = `-- name: DeleteSipExtension :one
 DELETE FROM sip_extensions WHERE id = $1 AND workspace_id = $2 AND kind = 'user'
-RETURNING id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by
+RETURNING id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by, external_blocked
 `
 
 type DeleteSipExtensionParams struct {
@@ -67,6 +67,7 @@ func (q *Queries) DeleteSipExtension(ctx context.Context, arg DeleteSipExtension
 		&i.Description,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.ExternalBlocked,
 	)
 	return i, err
 }
@@ -108,7 +109,7 @@ func (q *Queries) DeleteSipIvrItems(ctx context.Context, menuID uuid.UUID) error
 
 const deleteSipIvrMenu = `-- name: DeleteSipIvrMenu :one
 DELETE FROM sip_ivr_menus WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions
 `
 
 type DeleteSipIvrMenuParams struct {
@@ -134,12 +135,13 @@ func (q *Queries) DeleteSipIvrMenu(ctx context.Context, arg DeleteSipIvrMenuPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.DialExtensions,
 	)
 	return i, err
 }
 
 const getSipExtension = `-- name: GetSipExtension :one
-SELECT id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by FROM sip_extensions WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by, external_blocked FROM sip_extensions WHERE id = $1 AND workspace_id = $2
 `
 
 type GetSipExtensionParams struct {
@@ -160,6 +162,7 @@ func (q *Queries) GetSipExtension(ctx context.Context, arg GetSipExtensionParams
 		&i.Description,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.ExternalBlocked,
 	)
 	return i, err
 }
@@ -197,7 +200,7 @@ func (q *Queries) GetSipGroup(ctx context.Context, arg GetSipGroupParams) (SipGr
 }
 
 const getSipIvrMenu = `-- name: GetSipIvrMenu :one
-SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by FROM sip_ivr_menus WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions FROM sip_ivr_menus WHERE id = $1 AND workspace_id = $2
 `
 
 type GetSipIvrMenuParams struct {
@@ -223,24 +226,26 @@ func (q *Queries) GetSipIvrMenu(ctx context.Context, arg GetSipIvrMenuParams) (S
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.DialExtensions,
 	)
 	return i, err
 }
 
 const insertSipExtension = `-- name: InsertSipExtension :one
-INSERT INTO sip_extensions (workspace_id, number, kind, user_id, group_id, description, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by
+INSERT INTO sip_extensions (workspace_id, number, kind, user_id, group_id, description, created_by, external_blocked)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by, external_blocked
 `
 
 type InsertSipExtensionParams struct {
-	WorkspaceID uuid.UUID
-	Number      string
-	Kind        string
-	UserID      *uuid.UUID
-	GroupID     *uuid.UUID
-	Description string
-	CreatedBy   *uuid.UUID
+	WorkspaceID     uuid.UUID
+	Number          string
+	Kind            string
+	UserID          *uuid.UUID
+	GroupID         *uuid.UUID
+	Description     string
+	CreatedBy       *uuid.UUID
+	ExternalBlocked bool
 }
 
 func (q *Queries) InsertSipExtension(ctx context.Context, arg InsertSipExtensionParams) (SipExtension, error) {
@@ -252,6 +257,7 @@ func (q *Queries) InsertSipExtension(ctx context.Context, arg InsertSipExtension
 		arg.GroupID,
 		arg.Description,
 		arg.CreatedBy,
+		arg.ExternalBlocked,
 	)
 	var i SipExtension
 	err := row.Scan(
@@ -264,6 +270,7 @@ func (q *Queries) InsertSipExtension(ctx context.Context, arg InsertSipExtension
 		&i.Description,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.ExternalBlocked,
 	)
 	return i, err
 }
@@ -376,9 +383,10 @@ func (q *Queries) InsertSipIvrItem(ctx context.Context, arg InsertSipIvrItemPara
 
 const insertSipIvrMenu = `-- name: InsertSipIvrMenu :one
 INSERT INTO sip_ivr_menus (workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats,
-                           no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by
+                           no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, updated_by,
+                           dial_extensions)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions
 `
 
 type InsertSipIvrMenuParams struct {
@@ -393,6 +401,7 @@ type InsertSipIvrMenuParams struct {
 	NoInputExtensionID *uuid.UUID
 	NoInputGroupID     *uuid.UUID
 	UpdatedBy          *uuid.UUID
+	DialExtensions     bool
 }
 
 func (q *Queries) InsertSipIvrMenu(ctx context.Context, arg InsertSipIvrMenuParams) (SipIvrMenu, error) {
@@ -408,6 +417,7 @@ func (q *Queries) InsertSipIvrMenu(ctx context.Context, arg InsertSipIvrMenuPara
 		arg.NoInputExtensionID,
 		arg.NoInputGroupID,
 		arg.UpdatedBy,
+		arg.DialExtensions,
 	)
 	var i SipIvrMenu
 	err := row.Scan(
@@ -425,6 +435,7 @@ func (q *Queries) InsertSipIvrMenu(ctx context.Context, arg InsertSipIvrMenuPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.DialExtensions,
 	)
 	return i, err
 }
@@ -442,7 +453,7 @@ func (q *Queries) IsSipPromptFile(ctx context.Context, promptFileID *uuid.UUID) 
 }
 
 const listSipExtensions = `-- name: ListSipExtensions :many
-SELECT id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by FROM sip_extensions WHERE workspace_id = $1 ORDER BY number, id
+SELECT id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by, external_blocked FROM sip_extensions WHERE workspace_id = $1 ORDER BY number, id
 `
 
 func (q *Queries) ListSipExtensions(ctx context.Context, workspaceID uuid.UUID) ([]SipExtension, error) {
@@ -464,6 +475,7 @@ func (q *Queries) ListSipExtensions(ctx context.Context, workspaceID uuid.UUID) 
 			&i.Description,
 			&i.CreatedAt,
 			&i.CreatedBy,
+			&i.ExternalBlocked,
 		); err != nil {
 			return nil, err
 		}
@@ -638,7 +650,7 @@ func (q *Queries) ListSipIvrItemsOf(ctx context.Context, menuID uuid.UUID) ([]Si
 }
 
 const listSipIvrMenus = `-- name: ListSipIvrMenus :many
-SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by FROM sip_ivr_menus WHERE workspace_id = $1 ORDER BY id
+SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions FROM sip_ivr_menus WHERE workspace_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListSipIvrMenus(ctx context.Context, workspaceID uuid.UUID) ([]SipIvrMenu, error) {
@@ -665,6 +677,7 @@ func (q *Queries) ListSipIvrMenus(ctx context.Context, workspaceID uuid.UUID) ([
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
+			&i.DialExtensions,
 		); err != nil {
 			return nil, err
 		}
@@ -760,17 +773,18 @@ func (q *Queries) SetMemberSipExtension(ctx context.Context, arg SetMemberSipExt
 }
 
 const updateSipExtension = `-- name: UpdateSipExtension :one
-UPDATE sip_extensions SET number = $3, user_id = $4, description = $5
+UPDATE sip_extensions SET number = $3, user_id = $4, description = $5, external_blocked = $6
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by
+RETURNING id, workspace_id, number, kind, user_id, group_id, description, created_at, created_by, external_blocked
 `
 
 type UpdateSipExtensionParams struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-	Number      string
-	UserID      *uuid.UUID
-	Description string
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Number          string
+	UserID          *uuid.UUID
+	Description     string
+	ExternalBlocked bool
 }
 
 func (q *Queries) UpdateSipExtension(ctx context.Context, arg UpdateSipExtensionParams) (SipExtension, error) {
@@ -780,6 +794,7 @@ func (q *Queries) UpdateSipExtension(ctx context.Context, arg UpdateSipExtension
 		arg.Number,
 		arg.UserID,
 		arg.Description,
+		arg.ExternalBlocked,
 	)
 	var i SipExtension
 	err := row.Scan(
@@ -792,6 +807,7 @@ func (q *Queries) UpdateSipExtension(ctx context.Context, arg UpdateSipExtension
 		&i.Description,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.ExternalBlocked,
 	)
 	return i, err
 }
@@ -864,9 +880,9 @@ const updateSipIvrMenu = `-- name: UpdateSipIvrMenu :one
 UPDATE sip_ivr_menus
 SET name = $3, prompt_file_id = $4, prompt_duration_ms = $5, input_timeout_sec = $6, repeats = $7,
     no_input_kind = $8, no_input_menu_id = $9, no_input_extension_id = $10, no_input_group_id = $11,
-    updated_by = $12, updated_at = now()
+    updated_by = $12, dial_extensions = $13, updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions
 `
 
 type UpdateSipIvrMenuParams struct {
@@ -882,6 +898,7 @@ type UpdateSipIvrMenuParams struct {
 	NoInputExtensionID *uuid.UUID
 	NoInputGroupID     *uuid.UUID
 	UpdatedBy          *uuid.UUID
+	DialExtensions     bool
 }
 
 func (q *Queries) UpdateSipIvrMenu(ctx context.Context, arg UpdateSipIvrMenuParams) (SipIvrMenu, error) {
@@ -898,6 +915,7 @@ func (q *Queries) UpdateSipIvrMenu(ctx context.Context, arg UpdateSipIvrMenuPara
 		arg.NoInputExtensionID,
 		arg.NoInputGroupID,
 		arg.UpdatedBy,
+		arg.DialExtensions,
 	)
 	var i SipIvrMenu
 	err := row.Scan(
@@ -915,6 +933,7 @@ func (q *Queries) UpdateSipIvrMenu(ctx context.Context, arg UpdateSipIvrMenuPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.DialExtensions,
 	)
 	return i, err
 }

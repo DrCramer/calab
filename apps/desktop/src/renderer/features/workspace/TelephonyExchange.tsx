@@ -209,7 +209,7 @@ function ExtensionsCard({ workspaceId, exts }: { workspaceId: string; exts: SipE
               <ExtensionForm workspaceId={workspaceId} ext={e} exts={exts} onDone={() => setEditing(null)} />
             </li>
           ) : (
-            <ExtensionRow key={e.id} workspaceId={workspaceId} id={e.id} number={e.number} userId={e.userId} bot={e.kind === SipExtensionKind.BOT} description={e.description} onEdit={setEditing} />
+            <ExtensionRow key={e.id} workspaceId={workspaceId} id={e.id} number={e.number} userId={e.userId} bot={e.kind === SipExtensionKind.BOT} description={e.description} noExternal={e.externalBlocked} onEdit={setEditing} />
           ),
         )}
       </ul>
@@ -251,6 +251,7 @@ const ExtensionRow = memo(function ExtensionRow({
   userId,
   bot,
   description,
+  noExternal,
   onEdit,
 }: {
   workspaceId: string;
@@ -259,6 +260,7 @@ const ExtensionRow = memo(function ExtensionRow({
   userId: string;
   bot: boolean;
   description: string;
+  noExternal: boolean;
   onEdit: (id: string) => void;
 }): ReactNode {
   const refresh = useRefresh(workspaceId);
@@ -280,6 +282,11 @@ const ExtensionRow = memo(function ExtensionRow({
         {description ? (
           <span className="min-w-0 max-w-[40%] truncate text-muted mobile:max-w-full mobile:text-caption" title={description}>
             {description}
+          </span>
+        ) : null}
+        {noExternal ? (
+          <span className="shrink-0 rounded-full bg-[var(--color-fill)] px-1.5 text-caption text-muted" data-testid="sip-ext-no-external" title={t('pbx.ext.noExternal')}>
+            {t('pbx.ext.rowNoExternal')}
           </span>
         ) : null}
       </span>
@@ -319,6 +326,7 @@ function ExtensionForm({ workspaceId, ext, exts, onDone }: { workspaceId: string
   const [number, setNumber] = useState(ext?.number ?? '');
   const [userId, setUserId] = useState(ext?.userId ?? '');
   const [description, setDescription] = useState(ext?.description ?? '');
+  const [noExternal, setNoExternal] = useState(!!ext?.externalBlocked);
   const [picking, setPicking] = useState(false);
   const errs = useFormErrors(workspaceId);
   const id = useId();
@@ -327,8 +335,8 @@ function ExtensionForm({ workspaceId, ext, exts, onDone }: { workspaceId: string
   const save = useMutation({
     mutationFn: () =>
       ext
-        ? api.sip.updateExtension(workspaceId, ext.id, { number, userId, description: description.trim() })
-        : api.sip.createExtension(workspaceId, { number, userId, description: description.trim() }),
+        ? api.sip.updateExtension(workspaceId, ext.id, { number, userId, description: description.trim(), externalBlocked: noExternal })
+        : api.sip.createExtension(workspaceId, { number, userId, description: description.trim(), externalBlocked: noExternal }),
     onSuccess: () => {
       refresh();
       toast.success(t('pbx.saved'));
@@ -401,6 +409,10 @@ function ExtensionForm({ workspaceId, ext, exts, onDone }: { workspaceId: string
         </span>
       </div>
       <ErrLine text={errs.field['number'] ?? errs.field['userId'] ?? errs.field['description']} testId="sip-ext-error" />
+      {/* ADR-0129: dialing this number from a voice menu is closed to external callers. */}
+      <div data-testid="sip-ext-no-external-switch">
+        <Switch checked={noExternal} onChange={setNoExternal} label={t('pbx.ext.noExternal')} hint={t('pbx.ext.noExternalHint')} />
+      </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <ErrLine text={errs.form} />
         {ext && ext.userId ? (
@@ -1452,6 +1464,7 @@ function MenuForm({
   const [timeout, setTimeoutSec] = useState(String(menu?.inputTimeoutSec || 5));
   const [repeats, setRepeats] = useState(String(menu?.repeats || 3));
   const [noInput, setNoInput] = useState(targetValue(menu?.onNoInput));
+  const [dial, setDial] = useState(!!menu?.dialExtensions);
   const [keys, setKeys] = useState<Record<string, string>>(() => Object.fromEntries((menu?.items ?? []).map((it) => [it.digit, targetValue(it.action)])));
   const missing = useMemo(() => new Map((menu?.items ?? []).map((it) => [it.digit, it.action])), [menu]);
   const body = {
@@ -1459,6 +1472,7 @@ function MenuForm({
     inputTimeoutSec: Number(timeout) || 0,
     repeats: Number(repeats) || 0,
     onNoInput: targetInit(noInput),
+    dialExtensions: dial,
     items: {
       items: KEYPAD.filter((d) => keys[d]).map((d) => ({ digit: d, action: targetInit(keys[d] as string) })),
     },
@@ -1531,6 +1545,10 @@ function MenuForm({
         </div>
         <ErrLine text={errs.field['items'] ?? errs.field['digit']} />
         {Object.values(keys).includes('missing') ? <MissingNote target={{ missing: true } as SipRouteTarget} /> : null}
+      </div>
+      {/* ADR-0129: the caller may dial an internal number (a person, a bot, a group) too. */}
+      <div data-testid="sip-menu-dial">
+        <Switch checked={dial} onChange={setDial} label={t('pbx.menu.dial')} hint={t('pbx.menu.dialHint')} />
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <label className="flex items-center gap-2 text-body">

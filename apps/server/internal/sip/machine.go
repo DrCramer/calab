@@ -44,12 +44,16 @@ const ringRecheck = 15 * time.Second
 type InCall struct {
 	Phase Phase `json:"phase"`
 	Hops  int   `json:"hops"` // routes followed (MaxHops: a loop hangs up)
-	// Menu: the menu, its play count, whether the prompt finished (keys count only then: no
-	// barge-in, the owner's default 6) and when it ends by its duration (ms).
+	// Menu: the menu, its play count, whether the prompt finished (or a key cut it short:
+	// barge-in, ADR-0129) and when it ends by its duration (ms). Digits: a number being dialed
+	// (Menu.DialExtensions), waiting InterDigit for the next digit; Early: digits pressed before
+	// the entry point was entered (a menu takes them as pressed in it).
 	Menu       *uuid.UUID `json:"menu,omitempty"`
 	Attempts   int        `json:"attempts,omitempty"`
 	Played     bool       `json:"played,omitempty"`
 	PromptEnds int64      `json:"prompt_ends,omitempty"`
+	Digits     string     `json:"digits,omitempty"`
+	Early      string     `json:"early,omitempty"`
 	// Ring: who may ring in order (round-robin: one after another from Pos; else all at once),
 	// the group, where to go when nobody answers, who rings now and who rang so far.
 	Ring       []Ring      `json:"ring,omitempty"`
@@ -130,6 +134,12 @@ func (c *InCall) Enter(e Env, t Target, fx *Effects) {
 	default:
 		c.hangup(d.Reason, fx)
 	}
+	if early := c.Early; early != "" {
+		c.Early = ""
+		for i := 0; i < len(early) && c.Phase == PhaseMenu; i++ {
+			c.Digit(e, early[i], fx)
+		}
+	}
 }
 
 func routeLabel(t Target) string {
@@ -157,7 +167,7 @@ func (c *InCall) step(label string) {
 
 func (c *InCall) playMenu(e Env, m *Menu, attempt int, fx *Effects) {
 	id := m.ID
-	c.Phase, c.Menu, c.Attempts, c.Played = PhaseMenu, &id, attempt, false
+	c.Phase, c.Menu, c.Attempts, c.Played, c.Digits = PhaseMenu, &id, attempt, false, ""
 	c.Ring, c.Pos, c.Sequential, c.Group, c.Rang = nil, 0, false, nil, nil
 	c.FallbackAt, c.Declined = 0, nil
 	c.PromptEnds = e.ms(time.Duration(m.PromptMs) * time.Millisecond)
@@ -170,7 +180,7 @@ func (c *InCall) playMenu(e Env, m *Menu, attempt int, fx *Effects) {
 }
 
 func (c *InCall) ring(e Env, d Decision, fx *Effects) {
-	c.Phase, c.Menu, c.Attempts, c.Played, c.PromptEnds = PhaseRing, nil, 0, false, 0
+	c.Phase, c.Menu, c.Attempts, c.Played, c.PromptEnds, c.Digits = PhaseRing, nil, 0, false, 0, ""
 	c.Ring, c.Sequential, c.Group, c.OnFail, c.Pos, c.Rang = d.Ring, d.Sequential, d.Group, d.OnFail, 0, nil
 	c.FallbackAt, c.Declined = 0, nil
 	if d.FallbackSec > 0 {
@@ -361,6 +371,12 @@ func (c *InCall) Expire(e Env, fx *Effects) {
 	}
 	switch c.Phase {
 	case PhaseMenu:
+		if c.Digits != "" { // the pause after a digit of a number ran out
+			if m, ok := c.menu(e); ok {
+				c.dial(e, m, c.Digits, Collect(m, e.PBX, c.Digits, true), fx)
+				return
+			}
+		}
 		c.noInput(e, fx)
 	case PhaseRing:
 		switch {
@@ -425,12 +441,19 @@ func (c *InCall) PromptDone(e Env) {
 	c.promptDone(e, m)
 }
 
-// Digit is a key the caller pressed. While the prompt plays it does not count (no barge-in).
+// Digit is a key the caller pressed (ADR-0129). It counts at any time in a menu — also while
+// the prompt plays or before it started: the first key of an input stops the prompt (barge-in).
+// Without DialExtensions it is the menu's key at once; with it the digits collect into a
+// number until Collect resolves them (a full number, a key no number starts with) or the
+// InterDigit pause, «#» or «*» ends the input.
 func (c *InCall) Digit(e Env, digit byte, fx *Effects) {
 	if c.Phase != PhaseMenu {
 		return
 	}
-	if !c.Played && e.Now.UnixMilli() < c.PromptEnds {
+	if c.Menu == nil { // the entry point is not entered yet: Enter takes these
+		if len(c.Early) < maxDial {
+			c.Early += string(digit)
+		}
 		return
 	}
 	m, ok := c.menu(e)
@@ -438,6 +461,47 @@ func (c *InCall) Digit(e Env, digit byte, fx *Effects) {
 		c.hangup(ReasonHangup, fx)
 		return
 	}
+	if c.Digits == "" && !c.Played { // barge-in: whatever follows, the prompt stops now
+		c.Played = true
+		fx.Play, fx.Stop = nil, true
+	}
+	if !m.DialExtensions {
+		c.press(e, m, digit, fx)
+		return
+	}
+	if digit < '0' || digit > '9' { // «#» / «*»: a key, or the end of a number
+		if c.Digits == "" {
+			c.press(e, m, digit, fx)
+			return
+		}
+		c.dial(e, m, c.Digits, Collect(m, e.PBX, c.Digits, true), fx)
+		return
+	}
+	buf := c.Digits + string(digit)
+	c.dial(e, m, buf, Collect(m, e.PBX, buf, false), fx)
+}
+
+// dial carries out what Collect made of the digits buf.
+func (c *InCall) dial(e Env, m *Menu, buf string, d Dial, fx *Effects) {
+	c.Digits = ""
+	switch d.Result {
+	case DialWait:
+		c.Digits = buf
+		c.Deadline = e.ms(InterDigit)
+	case DialKey:
+		c.press(e, m, d.Key, fx)
+	case DialNumber:
+		c.step("dial:" + buf)
+		id := d.Ext
+		c.Enter(e, Target{Kind: RouteExtension, ID: &id}, fx)
+	default: // not a number anybody may dial: as a key without an item
+		c.step("dial:" + buf)
+		c.noInput(e, fx)
+	}
+}
+
+// press follows the menu's key digit.
+func (c *InCall) press(e Env, m *Menu, digit byte, fx *Effects) {
 	t, ok := Press(m, digit)
 	if !ok {
 		c.noInput(e, fx) // a key without an item counts as no input

@@ -964,6 +964,7 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   giveFixtureBadges(mock);
+  mock.seedSipExchange(); // Борис gets the internal number 101 (ADR-0117)
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click();
   const card = win.getByRole('dialog', { name: 'Борис Петров' });
@@ -974,6 +975,7 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
   await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
   await expect(card.getByTestId('profile-phone')).toContainText('+7 912 555-02-02');
+  await expect(card.getByTestId('profile-extension')).toContainText('101');
   await badgesLoaded(win);
   await checkpoint(shot, 'members-profile');
 });

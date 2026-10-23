@@ -148,7 +148,7 @@ export function ProfileCard({
           {t(ROLE_KEY[m.role])}
         </dd>
         <ProfileCardAchievements workspaceId={workspaceId} userId={userId} />
-        {u.isBot ? null : <ProfileContacts userId={userId} variant="row" />}
+        <ProfileContacts userId={userId} variant="row" extension={m.extension} />
         {u.isBot ? null : <LocalTime userId={userId} variant="row" />}
         {u.isBot ? null : <BirthdayInfo userId={userId} variant="row" />}
         {v?.roomId ? (
