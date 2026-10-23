@@ -429,6 +429,61 @@ func (q *Queries) InsertSipInboundCall(ctx context.Context, arg InsertSipInbound
 	return i, err
 }
 
+const listActiveSipCalls = `-- name: ListActiveSipCalls :many
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+WHERE workspace_id = $1 AND status IN ('dialing', 'ringing', 'active') AND started_at > $2
+ORDER BY started_at
+LIMIT 100
+`
+
+type ListActiveSipCallsParams struct {
+	WorkspaceID uuid.UUID
+	StartedAt   time.Time
+}
+
+// GET …/sip/calls (ADR-0128): the workspace's live calls of both directions started after the
+// cutoff (older rows are lost ones the sweepers will close), oldest first.
+func (q *Queries) ListActiveSipCalls(ctx context.Context, arg ListActiveSipCallsParams) ([]SipCall, error) {
+	rows, err := q.db.Query(ctx, listActiveSipCalls, arg.WorkspaceID, arg.StartedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SipCall{}
+	for rows.Next() {
+		var i SipCall
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Number,
+			&i.Direction,
+			&i.StartedBy,
+			&i.ParticipantIdentity,
+			&i.SipCallID,
+			&i.Status,
+			&i.Reason,
+			&i.EndedBy,
+			&i.StartedAt,
+			&i.AnsweredAt,
+			&i.EndedAt,
+			&i.LkRoom,
+			&i.AnsweredBy,
+			&i.Route,
+			&i.RingingUserIds,
+			&i.Via,
+			&i.ProviderCallID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveInboundCalls = `-- name: ListLiveInboundCalls :many
 SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
 WHERE direction = 'in' AND status IN ('dialing', 'ringing', 'active') AND started_at < $1

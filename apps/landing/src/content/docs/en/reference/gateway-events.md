@@ -95,6 +95,7 @@ An event is one of the `DispatchEvent` fields, lowerCamelCase in JSON. The “Bo
 | `soundCreate` · `soundUpdate` · `soundDelete` | yes | the workspace's sounds |
 | `soundPlay` | conditional | only while the bot is in the room's call |
 | `sipCallUpdate` | yes | a phone call from the room was placed or changed status |
+| `sipCallsChanged` | no | the workspace's live calls changed — to people with `MANAGE_INTEGRATIONS`; a bot reads `GET /api/workspaces/{id}/sip/calls` itself |
 | `roomAdmissionRequest` · `roomAdmissionDecided` | conditional | a guest waits for admission · a decision was made — to those who decide (`INVITE_GUESTS` in the room) |
 | `callRing` · `callState` | no | one-to-one calls — not for bots |
 | `backgroundCreate` · `backgroundUpdate` · `backgroundDelete` | no* | camera backgrounds; bots have no camera — ignore them |

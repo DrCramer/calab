@@ -149,6 +149,7 @@ BOARD_RULE_UPDATE             { workspace_id, board_id, rule } — (92) прав
 BOARD_RULE_DELETE             { workspace_id, board_id, rule_id } — (93) правило удалено; создание/удаление сопровождает `BOARD_UPDATE` (`rules_count`)
 TASK_GIT_LINKS_UPDATE         { workspace_id, board_id, task_id, links, count } — (94) Git-связи задачи (все, ≤ 50) изменились; зрителям доски и приглашённым по карточке (ADR-0059); рядом `TASK_UPDATE` (`git_links_count`) и `TASK_ACTIVITY` (`kind = git`)
 SIP_CALL_UPDATE               { call: SipCall } — телефонный звонок комнаты начат или сменил статус (ADR-0046); в READY — WorkspaceSnapshot.sip_calls (живые)
+SIP_CALLS_CHANGED             { workspace_id } — (107) живые звонки пространства изменились: начался, перешёл в меню / группу, ответили, закончился (ADR-0128); без деталей — клиент перечитывает `GET /api/workspaces/{id}/sip/calls`; участникам с `MANAGE_INTEGRATIONS` (не гостям, не ботам)
 WORKSPACE_APP_UPSERT          { app: WorkspaceApp } — веб-приложение пространства добавлено / изменено / перенесено (ADR-0050; перенумерация — по событию на каждое); в READY — WorkspaceSnapshot.apps
 WORKSPACE_APP_DELETE          { workspace_id, app_id } — приложение удалено: клиент убирает иконку, десктоп закрывает вид и чистит данные сайта
 ```
@@ -247,7 +248,7 @@ AI интеграция (CBF-60, `proto/calaba/v1/ai.proto`, `MANAGE_INTEGRATION
 
 Умные задачи (CBF-68, ADR-0118): `GET /api/workspaces/{id}/ai/status` → `{ state }` (участники, не гости); `POST /api/workspaces/{id}/smart-tasks { text, attachmentIds, priority }` → `201 { task, usedInstruction, attachmentsDropped, filesUnseen }` или `200 { refusal: { reason, duplicateKey } }` без задачи (CBF-75, ADR-0123), `409` с `reason` `AI_NOT_READY | NO_BOARDS | AI_FAILED | AI_BAD_ANSWER`, `422 text|attachmentIds`, `429`. Новых событий нет: созданная задача приходит обычным `TASK_CREATE`.
 
-REST и коды ошибок — `proto/calaba/v1/sip.proto` и ADR-0046 «Контракт для клиента». Кратко: настройки `GET|PUT /api/workspaces/{id}/sip`, проверка `POST …/sip/test`, журнал `GET /api/workspaces/{id}/calls` (всё — `MANAGE_WORKSPACE`, не боты); звонок `POST /api/rooms/{id}/calls {number}` и `DELETE /api/rooms/{id}/calls/{cid}`. Статусы — `SIP_CALL_UPDATE`; телефонная линия — участник LiveKit `sip:<call id>` с именем = номер.
+REST и коды ошибок — `proto/calaba/v1/sip.proto` и ADR-0046 «Контракт для клиента». Кратко: настройки `GET|PUT /api/workspaces/{id}/sip`, проверка `POST …/sip/test`, журнал `GET /api/workspaces/{id}/calls` (всё — `MANAGE_WORKSPACE`, не боты); звонок `POST /api/rooms/{id}/calls {number}` и `DELETE /api/rooms/{id}/calls/{cid}`. Статусы — `SIP_CALL_UPDATE`; телефонная линия — участник LiveKit `sip:<call id>` с именем = номер. Активные звонки (ADR-0128): `GET /api/workspaces/{id}/sip/calls` (`MANAGE_INTEGRATIONS`, боты тоже) → `ListSipActiveCallsResponse` — живые звонки обоих направлений со шагом (`DIALING` · `MENU` · `RINGING` · `CONNECTED`, имя меню / группы); номер полностью — при `VIEW_JOURNALS`, иначе маской (`number_masked`); обновление — `SIP_CALLS_CHANGED`.
 
 ## Дни рождения (docs/09 #76)
 

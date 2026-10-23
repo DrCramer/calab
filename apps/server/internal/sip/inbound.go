@@ -605,6 +605,10 @@ func (s *Service) withCall(ctx context.Context, id uuid.UUID, fn func(r *inRec, 
 // events, the round-robin pointer, the record.
 func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 	ctx = context.WithoutCancel(ctx)
+	// «Активные звонки» (ADR-0128) follow every step an admin sees: a menu, a ring, an answer, the end.
+	if fx.Hangup != "" || fx.Answered || fx.Changed || fx.Play != nil || len(fx.Rings) > 0 || len(fx.Stopped) > 0 {
+		defer s.callsChanged(ctx, r.WS)
+	}
 	switch {
 	case fx.Hangup != "":
 		if err := s.agent.Leave(ctx, r.ID); err != nil {
@@ -812,6 +816,7 @@ func (s *Service) endInbound(ctx context.Context, row sqlc.SipCall, reason strin
 			slog.WarnContext(ctx, "sip: finish inbound call", "call", row.ID, "err", err)
 		}
 		s.closeRoom(ctx, row.LkRoom)
+		s.callsChanged(ctx, row.WorkspaceID)
 		return
 	}
 	if err != nil {
