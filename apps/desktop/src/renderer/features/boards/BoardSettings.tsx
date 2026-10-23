@@ -32,7 +32,7 @@ import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boa
 import { fmt } from '../../lib/format';
 import { accessLevelOf, accessSteps, compactDrafts, isPrivateObject, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { planHas, planHasAI } from '../../lib/plan';
-import { isFullRole } from '../../lib/roles';
+import { isFullRole, rolesOfMember } from '../../lib/roles';
 import {
   createBoard,
   createLabel,
@@ -72,7 +72,7 @@ import { TriToggle } from '../workspace/RoomDialogs';
 import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
 import { RulesTab } from './Rules';
-import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, settingsTabShown, sortedStatuses } from './model';
+import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, accessRowNote, lacksView, settingsTabShown, sortedStatuses } from './model';
 import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /**
@@ -677,10 +677,12 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   }, [roles, drafts, board.workspaceId, targetable]);
   const current = targets.find((x) => x.key === selected) ?? targets[0];
   const draft = drafts.find((d) => current && key(d) === current.key);
-  // «Создавать задачи» ✓ without «Видеть доску» (ADR-0115): neutral VIEW_BOARD gives nothing on a
-  // private board, a deny nowhere — the target creates and sees only their own cards.
-  const view = triOf(draft, VIEW_BOARD);
-  const createOnly = triOf(draft, CREATE_TASKS) === 'allow' && (view === 'deny' || (restricted && view === 'inherit'));
+  // Without «Видеть доску» (ADR-0115): neutral VIEW_BOARD gives nothing on a private board unless a
+  // role override of the person allows it, a deny nowhere — «Создавать задачи» ✓ is create-only,
+  // «Править любые задачи» / «Управлять доской» ✓ do nothing (CBF-51: the rows say so).
+  const member = current?.type === PermissionTargetType.USER ? members?.[current.id] : undefined;
+  const viaRole = !!member && rolesOfMember(roles, member).some((r) => triOf(drafts.find((d) => d.targetType === PermissionTargetType.ROLE && d.targetId === r.id), VIEW_BOARD) === 'allow');
+  const noView = lacksView(triOf(draft, VIEW_BOARD), restricted, viaRole);
   const save = (next: OverrideDraft[]): void => {
     setDrafts(next);
     setBusy(true);
@@ -815,11 +817,7 @@ function AccessTab({ board }: { board: Board }): ReactNode {
                   <th scope="row" className="px-3 py-2 text-left font-normal">
                     <span data-settings-label>{t(b.label)}</span>
                     <span className="block text-caption text-muted">{t(b.hint)}</span>
-                    {b.bit === CREATE_TASKS && createOnly ? (
-                      <span className="block text-caption text-fg" data-testid="board-access-create-only">
-                        {t('boards.perm.createOnly')}
-                      </span>
-                    ) : null}
+                    <AccessRowNote note={accessRowNote(b.bit, triOf(draft, b.bit), noView)} />
                   </th>
                   <td className="w-32 px-3 py-2 text-right">
                     <TriToggle label={t(b.label)} value={triOf(draft, b.bit)} onChange={(v) => setTri(b.bit, v)} />
@@ -832,6 +830,17 @@ function AccessTab({ board }: { board: Board }): ReactNode {
         </div>
       </div>
     </>
+  );
+}
+
+/** The row's note without «Видеть доску»: create-only (plain), or «не действует» (danger). */
+function AccessRowNote({ note }: { note: ReturnType<typeof accessRowNote> }): ReactNode {
+  if (!note) return null;
+  const inert = note === 'boards.perm.needsView';
+  return (
+    <span className={cx('block text-caption', inert ? 'text-danger-text' : 'text-fg')} data-testid={inert ? 'board-access-needs-view' : 'board-access-create-only'}>
+      {t(note)}
+    </span>
   );
 }
 
