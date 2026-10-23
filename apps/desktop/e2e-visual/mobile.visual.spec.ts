@@ -1284,13 +1284,15 @@ test('m-voice', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
   // In the call (docs/08 «Кто в голосе»): Борис joins; the header's stack (me first) opens the card
   // with «Вы» at my row and «Выйти».
-  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: true, joinedAtMs: NOW.getTime() - 60_000 });
+  // CBF-82: Борис is in push-to-talk mode (mic on, waiting for his key): the pale crossed mic.
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, ptt: true, joinedAtMs: NOW.getTime() - 60_000 });
   const stack = page.getByTestId('room-voice-people');
   await expect(stack).toHaveAttribute('aria-label', /^В голосе: .+, Борис$/);
   await stack.tap();
   const card = page.getByTestId('voice-people-card');
   await expect(card.getByTestId('voice-people-row')).toHaveCount(2);
   await expect(card.getByTestId('voice-people-row').first()).toContainText('Вы');
+  await expect(card.getByTestId('voice-people-row').nth(1).locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
   await expect(card.getByTestId('voice-people-leave')).toBeVisible();
   await expectCentredCard(page, card);
   await checkpoint(page, 'm-voice-people-in-call');

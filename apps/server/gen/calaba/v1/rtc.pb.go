@@ -407,7 +407,9 @@ type UpdateVoiceSelfRequest struct {
 	Muted    *bool                  `protobuf:"varint,1,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
 	Deafened *bool                  `protobuf:"varint,2,opt,name=deafened,proto3,oneof" json:"deafened,omitempty"`
 	// Musician mode of this device (ADR-0052, VoiceState.musician).
-	Musician      *bool `protobuf:"varint,3,opt,name=musician,proto3,oneof" json:"musician,omitempty"`
+	Musician *bool `protobuf:"varint,3,opt,name=musician,proto3,oneof" json:"musician,omitempty"`
+	// Push-to-talk input mode of this device (ADR-0130, VoiceState.ptt). Sent on a mode change only.
+	Ptt           *bool `protobuf:"varint,4,opt,name=ptt,proto3,oneof" json:"ptt,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -463,6 +465,13 @@ func (x *UpdateVoiceSelfRequest) GetMusician() bool {
 	return false
 }
 
+func (x *UpdateVoiceSelfRequest) GetPtt() bool {
+	if x != nil && x.Ptt != nil {
+		return *x.Ptt
+	}
+	return false
+}
+
 var File_calaba_v1_rtc_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_rtc_proto_rawDesc = "" +
@@ -493,14 +502,16 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\x12\x10\n" +
 	"\x03fps\x18\x02 \x01(\rR\x03fps\"9\n" +
 	"\x11MoveMemberRequest\x12$\n" +
-	"\x0etarget_room_id\x18\x01 \x01(\tR\ftargetRoomId\"\x99\x01\n" +
+	"\x0etarget_room_id\x18\x01 \x01(\tR\ftargetRoomId\"\xb8\x01\n" +
 	"\x16UpdateVoiceSelfRequest\x12\x19\n" +
 	"\x05muted\x18\x01 \x01(\bH\x00R\x05muted\x88\x01\x01\x12\x1f\n" +
 	"\bdeafened\x18\x02 \x01(\bH\x01R\bdeafened\x88\x01\x01\x12\x1f\n" +
-	"\bmusician\x18\x03 \x01(\bH\x02R\bmusician\x88\x01\x01B\b\n" +
+	"\bmusician\x18\x03 \x01(\bH\x02R\bmusician\x88\x01\x01\x12\x15\n" +
+	"\x03ptt\x18\x04 \x01(\bH\x03R\x03ptt\x88\x01\x01B\b\n" +
 	"\x06_mutedB\v\n" +
 	"\t_deafenedB\v\n" +
-	"\t_musicianB\x96\x01\n" +
+	"\t_musicianB\x06\n" +
+	"\x04_pttB\x96\x01\n" +
 	"\rcom.calaba.v1B\bRtcProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

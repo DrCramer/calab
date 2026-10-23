@@ -1729,7 +1729,8 @@ function VoiceMember({
       {isMe ? (
         <SelfVoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || serverMuted} />
       ) : (
-        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} />
+        // CBF-82: someone else in push-to-talk mode: the pale crossed mic until they speak.
+        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} pttIdle={state.ptt && !talking} />
       )}
     </li>
   );

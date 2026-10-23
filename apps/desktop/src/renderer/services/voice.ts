@@ -361,6 +361,7 @@ class VoiceEngine {
       if (this.ptt.pending) this.ptt.stop();
       void this.syncPttBinding();
       this.applyTransmit();
+      if (s.micMode !== p.micMode) this.pushSelfState();
     }
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
     // Another speaker or mic: the acoustic path changed, judge the echo afresh.
@@ -402,6 +403,7 @@ class VoiceEngine {
     setVoice({ call: on });
     void this.syncPttBinding();
     this.applyTransmit();
+    this.pushSelfState(); // a call is voice activation only: the PTT flag follows
   }
 
   // ------------------------------------------------------------ join / leave
@@ -585,7 +587,8 @@ class VoiceEngine {
       if ('pending' in res && res.pending) {
         const { muted, deafened } = useVoice.getState();
         const musician = prefs().musicianMode;
-        if (muted || deafened || musician) void api.voice.updateSelf({ muted, deafened, musician }).catch((e: unknown) => log.warn('voice/self failed', e));
+        const ptt = this.micMode() === 'ptt';
+        if (muted || deafened || musician || ptt) void api.voice.updateSelf({ muted, deafened, musician, ptt }).catch((e: unknown) => log.warn('voice/self failed', e));
       }
       this.lastJoin = { url: res.url, token: res.token };
       setLink({ rtcHost: hostOfUrl(res.url) });
@@ -1096,7 +1099,8 @@ class VoiceEngine {
     log.info('voice: the server had lost this device, seat restored');
     const { muted, deafened } = useVoice.getState();
     const musician = prefs().musicianMode;
-    if (muted || deafened || musician) void api.voice.updateSelf({ muted, deafened, musician }).catch((e: unknown) => log.warn('voice/self failed', e));
+    const ptt = this.micMode() === 'ptt';
+    if (muted || deafened || musician || ptt) void api.voice.updateSelf({ muted, deafened, musician, ptt }).catch((e: unknown) => log.warn('voice/self failed', e));
   }
 
   /**
@@ -2603,7 +2607,9 @@ class VoiceEngine {
     if (isPhoneRoom(this.roomId)) return; // a phone call's session is in no voice list (ADR-0117)
     const v = useVoice.getState();
     const musician = prefs().musicianMode;
-    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
+    // Push-to-talk is a mode, not a key press (ADR-0130): sent when the mode changes, never per press.
+    const ptt = this.micMode() === 'ptt';
+    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician, ptt }).catch((e: unknown) => {
       // The plan does not include musician mode (ADR-0052, 409 PLAN_LIMIT): back to the processed mic.
       if (musician && e instanceof ApiError && e.reason === 'PLAN_LIMIT' && prefs().musicianMode) {
         usePrefs.getState().setPrefs({ musicianMode: false });
