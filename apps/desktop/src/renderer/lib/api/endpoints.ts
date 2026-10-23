@@ -1,10 +1,31 @@
 import {
   GetSipSettingsResponseSchema,
+  CreateSipExtensionRequestSchema,
+  CreateSipGroupRequestSchema,
+  CreateSipIvrMenuRequestSchema,
+  ListSipExtensionsResponseSchema,
+  ListSipGroupsResponseSchema,
+  ListSipIvrMenusResponseSchema,
+  SipExtensionResponseSchema,
+  SipGroupResponseSchema,
+  SipIvrMenuResponseSchema,
+  UpdateSipExtensionRequestSchema,
+  UpdateSipGroupRequestSchema,
+  UpdateSipIvrMenuRequestSchema,
+  GetAiSettingsResponseSchema,
+  GetAiStatusResponseSchema,
+  PutAiSettingsRequestSchema,
+  PutAiSettingsResponseSchema,
+  CheckAiRequestSchema,
+  CheckAiResponseSchema,
   ListSipCallsResponseSchema,
   PlaceSipCallRequestSchema,
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
+  PutSipInboundRequestSchema,
+  PutSipInboundResponseSchema,
   SipCallResponseSchema,
+  SipInboundAcceptResponseSchema,
   TestSipResponseSchema,
   CreateNotesRequestSchema,
   CreateNotesResponseSchema,
@@ -707,6 +728,54 @@ export const api = {
       call('GET', `/api/workspaces/${workspaceId}/calls${qs({ cursor })}`, ListSipCallsResponseSchema, undefined, signal),
     place: (roomId: string, number: string) => call('POST', `/api/rooms/${roomId}/calls`, SipCallResponseSchema, body(PlaceSipCallRequestSchema, { number })),
     hangup: (roomId: string, callId: string) => call('DELETE', `/api/rooms/${roomId}/calls/${callId}`, SipCallResponseSchema),
+    /**
+     * The exchange (ADR-0117): internal numbers (list — any member but guests), groups and voice
+     * menus — MANAGE_INTEGRATIONS. 409 SIP_EXTENSION_TAKEN (field number / userId), 422 VALIDATION
+     * field; a menu with promptSourceFileId (my upload, ≤ 10 MB, ≤ 3 min) waits for ffmpeg ≤ 60 s.
+     */
+    extensions: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip/extensions`, ListSipExtensionsResponseSchema),
+    createExtension: (workspaceId: string, init: MessageInitShape<typeof CreateSipExtensionRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/extensions`, SipExtensionResponseSchema, body(CreateSipExtensionRequestSchema, init)),
+    updateExtension: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipExtensionRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sip/extensions/${id}`, SipExtensionResponseSchema, body(UpdateSipExtensionRequestSchema, init)),
+    removeExtension: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/extensions/${id}`),
+    groups: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip/groups`, ListSipGroupsResponseSchema),
+    createGroup: (workspaceId: string, init: MessageInitShape<typeof CreateSipGroupRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/groups`, SipGroupResponseSchema, body(CreateSipGroupRequestSchema, init)),
+    updateGroup: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipGroupRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sip/groups/${id}`, SipGroupResponseSchema, body(UpdateSipGroupRequestSchema, init)),
+    removeGroup: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/groups/${id}`),
+    menus: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip/ivr`, ListSipIvrMenusResponseSchema),
+    createMenu: (workspaceId: string, init: MessageInitShape<typeof CreateSipIvrMenuRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/ivr`, SipIvrMenuResponseSchema, body(CreateSipIvrMenuRequestSchema, init)),
+    updateMenu: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSipIvrMenuRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sip/ivr/${id}`, SipIvrMenuResponseSchema, body(UpdateSipIvrMenuRequestSchema, init)),
+    removeMenu: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sip/ivr/${id}`),
+    /**
+     * Inbound calls (ADR-0117 step 2): the settings (MANAGE_INTEGRATIONS; 409 SIP_DISABLED without
+     * the server switch, 422 target / allowedCidrs), and a call that rings me — accept (a token for
+     * the call's room), join (a fresh token), decline, hang up.
+     */
+    saveInbound: (workspaceId: string, init: MessageInitShape<typeof PutSipInboundRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/sip/inbound`, PutSipInboundResponseSchema, body(PutSipInboundRequestSchema, init)),
+    acceptInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/accept`, SipInboundAcceptResponseSchema),
+    joinInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/join`, JoinVoiceResponseSchema),
+    declineInbound: (callId: string) => callEmpty('POST', `/api/sip/inbound/${callId}/decline`),
+    hangupInbound: (callId: string) => call('DELETE', `/api/sip/inbound/${callId}`, SipCallResponseSchema),
+  },
+  /**
+   * AI integration (CBF-60, ai.proto) — MANAGE_INTEGRATIONS. PUT replaces the form (api_key unset =
+   * keep the stored one for the same provider and address, "" = remove): 422 VALIDATION field.
+   * check sends «hi» to the model of the given form (up to ~30 s): 200 with ok / error, 429.
+   */
+  ai: {
+    settings: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/ai`, GetAiSettingsResponseSchema),
+    save: (workspaceId: string, init: MessageInitShape<typeof PutAiSettingsRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/ai`, PutAiSettingsResponseSchema, body(PutAiSettingsRequestSchema, init)),
+    check: (workspaceId: string, init: MessageInitShape<typeof CheckAiRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/ai/check`, CheckAiResponseSchema, body(CheckAiRequestSchema, init)),
+    /** CBF-68: whether smart tasks can run (any member but guests). */
+    status: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/ai/status`, GetAiStatusResponseSchema, undefined, signal),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

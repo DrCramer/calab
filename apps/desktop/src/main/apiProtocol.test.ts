@@ -204,5 +204,8 @@ describe('deadlines', () => {
     expect(SLOW_REQUEST_MS).toBeGreaterThan(25_000);
     expect(deadlinesFor('/api/workspaces/w1/sip')).toEqual({ headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS });
     expect(deadlinesFor('/api/workspaces/w1/sip/test/x')).toEqual({ headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS });
+    expect(deadlinesFor('/api/workspaces/w1/sip/ivr')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
+    expect(deadlinesFor('/api/workspaces/w1/sip/ivr/m1')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
+    expect(SLOW_REQUEST_MS).toBeGreaterThan(60_000);
   });
 });

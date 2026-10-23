@@ -329,6 +329,7 @@ func (s *Service) hangupWorkspace(ctx context.Context, wsID uuid.UUID) {
 		s.removeLine(ctx, voice.RoomName(wsID, *c.RoomID), c.ParticipantIdentity)
 		s.finish(ctx, c.ID, pbconv.SipEnded, reasonDisabled, nil)
 	}
+	s.hangupInboundWorkspace(ctx, wsID, reasonDisabled)
 }
 
 // journal: GET /api/workspaces/{id}/calls (VIEW_JOURNALS, ADR-0048). Calls of rooms the caller
@@ -652,6 +653,8 @@ func (s *Service) Sweep(ctx context.Context) {
 		slog.WarnContext(ctx, "sip: sweep", "err", err)
 		return
 	}
+	s.sweepInbound(ctx, now)
+	s.sweepRegistrations(ctx, now)
 	ringDeadline := now.Add(-(s.opts.RingingTimeout + 90*time.Second))
 	for _, c := range live {
 		if c.RoomID == nil { // a deleted room or an interrupted connection test

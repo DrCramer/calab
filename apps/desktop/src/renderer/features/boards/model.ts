@@ -17,6 +17,27 @@ export const MANAGE_BOARD = BigInt(Permission.MANAGE_BOARD);
 
 export const hasBit = (perms: bigint | undefined, bit: bigint): boolean => ((perms ?? 0n) & bit) === bit;
 
+/** CBF-73: statuses, labels and milestones of a board are EDIT_TASKS' («Править любые задачи»). */
+export const mayEditBoardItems = (perms: bigint | undefined): boolean => hasBit(perms, EDIT_TASKS);
+
+/** The board-settings sections of statuses, labels and milestones (EDIT_TASKS); the rest is MANAGE_BOARD's. */
+const ITEM_SETTINGS_TABS: readonly string[] = ['statuses', 'labels', 'milestones'];
+
+/** Whether the viewer sees a board-settings section (the server decides; this only hides). */
+export function settingsTabShown(id: string, perms: bigint | undefined): boolean {
+  return ITEM_SETTINGS_TABS.includes(id) ? mayEditBoardItems(perms) : hasBit(perms, MANAGE_BOARD);
+}
+
+/** Where «Настройки доски» opens: «Основное» for a manager, «Статусы» for an editor only; null — no entry. */
+export function settingsEntryTab(perms: bigint | undefined): 'general' | 'statuses' | null {
+  return hasBit(perms, MANAGE_BOARD) ? 'general' : mayEditBoardItems(perms) ? 'statuses' : null;
+}
+
+/** Why edit controls are locked (tooltip of a disabled «Добавить»): archived task, or no right to edit it. */
+export function editLockKey(archived: boolean): 'boards.err.archivedTask' | 'boards.needEditRight' {
+  return archived ? 'boards.err.archivedTask' : 'boards.needEditRight';
+}
+
 /** CREATE_TASKS edits tasks one created or is assigned to; EDIT_TASKS any (boards.proto). */
 export function mayEditTask(t: Pick<Task, 'createdBy' | 'assignees' | 'archivedAt'>, perms: bigint | undefined, me: string): boolean {
   if (t.archivedAt) return false;

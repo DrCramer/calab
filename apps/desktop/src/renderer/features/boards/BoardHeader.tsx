@@ -18,7 +18,7 @@ import { myUserId } from '../../stores/session';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { FilterButton } from './FilterBar';
 import { exportCsv } from './exportCsv';
-import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { hasBit, settingsEntryTab, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
 import { useBoardScoped } from './useTaskPerms';
 import { CreateButton } from '../../components/CreateButton';
@@ -395,6 +395,8 @@ function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: 
 
 function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: string; workspaceId: string; manage: boolean; onDisplay?: () => void }): ReactNode {
   const kind = useViewKind(boardId);
+  // CBF-73: an editor (EDIT_TASKS) opens the settings on «Статусы»; «Доступ» stays the manager's.
+  const entry = useBoards((s) => settingsEntryTab(s.boards[boardId]?.permissions));
   const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   const hasDisplay = useHasDisplay(boardId);
   const ctx = useMatchCtx(boardId);
@@ -419,14 +421,16 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
-            {manage ? (
+            {entry ? (
               <>
-                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId })} data-testid="board-settings">
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId, tab: entry })} data-testid="board-settings">
                   <Settings className="size-4" aria-hidden /> {t('boards.settings')}
                 </Dropdown.Item>
-                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId, tab: 'access' })}>
-                  <Shield className="size-4" aria-hidden /> {t('boards.access')}
-                </Dropdown.Item>
+                {manage ? (
+                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId, tab: 'access' })}>
+                    <Shield className="size-4" aria-hidden /> {t('boards.access')}
+                  </Dropdown.Item>
+                ) : null}
                 <Dropdown.Separator className={menuSeparator} />
               </>
             ) : null}

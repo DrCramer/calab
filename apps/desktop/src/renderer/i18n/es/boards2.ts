@@ -3,6 +3,7 @@ import type { DictShape } from '../types';
 
 /** Spanish UI strings — boards 2.0 (ADR-0058). Same keys and placeholders as ru. */
 export const esBoards2: DictShape<typeof ruBoards2> = {
+  'boards.createBoard': 'Crear tablero',
   'boards.cat.new': 'Nueva categoría',
   'boards.cat.none': 'Sin categoría',
   'boards.cat.moveTo': 'Mover a categoría',

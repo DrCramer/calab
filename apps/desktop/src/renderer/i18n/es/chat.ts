@@ -129,7 +129,6 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.mentionGuest': 'Invitado',
   'chat.mentionOutsider': 'Sin acceso: abriremos esta tarjeta',
   'chat.mentionOutsiderHint': 'No ve este tablero: la mención le abre esta tarjeta',
-  'chat.mentionOutsiderLocked': 'Solo quien edita la tarea puede llamarle',
   'chat.mentionList': 'Mencionar',
   // mentions inbox (title bar)
   'chat.inboxLoadMore': 'Mostrar más',

@@ -31,6 +31,7 @@ const (
 	MaxDescription    = 20000
 	MaxBoardName      = 60
 	MaxBoardDesc      = 2000
+	MaxAiInstruction  = 4000 // «Инструкция для ИИ» (CBF-68)
 	MaxStatusName     = 32
 	MaxLabelName      = 32
 	MaxMilestoneName  = 60

@@ -551,6 +551,7 @@ export const enBilling: DictShape<typeof ruBilling> = {
   'billing.plans.f.telephony': 'Telephony (SIP)',
   'billing.plans.f.caldav': 'Calendar sync (CalDAV)',
   'billing.plans.f.automations': 'Board automations',
+  'billing.plans.f.ai': 'AI features: AI integration and smart tasks',
   'billing.pay.title': 'Get {plan}',
   'billing.pay.titleChange': 'Switch to {plan}',
   'billing.pay.how': 'Top up the balance — the plan starts right away. We charge once a day and only for the people in the team.',

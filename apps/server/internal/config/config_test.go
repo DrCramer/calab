@@ -161,3 +161,19 @@ func TestMailHost(t *testing.T) {
 		}
 	}
 }
+
+// The registration agent's token (it gets the providers' passwords) is never the IVR worker's.
+func TestSIPRegAgentTokenDiffers(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("IVR_AGENT_TOKEN", "same-token")
+	t.Setenv("SIPREG_AGENT_TOKEN", "same-token")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SIPREG_AGENT_TOKEN") {
+		t.Fatalf("the IVR token accepted as the registration agent's: %v", err)
+	}
+	t.Setenv("SIPREG_AGENT_TOKEN", "another-token")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}

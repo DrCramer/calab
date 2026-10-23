@@ -295,6 +295,17 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 				sipCalls = append(sipCalls, pbconv.SipCall(c))
 			}
 		}
+		// Inbound calls (ADR-0117) that ring the recipient or that the recipient answered:
+		// the ringing modal / the call after a reconnect. Never for guests (they have no number).
+		if me.Role != perm.RoleGuest {
+			in, err := q.ListLiveInboundCallsForUser(ctx, sqlc.ListLiveInboundCallsForUserParams{WorkspaceID: ws.ID, UserID: userID})
+			if err != nil {
+				return nil, err
+			}
+			for _, c := range in {
+				sipCalls = append(sipCalls, pbconv.SipCall(c))
+			}
+		}
 	}
 	// Task boards (ADR-0042 §4): the visible ones with the recipient's bits, and their unread tasks.
 	bs, unread, err := boards.Snapshot(ctx, q, ws.ID, me)
@@ -1136,6 +1147,9 @@ func (h *Handlers) getMember(w http.ResponseWriter, r *http.Request) error {
 	}
 	if pbconv.ContactsVisible(role, auth.MustFromContext(r.Context()).IsBot, perm.Role(m.Role), u) { // ADR-0077
 		pbconv.WithContacts(pb.User, u)
+	}
+	if !pbconv.ExtensionVisible(role) { // ADR-0117: guests never see internal numbers
+		pb.Extension = ""
 	}
 	me, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, uid(r))
 	if err != nil {

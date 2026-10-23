@@ -3,6 +3,7 @@ import type { DictShape } from '../types';
 
 /** Simplified Chinese UI strings — boards 2.0 (ADR-0058). Same keys and placeholders as ru. */
 export const zhBoards2: DictShape<typeof ruBoards2> = {
+  'boards.createBoard': '创建看板',
   'boards.cat.new': '新建分类',
   'boards.cat.none': '无分类',
   'boards.cat.moveTo': '移到分类',

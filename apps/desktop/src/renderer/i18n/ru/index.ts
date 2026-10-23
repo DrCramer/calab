@@ -46,6 +46,9 @@ import { ruGuests } from './guests';
 import { ruTemp } from './temp';
 import { ruContacts } from './contacts';
 import { ruSip } from './sip';
+import { ruPbx } from './pbx';
+import { ruAi } from './ai';
+import { ruSmartTask } from './smartTask';
 import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
@@ -64,6 +67,9 @@ export const ru = {
   ...ruTemp,
   ...ruContacts,
   ...ruSip,
+  ...ruPbx,
+  ...ruAi,
+  ...ruSmartTask,
   ...ruWebApps,
   ...ruDm,
   ...ruNotes,
@@ -412,6 +418,7 @@ export const ru = {
   'voice.mode': 'Режим микрофона',
   'voice.modeVad': 'Активация голосом',
   'voice.modePtt': 'Push-to-talk',
+  'voice.pttIdleState': 'Push-to-talk: ждёт нажатия клавиши',
   'voice.threshold': 'Порог активации: {db} дБ',
   'voice.thresholdHint': 'Микрофон включается, когда вы говорите громче порога, и выключается после короткой паузы.',
   'voice.pttKey': 'Клавиша push‑to‑talk',

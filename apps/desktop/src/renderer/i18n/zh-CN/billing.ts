@@ -551,6 +551,7 @@ export const zhBilling: DictShape<typeof ruBilling> = {
   'billing.plans.f.telephony': '电话（SIP）',
   'billing.plans.f.caldav': '日历同步（CalDAV）',
   'billing.plans.f.automations': '看板自动化',
+  'billing.plans.f.ai': 'AI 功能：AI 集成和智能任务',
   'billing.pay.title': '开通 {plan}',
   'billing.pay.titleChange': '切换到 {plan}',
   'billing.pay.how': '为余额充值——套餐立即生效。每天扣费一次，只按团队中的实际人数计费。',

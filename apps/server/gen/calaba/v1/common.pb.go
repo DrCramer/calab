@@ -122,6 +122,12 @@ const (
 	ErrorCode_ERROR_CODE_USERNAME_TAKEN ErrorCode = 68
 	// 422: PATCH /api/me {username} — bad format or a reserved nickname (ADR-0077).
 	ErrorCode_ERROR_CODE_USERNAME_INVALID ErrorCode = 69
+	// 409: an internal telephone number of the workspace is taken (field "number"), or the member
+	// already has one (field "userId") (ADR-0117).
+	ErrorCode_ERROR_CODE_SIP_EXTENSION_TAKEN ErrorCode = 70
+	// 409: PUT /api/workspaces/{id}/sip/inbound in REGISTER mode — another workspace already
+	// registers the same SIP account (domain + username) at the provider (ADR-0121).
+	ErrorCode_ERROR_CODE_SIP_REGISTRATION_TAKEN ErrorCode = 71
 )
 
 // Enum value maps for ErrorCode.
@@ -183,6 +189,8 @@ var (
 		67: "ERROR_CODE_RECENT_AUTH_REQUIRED",
 		68: "ERROR_CODE_USERNAME_TAKEN",
 		69: "ERROR_CODE_USERNAME_INVALID",
+		70: "ERROR_CODE_SIP_EXTENSION_TAKEN",
+		71: "ERROR_CODE_SIP_REGISTRATION_TAKEN",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":                     0,
@@ -241,6 +249,8 @@ var (
 		"ERROR_CODE_RECENT_AUTH_REQUIRED":            67,
 		"ERROR_CODE_USERNAME_TAKEN":                  68,
 		"ERROR_CODE_USERNAME_INVALID":                69,
+		"ERROR_CODE_SIP_EXTENSION_TAKEN":             70,
+		"ERROR_CODE_SIP_REGISTRATION_TAKEN":          71,
 	}
 )
 
@@ -877,7 +887,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xf5\r\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xc0\x0e\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -935,7 +945,9 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"*ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE\x10B\x12#\n" +
 	"\x1fERROR_CODE_RECENT_AUTH_REQUIRED\x10C\x12\x1d\n" +
 	"\x19ERROR_CODE_USERNAME_TAKEN\x10D\x12\x1f\n" +
-	"\x1bERROR_CODE_USERNAME_INVALID\x10E*\xe8\x03\n" +
+	"\x1bERROR_CODE_USERNAME_INVALID\x10E\x12\"\n" +
+	"\x1eERROR_CODE_SIP_EXTENSION_TAKEN\x10F\x12%\n" +
+	"!ERROR_CODE_SIP_REGISTRATION_TAKEN\x10G*\xe8\x03\n" +
 	"\rPlanLimitKind\x12\x1f\n" +
 	"\x1bPLAN_LIMIT_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17PLAN_LIMIT_KIND_MEMBERS\x10\x01\x12\x18\n" +

@@ -106,6 +106,7 @@ Details for each group are in the REST chapters: [messages](./rest-messages), [b
 | `reaction` | `{ type: 'add' \| 'remove', workspaceId, roomId, messageId, userId, emoji }` |
 | `callback` | `BotCallback` — a button press; see [Commands and buttons](./commands-buttons) |
 | `contactShared` | `ContactShared` — a person shared their contact; see [Commands and buttons](./commands-buttons#contact-request) |
+| `botDelegation` | `BotDelegationChange` — a member allowed, revoked or declined acting on their behalf; see [Authorization](./auth#on-behalf-of-a-member) |
 | `taskNotice` | `TaskNoticeRelay` — a person's task notification; see [Task notifications](./task-notices) |
 | `voiceState` | `VoiceState` (empty `roomId` — left voice) |
 | `dispatch` | every raw `DispatchEvent` (rooms, members, presence…) |

@@ -15,10 +15,20 @@ export type DiskRefState = 'loading' | 'ok' | 'gone' | 'error';
 
 interface DiskRefsState {
   state: Readonly<Record<string, DiskRefState>>;
+  /** A folder's contents as the caller sees them (CBF-66), from the item GET; a listing does not carry them. */
+  counts: Readonly<Record<string, FolderCounts>>;
   set: (id: string, v: DiskRefState) => void;
+  setCounts: (id: string, c: FolderCounts) => void;
+}
+
+export interface FolderCounts {
+  files: number;
+  folders: number;
 }
 
 export const useDiskRefs = create<DiskRefsState>()((set) => ({
   state: {},
+  counts: {},
   set: (id, v) => set((s) => (s.state[id] === v ? s : { state: { ...s.state, [id]: v } })),
+  setCounts: (id, c) => set((s) => ({ counts: { ...s.counts, [id]: c } })),
 }));

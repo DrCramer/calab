@@ -42,4 +42,12 @@ export const ruCall = {
   'call.log.cancelled': 'Отменённый звонок',
   'call.log.busy': 'Занято',
   'call.log.call': 'Звонок',
+  // inbound phone calls (ADR-0117)
+  'call.sipIncoming': 'Входящий на номер',
+  'call.sipVia': 'Входящий на номер · {via}',
+  'call.sipUnknown': 'Скрытый номер',
+  'call.sipFailed': 'Не удалось принять звонок',
+  'call.sipTaken': 'Звонок уже принят или завершён',
+  'call.sipNotify': 'Входящий звонок с {number}',
+  'call.sipPanel': 'Звонок · {number}',
 } as const;

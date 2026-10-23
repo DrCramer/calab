@@ -411,7 +411,7 @@ func (x *CanvasPermissionEntry) GetDeny() uint64 {
 	return 0
 }
 
-// A saved version of a canvas (canvas_versions, ADR-0115 §1): at most one per 10 minutes, only
+// A saved version of a canvas (canvas_versions, ADR-0126 §1): at most one per 10 minutes, only
 // when the content changed; ≤ 50 per canvas. The Yjs state is not here:
 // GET /api/canvas/items/{id}/versions/{vid} returns it (application/octet-stream).
 type CanvasVersion struct {

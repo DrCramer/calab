@@ -335,6 +335,7 @@ function highlights(tier: PlanTier, l: PlanLimits | undefined): string[] {
     if (!l.telephonyDisabled) out.push(t('billing.plans.f.telephony'));
     if (!l.caldavDisabled) out.push(t('billing.plans.f.caldav'));
     if (!l.automationsDisabled) out.push(t('billing.plans.f.automations'));
+    if (l.ai) out.push(t('billing.plans.f.ai')); // CBF-69: Business
   }
   return out;
 }

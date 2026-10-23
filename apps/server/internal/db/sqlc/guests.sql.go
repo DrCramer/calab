@@ -435,7 +435,7 @@ func (q *Queries) LockExpiredGuest(ctx context.Context, id uuid.UUID) (uuid.UUID
 const promoteGuest = `-- name: PromoteGuest :one
 UPDATE workspace_members SET role = 'member'
 WHERE workspace_id = $1 AND user_id = $2 AND role = 'guest'
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type PromoteGuestParams struct {
@@ -455,6 +455,7 @@ func (q *Queries) PromoteGuest(ctx context.Context, arg PromoteGuestParams) (Wor
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }

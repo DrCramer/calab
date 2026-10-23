@@ -50,6 +50,8 @@ message DiskItem {
   uint64 my_bits = 14; // the caller's disk bits on the item (DISK_VIEW | DISK_WRITE | DISK_MANAGE)
   string trashed_by = 15;
   bool trashed_root = 16; // the item the deletion started at (the trash lists only these)
+  uint32 folder_files = 17; // folders, single GET only: files directly inside that the caller sees
+  uint32 folder_folders = 18; // folders, single GET only: sub-folders directly inside that the caller sees
 }
 
 // One override of an item (disk_permissions): «Просмотр» = DISK_VIEW, «Правка» = DISK_VIEW |

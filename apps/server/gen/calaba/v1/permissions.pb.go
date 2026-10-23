@@ -54,9 +54,10 @@ const (
 	Permission_PERMISSION_VIEW_BOARD Permission = 131072
 	// 1 << 18: create tasks; edit the ones one created or is assigned to.
 	Permission_PERMISSION_CREATE_TASKS Permission = 262144
-	// 1 << 19: edit, move and archive any task; moderate comments.
+	// 1 << 19: edit, move and archive any task; moderate comments; the board's statuses,
+	// labels and milestones (CBF-73).
 	Permission_PERMISSION_EDIT_TASKS Permission = 524288
-	// 1 << 20: statuses, labels, milestones, settings, access and archive of the board.
+	// 1 << 20: settings, access and archive of the board.
 	Permission_PERMISSION_MANAGE_BOARD Permission = 1048576
 	// Invitations (ADR-0043). Not implied by MANAGE_WORKSPACE / MANAGE_ROOM (migration 00047
 	// granted them to the roles holding those); settable per room; never for guests.
@@ -120,7 +121,7 @@ const (
 	// (member default); rename, move, trash and share one's own pages.
 	// 1 << 40 WIKI_MANAGE: the structure of any page, the trash retention, empty the whole trash,
 	// anyone's public link; implies VIEW and WRITE.
-	// Canvas bits (ADR-0115), the same rules as the wiki bits (in ADMINISTRATOR, never for guests
+	// Canvas bits (ADR-0126), the same rules as the wiki bits (in ADMINISTRATOR, never for guests
 	// and bots through roles, per-item overrides in canvas_permissions touch VIEW and WRITE only;
 	// TS CANVAS_BITS, Go perm.CanvasView …):
 	// 1 << 41 CANVAS_VIEW: see the Canvas section and every item that is not restricted (member

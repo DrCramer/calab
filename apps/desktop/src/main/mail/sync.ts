@@ -153,6 +153,12 @@ interface Op {
 
 const IMAP_FLAG: Record<keyof MailFlagPatch, string> = { seen: '\\Seen', flagged: '\\Flagged' };
 
+/** The engine's folder name check (create / rename): no control or wildcard characters, no delimiter, not hidden. */
+function checkFolderName(clean: string, delimiter: string): void {
+  // eslint-disable-next-line no-control-regex
+  if (!clean || clean.length > 100 || /[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.includes(delimiter) || clean.startsWith('.')) throw invalid('bad folder name');
+}
+
 export class AccountSync {
   state: MailAccountState = 'syncing';
   error: MailError | null = null;
@@ -668,8 +674,7 @@ export class AccountSync {
     if (parentRow !== null && !parent) throw notFound('folder');
     const all = this.store.folders();
     const delimiter = parent?.delimiter || all.find((f) => f.delimiter)?.delimiter || '/';
-    // eslint-disable-next-line no-control-regex
-    if (!clean || clean.length > 100 || /[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.includes(delimiter) || clean.startsWith('.')) throw invalid('bad folder name');
+    checkFolderName(clean, delimiter);
     let path: string;
     let parentPath = parent?.path ?? '';
     if (parent) path = `${parent.path}${delimiter}${clean}`;
@@ -687,6 +692,59 @@ export class AccountSync {
     const out = this.folders().find((f) => f.id === folderId(this.host.accountId, row));
     if (!out) throw notFound('folder');
     return out;
+  }
+
+  /**
+   * Renames an ordinary folder on the server and locally (CBF-56): same parent, new last segment;
+   * the row (and so every message id) stays, subfolder paths follow. Offline: NETWORK, nothing changed.
+   * Returns the old and new path (the service moves the sorting rules along).
+   */
+  async renameFolder(row: number, name: string): Promise<{ folder: MailFolder; from: string; to: string }> {
+    const f = this.store.folder(row);
+    if (!f) throw notFound('folder');
+    if (f.role) throw invalid('role folders cannot be renamed');
+    const clean = name.trim();
+    const delimiter = f.delimiter || '/';
+    checkFolderName(clean, delimiter);
+    const path = f.parentPath ? `${f.parentPath}${delimiter}${clean}` : clean;
+    if (path !== f.path) {
+      if (this.store.folders().some((x) => x.row !== row && x.path.toLowerCase() === path.toLowerCase())) throw invalid('the folder already exists');
+      await this.run((s) => s.renameFolder(f.path, path));
+      if (this.halted()) throw mailError('NETWORK', 'the account is offline');
+      this.store.renameFolderPath(row, path, clean, f.parentPath);
+      this.emitFolders();
+    }
+    const out = this.folders().find((x) => x.id === folderId(this.host.accountId, row));
+    if (!out) throw notFound('folder');
+    return { folder: out, from: f.path, to: path };
+  }
+
+  /**
+   * Deletes an ordinary folder with its subfolders (deepest first) on the server, then locally with
+   * their mail (CBF-56). Offline: NETWORK, nothing removed. Returns the deleted paths.
+   */
+  async removeFolder(row: number): Promise<string[]> {
+    const f = this.store.folder(row);
+    if (!f) throw notFound('folder');
+    if (f.role) throw invalid('role folders cannot be deleted');
+    const delim = f.delimiter || '/';
+    const doomed = this.store.folders().filter((x) => x.row === row || x.path.startsWith(f.path + delim));
+    if (doomed.some((x) => x.role)) throw invalid('the folder holds a role folder');
+    doomed.sort((a, b) => b.path.length - a.path.length);
+    await this.run(async (s) => {
+      for (const x of doomed) await s.deleteFolder(x.path);
+    });
+    if (this.halted()) throw mailError('NETWORK', 'the account is offline');
+    for (const x of doomed) {
+      const threads = new Set(this.store.db.prepare('SELECT DISTINCT thread_id FROM messages WHERE folder_row = ?').all(x.row).map((r) => String(r['thread_id'])));
+      const ids = this.store.deleteFolder(x.row);
+      if (ids.length) {
+        this.emitRemoved(x.row, [...threads], ids);
+        this.updateStarred(threads);
+      }
+    }
+    this.emitFolders();
+    return doomed.map((x) => x.path);
   }
 
   private insertHeaders(f: FolderRecord, uidValidity: string, headers: RemoteHeader[]): Added[] {

@@ -28,14 +28,19 @@ type taskRoom struct {
 }
 
 // invite is how a user is on a task (ADR-0059, ADR-0076): an assignee, an approver, a watcher
-// or several.
+// or several; invAuthor (ADR-0115) is the task's author — it opens the task to a create-only
+// member only and never makes a board task-scoped by itself (not in the scoped counters).
 type invite uint8
 
 const (
 	invAssignee invite = 1 << iota
 	invApprover
 	invWatcher
+	invAuthor
 )
+
+// invites reports whether how is a real invitation (counts in scoped): anything but authorship.
+func (how invite) invites() bool { return how&^invAuthor != 0 }
 
 // boardState is the boards part of wsState (mu of the workspace held).
 type boardState struct {
@@ -138,6 +143,7 @@ func (b *boardState) invitesOf(t *v1.Task) map[uuid.UUID]invite {
 	for _, w := range t.GetWatcherIds() {
 		add(w, invWatcher)
 	}
+	add(t.GetCreatedBy(), invAuthor)
 	return out
 }
 
@@ -147,8 +153,8 @@ func (b *boardState) setInvites(tid, bid uuid.UUID, next map[uuid.UUID]invite) {
 	b.init()
 	if old, ok := b.invited[tid]; ok {
 		ob := b.taskBoard[tid]
-		for u := range old {
-			if c := b.scoped[u]; c != nil {
+		for u, how := range old {
+			if c := b.scoped[u]; c != nil && how.invites() {
 				if c[ob]--; c[ob] <= 0 {
 					delete(c, ob)
 				}
@@ -164,7 +170,10 @@ func (b *boardState) setInvites(tid, bid uuid.UUID, next map[uuid.UUID]invite) {
 		return
 	}
 	b.invited[tid], b.taskBoard[tid] = next, bid
-	for u := range next {
+	for u, how := range next {
+		if !how.invites() {
+			continue
+		}
 		if b.scoped[u] == nil {
 			b.scoped[u] = map[uuid.UUID]int{}
 		}
@@ -208,6 +217,9 @@ func loadBoards(ctx context.Context, q *sqlc.Queries, wid uuid.UUID, st *wsState
 		if x.Watcher {
 			byTask[x.TaskID][x.UserID] |= invWatcher
 		}
+		if x.Author {
+			byTask[x.TaskID][x.UserID] |= invAuthor
+		}
 		boardOf[x.TaskID] = x.BoardID
 	}
 	for tid, m := range byTask {
@@ -240,7 +252,8 @@ func (v boardView) access() perm.BoardAccess {
 
 // boardView: a member's view of a live board (mu held) — boardVisible of ADR-0059 §3:
 // VIEW_BOARD, or invited on a live task of the board (restricted too, ADR-0076) and not a
-// guest (bots are never invited).
+// guest (bots are never invited) — or create-only (ADR-0115, a human: perm.Resolver's
+// taskScoped), then with the CREATE_TASKS bits even without a card.
 func (s *wsState) boardView(boardID, userID uuid.UUID) boardView {
 	bits := s.boardBits(boardID, userID)
 	if bits.Has(perm.ViewBoard) {
@@ -248,7 +261,13 @@ func (s *wsState) boardView(boardID, userID uuid.UUID) boardView {
 	}
 	b := s.boards[boardID]
 	m, ok := s.members[userID]
-	if b == nil || !ok || m.Role == perm.RoleGuest || s.scoped[userID][boardID] == 0 {
+	if b == nil || !ok || m.Role == perm.RoleGuest || s.bots[userID] {
+		return boardView{}
+	}
+	if perm.CreateOnly(bits) {
+		return boardView{bits: bits, scoped: true}
+	}
+	if s.scoped[userID][boardID] == 0 {
 		return boardView{}
 	}
 	return boardView{scoped: true}
@@ -261,7 +280,7 @@ func (s *wsState) taskBits(boardID, taskID, userID uuid.UUID) perm.Bits {
 	if v.scoped && s.taskBoard[taskID] == boardID {
 		inv = s.invited[taskID][userID]
 	}
-	return perm.TaskBits(v.access(), inv&invAssignee != 0, inv&invApprover != 0, inv&invWatcher != 0)
+	return perm.TaskBits(v.access(), inv&invAssignee != 0, inv&invApprover != 0, inv&invWatcher != 0, inv&invAuthor != 0)
 }
 
 // taskRoomBits: a member's bits in a task's comment room (0 = not a task room of a live board);
@@ -281,7 +300,7 @@ func forRecipient(ev *v1.DispatchEvent, v boardView) *v1.DispatchEvent {
 	form := func(b *v1.Board) *v1.Board {
 		b = proto.CloneOf(b)
 		if v.scoped {
-			return boards.ScopedForm(b)
+			return boards.ScopedForm(b, v.bits)
 		}
 		b.Permissions = uint64(v.bits)
 		return b
@@ -310,7 +329,8 @@ func boardDelete(wid uuid.UUID, boardID string) *v1.DispatchEvent {
 func boardTransition(before, after boardView, board *v1.Board, wid uuid.UUID, changed *v1.DispatchEvent) []*v1.DispatchEvent {
 	was, is := before.visible(), after.visible()
 	switch {
-	case was && is && before.scoped != after.scoped:
+	case was && is && (before.scoped != after.scoped || (after.scoped && before.bits != after.bits)):
+		// Full ↔ task-scoped, or invited ↔ create-only (ADR-0115: authored tasks appear or go).
 		return []*v1.DispatchEvent{boardDelete(wid, board.GetId()), boardCreate(board, after)}
 	case was && is && changed != nil:
 		return []*v1.DispatchEvent{forRecipient(changed, after)}

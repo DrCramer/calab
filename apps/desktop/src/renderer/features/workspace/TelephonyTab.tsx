@@ -3,6 +3,7 @@ import { timestampDate, timestampMs } from '@bufbuild/protobuf/wkt';
 import {
   GetSipSettingsResponseSchema,
   SipCallStatus,
+  SipInboundMode,
   SipTransport,
   type PutSipSettingsRequestSchema,
   type SipCall,
@@ -25,13 +26,15 @@ import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration } from '../shell/voiceFormat';
+import { Exchange } from './TelephonyExchange';
 
 /*
  * Workspace settings → «Телефония» (ADR-0046, docs/08 «Телефония»; MANAGE_WORKSPACE): the SIP
  * provider account as one form saved with PUT (the password is write-only: empty keeps the stored
  * one), «Проверить подключение» (a real short call to the Caller ID), the last provider error and
  * the call journal (100 per page, «Показать ещё» by cursor). A primitive screen by the owner's
- * word (30.09); IVR and inbound numbers come later. Business plan only (owner, 02.10): below it the
+ * word (30.09); the exchange (internal numbers, groups, voice menus — ADR-0117) is in
+ * TelephonyExchange. Business plan only (owner, 02.10): below it the
  * form and the test are locked (PlanLock) — a saved trunk stays readable, the journal stays open.
  */
 
@@ -62,7 +65,13 @@ const FIELD_ERROR: Record<string, MessageKey> = {
 };
 
 export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNode {
-  const q = useQuery({ queryKey: settingsKey(workspaceId), queryFn: () => api.sip.settings(workspaceId) });
+  // REGISTER mode (ADR-0121): the registration's state is re-read every 15 s while the window is
+  // visible (react-query pauses intervals in the background); no gateway event for it.
+  const q = useQuery({
+    queryKey: settingsKey(workspaceId),
+    queryFn: () => api.sip.settings(workspaceId),
+    refetchInterval: (query) => (query.state.data?.settings?.inboundMode === SipInboundMode.REGISTER && query.state.data.settings.inboundEnabled ? 15_000 : false),
+  });
   const settings = q.data?.settings;
   const allowed = useWorkspaces((s) => planHas(s.byId[workspaceId]?.ws.plan, 'telephony'));
   const setup = settings ? (
@@ -70,6 +79,7 @@ export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNod
       {/* Re-mounted when the server's copy changes: the form starts from what is saved. */}
       <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
       <TestCard workspaceId={workspaceId} settings={settings} />
+      <Exchange workspaceId={workspaceId} settings={settings} />
     </>
   ) : null;
   return (

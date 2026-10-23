@@ -40,4 +40,12 @@ export const esCall: DictShape<typeof ruCall> = {
   'call.log.cancelled': 'Llamada cancelada',
   'call.log.busy': 'Ocupado',
   'call.log.call': 'Llamada',
+  // inbound phone calls (ADR-0117)
+  'call.sipIncoming': 'Llamada entrante al número',
+  'call.sipVia': 'Llamada entrante al número · {via}',
+  'call.sipUnknown': 'Número oculto',
+  'call.sipFailed': 'No se pudo atender la llamada',
+  'call.sipTaken': 'La llamada ya fue atendida o terminó',
+  'call.sipNotify': 'Llamada entrante de {number}',
+  'call.sipPanel': 'Llamada · {number}',
 };

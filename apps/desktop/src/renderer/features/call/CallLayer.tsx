@@ -4,8 +4,11 @@ import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { formatPhone } from '../../lib/sip';
 import { accept, cancel, decline, setCollapsed } from '../../services/call';
+import { acceptInbound, declineInbound } from '../../services/sipInbound';
 import { useCall } from '../../stores/call';
+import { useSipInbound } from '../../stores/sipInbound';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 
 /**
@@ -13,14 +16,19 @@ import { useMemberName, useWorkspaces } from '../../stores/workspaces';
  *  - outgoing — «как на iPhone»: avatar 96, name, «Вызов…», red round «Отменить»; a click
  *    outside (or Esc) collapses it into the top strip «Вызов: X · Отменить» — the chat stays usable;
  *  - incoming — over everything: avatar, name, «Входящий звонок», red «Отклонить», green
- *    «Принять»; only the buttons close it (the call rings on every device).
+ *    «Принять»; only the buttons close it (the call rings on every device);
+ *  - an inbound phone call (ADR-0117 §7) — the same sheet with a phone in place of the avatar,
+ *    the caller's number and «Входящий на номер · <меню / группа>»; shown when no one-to-one
+ *    call rings or dials.
  * Phones (ADR-0021): full screen. Solid materials only (no backdrop-filter); the dots are finite.
  */
 export function CallLayer(): ReactNode {
   const phase = useCall((s) => s.phase);
   const collapsed = useCall((s) => s.collapsed);
+  const sipRing = useSipInbound((s) => s.ringing[0]?.id ?? '');
   if (phase === 'incoming') return <IncomingCall />;
   if (phase === 'outgoing') return collapsed ? <CallingStrip /> : <OutgoingCall />;
+  if (sipRing) return <SipIncomingCall id={sipRing} />;
   return null;
 }
 
@@ -49,7 +57,7 @@ function RoundAction({ label, tone, onClick, disabled, autoFocus, testId, childr
   );
 }
 
-/** The sheet both modals share: centred 320 px card; on a phone the whole screen. */
+/** The sheet of a one-to-one call: the peer's avatar and name. */
 function CallSheet({
   testId,
   subtitle,
@@ -65,6 +73,29 @@ function CallSheet({
   const peerId = useCall((s) => s.peerId);
   const name = useMemberName(null, peerId);
   const fileId = useWorkspaces((s) => s.users[peerId]?.avatarFileId || undefined);
+  return (
+    <Sheet testId={testId} subtitle={subtitle} onOutside={onOutside} title={name} avatar={<Avatar userId={peerId} name={name} fileId={fileId} size={96} />}>
+      {children}
+    </Sheet>
+  );
+}
+
+/** The sheet all call modals share: centred 320 px card; on a phone the whole screen. */
+function Sheet({
+  testId,
+  subtitle,
+  onOutside,
+  title,
+  avatar,
+  children,
+}: {
+  testId: string;
+  subtitle: ReactNode;
+  onOutside: (() => void) | null;
+  title: string;
+  avatar: ReactNode;
+  children: ReactNode;
+}): ReactNode {
   const outside = (e: Event): void => {
     e.preventDefault();
     onOutside?.();
@@ -83,9 +114,9 @@ function CallSheet({
             'mobile:inset-0 mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:justify-start mobile:rounded-none mobile:border-0! mobile:shadow-none! mobile:pb-[calc(var(--safe-bottom,0px)+48px)] mobile:pt-[calc(var(--safe-top,0px)+72px)]',
           )}
         >
-          <Avatar userId={peerId} name={name} fileId={fileId} size={96} />
-          <DialogP.Title className="mt-4 max-w-full truncate text-[20px] font-semibold leading-[26px]" title={name}>
-            {name}
+          {avatar}
+          <DialogP.Title className="mt-4 max-w-full truncate text-[20px] font-semibold leading-[26px] tabular-nums" title={title}>
+            {title}
           </DialogP.Title>
           <DialogP.Description className="mt-1 text-body text-muted">{subtitle}</DialogP.Description>
           <div className="mt-8 flex items-start justify-center gap-12 mobile:mt-auto">{children}</div>
@@ -131,6 +162,29 @@ function IncomingCall(): ReactNode {
         <Phone className="size-6" aria-hidden />
       </RoundAction>
     </CallSheet>
+  );
+}
+
+/** An inbound phone call (ADR-0117): the caller's number, what it came through, answer / refuse. */
+function SipIncomingCall({ id }: { id: string }): ReactNode {
+  const number = useSipInbound((s) => s.ringing.find((c) => c.id === id)?.number ?? '');
+  const via = useSipInbound((s) => s.ringing.find((c) => c.id === id)?.via ?? '');
+  const busy = useSipInbound((s) => s.busy);
+  const title = number ? formatPhone(number) : t('call.sipUnknown');
+  const phone = (
+    <span className="grid size-24 place-items-center rounded-full bg-[var(--color-fill)] text-ok" aria-hidden>
+      <Phone className="size-10" />
+    </span>
+  );
+  return (
+    <Sheet testId="sip-incoming" title={title} avatar={phone} subtitle={via ? t('call.sipVia', { via }) : t('call.sipIncoming')} onOutside={null}>
+      <RoundAction label={t('call.decline')} tone="decline" onClick={() => void declineInbound(id)} disabled={busy} testId="sip-decline">
+        <Phone className="size-6 rotate-[135deg]" aria-hidden />
+      </RoundAction>
+      <RoundAction label={t('call.accept')} tone="accept" onClick={() => void acceptInbound(id)} disabled={busy} autoFocus testId="sip-accept">
+        <Phone className="size-6" aria-hidden />
+      </RoundAction>
+    </Sheet>
   );
 }
 

@@ -304,17 +304,23 @@ message DispatchEvent {
     // Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
     CalendarEventCommentUpsert event_comment_upsert = 103;
     CalendarEventCommentDelete event_comment_delete = 104;
+    // A member's consent for a bot changed (ADR-0119): to that bot's user channel (gateway)
+    // and webhook only.
+    BotDelegationChange bot_delegation = 105;
+    // An inbound phone call rings the recipient (ADR-0117): to that user's channel (and a bot's
+    // webhook) only.
+    SipInboundRing sip_inbound_ring = 106;
     // Canvas (ADR-0126 §6): workspace channel, routed per recipient like the Wiki
     // (CANVAS_VIEW on the item); the tree structure only, the content goes through the
     // canvas's /sync socket.
-    CanvasItemUpsert canvas_item_upsert = 105;
-    CanvasItemRemove canvas_item_remove = 106;
+    CanvasItemUpsert canvas_item_upsert = 107;
+    CanvasItemRemove canvas_item_remove = 108;
     // Canvas comments (ADR-0127 wave 4): workspace channel, routed per recipient like the
     // items (CANVAS_VIEW on the canvas).
-    CanvasCommentUpsert canvas_comment_upsert = 107;
-    CanvasCommentDelete canvas_comment_delete = 108;
+    CanvasCommentUpsert canvas_comment_upsert = 109;
+    CanvasCommentDelete canvas_comment_delete = 110;
     // An @mention in a canvas comment: the mentioned member's user channel only.
-    CanvasCommentMention canvas_comment_mention = 109;
+    CanvasCommentMention canvas_comment_mention = 111;
   }
 }
 
@@ -322,7 +328,8 @@ message DispatchEvent {
 // with X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)> and X-Calab-Delivery: <id>.
 // Delivered events: MESSAGE_CREATE / UPDATE / DELETE and MESSAGE_REACTION_ADD / REMOVE of
 // rooms the bot can view and of its DMs, plus private BOT_CALLBACK (ADR-0047), TASK_NOTICE of
-// the users who chose the bot (ADR-0090) and CONTACT_SHARED (ADR-0100).
+// the users who chose the bot (ADR-0090), CONTACT_SHARED (ADR-0100) and BOT_DELEGATION
+// (ADR-0119).
 // A delivery may repeat (retries): dedupe by id.
 message BotWebhookUpdate {
   string id = 1;
@@ -421,7 +428,8 @@ message WorkspaceSnapshot {
   // Tasks with something unseen for the recipient (Task.unread; ≤ 999): the badge on the
   // boards icon. Changes come as TASK_UPDATE on the user channel.
   repeated string unread_task_ids = 17;
-  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms. Changes come as
+  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms, and inbound calls
+  // (ADR-0117) that ring the recipient or that the recipient answered. Changes come as
   // SIP_CALL_UPDATE.
   repeated SipCall sip_calls = 18;
   // Web apps of the workspace (ADR-0050), by position; empty for guests and bots. Changes come

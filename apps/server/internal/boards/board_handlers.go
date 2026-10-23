@@ -62,6 +62,9 @@ func (s *Service) respondBoard(w http.ResponseWriter, r *http.Request, id uuid.U
 	if err != nil {
 		return err
 	}
+	if err := s.withInstruction(r.Context(), b, acc); err != nil {
+		return err
+	}
 	s.publishBoard(r.Context(), acc.WorkspaceID, id, status == http.StatusCreated)
 	httpx.Write(w, status, &v1.BoardResponse{Board: b})
 	return nil
@@ -389,7 +392,24 @@ func (s *Service) getBoard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.withInstruction(r.Context(), b, acc); err != nil {
+		return err
+	}
 	httpx.Write(w, http.StatusOK, &v1.BoardResponse{Board: b})
+	return nil
+}
+
+// withInstruction adds the board's «Инструкция для ИИ» (CBF-68) for a caller with VIEW_BOARD:
+// only GET /api/boards/{id} and the caller's own answers carry it, never lists or events.
+func (s *Service) withInstruction(ctx context.Context, b *v1.Board, acc perm.BoardAccess) error {
+	if !acc.Bits.Has(perm.ViewBoard) {
+		return nil
+	}
+	row, err := s.db.Q.GetBoard(ctx, uuid.MustParse(b.GetId()))
+	if err != nil {
+		return err
+	}
+	b.AiInstruction = row.AiInstruction
 	return nil
 }
 
@@ -426,6 +446,14 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Description = &d
 	}
+	if req.AiInstruction != nil {
+		in := strings.TrimSpace(req.GetAiInstruction())
+		if utf8.RuneCountInString(in) > MaxAiInstruction {
+			return httpx.Validation("aiInstruction", "the AI instruction must be at most 4000 characters")
+		}
+		p.AiInstruction = &in
+	}
+	p.AiFindDuplicates = req.AiFindDuplicates
 	if req.Emoji != nil {
 		e, err := validEmoji(req.GetEmoji())
 		if err != nil {
@@ -836,12 +864,12 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, actor perm.BoardAcc
 	return out, nil
 }
 
-// ---- statuses, labels, milestones ----
+// ---- statuses, labels, milestones (EDIT_TASKS, CBF-73) ----
 
 func pathSub(r *http.Request) (uuid.UUID, error) { return httpx.PathUUID(r, "sid", "item") }
 
 func (s *Service) createStatus(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -929,7 +957,7 @@ func milestonePos(q *sqlc.Queries) func(context.Context, uuid.UUID, int32) error
 }
 
 func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -969,9 +997,14 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Icon = req.Icon
 	}
-	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+	err = s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
 			return err
+		}
+		if p.Type != nil && *p.Type == "completed" {
+			if err := statusCompletionGate(r, q, tx, id, sid, acc); err != nil {
+				return err
+			}
 		}
 		if _, err := q.UpdateBoardStatus(r.Context(), p); err != nil {
 			if db.IsNotFound(err) {
@@ -1006,9 +1039,50 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
 }
 
+// statusCompletionGate (CBF-73): turning a status into COMPLETED completes its tasks in place —
+// a forward move of each (ADR-0049 §2). EDIT_TASKS now reaches the statuses, but only the
+// override power (ADR-0108, a human with MANAGE_BOARD) passes the approval gate: for anyone
+// else the change is refused while a task of the status waits for approval or was rejected.
+func statusCompletionGate(r *http.Request, q *sqlc.Queries, tx pgx.Tx, boardID, sid uuid.UUID, acc perm.BoardAccess) error {
+	if Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) || mayManageApprovals(r, acc, "") == nil {
+		return nil
+	}
+	ss, err := q.ListBoardStatuses(r.Context(), []uuid.UUID{boardID})
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, x := range ss {
+		if x.ID == sid {
+			if x.Type == "completed" {
+				return nil
+			}
+			found = true
+		}
+	}
+	if !found {
+		return httpx.NotFound("status")
+	}
+	// Row locks: a vote or an approvers change cannot slip in between the check and the update.
+	rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1 ORDER BY t.id FOR UPDATE OF t", sid)
+	if err != nil {
+		return err
+	}
+	tls, err := tallies(r.Context(), q, rows)
+	if err != nil {
+		return err
+	}
+	for _, x := range rows {
+		if t := tls[x.ID]; t.Blocks() {
+			return approvalRequired(t)
+		}
+	}
+	return nil
+}
+
 // deleteStatus: DELETE …/statuses/{sid}?move_to=<sid> — its tasks move to move_to first.
 func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1092,9 +1166,10 @@ func (s *Service) createLabel(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// CREATE_TASKS may create a label on the fly (the picker); the rest needs MANAGE_BOARD.
-	if !acc.Bits.Has(perm.ManageBoard) && !acc.Bits.Has(perm.CreateTasks) {
-		return httpx.Forbidden("MANAGE_BOARD or CREATE_TASKS required")
+	// CREATE_TASKS may create a label on the fly (the picker) — a viewer's, not a create-only
+	// member's (ADR-0115: nothing of the board itself); the rest needs EDIT_TASKS (CBF-73).
+	if !acc.Bits.Has(perm.EditTasks) && !acc.Bits.Has(perm.ViewBoard|perm.CreateTasks) {
+		return httpx.Forbidden("EDIT_TASKS or CREATE_TASKS required")
 	}
 	if err := writable(acc); err != nil {
 		return err
@@ -1142,7 +1217,7 @@ func (s *Service) createLabel(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) updateLabel(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1199,7 +1274,7 @@ func (s *Service) updateLabel(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) deleteLabel(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1220,7 +1295,7 @@ func (s *Service) deleteLabel(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) createMilestone(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1264,7 +1339,7 @@ func (s *Service) createMilestone(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Service) updateMilestone(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}
@@ -1318,7 +1393,7 @@ func (s *Service) updateMilestone(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Service) deleteMilestone(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := manageBoard(r, false)
+	id, acc, err := editBoard(r)
 	if err != nil {
 		return err
 	}

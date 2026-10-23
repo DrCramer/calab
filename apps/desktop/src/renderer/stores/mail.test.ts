@@ -4,6 +4,7 @@ import { createMockMailApi } from '../features/mail/mock/mockApi';
 import {
   ALL_INBOXES,
   applyRows,
+  inBox,
   inboxUnread,
   initMail,
   loadMore,
@@ -14,6 +15,8 @@ import {
   rowKey,
   selectBox,
   setRowFlags,
+  smartBox,
+  updateSettings,
   useMail,
   type MailState,
 } from './mail';
@@ -176,6 +179,44 @@ describe('against the mock engine', () => {
     const sent = useMail.getState();
     expect(sent.order.length).toBeGreaterThan(0);
     expect(sent.order.every((key) => sent.rows[key]?.folderId === 'acc-work/sent')).toBe(true);
+  });
+});
+
+describe('smart folders and folder removal (CBF-56)', () => {
+  it('inBox: a smart box takes rows of its account by sender / subject, never junk / trash', () => {
+    const sf = { id: 's1', name: 'Счета', accountId: 'a1', match: 'any' as const, conditions: [{ field: 'subject' as const, contains: 'СЧЁТ' }, { field: 'to' as const, contains: 'buh' }] };
+    const junk: MailFolder = { ...inbox, id: 'a1/junk', role: 'junk' };
+    const s = { folderById: { [inbox.id]: inbox, [junk.id]: junk }, settings: { ...useMail.getState().settings, smartFolders: [sf] } };
+    const box = smartBox(sf);
+    expect(box).toEqual({ scope: 'a1', folder: { smart: 's1' } });
+    expect(inBox(s, box, row(1, { subject: 'Ваш счёт за май' }))).toBe(true);
+    expect(inBox(s, box, row(2, { subject: 'Hello' }))).toBe(false); // «to» is unknown on a row
+    expect(inBox(s, box, row(3, { subject: 'Счёт', folderId: junk.id }))).toBe(false);
+    expect(inBox(s, box, row(4, { subject: 'Счёт', accountId: 'a2' }))).toBe(false);
+  });
+
+  it('against the mock: a smart folder lists its mail; deleting it, or the folder on screen, goes back', async () => {
+    await initMail(createMockMailApi({ delayMs: 0, now: () => Date.UTC(2026, 9, 12, 9) }));
+    const first = useMail.getState().rows[useMail.getState().order[0] ?? ''];
+    if (!first) throw new Error('no row');
+    const sf = { id: 's1', name: 'One sender', accountId: first.accountId, match: 'all' as const, conditions: [{ field: 'from' as const, contains: first.from.address }] };
+    await updateSettings({ smartFolders: [sf] });
+    selectBox(smartBox(sf));
+    await flush();
+    const st = useMail.getState();
+    expect(st.order.length).toBeGreaterThan(0);
+    expect(st.order.every((k) => st.rows[k]?.from.address === first.from.address)).toBe(true);
+    await updateSettings({ smartFolders: [] });
+    await flush();
+    expect(useMail.getState().box).toEqual(ALL_INBOXES);
+    const api = (await import('./mail')).mailApi();
+    if (!api) throw new Error('no api');
+    const f = await api.folders.create('acc-work', 'Temp');
+    await flush();
+    selectBox({ scope: 'acc-work', folder: { id: f.id } });
+    await api.folders.remove(f.id);
+    await flush();
+    expect(useMail.getState().box).toEqual({ scope: 'acc-work', folder: 'inbox' });
   });
 });
 

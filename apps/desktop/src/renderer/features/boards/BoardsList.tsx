@@ -1,7 +1,7 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardFeature, type Board } from '@calaba/protocol';
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
@@ -33,7 +33,7 @@ import { myUserId, useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { hasBit, MANAGE_BOARD } from './model';
+import { hasBit, settingsEntryTab, MANAGE_BOARD } from './model';
 import { useFeatureOn } from './useBoardView';
 
 /**
@@ -57,7 +57,6 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   const list = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const [line, setLine] = useState<number | null>(null);
-  const [newCat, setNewCat] = useState(false);
   const press = useRef<{ kind: 'board' | 'cat'; id: string; y: number; started: boolean; layout: Layout } | null>(null);
   const target = useRef<RoomTarget | { index: number } | null>(null);
   const suppress = useRef(false);
@@ -175,15 +174,6 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       <MyTasksRow workspaceId={workspaceId} />
       <div className="flex h-9 items-center pl-2 pr-1 pt-2 mobile:h-11 mobile:px-3">
         <h2 className={cx('min-w-0 flex-1 truncate', GROUP_LABEL)}>{t('boards.boards')}</h2>
-        {creator ? (
-          <>
-            <Tip label={t('boards.cat.new')}>
-              <button type="button" aria-label={t('boards.cat.new')} onClick={() => setNewCat(true)} className="hidden size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg mobile:grid" data-testid="board-category-new">
-                <FolderPlus className="size-4" aria-hidden />
-              </button>
-            </Tip>
-          </>
-        ) : null}
       </div>
       <div className="flex flex-col gap-px pt-0.5 mobile:gap-0 mobile:pt-0">
         {tokens.map((tok) => {
@@ -214,7 +204,6 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       ) : null}
       {creator || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={live} /> : null}
       {line !== null ? <div aria-hidden className="pointer-events-none absolute inset-x-3 z-10 h-0.5 rounded-full bg-accent" style={{ top: Math.max(0, line - 1) }} /> : null}
-      {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
     </div>
   );
 }
@@ -414,6 +403,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
   const manage = hasBit(perms, MANAGE_BOARD);
+  const entry = settingsEntryTab(perms); // CBF-73: an editor gets «Настройки» on «Статусы»
   const [forms, setForms] = useState(false);
   const formsOn = useFeatureOn(id, BoardFeature.FORMS);
   // Phone: a long press on the row opens its «…» menu (the same one, docs/08 «Свайпы и долгое нажатие»).
@@ -460,15 +450,15 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           </Dropdown.Trigger>
           <Dropdown.Portal>
             <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
+              {entry ? (
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: entry })}>
+                  <Settings className="size-4" aria-hidden /> {t('boards.settings')}
+                </Dropdown.Item>
+              ) : null}
               {manage ? (
-                <>
-                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
-                    <Settings className="size-4" aria-hidden /> {t('boards.settings')}
-                  </Dropdown.Item>
-                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
-                    <Shield className="size-4" aria-hidden /> {t('boards.access')}
-                  </Dropdown.Item>
-                </>
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
+                  <Shield className="size-4" aria-hidden /> {t('boards.access')}
+                </Dropdown.Item>
               ) : null}
               {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
               <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>

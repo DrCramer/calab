@@ -564,7 +564,8 @@ export interface ComputePermissionsInput {
   /**
    * Set for a task board (ADR-0042): the overrides are the board's and touch only
    * BOARD_ONLY_PERMISSIONS; a private board (Board.isPrivate) drops the roles' VIEW_BOARD
-   * first; without VIEW_BOARD nothing; a guest (highest built-in role GUEST) gets nothing.
+   * first; without VIEW_BOARD nothing — except create-only (ADR-0115): CREATE_TASKS alone when
+   * an allow override on the board grants it; a guest (highest built-in role GUEST) gets nothing.
    * A private board has no bypass (ADR-0058 addendum 2026-10-14): ADMINISTRATOR is dropped too,
    * the `creator` keeps VIEW_BOARD, the owner (`board.owner`) with `ownerSeesPrivate` alone has
    * everything. `restricted` (Board.restricted, the pre-3.5 flag) is the same as `private`. The
@@ -643,10 +644,11 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
   if (input.board) {
     const b = input.board;
     if (b.guest) return 0n;
+    let full: PermissionBits;
     if (b.private || b.restricted) {
       if (b.owner && b.ownerSeesPrivate) return ALL_PERMISSIONS;
       perms &= ~(ADMINISTRATOR | VIEW_BOARD);
-      return applyOverrides(
+      full = applyOverrides(
         perms,
         roles,
         roleOverrides,
@@ -656,9 +658,14 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
         BOARD_ONLY_PERMISSIONS,
         b.creator ? VIEW_BOARD : 0n,
       );
+    } else {
+      if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
+      full = applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
     }
-    if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
-    return applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
+    if (full) return full;
+    // Create-only (CBF-61, ADR-0115): CREATE_TASKS alone, granted by the board's own overrides
+    // (the roles' workspace CREATE_TASKS does not count) and not denied after.
+    return applyOverrides(0n, roles, roleOverrides, input.userOverride, CREATE_TASKS, CREATE_TASKS);
   }
   if (input.restricted || input.privateTemp) {
     if (input.owner && input.ownerSeesPrivate) return ALL_PERMISSIONS;
@@ -764,18 +771,20 @@ export function taskRoomPermissions(board: PermissionBits, archived = false, com
  * board keeps `board.permissions`; on a task-scoped board (`board.taskScoped`, permissions 0) an
  * assignee of a live task gets VIEW_BOARD | CREATE_TASKS (edits the task like a member their
  * assigned task; never creates tasks — that takes the board's bits), an approver or a watcher
- * VIEW_BOARD (view, comment, subscribe; an approver also votes); anything else 0. Feed the result
- * to taskRoomPermissions for the task's comment room. Shared case table:
- * proto/testdata/task_bits.json.
+ * VIEW_BOARD (view, comment, subscribe; an approver also votes); anything else 0. A create-only
+ * viewer (ADR-0115: `taskScoped` with permissions = CREATE_TASKS) also gets VIEW_BOARD |
+ * CREATE_TASKS on the tasks they authored (`createdBy`). Feed the result to taskRoomPermissions
+ * for the task's comment room. Shared case table: proto/testdata/task_bits.json.
  */
 export function taskPermissions(
   board: Pick<Board, 'permissions' | 'taskScoped'>,
-  task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt'>,
+  task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt' | 'createdBy'>,
   me: string,
 ): PermissionBits {
   if (board.permissions & VIEW_BOARD) return board.permissions;
   if (!board.taskScoped || task.archivedAt) return 0n; // invitations count on live tasks only
-  if (task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | PERMISSION_BITS.CREATE_TASKS;
+  const author = board.permissions === CREATE_TASKS && me !== '' && task.createdBy === me;
+  if (author || task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | CREATE_TASKS;
   if (task.approvers.some((a) => a.userId === me) || task.watcherIds.includes(me)) return VIEW_BOARD;
   return 0n;
 }

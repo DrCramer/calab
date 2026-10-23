@@ -6,8 +6,38 @@ import (
 	"encoding/binary"
 	"math"
 	"os/exec"
+	"strings"
 	"testing"
 )
+
+// TestPromptArgs: a voice menu prompt is forced to its demuxer, read one second past the
+// 3-minute cap (a longer file is refused, not cut) and encoded at 32 kbit/s mono 48 kHz.
+func TestPromptArgs(t *testing.T) {
+	args := strings.Join(PromptArgs("wav", "in", "out.ogg"), " ")
+	for _, want := range []string{"-f wav -t 181 -i in", "-b:a 32k", "-ac 1 -ar 48000", "-c:a libopus", "-f ogg out.ogg"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("%q missing in %s", want, args)
+		}
+	}
+}
+
+// TestConvertPrompt runs the real ffmpeg (skipped without one): a 10 s WAV becomes a 10 s
+// Ogg/Opus prompt far below the size cap.
+func TestConvertPrompt(t *testing.T) {
+	ff, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("no ffmpeg on this host")
+	}
+	s := &Service{conv: &Converter{ffmpeg: ff, slot: make(chan struct{}, 1)}}
+	out, err := s.convertAudio(context.Background(), wav(10), PromptArgs("wav", "in", "out.ogg"), promptTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, ok := OggOpusDurationMs(out)
+	if !ok || ms < 9950 || ms > 10050 || len(out) > MaxPromptBytes {
+		t.Fatalf("%d ms, ok=%v, %d bytes", ms, ok, len(out))
+	}
+}
 
 // oggPage builds one Ogg page with a single packet (≤ 255 bytes per lacing value).
 func oggPage(granule int64, packet []byte) []byte {

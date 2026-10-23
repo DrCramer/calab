@@ -5,6 +5,7 @@ import { useState, type ComponentType, type ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { canShare, canWrite, isFolder } from '../../lib/disk';
+import { copyDiskItemAddress } from '../../services/diskLink';
 import { copyItemLink, deleteForever, downloadItem, openItem, openSendToChat, restoreItems, trashItems } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { useDiskUi } from '../../stores/diskUi';
@@ -64,11 +65,12 @@ function Entries({ id, parts }: { id: string; parts: Parts }): ReactNode {
       {title}
       {row(ic(FolderOpen), t('disk.open'), () => openItem(item), { testId: 'disk-menu-open' })}
       {!folder ? row(ic(Download), t('disk.download'), () => downloadItem(item), { testId: 'disk-menu-download' }) : null}
-      {!folder ? row(ic(Send), t('disk.sendToChat'), () => openSendToChat(id), { testId: 'disk-menu-send' }) : null}
+      {row(ic(Send), t('disk.sendToChat'), () => openSendToChat(id), { testId: 'disk-menu-send' })}
       {write ? row(ic(Pencil), t('disk.rename'), () => ui.setRenaming(id), { testId: 'disk-menu-rename' }) : null}
       {write ? row(ic(FolderInput), t('disk.moveTo'), () => ui.openDialog({ kind: 'move', itemIds: [id] }), { testId: 'disk-menu-move' }) : null}
       <Separator className={menuSeparator} />
       {share ? row(ic(Users), t('disk.access'), () => ui.openDialog({ kind: 'access', itemId: id }), { testId: 'disk-menu-access' }) : null}
+      {folder ? row(ic(Link2), t('disk.card.copyLink'), () => copyDiskItemAddress(id, 'disk.folder.linkCopied'), { testId: 'disk-menu-copy-link' }) : null}
       {!folder && share ? row(ic(Link2), t('disk.link'), () => ui.openDialog({ kind: 'link', itemId: id }), { testId: 'disk-menu-link' }) : null}
       {!folder && !share && item.link ? row(ic(Link2), t('disk.link.copy'), () => void copyItemLink(id)) : null}
       {row(ic(History), t('disk.history'), () => ui.openDialog({ kind: 'history', itemId: id }), { testId: 'disk-menu-history' })}

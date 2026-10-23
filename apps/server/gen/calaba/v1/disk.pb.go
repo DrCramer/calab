@@ -249,7 +249,9 @@ type DiskItem struct {
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	MyBits        uint64                 `protobuf:"varint,14,opt,name=my_bits,json=myBits,proto3" json:"my_bits,omitempty"` // the caller's disk bits on the item (DISK_VIEW | DISK_WRITE | DISK_MANAGE)
 	TrashedBy     string                 `protobuf:"bytes,15,opt,name=trashed_by,json=trashedBy,proto3" json:"trashed_by,omitempty"`
-	TrashedRoot   bool                   `protobuf:"varint,16,opt,name=trashed_root,json=trashedRoot,proto3" json:"trashed_root,omitempty"` // the item the deletion started at (the trash lists only these)
+	TrashedRoot   bool                   `protobuf:"varint,16,opt,name=trashed_root,json=trashedRoot,proto3" json:"trashed_root,omitempty"`       // the item the deletion started at (the trash lists only these)
+	FolderFiles   uint32                 `protobuf:"varint,17,opt,name=folder_files,json=folderFiles,proto3" json:"folder_files,omitempty"`       // folders, single GET only: files directly inside that the caller sees
+	FolderFolders uint32                 `protobuf:"varint,18,opt,name=folder_folders,json=folderFolders,proto3" json:"folder_folders,omitempty"` // folders, single GET only: sub-folders directly inside that the caller sees
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -394,6 +396,20 @@ func (x *DiskItem) GetTrashedRoot() bool {
 		return x.TrashedRoot
 	}
 	return false
+}
+
+func (x *DiskItem) GetFolderFiles() uint32 {
+	if x != nil {
+		return x.FolderFiles
+	}
+	return 0
+}
+
+func (x *DiskItem) GetFolderFolders() uint32 {
+	if x != nil {
+		return x.FolderFolders
+	}
+	return 0
 }
 
 // One override of an item (disk_permissions): «Просмотр» = DISK_VIEW, «Правка» = DISK_VIEW |
@@ -1631,7 +1647,7 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1c\n" +
 	"\tdownloads\x18\x05 \x01(\rR\tdownloads\x12\x17\n" +
-	"\aitem_id\x18\x06 \x01(\tR\x06itemId\"\xcc\x04\n" +
+	"\aitem_id\x18\x06 \x01(\tR\x06itemId\"\x96\x05\n" +
 	"\bDiskItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x1b\n" +
@@ -1655,7 +1671,9 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\amy_bits\x18\x0e \x01(\x04R\x06myBits\x12\x1d\n" +
 	"\n" +
 	"trashed_by\x18\x0f \x01(\tR\ttrashedBy\x12!\n" +
-	"\ftrashed_root\x18\x10 \x01(\bR\vtrashedRoot\"\x9e\x01\n" +
+	"\ftrashed_root\x18\x10 \x01(\bR\vtrashedRoot\x12!\n" +
+	"\ffolder_files\x18\x11 \x01(\rR\vfolderFiles\x12%\n" +
+	"\x0efolder_folders\x18\x12 \x01(\rR\rfolderFolders\"\x9e\x01\n" +
 	"\x13DiskPermissionEntry\x12@\n" +
 	"\vtarget_type\x18\x01 \x01(\x0e2\x1f.calaba.v1.PermissionTargetTypeR\n" +
 	"targetType\x12\x1b\n" +

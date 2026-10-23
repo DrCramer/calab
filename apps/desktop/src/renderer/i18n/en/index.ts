@@ -47,6 +47,9 @@ import { enGuests } from './guests';
 import { enTemp } from './temp';
 import { enContacts } from './contacts';
 import { enSip } from './sip';
+import { enPbx } from './pbx';
+import { enAi } from './ai';
+import { enSmartTask } from './smartTask';
 import { enWebApps } from './webapps';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
@@ -65,6 +68,9 @@ export const en: Dict = {
   ...enTemp,
   ...enContacts,
   ...enSip,
+  ...enPbx,
+  ...enAi,
+  ...enSmartTask,
   ...enWebApps,
   ...enDm,
   ...enNotes,
@@ -413,6 +419,7 @@ export const en: Dict = {
   'voice.mode': 'Input mode',
   'voice.modeVad': 'Voice activity',
   'voice.modePtt': 'Push-to-talk',
+  'voice.pttIdleState': 'Push-to-talk: waiting for the key',
   'voice.threshold': 'Activation threshold: {db} dB',
   'voice.thresholdHint': 'Your mic turns on when you speak louder than the threshold and off after a short pause.',
   'voice.pttKey': 'Push‑to‑talk key',

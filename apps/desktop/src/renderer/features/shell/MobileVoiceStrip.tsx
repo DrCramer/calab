@@ -13,6 +13,8 @@ import { useUi } from '../../stores/ui';
 import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { dmPeer } from '../../stores/dms';
+import { usePhoneCallNumber } from '../../stores/sipInbound';
+import { formatPhone } from '../../lib/sip';
 import { useMemberName } from '../../stores/workspaces';
 import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
@@ -51,6 +53,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
   const call = useVoice((s) => s.call);
   const ptt = usePrefs((s) => s.micMode === 'ptt') && !call;
   const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
+  const phone = usePhoneCallNumber(roomId); // an inbound phone call (ADR-0117)
+  const callLabel = phone !== null ? t('call.sipPanel', { number: phone ? formatPhone(phone) : t('call.sipUnknown') }) : t('call.panel', { name: peerName });
   const onAir = useVoice((s) => s.pttDown && s.transmitting);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const me = useSession((s) => s.me?.user);
@@ -88,9 +92,9 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
         <div className="relative flex min-w-0 flex-1 flex-col items-start justify-center self-stretch" aria-live="polite">
           <button
             type="button"
-            aria-label={call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}
+            aria-label={call ? callLabel : (room?.name ?? '')}
             className="absolute inset-0 rounded-[var(--radius-row)]"
-            onClick={() => (call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
+            onClick={() => (phone !== null ? undefined : call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
           />
           <span className="pointer-events-none flex max-w-full items-center gap-1">
             {/* A long status («Переподключение…») wraps instead of being cut; the room name then gives way
@@ -105,7 +109,7 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
             {recording ? <MobileRecDot roomId={roomId} workspaceId={wsId} rec={recording} className="pointer-events-auto -my-1 relative" /> : null}
             {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} compact />}
           </span>
-          <span className="pointer-events-none max-w-full truncate text-[12px] leading-[15px] text-muted">{call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}</span>
+          <span className="pointer-events-none max-w-full truncate text-[12px] leading-[15px] text-muted">{call ? callLabel : (room?.name ?? '')}</span>
         </div>
         <button
           type="button"

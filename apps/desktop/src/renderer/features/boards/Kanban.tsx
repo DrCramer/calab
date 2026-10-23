@@ -13,13 +13,14 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import type { FilterState, MatchCtx } from '../../lib/boards/filter';
 import { sortOn } from '../../lib/boards/features';
 import { dropIndex } from '../../lib/boards/position';
+import { wheelToScrollX } from '../../lib/boards/wheelX';
 import { createStatus, deleteStatus, gateText, moveStatus, moveTask, updateStatus } from '../../services/boards';
 import { taskPermsOf, useBoards } from '../../stores/boards';
 import { myUserId } from '../../stores/session';
 import { prefsOf, useBoardsUi, type BoardPrefs } from '../../stores/boardsUi';
 import { toast } from '../../stores/toasts';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { columnsOf, hasBit, visibleColumn, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { columnsOf, hasBit, mayEditBoardItems, visibleColumn, CREATE_TASKS } from './model';
 import { TaskCard } from './TaskCard';
 import { sortColumnIds } from './columnSort';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
@@ -72,7 +73,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
     sortedRef.current = sorted;
   }, [sorted]);
   const cols = useMemo(() => columnsOf({ statuses } as never, prefs), [statuses, prefs]);
-  const manage = hasBit(perms, MANAGE_BOARD);
+  const manage = mayEditBoardItems(perms); // CBF-73: columns are statuses — EDIT_TASKS
   const canCreate = hasBit(perms, CREATE_TASKS);
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -235,6 +236,20 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
     // dropCard reads the store at drop time; statuses / boardId change the column math.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardTargetAt, colTargetAt, statuses, boardId]);
+
+  // No scrollbars are drawn, so a plain mouse wheel must reach the columns off to the right (CBF-62).
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      const dx = wheelToScrollX(e, el);
+      if (dx === 0) return;
+      e.preventDefault();
+      el.scrollLeft += dx;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Auto-scroll near the board's left / right edges and a column's top / bottom while dragging.
   useEffect(() => {

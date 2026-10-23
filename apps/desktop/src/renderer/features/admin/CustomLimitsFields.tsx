@@ -69,7 +69,8 @@ function PresetField({ label, value, options, onChange }: { label: string; value
   );
 }
 
-export function CustomLimitsFields({ form, onChange }: { form: LimitsForm; onChange: (f: LimitsForm) => void }): ReactNode {
+/** `aiFixed`: Team / Business overrides — AI follows the plan kind (CBF-69), shown but not editable. */
+export function CustomLimitsFields({ form, onChange, aiFixed = false }: { form: LimitsForm; onChange: (f: LimitsForm) => void; aiFixed?: boolean }): ReactNode {
   return (
     <>
       <NumberField field="roomMembers" form={form} onChange={onChange} />
@@ -127,6 +128,10 @@ export function CustomLimitsFields({ form, onChange }: { form: LimitsForm; onCha
       {/* ADR-0113: SSO, directory sync and the OAuth provider together; Business has them, a new Custom plan does not. */}
       <Row label={t('admin.limit.identity')} hint={t('admin.limit.identityHint')}>
         <Toggle label={t('admin.limit.identity')} checked={form.corporateIdentity} onChange={(v) => onChange({ ...form, corporateIdentity: v })} />
+      </Row>
+      {/* CBF-69: AI integration and smart tasks — Business; a custom plan may grant them, an override of Team / Business may not. */}
+      <Row label={t('admin.limit.ai')} hint={t(aiFixed ? 'admin.limit.aiFixedHint' : 'admin.limit.aiHint')}>
+        <Toggle label={t('admin.limit.ai')} checked={form.ai} disabled={aiFixed} onChange={(v) => onChange({ ...form, ai: v })} />
       </Row>
     </>
   );

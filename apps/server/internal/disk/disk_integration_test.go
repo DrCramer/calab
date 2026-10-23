@@ -751,3 +751,35 @@ func TestDiskUsageBreakdown(t *testing.T) {
 		t.Fatalf("usage %v", u)
 	}
 }
+
+// A folder's single GET carries the counters of its direct children, only those the caller sees
+// (CBF-66: the folder card in a chat or on a board must not hint at what is hidden).
+func TestDiskFolderCounts(t *testing.T) {
+	e := newEnv(t)
+	team := e.folder(e.alice, "", "Team")
+	doc := e.upload(e.alice, team.GetId(), "a.txt", 3)
+	e.upload(e.alice, team.GetId(), "b.txt", 3)
+	e.folder(e.alice, team.GetId(), "Open")
+	secret := e.folder(e.alice, team.GetId(), "Secret")
+	e.upload(e.alice, secret.GetId(), "deep.txt", 3)
+	user := v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER
+	e.must(200, e.alice, "PUT", item(secret.GetId())+"/permissions", &v1.UpdateDiskPermissionsRequest{Restricted: proto.Bool(true),
+		Entries: []*v1.DiskPermissionEntry{{TargetType: user, TargetId: e.alice.String(), Allow: uint64(perm.DiskView)}}}, nil)
+	count := func(u uuid.UUID) (uint32, uint32) {
+		var r v1.DiskItemResponse
+		e.must(200, u, "GET", item(team.GetId()), nil, &r)
+		return r.GetItem().GetFolderFiles(), r.GetItem().GetFolderFolders()
+	}
+	if f, d := count(e.alice); f != 2 || d != 2 {
+		t.Fatalf("alice sees %d files, %d folders", f, d)
+	}
+	if f, d := count(e.bob); f != 2 || d != 1 {
+		t.Fatalf("bob sees %d files, %d folders (the restricted one is hidden)", f, d)
+	}
+	e.must(404, e.guest, "GET", item(team.GetId()), nil, nil)
+	var file v1.DiskItemResponse
+	e.must(200, e.alice, "GET", item(doc.GetId()), nil, &file)
+	if file.GetItem().GetFolderFiles() != 0 || file.GetItem().GetFolderFolders() != 0 {
+		t.Fatalf("a file has no counters: %v", file.GetItem())
+	}
+}

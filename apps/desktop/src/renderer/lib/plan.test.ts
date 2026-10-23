@@ -20,6 +20,7 @@ import {
   capMax,
   clampToCap,
   planHas,
+  planHasAI,
   planHasIdentity,
   planUsage,
   setPlanBody,
@@ -321,5 +322,21 @@ describe('plan caps for workspace voice defaults (#42)', () => {
     expect(planHasIdentity(withFlag(Plan.ENTERPRISE, false))).toBe(false);
     expect(planHasIdentity(withFlag(Plan.ENTERPRISE, true))).toBe(true);
     expect(planHasIdentity(create(WorkspacePlanSchema, { plan: Plan.CUSTOM, expired: true, limits: { corporateIdentity: true } }))).toBe(false);
+  });
+  it('CBF-69 planHasAI: Business (PlanLimits.ai), not Free / Team / an older custom plan / expired', () => {
+    expect(planHasAI(undefined)).toBe(true);
+    const withAI = (plan: Plan, ai: boolean, expired = false) => create(WorkspacePlanSchema, { plan, expired, limits: { ai } });
+    expect(planHasAI(withAI(Plan.ENTERPRISE, true))).toBe(true);
+    expect(planHasAI(withAI(Plan.FREE, false))).toBe(false);
+    expect(planHasAI(withAI(Plan.TEAM, false))).toBe(false);
+    expect(planHasAI(withAI(Plan.CUSTOM, false))).toBe(false);
+    expect(planHasAI(withAI(Plan.CUSTOM, true))).toBe(true);
+    expect(planHasAI(withAI(Plan.ENTERPRISE, true, true))).toBe(false);
+    expect(planHasAI(create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE }))).toBe(true);
+    expect(planHasAI(create(WorkspacePlanSchema, { plan: Plan.TEAM }))).toBe(false);
+    // The admin form keeps the flag (a new custom plan starts without it).
+    expect(limitsFormFrom(Plan.FREE, undefined).ai).toBe(false);
+    const back = limitsFromForm(limitsFormFrom(Plan.ENTERPRISE, create(PlanLimitsSchema, { ai: true })));
+    expect('limits' in back && back.limits.ai).toBe(true);
   });
 });

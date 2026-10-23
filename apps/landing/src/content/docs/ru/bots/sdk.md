@@ -106,6 +106,7 @@ console.log(`${ready.me?.user?.displayName} в сети, пространств:
 | `reaction` | `{ type: 'add' \| 'remove', workspaceId, roomId, messageId, userId, emoji }` |
 | `callback` | `BotCallback` — нажатие кнопки, см. [Команды и кнопки](./commands-buttons) |
 | `contactShared` | `ContactShared` — человек поделился контактом, см. [Команды и кнопки](./commands-buttons#запрос-контакта) |
+| `botDelegation` | `BotDelegationChange` — участник разрешил, отозвал или отклонил действия от своего имени, см. [Авторизация](./auth#от-имени-участника) |
 | `taskNotice` | `TaskNoticeRelay` — уведомление человека о задаче, см. [Уведомления о задачах](./task-notices) |
 | `voiceState` | `VoiceState` (`roomId` пуст — вышел из голоса) |
 | `dispatch` | любой сырой `DispatchEvent` (комнаты, участники, присутствие…) |

@@ -61,7 +61,7 @@ import { CreateButton, InlineAdd } from '../../components/CreateButton';
 import { Badge, Button, CountBadge, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, isOwnerRoles, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { can, isOwnerRoles, mayArrangeRooms, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { expiresMs, extendTo, formatRemaining, isExpiring, sortTempRooms } from '../../lib/tempRooms';
 import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom, makeTempRoomPermanent } from '../../services/tempRooms';
 import { useCalendar } from '../../stores/calendar';
@@ -80,6 +80,7 @@ import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinButton, joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
+import { streamClickPlan } from './streamOpen';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { MemberContextMenu } from '../people/MemberContextMenu';
@@ -88,7 +89,7 @@ import { joinedAtMs } from '../../lib/justJoined';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
-import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { MusicianIcon, SelfVoiceStateIcons, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { isMobileNow, useMobile } from '../../lib/mobile';
 import { useChatDrop } from '../chat/useChatDrop';
 import { applyChatDrop } from '../notes/dropActions';
@@ -108,11 +109,11 @@ import { useSipDial } from '../../stores/sipDial';
 import { startRecording, stopRecording } from '../../services/recording';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import { CREATE_TASKS, hasBit } from '../boards/model';
-import { openBoard } from '../../services/boards';
 import { useShallow } from 'zustand/react/shallow';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from './ColumnHeader';
-import { BoardsList, NewCategoryDialog } from '../boards/BoardsList';
+import { BoardsList } from '../boards/BoardsList';
+import { BoardsCreateMenu, createTaskOn } from '../boards/BoardsCreateMenu';
 import { ColumnVoice } from './BottomIsland';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
@@ -402,20 +403,8 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
 function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; guest: boolean; rooms: ReactNode }): ReactNode {
   const boardsOn = useBoardsUi((s) => s.active) && !guest;
   const calendarOn = useUi((s) => s.calDay !== null) && !guest && !boardsOn;
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const boardCreator = mayCreateBoards(useMemberRoles(workspaceId, me));
-  const [newCat, setNewCat] = useState(false);
   const add = boardsOn ? (
-    boardCreator ? (
-      <>
-        {/* «Новая категория»: quiet, left of the accent «+» (owner, 07.10). */}
-        <IconButton label={t('boards.cat.new')} onClick={() => setNewCat(true)} data-testid="board-category-new">
-          <FolderPlus className="size-[18px]" strokeWidth={1.75} aria-hidden />
-        </IconButton>
-        <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
-        {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
-      </>
-    ) : null
+    <BoardsCreateMenu workspaceId={workspaceId} />
   ) : calendarOn ? (
     <CreateButton label={t('shell.addMeeting')} data-testid="section-create-event" onClick={() => newEvent(workspaceId, nextQuarter())} />
   ) : (
@@ -523,13 +512,6 @@ function TaskBoardItem({ workspaceId, boardId }: { workspaceId: string; boardId:
       <span className="min-w-0 truncate">{name}</span>
     </Dropdown.Item>
   );
-}
-
-/** «Создать задачу»: the boards tab on that board, then its create dialog (reused, no new requests). */
-function createTaskOn(workspaceId: string, boardId: string): void {
-  if (!boardId) return;
-  openBoard(workspaceId, boardId);
-  useBoardsUi.getState().openCreate({ boardId });
 }
 
 /** «Добавить встречу»: today, from the next quarter hour, 30 minutes (the dialog's default length). */
@@ -1695,7 +1677,12 @@ function VoiceMember({
       tabIndex={0}
       aria-label={draggable ? `${name}. ${t('shell.dragHint')}` : name}
       onClick={() => {
-        if (stream && inSameRoom) voice.watch(stream.trackSid);
+        const plan = streamClickPlan({ streaming: state.streaming, hasTrack: !!stream, inSameRoom });
+        if (plan.openRoom) useUi.getState().openRoom(workspaceId, room.id);
+        if (plan.watch && stream) {
+          voice.watch(stream.trackSid);
+          voice.setStage('expanded');
+        }
       }}
       className={cx(
         // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
@@ -1739,7 +1726,11 @@ function VoiceMember({
         )
       ) : null}
       {state.musician ? <MusicianIcon /> : null}
-      <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
+      {isMe ? (
+        <SelfVoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || serverMuted} />
+      ) : (
+        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} />
+      )}
     </li>
   );
   // Shared member menu (PEOPLE): profile (dialog), mention, volume, moderation, «Переместить в ›»…

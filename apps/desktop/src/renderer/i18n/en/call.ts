@@ -40,4 +40,12 @@ export const enCall: DictShape<typeof ruCall> = {
   'call.log.cancelled': 'Cancelled call',
   'call.log.busy': 'Busy',
   'call.log.call': 'Call',
+  // inbound phone calls (ADR-0117)
+  'call.sipIncoming': 'Incoming to the number',
+  'call.sipVia': 'Incoming to the number · {via}',
+  'call.sipUnknown': 'Hidden number',
+  'call.sipFailed': 'Could not take the call',
+  'call.sipTaken': 'The call was already taken or ended',
+  'call.sipNotify': 'Incoming call from {number}',
+  'call.sipPanel': 'Call · {number}',
 };

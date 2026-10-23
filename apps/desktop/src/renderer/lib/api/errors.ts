@@ -60,6 +60,8 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_BANNED: { key: 'err.banned' },
   ERROR_CODE_ROOM_ARCHIVED: { key: 'temp.archived' },
   ERROR_CODE_USERNAME_TAKEN: { key: 'profile.username.taken' },
+  ERROR_CODE_SIP_EXTENSION_TAKEN: { key: 'sip.err.extTaken' },
+  ERROR_CODE_SIP_REGISTRATION_TAKEN: { key: 'sip.err.regTaken' },
   ERROR_CODE_USERNAME_INVALID: { key: 'profile.username.invalid' },
 };
 
@@ -200,6 +202,8 @@ export function describeError(e: unknown): HumanError {
     // The restricted mode «тариф не активен» (ADR-0086 amendment): one plain reason everywhere.
     if (e.reason === 'WORKSPACE_PLAN_INACTIVE')
       return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), retry: false, generic: false };
+    // CBF-69: an AI route on a plan without AI (Free / Team).
+    if (e.reason === 'AI_PLAN_REQUIRED') return { text: t('plan.lockedFrom', { plan: t('plan.name.enterprise') }), retry: false, generic: false };
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
       const sticker = e.field ? stickerField(e.field, e.message) : null;

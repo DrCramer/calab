@@ -47,6 +47,9 @@ import { esGuests } from './guests';
 import { esTemp } from './temp';
 import { esContacts } from './contacts';
 import { esSip } from './sip';
+import { esPbx } from './pbx';
+import { esAi } from './ai';
+import { esSmartTask } from './smartTask';
 import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -65,6 +68,9 @@ export const es: Dict = {
   ...esTemp,
   ...esContacts,
   ...esSip,
+  ...esPbx,
+  ...esAi,
+  ...esSmartTask,
   ...esWebApps,
   ...esDm,
   ...esNotes,
@@ -413,6 +419,7 @@ export const es: Dict = {
   'voice.mode': 'Modo de entrada',
   'voice.modeVad': 'Activación por voz',
   'voice.modePtt': 'Pulsar para hablar',
+  'voice.pttIdleState': 'Pulsar para hablar: esperando la tecla',
   'voice.threshold': 'Umbral de activación: {db} dB',
   'voice.thresholdHint': 'Tu micrófono se activa cuando hablas más fuerte que el umbral y se apaga tras una breve pausa.',
   'voice.pttKey': 'Tecla de pulsar para hablar',

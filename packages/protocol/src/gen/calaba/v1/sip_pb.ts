@@ -6,13 +6,15 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { JoinVoiceResponse } from "./rtc_pb.js";
+import { file_calaba_v1_rtc } from "./rtc_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/sip.proto.
  */
 export const file_calaba_v1_sip: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvc2lwLnByb3RvEgljYWxhYmEudjEi6gIKC1NpcFNldHRpbmdzEg8KB2VuYWJsZWQYASABKAgSEAoIcHJvdmlkZXIYAiABKAkSDAoEaG9zdBgDIAEoCRIqCgl0cmFuc3BvcnQYBCABKA4yFy5jYWxhYmEudjEuU2lwVHJhbnNwb3J0EhAKCHVzZXJuYW1lGAUgASgJEhQKDGhhc19wYXNzd29yZBgGIAEoCBIRCgljYWxsZXJfaWQYByABKAkSFwoPb3V0Ym91bmRfcHJlZml4GAggASgJEhgKEGFsbG93ZWRfcHJlZml4ZXMYCSADKAkSEgoKbGFzdF9lcnJvchgKIAEoCRIuCgp1cGRhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgp1cGRhdGVkX2J5GAwgASgJEhMKC3RydW5rX3NhdmVkGA0gASgIEhUKDWF1dGhfdXNlcm5hbWUYDiABKAkSDAoEcG9ydBgPIAEoDSJCChZHZXRTaXBTZXR0aW5nc1Jlc3BvbnNlEigKCHNldHRpbmdzGAEgASgLMhYuY2FsYWJhLnYxLlNpcFNldHRpbmdzIpUCChVQdXRTaXBTZXR0aW5nc1JlcXVlc3QSDwoHZW5hYmxlZBgBIAEoCBIQCghwcm92aWRlchgCIAEoCRIMCgRob3N0GAMgASgJEioKCXRyYW5zcG9ydBgEIAEoDjIXLmNhbGFiYS52MS5TaXBUcmFuc3BvcnQSEAoIdXNlcm5hbWUYBSABKAkSFQoIcGFzc3dvcmQYBiABKAlIAIgBARIRCgljYWxsZXJfaWQYByABKAkSFwoPb3V0Ym91bmRfcHJlZml4GAggASgJEhgKEGFsbG93ZWRfcHJlZml4ZXMYCSADKAkSFQoNYXV0aF91c2VybmFtZRgKIAEoCRIMCgRwb3J0GAsgASgNQgsKCV9wYXNzd29yZCJCChZQdXRTaXBTZXR0aW5nc1Jlc3BvbnNlEigKCHNldHRpbmdzGAEgASgLMhYuY2FsYWJhLnYxLlNpcFNldHRpbmdzIkIKD1Rlc3RTaXBSZXNwb25zZRIKCgJvaxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJEhIKCnNpcF9zdGF0dXMYAyABKA0iiQMKB1NpcENhbGwSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEg8KB3Jvb21faWQYAyABKAkSDgoGbnVtYmVyGAQgASgJEi4KCWRpcmVjdGlvbhgFIAEoDjIbLmNhbGFiYS52MS5TaXBDYWxsRGlyZWN0aW9uEhIKCnN0YXJ0ZWRfYnkYBiABKAkSKAoGc3RhdHVzGAcgASgOMhguY2FsYWJhLnYxLlNpcENhbGxTdGF0dXMSDgoGcmVhc29uGAggASgJEi4KCnN0YXJ0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2Fuc3dlcmVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUcGFydGljaXBhbnRfaWRlbnRpdHkYDCABKAkSEAoIZW5kZWRfYnkYDSABKAkiJQoTUGxhY2VTaXBDYWxsUmVxdWVzdBIOCgZudW1iZXIYASABKAkiMwoPU2lwQ2FsbFJlc3BvbnNlEiAKBGNhbGwYASABKAsyEi5jYWxhYmEudjEuU2lwQ2FsbCJOChRMaXN0U2lwQ2FsbHNSZXNwb25zZRIhCgVjYWxscxgBIAMoCzISLmNhbGFiYS52MS5TaXBDYWxsEhMKC25leHRfY3Vyc29yGAIgASgJIjEKDVNpcENhbGxVcGRhdGUSIAoEY2FsbBgBIAEoCzISLmNhbGFiYS52MS5TaXBDYWxsKnIKDFNpcFRyYW5zcG9ydBIdChlTSVBfVFJBTlNQT1JUX1VOU1BFQ0lGSUVEEAASFQoRU0lQX1RSQU5TUE9SVF9VRFAQARIVChFTSVBfVFJBTlNQT1JUX1RDUBACEhUKEVNJUF9UUkFOU1BPUlRfVExTEAMqvQEKDVNpcENhbGxTdGF0dXMSHwobU0lQX0NBTExfU1RBVFVTX1VOU1BFQ0lGSUVEEAASGwoXU0lQX0NBTExfU1RBVFVTX0RJQUxJTkcQARIbChdTSVBfQ0FMTF9TVEFUVVNfUklOR0lORxACEhoKFlNJUF9DQUxMX1NUQVRVU19BQ1RJVkUQAxIZChVTSVBfQ0FMTF9TVEFUVVNfRU5ERUQQBBIaChZTSVBfQ0FMTF9TVEFUVVNfRkFJTEVEEAUqbQoQU2lwQ2FsbERpcmVjdGlvbhIiCh5TSVBfQ0FMTF9ESVJFQ1RJT05fVU5TUEVDSUZJRUQQABIaChZTSVBfQ0FMTF9ESVJFQ1RJT05fT1VUEAESGQoVU0lQX0NBTExfRElSRUNUSU9OX0lOEAJClgEKDWNvbS5jYWxhYmEudjFCCFNpcFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChNjYWxhYmEvdjEvc2lwLnByb3RvEgljYWxhYmEudjEiigUKC1NpcFNldHRpbmdzEg8KB2VuYWJsZWQYASABKAgSEAoIcHJvdmlkZXIYAiABKAkSDAoEaG9zdBgDIAEoCRIqCgl0cmFuc3BvcnQYBCABKA4yFy5jYWxhYmEudjEuU2lwVHJhbnNwb3J0EhAKCHVzZXJuYW1lGAUgASgJEhQKDGhhc19wYXNzd29yZBgGIAEoCBIRCgljYWxsZXJfaWQYByABKAkSFwoPb3V0Ym91bmRfcHJlZml4GAggASgJEhgKEGFsbG93ZWRfcHJlZml4ZXMYCSADKAkSEgoKbGFzdF9lcnJvchgKIAEoCRIuCgp1cGRhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgp1cGRhdGVkX2J5GAwgASgJEhMKC3RydW5rX3NhdmVkGA0gASgIEhUKDWF1dGhfdXNlcm5hbWUYDiABKAkSDAoEcG9ydBgPIAEoDRIZChFpbmJvdW5kX2F2YWlsYWJsZRgQIAEoCBIXCg9pbmJvdW5kX2VuYWJsZWQYESABKAgSMQoOaW5ib3VuZF90YXJnZXQYEiABKAsyGS5jYWxhYmEudjEuU2lwUm91dGVUYXJnZXQSHQoVaW5ib3VuZF9hbGxvd2VkX2NpZHJzGBMgAygJEhUKDWluYm91bmRfc2F2ZWQYFCABKAgSLwoMaW5ib3VuZF9tb2RlGBUgASgOMhkuY2FsYWJhLnYxLlNpcEluYm91bmRNb2RlEjAKDHJlZ2lzdHJhdGlvbhgWIAEoCzIaLmNhbGFiYS52MS5TaXBSZWdpc3RyYXRpb24SHgoWcmVnaXN0cmF0aW9uX2F2YWlsYWJsZRgXIAEoCCLJAgoPU2lwUmVnaXN0cmF0aW9uEhEKCXJlZ2lzdHJhchgBIAEoCRIOCgZkb21haW4YAiABKAkSEwoLZXhwaXJlc19zZWMYAyABKA0SFQoNa2VlcGFsaXZlX3NlYxgEIAEoDRIVCg1hdXRoX3VzZXJuYW1lGAUgASgJEhQKDGhhc19wYXNzd29yZBgGIAEoCBIwCgZzdGF0dXMYByABKA4yIC5jYWxhYmEudjEuU2lwUmVnaXN0cmF0aW9uU3RhdHVzEg0KBWVycm9yGAggASgJEjEKDXJlZ2lzdGVyZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhYKDmNvbnRhY3RfbWFza2VkGAsgASgJIqABChRTaXBSZWdpc3RyYXRpb25JbnB1dBIRCglyZWdpc3RyYXIYASABKAkSDgoGZG9tYWluGAIgASgJEhMKC2V4cGlyZXNfc2VjGAMgASgNEhUKDWtlZXBhbGl2ZV9zZWMYBCABKA0SFQoNYXV0aF91c2VybmFtZRgFIAEoCRIVCghwYXNzd29yZBgGIAEoCUgAiAEBQgsKCV9wYXNzd29yZCJCChZHZXRTaXBTZXR0aW5nc1Jlc3BvbnNlEigKCHNldHRpbmdzGAEgASgLMhYuY2FsYWJhLnYxLlNpcFNldHRpbmdzIpUCChVQdXRTaXBTZXR0aW5nc1JlcXVlc3QSDwoHZW5hYmxlZBgBIAEoCBIQCghwcm92aWRlchgCIAEoCRIMCgRob3N0GAMgASgJEioKCXRyYW5zcG9ydBgEIAEoDjIXLmNhbGFiYS52MS5TaXBUcmFuc3BvcnQSEAoIdXNlcm5hbWUYBSABKAkSFQoIcGFzc3dvcmQYBiABKAlIAIgBARIRCgljYWxsZXJfaWQYByABKAkSFwoPb3V0Ym91bmRfcHJlZml4GAggASgJEhgKEGFsbG93ZWRfcHJlZml4ZXMYCSADKAkSFQoNYXV0aF91c2VybmFtZRgKIAEoCRIMCgRwb3J0GAsgASgNQgsKCV9wYXNzd29yZCJCChZQdXRTaXBTZXR0aW5nc1Jlc3BvbnNlEigKCHNldHRpbmdzGAEgASgLMhYuY2FsYWJhLnYxLlNpcFNldHRpbmdzIkIKD1Rlc3RTaXBSZXNwb25zZRIKCgJvaxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJEhIKCnNpcF9zdGF0dXMYAyABKA0i7gMKB1NpcENhbGwSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEg8KB3Jvb21faWQYAyABKAkSDgoGbnVtYmVyGAQgASgJEi4KCWRpcmVjdGlvbhgFIAEoDjIbLmNhbGFiYS52MS5TaXBDYWxsRGlyZWN0aW9uEhIKCnN0YXJ0ZWRfYnkYBiABKAkSKAoGc3RhdHVzGAcgASgOMhguY2FsYWJhLnYxLlNpcENhbGxTdGF0dXMSDgoGcmVhc29uGAggASgJEi4KCnN0YXJ0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2Fuc3dlcmVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUcGFydGljaXBhbnRfaWRlbnRpdHkYDCABKAkSEAoIZW5kZWRfYnkYDSABKAkSEwoLYW5zd2VyZWRfYnkYDiABKAkSDQoFcm91dGUYDyABKAkSGAoQcmluZ2luZ191c2VyX2lkcxgQIAMoCRILCgN2aWEYESABKAkSGAoQcHJvdmlkZXJfY2FsbF9pZBgSIAEoCSIlChNQbGFjZVNpcENhbGxSZXF1ZXN0Eg4KBm51bWJlchgBIAEoCSIzCg9TaXBDYWxsUmVzcG9uc2USIAoEY2FsbBgBIAEoCzISLmNhbGFiYS52MS5TaXBDYWxsIk4KFExpc3RTaXBDYWxsc1Jlc3BvbnNlEiEKBWNhbGxzGAEgAygLMhIuY2FsYWJhLnYxLlNpcENhbGwSEwoLbmV4dF9jdXJzb3IYAiABKAkiMQoNU2lwQ2FsbFVwZGF0ZRIgCgRjYWxsGAEgASgLMhIuY2FsYWJhLnYxLlNpcENhbGwiVAoOU2lwUm91dGVUYXJnZXQSJQoEa2luZBgBIAEoDjIXLmNhbGFiYS52MS5TaXBSb3V0ZUtpbmQSCgoCaWQYAiABKAkSDwoHbWlzc2luZxgDIAEoCCLTAQoMU2lwRXh0ZW5zaW9uEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIOCgZudW1iZXIYAyABKAkSKQoEa2luZBgEIAEoDjIbLmNhbGFiYS52MS5TaXBFeHRlbnNpb25LaW5kEg8KB3VzZXJfaWQYBSABKAkSEAoIZ3JvdXBfaWQYBiABKAkSEwoLZGVzY3JpcHRpb24YByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiOAoOU2lwR3JvdXBNZW1iZXISFAoMZXh0ZW5zaW9uX2lkGAEgASgJEhAKCHBvc2l0aW9uGAIgASgNIvgCCghTaXBHcm91cBIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEbmFtZRgDIAEoCRIqCglleHRlbnNpb24YBCABKAsyFy5jYWxhYmEudjEuU2lwRXh0ZW5zaW9uEi0KCHN0cmF0ZWd5GAUgASgOMhsuY2FsYWJhLnYxLlNpcEdyb3VwU3RyYXRlZ3kSEAoIcmluZ19zZWMYBiABKA0SFwoPbWVtYmVyX3Jpbmdfc2VjGAcgASgNEioKB29uX2ZhaWwYCCABKAsyGS5jYWxhYmEudjEuU2lwUm91dGVUYXJnZXQSKgoHbWVtYmVycxgJIAMoCzIZLmNhbGFiYS52MS5TaXBHcm91cE1lbWJlchIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIYChBmYWxsYmFja19lbmFibGVkGAsgASgIEhQKDGZhbGxiYWNrX3NlYxgMIAEoDSJGCgpTaXBJdnJJdGVtEg0KBWRpZ2l0GAEgASgJEikKBmFjdGlvbhgCIAEoCzIZLmNhbGFiYS52MS5TaXBSb3V0ZVRhcmdldCLpAgoKU2lwSXZyTWVudRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEbmFtZRgDIAEoCRIWCg5wcm9tcHRfZmlsZV9pZBgEIAEoCRIxCg1wcm9tcHRfc3RhdHVzGAUgASgOMhouY2FsYWJhLnYxLlNpcFByb21wdFN0YXR1cxIaChJwcm9tcHRfZHVyYXRpb25fbXMYBiABKA0SGQoRaW5wdXRfdGltZW91dF9zZWMYByABKA0SDwoHcmVwZWF0cxgIIAEoDRIuCgtvbl9ub19pbnB1dBgJIAEoCzIZLmNhbGFiYS52MS5TaXBSb3V0ZVRhcmdldBIkCgVpdGVtcxgKIAMoCzIVLmNhbGFiYS52MS5TaXBJdnJJdGVtEi4KCnVwZGF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnVwZGF0ZWRfYnkYDCABKAkiSAoZTGlzdFNpcEV4dGVuc2lvbnNSZXNwb25zZRIrCgpleHRlbnNpb25zGAEgAygLMhcuY2FsYWJhLnYxLlNpcEV4dGVuc2lvbiJRChlDcmVhdGVTaXBFeHRlbnNpb25SZXF1ZXN0Eg4KBm51bWJlchgBIAEoCRIPCgd1c2VyX2lkGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJIocBChlVcGRhdGVTaXBFeHRlbnNpb25SZXF1ZXN0EhMKBm51bWJlchgBIAEoCUgAiAEBEhQKB3VzZXJfaWQYAiABKAlIAYgBARIYCgtkZXNjcmlwdGlvbhgDIAEoCUgCiAEBQgkKB19udW1iZXJCCgoIX3VzZXJfaWRCDgoMX2Rlc2NyaXB0aW9uIkIKFFNpcEV4dGVuc2lvblJlc3BvbnNlEioKCWV4dGVuc2lvbhgBIAEoCzIXLmNhbGFiYS52MS5TaXBFeHRlbnNpb24iPAoVTGlzdFNpcEdyb3Vwc1Jlc3BvbnNlEiMKBmdyb3VwcxgBIAMoCzITLmNhbGFiYS52MS5TaXBHcm91cCIoCg9TaXBHcm91cE1lbWJlcnMSFQoNZXh0ZW5zaW9uX2lkcxgBIAMoCSKYAgoVQ3JlYXRlU2lwR3JvdXBSZXF1ZXN0EgwKBG5hbWUYASABKAkSDgoGbnVtYmVyGAIgASgJEi0KCHN0cmF0ZWd5GAMgASgOMhsuY2FsYWJhLnYxLlNpcEdyb3VwU3RyYXRlZ3kSEAoIcmluZ19zZWMYBCABKA0SFwoPbWVtYmVyX3Jpbmdfc2VjGAUgASgNEioKB29uX2ZhaWwYBiABKAsyGS5jYWxhYmEudjEuU2lwUm91dGVUYXJnZXQSKwoHbWVtYmVycxgHIAEoCzIaLmNhbGFiYS52MS5TaXBHcm91cE1lbWJlcnMSGAoQZmFsbGJhY2tfZW5hYmxlZBgIIAEoCBIUCgxmYWxsYmFja19zZWMYCSABKA0iowMKFVVwZGF0ZVNpcEdyb3VwUmVxdWVzdBIRCgRuYW1lGAEgASgJSACIAQESEwoGbnVtYmVyGAIgASgJSAGIAQESMgoIc3RyYXRlZ3kYAyABKA4yGy5jYWxhYmEudjEuU2lwR3JvdXBTdHJhdGVneUgCiAEBEhUKCHJpbmdfc2VjGAQgASgNSAOIAQESHAoPbWVtYmVyX3Jpbmdfc2VjGAUgASgNSASIAQESKgoHb25fZmFpbBgGIAEoCzIZLmNhbGFiYS52MS5TaXBSb3V0ZVRhcmdldBIrCgdtZW1iZXJzGAcgASgLMhouY2FsYWJhLnYxLlNpcEdyb3VwTWVtYmVycxIdChBmYWxsYmFja19lbmFibGVkGAggASgISAWIAQESGQoMZmFsbGJhY2tfc2VjGAkgASgNSAaIAQFCBwoFX25hbWVCCQoHX251bWJlckILCglfc3RyYXRlZ3lCCwoJX3Jpbmdfc2VjQhIKEF9tZW1iZXJfcmluZ19zZWNCEwoRX2ZhbGxiYWNrX2VuYWJsZWRCDwoNX2ZhbGxiYWNrX3NlYyI2ChBTaXBHcm91cFJlc3BvbnNlEiIKBWdyb3VwGAEgASgLMhMuY2FsYWJhLnYxLlNpcEdyb3VwIj8KF0xpc3RTaXBJdnJNZW51c1Jlc3BvbnNlEiQKBW1lbnVzGAEgAygLMhUuY2FsYWJhLnYxLlNpcEl2ck1lbnUiMwoLU2lwSXZySXRlbXMSJAoFaXRlbXMYASADKAsyFS5jYWxhYmEudjEuU2lwSXZySXRlbSLJAQoXQ3JlYXRlU2lwSXZyTWVudVJlcXVlc3QSDAoEbmFtZRgBIAEoCRIZChFpbnB1dF90aW1lb3V0X3NlYxgCIAEoDRIPCgdyZXBlYXRzGAMgASgNEi4KC29uX25vX2lucHV0GAQgASgLMhkuY2FsYWJhLnYxLlNpcFJvdXRlVGFyZ2V0EiUKBWl0ZW1zGAUgASgLMhYuY2FsYWJhLnYxLlNpcEl2ckl0ZW1zEh0KFXByb21wdF9zb3VyY2VfZmlsZV9pZBgGIAEoCSKiAgoXVXBkYXRlU2lwSXZyTWVudVJlcXVlc3QSEQoEbmFtZRgBIAEoCUgAiAEBEh4KEWlucHV0X3RpbWVvdXRfc2VjGAIgASgNSAGIAQESFAoHcmVwZWF0cxgDIAEoDUgCiAEBEi4KC29uX25vX2lucHV0GAQgASgLMhkuY2FsYWJhLnYxLlNpcFJvdXRlVGFyZ2V0EiUKBWl0ZW1zGAUgASgLMhYuY2FsYWJhLnYxLlNpcEl2ckl0ZW1zEiIKFXByb21wdF9zb3VyY2VfZmlsZV9pZBgGIAEoCUgDiAEBQgcKBV9uYW1lQhQKEl9pbnB1dF90aW1lb3V0X3NlY0IKCghfcmVwZWF0c0IYChZfcHJvbXB0X3NvdXJjZV9maWxlX2lkIjkKElNpcEl2ck1lbnVSZXNwb25zZRIjCgRtZW51GAEgASgLMhUuY2FsYWJhLnYxLlNpcEl2ck1lbnUiyQEKFFB1dFNpcEluYm91bmRSZXF1ZXN0Eg8KB2VuYWJsZWQYASABKAgSKQoGdGFyZ2V0GAIgASgLMhkuY2FsYWJhLnYxLlNpcFJvdXRlVGFyZ2V0EhUKDWFsbG93ZWRfY2lkcnMYAyADKAkSJwoEbW9kZRgEIAEoDjIZLmNhbGFiYS52MS5TaXBJbmJvdW5kTW9kZRI1CgxyZWdpc3RyYXRpb24YBSABKAsyHy5jYWxhYmEudjEuU2lwUmVnaXN0cmF0aW9uSW5wdXQiQQoVUHV0U2lwSW5ib3VuZFJlc3BvbnNlEigKCHNldHRpbmdzGAEgASgLMhYuY2FsYWJhLnYxLlNpcFNldHRpbmdzIjIKDlNpcEluYm91bmRSaW5nEiAKBGNhbGwYASABKAsyEi5jYWxhYmEudjEuU2lwQ2FsbCJoChhTaXBJbmJvdW5kQWNjZXB0UmVzcG9uc2USIAoEY2FsbBgBIAEoCzISLmNhbGFiYS52MS5TaXBDYWxsEioKBGpvaW4YAiABKAsyHC5jYWxhYmEudjEuSm9pblZvaWNlUmVzcG9uc2UqcgoMU2lwVHJhbnNwb3J0Eh0KGVNJUF9UUkFOU1BPUlRfVU5TUEVDSUZJRUQQABIVChFTSVBfVFJBTlNQT1JUX1VEUBABEhUKEVNJUF9UUkFOU1BPUlRfVENQEAISFQoRU0lQX1RSQU5TUE9SVF9UTFMQAyq9AQoNU2lwQ2FsbFN0YXR1cxIfChtTSVBfQ0FMTF9TVEFUVVNfVU5TUEVDSUZJRUQQABIbChdTSVBfQ0FMTF9TVEFUVVNfRElBTElORxABEhsKF1NJUF9DQUxMX1NUQVRVU19SSU5HSU5HEAISGgoWU0lQX0NBTExfU1RBVFVTX0FDVElWRRADEhkKFVNJUF9DQUxMX1NUQVRVU19FTkRFRBAEEhoKFlNJUF9DQUxMX1NUQVRVU19GQUlMRUQQBSptChBTaXBDYWxsRGlyZWN0aW9uEiIKHlNJUF9DQUxMX0RJUkVDVElPTl9VTlNQRUNJRklFRBAAEhoKFlNJUF9DQUxMX0RJUkVDVElPTl9PVVQQARIZChVTSVBfQ0FMTF9ESVJFQ1RJT05fSU4QAipuCg5TaXBJbmJvdW5kTW9kZRIgChxTSVBfSU5CT1VORF9NT0RFX1VOU1BFQ0lGSUVEEAASGwoXU0lQX0lOQk9VTkRfTU9ERV9ESVJFQ1QQARIdChlTSVBfSU5CT1VORF9NT0RFX1JFR0lTVEVSEAIq/wEKFVNpcFJlZ2lzdHJhdGlvblN0YXR1cxInCiNTSVBfUkVHSVNUUkFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh8KG1NJUF9SRUdJU1RSQVRJT05fU1RBVFVTX09GRhABEicKI1NJUF9SRUdJU1RSQVRJT05fU1RBVFVTX1VOQVZBSUxBQkxFEAISJwojU0lQX1JFR0lTVFJBVElPTl9TVEFUVVNfUkVHSVNURVJJTkcQAxImCiJTSVBfUkVHSVNUUkFUSU9OX1NUQVRVU19SRUdJU1RFUkVEEAQSIgoeU0lQX1JFR0lTVFJBVElPTl9TVEFUVVNfRkFJTEVEEAUqtQEKDFNpcFJvdXRlS2luZBIeChpTSVBfUk9VVEVfS0lORF9VTlNQRUNJRklFRBAAEhkKFVNJUF9ST1VURV9LSU5EX0hBTkdVUBABEhkKFVNJUF9ST1VURV9LSU5EX1JFUEVBVBACEhcKE1NJUF9ST1VURV9LSU5EX01FTlUQAxIcChhTSVBfUk9VVEVfS0lORF9FWFRFTlNJT04QBBIYChRTSVBfUk9VVEVfS0lORF9HUk9VUBAFKo0BChBTaXBFeHRlbnNpb25LaW5kEiIKHlNJUF9FWFRFTlNJT05fS0lORF9VTlNQRUNJRklFRBAAEhsKF1NJUF9FWFRFTlNJT05fS0lORF9VU0VSEAESGgoWU0lQX0VYVEVOU0lPTl9LSU5EX0JPVBACEhwKGFNJUF9FWFRFTlNJT05fS0lORF9HUk9VUBADKnsKEFNpcEdyb3VwU3RyYXRlZ3kSIgoeU0lQX0dST1VQX1NUUkFURUdZX1VOU1BFQ0lGSUVEEAASHwobU0lQX0dST1VQX1NUUkFURUdZX1JJTkdfQUxMEAESIgoeU0lQX0dST1VQX1NUUkFURUdZX1JPVU5EX1JPQklOEAIqbQoPU2lwUHJvbXB0U3RhdHVzEiEKHVNJUF9QUk9NUFRfU1RBVFVTX1VOU1BFQ0lGSUVEEAASGgoWU0lQX1BST01QVF9TVEFUVVNfTk9ORRABEhsKF1NJUF9QUk9NUFRfU1RBVFVTX1JFQURZEAJClgEKDWNvbS5jYWxhYmEudjFCCFNpcFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_rtc]);
 
 /**
  * The workspace's SIP provider account (one per workspace). GET never returns the password.
@@ -124,6 +126,66 @@ export type SipSettings = Message<"calaba.v1.SipSettings"> & {
    * @generated from field: uint32 port = 15;
    */
   port: number;
+
+  /**
+   * The server can answer inbound calls: LiveKit and the IVR worker token are configured
+   * (ADR-0117; no server switch since ADR-0121). The exchange below can be set up either way.
+   *
+   * @generated from field: bool inbound_available = 16;
+   */
+  inboundAvailable: boolean;
+
+  /**
+   * Inbound calls on caller_id (ADR-0117, PUT /api/workspaces/{id}/sip/inbound). Calls are
+   * answered when inbound_enabled and inbound_saved are set; a workspace that never switched
+   * inbound calls on takes none.
+   *
+   * @generated from field: bool inbound_enabled = 17;
+   */
+  inboundEnabled: boolean;
+
+  /**
+   * the entry point: a menu, a number or a group
+   *
+   * @generated from field: calaba.v1.SipRouteTarget inbound_target = 18;
+   */
+  inboundTarget?: SipRouteTarget | undefined;
+
+  /**
+   * provider addresses beyond the resolved host
+   *
+   * @generated from field: repeated string inbound_allowed_cidrs = 19;
+   */
+  inboundAllowedCidrs: string[];
+
+  /**
+   * LiveKit holds the inbound trunk and its dispatch rule
+   *
+   * @generated from field: bool inbound_saved = 20;
+   */
+  inboundSaved: boolean;
+
+  /**
+   * How inbound calls reach us (ADR-0121): DIRECT (the provider sends INVITE to our address) or
+   * REGISTER (the registration agent registers at the provider and hands its calls over).
+   *
+   * @generated from field: calaba.v1.SipInboundMode inbound_mode = 21;
+   */
+  inboundMode: SipInboundMode;
+
+  /**
+   * The registration at the provider (REGISTER mode; unset otherwise).
+   *
+   * @generated from field: calaba.v1.SipRegistration registration = 22;
+   */
+  registration?: SipRegistration | undefined;
+
+  /**
+   * The server has the registration agent (SIPREG_AGENT_TOKEN): REGISTER mode can be chosen.
+   *
+   * @generated from field: bool registration_available = 23;
+   */
+  registrationAvailable: boolean;
 };
 
 /**
@@ -132,6 +194,140 @@ export type SipSettings = Message<"calaba.v1.SipSettings"> & {
  */
 export const SipSettingsSchema: GenMessage<SipSettings> = /*@__PURE__*/
   messageDesc(file_calaba_v1_sip, 0);
+
+/**
+ * The registration at the provider (REGISTER mode, ADR-0121). The password is never sent back.
+ *
+ * @generated from message calaba.v1.SipRegistration
+ */
+export type SipRegistration = Message<"calaba.v1.SipRegistration"> & {
+  /**
+   * Registrar / outbound proxy «host[:port]»; empty = the account's host and port.
+   *
+   * @generated from field: string registrar = 1;
+   */
+  registrar: string;
+
+  /**
+   * SIP domain of the address of record; empty = the account's host.
+   *
+   * @generated from field: string domain = 2;
+   */
+  domain: string;
+
+  /**
+   * the requested registration interval, 60..3600 (600)
+   *
+   * @generated from field: uint32 expires_sec = 3;
+   */
+  expiresSec: number;
+
+  /**
+   * OPTIONS / CRLF keepalive, 0 = off or 15..120 (30)
+   *
+   * @generated from field: uint32 keepalive_sec = 4;
+   */
+  keepaliveSec: number;
+
+  /**
+   * Credentials of the registration when they differ from the account's; empty = the account's
+   * auth username (or username) and password.
+   *
+   * @generated from field: string auth_username = 5;
+   */
+  authUsername: string;
+
+  /**
+   * @generated from field: bool has_password = 6;
+   */
+  hasPassword: boolean;
+
+  /**
+   * @generated from field: calaba.v1.SipRegistrationStatus status = 7;
+   */
+  status: SipRegistrationStatus;
+
+  /**
+   * a code or a reason without secrets; empty = none
+   *
+   * @generated from field: string error = 8;
+   */
+  error: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp registered_at = 9;
+   */
+  registeredAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 10;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * The registered contact with the user part masked: «sip:c…@203.0.113.7:5080».
+   *
+   * @generated from field: string contact_masked = 11;
+   */
+  contactMasked: string;
+};
+
+/**
+ * Describes the message calaba.v1.SipRegistration.
+ * Use `create(SipRegistrationSchema)` to create a new message.
+ */
+export const SipRegistrationSchema: GenMessage<SipRegistration> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 1);
+
+/**
+ * The registration fields of PutSipInboundRequest (REGISTER mode).
+ *
+ * @generated from message calaba.v1.SipRegistrationInput
+ */
+export type SipRegistrationInput = Message<"calaba.v1.SipRegistrationInput"> & {
+  /**
+   * @generated from field: string registrar = 1;
+   */
+  registrar: string;
+
+  /**
+   * @generated from field: string domain = 2;
+   */
+  domain: string;
+
+  /**
+   * 0 = 600
+   *
+   * @generated from field: uint32 expires_sec = 3;
+   */
+  expiresSec: number;
+
+  /**
+   * 0 = off
+   *
+   * @generated from field: uint32 keepalive_sec = 4;
+   */
+  keepaliveSec: number;
+
+  /**
+   * @generated from field: string auth_username = 5;
+   */
+  authUsername: string;
+
+  /**
+   * Unset = keep the stored one; "" = drop it (the account's password is used).
+   *
+   * @generated from field: optional string password = 6;
+   */
+  password?: string | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipRegistrationInput.
+ * Use `create(SipRegistrationInputSchema)` to create a new message.
+ */
+export const SipRegistrationInputSchema: GenMessage<SipRegistrationInput> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 2);
 
 /**
  * GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
@@ -151,7 +347,7 @@ export type GetSipSettingsResponse = Message<"calaba.v1.GetSipSettingsResponse">
  * Use `create(GetSipSettingsResponseSchema)` to create a new message.
  */
 export const GetSipSettingsResponseSchema: GenMessage<GetSipSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 1);
+  messageDesc(file_calaba_v1_sip, 3);
 
 /**
  * PUT /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 PutSipSettingsResponse with the
@@ -240,7 +436,7 @@ export type PutSipSettingsRequest = Message<"calaba.v1.PutSipSettingsRequest"> &
  * Use `create(PutSipSettingsRequestSchema)` to create a new message.
  */
 export const PutSipSettingsRequestSchema: GenMessage<PutSipSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 2);
+  messageDesc(file_calaba_v1_sip, 4);
 
 /**
  * @generated from message calaba.v1.PutSipSettingsResponse
@@ -257,7 +453,7 @@ export type PutSipSettingsResponse = Message<"calaba.v1.PutSipSettingsResponse">
  * Use `create(PutSipSettingsResponseSchema)` to create a new message.
  */
 export const PutSipSettingsResponseSchema: GenMessage<PutSipSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 3);
+  messageDesc(file_calaba_v1_sip, 5);
 
 /**
  * POST /api/workspaces/{id}/sip/test (MANAGE_INTEGRATIONS, people; 5 per hour per workspace,
@@ -299,7 +495,7 @@ export type TestSipResponse = Message<"calaba.v1.TestSipResponse"> & {
  * Use `create(TestSipResponseSchema)` to create a new message.
  */
 export const TestSipResponseSchema: GenMessage<TestSipResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 4);
+  messageDesc(file_calaba_v1_sip, 6);
 
 /**
  * A phone call (journal row and live state).
@@ -395,6 +591,48 @@ export type SipCall = Message<"calaba.v1.SipCall"> & {
    * @generated from field: string ended_by = 13;
    */
   endedBy: string;
+
+  /**
+   * Inbound calls (direction IN, ADR-0117). number is the caller's number; status is RINGING
+   * from the moment the line got in (menu and ringing alike) until somebody answers (ACTIVE).
+   * More reasons: "hangup_menu" (a route to «hang up»), "no_input", "no_answer", "no_members",
+   * "loop", "declined" (everybody who rang declined), FAILED "busy_limit", "agent_unavailable",
+   * "plan", "disabled".
+   *
+   * the user who took the call
+   *
+   * @generated from field: string answered_by = 14;
+   */
+  answeredBy: string;
+
+  /**
+   * the path for the journal: «menu:<id>/2 → group:<id>»
+   *
+   * @generated from field: string route = 15;
+   */
+  route: string;
+
+  /**
+   * who rings right now
+   *
+   * @generated from field: repeated string ringing_user_ids = 16;
+   */
+  ringingUserIds: string[];
+
+  /**
+   * the name of the menu or group the call came through
+   *
+   * @generated from field: string via = 17;
+   */
+  via: string;
+
+  /**
+   * The provider's Call-ID of an inbound call that came over the registration (ADR-0121); empty
+   * for DIRECT inbound and outbound calls.
+   *
+   * @generated from field: string provider_call_id = 18;
+   */
+  providerCallId: string;
 };
 
 /**
@@ -402,7 +640,7 @@ export type SipCall = Message<"calaba.v1.SipCall"> & {
  * Use `create(SipCallSchema)` to create a new message.
  */
 export const SipCallSchema: GenMessage<SipCall> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 5);
+  messageDesc(file_calaba_v1_sip, 7);
 
 /**
  * POST /api/rooms/{id}/calls (PLACE_CALLS + VIEW_ROOM + CONNECT in the room, not a guest; a
@@ -431,7 +669,7 @@ export type PlaceSipCallRequest = Message<"calaba.v1.PlaceSipCallRequest"> & {
  * Use `create(PlaceSipCallRequestSchema)` to create a new message.
  */
 export const PlaceSipCallRequestSchema: GenMessage<PlaceSipCallRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 6);
+  messageDesc(file_calaba_v1_sip, 8);
 
 /**
  * @generated from message calaba.v1.SipCallResponse
@@ -448,7 +686,7 @@ export type SipCallResponse = Message<"calaba.v1.SipCallResponse"> & {
  * Use `create(SipCallResponseSchema)` to create a new message.
  */
 export const SipCallResponseSchema: GenMessage<SipCallResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 7);
+  messageDesc(file_calaba_v1_sip, 9);
 
 /**
  * DELETE /api/rooms/{id}/calls/{cid} (the caller, or MUTE_MEMBERS in the room; bots too) →
@@ -484,12 +722,13 @@ export type ListSipCallsResponse = Message<"calaba.v1.ListSipCallsResponse"> & {
  * Use `create(ListSipCallsResponseSchema)` to create a new message.
  */
 export const ListSipCallsResponseSchema: GenMessage<ListSipCallsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 8);
+  messageDesc(file_calaba_v1_sip, 10);
 
 /**
  * SIP_CALL_UPDATE: a phone call of a room was placed or changed status. To everyone who can
  * view the room (guests too: they hear the line). Active calls are also in
- * WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE).
+ * WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE). An inbound call (no room) goes to the
+ * user channels of the people it rings, rang or who answered it instead.
  *
  * @generated from message calaba.v1.SipCallUpdate
  */
@@ -505,7 +744,918 @@ export type SipCallUpdate = Message<"calaba.v1.SipCallUpdate"> & {
  * Use `create(SipCallUpdateSchema)` to create a new message.
  */
 export const SipCallUpdateSchema: GenMessage<SipCallUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_sip, 9);
+  messageDesc(file_calaba_v1_sip, 11);
+
+/**
+ * @generated from message calaba.v1.SipRouteTarget
+ */
+export type SipRouteTarget = Message<"calaba.v1.SipRouteTarget"> & {
+  /**
+   * @generated from field: calaba.v1.SipRouteKind kind = 1;
+   */
+  kind: SipRouteKind;
+
+  /**
+   * MENU / EXTENSION / GROUP; empty for HANGUP and REPEAT, and when the target was deleted
+   *
+   * @generated from field: string id = 2;
+   */
+  id: string;
+
+  /**
+   * Output only: the target of MENU / EXTENSION / GROUP was deleted, or the number has nobody
+   * (its member left). Such a route hangs up.
+   *
+   * @generated from field: bool missing = 3;
+   */
+  missing: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.SipRouteTarget.
+ * Use `create(SipRouteTargetSchema)` to create a new message.
+ */
+export const SipRouteTargetSchema: GenMessage<SipRouteTarget> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 12);
+
+/**
+ * An internal number: one numbering plan per workspace for people, bots and groups.
+ *
+ * @generated from message calaba.v1.SipExtension
+ */
+export type SipExtension = Message<"calaba.v1.SipExtension"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * 2..6 digits, a leading zero allowed («101», «1001»)
+   *
+   * @generated from field: string number = 3;
+   */
+  number: string;
+
+  /**
+   * @generated from field: calaba.v1.SipExtensionKind kind = 4;
+   */
+  kind: SipExtensionKind;
+
+  /**
+   * USER / BOT; empty = nobody (the member left)
+   *
+   * @generated from field: string user_id = 5;
+   */
+  userId: string;
+
+  /**
+   * GROUP
+   *
+   * @generated from field: string group_id = 6;
+   */
+  groupId: string;
+
+  /**
+   * ≤ 64 characters, for reference («Бухгалтерия»)
+   *
+   * @generated from field: string description = 7;
+   */
+  description: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 8;
+   */
+  createdAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipExtension.
+ * Use `create(SipExtensionSchema)` to create a new message.
+ */
+export const SipExtensionSchema: GenMessage<SipExtension> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 13);
+
+/**
+ * @generated from message calaba.v1.SipGroupMember
+ */
+export type SipGroupMember = Message<"calaba.v1.SipGroupMember"> & {
+  /**
+   * a number of kind USER or BOT
+   *
+   * @generated from field: string extension_id = 1;
+   */
+  extensionId: string;
+
+  /**
+   * 0..n-1, the round-robin order
+   *
+   * @generated from field: uint32 position = 2;
+   */
+  position: number;
+};
+
+/**
+ * Describes the message calaba.v1.SipGroupMember.
+ * Use `create(SipGroupMemberSchema)` to create a new message.
+ */
+export const SipGroupMemberSchema: GenMessage<SipGroupMember> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 14);
+
+/**
+ * @generated from message calaba.v1.SipGroup
+ */
+export type SipGroup = Message<"calaba.v1.SipGroup"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * 1..64 characters
+   *
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * the group's own number (kind GROUP)
+   *
+   * @generated from field: calaba.v1.SipExtension extension = 4;
+   */
+  extension?: SipExtension | undefined;
+
+  /**
+   * @generated from field: calaba.v1.SipGroupStrategy strategy = 5;
+   */
+  strategy: SipGroupStrategy;
+
+  /**
+   * unused since ADR-0124 (kept: 10..60, default 30)
+   *
+   * @generated from field: uint32 ring_sec = 6;
+   */
+  ringSec: number;
+
+  /**
+   * ROUND_ROBIN: 5..60 per member, default 15
+   *
+   * @generated from field: uint32 member_ring_sec = 7;
+   */
+  memberRingSec: number;
+
+  /**
+   * the fallback's action; not REPEAT; kept while it is off
+   *
+   * @generated from field: calaba.v1.SipRouteTarget on_fail = 8;
+   */
+  onFail?: SipRouteTarget | undefined;
+
+  /**
+   * by position, ≤ 20
+   *
+   * @generated from field: repeated calaba.v1.SipGroupMember members = 9;
+   */
+  members: SipGroupMember[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 10;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * The fallback (ADR-0124). Off (default): the group rings until somebody answers or the
+   * caller hangs up; on_fail is not used. On: after fallback_sec seconds of ringing, when
+   * everybody who rang declined, or at once when nobody can ring, the call follows on_fail
+   * (another group, a person or a bot, a menu, hang up). At most 3 group fallbacks per call:
+   * the next one hangs up (reason loop).
+   *
+   * @generated from field: bool fallback_enabled = 11;
+   */
+  fallbackEnabled: boolean;
+
+  /**
+   * 5..600, default 30
+   *
+   * @generated from field: uint32 fallback_sec = 12;
+   */
+  fallbackSec: number;
+};
+
+/**
+ * Describes the message calaba.v1.SipGroup.
+ * Use `create(SipGroupSchema)` to create a new message.
+ */
+export const SipGroupSchema: GenMessage<SipGroup> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 15);
+
+/**
+ * @generated from message calaba.v1.SipIvrItem
+ */
+export type SipIvrItem = Message<"calaba.v1.SipIvrItem"> & {
+  /**
+   * one of 0-9 * #
+   *
+   * @generated from field: string digit = 1;
+   */
+  digit: string;
+
+  /**
+   * @generated from field: calaba.v1.SipRouteTarget action = 2;
+   */
+  action?: SipRouteTarget | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipIvrItem.
+ * Use `create(SipIvrItemSchema)` to create a new message.
+ */
+export const SipIvrItemSchema: GenMessage<SipIvrItem> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 16);
+
+/**
+ * A voice menu: the prompt plays, the caller presses a key, the key's action follows. No key
+ * within input_timeout_sec after the prompt (or a key without an item) plays it again; after
+ * `repeats` plays on_no_input follows.
+ *
+ * @generated from message calaba.v1.SipIvrMenu
+ */
+export type SipIvrMenu = Message<"calaba.v1.SipIvrMenu"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * 1..64 characters
+   *
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * The prompt: Ogg/Opus 48 kHz mono 32 kbit/s made by the server from the upload (≤ 3 min);
+   * GET /api/files/{id} for MANAGE_INTEGRATIONS (listen in the settings). Empty = none.
+   *
+   * @generated from field: string prompt_file_id = 4;
+   */
+  promptFileId: string;
+
+  /**
+   * @generated from field: calaba.v1.SipPromptStatus prompt_status = 5;
+   */
+  promptStatus: SipPromptStatus;
+
+  /**
+   * @generated from field: uint32 prompt_duration_ms = 6;
+   */
+  promptDurationMs: number;
+
+  /**
+   * 3..15, default 5
+   *
+   * @generated from field: uint32 input_timeout_sec = 7;
+   */
+  inputTimeoutSec: number;
+
+  /**
+   * 1..5, default 3
+   *
+   * @generated from field: uint32 repeats = 8;
+   */
+  repeats: number;
+
+  /**
+   * not REPEAT
+   *
+   * @generated from field: calaba.v1.SipRouteTarget on_no_input = 9;
+   */
+  onNoInput?: SipRouteTarget | undefined;
+
+  /**
+   * by digit, ≤ 12
+   *
+   * @generated from field: repeated calaba.v1.SipIvrItem items = 10;
+   */
+  items: SipIvrItem[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 11;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string updated_by = 12;
+   */
+  updatedBy: string;
+};
+
+/**
+ * Describes the message calaba.v1.SipIvrMenu.
+ * Use `create(SipIvrMenuSchema)` to create a new message.
+ */
+export const SipIvrMenuSchema: GenMessage<SipIvrMenu> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 17);
+
+/**
+ * GET /api/workspaces/{id}/sip/extensions (any member but guests) → 200: all numbers by number,
+ * group numbers included.
+ *
+ * @generated from message calaba.v1.ListSipExtensionsResponse
+ */
+export type ListSipExtensionsResponse = Message<"calaba.v1.ListSipExtensionsResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.SipExtension extensions = 1;
+   */
+  extensions: SipExtension[];
+};
+
+/**
+ * Describes the message calaba.v1.ListSipExtensionsResponse.
+ * Use `create(ListSipExtensionsResponseSchema)` to create a new message.
+ */
+export const ListSipExtensionsResponseSchema: GenMessage<ListSipExtensionsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 18);
+
+/**
+ * POST /api/workspaces/{id}/sip/extensions → 201 SipExtensionResponse: a number for a member
+ * (a person or a bot, never a guest; ≤ 500 numbers per workspace). WORKSPACE_MEMBER_UPDATE
+ * carries the member's new extension. Errors: 422 VALIDATION (number: 2..6 digits; userId: not
+ * a member / a guest; description: ≤ 64 characters), 409 SIP_EXTENSION_TAKEN (field number: the
+ * number is taken; field userId: the member already has a number), 409 CONFLICT (limit).
+ *
+ * @generated from message calaba.v1.CreateSipExtensionRequest
+ */
+export type CreateSipExtensionRequest = Message<"calaba.v1.CreateSipExtensionRequest"> & {
+  /**
+   * @generated from field: string number = 1;
+   */
+  number: string;
+
+  /**
+   * @generated from field: string user_id = 2;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+};
+
+/**
+ * Describes the message calaba.v1.CreateSipExtensionRequest.
+ * Use `create(CreateSipExtensionRequestSchema)` to create a new message.
+ */
+export const CreateSipExtensionRequestSchema: GenMessage<CreateSipExtensionRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 19);
+
+/**
+ * PATCH /api/workspaces/{id}/sip/extensions/{eid} → 200 SipExtensionResponse; unset fields stay.
+ * user_id «» unassigns the number (it stays, routes to it hang up). A group's number changes
+ * only its number and description (user_id → 422). Errors as POST; 404 unknown number.
+ * DELETE …/extensions/{eid} → 204; a group's number is deleted with its group (422).
+ *
+ * @generated from message calaba.v1.UpdateSipExtensionRequest
+ */
+export type UpdateSipExtensionRequest = Message<"calaba.v1.UpdateSipExtensionRequest"> & {
+  /**
+   * @generated from field: optional string number = 1;
+   */
+  number?: string | undefined;
+
+  /**
+   * @generated from field: optional string user_id = 2;
+   */
+  userId?: string | undefined;
+
+  /**
+   * @generated from field: optional string description = 3;
+   */
+  description?: string | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateSipExtensionRequest.
+ * Use `create(UpdateSipExtensionRequestSchema)` to create a new message.
+ */
+export const UpdateSipExtensionRequestSchema: GenMessage<UpdateSipExtensionRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 20);
+
+/**
+ * @generated from message calaba.v1.SipExtensionResponse
+ */
+export type SipExtensionResponse = Message<"calaba.v1.SipExtensionResponse"> & {
+  /**
+   * @generated from field: calaba.v1.SipExtension extension = 1;
+   */
+  extension?: SipExtension | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipExtensionResponse.
+ * Use `create(SipExtensionResponseSchema)` to create a new message.
+ */
+export const SipExtensionResponseSchema: GenMessage<SipExtensionResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 21);
+
+/**
+ * GET /api/workspaces/{id}/sip/groups → 200.
+ *
+ * @generated from message calaba.v1.ListSipGroupsResponse
+ */
+export type ListSipGroupsResponse = Message<"calaba.v1.ListSipGroupsResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.SipGroup groups = 1;
+   */
+  groups: SipGroup[];
+};
+
+/**
+ * Describes the message calaba.v1.ListSipGroupsResponse.
+ * Use `create(ListSipGroupsResponseSchema)` to create a new message.
+ */
+export const ListSipGroupsResponseSchema: GenMessage<ListSipGroupsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 22);
+
+/**
+ * The members of a group in their order: SipExtension ids of kind USER or BOT, no repeats, ≤ 20.
+ *
+ * @generated from message calaba.v1.SipGroupMembers
+ */
+export type SipGroupMembers = Message<"calaba.v1.SipGroupMembers"> & {
+  /**
+   * @generated from field: repeated string extension_ids = 1;
+   */
+  extensionIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.SipGroupMembers.
+ * Use `create(SipGroupMembersSchema)` to create a new message.
+ */
+export const SipGroupMembersSchema: GenMessage<SipGroupMembers> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 23);
+
+/**
+ * POST /api/workspaces/{id}/sip/groups → 201 SipGroupResponse (≤ 50 groups): the group and its
+ * number. Errors: 422 VALIDATION (name, number, ringSec, memberRingSec, members, onFail — also a
+ * fallback to the group itself or its own number, fallbackSec), 409
+ * SIP_EXTENSION_TAKEN (number), 409 CONFLICT (limit).
+ *
+ * @generated from message calaba.v1.CreateSipGroupRequest
+ */
+export type CreateSipGroupRequest = Message<"calaba.v1.CreateSipGroupRequest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string number = 2;
+   */
+  number: string;
+
+  /**
+   * @generated from field: calaba.v1.SipGroupStrategy strategy = 3;
+   */
+  strategy: SipGroupStrategy;
+
+  /**
+   * 0 = 30
+   *
+   * @generated from field: uint32 ring_sec = 4;
+   */
+  ringSec: number;
+
+  /**
+   * 0 = 15
+   *
+   * @generated from field: uint32 member_ring_sec = 5;
+   */
+  memberRingSec: number;
+
+  /**
+   * unset = HANGUP
+   *
+   * @generated from field: calaba.v1.SipRouteTarget on_fail = 6;
+   */
+  onFail?: SipRouteTarget | undefined;
+
+  /**
+   * @generated from field: calaba.v1.SipGroupMembers members = 7;
+   */
+  members?: SipGroupMembers | undefined;
+
+  /**
+   * ADR-0124; default off
+   *
+   * @generated from field: bool fallback_enabled = 8;
+   */
+  fallbackEnabled: boolean;
+
+  /**
+   * 0 = 30
+   *
+   * @generated from field: uint32 fallback_sec = 9;
+   */
+  fallbackSec: number;
+};
+
+/**
+ * Describes the message calaba.v1.CreateSipGroupRequest.
+ * Use `create(CreateSipGroupRequestSchema)` to create a new message.
+ */
+export const CreateSipGroupRequestSchema: GenMessage<CreateSipGroupRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 24);
+
+/**
+ * PATCH /api/workspaces/{id}/sip/groups/{gid} → 200 SipGroupResponse; unset fields stay, set
+ * members replace the whole list with its order (the round-robin pointer starts over). DELETE
+ * …/groups/{gid} → 204 with its number; routes to it remain missing.
+ *
+ * @generated from message calaba.v1.UpdateSipGroupRequest
+ */
+export type UpdateSipGroupRequest = Message<"calaba.v1.UpdateSipGroupRequest"> & {
+  /**
+   * @generated from field: optional string name = 1;
+   */
+  name?: string | undefined;
+
+  /**
+   * @generated from field: optional string number = 2;
+   */
+  number?: string | undefined;
+
+  /**
+   * @generated from field: optional calaba.v1.SipGroupStrategy strategy = 3;
+   */
+  strategy?: SipGroupStrategy | undefined;
+
+  /**
+   * @generated from field: optional uint32 ring_sec = 4;
+   */
+  ringSec?: number | undefined;
+
+  /**
+   * @generated from field: optional uint32 member_ring_sec = 5;
+   */
+  memberRingSec?: number | undefined;
+
+  /**
+   * set = replace
+   *
+   * @generated from field: calaba.v1.SipRouteTarget on_fail = 6;
+   */
+  onFail?: SipRouteTarget | undefined;
+
+  /**
+   * set = replace
+   *
+   * @generated from field: calaba.v1.SipGroupMembers members = 7;
+   */
+  members?: SipGroupMembers | undefined;
+
+  /**
+   * @generated from field: optional bool fallback_enabled = 8;
+   */
+  fallbackEnabled?: boolean | undefined;
+
+  /**
+   * @generated from field: optional uint32 fallback_sec = 9;
+   */
+  fallbackSec?: number | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateSipGroupRequest.
+ * Use `create(UpdateSipGroupRequestSchema)` to create a new message.
+ */
+export const UpdateSipGroupRequestSchema: GenMessage<UpdateSipGroupRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 25);
+
+/**
+ * @generated from message calaba.v1.SipGroupResponse
+ */
+export type SipGroupResponse = Message<"calaba.v1.SipGroupResponse"> & {
+  /**
+   * @generated from field: calaba.v1.SipGroup group = 1;
+   */
+  group?: SipGroup | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipGroupResponse.
+ * Use `create(SipGroupResponseSchema)` to create a new message.
+ */
+export const SipGroupResponseSchema: GenMessage<SipGroupResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 26);
+
+/**
+ * GET /api/workspaces/{id}/sip/ivr → 200.
+ *
+ * @generated from message calaba.v1.ListSipIvrMenusResponse
+ */
+export type ListSipIvrMenusResponse = Message<"calaba.v1.ListSipIvrMenusResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.SipIvrMenu menus = 1;
+   */
+  menus: SipIvrMenu[];
+};
+
+/**
+ * Describes the message calaba.v1.ListSipIvrMenusResponse.
+ * Use `create(ListSipIvrMenusResponseSchema)` to create a new message.
+ */
+export const ListSipIvrMenusResponseSchema: GenMessage<ListSipIvrMenusResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 27);
+
+/**
+ * The keys of a menu: one item per digit, ≤ 12.
+ *
+ * @generated from message calaba.v1.SipIvrItems
+ */
+export type SipIvrItems = Message<"calaba.v1.SipIvrItems"> & {
+  /**
+   * @generated from field: repeated calaba.v1.SipIvrItem items = 1;
+   */
+  items: SipIvrItem[];
+};
+
+/**
+ * Describes the message calaba.v1.SipIvrItems.
+ * Use `create(SipIvrItemsSchema)` to create a new message.
+ */
+export const SipIvrItemsSchema: GenMessage<SipIvrItems> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 28);
+
+/**
+ * POST /api/workspaces/{id}/sip/ivr → 201 SipIvrMenuResponse (≤ 20 menus). Errors: 422
+ * VALIDATION (name, inputTimeoutSec, repeats, onNoInput, items / digit, promptSourceFileId),
+ * 409 CONFLICT (limit), 503 when the server has no ffmpeg.
+ *
+ * @generated from message calaba.v1.CreateSipIvrMenuRequest
+ */
+export type CreateSipIvrMenuRequest = Message<"calaba.v1.CreateSipIvrMenuRequest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * 0 = 5
+   *
+   * @generated from field: uint32 input_timeout_sec = 2;
+   */
+  inputTimeoutSec: number;
+
+  /**
+   * 0 = 3
+   *
+   * @generated from field: uint32 repeats = 3;
+   */
+  repeats: number;
+
+  /**
+   * @generated from field: calaba.v1.SipRouteTarget on_no_input = 4;
+   */
+  onNoInput?: SipRouteTarget | undefined;
+
+  /**
+   * @generated from field: calaba.v1.SipIvrItems items = 5;
+   */
+  items?: SipIvrItems | undefined;
+
+  /**
+   * An audio file the caller uploaded to this workspace (POST /api/workspaces/{id}/files):
+   * MP3, Ogg or WAV by its content, ≤ 10 MB, ≤ 3 min. The server makes the prompt from it
+   * (Ogg/Opus 48 kHz mono 32 kbit/s, loudness −16 LUFS) as a file of the workspace counted in
+   * its quota, not encrypted; the upload itself goes with the orphan cleanup. The request then
+   * takes up to ~60 s. Empty = no prompt.
+   *
+   * @generated from field: string prompt_source_file_id = 6;
+   */
+  promptSourceFileId: string;
+};
+
+/**
+ * Describes the message calaba.v1.CreateSipIvrMenuRequest.
+ * Use `create(CreateSipIvrMenuRequestSchema)` to create a new message.
+ */
+export const CreateSipIvrMenuRequestSchema: GenMessage<CreateSipIvrMenuRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 29);
+
+/**
+ * PATCH /api/workspaces/{id}/sip/ivr/{mid} → 200 SipIvrMenuResponse; unset fields stay, set
+ * items replace all keys. prompt_source_file_id: a new upload replaces the prompt, «» removes
+ * it (the old prompt file is deleted). DELETE …/ivr/{mid} → 204 with its prompt; routes to it
+ * remain missing.
+ *
+ * @generated from message calaba.v1.UpdateSipIvrMenuRequest
+ */
+export type UpdateSipIvrMenuRequest = Message<"calaba.v1.UpdateSipIvrMenuRequest"> & {
+  /**
+   * @generated from field: optional string name = 1;
+   */
+  name?: string | undefined;
+
+  /**
+   * @generated from field: optional uint32 input_timeout_sec = 2;
+   */
+  inputTimeoutSec?: number | undefined;
+
+  /**
+   * @generated from field: optional uint32 repeats = 3;
+   */
+  repeats?: number | undefined;
+
+  /**
+   * set = replace
+   *
+   * @generated from field: calaba.v1.SipRouteTarget on_no_input = 4;
+   */
+  onNoInput?: SipRouteTarget | undefined;
+
+  /**
+   * set = replace
+   *
+   * @generated from field: calaba.v1.SipIvrItems items = 5;
+   */
+  items?: SipIvrItems | undefined;
+
+  /**
+   * @generated from field: optional string prompt_source_file_id = 6;
+   */
+  promptSourceFileId?: string | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateSipIvrMenuRequest.
+ * Use `create(UpdateSipIvrMenuRequestSchema)` to create a new message.
+ */
+export const UpdateSipIvrMenuRequestSchema: GenMessage<UpdateSipIvrMenuRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 30);
+
+/**
+ * @generated from message calaba.v1.SipIvrMenuResponse
+ */
+export type SipIvrMenuResponse = Message<"calaba.v1.SipIvrMenuResponse"> & {
+  /**
+   * @generated from field: calaba.v1.SipIvrMenu menu = 1;
+   */
+  menu?: SipIvrMenu | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipIvrMenuResponse.
+ * Use `create(SipIvrMenuResponseSchema)` to create a new message.
+ */
+export const SipIvrMenuResponseSchema: GenMessage<SipIvrMenuResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 31);
+
+/**
+ * PUT /api/workspaces/{id}/sip/inbound (MANAGE_INTEGRATIONS, people) → 200 PutSipInboundResponse.
+ * enabled = true needs telephony on (SipSettings.enabled), a target other than HANGUP / REPEAT and
+ * a server that can take inbound calls; the server creates or replaces the LiveKit inbound trunk
+ * (numbers = caller_id; DIRECT: allowed addresses = the provider host's A/AAAA records now, the
+ * server's SIP_INBOUND_ALLOWED_ADDRESSES and allowed_cidrs; REGISTER: 127.0.0.1 and an internal
+ * digest password) and a dispatch rule that makes a room per call. enabled = false deletes both;
+ * live inbound calls end ("disabled"). Errors: 422 VALIDATION (target, allowedCidrs, registrar,
+ * domain, expiresSec, keepaliveSec, regAuthUsername, regPassword), 409 SIP_DISABLED (telephony
+ * off, no IVR worker token; REGISTER: no registration agent token on the server), 409
+ * SIP_REGISTRATION_TAKEN (another workspace registers the same account), 429 SIP_RATE_LIMITED
+ * (more than 10 mode / credential changes per hour), 502 SIP_PROVIDER_ERROR (LiveKit refused;
+ * last_error), 409 PLAN_LIMIT.
+ *
+ * @generated from message calaba.v1.PutSipInboundRequest
+ */
+export type PutSipInboundRequest = Message<"calaba.v1.PutSipInboundRequest"> & {
+  /**
+   * @generated from field: bool enabled = 1;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: calaba.v1.SipRouteTarget target = 2;
+   */
+  target?: SipRouteTarget | undefined;
+
+  /**
+   * IPv4 / IPv6 addresses or CIDR ranges of the provider («203.0.113.0/24»), ≤ 20; for providers
+   * that send calls from a pool rather than from their host's address. REGISTER mode: the
+   * sources the agent takes INVITEs from beyond the registrar's and the host's addresses.
+   *
+   * @generated from field: repeated string allowed_cidrs = 3;
+   */
+  allowedCidrs: string[];
+
+  /**
+   * UNSPECIFIED = keep the saved mode
+   *
+   * @generated from field: calaba.v1.SipInboundMode mode = 4;
+   */
+  mode: SipInboundMode;
+
+  /**
+   * REGISTER mode; unset = keep the saved fields
+   *
+   * @generated from field: calaba.v1.SipRegistrationInput registration = 5;
+   */
+  registration?: SipRegistrationInput | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.PutSipInboundRequest.
+ * Use `create(PutSipInboundRequestSchema)` to create a new message.
+ */
+export const PutSipInboundRequestSchema: GenMessage<PutSipInboundRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 32);
+
+/**
+ * @generated from message calaba.v1.PutSipInboundResponse
+ */
+export type PutSipInboundResponse = Message<"calaba.v1.PutSipInboundResponse"> & {
+  /**
+   * @generated from field: calaba.v1.SipSettings settings = 1;
+   */
+  settings?: SipSettings | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.PutSipInboundResponse.
+ * Use `create(PutSipInboundResponseSchema)` to create a new message.
+ */
+export const PutSipInboundResponseSchema: GenMessage<PutSipInboundResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 33);
+
+/**
+ * SIP_INBOUND_RING: an inbound call rings the recipient (a person or a bot): to every device of
+ * the user (and to a bot's webhook). Answer with POST /api/sip/inbound/{cid}/accept, refuse with
+ * …/decline. SIP_CALL_UPDATE follows on the user channel on every change (another member
+ * answered, the caller hung up, the ringing moved on); the modal closes when the recipient is no
+ * longer in ringing_user_ids. Ringing calls are also in WorkspaceSnapshot.sip_calls (READY).
+ *
+ * @generated from message calaba.v1.SipInboundRing
+ */
+export type SipInboundRing = Message<"calaba.v1.SipInboundRing"> & {
+  /**
+   * @generated from field: calaba.v1.SipCall call = 1;
+   */
+  call?: SipCall | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipInboundRing.
+ * Use `create(SipInboundRingSchema)` to create a new message.
+ */
+export const SipInboundRingSchema: GenMessage<SipInboundRing> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 34);
+
+/**
+ * POST /api/sip/inbound/{cid}/accept (a user the call rings now; bots too) → 200
+ * SipInboundAcceptResponse: the call is ACTIVE with answered_by = the caller, and join holds a
+ * LiveKit token for the call's room (microphone and listening only). Errors: 404 unknown call /
+ * not ringing the caller, 409 CONFLICT (somebody else answered first, or the call ended).
+ * POST /api/sip/inbound/{cid}/join (the user who answered) → 200 JoinVoiceResponse: a fresh token
+ * (reconnects). POST /api/sip/inbound/{cid}/decline (a user it rings) → 204: this user stops
+ * ringing; when nobody is left the route goes on as if nobody answered. DELETE
+ * /api/sip/inbound/{cid} (the user who answered, or MANAGE_INTEGRATIONS of the workspace) → 200
+ * SipCallResponse ENDED "hangup".
+ *
+ * @generated from message calaba.v1.SipInboundAcceptResponse
+ */
+export type SipInboundAcceptResponse = Message<"calaba.v1.SipInboundAcceptResponse"> & {
+  /**
+   * @generated from field: calaba.v1.SipCall call = 1;
+   */
+  call?: SipCall | undefined;
+
+  /**
+   * @generated from field: calaba.v1.JoinVoiceResponse join = 2;
+   */
+  join?: JoinVoiceResponse | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SipInboundAcceptResponse.
+ * Use `create(SipInboundAcceptResponseSchema)` to create a new message.
+ */
+export const SipInboundAcceptResponseSchema: GenMessage<SipInboundAcceptResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_sip, 35);
 
 /**
  * @generated from enum calaba.v1.SipTransport
@@ -610,7 +1760,7 @@ export enum SipCallDirection {
   OUT = 1,
 
   /**
-   * reserved for inbound calls (1.4+); never produced yet
+   * a call to the workspace's number (ADR-0117): room_id empty
    *
    * @generated from enum value: SIP_CALL_DIRECTION_IN = 2;
    */
@@ -622,4 +1772,243 @@ export enum SipCallDirection {
  */
 export const SipCallDirectionSchema: GenEnum<SipCallDirection> = /*@__PURE__*/
   enumDesc(file_calaba_v1_sip, 2);
+
+/**
+ * How inbound calls reach the server (ADR-0121). UNSPECIFIED in PutSipInboundRequest = keep the
+ * saved mode (clients before ADR-0121).
+ *
+ * @generated from enum calaba.v1.SipInboundMode
+ */
+export enum SipInboundMode {
+  /**
+   * @generated from enum value: SIP_INBOUND_MODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * the provider sends INVITE to our IP (ADR-0117)
+   *
+   * @generated from enum value: SIP_INBOUND_MODE_DIRECT = 1;
+   */
+  DIRECT = 1,
+
+  /**
+   * we register at the provider; calls come over the registration
+   *
+   * @generated from enum value: SIP_INBOUND_MODE_REGISTER = 2;
+   */
+  REGISTER = 2,
+}
+
+/**
+ * Describes the enum calaba.v1.SipInboundMode.
+ */
+export const SipInboundModeSchema: GenEnum<SipInboundMode> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_sip, 3);
+
+/**
+ * The state of the registration at the provider (ADR-0121 §3).
+ *
+ * @generated from enum calaba.v1.SipRegistrationStatus
+ */
+export enum SipRegistrationStatus {
+  /**
+   * @generated from enum value: SIP_REGISTRATION_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * not in REGISTER mode, or inbound calls off
+   *
+   * @generated from enum value: SIP_REGISTRATION_STATUS_OFF = 1;
+   */
+  OFF = 1,
+
+  /**
+   * the registration agent is not connected
+   *
+   * @generated from enum value: SIP_REGISTRATION_STATUS_UNAVAILABLE = 2;
+   */
+  UNAVAILABLE = 2,
+
+  /**
+   * @generated from enum value: SIP_REGISTRATION_STATUS_REGISTERING = 3;
+   */
+  REGISTERING = 3,
+
+  /**
+   * @generated from enum value: SIP_REGISTRATION_STATUS_REGISTERED = 4;
+   */
+  REGISTERED = 4,
+
+  /**
+   * error says why ("auth", "403", "timeout", …)
+   *
+   * @generated from enum value: SIP_REGISTRATION_STATUS_FAILED = 5;
+   */
+  FAILED = 5,
+}
+
+/**
+ * Describes the enum calaba.v1.SipRegistrationStatus.
+ */
+export const SipRegistrationStatusSchema: GenEnum<SipRegistrationStatus> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_sip, 4);
+
+/**
+ * What a route does: the entry point (step 2), a key of a menu, «no key pressed», «nobody
+ * answered».
+ *
+ * @generated from enum calaba.v1.SipRouteKind
+ */
+export enum SipRouteKind {
+  /**
+   * in requests: HANGUP
+   *
+   * @generated from enum value: SIP_ROUTE_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SIP_ROUTE_KIND_HANGUP = 1;
+   */
+  HANGUP = 1,
+
+  /**
+   * play the menu again; only a key of a menu
+   *
+   * @generated from enum value: SIP_ROUTE_KIND_REPEAT = 2;
+   */
+  REPEAT = 2,
+
+  /**
+   * another voice menu (id = SipIvrMenu.id)
+   *
+   * @generated from enum value: SIP_ROUTE_KIND_MENU = 3;
+   */
+  MENU = 3,
+
+  /**
+   * a person or a bot (id = SipExtension.id of kind USER or BOT)
+   *
+   * @generated from enum value: SIP_ROUTE_KIND_EXTENSION = 4;
+   */
+  EXTENSION = 4,
+
+  /**
+   * a call group (id = SipGroup.id); a group's number is stored as GROUP
+   *
+   * @generated from enum value: SIP_ROUTE_KIND_GROUP = 5;
+   */
+  GROUP = 5,
+}
+
+/**
+ * Describes the enum calaba.v1.SipRouteKind.
+ */
+export const SipRouteKindSchema: GenEnum<SipRouteKind> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_sip, 5);
+
+/**
+ * @generated from enum calaba.v1.SipExtensionKind
+ */
+export enum SipExtensionKind {
+  /**
+   * @generated from enum value: SIP_EXTENSION_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * a person (user_id; empty when the member left the workspace)
+   *
+   * @generated from enum value: SIP_EXTENSION_KIND_USER = 1;
+   */
+  USER = 1,
+
+  /**
+   * a bot member (user_id)
+   *
+   * @generated from enum value: SIP_EXTENSION_KIND_BOT = 2;
+   */
+  BOT = 2,
+
+  /**
+   * the number of a group (group_id); made and deleted with the group
+   *
+   * @generated from enum value: SIP_EXTENSION_KIND_GROUP = 3;
+   */
+  GROUP = 3,
+}
+
+/**
+ * Describes the enum calaba.v1.SipExtensionKind.
+ */
+export const SipExtensionKindSchema: GenEnum<SipExtensionKind> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_sip, 6);
+
+/**
+ * @generated from enum calaba.v1.SipGroupStrategy
+ */
+export enum SipGroupStrategy {
+  /**
+   * in requests: RING_ALL
+   *
+   * @generated from enum value: SIP_GROUP_STRATEGY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Every member rings at once (members who are not online ring too, with a push) until
+   * somebody answers, the caller hangs up or the fallback's time runs out (ADR-0124); the
+   * first who answers gets the call; members who become free meanwhile join the ringing.
+   *
+   * @generated from enum value: SIP_GROUP_STRATEGY_RING_ALL = 1;
+   */
+  RING_ALL = 1,
+
+  /**
+   * One member after another in their order for member_ring_sec each, starting after the one
+   * who answered last; members who are not online or busy are skipped; round after round
+   * until somebody answers, the caller hangs up or the fallback's time runs out (ADR-0124).
+   *
+   * @generated from enum value: SIP_GROUP_STRATEGY_ROUND_ROBIN = 2;
+   */
+  ROUND_ROBIN = 2,
+}
+
+/**
+ * Describes the enum calaba.v1.SipGroupStrategy.
+ */
+export const SipGroupStrategySchema: GenEnum<SipGroupStrategy> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_sip, 7);
+
+/**
+ * @generated from enum calaba.v1.SipPromptStatus
+ */
+export enum SipPromptStatus {
+  /**
+   * @generated from enum value: SIP_PROMPT_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * no prompt uploaded: the menu goes to on_no_input at once
+   *
+   * @generated from enum value: SIP_PROMPT_STATUS_NONE = 1;
+   */
+  NONE = 1,
+
+  /**
+   * prompt_file_id plays
+   *
+   * @generated from enum value: SIP_PROMPT_STATUS_READY = 2;
+   */
+  READY = 2,
+}
+
+/**
+ * Describes the enum calaba.v1.SipPromptStatus.
+ */
+export const SipPromptStatusSchema: GenEnum<SipPromptStatus> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_sip, 8);
 

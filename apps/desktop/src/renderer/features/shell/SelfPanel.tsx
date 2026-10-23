@@ -5,6 +5,7 @@ import { Avatar } from '../../components/Avatar';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMobile } from '../../lib/mobile';
+import { micGlyph } from '../../lib/voiceLogic';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -111,7 +112,7 @@ export function VoiceControls(): ReactNode {
       menuLabel={t('shell.micOptions')}
       menu={<MicMenu />}
     >
-      {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+      <MicGlyphIcon muted={muted} />
     </SplitButton>
     <SplitButton
       label={deafened ? t('voice.undeafen') : t('voice.deafen')}
@@ -124,6 +125,26 @@ export function VoiceControls(): ReactNode {
       {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
     </SplitButton>
     </>
+  );
+}
+
+/**
+ * The island's mic icon (CBF-71): a green dot in its corner while the mic really carries sound
+ * (not muted, and not waiting for the push-to-talk key). A leaf with its own subscriptions: a
+ * key press redraws only this icon.
+ */
+function MicGlyphIcon({ muted }: { muted: boolean }): ReactNode {
+  const deafened = useVoice((s) => s.deafened);
+  const inCall = useVoice((s) => s.roomId !== null);
+  const pttPref = usePrefs((s) => s.micMode === 'ptt');
+  const oneToOne = useVoice((s) => s.call);
+  const talking = useVoice((s) => s.pttDown);
+  const live = inCall && micGlyph({ muted, deafened, ptt: pttPref && !oneToOne, talking }) === 'live';
+  return (
+    <span className="relative grid place-items-center">
+      {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+      {live ? <span className="absolute -bottom-px -right-px size-2 rounded-full bg-ok" data-testid="mic-live-dot" aria-hidden /> : null}
+    </span>
   );
 }
 

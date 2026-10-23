@@ -11,6 +11,7 @@ import { isUploading, readyIds, roomLeft } from '../../lib/boards/pendingFiles';
 import { addAssignee, draftsOf, removeAssignee, type AssigneeDraft } from '../../lib/boards/assignees';
 import { MOD } from '../../components/ui';
 import { createTask, openTaskAnywhere } from '../../services/boards';
+import { boardsApi } from '../../services/boardsApi';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { menuBox, menuItem } from '../shell/menu';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -103,7 +104,7 @@ function Dialog({
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const files = usePendingFiles(boardId);
+  const files = usePendingFiles(boardsApi.uploadPath(boardId));
   const today = useToday();
   const st = board?.statuses.find((s) => s.id === status);
   const ms = board?.milestones.find((m) => m.id === milestone);

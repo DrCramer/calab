@@ -187,6 +187,23 @@ class FakeImap implements ImapSession {
     this.addFolder(path);
     return Promise.resolve();
   }
+  renameFolder(path: string, newPath: string): Promise<void> {
+    this.calls.push(`rename ${path} ${newPath}`);
+    for (const [p, f] of [...this.folders]) {
+      if (p !== path && !p.startsWith(`${path}/`)) continue;
+      const np = newPath + p.slice(path.length);
+      this.folders.delete(p);
+      const i = np.lastIndexOf('/');
+      f.info = { ...f.info, path: np, name: np.slice(i + 1), parentPath: i < 0 ? '' : np.slice(0, i) };
+      this.folders.set(np, f);
+    }
+    return Promise.resolve();
+  }
+  deleteFolder(path: string): Promise<void> {
+    this.calls.push(`delete ${path}`);
+    this.folders.delete(path);
+    return Promise.resolve();
+  }
   rest(inbox: string): Promise<void> {
     this.selected = inbox;
     return Promise.resolve();
@@ -678,5 +695,107 @@ describe('first sync progress (3.1.2)', () => {
     expect(sync.state).toBe('offline');
     advance(WATCHDOG_MS * 2);
     expect(sync.stalled).toBe(false);
+  });
+});
+
+describe('folder rename / delete and smart folders (CBF-56)', () => {
+  it('renames an ordinary folder on the server; the row, its mail and the subfolder paths follow', async () => {
+    const { imap, store, sync, events } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('Work');
+    const sub = imap.addFolder('Work/Old');
+    sub.info = { ...sub.info, parentPath: 'Work' };
+    imap.deliver('Work');
+    sync.start();
+    await settle();
+    const work = store.folderByPath('Work');
+    if (!work) throw new Error('no folder');
+    const before = [...store.localFlags(work.row).values()].map((m) => m.id);
+    events.length = 0;
+    const r = await sync.renameFolder(work.row, 'Проекты');
+    expect(imap.calls).toContain('rename Work Проекты');
+    expect(r).toMatchObject({ from: 'Work', to: 'Проекты', folder: { name: 'Проекты', path: 'Проекты' } });
+    expect(store.folder(work.row)?.path).toBe('Проекты');
+    expect([...store.localFlags(work.row).values()].map((m) => m.id)).toEqual(before);
+    expect(store.folderByPath('Проекты/Old')?.parentPath).toBe('Проекты');
+    expect(events.some((e) => e.type === 'folders')).toBe(true);
+    // The next LIST agrees: nothing is dropped or duplicated.
+    await sync.fullSync(imap);
+    expect(store.folders().map((f) => f.path).sort()).toEqual(['INBOX', 'Проекты', 'Проекты/Old']);
+  });
+
+  it('refuses role folders, bad and taken names', async () => {
+    const { imap, store, sync } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('A');
+    imap.addFolder('B');
+    sync.start();
+    await settle();
+    const inbox = store.folderByRole('inbox');
+    const a = store.folderByPath('A');
+    if (!inbox || !a) throw new Error('folders');
+    await expect(sync.renameFolder(inbox.row, 'X')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(sync.removeFolder(inbox.row)).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(sync.renameFolder(a.row, 'b')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(sync.renameFolder(a.row, 'x/y')).rejects.toMatchObject({ code: 'INVALID' });
+  });
+
+  it('deletes a folder with its subfolders (deepest first) and their mail', async () => {
+    const { imap, store, sync, events } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('Work');
+    imap.addFolder('Work/Old');
+    imap.deliver('Work/Old');
+    imap.deliver('INBOX');
+    sync.start();
+    await settle();
+    const work = store.folderByPath('Work');
+    if (!work) throw new Error('no folder');
+    events.length = 0;
+    expect(await sync.removeFolder(work.row)).toEqual(['Work/Old', 'Work']);
+    expect(imap.calls.filter((c) => c.startsWith('delete '))).toEqual(['delete Work/Old', 'delete Work']);
+    expect(store.folders().map((f) => f.path)).toEqual(['INBOX']);
+    expect(events.some((e) => e.type === 'messages_removed' && e.messageIds.length === 1)).toBe(true);
+    const inbox = store.folderByRole('inbox');
+    expect(inbox && store.folderCounts(inbox.row).total).toBe(1);
+  });
+
+  it('offline: rename and delete fail with NETWORK and change nothing (no queue)', async () => {
+    const { imap, store, sync } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('Work');
+    sync.start();
+    await settle();
+    const work = store.folderByPath('Work');
+    if (!work) throw new Error('no folder');
+    await sync.stop();
+    await expect(sync.renameFolder(work.row, 'New')).rejects.toMatchObject({ code: 'NETWORK' });
+    await expect(sync.removeFolder(work.row)).rejects.toMatchObject({ code: 'NETWORK' });
+    expect(store.folderByPath('Work')).not.toBeNull();
+    expect(imap.calls.some((c) => c.startsWith('rename') || c.startsWith('delete'))).toBe(false);
+  });
+
+  it('a smart scope lists the matching mail of every folder but the excluded, case-insensitively (Cyrillic too)', async () => {
+    const { imap, store, sync } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('Work');
+    imap.addFolder('Junk', '\\Junk');
+    imap.deliver('INBOX', { subject: 'Счёт за октябрь', from: { name: 'Бухгалтерия', address: 'buh@x.ru' } });
+    imap.deliver('Work', { subject: 'СЧЁТ №2', from: { name: 'Other', address: 'o@x.ru' }, to: [{ name: 'Анна', address: 'anna@x.ru' }] });
+    imap.deliver('INBOX', { subject: 'Hello' });
+    imap.deliver('Junk', { subject: 'счёт спам' });
+    sync.start();
+    await settle();
+    const junk = store.folderByRole('junk');
+    if (!junk) throw new Error('no junk');
+    type Cond = { field: 'from' | 'subject' | 'to'; contains: string };
+    const subjects = (match: 'all' | 'any', conditions: Cond[]): string[] =>
+      store
+        .listThreads({ kind: 'smart', exclude: [junk.row], query: JSON.stringify({ match, conditions }) }, { limit: 10 })
+        .map((r) => r.subject)
+        .sort();
+    expect(subjects('all', [{ field: 'subject', contains: 'счёт' }])).toEqual(['СЧЁТ №2', 'Счёт за октябрь']);
+    expect(subjects('all', [{ field: 'subject', contains: 'счёт' }, { field: 'from', contains: 'бухгалтер' }])).toEqual(['Счёт за октябрь']);
+    expect(subjects('any', [{ field: 'to', contains: 'ANNA@' }, { field: 'subject', contains: 'hello' }])).toEqual(['Hello', 'СЧЁТ №2']);
   });
 });

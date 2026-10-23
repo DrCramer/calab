@@ -30,9 +30,11 @@ type BoardAccess struct {
 	// DisabledFeatures: boards.disabled_features, the BoardFeature bit mask switched off
 	// (ADR-0058 §3; bit = the enum value).
 	DisabledFeatures int64
-	// TaskScoped (ADR-0059, ADR-0076): Bits = 0, yet the member (a human, not a guest) is an
-	// assignee, an approver or a watcher of a live task of this live board (restricted or not,
-	// ADR-0076 §2) — they see the board through those tasks only (TaskBits).
+	// TaskScoped (ADR-0059, ADR-0076, ADR-0115): no VIEW_BOARD, yet the member (a human, not a
+	// guest) is an assignee, an approver or a watcher of a live task of this live board
+	// (restricted or not, ADR-0076 §2), or is create-only (Bits = CREATE_TASKS, CreateOnly) —
+	// they see the board through those tasks only (TaskBits; a create-only member also through
+	// the tasks they authored). Bits is 0 or, create-only, CREATE_TASKS.
 	TaskScoped bool
 }
 
@@ -40,6 +42,22 @@ type BoardAccess struct {
 // outside the board: a private board, unless the member is the owner with «Владелец видит
 // приватное» on.
 func (a BoardAccess) NoBypass() bool { return a.Private && !a.Member.SeesPrivate() }
+
+// taskScoped decides the card-level access of a member without VIEW_BOARD (ADR-0059, ADR-0076,
+// ADR-0115) from their board bits, whether they are invited on a live task of the board and
+// whether they may see a board through cards at all (eligible: a human, not a guest, a live
+// board). Create-only bits (CreateOnly) make the board task-scoped even with no card yet; for
+// anyone not eligible they are dropped to 0 — a bot or a guest never creates on a board it does
+// not see. Returns TaskScoped and the bits to keep.
+func taskScoped(bits Bits, invited, eligible bool) (bool, Bits) {
+	switch {
+	case bits.Has(ViewBoard):
+		return false, bits
+	case !eligible:
+		return false, 0
+	}
+	return invited || CreateOnly(bits), bits
+}
 
 // Board returns the user's access to a board, or ErrNoBoard when the board does not exist or
 // the user is not a member of its workspace. Bits may be 0 (a hidden board): callers answer 404
@@ -70,7 +88,7 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 				Private: flags.Private, CreatedBy: flags.CreatedBy, Archived: row.Archived, Suspended: row.Suspended,
 				DisabledFeatures: row.DisabledFeatures,
 			}
-			acc.TaskScoped = row.Invited && acc.Bits == 0 && m.Role != RoleGuest && !row.Archived
+			acc.TaskScoped, acc.Bits = taskScoped(acc.Bits, row.Invited, m.Role != RoleGuest && !row.IsBot && !row.Archived)
 		}
 		r.mu.Lock()
 		r.boards[k] = acc
@@ -107,7 +125,8 @@ func (r *Resolver) taskRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 		return RoomAccess{}, err
 	}
 	live := !ref.TaskArchived // invitations count on live tasks only
-	bits := TaskRoom(TaskBits(b, live && ref.Assignee, live && ref.Approver, live && ref.Watcher), ref.TaskArchived, CommentsOff(b.DisabledFeatures))
+	author := ref.CreatedBy != nil && *ref.CreatedBy == userID
+	bits := TaskRoom(TaskBits(b, live && ref.Assignee, live && ref.Approver, live && ref.Watcher, live && author), ref.TaskArchived, CommentsOff(b.DisabledFeatures))
 	if b.Archived || bits == 0 {
 		// A member who cannot see the board: the room exists but shows nothing (404 upstream).
 		return RoomAccess{WorkspaceID: b.WorkspaceID, Role: b.Role, Member: b.Member, Task: true, TaskID: ref.TaskID, BoardID: ref.BoardID}, nil

@@ -362,9 +362,49 @@ func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if a.item.Kind == "folder" {
+		if item.FolderFiles, item.FolderFolders, err = s.folderCounts(r.Context(), a); err != nil {
+			return err
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.Write(w, http.StatusOK, &v1.DiskItemResponse{Item: item})
 	return nil
+}
+
+// folderCountMax bounds the children read for a folder card's counters.
+const folderCountMax = 5000
+
+// folderCounts: the files and sub-folders directly inside the folder that the caller may see
+// (the same rule as the listing, so the card never hints at what is hidden from them).
+func (s *Service) folderCounts(ctx context.Context, a access) (files, folders uint32, err error) {
+	q := s.db.Q
+	rows, err := q.ListDiskFolderByName(ctx, sqlc.ListDiskFolderByNameParams{WorkspaceID: a.item.WorkspaceID, ParentID: &a.item.ID, Lim: folderCountMax})
+	if err != nil {
+		return 0, 0, err
+	}
+	ch, err := diskacl.Load(ctx, q, []uuid.UUID{a.item.ID})
+	if err != nil {
+		return 0, 0, err
+	}
+	items := make([]sqlc.DiskItem, len(rows))
+	for i, x := range rows {
+		items[i] = x.DiskItem
+	}
+	if err := ch.AddChildren(ctx, q, &a.item.ID, items); err != nil {
+		return 0, 0, err
+	}
+	for _, it := range items {
+		if !ch.Bits(a.c.m, &it.ID).Has(perm.DiskView) {
+			continue
+		}
+		if it.Kind == "folder" {
+			folders++
+		} else {
+			files++
+		}
+	}
+	return files, folders, nil
 }
 
 // path: GET /api/disk/items/{id}/path — the breadcrumbs: the ancestors the caller sees, from

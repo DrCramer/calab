@@ -1,0 +1,102 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// AI integration of a workspace (CBF-60): the language model the workspace's AI features call
+// (later: smart tasks). One provider is active per workspace; every provider speaks the
+// OpenAI-compatible Chat Completions API (POST {base_url}/chat/completions, Bearer key).
+// GPTunneL's base URL is the server's GPTUNNEL_AI_URL; an OpenAI-compatible provider gives its own.
+// The API key is sealed at rest and never returned: GET answers has_key and a short mask.
+//
+// Who: MANAGE_INTEGRATIONS (ADR-0048), never guests; bots by the same bit (ADR-0109).
+
+enum AiProvider {
+  AI_PROVIDER_UNSPECIFIED = 0;
+  AI_PROVIDER_GPTUNNEL = 1;          // GPTunneL, base URL from the server's config
+  AI_PROVIDER_OPENAI_COMPATIBLE = 2; // any OpenAI-compatible API at base_url
+}
+
+message AiSettings {
+  AiProvider provider = 1; // UNSPECIFIED = never saved (the client shows GPTunneL)
+  // OPENAI_COMPATIBLE: the API root, e.g. https://api.example.com/v1 (…/chat/completions is
+  // added). Empty for GPTunneL.
+  string base_url = 2;
+  string model = 3;   // model id; «gpt-6-astra» when never saved
+  bool has_key = 4;   // a key is stored (it is never sent back)
+  string key_mask = 5; // «••••» and the key's last 4 characters; empty without a key
+  google.protobuf.Timestamp updated_at = 6; // unset = never saved
+  string updated_by = 7;                    // user id; empty = unknown / account gone
+  AiState state = 8;                        // CBF-68: whether smart tasks can run
+  google.protobuf.Timestamp checked_at = 9; // the last check of these settings; unset = none
+  string check_error = 10;                  // state FAILED: the check's error code
+}
+
+// CBF-68: the readiness of the saved settings, by the last «Проверить». Any change of the
+// provider, base URL, model or key makes the settings UNCHECKED again (the server keeps a
+// fingerprint of the checked four, never the key). Smart tasks run only when READY.
+enum AiState {
+  AI_STATE_UNSPECIFIED = 0;
+  AI_STATE_NO_KEY = 1;    // never saved or saved without a key: «Сначала подключите AI в настройках»
+  AI_STATE_UNCHECKED = 2; // not checked since the last change: «Проверьте подключение в настройках»
+  AI_STATE_FAILED = 3;    // the last check failed: «Подключение не работает — проверьте ключ»
+  AI_STATE_READY = 4;
+}
+
+// GET /api/workspaces/{id}/ai/status (any member but guests; people only) → 200. What the
+// «Создать умную задачу» item shows; never the key, the provider or the model.
+message GetAiStatusResponse {
+  AiState state = 1;
+}
+
+// GET /api/workspaces/{id}/ai (MANAGE_INTEGRATIONS) → 200 GetAiSettingsResponse; a workspace
+// that never saved gets provider UNSPECIFIED and the default model.
+message GetAiSettingsResponse {
+  AiSettings settings = 1;
+}
+
+// PUT /api/workspaces/{id}/ai (MANAGE_INTEGRATIONS) → 200 PutAiSettingsResponse. The whole object
+// is replaced, except the key: unset keeps the stored one, "" removes it, a value replaces it.
+// A stored key is kept only for the same provider and base URL: switching either without a new
+// key is 422 field apiKey (a key is never sent to another host than it was entered for).
+// Errors: 422 VALIDATION with field provider | baseUrl (absolute http(s) URL without
+// credentials, ≤ 500) | model (1..128 printable characters) | apiKey (≤ 512 printable ASCII).
+message PutAiSettingsRequest {
+  AiProvider provider = 1;
+  string base_url = 2; // OPENAI_COMPATIBLE only; ignored for GPTunneL
+  string model = 3;
+  optional string api_key = 4;
+}
+
+message PutAiSettingsResponse {
+  AiSettings settings = 1;
+}
+
+// POST /api/workspaces/{id}/ai/check (MANAGE_INTEGRATIONS; 10 per minute per workspace, else
+// 429 RATE_LIMITED) → 200 CheckAiResponse. Checks the given (unsaved) form: sends one user
+// message «hi» to the model and reports whether an answer came. The outcome is remembered for
+// the checked form (CBF-68): saving the same form afterwards keeps it, so AiSettings.state is
+// READY or FAILED; any other form is UNCHECKED. api_key unset = the stored key,
+// under the same rule as PUT; no key at all is 422 field apiKey. Validation errors as in PUT
+// (422). Takes up to ~30 s.
+message CheckAiRequest {
+  AiProvider provider = 1;
+  string base_url = 2;
+  string model = 3;
+  optional string api_key = 4;
+}
+
+message CheckAiResponse {
+  bool ok = 1;
+  string reply = 2; // ok: the start of the model's answer (≤ 200 characters)
+  // Not ok: why. «unauthorized» (401/403: wrong key), «model_not_found», «not_found» (404
+  // without a model error: a wrong base URL), «insufficient_balance» (402), «rate_limited»
+  // (429), «provider_error» (5xx), «bad_request»
+  // (other 4xx), «bad_response» (not a Chat Completions answer), «timeout», «network»,
+  // «blocked_address» (the host is not a public address).
+  string error = 3;
+  string message = 4;     // the provider's own error text, if any (≤ 300 characters)
+  uint32 http_status = 5; // the provider's HTTP status, 0 = none
+  uint32 latency_ms = 6;
+  AiState state = 7; // CBF-68: the saved settings' state after this check
+}

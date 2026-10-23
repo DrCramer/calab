@@ -139,6 +139,59 @@ services:
       livekit: { condition: service_started }
     logging: *logging
 
+  # IVR worker of inbound calls (ADR-0117 §2): IVR_AGENT_TOKEN in .env (with SIP_ENABLED=1) adds
+  # the compose profile "ivr" (deploy.sh). It holds an outgoing WebSocket to the API (IVR_API_URL, by default the app
+  # host; prod: the k8s API) with IVR_AGENT_TOKEN — the same value as the API's — and joins
+  # inbound calls' rooms over the loopback LiveKit. No ports of its own.
+  ivr:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile.ivr
+    profiles: [ivr]
+    network_mode: host
+    restart: unless-stopped
+    <<: *hardening
+    tmpfs: [/tmp]                  # the prompt cache (≤ 200 MB, refetched after a restart)
+    environment:
+      - API_URL=${IVR_API_URL:-https://${APP_HOST:-${DOMAIN}}}
+      - IVR_AGENT_TOKEN=${IVR_AGENT_TOKEN:-}
+      - LIVEKIT_URL=ws://127.0.0.1:7880
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 256m }
+    depends_on:
+      livekit: { condition: service_started }
+    logging: *logging
+
+  # SIP registration agent of inbound calls (ADR-0121): SIPREG_AGENT_TOKEN in .env (with
+  # SIP_ENABLED=1) adds the compose profile "sipreg" (deploy.sh). It registers the workspaces'
+  # accounts at their providers as a client behind NAT (ADR-0125: a flow to the registrar, no
+  # inbound port; SIP_REGISTRAR_PUBLIC_IP set = the older forward mode with 5080 udp+tcp open,
+  # docs/03) and hands their INVITEs to LiveKit SIP on 127.0.0.1:5060. Outgoing
+  # WebSocket to the API (SIPREG_API_URL, by default the app host; prod: the k8s API) with its
+  # own token; the providers' passwords stay in its memory. No HTTP ports.
+  sipreg:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile.sipreg
+    profiles: [sipreg]
+    network_mode: host
+    restart: unless-stopped
+    <<: *hardening                 # binds 5080 (> 1024): no capabilities needed
+    environment:
+      - API_URL=${SIPREG_API_URL:-https://${APP_HOST:-${DOMAIN}}}
+      - SIPREG_AGENT_TOKEN=${SIPREG_AGENT_TOKEN:-}
+      - SIP_REGISTRAR_PORT=${SIP_REGISTRAR_PORT:-5080}
+      - SIP_REGISTRAR_PUBLIC_IP=${SIP_REGISTRAR_PUBLIC_IP:-}
+      - SIP_REGISTRAR_STUN=${SIP_REGISTRAR_STUN:-}
+      - LIVEKIT_SIP_ADDR=127.0.0.1:5060
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 64m }
+    depends_on:
+      sip: { condition: service_started }
+    logging: *logging
+
   # One-shot: recordings_data belongs to the API user (distroless nonroot 65532), which creates
   # a world-writable directory per workspace for the egress user (1001) and deletes the files.
   # Reuses the Valkey image (already pulled) for its shell. FOWNER: from the second deploy on,
@@ -230,6 +283,11 @@ services:
       - BOT_MESSAGES_PER_MIN=${BOT_MESSAGES_PER_MIN:-20}
       # due notices of tasks at 09:00 of this IANA zone (ADR-0089)
       - TASKS_DUE_TZ=${TASKS_DUE_TZ:-Europe/Moscow}
+      # inbound calls on the SIP number (ADR-0117/0121): the IVR worker's token (empty = no inbound
+      # calls), the registration agent's own token (empty = no REGISTER mode)
+      - IVR_AGENT_TOKEN=${IVR_AGENT_TOKEN:-}
+      - SIPREG_AGENT_TOKEN=${SIPREG_AGENT_TOKEN:-}
+      - SIP_INBOUND_ALLOWED_ADDRESSES=${SIP_INBOUND_ALLOWED_ADDRESSES:-}
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files, /data/recordings
     tmpfs: [/tmp]
     volumes:

@@ -110,6 +110,9 @@ interface BoardsUiState {
   openMenu: (taskId: string, kind: CardMenu) => void;
   closeMenu: () => void;
   openCreate: (v: BoardsUiState['createFor']) => void;
+  /** «Создать умную задачу» (CBF-68): the workspace whose dialog is open; null = closed. */
+  smartFor: string | null;
+  openSmart: (workspaceId: string | null) => void;
   openSettings: (v: BoardsUiState['settingsFor']) => void;
   setFilterOpen: (v: boolean) => void;
   setHelpOpen: (v: boolean) => void;
@@ -136,6 +139,7 @@ export const useBoardsUi = create<BoardsUiState>()(
       selected: {},
       menu: null,
       createFor: null,
+      smartFor: null,
       lastBoard: {},
       setLastBoard: (wsId, boardId) => set((s) => (s.lastBoard[wsId] === boardId ? {} : { lastBoard: { ...s.lastBoard, [wsId]: boardId } })),
       settingsFor: null,
@@ -184,6 +188,7 @@ export const useBoardsUi = create<BoardsUiState>()(
       openMenu: (taskId, kind) => set({ menu: { taskId, kind, seq: ++menuSeq } }),
       closeMenu: () => set((s) => (s.menu ? { menu: null } : {})),
       openCreate: (createFor) => set({ createFor }),
+      openSmart: (smartFor) => set({ smartFor }),
       openSettings: (settingsFor) => set({ settingsFor }),
       setFilterOpen: (filterOpen) => set({ filterOpen }),
       setHelpOpen: (helpOpen) => set({ helpOpen }),

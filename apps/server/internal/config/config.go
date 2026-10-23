@@ -113,6 +113,16 @@ type Config struct {
 	LiveKitAPIKey          string `env:"LIVEKIT_API_KEY"`
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
+	// IVR worker (cmd/ivr, ADR-0117 §2): the shared token of its WebSocket to the API (both sides'
+	// env). Empty = no worker: inbound calls cannot be switched on. With it, inbound calls work in
+	// the workspaces whose admin switched them on (no server switch, ADR-0121).
+	IVRAgentToken string `env:"IVR_AGENT_TOKEN"`
+	// SIP registration agent (cmd/sipreg, ADR-0121): its own token (it gets the providers'
+	// passwords). Empty = no agent: the REGISTER mode of inbound calls cannot be chosen.
+	SIPRegAgentToken string `env:"SIPREG_AGENT_TOKEN"`
+	// Provider addresses (IPs / CIDRs) every inbound trunk accepts besides the resolved provider
+	// host and the workspace's own list, e.g. the provider's signalling pool.
+	SIPInboundAllowedAddresses []string `env:"SIP_INBOUND_ALLOWED_ADDRESSES" envSeparator:","`
 
 	// Native push is inert unless a complete transport is explicitly configured.
 	PushVoIPEnabled           bool   `env:"PUSH_VOIP_ENABLED"`
@@ -190,8 +200,11 @@ type Config struct {
 	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
 	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
 	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
-	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
-	GPTunnelWebURL    string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelAPIURL string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelWebURL string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	// GPTUNNEL_AI_URL: the OpenAI-compatible API root of GPTunneL for the AI integration (CBF-60,
+	// ai.proto): the check and AI features call {GPTUNNEL_AI_URL}/chat/completions.
+	GPTunnelAIURL     string `env:"GPTUNNEL_AI_URL" envDefault:"https://gptunnel.ru/v1"`
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
 	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
 	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
@@ -278,6 +291,11 @@ func (c *Config) Validate() error {
 	}
 	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
 		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
+	}
+	// The registration agent gets the providers' passwords: the IVR worker's token must not open
+	// its socket (ADR-0121 §4).
+	if c.SIPRegAgentToken != "" && c.SIPRegAgentToken == c.IVRAgentToken {
+		errs = append(errs, errors.New("SIPREG_AGENT_TOKEN must differ from IVR_AGENT_TOKEN"))
 	}
 	lk := []string{c.LiveKitURL, c.LiveKitInternalURL, c.LiveKitAPIKey, c.LiveKitAPISecret}
 	if n := countSet(lk); n != 0 && n != len(lk) {
@@ -387,6 +405,9 @@ func (c *Config) Validate() error {
 	}
 	if Origin(c.GPTunnelAPIURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
+	}
+	if Origin(c.GPTunnelAIURL) == "" {
+		errs = append(errs, fmt.Errorf("GPTUNNEL_AI_URL must be an absolute http(s) URL, got %q", c.GPTunnelAIURL))
 	}
 	if Origin(c.GPTunnelWebURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))

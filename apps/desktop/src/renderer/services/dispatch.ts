@@ -50,6 +50,7 @@ import { resumeVoiceAfterReady } from './resumeVoice';
 import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { applySnapshotSipCalls, dropSipCalls, onSipCallUpdate, resetSipCalls } from './sip';
+import { onSipInboundRing } from './sipInbound';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
@@ -576,6 +577,10 @@ export function applyDispatch(ev: DispatchEvent): void {
     // Telephony (ADR-0046): a room's phone line placed / changed status.
     case 'sipCallUpdate':
       onSipCallUpdate(e.value.call);
+      return;
+    // An inbound phone call rings me (ADR-0117): the incoming modal.
+    case 'sipInboundRing':
+      onSipInboundRing(e.value.call);
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);

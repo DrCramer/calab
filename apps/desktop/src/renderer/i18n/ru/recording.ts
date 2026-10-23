@@ -92,7 +92,7 @@ export const ruRecording = {
   'rec.tr.file': 'Транскрипт',
   'rec.tr.playFrom': 'Слушать с {time}',
   // workspace settings → GPTunneL
-  'gpt.tab': 'GPTunneL',
+  'gpt.tab': 'AI интеграция',
   'gpt.card': 'Запись и расшифровка встреч',
   'gpt.intro':
     'Записи встреч уходят в GPTunneL — там появятся расшифровка и саммари. Подключите пространство один раз, дальше любой участник включает запись из меню «…» голосовой комнаты.',

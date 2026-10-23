@@ -217,6 +217,22 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	if st, _ := setMemberRoles(admin, wid, plain.id, sales.GetId()); st != 403 {
 		t.Fatalf("admin grants the sales role: %d, want 403", st)
 	}
+	// Nor open it partly: a role that is create-only there (ADR-0115) lists the board and lets
+	// its holders create and see their cards. A role without an override on it is fine.
+	free, clerks := newRole(t, o, wid, "free", 0), newRole(t, o, wid, "clerks", 0)
+	setBoardPerms(pm, bid, 200, append(cloneBoardOverrides(t, pm, bid), roleOv(clerks.GetId(), perm.CreateTasks, 0))...)
+	if st, _ := setMemberRoles(admin, wid, plain.id, free.GetId()); st != 200 {
+		t.Fatalf("admin grants a role the board does not name: %d, want 200", st)
+	}
+	if st, _ := setMemberRoles(admin, wid, plain.id, clerks.GetId()); st != 403 {
+		t.Fatalf("admin grants a create-only role: %d, want 403", st)
+	}
+	if st, _ := setMemberRoles(adminOv, wid, plain.id, clerks.GetId()); st != 200 {
+		t.Fatalf("admin who sees the board grants a create-only role: %d, want 200", st)
+	}
+	if st, _ := setMemberRoles(o, wid, plain.id); st != 200 {
+		t.Fatalf("reset: %d", st)
+	}
 	// Nor change the flag or the access of a board they do not see.
 	admin.must(404, "PATCH", "/api/boards/"+bid, &v1.UpdateBoardRequest{Restricted: &off}, nil)
 	// An admin let in by an override has member bits there, not MANAGE_BOARD.

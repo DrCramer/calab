@@ -12,6 +12,7 @@ import { installWindowVisibility } from './lib/windowVisibility';
 import { startLocale } from './services/locale';
 import { installPlayer } from './services/player';
 import { installCalls } from './services/call';
+import { installSipInbound } from './services/sipInbound';
 import { installResumeVoice } from './services/resumeVoice';
 import { installTimeFormat } from './services/timeFormat';
 import { bootstrap } from './services/session';
@@ -43,6 +44,8 @@ installPlayer();
 
 // One-to-one calls (ADR-0034): leaving the call's voice session or closing the app ends the call.
 installCalls();
+// Inbound phone calls (ADR-0117): leaving such a call's voice session hangs it up.
+installSipInbound();
 
 // After a restart for an update: back into the same room / call (docs/09 #126).
 installResumeVoice();

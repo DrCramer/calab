@@ -2,7 +2,7 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { AiState, FormerMemberReason, Plan, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
@@ -457,6 +457,21 @@ test('m-chat-image', async ({ page }) => {
     expect(r.height).toBeLessThanOrEqual(vh * 0.6 + 1);
   }
   await checkpoint(page, 'm-chat-image', { main: true });
+});
+
+// CBF-66: a Disk folder link in a chat is its own card — name, who shared, what is inside, «Открыть».
+test('m-chat-folder-card', async ({ page }) => {
+  await signedInRoom(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  const folder = [...mock.disk.items.values()].find((i) => i.name === 'Проекты');
+  expect(folder).toBeTruthy();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: `Материалы по проектам ${new URL(page.url()).origin}/disk/${folder?.id ?? ''}` });
+  const card = page.getByTestId('disk-folder-card');
+  await expect(card.getByTestId('disk-folder-card-summary')).toContainText('папка');
+  await feedToBottom(page);
+  await page.mouse.move(0, 0);
+  await expectFeedFits(page);
+  await checkpoint(page, 'm-chat-folder-card', { main: true });
 });
 
 // A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
@@ -1000,6 +1015,34 @@ test('m-boards-create', async ({ page }) => {
   await checkpoint(page, 'm-boards-create');
 });
 
+// CBF-68: «Создать умную задачу» from the boards tab's «+»: off with the reason, then the dialog.
+test('m-boards-smart', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'boards');
+  await page.getByTestId('section-create-board').tap();
+  // CBF-69: Team (the fixture) — off for the plan; then Business.
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Доступно на тарифе Business');
+  await checkpoint(page, 'm-boards-smart-plan');
+  await page.keyboard.press('Escape');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await page.getByTestId('section-create-board').tap();
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
+  await checkpoint(page, 'm-boards-smart-off');
+  await page.keyboard.press('Escape');
+  mock.setAiState(IDS.workspaces.main, AiState.READY);
+  await page.getByTestId('section-create-board').tap();
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveCount(0);
+  await page.getByTestId('boards-create-smart').tap();
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы');
+  await checkpoint(page, 'm-boards-smart-dialog', { keyboard: true });
+  // CBF-75: the model declines (a duplicate of CAL-3): the reason inline, the text stays.
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика — похоже, дубль');
+  await page.getByTestId('smart-task-submit').tap();
+  await expect(page.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
+  await expect(page.getByTestId('smart-task-text')).toHaveValue('Оплатить счёт поставщика — похоже, дубль');
+  await checkpoint(page, 'm-boards-smart-refused', { keyboard: true });
+});
+
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
@@ -1539,6 +1582,42 @@ test('m-settings-bots', async ({ page }) => {
   await expect(dialog.getByRole('tab', { name: 'Боты' })).toBeVisible();
   await page.getByTestId('phone-back').tap();
   await expect(dialog).toHaveCount(0);
+});
+
+// ADR-0117: «Телефония» → the exchange cards on a phone (numbers, groups, menus) and a menu form.
+test('m-telephony', async ({ page }) => {
+  await signedIn(page);
+  mock.seedSipExchange();
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
+  const dialog = page.getByTestId('settings-page');
+  await dialog.getByRole('tab', { name: 'Телефония' }).tap();
+  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
+  await expectNoFieldFocus(page, 'telephony');
+  await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony');
+  // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
+  await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
+  await expect(dialog.getByTestId('sip-group-onfail')).toBeVisible();
+  await dialog.getByTestId('sip-group-fallback').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-group');
+  await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).tap();
+  await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
+  await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu');
+  // The greeting row on a phone: ▶, the length, «Заменить» / «Удалить запись», a refused file.
+  const promptRow = dialog.getByTestId('sip-menu-prompt');
+  await dialog.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
+  await expect(dialog.getByTestId('sip-menu-prompt-error')).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
+  await promptRow.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-prompt');
+  // ADR-0117 step 2: an inbound call rings me — the sheet takes the whole screen.
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  const ring = page.getByTestId('sip-incoming');
+  await expect(ring).toContainText('Входящий на номер · Отдел продаж');
+  await checkpoint(page, 'm-sip-incoming');
+  await ring.getByRole('button', { name: 'Отклонить' }).tap();
+  await expect(ring).toHaveCount(0);
 });
 
 // ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of

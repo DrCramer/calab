@@ -17,7 +17,7 @@ import {
   resolveStatusIcon,
   type StatusIconToken,
 } from '@calaba/protocol';
-import { Archive, Check, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Lock, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ColorPicker, GridPicker } from '../../components/ColorPicker';
 import { confirmAction } from '../../components/Confirm';
@@ -26,12 +26,12 @@ import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { useUi } from '../../stores/ui';
-import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, TextArea, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
 import { accessLevelOf, accessSteps, compactDrafts, isPrivateObject, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
-import { planHas } from '../../lib/plan';
+import { planHas, planHasAI } from '../../lib/plan';
 import { isFullRole } from '../../lib/roles';
 import {
   createBoard,
@@ -72,7 +72,7 @@ import { TriToggle } from '../workspace/RoomDialogs';
 import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
 import { RulesTab } from './Rules';
-import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, sortedStatuses } from './model';
+import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, settingsTabShown, sortedStatuses } from './model';
 import { PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss, colorName } from './visuals';
 
 /**
@@ -97,7 +97,8 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
   // «Вебхук» (ADR-0058 §4): MANAGE_BOARD (this window) and MANAGE_INTEGRATIONS of the workspace.
   const integrations = mayManageIntegrations(useMemberRoles(board?.workspaceId, myUserId()));
   if (!board) return null;
-  const sections: SettingsSection[] = [
+  // CBF-73: «Статусы», «Лейблы», «Вехи» — EDIT_TASKS; every other section — MANAGE_BOARD.
+  const all: SettingsSection[] = [
     { id: 'general', label: t('boards.set.general'), icon: Settings2, content: <GeneralTab board={board} /> },
     { id: 'features', label: t('boards.set.features'), icon: ToggleRight, content: <FeaturesTab board={board} /> },
     { id: 'statuses', label: t('boards.set.statuses'), icon: CircleDot, content: <StatusesTab board={board} /> },
@@ -110,7 +111,11 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
     ...(integrations ? [{ id: 'webhook', label: t('boards.set.webhook'), icon: Webhook, content: <WebhookTab board={board} /> }] : []),
     { id: 'danger', label: t('boards.set.danger'), icon: Archive, content: <DangerTab board={board} onDone={onClose} />, destructive: true },
   ];
-  return <SettingsWindow title={board.name} titleIcon={<span className="text-headline leading-none">{board.emoji || '📋'}</span>} sections={sections} initial={tab ?? 'general'} onClose={onClose} />;
+  const sections = all.filter((s) => settingsTabShown(s.id, board.permissions));
+  const first = sections[0];
+  if (!first) return null;
+  const initial = sections.some((s) => s.id === tab) ? (tab as string) : first.id;
+  return <SettingsWindow title={board.name} titleIcon={<span className="text-headline leading-none">{board.emoji || '📋'}</span>} sections={sections} initial={initial} onClose={onClose} />;
 }
 
 async function patch(boardId: string, init: Parameters<typeof updateBoard>[1]): Promise<void> {
@@ -145,9 +150,10 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
           <CommitInput label={t('boards.set.description')} value={board.description} maxLength={2000} onCommit={(v) => patch(board.id, { description: v })} />
         </Row>
       </Card>
+      <AiInstructionCard boardId={board.id} workspaceId={board.workspaceId} findDuplicates={board.aiFindDuplicates} />
       <Card title={t('boards.set.archiveCard')} footer={t('boards.set.autoArchiveHint')}>
         <Row label={t('boards.set.autoArchive')}>
-          <Select value={String(board.autoArchiveDays)} onChange={(e) => void patch(board.id, { autoArchiveDays: Number(e.target.value) })} data-testid="auto-archive">
+          <Select value={String(board.autoArchiveDays)} onChange={(e) => void patch(board.id, { autoArchiveDays: Number(e.target.value) })} aria-label={t('boards.set.autoArchive')} data-testid="auto-archive">
             {[0, 7, 14, 30, 60, 90].map((d) => (
               <option key={d} value={d}>
                 {d ? t('boards.set.days', { n: d }) : t('boards.set.never')}
@@ -157,6 +163,87 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
         </Row>
       </Card>
     </>
+  );
+}
+
+const AI_INSTRUCTION_MAX = 4000;
+
+/**
+ * «Инструкция для ИИ» (CBF-68, ADR-0118): how smart tasks of this board are written. It is not
+ * in the board lists or events — GET /api/boards/{id} (VIEW_BOARD) — so the card loads it; one
+ * PATCH on «Сохранить». Writable on any plan; smart tasks run on Business only (CBF-69), so
+ * without it the card says so. «Искать дубли за 2 недели» (CBF-75, ADR-0123) is a board field
+ * (in the lists too): one PATCH per switch.
+ */
+function AiInstructionCard({ boardId, workspaceId, findDuplicates }: { boardId: string; workspaceId: string; findDuplicates: boolean }): ReactNode {
+  const planAI = useWorkspaces((s) => planHasAI(s.byId[workspaceId]?.ws.plan));
+  const [saved, setSaved] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    boardsApi.get(boardId, ac.signal).then(
+      (r) => {
+        const v = r.board?.aiInstruction ?? '';
+        setSaved(v);
+        setDraft(v);
+      },
+      (e: unknown) => {
+        if (!ac.signal.aborted) toast.fail(e);
+      },
+    );
+    return () => ac.abort();
+  }, [boardId]);
+  const dirty = saved !== null && draft.trim() !== saved;
+  const save = async (): Promise<void> => {
+    if (!dirty || busy) return;
+    setBusy(true);
+    const b = await updateBoard(boardId, { aiInstruction: draft.trim() });
+    setBusy(false);
+    if (!b) return;
+    setSaved(b.aiInstruction);
+    setDraft(b.aiInstruction);
+    toast.success(t('smart.instruction.saved'));
+  };
+  return (
+    <Card title={t('smart.instruction.card')} footer={t('smart.instruction.hint')}>
+      <div className="flex flex-col gap-2 px-3 py-2.5" data-testid="board-ai-instruction">
+        <label className="text-body" htmlFor={`ai-instr-${boardId}`}>
+          {t('smart.instruction.label')}
+        </label>
+        {planAI ? null : (
+          <span id={`ai-instr-plan-${boardId}`} className="inline-flex items-center gap-1.5 text-caption text-muted" data-testid="board-ai-instruction-plan">
+            <Lock className="size-3.5 shrink-0" aria-hidden />
+            {t('smart.instruction.plan')}
+          </span>
+        )}
+        {saved === null ? (
+          <div className="grid h-24 place-items-center">
+            <Spinner />
+          </div>
+        ) : (
+          <TextArea
+            id={`ai-instr-${boardId}`}
+            aria-describedby={planAI ? undefined : `ai-instr-plan-${boardId}`}
+            value={draft}
+            maxLength={AI_INSTRUCTION_MAX}
+            rows={5}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={t('smart.instruction.placeholder')}
+            data-testid="board-ai-instruction-text"
+          />
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-caption tabular-nums text-faint">{t('smart.instruction.count', { n: draft.length })}</span>
+          <Button size="sm" onClick={() => void save()} busy={busy} disabled={!dirty} data-testid="board-ai-instruction-save">
+            {t('smart.instruction.save')}
+          </Button>
+        </div>
+      </div>
+      <Row label={t('smart.dup.label')} hint={t('smart.dup.hint')}>
+        <Toggle label={t('smart.dup.label')} checked={findDuplicates} onChange={(v) => void patch(boardId, { aiFindDuplicates: v })} />
+      </Row>
+    </Card>
   );
 }
 
@@ -590,6 +677,10 @@ function AccessTab({ board }: { board: Board }): ReactNode {
   }, [roles, drafts, board.workspaceId, targetable]);
   const current = targets.find((x) => x.key === selected) ?? targets[0];
   const draft = drafts.find((d) => current && key(d) === current.key);
+  // «Создавать задачи» ✓ without «Видеть доску» (ADR-0115): neutral VIEW_BOARD gives nothing on a
+  // private board, a deny nowhere — the target creates and sees only their own cards.
+  const view = triOf(draft, VIEW_BOARD);
+  const createOnly = triOf(draft, CREATE_TASKS) === 'allow' && (view === 'deny' || (restricted && view === 'inherit'));
   const save = (next: OverrideDraft[]): void => {
     setDrafts(next);
     setBusy(true);
@@ -724,6 +815,11 @@ function AccessTab({ board }: { board: Board }): ReactNode {
                   <th scope="row" className="px-3 py-2 text-left font-normal">
                     <span data-settings-label>{t(b.label)}</span>
                     <span className="block text-caption text-muted">{t(b.hint)}</span>
+                    {b.bit === CREATE_TASKS && createOnly ? (
+                      <span className="block text-caption text-fg" data-testid="board-access-create-only">
+                        {t('boards.perm.createOnly')}
+                      </span>
+                    ) : null}
                   </th>
                   <td className="w-32 px-3 py-2 text-right">
                     <TriToggle label={t(b.label)} value={triOf(draft, b.bit)} onChange={(v) => setTri(b.bit, v)} />

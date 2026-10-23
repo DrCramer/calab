@@ -18,9 +18,11 @@ import {
   type MailPage,
   type MailSelection,
   type MailSettings,
+  type MailSmartFolder,
   type MailSyncProgress,
   type MailThreadRow,
 } from '../../shared/mail';
+import { matchSmart } from '../../shared/mailMatch';
 
 /**
  * The mail client's data (ADR-0088 §8–§9): accounts, folders, the current page(s) of thread rows of
@@ -33,7 +35,10 @@ import {
  * timers here (events, never polling).
  */
 
-/** The selected mailbox: an account id or `'all'`, and a folder role (the only form for `'all'`) or id. */
+/**
+ * The selected mailbox: an account id or `'all'`, and a folder role, id or smart folder (CBF-56:
+ * `scope` is the smart folder's account, or `'all'`).
+ */
 export interface MailBox {
   scope: string;
   folder: MailFolderRef;
@@ -144,9 +149,18 @@ export function cmpRows(a: MailThreadRow, b: MailThreadRow): number {
   return a.messageId < b.messageId ? 1 : a.messageId > b.messageId ? -1 : 0;
 }
 
+/** The smart folder a box shows (CBF-56), else null. */
+export function boxSmart(s: Pick<MailState, 'settings'>, box: MailBox): MailSmartFolder | null {
+  const f = box.folder;
+  return typeof f !== 'string' && 'smart' in f ? (s.settings.smartFolders.find((x) => x.id === f.smart) ?? null) : null;
+}
+
+/** The box of a smart folder: its account, or every account. */
+export const smartBox = (f: Pick<MailSmartFolder, 'id' | 'accountId'>): MailBox => ({ scope: f.accountId ?? 'all', folder: { smart: f.id } });
+
 /** The folder of a box when it names one folder (an id, or a role within one account). */
 export function boxFolder(s: Pick<MailState, 'folders' | 'folderById'>, box: MailBox): MailFolder | null {
-  if (typeof box.folder !== 'string') return s.folderById[box.folder.id] ?? null;
+  if (typeof box.folder !== 'string') return 'id' in box.folder ? (s.folderById[box.folder.id] ?? null) : null;
   if (box.scope === 'all') return null;
   const role = box.folder;
   return s.folders[box.scope]?.find((f) => f.role === role) ?? null;
@@ -154,18 +168,30 @@ export function boxFolder(s: Pick<MailState, 'folders' | 'folderById'>, box: Mai
 
 /** The role a box lists (a folder id resolves to its folder's role). */
 export function boxRole(s: Pick<MailState, 'folderById'>, box: MailBox): MailFolderRole | null {
-  return typeof box.folder === 'string' ? box.folder : (s.folderById[box.folder.id]?.role ?? null);
+  if (typeof box.folder === 'string') return box.folder;
+  return 'id' in box.folder ? (s.folderById[box.folder.id]?.role ?? null) : null;
 }
 
-/** Does a row belong to the box on screen? */
-export function inBox(s: Pick<MailState, 'folderById'>, box: MailBox, row: MailThreadRow): boolean {
-  if (typeof box.folder !== 'string') return row.folderId === box.folder.id;
+/**
+ * Does a row belong to the box on screen? A smart folder tests the row's sender and subject (a row
+ * has no recipients, so a «Кому» condition shows new mail after the next reload only).
+ */
+export function inBox(s: Pick<MailState, 'folderById' | 'settings'>, box: MailBox, row: MailThreadRow): boolean {
+  if (typeof box.folder !== 'string') {
+    if ('id' in box.folder) return row.folderId === box.folder.id;
+    const sf = boxSmart(s, box);
+    const role = s.folderById[row.folderId]?.role;
+    if (!sf || (sf.accountId !== null && row.accountId !== sf.accountId) || role === 'junk' || role === 'trash') return false;
+    return matchSmart(sf, { fromName: row.from.name, fromAddress: row.from.address, subject: row.subject });
+  }
   if (box.scope !== 'all' && row.accountId !== box.scope) return false;
   return s.folderById[row.folderId]?.role === box.folder;
 }
 
-export const boxEquals = (a: MailBox, b: MailBox): boolean =>
-  a.scope === b.scope && (typeof a.folder === 'string' ? a.folder === b.folder : typeof b.folder !== 'string' && a.folder.id === b.folder.id);
+/** A box's folder as one string (`role`, `id:…`, `smart:…`): equality and React keys. */
+export const refKey = (f: MailFolderRef): string => (typeof f === 'string' ? f : 'id' in f ? `id:${f.id}` : `smart:${f.smart}`);
+
+export const boxEquals = (a: MailBox, b: MailBox): boolean => a.scope === b.scope && refKey(a.folder) === refKey(b.folder);
 
 /** The rail badge: unread in the inboxes of every account (a number — one primitive selector). */
 export function inboxUnread(s: Pick<MailState, 'folders'>): number {
@@ -437,6 +463,12 @@ function handleEvent(e: MailEvent): void {
       if (touched) void refreshThread();
     }
   }
+  if (e.type === 'folders') {
+    // The folder on screen was deleted (here or on another device): back to the account's inbox.
+    const cur = useMail.getState();
+    const f = cur.box.folder;
+    if (typeof f !== 'string' && 'id' in f && cur.box.scope === e.accountId && !cur.folderById[f.id]) selectBox({ scope: e.accountId, folder: 'inbox' });
+  }
   if (e.type === 'folders' || e.type === 'account_state') {
     // Drafts are local (§6): their folder's counter moves when one is saved / removed.
     const role = boxRole(useMail.getState(), useMail.getState().box);
@@ -543,7 +575,8 @@ export async function loadMore(): Promise<void> {
 export async function loadOlder(): Promise<void> {
   const a = api;
   const s = useMail.getState();
-  if (!a || s.older === 'loading') return;
+  // A smart folder (CBF-56) is a view over what is synced: nothing of its own to load.
+  if (!a || s.older === 'loading' || boxSmart(s, s.box)) return;
   const one = boxFolder(s, s.box);
   const role = boxRole(s, s.box);
   const ids = one ? [one.id] : s.accountIds.map((acc) => s.folders[acc]?.find((f) => f.role === role)?.id).filter((x): x is string => !!x);
@@ -859,8 +892,7 @@ export async function emptyFolder(folderId: string): Promise<boolean> {
 /** The folder shown when it is one account's trash (not search, not «Все …»): its id and size. */
 export function trashBox(s: MailState): { id: string; total: number } | null {
   if (s.query || s.box.scope === 'all') return null;
-  const box = s.box;
-  const f = typeof box.folder === 'string' ? s.folders[box.scope]?.find((x) => x.role === box.folder) : s.folderById[box.folder.id];
+  const f = boxFolder(s, s.box);
   return f && f.role === 'trash' ? { id: f.id, total: f.total } : null;
 }
 
@@ -889,6 +921,24 @@ export async function updateSettings(patch: Partial<MailSettings>): Promise<void
   } catch (e) {
     useMail.setState({ settings: prev });
     reportError(errCode(e), 'generic');
+  }
+  if (patch.smartFolders) afterSmartChange(prev);
+}
+
+/** Smart folders changed (CBF-56): the one on screen was deleted → «Все входящие»; edited → its list again. */
+function afterSmartChange(prev: MailSettings): void {
+  const s = useMail.getState();
+  const f = s.box.folder;
+  if (typeof f === 'string' || !('smart' in f)) return;
+  const now = s.settings.smartFolders.find((x) => x.id === f.smart);
+  if (!now) {
+    selectBox(ALL_INBOXES);
+    return;
+  }
+  const before = prev.smartFolders.find((x) => x.id === f.smart);
+  if (!before || JSON.stringify([before.accountId, before.match, before.conditions]) !== JSON.stringify([now.accountId, now.match, now.conditions])) {
+    useMail.setState({ box: smartBox(now), selected: null });
+    void reloadList();
   }
 }
 

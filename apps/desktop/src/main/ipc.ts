@@ -59,6 +59,7 @@ import { hideTip, showTip } from './tipOverlay';
 import { parseTipPayload } from './tipOverlayPolicy';
 import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
+import { openLink } from './ownLink';
 import { getMainWindow, isOwnPage, isShown } from './windows';
 import { mailRequest } from './mail';
 
@@ -264,6 +265,11 @@ export function registerIpc(): void {
     const url = str(a, 2048).trim();
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
+    // Our own in-app routes (/t/KEY …) open in the app, not the browser (CBF-63).
+    if (/^https?:/i.test(url)) {
+      openLink(url);
+      return Promise.resolve();
+    }
     return shell.openExternal(url);
   });
   // ADR-0084: the provider's hosted checkout in the in-app checkout window, from the main window

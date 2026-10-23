@@ -86,7 +86,7 @@ export const zhRecording: DictShape<typeof ruRecording> = {
   'rec.tr.speaker': '发言人 {n}',
   'rec.tr.file': '转写',
   'rec.tr.playFrom': '从 {time} 开始播放',
-  'gpt.tab': 'GPTunneL',
+  'gpt.tab': 'AI 集成',
   'gpt.card': '会议录制与转写',
   'gpt.intro': '会议录音会发送到 GPTunneL，在那里生成转写和摘要。只需连接一次工作区，之后任何成员都可以在语音房间的“…”菜单中开始录制。',
   'gpt.status': '状态',

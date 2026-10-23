@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // Board managers over approvals (ADR-0108).
@@ -77,15 +78,17 @@ func TestApprovalManagerPowers(t *testing.T) {
 	st = carol.do("POST", "/api/tasks/"+id+"/approval", &v1.TaskApprovalRequest{Decision: approve, OnBehalfOf: dave.id}, nil)
 	wantReason(t, carol.client, st, 403, "APPROVAL_ON_BEHALF_DENIED")
 
-	// Bots: the bot itself never votes; on behalf of its owner (a manager) the power is closed too.
+	// Bots: the bot itself never votes; on behalf of its owner (a manager) the vote for someone
+	// else is closed too (the override on behalf: TestApprovalOverrideOnBehalfOfOwner, CBF-74).
 	bt := createBot(t, o, wid, "managerbot")
 	if st, _ := setActsAsOwner(o, wid, bt.id, true); st != 200 {
 		t.Fatalf("acts_as_owner: %d", st)
 	}
+	giveBot(t, o, wid, bt, "Boards", perm.EditTasks|perm.ManageBoard) // its own rights do not matter
 	ob := asOwner(bt)
 	wantReason(t, bt.client, bt.do("POST", "/api/tasks/"+id+"/approval", &v1.TaskApprovalRequest{Decision: approve, OnBehalfOf: dave.id}, nil), 403, "BOT_NOT_ALLOWED")
 	wantReason(t, ob, ob.do("POST", "/api/tasks/"+id+"/approval", &v1.TaskApprovalRequest{Decision: approve, OnBehalfOf: dave.id}, nil), 403, "BOT_NOT_ALLOWED")
-	wantReason(t, ob, ob.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "BOT_NOT_ALLOWED")
+	wantReason(t, bt.client, bt.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "BOT_NOT_ALLOWED")
 	ob.must(409, "PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing}, nil) // the gate as for the owner
 
 	// The manager: no REJECT for someone else, only approvers, never over a personal decision.
@@ -175,6 +178,79 @@ func TestApprovalManagerPowers(t *testing.T) {
 	// COMPLETED is forward too: the override covers it.
 	patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &done}, 409)
 	patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &done, OverrideApproval: true}, 200)
+}
+
+// TestApprovalOverrideOnBehalfOfOwner (CBF-74): a bot acting on behalf of its owner
+// (Calab-On-Behalf: owner) overrides an incomplete approval when the owner has MANAGE_BOARD on
+// the board: journaled as the owner via the bot, the votes stay PENDING. The bot without the
+// header, a bot whose owner lacks MANAGE_BOARD and one whose owner does not see the board are
+// refused.
+func TestApprovalOverrideOnBehalfOfOwner(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	carl := register(t, invite(t, o, wid)) // MANAGE_BOTS and EDIT_TASKS: owns a bot, edits tasks, no MANAGE_BOARD
+	if st, _ := setMemberRoles(o, wid, carl.id, newRole(t, o, wid, "bots", perm.ManageBots|perm.EditTasks).GetId()); st != 200 {
+		t.Fatalf("assign MANAGE_BOTS: %d", st)
+	}
+	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Invoices", Key: "INX", Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
+	todo := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED)
+	doing := statusNamed(b, "В работе")
+	id := createTask(t, bob, b.GetId(), &v1.CreateTaskRequest{Title: "Счёт", StatusId: todo, ApproverIds: []string{bob.id, carl.id}}, 201).GetId()
+
+	bt := createBot(t, o, wid, "skrepka")
+	if st, _ := setActsAsOwner(o, wid, bt.id, true); st != 200 {
+		t.Fatalf("acts_as_owner: %d", st)
+	}
+	ob := asOwner(bt)
+	// (б) Without the header: the bot itself is refused as before, even with MANAGE_BOARD of its own.
+	giveBot(t, o, wid, bt, "Boards", perm.EditTasks|perm.ManageBoard)
+	wantReason(t, bt.client, bt.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "BOT_NOT_ALLOWED")
+
+	// (в) The owner of the bot lacks MANAGE_BOARD: refused like the owner himself.
+	cb := createBot(t, carl, wid, "carlbot")
+	if st, _ := setActsAsOwner(carl, wid, cb.id, true); st != 200 {
+		t.Fatalf("acts_as_owner (carl): %d", st)
+	}
+	cob := asOwner(cb)
+	wantReason(t, cob, cob.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "APPROVAL_OVERRIDE_DENIED")
+	wantReason(t, carl.client, carl.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "APPROVAL_OVERRIDE_DENIED")
+
+	// (д) The owner of the bot does not see the board (a private one): no access, no oracle.
+	priv := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Private", Key: "PRX", IsPrivate: true, Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
+	ptodo := statusOf(priv, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED)
+	pdoing := statusNamed(priv, "В работе")
+	pid := createTask(t, o, priv.GetId(), &v1.CreateTaskRequest{Title: "Тайна", StatusId: ptodo, ApproverIds: []string{o.id}}, 201).GetId()
+	cob.must(404, "PATCH", "/api/tasks/"+pid, &v1.UpdateTaskRequest{StatusId: &pdoing, OverrideApproval: true}, nil)
+
+	// (е) A bot acting for a consenting member (ADR-0111) who manages the board: still refused.
+	o.must(200, "PUT", "/api/workspaces/"+wid+"/bots/"+cb.id+"/delegations/"+o.id, nil, nil)
+	mo := asMember(cb, o.id)
+	mo.must(409, "PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing}, nil) // the member's rights apply
+	wantReason(t, mo, mo.do("PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, nil), 403, "BOT_NOT_ALLOWED")
+	wantReason(t, ob, ob.do("POST", "/api/tasks/"+id+"/approval", &v1.TaskApprovalRequest{Decision: approve, OnBehalfOf: bob.id}, nil), 403, "BOT_NOT_ALLOWED")
+
+	// (а) The owner manages the board: the override on his behalf goes through.
+	ob.must(409, "PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing}, nil) // without the flag: the gate
+	var r v1.TaskResponse
+	ob.must(200, "PATCH", "/api/tasks/"+id, &v1.UpdateTaskRequest{StatusId: &doing, OverrideApproval: true}, &r)
+	moved := r.GetTask()
+	// (г) The votes are not touched: both PENDING, the approval incomplete.
+	if moved.GetStatusId() != doing || moved.GetApprovalState() != v1.TaskApprovalState_TASK_APPROVAL_STATE_PENDING {
+		t.Fatalf("overridden on behalf: %v", moved)
+	}
+	for _, u := range []string{bob.id, carl.id} {
+		if a := approverOf(t, moved, u); a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetOnBehalf() || a.GetRecordedBy() != "" {
+			t.Fatalf("vote of %s changed: %v", u, a)
+		}
+	}
+	// The journal: approval_override by the owner, via the bot.
+	ov := entriesOf(t, o, id, "approval_override")
+	if len(ov) != 1 || ov[0].GetActorId() != o.id || ov[0].GetViaBotId() != bt.id {
+		t.Fatalf("approval_override entries %v", ov)
+	}
+	if f := ov[0].GetAfter().GetFields(); f["approved"].GetNumberValue() != 0 || f["quorum"].GetNumberValue() != 2 || f["status_id"].GetStringValue() != doing || f["from_status_id"].GetStringValue() != todo {
+		t.Fatalf("approval_override after %v", f)
+	}
 }
 
 // TestApprovalOnBehalfRecorderDeleted: a hard delete of the manager who recorded an approval

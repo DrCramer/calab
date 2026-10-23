@@ -2,12 +2,14 @@ import { FileX } from 'lucide-react';
 import { memo, useEffect, type MouseEvent, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
+import { isFolder } from '../../lib/disk';
 import { fmt } from '../../lib/format';
 import type { MdNode } from '../../lib/markdown/parse';
 import { ensureDiskItem, openDiskLink } from '../../services/diskLink';
 import { diskItemUrl, ownDiskItemId } from '../../services/links';
 import { useDisk } from '../../stores/disk';
 import { useDiskRefs } from '../../stores/diskRefs';
+import { FolderLinkCard } from './FolderLinkCard';
 import { ItemGlyph } from './visuals';
 
 /** The first link of a message to a Disk item of this server (its chip goes under the text), or null. */
@@ -31,18 +33,21 @@ const BOX =
  * A Disk file link in a message (CBF-20): a compact chip under the text — type icon, name, size,
  * «Открыть». Resolved on this computer by the item GET (once per id), so each viewer sees it by
  * their own Disk rights: no access → «Файл больше недоступен» and no name. A leaf with its own
- * selectors: resolving re-renders this chip only, never the feed. A click opens the Disk on the file.
+ * selectors (a folder is drawn by FolderLinkCard): resolving re-renders this chip only, never the feed. A click opens the Disk on the file.
  */
-export const DiskLinkChip = memo(function DiskLinkChip({ itemId }: { itemId: string }): ReactNode {
+export const DiskLinkChip = memo(function DiskLinkChip({ itemId, workspaceId, sharedBy }: { itemId: string; workspaceId?: string; sharedBy?: string }): ReactNode {
   useLocale();
   const known = useDisk((s) => !!s.items[itemId]);
   const name = useDisk((s) => s.items[itemId]?.name ?? '');
   const size = useDisk((s) => s.items[itemId]?.file?.size);
+  const folder = useDisk((s) => { const it = s.items[itemId]; return !!it && isFolder(it); });
   const st = useDiskRefs((s) => s.state[itemId]);
   useEffect(() => ensureDiskItem(itemId), [itemId]);
   const item = useDisk.getState().items[itemId];
   const view = known && st !== 'gone' ? 'item' : st === undefined || st === 'loading' ? 'loading' : 'unavailable';
 
+  // A folder gets its own card (CBF-66).
+  if (view === 'item' && folder) return <FolderLinkCard itemId={itemId} {...(workspaceId ? { workspaceId } : {})} {...(sharedBy ? { sharedBy } : {})} />;
   if (view === 'unavailable') {
     return (
       <div className={cx(BOX, 'text-[color:var(--bubble-meta)]')} data-testid="disk-link-chip" data-state="unavailable">

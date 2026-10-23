@@ -27,6 +27,8 @@ import {
   CreateBoardStatusRequestSchema,
   CreateBoardViewRequestSchema,
   CreateTaskRequestSchema,
+  CreateSmartTaskRequestSchema,
+  CreateSmartTaskResponseSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
   MyTasksResponseSchema,
@@ -240,4 +242,9 @@ export const boardsApi = {
 
   /** Where description / comment attachments of a board's tasks are uploaded. */
   uploadPath: (boardId: string): string => `/api/boards/${boardId}/files`,
+  /** «Создать умную задачу» (CBF-68): files are uploaded to the workspace before a board is known. */
+  workspaceUploadPath: (workspaceId: string): string => `/api/workspaces/${workspaceId}/files`,
+  /** CBF-68: the model picks the board and shapes the task; 201 with the task, 409 reasons AI_*, NO_BOARDS. */
+  createSmart: (workspaceId: string, init: MessageInitShape<typeof CreateSmartTaskRequestSchema>) =>
+    call('POST', `/api/workspaces/${workspaceId}/smart-tasks`, CreateSmartTaskResponseSchema, body(CreateSmartTaskRequestSchema, init)),
 };

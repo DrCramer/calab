@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/calaba/calaba/server/internal/aifiles"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -63,6 +64,15 @@ type Service struct {
 	Now func() time.Time
 	// Relay passes the users' task notices on to the bots they chose (ADR-0090); nil = off.
 	Relay NoticeRelay
+	// AI is the workspace's model of smart tasks (CBF-68); nil = the route answers 404.
+	AI AI
+	// SmartUserLimit (per person) / SmartWorkspaceLimit (per workspace): smart tasks, each up
+	// to two model calls billed to the workspace's key. nil = none.
+	SmartUserLimit, SmartWorkspaceLimit Limiter
+	// SmartFiles prepares the attached files' content for the model, read from Files (CBF-75);
+	// either nil = the model gets the files' names, sizes and types only.
+	SmartFiles *aifiles.Preparer
+	Files      FileStore
 }
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).
@@ -113,6 +123,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/boards/{id}/activity", s.boardActivity)
 	h("GET /api/boards/{id}/tasks", s.listTasks)
 	h("POST /api/boards/{id}/tasks", s.createTask)
+	h("POST /api/workspaces/{id}/smart-tasks", s.createSmartTask)
 	h("GET /api/tasks/{id}", s.getTask)
 	h("PATCH /api/tasks/{id}", s.updateTask)
 	h("POST /api/tasks/{id}/archive", func(w http.ResponseWriter, r *http.Request) error { return s.setArchived(w, r, true) })
@@ -226,6 +237,19 @@ func manageBoard(r *http.Request, archivedOK bool) (uuid.UUID, perm.BoardAccess,
 	}
 	if !acc.Bits.Has(perm.ManageBoard) {
 		return id, acc, httpx.Forbidden("MANAGE_BOARD required")
+	}
+	return id, acc, writable(acc)
+}
+
+// editBoard resolves a board whose statuses, labels and milestones the caller may change
+// (CBF-73: EDIT_TASKS, «edit any task»; MANAGE_BOARD keeps the settings and the access).
+func editBoard(r *http.Request) (uuid.UUID, perm.BoardAccess, error) {
+	id, acc, err := pathBoard(r, false)
+	if err != nil {
+		return id, acc, err
+	}
+	if !acc.Bits.Has(perm.EditTasks) {
+		return id, acc, httpx.Forbidden("EDIT_TASKS required")
 	}
 	return id, acc, writable(acc)
 }

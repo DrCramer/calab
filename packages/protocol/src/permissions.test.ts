@@ -393,20 +393,23 @@ describe('roles (ADR-0026)', () => {
   // ADR-0059 §2, ADR-0076 §3: the shared case table of perm.TestTaskBits in Go.
   it('task bits for task-scoped boards (ADR-0059, ADR-0076)', () => {
     const me = 'u1';
-    const task = (assignee: boolean, approver: boolean, watcher: boolean, archived = false) => ({
+    const task = (assignee: boolean, approver: boolean, watcher: boolean, archived = false, author = false) => ({
       assignees: assignee ? [create(TaskAssigneeSchema, { userId: me })] : [create(TaskAssigneeSchema, { userId: 'u2' })],
       approvers: approver ? [create(TaskApproverSchema, { userId: me })] : [],
       watcherIds: watcher ? ['u3', me] : ['u3'],
       archivedAt: archived ? create(TimestampSchema, { seconds: 1n }) : undefined,
+      createdBy: author ? me : 'u4',
     });
     const table = JSON.parse(readFileSync(new URL('../../../proto/testdata/task_bits.json', import.meta.url), 'utf8')) as {
-      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; want: number }[];
+      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; author?: boolean; want: number }[];
     };
-    expect(table.cases.length).toBeGreaterThanOrEqual(10);
+    expect(table.cases.length).toBeGreaterThanOrEqual(20);
     for (const c of table.cases) {
       const board = { permissions: BigInt(c.bits), taskScoped: c.scoped };
-      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher), me), c.name).toBe(BigInt(c.want));
+      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher, false, c.author ?? false), me), c.name).toBe(BigInt(c.want));
     }
+    // ADR-0115: a create-only author of an archived task no longer sees it.
+    expect(taskPermissions({ permissions: PERMISSION_BITS.CREATE_TASKS, taskScoped: true }, task(false, false, false, true, true), me)).toBe(0n);
     // An archived task: the invitation no longer counts (the server passes live flags only).
     expect(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, true, true, true), me)).toBe(0n);
     expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, false, false), me))).toBe(

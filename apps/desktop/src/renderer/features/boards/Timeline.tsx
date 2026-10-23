@@ -49,7 +49,7 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { EmptyBoard } from './ListView';
 import { MemberAvatar, useToday } from './menus';
-import { MANAGE_BOARD, hasBit, mayEditTask, visibleTasks } from './model';
+import { mayEditBoardItems, mayEditTask, visibleTasks } from './model';
 import { MilestoneDiamond } from './TaskMilestones';
 import { useFeatureOn, useMatchCtx } from './useBoardView';
 import { useTaskPerms } from './useTaskPerms';
@@ -100,7 +100,7 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
   const rowH = mobile ? ROW_COMPACT : ROW;
   const ctx = useMatchCtx(boardId);
   const milestones = useBoards(useShallow((s) => s.boards[boardId]?.milestones ?? NO_MS));
-  const manage = useBoards((s) => hasBit(s.boards[boardId]?.permissions, MANAGE_BOARD));
+  const manage = useBoards((s) => mayEditBoardItems(s.boards[boardId]?.permissions)); // CBF-73: milestones — EDIT_TASKS
   const today = dayNum(useToday());
   // What rows / range read, as a primitive: an edit of a title leaves the rows as they are.
   const shape = useBoards((s) => {

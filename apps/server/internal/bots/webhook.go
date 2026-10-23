@@ -273,6 +273,15 @@ func (s *Service) onWorkspaceEvent(ctx context.Context, wsID uuid.UUID, ev *v1.D
 
 // onUserEvent: events of a DM come on the participants' user channels.
 func (s *Service) onUserEvent(ctx context.Context, userID uuid.UUID, ev *v1.DispatchEvent) {
+	// An inbound phone call rings the bot (ADR-0117): it answers with the Bot API.
+	if ev.GetSipInboundRing() != nil {
+		ctx, cancel := queueCtx(ctx)
+		defer cancel()
+		if _, bots := s.webhookBots(ctx); bots[userID] {
+			s.enqueue(ctx, []botEvent{{userID, ev}})
+		}
+		return
+	}
 	_, actor, ok := deliverable(ev)
 	if !ok || actor == userID {
 		return

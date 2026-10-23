@@ -36,8 +36,8 @@ const (
 	// Board bits (ADR-0042): apply to task boards only (BoardOnly).
 	ViewBoard   Bits = 1 << 17 // see a board, its tasks and comments; comment; subscribe
 	CreateTasks Bits = 1 << 18 // create tasks; edit own and assigned ones
-	EditTasks   Bits = 1 << 19 // edit, move, archive any task; moderate comments
-	ManageBoard Bits = 1 << 20 // statuses, labels, milestones, settings, access, archive
+	EditTasks   Bits = 1 << 19 // edit, move, archive any task; moderate comments; statuses, labels, milestones (CBF-73)
+	ManageBoard Bits = 1 << 20 // settings, access, archive
 	// Invitations (ADR-0043): not implied by MANAGE_WORKSPACE / MANAGE_ROOM; settable per room.
 	InviteMembers Bits = 1 << 21 // workspace invites; in a room: members-only room links
 	InviteGuests  Bits = 1 << 22 // room links admitting guests, their approval, admission decisions

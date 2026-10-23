@@ -396,6 +396,8 @@ type Board struct {
 	DisabledFeatures           int64
 	EstimateScale              string
 	ApprovalNotifyDelaySeconds int32
+	AiInstruction              string
+	AiFindDuplicates           bool
 }
 
 type BoardCategory struct {
@@ -607,6 +609,13 @@ type BotDelegation struct {
 	BotID       uuid.UUID
 	UserID      uuid.UUID
 	Since       time.Time
+}
+
+type BotDelegationDecline struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+	DeclinedAt  time.Time
 }
 
 type BotDelegationInvite struct {
@@ -1511,22 +1520,45 @@ type SessionWorkspaceAssurance struct {
 }
 
 type SipAccount struct {
-	WorkspaceID     uuid.UUID
-	Provider        string
-	Host            string
-	Transport       string
-	Username        string
-	AuthUsername    string
-	Port            int32
-	PasswordEnc     []byte
-	CallerID        string
-	OutboundPrefix  string
-	AllowedPrefixes []string
-	TrunkID         string
-	Enabled         bool
-	LastError       string
-	UpdatedAt       time.Time
-	UpdatedBy       *uuid.UUID
+	WorkspaceID         uuid.UUID
+	Provider            string
+	Host                string
+	Transport           string
+	Username            string
+	AuthUsername        string
+	Port                int32
+	PasswordEnc         []byte
+	CallerID            string
+	OutboundPrefix      string
+	AllowedPrefixes     []string
+	TrunkID             string
+	Enabled             bool
+	LastError           string
+	UpdatedAt           time.Time
+	UpdatedBy           *uuid.UUID
+	InboundEnabled      bool
+	InboundKind         string
+	InboundMenuID       *uuid.UUID
+	InboundExtensionID  *uuid.UUID
+	InboundGroupID      *uuid.UUID
+	InboundAllowedCidrs []string
+	InboundTrunkID      string
+	InboundRuleID       string
+	InboundMode         string
+	RegRegistrar        string
+	RegDomain           string
+	RegExpires          int32
+	RegKeepaliveSec     int32
+	RegContactUser      string
+	RegAuthUsername     string
+	RegPasswordEnc      []byte
+	RegTrunkPasswordEnc []byte
+	RegStatus           string
+	RegError            string
+	RegRegisteredAt     *time.Time
+	RegExpiresAt        *time.Time
+	RegContact          string
+	RegStatusAt         *time.Time
 }
 
 type SipCall struct {
@@ -1544,6 +1576,76 @@ type SipCall struct {
 	StartedAt           time.Time
 	AnsweredAt          *time.Time
 	EndedAt             *time.Time
+	LkRoom              string
+	AnsweredBy          *uuid.UUID
+	Route               string
+	RingingUserIds      []uuid.UUID
+	Via                 string
+	ProviderCallID      string
+}
+
+type SipExtension struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Number      string
+	Kind        string
+	UserID      *uuid.UUID
+	GroupID     *uuid.UUID
+	Description string
+	CreatedAt   time.Time
+	CreatedBy   *uuid.UUID
+}
+
+type SipGroup struct {
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	Name              string
+	Strategy          string
+	RingSec           int32
+	MemberRingSec     int32
+	NextPosition      int32
+	OnFailKind        string
+	OnFailMenuID      *uuid.UUID
+	OnFailExtensionID *uuid.UUID
+	OnFailGroupID     *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FallbackEnabled   bool
+	FallbackSec       int32
+}
+
+type SipGroupMember struct {
+	WorkspaceID uuid.UUID
+	GroupID     uuid.UUID
+	ExtensionID uuid.UUID
+	Position    int32
+}
+
+type SipIvrItem struct {
+	WorkspaceID       uuid.UUID
+	MenuID            uuid.UUID
+	Digit             string
+	ActionKind        string
+	ActionMenuID      *uuid.UUID
+	ActionExtensionID *uuid.UUID
+	ActionGroupID     *uuid.UUID
+}
+
+type SipIvrMenu struct {
+	ID                 uuid.UUID
+	WorkspaceID        uuid.UUID
+	Name               string
+	PromptFileID       *uuid.UUID
+	PromptDurationMs   int32
+	InputTimeoutSec    int32
+	Repeats            int32
+	NoInputKind        string
+	NoInputMenuID      *uuid.UUID
+	NoInputExtensionID *uuid.UUID
+	NoInputGroupID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	UpdatedBy          *uuid.UUID
 }
 
 type Sticker struct {
@@ -1918,6 +2020,25 @@ type WorkspaceAdminLog struct {
 	CreatedAt   time.Time
 }
 
+type WorkspaceAi struct {
+	WorkspaceID uuid.UUID
+	Provider    string
+	BaseUrl     string
+	Model       string
+	KeyEnc      []byte
+	KeyHint     string
+	UpdatedAt   time.Time
+	UpdatedBy   *uuid.UUID
+}
+
+type WorkspaceAiCheck struct {
+	WorkspaceID uuid.UUID
+	Fingerprint []byte
+	Ok          bool
+	Error       string
+	CheckedAt   time.Time
+}
+
 type WorkspaceApp struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID
@@ -2119,6 +2240,7 @@ type WorkspaceMember struct {
 	BadgeID          *uuid.UUID
 	AchievementCount int32
 	LastActiveAt     *time.Time
+	SipExtension     string
 }
 
 type WorkspaceNotificationSetting struct {

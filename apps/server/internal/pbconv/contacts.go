@@ -43,11 +43,14 @@ func ContactsVisible(viewerRole perm.Role, viewerBot bool, subjectRole perm.Role
 func memberRole(r perm.Role) bool { return r != "" && r != perm.RoleGuest }
 
 // MemberFor converts a membership row as the viewer sees it: with contacts when
-// ContactsVisible.
+// ContactsVisible, without the internal number for a guest viewer (ADR-0117).
 func MemberFor(m sqlc.WorkspaceMember, u sqlc.User, roleIDs []uuid.UUID, viewerRole perm.Role, viewerBot bool) *v1.WorkspaceMember {
 	out := Member(m, u, roleIDs)
 	if ContactsVisible(viewerRole, viewerBot, perm.Role(m.Role), u) {
 		WithContacts(out.User, u)
+	}
+	if !ExtensionVisible(viewerRole) {
+		out.Extension = ""
 	}
 	return out
 }
