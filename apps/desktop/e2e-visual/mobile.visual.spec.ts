@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { AiState, FormerMemberReason, Plan, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
-import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
@@ -2043,6 +2043,16 @@ test('m-canvas-edit', async ({ page }) => {
   await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Править');
   for (const id of ['canvas-phone-toolbar', 'canvas-phone-props']) await expect(view.getByTestId(id)).toHaveCount(0);
   await checkpoint(page, 'm-canvas-edit-done', { snapshot: false });
+});
+
+// /c/{code} at 390 px: the header and the canvas in view mode (pan, pinch, the zoom bar); no edit mode.
+test('m-canvas-public', async ({ page }) => {
+  await open(page, `/c/${CANVAS_PUBLIC_CODE}`);
+  await expect(page.getByTestId('canvas-public-title')).toHaveText('Схема навигации');
+  await expect(page.getByTestId('canvas-zoom')).toBeVisible();
+  for (const id of ['canvas-phone-toolbar', 'phone-canvas-edit', 'canvas-others']) await expect(page.getByTestId(id)).toHaveCount(0);
+  await page.getByTestId('canvas-fit-all').tap();
+  await checkpoint(page, 'm-canvas-public');
 });
 
 // /w/{code} at 390 px: the outline is a «Содержание» disclosure above the text.

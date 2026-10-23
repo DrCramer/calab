@@ -88,16 +88,19 @@ import {
   CanvasActivityPageSchema,
   CanvasItemKind,
   CanvasItemResponseSchema,
+  CanvasLinkResponseSchema,
   CanvasPathResponseSchema,
   CanvasPermissionEntrySchema,
   CanvasPermissionsResponseSchema,
   CanvasSettingsSchema,
   CanvasVersionsResponseSchema,
   CreateCanvasItemRequestSchema,
+  CreateCanvasLinkRequestSchema,
   EmptyCanvasTrashResponseSchema,
   ListCanvasItemsResponseSchema,
   UpdateCanvasItemRequestSchema,
   UpdateCanvasPermissionsRequestSchema,
+  PublicCanvasSchema,
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
   DISK_BITS,
@@ -1071,6 +1074,8 @@ function mockUsername(raw: string): string | null {
 
 /** The public link of «Справочник команды» in the data scenario (`/w/{code}`, with subpages). */
 export const WIKI_PUBLIC_CODE = 'mockWikiPublicHandbook'.padEnd(43, 'x');
+/** The live public link of the fixture canvas «Схема навигации» (`/c/{code}`, ADR-0127 wave 5). */
+export const CANVAS_PUBLIC_CODE = 'mockCanvasPublicNavigation'.padEnd(43, 'x');
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
@@ -1376,6 +1381,12 @@ class MockImpl {
       if (canvasSync?.[1]) {
         const canvasId = canvasSync[1];
         this.canvasWss.handleUpgrade(req, socket, head, (ws) => this.canvas.connect(ws, canvasId, (token) => this.byAccessToken(token.trim())?.user.user.id ?? null));
+        return;
+      }
+      const canvasPublic = /^\/api\/public\/canvas\/([^/]+)\/sync$/.exec(path);
+      if (canvasPublic?.[1]) {
+        const code = canvasPublic[1];
+        this.canvasWss.handleUpgrade(req, socket, head, (ws) => this.canvas.connectPublic(ws, code));
         return;
       }
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -8426,10 +8437,12 @@ class MockImpl {
       d.create({ kind: 'sticky', x: 220, y: 0, color: 'pink', text: 'Что не получилось' });
     });
     const design = c.put({ workspaceId: ws, name: 'Дизайн', kind: FOLDER, ownerId: U.vera });
-    c.put({ workspaceId: ws, parentId: design.id, name: 'Схема навигации', ownerId: U.vera }, (d) => {
+    const nav = c.put({ workspaceId: ws, parentId: design.id, name: 'Схема навигации', ownerId: U.vera }, (d) => {
       d.create({ kind: 'shape', shape: 'rounded', x: 0, y: 0, text: 'Рейл' });
       d.create({ kind: 'shape', shape: 'rounded', x: 260, y: 0, text: 'Колонка' });
     });
+    // Its public link: the page /c/{CANVAS_PUBLIC_CODE} of the visual tests (web.spec.ts, mobile.visual.spec.ts).
+    c.seedLink(nav.id, CANVAS_PUBLIC_CODE, 12n);
     c.put({ workspaceId: ws, name: 'Планирование спринта', ownerId: U.anna }, (d) => {
       d.create({ kind: 'sticky', x: 0, y: 0, color: 'yellow', text: 'Задачи спринта' });
     });
@@ -8511,6 +8524,28 @@ class MockImpl {
       k().setPermissions(p0(c), me, b.entries, b.restricted);
       noContent(c.res);
     });
+    this.canvasRoute('GET', '/api/canvas/items/:id/link', (c, me) => sendMsg(c.res, 200, CanvasLinkResponseSchema, k().link(p0(c), me)));
+    this.canvasRoute('POST', '/api/canvas/items/:id/link', (c, me) => {
+      const b = parseBody(c, CreateCanvasLinkRequestSchema);
+      sendMsg(c.res, 200, CanvasLinkResponseSchema, k().createLink(p0(c), me, b.expiresInDays));
+    });
+    this.canvasRoute('DELETE', '/api/canvas/items/:id/link', (c, me) => {
+      k().deleteLink(p0(c), me);
+      noContent(c.res);
+    });
+    // The public page /c/{code} (ADR-0127 wave 5): anonymous; HEAD is the probe that counts no view.
+    const pub = (count: boolean) => (c: Ctx): void => {
+      try {
+        const meta = k().publicMeta(p0(c), count);
+        if (count) sendMsg(c.res, 200, PublicCanvasSchema, meta);
+        else noContent(c.res);
+      } catch (e) {
+        if (e instanceof CanvasError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    };
+    this.route('GET', '/api/public/canvas/:code', pub(true));
+    this.route('HEAD', '/api/public/canvas/:code', pub(false));
     this.canvasRoute('GET', '/api/canvas/items/:id/versions', (c, me) => sendMsg(c.res, 200, CanvasVersionsResponseSchema, { versions: k().listVersions(p0(c), me) }));
     this.canvasRoute('GET', '/api/canvas/items/:id/versions/:vid', (c, me) => {
       const state = k().versionState(p0(c), c.params[1] ?? '', me);

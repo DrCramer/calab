@@ -14,11 +14,15 @@
  * 10 minutes of edits), bots are not refused.
  */
 import { create } from '@bufbuild/protobuf';
-import { timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
+import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   CANVAS_BITS,
   CanvasItemKind,
   CanvasItemSchema,
+  CanvasLinkSchema,
+  PublicCanvasSchema,
+  type CanvasLink,
+  type PublicCanvas,
   CanvasPermissionEntrySchema,
   CanvasVersionSchema,
   ErrorCode,
@@ -32,6 +36,7 @@ import {
   type Role,
 } from '@calaba/protocol';
 import type { WebSocket } from 'ws';
+import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { CanvasDoc } from '../src/renderer/lib/canvas/doc';
 import { canvasPlainText } from '../src/renderer/lib/canvas/plainText';
@@ -363,6 +368,123 @@ export class CanvasMock {
     this.trashDays.set(wsId, days);
   }
 
+  // ---------------------------------------------------------------- the public link (ADR-0127 wave 5)
+
+  /** Live links by canvas id. No expiry sweep: an expired link is refused when used. */
+  readonly links = new Map<string, CanvasLink>();
+  private linkSeq = 0;
+
+  /** The canvas itself or a folder above it is restricted: no link (the server answers 409). */
+  private isPrivate(p: CanvasItem): boolean {
+    return this.chainOf(p).some((x) => x.restricted);
+  }
+
+  link(id: string, uid: string): { link?: CanvasLink; url: string } {
+    this.structural(id, uid);
+    const l = this.links.get(id);
+    return l ? { link: l, url: `https://calab.test/c/${l.code}` } : { url: '' };
+  }
+
+  createLink(id: string, uid: string, days: number): { link: CanvasLink; url: string } {
+    const p = this.structural(id, uid);
+    if (p.kind !== CanvasItemKind.CANVAS || p.trashedAt) throw notFound();
+    if (this.isPrivate(p)) throw conflict('a private canvas cannot be opened by a link');
+    const prev = this.links.get(id);
+    const now = this.d.tick();
+    const code = prev?.code ?? `mockCanvas${String(++this.linkSeq).padStart(4, '0')}`.padEnd(43, 'x');
+    const link = create(CanvasLinkSchema, {
+      code, canvasId: id, createdBy: prev?.createdBy ?? uid, createdAt: prev?.createdAt ?? now, views: prev?.views ?? 0n,
+      ...(days ? { expiresAt: timestampFromMs(timestampMs(now) + days * 86_400_000) } : {}),
+    });
+    this.links.set(id, link);
+    return { link, url: `https://calab.test/c/${code}` };
+  }
+
+  deleteLink(id: string, uid: string): void {
+    this.structural(id, uid);
+    this.links.delete(id);
+  }
+
+  /** A fixture link with a fixed code (the public page's visual tests open `/c/{code}`). */
+  seedLink(canvasId: string, code: string, views = 0n): void {
+    const p = this.items.get(canvasId);
+    if (p) this.links.set(canvasId, create(CanvasLinkSchema, { code, canvasId, createdBy: p.ownerId, createdAt: p.createdAt, views }));
+  }
+
+  /** The canvas a live code opens: gone, trashed, private or expired is a 404, like the server's. */
+  private byCode(code: string): CanvasItem {
+    for (const [id, l] of this.links) {
+      if (l.code !== code) continue;
+      const p = this.items.get(id);
+      if (!p || p.trashedAt || this.isPrivate(p) || (l.expiresAt && timestampMs(l.expiresAt) < Date.now())) break;
+      return p;
+    }
+    throw notFound();
+  }
+
+  /** GET /api/public/canvas/{code} (a view when `count`); HEAD asks without counting. */
+  publicMeta(code: string, count: boolean): PublicCanvas {
+    const p = this.byCode(code);
+    const l = this.links.get(p.id);
+    if (count && l) this.links.set(p.id, { ...l, views: l.views + 1n });
+    return create(PublicCanvasSchema, { name: p.name, updatedAt: p.updatedAt, readOnly: true, ...(l?.expiresAt ? { expiresAt: l.expiresAt } : {}) });
+  }
+
+  /** `/api/public/canvas/{code}/sync`: no token frame, the snapshot at once; any frame from it closes 4003. */
+  connectPublic(ws: WebSocket, code: string): void {
+    let p: CanvasItem;
+    try {
+      p = this.byCode(code);
+    } catch {
+      ws.close(4404, 'no link');
+      return;
+    }
+    const room = this.room(p.id);
+    const sock = { ws, uid: '', write: false };
+    room.sockets.add(sock);
+    ws.send(encodeSnapshot(room.throughSeq, room.state));
+    for (const u of room.updates) ws.send(encodeUpdate(u.update, u.seq));
+    ws.on('message', () => ws.close(4003, 'read only'));
+    ws.on('close', () => room.sockets.delete(sock));
+  }
+
+  // ---------------------------------------------------------------- a scripted co-author (visual tests)
+
+  private readonly peers = new Map<string, Awareness>();
+
+  /**
+   * Another person on the canvas, as their awareness frame reaches the open sockets: `{user, canvas: {cursor,
+   * selection}}` (features/canvas/syncBinding.ts). `null` takes them off. The public sockets get nothing (the server
+   * sends awareness only to signed-in sockets).
+   */
+  peer(canvasId: string, clientId: number, state: { user: { id: string; name: string; color: string }; canvas: { cursor: { x: number; y: number } | null; selection: string[] } } | null): void {
+    const key = `${canvasId}:${clientId}`;
+    let a = this.peers.get(key);
+    if (!a) {
+      const doc = new Y.Doc();
+      doc.clientID = clientId;
+      a = new Awareness(doc);
+      this.peers.set(key, a);
+    }
+    a.setLocalState(state);
+    const frame = encodeAwareness(encodeAwarenessUpdate(a, [clientId]));
+    for (const s of this.room(canvasId).sockets) if (s.uid !== '') s.ws.send(frame);
+  }
+
+  /** The object ids of a canvas's current document, with their text (to aim a co-author's selection). */
+  objects(canvasId: string): Array<{ id: string; text: string }> {
+    const room = this.room(canvasId);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, room.state);
+    for (const u of room.updates) Y.applyUpdate(doc, u.update);
+    const out = [...doc.getMap<Y.Map<unknown>>('objects').entries()].map(([id, m]) => {
+      const text = m.get('text');
+      return { id, text: text instanceof Y.Text ? text.toJSON() : typeof text === 'string' ? text : '' };
+    });
+    doc.destroy();
+    return out;
+  }
+
   // ---------------------------------------------------------------- the sync socket
 
   /** A socket on `/api/canvas/items/{id}/sync`; `auth` maps the first text frame (the token) to a user. */
@@ -440,5 +562,8 @@ export class CanvasMock {
   /** Closes every sync socket (reset / shutdown). */
   closeAll(): void {
     for (const r of this.docs.values()) for (const s of r.sockets) s.ws.terminate();
+    // Each scripted co-author's awareness runs a y-protocols interval.
+    for (const a of this.peers.values()) a.destroy();
+    this.peers.clear();
   }
 }

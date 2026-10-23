@@ -12,8 +12,11 @@ import { checkpoint } from './harness';
  * the trash. Fixture (e2e-support/mock-server seedCanvas): «Команда Calab» — «Продукт» (→ «Дорожная
  * карта Q1», «Ретро-доска»), «Дизайн» (→ «Схема навигации»), «Планирование спринта», «Черновики»
  * (restricted); in the trash «Старая схема» and the folder «Архив». The read-only canvas is added by
- * the test («Протокол встречи», Борис's, Анна has «Просмотр» only). Projects `canvas-dark-960`
- * (everything) and `canvas-light-960` (the «Доступ» dialog only). The phone's section is H6, not here.
+ * the test («Протокол встречи», Борис's, Анна has «Просмотр» only); so are a scripted co-author on the
+ * roadmap (`canvas-peers`), an empty canvas with the templates card (`canvas-blank`) and a live public link
+ * (`canvas-link`). Projects `canvas-dark-960` (everything) and `canvas-light-960` (the open canvas, the
+ * selection and the «Доступ» dialog). The phone's section and the public page `/c/{code}` are in
+ * mobile.visual.spec.ts and web.spec.ts.
  *
  *   CALABA_VISUAL_WORKERS=1 CALABA_VISUAL_MOCK_PORT=4750 MOCK_LIVEKIT_ROOM_PREFIX=canvas_ \
  *     pnpm -F @calaba/desktop e2e:visual -g "canvas"
@@ -57,20 +60,43 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
     await win.getByTestId('section-canvas').click();
     await expect(win.getByTestId('canvas-empty')).toBeVisible();
     await checkpoint(shot, 'canvas-empty');
+  }
 
-    // 2. The tree and an open canvas: stickies, a shape, a text, three connectors.
-    await open();
-    await openRoadmap(win);
-    await expect(win.getByTestId('canvas-node')).toHaveCount(6);
-    await expect(win.getByTestId('canvas-toolbar')).toBeVisible();
-    await checkpoint(shot, 'canvas-tree');
+  // 2. The tree and an open canvas: stickies, a shape, a text, three connectors (dark and light).
+  await open();
+  await openRoadmap(win);
+  await expect(win.getByTestId('canvas-node')).toHaveCount(6);
+  await expect(win.getByTestId('canvas-toolbar')).toBeVisible();
+  await checkpoint(shot, 'canvas-tree');
 
-    // 3. A selected sticky and its properties panel.
-    const p = await atWorld(win, 300, 80);
-    await win.mouse.click(p.x, p.y);
-    await expect(win.getByTestId('canvas-props')).toBeVisible();
+  // 3. A selected sticky and its properties panel (dark and light).
+  const p = await atWorld(win, 300, 80);
+  await win.mouse.click(p.x, p.y);
+  await expect(win.getByTestId('canvas-props')).toBeVisible();
+  // A screen reader hears what got selected (the canvas is one <canvas>).
+  await expect(win.getByTestId('canvas-announce')).toHaveText('Стикер: Раздел «Холст»');
+  await win.waitForTimeout(300);
+  await checkpoint(shot, 'canvas-selected');
+
+  if (theme === 'dark') {
+    // 3a. Two people on the canvas: Борис's cursor and selection, his avatar in «кто на холсте».
+    const road = [...mock.canvas.items.values()].find((i) => i.name === 'Дорожная карта Q1');
+    if (!road) throw new Error('no roadmap');
+    const blue = mock.canvas.objects(road.id).find((o) => o.text === 'Телефон: просмотр');
+    mock.canvas.peer(road.id, 424242, { user: { id: IDS.users.boris, name: 'Борис Петров', color: '#e5484d' }, canvas: { cursor: { x: 560, y: 150 }, selection: blue ? [blue.id] : [] } });
+    await expect(win.getByTestId('canvas-presence-user')).toHaveCount(1);
     await win.waitForTimeout(300);
-    await checkpoint(shot, 'canvas-selected');
+    await checkpoint(shot, 'canvas-peers');
+    mock.canvas.peer(road.id, 424242, null);
+
+    // 3b. A new, empty canvas: the templates card in the middle.
+    await open();
+    mock.canvas.put({ workspaceId: IDS.workspaces.main, name: 'Новый холст', ownerId: IDS.users.anna });
+    await win.getByTestId('section-canvas').click();
+    await win.getByTestId('canvas-node').filter({ hasText: 'Новый холст' }).getByTestId('canvas-node-open').click();
+    await expect(win.getByTestId('canvas-connecting')).toHaveCount(0);
+    await expect(win.getByTestId('canvas-templates-card')).toBeVisible();
+    await checkpoint(shot, 'canvas-blank');
 
     // 4. «Только просмотр»: a canvas of someone else's private folder with «Просмотр» only.
     await open();
@@ -112,6 +138,21 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('switch', { name: 'Только выбранные' })).toBeChecked();
   await checkpoint(shot, 'canvas-share');
+  // A private canvas has no link: the switch is off and says why.
+  await win.getByTestId('canvas-share-tabs').getByRole('radio', { name: 'Ссылка' }).click();
+  await expect(dialog.getByTestId('canvas-link-private')).toBeVisible();
+
+  if (theme === 'dark') {
+    // 6a. «Ссылка» of a canvas that can have one: turned on, the address, the term and the views.
+    await open();
+    await win.getByTestId('section-canvas').click();
+    await win.getByTestId('canvas-node').filter({ hasText: 'Планирование спринта' }).getByTestId('canvas-node-open').click();
+    await win.getByTestId('canvas-share').click();
+    await win.getByTestId('canvas-share-tabs').getByRole('radio', { name: 'Ссылка' }).click();
+    await dialog.getByRole('switch', { name: 'Доступ по ссылке' }).click();
+    await expect(dialog.getByTestId('canvas-link-url')).toHaveValue(/\/c\/mockCanvas/);
+    await checkpoint(shot, 'canvas-link');
+  }
 
   if (theme === 'dark') {
     // 7. The trash: a canvas and a folder; a trashed canvas shows the restore banner.
