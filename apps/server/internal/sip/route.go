@@ -36,6 +36,10 @@ type Ext struct {
 	ID    uuid.UUID
 	User  *uuid.UUID
 	Group *uuid.UUID
+	// Number is what a caller dials from a menu with DialExtensions (ADR-0129); NoExternal: a
+	// person's number external callers may not dial (the routes an admin set still ring it).
+	Number     string
+	NoExternal bool
 }
 
 // GroupMember is a member of a group in its round-robin order.
@@ -80,6 +84,7 @@ type Menu struct {
 	Repeats         int
 	OnNoInput       Target
 	Items           map[byte]Target // '0'..'9', '*', '#'
+	DialExtensions  bool            // the caller may dial an internal number too (ADR-0129)
 }
 
 // PBX is the exchange of one workspace.

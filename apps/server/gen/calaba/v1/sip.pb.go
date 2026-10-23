@@ -1791,17 +1791,21 @@ func (x *SipRouteTarget) GetMissing() bool {
 
 // An internal number: one numbering plan per workspace for people, bots and groups.
 type SipExtension struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Number        string                 `protobuf:"bytes,3,opt,name=number,proto3" json:"number,omitempty"` // 2..6 digits, a leading zero allowed («101», «1001»)
-	Kind          SipExtensionKind       `protobuf:"varint,4,opt,name=kind,proto3,enum=calaba.v1.SipExtensionKind" json:"kind,omitempty"`
-	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`    // USER / BOT; empty = nobody (the member left)
-	GroupId       string                 `protobuf:"bytes,6,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"` // GROUP
-	Description   string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`        // ≤ 64 characters, for reference («Бухгалтерия»)
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Number      string                 `protobuf:"bytes,3,opt,name=number,proto3" json:"number,omitempty"` // 2..6 digits, a leading zero allowed («101», «1001»)
+	Kind        SipExtensionKind       `protobuf:"varint,4,opt,name=kind,proto3,enum=calaba.v1.SipExtensionKind" json:"kind,omitempty"`
+	UserId      string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`    // USER / BOT; empty = nobody (the member left)
+	GroupId     string                 `protobuf:"bytes,6,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"` // GROUP
+	Description string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`        // ≤ 64 characters, for reference («Бухгалтерия»)
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// USER / BOT (ADR-0129): external callers may not dial this number from a voice menu (it is
+	// «not found» to them). Routes an admin set (keys, the entry point, fallbacks) and groups
+	// still ring it; internal calls are not affected. Always false on a GROUP number.
+	ExternalBlocked bool `protobuf:"varint,9,opt,name=external_blocked,json=externalBlocked,proto3" json:"external_blocked,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SipExtension) Reset() {
@@ -1888,6 +1892,13 @@ func (x *SipExtension) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *SipExtension) GetExternalBlocked() bool {
+	if x != nil {
+		return x.ExternalBlocked
+	}
+	return false
 }
 
 type SipGroupMember struct {
@@ -2150,8 +2161,13 @@ type SipIvrMenu struct {
 	Items            []*SipIvrItem          `protobuf:"bytes,10,rep,name=items,proto3" json:"items,omitempty"`                                              // by digit, ≤ 12
 	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	UpdatedBy        string                 `protobuf:"bytes,12,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// ADR-0129: the caller may also dial an internal number (a person, a bot, a group) while the
+	// menu plays or waits; the digits are collected until a 3 s pause or «#». A number that is
+	// not dialable (unknown, unassigned, external_blocked) counts as a key without an item: the
+	// menu plays again. Default off: keys only.
+	DialExtensions bool `protobuf:"varint,13,opt,name=dial_extensions,json=dialExtensions,proto3" json:"dial_extensions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SipIvrMenu) Reset() {
@@ -2268,6 +2284,13 @@ func (x *SipIvrMenu) GetUpdatedBy() string {
 	return ""
 }
 
+func (x *SipIvrMenu) GetDialExtensions() bool {
+	if x != nil {
+		return x.DialExtensions
+	}
+	return false
+}
+
 // GET /api/workspaces/{id}/sip/extensions (any member but guests) → 200: all numbers by number,
 // group numbers included.
 type ListSipExtensionsResponse struct {
@@ -2320,12 +2343,13 @@ func (x *ListSipExtensionsResponse) GetExtensions() []*SipExtension {
 // a member / a guest; description: ≤ 64 characters), 409 SIP_EXTENSION_TAKEN (field number: the
 // number is taken; field userId: the member already has a number), 409 CONFLICT (limit).
 type CreateSipExtensionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Number        string                 `protobuf:"bytes,1,opt,name=number,proto3" json:"number,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Number          string                 `protobuf:"bytes,1,opt,name=number,proto3" json:"number,omitempty"`
+	UserId          string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Description     string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	ExternalBlocked bool                   `protobuf:"varint,4,opt,name=external_blocked,json=externalBlocked,proto3" json:"external_blocked,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateSipExtensionRequest) Reset() {
@@ -2379,17 +2403,25 @@ func (x *CreateSipExtensionRequest) GetDescription() string {
 	return ""
 }
 
+func (x *CreateSipExtensionRequest) GetExternalBlocked() bool {
+	if x != nil {
+		return x.ExternalBlocked
+	}
+	return false
+}
+
 // PATCH /api/workspaces/{id}/sip/extensions/{eid} → 200 SipExtensionResponse; unset fields stay.
 // user_id «» unassigns the number (it stays, routes to it hang up). A group's number changes
 // only its number and description (user_id → 422). Errors as POST; 404 unknown number.
 // DELETE …/extensions/{eid} → 204; a group's number is deleted with its group (422).
 type UpdateSipExtensionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Number        *string                `protobuf:"bytes,1,opt,name=number,proto3,oneof" json:"number,omitempty"`
-	UserId        *string                `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`
-	Description   *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Number          *string                `protobuf:"bytes,1,opt,name=number,proto3,oneof" json:"number,omitempty"`
+	UserId          *string                `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`
+	Description     *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	ExternalBlocked *bool                  `protobuf:"varint,4,opt,name=external_blocked,json=externalBlocked,proto3,oneof" json:"external_blocked,omitempty"` // true on a group's number → 422 (field externalBlocked)
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UpdateSipExtensionRequest) Reset() {
@@ -2441,6 +2473,13 @@ func (x *UpdateSipExtensionRequest) GetDescription() string {
 		return *x.Description
 	}
 	return ""
+}
+
+func (x *UpdateSipExtensionRequest) GetExternalBlocked() bool {
+	if x != nil && x.ExternalBlocked != nil {
+		return *x.ExternalBlocked
+	}
+	return false
 }
 
 type SipExtensionResponse struct {
@@ -2950,6 +2989,7 @@ type CreateSipIvrMenuRequest struct {
 	// its quota, not encrypted; the upload itself goes with the orphan cleanup. The request then
 	// takes up to ~60 s. Empty = no prompt.
 	PromptSourceFileId string `protobuf:"bytes,6,opt,name=prompt_source_file_id,json=promptSourceFileId,proto3" json:"prompt_source_file_id,omitempty"`
+	DialExtensions     bool   `protobuf:"varint,7,opt,name=dial_extensions,json=dialExtensions,proto3" json:"dial_extensions,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3026,6 +3066,13 @@ func (x *CreateSipIvrMenuRequest) GetPromptSourceFileId() string {
 	return ""
 }
 
+func (x *CreateSipIvrMenuRequest) GetDialExtensions() bool {
+	if x != nil {
+		return x.DialExtensions
+	}
+	return false
+}
+
 // PATCH /api/workspaces/{id}/sip/ivr/{mid} → 200 SipIvrMenuResponse; unset fields stay, set
 // items replace all keys. prompt_source_file_id: a new upload replaces the prompt, «» removes
 // it (the old prompt file is deleted). DELETE …/ivr/{mid} → 204 with its prompt; routes to it
@@ -3038,6 +3085,7 @@ type UpdateSipIvrMenuRequest struct {
 	OnNoInput          *SipRouteTarget        `protobuf:"bytes,4,opt,name=on_no_input,json=onNoInput,proto3" json:"on_no_input,omitempty"` // set = replace
 	Items              *SipIvrItems           `protobuf:"bytes,5,opt,name=items,proto3" json:"items,omitempty"`                            // set = replace
 	PromptSourceFileId *string                `protobuf:"bytes,6,opt,name=prompt_source_file_id,json=promptSourceFileId,proto3,oneof" json:"prompt_source_file_id,omitempty"`
+	DialExtensions     *bool                  `protobuf:"varint,7,opt,name=dial_extensions,json=dialExtensions,proto3,oneof" json:"dial_extensions,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3112,6 +3160,13 @@ func (x *UpdateSipIvrMenuRequest) GetPromptSourceFileId() string {
 		return *x.PromptSourceFileId
 	}
 	return ""
+}
+
+func (x *UpdateSipIvrMenuRequest) GetDialExtensions() bool {
+	if x != nil && x.DialExtensions != nil {
+		return *x.DialExtensions
+	}
+	return false
 }
 
 type SipIvrMenuResponse struct {
@@ -3697,7 +3752,7 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x0eSipRouteTarget\x12+\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x17.calaba.v1.SipRouteKindR\x04kind\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x18\n" +
-	"\amissing\x18\x03 \x01(\bR\amissing\"\x9b\x02\n" +
+	"\amissing\x18\x03 \x01(\bR\amissing\"\xc6\x02\n" +
 	"\fSipExtension\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x16\n" +
@@ -3707,7 +3762,8 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\bgroup_id\x18\x06 \x01(\tR\agroupId\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"O\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12)\n" +
+	"\x10external_blocked\x18\t \x01(\bR\x0fexternalBlocked\"O\n" +
 	"\x0eSipGroupMember\x12!\n" +
 	"\fextension_id\x18\x01 \x01(\tR\vextensionId\x12\x1a\n" +
 	"\bposition\x18\x02 \x01(\rR\bposition\"\xf6\x03\n" +
@@ -3729,7 +3785,7 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\n" +
 	"SipIvrItem\x12\x14\n" +
 	"\x05digit\x18\x01 \x01(\tR\x05digit\x121\n" +
-	"\x06action\x18\x02 \x01(\v2\x19.calaba.v1.SipRouteTargetR\x06action\"\xf0\x03\n" +
+	"\x06action\x18\x02 \x01(\v2\x19.calaba.v1.SipRouteTargetR\x06action\"\x99\x04\n" +
 	"\n" +
 	"SipIvrMenu\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
@@ -3746,23 +3802,27 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_by\x18\f \x01(\tR\tupdatedBy\"T\n" +
+	"updated_by\x18\f \x01(\tR\tupdatedBy\x12'\n" +
+	"\x0fdial_extensions\x18\r \x01(\bR\x0edialExtensions\"T\n" +
 	"\x19ListSipExtensionsResponse\x127\n" +
 	"\n" +
 	"extensions\x18\x01 \x03(\v2\x17.calaba.v1.SipExtensionR\n" +
-	"extensions\"n\n" +
+	"extensions\"\x99\x01\n" +
 	"\x19CreateSipExtensionRequest\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\tR\x06number\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xa4\x01\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12)\n" +
+	"\x10external_blocked\x18\x04 \x01(\bR\x0fexternalBlocked\"\xe9\x01\n" +
 	"\x19UpdateSipExtensionRequest\x12\x1b\n" +
 	"\x06number\x18\x01 \x01(\tH\x00R\x06number\x88\x01\x01\x12\x1c\n" +
 	"\auser_id\x18\x02 \x01(\tH\x01R\x06userId\x88\x01\x01\x12%\n" +
-	"\vdescription\x18\x03 \x01(\tH\x02R\vdescription\x88\x01\x01B\t\n" +
+	"\vdescription\x18\x03 \x01(\tH\x02R\vdescription\x88\x01\x01\x12.\n" +
+	"\x10external_blocked\x18\x04 \x01(\bH\x03R\x0fexternalBlocked\x88\x01\x01B\t\n" +
 	"\a_numberB\n" +
 	"\n" +
 	"\b_user_idB\x0e\n" +
-	"\f_description\"M\n" +
+	"\f_descriptionB\x13\n" +
+	"\x11_external_blocked\"M\n" +
 	"\x14SipExtensionResponse\x125\n" +
 	"\textension\x18\x01 \x01(\v2\x17.calaba.v1.SipExtensionR\textension\"D\n" +
 	"\x15ListSipGroupsResponse\x12+\n" +
@@ -3801,26 +3861,29 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x17ListSipIvrMenusResponse\x12+\n" +
 	"\x05menus\x18\x01 \x03(\v2\x15.calaba.v1.SipIvrMenuR\x05menus\":\n" +
 	"\vSipIvrItems\x12+\n" +
-	"\x05items\x18\x01 \x03(\v2\x15.calaba.v1.SipIvrItemR\x05items\"\x8f\x02\n" +
+	"\x05items\x18\x01 \x03(\v2\x15.calaba.v1.SipIvrItemR\x05items\"\xb8\x02\n" +
 	"\x17CreateSipIvrMenuRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12*\n" +
 	"\x11input_timeout_sec\x18\x02 \x01(\rR\x0finputTimeoutSec\x12\x18\n" +
 	"\arepeats\x18\x03 \x01(\rR\arepeats\x129\n" +
 	"\von_no_input\x18\x04 \x01(\v2\x19.calaba.v1.SipRouteTargetR\tonNoInput\x12,\n" +
 	"\x05items\x18\x05 \x01(\v2\x16.calaba.v1.SipIvrItemsR\x05items\x121\n" +
-	"\x15prompt_source_file_id\x18\x06 \x01(\tR\x12promptSourceFileId\"\xe8\x02\n" +
+	"\x15prompt_source_file_id\x18\x06 \x01(\tR\x12promptSourceFileId\x12'\n" +
+	"\x0fdial_extensions\x18\a \x01(\bR\x0edialExtensions\"\xaa\x03\n" +
 	"\x17UpdateSipIvrMenuRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12/\n" +
 	"\x11input_timeout_sec\x18\x02 \x01(\rH\x01R\x0finputTimeoutSec\x88\x01\x01\x12\x1d\n" +
 	"\arepeats\x18\x03 \x01(\rH\x02R\arepeats\x88\x01\x01\x129\n" +
 	"\von_no_input\x18\x04 \x01(\v2\x19.calaba.v1.SipRouteTargetR\tonNoInput\x12,\n" +
 	"\x05items\x18\x05 \x01(\v2\x16.calaba.v1.SipIvrItemsR\x05items\x126\n" +
-	"\x15prompt_source_file_id\x18\x06 \x01(\tH\x03R\x12promptSourceFileId\x88\x01\x01B\a\n" +
+	"\x15prompt_source_file_id\x18\x06 \x01(\tH\x03R\x12promptSourceFileId\x88\x01\x01\x12,\n" +
+	"\x0fdial_extensions\x18\a \x01(\bH\x04R\x0edialExtensions\x88\x01\x01B\a\n" +
 	"\x05_nameB\x14\n" +
 	"\x12_input_timeout_secB\n" +
 	"\n" +
 	"\b_repeatsB\x18\n" +
-	"\x16_prompt_source_file_id\"?\n" +
+	"\x16_prompt_source_file_idB\x12\n" +
+	"\x10_dial_extensions\"?\n" +
 	"\x12SipIvrMenuResponse\x12)\n" +
 	"\x04menu\x18\x01 \x01(\v2\x15.calaba.v1.SipIvrMenuR\x04menu\"\xfc\x01\n" +
 	"\x14PutSipInboundRequest\x12\x18\n" +

@@ -14,12 +14,12 @@ SELECT * FROM sip_extensions WHERE id = $1 AND workspace_id = $2;
 SELECT count(*)::integer FROM sip_extensions WHERE workspace_id = $1;
 
 -- name: InsertSipExtension :one
-INSERT INTO sip_extensions (workspace_id, number, kind, user_id, group_id, description, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO sip_extensions (workspace_id, number, kind, user_id, group_id, description, created_by, external_blocked)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: UpdateSipExtension :one
-UPDATE sip_extensions SET number = $3, user_id = $4, description = $5
+UPDATE sip_extensions SET number = $3, user_id = $4, description = $5, external_blocked = $6
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 
@@ -85,15 +85,16 @@ SELECT count(*)::integer FROM sip_ivr_menus WHERE workspace_id = $1;
 
 -- name: InsertSipIvrMenu :one
 INSERT INTO sip_ivr_menus (workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats,
-                           no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                           no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, updated_by,
+                           dial_extensions)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING *;
 
 -- name: UpdateSipIvrMenu :one
 UPDATE sip_ivr_menus
 SET name = $3, prompt_file_id = $4, prompt_duration_ms = $5, input_timeout_sec = $6, repeats = $7,
     no_input_kind = $8, no_input_menu_id = $9, no_input_extension_id = $10, no_input_group_id = $11,
-    updated_by = $12, updated_at = now()
+    updated_by = $12, dial_extensions = $13, updated_at = now()
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 

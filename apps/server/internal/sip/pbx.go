@@ -236,7 +236,8 @@ func (ex *exchange) targetPB(kind string, menu, ext, group *uuid.UUID) *v1.SipRo
 
 func (ex *exchange) extPB(e sqlc.SipExtension) *v1.SipExtension {
 	out := &v1.SipExtension{Id: e.ID.String(), WorkspaceId: e.WorkspaceID.String(), Number: e.Number,
-		UserId: idOf(e.UserID), GroupId: idOf(e.GroupID), Description: e.Description, CreatedAt: timestamppb.New(e.CreatedAt)}
+		UserId: idOf(e.UserID), GroupId: idOf(e.GroupID), Description: e.Description, CreatedAt: timestamppb.New(e.CreatedAt),
+		ExternalBlocked: e.ExternalBlocked}
 	switch {
 	case e.Kind == "group":
 		out.Kind = v1.SipExtensionKind_SIP_EXTENSION_KIND_GROUP
@@ -278,7 +279,7 @@ func (ex *exchange) menuPB(m sqlc.SipIvrMenu) *v1.SipIvrMenu {
 		PromptStatus: v1.SipPromptStatus_SIP_PROMPT_STATUS_NONE, PromptDurationMs: uint32(max(m.PromptDurationMs, 0)), //nolint:gosec // ≤ 180000
 		InputTimeoutSec: uint32(max(m.InputTimeoutSec, 0)), Repeats: uint32(max(m.Repeats, 0)), //nolint:gosec // small
 		OnNoInput: ex.targetPB(m.NoInputKind, m.NoInputMenuID, m.NoInputExtensionID, m.NoInputGroupID),
-		Items:     []*v1.SipIvrItem{}, UpdatedAt: timestamppb.New(m.UpdatedAt), UpdatedBy: idOf(m.UpdatedBy)}
+		Items:     []*v1.SipIvrItem{}, UpdatedAt: timestamppb.New(m.UpdatedAt), UpdatedBy: idOf(m.UpdatedBy), DialExtensions: m.DialExtensions}
 	if m.PromptFileID != nil {
 		out.PromptStatus = v1.SipPromptStatus_SIP_PROMPT_STATUS_READY
 	}
@@ -555,7 +556,7 @@ func (s *Service) createExtension(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		if created, err = q.InsertSipExtension(ctx, sqlc.InsertSipExtensionParams{WorkspaceID: wsID, Number: number, Kind: "user",
-			UserID: &user, Description: desc, CreatedBy: &me}); err != nil {
+			UserID: &user, Description: desc, CreatedBy: &me, ExternalBlocked: req.GetExternalBlocked()}); err != nil {
 			return err
 		}
 		_, err = q.SetMemberSipExtension(ctx, sqlc.SetMemberSipExtensionParams{WorkspaceID: wsID, UserID: user, SipExtension: number})
@@ -616,8 +617,14 @@ func (s *Service) updateExtension(w http.ResponseWriter, r *http.Request) error 
 			return httpx.NotFound("extension")
 		}
 		before = cur
-		number, desc, user := cur.Number, cur.Description, cur.UserID
+		number, desc, user, blocked := cur.Number, cur.Description, cur.UserID, cur.ExternalBlocked
 		var err error
+		if req.ExternalBlocked != nil {
+			if cur.Kind == "group" && req.GetExternalBlocked() {
+				return httpx.Validation("externalBlocked", "a group's number is always open to callers")
+			}
+			blocked = req.GetExternalBlocked()
+		}
 		if req.Number != nil {
 			if number, err = extNumber(req.GetNumber(), "number"); err != nil {
 				return err
@@ -645,7 +652,7 @@ func (s *Service) updateExtension(w http.ResponseWriter, r *http.Request) error 
 			}
 		}
 		if after, err = q.UpdateSipExtension(ctx, sqlc.UpdateSipExtensionParams{ID: id, WorkspaceID: wsID, Number: number,
-			UserID: user, Description: desc}); err != nil {
+			UserID: user, Description: desc, ExternalBlocked: blocked}); err != nil {
 			return err
 		}
 		if before.UserID != nil && (after.UserID == nil || *after.UserID != *before.UserID) {
@@ -1111,7 +1118,7 @@ func (s *Service) createMenu(w http.ResponseWriter, r *http.Request) error {
 		}
 		if created, err = q.InsertSipIvrMenu(ctx, sqlc.InsertSipIvrMenuParams{WorkspaceID: wsID, Name: name, PromptFileID: prompt,
 			PromptDurationMs: ms, InputTimeoutSec: timeout, Repeats: repeats, NoInputKind: noInput.kind, NoInputMenuID: noInput.menu,
-			NoInputExtensionID: noInput.ext, NoInputGroupID: noInput.group, UpdatedBy: &me}); err != nil {
+			NoInputExtensionID: noInput.ext, NoInputGroupID: noInput.group, UpdatedBy: &me, DialExtensions: req.GetDialExtensions()}); err != nil {
 			return err
 		}
 		return setMenuItems(ctx, q, wsID, created.ID, items)
@@ -1182,7 +1189,10 @@ func (s *Service) updateMenu(w http.ResponseWriter, r *http.Request) error {
 		p := sqlc.UpdateSipIvrMenuParams{ID: id, WorkspaceID: wsID, Name: cur.Name, PromptFileID: cur.PromptFileID,
 			PromptDurationMs: cur.PromptDurationMs, InputTimeoutSec: cur.InputTimeoutSec, Repeats: cur.Repeats,
 			NoInputKind: cur.NoInputKind, NoInputMenuID: cur.NoInputMenuID, NoInputExtensionID: cur.NoInputExtensionID,
-			NoInputGroupID: cur.NoInputGroupID, UpdatedBy: &me}
+			NoInputGroupID: cur.NoInputGroupID, UpdatedBy: &me, DialExtensions: cur.DialExtensions}
+		if req.DialExtensions != nil {
+			p.DialExtensions = req.GetDialExtensions()
+		}
 		var err error
 		if req.Name != nil {
 			if p.Name, err = pbxName(req.GetName()); err != nil {
@@ -1285,7 +1295,7 @@ func (s *Service) deleteMenu(w http.ResponseWriter, r *http.Request) error {
 func (ex *exchange) routing() *PBX {
 	p := &PBX{Extensions: map[uuid.UUID]Ext{}, Groups: map[uuid.UUID]Group{}, Menus: map[uuid.UUID]Menu{}}
 	for _, e := range ex.exts {
-		x := Ext{ID: e.ID, Group: e.GroupID}
+		x := Ext{ID: e.ID, Group: e.GroupID, Number: e.Number, NoExternal: e.ExternalBlocked}
 		if who, ok := ex.people[e.ID]; ok && perm.Role(who.Role) != perm.RoleGuest {
 			u := who.UserID
 			x.User = &u
@@ -1303,7 +1313,8 @@ func (ex *exchange) routing() *PBX {
 	}
 	for _, m := range ex.menus {
 		mn := Menu{ID: m.ID, Name: m.Name, HasPrompt: m.PromptFileID != nil, PromptMs: int(m.PromptDurationMs), InputTimeoutSec: int(m.InputTimeoutSec), Repeats: int(m.Repeats),
-			OnNoInput: routeTarget(m.NoInputKind, m.NoInputMenuID, m.NoInputExtensionID, m.NoInputGroupID), Items: map[byte]Target{}}
+			OnNoInput: routeTarget(m.NoInputKind, m.NoInputMenuID, m.NoInputExtensionID, m.NoInputGroupID), Items: map[byte]Target{},
+			DialExtensions: m.DialExtensions}
 		if m.PromptFileID != nil {
 			mn.Prompt = *m.PromptFileID
 		}

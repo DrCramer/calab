@@ -1471,15 +1471,16 @@ type SipCall struct {
 }
 
 type SipExtension struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-	Number      string
-	Kind        string
-	UserID      *uuid.UUID
-	GroupID     *uuid.UUID
-	Description string
-	CreatedAt   time.Time
-	CreatedBy   *uuid.UUID
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Number          string
+	Kind            string
+	UserID          *uuid.UUID
+	GroupID         *uuid.UUID
+	Description     string
+	CreatedAt       time.Time
+	CreatedBy       *uuid.UUID
+	ExternalBlocked bool
 }
 
 type SipGroup struct {
@@ -1532,6 +1533,7 @@ type SipIvrMenu struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	UpdatedBy          *uuid.UUID
+	DialExtensions     bool
 }
 
 type Sticker struct {

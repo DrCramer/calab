@@ -315,6 +315,10 @@ message SipExtension {
   string group_id = 6;    // GROUP
   string description = 7; // ≤ 64 characters, for reference («Бухгалтерия»)
   google.protobuf.Timestamp created_at = 8;
+  // USER / BOT (ADR-0129): external callers may not dial this number from a voice menu (it is
+  // «not found» to them). Routes an admin set (keys, the entry point, fallbacks) and groups
+  // still ring it; internal calls are not affected. Always false on a GROUP number.
+  bool external_blocked = 9;
 }
 
 enum SipGroupStrategy {
@@ -383,6 +387,11 @@ message SipIvrMenu {
   repeated SipIvrItem items = 10; // by digit, ≤ 12
   google.protobuf.Timestamp updated_at = 11;
   string updated_by = 12;
+  // ADR-0129: the caller may also dial an internal number (a person, a bot, a group) while the
+  // menu plays or waits; the digits are collected until a 3 s pause or «#». A number that is
+  // not dialable (unknown, unassigned, external_blocked) counts as a key without an item: the
+  // menu plays again. Default off: keys only.
+  bool dial_extensions = 13;
 }
 
 // GET /api/workspaces/{id}/sip/extensions (any member but guests) → 200: all numbers by number,
@@ -400,6 +409,7 @@ message CreateSipExtensionRequest {
   string number = 1;
   string user_id = 2;
   string description = 3;
+  bool external_blocked = 4;
 }
 
 // PATCH /api/workspaces/{id}/sip/extensions/{eid} → 200 SipExtensionResponse; unset fields stay.
@@ -410,6 +420,7 @@ message UpdateSipExtensionRequest {
   optional string number = 1;
   optional string user_id = 2;
   optional string description = 3;
+  optional bool external_blocked = 4; // true on a group's number → 422 (field externalBlocked)
 }
 
 message SipExtensionResponse {
@@ -486,6 +497,7 @@ message CreateSipIvrMenuRequest {
   // its quota, not encrypted; the upload itself goes with the orphan cleanup. The request then
   // takes up to ~60 s. Empty = no prompt.
   string prompt_source_file_id = 6;
+  bool dial_extensions = 7;
 }
 
 // PATCH /api/workspaces/{id}/sip/ivr/{mid} → 200 SipIvrMenuResponse; unset fields stay, set
@@ -499,6 +511,7 @@ message UpdateSipIvrMenuRequest {
   SipRouteTarget on_no_input = 4; // set = replace
   SipIvrItems items = 5;          // set = replace
   optional string prompt_source_file_id = 6;
+  optional bool dial_extensions = 7;
 }
 
 message SipIvrMenuResponse {
