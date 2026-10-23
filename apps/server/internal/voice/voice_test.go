@@ -126,3 +126,24 @@ func TestDMRoomName(t *testing.T) {
 		t.Fatalf("parse ws: %v %v %v", w, r, ok)
 	}
 }
+
+// Push-to-talk mode (ADR-0130): all devices of the user in their room; a flip is a change.
+func TestAggregatePtt(t *testing.T) {
+	ws, u, r1 := uuid.New(), uuid.New(), uuid.New()
+	sessions := []SessionState{
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, Ptt: true, JoinedAt: 100},
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, JoinedAt: 200},
+	}
+	mixed := Aggregate(ws, u, sessions)
+	if mixed.GetPtt() {
+		t.Fatalf("one device on voice activation keeps the user off push-to-talk: %v", mixed)
+	}
+	sessions[1].Ptt = true
+	on := Aggregate(ws, u, sessions)
+	if !on.GetPtt() || Equal(mixed, on) {
+		t.Fatalf("all devices in push-to-talk, and the flip must be a change: %v", on)
+	}
+	if Aggregate(ws, uuid.New(), sessions).GetPtt() {
+		t.Fatal("a user without sessions has no ptt")
+	}
+}

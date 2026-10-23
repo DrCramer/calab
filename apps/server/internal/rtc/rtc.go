@@ -332,7 +332,7 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 			}
 			n := voice.SessionState{RoomID: room.ID, Pending: true, JoinedAt: time.Now().UnixMilli()}
 			if cur != nil {
-				n.Muted, n.Deafened, n.Musician = cur.Muted, cur.Deafened, cur.Musician
+				n.Muted, n.Deafened, n.Musician, n.Ptt = cur.Muted, cur.Deafened, cur.Musician, cur.Ptt
 			}
 			pending, joinedAt = true, n.JoinedAt
 			return &n
@@ -616,6 +616,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 		}
 		if req.Musician != nil {
 			n.Musician = req.GetMusician()
+		}
+		if req.Ptt != nil {
+			n.Ptt = req.GetPtt()
 		}
 		return &n
 	})

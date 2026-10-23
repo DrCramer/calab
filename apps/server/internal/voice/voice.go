@@ -52,6 +52,8 @@ type SessionState struct {
 	Camera    bool      `json:"c,omitempty"`
 	// Musician: the device sends its mic in musician mode (ADR-0052); PATCH /api/voice/self.
 	Musician bool `json:"mu,omitempty"`
+	// Ptt: the device is in push-to-talk mode (ADR-0130); PATCH /api/voice/self.
+	Ptt bool `json:"pt,omitempty"`
 	// Pending: recorded by /join (or an app-level move) and not connected to LiveKit yet;
 	// participant_joined clears it, a device that never connects is removed after 15 s.
 	Pending  bool  `json:"p,omitempty"`
@@ -122,7 +124,7 @@ func ParseRoomName(name string) (workspaceID, roomID uuid.UUID, ok bool) {
 // Aggregate computes the per-user voice state from all of the user's device sessions in a
 // workspace: the user is in the room of their most recently joined session; muted/deafened
 // = all sessions in that room are; streaming / camera / musician = any session in that room
-// is; pending = all
+// is; ptt = all sessions in that room are; pending = all
 // sessions in that room are still connecting (one connected device makes the user connected).
 // Returns a state with empty RoomId when the user has no sessions.
 func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.VoiceState {
@@ -141,7 +143,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		return out
 	}
 	out.RoomId = latest.RoomID.String()
-	out.Muted, out.Deafened, out.Pending = true, true, true
+	out.Muted, out.Deafened, out.Pending, out.Ptt = true, true, true, true
 	joined := latest.JoinedAt
 	for _, s := range sessions {
 		if s.UserID != userID || s.RoomID != latest.RoomID {
@@ -152,6 +154,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		out.Streaming = out.Streaming || s.Streaming
 		out.Camera = out.Camera || s.Camera
 		out.Musician = out.Musician || s.Musician
+		out.Ptt = out.Ptt && s.Ptt
 		out.Pending = out.Pending && s.Pending
 		joined = min(joined, s.JoinedAt)
 	}
@@ -178,7 +181,7 @@ func Equal(a, b *v1.VoiceState) bool {
 	return a.GetRoomId() == b.GetRoomId() && a.GetMuted() == b.GetMuted() &&
 		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() && a.GetCamera() == b.GetCamera() &&
 		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime()) && a.GetServerMuted() == b.GetServerMuted() &&
-		a.GetPending() == b.GetPending() && a.GetMusician() == b.GetMusician()
+		a.GetPending() == b.GetPending() && a.GetMusician() == b.GetMusician() && a.GetPtt() == b.GetPtt()
 }
 
 // Store is the Redis-backed voice state.

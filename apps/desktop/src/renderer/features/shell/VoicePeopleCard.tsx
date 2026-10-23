@@ -309,7 +309,7 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
             {v?.streaming ? <MonitorUp className="size-4 shrink-0 text-danger" aria-label={t('people.streaming')} role="img" /> : null}
             {v?.camera ? <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" /> : null}
             {v?.musician ? <MusicianIcon /> : null}
-            {v ? <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} /> : null}
+            {v ? <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} pttIdle={v.ptt && !talking} /> : null}
           </span>
         </button>
       </MemberContextMenu>
