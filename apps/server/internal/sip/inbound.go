@@ -915,13 +915,19 @@ func (s *Service) inboundJoined(ctx context.Context, wid uuid.UUID, room string,
 		return nil
 	}
 	entry := routeTarget(a.InboundKind, a.InboundMenuID, a.InboundExtensionID, a.InboundGroupID)
+	var pause int64 // digits pressed before the entry point began a number (ADR-0129)
 	if err := s.withCall(ctx, id, func(r *inRec, e Env, fx *Effects) error {
 		r.Enter(e, entry, fx)
+		if r.Phase == PhaseMenu && r.Digits != "" {
+			pause = r.Deadline
+		}
 		return nil
 	}); err != nil {
 		slog.WarnContext(ctx, "sip: inbound entry point", "call", id, "err", err)
 		s.endInbound(ctx, row, reasonError, nil)
+		return nil
 	}
+	s.dialPause(ctx, id, pause)
 	return nil
 }
 
@@ -969,15 +975,21 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 		slog.WarnContext(ctx, "sip: IVR event", "call", id, "op", ev.Op, "err", err)
 		return
 	}
-	if pause > 0 {
-		// The pause between digits (3 s) is shorter than the tick (5 s): this replica resolves
-		// the number on time; the tick still catches it if this replica goes away.
-		time.AfterFunc(time.Until(time.UnixMilli(pause))+50*time.Millisecond, func() {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			defer cancel()
-			s.expireCall(ctx, id)
-		})
+	s.dialPause(ctx, id, pause)
+}
+
+// dialPause resolves call id's number when the pause between its digits (deadline, ms; 0 =
+// none) runs out. The pause (3 s) is shorter than the tick (5 s): this replica resolves the
+// number on time; the tick still catches it if this replica goes away.
+func (s *Service) dialPause(ctx context.Context, id uuid.UUID, deadline int64) {
+	if deadline <= 0 {
+		return
 	}
+	time.AfterFunc(time.Until(time.UnixMilli(deadline))+50*time.Millisecond, func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		s.expireCall(ctx, id)
+	})
 }
 
 // ---------------------------------------------------------------- the tick
