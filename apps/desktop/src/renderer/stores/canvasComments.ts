@@ -2,7 +2,7 @@ import type { CanvasComment } from '@calaba/protocol';
 import { create } from 'zustand';
 
 /**
- * Comments of the open canvases (ADR-0116 wave 4): a store of its own, by id, apart from the tree's. A
+ * Comments of the open canvases (ADR-0127 wave 4): a store of its own, by id, apart from the tree's. A
  * canvas's threads are kept only once it was loaded (`loaded`); gateway events for other canvases are
  * dropped, the next open reads them fresh. Components select primitives or `useShallow` id lists:
  * a pin or a thread re-renders for its own comment only.

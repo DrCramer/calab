@@ -1,7 +1,7 @@
 import { CanvasItemKind, canvasStructureAllowed, CANVAS_BITS, type CanvasItem } from '@calaba/protocol';
 
 /**
- * Canvas (ADR-0115) — pure helpers of the desktop section: the keys of the lazily loaded child
+ * Canvas (ADR-0126) — pure helpers of the desktop section: the keys of the lazily loaded child
  * lists, the normalized store's reducers (stores/canvas.ts), ancestors for the crumbs, the drop plan
  * of a dragged tree row, the name filter and the rights shortcuts. Same shape as lib/wiki/tree.ts,
  * except that only folders hold children. No store or React imports.
@@ -224,7 +224,7 @@ export function mergeById<T extends { id: string }>(list: readonly T[], more: re
 }
 
 export const canView = (bits: bigint): boolean => (bits & CANVAS_BITS.VIEW) !== 0n;
-/** Edit the content of a canvas and create items in a folder (ADR-0115 §2). */
+/** Edit the content of a canvas and create items in a folder (ADR-0126 §2). */
 export const canWrite = (bits: bigint): boolean => (bits & (CANVAS_BITS.WRITE | CANVAS_BITS.MANAGE)) !== 0n;
 export const canManage = (bits: bigint): boolean => (bits & CANVAS_BITS.MANAGE) !== 0n;
 /** Rename, move, trash, restore, delete and access: the owner or CANVAS_MANAGE. */

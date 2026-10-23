@@ -1,5 +1,5 @@
 -- canvas_versions.state_hash: sha256 of the state, written with the version (InsertCanvasVersion).
--- The version rule (ADR-0115 §1: at most one per VersionEvery, only when the state changed) reads
+-- The version rule (ADR-0126 §1: at most one per VersionEvery, only when the state changed) reads
 -- it instead of hashing the last version's state (up to 4 MiB) on every stored snapshot, inside
 -- the transaction that holds the canvas row lock (second review, minor 4). A version stored before
 -- has NULL: the first comparison that needs it computes and keeps it (SetCanvasVersionHash).

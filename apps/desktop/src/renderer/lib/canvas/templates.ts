@@ -2,7 +2,7 @@ import type { Point, Rect } from './geometry';
 import { boundsOf } from './geometry';
 import type { ObjectInit } from './types';
 
-/** Built-in starting points for a canvas (ADR-0116): a set of objects inserted at once around a point. */
+/** Built-in starting points for a canvas (ADR-0127): a set of objects inserted at once around a point. */
 export const TEMPLATE_IDS = ['kanban', 'retro', 'swot', 'mindmap', 'flow'] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 

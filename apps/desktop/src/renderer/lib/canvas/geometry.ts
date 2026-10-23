@@ -1,4 +1,4 @@
-/** Plain geometry for the canvas engine (ADR-0115 §4). World units, y grows downwards. No DOM. */
+/** Plain geometry for the canvas engine (ADR-0126 §4). World units, y grows downwards. No DOM. */
 
 export interface Point {
   x: number;
@@ -234,7 +234,7 @@ export function mapRect(r: Rect, from: Rect, to: Rect): Rect {
   return { x: to.x + (r.x - from.x) * sx, y: to.y + (r.y - from.y) * sy, w: r.w * sx, h: r.h * sy };
 }
 
-// ── rotation (ADR-0116 §Волна 1) ───────────────────────────────────────────────
+// ── rotation (ADR-0127 §Волна 1) ───────────────────────────────────────────────
 // A rotated object keeps its unrotated frame (x, y, w, h) and an angle `rot` in degrees, clockwise (y grows
 // downwards), about the frame's center. Everything object-local (hit-testing, handles, resize) works in the
 // local frame: the point is rotated back about the center.

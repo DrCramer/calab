@@ -19,7 +19,7 @@ const hint = (touch: boolean | undefined, label: string, node: ReactNode): React
 const BTN = 'grid shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted';
 
 /**
- * The text size as a number (ADR-0116): a field you type in (Enter / blur applies, Esc cancels, ↑ / ↓ ± 1, Shift ± 10), − / + steppers and a
+ * The text size as a number (ADR-0127): a field you type in (Enter / blur applies, Esc cancels, ↑ / ↓ ± 1, Shift ± 10), − / + steppers and a
  * list of presets. One control for the properties panel, the format bar over the text being edited and the phone sheets
  * (`touch`: 44 px targets and the numeric keyboard). `value` undefined = the selection differs: the field is empty («—») and the
  * steppers are off. In the format bar (`keepsEditing`) the controls are marked so that moving the focus into the field does not

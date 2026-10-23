@@ -423,7 +423,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		recheck = p.Restricted != nil || moving // a rename changes no one's access
 		if p.Restricted != nil || moving {
-			// Made private, or moved below a restricted folder: its public links go (ADR-0116 wave 5).
+			// Made private, or moved below a restricted folder: its public links go (ADR-0127 wave 5).
 			if err := dropLinks(ctx, q, id); err != nil {
 				return err
 			}
@@ -519,7 +519,7 @@ func (s *Service) trash(w http.ResponseWriter, r *http.Request) error {
 		if !slices.Contains(ids, id) {
 			return errTrashed // trashed concurrently
 		}
-		if err := dropLinks(ctx, q, id); err != nil { // the trash revokes the public links (ADR-0116 wave 5)
+		if err := dropLinks(ctx, q, id); err != nil { // the trash revokes the public links (ADR-0127 wave 5)
 			return err
 		}
 		if a.item, err = q.GetCanvasItem(ctx, id); err != nil {

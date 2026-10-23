@@ -54,7 +54,7 @@ describe('creation', () => {
   });
 });
 
-describe('limits (ADR-0115 §3)', () => {
+describe('limits (ADR-0126 §3)', () => {
   it('refuses to create past 5000 objects', () => {
     const y = new Y.Doc();
     const d = new CanvasDoc(y, { rng: null });

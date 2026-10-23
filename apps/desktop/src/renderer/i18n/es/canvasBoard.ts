@@ -1,7 +1,7 @@
 import type { ruCanvasBoard } from '../ru/canvasBoard';
 import type { DictShape } from '../types';
 
-/** Spanish UI strings — pantalla del Lienzo (ADR-0115 §5). Same keys and placeholders as ru/canvasBoard.ts. */
+/** Spanish UI strings — pantalla del Lienzo (ADR-0126 §5). Same keys and placeholders as ru/canvasBoard.ts. */
 export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.label': 'Lienzo',
   'canvasBoard.toolbar': 'Herramientas',

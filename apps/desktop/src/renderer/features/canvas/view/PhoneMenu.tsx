@@ -7,7 +7,7 @@ import type { CanvasEngine } from '../engine';
 import { PANEL, keepFocus } from './chrome';
 
 /**
- * The long-press menu of the phone's edit mode (ADR-0116 wave 5b): a press that stays put on empty canvas opens
+ * The long-press menu of the phone's edit mode (ADR-0127 wave 5b): a press that stays put on empty canvas opens
  * «Вставить · Текст · Шаблон…» at the finger (the touch screen's right click). A leaf with its own subscription to the
  * engine's press event; closed, it renders nothing and holds nothing. A tap anywhere else (a backdrop) closes it.
  */

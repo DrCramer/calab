@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestCanvasMigration: 00107 (ADR-0115) adds CANVAS_VIEW | CANVAS_WRITE to the member roles that
+// TestCanvasMigration: 00115 (ADR-0126) adds CANVAS_VIEW | CANVAS_WRITE to the member roles that
 // exist, nothing to the others, and for new workspaces through the trigger; going down removes
 // the bits and the tables again (bits 41-43 from every role), and up works once more.
 func TestCanvasMigration(t *testing.T) {
@@ -33,7 +33,7 @@ func TestCanvasMigration(t *testing.T) {
 		}
 		return p
 	}
-	if err := d.MigrateTo(ctx, 101); err != nil {
+	if err := d.MigrateTo(ctx, 114); err != nil {
 		t.Fatal(err)
 	}
 	owner, ws := uuid.New(), uuid.New()
@@ -66,7 +66,7 @@ func TestCanvasMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.DownTo(ctx, 101); err != nil {
+	if _, err := p.DownTo(ctx, 114); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	if got := perms(ws, "member"); got != memberBefore {

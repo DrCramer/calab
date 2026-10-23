@@ -137,7 +137,7 @@ export function DiskActiveIcon({ className }: IconProps): ReactNode {
   );
 }
 
-/** «Холст» (ADR-0115 §5): a board with a sticky note and a connector to a shape; outline at rest. */
+/** «Холст» (ADR-0126 §5): a board with a sticky note and a connector to a shape; outline at rest. */
 export function CanvasIdleIcon({ className }: IconProps): ReactNode {
   return (
     <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">

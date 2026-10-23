@@ -27,7 +27,7 @@ export interface CanvasViewDeps {
   clipboard?: ClipboardPort;
   /**
    * `serverNow − localNow` in ms, estimated from the `Date` header of one light REST call; null = unknown. Called once
-   * per open canvas, and only when a timer is first seen or started (ADR-0116). Absent: the local clock is used.
+   * per open canvas, and only when a timer is first seen or started (ADR-0127). Absent: the local clock is used.
    */
   serverClockOffset?: () => Promise<number | null>;
 }
@@ -45,7 +45,7 @@ export interface SessionOptions {
   /** No CANVAS_WRITE. */
   readOnly: boolean;
   /**
-   * The public link's viewer (ADR-0116 wave 5): the anonymous receive-only socket of this code instead of
+   * The public link's viewer (ADR-0127 wave 5): the anonymous receive-only socket of this code instead of
    * `/api/canvas/items/{id}/sync` — no token, nothing sent (lib/canvasSync.ts `anonymous`).
    */
   publicCode?: string;

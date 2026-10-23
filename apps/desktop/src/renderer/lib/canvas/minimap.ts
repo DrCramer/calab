@@ -1,7 +1,7 @@
 import type { Camera, Viewport } from './camera';
 import { rectUnion, type Point, type Rect } from './geometry';
 
-/** The mini-map's box in CSS px and the margin kept around the drawing (ADR-0116). */
+/** The mini-map's box in CSS px and the margin kept around the drawing (ADR-0127). */
 export const MAP_W = 180;
 export const MAP_H = 120;
 export const MAP_PAD = 8;

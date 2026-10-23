@@ -1,7 +1,7 @@
 import type { ruCanvasComments } from '../ru/canvasComments';
 import type { DictShape } from '../types';
 
-/** Comments on a canvas (ADR-0116 wave 4). Same keys and placeholders as ru/canvasComments.ts. */
+/** Comments on a canvas (ADR-0127 wave 4). Same keys and placeholders as ru/canvasComments.ts. */
 export const enCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.title': 'Comments',
   'canvasComments.toggle': 'Comments',

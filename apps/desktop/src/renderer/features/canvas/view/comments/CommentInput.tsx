@@ -1,5 +1,5 @@
 /**
- * The text field of a canvas comment (ADR-0116 wave 4) with the project's @ autocomplete (MentionPopover):
+ * The text field of a canvas comment (ADR-0127 wave 4) with the project's @ autocomplete (MentionPopover):
  * the field shows `@Имя`, the wire text holds `@<user_id>` (lib/mentions). Only members the server says see
  * the canvas are offered (GET …/comments/mention-access, cached a minute); nobody is offered until it answers.
  * Enter sends, Shift+Enter breaks the line, Esc cancels.

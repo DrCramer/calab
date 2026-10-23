@@ -2,7 +2,7 @@ import { prefs } from '../../../stores/prefs';
 import { synth, wav, type Note } from '../../../lib/sounds';
 
 /**
- * The «time is up» cue (ADR-0116): a short three-note chime rendered once into a WAV blob and played through a plain
+ * The «time is up» cue (ADR-0127): a short three-note chime rendered once into a WAV blob and played through a plain
  * `<audio>` element on the chosen output device — never WebAudio on the output (docs/02, echo rule 1). It follows the
  * app's «Звуки» switch and volume.
  */

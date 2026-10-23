@@ -1,7 +1,7 @@
 import type { ruCanvasPhone } from '../ru/canvasPhone';
 import type { DictShape } from '../types';
 
-/** English UI strings — Canvas on the phone (ADR-0115 §5, editing — ADR-0116 wave 5b). Same keys and placeholders as ru/canvasPhone.ts. */
+/** English UI strings — Canvas on the phone (ADR-0126 §5, editing — ADR-0127 wave 5b). Same keys and placeholders as ru/canvasPhone.ts. */
 export const enCanvasPhone: DictShape<typeof ruCanvasPhone> = {
   'canvasPhone.note': 'You can only view this canvas — pan and zoom are available.',
   'canvasPhone.edit': 'Edit',

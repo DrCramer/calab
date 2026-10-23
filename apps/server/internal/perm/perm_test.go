@@ -67,7 +67,7 @@ type vector struct {
 	// ADR-0096: a wiki page vector (ComputeWikiPage over the chain, the top-level page first;
 	// structure: the expected WikiStructureAllowed for the owner flag of the last level).
 	Wiki *treeVector `json:"wiki"`
-	// ADR-0115: a canvas item vector (ComputeCanvasItem over the chain, the top-level item first;
+	// ADR-0126: a canvas item vector (ComputeCanvasItem over the chain, the top-level item first;
 	// structure as for the wiki).
 	Canvas   *treeVector `json:"canvas"`
 	Expected Bits        `json:"expected"`

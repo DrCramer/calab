@@ -196,7 +196,7 @@ describe('«Холст» on the phone: tree → canvas → back', () => {
   });
 });
 
-describe('«Править» (ADR-0116 wave 5b)', () => {
+describe('«Править» (ADR-0127 wave 5b)', () => {
   const open = async (id: string): Promise<void> => {
     act(() => useUi.getState().setPhone((p) => ({ ...p, stack: [{ kind: 'canvas', itemId: id }] })));
     await flush();

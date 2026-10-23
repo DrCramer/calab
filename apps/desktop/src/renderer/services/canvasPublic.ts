@@ -2,7 +2,7 @@ import { PublicCanvasSchema, type PublicCanvas } from '@calaba/protocol';
 import { call } from '../lib/api/client';
 
 /**
- * The public canvas `/c/{code}` (ADR-0116 wave 5): the anonymous `GET /api/public/canvas/{code}` (the name;
+ * The public canvas `/c/{code}` (ADR-0127 wave 5): the anonymous `GET /api/public/canvas/{code}` (the name;
  * a GET counts a view) and the receive-only socket `…/sync` (lib/canvasSync.ts `canvasPublicSyncUrl`, no token).
  * `probe` asks again with HEAD — not a view — after a socket attempt failed before it opened: a refused code is
  * a plain 404 before the upgrade, which a browser's WebSocket cannot read.

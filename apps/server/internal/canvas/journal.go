@@ -30,7 +30,7 @@ func encode(m snap) ([]byte, error) {
 }
 
 // journal writes one entry about item p (its name as now); actor nil = the sweeper. Kinds:
-// ADR-0115 §1 (create, rename, move, share, trash, restore, delete, version).
+// ADR-0126 §1 (create, rename, move, share, trash, restore, delete, version).
 func (s *Service) journal(ctx context.Context, q *sqlc.Queries, p sqlc.CanvasItemHead, actor *uuid.UUID, kind string, before, after snap) error {
 	return s.journalEntry(ctx, q, p, actor, kind, before, after, false)
 }

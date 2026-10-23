@@ -753,7 +753,7 @@ describe('PNG export', () => {
   });
 });
 
-describe('transform controls (ADR-0116)', () => {
+describe('transform controls (ADR-0127)', () => {
   const twoStickies = async (relay: MockRelay): Promise<Mounted> => {
     const m = await mount({ relay });
     for (const [x, y] of [[200, 200], [600, 330]] as const) {
@@ -973,7 +973,7 @@ describe('transform controls (ADR-0116)', () => {
   });
 });
 
-describe('the public link viewer (publicCode, ADR-0116 wave 5)', () => {
+describe('the public link viewer (publicCode, ADR-0127 wave 5)', () => {
   const CODE = 'B'.repeat(43);
 
   async function mountViewer(relay = new MockRelay()) {

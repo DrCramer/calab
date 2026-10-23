@@ -1,5 +1,5 @@
 /**
- * Text formatting of a canvas object (ADR-0116 §Волна 2). Pure: no Yjs, no DOM.
+ * Text formatting of a canvas object (ADR-0127 §Волна 2). Pure: no Yjs, no DOM.
  *
  * Stored in the object's `Y.Text` as Quill-style attributes: inline `bold` / `italic` / `strike` on characters and the
  * paragraph attribute `list: 'bullet' | 'number'` on the paragraph's terminating `\n`. A client that knows nothing of

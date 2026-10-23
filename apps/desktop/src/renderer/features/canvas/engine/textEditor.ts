@@ -52,7 +52,7 @@ export interface FormatState {
 
 const CLOSED: FormatState = { open: false, rich: false, bold: false, italic: false, strike: false, list: null, size: null, x: 0, y: 0, w: 0, h: 0, kbd: 0 };
 
-/** Keeping the text clear of the on-screen keyboard (the phone's edit mode, ADR-0116 wave 5b). */
+/** Keeping the text clear of the on-screen keyboard (the phone's edit mode, ADR-0127 wave 5b). */
 export interface PhoneKeyboard {
   /** The view must move by `dy` px (negative: up) so the text stays in the free part of the screen. */
   keepVisible(dy: number): void;
@@ -80,11 +80,11 @@ export interface TextEditorOptions {
 
 /**
  * A real `<textarea>` over the object while it is edited — IME, autocorrect and selection come for free,
- * which canvas text cannot do (ADR-0115 §4). The result is written once, on commit (blur, Escape,
+ * which canvas text cannot do (ADR-0126 §4). The result is written once, on commit (blur, Escape,
  * ⌘/Ctrl+Enter), by the caller. Key events never reach the engine's hotkeys: the textarea is not inside
  * the canvas.
  *
- * Formatting (ADR-0116): a textarea cannot show a bold word, so it stays a plain-text surface and the styles live in
+ * Formatting (ADR-0127): a textarea cannot show a bold word, so it stays a plain-text surface and the styles live in
  * a model beside it (`Fmt`, lib/canvas/richText): every `input` is diffed against the previous value and mapped onto
  * the model, so typing, deleting, autocorrect, IME composition and native undo keep the attributes in step with the
  * characters. The format bar (view/TextFormatBar) toggles them on the selection — or, at a caret, for what is typed

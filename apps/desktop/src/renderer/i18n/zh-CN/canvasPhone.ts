@@ -1,7 +1,7 @@
 import type { ruCanvasPhone } from '../ru/canvasPhone';
 import type { DictShape } from '../types';
 
-/** Simplified Chinese UI strings — Canvas on the phone (ADR-0115 §5, editing — ADR-0116 wave 5b). Same keys and placeholders as ru/canvasPhone.ts. */
+/** Simplified Chinese UI strings — Canvas on the phone (ADR-0126 §5, editing — ADR-0127 wave 5b). Same keys and placeholders as ru/canvasPhone.ts. */
 export const zhCanvasPhone: DictShape<typeof ruCanvasPhone> = {
   'canvasPhone.note': '你只能查看此画布，可平移和缩放。',
   'canvasPhone.edit': '编辑',

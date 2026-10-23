@@ -93,7 +93,7 @@ export type PhoneScreen =
   | { kind: 'disk'; folderId: string; trash?: boolean }
   /** A page of «Вики» (ADR-0096 §7), or with `trash` its trash (pageId ''); the workspace is the open one. */
   | { kind: 'wiki'; pageId: string; trash?: boolean }
-  /** A folder or a canvas of «Холст» (ADR-0115 §5, view only on the phone); the workspace is the open one. */
+  /** A folder or a canvas of «Холст» (ADR-0126 §5, view only on the phone); the workspace is the open one. */
   | { kind: 'canvas'; itemId: string }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)

@@ -1,4 +1,4 @@
-/** Text wrapping with a cache keyed by (text, size, width) — ADR-0115 §4. Pure given a measure function. */
+/** Text wrapping with a cache keyed by (text, size, width) — ADR-0126 §4. Pure given a measure function. */
 import { F_BOLD, F_ITALIC, flagsOf, listNumbers, paragraphCount, type Fmt } from './richText';
 import type { BoxRec } from './types';
 
@@ -10,7 +10,7 @@ export const STICKY_TEXT_SIZE = 18;
 export const SHAPE_TEXT_SIZE = 16;
 export const LABEL_SIZE = 13;
 
-/** Font-size tokens of the object-level `fontSize` (ADR-0116): S, M (the default, absent in the doc), L, XL. */
+/** Font-size tokens of the object-level `fontSize` (ADR-0127): S, M (the default, absent in the doc), L, XL. */
 export type FontToken = 's' | 'm' | 'l' | 'xl';
 export const FONT_TOKENS: readonly FontToken[] = ['s', 'm', 'l', 'xl'];
 export const isFontToken = (v: unknown): v is FontToken => v === 's' || v === 'm' || v === 'l' || v === 'xl';
@@ -44,7 +44,7 @@ export function nearestFontToken(kind: SizedKind, px: number): FontToken {
 }
 
 /**
- * What a sticky or shape stores for a text size of `px` (ADR-0116): a size equal to a preset is just that token
+ * What a sticky or shape stores for a text size of `px` (ADR-0127): a size equal to a preset is just that token
  * (`m` = nothing at all); any other is the exact `fontPx` next to the nearest token, so a client that only knows
  * tokens still shows a close size. `fontPx` is trusted only while its token is still the nearest one (see `storedFontPx`).
  */

@@ -22,7 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// Comments on a canvas (ADR-0116 wave 4): a server entity next to the Yjs document. A thread is
+// Comments on a canvas (ADR-0127 wave 4): a server entity next to the Yjs document. A thread is
 // a root with a pin and its replies (one level). Every route resolves the canvas first: without
 // CANVAS_VIEW on it the answer is 404, for a comment too (its id says nothing). Reading takes
 // CANVAS_VIEW; writing, replying and resolving CANVAS_WRITE; editing and deleting the author's

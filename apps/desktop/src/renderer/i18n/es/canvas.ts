@@ -1,7 +1,7 @@
 import type { ruCanvas } from '../ru/canvas';
 import type { DictShape } from '../types';
 
-/** Spanish UI strings — la sección Lienzo (ADR-0115 §5). Same keys and placeholders as ru/canvas.ts. */
+/** Spanish UI strings — la sección Lienzo (ADR-0126 §5). Same keys and placeholders as ru/canvas.ts. */
 export const esCanvas: DictShape<typeof ruCanvas> = {
   'canvas.section': 'Lienzo',
   'canvas.untitled': 'Sin título',

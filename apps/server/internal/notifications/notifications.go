@@ -326,7 +326,7 @@ func Notifies(f Facts) bool {
 	}
 }
 
-// CanvasFacts are one @mention in a canvas comment by someone else (ADR-0116 wave 4), as seen
+// CanvasFacts are one @mention in a canvas comment by someone else (ADR-0127 wave 4), as seen
 // by the mentioned member.
 type CanvasFacts struct {
 	Level    v1.NotificationLevel // the workspace's level; UNSPECIFIED = MENTIONS

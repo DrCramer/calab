@@ -121,7 +121,7 @@ export const ZoomBar = memo(function ZoomBar({
   phone?: boolean;
   /** The phone's edit mode: the bar hangs from the top, the bottom belongs to the tool bar. */
   top?: boolean;
-  /** The comments panel's button (ADR-0116 wave 4). */
+  /** The comments panel's button (ADR-0127 wave 4). */
   comments?: ReactNode;
 }): ReactNode {
   useLocale();

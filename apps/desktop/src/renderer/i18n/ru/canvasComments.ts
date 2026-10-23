@@ -1,5 +1,5 @@
 /**
- * Russian UI strings — comments on a canvas (ADR-0116 wave 4). Flat dotted keys, `{param}` placeholders.
+ * Russian UI strings — comments on a canvas (ADR-0127 wave 4). Flat dotted keys, `{param}` placeholders.
  */
 export const ruCanvasComments = {
   'canvasComments.title': 'Комментарии',

@@ -33,14 +33,14 @@ export type RefusedWhy = 'objects' | 'size' | 'create' | 'clipboard';
 
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment';
 
-/** A click (tap) of the «Комментарий» tool (ADR-0116 wave 4): where, and the object under it (null = the field). */
+/** A click (tap) of the «Комментарий» tool (ADR-0127 wave 4): where, and the object under it (null = the field). */
 export interface CommentClick {
   readonly screen: Point;
   readonly world: Point;
   readonly objectId: string | null;
 }
 
-/** Everything React is allowed to see: primitives only (ADR-0115 §4). The object identity changes only when a value does. */
+/** Everything React is allowed to see: primitives only (ADR-0126 §4). The object identity changes only when a value does. */
 export interface EngineState {
   /** The selected object when exactly one is selected. */
   readonly selectedId: string | null;
@@ -92,7 +92,7 @@ export interface EngineOptions {
   lowPower?: boolean;
   /** Camera moves jump instead of animating. */
   reducedMotion?: boolean;
-  /** The phone (ADR-0116 wave 5b): touch editing semantics (tap selects, drag moves the selected, bigger handles). */
+  /** The phone (ADR-0127 wave 5b): touch editing semantics (tap selects, drag moves the selected, bigger handles). */
   touch?: boolean;
   /** World grid step for snapping; 0 disables. */
   gridSize?: number;
@@ -143,14 +143,14 @@ function makeCanvasMeasure(family: () => string): MeasureFn {
 
 /**
  * The Canvas engine: Y.Doc → Scene → Canvas 2D renderer, with pointer/keyboard input, selection,
- * snapping, connectors, undo and a text-edit overlay (ADR-0115 §3–§4). Plain TS; the section UI (H5)
+ * snapping, connectors, undo and a text-edit overlay (ADR-0126 §3–§4). Plain TS; the section UI (H5)
  * subscribes to `getState()` primitives and calls the command methods.
  */
 export class CanvasEngine implements Core {
   readonly doc: CanvasDoc;
   readonly scene: Scene;
   readonly live: LiveLayer;
-  /** Voting on stickies and shapes (ADR-0116): the numbers behind the badges. */
+  /** Voting on stickies and shapes (ADR-0127): the numbers behind the badges. */
   readonly votes: VoteBook;
   readonly awareness = new AwarenessLayer();
   readonly renderer: Renderer;
@@ -637,7 +637,7 @@ export class CanvasEngine implements Core {
 
   /**
    * A click of the «Комментарий» tool: the view places a pin there and opens the input. The document is not
-   * touched — comments are a server entity (ADR-0116 wave 4).
+   * touched — comments are a server entity (ADR-0127 wave 4).
    */
   onCommentAt(fn: (c: CommentClick) => void): () => void {
     this.commentListeners.add(fn);
@@ -1038,7 +1038,7 @@ export class CanvasEngine implements Core {
     this.doc.patchMany(patches);
   }
 
-  // ── lock, groups, arrangement (ADR-0116) ────────────────────────────────────
+  // ── lock, groups, arrangement (ADR-0127) ────────────────────────────────────
 
   /** Locks the selection; when every selected object is already locked, unlocks it. */
   toggleLock(): void {

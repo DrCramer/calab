@@ -4,7 +4,7 @@ import type { VoteBadge } from '../../../lib/canvas/votes';
 import type { BoxRec } from '../../../lib/canvas/types';
 import type { Ctx2D, DrawEnv } from './draw';
 
-/** Vote badge on a sticky or shape (ADR-0116): a pill in the top right corner, the same size on screen at any zoom. */
+/** Vote badge on a sticky or shape (ADR-0127): a pill in the top right corner, the same size on screen at any zoom. */
 const MIN_SIDE_PX = 28;
 const INSET_PX = 5;
 /** The extra the badge can reach beyond the object's own bounds (repaint margin, screen px). */

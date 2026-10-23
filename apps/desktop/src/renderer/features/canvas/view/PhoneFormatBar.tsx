@@ -11,7 +11,7 @@ import { PhoneBtn } from './PhoneEditBar';
 const ICON = 'size-[22px]';
 
 /**
- * The format bar of the phone's edit mode (ADR-0116 wave 5b): bold, italic, strike-through, the two lists, the text size and
+ * The format bar of the phone's edit mode (ADR-0127 wave 5b): bold, italic, strike-through, the two lists, the text size and
  * «Готово», in one row of 44 px targets pinned to the bottom of the work area — which the keyboard has shortened, so the bar
  * sits right above it (`kbd` is what is left to add when the keyboard covers more than the shortened area). The row
  * scrolls sideways when the buttons do not fit; «Готово» stays put at its end. A leaf with its own subscription to the

@@ -81,7 +81,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('the «Комментарий» tool (engine, ADR-0116 wave 4)', () => {
+describe('the «Комментарий» tool (engine, ADR-0127 wave 4)', () => {
   it('a click reports the point and the object under it, the document is not touched; ⌥C toggles the tool', () => {
     const r = rig();
     const [note] = r.make({ init: { kind: 'sticky', x: 100, y: 100, w: 200, h: 200 } });
@@ -109,7 +109,7 @@ describe('the «Комментарий» tool (engine, ADR-0116 wave 4)', () => 
   });
 });
 
-describe('pins (a DOM layer over the canvas, ADR-0116 wave 4)', () => {
+describe('pins (a DOM layer over the canvas, ADR-0127 wave 4)', () => {
   function pins(r: Rig): HTMLElement {
     const el = mount(createElement(CommentPins, { engine: r.engine, canvasId: CV, workspaceId: W }));
     return el.querySelector<HTMLElement>('[data-testid="canvas-comment-pins"]') as HTMLElement;
@@ -159,7 +159,7 @@ describe('pins (a DOM layer over the canvas, ADR-0116 wave 4)', () => {
   });
 });
 
-describe('the comments panel (rights, ADR-0116 wave 4)', () => {
+describe('the comments panel (rights, ADR-0127 wave 4)', () => {
   const setup = (bits: bigint, ownerId = 'owner'): HTMLElement => {
     const r = rig();
     act(() => {
@@ -199,7 +199,7 @@ describe('the comments panel (rights, ADR-0116 wave 4)', () => {
   });
 });
 
-describe('the @ list of the input (ADR-0116 wave 4)', () => {
+describe('the @ list of the input (ADR-0127 wave 4)', () => {
   it('offers only members the server says see the canvas, and sends ids', async () => {
     useWorkspaces.setState({
       byId: {

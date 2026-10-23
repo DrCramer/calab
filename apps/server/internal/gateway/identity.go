@@ -290,9 +290,9 @@ var eventScope = map[protoreflect.Name]bool{
 	// Comments on a meeting (ADR-0104): workspace channel; routed by routeEventComment to the
 	// event's audience (as EVENT_UPDATE, not guests or bots).
 	"event_comment_upsert": true, "event_comment_delete": true,
-	// Canvas (ADR-0115 §6): workspace channel; routed to the item's viewers (CANVAS_VIEW).
+	// Canvas (ADR-0126 §6): workspace channel; routed to the item's viewers (CANVAS_VIEW).
 	"canvas_item_upsert": true, "canvas_item_remove": true,
-	// Canvas comments (ADR-0116 wave 4): workspace channel, routed to the canvas's viewers
+	// Canvas comments (ADR-0127 wave 4): workspace channel, routed to the canvas's viewers
 	// (CANVAS_VIEW); the @mention notice on the mentioned member's user channel, lease-gated by
 	// its workspace like every scoped event.
 	"canvas_comment_upsert": true, "canvas_comment_delete": true, "canvas_comment_mention": true,

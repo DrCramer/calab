@@ -107,7 +107,7 @@ export function App(): ReactNode {
   } else if (formCode) screen = <FormPublicPage code={formCode} />;
   // Web /w/<code>: a shared wiki page, read-only, signed in or not (ADR-0096 §6).
   else if (wikiCode) screen = <WikiPublicPage code={wikiCode} />;
-  // Web /c/<code>: a canvas through its public link, view only, signed in or not (ADR-0116 wave 5).
+  // Web /c/<code>: a canvas through its public link, view only, signed in or not (ADR-0127 wave 5).
   else if (canvasCode) screen = <CanvasPublicPage code={canvasCode} />;
   else if (eventPage) screen = <EventPublicPage page={eventPage} />;
   // Web /mail-reset/<token>: the one-time mailbox password of a bot reset (ADR-0101). The

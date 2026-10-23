@@ -1,5 +1,5 @@
 /**
- * Canvas engine benchmark (ADR-0115 §4, docs/14-energy.md). Bundles the engine with esbuild, opens it in a
+ * Canvas engine benchmark (ADR-0126 §4, docs/14-energy.md). Bundles the engine with esbuild, opens it in a
  * real Chromium page and measures, for N objects (default 2000 and 5000): document build, loading a synced
  * state (Y update → Scene), first paint, full-frame time at several zooms, the pan frame time (cached layer
  * scrolled, exposed strips painted), zoom and single-object-edit frames, a snapped drag through the

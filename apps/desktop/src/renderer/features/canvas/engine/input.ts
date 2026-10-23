@@ -25,7 +25,7 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
 
 const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1 };
 const NO_MODS: Mods = { shift: false, alt: false, mod: false };
-/** Touch editing (ADR-0116 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
+/** Touch editing (ADR-0127 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
 const LONG_PRESS_MS = 500;
 /** Two taps on one object within this long edit its text (the finger's double click). */
 const DOUBLE_TAP_MS = 350;
@@ -33,7 +33,7 @@ const DOUBLE_TAP_MS = 350;
 const TOUCH_PICK_PX = 10;
 
 /**
- * Wires pointer, wheel and keyboard events on the canvas element to engine commands (ADR-0115 §4).
+ * Wires pointer, wheel and keyboard events on the canvas element to engine commands (ADR-0126 §4).
  * Returns the detach function. Camera input (wheel, pinch, Safari gestures) is queued on the engine and
  * applied once per frame; nothing here owns a timer or a frame of its own.
  */
@@ -498,7 +498,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       return;
     }
     if (e.altKey && !e.shiftKey && e.code === 'KeyC') {
-      // ⌥C: the «Комментарий» tool (ADR-0116 wave 4) on and off; by the physical key (⌥C types «ç» on a Mac).
+      // ⌥C: the «Комментарий» tool (ADR-0127 wave 4) on and off; by the physical key (⌥C types «ç» on a Mac).
       if (engine.readOnly) return;
       engine.setTool(engine.tool === 'comment' ? 'select' : 'comment');
     } else if (e.shiftKey && e.code === 'Digit1') {

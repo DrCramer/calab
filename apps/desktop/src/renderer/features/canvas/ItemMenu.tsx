@@ -15,7 +15,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { getCanvasViewHandle } from './view/handle';
 
 /**
- * The item's menu (ADR-0115 §5): ONE list of entries on a right click / long press of a tree row
+ * The item's menu (ADR-0126 §5): ONE list of entries on a right click / long press of a tree row
  * and on the «⋯» of the canvas header. Open, Rename (inline in the row), New canvas / New folder
  * (folders), Move…, Access…, Version history (canvases), To the trash; in the trash — Restore and
  * Delete forever. Entries follow the item's bits: adding needs WRITE, the structure (rename, move,

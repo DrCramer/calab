@@ -80,7 +80,7 @@ export function SectionRail(): ReactNode {
         {MAIL ? <MailTile active={section === 'mail'} /> : null}
         {/* «Вики» (ADR-0096 §9): after «Почта» (ADR-0095 addendum 2026-10-14); guests have none (their access is per page). */}
         {ws && !guestWs ? <WikiTile active={section === 'wiki'} /> : null}
-        {/* «Холст» (ADR-0115 §5): after «Вики»; guests have none (their access is per item). */}
+        {/* «Холст» (ADR-0126 §5): after «Вики»; guests have none (their access is per item). */}
         {ws && !guestWs ? <CanvasTile active={section === 'canvas'} /> : null}
         {/* «Диск» (ADR-0094 §8): last; guests have none (their access is per item, v1 keeps it simple). */}
         {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
@@ -315,7 +315,7 @@ const WikiTile = memo(function WikiTile({ active }: { active: boolean }): ReactN
   );
 });
 
-/** «Холст» (ADR-0115 §5): the folders and canvases of the context workspace; no counter. */
+/** «Холст» (ADR-0126 §5): the folders and canvases of the context workspace; no counter. */
 const CanvasTile = memo(function CanvasTile({ active }: { active: boolean }): ReactNode {
   useLocale();
   const label = t('canvas.section');

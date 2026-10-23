@@ -1,4 +1,4 @@
-/** Align and distribute (ADR-0116 §Волна 1): pure math over "units" — a free object or a whole group moves as one. */
+/** Align and distribute (ADR-0127 §Волна 1): pure math over "units" — a free object or a whole group moves as one. */
 import { boundsOf, type Rect } from './geometry';
 import { aabb, isBox, type ObjectRec } from './types';
 

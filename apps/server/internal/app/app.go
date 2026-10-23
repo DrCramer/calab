@@ -154,7 +154,7 @@ type App struct {
 	Disk *disk.Service
 	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
 	Wiki *wiki.Service
-	// Canvas: the workspace Canvas (ADR-0115) with its sync socket and the hourly trash sweeper.
+	// Canvas: the workspace Canvas (ADR-0126) with its sync socket and the hourly trash sweeper.
 	Canvas *canvas.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP *sip.Service
@@ -475,9 +475,9 @@ func New(d Deps) *App {
 	wikiSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, wiki.SyncConfig{})
 	wikiSvc.Routes(mux, private)
 	canvasSvc := canvas.New(d.DB, pub)
-	canvasSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-comment:", 20, 20) // ADR-0116 wave 4: 20 at once, 20 per minute
+	canvasSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-comment:", 20, 20) // ADR-0127 wave 4: 20 at once, 20 per minute
 	canvasSvc.PublicURL = d.Config.PublicAppURL
-	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0116 wave 5: the public name, 60 per minute per IP
+	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0127 wave 5: the public name, 60 per minute per IP
 	canvasSvc.LinkSyncLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link-ws:", 20, 10) // … the anonymous socket's connects: 20 at once, 10 per minute per IP
 	canvasSvc.Billing = planSvc
 	canvasSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, ysync.Config{})

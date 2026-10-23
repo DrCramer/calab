@@ -1,4 +1,4 @@
--- Canvas comments and @mentions (ADR-0116 wave 4): a server entity next to the Yjs document,
+-- Canvas comments and @mentions (ADR-0127 wave 4): a server entity next to the Yjs document,
 -- never inside it.
 --
 -- canvas_comments  one row per comment. A thread is a root (parent_id NULL) and its replies

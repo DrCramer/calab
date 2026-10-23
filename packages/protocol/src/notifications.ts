@@ -110,7 +110,7 @@ export function levelNotifies(f: NotifyFacts): boolean {
   }
 }
 
-/** One @mention in a canvas comment by someone else (ADR-0116 wave 4), as seen by the mentioned member. */
+/** One @mention in a canvas comment by someone else (ADR-0127 wave 4), as seen by the mentioned member. */
 export interface CanvasMentionFacts {
   /** The workspace's level; unset = MENTIONS. */
   level?: NotificationLevel;
