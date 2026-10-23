@@ -56,6 +56,11 @@ export const nav: DocsNavSection[] = [
     ],
   },
   {
+    section: { ru: 'Телефония', en: 'Telephony' },
+    slug: 'telephony',
+    pages: [{ slug: 'index', ru: 'Настройка телефонии', en: 'Setting up telephony' }],
+  },
+  {
     section: { ru: 'OAuth 2 / OIDC', en: 'OAuth 2 / OIDC' },
     slug: 'oauth',
     pages: [
