@@ -66,6 +66,7 @@ const FIELD_ERR: Record<string, MessageKey> = {
   items: 'pbx.err.target',
   digit: 'pbx.err.target',
   promptSourceFileId: 'pbx.err.prompt',
+  noticeSourceFileId: 'pbx.err.notice',
   target: 'pbx.err.target',
   allowedCidrs: 'pbx.err.cidrs',
   registrar: 'pbx.err.registrar',

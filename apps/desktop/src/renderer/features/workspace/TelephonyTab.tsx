@@ -31,6 +31,7 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration } from '../shell/voiceFormat';
 import { ActiveCalls } from './TelephonyCalls';
 import { Exchange } from './TelephonyExchange';
+import { RecordingCard } from './TelephonyRecording';
 
 /*
  * Workspace settings → «Телефония» (ADR-0046, docs/08 «Телефония»; MANAGE_WORKSPACE), five tabs
@@ -38,8 +39,8 @@ import { Exchange } from './TelephonyExchange';
  * the call journal under it (100 per page, «Показать ещё» by cursor); «Номера», «Группы», «IVR» —
  * the exchange (ADR-0117, TelephonyExchange); «Настройки» — the SIP provider account as one form
  * saved with PUT (the password is write-only: empty keeps the stored one), «Проверить
- * подключение» (a real short call to the Caller ID) and «Входящие» (mode, registration and its
- * state). The last provider error is above the tabs. Business plan only (owner, 02.10): below it
+ * подключение» (a real short call to the Caller ID), «Входящие» (mode, registration and its
+ * state) and «Запись звонков» (ADR-0131, TelephonyRecording). The last provider error is above the tabs. Business plan only (owner, 02.10): below it
  * every tab but the calls is locked (PlanLock) — a saved trunk stays readable.
  */
 
@@ -106,6 +107,7 @@ export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNod
         <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
         <TestCard workspaceId={workspaceId} settings={settings} />
         <Exchange workspaceId={workspaceId} settings={settings} part="inbound" />
+        <RecordingCard workspaceId={workspaceId} settings={settings} settingsKey={settingsKey(workspaceId)} />
       </>,
     )
   ) : (
