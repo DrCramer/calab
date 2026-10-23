@@ -247,3 +247,48 @@ func TestTransferMemberWithoutNumberAndHangup(t *testing.T) {
 }
 
 const reasonForTest = "remote"
+
+// A group with nobody free whose fallback leads to somebody else: a transfer does not follow it
+// (ADR-0132 §1) — the target chosen is busy.
+func TestTransferGroupFallbackNotFollowed(t *testing.T) {
+	f := newFixture(false, 0)
+	u5, e5 := uuid.New(), uuid.New()
+	f.p.Extensions[e5] = Ext{ID: e5, User: &u5}
+	g := f.p.Groups[f.group]
+	g.OnFail = Target{Kind: RouteExtension, ID: &e5}
+	f.p.Groups[f.group] = g
+	c := answeredBy(t, f, avail{})
+	var fx Effects
+	var te *TransferError
+	err := c.Transfer(envAt(f, avail{busy: set(f.u1, f.u2, f.u3)}, time.Second), toExt(f.eGroup), &fx)
+	if !errors.As(err, &te) || te.Reason != ReasonBusy || len(fx.Rings) != 0 || c.Transferring() {
+		t.Fatalf("fallback followed: %v %+v", err, fx)
+	}
+}
+
+// A transfer nobody took gives its hops back: cancelling and trying again never reaches MaxHops.
+func TestTransferHopsGivenBack(t *testing.T) {
+	f := newFixture(false, 0)
+	a := avail{}
+	c := answeredBy(t, f, a)
+	hops := c.Hops
+	for i := range 2 * MaxHops {
+		at := time.Duration(i) * time.Second
+		if err := c.Transfer(envAt(f, a, at), toExt(f.e2), &Effects{}); err != nil {
+			t.Fatalf("transfer %d: %v", i, err)
+		}
+		if err := c.CancelTransfer(envAt(f, a, at), &Effects{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c.Hops != hops {
+		t.Fatalf("hops %d, want %d", c.Hops, hops)
+	}
+	// An answered transfer keeps them.
+	if err := c.Transfer(envAt(f, a, time.Minute), toExt(f.e2), &Effects{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Answer(envAt(f, a, time.Minute), f.u2, &Effects{}); err != nil || c.Hops != hops+1 {
+		t.Fatalf("answered: %v %d", err, c.Hops)
+	}
+}

@@ -1712,8 +1712,11 @@ export const SipInboundAcceptResponseSchema: GenMessage<SipInboundAcceptResponse
  * answered inbound call — answered_by — or MANAGE_INTEGRATIONS of the workspace; bots too) → 200
  * SipCallResponse: the call stays ACTIVE with the member (answered_by) and ringing_user_ids
  * ring the target (SIP_INBOUND_RING to them: the same ringing as a call to a number or a
- * group). The target answers (POST …/inbound/{cid}/accept) → the call is theirs and the
- * transferring member leaves the room; nobody answers in 30 s (a group with a fallback: its
+ * group). The target answers (POST …/inbound/{cid}/accept) → the call is theirs; the
+ * transferring member stays with the caller until the target is in the room, then hears
+ * SIP_CALL_UPDATE (answered_by the target) and is taken out of it (the target does not connect
+ * in 15 s: the call is the member's again, route «transfer:not_connected»); nobody answers in
+ * 30 s (a group with a fallback: its
  * fallback_sec; the fallback itself is not followed), everybody declines or DELETE …/transfer
  * (the same callers) → 200 SipCallResponse: the transfer is over and the call stays with the
  * member. The caller is never dropped by a transfer. external_blocked does not apply (an

@@ -23,6 +23,9 @@ const TransferRingSec = 30
 // Xfer is a transfer in progress: who hands the call over (the member on the call).
 type Xfer struct {
 	From uuid.UUID `json:"from"`
+	// Hops before the transfer: a transfer nobody took gives its hops back, so cancelling and
+	// trying again does not run the call into MaxHops.
+	Hops int `json:"hops,omitempty"`
 }
 
 // TransferTo is where a transfer goes: a route of the exchange (a number, a group), or a member
@@ -77,6 +80,11 @@ func (c *InCall) Transfer(e Env, to TransferTo, fx *Effects) error {
 	if d.Action == ActRing && d.Group == nil && len(d.Ring) == 1 && d.Ring[0].User == from {
 		return ErrTransferSelf
 	}
+	if d.Action == ActRing && d.Fallbacks > 0 {
+		// The group has nobody free and its fallback leads elsewhere: a transfer does not follow
+		// fallbacks — the target chosen is busy.
+		return &TransferError{Reason: ReasonBusy}
+	}
 	if d.Action != ActRing { // a menu (a group's fallback with nobody free) is no person either
 		reason := d.Reason
 		if d.Action == ActMenu {
@@ -91,9 +99,10 @@ func (c *InCall) Transfer(e Env, to TransferTo, fx *Effects) error {
 	if c.Hops+d.Hops+1 > MaxHops {
 		return &TransferError{Reason: ReasonLoop}
 	}
+	hops := c.Hops
 	c.Hops += d.Hops + 1
 	c.step("transfer:" + label)
-	c.Xfer = &Xfer{From: from}
+	c.Xfer = &Xfer{From: from, Hops: hops}
 	c.Phase, c.Ring, c.Sequential, c.Group, c.Pos, c.Rang = PhaseRing, ring, d.Sequential, d.Group, 0, nil
 	c.OnFail, c.Declined = Target{Kind: RouteHangup}, nil
 	if d.Group != nil {
@@ -135,6 +144,7 @@ func (c *InCall) transferBack(_ Env, reason string, fx *Effects) {
 	c.stopRinging(fx)
 	c.step("transfer:" + reason)
 	from := c.Xfer.From
+	c.Hops = c.Xfer.Hops
 	c.Xfer = nil
 	c.Phase, c.Answered, c.Deadline, c.FallbackAt = PhaseActive, &from, 0, 0
 	// Rang stays: a target who answers too late hears «somebody else has it» (409), not 404.

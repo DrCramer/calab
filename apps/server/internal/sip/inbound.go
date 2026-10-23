@@ -458,6 +458,9 @@ type inRec struct {
 	EndedBy *uuid.UUID `json:"ended_by,omitempty"`
 	// AnswerLeft: when the member who answered left the room (ms; 0 = in it).
 	AnswerLeft int64 `json:"answer_left,omitempty"`
+	// Handover: the member who transferred the call, still with the caller until the target who
+	// answered connects to the room (ADR-0132; transfer_api.go).
+	Handover *uuid.UUID `json:"handover,omitempty"`
 	InCall
 }
 
@@ -647,6 +650,10 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 		_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(*r.Answered)}, []string{r.ID.String()}).Error()
 		s.onCall(ctx, *r.Answered, r.ID, false)
 	}
+	if fx.Hangup != "" && r.Handover != nil { // ended while handed over (ADR-0132): them too
+		_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(*r.Handover)}, []string{r.ID.String()}).Error()
+		s.onCall(ctx, *r.Handover, r.ID, false)
+	}
 	if fx.Answered && r.Answered != nil {
 		s.onCall(ctx, *r.Answered, r.ID, true)
 	}
@@ -714,8 +721,10 @@ func (s *Service) announce(ctx context.Context, row sqlc.SipCall, r *inRec, fx *
 	if r.Answered != nil {
 		to = append(to, *r.Answered)
 	}
-	if fx.Released != nil {
-		to = append(to, *fx.Released)
+	// The member who handed the call over hears of its end; of the target's answer only when the
+	// target connected (finishHandover) — until then they stay with the caller.
+	if fx.Hangup != "" && r.Handover != nil {
+		to = append(to, *r.Handover)
 	}
 	for _, u := range to {
 		if seen[u] {
@@ -791,6 +800,14 @@ func (s *Service) Inbound(ctx context.Context, event, room string, p *rtc.Partic
 				}
 				return nil
 			}
+			if !gone && r.Phase == PhaseActive && r.Answered != nil && *r.Answered != user && (r.Handover == nil || *r.Handover != user) && s.lk != nil {
+				// Not whom the call is with (a transfer's target who connected after the call came
+				// back, a member it was handed from, ADR-0132): out of the room.
+				if err := s.lk.RemoveParticipant(ctx, room, p.Identity); err != nil && !rtc.IsNotFound(err) {
+					slog.WarnContext(ctx, "sip: remove a stray member", "call", r.ID, "err", err)
+				}
+				return nil
+			}
 			if r.Phase != PhaseActive || r.Answered == nil || *r.Answered != user {
 				return nil
 			}
@@ -799,6 +816,7 @@ func (s *Service) Inbound(ctx context.Context, event, room string, p *rtc.Partic
 				r.Deadline = e.Now.Add(answerGrace).UnixMilli()
 			} else {
 				r.AnswerLeft, r.Deadline = 0, 0
+				s.finishHandover(ctx, r) // the target of a transfer connected (ADR-0132)
 			}
 			return nil
 		})
@@ -1056,11 +1074,15 @@ func (s *Service) expireCall(ctx context.Context, id uuid.UUID) {
 			if r.AnswerLeft == 0 || e.Now.UnixMilli() < r.Deadline {
 				return nil
 			}
-			// The member who answered did not come back within the grace.
+			// The member who answered did not come back within the grace (or, the target of a
+			// transfer, did not connect: the call goes back to who handed it over, ADR-0132).
 			if _, err := s.lk.GetParticipant(ctx, r.Room, rtc.AnswerIdentity(*r.Answered)); rtc.IsNotFound(err) {
-				r.Hangup(reasonLost, fx)
+				if !s.handBack(ctx, r, fx) {
+					r.Hangup(reasonLost, fx)
+				}
 			} else if err == nil {
 				r.AnswerLeft, r.Deadline = 0, 0
+				s.finishHandover(ctx, r)
 			}
 			return nil
 		}

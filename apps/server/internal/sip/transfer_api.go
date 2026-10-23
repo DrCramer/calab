@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -152,6 +154,9 @@ func (s *Service) transferCall(w http.ResponseWriter, r *http.Request) error {
 		if err := onCallOrAdmin(rec, me, admin); err != nil {
 			return err
 		}
+		if rec.Handover != nil { // the last transfer's target is still connecting
+			return transferError(ErrTransferring)
+		}
 		if err := rec.Transfer(e, to, fx); err != nil {
 			return transferError(err)
 		}
@@ -199,24 +204,84 @@ func (s *Service) writeCall(w http.ResponseWriter, r *http.Request, id uuid.UUID
 	return nil
 }
 
+// handoverGrace: how long the target who answered a transfer has to connect to the call's room
+// before the call goes back to the member who handed it over (still with the caller).
+const handoverGrace = 15 * time.Second
+
 // applyTransfer carries out what a transfer's transition means outside the machine: the target
-// answered — the member who handed the call over is released (busy key, «on a call», their
-// LiveKit seat in the call's room); the call came back to a member who left the room while it
-// rang — the usual grace to come back starts.
-func (s *Service) applyTransfer(ctx context.Context, r *inRec, fx *Effects) {
+// answered — the member who handed the call over stays with the caller until the target is in
+// the room (Handover; finishHandover releases them, handBack returns the call when the target
+// never connects); the call came back to a member who left the room while it rang — the usual
+// grace to come back starts.
+func (s *Service) applyTransfer(_ context.Context, r *inRec, fx *Effects) {
 	if u := fx.Released; u != nil {
-		_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(*u)}, []string{r.ID.String()}).Error()
-		s.onCall(ctx, *u, r.ID, false)
-		if s.lk != nil {
-			if err := s.lk.RemoveParticipant(ctx, r.Room, rtc.AnswerIdentity(*u)); err != nil && !rtc.IsNotFound(err) {
-				slog.WarnContext(ctx, "sip: remove the member who transferred", "call", r.ID, "err", err)
-			}
-		}
-		r.AnswerLeft = 0
-		slog.InfoContext(ctx, "sip: inbound call transferred", "call", r.ID, "from", *u, "to", r.Answered)
+		from := *u
+		r.Handover = &from
+		now := time.Now()
+		r.AnswerLeft, r.Deadline = now.UnixMilli(), now.Add(handoverGrace).UnixMilli() // the target is not in the room yet
 		return
 	}
 	if fx.Xfer && r.Phase == PhaseActive && r.AnswerLeft != 0 {
 		r.Deadline = time.Now().Add(answerGrace).UnixMilli()
 	}
+}
+
+// finishHandover: the target of a transfer connected to the room — the member who handed the
+// call over is released (busy key, «on a call»), told the call is the target's, and taken out
+// of the room (their client leaves on that news; the removal is the backstop).
+func (s *Service) finishHandover(ctx context.Context, r *inRec) {
+	if r.Handover == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	u := *r.Handover
+	r.Handover = nil
+	_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(u)}, []string{r.ID.String()}).Error()
+	s.onCall(ctx, u, r.ID, false)
+	if row, err := s.db.Q.GetSipCall(ctx, r.ID); err == nil {
+		s.events.User(ctx, u, &v1.DispatchEvent{Event: &v1.DispatchEvent_SipCallUpdate{SipCallUpdate: &v1.SipCallUpdate{Call: pbconv.SipCall(row)}}})
+	}
+	if s.lk != nil {
+		if err := s.lk.RemoveParticipant(ctx, r.Room, rtc.AnswerIdentity(u)); err != nil && !rtc.IsNotFound(err) {
+			slog.WarnContext(ctx, "sip: remove the member who transferred", "call", r.ID, "err", err)
+		}
+	}
+	slog.InfoContext(ctx, "sip: inbound call transferred", "call", r.ID, "from", u, "to", r.Answered)
+}
+
+// handBack: the target answered a transfer but did not connect within handoverGrace — the call
+// is again the member's who handed it over, when they are still in the room (false: they are
+// not, the caller has nobody).
+func (s *Service) handBack(ctx context.Context, r *inRec, fx *Effects) bool {
+	if r.Handover == nil || r.Answered == nil {
+		return false
+	}
+	from, target := *r.Handover, *r.Answered
+	if _, err := s.lk.GetParticipant(ctx, r.Room, rtc.AnswerIdentity(from)); err != nil {
+		return false
+	}
+	ctx = context.WithoutCancel(ctx)
+	r.Handover, r.Answered, r.AnswerLeft, r.Deadline = nil, &from, 0, 0
+	r.step("transfer:not_connected")
+	_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(target)}, []string{r.ID.String()}).Error()
+	s.onCall(ctx, target, r.ID, false)
+	row, err := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+		return q.ReturnSipInboundTransfer(ctx, sqlc.ReturnSipInboundTransferParams{ID: r.ID, UserID: from, Route: clip(strings.Join(r.Route, " → "), 500)})
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "sip: inbound journal row", "call", r.ID, "err", err)
+	} else {
+		pb := pbconv.SipCall(row)
+		for _, u := range []uuid.UUID{from, target} {
+			s.events.User(ctx, u, &v1.DispatchEvent{Event: &v1.DispatchEvent_SipCallUpdate{SipCallUpdate: &v1.SipCallUpdate{Call: pb}}})
+		}
+	}
+	if s.lk != nil { // a late connect of the target must not take the call over
+		if err := s.lk.RemoveParticipant(ctx, r.Room, rtc.AnswerIdentity(target)); err != nil && !rtc.IsNotFound(err) {
+			slog.WarnContext(ctx, "sip: remove the target who did not connect", "call", r.ID, "err", err)
+		}
+	}
+	fx.Changed = true // «Активные звонки»
+	slog.InfoContext(ctx, "sip: inbound transfer not connected, back", "call", r.ID, "to", from, "target", target)
+	return true
 }

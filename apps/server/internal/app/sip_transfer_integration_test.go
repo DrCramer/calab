@@ -4,14 +4,21 @@ package app_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http/httptest"
+	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/app"
+	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rtc"
 )
 
@@ -21,7 +28,13 @@ import (
 // group with a 5 s fallback that nobody answers: the call comes back to her.
 func TestSIPTransfer(t *testing.T) {
 	ctx := context.Background()
-	a, server, _, _ := inboundApp(t)
+	cfg := *testCfg
+	cfg.IVRAgentToken = "it-ivr-token"
+	sfu := &roomSFU{LiveKit: lkRec, in: map[string]bool{}}
+	a := app.New(app.Deps{Config: &cfg, DB: testDB, Redis: testRedis, Events: events.Redis{C: testRedis}, Blob: testStore, LiveKit: sfu,
+		Mail: testMail, SIP: &fakeSIP{}, IVRAgent: &fakeIVR{}, UnfurlAllowAddr: func(netip.Addr) bool { return true }})
+	server := httptest.NewServer(a.Handler)
+	t.Cleanup(server.Close)
 	o := owner(t)
 	wid := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
 	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
@@ -105,17 +118,31 @@ func TestSIPTransfer(t *testing.T) {
 	})
 	pushHTTP(t, server, carol, 409, "POST", "/api/sip/inbound/"+cid+"/accept", nil, nil)
 
-	// By member: carol answers — the call is hers, bob is told it is not his any more.
+	// By member: carol answers — the call is hers; bob stays with the caller until she is in the
+	// room, then he is told it is not his any more and taken out of it.
 	pushHTTP(t, server, bob, 200, "POST", xfer, &v1.TransferSipCallRequest{UserId: carol.id}, nil)
 	var acc v1.SipInboundAcceptResponse
 	pushHTTP(t, server, carol, 200, "POST", "/api/sip/inbound/"+cid+"/accept", nil, &acc)
 	if c := acc.GetCall(); c.GetAnsweredBy() != carol.id || c.GetStatus() != v1.SipCallStatus_SIP_CALL_STATUS_ACTIVE || len(c.GetRingingUserIds()) != 0 || acc.GetJoin().GetToken() == "" {
 		t.Fatalf("taken: %v", &acc)
 	}
+	bobID, carolID := rtc.AnswerIdentity(uuid.MustParse(bob.id)), rtc.AnswerIdentity(uuid.MustParse(carol.id))
+	// Still connecting: a second transfer waits, bob is not out of the room.
+	pushHTTP(t, server, carol, 409, "POST", xfer, &v1.TransferSipCallRequest{UserId: dave.id}, nil)
+	if sfu.wasRemoved(bobID) {
+		t.Fatal("bob removed before carol connected")
+	}
+	sfu.join(room, carolID)
+	if err := a.SIP.Inbound(ctx, rtc.EventParticipantJoined, room, &rtc.Participant{Identity: carolID}); err != nil {
+		t.Fatal(err)
+	}
 	bobG.wait("bob is released", func(e *v1.DispatchEvent) bool {
 		c := e.GetSipCallUpdate().GetCall()
 		return c.GetId() == cid && c.GetAnsweredBy() == carol.id
 	})
+	if !sfu.wasRemoved(bobID) {
+		t.Fatal("bob still in the room")
+	}
 	pushHTTP(t, server, bob, 403, "POST", xfer, &v1.TransferSipCallRequest{Number: "1001"}, nil)
 	pushHTTP(t, server, bob, 404, "POST", "/api/sip/inbound/"+cid+"/join", nil, nil)
 
@@ -137,6 +164,20 @@ func TestSIPTransfer(t *testing.T) {
 	// An admin (MANAGE_INTEGRATIONS) may hand over a call they are not on.
 	pushHTTP(t, server, o, 200, "POST", xfer, &v1.TransferSipCallRequest{UserId: bob.id}, nil)
 	pushHTTP(t, server, o, 200, "DELETE", xfer, nil, nil)
+	// bob answers a transfer but never connects: after the grace the call is carol's again
+	// (she never left the room), and bob hears it.
+	pushHTTP(t, server, o, 200, "POST", xfer, &v1.TransferSipCallRequest{UserId: bob.id}, nil)
+	pushHTTP(t, server, bob, 200, "POST", "/api/sip/inbound/"+cid+"/accept", nil, nil)
+	expireNow(ctx, t, cid)
+	a.SIP.InboundTick(ctx)
+	carolG.wait("back with carol: bob never connected", func(e *v1.DispatchEvent) bool {
+		c := e.GetSipCallUpdate().GetCall()
+		return c.GetId() == cid && c.GetAnsweredBy() == carol.id && strings.HasSuffix(c.GetRoute(), "transfer:not_connected")
+	})
+	bobG.wait("bob hears it is back with carol", func(e *v1.DispatchEvent) bool {
+		c := e.GetSipCallUpdate().GetCall()
+		return c.GetId() == cid && c.GetAnsweredBy() == carol.id && len(c.GetRingingUserIds()) == 0
+	})
 	// The caller hangs up: the call ends as usual.
 	if err := a.SIP.Inbound(ctx, rtc.EventParticipantLeft, room, line); err != nil {
 		t.Fatal(err)
@@ -146,4 +187,65 @@ func TestSIPTransfer(t *testing.T) {
 		return c.GetId() == cid && c.GetStatus() == v1.SipCallStatus_SIP_CALL_STATUS_ENDED
 	})
 	pushHTTP(t, server, carol, 409, "POST", xfer, &v1.TransferSipCallRequest{UserId: bob.id}, nil)
+}
+
+// expireNow moves the deadline of inbound call cid into the past (a grace the test does not
+// wait out).
+func expireNow(ctx context.Context, t *testing.T, cid string) {
+	t.Helper()
+	key := redisx.Key("sipin:" + cid)
+	raw, err := testRedis.Do(ctx, testRedis.B().Get().Key(key).Build()).ToString()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Second).UnixMilli()
+	rec["deadline"] = past
+	b, _ := json.Marshal(rec)
+	if err := testRedis.Do(ctx, testRedis.B().Set().Key(key).Value(string(b)).Keepttl().Build()).Error(); err != nil {
+		t.Fatal(err)
+	}
+	if err := testRedis.Do(ctx, testRedis.B().Zadd().Key(redisx.Key("sipin:due")).ScoreMember().ScoreMember(float64(past), cid).Build()).Error(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// roomSFU: LiveKit whose rooms hold who the test put in them (GetParticipant / RemoveParticipant).
+type roomSFU struct {
+	rtc.LiveKit
+	mu      sync.Mutex
+	in      map[string]bool
+	removed []string
+}
+
+func (s *roomSFU) join(room, identity string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.in[room+"/"+identity] = true
+}
+
+func (s *roomSFU) GetParticipant(_ context.Context, room, identity string) (*rtc.Participant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.in[room+"/"+identity] {
+		return nil, &rtc.Error{Code: "not_found", Status: 404}
+	}
+	return &rtc.Participant{Identity: identity}, nil
+}
+
+func (s *roomSFU) RemoveParticipant(_ context.Context, room, identity string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.in, room+"/"+identity)
+	s.removed = append(s.removed, identity)
+	return nil
+}
+
+func (s *roomSFU) wasRemoved(identity string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Contains(s.removed, identity)
 }
