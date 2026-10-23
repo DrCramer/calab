@@ -209,6 +209,8 @@ import {
   RoomRecordingSchema,
   GetSipSettingsResponseSchema,
   ListSipCallsResponseSchema,
+  ListSipActiveCallsResponseSchema,
+  SipActiveStep,
   PlaceSipCallRequestSchema,
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
@@ -735,6 +737,12 @@ export interface MockServer {
    */
   ringSipInbound(toUserId: string, number: string, via: string): SipCall;
   /**
+   * ADR-0128: live calls of «Команда Calab» for «Активные звонки» — inbound in «Главное меню»,
+   * inbound ringing «Отдел продаж» (Борис, Вера), inbound answered by Вера, outbound talking in
+   * «Созвон» → SIP_CALLS_CHANGED.
+   */
+  seedSipActiveCalls(): void;
+  /**
    * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
    * status never advances by itself (unlike a stop through the API).
    */
@@ -919,6 +927,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setSipRegistration: (st) => impl.setSipRegistration(st),
     holdSipPrompt: () => impl.holdSipPrompt(),
     ringSipInbound: (to, number, via) => impl.ringSipInbound(to, number, via),
+    seedSipActiveCalls: () => impl.seedSipActiveCalls(),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
@@ -6125,6 +6134,36 @@ class MockImpl {
 
   private announceSipCall(c: SipCall): void {
     if (c.roomId) this.toWorkspace(c.workspaceId, { event: { case: 'sipCallUpdate', value: { call: c } } }, c.roomId);
+    this.toWorkspace(c.workspaceId, { event: { case: 'sipCallsChanged', value: { workspaceId: c.workspaceId } } });
+  }
+
+  /**
+   * «Активные звонки» (ADR-0128): an inbound call in «Главное меню», one ringing «Отдел продаж»
+   * (Борис, Вера), one Вера answered 2 min ago and an outbound one talking in «Созвон» →
+   * SIP_CALLS_CHANGED.
+   */
+  seedSipActiveCalls(): void {
+    const ws = IDS.workspaces.main;
+    const inbound = (number: string, agoMs: number, extra: Partial<SipCall>): void => {
+      const id = nextId(this.state, 'file');
+      this.state.sipCalls.set(
+        id,
+        create(SipCallSchema, {
+          id,
+          workspaceId: ws,
+          number,
+          direction: SipCallDirection.IN,
+          status: SipCallStatus.RINGING,
+          startedAt: timestampFromMs(Date.now() - agoMs),
+          participantIdentity: `sip_${number}`,
+          ...extra,
+        }),
+      );
+    };
+    inbound('+79161234567', 8_000, { route: 'menu', via: 'Главное меню' });
+    inbound('+79035550142', 21_000, { route: 'group', via: 'Отдел продаж', ringingUserIds: [IDS.users.boris, IDS.users.vera] });
+    inbound('+74957001122', 134_000, { status: SipCallStatus.ACTIVE, answeredBy: IDS.users.vera, answeredAt: timestampFromMs(Date.now() - 120_000), route: 'ext' });
+    this.placeSipCall(IDS.rooms.call, IDS.users.anna, '+79262223344', SipCallStatus.ACTIVE, 300_000);
   }
 
   placeSipCall(roomId: string, byUserId: string, number: string, status = SipCallStatus.DIALING, answeredAgoMs?: number): string {
@@ -6278,6 +6317,22 @@ class MockImpl {
       const message = ok ? 'answered' : 'no answer from the provider';
       this.state.sipSettings.set(wsId, create(SipSettingsSchema, { ...s, lastError: ok ? '' : message }));
       sendMsg(c.res, 200, TestSipResponseSchema, { ok, message, sipStatus: 0 });
+    });
+
+    // ADR-0128: the live calls with their step (sip/active.go). The mock keeps the step in the
+    // call's `route` («menu» / «group» / «ext») and its name in `via`.
+    this.route('GET', '/api/workspaces/:id/sip/calls', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      const calls = [...this.state.sipCalls.values()]
+        .filter((x) => x.workspaceId === wsId && isLiveSipStatus(x.status))
+        .map((x) => {
+          const call = clone(SipCallSchema, x);
+          if (x.status === SipCallStatus.ACTIVE) return { call, step: SipActiveStep.CONNECTED };
+          if (x.direction === SipCallDirection.OUT) return { call, step: SipActiveStep.DIALING };
+          if (x.route === 'menu') return { call, step: SipActiveStep.MENU, stepName: x.via };
+          return { call, step: SipActiveStep.RINGING, stepName: x.route === 'group' ? x.via : '' };
+        });
+      sendMsg(c.res, 200, ListSipActiveCallsResponseSchema, { calls });
     });
 
     this.route('GET', '/api/workspaces/:id/calls', (c) => {
