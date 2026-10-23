@@ -79,4 +79,6 @@ message UpdateVoiceSelfRequest {
   optional bool deafened = 2;
   // Musician mode of this device (ADR-0052, VoiceState.musician).
   optional bool musician = 3;
+  // Push-to-talk input mode of this device (ADR-0130, VoiceState.ptt). Sent on a mode change only.
+  optional bool ptt = 4;
 }

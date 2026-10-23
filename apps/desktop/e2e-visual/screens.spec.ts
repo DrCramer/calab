@@ -81,6 +81,7 @@ const KEY = new Set([
   'chat-voice-bubble',
   'voice-room-speaking',
   'voice-room-ptt-idle',
+  'voice-room-ptt-remote',
   'voice-room-pending',
   'voice-room-joined',
   'voice-stream',
@@ -2213,6 +2214,16 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   await expect(win.locator('aside').first().locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'voice-room-ptt-idle');
+  // CBF-82: Борис switched to push-to-talk - everyone sees the pale crossed mic in his row while the
+  // key is up; with the key held he speaks and the ring replaces it.
+  const boris = win.locator('aside').first().getByRole('listitem', { name: /Борис Петров/ });
+  await win.evaluate(() => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.([]));
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, ptt: true });
+  await expect(boris.locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
+  await checkpoint(shot, 'voice-room-ptt-remote');
+  await win.evaluate((id) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.([id]), IDS.users.boris);
+  await expect(boris).toHaveAttribute('data-speaking', 'true');
+  await expect(boris.locator('[data-voice-icon="ptt-idle"]')).toHaveCount(0);
 });
 
 // Noise suppression popover (docs/09 #12): the wave button in the «Голос подключён» header opens

@@ -350,6 +350,10 @@ message VoiceState {
   // echo cancellation, noise suppression and gain control, in a music Opus profile. Shown so
   // others know why they hear raw sound. Set through PATCH /api/voice/self.
   bool musician = 11;
+  // Push-to-talk mode (ADR-0130): every device of the user in this room waits for a key, so the
+  // mic is silent between presses. Others show a pale crossed mic until the user speaks. Set
+  // through PATCH /api/voice/self on a mode change only, never per key press.
+  bool ptt = 12;
 }
 
 message Presence {
