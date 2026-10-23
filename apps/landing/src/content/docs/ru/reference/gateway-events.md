@@ -95,6 +95,7 @@ order: 2
 | `soundCreate` · `soundUpdate` · `soundDelete` | да | звуки пространства |
 | `soundPlay` | по условию | только пока бот в звонке комнаты |
 | `sipCallUpdate` | да | телефонный звонок из комнаты набран или сменил статус |
+| `sipCallsChanged` | нет | живые звонки пространства изменились — людям с `MANAGE_INTEGRATIONS`; бот читает `GET /api/workspaces/{id}/sip/calls` сам |
 | `roomAdmissionRequest` · `roomAdmissionDecided` | по условию | гость ждёт впуска · решение принято — тем, кто решает (`INVITE_GUESTS` в комнате) |
 | `callRing` · `callState` | нет | звонки один на один — не для ботов |
 | `backgroundCreate` · `backgroundUpdate` · `backgroundDelete` | нет* | фоны камеры; у ботов нет камеры — игнорируйте |
