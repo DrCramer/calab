@@ -57,3 +57,18 @@ func TestSettingsDefaults(t *testing.T) {
 		t.Fatal("bitrate lost")
 	}
 }
+
+func TestPresetToDBRoundTrip(t *testing.T) {
+	for _, preset := range []v1.ScreenSharePreset{
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720_30,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_60,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60,
+		v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60,
+	} {
+		value, ok := PresetToDB(preset)
+		if !ok || PresetFromDB(value) != preset {
+			t.Errorf("preset round trip %v: %q, ok=%v", preset, value, ok)
+		}
+	}
+}

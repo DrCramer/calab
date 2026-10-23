@@ -481,7 +481,7 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     // ADR-0096: migration 00090.
     WIKI_BITS.VIEW |
     WIKI_BITS.WRITE |
-    // ADR-0126: migration 00115.
+    // ADR-0126: migration 00017.
     CANVAS_BITS.VIEW |
     CANVAS_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.

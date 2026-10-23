@@ -303,8 +303,7 @@ type RequestStreamResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Granted preset: ≤ room max_stream_preset and ≤ plan stream_max_preset (ADR-0024).
 	Preset ScreenSharePreset `protobuf:"varint,1,opt,name=preset,proto3,enum=calaba.v1.ScreenSharePreset" json:"preset,omitempty"`
-	// Granted frame rate: min(wanted, the preset's own — ECONOMY 5, H720 / H1080 15,
-	// ORIGINAL 30 — and plan stream_max_fps).
+	// Granted frame rate: min(wanted, the preset's own and plan stream_max_fps).
 	Fps           uint32 `protobuf:"varint,2,opt,name=fps,proto3" json:"fps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

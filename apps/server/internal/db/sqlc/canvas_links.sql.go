@@ -27,7 +27,7 @@ SELECT code, canvas_id, created_by, created_at, expires_at, revoked_at, views FR
 WHERE canvas_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
 `
 
-// The public read-only links of canvases (ADR-0127 wave 5, migration 00118).
+// The public read-only links of canvases (ADR-0127 wave 5, migration 00020).
 // The live link of a canvas (not revoked, not expired).
 func (q *Queries) GetCanvasLink(ctx context.Context, canvasID uuid.UUID) (CanvasLink, error) {
 	row := q.db.QueryRow(ctx, getCanvasLink, canvasID)

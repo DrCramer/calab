@@ -43,6 +43,13 @@ describe('screen share publish options', () => {
     expect(o.screenShareEncoding?.maxBitrate).toBe(2_000_000);
   });
 
+  it('publishes high frame-rate presets above the former 4 Mbps ceiling', () => {
+    const av1 = screenPublishOptions('av1', ScreenSharePreset.H1080_60, 'motion', 60);
+    const h264 = screenPublishOptions('h264', ScreenSharePreset.H1440_60, 'detail', 60);
+    expect(av1.screenShareEncoding).toEqual({ maxBitrate: 10_000_000, maxFramerate: 60 });
+    expect(h264.screenShareEncoding).toEqual({ maxBitrate: 22_400_000, maxFramerate: 60 });
+  });
+
   it('+40 % only for H.264 «detail»', () => {
     expect(H264_DETAIL_BITRATE_FACTOR).toBe(1.4);
     expect(screenBitrate(400_000, 'h264', 'detail')).toBe(560_000);

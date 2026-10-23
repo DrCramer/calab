@@ -18,7 +18,7 @@
 ## Решение
 
 ### 1. Готовность AI (`AiState`)
-- Результат последней «Проверить» хранится в `workspace_ai_check` (миграция `00108`): `fingerprint` —
+- Результат последней «Проверить» хранится в `workspace_ai_check` (миграция `00110`): `fingerprint` —
   HMAC-SHA256 (ключ из `JWT_SECRET`, метка `calaba/workspace-ai-check/v1`) от провайдера, адреса, модели
   и ключа; сам ключ — только в `workspace_ai.key_enc`. Состояние сохранённых настроек: `NO_KEY` (нет
   ключа), `UNCHECKED` (отпечаток не совпал — изменили провайдера, адрес, модель или ключ; путей
@@ -69,7 +69,7 @@
   выйти за доски, метки, приоритеты и права человека.
 
 ## Последствия
-- Миграция `00108`: колонка `boards.ai_instruction`, таблица `workspace_ai_check`. Протокол: `AiState`,
+- Миграция `00110`: колонка `boards.ai_instruction`, таблица `workspace_ai_check`. Протокол: `AiState`,
   `GetAiStatusResponse`, `CreateSmartTaskRequest/Response`, `Board.ai_instruction`,
   `UpdateBoardRequest.ai_instruction`. Маршруты — `botDeny` (бот создаёт задачи сам), в тарифном
   ограничении — как создание задачи.

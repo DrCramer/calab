@@ -176,7 +176,7 @@ B2BUA равен прокси.
 
 ### 3. Модель: два режима в одном аккаунте
 
-Миграция — следующая свободная на момент реализации (на 22.10 вышла `00111`). `sip_accounts` +:
+Миграция — следующая свободная на момент реализации (на 22.10 вышла `00013`). `sip_accounts` +:
 - `inbound_mode text NOT NULL DEFAULT 'direct' CHECK (direct|register)` — режим входящих; исходящие от
   режима не зависят (транк `SIPOutboundTrunk` — как сейчас, см. вопрос 4).
 - `reg_registrar text` (хост[:порт] регистратора/outbound proxy; пусто = `host:port`), `reg_domain text`

@@ -504,11 +504,18 @@ export const en: Dict = {
   'stream.returnHere': 'Bring back here',
 
   // presets
-  'preset.economy': 'Economy',
-  'preset.h720': '720p',
-  'preset.h1080': '1080p',
-  'preset.original': 'Maximum',
-  'preset.originalShort': 'Max',
+  'preset.economy': 'Economy · 5 fps',
+  'preset.h720': '720p · 15 fps',
+  'preset.h1080': '1080p · 15 fps',
+  'preset.original': 'Original · 30 fps',
+  'preset.h72030': '720p · 30 fps',
+  'preset.h108030': '1080p · 30 fps',
+  'preset.h108060': '1080p · 60 fps',
+  'preset.h144030': '1440p · 30 fps',
+  'preset.h144060': '1440p · 60 fps',
+  'preset.h216030': '2160p · 30 fps',
+  'preset.h216060': '2160p · 60 fps',
+  'preset.original60': 'Original · 60 fps',
   'preset.native': 'native resolution',
   'preset.detail': '{res}, {fps} fps, up to {mbps} Mbps',
 

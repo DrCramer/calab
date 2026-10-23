@@ -1,4 +1,4 @@
--- The public read-only links of canvases (ADR-0127 wave 5, migration 00118).
+-- The public read-only links of canvases (ADR-0127 wave 5, migration 00020).
 
 -- name: GetCanvasLink :one
 -- The live link of a canvas (not revoked, not expired).

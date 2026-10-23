@@ -793,7 +793,7 @@ type LastCanvasVersionRow struct {
 
 // The newest version of a canvas without its state: the 10-minute rule and the «content
 // changed» check of ADR-0126 §1 (state_hash against sha256 of the new state; NULL for a version
-// stored before 00119, see SetCanvasVersionHash).
+// stored before 00021, see SetCanvasVersionHash).
 func (q *Queries) LastCanvasVersion(ctx context.Context, canvasID uuid.UUID) (LastCanvasVersionRow, error) {
 	row := q.db.QueryRow(ctx, lastCanvasVersion, canvasID)
 	var i LastCanvasVersionRow
@@ -1947,7 +1947,7 @@ UPDATE canvas_versions SET state_hash = coalesce(state_hash, sha256(state)) WHER
 RETURNING state_hash::bytea
 `
 
-// The state_hash of a version stored before 00119, computed once and kept.
+// The state_hash of a version stored before 00021, computed once and kept.
 func (q *Queries) SetCanvasVersionHash(ctx context.Context, id uuid.UUID) ([]byte, error) {
 	row := q.db.QueryRow(ctx, setCanvasVersionHash, id)
 	var state_hash []byte

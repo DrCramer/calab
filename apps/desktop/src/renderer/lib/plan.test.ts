@@ -46,6 +46,8 @@ describe('preset locks (ADR-0024)', () => {
     expect(allowedStreamPreset(H1080, H1080, H720)).toBe(H720);
     expect(allowedStreamPreset(ORIGINAL, ORIGINAL, ECONOMY)).toBe(ECONOMY);
     expect(allowedStreamPreset(H1080, ORIGINAL, UNSPECIFIED)).toBe(H1080);
+    expect(allowedStreamPreset(ScreenSharePreset.H2160_60, ScreenSharePreset.ORIGINAL, UNSPECIFIED)).toBe(ScreenSharePreset.ORIGINAL);
+    expect(streamPresetLock(ScreenSharePreset.H720_30, ScreenSharePreset.H1080, UNSPECIFIED)).toBe('room');
   });
 
   it('camera: 1080p locked on free, allowed on team', () => {

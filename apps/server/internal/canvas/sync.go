@@ -271,7 +271,7 @@ func (b canvasBackend) version(ctx context.Context, q *sqlc.Queries, p ysync.Pos
 			return nil
 		}
 		prev := last.StateHash
-		if prev == nil { // stored before the column (00119)
+		if prev == nil { // stored before the column (00021)
 			if prev, err = q.SetCanvasVersionHash(ctx, last.ID); err != nil {
 				return err
 			}

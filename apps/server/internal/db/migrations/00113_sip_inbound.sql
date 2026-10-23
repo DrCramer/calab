@@ -1,7 +1,7 @@
 -- Telephony exchange, step 2 (ADR-0117, CBF-65): inbound calls on the workspace's number.
 --
 -- sip_accounts.inbound_*   the switch, the entry point (a menu, a number or a group; the same
---                          kind + one nullable FK column per kind as the routes of 00109, ON
+--                          kind + one nullable FK column per kind as the routes of 00011, ON
 --                          DELETE SET NULL of that column only: deleting the target never blocks,
 --                          a missing entry point hangs up), the provider addresses beyond the
 --                          resolved host, and the LiveKit SIPInboundTrunk / SIPDispatchRule made

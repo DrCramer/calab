@@ -18,7 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/ysync"
 )
 
-// Second review, minor 4: the version rule reads the sha256 kept with the last version (00119)
+// Second review, minor 4: the version rule reads the sha256 kept with the last version (00021)
 // and only once a version is due — every stored snapshot used to hash the last version's state
 // (≤ 4 MiB) inside the canvas's row lock. A version stored before the column gets its hash once,
 // when it is first compared. The rule stays: at most one per VersionEvery, only for a changed state.
@@ -57,7 +57,7 @@ func TestCanvasVersionHashKept(t *testing.T) {
 	if v := versions(); v.n != 1 || !bytes.Equal(v.hash, sum("one")) {
 		t.Fatalf("first version %d %x", v.n, v.hash)
 	}
-	// A version from before 00119.
+	// A version from before 00021.
 	if _, err := e.d.Pool.Exec(ctx, `UPDATE canvas_versions SET state_hash = NULL WHERE canvas_id = $1`, id); err != nil {
 		t.Fatal(err)
 	}

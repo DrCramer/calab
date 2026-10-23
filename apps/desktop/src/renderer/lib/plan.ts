@@ -1,4 +1,4 @@
-import { Plan, ScreenSharePreset, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type PlanLimits, type WorkspacePlan } from '@calaba/protocol';
+import { Plan, ScreenSharePreset, SCREEN_SHARE_PRESETS, SCREEN_SHARE_PRESET_ORDER, compareScreenSharePresets, type ConcreteScreenSharePreset, type PlanLimits, type WorkspacePlan } from '@calaba/protocol';
 import { plural, t, type MessageKey, type PluralKey } from '../i18n';
 import { fmt } from './format';
 
@@ -134,8 +134,8 @@ export type PresetLock = 'room' | 'plan' | null;
  * (`stream_max_preset`, UNSPECIFIED = none). The room lock wins: buying a plan would not lift it.
  */
 export function streamPresetLock(p: ConcreteScreenSharePreset, roomMax: ScreenSharePreset, planMax: ScreenSharePreset | undefined): PresetLock {
-  if (roomMax !== ScreenSharePreset.UNSPECIFIED && p > roomMax) return 'room';
-  if (planMax && p > planMax) return 'plan'; // UNSPECIFIED (0) = no limit
+  if (roomMax !== ScreenSharePreset.UNSPECIFIED && compareScreenSharePresets(p, roomMax) > 0) return 'room';
+  if (planMax && compareScreenSharePresets(p, planMax) > 0) return 'plan';
   return null;
 }
 
@@ -146,9 +146,8 @@ export function cameraPresetLock(p: ScreenSharePreset, planMax: ScreenSharePrese
 
 /** The highest preset ≤ `wanted` that neither the room nor the plan locks (ECONOMY at worst). */
 export function allowedStreamPreset(wanted: ConcreteScreenSharePreset, roomMax: ScreenSharePreset, planMax: ScreenSharePreset | undefined): ConcreteScreenSharePreset {
-  let p = wanted;
-  while (p > ScreenSharePreset.ECONOMY && streamPresetLock(p, roomMax, planMax)) p = (p - 1);
-  return p;
+  const candidates = SCREEN_SHARE_PRESET_ORDER.filter((p) => compareScreenSharePresets(p, wanted) <= 0).reverse();
+  return candidates.find((p) => !streamPresetLock(p, roomMax, planMax)) ?? ScreenSharePreset.ECONOMY;
 }
 
 /** The camera preset to capture: the chosen one, lowered to what the plan allows. */

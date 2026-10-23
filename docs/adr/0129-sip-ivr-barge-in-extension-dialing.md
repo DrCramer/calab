@@ -53,7 +53,7 @@ API `dtmf`. Значит, нажатия терялись не в воркере
    гостям сервер его не отдаёт — `pbconv.ExtensionVisible`) рядом с почтой и телефоном; мобильный —
    уже существующее `User.phone` (ADR-0077, видно только коллегам), правила видимости не меняются.
 
-Данные: миграция `00120_sip_extension_dialing.sql` — `sip_ivr_menus.dial_extensions bool default false`,
+Данные: миграция `00022_sip_extension_dialing.sql` — `sip_ivr_menus.dial_extensions bool default false`,
 `sip_extensions.external_blocked bool default false`. Протокол: `SipIvrMenu.dial_extensions`,
 `SipExtension.external_blocked` (+ поля в Create/Update).
 

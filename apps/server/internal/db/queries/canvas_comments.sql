@@ -1,4 +1,4 @@
--- Canvas comments (ADR-0127 wave 4, migration 00117). Access is checked by the handlers
+-- Canvas comments (ADR-0127 wave 4, migration 00019). Access is checked by the handlers
 -- (internal/canvas/comments.go) on the canvas before any of these run.
 
 -- name: LockCanvasComments :exec

@@ -343,12 +343,12 @@ RETURNING id, canvas_id, authors, created_at, octet_length(state)::int AS size;
 -- name: LastCanvasVersion :one
 -- The newest version of a canvas without its state: the 10-minute rule and the «content
 -- changed» check of ADR-0126 §1 (state_hash against sha256 of the new state; NULL for a version
--- stored before 00119, see SetCanvasVersionHash).
+-- stored before 00021, see SetCanvasVersionHash).
 SELECT id, created_at, state_hash FROM canvas_versions
 WHERE canvas_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1;
 
 -- name: SetCanvasVersionHash :one
--- The state_hash of a version stored before 00119, computed once and kept.
+-- The state_hash of a version stored before 00021, computed once and kept.
 UPDATE canvas_versions SET state_hash = coalesce(state_hash, sha256(state)) WHERE id = $1
 RETURNING state_hash::bytea;
 

@@ -27,20 +27,36 @@ type ScreenSharePreset int32
 
 const (
 	ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED ScreenSharePreset = 0
-	ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY     ScreenSharePreset = 1 // 720p  5fps  0.4 Mbps
-	ScreenSharePreset_SCREEN_SHARE_PRESET_H720        ScreenSharePreset = 2 // 720p  15fps 1.0 Mbps
-	ScreenSharePreset_SCREEN_SHARE_PRESET_H1080       ScreenSharePreset = 3 // 1080p 15fps 2.0 Mbps
-	ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL    ScreenSharePreset = 4 // native 30fps 4.0 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_ECONOMY     ScreenSharePreset = 1  // 720p  5fps  0.4 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H720        ScreenSharePreset = 2  // 720p  15fps 1.0 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H1080       ScreenSharePreset = 3  // 1080p 15fps 2.0 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL    ScreenSharePreset = 4  // native 30fps 4.0 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H720_30     ScreenSharePreset = 5  // 720p 30fps 2.5 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_30    ScreenSharePreset = 6  // 1080p 30fps 5.0 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H1080_60    ScreenSharePreset = 7  // 1080p 60fps 10 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_30    ScreenSharePreset = 8  // 1440p 30fps 10 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H1440_60    ScreenSharePreset = 9  // 1440p 60fps 16 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_30    ScreenSharePreset = 10 // 2160p 30fps 18 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_H2160_60    ScreenSharePreset = 11 // 2160p 60fps 30 Mbps
+	ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60 ScreenSharePreset = 12 // native 60fps 30 Mbps
 )
 
 // Enum value maps for ScreenSharePreset.
 var (
 	ScreenSharePreset_name = map[int32]string{
-		0: "SCREEN_SHARE_PRESET_UNSPECIFIED",
-		1: "SCREEN_SHARE_PRESET_ECONOMY",
-		2: "SCREEN_SHARE_PRESET_H720",
-		3: "SCREEN_SHARE_PRESET_H1080",
-		4: "SCREEN_SHARE_PRESET_ORIGINAL",
+		0:  "SCREEN_SHARE_PRESET_UNSPECIFIED",
+		1:  "SCREEN_SHARE_PRESET_ECONOMY",
+		2:  "SCREEN_SHARE_PRESET_H720",
+		3:  "SCREEN_SHARE_PRESET_H1080",
+		4:  "SCREEN_SHARE_PRESET_ORIGINAL",
+		5:  "SCREEN_SHARE_PRESET_H720_30",
+		6:  "SCREEN_SHARE_PRESET_H1080_30",
+		7:  "SCREEN_SHARE_PRESET_H1080_60",
+		8:  "SCREEN_SHARE_PRESET_H1440_30",
+		9:  "SCREEN_SHARE_PRESET_H1440_60",
+		10: "SCREEN_SHARE_PRESET_H2160_30",
+		11: "SCREEN_SHARE_PRESET_H2160_60",
+		12: "SCREEN_SHARE_PRESET_ORIGINAL_60",
 	}
 	ScreenSharePreset_value = map[string]int32{
 		"SCREEN_SHARE_PRESET_UNSPECIFIED": 0,
@@ -48,6 +64,14 @@ var (
 		"SCREEN_SHARE_PRESET_H720":        2,
 		"SCREEN_SHARE_PRESET_H1080":       3,
 		"SCREEN_SHARE_PRESET_ORIGINAL":    4,
+		"SCREEN_SHARE_PRESET_H720_30":     5,
+		"SCREEN_SHARE_PRESET_H1080_30":    6,
+		"SCREEN_SHARE_PRESET_H1080_60":    7,
+		"SCREEN_SHARE_PRESET_H1440_30":    8,
+		"SCREEN_SHARE_PRESET_H1440_60":    9,
+		"SCREEN_SHARE_PRESET_H2160_30":    10,
+		"SCREEN_SHARE_PRESET_H2160_60":    11,
+		"SCREEN_SHARE_PRESET_ORIGINAL_60": 12,
 	}
 )
 
@@ -157,13 +181,22 @@ const file_calaba_v1_media_proto_rawDesc = "" +
 	"\x11max_stream_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x0fmaxStreamPreset\x12\x1f\n" +
 	"\vmax_streams\x18\x03 \x01(\rR\n" +
 	"maxStreams\x12!\n" +
-	"\fcamera_limit\x18\x04 \x01(\rR\vcameraLimit*\xb8\x01\n" +
+	"\fcamera_limit\x18\x04 \x01(\rR\vcameraLimit*\xca\x03\n" +
 	"\x11ScreenSharePreset\x12#\n" +
 	"\x1fSCREEN_SHARE_PRESET_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bSCREEN_SHARE_PRESET_ECONOMY\x10\x01\x12\x1c\n" +
 	"\x18SCREEN_SHARE_PRESET_H720\x10\x02\x12\x1d\n" +
 	"\x19SCREEN_SHARE_PRESET_H1080\x10\x03\x12 \n" +
-	"\x1cSCREEN_SHARE_PRESET_ORIGINAL\x10\x04B\x98\x01\n" +
+	"\x1cSCREEN_SHARE_PRESET_ORIGINAL\x10\x04\x12\x1f\n" +
+	"\x1bSCREEN_SHARE_PRESET_H720_30\x10\x05\x12 \n" +
+	"\x1cSCREEN_SHARE_PRESET_H1080_30\x10\x06\x12 \n" +
+	"\x1cSCREEN_SHARE_PRESET_H1080_60\x10\a\x12 \n" +
+	"\x1cSCREEN_SHARE_PRESET_H1440_30\x10\b\x12 \n" +
+	"\x1cSCREEN_SHARE_PRESET_H1440_60\x10\t\x12 \n" +
+	"\x1cSCREEN_SHARE_PRESET_H2160_30\x10\n" +
+	"\x12 \n" +
+	"\x1cSCREEN_SHARE_PRESET_H2160_60\x10\v\x12#\n" +
+	"\x1fSCREEN_SHARE_PRESET_ORIGINAL_60\x10\fB\x98\x01\n" +
 	"\rcom.calaba.v1B\n" +
 	"MediaProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"

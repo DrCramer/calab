@@ -19,7 +19,7 @@
 
 ## Решение
 
-1. **Модель** (миграция `00114_sip_group_fallback.sql`): `sip_groups.fallback_enabled bool` (false) и
+1. **Модель** (миграция `00016_sip_group_fallback.sql`): `sip_groups.fallback_enabled bool` (false) и
    `fallback_sec int` (30; 5–600). Действие — существующие `on_fail_*` (тот же набор, что везде в маршрутах:
    положить трубку, меню, сотрудник/бот — номер `extension`, группа; `REPEAT` нельзя). При выключенной
    переадресации `on_fail_*` хранится, но не используется (включил обратно — действие на месте).

@@ -47,7 +47,7 @@
 - Таймаут вызова с картинками — 45 с (без — 30 с, как было).
 
 ### 2. Поиск дублей
-- `boards.ai_find_duplicates` (миграция `00113`, по умолчанию `false`), `Board.ai_find_duplicates` (в списках
+- `boards.ai_find_duplicates` (миграция `00015`, по умолчанию `false`), `Board.ai_find_duplicates` (в списках
   и событиях — не секрет), `UpdateBoardRequest.ai_find_duplicates` (`MANAGE_BOARD`). Переключатель — в
   карточке «Инструкция для ИИ» настроек доски.
 - Если включён, после выбора доски модель получает `recent_tasks`: живые задачи этой доски с `created_at` за

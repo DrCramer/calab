@@ -187,6 +187,7 @@ import {
   RequestCameraResponseSchema,
   RoomMediaSettingsSchema,
   SCREEN_SHARE_PRESETS,
+  compareScreenSharePresets,
   WorkspacePlanSchema,
   type AdminWorkspace,
   type PlanLimits,
@@ -5448,7 +5449,7 @@ class MockImpl {
       if (room.type === RoomType.DM) {
         this.requireCall(room.id, me);
         const b = parseBody(c, RequestStreamRequestSchema);
-        const preset = b.preset === ScreenSharePreset.UNSPECIFIED ? ScreenSharePreset.H1080 : Math.min(b.preset, ScreenSharePreset.H1080);
+        const preset = b.preset === ScreenSharePreset.UNSPECIFIED || compareScreenSharePresets(b.preset, ScreenSharePreset.H1080) > 0 ? ScreenSharePreset.H1080 : b.preset;
         const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
         sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps: b.fps > 0 ? Math.min(b.fps, own) : own });
         return;
@@ -5457,7 +5458,7 @@ class MockImpl {
       if (s().voiceStates.get(me)?.roomId !== room.id) throw conflict('not in this voice room');
       const b = parseBody(c, RequestStreamRequestSchema);
       const max = this.cappedMedia(room).maxStreamPreset || ScreenSharePreset.H1080;
-      const preset = b.preset === ScreenSharePreset.UNSPECIFIED ? max : Math.min(b.preset, max);
+      const preset = b.preset === ScreenSharePreset.UNSPECIFIED || compareScreenSharePresets(b.preset, max) > 0 ? max : b.preset;
       // fps: min(wanted, the preset's own, the plan's stream_max_fps) (docs/05, ADR-0024).
       const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
       const planFps = this.planLimits(room.workspaceId).streamMaxFps;
@@ -9013,7 +9014,7 @@ class MockImpl {
   private cappedMedia(room: Room): RoomMediaSettings {
     const media = create(RoomMediaSettingsSchema, room.media ?? DEFAULT_MEDIA);
     const pl = this.planLimits(room.workspaceId);
-    if (pl.streamMaxPreset && (!media.maxStreamPreset || media.maxStreamPreset > pl.streamMaxPreset)) media.maxStreamPreset = pl.streamMaxPreset;
+    if (pl.streamMaxPreset && (!media.maxStreamPreset || compareScreenSharePresets(media.maxStreamPreset, pl.streamMaxPreset) > 0)) media.maxStreamPreset = pl.streamMaxPreset;
     if (pl.streamsPerRoom && media.maxStreams > pl.streamsPerRoom) media.maxStreams = pl.streamsPerRoom;
     return media;
   }

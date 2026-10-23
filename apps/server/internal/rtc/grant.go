@@ -3,6 +3,7 @@ package rtc
 import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // Grant maps room permissions to LiveKit participant permissions (docs/04):
@@ -38,7 +39,7 @@ func ClampPreset(wanted, maxPreset v1.ScreenSharePreset) v1.ScreenSharePreset {
 	if maxPreset == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
 		maxPreset = v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080
 	}
-	if wanted == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || wanted > maxPreset {
+	if wanted == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || !plans.IsStreamPreset(wanted) || plans.ComparePresets(wanted, maxPreset) > 0 {
 		return maxPreset
 	}
 	return wanted

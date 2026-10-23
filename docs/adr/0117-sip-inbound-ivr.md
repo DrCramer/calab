@@ -106,7 +106,7 @@
 индексом дедлайнов `sipin:due` (как `call:ringing` в ADR-0034): любая реплика API продолжает сценарий по
 событию воркера или тику; общий тик 5 с.
 
-### 3. Модель данных (миграция — следующая свободная; вышла `00109_sip_pbx.sql`)
+### 3. Модель данных (миграция — следующая свободная; вышла `00011_sip_pbx.sql`)
 
 - `sip_accounts` +: `inbound_enabled bool`, `inbound_trunk_id text` (`SIPInboundTrunk`), `inbound_rule_id text`
   (`SIPDispatchRule`), `inbound_target_kind text CHECK (extension|menu)`, `inbound_target_id uuid` (точка входа;

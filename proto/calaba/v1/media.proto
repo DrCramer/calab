@@ -9,6 +9,14 @@ enum ScreenSharePreset {
   SCREEN_SHARE_PRESET_H720 = 2;     // 720p  15fps 1.0 Mbps
   SCREEN_SHARE_PRESET_H1080 = 3;    // 1080p 15fps 2.0 Mbps
   SCREEN_SHARE_PRESET_ORIGINAL = 4; // native 30fps 4.0 Mbps
+  SCREEN_SHARE_PRESET_H720_30 = 5;  // 720p 30fps 2.5 Mbps
+  SCREEN_SHARE_PRESET_H1080_30 = 6; // 1080p 30fps 5.0 Mbps
+  SCREEN_SHARE_PRESET_H1080_60 = 7; // 1080p 60fps 10 Mbps
+  SCREEN_SHARE_PRESET_H1440_30 = 8; // 1440p 30fps 10 Mbps
+  SCREEN_SHARE_PRESET_H1440_60 = 9; // 1440p 60fps 16 Mbps
+  SCREEN_SHARE_PRESET_H2160_30 = 10; // 2160p 30fps 18 Mbps
+  SCREEN_SHARE_PRESET_H2160_60 = 11; // 2160p 60fps 30 Mbps
+  SCREEN_SHARE_PRESET_ORIGINAL_60 = 12; // native 60fps 30 Mbps
 }
 
 // Effective per-room media settings (workspace defaults already applied).
