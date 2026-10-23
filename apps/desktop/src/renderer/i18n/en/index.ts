@@ -22,6 +22,11 @@ import { enCalendar } from './calendar';
 import { enMailbox } from './mailbox';
 import { enDisk } from './disk';
 import { enWiki } from './wiki';
+import { enCanvas } from './canvas';
+import { enCanvasBoard } from './canvasBoard';
+import { enCanvasPhone } from './canvasPhone';
+import { enCanvasComments } from './canvasComments';
+import { enCanvasShare } from './canvasShare';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
 import { enHistory } from './history';
@@ -90,6 +95,11 @@ export const en: Dict = {
   ...enMailbox,
   ...enDisk,
   ...enWiki,
+  ...enCanvas,
+  ...enCanvasBoard,
+  ...enCanvasPhone,
+  ...enCanvasComments,
+  ...enCanvasShare,
   ...enBoards,
   ...enBoards2,
   ...enHistory,

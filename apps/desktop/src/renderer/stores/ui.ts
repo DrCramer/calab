@@ -10,6 +10,7 @@ import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
 import { leaveMail, useMailUi } from './mailUi';
 import { leaveDisk, useDiskUi } from './diskUi';
+import { leaveCanvas, useCanvasUi } from './canvasUi';
 import { leaveWiki, useWikiUi } from './wikiUi';
 import { chatFollow, followTarget, type FollowEvent } from '../lib/chatFollow';
 
@@ -200,6 +201,7 @@ export const useUi = create<UiState>()(
           leaveMail();
           leaveDisk();
           leaveWiki();
+          leaveCanvas();
           return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
@@ -227,6 +229,7 @@ export const useUi = create<UiState>()(
           leaveMail();
           leaveDisk();
           leaveWiki();
+          leaveCanvas();
           return {
           calDay: null,
           calEvent: null,
@@ -301,6 +304,7 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   leaveMail();
   leaveDisk();
   leaveWiki();
+  leaveCanvas();
   const { ws, room } = r.to;
   return {
     calDay: null,
@@ -324,7 +328,7 @@ export function activeRoomId(): string | null {
 }
 
 /**
- * Another view covers the room column: the boards (an open task), mail, disk, wiki, a web app,
+ * Another view covers the room column: the boards (an open task), mail, disk, wiki, canvas, a web app,
  * the calendar day, or the DM list «Личные».
  */
 function roomColumnCovered(s: UiState): boolean {
@@ -335,6 +339,7 @@ function roomColumnCovered(s: UiState): boolean {
     useMailUi.getState().active ||
     useDiskUi.getState().active ||
     useWikiUi.getState().active ||
+    useCanvasUi.getState().active ||
     useWebApps.getState().open !== null
   );
 }

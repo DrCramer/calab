@@ -55,6 +55,11 @@ const (
 	scopeDiskItem
 	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
 	scopeWikiPage
+	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0126), the item's workspace.
+	scopeCanvasItem
+	// scopeCanvasComment: /api/canvas/comments/{id} (ADR-0127 wave 4), the workspace of the
+	// comment's canvas.
+	scopeCanvasComment
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -538,6 +543,39 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/wiki/{code}":                scopePublic,
 	"GET /api/public/wiki/{code}/state":          scopePublic,
 	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
+	// Canvas (ADR-0126 §7). The sync socket authenticates in-band like the Wiki's.
+	"GET /api/workspaces/{id}/canvas/items":        scopeWorkspace,
+	"POST /api/workspaces/{id}/canvas/items":       scopeWorkspace,
+	"POST /api/workspaces/{id}/canvas/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/canvas/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/canvas/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/canvas/settings":     scopeWorkspace,
+	"GET /api/canvas/items/{id}":                   scopeCanvasItem,
+	"PATCH /api/canvas/items/{id}":                 scopeCanvasItem,
+	"DELETE /api/canvas/items/{id}":                scopeCanvasItem,
+	"POST /api/canvas/items/{id}/trash":            scopeCanvasItem,
+	"POST /api/canvas/items/{id}/restore":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/path":              scopeCanvasItem,
+	"GET /api/canvas/items/{id}/activity":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/permissions":       scopeCanvasItem,
+	"PUT /api/canvas/items/{id}/permissions":       scopeCanvasItem,
+	"POST /api/canvas/items/{id}/take-over":        scopeCanvasItem,
+	"GET /api/canvas/items/{id}/versions":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/versions/{vid}":    scopeCanvasItem,
+	"GET /api/canvas/items/{id}/sync":              scopePublic,
+	// Canvas comments (ADR-0127 wave 4).
+	"GET /api/canvas/items/{id}/comments":                scopeCanvasItem,
+	"POST /api/canvas/items/{id}/comments":               scopeCanvasItem,
+	"GET /api/canvas/items/{id}/comments/mention-access": scopeCanvasItem,
+	"PATCH /api/canvas/comments/{id}":                    scopeCanvasComment,
+	"DELETE /api/canvas/comments/{id}":                   scopeCanvasComment,
+	// Canvas public link (ADR-0127 wave 5): managed by people of the canvas's workspace; the
+	// public name and the anonymous receive-only socket take no session at all.
+	"GET /api/canvas/items/{id}/link":    scopeCanvasItem,
+	"POST /api/canvas/items/{id}/link":   scopeCanvasItem,
+	"DELETE /api/canvas/items/{id}/link": scopeCanvasItem,
+	"GET /api/public/canvas/{code}":      scopePublic,
+	"GET /api/public/canvas/{code}/sync": scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
@@ -802,6 +840,11 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeWikiPage:
 		row, err := q.GetWikiPage(ctx, id)
 		return row.WorkspaceID, err
+	case scopeCanvasItem:
+		row, err := q.GetCanvasItem(ctx, id)
+		return row.WorkspaceID, err
+	case scopeCanvasComment:
+		return q.GetCanvasCommentWorkspace(ctx, id)
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -928,6 +971,10 @@ func IdentityRouteClass(pattern string) string {
 		return "disk_item"
 	case scopeWikiPage:
 		return "wiki_page"
+	case scopeCanvasItem:
+		return "canvas_item"
+	case scopeCanvasComment:
+		return "canvas_comment"
 	default:
 		return "specialized"
 	}

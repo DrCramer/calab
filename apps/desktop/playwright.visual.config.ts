@@ -57,6 +57,9 @@ export default defineConfig<VisualOptions>({
     // «Вики» (ADR-0096 §9, a new interface): dark 960×600; the page also light (wiki.visual.spec.ts).
     { name: 'wiki-dark-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'wiki-light-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
+    // «Холст» (ADR-0126 §5, a new interface): dark 960×600; «Доступ» also light (canvas.visual.spec.ts).
+    { name: 'canvas-dark-960', testMatch: /canvas\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    { name: 'canvas-light-960', testMatch: /canvas\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // «Телефония» — the exchange (ADR-0117 step 1, new cards): dark 960×600; the menu form also light.
     { name: 'telephony-dark-960', testMatch: /telephony\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'telephony-light-960', testMatch: /telephony\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },

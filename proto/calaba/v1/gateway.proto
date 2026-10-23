@@ -8,6 +8,7 @@ import "calaba/v1/billing.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
+import "calaba/v1/canvas.proto";
 import "calaba/v1/disk.proto";
 import "calaba/v1/event.proto";
 import "calaba/v1/invite.proto";
@@ -312,6 +313,17 @@ message DispatchEvent {
     // The workspace's live phone calls changed (ADR-0128): to its MANAGE_INTEGRATIONS members
     // (not guests, not bots), who re-read GET /api/workspaces/{id}/sip/calls.
     SipCallsChanged sip_calls_changed = 107;
+    // Canvas (ADR-0126 §6): workspace channel, routed per recipient like the Wiki
+    // (CANVAS_VIEW on the item); the tree structure only, the content goes through the
+    // canvas's /sync socket.
+    CanvasItemUpsert canvas_item_upsert = 108;
+    CanvasItemRemove canvas_item_remove = 109;
+    // Canvas comments (ADR-0127 wave 4): workspace channel, routed per recipient like the
+    // items (CANVAS_VIEW on the canvas).
+    CanvasCommentUpsert canvas_comment_upsert = 110;
+    CanvasCommentDelete canvas_comment_delete = 111;
+    // An @mention in a canvas comment: the mentioned member's user channel only.
+    CanvasCommentMention canvas_comment_mention = 112;
   }
 }
 

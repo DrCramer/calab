@@ -1,10 +1,10 @@
 import { SearchType, type SearchHit, type SearchResponse, type SearchSection } from '@calaba/protocol';
 
 /** Query-string names of the sections (ADR-0062 §1). */
-export type SectionName = 'messages' | 'task_comments' | 'tasks' | 'events' | 'files' | 'notes' | 'transcripts' | 'wiki' | 'disk';
+export type SectionName = 'messages' | 'task_comments' | 'tasks' | 'events' | 'files' | 'notes' | 'transcripts' | 'wiki' | 'canvas' | 'disk';
 
 /** The order of the sections in ⌘K and of the panel's tabs (ADR-0062 §4). */
-export const SECTION_ORDER: readonly SectionName[] = ['messages', 'tasks', 'task_comments', 'events', 'wiki', 'files', 'disk', 'notes', 'transcripts'];
+export const SECTION_ORDER: readonly SectionName[] = ['messages', 'tasks', 'task_comments', 'events', 'wiki', 'canvas', 'files', 'disk', 'notes', 'transcripts'];
 
 const BY_TYPE: Readonly<Record<number, SectionName>> = {
   [SearchType.MESSAGES]: 'messages',
@@ -15,6 +15,7 @@ const BY_TYPE: Readonly<Record<number, SectionName>> = {
   [SearchType.NOTES]: 'notes',
   [SearchType.TRANSCRIPTS]: 'transcripts',
   [SearchType.WIKI]: 'wiki',
+  [SearchType.CANVAS]: 'canvas',
   [SearchType.DISK]: 'disk',
 };
 
@@ -65,6 +66,8 @@ export function hitId(h: SearchHit): string {
       return `w:${r.value.pageId}`;
     case 'disk':
       return `d:${r.value.itemId}`;
+    case 'canvas':
+      return `v:${r.value.itemId}`;
     default:
       return `?:${h.snippet}`;
   }

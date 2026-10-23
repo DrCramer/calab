@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { NotificationLevel } from './gen/calaba/v1/room_pb.js';
-import { effectiveNotificationLevel, levelNotifies, taskNotifies, type TaskNotifyKind } from './notifications.js';
+import { canvasMentionNotifies, canvasMentionText, effectiveNotificationLevel, levelNotifies, taskNotifies, type TaskNotifyKind } from './notifications.js';
 
-type Lvl = 'all' | 'mentions' | 'none' | 'inherit';
+type Lvl = 'all' | 'mentions' | 'none' | 'inherit' | '';
 interface Vector {
   name: string;
   dm: boolean;
@@ -24,6 +24,9 @@ interface Vector {
     mandatory?: boolean;
     off?: boolean;
   };
+  // ADR-0127 wave 4: a canvas @mention vector; text = the notice may carry the comment.
+  canvas?: { level: Lvl; workspaceMuted: boolean; hideText: boolean; private: boolean };
+  text?: boolean;
 }
 
 const levels: Record<Lvl, NotificationLevel> = {
@@ -31,6 +34,7 @@ const levels: Record<Lvl, NotificationLevel> = {
   mentions: NotificationLevel.MENTIONS,
   none: NotificationLevel.NONE,
   inherit: NotificationLevel.INHERIT,
+  '': NotificationLevel.UNSPECIFIED,
 };
 
 const vectors = JSON.parse(
@@ -40,8 +44,15 @@ const vectors = JSON.parse(
 describe('notification levels (shared vectors with Go internal/notifications)', () => {
   it('has the full matrix', () => expect(vectors.length).toBeGreaterThan(50));
   it('has the task matrix', () => expect(vectors.filter((v) => v.task).length).toBeGreaterThan(50));
+  it('has the canvas matrix', () => expect(vectors.filter((v) => v.canvas).length).toBeGreaterThanOrEqual(32));
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.canvas) {
+        const f = { ...v.canvas, level: levels[v.canvas.level] };
+        expect(canvasMentionNotifies(f)).toBe(v.notifies);
+        expect(canvasMentionText(f)).toBe(v.text);
+        return;
+      }
       if (v.task) {
         expect(taskNotifies({ ...v.task, level: levels[v.task.level] })).toBe(v.notifies);
         return;

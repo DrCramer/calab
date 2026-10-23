@@ -110,6 +110,8 @@ func (s *Service) sectionFn(t v1.SearchType) sectionFn {
 		return s.wiki
 	case v1.SearchType_SEARCH_TYPE_DISK:
 		return s.disk
+	case v1.SearchType_SEARCH_TYPE_CANVAS:
+		return s.canvas
 	}
 	return s.messages // messages, task comments, notes
 }

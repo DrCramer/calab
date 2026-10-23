@@ -27,6 +27,7 @@ import (
 	"github.com/calaba/calaba/server/internal/caldav"
 	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/calls"
+	"github.com/calaba/calaba/server/internal/canvas"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -68,6 +69,7 @@ import (
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/calaba/calaba/server/internal/wiki"
 	"github.com/calaba/calaba/server/internal/workspaces"
+	"github.com/calaba/calaba/server/internal/ysync"
 )
 
 // Deps are the long-lived dependencies of the server.
@@ -161,6 +163,8 @@ type App struct {
 	Disk *disk.Service
 	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
 	Wiki *wiki.Service
+	// Canvas: the workspace Canvas (ADR-0126) with its sync socket and the hourly trash sweeper.
+	Canvas *canvas.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper and the inbound tick (ADR-0117).
 	SIP *sip.Service
 	// IVR: the IVR worker's endpoint (ADR-0117 §2).
@@ -190,6 +194,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Files.RunStagedCleanup(ctx, 10*time.Minute) // board form uploads never submitted (ADR-0064 v2)
 	go a.Disk.RunTrashSweep(ctx, disk.SweepInterval)
 	go a.Wiki.RunTrashSweep(ctx, wiki.SweepInterval)
+	go a.Canvas.RunTrashSweep(ctx, canvas.SweepInterval)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
 	go a.Guests.RunAdmissions(ctx, guests.AdmissionSweep)
@@ -486,6 +491,14 @@ func New(d Deps) *App {
 	allowed := d.Config.AllowedOrigins()
 	wikiSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, wiki.SyncConfig{})
 	wikiSvc.Routes(mux, private)
+	canvasSvc := canvas.New(d.DB, pub)
+	canvasSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-comment:", 20, 20) // ADR-0127 wave 4: 20 at once, 20 per minute
+	canvasSvc.PublicURL = d.Config.PublicAppURL
+	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0127 wave 5: the public name, 60 per minute per IP
+	canvasSvc.LinkSyncLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link-ws:", 20, 10) // … the anonymous socket's connects: 20 at once, 10 per minute per IP
+	canvasSvc.Billing = planSvc
+	canvasSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, ysync.Config{})
+	canvasSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
 		redisx.NewRateLimiter(d.Redis, "rl:sticker-upload:", 10, 1)).Routes(mux, private) // 10 batches at once, 60 per hour
 	sounds.NewHandlers(d.DB, pub, filesSvc, voice.Store{C: d.Redis}).Routes(mux, private)
@@ -633,7 +646,7 @@ func New(d Deps) *App {
 	)
 	mcpHandler.API = h
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, IVR: ivrHub, SIPReg: sipregHub, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Canvas: canvasSvc, Rooms: roomHandlers, SIP: sipSvc, IVR: ivrHub, SIPReg: sipregHub, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		dueTZ: boards.DueZone(d.Config.TasksDueTZ), Mailbox: mailboxSvc}
 }
 

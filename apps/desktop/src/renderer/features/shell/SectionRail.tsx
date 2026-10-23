@@ -5,6 +5,8 @@ import {
   BoardsActiveIcon,
   BoardsIdleIcon,
   CalendarActiveIcon,
+  CanvasActiveIcon,
+  CanvasIdleIcon,
   CalendarIdleIcon,
   DiskActiveIcon,
   DiskIdleIcon,
@@ -25,6 +27,7 @@ import { unreadCount, useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useCalendar } from '../../stores/calendar';
 import { useDiskUi } from '../../stores/diskUi';
+import { useCanvasUi } from '../../stores/canvasUi';
 import { useWikiUi } from '../../stores/wikiUi';
 import { HOME } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
@@ -77,6 +80,8 @@ export function SectionRail(): ReactNode {
         {MAIL ? <MailTile active={section === 'mail'} /> : null}
         {/* «Вики» (ADR-0096 §9): after «Почта» (ADR-0095 addendum 2026-10-14); guests have none (their access is per page). */}
         {ws && !guestWs ? <WikiTile active={section === 'wiki'} /> : null}
+        {/* «Холст» (ADR-0126 §5): after «Вики»; guests have none (their access is per item). */}
+        {ws && !guestWs ? <CanvasTile active={section === 'canvas'} /> : null}
         {/* «Диск» (ADR-0094 §8): last; guests have none (their access is per item, v1 keeps it simple). */}
         {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
@@ -94,8 +99,9 @@ function useSection(ws: string | null): Section | null {
   const mail = useMailUi((s) => s.active);
   const disk = useDiskUi((s) => s.active);
   const wiki = useWikiUi((s) => s.active);
+  const canvas = useCanvasUi((s) => s.active);
   const app = useOpenApp(home ? null : ws) !== null;
-  return currentSection({ home, boards, calendar, app, mail, disk, wiki });
+  return currentSection({ home, boards, calendar, app, mail, disk, wiki, canvas });
 }
 
 /** Resolved once per page load (the API never appears later). */
@@ -115,6 +121,7 @@ const BOARDS: NavIcons = [BoardsIdleIcon, BoardsActiveIcon];
 const MAIL_ICONS: NavIcons = [MailIdleIcon, MailActiveIcon];
 const DISK: NavIcons = [DiskIdleIcon, DiskActiveIcon];
 const WIKI: NavIcons = [WikiIdleIcon, WikiActiveIcon];
+const CANVAS: NavIcons = [CanvasIdleIcon, CanvasActiveIcon];
 
 function NavIcon({ icons, active, className }: { icons: NavIcons; active: boolean; className: string }): ReactNode {
   const Icon = icons[active ? 1 : 0];
@@ -303,6 +310,19 @@ const WikiTile = memo(function WikiTile({ active }: { active: boolean }): ReactN
     <Slot active={active}>
       <Tip label={label} side="right">
         <TileButton section="wiki" icons={WIKI} name={label} active={active} testId="section-wiki" />
+      </Tip>
+    </Slot>
+  );
+});
+
+/** «Холст» (ADR-0126 §5): the folders and canvases of the context workspace; no counter. */
+const CanvasTile = memo(function CanvasTile({ active }: { active: boolean }): ReactNode {
+  useLocale();
+  const label = t('canvas.section');
+  return (
+    <Slot active={active}>
+      <Tip label={label} side="right">
+        <TileButton section="canvas" icons={CANVAS} name={label} active={active} testId="section-canvas" />
       </Tip>
     </Slot>
   );

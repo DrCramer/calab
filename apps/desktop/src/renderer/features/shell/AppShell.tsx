@@ -43,6 +43,8 @@ import { useDiskUi } from '../../stores/diskUi';
 import { DiskScreen } from '../disk/DiskScreen';
 import { useWikiUi } from '../../stores/wikiUi';
 import { WikiScreen } from '../wiki/WikiScreen';
+import { useCanvasUi } from '../../stores/canvasUi';
+import { CanvasScreen } from '../canvas/CanvasScreen';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
 import { WindowVibrancy } from './WindowVibrancy';
@@ -103,6 +105,8 @@ function ShellLayout(): ReactNode {
   const disk = useDiskUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Вики» (ADR-0096 §9): the same, exclusive with the Disk; guests have none.
   const wiki = useWikiUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Холст» (ADR-0126 §5): the same, exclusive with the Disk and the wiki; guests have none.
+  const canvas = useCanvasUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
   // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
@@ -203,6 +207,12 @@ function ShellLayout(): ReactNode {
             {/* A Disk / wiki hit opens here, the results stay beside it (ADR-0105). */}
             {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
           </div>
+        ) : hasWs && wsId && canvas ? (
+          <div className="relative flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <CanvasScreen key={wsId} workspaceId={wsId} />
+            {/* A canvas hit opens here, the results stay beside it (ADR-0105). */}
+            {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
+          </div>
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
@@ -249,7 +259,7 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || (calDay !== null && !guestWs)} /> : null}
+        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || canvas || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
         {ready ? <SmartTaskDialog /> : null}
       </div>

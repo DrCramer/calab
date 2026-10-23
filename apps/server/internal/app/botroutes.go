@@ -62,7 +62,7 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/auth/password/reset",
 		"POST /api/mailbox/password/redeem",
 	}},
-	{access: botPublic, why: "anonymous links: the code is the credential; room links and meeting answers refuse bot tokens, the wiki socket authenticates in band (bot tokens too)", routes: []string{
+	{access: botPublic, why: "anonymous links: the code is the credential; room links and meeting answers refuse bot tokens, the wiki socket authenticates in band (bot tokens too), the canvas socket in band too and refuses bot tokens, the canvas's public link (ADR-0127 wave 5) is anonymous and receive-only: no token is read at all", routes: []string{
 		"GET /api/invites/{code}",
 		"GET /api/room-invites/{code}",
 		"POST /api/room-invites/{code}/join",
@@ -78,6 +78,9 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/public/wiki/{code}/state",
 		"GET /api/public/wiki/{code}/files/{fileId}",
 		"GET /api/wiki/pages/{id}/sync",
+		"GET /api/canvas/items/{id}/sync",
+		"GET /api/public/canvas/{code}",
+		"GET /api/public/canvas/{code}/sync",
 		"GET /api/stickers/builtin/{name}",
 	}},
 	{access: botPublic, why: "the IVR worker (ADR-0117 §2): its own bearer token (IVR_AGENT_TOKEN), never a user's or a bot's", routes: []string{
@@ -362,6 +365,34 @@ var botRouteGroups = []botRouteGroup{
 
 	// ---------------------------------------------------------------- allow: opened by ADR-0109
 	// Closed on behalf of the owner (ADR-0106 §3 is not widened by ADR-0109).
+	{access: botDeny, why: "Canvas v1 (ADR-0126), its comments (ADR-0127 wave 4) and its public link (wave 5): people only — there is no bot SDK for it yet, the sync socket refuses bot tokens (4003) and a bot is never @mentioned on a canvas; the group becomes botAllow by the canvas bits like the Disk and the Wiki (ADR-0109) when bots get the Canvas", routes: []string{
+		"DELETE /api/canvas/comments/{id}",
+		"DELETE /api/canvas/items/{id}",
+		"DELETE /api/canvas/items/{id}/link",
+		"GET /api/canvas/items/{id}",
+		"GET /api/canvas/items/{id}/activity",
+		"GET /api/canvas/items/{id}/comments",
+		"GET /api/canvas/items/{id}/comments/mention-access",
+		"GET /api/canvas/items/{id}/link",
+		"GET /api/canvas/items/{id}/path",
+		"GET /api/canvas/items/{id}/permissions",
+		"GET /api/canvas/items/{id}/versions",
+		"GET /api/canvas/items/{id}/versions/{vid}",
+		"GET /api/workspaces/{id}/canvas/activity",
+		"GET /api/workspaces/{id}/canvas/items",
+		"GET /api/workspaces/{id}/canvas/settings",
+		"PATCH /api/canvas/comments/{id}",
+		"PATCH /api/canvas/items/{id}",
+		"POST /api/canvas/items/{id}/comments",
+		"POST /api/canvas/items/{id}/link",
+		"POST /api/canvas/items/{id}/restore",
+		"POST /api/canvas/items/{id}/take-over",
+		"POST /api/canvas/items/{id}/trash",
+		"POST /api/workspaces/{id}/canvas/items",
+		"POST /api/workspaces/{id}/canvas/trash/empty",
+		"PUT /api/canvas/items/{id}/permissions",
+		"PUT /api/workspaces/{id}/canvas/settings",
+	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: board administration — automation rules (MANAGE_BOARD), the board's Git and webhook (MANAGE_BOARD and MANAGE_INTEGRATIONS; the secret is shown once to whoever sets it), the board's access (MANAGE_BOARD, as rooms)", routes: []string{
 		"POST /api/boards/{id}/rules",
 		"PATCH /api/rules/{id}",

@@ -22,6 +22,11 @@ import { zhCalendar } from './calendar';
 import { zhMailbox } from './mailbox';
 import { zhDisk } from './disk';
 import { zhWiki } from './wiki';
+import { zhCanvas } from './canvas';
+import { zhCanvasBoard } from './canvasBoard';
+import { zhCanvasPhone } from './canvasPhone';
+import { zhCanvasComments } from './canvasComments';
+import { zhCanvasShare } from './canvasShare';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
 import { zhHistory } from './history';
@@ -90,6 +95,11 @@ export const zhCN: Dict = {
   ...zhMailbox,
   ...zhDisk,
   ...zhWiki,
+  ...zhCanvas,
+  ...zhCanvasBoard,
+  ...zhCanvasPhone,
+  ...zhCanvasComments,
+  ...zhCanvasShare,
   ...zhBoards,
   ...zhBoards2,
   ...zhHistory,

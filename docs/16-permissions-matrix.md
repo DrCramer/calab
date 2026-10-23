@@ -184,6 +184,27 @@
 | Переименовать, иконка, обложка, перенести, в корзину, доступ, ссылка | владелец страницы или `WIKI_MANAGE` (`perm.WikiStructureAllowed`) | `internal/wiki` (W2) | по `WikiPage.my_bits` (W4) |
 | Срок корзины, очистка всей корзины, чужие ссылки, журнал вики | `WIKI_MANAGE` | `internal/wiki` (W2) | (W4) |
 
+## Холст (ADR-0126, ADR-0127)
+
+Биты `CANVAS_VIEW` (41) / `CANVAS_WRITE` (42) / `CANVAS_MANAGE` (43) — как у вики: уровень пространства, вне `ALL_PERMISSIONS`, у `member` по умолчанию VIEW + WRITE (миграция 00115), `ADMINISTRATOR` даёт все три, гостям — только личный allow на элементе; боты — как участники. Права на элемент — `perm.ComputeCanvasItem` (общий `perm.ComputeTree`), нет `CANVAS_VIEW` — 404. Приватный холст или папка (`restricted`) — как приватная страница вики: администраторы, `CANVAS_MANAGE` и владелец пространства без переопределения (и без «Владелец видит приватное») его не видят; `perm.Detached` отцепляет невидимую приватную подпапку при удалении/переносе предка. «Только просмотр» — отсутствие `CANVAS_WRITE`: сокет `/sync` не принимает UPDATE. Публичная ссылка только для чтения — ADR-0127 волна 5 (строки ниже). Боты в v1 — только люди: группа `botDeny` «Холст v1» в `internal/app/botroutes.go` (ADR-0109), SDK для холста нет, сокет `/sync` отклоняет токены ботов кодом 4003; когда ботам дадут холст, группа станет `botAllow` по битам `CANVAS_*`. Тесты: векторы `canvas:` в `proto/testdata/permissions.json` (Go `internal/perm`, TS `permissions.test.ts`).
+
+| Действие | Бит | Сервер | Клиент |
+|---|---|---|---|
+| Раздел «Холст», дерево, открыть холст, история версий | `CANVAS_VIEW` на элемент | `internal/canvas` | `features/canvas` |
+| Править содержимое (`/sync` с приёмом правок), создать папку или холст | `CANVAS_WRITE` на элемент (на верхнем уровне — в пространстве) | `internal/canvas` | `features/canvas` (без `WRITE` — «Только просмотр») |
+| Переименовать, перенести, в корзину, доступ | владелец элемента или `CANVAS_MANAGE` (`perm.CanvasStructureAllowed`); перенос — ещё `CANVAS_WRITE` в целевой папке | `internal/canvas` | по `CanvasItem.my_bits` (`canvasStructureAllowed`) |
+| Срок корзины, очистка всей корзины, журнал холста | `CANVAS_MANAGE` | `internal/canvas` | `features/canvas` (настройки, корзина) |
+| События `CANVAS_ITEM_UPSERT` / `REMOVE`, поиск `canvas` | `CANVAS_VIEW` на элемент (цепочка доступа, `perm.ComputeCanvasItemIn`) | `gateway` / `search` | `features/canvas` (по событиям дерева) |
+| Комментарии холста: читать (`GET …/comments`, события `CANVAS_COMMENT_*`) | `CANVAS_VIEW` на холст (нет — 404, и по id комментария) | `internal/canvas` (`comments.go`), `gateway` (цепочка холста) | `features/canvas/view/comments` |
+| Комментарии холста: написать, ответить, решить / открыть | `CANVAS_WRITE` на холст; не в корзине, пространство не приостановлено | `internal/canvas` | по `my_bits` (`commentRights`) |
+| Комментарии холста: править и удалять своё / чужое | своё — автор с `CANVAS_WRITE`; чужое — владелец холста или `CANVAS_MANAGE` | `internal/canvas` (`commentEditable`) | `mayChange` |
+| @упоминание в комментарии холста | упомянуть можно участника, у которого есть `CANVAS_VIEW` на холст (не бота); остальные отбрасываются | `internal/canvas` (`mentionable`), `notifications.CanvasMentionNotifies` | `CommentInput` (`mention-access`) |
+| Публичная ссылка холста: прочитать, создать (срок: никогда / 1 / 7 / 30 суток), отозвать (`GET/POST/DELETE …/items/{id}/link`) | владелец холста или `CANVAS_MANAGE` (`perm.CanvasStructureAllowed`; нет `CANVAS_VIEW` — 404); только холст, не приватный (ни сам, ни папка выше — 409 `CANVAS_RESTRICTED`), не в корзине, пространство не приостановлено, политика идентичности разрешает публичное; боты — `botDeny` | `internal/canvas` (`link.go`) | `features/canvas/LinkPanel` (вкладка «Ссылка» в «Доступе») |
+| Анонимный просмотр по ссылке (`GET /api/public/canvas/{code}`, сокет `…/sync`) | без входа: код — единственный пропуск; только приём (любой кадр клиента — 4013), без присутствия, комментариев и голосования; одинаковый 404 для неизвестного, отозванного, истёкшего, приватного, удалённого холста и приостановленного пространства | `internal/canvas` (`link.go`), `internal/ysync` (`ServeViewer`) | `features/canvas/PublicPage` (`/c/{code}`) |
+| Голосование и таймер холста: начать, завершить, сбросить итоги, поставить / снять голос, запуск / пауза / сброс таймера | `CANVAS_WRITE` на холст (зритель без записи не голосует и не управляет таймером; итоги видны всем, кто видит холст) | сокет (`UPDATE`): `CANVAS_WRITE` проверяет сервер; что именно написано в `meta.vote` / `votes` / `meta.timer` — **не проверяет** (сервер документ не разбирает, доверие клиенту) | `features/canvas/view/Vote.tsx`, `Timer.tsx`, `lib/canvas/votes.ts` |
+| Телефон: просмотр холста (пан, щипок) | `CANVAS_VIEW` на элемент; без `CANVAS_WRITE` — только просмотр | `internal/canvas` (сокет как на десктопе) | `features/canvas/PhoneCanvas`, `view/PhoneEditBar.tsx` |
+| Телефон: правка холста (режим «Править») | `CANVAS_WRITE` на элемент; клиент без записи кнопку «Править» не показывает | `internal/canvas` (сокет) | `features/canvas/view` (`canWrite` = (не телефон или режим «Править») и есть `WRITE`) |
+
 ## Телефония
 
 | Действие | Бит | Сервер | Клиент |
