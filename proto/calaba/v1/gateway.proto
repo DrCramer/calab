@@ -309,6 +309,9 @@ message DispatchEvent {
     // An inbound phone call rings the recipient (ADR-0117): to that user's channel (and a bot's
     // webhook) only.
     SipInboundRing sip_inbound_ring = 106;
+    // The workspace's live phone calls changed (ADR-0128): to its MANAGE_INTEGRATIONS members
+    // (not guests, not bots), who re-read GET /api/workspaces/{id}/sip/calls.
+    SipCallsChanged sip_calls_changed = 107;
   }
 }
 

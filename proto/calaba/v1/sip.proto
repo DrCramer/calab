@@ -563,3 +563,45 @@ message SipInboundAcceptResponse {
   SipCall call = 1;
   JoinVoiceResponse join = 2;
 }
+
+// ---------------------------------------------------------------- active calls (ADR-0128)
+//
+// GET /api/workspaces/{id}/sip/calls (MANAGE_INTEGRATIONS, not a guest; bots too) → 200
+// ListSipActiveCallsResponse: the calls of the workspace going on right now, oldest first —
+// inbound ones from their live state (a menu plays, people's devices ring, answered), outbound
+// ones of rooms the caller can see. call.number is the full number for a caller with
+// VIEW_JOURNALS (as the journal shows it) and masked otherwise («+7 916 ***-**-67»,
+// number_masked). SIP_CALLS_CHANGED tells the workspace's MANAGE_INTEGRATIONS members to read
+// it again.
+message ListSipActiveCallsResponse {
+  repeated SipActiveCall calls = 1;
+}
+
+// Where a live call is now.
+enum SipActiveStep {
+  SIP_ACTIVE_STEP_UNSPECIFIED = 0;
+  // An outbound call before the answer (DIALING / RINGING at the far end).
+  SIP_ACTIVE_STEP_DIALING = 1;
+  // An inbound call in a voice menu: step_id / step_name are the menu's.
+  SIP_ACTIVE_STEP_MENU = 2;
+  // An inbound call rings people (call.ringing_user_ids): step_id / step_name are the group's
+  // when it rings a group, empty when it rings one number.
+  SIP_ACTIVE_STEP_RINGING = 3;
+  // Answered: an inbound call by call.answered_by, an outbound one in the room call.room_id.
+  SIP_ACTIVE_STEP_CONNECTED = 4;
+}
+
+message SipActiveCall {
+  SipCall call = 1;
+  SipActiveStep step = 2;
+  string step_id = 3;
+  string step_name = 4;
+  bool number_masked = 5;
+}
+
+// SIP_CALLS_CHANGED: a call of the workspace started, moved on (a menu, a group, an answer) or
+// ended. No details: to the sessions of the workspace's members with MANAGE_INTEGRATIONS (not
+// guests, not bots), who read GET …/sip/calls again while they look at it.
+message SipCallsChanged {
+  string workspace_id = 1;
+}

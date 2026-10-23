@@ -3,29 +3,50 @@ import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
 
 /**
- * «Настройки пространства → Телефония» — the exchange (ADR-0117 step 1, docs/08 «Телефония»):
- * «Внутренние номера» (103 unassigned), «Группы» («Поддержка» with a deleted fallback),
- * «Автоответ» (a menu with a recording and keys, key 9 leading to a deleted menu), the inline forms
- * of a number, a group and a menu, «Входящие» over a registration at the provider (ADR-0121:
- * registered / a refused password). Fixture: mock-server seedSipExchange. And the incoming phone
- * call (ADR-0117 step 2): the sheet with the caller's number and the menu it came through; a
- * group's fallback off / on (ADR-0124); an exchange from scratch (empty cards, a new menu that stays
- * open for its greeting: refused files, the conversion). Projects `telephony-dark-960` (all) and
- * `telephony-light-960` (telephony-menu and the incoming call); run with -g:
+ * «Настройки пространства → Телефония» (docs/08 «Телефония»), five tabs (CBF-77): «Активные
+ * звонки» (ADR-0128: empty, then a call in a menu, one ringing a group, one answered and an
+ * outbound one), «Номера» (103 unassigned), «Группы» («Поддержка» with a deleted fallback), «IVR»
+ * (a menu with a recording and keys, key 9 leading to a deleted menu; «Выходные» without one —
+ * «Загрузить запись» in its row), «Настройки» with «Входящие» over a registration at the provider
+ * (ADR-0121: registered / a refused password). Fixture: mock-server seedSipExchange /
+ * seedSipActiveCalls. And the incoming phone call (ADR-0117 step 2): the sheet with the caller's
+ * number and the menu it came through; a group's fallback off / on (ADR-0124); an exchange from
+ * scratch (a new menu with its greeting chosen in the form: refused files at once, the upload
+ * right after «Сохранить» — the conversion, a server refusal that keeps the saved menu open).
+ * Projects `telephony-dark-960` (all) and `telephony-light-960` (telephony-menu and the incoming
+ * call); run with -g:
  *
  *   CALABA_VISUAL_MOCK_PORT=4513 MOCK_LIVEKIT_ROOM_PREFIX=tel_ \
  *     pnpm -F @calaba/desktop e2e:visual -g "telephony-"
  */
 
+type Page = import('@playwright/test').Page;
+type Locator = import('@playwright/test').Locator;
+
 const DARK = (theme: string): boolean => theme === 'dark';
 
-async function openTelephony(win: import('@playwright/test').Page): Promise<import('@playwright/test').Locator> {
+async function openTelephony(win: Page): Promise<Locator> {
   await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Телефония' }).click();
-  await expect(dialog.getByTestId('sip-exchange')).toBeVisible();
+  await expect(dialog.getByTestId('sip-tabs')).toBeVisible();
   return dialog;
+}
+
+/** A tab of the telephony section (desktop: segments). */
+async function tab(dialog: Locator, name: string): Promise<void> {
+  await dialog.getByTestId('sip-tabs').getByRole('radio', { name, exact: true }).click();
+}
+
+/** «Сохранено» sits over the form's foot (outside the modal): close it by a DOM click. */
+async function dropToasts(win: Page): Promise<void> {
+  await expect(async () => {
+    await win.evaluate(() => {
+      for (const b of document.querySelectorAll<HTMLButtonElement>('[data-testid="toast"] button[aria-label="Закрыть уведомление"]')) b.click();
+    });
+    await expect(win.getByTestId('toast')).toHaveCount(0, { timeout: 1000 });
+  }).toPass();
 }
 
 test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
@@ -34,13 +55,26 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   mock.seedSipExchange();
   mock.setSipRegistration('registered');
   const dialog = await openTelephony(win);
+
+  // «Активные звонки»: nothing yet; then four calls arrive (SIP_CALLS_CHANGED re-reads the list).
+  await tab(dialog, 'Активные звонки');
+  await expect(dialog.getByTestId('sip-calls-empty')).toHaveText('Сейчас звонков нет');
+  await checkpoint(shot, 'telephony-calls-empty');
+  mock.seedSipActiveCalls();
+  const rows = dialog.getByTestId('sip-call-row');
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText('+7 916 123-45-67');
+  await expect(rows.nth(0).getByTestId('sip-call-step')).toHaveText('Голосовое меню «Главное меню»');
+  await expect(rows.nth(1).getByTestId('sip-call-step')).toHaveText('Звонит группе «Отдел продаж» · Борис Петров, Вера Ким');
+  await expect(rows.nth(2).getByTestId('sip-call-step')).toHaveText('Разговор: Вера Ким');
+  await expect(rows.nth(3).getByTestId('sip-call-step')).toHaveText('Разговор в комнате «Созвон»');
+  // The timers and the journal's times follow the clock.
+  await expect(dialog.getByTestId('sip-journal-row')).toHaveCount(4);
+  await checkpoint(shot, 'telephony-calls', { mask: [dialog.getByTestId('sip-call-timer'), dialog.getByTestId('sip-journal-row').locator('td:first-child')] });
+
+  await tab(dialog, 'Номера');
   await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
-  await expect(dialog.getByTestId('sip-group-row')).toHaveCount(2);
-  await expect(dialog.getByTestId('sip-menu-row')).toHaveCount(2);
-  await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-numbers');
-  await dialog.getByTestId('sip-menu-list').scrollIntoViewIfNeeded();
-  await checkpoint(shot, 'telephony-groups-menus');
 
   // A new number: the member picker without guests and members who have one.
   await dialog.getByTestId('sip-ext-add').click();
@@ -59,7 +93,10 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   await checkpoint(shot, 'telephony-number-form');
   await dialog.getByRole('button', { name: 'Отмена' }).click();
 
-  // A group: order, strategy, «если никто не ответил» with a deleted target.
+  // «Группы»: the list; a group's order, strategy, «если никто не ответил» with a deleted target.
+  await tab(dialog, 'Группы');
+  await expect(dialog.getByTestId('sip-group-row')).toHaveCount(2);
+  await checkpoint(shot, 'telephony-groups');
   await dialog.getByTestId('sip-group-row').filter({ hasText: 'Поддержка' }).getByRole('button', { name: 'Изменить' }).click();
   const group = dialog.getByTestId('sip-group-form');
   await expect(group.getByTestId('sip-target-missing')).toBeVisible();
@@ -68,9 +105,20 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   await checkpoint(shot, 'telephony-group-form');
   await group.getByRole('button', { name: 'Отмена' }).click();
 
-  // ADR-0121: inbound calls over a registration at the provider — the mode, the state line
-  // (registered until …, the masked contact) with the registrar fields open; then the provider
-  // refuses the password: saving re-reads the settings and the line turns into the error.
+  // «IVR»: «Выходные» has no recording — «Загрузить запись» right in its row.
+  await tab(dialog, 'IVR');
+  await expect(dialog.getByTestId('sip-menu-row')).toHaveCount(2);
+  await expect(dialog.getByTestId('sip-menu-row').filter({ hasText: 'Выходные' }).getByTestId('sip-menu-row-upload')).toHaveText('Загрузить запись');
+  await expect(dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByTestId('sip-menu-row-upload')).toHaveCount(0);
+  await checkpoint(shot, 'telephony-ivr');
+
+  // «Настройки»: the provider, the test, «Входящие» (ADR-0121) over a registration at the
+  // provider — the mode, the state line (registered until …, the masked contact) with the
+  // registrar fields open; then the provider refuses the password: saving re-reads the settings
+  // and the line turns into the error.
+  await tab(dialog, 'Настройки');
+  await expect(dialog.getByTestId('sip-form')).toBeVisible();
+  await checkpoint(shot, 'telephony-settings');
   const inbound = dialog.getByTestId('sip-inbound');
   await expect(dialog.getByTestId('sip-reg-status')).toHaveText('Зарегистрировано до 13:39 · контакт sip:c…@141.105.69.177:5080');
   await expect(dialog.getByTestId('sip-inbound-mode').getByRole('radio', { name: 'По регистрации' })).toHaveAttribute('aria-checked', 'true');
@@ -85,54 +133,88 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
 });
 
 test('telephony-menu', async ({ open, win, mock, shot }) => {
-  // An exchange set up from scratch: empty cards; a group has nobody to add until people get numbers.
+  // An exchange set up from scratch: a group has nobody to add until people get numbers.
   await open();
   mock.seedSipExchange(true);
   let dialog = await openTelephony(win);
+  await tab(dialog, 'Номера');
   await expect(dialog.getByTestId('sip-ext-empty')).toBeVisible();
-  await expect(dialog.getByTestId('sip-menu-empty')).toBeVisible();
+  await tab(dialog, 'Группы');
   await dialog.getByTestId('sip-group-add').click();
   await expect(dialog.getByTestId('sip-group-form')).toContainText('сначала дайте сотрудникам или ботам номера');
-  await dialog.getByTestId('sip-menu-list').scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-empty');
   await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).click();
 
-  // A new menu stays open after «Сохранить» — the greeting is uploaded right there: a wrong
-  // format and a file over 10 MB are refused at once, the server's refusal under the row, the
-  // conversion shows «Обрабатываем запись…», then the length and ▶.
+  // A new menu: the greeting is chosen right in the form — a wrong format and a file over
+  // 10 MB are refused at once; a fitting one waits for «Сохранить».
+  await tab(dialog, 'IVR');
+  await expect(dialog.getByTestId('sip-menu-empty')).toBeVisible();
   await dialog.getByTestId('sip-menu-add').click();
   let menu = dialog.getByTestId('sip-menu-form');
   await menu.getByTestId('sip-menu-name').fill('Приветствие');
-  await menu.getByTestId('sip-menu-save').click();
-  menu = dialog.getByTestId('sip-menu-form');
-  await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Загрузить запись');
+  await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Выбрать файл');
   await expect(menu).toContainText('Пока записи нет, меню не звучит');
-  // «Сохранено» sits over the form's foot (outside the modal): close it by a DOM click.
-  await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').evaluate((b) => (b as HTMLButtonElement).click());
-  await expect(win.getByTestId('toast')).toHaveCount(0);
-  const file = menu.getByTestId('sip-menu-prompt-file');
+  let file = menu.getByTestId('sip-menu-prompt-file');
   const prompt = menu.getByTestId('sip-menu-prompt-error');
   await file.setInputFiles({ name: 'big.wav', mimeType: 'audio/wav', buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
   await expect(prompt).toHaveText('Файл больше 10 МБ — сожмите или укоротите запись');
-  await file.setInputFiles({ name: 'notes.mp3', mimeType: 'text/plain', buffer: Buffer.from('not audio') });
-  await expect(prompt).toHaveText('Нужен свой файл MP3, WAV или OGG до 10 МБ и до 3 минут');
   await file.setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
   await expect(prompt).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
   await menu.scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-prompt-error');
-  const release = mock.holdSipPrompt();
   await file.setInputFiles({ name: 'greeting.mp3', mimeType: 'audio/mpeg', buffer: Buffer.alloc(4096, 1) });
-  await expect(menu.getByTestId('sip-menu-prompt')).toContainText('Обрабатываем запись…');
+  await expect(menu.getByTestId('sip-menu-prompt')).toContainText('greeting.mp3 — загрузится после «Сохранить»');
   await expect(prompt).toHaveCount(0);
+  await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Заменить');
+  await menu.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-menu-new-file');
+
+  // «Сохранить»: the menu is created, the form stays open on it and the file uploads — the
+  // conversion shows «Обрабатываем запись…», then the length and ▶.
+  const release = mock.holdSipPrompt();
+  await menu.getByTestId('sip-menu-save').click();
+  menu = dialog.getByTestId('sip-menu-form');
+  await expect(menu.getByTestId('sip-menu-prompt')).toContainText('Обрабатываем запись…');
+  await dropToasts(win);
   await checkpoint(shot, 'telephony-prompt-processing');
   release();
   await expect(menu.getByTestId('sip-menu-listen')).toBeVisible();
   await expect(menu.getByTestId('sip-menu-prompt')).toContainText('0:42');
   await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Заменить');
+  await menu.getByRole('button', { name: 'Отмена' }).click();
+
+  // The server refuses the file after the menu is saved: the menu stays, its form stays open
+  // with the refusal and the picker; closed — its row offers «Загрузить запись».
+  await dialog.getByTestId('sip-menu-add').click();
+  menu = dialog.getByTestId('sip-menu-form');
+  await menu.getByTestId('sip-menu-name').fill('Ночной режим');
+  await menu.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'notes.mp3', mimeType: 'text/plain', buffer: Buffer.from('not audio') });
+  await menu.getByTestId('sip-menu-save').click();
+  menu = dialog.getByTestId('sip-menu-form');
+  await expect(menu.getByTestId('sip-menu-prompt-error')).toHaveText('Нужен свой файл MP3, WAV или OGG до 10 МБ и до 3 минут');
+  await expect(menu.getByTestId('sip-menu-upload')).toHaveText('Загрузить запись');
+  await expect(menu.getByRole('button', { name: 'Удалить меню' })).toBeVisible();
+  await dropToasts(win);
+  await menu.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-prompt-refused');
+  await menu.getByRole('button', { name: 'Отмена' }).click();
+  const night = dialog.getByTestId('sip-menu-row').filter({ hasText: 'Ночной режим' });
+  await expect(night).toContainText('Нет записи');
+  await checkpoint(shot, 'telephony-ivr-no-prompt');
+  // The row's «Загрузить запись» opens the form and uploads there.
+  await night.getByTestId('sip-menu-row-file').setInputFiles({ name: 'night.ogg', mimeType: 'audio/ogg', buffer: Buffer.alloc(4096, 1) });
+  menu = dialog.getByTestId('sip-menu-form');
+  await expect(menu.getByTestId('sip-menu-listen')).toBeVisible();
+  await expect(menu.getByTestId('sip-menu-name')).toHaveValue('Ночной режим');
+  file = menu.getByTestId('sip-menu-prompt-file');
+  await expect(file).toHaveCount(1);
+  await menu.getByRole('button', { name: 'Отмена' }).click();
+  await dropToasts(win);
 
   await open();
   mock.seedSipExchange();
   dialog = await openTelephony(win);
+  await tab(dialog, 'Группы');
   await expect(dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' })).toContainText('переадресация через 45 с');
 
   // ADR-0124: a new group rings until somebody answers (the fallback off); switched on — after
@@ -154,6 +236,7 @@ test('telephony-menu', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'telephony-group-fallback');
   await group.getByRole('button', { name: 'Отмена' }).click();
 
+  await tab(dialog, 'IVR');
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).click();
   const form = dialog.getByTestId('sip-menu-form');
   await expect(form.getByTestId('sip-menu-listen')).toBeVisible();

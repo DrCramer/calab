@@ -19,6 +19,7 @@ import {
   CheckAiRequestSchema,
   CheckAiResponseSchema,
   ListSipCallsResponseSchema,
+  ListSipActiveCallsResponseSchema,
   PlaceSipCallRequestSchema,
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
@@ -726,6 +727,8 @@ export const api = {
     test: (workspaceId: string) => call('POST', `/api/workspaces/${workspaceId}/sip/test`, TestSipResponseSchema),
     journal: (workspaceId: string, cursor?: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/calls${qs({ cursor })}`, ListSipCallsResponseSchema, undefined, signal),
+    /** The workspace's live calls with their step (ADR-0128; MANAGE_INTEGRATIONS); SIP_CALLS_CHANGED says when to re-read. */
+    activeCalls: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/sip/calls`, ListSipActiveCallsResponseSchema, undefined, signal),
     place: (roomId: string, number: string) => call('POST', `/api/rooms/${roomId}/calls`, SipCallResponseSchema, body(PlaceSipCallRequestSchema, { number })),
     hangup: (roomId: string, callId: string) => call('DELETE', `/api/rooms/${roomId}/calls/${callId}`, SipCallResponseSchema),
     /**

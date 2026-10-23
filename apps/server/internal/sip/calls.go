@@ -46,6 +46,7 @@ const (
 // publish sends SIP_CALL_UPDATE to the viewers of the call's room (calls without a room — the
 // connection tests — are not published).
 func (s *Service) publish(ctx context.Context, c sqlc.SipCall) {
+	s.callsChanged(ctx, c.WorkspaceID)
 	if c.RoomID == nil {
 		return
 	}

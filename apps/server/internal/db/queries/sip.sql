@@ -46,6 +46,14 @@ SELECT * FROM sip_calls
 WHERE workspace_id = $1 AND room_id IS NOT NULL AND status IN ('dialing', 'ringing', 'active')
 ORDER BY id;
 
+-- name: ListActiveSipCalls :many
+-- GET …/sip/calls (ADR-0128): the workspace's live calls of both directions started after the
+-- cutoff (older rows are lost ones the sweepers will close), oldest first.
+SELECT * FROM sip_calls
+WHERE workspace_id = $1 AND status IN ('dialing', 'ringing', 'active') AND started_at > $2
+ORDER BY started_at
+LIMIT 100;
+
 -- name: ListLiveSipCalls :many
 -- The sweeper: live calls placed before the cutoff, oldest first.
 SELECT * FROM sip_calls
