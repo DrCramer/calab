@@ -20,12 +20,15 @@ import (
 type Folder struct {
 	Name string
 	// Restricted: a folder created now gets «Только выбранные» — its owner alone sees it until
-	// they share it. An existing folder is used as it is (its access is the owner's business).
+	// they share it. An existing folder is used as it is (its access is the owner's business)
+	// only when the owner owns it: a folder of that name somebody else made beforehand would
+	// hand them (its owner sees all below it) what is filed there — the path is blocked then.
 	Restricted bool
 }
 
-// ErrPathBlocked means a file (not a folder) holds the name of a folder of the path.
-var ErrPathBlocked = errors.New("disk: a file holds the name of a folder on the path")
+// ErrPathBlocked means a file (not a folder) holds the name of a folder of the path, or a
+// folder of the path at a Restricted level belongs to somebody other than the owner.
+var ErrPathBlocked = errors.New("disk: a file or another member's folder holds the name of a folder on the path")
 
 // PlaceFile files f as name into path, creating the missing folders; new folders and the file are
 // owned by owner (the workspace owner). A taken file name gets «(2)» before the extension. The
@@ -97,6 +100,9 @@ func (s *Service) folder(ctx context.Context, q *sqlc.Queries, ws, owner uuid.UU
 	}
 	dir, err := q.GetDiskFolderByName(ctx, sqlc.GetDiskFolderByNameParams{WorkspaceID: ws, ParentID: parent, Name: name})
 	if err == nil {
+		if lvl.Restricted && (dir.OwnerID == nil || *dir.OwnerID != owner) {
+			return dir, false, ErrPathBlocked // a member's own folder: they would see the files
+		}
 		return dir, false, nil
 	}
 	if !db.IsNotFound(err) {

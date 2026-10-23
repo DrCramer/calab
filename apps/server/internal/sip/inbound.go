@@ -57,7 +57,7 @@ const (
 	answerGrace     = 30 * time.Second // the member who answered may reconnect
 	inboundTick     = 5 * time.Second
 	maxCIDRs        = 20
-	inboundRoomSize = 4 // the line, the worker, the member (and a reconnect)
+	inboundRoomSize = 6 // the line, the worker, the member, a transfer, the recording egress (ADR-0131), a reconnect
 )
 
 // Reasons of inbound calls beyond machine.go.

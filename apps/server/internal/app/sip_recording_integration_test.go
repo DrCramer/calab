@@ -323,6 +323,21 @@ func TestSIPRecording(t *testing.T) {
 		t.Fatal("an inbound call was recorded with its switch off")
 	}
 	pushHTTP(t, server, bob, 200, "DELETE", "/api/sip/inbound/"+cid6, nil, nil)
+
+	// A member's own folder of that name (made before the owner's, or after it went to the
+	// trash) is never used: its owner would see every recording filed below it.
+	pushHTTP(t, server, o, 200, "POST", "/api/disk/items/"+root.ID.String()+"/trash", nil, nil)
+	var trap v1.DiskItemResponse
+	pushHTTP(t, server, bob, 201, "POST", "/api/workspaces/"+wid+"/disk/folders", &v1.CreateDiskFolderRequest{Name: "Phone_Recordings"}, &trap)
+	pushHTTP(t, server, o, 200, "PUT", base+"/recording", &v1.PutSipRecordingRequest{RecordInbound: true}, nil)
+	cid7, _ := call("+79160000007")
+	if rec7 := end(cid7, eg.started(t, 6), 2048); rec7.Status != "failed" || rec7.Error != "path_blocked" || rec7.DiskItemID != nil || rec7.FileID != nil {
+		t.Fatalf("a member's folder: %+v", rec7)
+	}
+	var inTrap int
+	if err := testDB.Pool.QueryRow(ctx, `SELECT count(*) FROM disk_items WHERE parent_id = $1`, trap.GetItem().GetId()).Scan(&inTrap); err != nil || inTrap != 0 {
+		t.Fatalf("filed into the member's folder: %d %v", inTrap, err)
+	}
 }
 
 func ptrUUID(u uuid.UUID) *uuid.UUID { return &u }
