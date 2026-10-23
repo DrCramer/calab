@@ -234,6 +234,8 @@ import {
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
   PutSipInboundRequestSchema,
+  PutSipRecordingRequestSchema,
+  PutSipRecordingResponseSchema,
   PutSipInboundResponseSchema,
   SipCallDirection,
   SipCallResponseSchema,
@@ -6027,6 +6029,7 @@ class MockImpl {
     pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, {
       name: 'Главное меню',
       promptSourceFileId: nextId(this.state, 'file'),
+      noticeSourceFileId: nextId(this.state, 'file'), // ADR-0131: «Предупреждение о записи»
       dialExtensions: true,
       onNoInput: { kind: SipRouteKind.GROUP, id: sales },
       items: {
@@ -6070,6 +6073,8 @@ class MockImpl {
         ...cur,
         inboundAvailable: true,
         registrationAvailable: true,
+        recordingAvailable: true,
+        recordInbound: true, // ADR-0131: incoming calls recorded, outgoing not
         inboundEnabled: true,
         inboundSaved: true,
         inboundMode: SipInboundMode.REGISTER,
@@ -6311,6 +6316,16 @@ class MockImpl {
       );
       this.syncSipEnabled(wsId);
       sendMsg(c.res, 200, PutSipSettingsResponseSchema, { settings: this.sipSettingsOf(wsId) });
+    });
+
+    // ADR-0131: the call recording switches (the provider form's version stays).
+    this.route('PUT', '/api/workspaces/:id/sip/recording', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      const b = parseBody(c, PutSipRecordingRequestSchema);
+      const cur = this.sipSettingsOf(wsId);
+      if (!cur.updatedAt) throw new HttpError(409, ErrorCode.CONFLICT, 'save the provider settings first');
+      this.state.sipSettings.set(wsId, create(SipSettingsSchema, { ...cur, recordInbound: b.recordInbound, recordOutbound: b.recordOutbound }));
+      sendMsg(c.res, 200, PutSipRecordingResponseSchema, { settings: this.sipSettingsOf(wsId) });
     });
 
     // ADR-0117/0121: the inbound settings as sent; the registration's state stays what the

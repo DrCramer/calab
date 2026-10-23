@@ -18,7 +18,7 @@ export const MOCK_SIP_UNREACHABLE_HOST = 'unreachable.example.com';
 /** A host LiveKit «refuses» on PUT: 502 SIP_PROVIDER_ERROR, the text kept as last_error. */
 export const MOCK_SIP_REFUSED_HOST = 'refused.example.com';
 
-export const defaultSipSettings = (): SipSettings => create(SipSettingsSchema, { transport: SipTransport.UDP, port: 5060 });
+export const defaultSipSettings = (): SipSettings => create(SipSettingsSchema, { transport: SipTransport.UDP, port: 5060, recordingAvailable: true });
 
 /** The server's callee normalisation (sip.proto PlaceSipCallRequest): E.164 or null. */
 export function normalizeCallee(input: string): string | null {

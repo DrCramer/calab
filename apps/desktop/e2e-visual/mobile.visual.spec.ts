@@ -1639,6 +1639,12 @@ test('m-telephony', async ({ page }) => {
   await expect(dialog.getByTestId('sip-menu-prompt-error')).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
   await promptRow.scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-prompt');
+  // ADR-0131: the recording notice row, then «Запись звонков» in «Настройки».
+  await dialog.getByTestId('sip-menu-notice').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu-notice', { snapshot: false });
+  await pick('settings');
+  await dialog.getByTestId('sip-recording').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-recording', { snapshot: false });
   // ADR-0117 step 2: an inbound call rings me — the sheet takes the whole screen.
   mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
   const ring = page.getByTestId('sip-incoming');
