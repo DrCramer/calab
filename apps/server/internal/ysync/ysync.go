@@ -161,6 +161,13 @@ type Config struct {
 	AwarenessWindow      time.Duration // batching window for awareness (100 ms)
 	FarewellBurst        int           // Profile.BatchAwareness: own farewell frames (state null) a socket may relay at once per FarewellWindow (2); further ones are batched
 	FarewellWindow       time.Duration // … per this long (10 s)
+	// Catch-ups (the snapshot and the updates after it, read into memory and sent: up to MaxState +
+	// CeilingBytes each) running at once on this instance per section, so that a crowd of sockets
+	// cannot hold gigabytes: CatchUps of all sockets (16); of them ViewerCatchUps of the anonymous
+	// viewers (4) and ViewerCatchUpsPerDoc of the viewers of one document (2). The rest wait.
+	CatchUps             int
+	ViewerCatchUps       int
+	ViewerCatchUpsPerDoc int
 }
 
 // WithDefaults fills the zero fields with the production values. VersionEvery is not defaulted
@@ -212,6 +219,15 @@ func (c Config) WithDefaults() Config {
 	}
 	def(&c.CeilingGrace, 10*time.Second)
 	def(&c.ViewerMaxLife, 2*time.Hour)
+	if c.CatchUps == 0 {
+		c.CatchUps = 16
+	}
+	if c.ViewerCatchUps == 0 {
+		c.ViewerCatchUps = 4
+	}
+	if c.ViewerCatchUpsPerDoc == 0 {
+		c.ViewerCatchUpsPerDoc = 2
+	}
 	return c
 }
 

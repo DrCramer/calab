@@ -38,6 +38,8 @@ type conn struct {
 
 	// viewer: an anonymous receive-only socket (ServeViewer); nil for a person's or a bot's.
 	viewer *Viewer
+	// rm is the socket's room (set by run before the first catch-up).
+	rm *room
 	// until is when the viewer's access ends by itself (UnixNano; 0 = never), from its last check.
 	until atomic.Int64
 	// slots are the socket sets the socket counts in: the person's on the document, or the
@@ -314,6 +316,7 @@ func (h *Hub) run(c *conn) {
 	defer h.release(c)
 	rm := h.join(c)
 	defer h.leave(c)
+	c.rm = rm
 	// Subscribed first, then the snapshot read (catch-up), duplicates dropped by seq.
 	wait := time.NewTimer(h.cfg.SubscribeTimeout)
 	select {
@@ -571,7 +574,15 @@ func (c *conn) handle(f []byte) bool {
 // catchUp sends what the client lacks: the snapshot when it is newer than what was sent (or on
 // the first call), then the stored updates after it, read in one repeatable-read transaction so
 // that a compaction in between loses nothing.
+//
+// It runs under the hub's catch-up slots (Config.CatchUps; a viewer also under the viewers' and
+// its document's), held until the frames are sent: what is read is in memory until then.
 func (c *conn) catchUp() bool {
+	release, ok := c.catchUpSlots()
+	if !ok {
+		return false
+	}
+	defer release()
 	c.h.m.catchUps.Inc()
 	var frames [][]byte
 	last := c.lastSent
@@ -613,6 +624,30 @@ func (c *conn) catchUp() bool {
 	}
 	c.lastSent = last
 	return true
+}
+
+// catchUpSlots waits for the socket's catch-up slots, in one order for every socket (the
+// document's viewers, the viewers, all) so that no two wait on each other; false: the socket
+// ended while waiting.
+func (c *conn) catchUpSlots() (func(), bool) {
+	var held []gate
+	release := func() {
+		for i := len(held) - 1; i >= 0; i-- {
+			held[i].release()
+		}
+	}
+	gates := []gate{c.h.catchUps}
+	if c.viewer != nil {
+		gates = []gate{c.rm.viewerCatchUps, c.h.viewerCatchUps, c.h.catchUps}
+	}
+	for _, g := range gates {
+		if !g.acquire(c.ctx) {
+			release()
+			return nil, false
+		}
+		held = append(held, g)
+	}
+	return release, true
 }
 
 func (c *conn) send(f []byte) bool {

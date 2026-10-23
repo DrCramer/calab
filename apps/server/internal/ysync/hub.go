@@ -45,9 +45,28 @@ type Hub struct {
 	// for pubBackoff after it.
 	pubDown atomic.Int64
 
+	// catchUps and viewerCatchUps bound the catch-ups running at once (Config.CatchUps,
+	// Config.ViewerCatchUps).
+	catchUps, viewerCatchUps gate
+
 	mu    sync.Mutex
 	rooms map[uuid.UUID]*room
 }
+
+// gate is a counting semaphore: a slot is a value in the channel.
+type gate chan struct{}
+
+// acquire takes a slot, waiting for one until ctx ends (false).
+func (g gate) acquire(ctx context.Context) bool {
+	select {
+	case g <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (g gate) release() { <-g }
 
 // room is the sockets of one document on this instance and its Redis subscription.
 type room struct {
@@ -65,6 +84,8 @@ type room struct {
 	// is lost (a frame after the read arrives through Redis; one before it is in the database).
 	ready      chan struct{}
 	subscribed bool // hub.mu
+	// viewerCatchUps bounds the catch-ups of this document's viewers (Config.ViewerCatchUpsPerDoc).
+	viewerCatchUps gate
 
 	// Awareness batching (Canvas profile)
 	awMu      sync.Mutex
@@ -83,7 +104,7 @@ func NewHub(b Backend, o Options) *Hub {
 		cfg.UpdateBytesPerSecond = int64(b.MaxState()) / 20
 	}
 	h := &Hub{b: b, db: o.DB, rc: o.Redis, auth: o.Auth, origin: o.Origin, cfg: cfg, prof: b.Profile(), rooms: map[uuid.UUID]*room{},
-		m: newMetrics(b.Name())}
+		m: newMetrics(b.Name()), catchUps: make(gate, cfg.CatchUps), viewerCatchUps: make(gate, cfg.ViewerCatchUps)}
 	h.instance = uuid.New()
 	return h
 }
@@ -103,6 +124,8 @@ func (h *Hub) join(c *conn) *room {
 			stop:    make(chan struct{}),
 			ready:   make(chan struct{}),
 			awBatch: make(map[uint64]awarenessEntry),
+
+			viewerCatchUps: make(gate, h.cfg.ViewerCatchUpsPerDoc),
 		}
 		h.rooms[c.doc] = r
 		h.m.rooms.Inc()

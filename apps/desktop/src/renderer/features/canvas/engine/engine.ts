@@ -85,7 +85,7 @@ export interface EngineOptions {
   remoteCanvas?: HTMLCanvasElement;
   doc: Y.Doc;
   palette: CanvasPalette;
-  /** The signed-in person: the owner of the vote cells (no id, no voting). */
+  /** The signed-in person's key in the document (lib/canvas/docUser.ts, never the user id): the owner of the vote cells (none, no voting). */
   userId?: string;
   readOnly?: boolean;
   /** «Слабый компьютер»: DPR 1. */

@@ -9,6 +9,7 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { canvasPublicSyncUrl, canvasSyncUrl, createCanvasSync, type CanvasSync } from '../../../lib/canvasSync';
 import type { SocketLike } from '../../../lib/gateway/client';
+import { canvasDocUserKey } from '../../../lib/canvas/docUser';
 import { CanvasEngine, type CanvasPalette, type ClipboardPort, type RefusedWhy } from '../engine';
 import { bindCanvasSync, type CanvasUser, type SyncBinding, type SyncEnginePort } from '../syncBinding';
 import type { PresenceStore } from './presenceStore';
@@ -78,9 +79,11 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
   const ydoc = new Y.Doc();
   const awareness = new Awareness(ydoc);
   const me = o.deps.user();
+  // What the document carries for me (votes, who started a vote or the timer): a key, not my id (docUser.ts).
+  const docUser = o.publicCode ? '' : canvasDocUserKey(o.canvasId, me.id);
   const engine = new CanvasEngine({
     canvas: o.canvas,
-    userId: me.id,
+    userId: docUser,
     ...(o.remoteCanvas ? { remoteCanvas: o.remoteCanvas } : {}),
     doc: ydoc,
     palette: o.palette,
@@ -119,7 +122,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
 
   const timer = new TimerStore({
     meta: ydoc.getMap('meta'),
-    userId: me.id,
+    userId: docUser,
     canWrite: () => !engine.readOnly,
     visible: () => engine.isActive,
     onVisible: (fn) => engine.subscribeView(fn),
