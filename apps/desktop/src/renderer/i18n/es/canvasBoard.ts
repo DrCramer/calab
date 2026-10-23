@@ -218,4 +218,8 @@ export const esCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.timer.ended': 'Se acabó el tiempo',
   'canvasBoard.createFull': 'No se creó: el lienzo está lleno',
   'canvasBoard.clipboardFailed': 'El portapapeles no está disponible',
+  'canvasBoard.a11y.object': '{kind}: {text}',
+  'canvasBoard.a11y.noText': 'sin texto',
+  'canvasBoard.a11y.locked': 'bloqueado',
+  'canvasBoard.a11y.many': 'Objetos seleccionados: {n}',
 };

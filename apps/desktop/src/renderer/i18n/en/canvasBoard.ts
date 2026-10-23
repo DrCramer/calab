@@ -218,4 +218,8 @@ export const enCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.timer.ended': 'Time is up',
   'canvasBoard.createFull': 'Not created: the canvas is full',
   'canvasBoard.clipboardFailed': 'The clipboard is not available',
+  'canvasBoard.a11y.object': '{kind}: {text}',
+  'canvasBoard.a11y.noText': 'no text',
+  'canvasBoard.a11y.locked': 'locked',
+  'canvasBoard.a11y.many': 'Objects selected: {n}',
 };

@@ -218,4 +218,8 @@ export const ruCanvasBoard = {
   'canvasBoard.timer.ended': 'Время вышло',
   'canvasBoard.createFull': 'Не создано: на холсте не осталось места',
   'canvasBoard.clipboardFailed': 'Нет доступа к буферу обмена',
+  'canvasBoard.a11y.object': '{kind}: {text}',
+  'canvasBoard.a11y.noText': 'без текста',
+  'canvasBoard.a11y.locked': 'заблокирован',
+  'canvasBoard.a11y.many': 'Выбрано объектов: {n}',
 } as const;

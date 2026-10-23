@@ -218,4 +218,8 @@ export const zhCanvasBoard: DictShape<typeof ruCanvasBoard> = {
   'canvasBoard.timer.ended': '时间到',
   'canvasBoard.createFull': '未创建：画布已满',
   'canvasBoard.clipboardFailed': '无法访问剪贴板',
+  'canvasBoard.a11y.object': '{kind}：{text}',
+  'canvasBoard.a11y.noText': '无文字',
+  'canvasBoard.a11y.locked': '已锁定',
+  'canvasBoard.a11y.many': '已选择 {n} 个对象',
 };

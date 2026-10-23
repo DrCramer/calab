@@ -29,6 +29,7 @@ import { PhoneProps } from './PhoneProps';
 import { PhoneEditHint, PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
 import { PropsPanel } from './PropsPanel';
+import { SelectionAnnouncer } from './SelectionAnnouncer';
 import { StatusBanner, ViewerStatus } from './StatusBanner';
 import { TemplatesCard } from './Templates';
 import { TextFormatBar } from './TextFormatBar';
@@ -375,15 +376,16 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
  */
 function ViewerChrome({ session, focusCanvas, gone, phone }: { session: CanvasSession; focusCanvas: () => void; gone: boolean; phone: boolean }): ReactNode {
   const { engine, sync, timer } = session;
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <>
-      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={false} onHelpOpenChange={noop} phone={phone} />
+      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={helpOpen} onHelpOpenChange={setHelpOpen} phone={phone} minimap={false} />
       <ViewerStatus engine={engine} sync={sync} timer={timer} gone={gone} />
+      <SelectionAnnouncer engine={engine} />
     </>
   );
 }
 
-const noop = (): void => undefined;
 
 /** Everything drawn over the canvas. Editing tools exist only while the engine is writable. */
 function Chrome({
@@ -425,6 +427,7 @@ function Chrome({
           </PhoneEditBar>
         ) : null}
         <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} phone low={canWrite} />
+        <SelectionAnnouncer engine={engine} />
       </>
     );
   }
@@ -444,6 +447,7 @@ function Chrome({
       <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
       <Presence store={presence} engine={engine} />
       <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} />
+      <SelectionAnnouncer engine={engine} />
     </>
   );
 }

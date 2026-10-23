@@ -111,7 +111,7 @@ function MiniMapToggle({ focusCanvas }: { focusCanvas: () => void }): ReactNode 
 
 /** Zoom, fit and the shortcut help: bottom right. `phone` (view only, no keyboard): zoom and «вписать всё» only. */
 export const ZoomBar = memo(function ZoomBar({
-  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false, comments,
+  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false, comments, minimap = true,
 }: {
   engine: CanvasEngine;
   focusCanvas: () => void;
@@ -123,6 +123,8 @@ export const ZoomBar = memo(function ZoomBar({
   top?: boolean;
   /** The comments panel's button (ADR-0127 wave 4). */
   comments?: ReactNode;
+  /** The mini-map's toggle; off where no mini-map is mounted (the public link's viewer). */
+  minimap?: boolean;
 }): ReactNode {
   useLocale();
   const step = (dir: 1 | -1) => (): void => {
@@ -153,7 +155,7 @@ export const ZoomBar = memo(function ZoomBar({
           <IconButton label={t('canvasBoard.zoom.fitSelection')} shortcut="⇧2" onMouseDown={keepFocus} onClick={() => { engine.fitSelection(); focusCanvas(); }} data-testid="canvas-fit-selection">
             <Focus className={ICON} strokeWidth={1.75} aria-hidden />
           </IconButton>
-          <MiniMapToggle focusCanvas={focusCanvas} />
+          {minimap ? <MiniMapToggle focusCanvas={focusCanvas} /> : null}
           <div className={DIVIDER} aria-hidden />
           <Help focusCanvas={focusCanvas} canWrite={canWrite} open={helpOpen} onOpenChange={onHelpOpenChange} />
         </>

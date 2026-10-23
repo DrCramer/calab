@@ -275,6 +275,26 @@ describe('properties panel', () => {
   });
 });
 
+describe('screen reader', () => {
+  it('Tab says what it selected (kind, text, lock) and a multi-selection says the count; a viewer hears it too', async () => {
+    const relay = new MockRelay();
+    const d = new CanvasDoc(relay.doc);
+    d.create({ kind: 'sticky', x: 0, y: 0, text: 'Решения' });
+    d.create({ kind: 'shape', shape: 'ellipse', x: 300, y: 0 });
+    const m = await mount({ relay, bits: VIEW });
+    await settle(100);
+    const said = (): string => m.q('canvas-announce')?.textContent ?? '';
+    expect(m.q('canvas-announce')?.getAttribute('aria-live')).toBe('polite');
+    expect(said()).toBe('');
+    m.key('Tab');
+    expect(said()).toBe(t('canvasBoard.a11y.object', { kind: t('canvasBoard.tool.sticky'), text: 'Решения' }));
+    m.key('Tab');
+    expect(said()).toBe(t('canvasBoard.a11y.object', { kind: t('canvasBoard.shape.ellipse'), text: t('canvasBoard.a11y.noText') }));
+    m.key('a', { metaKey: true, ctrlKey: true });
+    expect(said()).toBe(t('canvasBoard.a11y.many', { n: 2 }));
+  });
+});
+
 describe('read-only', () => {
   it('without CANVAS_WRITE: no tools, no panel, a «view only» chip, and nothing is sent', async () => {
     const m = await mount({ bits: VIEW });
@@ -1005,7 +1025,7 @@ describe('the public link viewer (publicCode, ADR-0127 wave 5)', () => {
     expect(m.q('canvas-view')).not.toBeNull();
     expect(m.q('canvas-zoom')).not.toBeNull();
     expect(m.q('canvas-status')).not.toBeNull();
-    for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-presence', 'canvas-comments-toggle', 'canvas-minimap', 'canvas-view-only', 'canvas-props']) {
+    for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-presence', 'canvas-comments-toggle', 'canvas-minimap', 'canvas-minimap-toggle', 'canvas-view-only', 'canvas-props']) {
       expect(m.q(id), id).toBeNull();
     }
     // Keys that would edit for a writer (bits say WRITE: the viewer ignores them).
@@ -1019,6 +1039,9 @@ describe('the public link viewer (publicCode, ADR-0127 wave 5)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(canvasDocHandle('public')).toBeNull();
     fetchSpy.mockRestore();
+    // The help button of the zoom bar opens (the viewer owns its state; no dead buttons).
+    act(() => m.q('canvas-help')?.click());
+    expect(document.querySelector('[data-testid="canvas-help-panel"]')).not.toBeNull();
   });
 
   it('at rest: no frames, no React commits and no timer at all', async () => {
