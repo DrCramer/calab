@@ -34,6 +34,9 @@ type fakeSIP struct {
 	failTrunk error
 	// auto, if set, decides a dial at once (the connection test runs inside the request).
 	auto func(rtc.SIPCall) (rtc.SIPParticipant, error)
+	// inbound trunks and dispatch rules (ADR-0117)
+	inTrunks map[string]rtc.SIPInboundTrunk
+	rules    map[string]rtc.SIPDispatchRule
 }
 
 type sipResult struct {
@@ -79,6 +82,42 @@ func (f *fakeSIP) DeleteSIPTrunk(_ context.Context, id string) error {
 	defer f.mu.Unlock()
 	f.deletes = append(f.deletes, id)
 	delete(f.trunks, id)
+	delete(f.inTrunks, id)
+	return nil
+}
+
+// Inbound (ADR-0117): trunks and dispatch rules are kept by id.
+func (f *fakeSIP) CreateSIPInboundTrunk(_ context.Context, t rtc.SIPInboundTrunk) (rtc.SIPInboundTrunk, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failTrunk != nil {
+		return rtc.SIPInboundTrunk{}, f.failTrunk
+	}
+	f.seq++
+	t.ID = "ST_in" + strings.Repeat("x", f.seq)
+	if f.inTrunks == nil {
+		f.inTrunks = map[string]rtc.SIPInboundTrunk{}
+	}
+	f.inTrunks[t.ID] = t
+	return t, nil
+}
+
+func (f *fakeSIP) CreateSIPDispatchRule(_ context.Context, r rtc.SIPDispatchRule) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seq++
+	id := "SDR_" + strings.Repeat("x", f.seq)
+	if f.rules == nil {
+		f.rules = map[string]rtc.SIPDispatchRule{}
+	}
+	f.rules[id] = r
+	return id, nil
+}
+
+func (f *fakeSIP) DeleteSIPDispatchRule(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.rules, id)
 	return nil
 }
 

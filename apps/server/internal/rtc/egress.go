@@ -162,11 +162,18 @@ type FileOutput struct {
 	// egress records into a temporary file of its own and uploads it when the recording ends).
 	Filepath string
 	S3       *S3Upload
+	// FileType is the container: "" = MP4 (AAC, meetings), FileOGG = Ogg/Opus (phone calls,
+	// ADR-0131).
+	FileType string
 }
+
+// FileOGG is FileOutput.FileType of an Ogg/Opus recording (livekit.EncodedFileType OGG).
+const FileOGG = "OGG"
 
 // Egress is the subset of the LiveKit Egress service the server uses (mockable in tests).
 type Egress interface {
-	// StartAudioRecording records the mixed audio of a room into an MP4 (AAC) file at out.
+	// StartAudioRecording records the mixed audio of a room into an MP4 (AAC) file at out, or
+	// Ogg/Opus with out.FileType = FileOGG.
 	StartAudioRecording(ctx context.Context, room string, out FileOutput) (*EgressInfo, error)
 	StopEgress(ctx context.Context, egressID string) (*EgressInfo, error)
 	// ListEgress lists egresses: of one room ("" = all), or only one egress (egressID), and
@@ -188,7 +195,11 @@ func (e *egressClient) call(ctx context.Context, method string, in, out any) err
 }
 
 func (e *egressClient) StartAudioRecording(ctx context.Context, room string, out FileOutput) (*EgressInfo, error) {
-	file := map[string]any{"file_type": "MP4", "filepath": out.Filepath}
+	kind := "MP4"
+	if out.FileType != "" {
+		kind = out.FileType
+	}
+	file := map[string]any{"file_type": kind, "filepath": out.Filepath}
 	if u := out.S3; u != nil {
 		file["s3"] = map[string]any{
 			"access_key": u.AccessKey, "secret": u.Secret, "region": u.Region, "endpoint": u.Endpoint,

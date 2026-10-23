@@ -6,6 +6,7 @@ import { PermissionTargetType, RoomPermissionOverrideSchema } from './gen/calaba
 import { TaskApproverSchema, TaskAssigneeSchema } from './gen/calaba/v1/boards_pb.js';
 import { DiskPermissionEntrySchema } from './gen/calaba/v1/disk_pb.js';
 import { WikiPermissionEntrySchema } from './gen/calaba/v1/wiki_pb.js';
+import { CanvasPermissionEntrySchema } from './gen/calaba/v1/canvas_pb.js';
 import { TimestampSchema } from '@bufbuild/protobuf/wkt';
 import {
   ALL_PERMISSIONS,
@@ -33,6 +34,12 @@ import {
   treeItemPermissions,
   treeLevel,
   WIKI_BITS,
+  CANVAS_BITS,
+  CANVAS_PERMISSIONS,
+  CANVAS_OVERRIDE_PERMISSIONS,
+  canvasItemPermissions,
+  canvasPermissions,
+  canvasStructureAllowed,
   WIKI_PERMISSIONS,
   WIKI_OVERRIDE_PERMISSIONS,
   wikiPagePermissions,
@@ -84,6 +91,9 @@ interface Vector {
   // ADR-0096: a wiki page vector (wikiPagePermissions over the chain, the top-level page first;
   // structure: wikiStructureAllowed for the owner flag of the last level).
   wiki?: TreeVector & { structure: boolean };
+  // ADR-0126: a canvas item vector (canvasItemPermissions over the chain, the top-level item
+  // first; structure: canvasStructureAllowed for the owner flag of the last level).
+  canvas?: TreeVector & { structure: boolean };
   expected: number;
 }
 
@@ -124,10 +134,11 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
-      const tree = v.disk ?? v.wiki;
+      const tree = v.disk ?? v.wiki ?? v.canvas;
       if (tree) {
-        const bits = v.disk ? DISK_BITS : WIKI_BITS;
-        const compute = v.disk ? diskItemPermissions : wikiPagePermissions;
+        const bits = v.disk ? DISK_BITS : v.wiki ? WIKI_BITS : CANVAS_BITS;
+        const compute = v.disk ? diskItemPermissions : v.wiki ? wikiPagePermissions : canvasItemPermissions;
+        const entrySchema = v.disk ? DiskPermissionEntrySchema : v.wiki ? WikiPermissionEntrySchema : CanvasPermissionEntrySchema;
         const roles = toRoles(v.roles ?? []);
         const opts = { guest: tree.guest ?? false, owner: tree.owner ?? false, ownerSeesPrivate: tree.ownerSeesPrivate ?? false };
         const chain = tree.chain.map((c) => ({
@@ -141,13 +152,13 @@ describe('computePermissions (shared vectors)', () => {
         const got = compute(roles, chain, opts);
         expect(got).toBe(BigInt(v.expected));
         expect(treeItemPermissions(bits, roles, chain, opts)).toBe(BigInt(v.expected));
-        // The stored form: entries of Disk/WikiPermissionsResponse and the node's owner.
+        // The stored form: entries of Disk/Wiki/CanvasPermissionsResponse and the node's owner.
         const stored = tree.chain.map((c) =>
           (v.disk ? diskLevel : treeLevel)(
             { restricted: c.restricted ?? false, ownerId: c.owner ? 'u1' : 'u2' },
             [
               ...Object.entries(c.roleOverrides ?? {}).map(([id, o]) =>
-                create(v.disk ? DiskPermissionEntrySchema : WikiPermissionEntrySchema, {
+                create(entrySchema, {
                   targetType: PermissionTargetType.ROLE,
                   targetId: id,
                   allow: BigInt(o.allow),
@@ -156,7 +167,7 @@ describe('computePermissions (shared vectors)', () => {
               ),
               ...(c.userOverride
                 ? [
-                    create(v.disk ? DiskPermissionEntrySchema : WikiPermissionEntrySchema, {
+                    create(entrySchema, {
                       targetType: PermissionTargetType.USER,
                       targetId: 'u1',
                       allow: BigInt(c.userOverride.allow),
@@ -172,6 +183,10 @@ describe('computePermissions (shared vectors)', () => {
         if (v.wiki) {
           const owner = v.wiki.chain.at(-1)?.owner ?? false;
           expect(wikiStructureAllowed(got, owner)).toBe(v.wiki.structure);
+        }
+        if (v.canvas) {
+          const owner = v.canvas.chain.at(-1)?.owner ?? false;
+          expect(canvasStructureAllowed(got, owner)).toBe(v.canvas.structure);
         }
         return;
       }
@@ -378,20 +393,23 @@ describe('roles (ADR-0026)', () => {
   // ADR-0059 §2, ADR-0076 §3: the shared case table of perm.TestTaskBits in Go.
   it('task bits for task-scoped boards (ADR-0059, ADR-0076)', () => {
     const me = 'u1';
-    const task = (assignee: boolean, approver: boolean, watcher: boolean, archived = false) => ({
+    const task = (assignee: boolean, approver: boolean, watcher: boolean, archived = false, author = false) => ({
       assignees: assignee ? [create(TaskAssigneeSchema, { userId: me })] : [create(TaskAssigneeSchema, { userId: 'u2' })],
       approvers: approver ? [create(TaskApproverSchema, { userId: me })] : [],
       watcherIds: watcher ? ['u3', me] : ['u3'],
       archivedAt: archived ? create(TimestampSchema, { seconds: 1n }) : undefined,
+      createdBy: author ? me : 'u4',
     });
     const table = JSON.parse(readFileSync(new URL('../../../proto/testdata/task_bits.json', import.meta.url), 'utf8')) as {
-      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; want: number }[];
+      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; author?: boolean; want: number }[];
     };
-    expect(table.cases.length).toBeGreaterThanOrEqual(10);
+    expect(table.cases.length).toBeGreaterThanOrEqual(20);
     for (const c of table.cases) {
       const board = { permissions: BigInt(c.bits), taskScoped: c.scoped };
-      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher), me), c.name).toBe(BigInt(c.want));
+      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher, false, c.author ?? false), me), c.name).toBe(BigInt(c.want));
     }
+    // ADR-0115: a create-only author of an archived task no longer sees it.
+    expect(taskPermissions({ permissions: PERMISSION_BITS.CREATE_TASKS, taskScoped: true }, task(false, false, false, true, true), me)).toBe(0n);
     // An archived task: the invitation no longer counts (the server passes live flags only).
     expect(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, true, true, true), me)).toBe(0n);
     expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, false, false), me))).toBe(
@@ -498,5 +516,37 @@ describe('wiki bits (ADR-0096)', () => {
     expect(wikiStructureAllowed(WIKI_PERMISSIONS, false)).toBe(true);
     expect(wikiStructureAllowed(0n, true)).toBe(false);
     expect(wikiStructureAllowed(DISK_PERMISSIONS, true)).toBe(false);
+  });
+});
+
+describe('canvas bits (ADR-0126)', () => {
+  it('stand apart like the wiki bits; VIEW | WRITE by default', () => {
+    expect(CANVAS_PERMISSIONS).toBe(0x7n << 41n);
+    expect(ALL_PERMISSIONS & CANVAS_PERMISSIONS).toBe(0n);
+    expect((BILLING_PERMISSIONS | DISK_PERMISSIONS | WIKI_PERMISSIONS) & CANVAS_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & CANVAS_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & CANVAS_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & CANVAS_PERMISSIONS).toBe(CANVAS_OVERRIDE_PERMISSIONS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & CANVAS_PERMISSIONS).toBe(0n);
+    expect(vectors.filter((v) => v.canvas).length).toBeGreaterThanOrEqual(20);
+  });
+  it('ADMINISTRATOR includes them, guests never, bots like members, wiki bits give none', () => {
+    expect(canvasPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
+      CANVAS_PERMISSIONS,
+    );
+    expect(canvasPermissions([{ permissions: CANVAS_BITS.MANAGE }])).toBe(CANVAS_PERMISSIONS);
+    expect(canvasPermissions([{ permissions: WIKI_PERMISSIONS | DISK_PERMISSIONS }])).toBe(0n);
+    expect(canvasPermissions([{ permissions: CANVAS_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(canvasPermissions([{ permissions: CANVAS_OVERRIDE_PERMISSIONS, builtin: WorkspaceRole.MEMBER }])).toBe(
+      CANVAS_OVERRIDE_PERMISSIONS,
+    );
+  });
+  it('the structure needs the owner or MANAGE', () => {
+    const vw = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE;
+    expect(canvasStructureAllowed(vw, false)).toBe(false);
+    expect(canvasStructureAllowed(vw, true)).toBe(true);
+    expect(canvasStructureAllowed(CANVAS_PERMISSIONS, false)).toBe(true);
+    expect(canvasStructureAllowed(0n, true)).toBe(false);
+    expect(canvasStructureAllowed(WIKI_PERMISSIONS, true)).toBe(false);
   });
 });

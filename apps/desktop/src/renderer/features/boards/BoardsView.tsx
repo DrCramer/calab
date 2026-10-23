@@ -17,6 +17,7 @@ import { CountBadge } from './FilterBar';
 import { PRIORITIES, PRIORITY_LABEL, PriorityIcon } from './visuals';
 import { useToday } from './menus';
 import { CompletionSwitch } from './CompletionSwitch';
+import { AllTasks } from './AllTasks';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
@@ -121,13 +122,14 @@ const SCOPES: ReadonlyArray<{ value: TaskScope; label: 'boards.scope.assigned' |
   { value: 'subscribed', label: 'boards.scope.subscribed' },
 ];
 
-/** «Мои задачи» tabs: «Непрочитанное» (the badge's set) or a GET /me/tasks scope. */
-type MyTab = 'unread' | TaskScope;
+/** «Мои задачи» tabs: «Непрочитанное» (the badge's set), a GET /me/tasks scope or «Все задачи» (search over every board). */
+type MyTab = 'unread' | 'all' | TaskScope;
 
 /**
  * «Мои задачи»: «Непрочитанное · N» first — every task that lights the badge, newest notice
  * first, each with why — then the GET /me/tasks scopes (grouped by board). «Непрочитанное» opens
- * by default while anything is unread, otherwise the remembered scope.
+ * by default while anything is unread, otherwise the remembered scope. «Все задачи» last: a search
+ * over every board the caller sees (CBF-35).
  */
 function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   const scope = useBoardsUi((s) => s.myScope);
@@ -137,10 +139,10 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   const mobile = useMobile();
   const onTab = useCallback((v: MyTab) => {
     setTab(v);
-    if (v !== 'unread') useBoardsUi.getState().setMyScope(v);
+    if (v !== 'unread' && v !== 'all') useBoardsUi.getState().setMyScope(v);
   }, []);
   const tabs = useMemo(
-    (): Array<{ value: MyTab; label: string }> => [{ value: 'unread', label: unread ? t('boards.unreadTabN', { n: unread }) : t('boards.unreadTab') }, ...SCOPES.map((s) => ({ value: s.value, label: t(s.label) }))],
+    (): Array<{ value: MyTab; label: string }> => [{ value: 'unread', label: unread ? t('boards.unreadTabN', { n: unread }) : t('boards.unreadTab') }, ...SCOPES.map((s) => ({ value: s.value, label: t(s.label) })), { value: 'all', label: t('boards.allTasks') }],
     [unread],
   );
   return (
@@ -177,7 +179,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
       </Bar>
       <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 [scrollbar-width:none] mobile:overflow-visible" data-testid="my-tasks-tabs">
         <Choice phone="picker" testId="my-tasks-scope" value={tab} options={tabs} onChange={onTab} label={t('boards.myTasks')} />
-        {tab === 'unread' ? null : (
+        {tab === 'unread' || tab === 'all' ? null : (
           <>
             <span className="flex-1" />
             <MyFilterMenu workspaceId={workspaceId} />
@@ -186,7 +188,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
           </>
         )}
       </div>
-      {tab === 'unread' ? <UnreadList workspaceId={workspaceId} /> : <ScopeList workspaceId={workspaceId} scope={scope} />}
+      {tab === 'unread' ? <UnreadList workspaceId={workspaceId} /> : tab === 'all' ? <AllTasks workspaceId={workspaceId} onOpen={openFromList} /> : <ScopeList workspaceId={workspaceId} scope={scope} />}
     </>
   );
 }

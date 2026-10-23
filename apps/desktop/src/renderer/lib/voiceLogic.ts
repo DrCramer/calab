@@ -33,6 +33,19 @@ export function toggleDeafen(s: SelfState & { serverMuted?: boolean }): Required
 }
 
 /**
+ * Answering a call (phone, ADR-0117, or one-to-one) is an explicit wish to talk: a muted mic is
+ * switched on and a deafened user is undeafened (a call you cannot hear makes no sense). A moderator
+ * mute (`serverMuted`) is the server's: left as it is, deafen still lifts. Push-to-talk needs no
+ * special case: a call is voice activation only (ADR-0034), `muted: false` just means "not hard-muted".
+ * Returns null when nothing changes.
+ */
+export function answerCallSelf(s: SelfState & { serverMuted?: boolean }): Required<SelfState> | null {
+  const muted = s.serverMuted === true ? s.muted : false;
+  if (muted === s.muted && !s.deafened) return null;
+  return { muted, deafened: false, mutedBeforeDeafen: false };
+}
+
+/**
  * Push-to-talk key / button down (#12): only an unmuted, undeafened mic can go on air — muted or
  * deafened, the press is ignored: no gate, no transmission, no activation cue.
  */
@@ -52,6 +65,18 @@ export function pttCue(on: boolean, s: SelfState, inCall: boolean): 'pttOn' | 'p
  */
 export function micModeFor(pref: 'voice' | 'ptt', call: boolean): 'voice' | 'ptt' {
   return call ? 'voice' : pref;
+}
+
+/**
+ * Which mic glyph a user shows (CBF-71): `muted` — a crossed mic; `ptt-idle` — the mic is on but
+ * waits for the push-to-talk key (a pale crossed mic, no transmission); `live` — the mic carries
+ * sound (voice activation, or the PTT key is held).
+ */
+export type MicGlyph = 'muted' | 'ptt-idle' | 'live';
+
+export function micGlyph(i: { muted: boolean; deafened: boolean; ptt: boolean; talking: boolean }): MicGlyph {
+  if (i.muted || i.deafened) return 'muted';
+  return i.ptt && !i.talking ? 'ptt-idle' : 'live';
 }
 
 export interface TransmitInput extends SelfState {

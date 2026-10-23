@@ -242,7 +242,7 @@ Comprobaciones: `make test` (Go + TS), `make test-integration`, pruebas visuales
 | Telefonía (SIP) | — | — | ✓ | ✓ |
 | On-prem (servidor propio) | — | — | — | ✓ |
 | Soporte | — | soporte | prioritario | ✓ |
-| Precio | gratis | a consultar (**it@gptunnel.ai**) | a consultar (**it@gptunnel.ai**) | gratis para uso no comercial (BSL 1.1, «Powered by GPTunneL»); licencia comercial a consultar |
+| Precio | gratis | a consultar (**support@calab.io**) | a consultar (**support@calab.io**) | gratis para uso no comercial (BSL 1.1, «Powered by GPTunneL»); licencia comercial a consultar |
 
 Free, Team y Business son planes en la nube de un espacio ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise es Calab en tu propio servidor (on-prem), sin límites. Detalles: [calab.io/es/#pricing](https://calab.io/es/#pricing) y [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
@@ -253,13 +253,13 @@ Free, Team y Business son planes en la nube de un espacio ([ADR-0024](docs/adr/0
 **Business Source License 1.1**: [LICENSE](LICENSE).
 
 - El uso no comercial (personal, ONG, educación, evaluación de hasta 30 días) es **gratuito**, con «Powered by GPTunneL» en la interfaz y conservando el [NOTICE](NOTICE).
-- El uso comercial requiere una licencia de GPTunneL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), **it@gptunnel.ai**.
+- El uso comercial requiere una licencia de GPTunneL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), **support@calab.io**.
 - Cada versión pasa a Apache-2.0 cuatro años después de su publicación.
 
 Los nombres y logotipos de Calab y GPTunneL son marcas registradas, consulta [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Contribuir y seguridad
 
-Se aceptan pull requests con CLA: [CONTRIBUTING.md](CONTRIBUTING.md). Informa de vulnerabilidades en privado a **it@gptunnel.ai**, consulta [SECURITY.md](SECURITY.md).
+Se aceptan pull requests con CLA: [CONTRIBUTING.md](CONTRIBUTING.md). Informa de vulnerabilidades en privado a **support@calab.io**, consulta [SECURITY.md](SECURITY.md).
 
 <p align="center"><sub>© 2026 GPTunneL · Powered by <a href="https://gptunnel.ai">GPTunneL</a></sub></p>

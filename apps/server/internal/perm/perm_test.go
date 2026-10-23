@@ -66,7 +66,10 @@ type vector struct {
 	Disk *treeVector `json:"disk"`
 	// ADR-0096: a wiki page vector (ComputeWikiPage over the chain, the top-level page first;
 	// structure: the expected WikiStructureAllowed for the owner flag of the last level).
-	Wiki     *treeVector `json:"wiki"`
+	Wiki *treeVector `json:"wiki"`
+	// ADR-0126: a canvas item vector (ComputeCanvasItem over the chain, the top-level item first;
+	// structure as for the wiki).
+	Canvas   *treeVector `json:"canvas"`
 	Expected Bits        `json:"expected"`
 }
 
@@ -99,15 +102,18 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n, boards, taskRooms, billing, inactive, disk, wiki := 0, 0, 0, 0, 0, 0, 0
+	n, boards, taskRooms, billing, inactive, disk, wiki, canvas := 0, 0, 0, 0, 0, 0, 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
 		case v.Disk != nil:
 			disk++
-			testTreeVector(t, v, v.Disk, false)
+			testTreeVector(t, v, v.Disk, sectionDisk)
 		case v.Wiki != nil:
 			wiki++
-			testTreeVector(t, v, v.Wiki, true)
+			testTreeVector(t, v, v.Wiki, sectionWiki)
+		case v.Canvas != nil:
+			canvas++
+			testTreeVector(t, v, v.Canvas, sectionCanvas)
 		case v.PlanInactive != nil:
 			inactive++
 			if got := PlanInactive(v.PlanInactive.Bits); got != v.Expected {
@@ -206,16 +212,24 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 || disk < 25 || wiki < 20 {
-		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors, %d disk vectors, %d wiki vectors",
-			n, boards, taskRooms, billing, inactive, disk, wiki)
+	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 || disk < 25 || wiki < 20 || canvas < 20 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors, %d disk vectors, %d wiki vectors, %d canvas vectors",
+			n, boards, taskRooms, billing, inactive, disk, wiki, canvas)
 	}
 }
 
-// testTreeVector checks a disk or wiki vector through the section's wrapper (levels built from
-// the sorted roles), its stored form (override lists, owner ids) and the generic ComputeTree;
-// a wiki vector also checks WikiStructureAllowed.
-func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
+type treeSection int
+
+const (
+	sectionDisk treeSection = iota
+	sectionWiki
+	sectionCanvas
+)
+
+// testTreeVector checks a disk, wiki or canvas vector through the section's wrapper (levels built
+// from the sorted roles), its stored form (override lists, owner ids) and the generic
+// ComputeTree; a wiki or canvas vector also checks the section's structure rule.
+func testTreeVector(t *testing.T, v vector, tv *treeVector, section treeSection) {
 	t.Helper()
 	roles := make([]RoleBits, len(v.Roles))
 	for i, r := range v.Roles {
@@ -255,10 +269,14 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	}
 	tree, name := DiskTree, "ComputeDiskItem"
 	var got, gotIn Bits
-	if wiki {
+	switch section {
+	case sectionWiki:
 		tree, name = WikiTree, "ComputeWikiPage"
 		got, gotIn = ComputeWikiPage(m.Raw(), tv.Guest, levels), ComputeWikiPageIn(m, nodes)
-	} else {
+	case sectionCanvas:
+		tree, name = CanvasTree, "ComputeCanvasItem"
+		got, gotIn = ComputeCanvasItem(m.Raw(), tv.Guest, levels), ComputeCanvasItemIn(m, nodes)
+	default:
 		got, gotIn = ComputeDiskItem(m.Raw(), tv.Guest, levels), ComputeDiskItemIn(m, nodes)
 	}
 	if plain && got != v.Expected {
@@ -270,14 +288,18 @@ func testTreeVector(t *testing.T, v vector, tv *treeVector, wiki bool) {
 	if g := ComputeTree(tree, TreeInput{Raw: m.Raw(), Guest: tv.Guest, Chain: levels, Owner: tv.Owner, OwnerSeesPrivate: tv.OwnerSeesPrivate}); g != v.Expected {
 		t.Errorf("%s: ComputeTree got %d want %d", v.Name, g, v.Expected)
 	}
-	if wiki {
+	if section != sectionDisk {
 		if tv.Structure == nil {
-			t.Errorf("%s: a wiki vector states structure", v.Name)
+			t.Errorf("%s: a wiki or canvas vector states structure", v.Name)
 			return
 		}
 		owner := len(tv.Chain) > 0 && tv.Chain[len(tv.Chain)-1].Owner
-		if g := WikiStructureAllowed(gotIn, owner); g != *tv.Structure {
-			t.Errorf("%s: WikiStructureAllowed got %v want %v", v.Name, g, *tv.Structure)
+		allowed := WikiStructureAllowed
+		if section == sectionCanvas {
+			allowed = CanvasStructureAllowed
+		}
+		if g := allowed(gotIn, owner); g != *tv.Structure {
+			t.Errorf("%s: structure rule got %v want %v", v.Name, g, *tv.Structure)
 		}
 	}
 }
@@ -293,7 +315,7 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<32-1 || RoomOnly&RolesV2 != 0 || BoardOnly&RolesV2 != 0 || GuestMax&RolesV2 != 0 || RoleDefaults[RoleMember]&RolesV2 != 0 || RolesV2 != 0xFE000000 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
 	}
-	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<41-1 {
+	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<44-1 {
 		t.Fatal("billing bits stand apart: not in All, overrides, guest bounds or the defaults")
 	}
 	if All&Disk != 0 || GuestMax&Disk != 0 || RoleDefaults[RoleMember]&Disk != DiskView|DiskWrite || Disk != 7<<35 || Billing&Disk != 0 {
@@ -310,6 +332,15 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	}
 	if WikiOf(Administrator, false) != Wiki || WikiOf(WikiManage, false) != Wiki || WikiOf(Wiki, true) != 0 || WikiOf(RoleDefaults[RoleMember], false) != WikiOverride || WikiOf(Disk, false) != 0 {
 		t.Fatal("WikiOf")
+	}
+	if All&Canvas != 0 || GuestMax&Canvas != 0 || RoleDefaults[RoleMember]&Canvas != CanvasView|CanvasWrite || Canvas != 7<<41 || (Billing|Disk|Wiki)&Canvas != 0 {
+		t.Fatal("canvas bits: outside All and the guest bounds, VIEW | WRITE in the member default")
+	}
+	if !ValidCanvasOverride(CanvasView, CanvasWrite) || ValidCanvasOverride(CanvasManage, 0) || ValidCanvasOverride(WikiView, 0) || ValidCanvasOverride(0, ViewRoom) || ValidCanvasOverride(CanvasView, CanvasView) || ValidWikiOverride(CanvasView, 0) || ValidDiskOverride(CanvasView, 0) {
+		t.Fatal("canvas overrides carry CANVAS_VIEW and CANVAS_WRITE only")
+	}
+	if CanvasOf(Administrator, false) != Canvas || CanvasOf(CanvasManage, false) != Canvas || CanvasOf(Canvas, true) != 0 || CanvasOf(RoleDefaults[RoleMember], false) != CanvasOverride || CanvasOf(Wiki|Disk, false) != 0 {
+		t.Fatal("CanvasOf")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {
 		t.Fatal("guest bounds")
@@ -348,23 +379,54 @@ func TestTaskBits(t *testing.T) {
 	}
 	var table struct {
 		Cases []struct {
-			Name                        string
-			Bits                        Bits
-			Scoped                      bool
-			Assignee, Approver, Watcher bool
-			Want                        Bits
+			Name                                string
+			Bits                                Bits
+			Scoped                              bool
+			Assignee, Approver, Watcher, Author bool
+			Want                                Bits
 		}
 	}
 	if err := json.Unmarshal(raw, &table); err != nil {
 		t.Fatal(err)
 	}
-	if len(table.Cases) < 10 {
+	if len(table.Cases) < 20 {
 		t.Fatalf("task_bits.json: %d cases", len(table.Cases))
 	}
 	for _, c := range table.Cases {
 		acc := BoardAccess{Bits: c.Bits, TaskScoped: c.Scoped}
-		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher); got != c.Want {
+		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher, c.Author); got != c.Want {
 			t.Errorf("%s: TaskBits = %d, want %d", c.Name, got, c.Want)
 		}
+	}
+}
+
+// ADR-0115: the resolver's card-level access — create-only makes a board task-scoped without a
+// card, only for an eligible member (a human, not a guest, a live board); otherwise the
+// CREATE_TASKS bits are dropped, so a bot never creates on a board it does not see.
+func TestTaskScoped(t *testing.T) {
+	full := ViewBoard | CreateTasks
+	for _, c := range []struct {
+		name              string
+		bits              Bits
+		invited, eligible bool
+		wantScoped        bool
+		wantBits          Bits
+	}{
+		{"viewer", full, true, true, false, full},
+		{"viewer, not eligible (bot with VIEW_BOARD)", full, false, false, false, full},
+		{"invitee", 0, true, true, true, 0},
+		{"stranger", 0, false, true, false, 0},
+		{"create-only without a card", CreateTasks, false, true, true, CreateTasks},
+		{"create-only and invited", CreateTasks, true, true, true, CreateTasks},
+		{"create-only bot / guest / archived board", CreateTasks, false, false, false, 0},
+		{"invited bot / guest / archived board", 0, true, false, false, 0},
+	} {
+		scoped, bits := taskScoped(c.bits, c.invited, c.eligible)
+		if scoped != c.wantScoped || bits != c.wantBits {
+			t.Errorf("%s: taskScoped = %v, %d; want %v, %d", c.name, scoped, bits, c.wantScoped, c.wantBits)
+		}
+	}
+	if !CreateOnly(CreateTasks) || CreateOnly(full) || CreateOnly(0) || CreateOnly(CreateTasks|EditTasks) {
+		t.Error("CreateOnly: only CREATE_TASKS alone")
 	}
 }

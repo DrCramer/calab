@@ -211,9 +211,9 @@ func (h *Handlers) interact(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if isInvite { // ADR-0111: the server decides; the bot gets no callback
-			edited, err := delegationClick(ctx, q, m, inv, user, button.GetId())
-			closed = &edited
+		if isInvite { // ADR-0111: the server decides; the bot gets no callback, only BOT_DELEGATION (ADR-0119)
+			edited, ev, err := delegationClick(ctx, q, m, inv, user, button.GetId())
+			closed, event = &edited, ev
 			return err
 		}
 		event = &v1.DispatchEvent{Event: &v1.DispatchEvent_BotCallback{BotCallback: &v1.BotCallback{

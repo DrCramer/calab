@@ -43,13 +43,15 @@ UPDATE workspace_roles SET position = $3 WHERE id = $1 AND workspace_id = $2 RET
 DELETE FROM workspace_roles WHERE id = $1 AND workspace_id = $2 AND builtin IS NULL;
 
 -- name: DeleteRoleOverrides :many
--- The deleted role's room, board, disk and wiki overrides; returns the affected rooms.
+-- The deleted role's room, board, disk, wiki and canvas overrides; returns the affected rooms.
 WITH boards_gone AS (
     DELETE FROM board_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 ), disk_gone AS (
     DELETE FROM disk_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 ), wiki_gone AS (
     DELETE FROM wiki_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
+), canvas_gone AS (
+    DELETE FROM canvas_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 )
 DELETE FROM room_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 RETURNING room_id;
@@ -97,3 +99,22 @@ LEFT JOIN LATERAL (
     WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
 ) r ON true
 WHERE m.workspace_id = sqlc.arg('workspace_id') AND m.user_id = sqlc.arg('user_id');
+
+-- name: ListMembersAccess :many
+-- GetMemberAccess for several users at once (the members among user_ids; the rest are absent).
+SELECT m.user_id,
+       m.role,
+       coalesce(r.ids, '{}')::uuid[] AS role_ids,
+       coalesce(r.positions, '{}')::integer[] AS role_positions,
+       coalesce(r.perms, '{}')::bigint[] AS role_permissions,
+       w.owner_sees_private
+FROM workspace_members m
+JOIN workspaces w ON w.id = m.workspace_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms
+    FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+    WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
+) r ON true
+WHERE m.workspace_id = sqlc.arg('workspace_id') AND m.user_id = ANY(sqlc.arg('user_ids')::uuid[]);

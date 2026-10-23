@@ -50,6 +50,8 @@ import { resumeVoiceAfterReady } from './resumeVoice';
 import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { applySnapshotSipCalls, dropSipCalls, onSipCallUpdate, resetSipCalls } from './sip';
+import { onSipInboundRing } from './sipInbound';
+import { activeCallsKey, coalescer, journalKey } from '../lib/sipPbx';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
@@ -75,6 +77,10 @@ import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsRead
 import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
 import { useDisk } from '../stores/disk';
 import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
+import { onCanvasItemRemove, onCanvasItemUpsert } from './canvas';
+import { onCanvasCommentDelete, onCanvasCommentMention, onCanvasCommentUpsert, resyncCanvasComments } from './canvasComments';
+import { restoreSectionOnBoot } from '../features/shell/sectionNav';
+import { useCanvas } from '../stores/canvas';
 import { useWiki } from '../stores/wiki';
 import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
@@ -135,6 +141,14 @@ onRoomArchived((roomId) => {
   if (room) removeRoom(room.workspaceId, roomId);
 });
 
+// «Активные звонки» (ADR-0128): re-read only if the tab is open and the window is seen; hidden —
+// just stale, refetched on focus / remount. A busy exchange's bursts: one re-read a second.
+const callsChanged = coalescer((ws) => {
+  const refetchType = document.hidden ? 'none' : 'active';
+  void queryClient.invalidateQueries({ queryKey: activeCallsKey(ws), refetchType });
+  void queryClient.invalidateQueries({ queryKey: journalKey(ws), refetchType });
+}, 1000);
+
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
   if (e.value && e.case !== 'ready' && e.case !== 'workspaceIdentityAccessUpdate') {
@@ -170,6 +184,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWebApps.getState().reset();
       // Meeting comments missed while away (ADR-0104): an open card refetches its thread.
       useEventComments.getState().reset();
+      // Canvas comments missed while away (ADR-0127 wave 4): the held canvases read theirs again.
+      resyncCanvasComments();
       // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
       useReadReceipts.getState().reset();
       for (const pr of r.peerReads) useReadReceipts.getState().set(pr.roomId, pr.lastReadMessageId);
@@ -231,6 +247,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      // The first READY of this page: back on the section the workspace was left on (ADR-0074 §1).
+      restoreSectionOnBoot();
       // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
       onCalendarReady(r.workspaces);
       // Boards (ADR-0042): loaded boards and the open task reloaded, a pending /b/ or /t/ link.
@@ -332,6 +350,23 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'wikiPageRemove':
       onWikiPageRemove(e.value);
       return;
+    // Canvas (ADR-0126 §6): the tree's structure follows; the content only through /sync.
+    case 'canvasItemUpsert':
+      onCanvasItemUpsert(e.value);
+      return;
+    case 'canvasItemRemove':
+      onCanvasItemRemove(e.value);
+      return;
+    // Canvas comments (ADR-0127 wave 4): only for canvases whose comments are held; the @mention notice.
+    case 'canvasCommentUpsert':
+      onCanvasCommentUpsert(e.value);
+      return;
+    case 'canvasCommentDelete':
+      onCanvasCommentDelete(e.value);
+      return;
+    case 'canvasCommentMention':
+      onCanvasCommentMention(e.value);
+      return;
     case 'billingUpdate':
       onBillingUpdate(e.value.workspaceId, e.value.revision);
       return;
@@ -348,6 +383,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       dropWorkspaceBoards(id);
       useDisk.getState().dropWorkspace(id);
       useWiki.getState().dropWorkspace(id);
+      useCanvas.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
@@ -550,6 +586,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     // Telephony (ADR-0046): a room's phone line placed / changed status.
     case 'sipCallUpdate':
       onSipCallUpdate(e.value.call);
+      return;
+    // An inbound phone call rings me (ADR-0117): the incoming modal.
+    case 'sipInboundRing':
+      onSipInboundRing(e.value.call);
+      return;
+    case 'sipCallsChanged':
+      callsChanged(e.value.workspaceId);
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);

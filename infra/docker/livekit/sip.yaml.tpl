@@ -2,8 +2,8 @@
 # docs/06-deployment.md «Телефония».
 # Rendered by infra/docker/deploy.sh only when SIP_ENABLED=1, via envsubst, into the env var
 # SIP_CONFIG_BODY of the sip service (never written to disk: it carries the Valkey password).
-# Only the Valkey password (REDIS_PASSWORD) is substituted; add no other variables. Key/secret: from
-# env LIVEKIT_API_KEY / LIVEKIT_API_SECRET (compose.yml).
+# Only the Valkey password (REDIS_PASSWORD) is substituted; add no other variables. Key/secret:
+# from env LIVEKIT_API_KEY / LIVEKIT_API_SECRET (compose.yml).
 #
 # The service talks to livekit-server over Valkey (psrpc, the same DB 1 as LiveKit and egress)
 # and joins rooms over the loopback websocket as the phone line's participant.
@@ -23,7 +23,10 @@ sip_port: 5060
 rtp_port: 10000-10200
 # Announce the host's public IP (found via STUN) in SDP / Contact, like LiveKit's rtc section.
 use_external_ip: true
-# Outbound only for now: unauthenticated INVITEs (scanners, spam) are dropped silently.
+# INVITEs that match no inbound trunk (scanners, spam, unknown numbers or addresses) are dropped
+# silently. A workspace's inbound trunk still works (ADR-0117: its number from the provider's
+# allowed addresses; ADR-0121: the registration agent on 127.0.0.1, challenged with 407 digest
+# — LiveKit SIP v1.14 sends the challenge in this mode too).
 hide_inbound_port: true
 
 logging:

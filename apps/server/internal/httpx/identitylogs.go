@@ -30,9 +30,23 @@ func sensitiveFormPath(r *http.Request) bool {
 	return false
 }
 
+// sensitiveCanvasPath: a public canvas link code is a capability (like a form code).
+func sensitiveCanvasPath(r *http.Request) bool {
+	const prefix = "/api/public/canvas"
+	for _, value := range []string{r.URL.Path, path.Clean(r.URL.Path)} {
+		if value == prefix || strings.HasPrefix(value, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func safeLogPath(r *http.Request) string {
 	if sensitiveFormPath(r) {
 		return "/forms/{code}"
+	}
+	if sensitiveCanvasPath(r) {
+		return "/api/public/canvas/{code}"
 	}
 	if sensitiveConsentPath(r) {
 		if strings.HasSuffix(r.URL.Path, "/bind") {
@@ -49,6 +63,9 @@ func safeLogPath(r *http.Request) string {
 func safeLogError(r *http.Request, err error) any {
 	if sensitiveFormPath(r) {
 		return "form request failed"
+	}
+	if sensitiveCanvasPath(r) {
+		return "canvas request failed"
 	}
 	if sensitiveConsentPath(r) {
 		return "consent request failed"

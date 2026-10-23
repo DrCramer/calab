@@ -1,0 +1,25 @@
+{
+  "sections": [
+    {
+      "type": "SEARCH_TYPE_CANVAS",
+      "items": [
+        {
+          "snippet": "Купить молоко\nПозвонить в \u0002бухгалтерию\u0003",
+          "title": "compaction",
+          "workspaceId": "01a15526-0949-7d6c-aef4-d31347de1f70",
+          "at": "2026-10-19T17:12:05.866643Z",
+          "authorId": "01a15526-0939-7e04-8b32-cbe1d2eea79d",
+          "canvas": {
+            "itemId": "01a15526-1a0b-772d-b276-5974dd8a82ef",
+            "parentId": "",
+            "folder": false,
+            "path": []
+          }
+        }
+      ],
+      "totalEstimate": 1,
+      "nextCursor": "",
+      "timedOut": false
+    }
+  ]
+}

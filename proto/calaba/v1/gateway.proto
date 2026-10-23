@@ -8,6 +8,7 @@ import "calaba/v1/billing.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
+import "calaba/v1/canvas.proto";
 import "calaba/v1/disk.proto";
 import "calaba/v1/event.proto";
 import "calaba/v1/invite.proto";
@@ -303,6 +304,26 @@ message DispatchEvent {
     // Comments on a meeting (ADR-0104): to everyone who may see the event, as EVENT_UPDATE.
     CalendarEventCommentUpsert event_comment_upsert = 103;
     CalendarEventCommentDelete event_comment_delete = 104;
+    // A member's consent for a bot changed (ADR-0119): to that bot's user channel (gateway)
+    // and webhook only.
+    BotDelegationChange bot_delegation = 105;
+    // An inbound phone call rings the recipient (ADR-0117): to that user's channel (and a bot's
+    // webhook) only.
+    SipInboundRing sip_inbound_ring = 106;
+    // The workspace's live phone calls changed (ADR-0128): to its MANAGE_INTEGRATIONS members
+    // (not guests, not bots), who re-read GET /api/workspaces/{id}/sip/calls.
+    SipCallsChanged sip_calls_changed = 107;
+    // Canvas (ADR-0126 §6): workspace channel, routed per recipient like the Wiki
+    // (CANVAS_VIEW on the item); the tree structure only, the content goes through the
+    // canvas's /sync socket.
+    CanvasItemUpsert canvas_item_upsert = 108;
+    CanvasItemRemove canvas_item_remove = 109;
+    // Canvas comments (ADR-0127 wave 4): workspace channel, routed per recipient like the
+    // items (CANVAS_VIEW on the canvas).
+    CanvasCommentUpsert canvas_comment_upsert = 110;
+    CanvasCommentDelete canvas_comment_delete = 111;
+    // An @mention in a canvas comment: the mentioned member's user channel only.
+    CanvasCommentMention canvas_comment_mention = 112;
   }
 }
 
@@ -310,7 +331,8 @@ message DispatchEvent {
 // with X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)> and X-Calab-Delivery: <id>.
 // Delivered events: MESSAGE_CREATE / UPDATE / DELETE and MESSAGE_REACTION_ADD / REMOVE of
 // rooms the bot can view and of its DMs, plus private BOT_CALLBACK (ADR-0047), TASK_NOTICE of
-// the users who chose the bot (ADR-0090) and CONTACT_SHARED (ADR-0100).
+// the users who chose the bot (ADR-0090), CONTACT_SHARED (ADR-0100) and BOT_DELEGATION
+// (ADR-0119).
 // A delivery may repeat (retries): dedupe by id.
 message BotWebhookUpdate {
   string id = 1;
@@ -340,6 +362,10 @@ message VoiceState {
   // echo cancellation, noise suppression and gain control, in a music Opus profile. Shown so
   // others know why they hear raw sound. Set through PATCH /api/voice/self.
   bool musician = 11;
+  // Push-to-talk mode (ADR-0130): every device of the user in this room waits for a key, so the
+  // mic is silent between presses. Others show a pale crossed mic until the user speaks. Set
+  // through PATCH /api/voice/self on a mode change only, never per key press.
+  bool ptt = 12;
 }
 
 message Presence {
@@ -409,7 +435,8 @@ message WorkspaceSnapshot {
   // Tasks with something unseen for the recipient (Task.unread; ≤ 999): the badge on the
   // boards icon. Changes come as TASK_UPDATE on the user channel.
   repeated string unread_task_ids = 17;
-  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms. Changes come as
+  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms, and inbound calls
+  // (ADR-0117) that ring the recipient or that the recipient answered. Changes come as
   // SIP_CALL_UPDATE.
   repeated SipCall sip_calls = 18;
   // Web apps of the workspace (ADR-0050), by position; empty for guests and bots. Changes come

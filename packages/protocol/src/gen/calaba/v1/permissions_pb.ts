@@ -259,14 +259,15 @@ export enum Permission {
   CREATE_TASKS = 262144,
 
   /**
-   * 1 << 19: edit, move and archive any task; moderate comments.
+   * 1 << 19: edit, move and archive any task; moderate comments; the board's statuses,
+   * labels and milestones (CBF-73).
    *
    * @generated from enum value: PERMISSION_EDIT_TASKS = 524288;
    */
   EDIT_TASKS = 524288,
 
   /**
-   * 1 << 20: statuses, labels, milestones, settings, access and archive of the board.
+   * 1 << 20: settings, access and archive of the board.
    *
    * @generated from enum value: PERMISSION_MANAGE_BOARD = 1048576;
    */
@@ -385,6 +386,15 @@ export enum Permission {
    * (member default); rename, move, trash and share one's own pages.
    * 1 << 40 WIKI_MANAGE: the structure of any page, the trash retention, empty the whole trash,
    * anyone's public link; implies VIEW and WRITE.
+   * Canvas bits (ADR-0126), the same rules as the wiki bits (in ADMINISTRATOR, never for guests
+   * and bots through roles, per-item overrides in canvas_permissions touch VIEW and WRITE only;
+   * TS CANVAS_BITS, Go perm.CanvasView …):
+   * 1 << 41 CANVAS_VIEW: see the Canvas section and every item that is not restricted (member
+   * default).
+   * 1 << 42 CANVAS_WRITE: create folders and canvases, edit the content of any canvas one can
+   * write (member default); rename, move, trash and share one's own items.
+   * 1 << 43 CANVAS_MANAGE: the structure of any item, the trash retention, empty the whole
+   * trash; implies VIEW and WRITE.
    *
    * @generated from enum value: PERMISSION_MANAGE_RECORDINGS = -2147483648;
    */

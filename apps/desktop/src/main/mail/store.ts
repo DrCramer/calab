@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqlite';
-import type { MailAddress, MailAttachment, MailCursor, MailFlags, MailFolderRole, MailHeader, MailThreadRow } from '../../shared/mail';
+import type { MailAddress, MailAttachment, MailCursor, MailFlags, MailFolderRole, MailHeader, MailSmartFolder, MailThreadRow } from '../../shared/mail';
+import { matchSmart } from '../../shared/mailMatch';
 import { repairUtf8AsCp1251 } from './charset';
 import { folderId, messageId } from './ids';
 import { htmlToText, makeSnippet } from './mime';
@@ -214,8 +215,11 @@ export interface StoredBody {
   remoteImages: boolean;
 }
 
-/** Which messages a list / search runs over. */
-export type Scope = { kind: 'folder'; row: number } | { kind: 'flagged'; exclude: number[] } | { kind: 'all'; exclude: number[] };
+/**
+ * Which messages a list / search runs over. `smart` (CBF-56): a smart folder's conditions, as the
+ * JSON `{match, conditions}` handed to the `mail_smart` SQL function (shared/mailMatch.ts).
+ */
+export type Scope = { kind: 'folder'; row: number } | { kind: 'flagged'; exclude: number[] } | { kind: 'all'; exclude: number[] } | { kind: 'smart'; exclude: number[]; query: string };
 
 export interface OutgoingRecord {
   n: number;
@@ -243,6 +247,8 @@ const addrJson = (a: MailAddress[]): string => JSON.stringify(a.map((x) => ({ na
 export class MailStore {
   readonly db: DatabaseSync;
   private readonly blobDir: string;
+  /** Conversation grouping (CBF-39); off = every new message gets a thread of its own. */
+  grouped = true;
 
   constructor(
     readonly dir: string,
@@ -253,6 +259,7 @@ export class MailStore {
     this.blobDir = join(dir, 'blobs');
     mkdirSync(this.blobDir, { recursive: true });
     this.db = openDb(join(dir, 'mail.sqlite'));
+    registerSmartMatch(this.db);
     migrate(this.db);
     this.repairSnippets();
   }
@@ -386,6 +393,26 @@ export class MailStore {
     this.db.prepare(`UPDATE folders SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE row = ?`).run(...keys.map((k) => cols[k] ?? null), row);
   }
 
+  /**
+   * A folder renamed on the server (CBF-56): its row keeps the messages (ids are by row), the path
+   * of it and of its subfolders (`old` + delimiter + …) is rewritten.
+   */
+  renameFolderPath(row: number, path: string, name: string, parentPath: string): void {
+    const f = this.folder(row);
+    if (!f) return;
+    const old = f.path;
+    const delim = f.delimiter || '/';
+    this.tx(() => {
+      this.db.prepare('UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE row = ?').run(path, name, parentPath, row);
+      for (const c of this.folders()) {
+        if (c.row === row || !c.path.startsWith(old + delim)) continue;
+        const np = path + c.path.slice(old.length);
+        const pp = c.parentPath === old || c.parentPath.startsWith(old + delim) ? path + c.parentPath.slice(old.length) : c.parentPath;
+        this.db.prepare('UPDATE folders SET path = ?, parent_path = ? WHERE row = ?').run(np, pp, c.row);
+      }
+    });
+  }
+
   /** Drops a folder (gone from the server) with its messages; returns the removed message ids. */
   deleteFolder(row: number): string[] {
     return this.tx(() => {
@@ -453,8 +480,35 @@ export class MailStore {
     return { min: num(r['mn']), max: num(r['mx']), count: num(r['c']) };
   }
 
+  private newThread(): string {
+    const r = this.db.prepare('INSERT INTO threads (created) VALUES (?)').run(this.now());
+    return `${this.accountId}.t${String(r.lastInsertRowid)}`;
+  }
+
+  /**
+   * Re-threads every stored message after the grouping setting changed (CBF-39): off = a thread per
+   * message, on = the References / subject matching replayed oldest first. Thread ids change.
+   */
+  regroup(grouped: boolean): void {
+    this.grouped = grouped;
+    this.tx(() => {
+      this.db.prepare('DELETE FROM thread_keys').run();
+      this.db.prepare("UPDATE messages SET thread_id = ''").run();
+      const upd = this.db.prepare('UPDATE messages SET thread_id = ? WHERE rid = ?');
+      for (const r of this.db.prepare('SELECT rid, message_id_hdr, in_reply_to, refs, subject, subject_norm, date FROM messages ORDER BY date, rid').all()) {
+        const thread = grouped
+          ? this.threadFor(
+              { messageIdHdr: str(r['message_id_hdr']), inReplyTo: str(r['in_reply_to']), references: json<string[]>(r['refs'], []), subject: str(r['subject']), date: num(r['date']) },
+              str(r['subject_norm']),
+            )
+          : this.newThread();
+        upd.run(thread, num(r['rid']));
+      }
+    });
+  }
+
   /** Finds or allocates the thread of a new message (References / In-Reply-To, then subject ≤ 7 days). */
-  private threadFor(m: NewMessage, subjectNorm: string): string {
+  private threadFor(m: Pick<NewMessage, 'messageIdHdr' | 'inReplyTo' | 'references' | 'subject' | 'date'>, subjectNorm: string): string {
     const keys = [m.messageIdHdr, m.inReplyTo, ...m.references].filter(Boolean);
     const get = this.db.prepare('SELECT thread_id FROM thread_keys WHERE key = ?');
     let thread: string | null = null;
@@ -470,14 +524,11 @@ export class MailStore {
     // so unrelated mail with the same subject («Your order») does not merge.
     if (!thread && subjectNorm && (hasReplyPrefix(m.subject) || m.inReplyTo || m.references.length)) {
       const r = this.db
-        .prepare('SELECT thread_id FROM messages WHERE subject_norm = ? AND date BETWEEN ? AND ? ORDER BY ABS(date - ?) LIMIT 1')
+        .prepare("SELECT thread_id FROM messages WHERE subject_norm = ? AND thread_id <> '' AND date BETWEEN ? AND ? ORDER BY ABS(date - ?) LIMIT 1")
         .get(subjectNorm, m.date - SUBJECT_WINDOW_MS, m.date + SUBJECT_WINDOW_MS, m.date);
       if (r) thread = str(r['thread_id']);
     }
-    if (!thread) {
-      const r = this.db.prepare('INSERT INTO threads (created) VALUES (?)').run(this.now());
-      thread = `${this.accountId}.t${String(r.lastInsertRowid)}`;
-    }
+    if (!thread) thread = this.newThread();
     const put = this.db.prepare('INSERT OR IGNORE INTO thread_keys (key, thread_id) VALUES (?, ?)');
     for (const k of keys) put.run(k, thread);
     return thread;
@@ -489,7 +540,7 @@ export class MailStore {
     const ex = this.db.prepare('SELECT thread_id FROM messages WHERE id = ?').get(id);
     if (ex) return { id, threadId: str(ex['thread_id']), inserted: false };
     const subjectNorm = normalizeSubject(m.subject);
-    const threadId = this.threadFor(m, subjectNorm);
+    const threadId = this.grouped ? this.threadFor(m, subjectNorm) : this.newThread();
     const r = this.db
       .prepare(
         `INSERT INTO messages (id, folder_row, uid, thread_id, message_id_hdr, in_reply_to, refs, from_name, from_addr, to_json, cc_json, bcc_json,
@@ -896,7 +947,31 @@ export function scopeSql(a: string, scope: Scope): { sql: string; args: SQLInput
   if (scope.kind === 'folder') return { sql: `${a}.folder_row = ?`, args: [scope.row] };
   const ex = scope.exclude.length ? ` AND ${a}.folder_row NOT IN (${scope.exclude.map(() => '?').join(',')})` : '';
   if (scope.kind === 'flagged') return { sql: `${a}.flagged = 1${ex}`, args: [...scope.exclude] };
+  if (scope.kind === 'smart') return { sql: `mail_smart(?, ${a}.from_name, ${a}.from_addr, ${a}.subject, ${a}.to_json, ${a}.cc_json) = 1${ex}`, args: [scope.query, ...scope.exclude] };
   return { sql: `1 = 1${ex}`, args: [...scope.exclude] };
+}
+
+/**
+ * `mail_smart(query, from_name, from_addr, subject, to_json, cc_json)` → 1 / 0: a smart folder's
+ * test (CBF-56) with the same pure matcher as the renderer (SQLite's own lower() is ASCII-only).
+ * The query JSON is parsed once per distinct string (one smart folder at a time is listed).
+ */
+function registerSmartMatch(db: DatabaseSync): void {
+  let lastQ = '';
+  let last: Pick<MailSmartFolder, 'match' | 'conditions'> = { match: 'all', conditions: [] };
+  db.function('mail_smart', { deterministic: true }, (q, fromName, fromAddr, subject, to, cc) => {
+    if (typeof q !== 'string') return 0;
+    if (q !== lastQ) {
+      try {
+        last = JSON.parse(q) as typeof last;
+      } catch {
+        last = { match: 'all', conditions: [] };
+      }
+      lastQ = q;
+    }
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    return matchSmart(last, { fromName: text(fromName), fromAddress: text(fromAddr), subject: text(subject), to: `${text(to)}\n${text(cc)}` }) ? 1 : 0;
+  });
 }
 
 /** Free text → an FTS5 query: every word as a quoted prefix term (no operators from the user). */

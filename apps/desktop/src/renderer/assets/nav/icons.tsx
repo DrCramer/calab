@@ -136,3 +136,27 @@ export function DiskActiveIcon({ className }: IconProps): ReactNode {
     </svg>
   );
 }
+
+/** «Холст» (ADR-0126 §5): a board with a sticky note and a connector to a shape; outline at rest. */
+export function CanvasIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <rect x="4" y="6" width="36" height="32" rx="5" />
+      <rect x="10" y="12" width="11" height="10" rx="2" />
+      <circle cx="31" cy="29" r="4.5" />
+      <path d="M21 17H27C29.21 17 31 18.79 31 21V24.5" />
+    </svg>
+  );
+}
+
+/** «Холст», filled: the board solid with the sticky note and the shape cut out, the connector between them. */
+export function CanvasActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path
+        fillRule="evenodd"
+        d="M9 5C5.69 5 3 7.69 3 11V33C3 36.31 5.69 39 9 39H35C38.31 39 41 36.31 41 33V11C41 7.69 38.31 5 35 5H9ZM12 11C10.9 11 10 11.9 10 13V21C10 22.1 10.9 23 12 23H19C20.1 23 21 22.1 21 21V13C21 11.9 20.1 11 19 11H12ZM31 24C28.52 24 26.5 26.02 26.5 28.5C26.5 30.98 28.52 33 31 33C33.48 33 35.5 30.98 35.5 28.5C35.5 26.02 33.48 24 31 24ZM22 16C21.45 16 21 16.45 21 17C21 17.55 21.45 18 22 18H26C27.1 18 28 18.9 28 20V21H30V20C30 17.79 28.21 16 26 16H22Z"
+      />
+    </svg>
+  );
+}

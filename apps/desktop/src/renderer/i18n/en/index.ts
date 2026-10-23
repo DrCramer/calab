@@ -22,6 +22,11 @@ import { enCalendar } from './calendar';
 import { enMailbox } from './mailbox';
 import { enDisk } from './disk';
 import { enWiki } from './wiki';
+import { enCanvas } from './canvas';
+import { enCanvasBoard } from './canvasBoard';
+import { enCanvasPhone } from './canvasPhone';
+import { enCanvasComments } from './canvasComments';
+import { enCanvasShare } from './canvasShare';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
 import { enHistory } from './history';
@@ -42,6 +47,9 @@ import { enGuests } from './guests';
 import { enTemp } from './temp';
 import { enContacts } from './contacts';
 import { enSip } from './sip';
+import { enPbx } from './pbx';
+import { enAi } from './ai';
+import { enSmartTask } from './smartTask';
 import { enWebApps } from './webapps';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
@@ -60,6 +68,9 @@ export const en: Dict = {
   ...enTemp,
   ...enContacts,
   ...enSip,
+  ...enPbx,
+  ...enAi,
+  ...enSmartTask,
   ...enWebApps,
   ...enDm,
   ...enNotes,
@@ -84,6 +95,11 @@ export const en: Dict = {
   ...enMailbox,
   ...enDisk,
   ...enWiki,
+  ...enCanvas,
+  ...enCanvasBoard,
+  ...enCanvasPhone,
+  ...enCanvasComments,
+  ...enCanvasShare,
   ...enBoards,
   ...enBoards2,
   ...enHistory,
@@ -403,6 +419,7 @@ export const en: Dict = {
   'voice.mode': 'Input mode',
   'voice.modeVad': 'Voice activity',
   'voice.modePtt': 'Push-to-talk',
+  'voice.pttIdleState': 'Push-to-talk: waiting for the key',
   'voice.threshold': 'Activation threshold: {db} dB',
   'voice.thresholdHint': 'Your mic turns on when you speak louder than the threshold and off after a short pause.',
   'voice.pttKey': 'Push‑to‑talk key',

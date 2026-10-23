@@ -400,7 +400,7 @@ VALUES ($1, $2, $3, $4, $5,
         $6, $7, $7,
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = $1),
         $8)
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
 `
 
 type CreateBoardParams struct {
@@ -447,6 +447,8 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }
@@ -1025,7 +1027,7 @@ func (q *Queries) FilesByID(ctx context.Context, ids []uuid.UUID) ([]FilesByIDRo
 }
 
 const getBoard = `-- name: GetBoard :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE id = $1
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates FROM boards WHERE id = $1
 `
 
 func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -1052,6 +1054,8 @@ func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }
@@ -1073,6 +1077,8 @@ SELECT b.workspace_id,
        b.disabled_features,
        b.created_by,
        w.owner_sees_private,
+       -- ADR-0115: bots never see a board through cards (an unknown user counts as one).
+       coalesce(u.is_bot, true)::boolean AS is_bot,
        -- ADR-0059 / ADR-0076: the user (a human) is an assignee, an approver or a watcher of a
        -- live task of the board.
        (NOT coalesce(u.is_bot, true) AND (
@@ -1124,6 +1130,7 @@ type GetBoardAccessRow struct {
 	DisabledFeatures int64
 	CreatedBy        *uuid.UUID
 	OwnerSeesPrivate bool
+	IsBot            bool
 	Invited          bool
 }
 
@@ -1153,13 +1160,14 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 		&i.DisabledFeatures,
 		&i.CreatedBy,
 		&i.OwnerSeesPrivate,
+		&i.IsBot,
 		&i.Invited,
 	)
 	return i, err
 }
 
 const getBoardForUpdate = `-- name: GetBoardForUpdate :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates FROM boards WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -1186,6 +1194,8 @@ func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, e
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }
@@ -1335,7 +1345,7 @@ func (q *Queries) GetTaskLevel(ctx context.Context, arg GetTaskLevelParams) ([]G
 }
 
 const getTaskRoomRef = `-- name: GetTaskRoomRef :one
-SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
+SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived, t.created_by,
        EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS assignee,
        EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS approver,
        EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = t.id AND x.user_id = $1 AND x.watcher)::boolean AS watcher
@@ -1351,13 +1361,14 @@ type GetTaskRoomRefRow struct {
 	TaskID       uuid.UUID
 	BoardID      uuid.UUID
 	TaskArchived bool
+	CreatedBy    *uuid.UUID
 	Assignee     bool
 	Approver     bool
 	Watcher      bool
 }
 
 // The task and board of a task room and whether the user is its assignee / approver / watcher
-// (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076).
+// (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076) and the task's author (ADR-0115).
 func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) (GetTaskRoomRefRow, error) {
 	row := q.db.QueryRow(ctx, getTaskRoomRef, arg.UserID, arg.RoomID)
 	var i GetTaskRoomRefRow
@@ -1365,6 +1376,7 @@ func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) 
 		&i.TaskID,
 		&i.BoardID,
 		&i.TaskArchived,
+		&i.CreatedBy,
 		&i.Assignee,
 		&i.Approver,
 		&i.Watcher,
@@ -2021,7 +2033,7 @@ func (q *Queries) ListBoardViews(ctx context.Context, arg ListBoardViewsParams) 
 }
 
 const listBoards = `-- name: ListBoards :many
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
 ORDER BY position, id
 `
 
@@ -2060,6 +2072,8 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 			&i.DisabledFeatures,
 			&i.EstimateScale,
 			&i.ApprovalNotifyDelaySeconds,
+			&i.AiInstruction,
+			&i.AiFindDuplicates,
 		); err != nil {
 			return nil, err
 		}
@@ -2075,15 +2089,17 @@ const listInvitedTasks = `-- name: ListInvitedTasks :many
 SELECT t.id, t.board_id
 FROM tasks t JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
-  AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = $2
-               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = $2
-               UNION SELECT w.task_id FROM task_subscribers w WHERE w.user_id = $2 AND w.watcher)
+  AND (t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = $2
+                UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = $2
+                UNION SELECT w.task_id FROM task_subscribers w WHERE w.user_id = $2 AND w.watcher)
+       OR (t.created_by = $2 AND t.board_id = ANY($3::uuid[])))
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = $2 AND u.is_bot)
 `
 
 type ListInvitedTasksParams struct {
-	WorkspaceID uuid.UUID
-	UserID      uuid.UUID
+	WorkspaceID  uuid.UUID
+	UserID       uuid.UUID
+	AuthorBoards []uuid.UUID
 }
 
 type ListInvitedTasksRow struct {
@@ -2092,9 +2108,10 @@ type ListInvitedTasksRow struct {
 }
 
 // The live tasks on live boards of a workspace where the user (a human) is an assignee, an
-// approver or a watcher: the task-scoped boards of ADR-0059 (restricted ones too, ADR-0076).
+// approver or a watcher: the task-scoped boards of ADR-0059 (restricted ones too, ADR-0076);
+// on author_boards (where the user is create-only, ADR-0115) also the tasks they authored.
 func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksParams) ([]ListInvitedTasksRow, error) {
-	rows, err := q.db.Query(ctx, listInvitedTasks, arg.WorkspaceID, arg.UserID)
+	rows, err := q.db.Query(ctx, listInvitedTasks, arg.WorkspaceID, arg.UserID, arg.AuthorBoards)
 	if err != nil {
 		return nil, err
 	}
@@ -2555,12 +2572,14 @@ func (q *Queries) ListWorkspaceBoardOverrides(ctx context.Context, workspaceID u
 
 const listWorkspaceTaskInvitees = `-- name: ListWorkspaceTaskInvitees :many
 SELECT t.id AS task_id, t.board_id, x.user_id,
-       bool_or(x.how = 1)::boolean AS assignee, bool_or(x.how = 2)::boolean AS approver, bool_or(x.how = 3)::boolean AS watcher
+       bool_or(x.how = 1)::boolean AS assignee, bool_or(x.how = 2)::boolean AS approver, bool_or(x.how = 3)::boolean AS watcher,
+       bool_or(x.how = 4)::boolean AS author
 FROM tasks t
 JOIN boards b ON b.id = t.board_id
 JOIN (SELECT a.task_id, a.user_id, 1 AS how FROM task_assignees a
       UNION ALL SELECT p.task_id, p.user_id, 2 AS how FROM task_approvers p
-      UNION ALL SELECT w.task_id, w.user_id, 3 AS how FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
+      UNION ALL SELECT w.task_id, w.user_id, 3 AS how FROM task_subscribers w WHERE w.watcher
+      UNION ALL SELECT c.id, c.created_by, 4 AS how FROM tasks c WHERE c.created_by IS NOT NULL) x ON x.task_id = t.id
 JOIN users u ON u.id = x.user_id AND NOT u.is_bot
 WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
 GROUP BY t.id, t.board_id, x.user_id
@@ -2573,11 +2592,12 @@ type ListWorkspaceTaskInviteesRow struct {
 	Assignee bool
 	Approver bool
 	Watcher  bool
+	Author   bool
 }
 
 // The assignees, approvers and watchers (humans) of the live tasks on live boards of a
-// workspace: the gateway's invited map (ADR-0059, ADR-0076). how: 1 assignee, 2 approver,
-// 3 watcher.
+// workspace: the gateway's invited map (ADR-0059, ADR-0076), with each task's author (ADR-0115:
+// it counts for a create-only member only). how: 1 assignee, 2 approver, 3 watcher, 4 author.
 func (q *Queries) ListWorkspaceTaskInvitees(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceTaskInviteesRow, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceTaskInvitees, workspaceID)
 	if err != nil {
@@ -2594,6 +2614,7 @@ func (q *Queries) ListWorkspaceTaskInvitees(ctx context.Context, workspaceID uui
 			&i.Assignee,
 			&i.Approver,
 			&i.Watcher,
+			&i.Author,
 		); err != nil {
 			return nil, err
 		}
@@ -2878,7 +2899,7 @@ func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams
 const setBoardArchived = `-- name: SetBoardArchived :one
 UPDATE boards SET archived_at = CASE WHEN $1::boolean THEN now() ELSE NULL END
 WHERE id = $2
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
 `
 
 type SetBoardArchivedParams struct {
@@ -2910,12 +2931,14 @@ func (q *Queries) SetBoardArchived(ctx context.Context, arg SetBoardArchivedPara
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }
 
 const setBoardCreator = `-- name: SetBoardCreator :one
-UPDATE boards SET created_by = $1 WHERE id = $2 RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
+UPDATE boards SET created_by = $1 WHERE id = $2 RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
 `
 
 type SetBoardCreatorParams struct {
@@ -2949,6 +2972,8 @@ func (q *Queries) SetBoardCreator(ctx context.Context, arg SetBoardCreatorParams
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }
@@ -2958,7 +2983,7 @@ UPDATE boards SET
     disabled_features = coalesce($1, disabled_features),
     estimate_scale    = coalesce($2, estimate_scale)
 WHERE id = $3
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
 `
 
 type SetBoardFeaturesParams struct {
@@ -2992,6 +3017,8 @@ func (q *Queries) SetBoardFeatures(ctx context.Context, arg SetBoardFeaturesPara
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }
@@ -3383,9 +3410,11 @@ UPDATE boards SET
     auto_archive_days = coalesce($8, auto_archive_days),
     default_view_id   = CASE WHEN $9::boolean THEN $10::uuid ELSE default_view_id END,
     restricted        = coalesce($11, restricted),
-    approval_notify_delay_seconds = coalesce($12, approval_notify_delay_seconds)
-WHERE id = $13
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
+    approval_notify_delay_seconds = coalesce($12, approval_notify_delay_seconds),
+    ai_instruction    = coalesce($13, ai_instruction),
+    ai_find_duplicates = coalesce($14, ai_find_duplicates)
+WHERE id = $15
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
 `
 
 type UpdateBoardParams struct {
@@ -3401,6 +3430,8 @@ type UpdateBoardParams struct {
 	DefaultViewID              *uuid.UUID
 	Restricted                 *bool
 	ApprovalNotifyDelaySeconds *int32
+	AiInstruction              *string
+	AiFindDuplicates           *bool
 	ID                         uuid.UUID
 }
 
@@ -3418,6 +3449,8 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		arg.DefaultViewID,
 		arg.Restricted,
 		arg.ApprovalNotifyDelaySeconds,
+		arg.AiInstruction,
+		arg.AiFindDuplicates,
 		arg.ID,
 	)
 	var i Board
@@ -3442,6 +3475,8 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		&i.DisabledFeatures,
 		&i.EstimateScale,
 		&i.ApprovalNotifyDelaySeconds,
+		&i.AiInstruction,
+		&i.AiFindDuplicates,
 	)
 	return i, err
 }

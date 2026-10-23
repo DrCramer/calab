@@ -203,16 +203,16 @@ describe('pinned tabs (ADR-0095 + addendum 2026-10-14)', () => {
   });
   it('order: stored first, missing appended in the default sequence; the lead keeps the old bar order', () => {
     expect(normalizeOrder(undefined)).toEqual([...PHONE_TABS]);
-    expect(normalizeOrder(['profile', 'x', 'chats', 'chats'])).toEqual(['profile', 'chats', 'dms', 'calendar', 'boards', 'wiki', 'disk']);
-    expect(normalizeOrder(undefined, ['disk', 'chats', 'dms', 'boards'])).toEqual(['disk', 'chats', 'dms', 'boards', 'calendar', 'wiki', 'profile']);
+    expect(normalizeOrder(['profile', 'x', 'chats', 'chats'])).toEqual(['profile', 'chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk']);
+    expect(normalizeOrder(undefined, ['disk', 'chats', 'dms', 'boards'])).toEqual(['disk', 'chats', 'dms', 'boards', 'calendar', 'wiki', 'canvas', 'profile']);
   });
-  it('default order follows the rail: chats, dms, calendar, boards, wiki, disk, profile', () => {
-    expect(PHONE_TABS).toEqual(['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile']);
+  it('default order follows the rail: chats, dms, calendar, boards, wiki, canvas, disk, profile', () => {
+    expect(PHONE_TABS).toEqual(['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'profile']);
   });
   it('moveTab puts the dragged row on the place of the target, both ways', () => {
-    const o = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'disk', 'profile'] as const;
-    expect(moveTab(o, 'disk', 'dms')).toEqual(['chats', 'disk', 'dms', 'calendar', 'boards', 'wiki', 'profile']);
-    expect(moveTab(o, 'chats', 'boards')).toEqual(['dms', 'calendar', 'boards', 'chats', 'wiki', 'disk', 'profile']);
+    const o = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'profile'] as const;
+    expect(moveTab(o, 'disk', 'dms')).toEqual(['chats', 'disk', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'profile']);
+    expect(moveTab(o, 'chats', 'boards')).toEqual(['dms', 'calendar', 'boards', 'chats', 'wiki', 'canvas', 'disk', 'profile']);
     expect(moveTab(o, 'dms', 'dms')).toEqual([...o]);
     expect(moveTab(o, 'dms', 'nope' as never)).toEqual([...o]);
   });
@@ -259,5 +259,25 @@ describe('wiki screens (ADR-0096 §7)', () => {
     expect(PHONE_TABS).toContain('wiki');
     expect(barTabs(DEFAULT_PINNED, PHONE_TABS).bar).not.toContain('wiki');
     expect(togglePin(['chats', 'dms', 'boards'], 'wiki')).toEqual({ pinned: ['chats', 'dms', 'boards', 'wiki'] });
+  });
+});
+
+describe('canvas screens (ADR-0126 §5, view only on the phone)', () => {
+  it('folders and canvases stack over the Canvas tab; the same item is returned to', () => {
+    let n = pushOnTab(nav({ tab: 'chats' }), 'canvas', { kind: 'canvas', itemId: 'f1' });
+    expect(n.tab).toBe('canvas');
+    n = pushScreen(n, { kind: 'canvas', itemId: 'c1' });
+    expect(n.stack).toHaveLength(2);
+    n = pushScreen(n, { kind: 'canvas', itemId: 'f1' });
+    expect(n.stack).toEqual([{ kind: 'canvas', itemId: 'f1' }]);
+    n = pushOnTab(n, 'canvas', { kind: 'canvas', itemId: 'c2' });
+    expect(n.stack).toHaveLength(2);
+  });
+  it('the Canvas tab is behind «Ещё» by default and can be pinned', () => {
+    expect(PHONE_TABS).toContain('canvas');
+    expect(barTabs(DEFAULT_PINNED, PHONE_TABS)).toMatchObject({ more: true });
+    expect(barTabs(DEFAULT_PINNED, PHONE_TABS).bar).not.toContain('canvas');
+    expect(togglePin(['chats', 'dms', 'boards'], 'canvas')).toEqual({ pinned: ['chats', 'dms', 'boards', 'canvas'] });
+    expect(togglePin([...DEFAULT_PINNED], 'canvas')).toMatchObject({ full: true });
   });
 });

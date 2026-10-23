@@ -273,7 +273,7 @@ func (s *Service) grant(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, f id
 	if err != nil && !db.IsNotFound(err) {
 		return identitypolicy.Grant{}, err
 	}
-	g := identitypolicy.Grant{WorkspaceID: ws, Feature: f, Source: row.Source, Enabled: row.Enabled, Revoked: row.RevokedAt != nil, Version: row.Version, PlanEligible: s.Edition.Eligible(ws, row.Source, plan.Plan == "enterprise" && (plan.ValidUntil == nil || now.Before(*plan.ValidUntil)))}
+	g := identitypolicy.Grant{WorkspaceID: ws, Feature: f, Source: row.Source, Enabled: row.Enabled, Revoked: row.RevokedAt != nil, Version: row.Version, PlanEligible: s.Edition.Eligible(ws, row.Source, identitypolicy.PlanGrantsIdentity(plan.Plan, plan.Limits, plan.ValidUntil, now))}
 	if row.ValidUntil != nil {
 		g.ValidUntil = *row.ValidUntil
 	}

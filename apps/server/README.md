@@ -66,6 +66,8 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `LOGIN_ACCOUNT_ATTEMPTS` | `10` | попыток входа на один email за 15 мин с любых IP (429 + `Retry-After`) |
 | `MAX_WORKSPACES_PER_USER` | `5` | сколько workspace может принадлежать одному пользователю (409 `WORKSPACE_LIMIT`) |
 | `WORKSPACE_CREATES_PER_HOUR` | `3` | создание workspace на пользователя в час |
+| `TEMP_ROOM_MAX_TTL_DAYS` | `30` | наибольший срок временной комнаты в днях (создание, продление, восстановление) |
+| `TEMP_ROOMS_PER_WORKSPACE` | `50` | живых временных комнат на пространство (409 `TEMP_ROOM_LIMIT`) |
 | `DEFAULT_WORKSPACE_QUOTA_BYTES` | `10737418240` (10 GiB) | квота нового workspace |
 | `STORAGE_MAX_TOTAL_BYTES` | `53687091200` (50 GiB) | потолок всех файлов сервера (507 `STORAGE_FULL`); метрика `calaba_storage_used_bytes` |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | кому верить в `X-Forwarded-For` (Caddy) |
@@ -83,7 +85,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | — | задаются все четыре LIVEKIT_* или ни одной (тогда voice-эндпоинты → 503) |
 | `LIVEKIT_MAX_PARTICIPANTS` | `50` | `max_participants` комнаты LiveKit |
 | `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` | встроенные (ADR-0024) | JSON поверх дефолтов тарифа, напр. `{"room_members":5,"stream_max_preset":"h720","stream_max_fps":15,"storage_mb":1024}`; 0 / `""` = без лимита; неверный JSON — сервер не стартует |
-| `PLAN_CONTACT_URL` / `PLAN_CONTACT_EMAIL` | — / `it@gptunnel.ai` | куда писать за подпиской (`plan_contact` в READY и `/api/version`): URL, иначе `mailto:` |
+| `PLAN_CONTACT_URL` / `PLAN_CONTACT_EMAIL` | — / `support@calab.io` | куда писать за подпиской (`plan_contact` в READY и `/api/version`): URL, иначе `mailto:` |
 | `SUPERADMIN_EMAILS` | — | email суперадминов через запятую: `/api/admin/*`, `me.is_superadmin` |
 | `UNFURL_ALLOW_CIDRS` | — | только dev: диапазоны, которые превью ссылок может запрашивать, хотя они не публичные (VPN с fake-IP, напр. `198.18.0.0/15`); loopback/link-local всё равно запрещены |
 | `SMTP_HOST` | — | почта (ADR-0023); пусто = без почты: адреса считаются подтверждёнными, почтовые эндпоинты → 503. Можно `host:port` |

@@ -443,7 +443,7 @@ function Bubble({
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : diskItem ? <DiskLinkChip itemId={diskItem} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
+            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : diskItem ? <DiskLinkChip itemId={diskItem} workspaceId={workspaceId} sharedBy={m.authorId} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
           </div>
         ) : null}
         {rows.length ? (

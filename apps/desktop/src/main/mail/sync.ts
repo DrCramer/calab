@@ -5,9 +5,10 @@
  * «load older», local-first actions with a pending-ops queue and rollback, reconnect backoff up to
  * 15 min, `auth_failed` on a rejected login. All IMAP work is serialized on the one connection.
  */
-import type { MailAccountState, MailError, MailEvent, MailFlagPatch, MailFlags, MailFolder, MailFolderRole, MailSyncPhase, MailThreadRow } from '../../shared/mail';
+import type { MailAccountState, MailError, MailEvent, MailFlagPatch, MailFlags, MailFolder, MailFolderRole, MailRule, MailSyncPhase, MailThreadRow } from '../../shared/mail';
 import { classify, errorDetail, invalid, mailError, notFound } from './errors';
 import { folderId } from './ids';
+import { matchRule } from './rules';
 import { htmlToText, looksLikeHtml, makeSnippet, parseBody } from './mime';
 import { flagsFrom, type ImapSession, type RemoteFlags, type RemoteFolder, type RemoteHeader } from './session';
 import type { FolderRecord, LocalFlags, MailStore, Scope } from './store';
@@ -135,6 +136,8 @@ export interface SyncHost {
   clearTimer?(t: unknown): void;
   /** Gmail files sent mail itself (§6) and archives into All Mail. */
   readonly provider: string;
+  /** The sorting rules (CBF-39); absent = none. */
+  rules?(): readonly MailRule[];
 }
 
 type OpTarget = { kind: 'role'; role: 'archive' | 'trash' } | { kind: 'folder'; row: number };
@@ -149,6 +152,12 @@ interface Op {
 }
 
 const IMAP_FLAG: Record<keyof MailFlagPatch, string> = { seen: '\\Seen', flagged: '\\Flagged' };
+
+/** The engine's folder name check (create / rename): no control or wildcard characters, no delimiter, not hidden. */
+function checkFolderName(clean: string, delimiter: string): void {
+  // eslint-disable-next-line no-control-regex
+  if (!clean || clean.length > 100 || /[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.includes(delimiter) || clean.startsWith('.')) throw invalid('bad folder name');
+}
 
 export class AccountSync {
   state: MailAccountState = 'syncing';
@@ -621,7 +630,121 @@ export class AccountSync {
         this.host.emit({ type: 'new_mail', accountId: this.host.accountId, messageId: a.id, threadId: a.threadId, from: a.header.from, subject: a.header.subject });
       }
     }
+    if (f.role === 'inbox') this.fileByRules(added.map((a) => ({ id: a.id, fromName: a.header.from.name, fromAddress: a.header.from.address, subject: a.header.subject })));
     this.lastSyncAt = now;
+  }
+
+  /** Moves inbox messages into the folders the sorting rules pick (CBF-39); returns how many moved. */
+  private fileByRules(items: Array<{ id: string; fromName: string; fromAddress: string; subject: string }>): number {
+    const rules = this.host.rules?.() ?? [];
+    if (!rules.length || !items.length) return 0;
+    const inbox = this.store.folderByRole('inbox');
+    const byRow = new Map<number, string[]>();
+    for (const m of items) {
+      const path = matchRule(rules, this.host.accountId, m);
+      const dest = path ? this.store.folderByPath(path) : null;
+      if (!dest || dest.row === inbox?.row) continue;
+      const list = byRow.get(dest.row) ?? [];
+      list.push(m.id);
+      byRow.set(dest.row, list);
+    }
+    let n = 0;
+    for (const [row, ids] of byRow) {
+      this.move(ids, row);
+      n += ids.length;
+    }
+    return n;
+  }
+
+  /** «Применить к полученным»: files the whole local inbox by the rules. */
+  applyRules(): number {
+    const inbox = this.store.folderByRole('inbox');
+    if (!inbox) return 0;
+    const rows = this.store.db.prepare('SELECT id, from_name, from_addr, subject FROM messages WHERE folder_row = ?').all(inbox.row);
+    return this.fileByRules(rows.map((r) => ({ id: String(r['id']), fromName: String(r['from_name'] ?? ''), fromAddress: String(r['from_addr'] ?? ''), subject: String(r['subject'] ?? '') })));
+  }
+
+  /**
+   * Creates a folder on the server (under `parentRow`) and locally (CBF-39). Offline: NETWORK.
+   * Servers with the `INBOX.` namespace (Courier / Dovecot) get the prefix for top-level folders.
+   */
+  async createFolder(name: string, parentRow: number | null): Promise<MailFolder> {
+    const clean = name.trim();
+    const parent = parentRow === null ? null : this.store.folder(parentRow);
+    if (parentRow !== null && !parent) throw notFound('folder');
+    const all = this.store.folders();
+    const delimiter = parent?.delimiter || all.find((f) => f.delimiter)?.delimiter || '/';
+    checkFolderName(clean, delimiter);
+    let path: string;
+    let parentPath = parent?.path ?? '';
+    if (parent) path = `${parent.path}${delimiter}${clean}`;
+    else {
+      const ns = all.some((f) => f.role !== 'inbox' && f.path.startsWith(`INBOX${delimiter}`));
+      path = ns ? `INBOX${delimiter}${clean}` : clean;
+      // The parent LIST reports for `INBOX.x`: the new folder sits where the next sync puts it.
+      if (ns) parentPath = 'INBOX';
+    }
+    if (all.some((f) => f.path.toLowerCase() === path.toLowerCase())) throw invalid('the folder already exists');
+    await this.run((s) => s.createFolder(path));
+    if (this.halted()) throw mailError('NETWORK', 'the account is offline');
+    const row = this.store.upsertFolder({ path, name: clean, delimiter, parentPath, role: null, specialUse: null });
+    this.emitFolders();
+    const out = this.folders().find((f) => f.id === folderId(this.host.accountId, row));
+    if (!out) throw notFound('folder');
+    return out;
+  }
+
+  /**
+   * Renames an ordinary folder on the server and locally (CBF-56): same parent, new last segment;
+   * the row (and so every message id) stays, subfolder paths follow. Offline: NETWORK, nothing changed.
+   * Returns the old and new path (the service moves the sorting rules along).
+   */
+  async renameFolder(row: number, name: string): Promise<{ folder: MailFolder; from: string; to: string }> {
+    const f = this.store.folder(row);
+    if (!f) throw notFound('folder');
+    if (f.role) throw invalid('role folders cannot be renamed');
+    const clean = name.trim();
+    const delimiter = f.delimiter || '/';
+    checkFolderName(clean, delimiter);
+    const path = f.parentPath ? `${f.parentPath}${delimiter}${clean}` : clean;
+    if (path !== f.path) {
+      if (this.store.folders().some((x) => x.row !== row && x.path.toLowerCase() === path.toLowerCase())) throw invalid('the folder already exists');
+      await this.run((s) => s.renameFolder(f.path, path));
+      if (this.halted()) throw mailError('NETWORK', 'the account is offline');
+      this.store.renameFolderPath(row, path, clean, f.parentPath);
+      this.emitFolders();
+    }
+    const out = this.folders().find((x) => x.id === folderId(this.host.accountId, row));
+    if (!out) throw notFound('folder');
+    return { folder: out, from: f.path, to: path };
+  }
+
+  /**
+   * Deletes an ordinary folder with its subfolders (deepest first) on the server, then locally with
+   * their mail (CBF-56). Offline: NETWORK, nothing removed. Returns the deleted paths.
+   */
+  async removeFolder(row: number): Promise<string[]> {
+    const f = this.store.folder(row);
+    if (!f) throw notFound('folder');
+    if (f.role) throw invalid('role folders cannot be deleted');
+    const delim = f.delimiter || '/';
+    const doomed = this.store.folders().filter((x) => x.row === row || x.path.startsWith(f.path + delim));
+    if (doomed.some((x) => x.role)) throw invalid('the folder holds a role folder');
+    doomed.sort((a, b) => b.path.length - a.path.length);
+    await this.run(async (s) => {
+      for (const x of doomed) await s.deleteFolder(x.path);
+    });
+    if (this.halted()) throw mailError('NETWORK', 'the account is offline');
+    for (const x of doomed) {
+      const threads = new Set(this.store.db.prepare('SELECT DISTINCT thread_id FROM messages WHERE folder_row = ?').all(x.row).map((r) => String(r['thread_id'])));
+      const ids = this.store.deleteFolder(x.row);
+      if (ids.length) {
+        this.emitRemoved(x.row, [...threads], ids);
+        this.updateStarred(threads);
+      }
+    }
+    this.emitFolders();
+    return doomed.map((x) => x.path);
   }
 
   private insertHeaders(f: FolderRecord, uidValidity: string, headers: RemoteHeader[]): Added[] {

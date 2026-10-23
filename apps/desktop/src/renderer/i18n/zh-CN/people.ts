@@ -19,6 +19,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   // profile popover
   'people.profile.role': '角色',
   'people.profile.voice': '语音',
+  'people.profile.extension': '分机号',
   'people.profile.joined': '加入时间',
   'people.profile.name': '资料名称',
   'people.profile.status': '状态',

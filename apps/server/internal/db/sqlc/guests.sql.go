@@ -183,7 +183,7 @@ func (q *Queries) DeleteUserRoomOverrides(ctx context.Context, userID string) er
 }
 
 const getRoomInviteByCode = `-- name: GetRoomInviteByCode :one
-SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, i.require_approval, i.members_only, i.archive_revoked, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by, r.icon_file_id, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private
+SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, i.require_approval, i.members_only, i.archive_revoked, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by, r.icon_file_id, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private, w.canvas_trash_days
 FROM room_invites i
 JOIN rooms r ON r.id = i.room_id AND r.archived_at IS NULL
 JOIN workspaces w ON w.id = r.workspace_id
@@ -265,6 +265,7 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.Workspace.WikiTrashDays,
 		&i.Workspace.TempArchiveDays,
 		&i.Workspace.OwnerSeesPrivate,
+		&i.Workspace.CanvasTrashDays,
 	)
 	return i, err
 }
@@ -434,7 +435,7 @@ func (q *Queries) LockExpiredGuest(ctx context.Context, id uuid.UUID) (uuid.UUID
 const promoteGuest = `-- name: PromoteGuest :one
 UPDATE workspace_members SET role = 'member'
 WHERE workspace_id = $1 AND user_id = $2 AND role = 'guest'
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type PromoteGuestParams struct {
@@ -454,6 +455,7 @@ func (q *Queries) PromoteGuest(ctx context.Context, arg PromoteGuestParams) (Wor
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }

@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/plan.proto.
  */
 export const file_calaba_v1_plan: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIvwECgpQbGFuTGltaXRzEhwKFGJvYXJkX2Zvcm1zX2Rpc2FibGVkGCEgASgIEh0KFWJvYXJkX2Zvcm1zX3Blcl9ib2FyZBgiIAEoDRIUCgxyb29tX21lbWJlcnMYASABKA0SNwoRc3RyZWFtX21heF9wcmVzZXQYAiABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQSFgoOc3RyZWFtX21heF9mcHMYAyABKA0SNwoRY2FtZXJhX21heF9wcmVzZXQYBCABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQSFgoOY2FtZXJhX21heF9mcHMYBSABKA0SGAoQc3RyZWFtc19wZXJfcm9vbRgGIAEoDRISCgpzdG9yYWdlX21iGAcgASgEEg8KB21lbWJlcnMYCCABKA0SFQoNc3RpY2tlcl9wYWNrcxgJIAEoDRIQCghzdGlja2VycxgKIAEoDRIMCgRib3RzGBQgASgNEhsKE2F1ZGlvX3RpZXJfbWF4X2ticHMYFSABKA0SDgoGYm9hcmRzGBYgASgNEhgKEGNhbWVyYXNfcGVyX3Jvb20YGyABKA0SFwoPY2FsZGF2X2Rpc2FibGVkGBcgASgIEhkKEW11c2ljaWFuX2Rpc2FibGVkGBwgASgIEhsKE2NoZWNrbGlzdHNfZGlzYWJsZWQYHSABKAgSHwoXYm9hcmRfd2ViaG9va3NfZGlzYWJsZWQYHiABKAgSGgoSdGVsZXBob255X2Rpc2FibGVkGB8gASgIEhwKFGF1dG9tYXRpb25zX2Rpc2FibGVkGCAgASgISgQIGBAZSgQIGRAaSgQIGhAbIosCCg1Xb3Jrc3BhY2VQbGFuEh0KBHBsYW4YASABKA4yDy5jYWxhYmEudjEuUGxhbhIlCgZsaW1pdHMYAiABKAsyFS5jYWxhYmEudjEuUGxhbkxpbWl0cxIvCgt2YWxpZF91bnRpbBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASRwoVaWRlbnRpdHlfZW50aXRsZW1lbnRzGAUgASgLMiguY2FsYWJhLnYxLldvcmtzcGFjZUlkZW50aXR5RW50aXRsZW1lbnRzEg8KB2V4cGlyZWQYBCABKAgSFAoMZGlzcGxheV9uYW1lGAYgASgJEhMKC2Rlc2NyaXB0aW9uGAcgASgJKmAKBFBsYW4SFAoQUExBTl9VTlNQRUNJRklFRBAAEg0KCVBMQU5fRlJFRRABEg0KCVBMQU5fVEVBTRACEg8KC1BMQU5fQ1VTVE9NEAMSEwoPUExBTl9FTlRFUlBSSVNFEARClwEKDWNvbS5jYWxhYmEudjFCCVBsYW5Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_identity]);
+  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIswFCgpQbGFuTGltaXRzEhwKFGJvYXJkX2Zvcm1zX2Rpc2FibGVkGCEgASgIEh0KFWJvYXJkX2Zvcm1zX3Blcl9ib2FyZBgiIAEoDRISCgp3aWtpX3BhZ2VzGCQgASgNEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0SGwoTYXVkaW9fdGllcl9tYXhfa2JwcxgVIAEoDRIOCgZib2FyZHMYFiABKA0SGAoQY2FtZXJhc19wZXJfcm9vbRgbIAEoDRIXCg9jYWxkYXZfZGlzYWJsZWQYFyABKAgSGQoRbXVzaWNpYW5fZGlzYWJsZWQYHCABKAgSGwoTY2hlY2tsaXN0c19kaXNhYmxlZBgdIAEoCBIfChdib2FyZF93ZWJob29rc19kaXNhYmxlZBgeIAEoCBIaChJ0ZWxlcGhvbnlfZGlzYWJsZWQYHyABKAgSHAoUYXV0b21hdGlvbnNfZGlzYWJsZWQYICABKAgSEgoKdGVtcF9yb29tcxgjIAEoDRIaChJjb3Jwb3JhdGVfaWRlbnRpdHkYKCABKAgSCgoCYWkYKSABKAhKBAgYEBlKBAgZEBpKBAgaEBsiiwIKDVdvcmtzcGFjZVBsYW4SHQoEcGxhbhgBIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgCIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJHChVpZGVudGl0eV9lbnRpdGxlbWVudHMYBSABKAsyKC5jYWxhYmEudjEuV29ya3NwYWNlSWRlbnRpdHlFbnRpdGxlbWVudHMSDwoHZXhwaXJlZBgEIAEoCBIUCgxkaXNwbGF5X25hbWUYBiABKAkSEwoLZGVzY3JpcHRpb24YByABKAkqYAoEUGxhbhIUChBQTEFOX1VOU1BFQ0lGSUVEEAASDQoJUExBTl9GUkVFEAESDQoJUExBTl9URUFNEAISDwoLUExBTl9DVVNUT00QAxITCg9QTEFOX0VOVEVSUFJJU0UQBEKXAQoNY29tLmNhbGFiYS52MUIJUGxhblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_identity]);
 
 /**
  * Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
@@ -35,6 +35,13 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
    * @generated from field: uint32 board_forms_per_board = 34;
    */
   boardFormsPerBoard: number;
+
+  /**
+   * live (not trashed) Wiki pages of the workspace (ADR-0096); 0 = no plan limit
+   *
+   * @generated from field: uint32 wiki_pages = 36;
+   */
+  wikiPages: number;
 
   /**
    * users in one voice room (guests and pending devices count)
@@ -175,6 +182,35 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
    * @generated from field: bool automations_disabled = 32;
    */
   automationsDisabled: boolean;
+
+  /**
+   * live temporary rooms per creator (ADR-0044, CBF-38); 0 = no plan limit
+   *
+   * @generated from field: uint32 temp_rooms = 35;
+   */
+  tempRooms: number;
+
+  /**
+   * Corporate identity (SSO, directory sync, the OAuth provider; ADR-0054 §5, ADR-0113) is part of
+   * the plan. A positive flag, unlike the others (no entitlement from a permissive zero): Business
+   * has it, Free / Team / an older custom plan do not; a superadmin turns it on or off per workspace
+   * (custom plan, or an override of Team / Business). Field 40: 35-39 are left for the limits being
+   * added in parallel.
+   *
+   * @generated from field: bool corporate_identity = 40;
+   */
+  corporateIdentity: boolean;
+
+  /**
+   * AI features (the workspace's AI integration, «Создать умную задачу», the boards' AI
+   * instruction run by the model; CBF-69) are Business only (owner, 22.10). A positive flag like
+   * corporate_identity: zero, a client that does not know the field and an older custom plan mean
+   * «no». Set by the plan kind (PLAN_*_LIMITS on the operator's server) or a custom plan; a
+   * superadmin override of Team / Business cannot change it.
+   *
+   * @generated from field: bool ai = 41;
+   */
+  ai: boolean;
 };
 
 /**

@@ -22,6 +22,7 @@ import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
+import { isPhoneRoom, phoneCallId, takePhoneJoin } from '../lib/sipInbound';
 import { log } from '../lib/log';
 import { isLapsed } from '../lib/billing/model';
 import { restrictedPerms, roomPerms, voiceCaps } from '../lib/permissions';
@@ -51,7 +52,7 @@ import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { AUTO_MUTE_TOAST, AutoMuteTimer, autoMuteArmed, type AutoMuteSec } from '../lib/autoMute';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { answerCallSelf, canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -360,6 +361,7 @@ class VoiceEngine {
       if (this.ptt.pending) this.ptt.stop();
       void this.syncPttBinding();
       this.applyTransmit();
+      if (s.micMode !== p.micMode) this.pushSelfState();
     }
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
     // Another speaker or mic: the acoustic path changed, judge the echo afresh.
@@ -401,6 +403,7 @@ class VoiceEngine {
     setVoice({ call: on });
     void this.syncPttBinding();
     this.applyTransmit();
+    this.pushSelfState(); // a call is voice activation only: the PTT flag follows
   }
 
   // ------------------------------------------------------------ join / leave
@@ -584,7 +587,8 @@ class VoiceEngine {
       if ('pending' in res && res.pending) {
         const { muted, deafened } = useVoice.getState();
         const musician = prefs().musicianMode;
-        if (muted || deafened || musician) void api.voice.updateSelf({ muted, deafened, musician }).catch((e: unknown) => log.warn('voice/self failed', e));
+        const ptt = this.micMode() === 'ptt';
+        if (muted || deafened || musician || ptt) void api.voice.updateSelf({ muted, deafened, musician, ptt }).catch((e: unknown) => log.warn('voice/self failed', e));
       }
       this.lastJoin = { url: res.url, token: res.token };
       setLink({ rtcHost: hostOfUrl(res.url) });
@@ -1051,6 +1055,11 @@ class VoiceEngine {
   }
 
   private async leaveStray(roomId: string): Promise<void> {
+    // A phone call's session (ADR-0117) is not a seat of the server's voice state.
+    if (isPhoneRoom(roomId)) {
+      this.strayRooms.delete(roomId);
+      return;
+    }
     try {
       await api.voice.leave(roomId);
       this.strayRooms.delete(roomId);
@@ -1090,7 +1099,8 @@ class VoiceEngine {
     log.info('voice: the server had lost this device, seat restored');
     const { muted, deafened } = useVoice.getState();
     const musician = prefs().musicianMode;
-    if (muted || deafened || musician) void api.voice.updateSelf({ muted, deafened, musician }).catch((e: unknown) => log.warn('voice/self failed', e));
+    const ptt = this.micMode() === 'ptt';
+    if (muted || deafened || musician || ptt) void api.voice.updateSelf({ muted, deafened, musician, ptt }).catch((e: unknown) => log.warn('voice/self failed', e));
   }
 
   /**
@@ -1200,7 +1210,10 @@ class VoiceEngine {
 
   /** POST /join, remembered as the /join in flight. */
   private sendJoin(roomId: string): ReturnType<typeof api.voice.join> {
-    const req = api.voice.join(roomId);
+    // An inbound phone call's session (ADR-0117): the accept's token once, then a fresh one
+    // for each reconnect — never the room /join.
+    const pre = isPhoneRoom(roomId) ? takePhoneJoin(roomId) : undefined;
+    const req = isPhoneRoom(roomId) ? (pre ? Promise.resolve(pre) : api.sip.joinInbound(phoneCallId(roomId))) : api.voice.join(roomId);
     const settled = req.then(
       () => undefined,
       () => undefined,
@@ -1214,6 +1227,7 @@ class VoiceEngine {
 
   /** POST /voice/leave in the background, after a /join still in flight (never rejects). */
   private sendLeave(roomId: string): void {
+    if (isPhoneRoom(roomId)) return; // the phone call hangs up by services/sipInbound.ts
     const joining = this.joinReq;
     this.leavingRooms.add(roomId);
     const run = (async (): Promise<void> => {
@@ -2556,6 +2570,17 @@ class VoiceEngine {
     return (next.muted || next.deafened || next.serverMuted) === muted;
   }
 
+  /**
+   * The user answered a call (explicit accept): mic on, undeafened (lib/voiceLogic.answerCallSelf).
+   * Called before the call's join, which reads the store for the capture and the first voice state.
+   */
+  unmuteForAnswer(): void {
+    const next = answerCallSelf(useVoice.getState());
+    if (!next) return;
+    setVoice(next);
+    if (this.room) this.afterSelfChange();
+  }
+
   toggleMute(): void {
     const v = useVoice.getState();
     // A moderator mute (VoiceState.server_muted) can't be lifted by the user: the server removed
@@ -2590,9 +2615,12 @@ class VoiceEngine {
   /** Optimistic voice state for everyone (docs/05: PATCH /api/voice/self). */
   private pushSelfState(): void {
     if (!this.room && !this.nativeAudio) return;
+    if (isPhoneRoom(this.roomId)) return; // a phone call's session is in no voice list (ADR-0117)
     const v = useVoice.getState();
     const musician = prefs().musicianMode;
-    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
+    // Push-to-talk is a mode, not a key press (ADR-0130): sent when the mode changes, never per press.
+    const ptt = this.micMode() === 'ptt';
+    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician, ptt }).catch((e: unknown) => {
       // The plan does not include musician mode (ADR-0052, 409 PLAN_LIMIT): back to the processed mic.
       if (musician && e instanceof ApiError && e.reason === 'PLAN_LIMIT' && prefs().musicianMode) {
         usePrefs.getState().setPrefs({ musicianMode: false });

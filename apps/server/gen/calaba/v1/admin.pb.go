@@ -316,8 +316,11 @@ func (x *AdminGetWorkspaceResponse) GetWorkspace() *AdminWorkspace {
 	return nil
 }
 
-// PUT /api/admin/workspaces/{id}/plan. limits only with PLAN_CUSTOM (stored as written,
-// 0 = no limit); FREE and TEAM take their limits from the server config. valid_until must be
+// PUT /api/admin/workspaces/{id}/plan. limits: required with PLAN_CUSTOM (stored as written,
+// 0 = no limit); optional with PLAN_TEAM / PLAN_ENTERPRISE (ADR-0113): the full limits the
+// workspace gets, of which only the values that differ from the plan's defaults are stored, so
+// the rest keeps following the server config (unset = the plan's defaults, overrides dropped);
+// refused with PLAN_FREE. valid_until must be
 // in the future (unset = no expiry). Every change is logged; WORKSPACE_UPDATE follows.
 type AdminSetPlanRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`

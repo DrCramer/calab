@@ -82,6 +82,7 @@ type PlanLimits struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	BoardFormsDisabled    bool                   `protobuf:"varint,33,opt,name=board_forms_disabled,json=boardFormsDisabled,proto3" json:"board_forms_disabled,omitempty"`
 	BoardFormsPerBoard    uint32                 `protobuf:"varint,34,opt,name=board_forms_per_board,json=boardFormsPerBoard,proto3" json:"board_forms_per_board,omitempty"`                      // 0 = unlimited; ADR-0064
+	WikiPages             uint32                 `protobuf:"varint,36,opt,name=wiki_pages,json=wikiPages,proto3" json:"wiki_pages,omitempty"`                                                     // live (not trashed) Wiki pages of the workspace (ADR-0096); 0 = no plan limit
 	RoomMembers           uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
 	StreamMaxPreset       ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
 	StreamMaxFps          uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
@@ -102,8 +103,21 @@ type PlanLimits struct {
 	BoardWebhooksDisabled bool                   `protobuf:"varint,30,opt,name=board_webhooks_disabled,json=boardWebhooksDisabled,proto3" json:"board_webhooks_disabled,omitempty"`               // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
 	TelephonyDisabled     bool                   `protobuf:"varint,31,opt,name=telephony_disabled,json=telephonyDisabled,proto3" json:"telephony_disabled,omitempty"`                             // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
 	AutomationsDisabled   bool                   `protobuf:"varint,32,opt,name=automations_disabled,json=automationsDisabled,proto3" json:"automations_disabled,omitempty"`                       // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	TempRooms             uint32                 `protobuf:"varint,35,opt,name=temp_rooms,json=tempRooms,proto3" json:"temp_rooms,omitempty"`                                                     // live temporary rooms per creator (ADR-0044, CBF-38); 0 = no plan limit
+	// Corporate identity (SSO, directory sync, the OAuth provider; ADR-0054 §5, ADR-0113) is part of
+	// the plan. A positive flag, unlike the others (no entitlement from a permissive zero): Business
+	// has it, Free / Team / an older custom plan do not; a superadmin turns it on or off per workspace
+	// (custom plan, or an override of Team / Business). Field 40: 35-39 are left for the limits being
+	// added in parallel.
+	CorporateIdentity bool `protobuf:"varint,40,opt,name=corporate_identity,json=corporateIdentity,proto3" json:"corporate_identity,omitempty"`
+	// AI features (the workspace's AI integration, «Создать умную задачу», the boards' AI
+	// instruction run by the model; CBF-69) are Business only (owner, 22.10). A positive flag like
+	// corporate_identity: zero, a client that does not know the field and an older custom plan mean
+	// «no». Set by the plan kind (PLAN_*_LIMITS on the operator's server) or a custom plan; a
+	// superadmin override of Team / Business cannot change it.
+	Ai            bool `protobuf:"varint,41,opt,name=ai,proto3" json:"ai,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PlanLimits) Reset() {
@@ -146,6 +160,13 @@ func (x *PlanLimits) GetBoardFormsDisabled() bool {
 func (x *PlanLimits) GetBoardFormsPerBoard() uint32 {
 	if x != nil {
 		return x.BoardFormsPerBoard
+	}
+	return 0
+}
+
+func (x *PlanLimits) GetWikiPages() uint32 {
+	if x != nil {
+		return x.WikiPages
 	}
 	return 0
 }
@@ -290,6 +311,27 @@ func (x *PlanLimits) GetAutomationsDisabled() bool {
 	return false
 }
 
+func (x *PlanLimits) GetTempRooms() uint32 {
+	if x != nil {
+		return x.TempRooms
+	}
+	return 0
+}
+
+func (x *PlanLimits) GetCorporateIdentity() bool {
+	if x != nil {
+		return x.CorporateIdentity
+	}
+	return false
+}
+
+func (x *PlanLimits) GetAi() bool {
+	if x != nil {
+		return x.Ai
+	}
+	return false
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state                protoimpl.MessageState         `protogen:"open.v1"`
@@ -390,11 +432,13 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xd0\a\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xcd\b\n" +
 	"\n" +
 	"PlanLimits\x120\n" +
 	"\x14board_forms_disabled\x18! \x01(\bR\x12boardFormsDisabled\x121\n" +
-	"\x15board_forms_per_board\x18\" \x01(\rR\x12boardFormsPerBoard\x12!\n" +
+	"\x15board_forms_per_board\x18\" \x01(\rR\x12boardFormsPerBoard\x12\x1d\n" +
+	"\n" +
+	"wiki_pages\x18$ \x01(\rR\twikiPages\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
 	"\x11stream_max_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x0fstreamMaxPreset\x12$\n" +
 	"\x0estream_max_fps\x18\x03 \x01(\rR\fstreamMaxFps\x12H\n" +
@@ -416,7 +460,11 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x13checklists_disabled\x18\x1d \x01(\bR\x12checklistsDisabled\x126\n" +
 	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabled\x12-\n" +
 	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabled\x121\n" +
-	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
+	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabled\x12\x1d\n" +
+	"\n" +
+	"temp_rooms\x18# \x01(\rR\ttempRooms\x12-\n" +
+	"\x12corporate_identity\x18( \x01(\bR\x11corporateIdentity\x12\x0e\n" +
+	"\x02ai\x18) \x01(\bR\x02aiJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

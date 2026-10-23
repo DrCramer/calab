@@ -1,10 +1,10 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, MessageSquareShare, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, MessageSquareShare, PanelLeft, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
-import type { MailDraft, MailFolder, MailFolderRole, MailOutgoing } from '../../../shared/mail';
+import type { MailDraft, MailFolderRole, MailOutgoing } from '../../../shared/mail';
 import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -12,7 +12,9 @@ import { fmt, useTimeFormat } from '../../lib/format';
 import {
   ALL_INBOXES,
   boxEquals,
+  boxFolder,
   boxRole,
+  boxSmart,
   boxUnread,
   firstSyncAccount,
   loadDrafts,
@@ -25,6 +27,7 @@ import {
   scopeSyncing,
   inTrash,
   selectBox,
+  smartBox,
   setFlaggedOnly,
   setQuery,
   setUnreadOnly,
@@ -42,7 +45,8 @@ import { pickedSummary } from './BatchView';
 import { useMoveTargets } from './MailMessageView';
 import { MailStatusFooter } from './MailStatusFooter';
 import { UserAvatar, UserName, useMailUser } from './people';
-import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime, ROLE_ORDER } from './format';
+import { folderTree } from './folderTree';
+import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime } from './format';
 
 /**
  * The list column (ADR-0088 §8, Apple Mail): «Входящие ⌄» (the mailbox switcher) and «+» in the
@@ -55,6 +59,7 @@ export function MailColumn(): ReactNode {
   return (
     <aside className="mat-sidebar mat-sidebar-window relative flex w-[clamp(300px,30vw,380px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.list')} data-testid="mail-column">
       <ColumnHeader title={<BoxSwitcher />}>
+        <SidebarToggle />
         <EmptyTrashButton />
         <SyncControl />
         <CreateButton label={t('mbox.compose')} data-testid="mail-compose" onClick={composeNew} />
@@ -65,6 +70,18 @@ export function MailColumn(): ReactNode {
     </aside>
   );
 }
+
+/** «Показать ящики» while the sidebar is hidden (CBF-56); the sidebar's own header hides it. */
+const SidebarToggle = memo(function SidebarToggle(): ReactNode {
+  useLocale();
+  const hidden = useMailUi((s) => !s.sidebar);
+  if (!hidden) return null;
+  return (
+    <IconButton label={t('mbox.sidebar.show')} onClick={() => useMailUi.getState().toggleSidebar()} data-testid="mail-sidebar-show">
+      <PanelLeft className="size-4" strokeWidth={1.75} />
+    </IconButton>
+  );
+});
 
 // ---------------------------------------------------------------- sync (owner 12.10)
 
@@ -111,9 +128,11 @@ const EmptyTrashButton = memo(function EmptyTrashButton(): ReactNode {
 
 // ---------------------------------------------------------------- the switcher
 
-function boxTitle(s: Parameters<typeof boxRole>[0] & { folders: Record<string, MailFolder[]> }, box: MailBox): string {
+function boxTitle(s: Parameters<typeof boxFolder>[0] & Parameters<typeof boxSmart>[0], box: MailBox): string {
+  const smart = boxSmart(s, box);
+  if (smart) return smart.name;
   if (box.scope === 'all') return allLabel(typeof box.folder === 'string' ? box.folder : 'inbox');
-  const f = typeof box.folder === 'string' ? s.folders[box.scope]?.find((x) => x.role === box.folder) : s.folderById[box.folder.id];
+  const f = boxFolder(s, box);
   return f ? folderLabel(f) : t('mbox.section');
 }
 
@@ -136,7 +155,7 @@ function BoxSwitcher(): ReactNode {
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'max-h-[min(560px,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto')} sideOffset={4} align="start" collisionPadding={16} data-testid="mail-box-menu">
+        <Dropdown.Content className={cx(menuBox, 'max-h-[min(560px,var(--radix-dropdown-menu-content-available-height))] w-80 overflow-y-auto')} sideOffset={4} align="start" collisionPadding={16} data-testid="mail-box-menu">
           <SwitcherItems />
         </Dropdown.Content>
       </Dropdown.Portal>
@@ -144,17 +163,29 @@ function BoxSwitcher(): ReactNode {
   );
 }
 
-/** Mounted only while open: «Все входящие», then each account's folders with their counters. */
+/**
+ * Mounted only while open (CBF-56: grouped, not one flat list): with several accounts «Все
+ * входящие» / «Все: Отмеченные», then each account as a submenu with its folder tree; one account —
+ * its tree inline. Smart folders after them.
+ */
 function SwitcherItems(): ReactNode {
   const accountIds = useMail((s) => s.accountIds);
   const multi = accountIds.length > 1;
   return (
     <>
-      <BoxItem box={ALL_INBOXES} label={t('mbox.allInboxes')} role="inbox" />
-      {multi ? <BoxItem box={{ scope: 'all', folder: 'starred' }} label={allLabel('starred')} role="starred" /> : null}
-      {accountIds.map((id) => (
-        <AccountFolders key={id} accountId={id} />
-      ))}
+      {multi ? (
+        <>
+          <BoxItem box={ALL_INBOXES} label={t('mbox.allInboxes')} role="inbox" />
+          <BoxItem box={{ scope: 'all', folder: 'starred' }} label={allLabel('starred')} role="starred" />
+          <Dropdown.Separator className={menuSeparator} />
+          {accountIds.map((id) => (
+            <AccountSub key={id} accountId={id} />
+          ))}
+        </>
+      ) : accountIds[0] ? (
+        <AccountFolders accountId={accountIds[0]} />
+      ) : null}
+      <SmartItems />
       <Dropdown.Separator className={menuSeparator} />
       <Dropdown.Item className={menuItem} onSelect={() => useMailUi.getState().openAdd()} data-testid="mail-add-account">
         <Plus className="size-4" aria-hidden />
@@ -164,36 +195,55 @@ function SwitcherItems(): ReactNode {
   );
 }
 
-function AccountFolders({ accountId }: { accountId: string }): ReactNode {
+/** One account of several: a submenu «адрес ▸» with its tree; the box inside it is checked on the trigger. */
+function AccountSub({ accountId }: { accountId: string }): ReactNode {
   const email = useMail((s) => s.accounts[accountId]?.email ?? '');
   const state = useMail((s) => s.accounts[accountId]?.state);
+  const here = useMail((s) => !s.query && s.box.scope === accountId);
+  const unread = useMail((s) => s.folders[accountId]?.find((f) => f.role === 'inbox')?.unread ?? 0);
+  return (
+    <Dropdown.Sub>
+      <Dropdown.SubTrigger className={cx(menuItem, 'pr-2 data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="mail-box-account">
+        <span className="min-w-0 flex-1 truncate" title={email}>{email}</span>
+        {state === 'auth_failed' || state === 'error' || state === 'offline' ? <TriangleAlert className="size-3 shrink-0 text-warn" aria-label={t(state === 'auth_failed' ? 'mbox.state.authFailed' : state === 'offline' ? 'mbox.state.offline' : 'mbox.state.error')} /> : null}
+        {unread > 0 ? <span className="shrink-0 text-caption tabular-nums opacity-70">{unread}</span> : null}
+        <Check className={cx('size-4 shrink-0', !here && 'invisible')} aria-hidden />
+        <ChevronDown className="size-3.5 shrink-0 -rotate-90 opacity-60" aria-hidden />
+      </Dropdown.SubTrigger>
+      <Dropdown.Portal>
+        <Dropdown.SubContent className={cx(menuBox, 'max-h-[min(520px,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto')} collisionPadding={16}>
+          <AccountFolders accountId={accountId} />
+        </Dropdown.SubContent>
+      </Dropdown.Portal>
+    </Dropdown.Sub>
+  );
+}
+
+/** An account's folder tree (folderTree: role folders on top, own folders by name, subfolders indented). */
+function AccountFolders({ accountId }: { accountId: string }): ReactNode {
   const folders = useMail(useShallow((s) => s.folders[accountId] ?? []));
-  const sorted = useMemo(() => sortFolders(folders), [folders]);
+  const rows = useMemo(() => folderTree(folders), [folders]);
   return (
     <>
-      <Dropdown.Separator className={menuSeparator} />
-      <Dropdown.Label className={cx(menuLabel, 'flex items-center gap-1.5 normal-case')}>
-        <span className="min-w-0 truncate">{email}</span>
-        {state === 'auth_failed' || state === 'error' || state === 'offline' ? <TriangleAlert className="size-3 shrink-0 text-warn" aria-label={t(state === 'auth_failed' ? 'mbox.state.authFailed' : state === 'offline' ? 'mbox.state.offline' : 'mbox.state.error')} /> : null}
-      </Dropdown.Label>
-      {sorted.map(({ f, depth }) => (
+      {rows.map(({ folder: f, depth }) => (
         <BoxItem key={f.id} box={f.role ? { scope: accountId, folder: f.role } : { scope: accountId, folder: { id: f.id } }} label={folderLabel(f)} role={f.role} depth={depth} />
       ))}
     </>
   );
 }
 
-/** Role folders in Apple Mail's order, then the others by path with their nesting depth. */
-function sortFolders(list: readonly MailFolder[]): Array<{ f: MailFolder; depth: number }> {
-  const roles = ROLE_ORDER.map((r) => list.find((f) => f.role === r)).filter((f): f is MailFolder => !!f);
-  const rest = list.filter((f) => !f.role).sort((a, b) => a.path.localeCompare(b.path));
-  const byId = new Map(list.map((f) => [f.id, f]));
-  const depth = (f: MailFolder): number => {
-    let d = 0;
-    for (let p = f.parentId; p && d < 6; p = byId.get(p)?.parentId ?? null) d++;
-    return d;
-  };
-  return [...roles.map((f) => ({ f, depth: 0 })), ...rest.map((f) => ({ f, depth: depth(f) }))];
+function SmartItems(): ReactNode {
+  const list = useMail((s) => s.settings.smartFolders);
+  if (!list.length) return null;
+  return (
+    <>
+      <Dropdown.Separator className={menuSeparator} />
+      <Dropdown.Label className={cx(menuLabel, 'normal-case')}>{t('mbox.smart.group')}</Dropdown.Label>
+      {list.map((f) => (
+        <BoxItem key={f.id} box={smartBox(f)} label={f.name} role={null} />
+      ))}
+    </>
+  );
 }
 
 /**
@@ -231,7 +281,7 @@ const BoxRow = forwardRef<HTMLDivElement, { box: MailBox; label: string; role: M
   // Drafts and the outgoing queue count their items; every other folder its unread.
   const count = useMail((s) => {
     if (role === 'drafts' || role === 'outbox') {
-      const f = typeof box.folder !== 'string' ? s.folderById[box.folder.id] : box.scope === 'all' ? null : s.folders[box.scope]?.find((x) => x.role === role);
+      const f = boxFolder(s, box);
       return f ? f.total : 0;
     }
     return boxUnread(s, box);
@@ -239,7 +289,7 @@ const BoxRow = forwardRef<HTMLDivElement, { box: MailBox; label: string; role: M
   return (
     // `rest`: the context menu trigger's handlers (the trash row).
     <Dropdown.Item {...rest} ref={ref} className={cx(menuItem, 'pr-2')} onSelect={() => selectBox(box)} data-testid="mail-box-item" style={depth ? { paddingLeft: 10 + depth * 14 } : undefined}>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
       {count > 0 ? <span className="shrink-0 text-caption tabular-nums opacity-70">{count}</span> : null}
       <Check className={cx('size-4 shrink-0', !current && 'invisible')} aria-hidden />
     </Dropdown.Item>
@@ -377,6 +427,7 @@ function EmptyList(): ReactNode {
   const unreadOnly = useMail((s) => s.unreadOnly);
   const flaggedOnly = useMail((s) => s.flaggedOnly);
   const searching = useMail((s) => s.query !== '');
+  const smart = useMail((s) => !s.query && boxSmart(s, s.box) !== null);
   if (first) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-body text-muted" data-testid="mail-list-first-sync">
@@ -387,8 +438,8 @@ function EmptyList(): ReactNode {
   }
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-body text-muted" data-testid="mail-list-empty">
-      <p>{searching ? t('mbox.searchEmpty') : flaggedOnly ? t('mbox.emptyFlagged') : unreadOnly ? t('mbox.emptyUnread') : t('mbox.empty')}</p>
-      {searching || unreadOnly || flaggedOnly ? null : <ListFooter />}
+      <p>{searching ? t('mbox.searchEmpty') : flaggedOnly ? t('mbox.emptyFlagged') : unreadOnly ? t('mbox.emptyUnread') : smart ? t('mbox.smart.empty') : t('mbox.empty')}</p>
+      {searching || unreadOnly || flaggedOnly || smart ? null : <ListFooter />}
     </div>
   );
 }
@@ -562,6 +613,8 @@ function ListFooter(): ReactNode {
   const hasNext = useMail((s) => s.next !== null);
   const older = useMail((s) => s.older);
   const searching = useMail((s) => s.query !== '');
+  // A smart folder (CBF-56) shows what is synced: older mail is loaded in its real folders.
+  const smart = useMail((s) => boxSmart(s, s.box) !== null);
   if (loading || hasNext) {
     return (
       <div className="grid h-12 place-items-center">
@@ -569,7 +622,7 @@ function ListFooter(): ReactNode {
       </div>
     );
   }
-  if (searching) return <div className="h-4" />;
+  if (searching || smart) return <div className="h-4" />;
   return (
     <div className="flex h-14 items-center justify-center px-3">
       {older === 'exhausted' ? (

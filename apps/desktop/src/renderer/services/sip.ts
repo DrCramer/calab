@@ -1,4 +1,4 @@
-import { SipCallStatus, type SipCall, type WorkspaceSnapshot } from '@calaba/protocol';
+import { SipCallDirection, SipCallStatus, type SipCall, type WorkspaceSnapshot } from '@calaba/protocol';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { describeError } from '../lib/api/errors';
@@ -21,6 +21,7 @@ import { myUserId } from '../stores/session';
 import { useSipCalls } from '../stores/sipCalls';
 import { toast } from '../stores/toasts';
 import { useVoice } from '../stores/voice';
+import { applySnapshotInbound, onInboundCallUpdate, resetInbound } from './sipInbound';
 
 /**
  * Telephony on the client (ADR-0046): the server's phone lines (READY / WORKSPACE_CREATE
@@ -34,17 +35,24 @@ export function resetSipCalls(snaps: readonly WorkspaceSnapshot[]): void {
   let map: SipCallMap = {};
   for (const s of snaps) if (s.workspace) map = withSnapshot(map, s.workspace.id, s.sipCalls);
   commit(map);
+  resetInbound(snaps); // inbound calls that ring me / I took (ADR-0117)
 }
 
 /** WORKSPACE_CREATE (joined a workspace): its live lines. */
 export function applySnapshotSipCalls(snap: WorkspaceSnapshot): void {
   if (!snap.workspace) return;
+  applySnapshotInbound(snap);
   commit(withSnapshot(useSipCalls.getState().byRoom, snap.workspace.id, snap.sipCalls));
 }
 
 /** SIP_CALL_UPDATE, and the answers of POST / DELETE (the same call, whichever comes first). */
 export function onSipCallUpdate(call: SipCall | undefined): void {
-  if (call) commit(withEvent(useSipCalls.getState().byRoom, call));
+  if (!call) return;
+  if (call.direction === SipCallDirection.IN) {
+    onInboundCallUpdate(call);
+    return;
+  }
+  commit(withEvent(useSipCalls.getState().byRoom, call));
 }
 
 /** A deleted room / a workspace I left. */

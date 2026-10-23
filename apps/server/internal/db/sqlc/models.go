@@ -396,6 +396,8 @@ type Board struct {
 	DisabledFeatures           int64
 	EstimateScale              string
 	ApprovalNotifyDelaySeconds int32
+	AiInstruction              string
+	AiFindDuplicates           bool
 }
 
 type BoardCategory struct {
@@ -609,6 +611,13 @@ type BotDelegation struct {
 	Since       time.Time
 }
 
+type BotDelegationDecline struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+	DeclinedAt  time.Time
+}
+
 type BotDelegationInvite struct {
 	WorkspaceID      uuid.UUID
 	BotID            uuid.UUID
@@ -656,6 +665,120 @@ type CaldavPush struct {
 	NextAt    time.Time
 	Error     string
 	CreatedAt time.Time
+}
+
+type CanvasActivity struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ItemID      *uuid.UUID
+	ItemName    string
+	ActorID     *uuid.UUID
+	Kind        string
+	Before      []byte
+	After       []byte
+	Private     bool
+	CreatedAt   time.Time
+}
+
+type CanvasComment struct {
+	ID         uuid.UUID
+	CanvasID   uuid.UUID
+	ParentID   *uuid.UUID
+	ObjectID   *string
+	X          float64
+	Y          float64
+	AuthorID   *uuid.UUID
+	Body       string
+	Mentions   []uuid.UUID
+	Notified   []uuid.UUID
+	ResolvedAt *time.Time
+	ResolvedBy *uuid.UUID
+	CreatedAt  time.Time
+	EditedAt   *time.Time
+}
+
+type CanvasItem struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	PlainText   string
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type CanvasItemHead struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type CanvasLink struct {
+	Code      string
+	CanvasID  uuid.UUID
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt *time.Time
+	RevokedAt *time.Time
+	Views     int64
+}
+
+type CanvasPermission struct {
+	CanvasID   uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
+}
+
+type CanvasSnapshot struct {
+	CanvasID   uuid.UUID
+	State      []byte
+	ThroughSeq int64
+	SavedBy    *uuid.UUID
+	SavedAt    time.Time
+}
+
+type CanvasUpdate struct {
+	CanvasID  uuid.UUID
+	Seq       int64
+	Data      []byte
+	AuthorID  *uuid.UUID
+	CreatedAt time.Time
+}
+
+type CanvasVersion struct {
+	ID        uuid.UUID
+	CanvasID  uuid.UUID
+	State     []byte
+	Authors   []uuid.UUID
+	CreatedAt time.Time
+	StateHash []byte
 }
 
 type DirectoryObject struct {
@@ -1397,22 +1520,47 @@ type SessionWorkspaceAssurance struct {
 }
 
 type SipAccount struct {
-	WorkspaceID     uuid.UUID
-	Provider        string
-	Host            string
-	Transport       string
-	Username        string
-	AuthUsername    string
-	Port            int32
-	PasswordEnc     []byte
-	CallerID        string
-	OutboundPrefix  string
-	AllowedPrefixes []string
-	TrunkID         string
-	Enabled         bool
-	LastError       string
-	UpdatedAt       time.Time
-	UpdatedBy       *uuid.UUID
+	WorkspaceID         uuid.UUID
+	Provider            string
+	Host                string
+	Transport           string
+	Username            string
+	AuthUsername        string
+	Port                int32
+	PasswordEnc         []byte
+	CallerID            string
+	OutboundPrefix      string
+	AllowedPrefixes     []string
+	TrunkID             string
+	Enabled             bool
+	LastError           string
+	UpdatedAt           time.Time
+	UpdatedBy           *uuid.UUID
+	InboundEnabled      bool
+	InboundKind         string
+	InboundMenuID       *uuid.UUID
+	InboundExtensionID  *uuid.UUID
+	InboundGroupID      *uuid.UUID
+	InboundAllowedCidrs []string
+	InboundTrunkID      string
+	InboundRuleID       string
+	InboundMode         string
+	RegRegistrar        string
+	RegDomain           string
+	RegExpires          int32
+	RegKeepaliveSec     int32
+	RegContactUser      string
+	RegAuthUsername     string
+	RegPasswordEnc      []byte
+	RegTrunkPasswordEnc []byte
+	RegStatus           string
+	RegError            string
+	RegRegisteredAt     *time.Time
+	RegExpiresAt        *time.Time
+	RegContact          string
+	RegStatusAt         *time.Time
+	RecordInbound       bool
+	RecordOutbound      bool
 }
 
 type SipCall struct {
@@ -1430,6 +1578,99 @@ type SipCall struct {
 	StartedAt           time.Time
 	AnsweredAt          *time.Time
 	EndedAt             *time.Time
+	LkRoom              string
+	AnsweredBy          *uuid.UUID
+	Route               string
+	RingingUserIds      []uuid.UUID
+	Via                 string
+	ProviderCallID      string
+}
+
+type SipCallRecording struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	CallID      uuid.UUID
+	Direction   string
+	Number      string
+	LkRoom      string
+	EgressID    *string
+	File        string
+	Status      string
+	Error       string
+	StartedAt   time.Time
+	StoppedAt   *time.Time
+	EndedAt     *time.Time
+	SizeBytes   int64
+	FileID      *uuid.UUID
+	DiskItemID  *uuid.UUID
+}
+
+type SipExtension struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Number          string
+	Kind            string
+	UserID          *uuid.UUID
+	GroupID         *uuid.UUID
+	Description     string
+	CreatedAt       time.Time
+	CreatedBy       *uuid.UUID
+	ExternalBlocked bool
+}
+
+type SipGroup struct {
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	Name              string
+	Strategy          string
+	RingSec           int32
+	MemberRingSec     int32
+	NextPosition      int32
+	OnFailKind        string
+	OnFailMenuID      *uuid.UUID
+	OnFailExtensionID *uuid.UUID
+	OnFailGroupID     *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FallbackEnabled   bool
+	FallbackSec       int32
+}
+
+type SipGroupMember struct {
+	WorkspaceID uuid.UUID
+	GroupID     uuid.UUID
+	ExtensionID uuid.UUID
+	Position    int32
+}
+
+type SipIvrItem struct {
+	WorkspaceID       uuid.UUID
+	MenuID            uuid.UUID
+	Digit             string
+	ActionKind        string
+	ActionMenuID      *uuid.UUID
+	ActionExtensionID *uuid.UUID
+	ActionGroupID     *uuid.UUID
+}
+
+type SipIvrMenu struct {
+	ID                 uuid.UUID
+	WorkspaceID        uuid.UUID
+	Name               string
+	PromptFileID       *uuid.UUID
+	PromptDurationMs   int32
+	InputTimeoutSec    int32
+	Repeats            int32
+	NoInputKind        string
+	NoInputMenuID      *uuid.UUID
+	NoInputExtensionID *uuid.UUID
+	NoInputGroupID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	UpdatedBy          *uuid.UUID
+	DialExtensions     bool
+	NoticeFileID       *uuid.UUID
+	NoticeDurationMs   int32
 }
 
 type Sticker struct {
@@ -1792,6 +2033,7 @@ type Workspace struct {
 	WikiTrashDays           *int32
 	TempArchiveDays         int32
 	OwnerSeesPrivate        bool
+	CanvasTrashDays         *int32
 }
 
 type WorkspaceAdminLog struct {
@@ -1801,6 +2043,25 @@ type WorkspaceAdminLog struct {
 	Action      string
 	Reason      string
 	CreatedAt   time.Time
+}
+
+type WorkspaceAi struct {
+	WorkspaceID uuid.UUID
+	Provider    string
+	BaseUrl     string
+	Model       string
+	KeyEnc      []byte
+	KeyHint     string
+	UpdatedAt   time.Time
+	UpdatedBy   *uuid.UUID
+}
+
+type WorkspaceAiCheck struct {
+	WorkspaceID uuid.UUID
+	Fingerprint []byte
+	Ok          bool
+	Error       string
+	CheckedAt   time.Time
 }
 
 type WorkspaceApp struct {
@@ -2004,6 +2265,7 @@ type WorkspaceMember struct {
 	BadgeID          *uuid.UUID
 	AchievementCount int32
 	LastActiveAt     *time.Time
+	SipExtension     string
 }
 
 type WorkspaceNotificationSetting struct {

@@ -18,7 +18,7 @@ WITH back AS (
 INSERT INTO workspace_members (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id, user_id) DO NOTHING
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type AddMemberParams struct {
@@ -40,6 +40,7 @@ func (q *Queries) AddMember(ctx context.Context, arg AddMemberParams) (Workspace
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }
@@ -58,7 +59,7 @@ func (q *Queries) CountOwnedWorkspaces(ctx context.Context, ownerID uuid.UUID) (
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (slug, name, visibility, owner_id, storage_quota_bytes)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days
 `
 
 type CreateWorkspaceParams struct {
@@ -102,6 +103,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.WikiTrashDays,
 		&i.TempArchiveDays,
 		&i.OwnerSeesPrivate,
+		&i.CanvasTrashDays,
 	)
 	return i, err
 }
@@ -119,6 +121,10 @@ WITH boards_gone AS (
     DELETE FROM wiki_permissions wpm USING wiki_pages wp
     WHERE wpm.page_id = wp.id AND wp.workspace_id = $1::uuid
       AND wpm.target_type = 'user' AND wpm.target_id = $2::text
+), canvas_gone AS (
+    DELETE FROM canvas_permissions cpm USING canvas_items ci
+    WHERE cpm.canvas_id = ci.id AND ci.workspace_id = $1::uuid
+      AND cpm.target_type = 'user' AND cpm.target_id = $2::text
 )
 DELETE FROM room_permissions rp
 USING rooms r
@@ -131,7 +137,8 @@ type DeleteUserOverridesInWorkspaceParams struct {
 	UserID      string
 }
 
-// A member leaves: their room, board (ADR-0042), disk (ADR-0094) and wiki (ADR-0096) overrides go.
+// A member leaves: their room, board (ADR-0042), disk (ADR-0094), wiki (ADR-0096) and canvas
+// (ADR-0126) overrides go.
 func (q *Queries) DeleteUserOverridesInWorkspace(ctx context.Context, arg DeleteUserOverridesInWorkspaceParams) error {
 	_, err := q.db.Exec(ctx, deleteUserOverridesInWorkspace, arg.WorkspaceID, arg.UserID)
 	return err
@@ -150,7 +157,7 @@ func (q *Queries) DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const getMember = `-- name: GetMember :one
-SELECT workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at FROM workspace_members WHERE workspace_id = $1 AND user_id = $2
+SELECT workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension FROM workspace_members WHERE workspace_id = $1 AND user_id = $2
 `
 
 type GetMemberParams struct {
@@ -170,12 +177,13 @@ func (q *Queries) GetMember(ctx context.Context, arg GetMemberParams) (Workspace
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }
 
 const getMemberWithUser = `-- name: GetMemberWithUser :one
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, m.sip_extension, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
@@ -206,6 +214,7 @@ func (q *Queries) GetMemberWithUser(ctx context.Context, arg GetMemberWithUserPa
 		&i.WorkspaceMember.BadgeID,
 		&i.WorkspaceMember.AchievementCount,
 		&i.WorkspaceMember.LastActiveAt,
+		&i.WorkspaceMember.SipExtension,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,
@@ -247,7 +256,7 @@ func (q *Queries) GetMemberWithUser(ctx context.Context, arg GetMemberWithUserPa
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private FROM workspaces WHERE id = $1
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days FROM workspaces WHERE id = $1
 `
 
 func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error) {
@@ -277,6 +286,7 @@ func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, er
 		&i.WikiTrashDays,
 		&i.TempArchiveDays,
 		&i.OwnerSeesPrivate,
+		&i.CanvasTrashDays,
 	)
 	return i, err
 }
@@ -319,7 +329,7 @@ func (q *Queries) ListMemberNames(ctx context.Context, arg ListMemberNamesParams
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, m.badge_id, m.achievement_count, m.last_active_at, m.sip_extension, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
@@ -352,6 +362,7 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 			&i.WorkspaceMember.BadgeID,
 			&i.WorkspaceMember.AchievementCount,
 			&i.WorkspaceMember.LastActiveAt,
+			&i.WorkspaceMember.SipExtension,
 			&i.User.ID,
 			&i.User.Email,
 			&i.User.PasswordHash,
@@ -400,7 +411,7 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 }
 
 const listOpenWorkspacesForUser = `-- name: ListOpenWorkspacesForUser :many
-SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private FROM workspaces w
+SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private, w.canvas_trash_days FROM workspaces w
 WHERE w.visibility = 'open'
   AND NOT EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id AND m.user_id = $1)
 ORDER BY w.name
@@ -440,6 +451,7 @@ func (q *Queries) ListOpenWorkspacesForUser(ctx context.Context, userID uuid.UUI
 			&i.WikiTrashDays,
 			&i.TempArchiveDays,
 			&i.OwnerSeesPrivate,
+			&i.CanvasTrashDays,
 		); err != nil {
 			return nil, err
 		}
@@ -476,7 +488,7 @@ func (q *Queries) ListUserWorkspaceIDs(ctx context.Context, userID uuid.UUID) ([
 }
 
 const listUserWorkspaces = `-- name: ListUserWorkspaces :many
-SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private FROM workspaces w
+SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private, w.canvas_trash_days FROM workspaces w
 JOIN workspace_members m ON m.workspace_id = w.id
 WHERE m.user_id = $1
 ORDER BY m.joined_at
@@ -515,6 +527,7 @@ func (q *Queries) ListUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]W
 			&i.WikiTrashDays,
 			&i.TempArchiveDays,
 			&i.OwnerSeesPrivate,
+			&i.CanvasTrashDays,
 		); err != nil {
 			return nil, err
 		}
@@ -560,7 +573,7 @@ UPDATE workspace_members SET
     -- A member made a guest starts the guest inactivity clock now (ADR-0098).
     last_active_at = CASE WHEN $1::text = 'guest' AND role <> 'guest' THEN now() ELSE last_active_at END
 WHERE workspace_id = $3 AND user_id = $4
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
 `
 
 type UpdateMemberParams struct {
@@ -587,6 +600,7 @@ func (q *Queries) UpdateMember(ctx context.Context, arg UpdateMemberParams) (Wor
 		&i.BadgeID,
 		&i.AchievementCount,
 		&i.LastActiveAt,
+		&i.SipExtension,
 	)
 	return i, err
 }
@@ -605,7 +619,7 @@ UPDATE workspaces SET
     time_format                = coalesce($11, time_format),
     temp_archive_days          = coalesce($12, temp_archive_days)
 WHERE id = $13
-RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days
 `
 
 type UpdateWorkspaceParams struct {
@@ -665,6 +679,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.WikiTrashDays,
 		&i.TempArchiveDays,
 		&i.OwnerSeesPrivate,
+		&i.CanvasTrashDays,
 	)
 	return i, err
 }

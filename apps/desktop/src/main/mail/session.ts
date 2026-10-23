@@ -70,6 +70,10 @@ export interface ImapSession {
   expungeAll(): Promise<void>;
   append(path: string, raw: Buffer, flags: string[]): Promise<void>;
   createFolder(path: string): Promise<void>;
+  /** RENAME (subfolders follow on the server). */
+  renameFolder(path: string, newPath: string): Promise<void>;
+  /** DELETE of one mailbox (the caller deletes subfolders first). */
+  deleteFolder(path: string): Promise<void>;
   /** Back to the inbox: imapflow IDLEs on the selected mailbox when idle. */
   rest(inboxPath: string): Promise<void>;
   /** The selected mailbox changed on the server (new mail, flags, expunge). */

@@ -30,6 +30,10 @@ import { SoundChip, SoundboardButton } from '../voice/Soundboard';
 import { MyStreamAnnot } from '../voice/Annotations';
 import { useBackgroundList, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { dmPeer } from '../../stores/dms';
+import { usePhoneCallNumber } from '../../stores/sipInbound';
+import { phoneCallId } from '../../lib/sipInbound';
+import { PhoneTransferRow } from '../call/PhoneTransfer';
+import { formatPhone } from '../../lib/sip';
 import { openDm } from '../../services/dms';
 import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
@@ -603,6 +607,8 @@ export function VoiceBar(): ReactNode {
   // A one-to-one call (ADR-0034): «Звонок · <имя>» instead of «Комната / Пространство».
   const call = useVoice((s) => s.call);
   const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
+  // An inbound phone call (ADR-0117): «Звонок · +7 916 …».
+  const phone = usePhoneCallNumber(roomId);
   const devStats = usePrefs((s) => s.devStats);
   const saveTraffic = usePrefs((s) => s.saveTraffic);
   const musician = usePrefs((s) => s.musicianMode);
@@ -621,10 +627,16 @@ export function VoiceBar(): ReactNode {
     phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : phase === 'blocked' ? t('voice.blocked') : t('voice.connecting');
   const retry = offerRetry(phase, link.attempts);
   const host = link.blockedHost ?? link.rtcHost ?? '';
-  const full = call ? t('call.panel', { name: peerName }) : t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
+  const full =
+    phone !== null
+      ? t('call.sipPanel', { number: phone ? formatPhone(phone) : t('call.sipUnknown') })
+      : call
+        ? t('call.panel', { name: peerName })
+        : t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
   // Always «room / workspace» (Discord's «Room / Server»); truncated in the panel, the full path
   // is in the tooltip. A call opens its DM.
   const goRoom = (): void => {
+    if (phone !== null) return;
     if (call) openDm(roomId);
     else if (wsId) openRoom(wsId, roomId);
   };
@@ -663,6 +675,8 @@ export function VoiceBar(): ReactNode {
       {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />}
       {/* Soundboard (ADR-0036): «🥁 Ba dum tss · Илья» for 2 s after a sound played in the call. */}
       {call ? null : <SoundChip className="mt-1 pl-11" />}
+      {/* An inbound phone call (ADR-0132): «Перевести» → whom; while it rings, «Переводим: Имя». */}
+      {phone !== null ? <PhoneTransferRow callId={phoneCallId(roomId)} className="mt-2" /> : null}
 
       {phase === 'reconnecting' || phase === 'blocked' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it

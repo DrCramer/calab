@@ -361,7 +361,19 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	var bare *encEvent
 	bareID := uuid.Nil
 	withContacts := pbconv.StripEvent(ev) != ev
+	// Internal numbers (ADR-0117): a guest recipient gets WORKSPACE_MEMBER_* without them (and
+	// without contacts, which a guest never sees either).
+	var guestCopy *encEvent
+	guestID := uuid.Nil
+	withExtension := pbconv.HasExtension(ev)
 	deliver := func(s *Session, subject uuid.UUID) {
+		if withExtension && !pbconv.ExtensionVisible(st.role(s.user)) {
+			if guestCopy == nil {
+				guestCopy, guestID = newScopedEnc(wid, pbconv.StripForGuest(ev)), guestStrippedID(id)
+			}
+			s.dispatchEnc(guestID, guestCopy)
+			return
+		}
 		if withContacts && contactsHidden(st, s, subject) {
 			if bare == nil {
 				bare, bareID = newScopedEnc(wid, pbconv.StripEvent(ev)), strippedID(id)
@@ -429,7 +441,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			defer h.syncGuestMembers(st, wid, guestBefore, subject)
 		}
 	}
-	if h.routeBoards(st, wid, id, sessions, ev) || h.routeDisk(st, wid, id, sessions, ev) || h.routeWiki(st, wid, id, sessions, ev) {
+	if h.routeBoards(st, wid, id, sessions, ev) || h.routeDisk(st, wid, id, sessions, ev) || h.routeWiki(st, wid, id, sessions, ev) || h.routeCanvas(st, wid, id, sessions, ev) {
 		return
 	}
 	switch e := ev.GetEvent().(type) {
@@ -637,6 +649,14 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 				s.dispatchEnc(id, shared)
 			}
 		}
+	case *v1.DispatchEvent_SipCallsChanged:
+		// «Активные звонки» of the telephony settings (ADR-0128): as REST GET …/sip/calls
+		// (MANAGE_INTEGRATIONS, never a guest); bots read the endpoint themselves.
+		for _, s := range sessions {
+			if !s.bot && st.members[s.user].Workspace().Has(perm.ManageIntegrations) && st.role(s.user) != perm.RoleGuest {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
 		// Bans are shown to those who manage members (item 32; MANAGE_MEMBERS, ADR-0048).
 		for _, s := range sessions {
@@ -771,7 +791,7 @@ func (h *Hub) guestAdds(st *wsState, wid uuid.UUID, before map[*Session]map[uuid
 					continue
 				}
 				evs = append(evs, pendingEvent{id: uuid.New(), enc: newScopedEnc(wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
-					WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds)}}})})
+					WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.MemberFor(row.WorkspaceMember, row.User, row.RoleIds, perm.RoleGuest, false)}}})})
 				if p := pres[u]; p != nil {
 					evs = append(evs, pendingEvent{id: uuid.New(), enc: newScopedEnc(wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{
 						PresenceUpdate: &v1.PresenceUpdate{Presence: p}}})})
@@ -926,7 +946,7 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		}
 		sessions = filtered
 	}
-	if ev.GetContactShared() != nil { // a person's contact: bot sessions only (ADR-0100)
+	if ev.GetContactShared() != nil || ev.GetBotDelegation() != nil { // to the bot only (ADR-0100, ADR-0119)
 		filtered := make([]*Session, 0, len(sessions))
 		for _, s := range sessions {
 			if s.bot {
@@ -1079,7 +1099,7 @@ func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.Worksp
 		if err != nil {
 			continue // not a member (any more): stays hidden
 		}
-		snap.Members = append(snap.Members, pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds))
+		snap.Members = append(snap.Members, pbconv.MemberFor(row.WorkspaceMember, row.User, row.RoleIds, perm.RoleGuest, false)) // a guest snapshot
 		members[vs.GetUserId()] = true
 		users = append(users, row.User.ID)
 	}
@@ -1556,3 +1576,9 @@ func contactsHidden(st *wsState, s *Session, subject uuid.UUID) bool {
 // strippedID is the event id of the contact-less copy of event id (stable, so its copies
 // from several workspaces still count once).
 func strippedID(id uuid.UUID) uuid.UUID { return uuid.NewSHA1(id, []byte("calaba:contacts-stripped")) }
+
+// guestStrippedID is the event id of the copy of event id for guest recipients (no contacts,
+// no internal numbers, ADR-0117).
+func guestStrippedID(id uuid.UUID) uuid.UUID {
+	return uuid.NewSHA1(id, []byte("calaba:guest-stripped"))
+}

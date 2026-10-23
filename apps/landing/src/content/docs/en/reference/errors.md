@@ -76,6 +76,7 @@ OAuth protocol errors (`invalid_grant`, `invalid_client` and others) use the RFC
 | `ON_BEHALF_*` | `FORBIDDEN`, `BAD_REQUEST` | a request on behalf of the owner was refused — see [Token and permissions](../bots/auth#on-behalf-of-the-owner) |
 | `PLAN_LIMIT` | `CONFLICT`, `ROOM_FULL`, `FILE_QUOTA_EXCEEDED` | a plan limit; `used` / `limit` |
 | `PLAN_LIMITS_EXCEEDED` | `CONFLICT` | a plan change was refused: the workspace uses more than the new plan allows |
+| `AI_PLAN_REQUIRED` | `CONFLICT` | AI features (AI settings, the check, smart tasks) are on the Business plan only |
 | `REACTION_LIMIT` | `CONFLICT` | at most 3 different reactions per member per message |
 | `FEATURE_DISABLED` | `CONFLICT` | a board feature is off; `field` names the field |
 | `CHECKLIST_LIMIT` · `CHECKLIST_ITEM_LIMIT` · `BOARD_CATEGORY_LIMIT` | `CONFLICT` | 10 checklists per task · 100 items per checklist · 50 board categories |

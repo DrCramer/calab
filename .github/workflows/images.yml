@@ -12,6 +12,8 @@ name: images
 #      repositories of that registry.
 #   4. File one GitHub deployment `calab-prod` whose payload holds both image digests, so the API and
 #      the web of a release roll out together.
+#   5. agents: build apps/server/Dockerfile.sipreg and Dockerfile.ivr and push them the same way (tag = the
+#      commit SHA, digest in the run summary); not part of the deployment — devops rolls them out.
 #
 # The production cluster pulls those deployments itself and rolls the digests out (it accepts only
 # deployments created by this workflow for commits on main). This workflow has no access to the
@@ -208,6 +210,77 @@ jobs:
           docker logout cr.yandex
         env:
           IMAGE: web
+
+  # The inbound-call agents (ADR-0117 calab-ivr, ADR-0121/0125 calab-sipreg): pushed as <registry>/ivr:<sha>
+  # and <registry>/sipreg:<sha> (and to cr.shds.io/calab), rolled out by devops, not by the calab-prod
+  # deployment: they are single-replica agents outside the api/web rollout, and a failed agent build does
+  # not hold back a release.
+  agents:
+    if: >-
+      github.repository == 'itrcz/calab' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [sipreg, ivr]
+    permissions:
+      contents: read
+      id-token: write      # GitHub OIDC token → Yandex Cloud IAM token (registry push only)
+    env:
+      REGISTRY: ${{ secrets.YC_REGISTRY }}
+      SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+      IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+
+      - name: build
+        run: |
+          test -n "$REGISTRY" && test -n "$SA_ID" || { echo "::error::YC_REGISTRY / YC_CI_SA_ID are not set"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $TAG"; exit 1; }
+          docker build -f "apps/server/Dockerfile.$IMAGE" -t "$REGISTRY/$IMAGE:$SHA" .
+
+      - name: registry login (OIDC → Yandex Cloud IAM)
+        run: |
+          jwt="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://github.com/itrcz" | jq -r .value)"
+          echo "::add-mask::$jwt"
+          iam="$(curl -sSf -X POST https://auth.yandex.cloud/oauth/token \
+            --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+            --data-urlencode requested_token_type=urn:ietf:params:oauth:token-type:access_token \
+            --data-urlencode audience="$SA_ID" \
+            --data-urlencode subject_token="$jwt" \
+            --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:id_token | jq -r .access_token)"
+          echo "::add-mask::$iam"
+          test -n "$iam" && test "$iam" != null || { echo "::error::token exchange failed"; exit 1; }
+          printf '%s' "$iam" | docker login cr.yandex --username iam --password-stdin
+
+      - name: push
+        run: |
+          docker push -q "$REGISTRY/$IMAGE:$SHA"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
+          # Same copy to the VK Cloud registry as api / web (byte-for-byte by digest, then checked).
+          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
+            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
+              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
+            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
+            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
+          else
+            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
+          fi
+          docker logout cr.yandex
+          # The digest for devops to pin (the image names stay masked with the registry secret).
+          echo "$IMAGE @ $TAG: \`$digest\` (tag \`$SHA\`)" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: [api, web]

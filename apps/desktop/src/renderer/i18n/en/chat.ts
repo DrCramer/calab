@@ -129,7 +129,6 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.mentionGuest': 'Guest',
   'chat.mentionOutsider': "No access — we'll open this card",
   'chat.mentionOutsiderHint': 'Cannot see this board: the mention opens this card to them',
-  'chat.mentionOutsiderLocked': 'Only someone who edits the task can call them',
   'chat.mentionList': 'Mention',
   // mentions inbox (title bar)
   'chat.inboxLoadMore': 'Show more',

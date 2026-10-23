@@ -12,7 +12,8 @@ import (
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 )
 
-// businessFeatures are the identity features a Business plan (PLAN_ENTERPRISE) grants.
+// businessFeatures are the identity features a plan with corporate identity grants (Business, or
+// a custom plan / override with corporate_identity; ADR-0113).
 var businessFeatures = []identitypolicy.Feature{identitypolicy.SSO, identitypolicy.DirectorySync, identitypolicy.OAuthProvider}
 
 // setBusinessGrants writes the cloud_business identity grants of ws (enabled with the plan
@@ -54,8 +55,9 @@ func sameTime(a, b *time.Time) bool {
 }
 
 // SyncBillingIdentity makes the identity grants of a billing-managed workspace follow its plan
-// (workspace_plans with source = billing): Business (enterprise) enables SSO, directory sync and
-// the OAuth provider, any other plan (team, free after a stop) disables them, and a change
+// (workspace_plans with source = billing): Business (enterprise) or a custom plan with corporate
+// identity (ADR-0113) enables SSO, directory sync and the OAuth provider, any other plan (team, free
+// after a stop) disables them, and a change
 // invalidates the workspace's identity sessions like the superadmin plan edit
 // (auth.InvalidateIdentity "plan_changed"). A billing suspension keeps the plan and the grants
 // (ADR-0080 §3): the identity gate closes the workspace from billing_accounts.
@@ -88,7 +90,8 @@ func SyncBillingIdentity(ctx context.Context, d *db.DB, ws uuid.UUID) (bool, err
 		if row.Source != "billing" {
 			return nil
 		}
-		if changed, err = setBusinessGrants(ctx, q, ws, row.Plan == "enterprise", nil, nil, false); err != nil || !changed {
+		identity := identitypolicy.PlanGrantsIdentity(row.Plan, row.Limits, nil, time.Time{})
+		if changed, err = setBusinessGrants(ctx, q, ws, identity, nil, nil, false); err != nil || !changed {
 			return err
 		}
 		return auth.InvalidateIdentity(ctx, q, ws, nil, nil, "plan_changed")

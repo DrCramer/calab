@@ -369,6 +369,9 @@ Web apps, camera backgrounds, GPTunneL, telephony, the journal and former member
 | `GET` | `/api/workspaces/{id}/sip` | by role permissions |
 | `PUT` | `/api/workspaces/{id}/sip` | by role permissions |
 | `POST` | `/api/workspaces/{id}/sip/test` | by role permissions |
+| `GET` | `/api/workspaces/{id}/ai` | by role permissions |
+| `PUT` | `/api/workspaces/{id}/ai` | by role permissions |
+| `POST` | `/api/workspaces/{id}/ai/check` | by role permissions |
 | `GET` | `/api/workspaces/{id}/users` | by role permissions |
 <!-- /routes -->
 

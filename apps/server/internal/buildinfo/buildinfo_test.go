@@ -14,7 +14,7 @@ func TestVersionEndpoint(t *testing.T) {
 	Version, Commit = "1.2.3", "abc1234"
 	defer func() { Version, Commit = "dev", "" }()
 	mux := http.NewServeMux()
-	Routes(mux, "mailto:it@gptunnel.ai")
+	Routes(mux, "mailto:support@calab.io")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/version", nil)) //nolint:noctx // test
 	if rec.Code != http.StatusOK {
@@ -26,7 +26,7 @@ func TestVersionEndpoint(t *testing.T) {
 	}
 	if got.GetVersion() != "1.2.3" || got.GetCommit() != "abc1234" || got.GetLicense() != "BUSL-1.1" ||
 		got.GetAttribution() != "Powered by GPTunneL" || got.GetProduct() != "Calab" || got.GetCommercialLicense() == "" || got.GetUrl() == "" ||
-		got.GetPlanContact() != "mailto:it@gptunnel.ai" {
+		got.GetPlanContact() != "mailto:support@calab.io" {
 		t.Fatalf("%v", &got)
 	}
 }

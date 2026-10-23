@@ -196,6 +196,16 @@ test('stream-annotate', async ({ open, win, shot }) => {
     await expect.poll(() => inkAt(win, 'stream-stage', 0.7, 0.45)).toBe(true);
     await expect.poll(() => inkAt(win, 'stream-stage', 0.3, 0.22)).toBe(true);
     await checkpoint(shot, 'stream-annotate');
+
+    // CBF-67: with another chat selected, the LIVE row opens the room and the stream on the stage.
+    await stage.getByRole('button', { name: 'Свернуть' }).first().click();
+    await expect(stage).toHaveCount(0);
+    await win.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+    await expect(win.getByRole('heading', { name: 'общий' })).toBeVisible();
+    await win.locator('aside').getByRole('listitem', { name: /Вера Ким/ }).first().click();
+    await expect(win.getByRole('heading', { name: 'Переговорка', exact: true })).toBeVisible();
+    await expect(stage).toBeVisible();
+    await checkpoint(shot, 'stream-live-other-chat');
   } finally {
     if (ping) clearInterval(ping);
     await vera.stop();

@@ -92,4 +92,6 @@ export const zhBots = {
   'bots.delegate.cancelInvite': '取消给 {name} 的建议',
   'bots.delegate.decline': '拒绝',
   'bots.delegate.noGuests': '访客不可用',
+  'bots.delegate.ask': '{bot} 想以您的名义操作：是否允许？',
+  'bots.delegate.askDetails': '详情',
 } as const;

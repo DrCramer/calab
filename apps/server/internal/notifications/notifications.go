@@ -325,3 +325,22 @@ func Notifies(f Facts) bool {
 		return false
 	}
 }
+
+// CanvasFacts are one @mention in a canvas comment by someone else (ADR-0127 wave 4), as seen
+// by the mentioned member.
+type CanvasFacts struct {
+	Level    v1.NotificationLevel // the workspace's level; UNSPECIFIED = MENTIONS
+	Muted    bool                 // the workspace is muted (muted_until in the future)
+	HideText bool                 // users.hide_message_text_in_notifications (ADR-0072)
+	Private  bool                 // the canvas is restricted somewhere on its chain
+}
+
+// CanvasMentionNotifies reports whether a canvas @mention notifies: like a chat mention in a
+// room that follows the workspace — ALL and MENTIONS do, NONE and a muted workspace do not.
+func CanvasMentionNotifies(f CanvasFacts) bool {
+	return Notifies(Facts{Mention: true, Room: v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT, Workspace: f.Level, WorkspaceMuted: f.Muted})
+}
+
+// CanvasMentionText reports whether the notice may carry the start of the comment: not when
+// the recipient hides message text in notifications, and never for a private canvas.
+func CanvasMentionText(f CanvasFacts) bool { return !f.HideText && !f.Private }

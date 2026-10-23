@@ -12,8 +12,8 @@ import "calaba/v1/room.proto";
 // Access: a board is computed like a room (computePermissions with the board's overrides,
 // BOARD_ONLY bits): VIEW_BOARD sees the board, its tasks and comments and may comment;
 // CREATE_TASKS creates tasks and edits the ones it created or is assigned to; EDIT_TASKS edits,
-// moves and archives any task and moderates comments; MANAGE_BOARD manages statuses, labels,
-// milestones, settings, access and the board's archive. A private board (is_private) is seen
+// moves and archives any task, moderates comments and manages statuses, labels and milestones
+// (CBF-73); MANAGE_BOARD manages settings, access and the board's archive. A private board (is_private) is seen
 // only by those with VIEW_BOARD from an override (a role's or their own); ADMINISTRATOR sees
 // everything. Guests never see boards. A board the caller cannot see answers 404.
 //
@@ -253,7 +253,8 @@ message Board {
   // Task-scoped access (ADR-0059, ADR-0076): the recipient sees the board only through its
   // tasks - those where they are an assignee, an approver or a watcher; permissions = 0 (task
   // bits come from taskPermissions), permission_overrides empty, open_tasks 0. Restricted
-  // boards too (ADR-0076); never for guests or bots.
+  // boards too (ADR-0076); never for guests or bots. Create-only (ADR-0115): permissions =
+  // CREATE_TASKS - the recipient creates tasks and also sees the ones they authored.
   bool task_scoped = 28;
   // Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
   // created or deleted).
@@ -262,6 +263,14 @@ message Board {
   // a change of the task) before the APPROVAL_REQUESTED notice goes out; one of 0 (immediately),
   // 60, 300, 900, 1800, 3600. An approver removed or a vote cast meanwhile cancels the notice.
   uint32 approval_notify_delay_seconds = 30;
+  // «Инструкция для ИИ» (CBF-68, ADR-0118): how the model shapes a smart task of this board,
+  // ≤ 4000 characters. Only in GET /api/boards/{id} and the PATCH answer, and only to a
+  // recipient with VIEW_BOARD; empty everywhere else (lists, READY, BOARD_* events).
+  string ai_instruction = 31;
+  // «Искать дубли за 2 недели» (CBF-75, ADR-0123): a smart task filed on this board is first
+  // compared by the model with the board's tasks of the last 14 days the person sees; the model
+  // may refuse it as a duplicate (CreateSmartTaskResponse.refusal). Off by default.
+  bool ai_find_duplicates = 32;
 }
 
 message TaskAssignee {
@@ -583,6 +592,10 @@ message UpdateBoardRequest {
   // ADR-0082: one of 0, 60, 300, 900, 1800, 3600 (422 otherwise). Notices already scheduled
   // keep their time.
   optional uint32 approval_notify_delay_seconds = 13;
+  // CBF-68: «Инструкция для ИИ», ≤ 4000 characters (trimmed; "" = none), 422 field aiInstruction.
+  optional string ai_instruction = 14;
+  // CBF-75: «Искать дубли за 2 недели» (MANAGE_BOARD).
+  optional bool ai_find_duplicates = 15;
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -701,6 +714,53 @@ message CreateTaskRequest {
   repeated string attachment_ids = 14;
   repeated string approver_ids = 15;
   uint32 approval_required = 16;
+}
+
+// POST /api/workspaces/{id}/smart-tasks → 201 CreateSmartTaskResponse (CBF-68, ADR-0118;
+// CBF-75, ADR-0123): «Создать умную задачу». People only, never guests; the workspace's AI must
+// be READY (GetAiStatusResponse), else 409 CONFLICT reason "AI_NOT_READY". The server sends the
+// model the text, the files (images and the first and last page of a PDF as images, text files
+// as text, other files by name and type; at most 4 images, ~5 MB of them, 20 000 characters of
+// text) and the boards where the caller may create tasks (CREATE_TASKS: name, key, description,
+// labels); the model picks one board, which must be in that list. With the board's
+// ai_instruction the model then shapes the task (title, description, labels of the board,
+// priority) by it; without one the description is the text as is. With the board's
+// ai_find_duplicates the model also gets the board's live tasks of the last 14 days that the
+// caller sees (key, title, the start of the description). The model may refuse to file the
+// task: 200 with refusal set and no task. The task is created as POST /api/boards/{id}/tasks by
+// the caller (their rights, limits and features of the board; the original text is kept in the
+// description). The model never sets assignees, approvers, watchers or access; @mentions it
+// adds are dropped. A model that refuses images is asked again with the files by name
+// (files_unseen).
+// Errors: 422 VALIDATION text (1..4000 characters) | attachmentIds (≤ 20 unattached uploads of
+// the caller in the workspace, POST /api/workspaces/{id}/files) | priority; 409 CONFLICT reason
+// "NO_BOARDS" (no board to create on), "AI_FAILED" (the provider refused or did not answer;
+// message = the CheckAiResponse.error code), "AI_BAD_ANSWER" (not the JSON asked for, or a
+// board outside the list): no task is created. 429 RATE_LIMITED: 10 at once then 5 per minute
+// per person, 60 per hour per workspace. Takes up to ~60 s (two model calls; ~90 s with
+// images).
+message CreateSmartTaskRequest {
+  string text = 1;
+  repeated string attachment_ids = 2;
+  // NONE = let the board's instruction decide (none without one); otherwise it wins.
+  TaskPriority priority = 3;
+}
+
+message CreateSmartTaskResponse {
+  Task task = 1;
+  bool used_instruction = 2;    // the board's ai_instruction shaped the task
+  bool attachments_dropped = 3; // the chosen board has attachments off: the files were not attached
+  // CBF-75: the model refused to file the task (status 200, task unset): the person edits the
+  // text or the files and sends again.
+  SmartTaskRefusal refusal = 4;
+  // CBF-75: the model does not take images: it saw the files by name (and text files' text).
+  bool files_unseen = 5;
+}
+
+// CBF-75: why the model did not file a smart task.
+message SmartTaskRefusal {
+  string reason = 1;        // plain text, ≤ 300 characters: no links, markup or mentions
+  string duplicate_key = 2; // the task it duplicates ("DOC-123"), one the caller sees; "" = none
 }
 
 // POST /tasks (201), GET /tasks/{id}, PATCH, archive / restore, relations, subscription,

@@ -209,7 +209,7 @@ func TestSearchMessagesAndFiles(t *testing.T) {
 	bob.must(400, "GET", "/api/search?q=x&scope=all&type=nope", nil, nil)
 	stranger := register(t, invite(t, o, createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()))
 	stranger.must(404, "GET", "/api/search?q=x&scope="+wid, nil, nil)
-	if r := doSearch(t, bob, q(w)+scope); len(r.GetSections()) != 9 { // + wiki (ADR-0096), disk
+	if r := doSearch(t, bob, q(w)+scope); len(r.GetSections()) != 10 { // + wiki (ADR-0096), disk, canvas (ADR-0126)
 		t.Fatalf("sections %v", r.GetSections())
 	}
 }

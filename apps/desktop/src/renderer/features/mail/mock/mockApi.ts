@@ -18,6 +18,7 @@ import {
   type MailSettings,
   type MailThreadRow,
 } from '../../../../shared/mail';
+import { matchSmart } from '../../../../shared/mailMatch';
 import { MOCK_NOW, PIXEL_PNG, folderId, mockAccounts, mockFolders, mockMessages, ROLES, type MockMessage } from './fixtures';
 
 export interface MockMailOptions {
@@ -192,15 +193,28 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
     return { rows: clone(out), next: after.length > limit && last ? { date: last.date, id: last.messageId } : null };
   }
 
+  /** The real folders a smart folder looks in (CBF-56): every synced folder of its accounts but junk / trash. */
+  function smartFolders(scope: string): MailFolder[] {
+    return [...folders.values()].filter((f) => (scope === 'all' || f.accountId === scope) && f.path && f.role !== 'junk' && f.role !== 'trash' && f.role !== 'starred');
+  }
+
   function resolveFolders(scope: string, ref: MailFolderRef): MailFolder[] {
     if (typeof ref === 'string') {
       const ids = scope === 'all' ? [...accounts.keys()] : [account(scope).id];
       return ids.map((a) => byRole(a, ref));
     }
+    if ('smart' in ref) return smartFolders(scope);
     if (scope === 'all') return fail('INVALID', "scope 'all' takes a folder role");
     const f = folder(ref.id);
     if (f.accountId !== scope) fail('INVALID', 'folder of another account');
     return [f];
+  }
+
+  function checkName(name: string): string {
+    const clean = name.trim();
+    // eslint-disable-next-line no-control-regex
+    if (!clean || clean.length > 100 || /[\x00-\x1f\x7f/\\%*#&]/.test(clean) || clean.startsWith('.')) fail('INVALID', 'bad folder name');
+    return clean;
   }
 
   function selected(sel: MailSelection): MockMessage[] {
@@ -451,10 +465,82 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         emitRows('messages_changed', touched, list.map((m) => m.id));
         emitFolders(f.accountId);
       },
+      // CBF-39 / CBF-56: a folder, top-level or under `parentId` (the engine's name checks, simplified); offline account → NETWORK.
+      create: async (accountId, name, parentId) => {
+        const a = account(accountId);
+        if (a.state === 'offline') fail('NETWORK', 'the account is offline');
+        const clean = checkName(name);
+        const parent = parentId ? folder(parentId) : null;
+        if (parent && (parent.accountId !== accountId || !parent.path)) fail('NOT_FOUND', 'no such parent');
+        const path = parent ? `${parent.path}/${clean}` : clean;
+        if ([...folders.values()].some((f) => f.accountId === accountId && f.path.toLowerCase() === path.toLowerCase())) fail('INVALID', 'the folder already exists');
+        const f: MailFolder = { id: folderId(accountId, nextId('folder')), accountId, path, name: clean, role: null, parentId: parent?.id ?? null, unread: 0, total: 0 };
+        folders.set(f.id, f);
+        emitFolders(accountId);
+        return clone(f);
+      },
+      rename: async (fid, name) => {
+        const f = folder(fid);
+        if (f.role || !f.path) fail('INVALID', 'role folders cannot be renamed');
+        if (account(f.accountId).state === 'offline') fail('NETWORK', 'the account is offline');
+        const clean = checkName(name);
+        const old = f.path;
+        const path = old.slice(0, old.length - f.name.length) + clean;
+        if ([...folders.values()].some((x) => x.id !== fid && x.accountId === f.accountId && x.path.toLowerCase() === path.toLowerCase())) fail('INVALID', 'the folder already exists');
+        for (const x of folders.values()) if (x.accountId === f.accountId && x.path.startsWith(`${old}/`)) x.path = path + x.path.slice(old.length);
+        f.path = path;
+        f.name = clean;
+        settings = { ...settings, rules: settings.rules.map((r) => (r.accountId === f.accountId && r.folderPath === old ? { ...r, folderPath: path } : r)) };
+        emitFolders(f.accountId);
+        return clone(f);
+      },
+      remove: async (fid) => {
+        const f = folder(fid);
+        if (f.role || !f.path) fail('INVALID', 'role folders cannot be deleted');
+        if (account(f.accountId).state === 'offline') fail('NETWORK', 'the account is offline');
+        const doomed = [...folders.values()].filter((x) => x.accountId === f.accountId && (x.id === fid || x.path.startsWith(`${f.path}/`)));
+        const touched = new Map<string, Set<string>>();
+        const ids: string[] = [];
+        for (const x of doomed) {
+          for (const m of inFolder(x)) {
+            touch(touched, m);
+            messages.delete(m.id);
+            ids.push(m.id);
+          }
+        }
+        emitRows('messages_changed', touched, ids);
+        for (const x of doomed) folders.delete(x.id);
+        const paths = new Set(doomed.map((x) => x.path));
+        settings = { ...settings, rules: settings.rules.filter((r) => !(r.accountId === f.accountId && paths.has(r.folderPath))) };
+        emitFolders(f.accountId);
+      },
+      // Sorting rules: first match by sender (name / address) or subject, inbox only.
+      applyRules: async (accountId) => {
+        const rules = settings.rules.filter((r) => r.accountId === accountId && r.contains.trim());
+        const inbox = byRole(accountId, 'inbox');
+        const byFolder = new Map<string, MockMessage[]>();
+        for (const m of inFolder(inbox)) {
+          const from = `${m.from.name}\n${m.from.address}`.toLowerCase();
+          const r = rules.find((x) => (x.field === 'from' ? from : m.subject.toLowerCase()).includes(x.contains.trim().toLowerCase()));
+          const dest = r ? [...folders.values()].find((f) => f.accountId === accountId && f.path === r.folderPath) : undefined;
+          if (!dest || dest.id === inbox.id) continue;
+          byFolder.set(dest.id, [...(byFolder.get(dest.id) ?? []), m]);
+        }
+        let moved = 0;
+        for (const [id, list] of byFolder) {
+          moveTo(list, folder(id));
+          moved += list.length;
+        }
+        return { moved };
+      },
     },
     messages: {
       list: async (q) => {
-        const rows = resolveFolders(q.scope, q.folder).flatMap((f) => rowsOf(f, inFolder(f)));
+        const ref = q.folder;
+        const sf = typeof ref !== 'string' && 'smart' in ref ? (settings.smartFolders.find((x) => x.id === ref.smart) ?? fail('NOT_FOUND', 'no smart folder')) : null;
+        const hit = (m: MockMessage): boolean =>
+          !sf || matchSmart(sf, { fromName: m.from.name, fromAddress: m.from.address, subject: m.subject, to: [...m.to, ...m.cc].map((x) => `${x.name}\n${x.address}`).join('\n') });
+        const rows = resolveFolders(q.scope, q.folder).flatMap((f) => rowsOf(f, inFolder(f).filter(hit)));
         return page(
           rows.filter((r) => (!q.unreadOnly || r.unread) && (!q.flaggedOnly || r.flagged)),
           q.before,

@@ -33,10 +33,15 @@ func SipCall(c sqlc.SipCall) *v1.SipCall {
 	if c.Direction == "in" {
 		dir = v1.SipCallDirection_SIP_CALL_DIRECTION_IN
 	}
-	return &v1.SipCall{
+	out := &v1.SipCall{
 		Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), RoomId: idp(c.RoomID), Number: c.Number,
 		Direction: dir, StartedBy: idp(c.StartedBy), Status: sipStatus[c.Status], Reason: c.Reason,
 		StartedAt: ts(c.StartedAt), AnsweredAt: tsp(c.AnsweredAt), EndedAt: tsp(c.EndedAt),
 		ParticipantIdentity: c.ParticipantIdentity, EndedBy: idp(c.EndedBy),
+		AnsweredBy: idp(c.AnsweredBy), Route: c.Route, Via: c.Via, ProviderCallId: c.ProviderCallID, RingingUserIds: make([]string, 0, len(c.RingingUserIds)),
 	}
+	for _, u := range c.RingingUserIds {
+		out.RingingUserIds = append(out.RingingUserIds, u.String())
+	}
+	return out
 }

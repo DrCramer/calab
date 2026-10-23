@@ -106,6 +106,7 @@ console.log(`${ready.me?.user?.displayName} в сети, пространств:
 | `reaction` | `{ type: 'add' \| 'remove', workspaceId, roomId, messageId, userId, emoji }` |
 | `callback` | `BotCallback` — нажатие кнопки, см. [Команды и кнопки](./commands-buttons) |
 | `contactShared` | `ContactShared` — человек поделился контактом, см. [Команды и кнопки](./commands-buttons#запрос-контакта) |
+| `botDelegation` | `BotDelegationChange` — участник разрешил, отозвал или отклонил действия от своего имени, см. [Авторизация](./auth#от-имени-участника) |
 | `taskNotice` | `TaskNoticeRelay` — уведомление человека о задаче, см. [Уведомления о задачах](./task-notices) |
 | `voiceState` | `VoiceState` (`roomId` пуст — вышел из голоса) |
 | `dispatch` | любой сырой `DispatchEvent` (комнаты, участники, присутствие…) |
@@ -160,3 +161,7 @@ BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.example.com npm start
 
 > [!TIP]
 > На других языках SDK не нужен: REST — обычный HTTP с JSON, gateway принимает JSON-кадры (`?encoding=json`). Типы для любого языка можно сгенерировать из `proto/` репозитория (`buf generate` с нужным плагином).
+
+## MCP для LLM-клиентов
+
+`POST /api/mcp` — сервер [Model Context Protocol](https://modelcontextprotocol.io) (Streamable HTTP, ответы JSON, без сессий): любой LLM-клиент подключается с заголовком `Authorization: Bearer calab_bot_…`. Токены людей получают 403. Инструменты: `find` (задачи, сообщения, комнаты, доски), `read` (задача со статусами её доски или сообщения комнаты; `full: true` — объект API целиком), `create_task`, `comment_task`, `set_task_status`, `send_message`. Подробности, параметры и примеры — [MCP для LLM-клиентов](./mcp). Каждый инструмент вызывает описанные выше маршруты REST тем же токеном, поэтому у него ровно права и лимиты бота (вызов инструмента — один запрос плюс его вызовы REST).

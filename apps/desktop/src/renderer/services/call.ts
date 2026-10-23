@@ -19,6 +19,7 @@ import { useVoice } from '../stores/voice';
 import { memberName, useWorkspaces } from '../stores/workspaces';
 import { roomLabel } from '../features/chat/roomLabel';
 import { ensureDm, openDm } from './dms';
+import { sipInboundRinging } from './sipInbound';
 import { voice } from './voice';
 
 /**
@@ -107,7 +108,8 @@ function syncRing(m: CallModel): void {
   if (m.phase === 'outgoing') startRing('call-outgoing');
   // «Не беспокоить»: the modal shows, the ringtone stays silent (ADR-0034).
   else if (m.phase === 'incoming' && !hostIncoming.has(m.call?.id ?? '') && prefs().presence !== PresenceStatus.DND) startRing('call-incoming');
-  else stopRing();
+  // An inbound phone call (ADR-0117) keeps its own ringtone (services/sipInbound.ts).
+  else if (!sipInboundRinging()) stopRing();
 }
 
 // ---------------------------------------------------------------- gateway
@@ -348,6 +350,8 @@ export function callErrorText(e: unknown): string {
 // ---------------------------------------------------------------- voice
 
 function joinCallVoice(call: Call, resumed: boolean): void {
+  // Answered here by the user (not a resume / the other side's join): mic on, undeafened.
+  if (!resumed && accepting?.id === call.id) voice.unmuteForAnswer();
   void voice.join(call.dmRoomId, '', { call: true, resumed, ...(hostAudioEvents.has(call.id) ? {nativeCallEvent: hostAudioEvents.get(call.id)} : {}) });
 }
 

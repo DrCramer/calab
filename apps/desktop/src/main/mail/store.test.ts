@@ -131,6 +131,26 @@ describe('threading', () => {
     const plain = s.insertMessage(msg(f, { messageIdHdr: '<d@x>', subject: 'Budget', date: t0 + DAY }));
     expect(plain.threadId).not.toBe(a.threadId);
   });
+  it('regroup(false) gives every message its own thread, regroup(true) restores the conversations', () => {
+    const s = store();
+    const f = s.upsertFolder({ path: 'INBOX', name: 'INBOX', delimiter: '/', parentPath: '', role: 'inbox', specialUse: null });
+    const t0 = 1_700_000_000_000;
+    const a = s.insertMessage(msg(f, { messageIdHdr: '<1@x>', date: t0 }));
+    const b = s.insertMessage(msg(f, { messageIdHdr: '<2@x>', inReplyTo: '<1@x>', references: ['<1@x>'], subject: 'Re: Hello', date: t0 + 1000 }));
+    const scope = { kind: 'folder', row: f } as const;
+    expect(s.listThreads(scope, { limit: 10 })).toHaveLength(1);
+    s.regroup(false);
+    const rows = s.listThreads(scope, { limit: 10 });
+    expect(rows.map((r) => [r.messageId, r.count])).toEqual([[b.id, 1], [a.id, 1]]);
+    // New mail while off is a thread of its own, even as a reply.
+    const c = s.insertMessage(msg(f, { messageIdHdr: '<3@x>', inReplyTo: '<1@x>', references: ['<1@x>'], subject: 'Re: Hello', date: t0 + 2000 }));
+    expect(s.listThreads(scope, { limit: 10 })).toHaveLength(3);
+    s.regroup(true);
+    const back = s.listThreads(scope, { limit: 10 });
+    expect(back).toHaveLength(1);
+    expect(back[0]?.messageId).toBe(c.id);
+    expect(back[0]?.count).toBe(3);
+  });
   it('is idempotent per folder + uid', () => {
     const s = store();
     const f = s.upsertFolder({ path: 'INBOX', name: 'INBOX', delimiter: '/', parentPath: '', role: 'inbox', specialUse: null });

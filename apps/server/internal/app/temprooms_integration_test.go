@@ -96,7 +96,7 @@ func TestTempRooms(t *testing.T) {
 	for _, bad := range []*v1.CreateTempRoomRequest{
 		{Name: "", TtlSeconds: 3600, Guests: noGuests()},
 		{Name: "x", TtlSeconds: 899, Guests: noGuests()},
-		{Name: "x", TtlSeconds: 604801, Guests: noGuests()},
+		{Name: "x", TtlSeconds: 30*24*3600 + 1, Guests: noGuests()},                      // just past the 30-day default (TEMP_ROOM_MAX_TTL_DAYS)
 		{Name: "x", TtlSeconds: 3600, Guests: noGuests(), MemberIds: []string{carol.id}}, // people for a private room only
 		{Name: "x", TtlSeconds: 3600, Guests: noGuests(), Private: true, MemberIds: []string{uuid.NewString()}},
 	} {
@@ -157,7 +157,7 @@ func TestTempRooms(t *testing.T) {
 	if err := testDB.Pool.QueryRow(context.Background(), "SELECT expires_at FROM room_invites WHERE code = $1", priv.GetInviteCode()).Scan(&linkEnd); err != nil || !linkEnd.Equal(newEnd) {
 		t.Fatalf("the link follows the room: %v %v", linkEnd, err)
 	}
-	apiErrOf(t, bob.client, 422, "PATCH", up, &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(8 * 24 * time.Hour))})
+	apiErrOf(t, bob.client, 422, "PATCH", up, &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(31 * 24 * time.Hour))})
 	apiErrOf(t, bob.client, 422, "PATCH", up, &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(-time.Minute))})
 	apiErrOf(t, bob.client, 403, "PATCH", up, &v1.UpdateRoomRequest{MakePermanent: true})
 	cat := ""
@@ -189,16 +189,19 @@ func TestTempRooms(t *testing.T) {
 	// ADR-0078 addendum 2026-10-14: a permanent room switches private / public too.
 	o.must(200, "PATCH", "/api/rooms/"+cr.GetRoom().GetId(), &v1.UpdateRoomRequest{IsPrivate: &tr}, nil)
 
-	// Limits: 5 live per creator, 20 per workspace.
-	for i := range 3 {
-		tempRoom(t, bob, wid, &v1.CreateTempRoomRequest{Name: "r" + string(rune('a'+i)), TtlSeconds: 900, Guests: noGuests()})
+	// Limits follow the workspace plan (Free: 3 live per creator, TempRooms in plans.Limits): create
+	// until the cap answers 409, then the next create reports it.
+	for i := 0; i < 60; i++ {
+		if bob.do("POST", base, &v1.CreateTempRoomRequest{Name: "r" + string(rune('a'+i%26)), TtlSeconds: 900, Guests: noGuests()}, &v1.TempRoomResponse{}) == 409 {
+			break
+		}
 	}
 	c, reason := apiErrOf(t, bob.client, 409, "POST", base, &v1.CreateTempRoomRequest{Name: "6th", TtlSeconds: 900, Guests: noGuests()})
 	if c != v1.ErrorCode_ERROR_CODE_TEMP_ROOM_LIMIT || reason != "PER_USER" {
 		t.Fatalf("per-user cap: %v %q", c, reason)
 	}
 	sqlExec(t, `INSERT INTO rooms (workspace_id, type, name, expires_at, created_by)
-		SELECT $1, 'voice', 'filler', now() + interval '1 hour', $2 FROM generate_series(1, 15)`, wid, o.id)
+		SELECT $1, 'voice', 'filler', now() + interval '1 hour', $2 FROM generate_series(1, 60)`, wid, o.id) // over TEMP_ROOMS_PER_WORKSPACE (50)
 	c, reason = apiErrOf(t, carol.client, 409, "POST", base, &v1.CreateTempRoomRequest{Name: "21st", TtlSeconds: 900, Guests: noGuests()})
 	if c != v1.ErrorCode_ERROR_CODE_TEMP_ROOM_LIMIT || reason != "" {
 		t.Fatalf("workspace cap: %v %q", c, reason)
@@ -372,5 +375,46 @@ func TestTempRoomExtendFollowsMeeting(t *testing.T) {
 	}
 	if got := end(edited.GetEvent().GetId()); !got.Equal(manual.Truncate(time.Microsecond)) {
 		t.Fatalf("hand-edited meeting moved to %v, want %v", got, manual)
+	}
+}
+
+// CBF-45: a room made permanent goes to the end of the sidebar list, into the last category if any.
+func TestTempRoomMadePermanentGoesToEnd(t *testing.T) {
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	wid := ws.GetId()
+	place := func(id string) (int32, string) {
+		t.Helper()
+		var pos int32
+		var cat *string
+		if err := testDB.Pool.QueryRow(context.Background(), "SELECT position, category_id::text FROM rooms WHERE id = $1", id).Scan(&pos, &cat); err != nil {
+			t.Fatal(err)
+		}
+		if cat == nil {
+			return pos, ""
+		}
+		return pos, *cat
+	}
+	var loose v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "loose"}, &loose)
+	first := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "first", TtlSeconds: 3600, Guests: noGuests()})
+	second := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "second", TtlSeconds: 3600, Guests: noGuests()})
+	var ur v1.UpdateRoomResponse
+
+	// No categories: after the last loose room.
+	o.must(200, "PATCH", "/api/rooms/"+first.GetRoom().GetId(), &v1.UpdateRoomRequest{MakePermanent: true}, &ur)
+	lp, _ := place(loose.GetRoom().GetId())
+	if pos, cat := place(first.GetRoom().GetId()); cat != "" || pos <= lp {
+		t.Fatalf("loose end: position %d (loose %d) category %q", pos, lp, cat)
+	}
+
+	// Last category by position: inside it, after its rooms.
+	var c1, c2 v1.CreateCategoryResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/categories", &v1.CreateCategoryRequest{Name: "A"}, &c1)
+	o.must(201, "POST", "/api/workspaces/"+wid+"/categories", &v1.CreateCategoryRequest{Name: "B"}, &c2)
+	sqlExec(t, "UPDATE rooms SET category_id = $1, position = 7 WHERE id = $2", c2.GetCategory().GetId(), loose.GetRoom().GetId())
+	o.must(200, "PATCH", "/api/rooms/"+second.GetRoom().GetId(), &v1.UpdateRoomRequest{MakePermanent: true}, &ur)
+	if pos, cat := place(second.GetRoom().GetId()); cat != c2.GetCategory().GetId() || pos != 8 {
+		t.Fatalf("last category end: position %d category %q, want 8 in %q", pos, cat, c2.GetCategory().GetId())
 	}
 }

@@ -3,6 +3,7 @@ import { PermissionTargetType, type RoomPermissionOverride } from './gen/calaba/
 import type { Board, Task } from './gen/calaba/v1/boards_pb.js';
 import type { DiskPermissionEntry } from './gen/calaba/v1/disk_pb.js';
 import type { WikiPermissionEntry } from './gen/calaba/v1/wiki_pb.js';
+import type { CanvasPermissionEntry } from './gen/calaba/v1/canvas_pb.js';
 
 /**
  * Permission bits as bigint (uint64 on the wire). Values come from the generated
@@ -87,7 +88,7 @@ export function billingPermissions(
 }
 
 /**
- * The three bits of one tree section (the Disk, the Wiki): the workspace-level VIEW / WRITE /
+ * The three bits of one tree section (the Disk, the Wiki, the Canvas): the workspace-level VIEW / WRITE /
  * MANAGE on roles, per-node overrides of VIEW and WRITE (Go: perm.TreeBits).
  */
 export interface TreeBits {
@@ -140,7 +141,7 @@ export interface TreeLevel {
 }
 
 /**
- * The one tree node rule shared by the Disk (ADR-0094 §2) and the Wiki (ADR-0096 §2); Go:
+ * The one tree node rule shared by the Disk (ADR-0094 §2), the Wiki (ADR-0096 §2) and the Canvas (ADR-0126 §2); Go:
  * perm.ComputeTree. `chain` runs from the topmost ancestor down to the node (empty = the top of
  * the section). MANAGE or ADMINISTRATOR (the workspace owner too): all three bits outside any
  * restricted node. Otherwise — and for them as well once the chain has a restricted node
@@ -208,8 +209,11 @@ export function treeLevel(
   };
 }
 
-/** A stored override row of a tree node (DiskPermissionEntry, WikiPermissionEntry). */
-export type OverrideEntry = Pick<DiskPermissionEntry | WikiPermissionEntry, 'targetType' | 'targetId' | 'allow' | 'deny'>;
+/** A stored override row of a tree node (DiskPermissionEntry, WikiPermissionEntry, CanvasPermissionEntry). */
+export type OverrideEntry = Pick<
+  DiskPermissionEntry | WikiPermissionEntry | CanvasPermissionEntry,
+  'targetType' | 'targetId' | 'allow' | 'deny'
+>;
 
 /**
  * Disk bits (ADR-0094 §2), Go: perm.DiskView / DiskWrite / DiskManage. Like the billing bits they
@@ -314,6 +318,57 @@ export function wikiPagePermissions(
  */
 export function wikiStructureAllowed(bits: PermissionBits, owner: boolean): boolean {
   return (bits & WIKI_BITS.VIEW) !== 0n && (owner || (bits & WIKI_BITS.MANAGE) !== 0n);
+}
+
+/**
+ * Canvas bits (ADR-0126 §2), Go: perm.CanvasView / CanvasWrite / CanvasManage. The same rules as
+ * the wiki bits: outside ALL_PERMISSIONS, in ADMINISTRATOR, never for guests through roles,
+ * per-item overrides carry VIEW and WRITE only (CANVAS_OVERRIDE_PERMISSIONS). WRITE on a canvas
+ * edits its content and creates items in a folder; the structure needs the owner or MANAGE
+ * (canvasStructureAllowed).
+ */
+export const CANVAS_BITS = {
+  /** See the Canvas section and every item that is not restricted. Member default. */
+  VIEW: 1n << 41n,
+  /** Create folders and canvases; edit the content of any canvas one can write. Member default. */
+  WRITE: 1n << 42n,
+  /** The structure of any item, the trash retention, empty the whole trash. Implies VIEW + WRITE. */
+  MANAGE: 1n << 43n,
+} as const satisfies TreeBits;
+
+/** The three canvas bits (Go: perm.Canvas). */
+export const CANVAS_PERMISSIONS: PermissionBits = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE | CANVAS_BITS.MANAGE;
+
+/** Bits a canvas item override may allow or deny (Go: perm.CanvasOverride): «Просмотр» / «Правка». */
+export const CANVAS_OVERRIDE_PERMISSIONS: PermissionBits = CANVAS_BITS.VIEW | CANVAS_BITS.WRITE;
+
+/** The workspace-level canvas rule (Go: perm.CanvasOf): treePermissions over CANVAS_BITS. */
+export function canvasPermissions(
+  roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
+  opts: { guest?: boolean | undefined } = {},
+): PermissionBits {
+  return treePermissions(CANVAS_BITS, roles, opts);
+}
+
+/**
+ * The one canvas item rule (ADR-0126 §2; Go: perm.ComputeCanvasItem): treeItemPermissions over
+ * CANVAS_BITS. `chain` runs from the top-level ancestor down to the item (empty = the top level).
+ */
+export function canvasItemPermissions(
+  roles: readonly RoleBits[],
+  chain: readonly TreeLevel[],
+  opts: TreeOptions = {},
+): PermissionBits {
+  return treeItemPermissions(CANVAS_BITS, roles, chain, opts);
+}
+
+/**
+ * The structural rule of a canvas item (ADR-0126 §2; Go: perm.CanvasStructureAllowed): rename,
+ * move, trash, restore, delete and access need VIEW on the item (`bits`, CanvasItem.myBits) and
+ * either its ownership or CANVAS_MANAGE. WRITE alone edits the content and creates items.
+ */
+export function canvasStructureAllowed(bits: PermissionBits, owner: boolean): boolean {
+  return (bits & CANVAS_BITS.VIEW) !== 0n && (owner || (bits & CANVAS_BITS.MANAGE) !== 0n);
 }
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -425,7 +480,10 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
     DISK_BITS.WRITE |
     // ADR-0096: migration 00090.
     WIKI_BITS.VIEW |
-    WIKI_BITS.WRITE,
+    WIKI_BITS.WRITE |
+    // ADR-0126: migration 00017.
+    CANVAS_BITS.VIEW |
+    CANVAS_BITS.WRITE,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };
@@ -506,7 +564,8 @@ export interface ComputePermissionsInput {
   /**
    * Set for a task board (ADR-0042): the overrides are the board's and touch only
    * BOARD_ONLY_PERMISSIONS; a private board (Board.isPrivate) drops the roles' VIEW_BOARD
-   * first; without VIEW_BOARD nothing; a guest (highest built-in role GUEST) gets nothing.
+   * first; without VIEW_BOARD nothing — except create-only (ADR-0115): CREATE_TASKS alone when
+   * an allow override on the board grants it; a guest (highest built-in role GUEST) gets nothing.
    * A private board has no bypass (ADR-0058 addendum 2026-10-14): ADMINISTRATOR is dropped too,
    * the `creator` keeps VIEW_BOARD, the owner (`board.owner`) with `ownerSeesPrivate` alone has
    * everything. `restricted` (Board.restricted, the pre-3.5 flag) is the same as `private`. The
@@ -585,10 +644,11 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
   if (input.board) {
     const b = input.board;
     if (b.guest) return 0n;
+    let full: PermissionBits;
     if (b.private || b.restricted) {
       if (b.owner && b.ownerSeesPrivate) return ALL_PERMISSIONS;
       perms &= ~(ADMINISTRATOR | VIEW_BOARD);
-      return applyOverrides(
+      full = applyOverrides(
         perms,
         roles,
         roleOverrides,
@@ -598,9 +658,14 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
         BOARD_ONLY_PERMISSIONS,
         b.creator ? VIEW_BOARD : 0n,
       );
+    } else {
+      if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
+      full = applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
     }
-    if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
-    return applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
+    if (full) return full;
+    // Create-only (CBF-61, ADR-0115): CREATE_TASKS alone, granted by the board's own overrides
+    // (the roles' workspace CREATE_TASKS does not count) and not denied after.
+    return applyOverrides(0n, roles, roleOverrides, input.userOverride, CREATE_TASKS, CREATE_TASKS);
   }
   if (input.restricted || input.privateTemp) {
     if (input.owner && input.ownerSeesPrivate) return ALL_PERMISSIONS;
@@ -706,18 +771,20 @@ export function taskRoomPermissions(board: PermissionBits, archived = false, com
  * board keeps `board.permissions`; on a task-scoped board (`board.taskScoped`, permissions 0) an
  * assignee of a live task gets VIEW_BOARD | CREATE_TASKS (edits the task like a member their
  * assigned task; never creates tasks — that takes the board's bits), an approver or a watcher
- * VIEW_BOARD (view, comment, subscribe; an approver also votes); anything else 0. Feed the result
- * to taskRoomPermissions for the task's comment room. Shared case table:
- * proto/testdata/task_bits.json.
+ * VIEW_BOARD (view, comment, subscribe; an approver also votes); anything else 0. A create-only
+ * viewer (ADR-0115: `taskScoped` with permissions = CREATE_TASKS) also gets VIEW_BOARD |
+ * CREATE_TASKS on the tasks they authored (`createdBy`). Feed the result to taskRoomPermissions
+ * for the task's comment room. Shared case table: proto/testdata/task_bits.json.
  */
 export function taskPermissions(
   board: Pick<Board, 'permissions' | 'taskScoped'>,
-  task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt'>,
+  task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt' | 'createdBy'>,
   me: string,
 ): PermissionBits {
   if (board.permissions & VIEW_BOARD) return board.permissions;
   if (!board.taskScoped || task.archivedAt) return 0n; // invitations count on live tasks only
-  if (task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | PERMISSION_BITS.CREATE_TASKS;
+  const author = board.permissions === CREATE_TASKS && me !== '' && task.createdBy === me;
+  if (author || task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | CREATE_TASKS;
   if (task.approvers.some((a) => a.userId === me) || task.watcherIds.includes(me)) return VIEW_BOARD;
   return 0n;
 }

@@ -345,6 +345,44 @@ func (q *Queries) DiskNameTaken(ctx context.Context, arg DiskNameTakenParams) (b
 	return exists, err
 }
 
+const getDiskFolderByName = `-- name: GetDiskFolderByName :one
+SELECT id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM disk_items
+WHERE workspace_id = $1::uuid
+  AND (parent_id = $2::uuid OR ($2::uuid IS NULL AND parent_id IS NULL))
+  AND kind = 'folder' AND lower(name) = lower($3::text) AND trashed_at IS NULL
+ORDER BY id
+LIMIT 1
+`
+
+type GetDiskFolderByNameParams struct {
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Name        string
+}
+
+// A live folder of the folder parent (NULL = the root) by name, ignoring case: the server's own
+// folders (phone recordings, ADR-0131) are found again by name.
+func (q *Queries) GetDiskFolderByName(ctx context.Context, arg GetDiskFolderByNameParams) (DiskItem, error) {
+	row := q.db.QueryRow(ctx, getDiskFolderByName, arg.WorkspaceID, arg.ParentID, arg.Name)
+	var i DiskItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ParentID,
+		&i.Kind,
+		&i.Name,
+		&i.FileID,
+		&i.OwnerID,
+		&i.Restricted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TrashedAt,
+		&i.TrashedBy,
+		&i.TrashedRoot,
+	)
+	return i, err
+}
+
 const getDiskItem = `-- name: GetDiskItem :one
 SELECT id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM disk_items WHERE id = $1
 `

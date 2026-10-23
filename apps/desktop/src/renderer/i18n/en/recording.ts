@@ -86,7 +86,7 @@ export const enRecording: DictShape<typeof ruRecording> = {
   'rec.tr.speaker': 'Speaker {n}',
   'rec.tr.file': 'Transcript',
   'rec.tr.playFrom': 'Play from {time}',
-  'gpt.tab': 'GPTunneL',
+  'gpt.tab': 'AI integration',
   'gpt.card': 'Meeting recording and transcripts',
   'gpt.intro':
     'Meeting recordings go to GPTunneL, where the transcript and summary appear. Connect the workspace once — after that any member starts recording from a voice room’s “…” menu.',

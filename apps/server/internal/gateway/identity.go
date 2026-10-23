@@ -287,9 +287,24 @@ var eventScope = map[protoreflect.Name]bool{
 	// A contact shared with a bot (ADR-0100): the bot's user channel only; routeUser drops it
 	// for people's sessions.
 	"contact_shared": false,
+	// A member's consent for a bot changed (ADR-0119): the bot's user channel only, like
+	// contact_shared; routeUser drops it for people's sessions.
+	"bot_delegation": false,
 	// Comments on a meeting (ADR-0104): workspace channel; routed by routeEventComment to the
 	// event's audience (as EVENT_UPDATE, not guests or bots).
 	"event_comment_upsert": true, "event_comment_delete": true,
+	// Canvas (ADR-0126 §6): workspace channel; routed to the item's viewers (CANVAS_VIEW).
+	"canvas_item_upsert": true, "canvas_item_remove": true,
+	// Canvas comments (ADR-0127 wave 4): workspace channel, routed to the canvas's viewers
+	// (CANVAS_VIEW); the @mention notice on the mentioned member's user channel, lease-gated by
+	// its workspace like every scoped event.
+	"canvas_comment_upsert": true, "canvas_comment_delete": true, "canvas_comment_mention": true,
+	// An inbound phone call rings the recipient (ADR-0117): the recipient's user channel only
+	// (and a bot's webhook); not workspace-lease-gated.
+	"sip_inbound_ring": false,
+	// The workspace's live phone calls changed (ADR-0128): workspace channel; routed to the
+	// sessions with MANAGE_INTEGRATIONS (not guests, not bots).
+	"sip_calls_changed": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

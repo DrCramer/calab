@@ -23,13 +23,13 @@ beforeEach(() => {
 
 describe('reportPlanError', () => {
   it('409 PLAN_LIMIT → info toast with «Связаться» that opens the contact', () => {
-    useSession.getState().set({ planContact: 'mailto:it@gptunnel.ai' });
+    useSession.getState().set({ planContact: 'mailto:support@calab.io' });
     expect(reportPlanError(roomFull, null)).toBe(true);
     const [toast] = useToasts.getState().items;
     expect(toast).toMatchObject({ kind: 'info', text: 'В бесплатном тарифе до 5 человек в комнате' });
     expect(toast?.action?.label).toBe('Связаться');
     toast?.action?.run();
-    expect(openExternal).toHaveBeenCalledWith('mailto:it@gptunnel.ai');
+    expect(openExternal).toHaveBeenCalledWith('mailto:support@calab.io');
   });
 
   it('no usable contact → the toast without a button', () => {
@@ -46,7 +46,7 @@ describe('reportPlanError', () => {
 
   it('keeps limits but removes sales actions in the iOS shell', () => {
     shell.ios = true;
-    useSession.getState().set({ planContact: 'mailto:it@gptunnel.ai' });
+    useSession.getState().set({ planContact: 'mailto:support@calab.io' });
     expect(planOffersAllowed()).toBe(false);
     expect(planContact()).toBeNull();
     expect(reportPlanError(roomFull, null)).toBe(true);

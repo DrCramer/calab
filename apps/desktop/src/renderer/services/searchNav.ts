@@ -9,6 +9,7 @@ import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { loadTask, openTaskAnywhere } from './boards';
 import { openEventOccurrence } from './calendar';
+import { openCanvasHit } from './canvas';
 import { openDiskHit } from './disk';
 import { openWikiHit } from './wiki';
 
@@ -17,7 +18,7 @@ import { openWikiHit } from './wiki';
  * the task's panel scrolled to the comment; a task — its panel; an event — its card on the
  * matched occurrence; a file — the image viewer with «Показать в чате» (other files: the message
  * carrying it); a note — the shelf, scrolled to it; a transcript — the recording's transcript at
- * the segment; a wiki page — the wiki on that page; a Disk item — the Disk at its folder with it
+ * the segment; a wiki page — the wiki on that page; a canvas — the Canvas section on it (a folder: its path expanded in the tree); a Disk item — the Disk at its folder with it
  * selected (services/disk.ts openDiskHit). Nothing here writes a feed store: the target view
  * loads what it needs.
  */
@@ -45,6 +46,9 @@ export function openHit(h: SearchHit): void {
       return;
     case 'wiki':
       openWikiHit(h.workspaceId, r.value.pageId);
+      return;
+    case 'canvas':
+      void openCanvasHit(h.workspaceId, r.value);
       return;
     case 'disk':
       void openDiskHit(h.workspaceId, r.value);

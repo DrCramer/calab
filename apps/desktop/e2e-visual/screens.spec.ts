@@ -1,7 +1,7 @@
 import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
-import { FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
+import { AiState, FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
@@ -80,6 +80,8 @@ const KEY = new Set([
   'chat-voice-recording-narrow',
   'chat-voice-bubble',
   'voice-room-speaking',
+  'voice-room-ptt-idle',
+  'voice-room-ptt-remote',
   'voice-room-pending',
   'voice-room-joined',
   'voice-stream',
@@ -170,6 +172,7 @@ const KEY = new Set([
   'members-admissions',
   // Task boards (ADR-0042 §5).
   'boards-kanban',
+  'boards-create-menu',
   'boards-task',
   // «Комментарии | История» of the task panel (ADR-0091).
   'boards-task-comments',
@@ -961,6 +964,7 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   giveFixtureBadges(mock);
+  mock.seedSipExchange(); // Борис gets the internal number 101 (ADR-0117)
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click();
   const card = win.getByRole('dialog', { name: 'Борис Петров' });
@@ -971,6 +975,7 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
   await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
   await expect(card.getByTestId('profile-phone')).toContainText('+7 912 555-02-02');
+  await expect(card.getByTestId('profile-extension')).toContainText('101');
   await badgesLoaded(win);
   await checkpoint(shot, 'members-profile');
 });
@@ -1735,7 +1740,9 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
 });
 
 /**
- * Workspace settings → «GPTunneL» (ADR-0025) for the owner, not connected: the code typed through
+ * Workspace settings → «AI интеграция» (CBF-60) for the owner: the AI card first (provider tabs,
+ * empty state without a key, the key typed masked, model, «Проверить» and its answer), then the
+ * GPTunneL connection (ADR-0025) below it, not connected: the code typed through
  * the ABCD-EFGH mask, a wrong code's inline error, the hint with the GPTunneL link. Then the
  * right code connects (device, account, «Открыть в GPTunneL», «Отключить»).
  */
@@ -1745,7 +1752,23 @@ test('settings-gptunnel', async ({ open, win, mock, shot }) => {
   await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
   const dialog = win.getByRole('dialog');
-  await dialog.getByRole('tab', { name: 'GPTunneL' }).click();
+  await dialog.getByRole('tab', { name: 'AI интеграция' }).click();
+  // CBF-69: the fixture's main workspace is Team — the form stays visible under the Business lock.
+  await expect(dialog.getByTestId('ai-plan-lock')).toContainText('Доступно на тарифе Business и выше');
+  await checkpoint(shot, 'settings-gptunnel-ai-plan');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await expect(dialog.getByTestId('ai-plan-lock')).toHaveCount(0);
+  const aiForm = dialog.getByTestId('ai-form');
+  await expect(aiForm.getByTestId('ai-status')).toHaveText('Не выбран');
+  await expect(aiForm.getByTestId('ai-model')).toHaveValue('gpt-6-astra');
+  await expect(aiForm.getByTestId('ai-key')).toHaveValue('');
+  await expect(aiForm.getByRole('button', { name: 'Проверить' })).toBeVisible();
+  await checkpoint(shot, 'settings-gptunnel-ai-empty');
+  await aiForm.getByTestId('ai-key').fill('sk-test-1234567890');
+  await expect(aiForm.getByTestId('ai-key')).toHaveAttribute('type', 'password');
+  await aiForm.getByRole('button', { name: 'Проверить' }).click();
+  await expect(aiForm.getByTestId('ai-check-result')).toContainText('Ответ получен');
+  await checkpoint(shot, 'settings-gptunnel-ai-checked');
   await expect(dialog.getByTestId('gptunnel-status')).toHaveText('Не подключено');
   const code = dialog.getByTestId('gptunnel-code');
   await code.pressSequentially('wxyz1234');
@@ -2180,6 +2203,29 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
   await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
   await checkpoint(shot, 'voice-room-speaking');
+  // CBF-71: the mic is on and live (green dot on the island's mic); switched to push-to-talk it
+  // waits for the key - a pale crossed mic in my row, no dot.
+  await expect(win.getByTestId('mic-live-dot')).toHaveCount(0);
+  await win.keyboard.press(`${MOD}+Shift+m`);
+  await expect(win.getByTestId('mic-live-dot')).toBeVisible();
+  await win.getByRole('button', { name: 'Выбор микрофона' }).click();
+  await win.getByTestId('mic-menu').getByRole('menuitemradio', { name: 'Push-to-talk' }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('mic-menu')).toHaveCount(0);
+  await expect(win.getByTestId('mic-live-dot')).toHaveCount(0);
+  await expect(win.locator('aside').first().locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'voice-room-ptt-idle');
+  // CBF-82: Борис switched to push-to-talk - everyone sees the pale crossed mic in his row while the
+  // key is up; with the key held he speaks and the ring replaces it.
+  const boris = win.locator('aside').first().getByRole('listitem', { name: /Борис Петров/ });
+  await win.evaluate(() => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.([]));
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, ptt: true });
+  await expect(boris.locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
+  await checkpoint(shot, 'voice-room-ptt-remote');
+  await win.evaluate((id) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.([id]), IDS.users.boris);
+  await expect(boris).toHaveAttribute('data-speaking', 'true');
+  await expect(boris.locator('[data-voice-icon="ptt-idle"]')).toHaveCount(0);
 });
 
 // Noise suppression popover (docs/09 #12): the wave button in the «Голос подключён» header opens
@@ -3918,6 +3964,16 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await boardsMode(win, mock);
   await checkpoint(shot, 'boards-kanban');
 
+  // CBF-58: the column's «+» — «Создать задачу», the boards to create in, a separator, category / board.
+  await win.getByTestId('section-create-board').click();
+  const createMenu = win.getByTestId('boards-create-menu');
+  await expect(createMenu).toBeVisible();
+  await expect(createMenu.getByTestId('boards-create-task')).toBeVisible();
+  await expect(createMenu.getByTestId('boards-create-board')).toBeVisible();
+  await checkpoint(shot, 'boards-create-menu');
+  await win.keyboard.press('Escape');
+  await expect(createMenu).toHaveCount(0);
+
   // Bug board #4 (needs the dev LiveKit): in voice, the boards column ends with the same voice
   // block as the rooms island; its mic mutes the call while the board stays on screen.
   await win.getByTestId('section-chats').click();
@@ -3931,6 +3987,52 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await expect(dock.getByRole('button', { name: /^Включить микрофон/ })).toBeVisible();
   await expect(win.getByTestId('kanban')).toBeVisible();
   await checkpoint(shot, 'boards-voice-dock');
+});
+
+/**
+ * CBF-68: «Создать умную задачу» in the column's «+». Without a checked AI connection the item is
+ * off with the reason under it; once READY it opens the dialog (text, priority, files); «Создать»
+ * creates the task and opens it.
+ */
+test('boards-smart-task', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('section-create-board').click();
+  const menu = win.getByTestId('boards-create-menu');
+  // CBF-69: on Team (the fixture) the item is off for the plan, whatever the AI state.
+  await expect(menu.getByTestId('boards-create-smart-hint')).toHaveText('Доступно на тарифе Business');
+  await expect(menu.getByTestId('boards-create-smart')).toHaveAttribute('data-disabled', '');
+  await checkpoint(shot, 'boards-smart-plan');
+  await win.keyboard.press('Escape');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await win.getByTestId('section-create-board').click();
+  await expect(menu.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
+  await expect(menu.getByTestId('boards-create-smart')).toHaveAttribute('data-disabled', '');
+  await checkpoint(shot, 'boards-smart-off');
+  await win.keyboard.press('Escape');
+
+  mock.setAiState(IDS.workspaces.main, AiState.READY);
+  await win.getByTestId('section-create-board').click();
+  await expect(menu.getByTestId('boards-create-smart-hint')).toHaveCount(0);
+  await menu.getByTestId('boards-create-smart').click();
+  const dialog = win.getByTestId('smart-task');
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы\nСумма 120 000 ₽, реквизиты в письме бухгалтерии.');
+  await checkpoint(shot, 'boards-smart-dialog');
+  // CBF-75: the model declines (a duplicate): the reason and the task inline, the text stays.
+  const text = dialog.getByTestId('smart-task-text');
+  await text.fill('Оплатить счёт поставщика — похоже, дубль\nСумма 120 000 ₽.');
+  await win.getByTestId('smart-task-submit').click();
+  await expect(dialog.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
+  await expect(dialog.getByTestId('smart-task-duplicate')).toHaveText('Открыть CAL-3');
+  await expect(text).toHaveValue('Оплатить счёт поставщика — похоже, дубль\nСумма 120 000 ₽.');
+  await checkpoint(shot, 'boards-smart-refused');
+  await text.fill('Оплатить счёт поставщика до пятницы\nСумма 120 000 ₽, реквизиты в письме бухгалтерии.');
+  await expect(dialog.getByTestId('smart-task-refusal')).toHaveCount(0);
+  await win.getByTestId('smart-task-submit').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(win.getByTestId('task-panel')).toContainText('Оплатить счёт поставщика до пятницы');
 });
 
 /** The task full screen over the board: properties, two assignees, relations, comments. */
@@ -3960,6 +4062,19 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(viewer).toBeHidden();
   await expect(panel).toBeVisible();
+
+  // CBF-59: a picture picked in the description editor is attached and shown inline, in place.
+  await panel.getByTestId('task-description').click();
+  const editor = panel.getByTestId('task-description-editor');
+  await editor.press('End');
+  const shotPng = encodePng(640, 360, (u, v) => (v < 0.15 ? [58, 124, 246] : u < 0.3 ? [235, 238, 245] : [250, 251, 253]));
+  const attached = win.waitForResponse((r) => r.request().method() === 'PATCH' && /\/api\/tasks\/[^/]+$/.test(r.url()));
+  await panel.locator('input[accept="image/*"]').setInputFiles({ name: 'screenshot.png', mimeType: 'image/png', buffer: shotPng });
+  expect((await attached).ok()).toBe(true);
+  await expect(editor).toHaveValue(/calaba-file:/);
+  await panel.getByTestId('task-description-save').click();
+  await expect(panel.getByTestId('task-description-img')).toBeVisible();
+  await checkpoint(shot, 'boards-task-inline-image');
 });
 
 /** CAL-3's panel at its lower section: the «Комментарии» tab (the default) with the composer. */
@@ -4059,9 +4174,56 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await boardsMode(win, mock);
   await win.getByTestId('board-more').click();
   await win.getByTestId('board-settings').click();
+  // CBF-68: «Основное» → «Инструкция для ИИ», typed and saved. CBF-69: on Team (the fixture) it
+  // is writable with the Business line under the label.
+  const instr = win.getByTestId('board-ai-instruction-text');
+  await expect(instr).toHaveValue('');
+  await expect(win.getByTestId('board-ai-instruction-plan')).toHaveText('Умные задачи работают на тарифе Business — инструкцию можно написать заранее');
+  await win.getByTestId('board-ai-instruction').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-settings-ai-plan');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await expect(win.getByTestId('board-ai-instruction-plan')).toHaveCount(0);
+  await instr.fill('Заголовок — «Баг: где и что». В описании — шаги воспроизведения и ожидаемое поведение. Метка «Баг», приоритет высокий, если сломан вход.');
+  // CBF-75: «Искать дубли за 2 недели» under the instruction, off by default.
+  const dup = win.getByRole('switch', { name: 'Искать дубли за 2 недели' });
+  await expect(dup).toHaveAttribute('aria-checked', 'false');
+  await dup.click();
+  await expect(dup).toHaveAttribute('aria-checked', 'true');
+  await dup.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-settings-ai');
+  await win.getByTestId('board-ai-instruction-save').click();
+  await expect(win.getByTestId('board-ai-instruction-save')).toBeDisabled();
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');
+  // CBF-73: an editor (EDIT_TASKS without MANAGE_BOARD) — «Настройки» opens on «Статусы» with only
+  // the statuses, labels and milestones; no «Доступ» in the menu.
+  await win.keyboard.press('Escape');
+  const dev = [...mock.boards.boards.values()].find((r) => r.board.key === 'CAL');
+  if (!dev) throw new Error('board CAL');
+  mock.boards.setViewerBits(dev.board.id, IDS.users.anna, PERMISSION_BITS.VIEW_BOARD | PERMISSION_BITS.CREATE_TASKS | PERMISSION_BITS.EDIT_TASKS);
+  await win.getByTestId('board-more').click();
+  await expect(win.getByRole('menuitem', { name: 'Доступ' })).toHaveCount(0);
+  await win.getByTestId('board-settings').click();
+  await expect(win.getByRole('tablist', { name: 'Разработка' }).getByRole('tab')).toHaveText(['Статусы', 'Лейблы', 'Вехи']);
+  await expect(win.getByRole('tab', { name: 'Статусы' })).toHaveAttribute('aria-selected', 'true');
+  await checkpoint(shot, 'boards-settings-editor');
+  mock.boards.setViewerBits(dev.board.id, IDS.users.anna, null);
+  // CBF-51: «Доступ» of @Участник — without «Видеть доску» «Править любые задачи» ✓ does nothing
+  // (the row says so, danger), «Создавать задачи» ✓ is create-only.
+  await win.keyboard.press('Escape');
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Доступ' }).click();
+  await win.getByRole('radio', { name: 'Видеть доску: запрещено' }).click();
+  await win.getByRole('radio', { name: 'Создавать задачи: разрешено' }).click();
+  await win.getByRole('radio', { name: 'Править любые задачи: разрешено' }).click();
+  await expect(win.getByTestId('board-access-needs-view')).toHaveText('Не действует без «Видеть доску»');
+  await expect(win.getByTestId('board-access-create-only')).toHaveText('Создаёт и видит только свои карточки');
+  // «Инструкция сохранена» from above covers the last row: closed by a DOM click (outside the modal).
+  for (const b of await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').all()) await b.evaluate((x) => (x as HTMLButtonElement).click());
+  await expect(win.getByTestId('toast')).toHaveCount(0);
+  await checkpoint(shot, 'boards-settings-access');
 });
 
 /** Board settings → «Статусы», the colour picker of the first status open (ADR-0093): a 6-wide grid over the rows. */

@@ -46,6 +46,7 @@ const (
 // publish sends SIP_CALL_UPDATE to the viewers of the call's room (calls without a room — the
 // connection tests — are not published).
 func (s *Service) publish(ctx context.Context, c sqlc.SipCall) {
+	s.callsChanged(ctx, c.WorkspaceID)
 	if c.RoomID == nil {
 		return
 	}
@@ -200,6 +201,7 @@ func (s *Service) dial(ctx context.Context, call sqlc.SipCall, a sqlc.SipAccount
 		switch {
 		case err == nil:
 			s.publish(ctx, row)
+			s.recConnected(ctx, row.ID) // ADR-0131
 		case db.IsNotFound(err): // ended while ringing: take the line out
 			s.removeLine(ctx, lkRoom, call.ParticipantIdentity)
 		default:
@@ -253,6 +255,7 @@ func (s *Service) finish(ctx context.Context, id uuid.UUID, status, reason strin
 		return row, false
 	}
 	s.publish(ctx, row)
+	s.recEnded(ctx, row.ID)
 	return row, true
 }
 
@@ -329,6 +332,7 @@ func (s *Service) hangupWorkspace(ctx context.Context, wsID uuid.UUID) {
 		s.removeLine(ctx, voice.RoomName(wsID, *c.RoomID), c.ParticipantIdentity)
 		s.finish(ctx, c.ID, pbconv.SipEnded, reasonDisabled, nil)
 	}
+	s.hangupInboundWorkspace(ctx, wsID, reasonDisabled)
 }
 
 // journal: GET /api/workspaces/{id}/calls (VIEW_JOURNALS, ADR-0048). Calls of rooms the caller
@@ -587,6 +591,9 @@ func (s *Service) SIPParticipant(ctx context.Context, event string, wid, rid uui
 			return err
 		}
 		s.publish(ctx, row)
+		if row.Status == pbconv.SipActive {
+			s.recConnected(ctx, row.ID) // ADR-0131 (a second «connected» records nothing more)
+		}
 	case rtc.EventParticipantLeft, rtc.EventParticipantAborted:
 		// Before the answer the dialing request reports the outcome (busy, no answer…); the
 		// sweeper covers a lost one.
@@ -652,6 +659,8 @@ func (s *Service) Sweep(ctx context.Context) {
 		slog.WarnContext(ctx, "sip: sweep", "err", err)
 		return
 	}
+	s.sweepInbound(ctx, now)
+	s.sweepRegistrations(ctx, now)
 	ringDeadline := now.Add(-(s.opts.RingingTimeout + 90*time.Second))
 	for _, c := range live {
 		if c.RoomID == nil { // a deleted room or an interrupted connection test

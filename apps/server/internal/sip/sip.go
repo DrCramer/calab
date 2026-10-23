@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -69,6 +70,8 @@ type Options struct {
 	RingingTimeout, MaxCallTime time.Duration
 	// SweepInterval: how often lost calls are looked for (0 = 30 s).
 	SweepInterval time.Duration
+	// InboundTick: how often inbound deadlines are looked at (0 = 5 s).
+	InboundTick time.Duration
 }
 
 // Service is telephony.
@@ -81,9 +84,26 @@ type Service struct {
 	events events.Publisher
 	plans  *plans.Service
 	box    *sealbox.Box
+	regBox *sealbox.Box   // the registration's passwords (ADR-0121), another purpose than box
+	files  *files.Service // voice menu prompts (ADR-0117); nil = prompts answer 503
 	opts   Options
-	// CallLimit / TestLimit: per workspace (CallsPerHour, TestsPerHour).
-	CallLimit, TestLimit *redisx.RateLimiter
+	// CallLimit / TestLimit: per workspace (CallsPerHour, TestsPerHour); InboundLimit: inbound
+	// calls per workspace (InboundPerHour).
+	CallLimit, TestLimit, InboundLimit *redisx.RateLimiter
+	// RegLimit: mode / registration credential changes per workspace (RegChangesPerHour).
+	RegLimit *redisx.RateLimiter
+	// Inbound calls (ADR-0117 step 2): the IVR worker and the token config (SetInbound).
+	agent rtc.IVRAgent
+	inCfg InboundConfig
+	// The registration agent (ADR-0121, SetRegistrar) and its bookkeeping on this replica.
+	reg       Registrar
+	regLast   regState
+	regGone   time.Time // when the sweep first saw no agent (zero = connected)
+	regWarned bool
+	// Presence announces a user's presence after on_call changed (the gateway).
+	Presence func(ctx context.Context, u uuid.UUID)
+	// recorder records calls (ADR-0131, SetRecorder); nil = none.
+	recorder CallRecorder
 }
 
 // New wires the service. lk and s may be nil (no LiveKit): settings still work, calls and the
@@ -106,9 +126,11 @@ func New(d *db.DB, r rueidis.Client, lk rtc.LiveKit, s rtc.SIP, pub events.Publi
 	}
 	return &Service{
 		db: d, redis: r, voice: voice.Store{C: r}, lk: lk, sip: s, events: pub, plans: pl,
-		box: sealbox.New("calaba/sip-password/v1", secret), opts: o,
-		CallLimit: redisx.NewRateLimiter(r, "rl:sip-call:", CallsPerHour, float64(CallsPerHour)/60),
-		TestLimit: redisx.NewRateLimiter(r, "rl:sip-test:", TestsPerHour, float64(TestsPerHour)/60),
+		box: sealbox.New("calaba/sip-password/v1", secret), regBox: sealbox.New(regPurpose, secret), opts: o,
+		CallLimit:    redisx.NewRateLimiter(r, "rl:sip-call:", CallsPerHour, float64(CallsPerHour)/60),
+		TestLimit:    redisx.NewRateLimiter(r, "rl:sip-test:", TestsPerHour, float64(TestsPerHour)/60),
+		InboundLimit: redisx.NewRateLimiter(r, "rl:sip-in:", InboundPerHour, float64(InboundPerHour)/60),
+		RegLimit:     redisx.NewRateLimiter(r, "rl:sip-reg:", RegChangesPerHour, float64(RegChangesPerHour)/60),
 	}
 }
 
@@ -121,14 +143,22 @@ func publicAddr(a netip.Addr) bool {
 		!netip.MustParsePrefix("100.64.0.0/10").Contains(a) && !netip.MustParsePrefix("0.0.0.0/8").Contains(a)
 }
 
+// SetFiles gives the service the file store for voice menu prompts (ADR-0117).
+func (s *Service) SetFiles(f *files.Service) { s.files = f }
+
 // Routes registers the telephony routes.
 func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/workspaces/{id}/sip", wrap(httpx.HandlerFunc(s.getSettings)))
 	mux.Handle("PUT /api/workspaces/{id}/sip", wrap(httpx.HandlerFunc(s.putSettings)))
 	mux.Handle("POST /api/workspaces/{id}/sip/test", wrap(httpx.HandlerFunc(s.test)))
 	mux.Handle("GET /api/workspaces/{id}/calls", wrap(httpx.HandlerFunc(s.journal)))
+	mux.Handle("GET /api/workspaces/{id}/sip/calls", wrap(httpx.HandlerFunc(s.activeCalls)))
 	mux.Handle("POST /api/rooms/{id}/calls", wrap(httpx.HandlerFunc(s.place)))
 	mux.Handle("DELETE /api/rooms/{id}/calls/{cid}", wrap(httpx.HandlerFunc(s.hangup)))
+	mux.Handle("PUT /api/workspaces/{id}/sip/recording", wrap(httpx.HandlerFunc(s.putRecording)))
+	s.pbxRoutes(mux, wrap)
+	s.inboundRoutes(mux, wrap)
+	s.transferRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -203,7 +233,7 @@ func settingsPB(a sqlc.SipAccount, saved bool) *v1.SipSettings {
 		Enabled: a.Enabled, Provider: a.Provider, Host: a.Host, Transport: transportFromDB[a.Transport],
 		Username: a.Username, AuthUsername: a.AuthUsername, Port: uint32(max(a.Port, 0)), HasPassword: len(a.PasswordEnc) > 0, CallerId: a.CallerID,
 		OutboundPrefix: a.OutboundPrefix, AllowedPrefixes: a.AllowedPrefixes, LastError: a.LastError,
-		TrunkSaved: a.TrunkID != "",
+		TrunkSaved: a.TrunkID != "", RecordInbound: a.RecordInbound, RecordOutbound: a.RecordOutbound,
 	}
 	if out.AllowedPrefixes == nil {
 		out.AllowedPrefixes = []string{}
@@ -226,7 +256,16 @@ func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetSipSettingsResponse{Settings: settingsPB(a, saved || a.LastError != "")})
+	out := settingsPB(a, saved || a.LastError != "")
+	out.InboundAvailable = s.inboundReady()
+	s.fillRecording(out, a)
+	ex, err := loadExchange(r.Context(), s.db.Q, wsID)
+	if err != nil {
+		return err
+	}
+	fillInbound(out, a, ex)
+	s.fillRegistration(r.Context(), out, a)
+	httpx.Write(w, http.StatusOK, &v1.GetSipSettingsResponse{Settings: out})
 	return nil
 }
 
@@ -367,7 +406,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_SIP_DISABLED, "LiveKit is not configured on this server")
 	}
 	ctx, me := r.Context(), uid(r)
-	var saved sqlc.SipAccount
+	var saved, before sqlc.SipAccount
 	var ws sqlc.Workspace
 	disabled := false
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
@@ -378,6 +417,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		before = cur
 		sealed, plain := cur.PasswordEnc, ""
 		switch {
 		case in.password == nil && len(cur.PasswordEnc) > 0:
@@ -395,6 +435,20 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 			plain = *in.password
 		}
 		trunkID := cur.TrunkID
+		// The inbound trunk follows the caller ID (syncInbound): refuse a number another
+		// workspace takes inbound calls on before any LiveKit object changes.
+		if in.enabled && cur.InboundEnabled && s.inboundReady() {
+			if err := numberFree(ctx, q, sqlc.SipAccount{WorkspaceID: wsID, CallerID: in.callerID}); err != nil {
+				return err
+			}
+			if cur.InboundMode == modeRegister {
+				next := cur
+				next.Host, next.Username = in.host, in.username
+				if err := regFree(ctx, q, next); err != nil {
+					return err
+				}
+			}
+		}
 		if in.enabled {
 			authUser := in.authUsername
 			if authUser == "" {
@@ -437,6 +491,11 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		// Inbound calls follow (ADR-0117): the trunk takes the new caller ID / host, or goes
+		// with telephony switched off.
+		if saved, err = s.syncInbound(ctx, q, saved); err != nil {
+			return err
+		}
 		disabled = cur.Enabled && !in.enabled
 		ws, err = q.SetWorkspaceSipEnabled(ctx, sqlc.SetWorkspaceSipEnabledParams{ID: wsID, SipEnabled: in.enabled && trunkID != ""})
 		return err
@@ -452,7 +511,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	if err != nil {
-		return err
+		return inboundTaken(err)
 	}
 	slog.InfoContext(ctx, "sip: settings saved", "workspace", wsID, "by", me, "enabled", saved.Enabled, "trunk", saved.TrunkID)
 	pw := pbconv.Workspace(ws)
@@ -463,6 +522,16 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	if disabled {
 		s.hangupWorkspace(ctx, wsID)
 	}
-	httpx.Write(w, http.StatusOK, &v1.PutSipSettingsResponse{Settings: settingsPB(saved, true)})
+	// The registration follows the credentials, the host and the switch (ADR-0121).
+	s.regChanged(ctx, before, saved)
+	out := settingsPB(saved, true)
+	out.InboundAvailable = s.inboundReady()
+	s.fillRecording(out, saved)
+	fillInbound(out, saved, nil)
+	if ex, err := loadExchange(ctx, s.db.Q, wsID); err == nil {
+		fillInbound(out, saved, ex)
+	}
+	s.fillRegistration(ctx, out, saved)
+	httpx.Write(w, http.StatusOK, &v1.PutSipSettingsResponse{Settings: out})
 	return nil
 }

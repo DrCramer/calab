@@ -55,6 +55,11 @@ const (
 	scopeDiskItem
 	// scopeWikiPage: /api/wiki/pages/{id} (ADR-0096), the page's workspace.
 	scopeWikiPage
+	// scopeCanvasItem: /api/canvas/items/{id} (ADR-0126), the item's workspace.
+	scopeCanvasItem
+	// scopeCanvasComment: /api/canvas/comments/{id} (ADR-0127 wave 4), the workspace of the
+	// comment's canvas.
+	scopeCanvasComment
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -258,6 +263,12 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/workspaces/{id}/roles":                                      scopeWorkspace,
 	"GET /api/workspaces/{id}/rooms":                                      scopeWorkspace,
 	"GET /api/workspaces/{id}/sip":                                        scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/extensions":                             scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/groups":                                 scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/ivr":                                    scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/calls":                                  scopeWorkspace,
+	"GET /api/workspaces/{id}/ai":                                         scopeWorkspace,
+	"GET /api/workspaces/{id}/ai/status":                                  scopeWorkspace,
 	"GET /api/workspaces/{id}/sounds":                                     scopeWorkspace,
 	"GET /api/workspaces/{id}/sticker-packs":                              scopeWorkspace,
 	"GET /api/workspaces/{id}/tasks/search":                               scopeWorkspace,
@@ -360,6 +371,9 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/rooms/{id}/voice/{userId}/stop-camera":                     scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/stop-stream":                     scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/unmute":                          scopeRoom,
+	"GET /api/internal/ivr-agent":                                         scopePublic,
+	"GET /api/internal/ivr-agent/files/{id}":                              scopePublic,
+	"GET /api/internal/sipreg-agent":                                      scopePublic,
 	"POST /api/rtc/webhook":                                               scopePublic,
 	"POST /api/sticker-packs/{id}/stickers":                               scopePack,
 	"POST /api/tasks/{id}/approval":                                       scopeTask,
@@ -390,6 +404,17 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/workspaces/{id}/rooms":                                     scopeWorkspace,
 	"POST /api/workspaces/{id}/rooms/temp":                                scopeWorkspace,
 	"POST /api/workspaces/{id}/sip/test":                                  scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/extensions":                            scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/groups":                                scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/ivr":                                   scopeWorkspace,
+	"PATCH /api/workspaces/{id}/sip/extensions/{eid}":                     scopeWorkspace,
+	"PATCH /api/workspaces/{id}/sip/groups/{gid}":                         scopeWorkspace,
+	"PATCH /api/workspaces/{id}/sip/ivr/{mid}":                            scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/extensions/{eid}":                    scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/groups/{gid}":                        scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/ivr/{mid}":                           scopeWorkspace,
+	"POST /api/workspaces/{id}/ai/check":                                  scopeWorkspace,
+	"POST /api/workspaces/{id}/smart-tasks":                               scopeWorkspace,
 	"POST /api/workspaces/{id}/sounds":                                    scopeWorkspace,
 	"POST /api/workspaces/{id}/sticker-packs":                             scopeWorkspace,
 	"PUT /api/admin/users/{id}/storage-quota":                             scopeAdmin,
@@ -425,7 +450,16 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/workspaces/{id}/notifications":                              scopeWorkspace,
 	"PUT /api/workspaces/{id}/roles/order":                                scopeWorkspace,
 	"PUT /api/workspaces/{id}/rooms/order":                                scopeWorkspace,
+	"PUT /api/workspaces/{id}/sip/inbound":                                scopeWorkspace,
+	"PUT /api/workspaces/{id}/sip/recording":                              scopeWorkspace,
+	"POST /api/sip/inbound/{cid}/accept":                                  scopeGlobal,
+	"POST /api/sip/inbound/{cid}/decline":                                 scopeGlobal,
+	"POST /api/sip/inbound/{cid}/join":                                    scopeGlobal,
+	"DELETE /api/sip/inbound/{cid}":                                       scopeGlobal,
+	"POST /api/workspaces/{id}/sip/calls/{cid}/transfer":                  scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/calls/{cid}/transfer":                scopeWorkspace,
 	"PUT /api/workspaces/{id}/sip":                                        scopeWorkspace,
+	"PUT /api/workspaces/{id}/ai":                                         scopeWorkspace,
 	// Boards 2.0 (ADR-0058).
 	"GET /api/workspaces/{id}/board-categories":  scopeWorkspace,
 	"POST /api/workspaces/{id}/board-categories": scopeWorkspace,
@@ -512,6 +546,39 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/wiki/{code}":                scopePublic,
 	"GET /api/public/wiki/{code}/state":          scopePublic,
 	"GET /api/public/wiki/{code}/files/{fileId}": scopePublic,
+	// Canvas (ADR-0126 §7). The sync socket authenticates in-band like the Wiki's.
+	"GET /api/workspaces/{id}/canvas/items":        scopeWorkspace,
+	"POST /api/workspaces/{id}/canvas/items":       scopeWorkspace,
+	"POST /api/workspaces/{id}/canvas/trash/empty": scopeWorkspace,
+	"GET /api/workspaces/{id}/canvas/activity":     scopeWorkspace,
+	"GET /api/workspaces/{id}/canvas/settings":     scopeWorkspace,
+	"PUT /api/workspaces/{id}/canvas/settings":     scopeWorkspace,
+	"GET /api/canvas/items/{id}":                   scopeCanvasItem,
+	"PATCH /api/canvas/items/{id}":                 scopeCanvasItem,
+	"DELETE /api/canvas/items/{id}":                scopeCanvasItem,
+	"POST /api/canvas/items/{id}/trash":            scopeCanvasItem,
+	"POST /api/canvas/items/{id}/restore":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/path":              scopeCanvasItem,
+	"GET /api/canvas/items/{id}/activity":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/permissions":       scopeCanvasItem,
+	"PUT /api/canvas/items/{id}/permissions":       scopeCanvasItem,
+	"POST /api/canvas/items/{id}/take-over":        scopeCanvasItem,
+	"GET /api/canvas/items/{id}/versions":          scopeCanvasItem,
+	"GET /api/canvas/items/{id}/versions/{vid}":    scopeCanvasItem,
+	"GET /api/canvas/items/{id}/sync":              scopePublic,
+	// Canvas comments (ADR-0127 wave 4).
+	"GET /api/canvas/items/{id}/comments":                scopeCanvasItem,
+	"POST /api/canvas/items/{id}/comments":               scopeCanvasItem,
+	"GET /api/canvas/items/{id}/comments/mention-access": scopeCanvasItem,
+	"PATCH /api/canvas/comments/{id}":                    scopeCanvasComment,
+	"DELETE /api/canvas/comments/{id}":                   scopeCanvasComment,
+	// Canvas public link (ADR-0127 wave 5): managed by people of the canvas's workspace; the
+	// public name and the anonymous receive-only socket take no session at all.
+	"GET /api/canvas/items/{id}/link":    scopeCanvasItem,
+	"POST /api/canvas/items/{id}/link":   scopeCanvasItem,
+	"DELETE /api/canvas/items/{id}/link": scopeCanvasItem,
+	"GET /api/public/canvas/{code}":      scopePublic,
+	"GET /api/public/canvas/{code}/sync": scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
 	// (signed body, no session); the return page only redirects into the app.
 	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
@@ -575,6 +642,9 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}":        scopeWorkspace,
 	"POST /api/workspaces/{id}/bots/{botId}/delegation-invites":            scopeWorkspace,
 	"DELETE /api/workspaces/{id}/bots/{botId}/delegation-invites/{userId}": scopeWorkspace,
+	// MCP for bots (CBF-48): the endpoint itself reads and writes nothing; every tool's REST
+	// call goes through this gate again with its own route and scope.
+	"/api/mcp": scopePublic,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of
@@ -773,6 +843,11 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeWikiPage:
 		row, err := q.GetWikiPage(ctx, id)
 		return row.WorkspaceID, err
+	case scopeCanvasItem:
+		row, err := q.GetCanvasItem(ctx, id)
+		return row.WorkspaceID, err
+	case scopeCanvasComment:
+		return q.GetCanvasCommentWorkspace(ctx, id)
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -899,6 +974,10 @@ func IdentityRouteClass(pattern string) string {
 		return "disk_item"
 	case scopeWikiPage:
 		return "wiki_page"
+	case scopeCanvasItem:
+		return "canvas_item"
+	case scopeCanvasComment:
+		return "canvas_comment"
 	default:
 		return "specialized"
 	}

@@ -242,7 +242,7 @@ pnpm -F @calaba/desktop dev                       # Electron
 | 电话呼叫（SIP） | — | — | ✓ | ✓ |
 | On-prem（自有服务器） | — | — | — | ✓ |
 | 支持 | — | 支持 | 优先支持 | ✓ |
-| 价格 | 免费 | 按需询价（**it@gptunnel.ai**） | 按需询价（**it@gptunnel.ai**） | 非商业用途免费（BSL 1.1，保留“Powered by GPTunneL”）；商业许可按需询价 |
+| 价格 | 免费 | 按需询价（**support@calab.io**） | 按需询价（**support@calab.io**） | 非商业用途免费（BSL 1.1，保留“Powered by GPTunneL”）；商业许可按需询价 |
 
 Free、Team 和 Business 是工作区的云端方案（[ADR-0024](docs/adr/0024-plans-and-limits.md)）；Enterprise 是部署在自有服务器上的 Calab（on-prem），没有任何限制。详情见 [calab.io/zh/#pricing](https://calab.io/zh/#pricing) 和 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
 
@@ -253,13 +253,13 @@ Free、Team 和 Business 是工作区的云端方案（[ADR-0024](docs/adr/0024-
 **Business Source License 1.1**——[LICENSE](LICENSE)。
 
 - 非商业用途（个人、非营利组织、教育、不超过 30 天的评估）**免费**，需在界面中保留“Powered by GPTunneL”并保留 [NOTICE](NOTICE)。
-- 商业用途需获得 GPTunneL 许可：[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)，**it@gptunnel.ai**。
+- 商业用途需获得 GPTunneL 许可：[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)，**support@calab.io**。
 - 每个版本在发布四年后转为 Apache-2.0。
 
 Calab 和 GPTunneL 的名称与标志是商标，见 [TRADEMARKS.md](TRADEMARKS.md)。
 
 ## 参与贡献与安全
 
-欢迎通过 pull request 贡献代码（需签署 CLA）——[CONTRIBUTING.md](CONTRIBUTING.md)。请将安全漏洞私下报告至 **it@gptunnel.ai**，见 [SECURITY.md](SECURITY.md)。
+欢迎通过 pull request 贡献代码（需签署 CLA）——[CONTRIBUTING.md](CONTRIBUTING.md)。请将安全漏洞私下报告至 **support@calab.io**，见 [SECURITY.md](SECURITY.md)。
 
 <p align="center"><sub>© 2026 GPTunneL · Powered by <a href="https://gptunnel.ai">GPTunneL</a></sub></p>

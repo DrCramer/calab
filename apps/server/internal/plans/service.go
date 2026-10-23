@@ -2,6 +2,7 @@ package plans
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -108,6 +109,12 @@ func Defaults(freeJSON, teamJSON, bizJSON string) (free, team, biz Limits, err e
 	if biz, err = ParseLimits(bizJSON, DefaultBusiness); err != nil {
 		return Limits{}, Limits{}, Limits{}, err
 	}
+	// ADR-0113: the identity gate decides in SQL from workspace_plans alone, so a plan kind's
+	// corporate_identity is the built-in one; a superadmin changes it per workspace.
+	if free.CorporateIdentity != DefaultFree.CorporateIdentity || team.CorporateIdentity != DefaultTeam.CorporateIdentity ||
+		biz.CorporateIdentity != DefaultBusiness.CorporateIdentity {
+		return Limits{}, Limits{}, Limits{}, errors.New("plan limits: corporate_identity cannot be changed in PLAN_*_LIMITS; set it per workspace in the admin panel")
+	}
 	return free, team, biz, nil
 }
 
@@ -183,6 +190,16 @@ func (s *Service) AllowsMusician(ctx context.Context, wsID uuid.UUID, dm bool, u
 	return !s.PlanLimits(v1.Plan_PLAN_FREE).MusicianDisabled, nil
 }
 
+// AllowsAI reports whether the AI features (CBF-69) are part of the workspace's plan: Business
+// (or a custom plan granting them); an expired plan reads as Free. A nil service allows them.
+func (s *Service) AllowsAI(ctx context.Context, wsID uuid.UUID) (bool, error) {
+	if s == nil {
+		return true, nil
+	}
+	l, err := s.Effective(ctx, wsID)
+	return l.AI, err
+}
+
 // Effective returns the effective limits of a workspace.
 func (s *Service) Effective(ctx context.Context, wsID uuid.UUID) (Limits, error) {
 	i, err := s.Info(ctx, wsID)
@@ -253,9 +270,9 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 	}
 	switch info.Plan {
 	case v1.Plan_PLAN_TEAM:
-		info.Limits = s.team
+		info.Limits = s.overriddenLocked(ctx, *row, s.team)
 	case v1.Plan_PLAN_ENTERPRISE:
-		info.Limits = s.biz
+		info.Limits = s.overriddenLocked(ctx, *row, s.biz)
 	case v1.Plan_PLAN_CUSTOM:
 		info.Limits = s.customLimitsLocked(ctx, *row)
 	default:
@@ -277,6 +294,21 @@ func (s *Service) customLimitsLocked(ctx context.Context, row sqlc.WorkspacePlan
 		slog.WarnContext(ctx, "invalid custom plan limits, using free", "workspace", row.WorkspaceID, "err", err)
 		return s.free
 	}
+	return l
+}
+
+// overriddenLocked applies a Team / Business row's superadmin overrides (ADR-0113: only the keys
+// that differ from the plan's defaults are stored) over base; none or a corrupt row = base.
+func (s *Service) overriddenLocked(ctx context.Context, row sqlc.WorkspacePlan, base Limits) Limits {
+	if len(row.Limits) == 0 {
+		return base
+	}
+	l, err := ParseLimits(string(row.Limits), base)
+	if err != nil {
+		slog.WarnContext(ctx, "invalid plan overrides, using the plan's defaults", "workspace", row.WorkspaceID, "err", err)
+		return base
+	}
+	l.AI = base.AI // CBF-69: AI follows the plan, never an override
 	return l
 }
 

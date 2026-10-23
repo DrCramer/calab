@@ -47,9 +47,53 @@ interface MailUiState {
   openToChat: (messageId: string | null) => void;
   openCompose: (req: DistributiveOmit<ComposeRequest, 'seq'>) => void;
   closeCompose: () => void;
+  /** The mailbox sidebar is shown (CBF-56, Apple Mail; remembered on this computer). */
+  sidebar: boolean;
+  toggleSidebar: () => void;
+  /** Folded account sections and folders (ids), remembered on this computer. */
+  collapsed: ReadonlySet<string>;
+  toggleCollapsed: (id: string) => void;
+  folderDialog: FolderDialogReq | null;
+  openFolderDialog: (req: FolderDialogReq | null) => void;
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/**
+ * The folder dialog (CBF-56): a new folder in an account (under `parentId`; `smart` starts it as a
+ * smart folder), renaming an own folder, or editing a smart folder.
+ */
+export type FolderDialogReq =
+  | { kind: 'create'; accountId: string | null; parentId: string | null; smart: boolean }
+  | { kind: 'rename'; folderId: string }
+  | { kind: 'smart'; smartId: string };
+
+const SIDEBAR_KEY = 'calab.mail.sidebar';
+const COLLAPSED_KEY = 'calab.mail.collapsed';
+
+/** Per-viewer conveniences (CBF-56): the sidebar shown, the folded accounts / folders. Storage may be unavailable. */
+function readPref<T>(key: string, fallback: T): T {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const v = window.localStorage.getItem(key);
+    return v === null ? fallback : (JSON.parse(v) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function readCollapsed(): ReadonlySet<string> {
+  const v = readPref<unknown>(COLLAPSED_KEY, []);
+  return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+}
+
+function writePref(key: string, v: unknown): void {
+  try {
+    if (typeof window !== 'undefined') window.localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    // private mode / blocked storage: the preference lives for this session only
+  }
+}
 
 let seq = 0;
 
@@ -66,6 +110,23 @@ export const useMailUi = create<MailUiState>()((set) => ({
   openToChat: (toChat) => set({ toChat }),
   openCompose: (req) => set({ compose: { ...req, seq: ++seq } }),
   closeCompose: () => set({ compose: null }),
+  sidebar: readPref<unknown>(SIDEBAR_KEY, true) !== false,
+  toggleSidebar: () =>
+    set((s) => {
+      writePref(SIDEBAR_KEY, !s.sidebar);
+      return { sidebar: !s.sidebar };
+    }),
+  collapsed: readCollapsed(),
+  toggleCollapsed: (id) =>
+    set((s) => {
+      const next = new Set(s.collapsed);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      writePref(COLLAPSED_KEY, [...next].slice(-500));
+      return { collapsed: next };
+    }),
+  folderDialog: null,
+  openFolderDialog: (folderDialog) => set({ folderDialog }),
 }));
 
 const NONE: ReadonlySet<string> = new Set<string>();

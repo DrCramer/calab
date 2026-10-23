@@ -82,6 +82,8 @@
 обход согласования — решение с подтверждением, которое не должно случаться от утёкшего токена. Таблицы
 `botRoutes`/`onBehalfRoutes` и маршруты лендинга не меняются.
 
+Superseded for the owner-acting bot by [ADR-0122](0122-owner-bot-approval-override.md).
+
 ## Последствия
 - Протокол (`boards.proto`: `TaskApprover.recorded_by`/`on_behalf`, `UpdateTaskRequest.override_approval`,
   `TaskApprovalRequest.on_behalf_of`, `TaskNoticeKind.APPROVED_ON_BEHALF`, виды журнала), `make gen`;

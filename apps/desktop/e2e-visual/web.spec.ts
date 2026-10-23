@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { IDS, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { CANVAS_PUBLIC_CODE, IDS, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, THEMES, VIEWPORTS, checkpoint, type Shot } from './harness';
 import { seedDay } from './calendarWeb';
 
@@ -418,6 +418,38 @@ test('wiki-public', async ({ page }) => {
     // A code with no link behind it.
     await page.goto(`${mock.url}/w/${'x'.repeat(43)}?visual-test`);
     await expect(page.getByTestId('wiki-public-gone')).toBeVisible();
+  } finally {
+    await mock?.close();
+  }
+});
+
+/**
+ * The public canvas /c/{code} (ADR-0127 wave 5, docs/08 «Холст»): the 48 px header with «Только просмотр», the
+ * canvas in view mode with only the zoom bar — no tools, panels, comments or people. Dark 960 and light 960
+ * (`canvas-public`); a code with no link behind it is «Холст недоступен» (behaviour). The phone is m-canvas-public.
+ */
+test('canvas-public', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    const viewport = { width: 960, height: 600 };
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(NOW);
+    for (const theme of ['dark', 'light'] as const) {
+      await page.goto(`${mock.url}/?visual-test`);
+      await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
+      await page.goto(`${mock.url}/c/${CANVAS_PUBLIC_CODE}?visual-test`);
+      await expect(page.getByTestId('canvas-public-title')).toHaveText('Схема навигации');
+      await expect(page.getByTestId('canvas-public-readonly')).toBeVisible();
+      await expect(page.getByTestId('canvas-zoom')).toBeVisible();
+      for (const id of ['canvas-toolbar', 'canvas-props', 'canvas-presence', 'canvas-comments-toggle']) await expect(page.getByTestId(id)).toHaveCount(0);
+      await page.getByTestId('canvas-fit-all').click();
+      await page.waitForTimeout(500);
+      await checkpoint({ page, theme, viewport }, 'canvas-public');
+    }
+    await page.goto(`${mock.url}/c/${'x'.repeat(43)}?visual-test`);
+    await expect(page.getByTestId('canvas-public-gone')).toBeVisible();
   } finally {
     await mock?.close();
   }

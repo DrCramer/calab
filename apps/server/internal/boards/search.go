@@ -23,33 +23,48 @@ type Visible struct {
 	Full map[uuid.UUID]perm.Bits
 	// Scoped: the task-scoped boards — live, without VIEW_BOARD, where the member (a human, not
 	// a guest) is invited (assignee, approver, watcher) on a live task; Invited: those tasks.
-	Scoped  map[uuid.UUID]bool
-	Invited map[uuid.UUID]bool
-	viewer  uuid.UUID
+	// CreateOnly (ADR-0115): of Scoped, the boards where the member is create-only (CREATE_TASKS
+	// without VIEW_BOARD) — listed even with no card; Invited holds their authored tasks too.
+	Scoped     map[uuid.UUID]bool
+	CreateOnly map[uuid.UUID]bool
+	Invited    map[uuid.UUID]bool
+	viewer     uuid.UUID
 }
 
 // Empty reports that the member sees no board at all.
 func (v Visible) Empty() bool { return len(v.Full) == 0 && len(v.Scoped) == 0 }
 
 // Cond is the SQL condition over tasks t (JOIN boards b) of the tasks the member sees: every
-// task of a full board, the live tasks they are invited on of a task-scoped one.
+// task of a full board, the live tasks they are invited on of a task-scoped one (and, where they
+// are create-only, the live tasks they authored).
 func (v Visible) Cond(a *Args) string {
-	full := "t.board_id = ANY(" + a.Add(keys(v.Full)) + "::uuid[])"
-	if len(v.Scoped) == 0 {
-		return full
-	}
-	scoped := make([]uuid.UUID, 0, len(v.Scoped))
+	cond := "t.board_id = ANY(" + a.Add(keys(v.Full)) + "::uuid[])"
+	var invited, authored []uuid.UUID
 	for id := range v.Scoped {
-		scoped = append(scoped, id)
+		if v.CreateOnly[id] {
+			authored = append(authored, id)
+		} else {
+			invited = append(invited, id)
+		}
 	}
-	return "(" + full + " OR (t.board_id = ANY(" + a.Add(scoped) + "::uuid[]) AND t.archived_at IS NULL AND " +
-		invitedCond(a, v.viewer) + "))"
+	for _, g := range []struct {
+		ids    []uuid.UUID
+		author bool
+	}{{invited, false}, {authored, true}} {
+		if len(g.ids) > 0 {
+			cond += " OR (t.board_id = ANY(" + a.Add(g.ids) + "::uuid[]) AND t.archived_at IS NULL AND " + invitedCond(a, v.viewer, g.author) + ")"
+		}
+	}
+	if len(v.Scoped) == 0 {
+		return cond
+	}
+	return "(" + cond + ")"
 }
 
 // VisibleBoards returns the live boards of a workspace member m sees: with VIEW_BOARD (their
 // bits) and task-scoped (ADR-0059).
 func VisibleBoards(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Member) (Visible, error) {
-	out := Visible{Full: map[uuid.UUID]perm.Bits{}, Scoped: map[uuid.UUID]bool{}, Invited: map[uuid.UUID]bool{}}
+	out := Visible{Full: map[uuid.UUID]perm.Bits{}, Scoped: map[uuid.UUID]bool{}, CreateOnly: map[uuid.UUID]bool{}, Invited: map[uuid.UUID]bool{}}
 	if m.Role == perm.RoleGuest || m.Role == "" {
 		return out, nil
 	}
@@ -70,12 +85,28 @@ func VisibleBoards(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.
 	for _, o := range ovs {
 		by[o.BoardID] = append(by[o.BoardID], o)
 	}
+	var authorBoards []uuid.UUID
 	for _, b := range rows {
-		if bits := perm.ComputeBoardIn(m, perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy), OverrideTargets(by[b.ID])); bits.Has(perm.ViewBoard) {
+		switch bits := perm.ComputeBoardIn(m, perm.BoardFlagsOf(b.IsPrivate, b.Restricted, b.CreatedBy), OverrideTargets(by[b.ID])); {
+		case bits.Has(perm.ViewBoard):
 			out.Full[b.ID] = bits
+		case perm.CreateOnly(bits):
+			authorBoards = append(authorBoards, b.ID)
 		}
 	}
-	inv, err := q.ListInvitedTasks(ctx, sqlc.ListInvitedTasksParams{WorkspaceID: wsID, UserID: me})
+	if len(authorBoards) > 0 { // create-only is for humans (perm.Resolver: taskScoped)
+		u, err := q.GetUser(ctx, me)
+		if err != nil {
+			return out, err
+		}
+		if u.IsBot {
+			authorBoards = nil
+		}
+	}
+	for _, id := range authorBoards {
+		out.Scoped[id], out.CreateOnly[id] = true, true
+	}
+	inv, err := q.ListInvitedTasks(ctx, sqlc.ListInvitedTasksParams{WorkspaceID: wsID, UserID: me, AuthorBoards: authorBoards})
 	if err != nil {
 		return out, err
 	}
@@ -204,7 +235,9 @@ func (s *Service) myTasks(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// search: GET /api/workspaces/{id}/tasks/search?q=&limit= — ⌘K over the tasks the caller sees.
+// search: GET /api/workspaces/{id}/tasks/search?q=&limit=&state= — the tasks the caller sees on
+// every board of the workspace (⌘K, «Мои задачи → Все задачи»); state: open (not in a completed /
+// cancelled status), done (in one) or all (the default).
 func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	wsID, err := httpx.PathUUID(r, "id", "workspace")
 	if err != nil {
@@ -229,6 +262,12 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 		}
 		limit = n
 	}
+	state := r.URL.Query().Get("state")
+	switch state {
+	case "", "all", "open", "done":
+	default:
+		return httpx.BadRequest("state must be open, done or all")
+	}
 	vis, err := VisibleBoards(r.Context(), s.db.Q, wsID, m)
 	if err != nil {
 		return err
@@ -238,7 +277,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 		httpx.Write(w, http.StatusOK, out)
 		return nil
 	}
-	rows, err := searchTasks(r.Context(), s.db.Pool, vis, q, limit)
+	rows, err := searchTasks(r.Context(), s.db.Pool, vis, q, state, limit)
 	if err != nil {
 		return err
 	}
@@ -276,9 +315,13 @@ func SearchMatch(pq searchq.Query, raw string, a *Args) (cond, keyMatch string, 
 	return "(" + strings.Join(parts, " OR ") + ")", keyMatch, rank
 }
 
-// searchTasks finds the visible live tasks by key and words; exact key matches first, then
-// by relevance and recency. A query without a word finds nothing.
-func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q string, limit int) ([]taskRow, error) {
+// doneStatuses is the condition over tasks t of a status of a done type (completed, cancelled).
+const doneStatuses = "t.status_id IN (SELECT st.id FROM board_statuses st WHERE st.type IN ('completed', 'cancelled'))"
+
+// searchTasks finds the visible live tasks by key and words — of a done status (state done),
+// of another (open) or any (all, "") — exact key matches first, then by relevance and recency.
+// A query without a word finds nothing.
+func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q, state string, limit int) ([]taskRow, error) {
 	pq, err := searchq.Parse(q)
 	if err != nil {
 		return nil, nil //nolint:nilerr // only punctuation: no match
@@ -286,6 +329,12 @@ func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q string, lim
 	var a Args
 	visible := vis.Cond(&a)
 	cond, key, rank := SearchMatch(pq, q, &a)
+	switch state {
+	case "open":
+		cond += " AND NOT " + doneStatuses
+	case "done":
+		cond += " AND " + doneStatuses
+	}
 	order := rank() + " DESC, t.updated_at DESC, t.id DESC"
 	if key != "false" { // a constant cannot be an ORDER BY item
 		order = key + " DESC, " + order

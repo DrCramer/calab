@@ -53,6 +53,22 @@ func (q *Queries) DeleteBotDelegation(ctx context.Context, arg DeleteBotDelegati
 	return result.RowsAffected(), nil
 }
 
+const deleteBotDelegationDecline = `-- name: DeleteBotDelegationDecline :exec
+DELETE FROM bot_delegation_declines
+WHERE workspace_id = $1 AND bot_id = $2 AND user_id = $3
+`
+
+type DeleteBotDelegationDeclineParams struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+}
+
+func (q *Queries) DeleteBotDelegationDecline(ctx context.Context, arg DeleteBotDelegationDeclineParams) error {
+	_, err := q.db.Exec(ctx, deleteBotDelegationDecline, arg.WorkspaceID, arg.BotID, arg.UserID)
+	return err
+}
+
 const deleteBotDelegationInvite = `-- name: DeleteBotDelegationInvite :one
 DELETE FROM bot_delegation_invites
 WHERE workspace_id = $1 AND bot_id = $2 AND user_id = $3
@@ -178,6 +194,43 @@ func (q *Queries) InsertBotDelegationInvite(ctx context.Context, arg InsertBotDe
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listBotDelegationDeclines = `-- name: ListBotDelegationDeclines :many
+SELECT user_id, declined_at FROM bot_delegation_declines
+WHERE workspace_id = $1 AND bot_id = $2 AND declined_at > $3::timestamptz
+`
+
+type ListBotDelegationDeclinesParams struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	Since       time.Time
+}
+
+type ListBotDelegationDeclinesRow struct {
+	UserID     uuid.UUID
+	DeclinedAt time.Time
+}
+
+// The declines of a bot's invitations in a workspace newer than since.
+func (q *Queries) ListBotDelegationDeclines(ctx context.Context, arg ListBotDelegationDeclinesParams) ([]ListBotDelegationDeclinesRow, error) {
+	rows, err := q.db.Query(ctx, listBotDelegationDeclines, arg.WorkspaceID, arg.BotID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBotDelegationDeclinesRow{}
+	for rows.Next() {
+		var i ListBotDelegationDeclinesRow
+		if err := rows.Scan(&i.UserID, &i.DeclinedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listBotDelegationInvites = `-- name: ListBotDelegationInvites :many
@@ -342,4 +395,22 @@ func (q *Queries) UpsertBotDelegation(ctx context.Context, arg UpsertBotDelegati
 		&i.Since,
 	)
 	return i, err
+}
+
+const upsertBotDelegationDecline = `-- name: UpsertBotDelegationDecline :exec
+INSERT INTO bot_delegation_declines (workspace_id, bot_id, user_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (workspace_id, bot_id, user_id) DO UPDATE SET declined_at = now()
+`
+
+type UpsertBotDelegationDeclineParams struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	UserID      uuid.UUID
+}
+
+// The member declined an invitation (CBF-41): re-inviting them waits a cooldown.
+func (q *Queries) UpsertBotDelegationDecline(ctx context.Context, arg UpsertBotDelegationDeclineParams) error {
+	_, err := q.db.Exec(ctx, upsertBotDelegationDecline, arg.WorkspaceID, arg.BotID, arg.UserID)
+	return err
 }

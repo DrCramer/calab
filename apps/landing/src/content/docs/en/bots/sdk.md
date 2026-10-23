@@ -106,6 +106,7 @@ Details for each group are in the REST chapters: [messages](./rest-messages), [b
 | `reaction` | `{ type: 'add' \| 'remove', workspaceId, roomId, messageId, userId, emoji }` |
 | `callback` | `BotCallback` — a button press; see [Commands and buttons](./commands-buttons) |
 | `contactShared` | `ContactShared` — a person shared their contact; see [Commands and buttons](./commands-buttons#contact-request) |
+| `botDelegation` | `BotDelegationChange` — a member allowed, revoked or declined acting on their behalf; see [Authorization](./auth#on-behalf-of-a-member) |
 | `taskNotice` | `TaskNoticeRelay` — a person's task notification; see [Task notifications](./task-notices) |
 | `voiceState` | `VoiceState` (empty `roomId` — left voice) |
 | `dispatch` | every raw `DispatchEvent` (rooms, members, presence…) |
@@ -160,3 +161,7 @@ BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.example.com npm start
 
 > [!TIP]
 > Other languages don't need an SDK: REST is plain HTTP with JSON and the gateway accepts JSON frames (`?encoding=json`). Types for any language can be generated from the repository's `proto/` folder (`buf generate` with the plugin you need).
+
+## MCP for LLM clients
+
+`POST /api/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server (Streamable HTTP, JSON answers, no sessions): any LLM client connects with the header `Authorization: Bearer calab_bot_…`. People's tokens get 403. Tools: `find` (tasks, messages, rooms, boards), `read` (a task with its board's statuses, or a room's messages; `full: true` — the whole API object), `create_task`, `comment_task`, `set_task_status`, `send_message`. Details, parameters and examples: [MCP for LLM clients](./mcp). Each tool calls the REST routes above with the same token, so it has exactly the bot's rights and limits (a tool call counts as one request plus its REST calls).

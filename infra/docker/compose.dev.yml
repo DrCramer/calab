@@ -68,6 +68,38 @@ services:
           level: debug
     depends_on: [livekit, valkey]
 
+  # Входящие по регистрации (ADR-0121 §7), ручная сквозная проверка без провайдера, только по
+  # запросу: `docker compose -f infra/docker/compose.dev.yml --profile sip --profile sip-dev up -d`.
+  # Всё в сетевом пространстве LiveKit: LiveKit SIP — 127.0.0.1:5060, агент — 127.0.0.1:5080,
+  # Asterisk-«провайдер» — 127.0.0.1:5070 (asterisk/pjsip.conf: логин 130098). API на хосте с
+  # IVR_AGENT_TOKEN, SIPREG_AGENT_TOKEN=dev-sipreg-token и UNFURL_ALLOW_CIDRS=127.0.0.0/8 (хост
+  # провайдера — loopback); воркер `go run ./cmd/ivr` на хосте. В настройках телефонии: хост
+  # 127.0.0.1, порт 5070, логин 130098, пароль dev-only-130098; «Входящие» → «По регистрации».
+  # Позвонить — asterisk/extensions.conf.
+  sipreg:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile.sipreg
+    profiles: [sip-dev]
+    network_mode: "service:livekit"
+    environment:
+      API_URL: http://host.docker.internal:3000
+      SIPREG_AGENT_TOKEN: dev-sipreg-token
+      SIP_REGISTRAR_BIND: 127.0.0.1
+      SIP_REGISTRAR_PUBLIC_IP: 127.0.0.1
+      SIP_REGISTRAR_STUN: "off"
+      LIVEKIT_SIP_ADDR: 127.0.0.1:5060
+    depends_on: [livekit]
+
+  asterisk:
+    image: andrius/asterisk:22.8-cert4_debian-trixie@sha256:94437291aabc350fe04814a3d3e721ea4e75db32b852b290f4ccb22dfda4729c
+    profiles: [sip-dev]
+    network_mode: "service:livekit"
+    volumes:
+      - ./asterisk/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./asterisk/extensions.conf:/etc/asterisk/extensions.conf:ro
+    depends_on: [livekit]
+
   # Запись встреч (ADR-0025). В сетевом пространстве LiveKit: node_ip 127.0.0.1 из livekit.dev.yaml
   # для egress — это сам LiveKit. Файлы — в apps/server/data/recordings (RECORDINGS_PATH API
   # на хосте по умолчанию), внутри контейнера /out.

@@ -218,8 +218,12 @@ export interface MailCursor {
   id: string;
 }
 
-/** A folder by role (resolved per account; the only form allowed with `scope: 'all'`) or by id. */
-export type MailFolderRef = MailFolderRole | { id: string };
+/**
+ * A folder by role (resolved per account), by id, or a smart folder by its id in
+ * `settings.smartFolders` (CBF-56: a local view over the synced mail, never an IMAP folder). With
+ * `scope: 'all'` only a role or a smart folder.
+ */
+export type MailFolderRef = MailFolderRole | { id: string } | { smart: string };
 
 export interface MailListQuery {
   /** An account id, or `'all'` for the unified mailbox («Все входящие»: the role across accounts). */
@@ -409,6 +413,43 @@ export interface MailOutgoing {
 
 // ---------------------------------------------------------------- settings
 
+/**
+ * A sorting rule (CBF-39): an inbox message whose sender (name or address) or subject contains
+ * `contains` (case-insensitive) is moved to the folder `folderPath` of the same account. The first
+ * matching rule of the account wins. Folders are referenced by IMAP path (stable across syncs).
+ */
+export interface MailRule {
+  id: string;
+  accountId: string;
+  field: 'from' | 'subject';
+  contains: string;
+  folderPath: string;
+}
+
+export const MAIL_RULES_MAX = 200;
+
+/** A condition of a smart folder (CBF-56): the field contains `contains` (case-insensitive). `to` = To and Cc. */
+export interface MailCondition {
+  field: 'from' | 'subject' | 'to';
+  contains: string;
+}
+
+/**
+ * A smart folder (CBF-56, Apple Mail «Smart Mailbox»): a saved local view of the messages matching
+ * its conditions (`all` of them or `any`), over one account or every account (`accountId: null`),
+ * junk and trash excluded. Lives in the mail settings only — nothing is created on the IMAP server.
+ */
+export interface MailSmartFolder {
+  id: string;
+  name: string;
+  accountId: string | null;
+  match: 'all' | 'any';
+  conditions: MailCondition[];
+}
+
+export const MAIL_SMART_MAX = 50;
+export const MAIL_SMART_CONDITIONS_MAX = 10;
+
 export interface MailSettings {
   /** Remote images: `ask` = hidden with the «Показать» bar (default), `always` = shown. */
   remoteImages: 'ask' | 'always';
@@ -416,8 +457,14 @@ export interface MailSettings {
   remoteImageSenders: string[];
   /** System notifications for new inbox mail (§8). */
   notify: boolean;
+  /** Group messages into conversations (default); off = every message is its own row (CBF-39). */
+  groupThreads: boolean;
   /** Plain-text signature per account id ('' / absent = none). */
   signatures: Record<string, string>;
+  /** Sorting rules for incoming mail (CBF-39), applied to new inbox mail and by `folders.applyRules`. */
+  rules: MailRule[];
+  /** Smart folders (CBF-56), listed by `messages.list` with `folder: { smart: id }`. */
+  smartFolders: MailSmartFolder[];
   /** Body / attachment cache limit per account, bytes (default 1 GiB, §3). */
   cacheLimitBytes: number;
 }
@@ -426,7 +473,10 @@ export const DEFAULT_MAIL_SETTINGS: MailSettings = {
   remoteImages: 'ask',
   remoteImageSenders: [],
   notify: true,
+  groupThreads: true,
   signatures: {},
+  rules: [],
+  smartFolders: [],
   cacheLimitBytes: 1024 * 1024 * 1024,
 };
 
@@ -572,6 +622,23 @@ export interface MailApi {
      * `UID STORE 1:* +FLAGS (\Deleted)` + EXPUNGE), then locally. Any other folder: `INVALID`.
      */
     empty(folderId: string): Promise<void>;
+    /**
+     * Creates a folder on the IMAP server (under `parentId` when given) and in the local list
+     * (CBF-39). `NETWORK` offline, `INVALID` for a bad / existing name.
+     */
+    create(accountId: string, name: string, parentId?: string | null): Promise<MailFolder>;
+    /**
+     * Renames an ordinary folder on the IMAP server (RENAME), its subfolders move with it; sorting
+     * rules follow the new path (CBF-56). Role and virtual folders: `INVALID`; offline: `NETWORK`.
+     */
+    rename(folderId: string, name: string): Promise<MailFolder>;
+    /**
+     * Deletes an ordinary folder and its subfolders on the IMAP server (DELETE) with their mail, then
+     * locally; rules filing into them are dropped (CBF-56). Role / virtual: `INVALID`; offline: `NETWORK`.
+     */
+    remove(folderId: string): Promise<void>;
+    /** Files the account's inbox by the sorting rules (`settings.rules`); resolves with the number of moved messages. */
+    applyRules(accountId: string): Promise<{ moved: number }>;
   };
   messages: {
     /** A page of thread rows, newest first, from the local database (never waits for the network). */
@@ -682,6 +749,10 @@ export const mailMethods = [
   'accounts.setPassword',
   'folders.list',
   'folders.empty',
+  'folders.create',
+  'folders.rename',
+  'folders.remove',
+  'folders.applyRules',
   'messages.list',
   'messages.get',
   'messages.raw',
@@ -812,6 +883,7 @@ export const MAIL_METHOD_TIMEOUT_MS: Readonly<Partial<Record<MailMethod | 'verif
   'accounts.setPassword': 60_000,
   'compose.send': 60_000,
   'folders.empty': 60_000,
+  'folders.remove': 60_000,
   verify: 60_000,
 };
 

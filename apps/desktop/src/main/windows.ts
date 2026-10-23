@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
 import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession, isCheckoutSession } from './appSessions';
@@ -9,6 +9,7 @@ import { RendererCrashBudget } from './crashRecovery';
 import { log } from './logging';
 import { windowIconPath } from './icons';
 import { isPdfViewerFrame } from './pdfFrame';
+import { openLink } from './ownLink';
 import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -230,7 +231,7 @@ export function createMainWindow(): BrowserWindow {
         },
       };
     }
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) openLink(url);
     return { action: 'deny' };
   });
   win.webContents.on('did-create-window', (child, details) => {
@@ -270,6 +271,10 @@ export function guardWebContents(wc: WebContents): void {
   // shows our page, has no preload and no IPC. The same for the checkout window's page (ADR-0084,
   // main/checkoutWindow.ts).
   if (isAppSession(wc.session) || isCheckoutSession(wc.session)) return;
+  // A trackpad pinch must reach the page as ctrl+wheel events (the Canvas zooms itself, ADR-0126 §4), not
+  // scale the whole window. Electron ships with visual zoom off; pinned here so no flag or upgrade turns
+  // it on. The interface scale (View → Zoom, ⌘+/−) is the zoom factor, a different thing, and is untouched.
+  wc.setVisualZoomLevelLimits(1, 1).catch(() => {});
   wc.on('will-navigate', (e, url) => {
     if (!isOwnPage(url)) e.preventDefault();
   });
@@ -282,7 +287,7 @@ export function guardWebContents(wc: WebContents): void {
   });
   wc.on('will-attach-webview', (e) => e.preventDefault());
   wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) openLink(url);
     return { action: 'deny' };
   });
 }

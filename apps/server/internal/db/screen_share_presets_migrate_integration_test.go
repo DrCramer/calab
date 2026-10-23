@@ -54,4 +54,7 @@ func TestSelfHostMigrationHistoryUpgradesPastPresetVersion(t *testing.T) {
 			t.Errorf("%s does not permit expanded presets: %s", constraint, definition)
 		}
 	}
+	if err := d.MigrateTo(ctx, 123); err != nil {
+		t.Fatalf("upgrade self-host migration history through current upstream: %v", err)
+	}
 }

@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
+import { BoardFeature, MessageKind, Permission, TaskRelationKind, WorkspaceRole, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
 import {
   Archive,
   ArchiveRestore,
@@ -12,12 +12,14 @@ import {
   FolderInput,
   GitFork,
   Link2,
+  ImagePlus,
   Paperclip,
   Plus,
   X,
 } from 'lucide-react';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { fmt } from '../../lib/format';
+import { log } from '../../lib/log';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
 import { Bar } from '../../components/Bar';
@@ -30,7 +32,7 @@ import { Markdown } from '../../lib/markdown/Markdown';
 import type { ActivityTab } from '../../lib/boards/activity';
 import { approvalsWouldReset, blockedStatusIds, decidedApprovers, gateReason } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, replaceAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
-import { uploadFile } from '../../lib/api/endpoints';
+import { thumbnailPath, uploadFile } from '../../lib/api/endpoints';
 import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
 import { useChatView } from '../chat/chatView';
 import { subscribeRooms } from '../../services/gateway';
@@ -43,6 +45,7 @@ import {
   loadTask,
   moveTaskToBoard,
   restoreTask,
+  searchAllTasks,
   setAssignees,
   setRelation,
   setSubscription,
@@ -59,7 +62,8 @@ import { EMPTY_ROOM_MESSAGES, useMessages } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { myUserId, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import { memberName, useFormerInfo, useMemberName } from '../../stores/workspaces';
+import { memberName, useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { BotConsentPrompt } from '../people/BotConsentPrompt';
 import { FormerChip } from '../people/MemberBits';
 import { Composer, toOutgoing } from '../chat/Composer';
 import { buildMetas, type RowMeta } from '../chat/grouping';
@@ -72,12 +76,16 @@ import { ApprovalsSection } from './Approvals';
 import { WatchersSection } from './Watchers';
 import { GitSection } from './GitLinks';
 import { AttachmentChip } from './AttachmentChip';
+import { imageToken, insertImage, splitDescription } from './inlineImages';
+import { MediaImg } from '../../components/MediaImg';
+import { THUMB_LARGE, thumbWidthPath } from '../../lib/thumbs';
+import { openAttachment } from '../../services/files';
 import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { TaskHistory } from './TaskHistory';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
-import { taskChoices } from './taskChoices';
-import { doneType, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { linkChoices, taskChoices } from './taskChoices';
+import { doneType, editLockKey, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
@@ -384,12 +392,29 @@ export function TitleEditor({ task, canEdit, large = false }: { task: Task; canE
   );
 }
 
+/** A picture of the description (CBF-59): the task's attachment shown in place; a click opens the Lightbox. */
+const DescriptionImage = memo(function DescriptionImage({ id, name, list }: { id: string; name: string; list: readonly FileMeta[] }): ReactNode {
+  const f = list.find((x) => x.id === id);
+  if (!f) return <span className="block text-caption text-faint">{name || t('boards.imageGone')}</span>;
+  return (
+    // Not a <button>: the description is itself a button («edit»); the chip below the text is the keyboard path.
+    <div
+      onClick={(e) => { e.stopPropagation(); openAttachment(f, list); }}
+      className="my-1 w-fit max-w-full cursor-zoom-in rounded-[var(--radius-card)] border border-line"
+      data-testid="task-description-img"
+    >
+      <MediaImg path={thumbWidthPath(thumbnailPath(f.id), THUMB_LARGE)} alt={name} loading="lazy" className="block max-h-[420px] max-w-full rounded-[var(--radius-card)] object-contain" />
+    </div>
+  );
+});
+
 export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit: boolean; attachments: boolean }): ReactNode {
   const { guard, dialog } = useResetGuard(task);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(task.description);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
+  const pic = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const [prev, setPrev] = useState(task.description);
   if (prev !== task.description && !editing) {
@@ -421,6 +446,37 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
       setBusy(false);
     }
   };
+  // CBF-59: a picture pasted / dropped / picked in the editor is uploaded as an attachment of the
+  // task and referenced from the draft at the caret (the text itself is saved with «Save»).
+  const insertPictures = async (list: File[]): Promise<void> => {
+    const pics = list.filter((f) => f.type.startsWith('image/')).slice(0, Math.max(0, 20 - task.attachments.length));
+    if (!pics.length) return;
+    let caret = ref.current?.selectionStart ?? v.length;
+    setBusy(true);
+    try {
+      const ids = task.attachments.map((a) => a.id);
+      const tokens: string[] = [];
+      for (const f of pics) {
+        const up = await uploadFile(boardsApi.uploadPath(task.boardId), f, f.name || 'image.png', () => undefined).promise;
+        ids.push(up.id);
+        tokens.push(imageToken(up.id, f.name || 'image.png'));
+      }
+      await setTaskAttachments(task.id, ids);
+      setV((cur) => {
+        let text = cur;
+        for (const tk of tokens) {
+          const r = insertImage(text, caret, tk);
+          text = r.text;
+          caret = r.caret;
+        }
+        return text;
+      });
+    } catch (e) {
+      toast.fail(e, t('boards.err.save'));
+    } finally {
+      setBusy(false);
+    }
+  };
   const removeAttachment = (f: FileMeta): void => guard(() => void setTaskAttachments(task.id, task.attachments.filter((x) => x.id !== f.id).map((x) => x.id)));
   const mention = useCallback((val: string, key: string) => <span key={key} className="font-medium text-accent-text">@{memberName(task.workspaceId, val)}</span>, [task.workspaceId]);
   return (
@@ -433,6 +489,18 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
             value={v}
             maxLength={DESCRIPTION_MAX}
             onChange={(e) => setV(e.target.value)}
+            onPaste={(e) => {
+              const pics = attachments ? [...e.clipboardData.files].filter((f) => f.type.startsWith('image/')) : [];
+              if (!pics.length) return;
+              e.preventDefault();
+              void insertPictures(pics);
+            }}
+            onDrop={(e) => {
+              const pics = attachments ? [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')) : [];
+              if (!pics.length) return;
+              e.preventDefault();
+              void insertPictures(pics);
+            }}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -450,6 +518,14 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
           />
           <div className="flex items-center justify-end gap-2">
             <span className="mr-auto text-caption text-faint">{t('boards.markdownHint')}</span>
+            {attachments ? (
+              <>
+                <Button variant="ghost" size="sm" busy={busy} onClick={() => pic.current?.click()} data-testid="task-description-image">
+                  <ImagePlus className="size-3.5" aria-hidden /> {t('boards.insertImage')}
+                </Button>
+                <input ref={pic} type="file" accept="image/*" multiple hidden onChange={(e) => { void insertPictures([...(e.target.files ?? [])]); e.target.value = ''; }} />
+              </>
+            ) : null}
             <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>
               {t('common.cancel')}
             </Button>
@@ -467,7 +543,7 @@ export function DescriptionEditor({ task, canEdit, attachments }: { task: Task; 
           className={cx('selectable min-h-8 whitespace-pre-wrap break-words rounded-[var(--radius-row)] text-body', canEdit && 'cursor-text hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]', !task.description && 'text-faint')}
           data-testid="task-description"
         >
-          {task.description ? <Markdown text={task.description} mention={mention} /> : canEdit ? t('boards.descriptionPlaceholder') : t('boards.noDescription')}
+          {task.description ? splitDescription(task.description).map((seg, i) => seg.k === 'text' ? <Markdown key={i} text={seg.v} mention={mention} /> : <DescriptionImage key={i} id={seg.id} name={seg.name} list={task.attachments} />) : canEdit ? t('boards.descriptionPlaceholder') : t('boards.noDescription')}
         </div>
       )}
       {attachments && (task.attachments.length || canEdit) ? (
@@ -504,13 +580,20 @@ export function Prop({ label, children, testId }: { label: string; children: Rea
 /** The task's author (Task.created_by: a user or a bot), read-only, the first property. */
 const AuthorProp = memo(function AuthorProp({ task }: { task: Task }): ReactNode {
   const name = useMemberName(task.workspaceId, task.createdBy);
+  // CBF-41: a bot-made card shows the bot's «act on your behalf» request to the people it concerns.
+  const botAuthor = useWorkspaces((s) => !!s.users[task.createdBy]?.isBot && s.byId[task.workspaceId]?.role !== WorkspaceRole.GUEST);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const concerned = botAuthor && me !== '' && (task.subscribed || task.assignees.some((a) => a.userId === me));
   return (
-    <Prop label={t('boards.f.author')} testId="prop-author">
-      <ProfileTarget userId={task.createdBy} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex h-7 min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] px-1 text-left">
-        <MemberAvatar workspaceId={task.workspaceId} userId={task.createdBy} size={20} />
-        <span className="min-w-0 truncate text-control font-medium">{name}</span>
-      </ProfileTarget>
-    </Prop>
+    <>
+      <Prop label={t('boards.f.author')} testId="prop-author">
+        <ProfileTarget userId={task.createdBy} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex h-7 min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] px-1 text-left">
+          <MemberAvatar workspaceId={task.workspaceId} userId={task.createdBy} size={20} />
+          <span className="min-w-0 truncate text-control font-medium">{name}</span>
+        </ProfileTarget>
+      </Prop>
+      {concerned ? <BotConsentPrompt workspaceId={task.workspaceId} botUserId={task.createdBy} /> : null}
+    </>
   );
 });
 
@@ -556,7 +639,7 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
           </PriorityMenu>
         </Prop>
       ) : null}
-      <Assignees task={task} canEdit={canEdit} req={req('assignee')} stacked={bare} />
+      <Assignees task={task} canEdit={canEdit} cardOnly={scoped && !hasBit(perms, CREATE_TASKS)} req={req('assignee')} stacked={bare} />
       {on(BoardFeature.LABELS) ? (
         <Prop label={t('boards.f.label')}>
           {mine.map((l) => (
@@ -697,6 +780,52 @@ function useTaskChoices(boardId: string, exclude: string, open: boolean): Choice
   return useMemo(() => taskChoices(tasks, boardId, exclude), [tasks, boardId, exclude]);
 }
 
+/** Typing pause before a relation search request: one query per word, not per key. */
+const LINK_DEBOUNCE_MS = 250;
+
+/**
+ * The relation picker's choices (CBF-47): the board's tasks at once, and for the typed text the
+ * workspace search (GET …/tasks/search — the server keeps only the boards the caller sees) over
+ * every board, its hits first; each row names its board. `loading` — the board or the search.
+ */
+function useLinkChoices(task: Task, open: boolean): { choices: Choice[]; loading: boolean; onInput: (text: string) => void } {
+  const tasks = useBoards((s) => (open ? s.tasks : null));
+  const boardLoading = useBoards((s) => open && s.load[task.boardId] === 'loading');
+  const names = useBoards(useShallow((s) => (open ? workspaceBoards(s.boards, task.workspaceId).map((b) => `${b.id}\u0000${b.emoji || '📋'} ${b.name}`) : NO_NAMES)));
+  const [q, setQ] = useState('');
+  const [found, setFound] = useState<{ q: string; ids: string[] } | null>(null);
+  const query = open ? q.trim() : '';
+  useEffect(() => {
+    if (open) void ensureBoardTasks(task.boardId);
+  }, [open, task.boardId]);
+  useEffect(() => {
+    if (!query) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      searchAllTasks(task.workspaceId, query, 'all', ctl.signal).then(
+        (ids) => setFound({ q: query, ids }),
+        (e: unknown) => {
+          if (ctl.signal.aborted) return;
+          log.warn('relation search failed', e);
+          setFound({ q: query, ids: [] });
+        },
+      );
+    }, LINK_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [task.workspaceId, query]);
+  const ids = query && found ? found.ids : NO_NAMES;
+  const choices = useMemo(() => {
+    const nameOf = new Map(names.map((x) => x.split('\u0000') as [string, string]));
+    return linkChoices(tasks, task.boardId, task.id, ids, (b) => nameOf.get(b) ?? '');
+  }, [tasks, task.boardId, task.id, ids, names]);
+  return { choices, loading: boardLoading || (!!query && found?.q !== query), onInput: setQ };
+}
+
+const NO_NAMES: string[] = [];
+
 function ParentMenu({ task, children }: { task: Task; children: ReactNode }): ReactNode {
   const [open, setOpen] = useState(false);
   const choices = useTaskChoices(task.boardId, task.id, open);
@@ -710,7 +839,7 @@ function ParentMenu({ task, children }: { task: Task; children: ReactNode }): Re
 
 // ------------------------------------------------------------------ assignees
 
-function Assignees({ task, canEdit, req, stacked = false }: { task: Task; canEdit: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void }; stacked?: boolean }): ReactNode {
+function Assignees({ task, canEdit, cardOnly, req, stacked = false }: { task: Task; canEdit: boolean; cardOnly: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void }; stacked?: boolean }): ReactNode {
   const [over, setOver] = useState(false);
   const drafts = useMemo(() => draftsOf(task.assignees), [task.assignees]);
   const onDragOver = (e: DragEvent): void => {
@@ -741,7 +870,7 @@ function Assignees({ task, canEdit, req, stacked = false }: { task: Task; canEdi
           onNone={() => void setAssignees(task.id, [])}
           {...req}
         >
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, 'self-start text-muted')} data-testid="assignee-add">
+          <button type="button" disabled={!canEdit} {...(canEdit ? {} : { title: t(editLockKey(!!task.archivedAt, cardOnly)) })} className={cx(valueBtn, 'self-start text-muted')} data-testid="assignee-add">
             <Plus className="size-3.5" aria-hidden /> {t('boards.addAssignee')}
           </button>
         </AssigneeMenu>
@@ -912,8 +1041,7 @@ const REL_GROUPS: ReadonlyArray<{ key: 'blocks' | 'blocked' | 'relates' | 'dupli
 
 export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: boolean }): ReactNode {
   const [kind, setKind] = useState<TaskRelationKind | null>(null);
-  const choices = useTaskChoices(task.boardId, task.id, kind !== null);
-  const loading = useBoards((s) => kind !== null && s.load[task.boardId] === 'loading');
+  const { choices, loading, onInput } = useLinkChoices(task, kind !== null);
   const groups = useMemo(() => {
     const g: Record<string, Array<{ other: string; kind: TaskRelationKind }>> = { blocks: [], blocked: [], relates: [], duplicates: [] };
     for (const r of task.relations) {
@@ -970,7 +1098,15 @@ export function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdi
         </Dropdown.Root>
       ) : null}
       {kind !== null ? (
-        <ChoiceMenu open onOpenChange={(v) => !v && setKind(null)} groups={[{ id: 't', label: '', items: choices }]} width={320} onPick={(c) => void setRelation(task.id, c.id, kind, true)} placeholder={t('boards.menu.task')} label={t('boards.addRelation')} loading={loading} emptyText={t('boards.noTasksToLink')}>
+        <ChoiceMenu
+          open
+          onOpenChange={(v) => {
+            if (v) return;
+            setKind(null);
+            onInput('');
+          }}
+          groups={[{ id: 't', label: '', items: choices }]}
+          width={380} onPick={(c) => void setRelation(task.id, c.id, kind, true)} onInput={onInput} placeholder={t('boards.menu.task')} label={t('boards.addRelation')} loading={loading} emptyText={t('boards.noTasksToLink')}>
           <span className="block h-0" />
         </ChoiceMenu>
       ) : null}

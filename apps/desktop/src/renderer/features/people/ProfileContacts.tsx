@@ -1,4 +1,4 @@
-import { Copy, Mail, Phone } from 'lucide-react';
+import { Copy, Hash, Mail, Phone } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -29,13 +29,20 @@ function CopyButton({ value, label }: { value: string; label: string }): ReactNo
 /**
  * «Почта» and «Телефон» of a person (ADR-0077), each with «Скопировать»; the phone is a `tel:` link
  * on a phone. Nothing when I may not see them (contacts.ts) or there are none. `row` — dt/dd pairs
- * for the profile card's list; `section` — the profile dialog's block.
+ * for the profile card's list; `section` — the profile dialog's block. `extension` — the member's
+ * internal number in this workspace (ADR-0117; the server sends it to no guest), bots' too.
  */
-export function ProfileContacts({ userId, variant }: { userId: string; variant: 'row' | 'section' }): ReactNode {
+export function ProfileContacts({ userId, variant, extension = '' }: { userId: string; variant: 'row' | 'section'; extension?: string }): ReactNode {
   const c = useContacts(userId);
   const mobile = useMobile();
-  if (!c || (!c.email && !c.phone)) return null;
-  const email = c.email ? (
+  if ((!c || (!c.email && !c.phone)) && !extension) return null;
+  const ext = extension ? (
+    <span className="flex min-w-0 items-center gap-1.5" data-testid="profile-extension">
+      <span className="selectable min-w-0 tabular-nums">{extension}</span>
+      <CopyButton value={extension} label={t('people.profile.extension')} />
+    </span>
+  ) : null;
+  const email = c?.email ? (
     <span className="flex min-w-0 items-center gap-1.5" data-testid="profile-email">
       <span className="selectable min-w-0 [overflow-wrap:anywhere]">
         {c.email}
@@ -44,7 +51,7 @@ export function ProfileContacts({ userId, variant }: { userId: string; variant: 
       <CopyButton value={c.email} label={t('people.contacts.email')} />
     </span>
   ) : null;
-  const phone = c.phone ? (
+  const phone = c?.phone ? (
     <span className="flex min-w-0 items-center gap-1.5" data-testid="profile-phone">
       {mobile ? (
         <a href={telHref(c.phone)} className="flex min-h-11 min-w-0 items-center text-accent-text [overflow-wrap:anywhere] hover:underline">
@@ -71,6 +78,12 @@ export function ProfileContacts({ userId, variant }: { userId: string; variant: 
             <dd className="min-w-0">{phone}</dd>
           </>
         ) : null}
+        {ext ? (
+          <>
+            <dt className="text-muted">{t('people.profile.extension')}</dt>
+            <dd className="min-w-0">{ext}</dd>
+          </>
+        ) : null}
       </>
     );
   }
@@ -88,6 +101,12 @@ export function ProfileContacts({ userId, variant }: { userId: string; variant: 
           <div className="flex min-w-0 items-center gap-2">
             <Phone className="size-4 shrink-0 text-muted" role="img" aria-label={t('people.contacts.phone')} />
             {phone}
+          </div>
+        ) : null}
+        {ext ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <Hash className="size-4 shrink-0 text-muted" role="img" aria-label={t('people.profile.extension')} />
+            {ext}
           </div>
         ) : null}
       </div>

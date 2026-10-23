@@ -143,11 +143,12 @@ func run(m *testing.M) int {
 	defer stopFakes()
 
 	cfg := &config.Config{
-		DatabaseURL:      u.String(),
-		RedisKeyPrefix:   redistest.Prefix(),
-		JWTSecret:        "integration-secret-integration-secret",
-		AccessTokenTTL:   24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
-		RefreshTokenTTL:  8760 * time.Hour,
+		DatabaseURL:        u.String(),
+		RedisKeyPrefix:     redistest.Prefix(),
+		JWTSecret:          "integration-secret-integration-secret",
+		AccessTokenTTL:     24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
+		RefreshTokenTTL:    8760 * time.Hour,
+		TempRoomMaxTTLDays: 30, TempRoomsPerWorkspace: 50, // the defaults (config.go); the literal skips envDefault
 		RegistrationMode: config.RegistrationInvite,
 		PublicAppURL:     "https://app.example.com",
 		// Abuse limits are exercised separately (TestAbuseLimits) with small values.
@@ -176,13 +177,14 @@ func run(m *testing.M) int {
 		// Plans (ADR-0024): no plan limits by default, so other tests see room settings only;
 		// plans_integration_test sets the free limits it needs.
 		PlanFreeLimits:        unlimitedPlan,
-		PlanContactEmail:      "it@gptunnel.ai",
+		PlanContactEmail:      "support@calab.io",
 		SuperadminEmails:      []string{superadminEmail, superadminEmail2},
 		MailPerAddressPerHour: 3,
 		MailPerHour:           1 << 20, // every test user gets a verification code
 		// Recording (ADR-0025): fakes of GPTunneL and the egress, see recording_integration_test.
 		GPTunnelAPIURL:         gptFake.URL,
 		GPTunnelWebURL:         "https://gptunnel.ru",
+		GPTunnelAIURL:          aiFake.URL + "/v1", // ai_integration_test
 		RecordingKeepDays:      30,
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,

@@ -7,16 +7,13 @@ import { t } from '../../i18n';
 import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
 import { mentionableOnBoard, pickerAccess } from '../../lib/boards/access';
 import { cachedMentionAccess, loadMentionAccess, type MentionAccess } from '../../lib/boards/mentionAccess';
-import { mayEditTask } from '../boards/model';
-import { taskPermsOf } from '../../stores/boards';
-import { myUserId } from '../../stores/session';
 import { can, roomPerms } from '../../lib/permissions';
 import { customLook, rolesOfMember } from '../../lib/roles';
 import { useBoards } from '../../stores/boards';
 import { isGuest, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 
-export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; outsider?: 'card' | 'locked' | undefined; role?: WorkspaceRole | undefined; custom?: Role | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
+export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; outsider?: 'card' | undefined; role?: WorkspaceRole | undefined; custom?: Role | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
 
 export const optionKey = (o: MentionOption): string => (o.kind === 'member' ? o.c.id : o.v);
 
@@ -25,10 +22,10 @@ export interface Mentionables {
   candidates: MentionCandidate[];
   guests: Set<string>;
   /**
-   * Task rooms: members who do not see the board. 'card' = the mention opens this card to them (the
-   * author may edit the task); 'locked' = the author cannot edit it, so cannot call them (ADR-0076 §4–5).
+   * Task rooms: members who do not see the board; the mention opens this card to them. Any
+   * commenter may call them, editing rights do not matter (ADR-0076 §5).
    */
-  outsiders: Map<string, 'card' | 'locked'>;
+  outsiders: Map<string, 'card'>;
   /** Workspace role per candidate (name colour + RoleMark, docs/09 #26). */
   roles: Map<string, { role: WorkspaceRole; custom: Role | undefined }>;
   /** Every member of the workspace with the name shown in the field (typed-name conversion). */
@@ -44,11 +41,6 @@ export function useMentionables(workspaceId: string, room: Room, me: string, act
   // board object (stable between edits) decides, not the room's own overrides.
   const isTask = room.type === RoomType.TASK;
   const board = useBoards((s) => (isTask ? s.boards[s.tasks[s.roomTask[room.id] ?? '']?.boardId ?? ''] : undefined));
-  // May the author edit the task (= open its card to the mentioned, ADR-0076 §4–5): one boolean.
-  const canEdit = useBoards((s) => {
-    const task = isTask ? s.tasks[s.roomTask[room.id] ?? ''] : undefined;
-    return task ? mayEditTask(task, taskPermsOf(s, task, myUserId()), myUserId()) : false;
-  });
   // A commenter without MANAGE_BOARD never receives the board's overrides, so the server tells who
   // sees the board (ADR-0076 §5): asked once per open popover (cached), the local guess meanwhile.
   const taskId = useBoards((s) => (isTask ? (s.roomTask[room.id] ?? '') : ''));
@@ -83,14 +75,14 @@ export function useMentionables(workspaceId: string, room: Room, me: string, act
         // A task comment may call a workspace member without board access: the card opens to them
         // (ADR-0076 §5). Guests and bots without access are not offered.
         if (!isTask || isGuest(m) || (!known && pickerAccess(board, wsRoles ?? [], m) !== 'card')) continue;
-        out.outsiders.set(u.id, canEdit ? 'card' : 'locked');
+        out.outsiders.set(u.id, 'card');
       }
       if (isGuest(m)) out.guests.add(u.id);
       out.roles.set(u.id, { role: m.role, custom: customLook(roles) });
       out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [], ...(u.username ? { nick: u.username } : {}) });
     }
     return out;
-  }, [members, wsRoles, me, room, isTask, board, canEdit, acc]);
+  }, [members, wsRoles, me, room, isTask, board, acc]);
 }
 
 /**
@@ -127,7 +119,6 @@ export function MentionPopover({
               id={`${id}-${key}`}
               role="option"
               aria-selected={active}
-              aria-disabled={o.kind === 'member' && o.outsider === 'locked' ? true : undefined}
               ref={active ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -137,7 +128,6 @@ export function MentionPopover({
               className={cx(
                 'flex h-9 cursor-default items-center gap-2.5 rounded-[5px] px-2 text-body',
                 active ? 'bg-accent-strong text-accent-fg' : 'text-fg',
-                o.kind === 'member' && o.outsider === 'locked' && 'opacity-60',
               )}
             >
               {o.kind === 'member' ? (
@@ -158,7 +148,7 @@ export function MentionPopover({
                   {o.outsider ? (
                     <span className={cx('ml-auto flex min-w-0 max-w-[58%] shrink items-center gap-1 text-micro', active ? 'text-accent-fg' : 'text-muted')}>
                       <EyeOff className="size-3 shrink-0" aria-hidden />
-                      <span className="truncate">{t(o.outsider === 'card' ? 'chat.mentionOutsider' : 'chat.mentionOutsiderLocked')}</span>
+                      <span className="truncate">{t('chat.mentionOutsider')}</span>
                     </span>
                   ) : o.guest ? (
                     <span className={cx('ml-auto shrink-0 text-micro', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>

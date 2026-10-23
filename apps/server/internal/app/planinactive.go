@@ -56,6 +56,7 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/rooms/{id}/make-permanent":     plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/boards":        plans.RestrictedCreate,
 	"POST /api/boards/{id}/tasks":             plans.RestrictedCreate,
+	"POST /api/workspaces/{id}/smart-tasks":   plans.RestrictedCreate, // CBF-68: a task too
 	"POST /api/checklist-items/{id}/convert":  plans.RestrictedCreate, // a subtask is a new task
 	"POST /api/workspaces/{id}/bots":          plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/bots/add":      plans.RestrictedCreate,
@@ -64,6 +65,7 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/workspaces/{id}/sounds":        plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/disk/folders":  plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/wiki/pages":    plans.RestrictedCreate, // ADR-0096
+	"POST /api/workspaces/{id}/canvas/items":  plans.RestrictedCreate, // ADR-0126
 	// integrations: apps, GPTunneL, bot tokens, board webhooks / Git / rules / forms, telephony
 	"POST /api/workspaces/{id}/apps":                  plans.RestrictedConnect,
 	"POST /api/workspaces/{id}/integrations/gptunnel": plans.RestrictedConnect,
@@ -75,6 +77,8 @@ var planInactiveRoutes = map[string]string{
 	"PUT /api/boards/{id}/forms/{fid}":                plans.RestrictedConnect,
 	"PUT /api/workspaces/{id}/sip":                    plans.RestrictedConnect,
 	"POST /api/workspaces/{id}/sip/test":              plans.RestrictedConnect,
+	"PUT /api/workspaces/{id}/ai":                     plans.RestrictedConnect,
+	"POST /api/workspaces/{id}/ai/check":              plans.RestrictedConnect,
 	"POST /api/rooms/{id}/calls":                      plans.RestrictedConnect,
 	// voice: audio only (the LiveKit grants drop camera / screen too, rtc)
 	"POST /api/rooms/{id}/stream/request":              plans.RestrictedMedia,

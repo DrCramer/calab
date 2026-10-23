@@ -78,6 +78,7 @@ order: 2
 | `typingStart` | по условию | «печатает» — только в комнатах из `SUBSCRIBE` |
 | `botCallback` | по условию | нажатие кнопки — только боту-автору сообщения |
 | `contactShared` | по условию | контакт человека по кнопке запроса — только этому боту (ADR-0100) |
+| `botDelegation` | по условию | согласие участника «от имени» выдано, отозвано или отклонено — только этому боту (ADR-0119) |
 | `dmCreate` | да | новый DM с ботом |
 | `stickerPackCreate` · `stickerPackUpdate` · `stickerPackDelete` | да | стикерпаки пространства |
 | `readReceipt` | нет | отметки «прочитано» людей — ботам не отправляются |
@@ -94,6 +95,7 @@ order: 2
 | `soundCreate` · `soundUpdate` · `soundDelete` | да | звуки пространства |
 | `soundPlay` | по условию | только пока бот в звонке комнаты |
 | `sipCallUpdate` | да | телефонный звонок из комнаты набран или сменил статус |
+| `sipCallsChanged` | нет | живые звонки пространства изменились — людям с `MANAGE_INTEGRATIONS`; бот читает `GET /api/workspaces/{id}/sip/calls` сам |
 | `roomAdmissionRequest` · `roomAdmissionDecided` | по условию | гость ждёт впуска · решение принято — тем, кто решает (`INVITE_GUESTS` в комнате) |
 | `callRing` · `callState` | нет | звонки один на один — не для ботов |
 | `backgroundCreate` · `backgroundUpdate` · `backgroundDelete` | нет* | фоны камеры; у ботов нет камеры — игнорируйте |

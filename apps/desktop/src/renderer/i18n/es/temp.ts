@@ -12,6 +12,7 @@ export const esTemp = {
   'temp.preset.1d': '1 día',
   'temp.preset.3d': '3 días',
   'temp.preset.7d': '7 días',
+  'temp.preset.30d': '30 días',
   'temp.preset.date': 'Hasta fecha',
   'temp.closesAt': 'Se cierra {when}',
   'temp.untilDate': 'Fecha y hora de cierre',

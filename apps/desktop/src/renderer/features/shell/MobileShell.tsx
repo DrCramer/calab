@@ -17,9 +17,7 @@ import { useSearchPanel } from '../../stores/searchPanel';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
-import { useBoardsUi } from '../../stores/boardsUi';
-import { mayCreateBoards } from '../../lib/permissions';
+import { useWorkspaces } from '../../stores/workspaces';
 import { useIdentity } from '../../stores/identity';
 import { lockScreen } from '../identity/model';
 import { WorkspaceLock } from '../identity/WorkspaceLock';
@@ -34,7 +32,9 @@ import { DmSidebar } from '../dm/DmSidebar';
 import { DayView } from '../calendar/DayView';
 import { EventPanel } from '../calendar/EventCard';
 import { BoardsList } from '../boards/BoardsList';
+import { BoardsCreateMenu } from '../boards/BoardsCreateMenu';
 import { BoardsView } from '../boards/BoardsView';
+import { PhoneCanvas, PhoneCanvasScreen } from '../canvas/PhoneCanvas';
 import { PhoneDisk } from '../disk/PhoneDisk';
 import { PhoneWiki, PhoneWikiPage, PhoneWikiTrash } from '../wiki/PhoneWiki';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
@@ -142,6 +142,8 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <DiskRoot welcome={welcome} />;
     case 'wiki':
       return <WikiRoot welcome={welcome} />;
+    case 'canvas':
+      return <CanvasRoot welcome={welcome} />;
     case 'profile':
       return <ProfileRoot />;
   }
@@ -189,13 +191,11 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
   const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const creator = mayCreateBoards(useMemberRoles(ws ?? '', me));
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
       <RootTitle title={t('shell.modeBoards')} icon={<HeaderIcon icon={SquareKanban} />} search>
-        {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
+        <BoardsCreateMenu workspaceId={ws} />
       </RootTitle>
       <BoardsList workspaceId={ws} />
     </section>
@@ -245,6 +245,14 @@ function WikiRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
   if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
   return <PhoneWiki workspaceId={ws} />;
+}
+
+/** «Холст» (ADR-0126 §5, view only on the phone): the top level of the open workspace; a folder or a canvas is a pushed screen (guests have no tab). */
+function CanvasRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneCanvas workspaceId={ws} />;
 }
 
 /** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
@@ -302,6 +310,8 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <SettingsScreen section={screen.section} />;
     case 'disk':
       return <ActiveWorkspace>{(ws) => <PhoneDisk key={`${screen.folderId}|${screen.trash ? 't' : ''}`} workspaceId={ws} folderId={screen.folderId} trash={!!screen.trash} root={false} />}</ActiveWorkspace>;
+    case 'canvas':
+      return <ActiveWorkspace>{(ws) => <PhoneCanvasScreen key={screen.itemId} workspaceId={ws} itemId={screen.itemId} />}</ActiveWorkspace>;
     case 'wiki':
       return <ActiveWorkspace>{(ws) => (screen.trash ? <PhoneWikiTrash workspaceId={ws} /> : <PhoneWikiPage key={screen.pageId} workspaceId={ws} pageId={screen.pageId} />)}</ActiveWorkspace>;
   }

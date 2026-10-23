@@ -2,7 +2,9 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampDate, timestampMs } from '@bufbuild/protobuf/wkt';
 import {
   GetSipSettingsResponseSchema,
+  SipCallDirection,
   SipCallStatus,
+  SipInboundMode,
   SipTransport,
   type PutSipSettingsRequestSchema,
   type SipCall,
@@ -12,6 +14,7 @@ import {
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TriangleAlert, X } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
+import { Choice } from '../../components/Choice';
 import { PlanLock } from '../../components/PlanLock';
 import { Button, Card, Input, PasswordInput, Row, Select, Spinner, Switch, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
@@ -21,25 +24,30 @@ import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { planHas } from '../../lib/plan';
 import { callDurationMs, formatPhone, isLiveStatus, normalizePrefix, reasonCode, reasonKey, statusKey } from '../../lib/sip';
+import { TELEPHONY_TABS, TELEPHONY_TAB_LABEL, journalKey, rememberTelephonyTab, rememberedTelephonyTab, type TelephonyTabId } from '../../lib/sipPbx';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration } from '../shell/voiceFormat';
+import { ActiveCalls } from './TelephonyCalls';
+import { Exchange } from './TelephonyExchange';
+import { RecordingCard } from './TelephonyRecording';
 
 /*
- * Workspace settings → «Телефония» (ADR-0046, docs/08 «Телефония»; MANAGE_WORKSPACE): the SIP
- * provider account as one form saved with PUT (the password is write-only: empty keeps the stored
- * one), «Проверить подключение» (a real short call to the Caller ID), the last provider error and
- * the call journal (100 per page, «Показать ещё» by cursor). A primitive screen by the owner's
- * word (30.09); IVR and inbound numbers come later. Business plan only (owner, 02.10): below it the
- * form and the test are locked (PlanLock) — a saved trunk stays readable, the journal stays open.
+ * Workspace settings → «Телефония» (ADR-0046, docs/08 «Телефония»; MANAGE_WORKSPACE), five tabs
+ * (CBF-77, the last one remembered per viewer): «Активные звонки» (TelephonyCalls, ADR-0128) with
+ * the call journal under it (100 per page, «Показать ещё» by cursor); «Номера», «Группы», «IVR» —
+ * the exchange (ADR-0117, TelephonyExchange); «Настройки» — the SIP provider account as one form
+ * saved with PUT (the password is write-only: empty keeps the stored one), «Проверить
+ * подключение» (a real short call to the Caller ID), «Входящие» (mode, registration and its
+ * state) and «Запись звонков» (ADR-0131, TelephonyRecording). The last provider error is above the tabs. Business plan only (owner, 02.10): below it
+ * every tab but the calls is locked (PlanLock) — a saved trunk stays readable.
  */
 
 /** SipSettings.port when never set (sip.proto: PUT 0 = 5060). */
 export const DEFAULT_SIP_PORT = 5060;
 
 const settingsKey = (workspaceId: string): readonly unknown[] => ['sip', workspaceId];
-const journalKey = (workspaceId: string): readonly unknown[] => ['sipJournal', workspaceId];
 
 const TRANSPORTS: ReadonlyArray<{ value: SipTransport; label: string }> = [
   { value: SipTransport.UDP, label: 'UDP' },
@@ -62,16 +70,49 @@ const FIELD_ERROR: Record<string, MessageKey> = {
 };
 
 export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNode {
-  const q = useQuery({ queryKey: settingsKey(workspaceId), queryFn: () => api.sip.settings(workspaceId) });
+  // REGISTER mode (ADR-0121): the registration's state is re-read every 15 s while the window is
+  // visible (react-query pauses intervals in the background); no gateway event for it.
+  const q = useQuery({
+    queryKey: settingsKey(workspaceId),
+    queryFn: () => api.sip.settings(workspaceId),
+    refetchInterval: (query) => (query.state.data?.settings?.inboundMode === SipInboundMode.REGISTER && query.state.data.settings.inboundEnabled ? 15_000 : false),
+  });
   const settings = q.data?.settings;
   const allowed = useWorkspaces((s) => planHas(s.byId[workspaceId]?.ws.plan, 'telephony'));
-  const setup = settings ? (
+  // The last tab the viewer looked at (localStorage); first time — «Активные звонки».
+  const [tab, setTab] = useState<TelephonyTabId>(() => rememberedTelephonyTab('calls'));
+  const choose = (v: TelephonyTabId): void => {
+    setTab(v);
+    rememberTelephonyTab(v);
+  };
+  // Below Business the setup is locked (PlanLock) — a saved trunk stays readable; the live calls
+  // and the journal stay open.
+  const locked = (node: ReactNode): ReactNode =>
+    allowed ? (
+      node
+    ) : (
+      <PlanLock plan="business" testId="sip-plan-lock">
+        <div className="flex flex-col gap-6">{node}</div>
+      </PlanLock>
+    );
+  const body = !settings ? null : tab === 'calls' ? (
     <>
-      {/* Re-mounted when the server's copy changes: the form starts from what is saved. */}
-      <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
-      <TestCard workspaceId={workspaceId} settings={settings} />
+      <ActiveCalls workspaceId={workspaceId} />
+      <Journal workspaceId={workspaceId} />
     </>
-  ) : null;
+  ) : tab === 'settings' ? (
+    locked(
+      <>
+        {/* Re-mounted when the server's copy changes: the form starts from what is saved. */}
+        <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
+        <TestCard workspaceId={workspaceId} settings={settings} />
+        <Exchange workspaceId={workspaceId} settings={settings} part="inbound" />
+        <RecordingCard workspaceId={workspaceId} settings={settings} settingsKey={settingsKey(workspaceId)} />
+      </>,
+    )
+  ) : (
+    locked(<Exchange workspaceId={workspaceId} settings={settings} part={tab} />)
+  );
   return (
     <>
       <p className="px-1 text-body text-muted">{t('sip.intro')}</p>
@@ -93,14 +134,17 @@ export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNod
       ) : (
         <>
           {settings.lastError ? <LastError text={settings.lastError} /> : null}
-          {allowed ? (
-            setup
-          ) : (
-            <PlanLock plan="business" testId="sip-plan-lock">
-              <div className="flex flex-col gap-6">{setup}</div>
-            </PlanLock>
-          )}
-          <Journal workspaceId={workspaceId} />
+          {/* docs/08 «Choice»: segments on the desktop, a picker button on a phone (five tabs). */}
+          <div className="-mx-1 overflow-x-auto px-1" data-testid="sip-tabs">
+            <Choice<TelephonyTabId>
+              label={t('pbx.tabs')}
+              value={tab}
+              onChange={choose}
+              options={TELEPHONY_TABS.map((v) => ({ value: v, label: t(TELEPHONY_TAB_LABEL[v]) }))}
+              testId="sip-tab"
+            />
+          </div>
+          {body}
         </>
       )}
     </>
@@ -507,7 +551,8 @@ function Journal({ workspaceId }: { workspaceId: string }): ReactNode {
           {t('sip.journal.empty')}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-[var(--radius-card)] bg-[var(--color-card)]">
+        // A phone scrolls the table sideways: the region takes keyboard focus (axe scrollable-region-focusable).
+        <div className="overflow-x-auto rounded-[var(--radius-card)] bg-[var(--color-card)]" tabIndex={0} role="region" aria-label={t('sip.journal')}>
           <table className="w-full min-w-[560px] text-body" data-testid="sip-journal">
             <caption className="sr-only">{t('sip.journal')}</caption>
             <thead>
@@ -564,7 +609,11 @@ function JournalRow({ workspaceId, call }: { workspaceId: string; call: SipCall 
       <td className="px-2 py-2 min-w-[5.5rem] max-sm:whitespace-nowrap tabular-nums text-muted">{started ? fmt.dateTime(started, 'short') : '—'}</td>
       <td className="px-2 py-2">
         <span className="block max-w-20 truncate" title={roomName || undefined}>
-          {call.roomId ? roomName || '—' : <span className="text-muted">{t('sip.journal.test')}</span>}
+          {call.roomId ? (
+            roomName || '—'
+          ) : (
+            <span className="text-muted">{t(call.direction === SipCallDirection.IN ? 'pbx.calls.in' : 'sip.journal.test')}</span>
+          )}
         </span>
       </td>
       <td className="whitespace-nowrap px-2 py-2 tabular-nums">{formatPhone(call.number)}</td>

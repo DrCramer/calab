@@ -13,6 +13,10 @@ import { useUi } from '../../stores/ui';
 import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { dmPeer } from '../../stores/dms';
+import { usePhoneCallNumber } from '../../stores/sipInbound';
+import { phoneCallId } from '../../lib/sipInbound';
+import { PhoneTransferButton, PhoneTransferStatus } from '../call/PhoneTransfer';
+import { formatPhone } from '../../lib/sip';
 import { useMemberName } from '../../stores/workspaces';
 import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
@@ -51,6 +55,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
   const call = useVoice((s) => s.call);
   const ptt = usePrefs((s) => s.micMode === 'ptt') && !call;
   const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
+  const phone = usePhoneCallNumber(roomId); // an inbound phone call (ADR-0117)
+  const callLabel = phone !== null ? t('call.sipPanel', { number: phone ? formatPhone(phone) : t('call.sipUnknown') }) : t('call.panel', { name: peerName });
   const onAir = useVoice((s) => s.pttDown && s.transmitting);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const me = useSession((s) => s.me?.user);
@@ -71,6 +77,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
     <div className={cx('shrink-0 px-4 pt-1 [.kb-open_&]:hidden', aboveTabs ? 'pb-2' : 'pb-[calc(var(--safe-bottom,0px)+8px)]')} data-testid="mobile-voice-strip">
       {/* Push-to-talk: a big hold button above the island, in the flow — the feed and the composer above it shrink by its height. */}
       {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
+      {/* A transfer of the phone call rings (ADR-0132): «Переводим: Имя · Отменить перевод». */}
+      {phone !== null ? <PhoneTransferStatus callId={phoneCallId(roomId)} className="mb-2 shadow-[var(--shadow-island)]" /> : null}
       <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1 rounded-[var(--radius-panel)] pl-2 pr-1.5 shadow-[var(--shadow-island)]">
         {me ? (
           <span
@@ -88,9 +96,9 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
         <div className="relative flex min-w-0 flex-1 flex-col items-start justify-center self-stretch" aria-live="polite">
           <button
             type="button"
-            aria-label={call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}
+            aria-label={call ? callLabel : (room?.name ?? '')}
             className="absolute inset-0 rounded-[var(--radius-row)]"
-            onClick={() => (call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
+            onClick={() => (phone !== null ? undefined : call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
           />
           <span className="pointer-events-none flex max-w-full items-center gap-1">
             {/* A long status («Переподключение…») wraps instead of being cut; the room name then gives way
@@ -105,7 +113,7 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
             {recording ? <MobileRecDot roomId={roomId} workspaceId={wsId} rec={recording} className="pointer-events-auto -my-1 relative" /> : null}
             {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} compact />}
           </span>
-          <span className="pointer-events-none max-w-full truncate text-[12px] leading-[15px] text-muted">{call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}</span>
+          <span className="pointer-events-none max-w-full truncate text-[12px] leading-[15px] text-muted">{call ? callLabel : (room?.name ?? '')}</span>
         </div>
         <button
           type="button"
@@ -131,7 +139,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
         >
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
-        <StripCamera roomId={roomId} />
+        {/* A phone call has no camera: «Перевести» takes its place (ADR-0132). */}
+        {phone !== null ? <PhoneTransferButton callId={phoneCallId(roomId)} className={cx(round, idle)} /> : <StripCamera roomId={roomId} />}
         {/* Soundboard (ADR-0036): the island's panel as a bottom sheet, «Ещё → Звуки». */}
         {call ? (
           <MoreMenu roomId={roomId} cameraItem={false} />

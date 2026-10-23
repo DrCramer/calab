@@ -12,7 +12,7 @@ import "calaba/v1/boards.proto";
 
 // The kind of a section and of its hits. In the query string a type is written in lower case
 // without the prefix: messages, task_comments, tasks, events, files, notes, transcripts, wiki,
-// disk.
+// disk, canvas.
 enum SearchType {
   SEARCH_TYPE_UNSPECIFIED = 0;
   SEARCH_TYPE_MESSAGES = 1;      // messages of rooms and (scope=all) the caller's DMs
@@ -24,6 +24,7 @@ enum SearchType {
   SEARCH_TYPE_TRANSCRIPTS = 7;   // transcripts of visible recordings with a ready result, newest first
   SEARCH_TYPE_WIKI = 8;          // live wiki pages the caller sees (WIKI_VIEW), by title and text
   SEARCH_TYPE_DISK = 9;          // live Disk folders and files the caller sees (DISK_VIEW), by name
+  SEARCH_TYPE_CANVAS = 10;       // live canvases and folders the caller sees (CANVAS_VIEW), by name and text
 }
 
 // Order inside a section feed (type=…). The summary (no type) always uses its defaults.
@@ -111,6 +112,7 @@ message SearchHit {
     SearchTranscriptRef transcript = 16;
     SearchWikiRef wiki = 17;
     SearchDiskRef disk = 18;
+    SearchCanvasRef canvas = 19;
   }
 }
 
@@ -193,4 +195,16 @@ message SearchDiskRef {
   // GET /api/disk/items/{id}/path: above a folder they do not see, nothing is named). Empty =
   // the item lies at the root (or under folders hidden from the caller).
   repeated string path = 7;
+}
+
+// A canvas or a Canvas folder (ADR-0126 §6): open it; the snippet is of the text on the canvas
+// (or the name), title is the item's name.
+message SearchCanvasRef {
+  string item_id = 1;
+  string parent_id = 2;
+  bool folder = 3;
+  // The names of the folders above the item that the caller sees, the topmost first (like
+  // GET /api/canvas/items/{id}/path: above a folder they do not see, nothing is named). Empty =
+  // a top-level item (or one under folders hidden from the caller).
+  repeated string path = 4;
 }

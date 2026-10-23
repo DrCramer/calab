@@ -6,10 +6,11 @@ import { IdentityAbout, IdentityNotConfigured } from '../identity/IdentityGate';
 import { PlanLock } from '../../components/PlanLock';
 import { DiskSettingsTab } from '../disk/DiskSettings';
 import { WikiSettingsTab } from '../wiki/WikiSettings';
-import { audioTierKbps, compareScreenSharePresets, type ConcreteScreenSharePreset, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
+import { CanvasSettingsTab } from '../canvas/CanvasSettings';
+import { audioTierKbps, compareScreenSharePresets, type ConcreteScreenSharePreset, CANVAS_BITS, canvasPermissions, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, CircleDot, Copy, Gem, HardDrive, KeyRound, BookOpen, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, Shapes, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -108,6 +109,7 @@ export function WorkspaceSettingsDialog({
   const library = librarySegments(access);
   const diskManage = (diskPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & DISK_BITS.MANAGE) !== 0n;
   const wikiManage = (wikiPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & WIKI_BITS.MANAGE) !== 0n;
+  const canvasManage = (canvasPermissions(myRoles, { guest: entry.role === WorkspaceRole.GUEST }) & CANVAS_BITS.MANAGE) !== 0n;
   const requested = resolveSettingsTab(tab);
   const identityPanel = (feature: IdentityFeature, about: ReactNode, content: ReactNode): ReactNode =>
     identityStatus.isPending ? (
@@ -167,11 +169,14 @@ export function WorkspaceSettingsDialog({
     ...(diskManage ? [{ id: 'disk', label: t('disk.section'), icon: HardDrive, keywords: t('disk.settings.trash'), content: <DiskSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Вики» (ADR-0096 §1): the trash retention — WIKI_MANAGE (ADMINISTRATOR includes it).
     ...(wikiManage ? [{ id: 'wiki', label: t('wiki.section'), icon: BookOpen, keywords: t('wiki.settings.trash'), content: <WikiSettingsTab workspaceId={workspaceId} /> }] : []),
+    // «Холст» (ADR-0126 §1): the trash retention — CANVAS_MANAGE (ADMINISTRATOR includes it).
+    ...(canvasManage ? [{ id: 'canvas', label: t('canvas.section'), icon: Shapes, keywords: t('canvas.settings.trash'), content: <CanvasSettingsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
-    // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).
+    // «AI интеграция» (CBF-60): the AI model (MANAGE_INTEGRATIONS) and the GPTunneL meeting recording
+    // connection (ADR-0025); guests don't see it (the API is 403).
     ...(entry.role !== WorkspaceRole.GUEST
-      ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={access.integrations} /> }]
+      ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: Sparkles, keywords: 'GPTunneL OpenAI', content: <GptunnelTab workspaceId={workspaceId} canManage={access.integrations} /> }]
       : []),
     // «Телефония» (ADR-0046): the SIP account, the connection test and the call journal — MANAGE_WORKSPACE.
     ...(admin ? [{ id: 'telephony', label: t('sip.tab'), icon: Phone, content: <TelephonyTab workspaceId={workspaceId} /> }] : []),

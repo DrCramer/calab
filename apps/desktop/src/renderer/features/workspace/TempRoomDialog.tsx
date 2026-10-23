@@ -44,6 +44,7 @@ const PRESET_LABEL: Record<LifetimePreset, MessageKey> = {
   '1d': 'temp.preset.1d',
   '3d': 'temp.preset.3d',
   '7d': 'temp.preset.7d',
+  '30d': 'temp.preset.30d',
   date: 'temp.preset.date',
 };
 
@@ -240,7 +241,7 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
 function createError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_TEMP_ROOM_LIMIT')) {
-      const limit = e.extra.limit ?? (e.reason === 'PER_USER' ? 5 : 20);
+      const limit = e.extra.limit ?? 50;
       return e.reason === 'PER_USER' ? t('temp.errLimitUser', { limit }) : t('temp.errLimitWs', { limit });
     }
     if (e.status === 403 && e.is('ERROR_CODE_FORBIDDEN')) return /INVITE_GUESTS/.test(e.message) ? t('temp.errGuests') : t('temp.errForbidden');

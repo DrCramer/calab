@@ -27,6 +27,8 @@ import {
   CreateBoardStatusRequestSchema,
   CreateBoardViewRequestSchema,
   CreateTaskRequestSchema,
+  CreateSmartTaskRequestSchema,
+  CreateSmartTaskResponseSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
   MyTasksResponseSchema,
@@ -55,6 +57,7 @@ import {
   type TaskRelationKind,
 } from '@calaba/protocol';
 import { body, call, callEmpty, qs } from '../lib/api/client';
+import type { Completion } from '../lib/boards/completion';
 
 /**
  * Task boards REST (ADR-0042 §3, proto/calaba/v1/boards.proto). The one module that knows the
@@ -203,9 +206,9 @@ export const boardsApi = {
     /** only (ADR-0091 §3): `journal` — journal entries only, `comments` — messages only; a server without it sends both. */
     activity: (taskId: string, p: { before?: string; limit?: number; only?: 'journal' | 'comments' } = {}, signal?: AbortSignal) =>
       call('GET', `/api/tasks/${taskId}/activity${qs({ before: p.before, limit: p.limit, only: p.only })}`, TaskActivityPageSchema, undefined, signal),
-    /** ⌘K: live tasks of every board the caller sees, by key and words. */
-    search: (workspaceId: string, q: string, signal?: AbortSignal) =>
-      call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q })}`, SearchTasksResponseSchema, undefined, signal),
+    /** Live tasks of every board the caller sees, by key and words («Мои задачи → Все задачи»); `state` — completion (server default all). */
+    search: (workspaceId: string, q: string, p: { state?: Completion; limit?: number } = {}, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q, state: p.state, limit: p.limit })}`, SearchTasksResponseSchema, undefined, signal),
     /** Checklists (ADR-0058 §2); every write answers the checklist and the task's counters. */
     checklists: {
       create: (taskId: string, title: string) =>
@@ -239,4 +242,9 @@ export const boardsApi = {
 
   /** Where description / comment attachments of a board's tasks are uploaded. */
   uploadPath: (boardId: string): string => `/api/boards/${boardId}/files`,
+  /** «Создать умную задачу» (CBF-68): files are uploaded to the workspace before a board is known. */
+  workspaceUploadPath: (workspaceId: string): string => `/api/workspaces/${workspaceId}/files`,
+  /** CBF-68: the model picks the board and shapes the task; 201 with the task, 409 reasons AI_*, NO_BOARDS. */
+  createSmart: (workspaceId: string, init: MessageInitShape<typeof CreateSmartTaskRequestSchema>) =>
+    call('POST', `/api/workspaces/${workspaceId}/smart-tasks`, CreateSmartTaskResponseSchema, body(CreateSmartTaskRequestSchema, init)),
 };

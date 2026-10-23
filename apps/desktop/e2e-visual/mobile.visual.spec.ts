@@ -2,9 +2,9 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { FormerMemberReason, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { AiState, FormerMemberReason, Plan, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
-import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
@@ -79,7 +79,7 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'profile'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'profile'): Promise<void> {
   await toRoot(page);
   const pinned = page.getByTestId(`phone-tab-${name}`);
   if ((await pinned.count()) > 0) {
@@ -459,6 +459,21 @@ test('m-chat-image', async ({ page }) => {
   await checkpoint(page, 'm-chat-image', { main: true });
 });
 
+// CBF-66: a Disk folder link in a chat is its own card — name, who shared, what is inside, «Открыть».
+test('m-chat-folder-card', async ({ page }) => {
+  await signedInRoom(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  const folder = [...mock.disk.items.values()].find((i) => i.name === 'Проекты');
+  expect(folder).toBeTruthy();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: `Материалы по проектам ${new URL(page.url()).origin}/disk/${folder?.id ?? ''}` });
+  const card = page.getByTestId('disk-folder-card');
+  await expect(card.getByTestId('disk-folder-card-summary')).toContainText('папка');
+  await feedToBottom(page);
+  await page.mouse.move(0, 0);
+  await expectFeedFits(page);
+  await checkpoint(page, 'm-chat-folder-card', { main: true });
+});
+
 // A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
 // the actions wrap; 44 px targets; the REC circle plays (#88), no «Готово» row.
 test('m-chat-recording', async ({ page }) => {
@@ -712,10 +727,12 @@ test('m-members-page', async ({ page }) => {
 // a tel: link. Review shot only (no baseline).
 test('m-profile-member', async ({ page }) => {
   await signedInRoom(page);
+  mock.seedSipExchange(); // Борис gets the internal number 101 (ADR-0117)
   await page.getByRole('button', { name: 'Участники' }).tap();
   await page.getByTestId('members-page').getByRole('button', { name: /Борис Петров/ }).tap();
   const card = page.getByRole('dialog', { name: 'Борис Петров' });
   await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
+  await expect(card.getByTestId('profile-extension')).toContainText('101');
   await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
   await expect(card.getByRole('link', { name: '+7 912 555-02-02' })).toHaveAttribute('href', 'tel:+79125550202');
   await checkpoint(page, 'm-profile-member', { snapshot: false });
@@ -1000,6 +1017,34 @@ test('m-boards-create', async ({ page }) => {
   await checkpoint(page, 'm-boards-create');
 });
 
+// CBF-68: «Создать умную задачу» from the boards tab's «+»: off with the reason, then the dialog.
+test('m-boards-smart', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'boards');
+  await page.getByTestId('section-create-board').tap();
+  // CBF-69: Team (the fixture) — off for the plan; then Business.
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Доступно на тарифе Business');
+  await checkpoint(page, 'm-boards-smart-plan');
+  await page.keyboard.press('Escape');
+  mock.setPlanKind(IDS.workspaces.main, Plan.ENTERPRISE);
+  await page.getByTestId('section-create-board').tap();
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveText('Сначала подключите AI в настройках');
+  await checkpoint(page, 'm-boards-smart-off');
+  await page.keyboard.press('Escape');
+  mock.setAiState(IDS.workspaces.main, AiState.READY);
+  await page.getByTestId('section-create-board').tap();
+  await expect(page.getByTestId('boards-create-smart-hint')).toHaveCount(0);
+  await page.getByTestId('boards-create-smart').tap();
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика до пятницы');
+  await checkpoint(page, 'm-boards-smart-dialog', { keyboard: true });
+  // CBF-75: the model declines (a duplicate of CAL-3): the reason inline, the text stays.
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика — похоже, дубль');
+  await page.getByTestId('smart-task-submit').tap();
+  await expect(page.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
+  await expect(page.getByTestId('smart-task-text')).toHaveValue('Оплатить счёт поставщика — похоже, дубль');
+  await checkpoint(page, 'm-boards-smart-refused', { keyboard: true });
+});
+
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
@@ -1241,13 +1286,15 @@ test('m-voice', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
   // In the call (docs/08 «Кто в голосе»): Борис joins; the header's stack (me first) opens the card
   // with «Вы» at my row and «Выйти».
-  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: true, joinedAtMs: NOW.getTime() - 60_000 });
+  // CBF-82: Борис is in push-to-talk mode (mic on, waiting for his key): the pale crossed mic.
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, ptt: true, joinedAtMs: NOW.getTime() - 60_000 });
   const stack = page.getByTestId('room-voice-people');
   await expect(stack).toHaveAttribute('aria-label', /^В голосе: .+, Борис$/);
   await stack.tap();
   const card = page.getByTestId('voice-people-card');
   await expect(card.getByTestId('voice-people-row')).toHaveCount(2);
   await expect(card.getByTestId('voice-people-row').first()).toContainText('Вы');
+  await expect(card.getByTestId('voice-people-row').nth(1).locator('[data-voice-icon="ptt-idle"]')).toHaveCount(1);
   await expect(card.getByTestId('voice-people-leave')).toBeVisible();
   await expectCentredCard(page, card);
   await checkpoint(page, 'm-voice-people-in-call');
@@ -1541,6 +1588,93 @@ test('m-settings-bots', async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 });
 
+// ADR-0117, CBF-77: «Телефония» on a phone — the tabs as a picker button (five tabs, docs/08
+// «Choice»), the live calls, the numbers, a group form, a menu form.
+test('m-telephony', async ({ page }) => {
+  await signedIn(page);
+  mock.seedSipExchange();
+  mock.seedSipActiveCalls();
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
+  const dialog = page.getByTestId('settings-page');
+  await dialog.getByRole('tab', { name: 'Телефония' }).tap();
+  const pick = async (tab: string): Promise<void> => {
+    await dialog.getByTestId('sip-tab').tap();
+    await page.getByTestId(`sip-tab-${tab}`).tap();
+  };
+  await pick('calls');
+  await expect(dialog.getByTestId('sip-call-row')).toHaveCount(4);
+  await expectNoFieldFocus(page, 'telephony');
+  // The timers and the journal's times follow the clock.
+  const clock = [dialog.getByTestId('sip-call-timer'), dialog.getByTestId('sip-journal-row').locator('td:first-child')];
+  await checkpoint(page, 'm-telephony-calls', { mask: clock });
+  await dialog.getByTestId('sip-tab').tap();
+  await expect(page.getByTestId('sip-tab-ivr')).toBeVisible();
+  await checkpoint(page, 'm-telephony-tabs', { mask: clock });
+  await page.getByTestId('sip-tab-numbers').tap();
+  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
+  await checkpoint(page, 'm-telephony');
+  // ADR-0129: a number closed to external callers — the switch in its form on a phone. Review shot.
+  await dialog.getByTestId('sip-ext-row').filter({ hasText: 'Борис' }).getByRole('button', { name: 'Изменить' }).tap();
+  await dialog.getByTestId('sip-ext-no-external-switch').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-number-no-external', { snapshot: false });
+  await dialog.getByTestId('sip-ext-form').getByRole('button', { name: 'Отмена' }).tap();
+  // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
+  await pick('groups');
+  await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
+  await expect(dialog.getByTestId('sip-group-onfail')).toBeVisible();
+  await dialog.getByTestId('sip-group-fallback').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-group');
+  await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).tap();
+  await pick('ivr');
+  await checkpoint(page, 'm-telephony-ivr');
+  await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
+  await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu');
+  await dialog.getByTestId('sip-menu-dial').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu-dial', { snapshot: false });
+  // The greeting row on a phone: ▶, the length, «Заменить» / «Удалить запись», a refused file.
+  const promptRow = dialog.getByTestId('sip-menu-prompt');
+  await dialog.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
+  await expect(dialog.getByTestId('sip-menu-prompt-error')).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
+  await promptRow.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-prompt');
+  // ADR-0131: the recording notice row, then «Запись звонков» in «Настройки».
+  await dialog.getByTestId('sip-menu-notice').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu-notice', { snapshot: false });
+  await pick('settings');
+  await dialog.getByTestId('sip-recording').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-recording', { snapshot: false });
+  // ADR-0117 step 2: an inbound call rings me — the sheet takes the whole screen.
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  const ring = page.getByTestId('sip-incoming');
+  await expect(ring).toContainText('Входящий на номер · Отдел продаж');
+  await checkpoint(page, 'm-sip-incoming');
+  await ring.getByRole('button', { name: 'Отклонить' }).tap();
+  await expect(ring).toHaveCount(0);
+  // ADR-0132: the next call taken — the strip's round «Перевести» (in place of the camera) opens
+  // the picker as a centred card; a pick rings Борис: «Переводим: Борис» above the strip.
+  await toRoot(page);
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  await ring.getByRole('button', { name: 'Принять' }).tap();
+  const strip = page.getByTestId('mobile-voice-strip');
+  // The transfer does not wait for the media: WebKit's LiveKit link may still be connecting — masked.
+  const status = [strip.getByTestId('mobile-voice-status')];
+  await strip.getByTestId('sip-transfer').tap();
+  const picker = page.getByTestId('sip-transfer-picker');
+  await expect(picker.getByRole('option', { name: /Борис/ })).toBeVisible();
+  await expectNoFieldFocus(page, 'transfer picker');
+  await checkpoint(page, 'm-sip-transfer-picker', { mask: status });
+  await picker.getByRole('option', { name: /Борис/ }).tap();
+  const transferring = strip.getByTestId('sip-transferring');
+  await expect(transferring).toContainText('Переводим: Борис');
+  await checkpoint(page, 'm-sip-transferring', { mask: status });
+  await transferring.getByRole('button', { name: 'Отменить перевод' }).tap();
+  await expect(transferring).toHaveCount(0);
+  await strip.getByRole('button', { name: 'Отключиться' }).tap();
+  await expect(strip).toHaveCount(0);
+});
+
 // ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of
 // the outgoing screen is removed when the animation ends (only the top screen stays mounted). The
 // run's reduced-motion default is lifted here; the animations are paused mid-way for the shot.
@@ -1831,6 +1965,149 @@ test('m-wiki-trash', async ({ page }) => {
   const trash = page.getByTestId('phone-wiki-trash');
   await expect(trash.getByTestId('phone-wiki-trash-row')).toHaveCount(2);
   await checkpoint(page, 'm-wiki-trash', { snapshot: false });
+});
+
+// ADR-0126 §5 / ADR-0127 wave 5b: «Холст» on the phone — the section behind «Ещё», the tree as 56 px rows, a
+// folder and a canvas as pushed screens; the canvas opens in view mode (pans with a finger, pinches, has the
+// zoom bar; no tools or panels) and «Править» in the header turns on the edit mode (m-canvas-edit).
+test('m-canvas-root', async ({ page }) => {
+  await signedIn(page);
+  await toRoot(page);
+  // Behind «Ещё» by default (ADR-0095): the card lists the section.
+  await page.getByTestId('phone-tab-more').tap();
+  await expect(page.getByTestId('more-row-canvas')).toBeVisible();
+  await checkpoint(page, 'm-canvas-more', { snapshot: false });
+  await page.getByTestId('more-row-canvas').tap();
+  const root = page.getByTestId('phone-canvas');
+  await expect(root.getByTestId('phone-canvas-row')).toHaveCount(4);
+  await expect(root.getByTestId('phone-canvas-row').first()).toContainText('Продукт');
+  await expect(root.getByTestId('phone-tabbar')).toHaveCount(0);
+  await checkpoint(page, 'm-canvas-root');
+  // The magnifier filters by name; nothing to create or to trash on the phone.
+  await root.getByTestId('phone-search').tap();
+  await root.getByTestId('phone-canvas-search-field').fill('спринт');
+  await expect(root.getByTestId('phone-canvas-row')).toHaveCount(1);
+  await checkpoint(page, 'm-canvas-search', { snapshot: false });
+});
+
+test('m-canvas-folder', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'canvas');
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Продукт' }).getByRole('button').tap();
+  const folder = page.getByTestId('phone-canvas-folder');
+  await expect(folder.getByTestId('phone-header')).toContainText('Продукт');
+  await expect(folder.getByTestId('phone-canvas-row')).toHaveCount(2);
+  await checkpoint(page, 'm-canvas-folder');
+});
+
+test('m-canvas-view', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'canvas');
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Продукт' }).getByRole('button').tap();
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Дорожная карта Q1' }).getByRole('button').tap();
+  const screen = page.getByTestId('phone-canvas-screen');
+  await expect(screen.getByTestId('phone-header')).toContainText('Дорожная карта Q1');
+  const view = screen.getByTestId('canvas-view');
+  await expect(view.getByTestId('canvas-zoom')).toBeVisible();
+  // View mode by default, whatever the grant (the owner can write): no tools, no panels, no help, no chip, no note —
+  // the way to edit is «Править» in the header.
+  for (const id of ['canvas-toolbar', 'canvas-history', 'canvas-props', 'canvas-help', 'canvas-presence', 'canvas-view-only', 'canvas-phone-toolbar', 'canvas-phone-note']) await expect(view.getByTestId(id)).toHaveCount(0);
+  await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Править');
+  await expectNoFieldFocus(page, 'canvas view');
+  await view.getByTestId('canvas-fit-all').tap();
+  await checkpoint(page, 'm-canvas-view');
+
+  // Pinch: two touch pointers moving apart zoom in; one finger pans (synthetic pointer events: Playwright has no multi-touch gesture).
+  const pct = async (): Promise<number> => Number(/\d+/.exec((await view.getByTestId('canvas-zoom-pct').textContent()) ?? '')?.[0]);
+  const before = await pct();
+  await view.getByTestId('canvas-surface').evaluate((el) => {
+    const fire = (type: string, id: number, x: number, y: number): void => {
+      el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: 0, bubbles: true, cancelable: true }));
+    };
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    fire('pointerdown', 1, cx - 40, cy);
+    fire('pointerdown', 2, cx + 40, cy);
+    for (let i = 1; i <= 5; i++) {
+      fire('pointermove', 1, cx - 40 - i * 15, cy);
+      fire('pointermove', 2, cx + 40 + i * 15, cy);
+    }
+    fire('pointerup', 2, cx + 115, cy);
+    fire('pointerup', 1, cx - 115, cy);
+  });
+  await expect.poll(pct, 'pinch out zooms in').toBeGreaterThan(before);
+  // The zoom bar's «100 %» resets; nothing was edited on the way (the canvas has no tools to edit with).
+  await view.getByTestId('canvas-zoom-pct').tap();
+  await expect.poll(pct).toBe(100);
+  await checkpoint(page, 'm-canvas-view-zoom', { snapshot: false });
+});
+
+// ADR-0127 wave 5b: the edit mode — the bottom tool bar, the shapes grid, «+», a new sticky with its text editor and
+// the format bar, the properties sheet, «Выбрать несколько», and «Готово» back to view mode. Written, not run (no WebKit).
+test('m-canvas-edit', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'canvas');
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Продукт' }).getByRole('button').tap();
+  await page.getByTestId('phone-canvas-row').filter({ hasText: 'Дорожная карта Q1' }).getByRole('button').tap();
+  const screen = page.getByTestId('phone-canvas-screen');
+  const view = screen.getByTestId('canvas-view');
+  await expect(view.getByTestId('canvas-zoom')).toBeVisible();
+  await screen.getByTestId('phone-canvas-edit').tap();
+  await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Готово');
+  // The bar with 44 px targets above the home indicator, the zoom bar moved to the top, the one-time hint.
+  const bar = view.getByTestId('canvas-phone-toolbar');
+  await expect(bar).toBeVisible();
+  for (const btn of await bar.getByRole('button').all()) {
+    const box = await btn.boundingBox();
+    expect(box?.width ?? 0, 'tool bar target width').toBeGreaterThanOrEqual(43.5);
+    expect(box?.height ?? 0, 'tool bar target height').toBeGreaterThanOrEqual(43.5);
+  }
+  await expect(view.getByTestId('canvas-phone-edit-hint')).toBeVisible();
+  await view.getByTestId('canvas-fit-all').tap();
+  await checkpoint(page, 'm-canvas-edit');
+  await view.getByTestId('canvas-phone-edit-hint-close').tap();
+  // The shapes grid.
+  await view.getByTestId('canvas-tool-shape').tap();
+  await expect(view.getByTestId('canvas-phone-shapes')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-shapes', { snapshot: false });
+  await view.getByTestId('canvas-shape-ellipse').tap();
+  // «+»: templates, vote, timer.
+  await view.getByTestId('canvas-phone-plus').tap();
+  await expect(view.getByTestId('canvas-phone-plus-sheet')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-plus', { snapshot: false });
+  await view.getByTestId('canvas-phone-plus').tap();
+  // A sticky: arm the tool, tap the canvas — its text editor opens with the format bar above the keyboard.
+  await view.getByTestId('canvas-tool-sticky').tap();
+  await expect(view.getByTestId('canvas-phone-armed')).toBeVisible();
+  await view.getByTestId('canvas-surface').tap({ position: { x: 180, y: 300 } });
+  await expect(view.getByTestId('canvas-format-bar')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-text', { snapshot: false });
+  await view.getByTestId('canvas-format-done').tap();
+  // The new object stays selected: its properties sheet is above the tool bar.
+  await expect(view.getByTestId('canvas-phone-props')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-props');
+  await view.getByTestId('canvas-prop-sticky-color').tap();
+  await expect(view.getByTestId('canvas-phone-panel')).toBeVisible();
+  await checkpoint(page, 'm-canvas-edit-color', { snapshot: false });
+  await view.getByTestId('canvas-phone-color-pink').tap();
+  await view.getByTestId('canvas-phone-multi').tap();
+  await expect(view.getByTestId('canvas-phone-multi')).toHaveAttribute('aria-pressed', 'true');
+  // «Готово» is back to view mode: the bar and the sheet are gone, the canvas is the same.
+  await screen.getByTestId('phone-canvas-edit').tap();
+  await expect(screen.getByTestId('phone-canvas-edit')).toHaveText('Править');
+  for (const id of ['canvas-phone-toolbar', 'canvas-phone-props']) await expect(view.getByTestId(id)).toHaveCount(0);
+  await checkpoint(page, 'm-canvas-edit-done', { snapshot: false });
+});
+
+// /c/{code} at 390 px: the header and the canvas in view mode (pan, pinch, the zoom bar); no edit mode.
+test('m-canvas-public', async ({ page }) => {
+  await open(page, `/c/${CANVAS_PUBLIC_CODE}`);
+  await expect(page.getByTestId('canvas-public-title')).toHaveText('Схема навигации');
+  await expect(page.getByTestId('canvas-zoom')).toBeVisible();
+  for (const id of ['canvas-phone-toolbar', 'phone-canvas-edit', 'canvas-others']) await expect(page.getByTestId(id)).toHaveCount(0);
+  await page.getByTestId('canvas-fit-all').tap();
+  await checkpoint(page, 'm-canvas-public');
 });
 
 // /w/{code} at 390 px: the outline is a «Содержание» disclosure above the text.

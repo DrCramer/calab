@@ -62,6 +62,18 @@ func (q *Queries) AppendWikiUpdate(ctx context.Context, arg AppendWikiUpdatePara
 	return i, err
 }
 
+const countLiveWikiPages = `-- name: CountLiveWikiPages :one
+SELECT count(*) FROM wiki_pages WHERE workspace_id = $1 AND trashed_at IS NULL
+`
+
+// Live (not trashed) pages of a workspace: the plan limit of ADR-0096 counts these.
+func (q *Queries) CountLiveWikiPages(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveWikiPages, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countWikiLinkView = `-- name: CountWikiLinkView :exec
 UPDATE wiki_links SET views = views + 1 WHERE id = $1
 `

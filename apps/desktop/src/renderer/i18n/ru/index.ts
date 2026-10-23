@@ -21,6 +21,11 @@ import { ruCalendar } from './calendar';
 import { ruMailbox } from './mailbox';
 import { ruDisk } from './disk';
 import { ruWiki } from './wiki';
+import { ruCanvas } from './canvas';
+import { ruCanvasBoard } from './canvasBoard';
+import { ruCanvasPhone } from './canvasPhone';
+import { ruCanvasComments } from './canvasComments';
+import { ruCanvasShare } from './canvasShare';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
 import { ruHistory } from './history';
@@ -41,6 +46,9 @@ import { ruGuests } from './guests';
 import { ruTemp } from './temp';
 import { ruContacts } from './contacts';
 import { ruSip } from './sip';
+import { ruPbx } from './pbx';
+import { ruAi } from './ai';
+import { ruSmartTask } from './smartTask';
 import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
@@ -59,6 +67,9 @@ export const ru = {
   ...ruTemp,
   ...ruContacts,
   ...ruSip,
+  ...ruPbx,
+  ...ruAi,
+  ...ruSmartTask,
   ...ruWebApps,
   ...ruDm,
   ...ruNotes,
@@ -83,6 +94,11 @@ export const ru = {
   ...ruMailbox,
   ...ruDisk,
   ...ruWiki,
+  ...ruCanvas,
+  ...ruCanvasBoard,
+  ...ruCanvasPhone,
+  ...ruCanvasComments,
+  ...ruCanvasShare,
   ...ruBoards,
   ...ruBoards2,
   ...ruHistory,
@@ -402,6 +418,7 @@ export const ru = {
   'voice.mode': 'Режим микрофона',
   'voice.modeVad': 'Активация голосом',
   'voice.modePtt': 'Push-to-talk',
+  'voice.pttIdleState': 'Push-to-talk: ждёт нажатия клавиши',
   'voice.threshold': 'Порог активации: {db} дБ',
   'voice.thresholdHint': 'Микрофон включается, когда вы говорите громче порога, и выключается после короткой паузы.',
   'voice.pttKey': 'Клавиша push‑to‑talk',

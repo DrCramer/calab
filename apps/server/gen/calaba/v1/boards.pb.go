@@ -2025,7 +2025,8 @@ type Board struct {
 	// Task-scoped access (ADR-0059, ADR-0076): the recipient sees the board only through its
 	// tasks - those where they are an assignee, an approver or a watcher; permissions = 0 (task
 	// bits come from taskPermissions), permission_overrides empty, open_tasks 0. Restricted
-	// boards too (ADR-0076); never for guests or bots.
+	// boards too (ADR-0076); never for guests or bots. Create-only (ADR-0115): permissions =
+	// CREATE_TASKS - the recipient creates tasks and also sees the ones they authored.
 	TaskScoped bool `protobuf:"varint,28,opt,name=task_scoped,json=taskScoped,proto3" json:"task_scoped,omitempty"`
 	// Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
 	// created or deleted).
@@ -2034,8 +2035,16 @@ type Board struct {
 	// a change of the task) before the APPROVAL_REQUESTED notice goes out; one of 0 (immediately),
 	// 60, 300, 900, 1800, 3600. An approver removed or a vote cast meanwhile cancels the notice.
 	ApprovalNotifyDelaySeconds uint32 `protobuf:"varint,30,opt,name=approval_notify_delay_seconds,json=approvalNotifyDelaySeconds,proto3" json:"approval_notify_delay_seconds,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
+	// «Инструкция для ИИ» (CBF-68, ADR-0118): how the model shapes a smart task of this board,
+	// ≤ 4000 characters. Only in GET /api/boards/{id} and the PATCH answer, and only to a
+	// recipient with VIEW_BOARD; empty everywhere else (lists, READY, BOARD_* events).
+	AiInstruction string `protobuf:"bytes,31,opt,name=ai_instruction,json=aiInstruction,proto3" json:"ai_instruction,omitempty"`
+	// «Искать дубли за 2 недели» (CBF-75, ADR-0123): a smart task filed on this board is first
+	// compared by the model with the board's tasks of the last 14 days the person sees; the model
+	// may refuse it as a duplicate (CreateSmartTaskResponse.refusal). Off by default.
+	AiFindDuplicates bool `protobuf:"varint,32,opt,name=ai_find_duplicates,json=aiFindDuplicates,proto3" json:"ai_find_duplicates,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Board) Reset() {
@@ -2276,6 +2285,20 @@ func (x *Board) GetApprovalNotifyDelaySeconds() uint32 {
 		return x.ApprovalNotifyDelaySeconds
 	}
 	return 0
+}
+
+func (x *Board) GetAiInstruction() string {
+	if x != nil {
+		return x.AiInstruction
+	}
+	return ""
+}
+
+func (x *Board) GetAiFindDuplicates() bool {
+	if x != nil {
+		return x.AiFindDuplicates
+	}
+	return false
 }
 
 type TaskAssignee struct {
@@ -3619,8 +3642,12 @@ type UpdateBoardRequest struct {
 	// ADR-0082: one of 0, 60, 300, 900, 1800, 3600 (422 otherwise). Notices already scheduled
 	// keep their time.
 	ApprovalNotifyDelaySeconds *uint32 `protobuf:"varint,13,opt,name=approval_notify_delay_seconds,json=approvalNotifyDelaySeconds,proto3,oneof" json:"approval_notify_delay_seconds,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
+	// CBF-68: «Инструкция для ИИ», ≤ 4000 characters (trimmed; "" = none), 422 field aiInstruction.
+	AiInstruction *string `protobuf:"bytes,14,opt,name=ai_instruction,json=aiInstruction,proto3,oneof" json:"ai_instruction,omitempty"`
+	// CBF-75: «Искать дубли за 2 недели» (MANAGE_BOARD).
+	AiFindDuplicates *bool `protobuf:"varint,15,opt,name=ai_find_duplicates,json=aiFindDuplicates,proto3,oneof" json:"ai_find_duplicates,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateBoardRequest) Reset() {
@@ -3742,6 +3769,20 @@ func (x *UpdateBoardRequest) GetApprovalNotifyDelaySeconds() uint32 {
 		return *x.ApprovalNotifyDelaySeconds
 	}
 	return 0
+}
+
+func (x *UpdateBoardRequest) GetAiInstruction() string {
+	if x != nil && x.AiInstruction != nil {
+		return *x.AiInstruction
+	}
+	return ""
+}
+
+func (x *UpdateBoardRequest) GetAiFindDuplicates() bool {
+	if x != nil && x.AiFindDuplicates != nil {
+		return *x.AiFindDuplicates
+	}
+	return false
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -4606,6 +4647,222 @@ func (x *CreateTaskRequest) GetApprovalRequired() uint32 {
 	return 0
 }
 
+// POST /api/workspaces/{id}/smart-tasks → 201 CreateSmartTaskResponse (CBF-68, ADR-0118;
+// CBF-75, ADR-0123): «Создать умную задачу». People only, never guests; the workspace's AI must
+// be READY (GetAiStatusResponse), else 409 CONFLICT reason "AI_NOT_READY". The server sends the
+// model the text, the files (images and the first and last page of a PDF as images, text files
+// as text, other files by name and type; at most 4 images, ~5 MB of them, 20 000 characters of
+// text) and the boards where the caller may create tasks (CREATE_TASKS: name, key, description,
+// labels); the model picks one board, which must be in that list. With the board's
+// ai_instruction the model then shapes the task (title, description, labels of the board,
+// priority) by it; without one the description is the text as is. With the board's
+// ai_find_duplicates the model also gets the board's live tasks of the last 14 days that the
+// caller sees (key, title, the start of the description). The model may refuse to file the
+// task: 200 with refusal set and no task. The task is created as POST /api/boards/{id}/tasks by
+// the caller (their rights, limits and features of the board; the original text is kept in the
+// description). The model never sets assignees, approvers, watchers or access; @mentions it
+// adds are dropped. A model that refuses images is asked again with the files by name
+// (files_unseen).
+// Errors: 422 VALIDATION text (1..4000 characters) | attachmentIds (≤ 20 unattached uploads of
+// the caller in the workspace, POST /api/workspaces/{id}/files) | priority; 409 CONFLICT reason
+// "NO_BOARDS" (no board to create on), "AI_FAILED" (the provider refused or did not answer;
+// message = the CheckAiResponse.error code), "AI_BAD_ANSWER" (not the JSON asked for, or a
+// board outside the list): no task is created. 429 RATE_LIMITED: 10 at once then 5 per minute
+// per person, 60 per hour per workspace. Takes up to ~60 s (two model calls; ~90 s with
+// images).
+type CreateSmartTaskRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	AttachmentIds []string               `protobuf:"bytes,2,rep,name=attachment_ids,json=attachmentIds,proto3" json:"attachment_ids,omitempty"`
+	// NONE = let the board's instruction decide (none without one); otherwise it wins.
+	Priority      TaskPriority `protobuf:"varint,3,opt,name=priority,proto3,enum=calaba.v1.TaskPriority" json:"priority,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateSmartTaskRequest) Reset() {
+	*x = CreateSmartTaskRequest{}
+	mi := &file_calaba_v1_boards_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateSmartTaskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateSmartTaskRequest) ProtoMessage() {}
+
+func (x *CreateSmartTaskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_boards_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateSmartTaskRequest.ProtoReflect.Descriptor instead.
+func (*CreateSmartTaskRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *CreateSmartTaskRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *CreateSmartTaskRequest) GetAttachmentIds() []string {
+	if x != nil {
+		return x.AttachmentIds
+	}
+	return nil
+}
+
+func (x *CreateSmartTaskRequest) GetPriority() TaskPriority {
+	if x != nil {
+		return x.Priority
+	}
+	return TaskPriority_TASK_PRIORITY_NONE
+}
+
+type CreateSmartTaskResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Task               *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	UsedInstruction    bool                   `protobuf:"varint,2,opt,name=used_instruction,json=usedInstruction,proto3" json:"used_instruction,omitempty"`          // the board's ai_instruction shaped the task
+	AttachmentsDropped bool                   `protobuf:"varint,3,opt,name=attachments_dropped,json=attachmentsDropped,proto3" json:"attachments_dropped,omitempty"` // the chosen board has attachments off: the files were not attached
+	// CBF-75: the model refused to file the task (status 200, task unset): the person edits the
+	// text or the files and sends again.
+	Refusal *SmartTaskRefusal `protobuf:"bytes,4,opt,name=refusal,proto3" json:"refusal,omitempty"`
+	// CBF-75: the model does not take images: it saw the files by name (and text files' text).
+	FilesUnseen   bool `protobuf:"varint,5,opt,name=files_unseen,json=filesUnseen,proto3" json:"files_unseen,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateSmartTaskResponse) Reset() {
+	*x = CreateSmartTaskResponse{}
+	mi := &file_calaba_v1_boards_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateSmartTaskResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateSmartTaskResponse) ProtoMessage() {}
+
+func (x *CreateSmartTaskResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_boards_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateSmartTaskResponse.ProtoReflect.Descriptor instead.
+func (*CreateSmartTaskResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *CreateSmartTaskResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *CreateSmartTaskResponse) GetUsedInstruction() bool {
+	if x != nil {
+		return x.UsedInstruction
+	}
+	return false
+}
+
+func (x *CreateSmartTaskResponse) GetAttachmentsDropped() bool {
+	if x != nil {
+		return x.AttachmentsDropped
+	}
+	return false
+}
+
+func (x *CreateSmartTaskResponse) GetRefusal() *SmartTaskRefusal {
+	if x != nil {
+		return x.Refusal
+	}
+	return nil
+}
+
+func (x *CreateSmartTaskResponse) GetFilesUnseen() bool {
+	if x != nil {
+		return x.FilesUnseen
+	}
+	return false
+}
+
+// CBF-75: why the model did not file a smart task.
+type SmartTaskRefusal struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`                                 // plain text, ≤ 300 characters: no links, markup or mentions
+	DuplicateKey  string                 `protobuf:"bytes,2,opt,name=duplicate_key,json=duplicateKey,proto3" json:"duplicate_key,omitempty"` // the task it duplicates ("DOC-123"), one the caller sees; "" = none
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SmartTaskRefusal) Reset() {
+	*x = SmartTaskRefusal{}
+	mi := &file_calaba_v1_boards_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SmartTaskRefusal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SmartTaskRefusal) ProtoMessage() {}
+
+func (x *SmartTaskRefusal) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_boards_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SmartTaskRefusal.ProtoReflect.Descriptor instead.
+func (*SmartTaskRefusal) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SmartTaskRefusal) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SmartTaskRefusal) GetDuplicateKey() string {
+	if x != nil {
+		return x.DuplicateKey
+	}
+	return ""
+}
+
 // POST /tasks (201), GET /tasks/{id}, PATCH, archive / restore, relations, subscription,
 // assignees, GET /api/t/{key}. subtasks / related / parent: GET and the key lookup only.
 type TaskResponse struct {
@@ -4622,7 +4879,7 @@ type TaskResponse struct {
 
 func (x *TaskResponse) Reset() {
 	*x = TaskResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[35]
+	mi := &file_calaba_v1_boards_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4634,7 +4891,7 @@ func (x *TaskResponse) String() string {
 func (*TaskResponse) ProtoMessage() {}
 
 func (x *TaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[35]
+	mi := &file_calaba_v1_boards_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4647,7 +4904,7 @@ func (x *TaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskResponse.ProtoReflect.Descriptor instead.
 func (*TaskResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{35}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *TaskResponse) GetTask() *Task {
@@ -4733,7 +4990,7 @@ type UpdateTaskRequest struct {
 
 func (x *UpdateTaskRequest) Reset() {
 	*x = UpdateTaskRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[36]
+	mi := &file_calaba_v1_boards_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4745,7 +5002,7 @@ func (x *UpdateTaskRequest) String() string {
 func (*UpdateTaskRequest) ProtoMessage() {}
 
 func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[36]
+	mi := &file_calaba_v1_boards_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4758,7 +5015,7 @@ func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTaskRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{36}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *UpdateTaskRequest) GetTitle() string {
@@ -4898,7 +5155,7 @@ type SetAssigneesRequest struct {
 
 func (x *SetAssigneesRequest) Reset() {
 	*x = SetAssigneesRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[37]
+	mi := &file_calaba_v1_boards_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4910,7 +5167,7 @@ func (x *SetAssigneesRequest) String() string {
 func (*SetAssigneesRequest) ProtoMessage() {}
 
 func (x *SetAssigneesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[37]
+	mi := &file_calaba_v1_boards_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4923,7 +5180,7 @@ func (x *SetAssigneesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAssigneesRequest.ProtoReflect.Descriptor instead.
 func (*SetAssigneesRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{37}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SetAssigneesRequest) GetAssignees() []*TaskAssigneeInput {
@@ -4951,7 +5208,7 @@ type SetTaskApproversRequest struct {
 
 func (x *SetTaskApproversRequest) Reset() {
 	*x = SetTaskApproversRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[38]
+	mi := &file_calaba_v1_boards_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4963,7 +5220,7 @@ func (x *SetTaskApproversRequest) String() string {
 func (*SetTaskApproversRequest) ProtoMessage() {}
 
 func (x *SetTaskApproversRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[38]
+	mi := &file_calaba_v1_boards_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4976,7 +5233,7 @@ func (x *SetTaskApproversRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTaskApproversRequest.ProtoReflect.Descriptor instead.
 func (*SetTaskApproversRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{38}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SetTaskApproversRequest) GetUserIds() []string {
@@ -5014,7 +5271,7 @@ type TaskApprovalRequest struct {
 
 func (x *TaskApprovalRequest) Reset() {
 	*x = TaskApprovalRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[39]
+	mi := &file_calaba_v1_boards_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5026,7 +5283,7 @@ func (x *TaskApprovalRequest) String() string {
 func (*TaskApprovalRequest) ProtoMessage() {}
 
 func (x *TaskApprovalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[39]
+	mi := &file_calaba_v1_boards_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5039,7 +5296,7 @@ func (x *TaskApprovalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskApprovalRequest.ProtoReflect.Descriptor instead.
 func (*TaskApprovalRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{39}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *TaskApprovalRequest) GetDecision() TaskApprovalDecision {
@@ -5075,7 +5332,7 @@ type SetTaskRelationRequest struct {
 
 func (x *SetTaskRelationRequest) Reset() {
 	*x = SetTaskRelationRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[40]
+	mi := &file_calaba_v1_boards_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5087,7 +5344,7 @@ func (x *SetTaskRelationRequest) String() string {
 func (*SetTaskRelationRequest) ProtoMessage() {}
 
 func (x *SetTaskRelationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[40]
+	mi := &file_calaba_v1_boards_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5100,7 +5357,7 @@ func (x *SetTaskRelationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTaskRelationRequest.ProtoReflect.Descriptor instead.
 func (*SetTaskRelationRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{40}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SetTaskRelationRequest) GetRelatedId() string {
@@ -5136,7 +5393,7 @@ type SetTaskWatcherRequest struct {
 
 func (x *SetTaskWatcherRequest) Reset() {
 	*x = SetTaskWatcherRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[41]
+	mi := &file_calaba_v1_boards_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5148,7 +5405,7 @@ func (x *SetTaskWatcherRequest) String() string {
 func (*SetTaskWatcherRequest) ProtoMessage() {}
 
 func (x *SetTaskWatcherRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[41]
+	mi := &file_calaba_v1_boards_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5161,7 +5418,7 @@ func (x *SetTaskWatcherRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTaskWatcherRequest.ProtoReflect.Descriptor instead.
 func (*SetTaskWatcherRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{41}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SetTaskWatcherRequest) GetUserId() string {
@@ -5182,7 +5439,7 @@ type SetTaskSubscriptionRequest struct {
 
 func (x *SetTaskSubscriptionRequest) Reset() {
 	*x = SetTaskSubscriptionRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[42]
+	mi := &file_calaba_v1_boards_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5194,7 +5451,7 @@ func (x *SetTaskSubscriptionRequest) String() string {
 func (*SetTaskSubscriptionRequest) ProtoMessage() {}
 
 func (x *SetTaskSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[42]
+	mi := &file_calaba_v1_boards_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5207,7 +5464,7 @@ func (x *SetTaskSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTaskSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*SetTaskSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{42}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SetTaskSubscriptionRequest) GetMuted() bool {
@@ -5232,7 +5489,7 @@ type TaskActivityPage struct {
 
 func (x *TaskActivityPage) Reset() {
 	*x = TaskActivityPage{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[43]
+	mi := &file_calaba_v1_boards_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5244,7 +5501,7 @@ func (x *TaskActivityPage) String() string {
 func (*TaskActivityPage) ProtoMessage() {}
 
 func (x *TaskActivityPage) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[43]
+	mi := &file_calaba_v1_boards_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5257,7 +5514,7 @@ func (x *TaskActivityPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskActivityPage.ProtoReflect.Descriptor instead.
 func (*TaskActivityPage) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{43}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TaskActivityPage) GetItems() []*TaskActivityItem {
@@ -5287,7 +5544,7 @@ type BoardActivityResponse struct {
 
 func (x *BoardActivityResponse) Reset() {
 	*x = BoardActivityResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[44]
+	mi := &file_calaba_v1_boards_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5299,7 +5556,7 @@ func (x *BoardActivityResponse) String() string {
 func (*BoardActivityResponse) ProtoMessage() {}
 
 func (x *BoardActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[44]
+	mi := &file_calaba_v1_boards_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5312,7 +5569,7 @@ func (x *BoardActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardActivityResponse.ProtoReflect.Descriptor instead.
 func (*BoardActivityResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{44}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *BoardActivityResponse) GetActivities() []*TaskActivity {
@@ -5341,7 +5598,7 @@ type MyTasksResponse struct {
 
 func (x *MyTasksResponse) Reset() {
 	*x = MyTasksResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[45]
+	mi := &file_calaba_v1_boards_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5353,7 +5610,7 @@ func (x *MyTasksResponse) String() string {
 func (*MyTasksResponse) ProtoMessage() {}
 
 func (x *MyTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[45]
+	mi := &file_calaba_v1_boards_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5366,7 +5623,7 @@ func (x *MyTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MyTasksResponse.ProtoReflect.Descriptor instead.
 func (*MyTasksResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{45}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *MyTasksResponse) GetTasks() []*Task {
@@ -5394,7 +5651,7 @@ type SearchTasksResponse struct {
 
 func (x *SearchTasksResponse) Reset() {
 	*x = SearchTasksResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[46]
+	mi := &file_calaba_v1_boards_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5406,7 +5663,7 @@ func (x *SearchTasksResponse) String() string {
 func (*SearchTasksResponse) ProtoMessage() {}
 
 func (x *SearchTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[46]
+	mi := &file_calaba_v1_boards_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5419,7 +5676,7 @@ func (x *SearchTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchTasksResponse.ProtoReflect.Descriptor instead.
 func (*SearchTasksResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{46}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SearchTasksResponse) GetTasks() []*Task {
@@ -5439,7 +5696,7 @@ type ListBoardViewsResponse struct {
 
 func (x *ListBoardViewsResponse) Reset() {
 	*x = ListBoardViewsResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[47]
+	mi := &file_calaba_v1_boards_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5451,7 +5708,7 @@ func (x *ListBoardViewsResponse) String() string {
 func (*ListBoardViewsResponse) ProtoMessage() {}
 
 func (x *ListBoardViewsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[47]
+	mi := &file_calaba_v1_boards_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5464,7 +5721,7 @@ func (x *ListBoardViewsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBoardViewsResponse.ProtoReflect.Descriptor instead.
 func (*ListBoardViewsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{47}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListBoardViewsResponse) GetViews() []*BoardView {
@@ -5491,7 +5748,7 @@ type CreateBoardViewRequest struct {
 
 func (x *CreateBoardViewRequest) Reset() {
 	*x = CreateBoardViewRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[48]
+	mi := &file_calaba_v1_boards_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5503,7 +5760,7 @@ func (x *CreateBoardViewRequest) String() string {
 func (*CreateBoardViewRequest) ProtoMessage() {}
 
 func (x *CreateBoardViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[48]
+	mi := &file_calaba_v1_boards_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5516,7 +5773,7 @@ func (x *CreateBoardViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardViewRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardViewRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{48}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *CreateBoardViewRequest) GetName() string {
@@ -5585,7 +5842,7 @@ type UpdateBoardViewRequest struct {
 
 func (x *UpdateBoardViewRequest) Reset() {
 	*x = UpdateBoardViewRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[49]
+	mi := &file_calaba_v1_boards_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5597,7 +5854,7 @@ func (x *UpdateBoardViewRequest) String() string {
 func (*UpdateBoardViewRequest) ProtoMessage() {}
 
 func (x *UpdateBoardViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[49]
+	mi := &file_calaba_v1_boards_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5610,7 +5867,7 @@ func (x *UpdateBoardViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardViewRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardViewRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{49}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *UpdateBoardViewRequest) GetName() string {
@@ -5671,7 +5928,7 @@ type BoardViewResponse struct {
 
 func (x *BoardViewResponse) Reset() {
 	*x = BoardViewResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[50]
+	mi := &file_calaba_v1_boards_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5683,7 +5940,7 @@ func (x *BoardViewResponse) String() string {
 func (*BoardViewResponse) ProtoMessage() {}
 
 func (x *BoardViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[50]
+	mi := &file_calaba_v1_boards_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5696,7 +5953,7 @@ func (x *BoardViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardViewResponse.ProtoReflect.Descriptor instead.
 func (*BoardViewResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{50}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *BoardViewResponse) GetView() *BoardView {
@@ -5717,7 +5974,7 @@ type ListBoardCategoriesResponse struct {
 
 func (x *ListBoardCategoriesResponse) Reset() {
 	*x = ListBoardCategoriesResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[51]
+	mi := &file_calaba_v1_boards_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5729,7 +5986,7 @@ func (x *ListBoardCategoriesResponse) String() string {
 func (*ListBoardCategoriesResponse) ProtoMessage() {}
 
 func (x *ListBoardCategoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[51]
+	mi := &file_calaba_v1_boards_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5742,7 +5999,7 @@ func (x *ListBoardCategoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBoardCategoriesResponse.ProtoReflect.Descriptor instead.
 func (*ListBoardCategoriesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{51}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListBoardCategoriesResponse) GetCategories() []*BoardCategory {
@@ -5764,7 +6021,7 @@ type CreateBoardCategoryRequest struct {
 
 func (x *CreateBoardCategoryRequest) Reset() {
 	*x = CreateBoardCategoryRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[52]
+	mi := &file_calaba_v1_boards_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5776,7 +6033,7 @@ func (x *CreateBoardCategoryRequest) String() string {
 func (*CreateBoardCategoryRequest) ProtoMessage() {}
 
 func (x *CreateBoardCategoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[52]
+	mi := &file_calaba_v1_boards_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5789,7 +6046,7 @@ func (x *CreateBoardCategoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardCategoryRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardCategoryRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{52}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CreateBoardCategoryRequest) GetName() string {
@@ -5818,7 +6075,7 @@ type UpdateBoardCategoryRequest struct {
 
 func (x *UpdateBoardCategoryRequest) Reset() {
 	*x = UpdateBoardCategoryRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[53]
+	mi := &file_calaba_v1_boards_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5830,7 +6087,7 @@ func (x *UpdateBoardCategoryRequest) String() string {
 func (*UpdateBoardCategoryRequest) ProtoMessage() {}
 
 func (x *UpdateBoardCategoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[53]
+	mi := &file_calaba_v1_boards_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5843,7 +6100,7 @@ func (x *UpdateBoardCategoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardCategoryRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardCategoryRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{53}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *UpdateBoardCategoryRequest) GetName() string {
@@ -5869,7 +6126,7 @@ type BoardCategoryResponse struct {
 
 func (x *BoardCategoryResponse) Reset() {
 	*x = BoardCategoryResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[54]
+	mi := &file_calaba_v1_boards_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5881,7 +6138,7 @@ func (x *BoardCategoryResponse) String() string {
 func (*BoardCategoryResponse) ProtoMessage() {}
 
 func (x *BoardCategoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[54]
+	mi := &file_calaba_v1_boards_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5894,7 +6151,7 @@ func (x *BoardCategoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryResponse.ProtoReflect.Descriptor instead.
 func (*BoardCategoryResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{54}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *BoardCategoryResponse) GetCategory() *BoardCategory {
@@ -5918,7 +6175,7 @@ type SetBoardOrderRequest struct {
 
 func (x *SetBoardOrderRequest) Reset() {
 	*x = SetBoardOrderRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[55]
+	mi := &file_calaba_v1_boards_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5930,7 +6187,7 @@ func (x *SetBoardOrderRequest) String() string {
 func (*SetBoardOrderRequest) ProtoMessage() {}
 
 func (x *SetBoardOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[55]
+	mi := &file_calaba_v1_boards_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5943,7 +6200,7 @@ func (x *SetBoardOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBoardOrderRequest.ProtoReflect.Descriptor instead.
 func (*SetBoardOrderRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{55}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *SetBoardOrderRequest) GetBoards() []*SetBoardOrderRequest_BoardPosition {
@@ -5971,7 +6228,7 @@ type SetBoardOrderResponse struct {
 
 func (x *SetBoardOrderResponse) Reset() {
 	*x = SetBoardOrderResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[56]
+	mi := &file_calaba_v1_boards_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5983,7 +6240,7 @@ func (x *SetBoardOrderResponse) String() string {
 func (*SetBoardOrderResponse) ProtoMessage() {}
 
 func (x *SetBoardOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[56]
+	mi := &file_calaba_v1_boards_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5996,7 +6253,7 @@ func (x *SetBoardOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBoardOrderResponse.ProtoReflect.Descriptor instead.
 func (*SetBoardOrderResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{56}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *SetBoardOrderResponse) GetBoards() []*Board {
@@ -6025,7 +6282,7 @@ type CreateTaskChecklistRequest struct {
 
 func (x *CreateTaskChecklistRequest) Reset() {
 	*x = CreateTaskChecklistRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[57]
+	mi := &file_calaba_v1_boards_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6037,7 +6294,7 @@ func (x *CreateTaskChecklistRequest) String() string {
 func (*CreateTaskChecklistRequest) ProtoMessage() {}
 
 func (x *CreateTaskChecklistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[57]
+	mi := &file_calaba_v1_boards_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6050,7 +6307,7 @@ func (x *CreateTaskChecklistRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskChecklistRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskChecklistRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{57}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *CreateTaskChecklistRequest) GetTitle() string {
@@ -6079,7 +6336,7 @@ type UpdateTaskChecklistRequest struct {
 
 func (x *UpdateTaskChecklistRequest) Reset() {
 	*x = UpdateTaskChecklistRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[58]
+	mi := &file_calaba_v1_boards_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6091,7 +6348,7 @@ func (x *UpdateTaskChecklistRequest) String() string {
 func (*UpdateTaskChecklistRequest) ProtoMessage() {}
 
 func (x *UpdateTaskChecklistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[58]
+	mi := &file_calaba_v1_boards_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6104,7 +6361,7 @@ func (x *UpdateTaskChecklistRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTaskChecklistRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTaskChecklistRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{58}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *UpdateTaskChecklistRequest) GetTitle() string {
@@ -6133,7 +6390,7 @@ type CreateTaskChecklistItemRequest struct {
 
 func (x *CreateTaskChecklistItemRequest) Reset() {
 	*x = CreateTaskChecklistItemRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[59]
+	mi := &file_calaba_v1_boards_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6145,7 +6402,7 @@ func (x *CreateTaskChecklistItemRequest) String() string {
 func (*CreateTaskChecklistItemRequest) ProtoMessage() {}
 
 func (x *CreateTaskChecklistItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[59]
+	mi := &file_calaba_v1_boards_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6158,7 +6415,7 @@ func (x *CreateTaskChecklistItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskChecklistItemRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskChecklistItemRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{59}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *CreateTaskChecklistItemRequest) GetText() string {
@@ -6190,7 +6447,7 @@ type UpdateTaskChecklistItemRequest struct {
 
 func (x *UpdateTaskChecklistItemRequest) Reset() {
 	*x = UpdateTaskChecklistItemRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[60]
+	mi := &file_calaba_v1_boards_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6202,7 +6459,7 @@ func (x *UpdateTaskChecklistItemRequest) String() string {
 func (*UpdateTaskChecklistItemRequest) ProtoMessage() {}
 
 func (x *UpdateTaskChecklistItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[60]
+	mi := &file_calaba_v1_boards_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6215,7 +6472,7 @@ func (x *UpdateTaskChecklistItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTaskChecklistItemRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTaskChecklistItemRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{60}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *UpdateTaskChecklistItemRequest) GetText() string {
@@ -6258,7 +6515,7 @@ type TaskChecklistResponse struct {
 
 func (x *TaskChecklistResponse) Reset() {
 	*x = TaskChecklistResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[61]
+	mi := &file_calaba_v1_boards_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6270,7 +6527,7 @@ func (x *TaskChecklistResponse) String() string {
 func (*TaskChecklistResponse) ProtoMessage() {}
 
 func (x *TaskChecklistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[61]
+	mi := &file_calaba_v1_boards_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6283,7 +6540,7 @@ func (x *TaskChecklistResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskChecklistResponse.ProtoReflect.Descriptor instead.
 func (*TaskChecklistResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{61}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *TaskChecklistResponse) GetChecklist() *TaskChecklist {
@@ -6323,7 +6580,7 @@ type ConvertChecklistItemResponse struct {
 
 func (x *ConvertChecklistItemResponse) Reset() {
 	*x = ConvertChecklistItemResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[62]
+	mi := &file_calaba_v1_boards_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6335,7 +6592,7 @@ func (x *ConvertChecklistItemResponse) String() string {
 func (*ConvertChecklistItemResponse) ProtoMessage() {}
 
 func (x *ConvertChecklistItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[62]
+	mi := &file_calaba_v1_boards_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6348,7 +6605,7 @@ func (x *ConvertChecklistItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConvertChecklistItemResponse.ProtoReflect.Descriptor instead.
 func (*ConvertChecklistItemResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{62}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ConvertChecklistItemResponse) GetTask() *Task {
@@ -6392,7 +6649,7 @@ type CreateTaskMilestoneRequest struct {
 
 func (x *CreateTaskMilestoneRequest) Reset() {
 	*x = CreateTaskMilestoneRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[63]
+	mi := &file_calaba_v1_boards_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6404,7 +6661,7 @@ func (x *CreateTaskMilestoneRequest) String() string {
 func (*CreateTaskMilestoneRequest) ProtoMessage() {}
 
 func (x *CreateTaskMilestoneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[63]
+	mi := &file_calaba_v1_boards_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6417,7 +6674,7 @@ func (x *CreateTaskMilestoneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskMilestoneRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskMilestoneRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{63}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *CreateTaskMilestoneRequest) GetName() string {
@@ -6457,7 +6714,7 @@ type UpdateTaskMilestoneRequest struct {
 
 func (x *UpdateTaskMilestoneRequest) Reset() {
 	*x = UpdateTaskMilestoneRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[64]
+	mi := &file_calaba_v1_boards_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6469,7 +6726,7 @@ func (x *UpdateTaskMilestoneRequest) String() string {
 func (*UpdateTaskMilestoneRequest) ProtoMessage() {}
 
 func (x *UpdateTaskMilestoneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[64]
+	mi := &file_calaba_v1_boards_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6482,7 +6739,7 @@ func (x *UpdateTaskMilestoneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTaskMilestoneRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTaskMilestoneRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{64}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *UpdateTaskMilestoneRequest) GetName() string {
@@ -6524,7 +6781,7 @@ type TaskMilestoneResponse struct {
 
 func (x *TaskMilestoneResponse) Reset() {
 	*x = TaskMilestoneResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[65]
+	mi := &file_calaba_v1_boards_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6536,7 +6793,7 @@ func (x *TaskMilestoneResponse) String() string {
 func (*TaskMilestoneResponse) ProtoMessage() {}
 
 func (x *TaskMilestoneResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[65]
+	mi := &file_calaba_v1_boards_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6549,7 +6806,7 @@ func (x *TaskMilestoneResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskMilestoneResponse.ProtoReflect.Descriptor instead.
 func (*TaskMilestoneResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{65}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *TaskMilestoneResponse) GetMilestone() *TaskMilestone {
@@ -6588,7 +6845,7 @@ type BoardWebhook struct {
 
 func (x *BoardWebhook) Reset() {
 	*x = BoardWebhook{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[66]
+	mi := &file_calaba_v1_boards_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6600,7 +6857,7 @@ func (x *BoardWebhook) String() string {
 func (*BoardWebhook) ProtoMessage() {}
 
 func (x *BoardWebhook) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[66]
+	mi := &file_calaba_v1_boards_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6613,7 +6870,7 @@ func (x *BoardWebhook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhook.ProtoReflect.Descriptor instead.
 func (*BoardWebhook) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{66}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *BoardWebhook) GetBoardId() string {
@@ -6719,7 +6976,7 @@ type SetBoardWebhookRequest struct {
 
 func (x *SetBoardWebhookRequest) Reset() {
 	*x = SetBoardWebhookRequest{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[67]
+	mi := &file_calaba_v1_boards_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6731,7 +6988,7 @@ func (x *SetBoardWebhookRequest) String() string {
 func (*SetBoardWebhookRequest) ProtoMessage() {}
 
 func (x *SetBoardWebhookRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[67]
+	mi := &file_calaba_v1_boards_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6744,7 +7001,7 @@ func (x *SetBoardWebhookRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBoardWebhookRequest.ProtoReflect.Descriptor instead.
 func (*SetBoardWebhookRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{67}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *SetBoardWebhookRequest) GetUrl() string {
@@ -6773,7 +7030,7 @@ type BoardWebhookResponse struct {
 
 func (x *BoardWebhookResponse) Reset() {
 	*x = BoardWebhookResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[68]
+	mi := &file_calaba_v1_boards_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6785,7 +7042,7 @@ func (x *BoardWebhookResponse) String() string {
 func (*BoardWebhookResponse) ProtoMessage() {}
 
 func (x *BoardWebhookResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[68]
+	mi := &file_calaba_v1_boards_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6798,7 +7055,7 @@ func (x *BoardWebhookResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookResponse.ProtoReflect.Descriptor instead.
 func (*BoardWebhookResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{68}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *BoardWebhookResponse) GetWebhook() *BoardWebhook {
@@ -6828,7 +7085,7 @@ type BoardWebhookPingResponse struct {
 
 func (x *BoardWebhookPingResponse) Reset() {
 	*x = BoardWebhookPingResponse{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[69]
+	mi := &file_calaba_v1_boards_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6840,7 +7097,7 @@ func (x *BoardWebhookPingResponse) String() string {
 func (*BoardWebhookPingResponse) ProtoMessage() {}
 
 func (x *BoardWebhookPingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[69]
+	mi := &file_calaba_v1_boards_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6853,7 +7110,7 @@ func (x *BoardWebhookPingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookPingResponse.ProtoReflect.Descriptor instead.
 func (*BoardWebhookPingResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{69}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *BoardWebhookPingResponse) GetOk() bool {
@@ -6911,7 +7168,7 @@ type BoardWebhookEvent struct {
 
 func (x *BoardWebhookEvent) Reset() {
 	*x = BoardWebhookEvent{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[70]
+	mi := &file_calaba_v1_boards_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6923,7 +7180,7 @@ func (x *BoardWebhookEvent) String() string {
 func (*BoardWebhookEvent) ProtoMessage() {}
 
 func (x *BoardWebhookEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[70]
+	mi := &file_calaba_v1_boards_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6936,7 +7193,7 @@ func (x *BoardWebhookEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookEvent.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *BoardWebhookEvent) GetId() string {
@@ -7039,7 +7296,7 @@ type BoardCreate struct {
 
 func (x *BoardCreate) Reset() {
 	*x = BoardCreate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[71]
+	mi := &file_calaba_v1_boards_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7051,7 +7308,7 @@ func (x *BoardCreate) String() string {
 func (*BoardCreate) ProtoMessage() {}
 
 func (x *BoardCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[71]
+	mi := &file_calaba_v1_boards_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7064,7 +7321,7 @@ func (x *BoardCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCreate.ProtoReflect.Descriptor instead.
 func (*BoardCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{71}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *BoardCreate) GetBoard() *Board {
@@ -7086,7 +7343,7 @@ type BoardUpdate struct {
 
 func (x *BoardUpdate) Reset() {
 	*x = BoardUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[72]
+	mi := &file_calaba_v1_boards_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7098,7 +7355,7 @@ func (x *BoardUpdate) String() string {
 func (*BoardUpdate) ProtoMessage() {}
 
 func (x *BoardUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[72]
+	mi := &file_calaba_v1_boards_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7111,7 +7368,7 @@ func (x *BoardUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardUpdate.ProtoReflect.Descriptor instead.
 func (*BoardUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{72}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *BoardUpdate) GetBoard() *Board {
@@ -7132,7 +7389,7 @@ type BoardDelete struct {
 
 func (x *BoardDelete) Reset() {
 	*x = BoardDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[73]
+	mi := &file_calaba_v1_boards_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7144,7 +7401,7 @@ func (x *BoardDelete) String() string {
 func (*BoardDelete) ProtoMessage() {}
 
 func (x *BoardDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[73]
+	mi := &file_calaba_v1_boards_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7157,7 +7414,7 @@ func (x *BoardDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardDelete.ProtoReflect.Descriptor instead.
 func (*BoardDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *BoardDelete) GetWorkspaceId() string {
@@ -7190,7 +7447,7 @@ type TaskCreate struct {
 
 func (x *TaskCreate) Reset() {
 	*x = TaskCreate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[74]
+	mi := &file_calaba_v1_boards_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7202,7 +7459,7 @@ func (x *TaskCreate) String() string {
 func (*TaskCreate) ProtoMessage() {}
 
 func (x *TaskCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[74]
+	mi := &file_calaba_v1_boards_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7215,7 +7472,7 @@ func (x *TaskCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskCreate.ProtoReflect.Descriptor instead.
 func (*TaskCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{74}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *TaskCreate) GetTask() *Task {
@@ -7238,7 +7495,7 @@ type TaskUpdate struct {
 
 func (x *TaskUpdate) Reset() {
 	*x = TaskUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[75]
+	mi := &file_calaba_v1_boards_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7250,7 +7507,7 @@ func (x *TaskUpdate) String() string {
 func (*TaskUpdate) ProtoMessage() {}
 
 func (x *TaskUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[75]
+	mi := &file_calaba_v1_boards_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7263,7 +7520,7 @@ func (x *TaskUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskUpdate.ProtoReflect.Descriptor instead.
 func (*TaskUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{75}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *TaskUpdate) GetTask() *Task {
@@ -7301,7 +7558,7 @@ type TaskNoticeRelay struct {
 
 func (x *TaskNoticeRelay) Reset() {
 	*x = TaskNoticeRelay{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[76]
+	mi := &file_calaba_v1_boards_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7313,7 +7570,7 @@ func (x *TaskNoticeRelay) String() string {
 func (*TaskNoticeRelay) ProtoMessage() {}
 
 func (x *TaskNoticeRelay) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[76]
+	mi := &file_calaba_v1_boards_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7326,7 +7583,7 @@ func (x *TaskNoticeRelay) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskNoticeRelay.ProtoReflect.Descriptor instead.
 func (*TaskNoticeRelay) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{76}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *TaskNoticeRelay) GetWorkspaceId() string {
@@ -7401,7 +7658,7 @@ type TaskNotice struct {
 
 func (x *TaskNotice) Reset() {
 	*x = TaskNotice{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[77]
+	mi := &file_calaba_v1_boards_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7413,7 +7670,7 @@ func (x *TaskNotice) String() string {
 func (*TaskNotice) ProtoMessage() {}
 
 func (x *TaskNotice) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[77]
+	mi := &file_calaba_v1_boards_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7426,7 +7683,7 @@ func (x *TaskNotice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskNotice.ProtoReflect.Descriptor instead.
 func (*TaskNotice) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{77}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *TaskNotice) GetKind() TaskNoticeKind {
@@ -7505,7 +7762,7 @@ type TaskDelete struct {
 
 func (x *TaskDelete) Reset() {
 	*x = TaskDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[78]
+	mi := &file_calaba_v1_boards_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7517,7 +7774,7 @@ func (x *TaskDelete) String() string {
 func (*TaskDelete) ProtoMessage() {}
 
 func (x *TaskDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[78]
+	mi := &file_calaba_v1_boards_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7530,7 +7787,7 @@ func (x *TaskDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskDelete.ProtoReflect.Descriptor instead.
 func (*TaskDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{78}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *TaskDelete) GetWorkspaceId() string {
@@ -7580,7 +7837,7 @@ type TaskActivityAppend struct {
 
 func (x *TaskActivityAppend) Reset() {
 	*x = TaskActivityAppend{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[79]
+	mi := &file_calaba_v1_boards_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7592,7 +7849,7 @@ func (x *TaskActivityAppend) String() string {
 func (*TaskActivityAppend) ProtoMessage() {}
 
 func (x *TaskActivityAppend) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[79]
+	mi := &file_calaba_v1_boards_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7605,7 +7862,7 @@ func (x *TaskActivityAppend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskActivityAppend.ProtoReflect.Descriptor instead.
 func (*TaskActivityAppend) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{79}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *TaskActivityAppend) GetWorkspaceId() string {
@@ -7653,7 +7910,7 @@ type BoardCategoryCreate struct {
 
 func (x *BoardCategoryCreate) Reset() {
 	*x = BoardCategoryCreate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[80]
+	mi := &file_calaba_v1_boards_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7665,7 +7922,7 @@ func (x *BoardCategoryCreate) String() string {
 func (*BoardCategoryCreate) ProtoMessage() {}
 
 func (x *BoardCategoryCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[80]
+	mi := &file_calaba_v1_boards_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7678,7 +7935,7 @@ func (x *BoardCategoryCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryCreate.ProtoReflect.Descriptor instead.
 func (*BoardCategoryCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{80}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *BoardCategoryCreate) GetCategory() *BoardCategory {
@@ -7697,7 +7954,7 @@ type BoardCategoryUpdate struct {
 
 func (x *BoardCategoryUpdate) Reset() {
 	*x = BoardCategoryUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[81]
+	mi := &file_calaba_v1_boards_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7709,7 +7966,7 @@ func (x *BoardCategoryUpdate) String() string {
 func (*BoardCategoryUpdate) ProtoMessage() {}
 
 func (x *BoardCategoryUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[81]
+	mi := &file_calaba_v1_boards_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7722,7 +7979,7 @@ func (x *BoardCategoryUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryUpdate.ProtoReflect.Descriptor instead.
 func (*BoardCategoryUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{81}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *BoardCategoryUpdate) GetCategory() *BoardCategory {
@@ -7743,7 +8000,7 @@ type BoardCategoryDelete struct {
 
 func (x *BoardCategoryDelete) Reset() {
 	*x = BoardCategoryDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[82]
+	mi := &file_calaba_v1_boards_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7755,7 +8012,7 @@ func (x *BoardCategoryDelete) String() string {
 func (*BoardCategoryDelete) ProtoMessage() {}
 
 func (x *BoardCategoryDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[82]
+	mi := &file_calaba_v1_boards_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7768,7 +8025,7 @@ func (x *BoardCategoryDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardCategoryDelete.ProtoReflect.Descriptor instead.
 func (*BoardCategoryDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{82}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *BoardCategoryDelete) GetWorkspaceId() string {
@@ -7801,7 +8058,7 @@ type TaskChecklistUpdate struct {
 
 func (x *TaskChecklistUpdate) Reset() {
 	*x = TaskChecklistUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[83]
+	mi := &file_calaba_v1_boards_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7813,7 +8070,7 @@ func (x *TaskChecklistUpdate) String() string {
 func (*TaskChecklistUpdate) ProtoMessage() {}
 
 func (x *TaskChecklistUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[83]
+	mi := &file_calaba_v1_boards_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7826,7 +8083,7 @@ func (x *TaskChecklistUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskChecklistUpdate.ProtoReflect.Descriptor instead.
 func (*TaskChecklistUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{83}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *TaskChecklistUpdate) GetWorkspaceId() string {
@@ -7886,7 +8143,7 @@ type TaskChecklistDelete struct {
 
 func (x *TaskChecklistDelete) Reset() {
 	*x = TaskChecklistDelete{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[84]
+	mi := &file_calaba_v1_boards_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7898,7 +8155,7 @@ func (x *TaskChecklistDelete) String() string {
 func (*TaskChecklistDelete) ProtoMessage() {}
 
 func (x *TaskChecklistDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[84]
+	mi := &file_calaba_v1_boards_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7911,7 +8168,7 @@ func (x *TaskChecklistDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskChecklistDelete.ProtoReflect.Descriptor instead.
 func (*TaskChecklistDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{84}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *TaskChecklistDelete) GetWorkspaceId() string {
@@ -7979,7 +8236,7 @@ type TaskGitLink struct {
 
 func (x *TaskGitLink) Reset() {
 	*x = TaskGitLink{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[85]
+	mi := &file_calaba_v1_boards_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7991,7 +8248,7 @@ func (x *TaskGitLink) String() string {
 func (*TaskGitLink) ProtoMessage() {}
 
 func (x *TaskGitLink) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[85]
+	mi := &file_calaba_v1_boards_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8004,7 +8261,7 @@ func (x *TaskGitLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGitLink.ProtoReflect.Descriptor instead.
 func (*TaskGitLink) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{85}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *TaskGitLink) GetId() string {
@@ -8107,7 +8364,7 @@ type TaskGitLinksUpdate struct {
 
 func (x *TaskGitLinksUpdate) Reset() {
 	*x = TaskGitLinksUpdate{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[86]
+	mi := &file_calaba_v1_boards_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8119,7 +8376,7 @@ func (x *TaskGitLinksUpdate) String() string {
 func (*TaskGitLinksUpdate) ProtoMessage() {}
 
 func (x *TaskGitLinksUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[86]
+	mi := &file_calaba_v1_boards_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8132,7 +8389,7 @@ func (x *TaskGitLinksUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGitLinksUpdate.ProtoReflect.Descriptor instead.
 func (*TaskGitLinksUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{86}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *TaskGitLinksUpdate) GetWorkspaceId() string {
@@ -8181,7 +8438,7 @@ type SetBoardOrderRequest_BoardPosition struct {
 
 func (x *SetBoardOrderRequest_BoardPosition) Reset() {
 	*x = SetBoardOrderRequest_BoardPosition{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[87]
+	mi := &file_calaba_v1_boards_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8193,7 +8450,7 @@ func (x *SetBoardOrderRequest_BoardPosition) String() string {
 func (*SetBoardOrderRequest_BoardPosition) ProtoMessage() {}
 
 func (x *SetBoardOrderRequest_BoardPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[87]
+	mi := &file_calaba_v1_boards_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8206,7 +8463,7 @@ func (x *SetBoardOrderRequest_BoardPosition) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use SetBoardOrderRequest_BoardPosition.ProtoReflect.Descriptor instead.
 func (*SetBoardOrderRequest_BoardPosition) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{55, 0}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{58, 0}
 }
 
 func (x *SetBoardOrderRequest_BoardPosition) GetBoardId() string {
@@ -8240,7 +8497,7 @@ type SetBoardOrderRequest_CategoryPosition struct {
 
 func (x *SetBoardOrderRequest_CategoryPosition) Reset() {
 	*x = SetBoardOrderRequest_CategoryPosition{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[88]
+	mi := &file_calaba_v1_boards_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8252,7 +8509,7 @@ func (x *SetBoardOrderRequest_CategoryPosition) String() string {
 func (*SetBoardOrderRequest_CategoryPosition) ProtoMessage() {}
 
 func (x *SetBoardOrderRequest_CategoryPosition) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[88]
+	mi := &file_calaba_v1_boards_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8265,7 +8522,7 @@ func (x *SetBoardOrderRequest_CategoryPosition) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use SetBoardOrderRequest_CategoryPosition.ProtoReflect.Descriptor instead.
 func (*SetBoardOrderRequest_CategoryPosition) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{55, 1}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{58, 1}
 }
 
 func (x *SetBoardOrderRequest_CategoryPosition) GetCategoryId() string {
@@ -8294,7 +8551,7 @@ type BoardWebhookEvent_BoardRef struct {
 
 func (x *BoardWebhookEvent_BoardRef) Reset() {
 	*x = BoardWebhookEvent_BoardRef{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[89]
+	mi := &file_calaba_v1_boards_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8306,7 +8563,7 @@ func (x *BoardWebhookEvent_BoardRef) String() string {
 func (*BoardWebhookEvent_BoardRef) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_BoardRef) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[89]
+	mi := &file_calaba_v1_boards_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8319,7 +8576,7 @@ func (x *BoardWebhookEvent_BoardRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookEvent_BoardRef.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent_BoardRef) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70, 0}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73, 0}
 }
 
 func (x *BoardWebhookEvent_BoardRef) GetId() string {
@@ -8356,7 +8613,7 @@ type BoardWebhookEvent_Actor struct {
 
 func (x *BoardWebhookEvent_Actor) Reset() {
 	*x = BoardWebhookEvent_Actor{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[90]
+	mi := &file_calaba_v1_boards_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8368,7 +8625,7 @@ func (x *BoardWebhookEvent_Actor) String() string {
 func (*BoardWebhookEvent_Actor) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[90]
+	mi := &file_calaba_v1_boards_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8381,7 +8638,7 @@ func (x *BoardWebhookEvent_Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookEvent_Actor.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent_Actor) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70, 1}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73, 1}
 }
 
 func (x *BoardWebhookEvent_Actor) GetId() string {
@@ -8417,7 +8674,7 @@ type BoardWebhookEvent_Change struct {
 
 func (x *BoardWebhookEvent_Change) Reset() {
 	*x = BoardWebhookEvent_Change{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[91]
+	mi := &file_calaba_v1_boards_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8429,7 +8686,7 @@ func (x *BoardWebhookEvent_Change) String() string {
 func (*BoardWebhookEvent_Change) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Change) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[91]
+	mi := &file_calaba_v1_boards_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8442,7 +8699,7 @@ func (x *BoardWebhookEvent_Change) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookEvent_Change.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent_Change) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70, 2}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73, 2}
 }
 
 func (x *BoardWebhookEvent_Change) GetField() string {
@@ -8477,7 +8734,7 @@ type BoardWebhookEvent_CommentAttachment struct {
 
 func (x *BoardWebhookEvent_CommentAttachment) Reset() {
 	*x = BoardWebhookEvent_CommentAttachment{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[92]
+	mi := &file_calaba_v1_boards_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8489,7 +8746,7 @@ func (x *BoardWebhookEvent_CommentAttachment) String() string {
 func (*BoardWebhookEvent_CommentAttachment) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_CommentAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[92]
+	mi := &file_calaba_v1_boards_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8502,7 +8759,7 @@ func (x *BoardWebhookEvent_CommentAttachment) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use BoardWebhookEvent_CommentAttachment.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent_CommentAttachment) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70, 3}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73, 3}
 }
 
 func (x *BoardWebhookEvent_CommentAttachment) GetName() string {
@@ -8541,7 +8798,7 @@ type BoardWebhookEvent_Comment struct {
 
 func (x *BoardWebhookEvent_Comment) Reset() {
 	*x = BoardWebhookEvent_Comment{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[93]
+	mi := &file_calaba_v1_boards_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8553,7 +8810,7 @@ func (x *BoardWebhookEvent_Comment) String() string {
 func (*BoardWebhookEvent_Comment) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Comment) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[93]
+	mi := &file_calaba_v1_boards_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8566,7 +8823,7 @@ func (x *BoardWebhookEvent_Comment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookEvent_Comment.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent_Comment) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70, 4}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73, 4}
 }
 
 func (x *BoardWebhookEvent_Comment) GetId() string {
@@ -8622,7 +8879,7 @@ type BoardWebhookEvent_Rule struct {
 
 func (x *BoardWebhookEvent_Rule) Reset() {
 	*x = BoardWebhookEvent_Rule{}
-	mi := &file_calaba_v1_boards_proto_msgTypes[94]
+	mi := &file_calaba_v1_boards_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8634,7 +8891,7 @@ func (x *BoardWebhookEvent_Rule) String() string {
 func (*BoardWebhookEvent_Rule) ProtoMessage() {}
 
 func (x *BoardWebhookEvent_Rule) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_boards_proto_msgTypes[94]
+	mi := &file_calaba_v1_boards_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8647,7 +8904,7 @@ func (x *BoardWebhookEvent_Rule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardWebhookEvent_Rule.ProtoReflect.Descriptor instead.
 func (*BoardWebhookEvent_Rule) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{70, 5}
+	return file_calaba_v1_boards_proto_rawDescGZIP(), []int{73, 5}
 }
 
 func (x *BoardWebhookEvent_Rule) GetId() string {
@@ -8750,7 +9007,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x12\x1a\n" +
 	"\bposition\x18\t \x01(\x05R\bposition\x12\x19\n" +
 	"\bboard_id\x18\n" +
-	" \x01(\tR\aboardId\"\xd1\t\n" +
+	" \x01(\tR\aboardId\"\xa6\n" +
+	"\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -8796,7 +9054,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"taskScoped\x12\x1f\n" +
 	"\vrules_count\x18\x1d \x01(\rR\n" +
 	"rulesCount\x12A\n" +
-	"\x1dapproval_notify_delay_seconds\x18\x1e \x01(\rR\x1aapprovalNotifyDelaySeconds\"\xb2\x01\n" +
+	"\x1dapproval_notify_delay_seconds\x18\x1e \x01(\rR\x1aapprovalNotifyDelaySeconds\x12%\n" +
+	"\x0eai_instruction\x18\x1f \x01(\tR\raiInstruction\x12,\n" +
+	"\x12ai_find_duplicates\x18  \x01(\bR\x10aiFindDuplicates\"\xb2\x01\n" +
 	"\fTaskAssignee\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +
@@ -8933,7 +9193,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"member_ids\x18\b \x03(\tR\tmemberIds\x12\x19\n" +
 	"\brole_ids\x18\t \x03(\tR\aroleIds\"7\n" +
 	"\rBoardResponse\x12&\n" +
-	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\x95\x06\n" +
+	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\x9e\a\n" +
 	"\x12UpdateBoardRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x15\n" +
 	"\x03key\x18\x02 \x01(\tH\x01R\x03key\x88\x01\x01\x12\x19\n" +
@@ -8953,7 +9213,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x11disabled_features\x18\v \x03(\x0e2\x17.calaba.v1.BoardFeatureR\x10disabledFeatures\x12D\n" +
 	"\x0eestimate_scale\x18\f \x01(\x0e2\x18.calaba.v1.EstimateScaleH\tR\restimateScale\x88\x01\x01\x12F\n" +
 	"\x1dapproval_notify_delay_seconds\x18\r \x01(\rH\n" +
-	"R\x1aapprovalNotifyDelaySeconds\x88\x01\x01B\a\n" +
+	"R\x1aapprovalNotifyDelaySeconds\x88\x01\x01\x12*\n" +
+	"\x0eai_instruction\x18\x0e \x01(\tH\vR\raiInstruction\x88\x01\x01\x121\n" +
+	"\x12ai_find_duplicates\x18\x0f \x01(\bH\fR\x10aiFindDuplicates\x88\x01\x01B\a\n" +
 	"\x05_nameB\x06\n" +
 	"\x04_keyB\b\n" +
 	"\x06_emojiB\x0f\n" +
@@ -8964,7 +9226,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x10_default_view_idB\r\n" +
 	"\v_restrictedB\x11\n" +
 	"\x0f_estimate_scaleB \n" +
-	"\x1e_approval_notify_delay_seconds\"k\n" +
+	"\x1e_approval_notify_delay_secondsB\x11\n" +
+	"\x0f_ai_instructionB\x15\n" +
+	"\x13_ai_find_duplicates\"k\n" +
 	"\x17SetBoardPositionRequest\x12\x1a\n" +
 	"\bposition\x18\x01 \x01(\x05R\bposition\x12$\n" +
 	"\vcategory_id\x18\x02 \x01(\tH\x00R\n" +
@@ -9048,7 +9312,20 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x0ffrom_message_id\x18\r \x01(\tR\rfromMessageId\x12%\n" +
 	"\x0eattachment_ids\x18\x0e \x03(\tR\rattachmentIds\x12!\n" +
 	"\fapprover_ids\x18\x0f \x03(\tR\vapproverIds\x12+\n" +
-	"\x11approval_required\x18\x10 \x01(\rR\x10approvalRequired\"\x81\x02\n" +
+	"\x11approval_required\x18\x10 \x01(\rR\x10approvalRequired\"\x88\x01\n" +
+	"\x16CreateSmartTaskRequest\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12%\n" +
+	"\x0eattachment_ids\x18\x02 \x03(\tR\rattachmentIds\x123\n" +
+	"\bpriority\x18\x03 \x01(\x0e2\x17.calaba.v1.TaskPriorityR\bpriority\"\xf4\x01\n" +
+	"\x17CreateSmartTaskResponse\x12#\n" +
+	"\x04task\x18\x01 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12)\n" +
+	"\x10used_instruction\x18\x02 \x01(\bR\x0fusedInstruction\x12/\n" +
+	"\x13attachments_dropped\x18\x03 \x01(\bR\x12attachmentsDropped\x125\n" +
+	"\arefusal\x18\x04 \x01(\v2\x1b.calaba.v1.SmartTaskRefusalR\arefusal\x12!\n" +
+	"\ffiles_unseen\x18\x05 \x01(\bR\vfilesUnseen\"O\n" +
+	"\x10SmartTaskRefusal\x12\x16\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\x12#\n" +
+	"\rduplicate_key\x18\x02 \x01(\tR\fduplicateKey\"\x81\x02\n" +
 	"\fTaskResponse\x12#\n" +
 	"\x04task\x18\x01 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12+\n" +
 	"\bsubtasks\x18\x02 \x03(\v2\x0f.calaba.v1.TaskR\bsubtasks\x12)\n" +
@@ -9571,7 +9848,7 @@ func file_calaba_v1_boards_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_boards_proto_enumTypes = make([]protoimpl.EnumInfo, 17)
-var file_calaba_v1_boards_proto_msgTypes = make([]protoimpl.MessageInfo, 95)
+var file_calaba_v1_boards_proto_msgTypes = make([]protoimpl.MessageInfo, 98)
 var file_calaba_v1_boards_proto_goTypes = []any{
 	(BoardStatusType)(0),                          // 0: calaba.v1.BoardStatusType
 	(TaskPriority)(0),                             // 1: calaba.v1.TaskPriority
@@ -9625,209 +9902,215 @@ var file_calaba_v1_boards_proto_goTypes = []any{
 	(*UpdateBoardMilestoneRequest)(nil),           // 49: calaba.v1.UpdateBoardMilestoneRequest
 	(*ListTasksResponse)(nil),                     // 50: calaba.v1.ListTasksResponse
 	(*CreateTaskRequest)(nil),                     // 51: calaba.v1.CreateTaskRequest
-	(*TaskResponse)(nil),                          // 52: calaba.v1.TaskResponse
-	(*UpdateTaskRequest)(nil),                     // 53: calaba.v1.UpdateTaskRequest
-	(*SetAssigneesRequest)(nil),                   // 54: calaba.v1.SetAssigneesRequest
-	(*SetTaskApproversRequest)(nil),               // 55: calaba.v1.SetTaskApproversRequest
-	(*TaskApprovalRequest)(nil),                   // 56: calaba.v1.TaskApprovalRequest
-	(*SetTaskRelationRequest)(nil),                // 57: calaba.v1.SetTaskRelationRequest
-	(*SetTaskWatcherRequest)(nil),                 // 58: calaba.v1.SetTaskWatcherRequest
-	(*SetTaskSubscriptionRequest)(nil),            // 59: calaba.v1.SetTaskSubscriptionRequest
-	(*TaskActivityPage)(nil),                      // 60: calaba.v1.TaskActivityPage
-	(*BoardActivityResponse)(nil),                 // 61: calaba.v1.BoardActivityResponse
-	(*MyTasksResponse)(nil),                       // 62: calaba.v1.MyTasksResponse
-	(*SearchTasksResponse)(nil),                   // 63: calaba.v1.SearchTasksResponse
-	(*ListBoardViewsResponse)(nil),                // 64: calaba.v1.ListBoardViewsResponse
-	(*CreateBoardViewRequest)(nil),                // 65: calaba.v1.CreateBoardViewRequest
-	(*UpdateBoardViewRequest)(nil),                // 66: calaba.v1.UpdateBoardViewRequest
-	(*BoardViewResponse)(nil),                     // 67: calaba.v1.BoardViewResponse
-	(*ListBoardCategoriesResponse)(nil),           // 68: calaba.v1.ListBoardCategoriesResponse
-	(*CreateBoardCategoryRequest)(nil),            // 69: calaba.v1.CreateBoardCategoryRequest
-	(*UpdateBoardCategoryRequest)(nil),            // 70: calaba.v1.UpdateBoardCategoryRequest
-	(*BoardCategoryResponse)(nil),                 // 71: calaba.v1.BoardCategoryResponse
-	(*SetBoardOrderRequest)(nil),                  // 72: calaba.v1.SetBoardOrderRequest
-	(*SetBoardOrderResponse)(nil),                 // 73: calaba.v1.SetBoardOrderResponse
-	(*CreateTaskChecklistRequest)(nil),            // 74: calaba.v1.CreateTaskChecklistRequest
-	(*UpdateTaskChecklistRequest)(nil),            // 75: calaba.v1.UpdateTaskChecklistRequest
-	(*CreateTaskChecklistItemRequest)(nil),        // 76: calaba.v1.CreateTaskChecklistItemRequest
-	(*UpdateTaskChecklistItemRequest)(nil),        // 77: calaba.v1.UpdateTaskChecklistItemRequest
-	(*TaskChecklistResponse)(nil),                 // 78: calaba.v1.TaskChecklistResponse
-	(*ConvertChecklistItemResponse)(nil),          // 79: calaba.v1.ConvertChecklistItemResponse
-	(*CreateTaskMilestoneRequest)(nil),            // 80: calaba.v1.CreateTaskMilestoneRequest
-	(*UpdateTaskMilestoneRequest)(nil),            // 81: calaba.v1.UpdateTaskMilestoneRequest
-	(*TaskMilestoneResponse)(nil),                 // 82: calaba.v1.TaskMilestoneResponse
-	(*BoardWebhook)(nil),                          // 83: calaba.v1.BoardWebhook
-	(*SetBoardWebhookRequest)(nil),                // 84: calaba.v1.SetBoardWebhookRequest
-	(*BoardWebhookResponse)(nil),                  // 85: calaba.v1.BoardWebhookResponse
-	(*BoardWebhookPingResponse)(nil),              // 86: calaba.v1.BoardWebhookPingResponse
-	(*BoardWebhookEvent)(nil),                     // 87: calaba.v1.BoardWebhookEvent
-	(*BoardCreate)(nil),                           // 88: calaba.v1.BoardCreate
-	(*BoardUpdate)(nil),                           // 89: calaba.v1.BoardUpdate
-	(*BoardDelete)(nil),                           // 90: calaba.v1.BoardDelete
-	(*TaskCreate)(nil),                            // 91: calaba.v1.TaskCreate
-	(*TaskUpdate)(nil),                            // 92: calaba.v1.TaskUpdate
-	(*TaskNoticeRelay)(nil),                       // 93: calaba.v1.TaskNoticeRelay
-	(*TaskNotice)(nil),                            // 94: calaba.v1.TaskNotice
-	(*TaskDelete)(nil),                            // 95: calaba.v1.TaskDelete
-	(*TaskActivityAppend)(nil),                    // 96: calaba.v1.TaskActivityAppend
-	(*BoardCategoryCreate)(nil),                   // 97: calaba.v1.BoardCategoryCreate
-	(*BoardCategoryUpdate)(nil),                   // 98: calaba.v1.BoardCategoryUpdate
-	(*BoardCategoryDelete)(nil),                   // 99: calaba.v1.BoardCategoryDelete
-	(*TaskChecklistUpdate)(nil),                   // 100: calaba.v1.TaskChecklistUpdate
-	(*TaskChecklistDelete)(nil),                   // 101: calaba.v1.TaskChecklistDelete
-	(*TaskGitLink)(nil),                           // 102: calaba.v1.TaskGitLink
-	(*TaskGitLinksUpdate)(nil),                    // 103: calaba.v1.TaskGitLinksUpdate
-	(*SetBoardOrderRequest_BoardPosition)(nil),    // 104: calaba.v1.SetBoardOrderRequest.BoardPosition
-	(*SetBoardOrderRequest_CategoryPosition)(nil), // 105: calaba.v1.SetBoardOrderRequest.CategoryPosition
-	(*BoardWebhookEvent_BoardRef)(nil),            // 106: calaba.v1.BoardWebhookEvent.BoardRef
-	(*BoardWebhookEvent_Actor)(nil),               // 107: calaba.v1.BoardWebhookEvent.Actor
-	(*BoardWebhookEvent_Change)(nil),              // 108: calaba.v1.BoardWebhookEvent.Change
-	(*BoardWebhookEvent_CommentAttachment)(nil),   // 109: calaba.v1.BoardWebhookEvent.CommentAttachment
-	(*BoardWebhookEvent_Comment)(nil),             // 110: calaba.v1.BoardWebhookEvent.Comment
-	(*BoardWebhookEvent_Rule)(nil),                // 111: calaba.v1.BoardWebhookEvent.Rule
-	(*timestamppb.Timestamp)(nil),                 // 112: google.protobuf.Timestamp
-	(*RoomPermissionOverride)(nil),                // 113: calaba.v1.RoomPermissionOverride
-	(*FileMeta)(nil),                              // 114: calaba.v1.FileMeta
-	(*structpb.Struct)(nil),                       // 115: google.protobuf.Struct
-	(*Message)(nil),                               // 116: calaba.v1.Message
-	(*Room)(nil),                                  // 117: calaba.v1.Room
+	(*CreateSmartTaskRequest)(nil),                // 52: calaba.v1.CreateSmartTaskRequest
+	(*CreateSmartTaskResponse)(nil),               // 53: calaba.v1.CreateSmartTaskResponse
+	(*SmartTaskRefusal)(nil),                      // 54: calaba.v1.SmartTaskRefusal
+	(*TaskResponse)(nil),                          // 55: calaba.v1.TaskResponse
+	(*UpdateTaskRequest)(nil),                     // 56: calaba.v1.UpdateTaskRequest
+	(*SetAssigneesRequest)(nil),                   // 57: calaba.v1.SetAssigneesRequest
+	(*SetTaskApproversRequest)(nil),               // 58: calaba.v1.SetTaskApproversRequest
+	(*TaskApprovalRequest)(nil),                   // 59: calaba.v1.TaskApprovalRequest
+	(*SetTaskRelationRequest)(nil),                // 60: calaba.v1.SetTaskRelationRequest
+	(*SetTaskWatcherRequest)(nil),                 // 61: calaba.v1.SetTaskWatcherRequest
+	(*SetTaskSubscriptionRequest)(nil),            // 62: calaba.v1.SetTaskSubscriptionRequest
+	(*TaskActivityPage)(nil),                      // 63: calaba.v1.TaskActivityPage
+	(*BoardActivityResponse)(nil),                 // 64: calaba.v1.BoardActivityResponse
+	(*MyTasksResponse)(nil),                       // 65: calaba.v1.MyTasksResponse
+	(*SearchTasksResponse)(nil),                   // 66: calaba.v1.SearchTasksResponse
+	(*ListBoardViewsResponse)(nil),                // 67: calaba.v1.ListBoardViewsResponse
+	(*CreateBoardViewRequest)(nil),                // 68: calaba.v1.CreateBoardViewRequest
+	(*UpdateBoardViewRequest)(nil),                // 69: calaba.v1.UpdateBoardViewRequest
+	(*BoardViewResponse)(nil),                     // 70: calaba.v1.BoardViewResponse
+	(*ListBoardCategoriesResponse)(nil),           // 71: calaba.v1.ListBoardCategoriesResponse
+	(*CreateBoardCategoryRequest)(nil),            // 72: calaba.v1.CreateBoardCategoryRequest
+	(*UpdateBoardCategoryRequest)(nil),            // 73: calaba.v1.UpdateBoardCategoryRequest
+	(*BoardCategoryResponse)(nil),                 // 74: calaba.v1.BoardCategoryResponse
+	(*SetBoardOrderRequest)(nil),                  // 75: calaba.v1.SetBoardOrderRequest
+	(*SetBoardOrderResponse)(nil),                 // 76: calaba.v1.SetBoardOrderResponse
+	(*CreateTaskChecklistRequest)(nil),            // 77: calaba.v1.CreateTaskChecklistRequest
+	(*UpdateTaskChecklistRequest)(nil),            // 78: calaba.v1.UpdateTaskChecklistRequest
+	(*CreateTaskChecklistItemRequest)(nil),        // 79: calaba.v1.CreateTaskChecklistItemRequest
+	(*UpdateTaskChecklistItemRequest)(nil),        // 80: calaba.v1.UpdateTaskChecklistItemRequest
+	(*TaskChecklistResponse)(nil),                 // 81: calaba.v1.TaskChecklistResponse
+	(*ConvertChecklistItemResponse)(nil),          // 82: calaba.v1.ConvertChecklistItemResponse
+	(*CreateTaskMilestoneRequest)(nil),            // 83: calaba.v1.CreateTaskMilestoneRequest
+	(*UpdateTaskMilestoneRequest)(nil),            // 84: calaba.v1.UpdateTaskMilestoneRequest
+	(*TaskMilestoneResponse)(nil),                 // 85: calaba.v1.TaskMilestoneResponse
+	(*BoardWebhook)(nil),                          // 86: calaba.v1.BoardWebhook
+	(*SetBoardWebhookRequest)(nil),                // 87: calaba.v1.SetBoardWebhookRequest
+	(*BoardWebhookResponse)(nil),                  // 88: calaba.v1.BoardWebhookResponse
+	(*BoardWebhookPingResponse)(nil),              // 89: calaba.v1.BoardWebhookPingResponse
+	(*BoardWebhookEvent)(nil),                     // 90: calaba.v1.BoardWebhookEvent
+	(*BoardCreate)(nil),                           // 91: calaba.v1.BoardCreate
+	(*BoardUpdate)(nil),                           // 92: calaba.v1.BoardUpdate
+	(*BoardDelete)(nil),                           // 93: calaba.v1.BoardDelete
+	(*TaskCreate)(nil),                            // 94: calaba.v1.TaskCreate
+	(*TaskUpdate)(nil),                            // 95: calaba.v1.TaskUpdate
+	(*TaskNoticeRelay)(nil),                       // 96: calaba.v1.TaskNoticeRelay
+	(*TaskNotice)(nil),                            // 97: calaba.v1.TaskNotice
+	(*TaskDelete)(nil),                            // 98: calaba.v1.TaskDelete
+	(*TaskActivityAppend)(nil),                    // 99: calaba.v1.TaskActivityAppend
+	(*BoardCategoryCreate)(nil),                   // 100: calaba.v1.BoardCategoryCreate
+	(*BoardCategoryUpdate)(nil),                   // 101: calaba.v1.BoardCategoryUpdate
+	(*BoardCategoryDelete)(nil),                   // 102: calaba.v1.BoardCategoryDelete
+	(*TaskChecklistUpdate)(nil),                   // 103: calaba.v1.TaskChecklistUpdate
+	(*TaskChecklistDelete)(nil),                   // 104: calaba.v1.TaskChecklistDelete
+	(*TaskGitLink)(nil),                           // 105: calaba.v1.TaskGitLink
+	(*TaskGitLinksUpdate)(nil),                    // 106: calaba.v1.TaskGitLinksUpdate
+	(*SetBoardOrderRequest_BoardPosition)(nil),    // 107: calaba.v1.SetBoardOrderRequest.BoardPosition
+	(*SetBoardOrderRequest_CategoryPosition)(nil), // 108: calaba.v1.SetBoardOrderRequest.CategoryPosition
+	(*BoardWebhookEvent_BoardRef)(nil),            // 109: calaba.v1.BoardWebhookEvent.BoardRef
+	(*BoardWebhookEvent_Actor)(nil),               // 110: calaba.v1.BoardWebhookEvent.Actor
+	(*BoardWebhookEvent_Change)(nil),              // 111: calaba.v1.BoardWebhookEvent.Change
+	(*BoardWebhookEvent_CommentAttachment)(nil),   // 112: calaba.v1.BoardWebhookEvent.CommentAttachment
+	(*BoardWebhookEvent_Comment)(nil),             // 113: calaba.v1.BoardWebhookEvent.Comment
+	(*BoardWebhookEvent_Rule)(nil),                // 114: calaba.v1.BoardWebhookEvent.Rule
+	(*timestamppb.Timestamp)(nil),                 // 115: google.protobuf.Timestamp
+	(*RoomPermissionOverride)(nil),                // 116: calaba.v1.RoomPermissionOverride
+	(*FileMeta)(nil),                              // 117: calaba.v1.FileMeta
+	(*structpb.Struct)(nil),                       // 118: google.protobuf.Struct
+	(*Message)(nil),                               // 119: calaba.v1.Message
+	(*Room)(nil),                                  // 120: calaba.v1.Room
 }
 var file_calaba_v1_boards_proto_depIdxs = []int32{
-	112, // 0: calaba.v1.TaskChecklistItem.done_at:type_name -> google.protobuf.Timestamp
-	112, // 1: calaba.v1.TaskChecklistItem.created_at:type_name -> google.protobuf.Timestamp
+	115, // 0: calaba.v1.TaskChecklistItem.done_at:type_name -> google.protobuf.Timestamp
+	115, // 1: calaba.v1.TaskChecklistItem.created_at:type_name -> google.protobuf.Timestamp
 	18,  // 2: calaba.v1.TaskChecklist.items:type_name -> calaba.v1.TaskChecklistItem
-	112, // 3: calaba.v1.TaskChecklist.created_at:type_name -> google.protobuf.Timestamp
-	112, // 4: calaba.v1.TaskMilestone.completed_at:type_name -> google.protobuf.Timestamp
-	112, // 5: calaba.v1.TaskMilestone.created_at:type_name -> google.protobuf.Timestamp
-	112, // 6: calaba.v1.TaskMilestone.updated_at:type_name -> google.protobuf.Timestamp
+	115, // 3: calaba.v1.TaskChecklist.created_at:type_name -> google.protobuf.Timestamp
+	115, // 4: calaba.v1.TaskMilestone.completed_at:type_name -> google.protobuf.Timestamp
+	115, // 5: calaba.v1.TaskMilestone.created_at:type_name -> google.protobuf.Timestamp
+	115, // 6: calaba.v1.TaskMilestone.updated_at:type_name -> google.protobuf.Timestamp
 	0,   // 7: calaba.v1.BoardStatus.type:type_name -> calaba.v1.BoardStatusType
 	2,   // 8: calaba.v1.BoardView.kind:type_name -> calaba.v1.BoardViewKind
 	35,  // 9: calaba.v1.BoardView.filter:type_name -> calaba.v1.TaskFilter
-	112, // 10: calaba.v1.Board.created_at:type_name -> google.protobuf.Timestamp
-	112, // 11: calaba.v1.Board.archived_at:type_name -> google.protobuf.Timestamp
+	115, // 10: calaba.v1.Board.created_at:type_name -> google.protobuf.Timestamp
+	115, // 11: calaba.v1.Board.archived_at:type_name -> google.protobuf.Timestamp
 	22,  // 12: calaba.v1.Board.statuses:type_name -> calaba.v1.BoardStatus
 	23,  // 13: calaba.v1.Board.labels:type_name -> calaba.v1.BoardLabel
 	24,  // 14: calaba.v1.Board.milestones:type_name -> calaba.v1.BoardMilestone
 	25,  // 15: calaba.v1.Board.views:type_name -> calaba.v1.BoardView
-	113, // 16: calaba.v1.Board.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
+	116, // 16: calaba.v1.Board.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
 	5,   // 17: calaba.v1.Board.disabled_features:type_name -> calaba.v1.BoardFeature
 	6,   // 18: calaba.v1.Board.estimate_scale:type_name -> calaba.v1.EstimateScale
-	112, // 19: calaba.v1.TaskAssignee.assigned_at:type_name -> google.protobuf.Timestamp
+	115, // 19: calaba.v1.TaskAssignee.assigned_at:type_name -> google.protobuf.Timestamp
 	8,   // 20: calaba.v1.TaskApprover.state:type_name -> calaba.v1.ApproverState
-	112, // 21: calaba.v1.TaskApprover.decided_at:type_name -> google.protobuf.Timestamp
-	112, // 22: calaba.v1.TaskApprover.added_at:type_name -> google.protobuf.Timestamp
+	115, // 21: calaba.v1.TaskApprover.decided_at:type_name -> google.protobuf.Timestamp
+	115, // 22: calaba.v1.TaskApprover.added_at:type_name -> google.protobuf.Timestamp
 	3,   // 23: calaba.v1.TaskRelation.kind:type_name -> calaba.v1.TaskRelationKind
 	1,   // 24: calaba.v1.Task.priority:type_name -> calaba.v1.TaskPriority
 	27,  // 25: calaba.v1.Task.assignees:type_name -> calaba.v1.TaskAssignee
 	30,  // 26: calaba.v1.Task.relations:type_name -> calaba.v1.TaskRelation
-	112, // 27: calaba.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	112, // 28: calaba.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	112, // 29: calaba.v1.Task.started_at:type_name -> google.protobuf.Timestamp
-	112, // 30: calaba.v1.Task.completed_at:type_name -> google.protobuf.Timestamp
-	112, // 31: calaba.v1.Task.archived_at:type_name -> google.protobuf.Timestamp
-	114, // 32: calaba.v1.Task.attachments:type_name -> calaba.v1.FileMeta
+	115, // 27: calaba.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	115, // 28: calaba.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	115, // 29: calaba.v1.Task.started_at:type_name -> google.protobuf.Timestamp
+	115, // 30: calaba.v1.Task.completed_at:type_name -> google.protobuf.Timestamp
+	115, // 31: calaba.v1.Task.archived_at:type_name -> google.protobuf.Timestamp
+	117, // 32: calaba.v1.Task.attachments:type_name -> calaba.v1.FileMeta
 	29,  // 33: calaba.v1.Task.approvers:type_name -> calaba.v1.TaskApprover
 	7,   // 34: calaba.v1.Task.approval_state:type_name -> calaba.v1.TaskApprovalState
 	19,  // 35: calaba.v1.Task.checklists:type_name -> calaba.v1.TaskChecklist
-	102, // 36: calaba.v1.Task.git_links:type_name -> calaba.v1.TaskGitLink
+	105, // 36: calaba.v1.Task.git_links:type_name -> calaba.v1.TaskGitLink
 	20,  // 37: calaba.v1.Task.milestones:type_name -> calaba.v1.TaskMilestone
 	21,  // 38: calaba.v1.Task.milestone_progress:type_name -> calaba.v1.TaskMilestoneProgress
-	115, // 39: calaba.v1.TaskActivity.before:type_name -> google.protobuf.Struct
-	115, // 40: calaba.v1.TaskActivity.after:type_name -> google.protobuf.Struct
-	112, // 41: calaba.v1.TaskActivity.created_at:type_name -> google.protobuf.Timestamp
-	116, // 42: calaba.v1.TaskActivityItem.message:type_name -> calaba.v1.Message
+	118, // 39: calaba.v1.TaskActivity.before:type_name -> google.protobuf.Struct
+	118, // 40: calaba.v1.TaskActivity.after:type_name -> google.protobuf.Struct
+	115, // 41: calaba.v1.TaskActivity.created_at:type_name -> google.protobuf.Timestamp
+	119, // 42: calaba.v1.TaskActivityItem.message:type_name -> calaba.v1.Message
 	32,  // 43: calaba.v1.TaskActivityItem.activity:type_name -> calaba.v1.TaskActivity
 	9,   // 44: calaba.v1.TaskCondition.field:type_name -> calaba.v1.TaskField
 	10,  // 45: calaba.v1.TaskCondition.op:type_name -> calaba.v1.TaskOp
-	112, // 46: calaba.v1.TaskCondition.from:type_name -> google.protobuf.Timestamp
-	112, // 47: calaba.v1.TaskCondition.to:type_name -> google.protobuf.Timestamp
+	115, // 46: calaba.v1.TaskCondition.from:type_name -> google.protobuf.Timestamp
+	115, // 47: calaba.v1.TaskCondition.to:type_name -> google.protobuf.Timestamp
 	34,  // 48: calaba.v1.TaskFilter.conditions:type_name -> calaba.v1.TaskCondition
 	26,  // 49: calaba.v1.ListBoardsResponse.boards:type_name -> calaba.v1.Board
 	4,   // 50: calaba.v1.CreateBoardRequest.template:type_name -> calaba.v1.BoardTemplate
 	26,  // 51: calaba.v1.BoardResponse.board:type_name -> calaba.v1.Board
 	5,   // 52: calaba.v1.UpdateBoardRequest.disabled_features:type_name -> calaba.v1.BoardFeature
 	6,   // 53: calaba.v1.UpdateBoardRequest.estimate_scale:type_name -> calaba.v1.EstimateScale
-	113, // 54: calaba.v1.SetBoardPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
-	113, // 55: calaba.v1.BoardPermissionsResponse.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	116, // 54: calaba.v1.SetBoardPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	116, // 55: calaba.v1.BoardPermissionsResponse.overrides:type_name -> calaba.v1.RoomPermissionOverride
 	26,  // 56: calaba.v1.BoardPermissionsResponse.board:type_name -> calaba.v1.Board
 	0,   // 57: calaba.v1.CreateBoardStatusRequest.type:type_name -> calaba.v1.BoardStatusType
 	0,   // 58: calaba.v1.UpdateBoardStatusRequest.type:type_name -> calaba.v1.BoardStatusType
 	31,  // 59: calaba.v1.ListTasksResponse.tasks:type_name -> calaba.v1.Task
 	1,   // 60: calaba.v1.CreateTaskRequest.priority:type_name -> calaba.v1.TaskPriority
 	28,  // 61: calaba.v1.CreateTaskRequest.assignees:type_name -> calaba.v1.TaskAssigneeInput
-	31,  // 62: calaba.v1.TaskResponse.task:type_name -> calaba.v1.Task
-	31,  // 63: calaba.v1.TaskResponse.subtasks:type_name -> calaba.v1.Task
-	31,  // 64: calaba.v1.TaskResponse.related:type_name -> calaba.v1.Task
-	31,  // 65: calaba.v1.TaskResponse.parent:type_name -> calaba.v1.Task
-	26,  // 66: calaba.v1.TaskResponse.board:type_name -> calaba.v1.Board
-	117, // 67: calaba.v1.TaskResponse.room:type_name -> calaba.v1.Room
-	1,   // 68: calaba.v1.UpdateTaskRequest.priority:type_name -> calaba.v1.TaskPriority
-	28,  // 69: calaba.v1.SetAssigneesRequest.assignees:type_name -> calaba.v1.TaskAssigneeInput
-	11,  // 70: calaba.v1.TaskApprovalRequest.decision:type_name -> calaba.v1.TaskApprovalDecision
-	3,   // 71: calaba.v1.SetTaskRelationRequest.kind:type_name -> calaba.v1.TaskRelationKind
-	33,  // 72: calaba.v1.TaskActivityPage.items:type_name -> calaba.v1.TaskActivityItem
-	32,  // 73: calaba.v1.BoardActivityResponse.activities:type_name -> calaba.v1.TaskActivity
-	31,  // 74: calaba.v1.MyTasksResponse.tasks:type_name -> calaba.v1.Task
-	31,  // 75: calaba.v1.SearchTasksResponse.tasks:type_name -> calaba.v1.Task
-	25,  // 76: calaba.v1.ListBoardViewsResponse.views:type_name -> calaba.v1.BoardView
-	2,   // 77: calaba.v1.CreateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
-	35,  // 78: calaba.v1.CreateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
-	2,   // 79: calaba.v1.UpdateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
-	35,  // 80: calaba.v1.UpdateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
-	25,  // 81: calaba.v1.BoardViewResponse.view:type_name -> calaba.v1.BoardView
-	17,  // 82: calaba.v1.ListBoardCategoriesResponse.categories:type_name -> calaba.v1.BoardCategory
-	17,  // 83: calaba.v1.BoardCategoryResponse.category:type_name -> calaba.v1.BoardCategory
-	104, // 84: calaba.v1.SetBoardOrderRequest.boards:type_name -> calaba.v1.SetBoardOrderRequest.BoardPosition
-	105, // 85: calaba.v1.SetBoardOrderRequest.categories:type_name -> calaba.v1.SetBoardOrderRequest.CategoryPosition
-	26,  // 86: calaba.v1.SetBoardOrderResponse.boards:type_name -> calaba.v1.Board
-	17,  // 87: calaba.v1.SetBoardOrderResponse.categories:type_name -> calaba.v1.BoardCategory
-	19,  // 88: calaba.v1.TaskChecklistResponse.checklist:type_name -> calaba.v1.TaskChecklist
-	31,  // 89: calaba.v1.ConvertChecklistItemResponse.task:type_name -> calaba.v1.Task
-	19,  // 90: calaba.v1.ConvertChecklistItemResponse.checklist:type_name -> calaba.v1.TaskChecklist
-	20,  // 91: calaba.v1.TaskMilestoneResponse.milestone:type_name -> calaba.v1.TaskMilestone
-	31,  // 92: calaba.v1.TaskMilestoneResponse.task:type_name -> calaba.v1.Task
-	112, // 93: calaba.v1.BoardWebhook.disabled_at:type_name -> google.protobuf.Timestamp
-	112, // 94: calaba.v1.BoardWebhook.failing_since:type_name -> google.protobuf.Timestamp
-	112, // 95: calaba.v1.BoardWebhook.last_ok_at:type_name -> google.protobuf.Timestamp
-	112, // 96: calaba.v1.BoardWebhook.created_at:type_name -> google.protobuf.Timestamp
-	112, // 97: calaba.v1.BoardWebhook.updated_at:type_name -> google.protobuf.Timestamp
-	12,  // 98: calaba.v1.BoardWebhook.paused_reason:type_name -> calaba.v1.BoardWebhookPauseReason
-	83,  // 99: calaba.v1.BoardWebhookResponse.webhook:type_name -> calaba.v1.BoardWebhook
-	112, // 100: calaba.v1.BoardWebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	106, // 101: calaba.v1.BoardWebhookEvent.board:type_name -> calaba.v1.BoardWebhookEvent.BoardRef
-	107, // 102: calaba.v1.BoardWebhookEvent.actor:type_name -> calaba.v1.BoardWebhookEvent.Actor
-	31,  // 103: calaba.v1.BoardWebhookEvent.task:type_name -> calaba.v1.Task
-	108, // 104: calaba.v1.BoardWebhookEvent.changes:type_name -> calaba.v1.BoardWebhookEvent.Change
-	110, // 105: calaba.v1.BoardWebhookEvent.comment:type_name -> calaba.v1.BoardWebhookEvent.Comment
-	111, // 106: calaba.v1.BoardWebhookEvent.rule:type_name -> calaba.v1.BoardWebhookEvent.Rule
-	26,  // 107: calaba.v1.BoardCreate.board:type_name -> calaba.v1.Board
-	26,  // 108: calaba.v1.BoardUpdate.board:type_name -> calaba.v1.Board
-	31,  // 109: calaba.v1.TaskCreate.task:type_name -> calaba.v1.Task
-	31,  // 110: calaba.v1.TaskUpdate.task:type_name -> calaba.v1.Task
-	94,  // 111: calaba.v1.TaskUpdate.notice:type_name -> calaba.v1.TaskNotice
-	31,  // 112: calaba.v1.TaskNoticeRelay.task:type_name -> calaba.v1.Task
-	94,  // 113: calaba.v1.TaskNoticeRelay.notice:type_name -> calaba.v1.TaskNotice
-	13,  // 114: calaba.v1.TaskNotice.kind:type_name -> calaba.v1.TaskNoticeKind
-	32,  // 115: calaba.v1.TaskActivityAppend.activity:type_name -> calaba.v1.TaskActivity
-	17,  // 116: calaba.v1.BoardCategoryCreate.category:type_name -> calaba.v1.BoardCategory
-	17,  // 117: calaba.v1.BoardCategoryUpdate.category:type_name -> calaba.v1.BoardCategory
-	19,  // 118: calaba.v1.TaskChecklistUpdate.checklist:type_name -> calaba.v1.TaskChecklist
-	15,  // 119: calaba.v1.TaskGitLink.kind:type_name -> calaba.v1.TaskGitLinkKind
-	14,  // 120: calaba.v1.TaskGitLink.provider:type_name -> calaba.v1.GitProvider
-	16,  // 121: calaba.v1.TaskGitLink.state:type_name -> calaba.v1.TaskGitLinkState
-	112, // 122: calaba.v1.TaskGitLink.created_at:type_name -> google.protobuf.Timestamp
-	112, // 123: calaba.v1.TaskGitLink.updated_at:type_name -> google.protobuf.Timestamp
-	102, // 124: calaba.v1.TaskGitLinksUpdate.links:type_name -> calaba.v1.TaskGitLink
-	115, // 125: calaba.v1.BoardWebhookEvent.Change.before:type_name -> google.protobuf.Struct
-	115, // 126: calaba.v1.BoardWebhookEvent.Change.after:type_name -> google.protobuf.Struct
-	109, // 127: calaba.v1.BoardWebhookEvent.Comment.attachments:type_name -> calaba.v1.BoardWebhookEvent.CommentAttachment
-	112, // 128: calaba.v1.BoardWebhookEvent.Comment.created_at:type_name -> google.protobuf.Timestamp
-	112, // 129: calaba.v1.BoardWebhookEvent.Comment.edited_at:type_name -> google.protobuf.Timestamp
-	130, // [130:130] is the sub-list for method output_type
-	130, // [130:130] is the sub-list for method input_type
-	130, // [130:130] is the sub-list for extension type_name
-	130, // [130:130] is the sub-list for extension extendee
-	0,   // [0:130] is the sub-list for field type_name
+	1,   // 62: calaba.v1.CreateSmartTaskRequest.priority:type_name -> calaba.v1.TaskPriority
+	31,  // 63: calaba.v1.CreateSmartTaskResponse.task:type_name -> calaba.v1.Task
+	54,  // 64: calaba.v1.CreateSmartTaskResponse.refusal:type_name -> calaba.v1.SmartTaskRefusal
+	31,  // 65: calaba.v1.TaskResponse.task:type_name -> calaba.v1.Task
+	31,  // 66: calaba.v1.TaskResponse.subtasks:type_name -> calaba.v1.Task
+	31,  // 67: calaba.v1.TaskResponse.related:type_name -> calaba.v1.Task
+	31,  // 68: calaba.v1.TaskResponse.parent:type_name -> calaba.v1.Task
+	26,  // 69: calaba.v1.TaskResponse.board:type_name -> calaba.v1.Board
+	120, // 70: calaba.v1.TaskResponse.room:type_name -> calaba.v1.Room
+	1,   // 71: calaba.v1.UpdateTaskRequest.priority:type_name -> calaba.v1.TaskPriority
+	28,  // 72: calaba.v1.SetAssigneesRequest.assignees:type_name -> calaba.v1.TaskAssigneeInput
+	11,  // 73: calaba.v1.TaskApprovalRequest.decision:type_name -> calaba.v1.TaskApprovalDecision
+	3,   // 74: calaba.v1.SetTaskRelationRequest.kind:type_name -> calaba.v1.TaskRelationKind
+	33,  // 75: calaba.v1.TaskActivityPage.items:type_name -> calaba.v1.TaskActivityItem
+	32,  // 76: calaba.v1.BoardActivityResponse.activities:type_name -> calaba.v1.TaskActivity
+	31,  // 77: calaba.v1.MyTasksResponse.tasks:type_name -> calaba.v1.Task
+	31,  // 78: calaba.v1.SearchTasksResponse.tasks:type_name -> calaba.v1.Task
+	25,  // 79: calaba.v1.ListBoardViewsResponse.views:type_name -> calaba.v1.BoardView
+	2,   // 80: calaba.v1.CreateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
+	35,  // 81: calaba.v1.CreateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
+	2,   // 82: calaba.v1.UpdateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
+	35,  // 83: calaba.v1.UpdateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
+	25,  // 84: calaba.v1.BoardViewResponse.view:type_name -> calaba.v1.BoardView
+	17,  // 85: calaba.v1.ListBoardCategoriesResponse.categories:type_name -> calaba.v1.BoardCategory
+	17,  // 86: calaba.v1.BoardCategoryResponse.category:type_name -> calaba.v1.BoardCategory
+	107, // 87: calaba.v1.SetBoardOrderRequest.boards:type_name -> calaba.v1.SetBoardOrderRequest.BoardPosition
+	108, // 88: calaba.v1.SetBoardOrderRequest.categories:type_name -> calaba.v1.SetBoardOrderRequest.CategoryPosition
+	26,  // 89: calaba.v1.SetBoardOrderResponse.boards:type_name -> calaba.v1.Board
+	17,  // 90: calaba.v1.SetBoardOrderResponse.categories:type_name -> calaba.v1.BoardCategory
+	19,  // 91: calaba.v1.TaskChecklistResponse.checklist:type_name -> calaba.v1.TaskChecklist
+	31,  // 92: calaba.v1.ConvertChecklistItemResponse.task:type_name -> calaba.v1.Task
+	19,  // 93: calaba.v1.ConvertChecklistItemResponse.checklist:type_name -> calaba.v1.TaskChecklist
+	20,  // 94: calaba.v1.TaskMilestoneResponse.milestone:type_name -> calaba.v1.TaskMilestone
+	31,  // 95: calaba.v1.TaskMilestoneResponse.task:type_name -> calaba.v1.Task
+	115, // 96: calaba.v1.BoardWebhook.disabled_at:type_name -> google.protobuf.Timestamp
+	115, // 97: calaba.v1.BoardWebhook.failing_since:type_name -> google.protobuf.Timestamp
+	115, // 98: calaba.v1.BoardWebhook.last_ok_at:type_name -> google.protobuf.Timestamp
+	115, // 99: calaba.v1.BoardWebhook.created_at:type_name -> google.protobuf.Timestamp
+	115, // 100: calaba.v1.BoardWebhook.updated_at:type_name -> google.protobuf.Timestamp
+	12,  // 101: calaba.v1.BoardWebhook.paused_reason:type_name -> calaba.v1.BoardWebhookPauseReason
+	86,  // 102: calaba.v1.BoardWebhookResponse.webhook:type_name -> calaba.v1.BoardWebhook
+	115, // 103: calaba.v1.BoardWebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	109, // 104: calaba.v1.BoardWebhookEvent.board:type_name -> calaba.v1.BoardWebhookEvent.BoardRef
+	110, // 105: calaba.v1.BoardWebhookEvent.actor:type_name -> calaba.v1.BoardWebhookEvent.Actor
+	31,  // 106: calaba.v1.BoardWebhookEvent.task:type_name -> calaba.v1.Task
+	111, // 107: calaba.v1.BoardWebhookEvent.changes:type_name -> calaba.v1.BoardWebhookEvent.Change
+	113, // 108: calaba.v1.BoardWebhookEvent.comment:type_name -> calaba.v1.BoardWebhookEvent.Comment
+	114, // 109: calaba.v1.BoardWebhookEvent.rule:type_name -> calaba.v1.BoardWebhookEvent.Rule
+	26,  // 110: calaba.v1.BoardCreate.board:type_name -> calaba.v1.Board
+	26,  // 111: calaba.v1.BoardUpdate.board:type_name -> calaba.v1.Board
+	31,  // 112: calaba.v1.TaskCreate.task:type_name -> calaba.v1.Task
+	31,  // 113: calaba.v1.TaskUpdate.task:type_name -> calaba.v1.Task
+	97,  // 114: calaba.v1.TaskUpdate.notice:type_name -> calaba.v1.TaskNotice
+	31,  // 115: calaba.v1.TaskNoticeRelay.task:type_name -> calaba.v1.Task
+	97,  // 116: calaba.v1.TaskNoticeRelay.notice:type_name -> calaba.v1.TaskNotice
+	13,  // 117: calaba.v1.TaskNotice.kind:type_name -> calaba.v1.TaskNoticeKind
+	32,  // 118: calaba.v1.TaskActivityAppend.activity:type_name -> calaba.v1.TaskActivity
+	17,  // 119: calaba.v1.BoardCategoryCreate.category:type_name -> calaba.v1.BoardCategory
+	17,  // 120: calaba.v1.BoardCategoryUpdate.category:type_name -> calaba.v1.BoardCategory
+	19,  // 121: calaba.v1.TaskChecklistUpdate.checklist:type_name -> calaba.v1.TaskChecklist
+	15,  // 122: calaba.v1.TaskGitLink.kind:type_name -> calaba.v1.TaskGitLinkKind
+	14,  // 123: calaba.v1.TaskGitLink.provider:type_name -> calaba.v1.GitProvider
+	16,  // 124: calaba.v1.TaskGitLink.state:type_name -> calaba.v1.TaskGitLinkState
+	115, // 125: calaba.v1.TaskGitLink.created_at:type_name -> google.protobuf.Timestamp
+	115, // 126: calaba.v1.TaskGitLink.updated_at:type_name -> google.protobuf.Timestamp
+	105, // 127: calaba.v1.TaskGitLinksUpdate.links:type_name -> calaba.v1.TaskGitLink
+	118, // 128: calaba.v1.BoardWebhookEvent.Change.before:type_name -> google.protobuf.Struct
+	118, // 129: calaba.v1.BoardWebhookEvent.Change.after:type_name -> google.protobuf.Struct
+	112, // 130: calaba.v1.BoardWebhookEvent.Comment.attachments:type_name -> calaba.v1.BoardWebhookEvent.CommentAttachment
+	115, // 131: calaba.v1.BoardWebhookEvent.Comment.created_at:type_name -> google.protobuf.Timestamp
+	115, // 132: calaba.v1.BoardWebhookEvent.Comment.edited_at:type_name -> google.protobuf.Timestamp
+	133, // [133:133] is the sub-list for method output_type
+	133, // [133:133] is the sub-list for method input_type
+	133, // [133:133] is the sub-list for extension type_name
+	133, // [133:133] is the sub-list for extension extendee
+	0,   // [0:133] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_boards_proto_init() }
@@ -9850,24 +10133,24 @@ func file_calaba_v1_boards_proto_init() {
 	file_calaba_v1_boards_proto_msgTypes[30].OneofWrappers = []any{}
 	file_calaba_v1_boards_proto_msgTypes[31].OneofWrappers = []any{}
 	file_calaba_v1_boards_proto_msgTypes[32].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[36].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[48].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[49].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[39].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[51].OneofWrappers = []any{}
 	file_calaba_v1_boards_proto_msgTypes[52].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[53].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[57].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[58].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[59].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[55].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[56].OneofWrappers = []any{}
 	file_calaba_v1_boards_proto_msgTypes[60].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[61].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[62].OneofWrappers = []any{}
 	file_calaba_v1_boards_proto_msgTypes[63].OneofWrappers = []any{}
-	file_calaba_v1_boards_proto_msgTypes[64].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[66].OneofWrappers = []any{}
+	file_calaba_v1_boards_proto_msgTypes[67].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_boards_proto_rawDesc), len(file_calaba_v1_boards_proto_rawDesc)),
 			NumEnums:      17,
-			NumMessages:   95,
+			NumMessages:   98,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

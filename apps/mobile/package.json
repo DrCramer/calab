@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Calab phone host: the shared web client in a WebView (ADR-0067)",
-  "author": "GPTunneL <it@gptunnel.ai>",
+  "author": "GPTunneL <support@calab.io>",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { t } from '../../i18n';
 import { uploadFile, type UploadHandle } from '../../lib/api/endpoints';
 import { roomLeft, type PendingFile } from '../../lib/boards/pendingFiles';
-import { boardsApi } from '../../services/boardsApi';
 import { toast } from '../../stores/toasts';
 
 export interface PendingFiles {
@@ -14,8 +13,11 @@ export interface PendingFiles {
   clear: () => void;
 }
 
-/** Uploads to the board as files are picked; `items` is what the create dialog sends and waits for. */
-export function usePendingFiles(boardId: string): PendingFiles {
+/**
+ * Uploads to `uploadPath` (a board's files, or the workspace's for a smart task) as files are
+ * picked; `items` is what the create dialog sends and waits for.
+ */
+export function usePendingFiles(uploadPath: string): PendingFiles {
   const [items, setItems] = useState<PendingFile[]>([]);
   // The ref is the source of truth (event handlers read it); state only mirrors it for rendering.
   const itemsRef = useRef<PendingFile[]>([]);
@@ -38,7 +40,7 @@ export function usePendingFiles(boardId: string): PendingFiles {
       commit([...itemsRef.current, ...added.map((a) => a.item)]);
       for (const { file, item } of added) {
         let last = 0;
-        const h = uploadFile(boardsApi.uploadPath(boardId), file, file.name, (p) => {
+        const h = uploadFile(uploadPath, file, file.name, (p) => {
           // Re-render per whole percent at most, not per progress event.
           const pct = Math.floor(p * 100);
           if (pct !== last) {
@@ -60,7 +62,7 @@ export function usePendingFiles(boardId: string): PendingFiles {
         );
       }
     },
-    [boardId, patch, commit],
+    [uploadPath, patch, commit],
   );
 
   const remove = useCallback((key: string): void => {

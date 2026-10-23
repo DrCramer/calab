@@ -6,6 +6,7 @@ import { rolesOfMember } from '../roles';
 /**
  * Task-scoped access (ADR-0059 §5, ADR-0076). A board the viewer sees only through cards (assignee,
  * approver or watcher) arrives with `permissions = 0n` and `taskScoped = true`: zero bits do NOT mean hidden.
+ * Create-only (ADR-0115): `taskScoped` with `permissions = CREATE_TASKS` — creates, sees own cards.
  */
 export function boardVisible(b: Pick<Board, 'permissions' | 'taskScoped' | 'archivedAt'> | undefined): boolean {
   if (!b || b.archivedAt) return false;
@@ -17,7 +18,7 @@ export function boardVisible(b: Pick<Board, 'permissions' | 'taskScoped' | 'arch
  * hotkeys and the bulk actions (a viewer of the board keeps the board's bits; a scoped viewer gets
  * assignee / approver / watcher bits of the card, taskPermissions in @calaba/protocol).
  */
-export function taskBits(board: Pick<Board, 'permissions' | 'taskScoped'> | undefined, task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt'>, me: string): bigint {
+export function taskBits(board: Pick<Board, 'permissions' | 'taskScoped'> | undefined, task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt' | 'createdBy'>, me: string): bigint {
   return board ? taskPermissions(board, task, me) : 0n;
 }
 

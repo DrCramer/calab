@@ -36,8 +36,8 @@ const (
 	// Board bits (ADR-0042): apply to task boards only (BoardOnly).
 	ViewBoard   Bits = 1 << 17 // see a board, its tasks and comments; comment; subscribe
 	CreateTasks Bits = 1 << 18 // create tasks; edit own and assigned ones
-	EditTasks   Bits = 1 << 19 // edit, move, archive any task; moderate comments
-	ManageBoard Bits = 1 << 20 // statuses, labels, milestones, settings, access, archive
+	EditTasks   Bits = 1 << 19 // edit, move, archive any task; moderate comments; statuses, labels, milestones (CBF-73)
+	ManageBoard Bits = 1 << 20 // settings, access, archive
 	// Invitations (ADR-0043): not implied by MANAGE_WORKSPACE / MANAGE_ROOM; settable per room.
 	InviteMembers Bits = 1 << 21 // workspace invites; in a room: members-only room links
 	InviteGuests  Bits = 1 << 22 // room links admitting guests, their approval, admission decisions
@@ -94,8 +94,9 @@ var RoleDefaults = map[Role]Bits{
 	RoleOwner: Administrator,
 	RoleAdmin: Administrator,
 	// DiskView | DiskWrite (ADR-0094): migration 00088 gave them to the existing member roles;
-	// WikiView | WikiWrite (ADR-0096): migration 00090.
-	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite | WikiView | WikiWrite,
+	// WikiView | WikiWrite (ADR-0096): migration 00090; CanvasView | CanvasWrite (ADR-0126):
+	// migration 00017.
+	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms | DiskView | DiskWrite | WikiView | WikiWrite | CanvasView | CanvasWrite,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
 	RoleGuest: Connect | Speak,
 }
@@ -131,9 +132,9 @@ type Member struct {
 	OwnerSeesPrivate bool
 }
 
-// SeesPrivate reports whether the member bypasses every private room, board, Disk item and Wiki
-// page: the workspace owner while «Владелец видит приватное» is on — with every bit there, so the
-// owner can manage what a former member left behind. Nobody else ever does.
+// SeesPrivate reports whether the member bypasses every private room, board, Disk item, Wiki
+// page and canvas: the workspace owner while «Владелец видит приватное» is on — with every bit
+// there, so the owner can manage what a former member left behind. Nobody else ever does.
 func (m Member) SeesPrivate() bool { return m.Role == RoleOwner && m.OwnerSeesPrivate }
 
 // NewMember returns a Member with roles sorted by position (lowest first).

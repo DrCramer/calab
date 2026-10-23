@@ -2,7 +2,7 @@
 
 > Calab is a voice-first team messenger you can run on your own server: always-open voice rooms, video meetings and screen sharing, Telegram-style chat, a calendar with meetings, task boards, notes, unified search, an email client in the desktop app, flexible notifications (including relaying task notifications to your own bot), phone calls over SIP, workspace web apps, and bots with an API and SDK. Desktop apps for macOS, Windows and Linux, plus a web app that also works on phones; iPhone and Android apps are coming soon.
 
-This file is the detailed version of https://calab.io/llms.txt. It describes only what exists in the product today; things that are planned are listed separately at the end and are marked as not available. Site: https://calab.io (languages: /en/, /ru/, /es/, /zh/). Source: https://github.com/itrcz/calab. Contact: it@gptunnel.ai. A Russian summary is at the very end.
+This file is the detailed version of https://calab.io/llms.txt. It describes only what exists in the product today; things that are planned are listed separately at the end and are marked as not available. Site: https://calab.io (languages: /en/, /ru/, /es/, /zh/). Source: https://github.com/itrcz/calab. Contact: support@calab.io. A Russian summary is at the very end.
 
 ## What Calab is
 
@@ -10,7 +10,7 @@ Calab is a team messenger where voice comes first. You join a room and hear your
 
 - Clients: desktop app (Electron) for macOS (Apple Silicon and Intel, signed and notarized), Windows 10/11 (the installer is not code-signed yet, so SmartScreen shows "Unknown publisher" on first launch) and Linux (AppImage and .deb, x64). A web app works in Chrome, Edge, Safari and Firefox, adapts to phones and installs to the home screen. The desktop app updates itself.
 - Server: Go, PostgreSQL (17 or 18), Valkey/Redis, LiveKit for media, Caddy for TLS and the single public entry point.
-- Target size of the current version: teams of up to 20–30 people online at once and up to three screen shares per room. Horizontal scaling is on the roadmap of the project; a rough sizing for a 30-person team is about 4 vCPUs and 8 GB of RAM.
+- Target size of the current version: teams of up to 20–30 people online at once and a handful of simultaneous screen shares per room (plan limits: 1 on Free, 2 on Team, 5 on Business). Horizontal scaling is on the roadmap of the project; a rough sizing for a 30-person team is about 4 vCPUs and 8 GB of RAM.
 - Interface languages: Russian, English, Spanish and Chinese on the site; the app itself is localized as well.
 
 ## Voice rooms, video, screen sharing
@@ -24,7 +24,7 @@ Calab is a team messenger where voice comes first. You join a room and hear your
 - One-on-one calls in direct messages, with ringing, camera and screen sharing.
 - Soundboard: sounds (built-in plus workspace sounds uploaded by admins) played to everyone in the room; each client plays the clip locally, so the voice track is never degraded.
 - Moderation: server-side mute, disconnect, move a participant to another room by drag and drop; statuses.
-- Temporary rooms: a room for an hour or a day that any member can create (name, lifetime, visible to everyone or only to chosen people), with a guest link ready immediately and an optional calendar meeting. Expired rooms cannot be joined and stay in the archive. This covers quick calls with customers without a separate conferencing tool.
+- Temporary rooms: a room that any member can create for up to 30 days (name, lifetime, visible to everyone or only to chosen people; live rooms per person: Free 3, Team 10, Business 50), with a guest link ready immediately and an optional calendar meeting. Expired rooms cannot be joined and stay in the archive. This covers quick calls with customers without a separate conferencing tool.
 - Recording and transcripts: the server records a meeting, the workspace's GPTunneL connection transcribes it, and a card with the summary, the audio and the full transcript arrives in the room chat. The workspace connects to GPTunneL once, with a code in the settings; the audio is kept as the card's attachment for 30 days; recording can be disabled in the room settings. Guests cannot record.
 
 ## Audio quality
@@ -122,6 +122,7 @@ An admin pins site shortcuts (Grafana, a wiki, a CRM) under the workspace icon i
 - It can read and write chat in rooms and DMs, reply, react, send files and stickers, register `/commands` (suggested in the composer), and attach buttons under messages (up to 5 rows of 5; a press reaches only that bot as an event).
 - Tasks: create, edit, comment, assign, search.
 - Voice: a bot joins a voice room through LiveKit (Node, Python, Go), hears participants and speaks (text to speech, echo, music, recording).
+- MCP: `POST /api/mcp` is a Model Context Protocol server for LLM clients. It accepts only a bot token (people's tokens get 403) and calls the regular API with that token, so a tool has exactly the bot's rights and limits. Six tools: find, read, create_task, comment_task, set_task_status, send_message; short descriptions and compact answers save the model's tokens. Docs: https://calab.io/en/docs/bots/sdk/#mcp-for-llm-clients
 - Bot API v2: calendar (create, move and cancel meetings as the organizer, free/busy, find a time), member profiles with open tasks, renaming, invitations by link and email, badges and sounds, guest admission, starting and stopping meeting recording.
 - Events arrive over a WebSocket gateway or as a webhook: a POST with an HMAC-SHA256 signature, retries with backoff for up to a day, and dedupe by delivery id.
 - Limits: 30 requests per second per bot, 20 messages per minute, messages up to 4000 characters. The number of bots depends on the plan.
@@ -160,11 +161,11 @@ Measurements are published with their method in docs/14-energy.md (https://githu
 - Media: DTLS-SRTP. API and signaling: HTTPS/WSS, HSTS, strict CSP. Web sessions use HttpOnly, SameSite=Strict cookies; passwords are hashed with argon2id; refresh tokens rotate with reuse detection; rate limits. There is no end-to-end encryption yet: media goes through your own media server.
 - Works behind VPNs and firewalls: UDP, then ICE/TCP, then TURN/UDP 443, then TURN/TLS on 443, automatically; one public IP is enough.
 - Install: a Linux host with a public IP, Docker with Compose and a domain with A records for `app`, `rtc` and `turn` (and `@` for the site). Clone the repository, copy `infra/docker/.env.example` to `infra/docker/.env`, run `infra/docker/deploy.sh`. Ports: 80/443 TCP, 443/UDP, 7881/TCP, 7882/UDP. The first registered user becomes the server owner; others join by invitation. Let's Encrypt certificates are automatic, containers are hardened, backups run daily with a verified restore, Prometheus metrics are exposed. Files can be stored on disk or in any S3-compatible bucket.
-- Guide: https://github.com/itrcz/calab/blob/main/docs/06-deployment.md. Security reports: it@gptunnel.ai (https://github.com/itrcz/calab/blob/main/SECURITY.md).
+- Guide: https://github.com/itrcz/calab/blob/main/docs/06-deployment.md. Security reports: support@calab.io (https://github.com/itrcz/calab/blob/main/SECURITY.md).
 
 ## Licence
 
-Business Source License 1.1 (https://github.com/itrcz/calab/blob/main/LICENSE). Enterprise (your own server) is free for non-commercial use with "Powered by GPTunneL" in the interface; commercial use needs a commercial licence from GPTunneL (https://github.com/itrcz/calab/blob/main/COMMERCIAL-LICENSE.md, it@gptunnel.ai). Every Calab version becomes available under the Apache License 2.0 four years after its release.
+Business Source License 1.1 (https://github.com/itrcz/calab/blob/main/LICENSE). Enterprise (your own server) is free for non-commercial use with "Powered by GPTunneL" in the interface; commercial use needs a commercial licence from GPTunneL (https://github.com/itrcz/calab/blob/main/COMMERCIAL-LICENSE.md, support@calab.io). Every Calab version becomes available under the Apache License 2.0 four years after its release.
 
 ## Plans
 
@@ -179,6 +180,8 @@ Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/l
 | Files | 5 GB | 300 GB | 1 TB | unlimited |
 | Bots | 1 | 5 | 20 | unlimited |
 | Task boards | 3 | 30 | 50 | unlimited |
+| Temporary rooms per person (up to 30 days) | 3 | 10 | 50 | unlimited |
+| Wiki pages | 10 | 50 | 500 | unlimited |
 | Simultaneous screen shares per room | 1 | 2 | 5 | unlimited |
 | Simultaneous cameras per room | 3 | 10 | 25 | unlimited |
 | Musician mode | no (locked) | yes | yes | yes |
@@ -188,6 +191,7 @@ Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/l
 | Board forms | no | up to 5 per board | up to 20 per board | unlimited |
 | Board webhook | no | no | yes | yes |
 | Phone calls (SIP) | no | no | yes | yes |
+| AI features (AI integration, smart tasks) | no | no | yes | yes |
 | SSO / Active Directory / Sign in with Calab | no | no | yes | yes |
 | Email (desktop app) | yes | yes | yes | yes |
 | On-prem (your own server) | no | no | no | yes |
@@ -216,15 +220,14 @@ These are on the roadmap. Do not present them as existing features.
 
 - iPhone and Android apps: native apps with push notifications and calls on the lock screen are coming soon; until then the web app works in a phone's browser.
 - Voice AI assistant: a voice AI assistant in rooms. It is already in testing and is not generally available.
-- IVR: a voice menu and internal extension numbers for phone calls (SIP).
 
 ## Contact
 
-it@gptunnel.ai for licensing, plans, support and security reports. Calab is developed by GPTunneL (https://gptunnel.ai).
+support@calab.io for licensing, plans, support and security reports. Calab is developed by GPTunneL (https://gptunnel.ai).
 
 ## Кратко по-русски
 
-Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера. Сайт: https://calab.io/ru/, контакт: it@gptunnel.ai.
+Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, AI-функции (AI интеграция, умная задача) — только Business и Enterprise, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется) и внутренние номера. Сайт: https://calab.io/ru/, контакт: support@calab.io.
 
 ## Workspace identity (Identity 2.0)
 

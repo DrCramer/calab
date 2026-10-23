@@ -239,46 +239,57 @@ func (a *Admin) get(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// validatePlan checks an AdminSetPlanRequest and returns the DB plan text, the limits to
-// store (custom only) and the limits to log.
-func (a *Admin) validatePlan(req *v1.AdminSetPlanRequest, now time.Time) (plan string, stored []byte, logged []byte, err error) {
+// validatePlan checks an AdminSetPlanRequest and returns the DB plan text, the limits the
+// workspace gets, the limits to store and the limits to log. Custom stores them all; Team and
+// Business store only what differs from the plan's defaults (ADR-0113: nil = none, the plan
+// follows its defaults); Free stores none.
+func (a *Admin) validatePlan(req *v1.AdminSetPlanRequest, now time.Time) (plan string, target Limits, stored []byte, logged []byte, err error) {
 	plan, ok := PlanToDB(req.GetPlan())
 	if !ok {
-		return "", nil, nil, httpx.Validation("plan", "plan must be PLAN_FREE, PLAN_TEAM, PLAN_ENTERPRISE or PLAN_CUSTOM")
+		return "", Limits{}, nil, nil, httpx.Validation("plan", "plan must be PLAN_FREE, PLAN_TEAM, PLAN_ENTERPRISE or PLAN_CUSTOM")
 	}
-	var l Limits
-	if req.GetPlan() == v1.Plan_PLAN_CUSTOM {
-		if req.Limits == nil {
-			return "", nil, nil, httpx.Validation("limits", "limits are required for PLAN_CUSTOM")
-		}
+	custom := req.GetPlan() == v1.Plan_PLAN_CUSTOM
+	overridable := req.GetPlan() == v1.Plan_PLAN_TEAM || req.GetPlan() == v1.Plan_PLAN_ENTERPRISE
+	switch {
+	case custom && req.Limits == nil:
+		return "", Limits{}, nil, nil, httpx.Validation("limits", "limits are required for PLAN_CUSTOM")
+	case req.Limits != nil && !custom && !overridable:
+		return "", Limits{}, nil, nil, httpx.Validation("limits", "limits are only set for PLAN_CUSTOM, PLAN_TEAM or PLAN_ENTERPRISE")
+	case !custom && (CleanText(req.GetDisplayName()) != "" || CleanText(req.GetDescription()) != ""):
+		return "", Limits{}, nil, nil, httpx.Validation("displayName", "a name and description are only set for PLAN_CUSTOM")
+	}
+	defaults := a.plans.PlanLimits(req.GetPlan())
+	l := defaults
+	if req.Limits != nil {
 		l = FromProto(req.GetLimits())
 		if err := l.Validate(); err != nil {
-			return "", nil, nil, httpx.Validation("limits", err.Error())
+			return "", Limits{}, nil, nil, httpx.Validation("limits", err.Error())
 		}
-	} else {
-		if req.Limits != nil {
-			return "", nil, nil, httpx.Validation("limits", "limits are only set for PLAN_CUSTOM")
+		// CBF-69: AI is part of the plan kind (Business) or of a custom plan, not an override.
+		if overridable && l.AI != defaults.AI {
+			return "", Limits{}, nil, nil, httpx.Validation("limits", "ai follows the plan and cannot be overridden for PLAN_TEAM or PLAN_ENTERPRISE")
 		}
-		if CleanText(req.GetDisplayName()) != "" || CleanText(req.GetDescription()) != "" {
-			return "", nil, nil, httpx.Validation("displayName", "a name and description are only set for PLAN_CUSTOM")
-		}
-		l = a.plans.PlanLimits(req.GetPlan())
 	}
 	if req.ValidUntil != nil {
 		if err := req.GetValidUntil().CheckValid(); err != nil || !req.GetValidUntil().AsTime().After(now) {
-			return "", nil, nil, httpx.Validation("validUntil", "valid_until must be in the future")
+			return "", Limits{}, nil, nil, httpx.Validation("validUntil", "valid_until must be in the future")
 		}
 	}
 	if utf8.RuneCountInString(req.GetNote()) > maxNote {
-		return "", nil, nil, httpx.Validation("note", "note must be at most 500 characters")
+		return "", Limits{}, nil, nil, httpx.Validation("note", "note must be at most 500 characters")
 	}
 	if logged, err = json.Marshal(l); err != nil {
-		return "", nil, nil, err
+		return "", Limits{}, nil, nil, err
 	}
-	if req.GetPlan() == v1.Plan_PLAN_CUSTOM {
+	switch {
+	case custom:
 		stored = logged
+	case overridable:
+		if stored, err = Overrides(l, defaults); err != nil {
+			return "", Limits{}, nil, nil, err
+		}
 	}
-	return plan, stored, logged, nil
+	return plan, l, stored, logged, nil
 }
 
 func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
@@ -290,7 +301,7 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	plan, stored, logged, err := a.validatePlan(&req, time.Now())
+	plan, target, stored, logged, err := a.validatePlan(&req, time.Now())
 	if err != nil {
 		return err
 	}
@@ -305,10 +316,8 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	actor := auth.MustFromContext(r.Context()).UserID
-	target := a.plans.PlanLimits(req.GetPlan())
-	if req.GetPlan() == v1.Plan_PLAN_CUSTOM {
-		target = FromProto(req.GetLimits())
-	}
+	// The plan's corporate identity (ADR-0113), as the identity gate reads it from the stored row.
+	identity := identitypolicy.PlanGrantsIdentity(plan, stored, nil, time.Time{})
 	var ws sqlc.Workspace
 	var overridden []*v1.PlanLimitViolation
 	err = a.db.Tx(r.Context(), func(q *sqlc.Queries) error {
@@ -329,7 +338,7 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		overridden = u.Violations(target, plan == "enterprise")
+		overridden = u.Violations(target, identity)
 		logNote := note
 		if len(overridden) > 0 {
 			logNote = strings.TrimSpace(note + " [over limits: " + violationsText(overridden) + "]")
@@ -347,7 +356,7 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		if len(overridden) > 0 && !req.GetOverrideLimits() {
 			return ViolationsError(plan, overridden) // after the upsert: BILLING_PLAN_MANAGED wins
 		}
-		if _, err := setBusinessGrants(r.Context(), q, id, plan == "enterprise", until, &actor, true); err != nil {
+		if _, err := setBusinessGrants(r.Context(), q, id, identity, until, &actor, true); err != nil {
 			return err
 		}
 		if err := auth.InvalidateIdentity(r.Context(), q, id, nil, &actor, "plan_changed"); err != nil {

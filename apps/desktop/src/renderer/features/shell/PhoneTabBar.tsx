@@ -3,7 +3,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { DndContext, MouseSensor, TouchSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { Ellipsis, GripVertical, Pin } from 'lucide-react';
 import { memo, useCallback, useMemo, type ReactNode } from 'react';
-import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon, WikiActiveIcon, WikiIdleIcon } from '../../assets/nav/icons';
+import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, CanvasActiveIcon, CanvasIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon, WikiActiveIcon, WikiIdleIcon } from '../../assets/nav/icons';
 import { CountBadge, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { haptics } from '../../lib/haptics';
@@ -49,6 +49,8 @@ export function tabLabel(tab: PhoneTab): string {
       return t('mobile.tabDisk');
     case 'wiki':
       return t('mobile.tabWiki');
+    case 'canvas':
+      return t('canvas.section');
     case 'profile':
       return t('mobile.profile');
   }
@@ -69,6 +71,8 @@ const TabIcon = memo(function TabIcon({ tab, active, cls }: { tab: PhoneTab; act
       return active ? <DiskActiveIcon className={cls} /> : <DiskIdleIcon className={cls} />;
     case 'wiki':
       return active ? <WikiActiveIcon className={cls} /> : <WikiIdleIcon className={cls} />;
+    case 'canvas':
+      return active ? <CanvasActiveIcon className={cls} /> : <CanvasIdleIcon className={cls} />;
     case 'profile':
       return <ProfileTabIcon active={active} />;
   }
@@ -86,7 +90,7 @@ export function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
     () =>
       PHONE_TABS.filter((x) => {
         if (x === 'dms') return !guest;
-        if (x === 'boards' || x === 'calendar' || x === 'disk' || x === 'wiki') return full && !guest;
+        if (x === 'boards' || x === 'calendar' || x === 'disk' || x === 'wiki' || x === 'canvas') return full && !guest;
         return true;
       }),
     [guest, full],

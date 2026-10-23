@@ -100,4 +100,11 @@ func TestStartAudioRecordingRequest(t *testing.T) {
 	if f = rec.got.GetFileOutputs()[0]; f.GetFilepath() != "w/r.mp4" || f.GetS3().GetForcePathStyle() {
 		t.Fatalf("virtual-hosted style: %v", f)
 	}
+	// A phone call (ADR-0131): Ogg/Opus.
+	if _, err := eg.StartAudioRecording(ctx, "sipin_a_b", FileOutput{Filepath: "/out/phone/w/r.ogg", FileType: FileOGG}); err != nil {
+		t.Fatal(err)
+	}
+	if f = rec.got.GetFileOutputs()[0]; f.GetFileType() != livekit.EncodedFileType_OGG || f.GetFilepath() != "/out/phone/w/r.ogg" {
+		t.Fatalf("ogg file output: %v", f)
+	}
 }

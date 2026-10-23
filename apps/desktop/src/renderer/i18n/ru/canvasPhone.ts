@@ -1,0 +1,32 @@
+/**
+ * Russian UI strings — «Холст» на телефоне (ADR-0126 §5, правка — ADR-0127 волна 5б). Flat dotted keys, `{param}` placeholders.
+ */
+export const ruCanvasPhone = {
+  'canvasPhone.note': 'Вам доступен только просмотр этого холста — можно листать и приближать.',
+  'canvasPhone.edit': 'Править',
+  'canvasPhone.done': 'Готово',
+  'canvasPhone.editHint': 'Коснитесь объекта, чтобы выделить; потяните выделенный — он переместится. Двумя пальцами — листать и приближать. Долгое касание по пустому месту — меню.',
+  'canvasPhone.editMode': 'Режим правки',
+  'canvasPhone.tools': 'Инструменты',
+  'canvasPhone.plus': 'Добавить',
+  'canvasPhone.shapes': 'Фигуры',
+  'canvasPhone.armed.sticky': 'Коснитесь холста — поставить стикер',
+  'canvasPhone.armed.text': 'Коснитесь холста — написать текст',
+  'canvasPhone.armed.shape': 'Коснитесь холста — поставить фигуру',
+  'canvasPhone.armed.connector': 'Протяните палец от одного объекта к другому',
+  'canvasPhone.armed.comment': 'Коснитесь объекта или поля — оставить комментарий',
+  'canvasPhone.multi': 'Выбрать несколько',
+  'canvasPhone.multiHint': 'Коснитесь объектов, чтобы выбрать',
+  'canvasPhone.selected': { one: 'Выбран {n}', few: 'Выбрано {n}', many: 'Выбрано {n}', other: 'Выбрано {n}' },
+  'canvasPhone.menu': 'Меню холста',
+  'canvasPhone.menuClose': 'Закрыть меню',
+  'canvasPhone.menu.paste': 'Вставить',
+  'canvasPhone.menu.text': 'Текст здесь',
+  'canvasPhone.menu.templates': 'Шаблон…',
+  'canvasPhone.editText': 'Изменить текст',
+  'canvasPhone.textDone': 'Готово',
+  'canvasPhone.dismiss': 'Понятно',
+  'canvasPhone.others': { one: 'ещё {n} на холсте', few: 'ещё {n} на холсте', many: 'ещё {n} на холсте', other: 'ещё {n} на холсте' },
+  'canvasPhone.loadFailed': 'Не удалось загрузить холсты',
+  'canvasPhone.updated': 'изменён {when}',
+} as const;

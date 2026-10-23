@@ -14,6 +14,7 @@ import {
   describeActivity,
   dropWorkspace,
   fileKind,
+  folderCountParts,
   folderKey,
   matchesQuery,
   previewable,
@@ -271,5 +272,19 @@ describe('columns view (CBF-21)', () => {
   it('the phone has no columns', () => {
     expect(phoneDiskView('columns')).toBe('list');
     expect(phoneDiskView('tiles')).toBe('tiles');
+  });
+});
+
+describe('folderCountParts (the folder card, CBF-66)', () => {
+  it('lists only the non-zero counters, files first', () => {
+    expect(folderCountParts(3, 2)).toEqual([
+      { kind: 'files', n: 3 },
+      { kind: 'folders', n: 2 },
+    ]);
+    expect(folderCountParts(0, 4)).toEqual([{ kind: 'folders', n: 4 }]);
+    expect(folderCountParts(1, 0)).toEqual([{ kind: 'files', n: 1 }]);
+  });
+  it('is empty for an empty folder', () => {
+    expect(folderCountParts(0, 0)).toEqual([]);
   });
 });

@@ -28,8 +28,8 @@ func TestBillingPermissionRoles(t *testing.T) {
 		t.Fatalf("make admin: %d", st)
 	}
 
-	// Unknown bits above WIKI_MANAGE are refused; the admin cannot create a billing role.
-	o.must(422, "POST", base, &v1.CreateRoleRequest{Name: "x", Permissions: uint64(perm.WikiManage << 1)}, nil)
+	// Unknown bits above CANVAS_MANAGE are refused; the admin cannot create a billing role.
+	o.must(422, "POST", base, &v1.CreateRoleRequest{Name: "x", Permissions: uint64(perm.CanvasManage << 1)}, nil)
 	adm.must(403, "POST", base, &v1.CreateRoleRequest{Name: "Pay", Permissions: uint64(perm.BillingTopup)}, nil)
 	fin := newRole(t, o, wid, "Finance", perm.BillingManage)
 	if fin.GetPermissions() != uint64(perm.BillingManage) {

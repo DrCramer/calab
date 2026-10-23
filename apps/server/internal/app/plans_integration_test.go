@@ -190,7 +190,7 @@ func TestPlanMediaCaps(t *testing.T) {
 
 	// The plan is in READY (Workspace.plan) with the contact for buying.
 	ready := dialGW(t).identify(bob.token)
-	if ready.GetPlanContact() != "mailto:it@gptunnel.ai" {
+	if ready.GetPlanContact() != "mailto:support@calab.io" {
 		t.Fatalf("plan_contact %q", ready.GetPlanContact())
 	}
 	for _, s := range ready.GetWorkspaces() {
@@ -348,7 +348,8 @@ func TestAdminPlans(t *testing.T) {
 	// Validation.
 	for name, req := range map[string]*v1.AdminSetPlanRequest{
 		"no plan":           {},
-		"limits for team":   {Plan: v1.Plan_PLAN_TEAM, Limits: &v1.PlanLimits{RoomMembers: 3}},
+		"limits for free":   {Plan: v1.Plan_PLAN_FREE, Limits: &v1.PlanLimits{RoomMembers: 3}},
+		"bad team bound":    {Plan: v1.Plan_PLAN_TEAM, Limits: &v1.PlanLimits{RoomMembers: 5000}},
 		"custom w/o limits": {Plan: v1.Plan_PLAN_CUSTOM},
 		"bad bound":         {Plan: v1.Plan_PLAN_CUSTOM, Limits: &v1.PlanLimits{RoomMembers: 5000}},
 		"past valid_until":  {Plan: v1.Plan_PLAN_TEAM, ValidUntil: timestamppb.New(time.Now().Add(-time.Hour))},

@@ -143,7 +143,7 @@ func (l *SQLLoader) LoadGrant(ctx context.Context, now time.Time, ws uuid.UUID, 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Grant{}, err
 	}
-	business := err == nil && plan.Plan == "enterprise" && (plan.ValidUntil == nil || now.Before(*plan.ValidUntil))
+	business := err == nil && PlanGrantsIdentity(plan.Plan, plan.Limits, plan.ValidUntil, now)
 	until := timeValue(row.ValidUntil)
 	if row.Source == "cloud_business" && err == nil && plan.ValidUntil != nil {
 		until = minimum(until, *plan.ValidUntil)

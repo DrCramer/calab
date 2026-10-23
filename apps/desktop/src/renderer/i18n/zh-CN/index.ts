@@ -22,6 +22,11 @@ import { zhCalendar } from './calendar';
 import { zhMailbox } from './mailbox';
 import { zhDisk } from './disk';
 import { zhWiki } from './wiki';
+import { zhCanvas } from './canvas';
+import { zhCanvasBoard } from './canvasBoard';
+import { zhCanvasPhone } from './canvasPhone';
+import { zhCanvasComments } from './canvasComments';
+import { zhCanvasShare } from './canvasShare';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
 import { zhHistory } from './history';
@@ -42,6 +47,9 @@ import { zhGuests } from './guests';
 import { zhTemp } from './temp';
 import { zhContacts } from './contacts';
 import { zhSip } from './sip';
+import { zhPbx } from './pbx';
+import { zhAi } from './ai';
+import { zhSmartTask } from './smartTask';
 import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -60,6 +68,9 @@ export const zhCN: Dict = {
   ...zhTemp,
   ...zhContacts,
   ...zhSip,
+  ...zhPbx,
+  ...zhAi,
+  ...zhSmartTask,
   ...zhWebApps,
   ...zhDm,
   ...zhNotes,
@@ -84,6 +95,11 @@ export const zhCN: Dict = {
   ...zhMailbox,
   ...zhDisk,
   ...zhWiki,
+  ...zhCanvas,
+  ...zhCanvasBoard,
+  ...zhCanvasPhone,
+  ...zhCanvasComments,
+  ...zhCanvasShare,
   ...zhBoards,
   ...zhBoards2,
   ...zhHistory,
@@ -403,6 +419,7 @@ export const zhCN: Dict = {
   'voice.mode': '输入模式',
   'voice.modeVad': '语音激活',
   'voice.modePtt': '按键说话',
+  'voice.pttIdleState': '按键说话：等待按键',
   'voice.threshold': '激活阈值：{db} dB',
   'voice.thresholdHint': '当你说话音量高于阈值时麦克风开启，短暂停顿后关闭。',
   'voice.pttKey': '按键说话快捷键',

@@ -94,8 +94,11 @@ type Config struct {
 	LoginAccountBurst int `env:"LOGIN_ACCOUNT_ATTEMPTS" envDefault:"10"`
 
 	// Abuse limits (disk is shared with other tenants of the host).
-	MaxWorkspacesPerUser       int   `env:"MAX_WORKSPACES_PER_USER" envDefault:"5"`
-	WorkspaceCreatesPerHour    int   `env:"WORKSPACE_CREATES_PER_HOUR" envDefault:"3"`
+	MaxWorkspacesPerUser    int `env:"MAX_WORKSPACES_PER_USER" envDefault:"5"`
+	WorkspaceCreatesPerHour int `env:"WORKSPACE_CREATES_PER_HOUR" envDefault:"3"`
+	// Temporary rooms (CBF-38): the longest lifetime in days, live rooms per workspace and per creator.
+	TempRoomMaxTTLDays         int   `env:"TEMP_ROOM_MAX_TTL_DAYS" envDefault:"30"`
+	TempRoomsPerWorkspace      int   `env:"TEMP_ROOMS_PER_WORKSPACE" envDefault:"50"`
 	StorageMaxTotalBytes       int64 `env:"STORAGE_MAX_TOTAL_BYTES" envDefault:"53687091200"`       // 50 GiB, all files
 	DefaultWorkspaceQuotaBytes int64 `env:"DEFAULT_WORKSPACE_QUOTA_BYTES" envDefault:"10737418240"` // 10 GiB per new workspace
 	// Personal file quota of notes shelves (ADR-0039) for users without their own.
@@ -110,6 +113,16 @@ type Config struct {
 	LiveKitAPIKey          string `env:"LIVEKIT_API_KEY"`
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
+	// IVR worker (cmd/ivr, ADR-0117 §2): the shared token of its WebSocket to the API (both sides'
+	// env). Empty = no worker: inbound calls cannot be switched on. With it, inbound calls work in
+	// the workspaces whose admin switched them on (no server switch, ADR-0121).
+	IVRAgentToken string `env:"IVR_AGENT_TOKEN"`
+	// SIP registration agent (cmd/sipreg, ADR-0121): its own token (it gets the providers'
+	// passwords). Empty = no agent: the REGISTER mode of inbound calls cannot be chosen.
+	SIPRegAgentToken string `env:"SIPREG_AGENT_TOKEN"`
+	// Provider addresses (IPs / CIDRs) every inbound trunk accepts besides the resolved provider
+	// host and the workspace's own list, e.g. the provider's signalling pool.
+	SIPInboundAllowedAddresses []string `env:"SIP_INBOUND_ALLOWED_ADDRESSES" envSeparator:","`
 
 	// Native push is inert unless a complete transport is explicitly configured.
 	PushVoIPEnabled           bool   `env:"PUSH_VOIP_ENABLED"`
@@ -162,7 +175,7 @@ type Config struct {
 	PlanBusinessLimits string `env:"PLAN_BUSINESS_LIMITS"`
 	// Where to ask for a paid plan: PLAN_CONTACT_URL wins, else mailto:PLAN_CONTACT_EMAIL.
 	PlanContactURL   string `env:"PLAN_CONTACT_URL"`
-	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"it@gptunnel.ai"`
+	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"support@calab.io"`
 	// Product superadmins (comma-separated emails): /api/admin/*, Me.is_superadmin.
 	SuperadminEmails []string `env:"SUPERADMIN_EMAILS" envSeparator:","`
 
@@ -187,14 +200,22 @@ type Config struct {
 	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
 	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
 	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
-	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
-	GPTunnelWebURL    string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelAPIURL string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelWebURL string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	// GPTUNNEL_AI_URL: the OpenAI-compatible API root of GPTunneL for the AI integration (CBF-60,
+	// ai.proto): the check and AI features call {GPTUNNEL_AI_URL}/chat/completions.
+	GPTunnelAIURL     string `env:"GPTUNNEL_AI_URL" envDefault:"https://gptunnel.ru/v1"`
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
 	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
 	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
+	// Phone call recording to the Disk (ADR-0131): the IANA zone of the day folders and file
+	// names (workspaces have no zone of their own), and how many calls record at once on this
+	// server (the egress is shared with meeting recordings).
+	SIPRecordingTZ            string `env:"SIP_RECORDING_TZ" envDefault:"UTC"`
+	SIPRecordingMaxConcurrent int    `env:"SIP_RECORDING_MAX_CONCURRENT" envDefault:"10"`
 
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
@@ -276,6 +297,11 @@ func (c *Config) Validate() error {
 	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
 		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
 	}
+	// The registration agent gets the providers' passwords: the IVR worker's token must not open
+	// its socket (ADR-0121 §4).
+	if c.SIPRegAgentToken != "" && c.SIPRegAgentToken == c.IVRAgentToken {
+		errs = append(errs, errors.New("SIPREG_AGENT_TOKEN must differ from IVR_AGENT_TOKEN"))
+	}
 	lk := []string{c.LiveKitURL, c.LiveKitInternalURL, c.LiveKitAPIKey, c.LiveKitAPISecret}
 	if n := countSet(lk); n != 0 && n != len(lk) {
 		errs = append(errs, errors.New("LIVEKIT_URL, LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set together"))
@@ -334,6 +360,9 @@ func (c *Config) Validate() error {
 		c.StorageMaxTotalBytes < 1 || c.DefaultWorkspaceQuotaBytes < 0 || c.DefaultPersonalQuotaBytes < 0 {
 		errs = append(errs, errors.New("LOGIN_ACCOUNT_ATTEMPTS, MAX_WORKSPACES_PER_USER, WORKSPACE_CREATES_PER_HOUR, STORAGE_MAX_TOTAL_BYTES must be >= 1 and DEFAULT_WORKSPACE_QUOTA_BYTES, DEFAULT_PERSONAL_QUOTA_BYTES >= 0"))
 	}
+	if c.TempRoomMaxTTLDays < 1 || c.TempRoomsPerWorkspace < 1 {
+		errs = append(errs, errors.New("TEMP_ROOM_MAX_TTL_DAYS, TEMP_ROOMS_PER_WORKSPACE must be >= 1"))
+	}
 	if c.MaxFileSizeMB < 1 {
 		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))
 	}
@@ -382,6 +411,9 @@ func (c *Config) Validate() error {
 	if Origin(c.GPTunnelAPIURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
 	}
+	if Origin(c.GPTunnelAIURL) == "" {
+		errs = append(errs, fmt.Errorf("GPTUNNEL_AI_URL must be an absolute http(s) URL, got %q", c.GPTunnelAIURL))
+	}
 	if Origin(c.GPTunnelWebURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))
 	}
@@ -390,6 +422,14 @@ func (c *Config) Validate() error {
 	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
+	}
+	if c.SIPRecordingTZ != "" { // "" = UTC
+		if _, err := time.LoadLocation(c.SIPRecordingTZ); err != nil || c.SIPRecordingTZ == "Local" {
+			errs = append(errs, fmt.Errorf("SIP_RECORDING_TZ must be an IANA zone name, got %q", c.SIPRecordingTZ))
+		}
+	}
+	if c.SIPRecordingMaxConcurrent < 0 {
+		errs = append(errs, errors.New("SIP_RECORDING_MAX_CONCURRENT must not be negative (0 = 10)"))
 	}
 	if c.TasksDueTZ != "" {
 		if _, err := time.LoadLocation(c.TasksDueTZ); err != nil || c.TasksDueTZ == "Local" {

@@ -40,6 +40,7 @@
 | [2.13 Эхо на колонках E.1–E.3](#213-эхо-на-колонках-e1e3-ветка-featecho-hardening) | «собеседник слышит себя»: предупреждение, режимы «Динамики»/«Авто», «Проверка эха», флаги AEC | 2 машины (у одной — колонки, без наушников), 2 человека, сборка из `feat/echo-hardening` | 30 мин |
 | [2.13а Режим музыканта MU.1–MU.4](#213а-режим-музыканта-mu1mu4-adr-0052-ветка-featmusician-mode) | живой инструмент/пение без обработки, предупреждение про динамики, замок на Free | 2 машины, 2 человека, наушники у обоих, инструмент или голос; пространство Team и Free | 20 мин |
 | [2.18 REST не зависает во время звонка AT.1–AT.4](#218-rest-не-зависает-во-время-звонка-at1at4-docs09-146) | видео-превью с перемоткой, смена Wi‑Fi, сон, блокировка API → всё грузится без перезапуска | Mac, сборка из ветки, стенд, видео ≥ 15 МБ | 20 мин |
+| [2.21 Холст CV.1–CV.15 (ADR-0126, ADR-0127)](#221-холст-cv115-adr-0126-adr-0127) | дерево, объекты, два человека, «только просмотр», версии, корзина, PNG, ⌘K, телефон, публичная ссылка, вращение/группы, шаблоны, мини-карта, голосование, таймер, комментарии | два пользователя (А, Б, В) и телефон; стенд или локальный API | 45 мин |
 | [3.1 Сервер: базовый прогон](#31-базовый-прогон-контракт-go-интеграционные-тесты-curl-образ) | proto, линт, unit/integration, curl: регистрация, права, refresh, rate limit | Docker, Go, buf, sqlc, jq | 20 мин |
 | [3.2 Сервер: gateway, сообщения, файлы, rtc](#32-gateway-сообщения-файлы-rtc) | READY/RESUME, история, файлы, join/webhook, cookie/CSRF | как 3.1 + Node ≥ 22, LiveKit dev | 20 мин |
 | [3.3 Сервер: сценарии против стенда](#33-сценарии-api-против-стенда-https) | 3.1 шаг 4 и 3.2 шаг 2 по HTTPS | jq, Node; инвайт из 0.2 | 20 мин |
@@ -544,6 +545,27 @@ docker compose -f infra/docker/compose.dev.yml --profile mail down
 `gh workflow run win-smoke.yml -f version=3.1.2 [-f from=3.0.9] [-f unicode=true] [-f update_from=3.1.1]` (ручной, не в CI) → `gh run watch`, `gh run download`.
 Ставит релиз на `windows-latest`, запускает, входит в mock-API (все разделы и вкладки настроек, скриншоты), гоняет почтовый движок против фейка, опционально — автообновление и кириллические пути.
 Ожидается в `summary.txt`: `alive processes>0`, `main alive=true`, ответы `mail: … ok:true`, без `EXITED`/`CRASHED`; `events.txt` пустой. Падение — смотреть `renderer gone` / `child process gone` в `*-logs/main.log` и `Faulting module` в `events.txt`.
+
+### 2.21 Холст CV.1–CV.15 (ADR-0126, ADR-0127)
+Авто: `go test -race -tags integration ./internal/canvas ./internal/canvasacl`; живая сходимость — `docs/plans/canvas-v1-tasks.md`, «Проверка H8».
+| # | Проверка | Ожидается |
+|---|---|---|
+| CV.1 | А: «Холст» → «+» → папка «Проект», в ней холст «Доска»; переименовать папку | Папка и холст в дереве; у Б появляются без перезагрузки |
+| CV.2 | А на холсте: стикер (`S`, текст), фигура (`R`), коннектор (`C`) от стикера к фигуре; перенести фигуру | Коннектор следует за фигурой; `⌘Z` отменяет только последнее действие А |
+| CV.3 | Б открывает тот же холст, переносит стикер, пишет в текст А | Правки видны у А сразу; у обоих курсоры с именем и цветом; аватары «кто на холсте» справа сверху |
+| CV.4 | А: «Доступ…» → Б «Только просмотр»; Б открывает холст | Плашка «Только просмотр», нет инструментов и панели свойств; попытки править не меняют холст у А |
+| CV.5 | А: «⋯» → История версий → старая версия → «Восстановить» | Холст возвращается к версии у обоих; в «Истории» видны авторы |
+| CV.6 | Б держит холст открытым. А: «⋯» → В корзину; в «Корзине» — один холст «Восстановить», другой «Удалить навсегда» | У Б открытый холст сменяется экраном «Холст в корзине»; восстановленный на месте с содержимым; удалённый не открывается (404) |
+| CV.7 | А: «⋯» → Экспорт PNG; то же на пустом холсте | PNG со всем содержимым; на пустом — «Холст пуст — экспортировать нечего» |
+| CV.8 | ⌘K: часть названия холста и слово из текста стикера | Результат «Холст» с путём «Проект › Доска»; клик открывает холст |
+| CV.9 | Телефон: «Ещё» → «Холст» → холст; «Править»: стикер касанием, перенос выбранного, текст с клавиатурой, длинное касание по пустому, «Готово» | Просмотр по умолчанию (пан, щипок, без инструментов); при «ещё 1 на холсте» у второго участника; «Править» → нижняя панель, лист свойств; перетаскивание невыбранного листает, выбранного — двигает; клавиатура не закрывает текст, панель B/I/S над ней; без права записи кнопки нет и плашка «только просмотр» один раз |
+| CV.10 | А: «Доступ…» холста → «Ссылка» → включить (7 дн.) → «Скопировать»; открыть адрес в приватном окне браузера и на телефоне без входа; Б в это время правит холст; А: «Отозвать» (выключить) | Страница `/c/…`: название, «Только просмотр», холст без инструментов, комментариев, курсоров и аватаров; правки Б видны сразу; пан и щипок на телефоне; «Просмотров» растёт; после выключения — «Холст недоступен» в течение секунд; у приватного холста ссылка недоступна с пояснением |
+| CV.11 | А: стикер и фигура → выделить оба → «Выровнять» по левому краю; три объекта → «Равномерно по горизонтали»; выделить два → «Сгруппировать» (`⌘G`), повернуть группу ручкой (`Shift` — шаг 15°); стикер «Заблокировать» (`⌘⇧L`), попытаться перенести | Выравнивание и распределение отменяются одним `⌘Z`; группа вращается целиком, коннектор следует за повёрнутой стороной; заблокированный выделяется, но не двигается и не правится; `Del` и `⌘X` его не удаляют (`⌘X` — только копия), корзины в панели и «Удалить» в меню нет; у Б изменения видны сразу |
+| CV.12 | А: пустой холст → карточка «Шаблоны» → «Канбан»; текст колонки: `⌘B` жирным и список; «Мини-карта» (справа внизу) → клик и перетаскивание по карте | Шаблон вставлен одним действием (один `⌘Z` убирает весь); формат виден на холсте после выхода из правки; мини-карта показывает все объекты и двигает вид; при выключении не рисуется |
+| CV.13 | А: «Голосование» → «Начать» (2 голоса на человека); Б ставит голоса стикерами; А: «Завершить». Параллельно А: «Таймер» → 1 мин → «Пауза» → «Продолжить» | У Б «Осталось N из M» уменьшается; до завершения чужие голоса не видны; после — итоги, лидеры выделены; таймер у обоих, пауза и продолжение синхронны; по окончании — сигнал и подсветка плашки; при скрытом окне Б тиков нет |
+| CV.14 | Б: инструмент «Комментарий» (`⌥C`) → клик по стикеру А → текст с `@` и именем А. А открывает уведомление, отвечает в ветке, «Решить». В: «Только просмотр» — читает комментарии, писать не может | Уведомление «Б упомянул(а) вас в комментарии» ведёт к пину; ответ виден у Б сразу; решённая ветка уходит из «Только открытые»; у В кнопки комментария нет; упомянуть того, кто холст не видит, нельзя (его нет в списке `@`) |
+| CV.15 | А: стикер → ручка вращения над ним, тянуть (затем два объекта сразу); стикер → панель свойств, «Размер текста»: ввести `27` + Enter, затем `−`/`+`, ↑/↓, список (`12`…`96`); выделить стикер и текст с разными размерами; правка текста → в панели над ним `+`, ввести число. Телефон: то же в «Править» | У курсора плашка «NN°» (у одного объекта — его угол, у нескольких — поворот), исчезает на отпускании. Поле показывает реальные px (у нового стикера 18); при разных размерах поле пусто («—»), `−`/`+` выключены; Esc отменяет ввод; во время правки текст не закрывается, размер меняется сразу; у Б размер виден; старый клиент показывает ближайший из S/M/L/XL |
+| CV.16 | Холст больше экрана: рамкой от пустого места тянуть к правому краю и держать; затем перенести стикер к нижнему краю; растянуть фигуру к левому краю. Клик у самого края — без движения | Вид едет к краю, пока курсор в полосе у края (быстрее у самого края), рамка набирает новые объекты, стикер и край фигуры остаются под курсором; отпускание — вид стоит; клик у края вид не двигает |
 
 ## 3. Сервер
 
@@ -1213,7 +1235,7 @@ go test -race -count=1 ./internal/plans/
 TEST_REDIS_URL=redis://localhost:56379/1 TEST_RTC_REDIS_DB=13 go test -race -tags integration -count=1 -v -run 'TestPlan|TestAdminPlans' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
 ```
 Ожидается: 4 `--- PASS` и `ok` (`TestPlanRoomMembersLimit`, `TestPlanMediaCaps` — `SKIP` без dev-LiveKit / `lk`). Проверяется: 6-й в комнате (и владелец) → `409 ROOM_FULL` `reason PLAN_LIMIT`; 1080p → `H720`/15 в `/stream/request`, `/camera/request`, `/join` (`media`, `planLimits`) и `Workspace.plan` в READY; `storage_mb` → `413` c `used`/`limit`; admin: не-суперадмин → 404, поиск (slug/имя/email), 422 на неверный план, `WORKSPACE_UPDATE` с лимитами, журнал; `me.isSuperadmin`, `planContact`.
-Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:it@gptunnel.ai"`.
+Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:support@calab.io"`.
 
 Клиент (`feat/plans-client`):
 ```sh
@@ -2094,6 +2116,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | K.23 | Клиент: в чате `https://<APP_HOST>/t/CAL-3` и `/b/<id>`; сменить статус CAL-3 на доске; клик по карточке. Меню пространства → Уведомления → «Задачи: ничего»; архивировать доску → «Архив» → «Восстановить» | Карточка: ключ, заголовок, статус, исполнители, срок; статус обновляется без перезагрузки; клик — режим досок и панель; `PUT …/notifications {taskLevel}`; доска возвращается в список |
 | K.24 | Доска по карточкам (ADR-0059): приватная доска без bob; owner ставит bob исполнителем SCP-1, carol — согласующей SCP-2 | bob: `BOARD_CREATE` (`taskScoped`, `permissions 0`), затем `TASK_CREATE`, уведомление «назначен»; в списке досок, ⌘K, «Мои задачи», unfurl — только SCP-1; SCP-2 — `404`; «+ Задача», виды, журнал, доступ — `403`; правка и комментарий SCP-1 — `200`; carol голосует и комментирует, правка — `403` |
 | K.25 | Owner снимает bob с SCP-1; закрывает доску (`restricted`); зовёт гостя или бота без доступа | bob: `TASK_DELETE`, затем `BOARD_DELETE`; carol доску сохраняет (ADR-0076: закрытая доска открывается по карточке), назначение на закрытой доске — `200`; гостя, бота — `422` |
+| K.25с | Только создавать (ADR-0115, CBF-61): приватная доска DOC, в «Доступе» bob: «Создавать задачи» ✓, «Видеть доску» нейтрально; bob создаёт DOC-2, затем через бота от своего имени (согласие) — DOC-3 | Под строкой «Создавать задачи» подпись «Создаёт и видит только свои карточки»; у bob доска «Только мои карточки» и до первой карточки, «+ Задача» есть; создание `201` (и «от имени»); видны только DOC-2, DOC-3 и карточки, куда позвали; чужие — `404`; журнал, доступ, виды, лейблы — `403`; сняли «Создавать» — свои карточки исчезают |
 | K.25н | Наблюдатели (ADR-0076): owner в SCP-1 «Наблюдатели» → «+ Добавить» → dave (не видит доску); dave комментирует; dave в комментарии упоминает eve; owner упоминает eve; dave → «Перестать наблюдать»; настройки закрытой доски → «Доступ» | dave: доска «Только мои карточки», SCP-1 открыт, правка — `403`, «+ Добавить» нет; упоминание от dave eve доступа не даёт (`404`), от owner — eve в наблюдателях и уведомление «вас упомянули»; после ухода у dave `TASK_DELETE`, `BOARD_DELETE`; в «Доступе» строка «Позванные по карточкам: N» |
 | K.26 | Клиент (K.24): bob — список досок и канбан, открыть SCP-1; carol — открыть SCP-2; у owner открыть пикер исполнителей; owner снимает bob | У bob чип «Только мои карточки», нет «+ Задача» / `C` / ⋯ → настройки / «Сохранить как вид» / панели массовых действий; в SCP-1 правка и комментарии, у carol поля read-only, видны голосование и комментарии; в пикере у не видящих доску подпись «увидит только эту задачу» (и на закрытой доске, ADR-0076); после снятия панель закрывается, доска исчезает из списка |
 | K.27 | Автоматизации (ADR-0060, сервер): на доске FNG owner `POST /api/boards/{id}/rules` «В работу → срочно» (`trigger.statusChanged.toStatusId` = «В работе», действия `setPriority HIGH`, `comment "{key} в работе"`, `notifyDm ASSIGNEES`); перевести FNG-1 (исполнитель bob) в «В работе»; бот — `POST …/rules`; пространство на Free — `POST …/rules` | Приоритет HIGH, в журнале запись с `ruleId` и пустым `actorId`, в комментариях карточка «FNG-1 в работе», у bob уведомление `RULE`; `GET /api/rules/{id}/runs` — `ok`, `actionsApplied 3`; бот — `403 BOT_NOT_ALLOWED`; Free — `409 PLAN_LIMIT`. Правило «Приоритет → Готово» на задаче с несогласованным согласующим — задача не двигается, в журнале правила `TASK_APPROVAL_REQUIRED` |
@@ -2277,6 +2300,25 @@ are not current phone evidence. Visual suites remain disabled.
 1. Task on a board where member B has no access; you can edit the task. Type `@` in the task comment field.
 2. B is listed after members with access, with an eye-off icon and «Нет доступа — откроем эту карточку»; at 390 px the caption truncates, the row stays one line.
 3. Pick B, send: the mention chip renders as usual; the task's «Наблюдатели» gains B, B gets «вас упомянули» and sees the card.
-4. As a user who cannot edit the task: B is dimmed with «Позвать может тот, кто правит задачу», and Enter/click does not insert.
+4. As a commenter who cannot edit the task (CBF-53): B is listed and callable exactly the same; B becomes a watcher and gets «вас упомянули».
 5. Guests and bots without access are not listed; ordinary chats and DMs are unchanged.
 6. A commenter without board-management rights sees the same marks (the server answers who sees the board); typing @ruslan finds «Руслан», @shchukin finds «Щукин», in chats, DMs, tasks and ⌘K people.
+
+## MCP endpoint for bots (ADR-0114)
+
+1. Take a bot token (workspace settings → Bots) into `CALAB_BOT_TOKEN`; the bot needs a role with a board or a room. Not run here: there is no real server in this environment, so only `bash -n tools/mcp-smoke.sh` was checked.
+2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (six tools: find, read, create_task, comment_task, set_task_status, send_message), `tools/call` find (`boards`). The token is not printed.
+3. `read` a task by key from `find`, then `comment_task` and `set_task_status` with a status name of its board; both appear in the task (as the bot). A wrong status name returns `isError` with the board's statuses.
+4. `send_message` to a room the bot is not in or a private board task: `isError` with `404`/`403`, nothing is created.
+5. No header: `401`. A person's token or session: `403`. `GET /api/mcp`: `405`. A JSON array body: `400`.
+6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists six tools. Guide: `/ru/docs/bots/mcp`.
+
+## SIP inbound over a registration (ADR-0121)
+
+1. Without a provider: `go test -race ./cmd/sipreg ./internal/sipreg ./internal/sip` (fake provider and fake LiveKit SIP in-process). Manual end-to-end: `docker compose -f infra/docker/compose.dev.yml --profile sip --profile sip-dev up -d` (Asterisk as the provider, comments in compose.dev.yml).
+2. Stand: `SIPREG_AGENT_TOKEN` in `.env` and in the prod API env, `SIP_REGISTRAR_PUBLIC_IP` empty (flow mode, ADR-0125: no inbound port), `deploy.sh`; API log «sipreg: agent connected», agent log `"mode":"flow"`.
+3. Settings → Телефония: telephony on (Plusofon host, login, password, Caller ID) → «Входящие» → «По регистрации», a target, save. Within seconds the line reads «Зарегистрировано до HH:MM · контакт sip:c…@<IP>:5080».
+4. Wrong password: the line turns «Ошибка регистрации: провайдер не принял логин или пароль»; the agent does not retry for 5 minutes.
+5. Call the Caller ID from a phone: the menu / group rings as in direct mode; the journal row has `provider_call_id`. Hang up on either side — the other side ends.
+6. Switch back to «На адрес сервера»: the agent unregisters (Expires: 0); the line disappears.
+7. `docker compose stop sipreg`: within 30 s the line reads «Регистратор недоступен»; start it — «Зарегистрировано» again.
