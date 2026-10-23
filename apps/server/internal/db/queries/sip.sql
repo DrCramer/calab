@@ -169,8 +169,9 @@ ORDER BY id;
 UPDATE sip_groups SET next_position = $3 WHERE workspace_id = $1 AND id = $2;
 
 -- name: GetSipPromptFile :one
--- The IVR worker downloads a prompt: only files that are a menu's prompt.
-SELECT f.* FROM files f JOIN sip_ivr_menus m ON m.prompt_file_id = f.id WHERE f.id = $1;
+-- The IVR worker downloads a prompt: only files that are a menu's prompt or recording notice.
+SELECT f.* FROM files f WHERE f.id = $1
+  AND EXISTS (SELECT 1 FROM sip_ivr_menus m WHERE m.prompt_file_id = f.id OR m.notice_file_id = f.id);
 
 -- ---- inbound calls over a registration (ADR-0121)
 
@@ -227,3 +228,68 @@ WHERE inbound_mode = 'register' AND inbound_trunk_id <> '' GROUP BY reg_status;
 
 -- name: SetSipCallProviderCallID :exec
 UPDATE sip_calls SET provider_call_id = $2 WHERE id = $1 AND provider_call_id = '';
+
+-- ---- call recording (ADR-0131)
+
+-- name: SetSipRecording :one
+-- PUT …/sip/recording: the admin's switches. updated_at stays: it is the provider form's
+-- version (the client re-mounts the form on it).
+INSERT INTO sip_accounts (workspace_id, record_inbound, record_outbound)
+VALUES ($1, $2, $3)
+ON CONFLICT (workspace_id) DO UPDATE
+SET record_inbound = excluded.record_inbound, record_outbound = excluded.record_outbound
+RETURNING *;
+
+-- name: InsertSipCallRecording :one
+-- A call is being recorded; a second insert for the same call (a redelivered webhook) conflicts.
+INSERT INTO sip_call_recordings (id, workspace_id, call_id, direction, number, lk_room, file)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (call_id) DO NOTHING
+RETURNING *;
+
+-- name: MarkSipRecordingStarted :one
+UPDATE sip_call_recordings SET egress_id = $2, status = 'recording'
+WHERE id = $1 AND status = 'starting'
+RETURNING *;
+
+-- name: MarkSipRecordingStopRequested :one
+UPDATE sip_call_recordings SET stopped_at = coalesce(stopped_at, now())
+WHERE id = $1 AND status IN ('starting', 'recording')
+RETURNING *;
+
+-- name: MarkSipRecordingFailed :one
+UPDATE sip_call_recordings SET status = 'failed', error = sqlc.arg('error'), ended_at = now()
+WHERE id = sqlc.arg('id') AND status IN ('starting', 'recording')
+RETURNING *;
+
+-- name: MarkSipRecordingStored :one
+UPDATE sip_call_recordings
+SET status = 'stored', ended_at = now(), size_bytes = sqlc.arg('size_bytes'), file_id = sqlc.arg('file_id'),
+    disk_item_id = sqlc.arg('disk_item_id')
+WHERE id = sqlc.arg('id') AND status = 'recording'
+RETURNING *;
+
+-- name: GetSipRecordingByEgress :one
+SELECT * FROM sip_call_recordings WHERE egress_id = $1;
+
+-- name: GetLiveSipRecordingByCall :one
+SELECT * FROM sip_call_recordings WHERE call_id = $1 AND status IN ('starting', 'recording');
+
+-- name: ListLiveSipRecordings :many
+SELECT * FROM sip_call_recordings WHERE status IN ('starting', 'recording') ORDER BY started_at LIMIT 200;
+
+-- name: CountLiveSipRecordings :one
+SELECT count(*) FROM sip_call_recordings WHERE status IN ('starting', 'recording');
+
+-- name: ListSipRecordingFilesToDelete :many
+-- Raw files of finished recordings still on the volume / in the bucket (a failed copy to the Disk
+-- keeps its file a while for the admin to recover by hand).
+SELECT * FROM sip_call_recordings
+WHERE status IN ('stored', 'failed') AND file <> '' AND ended_at < sqlc.arg('before')
+ORDER BY ended_at LIMIT 200;
+
+-- name: ForgetSipRecordingFile :exec
+UPDATE sip_call_recordings SET file = '' WHERE id = $1;
+
+-- name: GetSipCallRecording :one
+SELECT * FROM sip_call_recordings WHERE id = $1;

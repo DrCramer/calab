@@ -66,6 +66,17 @@ func (q *Queries) CountLiveInboundCalls(ctx context.Context, workspaceID uuid.UU
 	return count, err
 }
 
+const countLiveSipRecordings = `-- name: CountLiveSipRecordings :one
+SELECT count(*) FROM sip_call_recordings WHERE status IN ('starting', 'recording')
+`
+
+func (q *Queries) CountLiveSipRecordings(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveSipRecordings)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSipRegStatus = `-- name: CountSipRegStatus :many
 SELECT reg_status, count(*)::bigint AS n FROM sip_accounts
 WHERE inbound_mode = 'register' AND inbound_trunk_id <> '' GROUP BY reg_status
@@ -148,6 +159,15 @@ func (q *Queries) FinishSipCall(ctx context.Context, arg FinishSipCallParams) (S
 	return i, err
 }
 
+const forgetSipRecordingFile = `-- name: ForgetSipRecordingFile :exec
+UPDATE sip_call_recordings SET file = '' WHERE id = $1
+`
+
+func (q *Queries) ForgetSipRecordingFile(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, forgetSipRecordingFile, id)
+	return err
+}
+
 const getLiveSipCallByRoom = `-- name: GetLiveSipCallByRoom :one
 SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls WHERE room_id = $1 AND status IN ('dialing', 'ringing', 'active')
 `
@@ -180,8 +200,36 @@ func (q *Queries) GetLiveSipCallByRoom(ctx context.Context, roomID *uuid.UUID) (
 	return i, err
 }
 
+const getLiveSipRecordingByCall = `-- name: GetLiveSipRecordingByCall :one
+SELECT id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id FROM sip_call_recordings WHERE call_id = $1 AND status IN ('starting', 'recording')
+`
+
+func (q *Queries) GetLiveSipRecordingByCall(ctx context.Context, callID uuid.UUID) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, getLiveSipRecordingByCall, callID)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
+	)
+	return i, err
+}
+
 const getSipAccount = `-- name: GetSipAccount :one
-SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at FROM sip_accounts WHERE workspace_id = $1
+SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound FROM sip_accounts WHERE workspace_id = $1
 `
 
 func (q *Queries) GetSipAccount(ctx context.Context, workspaceID uuid.UUID) (SipAccount, error) {
@@ -227,6 +275,8 @@ func (q *Queries) GetSipAccount(ctx context.Context, workspaceID uuid.UUID) (Sip
 		&i.RegExpiresAt,
 		&i.RegContact,
 		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
 	)
 	return i, err
 }
@@ -295,11 +345,40 @@ func (q *Queries) GetSipCallByLKRoom(ctx context.Context, lkRoom string) (SipCal
 	return i, err
 }
 
-const getSipPromptFile = `-- name: GetSipPromptFile :one
-SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform FROM files f JOIN sip_ivr_menus m ON m.prompt_file_id = f.id WHERE f.id = $1
+const getSipCallRecording = `-- name: GetSipCallRecording :one
+SELECT id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id FROM sip_call_recordings WHERE id = $1
 `
 
-// The IVR worker downloads a prompt: only files that are a menu's prompt.
+func (q *Queries) GetSipCallRecording(ctx context.Context, id uuid.UUID) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, getSipCallRecording, id)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
+	)
+	return i, err
+}
+
+const getSipPromptFile = `-- name: GetSipPromptFile :one
+SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform FROM files f WHERE f.id = $1
+  AND EXISTS (SELECT 1 FROM sip_ivr_menus m WHERE m.prompt_file_id = f.id OR m.notice_file_id = f.id)
+`
+
+// The IVR worker downloads a prompt: only files that are a menu's prompt or recording notice.
 func (q *Queries) GetSipPromptFile(ctx context.Context, id uuid.UUID) (File, error) {
 	row := q.db.QueryRow(ctx, getSipPromptFile, id)
 	var i File
@@ -318,6 +397,34 @@ func (q *Queries) GetSipPromptFile(ctx context.Context, id uuid.UUID) (File, err
 		&i.CreatedAt,
 		&i.VoiceDurationMs,
 		&i.VoiceWaveform,
+	)
+	return i, err
+}
+
+const getSipRecordingByEgress = `-- name: GetSipRecordingByEgress :one
+SELECT id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id FROM sip_call_recordings WHERE egress_id = $1
+`
+
+func (q *Queries) GetSipRecordingByEgress(ctx context.Context, egressID *string) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, getSipRecordingByEgress, egressID)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
 	)
 	return i, err
 }
@@ -368,6 +475,56 @@ func (q *Queries) InsertSipCall(ctx context.Context, arg InsertSipCallParams) (S
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+	)
+	return i, err
+}
+
+const insertSipCallRecording = `-- name: InsertSipCallRecording :one
+INSERT INTO sip_call_recordings (id, workspace_id, call_id, direction, number, lk_room, file)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (call_id) DO NOTHING
+RETURNING id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id
+`
+
+type InsertSipCallRecordingParams struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	CallID      uuid.UUID
+	Direction   string
+	Number      string
+	LkRoom      string
+	File        string
+}
+
+// A call is being recorded; a second insert for the same call (a redelivered webhook) conflicts.
+func (q *Queries) InsertSipCallRecording(ctx context.Context, arg InsertSipCallRecordingParams) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, insertSipCallRecording,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.CallID,
+		arg.Direction,
+		arg.Number,
+		arg.LkRoom,
+		arg.File,
+	)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
 	)
 	return i, err
 }
@@ -731,6 +888,47 @@ func (q *Queries) ListLiveSipCallsByWorkspace(ctx context.Context, workspaceID u
 	return items, nil
 }
 
+const listLiveSipRecordings = `-- name: ListLiveSipRecordings :many
+SELECT id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id FROM sip_call_recordings WHERE status IN ('starting', 'recording') ORDER BY started_at LIMIT 200
+`
+
+func (q *Queries) ListLiveSipRecordings(ctx context.Context) ([]SipCallRecording, error) {
+	rows, err := q.db.Query(ctx, listLiveSipRecordings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SipCallRecording{}
+	for rows.Next() {
+		var i SipCallRecording
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.CallID,
+			&i.Direction,
+			&i.Number,
+			&i.LkRoom,
+			&i.EgressID,
+			&i.File,
+			&i.Status,
+			&i.Error,
+			&i.StartedAt,
+			&i.StoppedAt,
+			&i.EndedAt,
+			&i.SizeBytes,
+			&i.FileID,
+			&i.DiskItemID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSipCalls = `-- name: ListSipCalls :many
 SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
 WHERE workspace_id = $1
@@ -797,8 +995,53 @@ func (q *Queries) ListSipCalls(ctx context.Context, arg ListSipCallsParams) ([]S
 	return items, nil
 }
 
+const listSipRecordingFilesToDelete = `-- name: ListSipRecordingFilesToDelete :many
+SELECT id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id FROM sip_call_recordings
+WHERE status IN ('stored', 'failed') AND file <> '' AND ended_at < $1
+ORDER BY ended_at LIMIT 200
+`
+
+// Raw files of finished recordings still on the volume / in the bucket (a failed copy to the Disk
+// keeps its file a while for the admin to recover by hand).
+func (q *Queries) ListSipRecordingFilesToDelete(ctx context.Context, before *time.Time) ([]SipCallRecording, error) {
+	rows, err := q.db.Query(ctx, listSipRecordingFilesToDelete, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SipCallRecording{}
+	for rows.Next() {
+		var i SipCallRecording
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.CallID,
+			&i.Direction,
+			&i.Number,
+			&i.LkRoom,
+			&i.EgressID,
+			&i.File,
+			&i.Status,
+			&i.Error,
+			&i.StartedAt,
+			&i.StoppedAt,
+			&i.EndedAt,
+			&i.SizeBytes,
+			&i.FileID,
+			&i.DiskItemID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSipRegisterAccounts = `-- name: ListSipRegisterAccounts :many
-SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at FROM sip_accounts
+SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound FROM sip_accounts
 WHERE inbound_mode = 'register' AND inbound_trunk_id <> '' AND enabled AND inbound_enabled
 ORDER BY workspace_id
 `
@@ -853,6 +1096,8 @@ func (q *Queries) ListSipRegisterAccounts(ctx context.Context) ([]SipAccount, er
 			&i.RegExpiresAt,
 			&i.RegContact,
 			&i.RegStatusAt,
+			&i.RecordInbound,
+			&i.RecordOutbound,
 		); err != nil {
 			return nil, err
 		}
@@ -951,6 +1196,150 @@ func (q *Queries) MarkSipCallRinging(ctx context.Context, id uuid.UUID) (SipCall
 	return i, err
 }
 
+const markSipRecordingFailed = `-- name: MarkSipRecordingFailed :one
+UPDATE sip_call_recordings SET status = 'failed', error = $1, ended_at = now()
+WHERE id = $2 AND status IN ('starting', 'recording')
+RETURNING id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id
+`
+
+type MarkSipRecordingFailedParams struct {
+	Error string
+	ID    uuid.UUID
+}
+
+func (q *Queries) MarkSipRecordingFailed(ctx context.Context, arg MarkSipRecordingFailedParams) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, markSipRecordingFailed, arg.Error, arg.ID)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
+	)
+	return i, err
+}
+
+const markSipRecordingStarted = `-- name: MarkSipRecordingStarted :one
+UPDATE sip_call_recordings SET egress_id = $2, status = 'recording'
+WHERE id = $1 AND status = 'starting'
+RETURNING id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id
+`
+
+type MarkSipRecordingStartedParams struct {
+	ID       uuid.UUID
+	EgressID *string
+}
+
+func (q *Queries) MarkSipRecordingStarted(ctx context.Context, arg MarkSipRecordingStartedParams) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, markSipRecordingStarted, arg.ID, arg.EgressID)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
+	)
+	return i, err
+}
+
+const markSipRecordingStopRequested = `-- name: MarkSipRecordingStopRequested :one
+UPDATE sip_call_recordings SET stopped_at = coalesce(stopped_at, now())
+WHERE id = $1 AND status IN ('starting', 'recording')
+RETURNING id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id
+`
+
+func (q *Queries) MarkSipRecordingStopRequested(ctx context.Context, id uuid.UUID) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, markSipRecordingStopRequested, id)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
+	)
+	return i, err
+}
+
+const markSipRecordingStored = `-- name: MarkSipRecordingStored :one
+UPDATE sip_call_recordings
+SET status = 'stored', ended_at = now(), size_bytes = $1, file_id = $2,
+    disk_item_id = $3
+WHERE id = $4 AND status = 'recording'
+RETURNING id, workspace_id, call_id, direction, number, lk_room, egress_id, file, status, error, started_at, stopped_at, ended_at, size_bytes, file_id, disk_item_id
+`
+
+type MarkSipRecordingStoredParams struct {
+	SizeBytes  int64
+	FileID     *uuid.UUID
+	DiskItemID *uuid.UUID
+	ID         uuid.UUID
+}
+
+func (q *Queries) MarkSipRecordingStored(ctx context.Context, arg MarkSipRecordingStoredParams) (SipCallRecording, error) {
+	row := q.db.QueryRow(ctx, markSipRecordingStored,
+		arg.SizeBytes,
+		arg.FileID,
+		arg.DiskItemID,
+		arg.ID,
+	)
+	var i SipCallRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CallID,
+		&i.Direction,
+		&i.Number,
+		&i.LkRoom,
+		&i.EgressID,
+		&i.File,
+		&i.Status,
+		&i.Error,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EndedAt,
+		&i.SizeBytes,
+		&i.FileID,
+		&i.DiskItemID,
+	)
+	return i, err
+}
+
 const putSipAccount = `-- name: PutSipAccount :one
 INSERT INTO sip_accounts (workspace_id, provider, host, transport, username, password_enc, caller_id,
                           outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by,
@@ -963,7 +1352,7 @@ SET provider = excluded.provider, host = excluded.host, transport = excluded.tra
     outbound_prefix = excluded.outbound_prefix, allowed_prefixes = excluded.allowed_prefixes,
     trunk_id = excluded.trunk_id, enabled = excluded.enabled, last_error = '',
     updated_at = now(), updated_by = excluded.updated_by
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
 `
 
 type PutSipAccountParams struct {
@@ -1041,6 +1430,8 @@ func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (S
 		&i.RegExpiresAt,
 		&i.RegContact,
 		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
 	)
 	return i, err
 }
@@ -1084,7 +1475,7 @@ SET inbound_enabled = $1, inbound_kind = $2,
     inbound_trunk_id = $7, inbound_rule_id = $8,
     last_error = '', updated_at = now(), updated_by = $9
 WHERE workspace_id = $10
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
 `
 
 type SetSipInboundParams struct {
@@ -1157,6 +1548,8 @@ func (q *Queries) SetSipInbound(ctx context.Context, arg SetSipInboundParams) (S
 		&i.RegExpiresAt,
 		&i.RegContact,
 		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
 	)
 	return i, err
 }
@@ -1191,6 +1584,73 @@ type SetSipLastErrorParams struct {
 func (q *Queries) SetSipLastError(ctx context.Context, arg SetSipLastErrorParams) error {
 	_, err := q.db.Exec(ctx, setSipLastError, arg.WorkspaceID, arg.LastError)
 	return err
+}
+
+const setSipRecording = `-- name: SetSipRecording :one
+
+INSERT INTO sip_accounts (workspace_id, record_inbound, record_outbound)
+VALUES ($1, $2, $3)
+ON CONFLICT (workspace_id) DO UPDATE
+SET record_inbound = excluded.record_inbound, record_outbound = excluded.record_outbound
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
+`
+
+type SetSipRecordingParams struct {
+	WorkspaceID    uuid.UUID
+	RecordInbound  bool
+	RecordOutbound bool
+}
+
+// ---- call recording (ADR-0131)
+// PUT …/sip/recording: the admin's switches. updated_at stays: it is the provider form's
+// version (the client re-mounts the form on it).
+func (q *Queries) SetSipRecording(ctx context.Context, arg SetSipRecordingParams) (SipAccount, error) {
+	row := q.db.QueryRow(ctx, setSipRecording, arg.WorkspaceID, arg.RecordInbound, arg.RecordOutbound)
+	var i SipAccount
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Provider,
+		&i.Host,
+		&i.Transport,
+		&i.Username,
+		&i.AuthUsername,
+		&i.Port,
+		&i.PasswordEnc,
+		&i.CallerID,
+		&i.OutboundPrefix,
+		&i.AllowedPrefixes,
+		&i.TrunkID,
+		&i.Enabled,
+		&i.LastError,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.InboundEnabled,
+		&i.InboundKind,
+		&i.InboundMenuID,
+		&i.InboundExtensionID,
+		&i.InboundGroupID,
+		&i.InboundAllowedCidrs,
+		&i.InboundTrunkID,
+		&i.InboundRuleID,
+		&i.InboundMode,
+		&i.RegRegistrar,
+		&i.RegDomain,
+		&i.RegExpires,
+		&i.RegKeepaliveSec,
+		&i.RegContactUser,
+		&i.RegAuthUsername,
+		&i.RegPasswordEnc,
+		&i.RegTrunkPasswordEnc,
+		&i.RegStatus,
+		&i.RegError,
+		&i.RegRegisteredAt,
+		&i.RegExpiresAt,
+		&i.RegContact,
+		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
+	)
+	return i, err
 }
 
 const setSipRegStatus = `-- name: SetSipRegStatus :execrows
@@ -1251,7 +1711,7 @@ SET inbound_mode = $1, reg_registrar = $2, reg_domain = $3,
     reg_expires_at = CASE WHEN $10::text = 'registered' THEN reg_expires_at END,
     reg_contact = CASE WHEN $10::text = 'registered' THEN reg_contact ELSE '' END
 WHERE workspace_id = $11
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
 `
 
 type SetSipRegistrationParams struct {
@@ -1325,6 +1785,8 @@ func (q *Queries) SetSipRegistration(ctx context.Context, arg SetSipRegistration
 		&i.RegExpiresAt,
 		&i.RegContact,
 		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
 	)
 	return i, err
 }
