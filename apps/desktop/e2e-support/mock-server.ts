@@ -340,6 +340,8 @@ import {
   UpdateRoomInviteResponseSchema,
   RoomAdmissionStatus,
   JoinVoiceResponseSchema,
+  SipInboundAcceptResponseSchema,
+  TransferSipCallRequestSchema,
   JoinWorkspaceResponseSchema,
   ListCategoriesResponseSchema,
   ListDmCandidatesResponseSchema,
@@ -2746,6 +2748,81 @@ class MockImpl {
       }
       this.toUser(me, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
       noContent(c.res);
+    });
+    // Accept / join (ADR-0117): the call is mine; its voice session is the LiveKit room
+    // «<prefix>sipin_<call>» of the dev server (nobody else in it: the line is not simulated).
+    const inbound = (c: Ctx, mine: boolean): SipCall => {
+      const call = this.state.sipCalls.get(c.params[0] ?? '');
+      const me = this.uid(c);
+      if (!call || call.direction !== SipCallDirection.IN) throw notFound('call not found');
+      if (mine ? call.answeredBy !== me : !call.ringingUserIds.includes(me)) throw notFound('call not found');
+      if (call.status === SipCallStatus.ENDED) throw conflict('the call is over');
+      return call;
+    };
+    const phoneJoin = async (c: Ctx, callId: string) => {
+      const { user } = this.auth(c);
+      const identity = `sipin_${user.user.id}`;
+      const token = await this.voiceToken({ id: `sipin_${callId}` } as Room, identity, user.user.displayName);
+      return { url: this.lk.url, token, identity, canSpeak: true };
+    };
+    this.route('POST', '/api/sip/inbound/:id/accept', async (c) => {
+      const call = inbound(c, false);
+      call.status = SipCallStatus.ACTIVE;
+      call.answeredBy = this.uid(c);
+      call.answeredAt = timestampFromMs(Date.now());
+      call.ringingUserIds = [];
+      this.toUser(call.answeredBy, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      sendMsg(c.res, 200, SipInboundAcceptResponseSchema, { call: clone(SipCallSchema, call), join: await phoneJoin(c, call.id) });
+    });
+    this.route('POST', '/api/sip/inbound/:id/join', async (c) => {
+      const call = inbound(c, true);
+      sendMsg(c.res, 200, JoinVoiceResponseSchema, await phoneJoin(c, call.id));
+    });
+    this.route('DELETE', '/api/sip/inbound/:id', (c) => {
+      const call = inbound(c, true);
+      call.status = SipCallStatus.ENDED;
+      call.reason = 'hangup';
+      call.ringingUserIds = [];
+      call.endedAt = timestampFromMs(Date.now());
+      this.toUser(this.uid(c), { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      sendMsg(c.res, 200, SipCallResponseSchema, { call: clone(SipCallSchema, call) });
+    });
+    // Transfer (ADR-0132): the target rings (never answers here); DELETE cancels.
+    const transferable = (c: Ctx): SipCall => {
+      const call = this.state.sipCalls.get(c.params[1] ?? '');
+      if (!call || call.workspaceId !== c.params[0] || call.direction !== SipCallDirection.IN) throw notFound('call not found');
+      if (call.answeredBy !== this.uid(c)) throw forbidden('not on the call');
+      if (call.status !== SipCallStatus.ACTIVE) throw conflict('the call is not answered');
+      return call;
+    };
+    this.route('POST', '/api/workspaces/:id/sip/calls/:cid/transfer', (c) => {
+      const call = transferable(c);
+      if (call.ringingUserIds.length) throw conflict('a transfer already rings');
+      const b = parseBody(c, TransferSipCallRequestSchema);
+      const p = this.pbxOf(call.workspaceId);
+      const ext = p.exts.find((e) => e.id === b.extensionId || (b.number !== '' && e.number === b.number));
+      const group = ext?.groupId ? p.groups.find((g) => g.id === ext.groupId) : undefined;
+      const users = b.userId
+        ? [b.userId]
+        : group
+          ? group.members.map((gm) => p.exts.find((e) => e.id === gm.extensionId)?.userId ?? '').filter((u) => u && u !== call.answeredBy)
+          : ext?.userId
+            ? [ext.userId]
+            : [];
+      if (users.length === 0 || users.includes(call.answeredBy)) throw invalid('target', 'nobody takes calls on this number');
+      call.ringingUserIds = users;
+      call.route += ` → transfer:${b.userId ? 'user:' + b.userId : 'ext:' + (ext?.id ?? '')}`;
+      this.toUser(call.answeredBy, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      this.announceSipCall(clone(SipCallSchema, call));
+      sendMsg(c.res, 200, SipCallResponseSchema, { call: clone(SipCallSchema, call) });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sip/calls/:cid/transfer', (c) => {
+      const call = transferable(c);
+      if (!call.ringingUserIds.length) throw conflict('no transfer rings');
+      call.ringingUserIds = [];
+      call.route += ' → transfer:cancelled';
+      this.toUser(call.answeredBy, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      sendMsg(c.res, 200, SipCallResponseSchema, { call: clone(SipCallSchema, call) });
     });
     // Control endpoints (tests in another process): ringCall / callAction.
     const ctl = (c: Ctx): Record<string, string> => (c.raw.length ? (JSON.parse(c.raw.toString('utf8')) as Record<string, string>) : {});
@@ -6099,7 +6176,10 @@ class MockImpl {
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
       if (m.role === WorkspaceRole.GUEST) throw forbidden('guests do not see the numbers');
       const p = this.pbxOf(ws.id);
-      sendMsg(c.res, 200, ListSipExtensionsResponseSchema, { extensions: [...p.exts].sort((a, b) => a.number.localeCompare(b.number)) });
+      const groupName = (id: string): string => p.groups.find((g) => g.id === id)?.name ?? '';
+      sendMsg(c.res, 200, ListSipExtensionsResponseSchema, {
+        extensions: [...p.exts].sort((a, b) => a.number.localeCompare(b.number)).map((e) => (e.groupId ? { ...e, groupName: groupName(e.groupId) } : e)),
+      });
     });
     this.route('POST', '/api/workspaces/:id/sip/extensions', (c) => {
       const { wsId, p } = this.pbxAdmin(c);

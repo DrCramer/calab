@@ -241,6 +241,9 @@ func (ex *exchange) extPB(e sqlc.SipExtension) *v1.SipExtension {
 	switch {
 	case e.Kind == "group":
 		out.Kind = v1.SipExtensionKind_SIP_EXTENSION_KIND_GROUP
+		if e.GroupID != nil {
+			out.GroupName = ex.group[*e.GroupID].Name
+		}
 	case ex.people[e.ID].IsBot:
 		out.Kind = v1.SipExtensionKind_SIP_EXTENSION_KIND_BOT
 	default:

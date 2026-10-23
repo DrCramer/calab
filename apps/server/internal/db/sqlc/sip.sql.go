@@ -1045,6 +1045,48 @@ func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (S
 	return i, err
 }
 
+const returnSipInboundTransfer = `-- name: ReturnSipInboundTransfer :one
+UPDATE sip_calls SET answered_by = $1::uuid, ringing_user_ids = '{}', route = $2
+WHERE id = $3 AND direction = 'in' AND status = 'active'
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+`
+
+type ReturnSipInboundTransferParams struct {
+	UserID uuid.UUID
+	Route  string
+	ID     uuid.UUID
+}
+
+// The target of a transfer answered but never connected (ADR-0132): the call is back with the
+// member who handed it over, still on it.
+func (q *Queries) ReturnSipInboundTransfer(ctx context.Context, arg ReturnSipInboundTransferParams) (SipCall, error) {
+	row := q.db.QueryRow(ctx, returnSipInboundTransfer, arg.UserID, arg.Route, arg.ID)
+	var i SipCall
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.Number,
+		&i.Direction,
+		&i.StartedBy,
+		&i.ParticipantIdentity,
+		&i.SipCallID,
+		&i.Status,
+		&i.Reason,
+		&i.EndedBy,
+		&i.StartedAt,
+		&i.AnsweredAt,
+		&i.EndedAt,
+		&i.LkRoom,
+		&i.AnsweredBy,
+		&i.Route,
+		&i.RingingUserIds,
+		&i.Via,
+		&i.ProviderCallID,
+	)
+	return i, err
+}
+
 const setSipCallProviderCallID = `-- name: SetSipCallProviderCallID :exec
 UPDATE sip_calls SET provider_call_id = $2 WHERE id = $1 AND provider_call_id = ''
 `
@@ -1413,6 +1455,49 @@ func (q *Queries) SipRegistrationTaken(ctx context.Context, arg SipRegistrationT
 	return exists, err
 }
 
+const transferSipInboundCall = `-- name: TransferSipInboundCall :one
+UPDATE sip_calls
+SET answered_by = $1::uuid, ringing_user_ids = '{}', route = $2
+WHERE id = $3 AND direction = 'in' AND status = 'active'
+  AND $1::uuid = ANY (ringing_user_ids)
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+`
+
+type TransferSipInboundCallParams struct {
+	UserID uuid.UUID
+	Route  string
+	ID     uuid.UUID
+}
+
+// The target of a transfer answers (ADR-0132): the call is theirs; only while it rings them.
+func (q *Queries) TransferSipInboundCall(ctx context.Context, arg TransferSipInboundCallParams) (SipCall, error) {
+	row := q.db.QueryRow(ctx, transferSipInboundCall, arg.UserID, arg.Route, arg.ID)
+	var i SipCall
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.Number,
+		&i.Direction,
+		&i.StartedBy,
+		&i.ParticipantIdentity,
+		&i.SipCallID,
+		&i.Status,
+		&i.Reason,
+		&i.EndedBy,
+		&i.StartedAt,
+		&i.AnsweredAt,
+		&i.EndedAt,
+		&i.LkRoom,
+		&i.AnsweredBy,
+		&i.Route,
+		&i.RingingUserIds,
+		&i.Via,
+		&i.ProviderCallID,
+	)
+	return i, err
+}
+
 const updateSipInboundRinging = `-- name: UpdateSipInboundRinging :one
 UPDATE sip_calls SET ringing_user_ids = $2, route = $3, via = $4
 WHERE id = $1 AND direction = 'in' AND status = 'ringing'
@@ -1434,6 +1519,48 @@ func (q *Queries) UpdateSipInboundRinging(ctx context.Context, arg UpdateSipInbo
 		arg.Route,
 		arg.Via,
 	)
+	var i SipCall
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.Number,
+		&i.Direction,
+		&i.StartedBy,
+		&i.ParticipantIdentity,
+		&i.SipCallID,
+		&i.Status,
+		&i.Reason,
+		&i.EndedBy,
+		&i.StartedAt,
+		&i.AnsweredAt,
+		&i.EndedAt,
+		&i.LkRoom,
+		&i.AnsweredBy,
+		&i.Route,
+		&i.RingingUserIds,
+		&i.Via,
+		&i.ProviderCallID,
+	)
+	return i, err
+}
+
+const updateSipInboundTransfer = `-- name: UpdateSipInboundTransfer :one
+UPDATE sip_calls SET ringing_user_ids = $2, route = $3
+WHERE id = $1 AND direction = 'in' AND status = 'active'
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+`
+
+type UpdateSipInboundTransferParams struct {
+	ID             uuid.UUID
+	RingingUserIds []uuid.UUID
+	Route          string
+}
+
+// A transfer of an answered call starts / ends (ADR-0132): who rings now and the route so far;
+// the call stays active with answered_by.
+func (q *Queries) UpdateSipInboundTransfer(ctx context.Context, arg UpdateSipInboundTransferParams) (SipCall, error) {
+	row := q.db.QueryRow(ctx, updateSipInboundTransfer, arg.ID, arg.RingingUserIds, arg.Route)
 	var i SipCall
 	err := row.Scan(
 		&i.ID,

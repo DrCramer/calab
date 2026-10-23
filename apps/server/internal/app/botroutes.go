@@ -438,11 +438,13 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/workspaces/{id}/ai/check",
 		"GET /api/workspaces/{id}/calls",
 	}},
-	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0117 §5: an inbound phone call is taken by whom it rings — a bot with a number answers it like a person (accept / decline / join / hang up check that the call rings or was answered by the caller; hanging up someone else's needs MANAGE_INTEGRATIONS); closed on behalf", routes: []string{
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0117 §5: an inbound phone call is taken by whom it rings — a bot with a number answers it like a person (accept / decline / join / hang up check that the call rings or was answered by the caller; hanging up someone else's needs MANAGE_INTEGRATIONS) and hands it over to a colleague (ADR-0132: transfer / cancel the transfer — the one on the call, or MANAGE_INTEGRATIONS); closed on behalf", routes: []string{
 		"POST /api/sip/inbound/{cid}/accept",
 		"POST /api/sip/inbound/{cid}/join",
 		"POST /api/sip/inbound/{cid}/decline",
 		"DELETE /api/sip/inbound/{cid}",
+		"POST /api/workspaces/{id}/sip/calls/{cid}/transfer",
+		"DELETE /api/workspaces/{id}/sip/calls/{cid}/transfer",
 	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace content — camera backgrounds (MANAGE_WORKSPACE; members read them), the achievements catalog (MANAGE_WORKSPACE) and grants (MANAGE_MEMBERS; never to a bot or oneself)", routes: []string{
 		"GET /api/workspaces/{id}/backgrounds",

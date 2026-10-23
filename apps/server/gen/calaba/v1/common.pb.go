@@ -74,7 +74,9 @@ const (
 	// 403: a bot writes to a person who blocked it (POST /api/me/blocked-bots/{id}, ADR-0031).
 	ErrorCode_ERROR_CODE_BOT_BLOCKED ErrorCode = 40
 	// One-to-one calls (ADR-0034), all 409.
-	ErrorCode_ERROR_CODE_BUSY            ErrorCode = 41 // POST /api/dms/{id}/call: the callee is in another call
+	// POST /api/dms/{id}/call: the callee is in another call; POST …/sip/calls/{cid}/transfer: the
+	// target is in another call or its group has nobody free (ADR-0132).
+	ErrorCode_ERROR_CODE_BUSY            ErrorCode = 41
 	ErrorCode_ERROR_CODE_IN_CALL         ErrorCode = 42 // POST /api/dms/{id}/call: the caller already has a call
 	ErrorCode_ERROR_CODE_CALL_NOT_ACTIVE ErrorCode = 43 // POST /api/rooms/{id}/join of a DM without an active call of the caller
 	// 401 on POST /api/auth/refresh: the session was ended; `reason` says why: "REUSE" (a refresh
