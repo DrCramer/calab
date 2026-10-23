@@ -14,10 +14,12 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/app"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/rtc"
 )
 
@@ -92,6 +94,14 @@ func TestSIPInboundCall(t *testing.T) {
 	bobG.identify(bob.token)
 	oG := dialGW(t)
 	oG.identify(o.token)
+	// Dave manages telephony but may not read the journal: he sees the live calls masked.
+	dave := register(t, invite(t, o, wid))
+	tel := newRole(t, o, wid, "Telephony", perm.ManageIntegrations)
+	if st, _ := setMemberRoles(o, wid, dave.id, tel.GetId()); st != 200 {
+		t.Fatalf("dave's role: %d", st)
+	}
+	daveG := dialGW(t)
+	daveG.identify(dave.token)
 	base := "/api/workspaces/" + wid + "/sip"
 	// «Активные звонки» (ADR-0128): the live calls with their step, for MANAGE_INTEGRATIONS.
 	active := func(want int) []*v1.SipActiveCall {
@@ -187,6 +197,17 @@ func TestSIPInboundCall(t *testing.T) {
 	if c := active(1)[0]; c.GetStep() != v1.SipActiveStep_SIP_ACTIVE_STEP_RINGING || c.GetCall().GetId() != cid ||
 		c.GetCall().GetNumber() != "+79161234567" || c.GetNumberMasked() || !slices.Equal(c.GetCall().GetRingingUserIds(), []string{bob.id}) {
 		t.Fatalf("active ringing: %v", c)
+	}
+	daveG.wait("SIP_CALLS_CHANGED to a telephony admin", func(e *v1.DispatchEvent) bool { return e.GetSipCallsChanged().GetWorkspaceId() == wid })
+	var masked v1.ListSipActiveCallsResponse
+	pushHTTP(t, server, dave, 200, "GET", base+"/calls", nil, &masked)
+	if len(masked.GetCalls()) != 1 {
+		t.Fatalf("dave's active calls: %v", masked.GetCalls())
+	}
+	if c := masked.GetCalls()[0]; !c.GetNumberMasked() || c.GetCall().GetNumber() != "+7916*****67" ||
+		c.GetCall().GetParticipantIdentity() != "" || c.GetCall().GetProviderCallId() != "" ||
+		strings.Contains(protojson.Format(c), "1234567") {
+		t.Fatalf("masked for an admin without VIEW_JOURNALS: %v", c)
 	}
 	pushHTTP(t, server, bob, 403, "GET", base+"/calls", nil, nil)
 	bobG.quiet("SIP_CALLS_CHANGED to a member", 300*time.Millisecond, func(e *v1.DispatchEvent) bool { return e.GetSipCallsChanged() != nil })

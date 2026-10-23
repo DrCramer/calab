@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
@@ -79,7 +80,7 @@ func (s *Service) activeCalls(w http.ResponseWriter, r *http.Request) error {
 		}
 		a := activeCall(c, rec, ex)
 		if !full {
-			a.Call.Number, a.NumberMasked = maskNumber(a.Call.GetNumber()), true
+			maskCall(a)
 		}
 		out.Calls = append(out.Calls, a)
 	}
@@ -161,19 +162,33 @@ func activeCall(c sqlc.SipCall, rec *inRec, ex *exchange) *v1.SipActiveCall {
 	return a
 }
 
+// maskCall hides the caller from a viewer without VIEW_JOURNALS: the number masked and the
+// fields that carry it otherwise cleared — an inbound line's LiveKit identity is «sip_<number>»
+// and the provider's Call-ID may hold it too.
+func maskCall(a *v1.SipActiveCall) {
+	a.Call.Number, a.NumberMasked = maskNumber(a.Call.GetNumber()), true
+	a.Call.ParticipantIdentity, a.Call.ProviderCallId = "", ""
+}
+
 // maskNumber hides the middle of a phone number for a viewer without VIEW_JOURNALS: the
-// country and operator code and the last two digits stay («+7916*****67»).
+// country and operator code and the last two digits stay («+7916*****67»). Anything that is not
+// a plain number (a SIP URI or user name, «anonymous») and numbers too short to keep a hidden
+// middle are starred whole.
 func maskNumber(n string) string {
 	digits := 0
-	for _, r := range n {
-		if r >= '0' && r <= '9' {
+	for i, r := range n {
+		switch {
+		case r >= '0' && r <= '9':
 			digits++
+		case r == '+' && i == 0:
+		default:
+			return strings.Repeat("*", utf8.RuneCountInString(n))
 		}
 	}
-	if digits < 5 {
+	if digits < 7 {
 		return strings.Repeat("*", len(n))
 	}
-	keepHead := min(4, digits-4)
+	keepHead := min(4, digits-5)
 	var b strings.Builder
 	i := 0
 	for _, r := range n {
