@@ -27,7 +27,7 @@ redis:
   db: 1
 
 room:
-  auto_create: false      # as in production: only the API creates rooms
+  auto_create: true       # as in production: LiveKit SIP creates the sipin_* rooms of inbound calls
   empty_timeout: 300
 
 logging:
