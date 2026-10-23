@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
 import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession, isCheckoutSession } from './appSessions';
