@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../platform', () => ({ platform: { kind: 'web', apiBase: '', apiFetch: vi.fn() } }));
 
 const { ApiError } = await import('./api/client');
-const { MAX_PROMPT_UPLOAD, callerNumber, cleanNumber, fieldError, numberValid, promptFileError, rememberTelephonyTab, rememberedTelephonyTab, targetInit, targetValue } =
+const { MAX_PROMPT_UPLOAD, callerNumber, cleanNumber, coalescer, fieldError, numberValid, promptFileError, rememberTelephonyTab, rememberedTelephonyTab, targetInit, targetValue } =
   await import('./sipPbx');
 
 describe('exchange routes as select values (ADR-0117)', () => {
@@ -83,5 +83,31 @@ describe('the greeting file and the caller number', () => {
     expect(callerNumber('+79161234567', false)).toBe('+7 916 123-45-67');
     expect(callerNumber('+7916*****67', true)).toBe('+7 916 ***-**-67');
     expect(callerNumber('+1202*****47', true)).toBe('+1202*****47');
+  });
+});
+
+describe('coalescer (SIP_CALLS_CHANGED, ADR-0128)', () => {
+  it('runs at once, then at most once per gap per key, keeping the last change', () => {
+    vi.useFakeTimers();
+    try {
+      const run = vi.fn();
+      const ping = coalescer(run, 1000);
+      ping('a');
+      expect(run).toHaveBeenCalledTimes(1);
+      ping('a');
+      ping('a');
+      ping('b');
+      expect(run.mock.calls).toEqual([['a'], ['b']]);
+      vi.advanceTimersByTime(999);
+      expect(run).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(1);
+      expect(run.mock.calls).toEqual([['a'], ['b'], ['a']]);
+      vi.advanceTimersByTime(5000);
+      expect(run).toHaveBeenCalledTimes(3);
+      ping('a');
+      expect(run).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

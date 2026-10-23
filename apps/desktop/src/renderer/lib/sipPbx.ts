@@ -154,3 +154,28 @@ export function callerNumber(n: string, masked: boolean): string {
   return masked ? n : formatPhone(n);
 }
 
+/**
+ * Coalesces SIP_CALLS_CHANGED (ADR-0128): a busy exchange sends one per step of every call, and
+ * each re-read is a request (the journal: every loaded page). `run(key)` goes at once when the
+ * key ran more than `gapMs` ago, otherwise once at the end of the gap — at most one re-read per
+ * gap per workspace, the last change never lost. No timer lives between bursts.
+ */
+export function coalescer(run: (key: string) => void, gapMs: number): (key: string) => void {
+  const last = new Map<string, number>();
+  const pending = new Set<string>();
+  return (key) => {
+    if (pending.has(key)) return;
+    const wait = (last.get(key) ?? -Infinity) + gapMs - Date.now();
+    const go = (): void => {
+      pending.delete(key);
+      last.set(key, Date.now());
+      run(key);
+    };
+    if (wait <= 0) go();
+    else {
+      pending.add(key);
+      setTimeout(go, wait);
+    }
+  };
+}
+
