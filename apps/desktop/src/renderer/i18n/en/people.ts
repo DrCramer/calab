@@ -19,6 +19,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   // profile popover
   'people.profile.role': 'Role',
   'people.profile.voice': 'Voice',
+  'people.profile.extension': 'Extension',
   'people.profile.joined': 'Member since',
   'people.profile.name': 'Profile name',
   'people.profile.status': 'Status',

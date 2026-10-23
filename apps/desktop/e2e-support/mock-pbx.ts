@@ -163,6 +163,7 @@ export function createExtension(
     userId: b.userId,
     description: trimmed(b.description, 64, 'description', false),
     createdAt: now,
+    externalBlocked: b.externalBlocked,
   });
   p.exts.push(e);
   return e;
@@ -181,6 +182,10 @@ export function updateExtension(p: MockPbx, m: PbxMembers, id: string, b: Messag
   if (b.userId !== undefined) {
     e.userId = b.userId;
     e.kind = b.userId && m.isBot(b.userId) ? SipExtensionKind.BOT : SipExtensionKind.USER;
+  }
+  if (b.externalBlocked !== undefined) {
+    if (e.kind === SipExtensionKind.GROUP && b.externalBlocked) throw invalid('externalBlocked');
+    e.externalBlocked = b.externalBlocked;
   }
   e.description = description;
   return e;
@@ -257,6 +262,7 @@ export function createMenu(p: MockPbx, wsId: string, id: string, me: string, now
     items: items(p, b.items?.items ?? []),
     updatedAt: now,
     updatedBy: me,
+    dialExtensions: b.dialExtensions,
   });
   p.menus.push(m);
   return m;
@@ -271,6 +277,7 @@ export function updateMenu(p: MockPbx, id: string, me: string, now: Timestamp, b
   const onNoInput = b.onNoInput ? target(p, b.onNoInput, 'onNoInput', false) : m.onNoInput;
   const list = b.items ? items(p, b.items.items) : m.items;
   Object.assign(m, { name, inputTimeoutSec, repeats, items: list, updatedAt: now, updatedBy: me, ...(onNoInput ? { onNoInput } : {}) });
+  if (b.dialExtensions !== undefined) m.dialExtensions = b.dialExtensions;
   if (b.promptSourceFileId !== undefined) {
     m.promptFileId = b.promptSourceFileId;
     m.promptStatus = b.promptSourceFileId ? SipPromptStatus.READY : SipPromptStatus.NONE;

@@ -5950,6 +5950,8 @@ class MockImpl {
     pbxUpdateExtension(p, m, ext('103', IDS.users.anna, 'Склад'), create(UpdateSipExtensionRequestSchema, { userId: '' }));
     const anna = ext('100', IDS.users.anna, 'Директор');
     const boris = ext('101', IDS.users.boris, 'Бухгалтерия');
+    // ADR-0129: Борис is not dialable from a menu by external callers; the main menu dials numbers.
+    pbxUpdateExtension(p, m, boris, create(UpdateSipExtensionRequestSchema, { externalBlocked: true }));
     const vera = ext('102', IDS.users.vera, '');
     const group = (name: string, number: string, roundRobin: boolean, members: string[], onFail: { kind: SipRouteKind; id?: string }): string =>
       pbxCreateGroup(p, wsId, { group: nextId(this.state, 'file'), ext: nextId(this.state, 'file') }, at, create(CreateSipGroupRequestSchema, {
@@ -5967,6 +5969,7 @@ class MockImpl {
     pbxCreateMenu(p, wsId, nextId(this.state, 'file'), IDS.users.anna, at, create(CreateSipIvrMenuRequestSchema, {
       name: 'Главное меню',
       promptSourceFileId: nextId(this.state, 'file'),
+      dialExtensions: true,
       onNoInput: { kind: SipRouteKind.GROUP, id: sales },
       items: {
         items: [

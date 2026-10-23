@@ -74,7 +74,14 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
 
   await tab(dialog, 'Номера');
   await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
+  // ADR-0129: 101 (Борис) is closed to external callers — «без внешних» in its row and the switch on in its form.
+  await expect(dialog.getByTestId('sip-ext-row').filter({ hasText: 'Борис' }).getByTestId('sip-ext-no-external')).toHaveText('без внешних');
   await checkpoint(shot, 'telephony-numbers');
+  await dialog.getByTestId('sip-ext-row').filter({ hasText: 'Борис' }).getByRole('button', { name: 'Изменить' }).click();
+  const noExternal = dialog.getByTestId('sip-ext-no-external-switch');
+  await expect(noExternal.getByRole('switch', { name: 'Не принимать внешние звонки по добавочному' })).toHaveAttribute('aria-checked', 'true');
+  await checkpoint(shot, 'telephony-number-no-external');
+  await dialog.getByTestId('sip-ext-form').getByRole('button', { name: 'Отмена' }).click();
 
   // A new number: the member picker without guests and members who have one.
   await dialog.getByTestId('sip-ext-add').click();
@@ -243,6 +250,11 @@ test('telephony-menu', async ({ open, win, mock, shot }) => {
   await expect(form.getByTestId('sip-menu-key-9')).toHaveValue('missing');
   await form.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-menu-form');
+  // ADR-0129: «Разрешить набор добавочного номера» on for the main menu.
+  const dial = form.getByTestId('sip-menu-dial');
+  await expect(dial.getByRole('switch', { name: 'Разрешить набор добавочного номера' })).toHaveAttribute('aria-checked', 'true');
+  await dial.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-menu-dial');
 });
 
 // ADR-0117 step 2: an inbound call rings me — the number, «Входящий на номер · <группа>», the
