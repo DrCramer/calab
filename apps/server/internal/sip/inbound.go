@@ -615,7 +615,7 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 			slog.WarnContext(ctx, "sip: worker leave", "call", r.ID, "err", err)
 		}
 		s.closeRoom(ctx, r.Room)
-	case fx.Answered:
+	case fx.Answered && fx.Released == nil: // a transfer's answer: the worker left at the first one
 		if err := s.agent.Leave(ctx, r.ID); err != nil {
 			slog.WarnContext(ctx, "sip: worker leave", "call", r.ID, "err", err)
 		}
@@ -650,6 +650,7 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 	if fx.Answered && r.Answered != nil {
 		s.onCall(ctx, *r.Answered, r.ID, true)
 	}
+	s.applyTransfer(ctx, r, fx)
 	if fx.Advance != nil {
 		if err := db.GuardExec(ctx, s.db, func(q *sqlc.Queries) error {
 			return q.SetSipGroupNextPosition(ctx, sqlc.SetSipGroupNextPositionParams{WorkspaceID: r.WS, ID: fx.Advance.Group, NextPosition: int32(fx.Advance.Position)}) //nolint:gosec // ≤ 20 members
@@ -665,6 +666,11 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 			return q.FinishSipCall(ctx, sqlc.FinishSipCallParams{ID: r.ID, Status: pbconv.SipEnded, Reason: fx.Hangup, EndedBy: r.EndedBy})
 		})
 		slog.InfoContext(ctx, "sip: inbound call ended", "call", r.ID, "reason", fx.Hangup, "route", strings.Join(r.Route, " → "))
+	case fx.Changed && !fx.Answered && (fx.Xfer || r.Xfer != nil): // a transfer rings / ended (ADR-0132)
+		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+			return q.UpdateSipInboundTransfer(ctx, sqlc.UpdateSipInboundTransferParams{ID: r.ID, RingingUserIds: nonNil(r.Ringing),
+				Route: clip(strings.Join(r.Route, " → "), 500)})
+		})
 	case fx.Changed && r.Phase != PhaseActive:
 		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
 			return q.UpdateSipInboundRinging(ctx, sqlc.UpdateSipInboundRingingParams{ID: r.ID, RingingUserIds: nonNil(r.Ringing),
@@ -707,6 +713,9 @@ func (s *Service) announce(ctx context.Context, row sqlc.SipCall, r *inRec, fx *
 	to := append(append([]uuid.UUID{}, fx.Stopped...), r.Ringing...)
 	if r.Answered != nil {
 		to = append(to, *r.Answered)
+	}
+	if fx.Released != nil {
+		to = append(to, *fx.Released)
 	}
 	for _, u := range to {
 		if seen[u] {
@@ -773,6 +782,15 @@ func (s *Service) Inbound(ctx context.Context, event, room string, p *rtc.Partic
 			return nil
 		}
 		err = s.withCall(ctx, row.ID, func(r *inRec, e Env, _ *Effects) error {
+			if r.Xfer != nil && r.Answered != nil && *r.Answered == user {
+				// A transfer rings (ADR-0132): the deadline is the ringing's; the grace starts if
+				// the call comes back to the member (applyTransfer).
+				r.AnswerLeft = 0
+				if gone {
+					r.AnswerLeft = e.Now.UnixMilli()
+				}
+				return nil
+			}
 			if r.Phase != PhaseActive || r.Answered == nil || *r.Answered != user {
 				return nil
 			}
@@ -963,7 +981,7 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 		// room): before the answer the caller would hear silence — hang up.
 		slog.WarnContext(ctx, "sip: IVR worker", "call", id, "op", ev.Op, "error", ev.Error)
 		fn = func(r *inRec, _ Env, fx *Effects) error {
-			if r.Phase != PhaseActive {
+			if r.Phase != PhaseActive && !r.Transferring() { // answered: the worker is gone anyway
 				r.Hangup(reasonAgent, fx)
 			}
 			return nil
@@ -1154,6 +1172,7 @@ func (s *Service) acceptInbound(w http.ResponseWriter, r *http.Request) error {
 	ctx, me := r.Context(), uid(r)
 	var room string
 	err = s.withCall(ctx, row.ID, func(rec *inRec, e Env, fx *Effects) error {
+		xfer := rec.Transferring()
 		if err := rec.Answer(e, me, fx); err != nil {
 			if rangUser(rec, me) {
 				return errCallOver()
@@ -1162,6 +1181,10 @@ func (s *Service) acceptInbound(w http.ResponseWriter, r *http.Request) error {
 		}
 		var err error
 		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+			if xfer { // ADR-0132: the call was answered; it is the target's now
+				return q.TransferSipInboundCall(ctx, sqlc.TransferSipInboundCallParams{ID: rec.ID, UserID: me,
+					Route: clip(strings.Join(rec.Route, " → "), 500)})
+			}
 			return q.AnswerSipInboundCall(ctx, sqlc.AnswerSipInboundCallParams{ID: rec.ID, UserID: me})
 		})
 		if db.IsNotFound(err) {

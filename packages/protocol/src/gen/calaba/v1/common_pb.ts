@@ -523,8 +523,8 @@ export enum ErrorCode {
 
   /**
    * One-to-one calls (ADR-0034), all 409.
-   *
-   * POST /api/dms/{id}/call: the callee is in another call
+   * POST /api/dms/{id}/call: the callee is in another call; POST …/sip/calls/{cid}/transfer: the
+   * target is in another call or its group has nobody free (ADR-0132).
    *
    * @generated from enum value: ERROR_CODE_BUSY = 41;
    */

@@ -52,7 +52,9 @@ enum ErrorCode {
   // 403: a bot writes to a person who blocked it (POST /api/me/blocked-bots/{id}, ADR-0031).
   ERROR_CODE_BOT_BLOCKED = 40;
   // One-to-one calls (ADR-0034), all 409.
-  ERROR_CODE_BUSY = 41;            // POST /api/dms/{id}/call: the callee is in another call
+  // POST /api/dms/{id}/call: the callee is in another call; POST …/sip/calls/{cid}/transfer: the
+  // target is in another call or its group has nobody free (ADR-0132).
+  ERROR_CODE_BUSY = 41;
   ERROR_CODE_IN_CALL = 42;         // POST /api/dms/{id}/call: the caller already has a call
   ERROR_CODE_CALL_NOT_ACTIVE = 43; // POST /api/rooms/{id}/join of a DM without an active call of the caller
   // 401 on POST /api/auth/refresh: the session was ended; `reason` says why: "REUSE" (a refresh
