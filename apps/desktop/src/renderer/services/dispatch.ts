@@ -51,6 +51,7 @@ import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { applySnapshotSipCalls, dropSipCalls, onSipCallUpdate, resetSipCalls } from './sip';
 import { onSipInboundRing } from './sipInbound';
+import { activeCallsKey, coalescer, journalKey } from '../lib/sipPbx';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
@@ -139,6 +140,14 @@ onRoomArchived((roomId) => {
   const room = useRooms.getState().byId[roomId];
   if (room) removeRoom(room.workspaceId, roomId);
 });
+
+// «Активные звонки» (ADR-0128): re-read only if the tab is open and the window is seen; hidden —
+// just stale, refetched on focus / remount. A busy exchange's bursts: one re-read a second.
+const callsChanged = coalescer((ws) => {
+  const refetchType = document.hidden ? 'none' : 'active';
+  void queryClient.invalidateQueries({ queryKey: activeCallsKey(ws), refetchType });
+  void queryClient.invalidateQueries({ queryKey: journalKey(ws), refetchType });
+}, 1000);
 
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
@@ -581,6 +590,9 @@ export function applyDispatch(ev: DispatchEvent): void {
     // An inbound phone call rings me (ADR-0117): the incoming modal.
     case 'sipInboundRing':
       onSipInboundRing(e.value.call);
+      return;
+    case 'sipCallsChanged':
+      callsChanged(e.value.workspaceId);
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);

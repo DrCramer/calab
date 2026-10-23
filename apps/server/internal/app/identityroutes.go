@@ -266,6 +266,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/workspaces/{id}/sip/extensions":                             scopeWorkspace,
 	"GET /api/workspaces/{id}/sip/groups":                                 scopeWorkspace,
 	"GET /api/workspaces/{id}/sip/ivr":                                    scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/calls":                                  scopeWorkspace,
 	"GET /api/workspaces/{id}/ai":                                         scopeWorkspace,
 	"GET /api/workspaces/{id}/ai/status":                                  scopeWorkspace,
 	"GET /api/workspaces/{id}/sounds":                                     scopeWorkspace,

@@ -38,9 +38,12 @@ turn:
   relay_range_end: 29999
 
 room:
-  # Rooms are created only by our API: it calls CreateRoom (idempotent)
-  # before issuing every join token.
-  auto_create: false
+  # Our API calls CreateRoom (idempotent) before issuing every join token. Inbound phone calls
+  # (ADR-0117) need auto_create: LiveKit SIP puts the caller into a new room sipin_<workspace>_…
+  # of its own (SIPDispatchRuleIndividual, random suffix) that the API cannot create in advance;
+  # with auto_create: false the server answers 404 and the caller hears busy. Joining still needs
+  # a token, and only the API (or LiveKit SIP, by our dispatch rule) mints them.
+  auto_create: true
   empty_timeout: 300
   max_participants: 100
 

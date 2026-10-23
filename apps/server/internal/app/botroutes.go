@@ -407,7 +407,7 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/boards/{id}/webhook/ping",
 		"PUT /api/boards/{id}/permissions",
 	}},
-	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned) and the exchange — internal numbers, groups, voice menus (ADR-0117; the list of numbers is open to every member but guests), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned) and the exchange — internal numbers, groups, voice menus (ADR-0117; the list of numbers is open to every member but guests), the live calls (ADR-0128; numbers masked without VIEW_JOURNALS), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
 		"GET /api/workspaces/{id}/apps",
 		"POST /api/workspaces/{id}/apps",
 		"PATCH /api/workspace-apps/{appId}",
@@ -432,6 +432,7 @@ var botRouteGroups = []botRouteGroup{
 		"PATCH /api/workspaces/{id}/sip/ivr/{mid}",
 		"DELETE /api/workspaces/{id}/sip/ivr/{mid}",
 		"GET /api/workspaces/{id}/sip/extensions",
+		"GET /api/workspaces/{id}/sip/calls",
 		"GET /api/workspaces/{id}/ai",
 		"PUT /api/workspaces/{id}/ai",
 		"POST /api/workspaces/{id}/ai/check",

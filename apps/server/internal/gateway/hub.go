@@ -649,6 +649,14 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 				s.dispatchEnc(id, shared)
 			}
 		}
+	case *v1.DispatchEvent_SipCallsChanged:
+		// «Активные звонки» of the telephony settings (ADR-0128): as REST GET …/sip/calls
+		// (MANAGE_INTEGRATIONS, never a guest); bots read the endpoint themselves.
+		for _, s := range sessions {
+			if !s.bot && st.members[s.user].Workspace().Has(perm.ManageIntegrations) && st.role(s.user) != perm.RoleGuest {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
 		// Bans are shown to those who manage members (item 32; MANAGE_MEMBERS, ADR-0048).
 		for _, s := range sessions {

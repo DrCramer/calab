@@ -302,6 +302,9 @@ var eventScope = map[protoreflect.Name]bool{
 	// An inbound phone call rings the recipient (ADR-0117): the recipient's user channel only
 	// (and a bot's webhook); not workspace-lease-gated.
 	"sip_inbound_ring": false,
+	// The workspace's live phone calls changed (ADR-0128): workspace channel; routed to the
+	// sessions with MANAGE_INTEGRATIONS (not guests, not bots).
+	"sip_calls_changed": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

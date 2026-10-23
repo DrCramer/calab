@@ -74,7 +74,7 @@
 
 - Официальный образ, host network, конфиг-шаблон `infra/docker/livekit/livekit.yaml.tpl` (рендерится `deploy.sh`).
 - Одна LiveKit-room = одна voice-комната Calaba. Имя room = `ws_<workspaceId>_room_<roomId>`.
-- `room.auto_create: false`: комнаты создаёт только API — перед выдачей каждого join-токена вызывает `CreateRoom` (идемпотентно; существующая комната возвращается как есть) с `empty_timeout: 300` с.
+- `room.auto_create: true`: обычные комнаты создаёт API — перед выдачей каждого join-токена вызывает `CreateRoom` (идемпотентно; существующая комната возвращается как есть) с `empty_timeout: 300` с. Автосоздание нужно входящим звонкам (ADR-0117): LiveKit SIP по правилу `SIPDispatchRuleIndividual` заводит абонента в новую комнату `sipin_<пространство>_…` со случайным суффиксом, создать её заранее API не может; при `false` сервер отвечает 404 и абонент слышит «занято». Войти в комнату без токена нельзя, токены выдают только API и LiveKit SIP по нашему правилу.
 - Participant identity = `<user_id>:<session_id>` — один пользователь может быть в комнате с нескольких устройств (см. docs/05).
 - Webhooks `participant_joined/left`, `track_published/unpublished` → сервер обновляет voice-state и рассылает по gateway (кто в какой комнате, кто стримит).
 
