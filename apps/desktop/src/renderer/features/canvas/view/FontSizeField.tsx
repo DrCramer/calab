@@ -91,7 +91,6 @@ export const FontSizeField = memo(function FontSizeField({
         type="button"
         aria-label={t('common.decrease', { label })}
         disabled={mixed || value <= MIN}
-        onPointerDown={keepFocus}
         onMouseDown={keepFocus}
         onClick={(e) => step(e.shiftKey ? -10 : -1)}
         className={cx(BTN, btn)}
@@ -134,7 +133,6 @@ export const FontSizeField = memo(function FontSizeField({
         type="button"
         aria-label={t('common.increase', { label })}
         disabled={mixed || value >= MAX}
-        onPointerDown={keepFocus}
         onMouseDown={keepFocus}
         onClick={(e) => step(e.shiftKey ? 10 : 1)}
         className={cx(BTN, btn)}
@@ -174,7 +172,6 @@ function Presets({
         <button
           type="button"
           aria-label={label}
-          onPointerDown={keepFocus}
           onMouseDown={keepFocus}
           className={cx(BTN, touch ? 'size-11' : 'h-7 w-5')}
           data-testid={`${testId}-presets`}
@@ -209,7 +206,6 @@ function Presets({
                   type="button"
                   role="option"
                   aria-selected={n === value}
-                  onPointerDown={keepFocus}
                   onMouseDown={keepFocus}
                   onClick={() => onPick(n)}
                   className={cx(

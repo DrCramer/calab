@@ -46,7 +46,8 @@ export function PhoneBtn({
       aria-pressed={active === undefined ? undefined : active}
       disabled={disabled}
       // A tap on a button never takes the focus from the canvas or from the textarea being edited (the keyboard stays up).
-      onPointerDown={keepFocus}
+      // `mousedown` only: WebKit (iOS Safari, the app's WKWebView) drops the click of a touch whose `pointerdown` was
+      // prevented, so a prevented pointerdown would make every phone button dead.
       onMouseDown={keepFocus}
       onClick={onClick}
       className={cx(BTN, active && ACTIVE_TOOL)}

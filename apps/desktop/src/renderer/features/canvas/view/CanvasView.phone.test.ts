@@ -601,9 +601,14 @@ describe('touch editing in the viewer', () => {
     // B toggles bold at the caret and keeps the textarea focused (the keyboard stays up)
     const ta = m.host.querySelector('textarea') as HTMLTextAreaElement;
     ta.focus();
-    const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+    // mousedown keeps the focus; pointerdown must stay unprevented — WebKit drops the click of a touch whose
+    // pointerdown was prevented (every phone button was dead in iOS Safari).
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     act(() => void m.q('canvas-format-bold')?.dispatchEvent(down));
     expect(down.defaultPrevented).toBe(true);
+    const pdown = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+    act(() => void m.q('canvas-format-bold')?.dispatchEvent(pdown));
+    expect(pdown.defaultPrevented).toBe(false);
     click(m, 'canvas-format-bold');
     expect(m.q('canvas-format-bold')?.getAttribute('aria-pressed')).toBe('true');
     expect(m.q('canvas-format-size-input')?.getAttribute('inputmode')).toBe('numeric');
