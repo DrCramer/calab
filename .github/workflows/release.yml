@@ -278,6 +278,8 @@ jobs:
           MAIN_VITE_UPDATE_GITHUB: ${{ env.RELEASE_REPO }}
           MAIN_VITE_DEFAULT_SERVER_URL: ${{ env.APP_ORIGIN }}   # the host the preflight job checked
           MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.trusted == '1' && '1' || '' }}
+          # the bundle (canvas, PR #230) outgrew node's default ~2 GB heap on the mac arm64 runner (7 GB RAM): OOM in v4.0.0
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm -F @calaba/desktop run build:app
       - name: third-party notices generated
         run: test -s apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt
