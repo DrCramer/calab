@@ -14,6 +14,8 @@ import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { dmPeer } from '../../stores/dms';
 import { usePhoneCallNumber } from '../../stores/sipInbound';
+import { phoneCallId } from '../../lib/sipInbound';
+import { PhoneTransferButton, PhoneTransferStatus } from '../call/PhoneTransfer';
 import { formatPhone } from '../../lib/sip';
 import { useMemberName } from '../../stores/workspaces';
 import { openDm } from '../../services/dms';
@@ -75,6 +77,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
     <div className={cx('shrink-0 px-4 pt-1 [.kb-open_&]:hidden', aboveTabs ? 'pb-2' : 'pb-[calc(var(--safe-bottom,0px)+8px)]')} data-testid="mobile-voice-strip">
       {/* Push-to-talk: a big hold button above the island, in the flow — the feed and the composer above it shrink by its height. */}
       {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
+      {/* A transfer of the phone call rings (ADR-0132): «Переводим: Имя · Отменить перевод». */}
+      {phone !== null ? <PhoneTransferStatus callId={phoneCallId(roomId)} className="mb-2 shadow-[var(--shadow-island)]" /> : null}
       <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1 rounded-[var(--radius-panel)] pl-2 pr-1.5 shadow-[var(--shadow-island)]">
         {me ? (
           <span
@@ -135,7 +139,8 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
         >
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
-        <StripCamera roomId={roomId} />
+        {/* A phone call has no camera: «Перевести» takes its place (ADR-0132). */}
+        {phone !== null ? <PhoneTransferButton callId={phoneCallId(roomId)} className={cx(round, idle)} /> : <StripCamera roomId={roomId} />}
         {/* Soundboard (ADR-0036): the island's panel as a bottom sheet, «Ещё → Звуки». */}
         {call ? (
           <MoreMenu roomId={roomId} cameraItem={false} />

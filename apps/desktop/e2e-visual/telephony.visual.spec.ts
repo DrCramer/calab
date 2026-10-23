@@ -270,4 +270,36 @@ test('telephony-incoming', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'telephony-incoming');
   await modal.getByRole('button', { name: 'Отклонить' }).click();
   await expect(modal).toHaveCount(0);
+
+  // ADR-0132: the next call taken — the island's «Перевести» opens the picker (groups by their
+  // number, colleagues with theirs, «Перевести на номер N» for digits); a pick rings Борис while I
+  // stay on the call — «Переводим: Борис» with «Отменить перевод».
+  mock.seedSipExchange();
+  mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
+  await modal.getByRole('button', { name: 'Принять' }).click();
+  const panel = win.getByRole('region', { name: 'Голосовое подключение' });
+  await expect(panel).toContainText('Звонок · +7 916 123-45-67');
+  await expect(panel).toContainText('Голос подключён', { timeout: 30_000 });
+  const transfer = panel.getByTestId('sip-transfer');
+  await expect(transfer).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'telephony-in-call');
+  await transfer.click();
+  const picker = win.getByTestId('sip-transfer-picker');
+  await expect(picker.getByRole('option', { name: /Отдел продаж/ })).toBeVisible();
+  await expect(picker.getByRole('option', { name: /Борис/ })).toBeVisible();
+  await checkpoint(shot, 'telephony-transfer-picker');
+  await win.keyboard.type('105');
+  await expect(picker.getByRole('option', { name: 'Перевести на номер 105' })).toBeVisible();
+  await win.keyboard.press('Backspace');
+  await win.keyboard.press('Backspace');
+  await win.keyboard.press('Backspace');
+  await picker.getByRole('option', { name: /Борис/ }).click();
+  const ringing = panel.getByTestId('sip-transferring');
+  await expect(ringing).toContainText('Переводим: Борис');
+  await checkpoint(shot, 'telephony-transferring');
+  await ringing.getByRole('button', { name: 'Отменить перевод' }).click();
+  await expect(transfer).toBeVisible();
+  await panel.getByRole('button', { name: 'Отключиться' }).click();
+  await expect(panel).toHaveCount(0);
 });

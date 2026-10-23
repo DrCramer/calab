@@ -1,7 +1,7 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { SipCallDirection, SipCallSchema, SipCallStatus, type SipCall } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { NO_INBOUND, applyInbound, inboundOf, isPhoneRoom, phoneCallId, phoneRoomId } from './sipInbound';
+import { NO_INBOUND, applyInbound, inboundOf, isPhoneRoom, phoneCallId, phoneRoomId, transferTargets } from './sipInbound';
 
 const me = 'u-me';
 const call = (id: string, status: SipCallStatus, over: MessageInitShape<typeof SipCallSchema> = {}): SipCall =>
@@ -41,6 +41,27 @@ describe('inbound calls', () => {
     const s = inboundOf([out, call('c1', SipCallStatus.RINGING, { ringingUserIds: [me] }), call('c2', SipCallStatus.ACTIVE, { answeredBy: me })], me);
     expect(s.ringing.map((c) => c.id)).toEqual(['c1']);
     expect(s.active?.id).toBe('c2');
+  });
+
+  it('a transfer (ADR-0132): rings the target of an ACTIVE call, stays with the member until answered', () => {
+    const xfer = call('c1', SipCallStatus.ACTIVE, { answeredBy: 'u2', ringingUserIds: [me] });
+    // The target: the ACTIVE call rings me.
+    let s = applyInbound(NO_INBOUND, xfer, me);
+    expect(s.ringing.map((c) => c.id)).toEqual(['c1']);
+    expect(s.active).toBeNull();
+    // The member who transfers: still my call, with the target ringing.
+    let m = applyInbound(NO_INBOUND, call('c1', SipCallStatus.ACTIVE, { answeredBy: me }), me);
+    m = applyInbound(m, call('c1', SipCallStatus.ACTIVE, { answeredBy: me, ringingUserIds: ['u2'] }), me);
+    expect(m.ringing).toEqual([]);
+    expect(transferTargets(m.active)).toEqual(['u2']);
+    // The target answers: the call is theirs, gone here.
+    m = applyInbound(m, call('c1', SipCallStatus.ACTIVE, { answeredBy: 'u2' }), me);
+    expect(m.active).toBeNull();
+    s = applyInbound(s, call('c1', SipCallStatus.ACTIVE, { answeredBy: me }), me);
+    expect(s.ringing).toEqual([]);
+    expect(s.active?.id).toBe('c1');
+    expect(transferTargets(s.active)).toEqual([]);
+    expect(transferTargets(call('c2', SipCallStatus.RINGING, { ringingUserIds: [me] }))).toEqual([]);
   });
 
   it('names phone rooms', () => {

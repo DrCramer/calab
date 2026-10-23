@@ -24,6 +24,7 @@ import {
   PutSipSettingsRequestSchema,
   PutSipSettingsResponseSchema,
   PutSipInboundRequestSchema,
+  TransferSipCallRequestSchema,
   PutSipInboundResponseSchema,
   SipCallResponseSchema,
   SipInboundAcceptResponseSchema,
@@ -765,6 +766,14 @@ export const api = {
     joinInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/join`, JoinVoiceResponseSchema),
     declineInbound: (callId: string) => callEmpty('POST', `/api/sip/inbound/${callId}/decline`),
     hangupInbound: (callId: string) => call('DELETE', `/api/sip/inbound/${callId}`, SipCallResponseSchema),
+    /**
+     * ADR-0132: hand the answered call over (a member, a number or a group — exactly one) and
+     * cancel that. 409 BUSY (the target is busy), 409 CONFLICT (already transferring / over),
+     * 422 target.
+     */
+    transfer: (workspaceId: string, callId: string, init: MessageInitShape<typeof TransferSipCallRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sip/calls/${callId}/transfer`, SipCallResponseSchema, body(TransferSipCallRequestSchema, init)),
+    cancelTransfer: (workspaceId: string, callId: string) => call('DELETE', `/api/workspaces/${workspaceId}/sip/calls/${callId}/transfer`, SipCallResponseSchema),
   },
   /**
    * AI integration (CBF-60, ai.proto) — MANAGE_INTEGRATIONS. PUT replaces the form (api_key unset =

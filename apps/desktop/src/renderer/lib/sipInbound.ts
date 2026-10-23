@@ -58,7 +58,8 @@ export function applyInbound(s: InboundState, c: SipCall, me: string): InboundSt
   if (c.direction !== SipCallDirection.IN || !me) return s;
   if (s.active?.id === c.id && c.status === SipCallStatus.RINGING) return s;
   const live = LIVE.has(c.status);
-  const ringsMe = live && c.status !== SipCallStatus.ACTIVE && c.ringingUserIds.includes(me);
+  // An ACTIVE call rings me while somebody transfers it to me (ADR-0132).
+  const ringsMe = live && c.answeredBy !== me && c.ringingUserIds.includes(me);
   const mine = live && c.status === SipCallStatus.ACTIVE && c.answeredBy === me;
   const had = s.ringing.findIndex((x) => x.id === c.id);
   let ringing = s.ringing;
@@ -71,6 +72,16 @@ export function applyInbound(s: InboundState, c: SipCall, me: string): InboundSt
   if (ringing === s.ringing && active === s.active) return s;
   return { ringing, active };
 }
+
+/**
+ * A transfer of an answered call (ADR-0132): the call stays ACTIVE with `answered_by` while
+ * `ringing_user_ids` ring the target — who they are ([] = no transfer rings).
+ */
+export function transferTargets(c: SipCall | null | undefined): readonly string[] {
+  return c && c.status === SipCallStatus.ACTIVE ? c.ringingUserIds : NO_TARGETS;
+}
+
+const NO_TARGETS: readonly string[] = [];
 
 /** READY: the inbound calls of every workspace snapshot (anything known before is replaced). */
 export function inboundOf(calls: readonly SipCall[], me: string): InboundState {
