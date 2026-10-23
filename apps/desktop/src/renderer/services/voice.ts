@@ -52,7 +52,7 @@ import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { AUTO_MUTE_TOAST, AutoMuteTimer, autoMuteArmed, type AutoMuteSec } from '../lib/autoMute';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { answerCallSelf, canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -2568,6 +2568,17 @@ class VoiceEngine {
     if ((v.muted || v.deafened || v.serverMuted) !== muted) this.toggleMute();
     const next = useVoice.getState();
     return (next.muted || next.deafened || next.serverMuted) === muted;
+  }
+
+  /**
+   * The user answered a call (explicit accept): mic on, undeafened (lib/voiceLogic.answerCallSelf).
+   * Called before the call's join, which reads the store for the capture and the first voice state.
+   */
+  unmuteForAnswer(): void {
+    const next = answerCallSelf(useVoice.getState());
+    if (!next) return;
+    setVoice(next);
+    if (this.room) this.afterSelfChange();
   }
 
   toggleMute(): void {

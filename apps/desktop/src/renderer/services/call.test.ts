@@ -26,6 +26,7 @@ vi.mock('./voice', () => ({
     join: (r: string, w: string, o?: unknown) => join(r, w, o),
     leave: () => leave(),
     setMuted: (muted: boolean) => { useVoice.setState({muted}); return true; },
+    unmuteForAnswer: () => {},
     get takenOverRoom() {
       return voiceState.takenOverRoom;
     },

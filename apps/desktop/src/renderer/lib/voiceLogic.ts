@@ -33,6 +33,19 @@ export function toggleDeafen(s: SelfState & { serverMuted?: boolean }): Required
 }
 
 /**
+ * Answering a call (phone, ADR-0117, or one-to-one) is an explicit wish to talk: a muted mic is
+ * switched on and a deafened user is undeafened (a call you cannot hear makes no sense). A moderator
+ * mute (`serverMuted`) is the server's: left as it is, deafen still lifts. Push-to-talk needs no
+ * special case: a call is voice activation only (ADR-0034), `muted: false` just means "not hard-muted".
+ * Returns null when nothing changes.
+ */
+export function answerCallSelf(s: SelfState & { serverMuted?: boolean }): Required<SelfState> | null {
+  const muted = s.serverMuted === true ? s.muted : false;
+  if (muted === s.muted && !s.deafened) return null;
+  return { muted, deafened: false, mutedBeforeDeafen: false };
+}
+
+/**
  * Push-to-talk key / button down (#12): only an unmuted, undeafened mic can go on air — muted or
  * deafened, the press is ignored: no gate, no transmission, no activation cue.
  */

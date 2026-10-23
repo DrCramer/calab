@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
+import { meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, answerCallSelf, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
 
 describe('mute / deafen', () => {
   it('mute toggles; the mic button while deafened lifts deafen and turns the mic on (Discord)', () => {
@@ -159,5 +159,21 @@ describe('micModeFor (ADR-0034)', () => {
     expect(micModeFor('voice', true)).toBe('voice');
     expect(micModeFor('ptt', false)).toBe('ptt');
     expect(micModeFor('voice', false)).toBe('voice');
+  });
+});
+
+describe('answerCallSelf', () => {
+  it('unmutes a muted mic', () => {
+    expect(answerCallSelf({ muted: true, deafened: false })).toEqual({ muted: false, deafened: false, mutedBeforeDeafen: false });
+  });
+  it('undeafens and unmutes a deafened user', () => {
+    expect(answerCallSelf({ muted: true, deafened: true, mutedBeforeDeafen: true })).toEqual({ muted: false, deafened: false, mutedBeforeDeafen: false });
+  });
+  it('changes nothing for a live mic', () => {
+    expect(answerCallSelf({ muted: false, deafened: false })).toBeNull();
+  });
+  it('keeps a moderator mute, still undeafens', () => {
+    expect(answerCallSelf({ muted: true, deafened: false, serverMuted: true })).toBeNull();
+    expect(answerCallSelf({ muted: true, deafened: true, serverMuted: true })).toEqual({ muted: true, deafened: false, mutedBeforeDeafen: false });
   });
 });
