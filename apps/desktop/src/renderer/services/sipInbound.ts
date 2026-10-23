@@ -132,6 +132,7 @@ export async function acceptInbound(callId: string): Promise<void> {
     if (r.call) set(applyInbound(useSipInbound.getState(), r.call, myUserId()));
     const v = useVoice.getState();
     if (v.roomId && v.roomId !== room) await voice.leave();
+    voice.unmuteForAnswer(); // explicit accept: a muted / deafened user is brought back to talking
     await voice.join(room, '', { call: true });
   } catch (e) {
     log.warn('sip inbound: accept failed', e);

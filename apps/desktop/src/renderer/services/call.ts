@@ -350,6 +350,8 @@ export function callErrorText(e: unknown): string {
 // ---------------------------------------------------------------- voice
 
 function joinCallVoice(call: Call, resumed: boolean): void {
+  // Answered here by the user (not a resume / the other side's join): mic on, undeafened.
+  if (!resumed && accepting?.id === call.id) voice.unmuteForAnswer();
   void voice.join(call.dmRoomId, '', { call: true, resumed, ...(hostAudioEvents.has(call.id) ? {nativeCallEvent: hostAudioEvents.get(call.id)} : {}) });
 }
 
