@@ -9,6 +9,7 @@ import { RendererCrashBudget } from './crashRecovery';
 import { log } from './logging';
 import { windowIconPath } from './icons';
 import { isPdfViewerFrame } from './pdfFrame';
+import { openLink } from './ownLink';
 import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -230,7 +231,7 @@ export function createMainWindow(): BrowserWindow {
         },
       };
     }
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) openLink(url);
     return { action: 'deny' };
   });
   win.webContents.on('did-create-window', (child, details) => {
@@ -282,7 +283,7 @@ export function guardWebContents(wc: WebContents): void {
   });
   wc.on('will-attach-webview', (e) => e.preventDefault());
   wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) openLink(url);
     return { action: 'deny' };
   });
 }
