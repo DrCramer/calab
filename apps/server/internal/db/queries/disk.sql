@@ -420,3 +420,13 @@ WITH RECURSIVE root AS (
     WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
 )
 UPDATE disk_items d SET trashed_at = sqlc.arg('trashed_at')::timestamptz FROM sub WHERE d.id = sub.id;
+
+-- name: GetDiskFolderByName :one
+-- A live folder of the folder parent (NULL = the root) by name, ignoring case: the server's own
+-- folders (phone recordings, ADR-0131) are found again by name.
+SELECT * FROM disk_items
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid
+  AND (parent_id = sqlc.narg('parent_id')::uuid OR (sqlc.narg('parent_id')::uuid IS NULL AND parent_id IS NULL))
+  AND kind = 'folder' AND lower(name) = lower(sqlc.arg('name')::text) AND trashed_at IS NULL
+ORDER BY id
+LIMIT 1;

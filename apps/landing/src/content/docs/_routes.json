@@ -430,6 +430,7 @@
 {"method":"GET","path":"/api/workspaces/{id}/sip/calls","decision":"allow","group":"rooms"},
 {"method":"POST","path":"/api/workspaces/{id}/sip/calls/{cid}/transfer","decision":"allow","group":"rooms"},
 {"method":"DELETE","path":"/api/workspaces/{id}/sip/calls/{cid}/transfer","decision":"allow","group":"rooms"},
+{"method":"PUT","path":"/api/workspaces/{id}/sip/recording","decision":"allow","group":"rooms"},
 {"method":"GET","path":"/api/workspaces/{id}/sounds","decision":"allow","group":"rooms"},
 {"method":"POST","path":"/api/workspaces/{id}/sounds","decision":"allow","group":"rooms"},
 {"method":"PATCH","path":"/api/workspaces/{id}/sounds/{soundId}","decision":"allow","group":"rooms"},

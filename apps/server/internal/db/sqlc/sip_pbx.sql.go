@@ -109,7 +109,7 @@ func (q *Queries) DeleteSipIvrItems(ctx context.Context, menuID uuid.UUID) error
 
 const deleteSipIvrMenu = `-- name: DeleteSipIvrMenu :one
 DELETE FROM sip_ivr_menus WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions, notice_file_id, notice_duration_ms
 `
 
 type DeleteSipIvrMenuParams struct {
@@ -136,6 +136,8 @@ func (q *Queries) DeleteSipIvrMenu(ctx context.Context, arg DeleteSipIvrMenuPara
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.DialExtensions,
+		&i.NoticeFileID,
+		&i.NoticeDurationMs,
 	)
 	return i, err
 }
@@ -200,7 +202,7 @@ func (q *Queries) GetSipGroup(ctx context.Context, arg GetSipGroupParams) (SipGr
 }
 
 const getSipIvrMenu = `-- name: GetSipIvrMenu :one
-SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions FROM sip_ivr_menus WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions, notice_file_id, notice_duration_ms FROM sip_ivr_menus WHERE id = $1 AND workspace_id = $2
 `
 
 type GetSipIvrMenuParams struct {
@@ -227,6 +229,8 @@ func (q *Queries) GetSipIvrMenu(ctx context.Context, arg GetSipIvrMenuParams) (S
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.DialExtensions,
+		&i.NoticeFileID,
+		&i.NoticeDurationMs,
 	)
 	return i, err
 }
@@ -386,7 +390,7 @@ INSERT INTO sip_ivr_menus (workspace_id, name, prompt_file_id, prompt_duration_m
                            no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, updated_by,
                            dial_extensions)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions, notice_file_id, notice_duration_ms
 `
 
 type InsertSipIvrMenuParams struct {
@@ -436,15 +440,18 @@ func (q *Queries) InsertSipIvrMenu(ctx context.Context, arg InsertSipIvrMenuPara
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.DialExtensions,
+		&i.NoticeFileID,
+		&i.NoticeDurationMs,
 	)
 	return i, err
 }
 
 const isSipPromptFile = `-- name: IsSipPromptFile :one
-SELECT EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1)::boolean
+SELECT EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1 OR notice_file_id = $1)::boolean
 `
 
-// The file is the prompt of a voice menu (files.CanRead: MANAGE_INTEGRATIONS of its workspace).
+// The file is the prompt or the recording notice of a voice menu (files.CanRead:
+// MANAGE_INTEGRATIONS of its workspace).
 func (q *Queries) IsSipPromptFile(ctx context.Context, promptFileID *uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, isSipPromptFile, promptFileID)
 	var column_1 bool
@@ -650,7 +657,7 @@ func (q *Queries) ListSipIvrItemsOf(ctx context.Context, menuID uuid.UUID) ([]Si
 }
 
 const listSipIvrMenus = `-- name: ListSipIvrMenus :many
-SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions FROM sip_ivr_menus WHERE workspace_id = $1 ORDER BY id
+SELECT id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions, notice_file_id, notice_duration_ms FROM sip_ivr_menus WHERE workspace_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListSipIvrMenus(ctx context.Context, workspaceID uuid.UUID) ([]SipIvrMenu, error) {
@@ -678,6 +685,8 @@ func (q *Queries) ListSipIvrMenus(ctx context.Context, workspaceID uuid.UUID) ([
 			&i.UpdatedAt,
 			&i.UpdatedBy,
 			&i.DialExtensions,
+			&i.NoticeFileID,
+			&i.NoticeDurationMs,
 		); err != nil {
 			return nil, err
 		}
@@ -768,6 +777,52 @@ func (q *Queries) SetMemberSipExtension(ctx context.Context, arg SetMemberSipExt
 		&i.AchievementCount,
 		&i.LastActiveAt,
 		&i.SipExtension,
+	)
+	return i, err
+}
+
+const setSipIvrMenuNotice = `-- name: SetSipIvrMenuNotice :one
+UPDATE sip_ivr_menus SET notice_file_id = $3, notice_duration_ms = $4, updated_by = $5, updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions, notice_file_id, notice_duration_ms
+`
+
+type SetSipIvrMenuNoticeParams struct {
+	ID               uuid.UUID
+	WorkspaceID      uuid.UUID
+	NoticeFileID     *uuid.UUID
+	NoticeDurationMs int32
+	UpdatedBy        *uuid.UUID
+}
+
+// The recording notice of a menu (ADR-0131): a new file, or NULL to remove it.
+func (q *Queries) SetSipIvrMenuNotice(ctx context.Context, arg SetSipIvrMenuNoticeParams) (SipIvrMenu, error) {
+	row := q.db.QueryRow(ctx, setSipIvrMenuNotice,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.NoticeFileID,
+		arg.NoticeDurationMs,
+		arg.UpdatedBy,
+	)
+	var i SipIvrMenu
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.PromptFileID,
+		&i.PromptDurationMs,
+		&i.InputTimeoutSec,
+		&i.Repeats,
+		&i.NoInputKind,
+		&i.NoInputMenuID,
+		&i.NoInputExtensionID,
+		&i.NoInputGroupID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.DialExtensions,
+		&i.NoticeFileID,
+		&i.NoticeDurationMs,
 	)
 	return i, err
 }
@@ -882,7 +937,7 @@ SET name = $3, prompt_file_id = $4, prompt_duration_ms = $5, input_timeout_sec =
     no_input_kind = $8, no_input_menu_id = $9, no_input_extension_id = $10, no_input_group_id = $11,
     updated_by = $12, dial_extensions = $13, updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions
+RETURNING id, workspace_id, name, prompt_file_id, prompt_duration_ms, input_timeout_sec, repeats, no_input_kind, no_input_menu_id, no_input_extension_id, no_input_group_id, created_at, updated_at, updated_by, dial_extensions, notice_file_id, notice_duration_ms
 `
 
 type UpdateSipIvrMenuParams struct {
@@ -934,6 +989,8 @@ func (q *Queries) UpdateSipIvrMenu(ctx context.Context, arg UpdateSipIvrMenuPara
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.DialExtensions,
+		&i.NoticeFileID,
+		&i.NoticeDurationMs,
 	)
 	return i, err
 }

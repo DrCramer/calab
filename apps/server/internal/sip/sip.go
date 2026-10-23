@@ -102,6 +102,8 @@ type Service struct {
 	regWarned bool
 	// Presence announces a user's presence after on_call changed (the gateway).
 	Presence func(ctx context.Context, u uuid.UUID)
+	// recorder records calls (ADR-0131, SetRecorder); nil = none.
+	recorder CallRecorder
 }
 
 // New wires the service. lk and s may be nil (no LiveKit): settings still work, calls and the
@@ -153,6 +155,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("GET /api/workspaces/{id}/sip/calls", wrap(httpx.HandlerFunc(s.activeCalls)))
 	mux.Handle("POST /api/rooms/{id}/calls", wrap(httpx.HandlerFunc(s.place)))
 	mux.Handle("DELETE /api/rooms/{id}/calls/{cid}", wrap(httpx.HandlerFunc(s.hangup)))
+	mux.Handle("PUT /api/workspaces/{id}/sip/recording", wrap(httpx.HandlerFunc(s.putRecording)))
 	s.pbxRoutes(mux, wrap)
 	s.inboundRoutes(mux, wrap)
 	s.transferRoutes(mux, wrap)
@@ -230,7 +233,7 @@ func settingsPB(a sqlc.SipAccount, saved bool) *v1.SipSettings {
 		Enabled: a.Enabled, Provider: a.Provider, Host: a.Host, Transport: transportFromDB[a.Transport],
 		Username: a.Username, AuthUsername: a.AuthUsername, Port: uint32(max(a.Port, 0)), HasPassword: len(a.PasswordEnc) > 0, CallerId: a.CallerID,
 		OutboundPrefix: a.OutboundPrefix, AllowedPrefixes: a.AllowedPrefixes, LastError: a.LastError,
-		TrunkSaved: a.TrunkID != "",
+		TrunkSaved: a.TrunkID != "", RecordInbound: a.RecordInbound, RecordOutbound: a.RecordOutbound,
 	}
 	if out.AllowedPrefixes == nil {
 		out.AllowedPrefixes = []string{}
@@ -255,6 +258,7 @@ func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := settingsPB(a, saved || a.LastError != "")
 	out.InboundAvailable = s.inboundReady()
+	s.fillRecording(out, a)
 	ex, err := loadExchange(r.Context(), s.db.Q, wsID)
 	if err != nil {
 		return err
@@ -522,6 +526,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	s.regChanged(ctx, before, saved)
 	out := settingsPB(saved, true)
 	out.InboundAvailable = s.inboundReady()
+	s.fillRecording(out, saved)
 	fillInbound(out, saved, nil)
 	if ex, err := loadExchange(ctx, s.db.Q, wsID); err == nil {
 		fillInbound(out, saved, ex)

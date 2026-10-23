@@ -247,6 +247,9 @@ export function deleteGroup(p: MockPbx, id: string): void {
   p.exts = p.exts.filter((e) => e.groupId !== id);
 }
 
+/** The recording notice's length (ADR-0131) after the mock «conversion». */
+const NOTICE_MS = 6_000;
+
 export function createMenu(p: MockPbx, wsId: string, id: string, me: string, now: Timestamp, b: MessageShape<typeof CreateSipIvrMenuRequestSchema>): SipIvrMenu {
   const name = trimmed(b.name, 64, 'name', true);
   const m = create(SipIvrMenuSchema, {
@@ -263,6 +266,8 @@ export function createMenu(p: MockPbx, wsId: string, id: string, me: string, now
     updatedAt: now,
     updatedBy: me,
     dialExtensions: b.dialExtensions,
+    noticeFileId: b.noticeSourceFileId,
+    noticeDurationMs: b.noticeSourceFileId ? NOTICE_MS : 0,
   });
   p.menus.push(m);
   return m;
@@ -282,6 +287,10 @@ export function updateMenu(p: MockPbx, id: string, me: string, now: Timestamp, b
     m.promptFileId = b.promptSourceFileId;
     m.promptStatus = b.promptSourceFileId ? SipPromptStatus.READY : SipPromptStatus.NONE;
     m.promptDurationMs = b.promptSourceFileId ? PROMPT_MS : 0;
+  }
+  if (b.noticeSourceFileId !== undefined) {
+    m.noticeFileId = b.noticeSourceFileId;
+    m.noticeDurationMs = b.noticeSourceFileId ? NOTICE_MS : 0;
   }
   return m;
 }

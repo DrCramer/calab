@@ -16,8 +16,16 @@ import { toast } from '../../stores/toasts';
  * of that row, not of the form).
  */
 
+/** Which file of a menu: the greeting, or the recording notice (ADR-0131). */
+export type PromptKind = 'prompt' | 'notice';
+
+/** The store slot of a menu's file: the menu id for the greeting, «<id>:notice» for the notice. */
+export function promptSlot(menuId: string, kind: PromptKind): string {
+  return kind === 'notice' ? `${menuId}:notice` : menuId;
+}
+
 interface PromptUpload {
-  /** The menu being uploaded to; '' = none. */
+  /** The slot (promptSlot) being uploaded to; '' = none. */
   menuId: string;
   /** Upload progress in whole percent; null while the server converts the file (or idle). */
   pct: number | null;
@@ -38,32 +46,33 @@ export function clearPromptError(menuId: string): void {
 
 /**
  * Checks `file` like the picker (format, ≤ 10 MB), uploads it and sets it as the menu's
- * greeting (the server converts it, ≤ 60 s). A refusal stays in the store under the menu;
- * true = the greeting is saved.
+ * greeting — or its recording notice (kind) — the server converts it, ≤ 60 s. A refusal stays in
+ * the store under the slot; true = the file is saved.
  */
-export async function uploadPrompt(workspaceId: string, menuId: string, file: File): Promise<boolean> {
+export async function uploadPrompt(workspaceId: string, menuId: string, file: File, kind: PromptKind = 'prompt'): Promise<boolean> {
+  const slot = promptSlot(menuId, kind);
   const bad = promptFileError(file);
   if (bad) {
-    promptError(menuId, t(bad));
+    promptError(slot, t(bad));
     return false;
   }
   if (usePromptUpload.getState().menuId) return false; // one at a time (the button is busy meanwhile)
-  usePromptUpload.setState({ menuId, pct: 0, errMenu: '', err: '' });
+  usePromptUpload.setState({ menuId: slot, pct: 0, errMenu: '', err: '' });
   try {
     const meta = await uploadFile(uploadPath(workspaceId, ''), file, file.name, (f) => {
       const pct = Math.min(99, Math.round(f * 100));
       const s = usePromptUpload.getState();
-      if (s.menuId === menuId && s.pct !== null && s.pct !== pct) usePromptUpload.setState({ pct });
+      if (s.menuId === slot && s.pct !== null && s.pct !== pct) usePromptUpload.setState({ pct });
     }).promise;
     usePromptUpload.setState({ pct: null });
-    await api.sip.updateMenu(workspaceId, menuId, { promptSourceFileId: meta.id });
-    toast.success(t('pbx.menu.promptSaved'));
+    await api.sip.updateMenu(workspaceId, menuId, kind === 'notice' ? { noticeSourceFileId: meta.id } : { promptSourceFileId: meta.id });
+    toast.success(t(kind === 'notice' ? 'pbx.menu.noticeSaved' : 'pbx.menu.promptSaved'));
     return true;
   } catch (e) {
     log.warn('sip prompt upload', e);
     const f = fieldError(e);
-    if (f) promptError(menuId, f.text);
-    else if (!reportPlanError(e, workspaceId)) promptError(menuId, describeError(e).text);
+    if (f) promptError(slot, f.text);
+    else if (!reportPlanError(e, workspaceId)) promptError(slot, describeError(e).text);
     return false;
   } finally {
     // The row leaves «Обрабатываем запись…» once the list holds the new greeting (no flash of «Нет записи»).

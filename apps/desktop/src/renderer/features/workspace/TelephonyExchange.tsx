@@ -44,7 +44,7 @@ import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { memberItems } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
 import { formatDuration } from '../shell/voiceFormat';
-import { clearPromptError, promptError, uploadPrompt, usePromptUpload } from './promptUpload';
+import { clearPromptError, promptError, promptSlot, uploadPrompt, usePromptUpload, type PromptKind } from './promptUpload';
 
 /*
  * Workspace settings → «Телефония» → the exchange (ADR-0117 step 1, docs/08 «Телефония»;
@@ -1154,10 +1154,14 @@ function MenusCard({ workspaceId, exts, groups, menus }: { workspaceId: string; 
   // A new menu stays open after «Сохранить» as its edit form; the greeting chosen in the new
   // form is uploaded right then (it needs the menu's id), its progress shows in that form.
   const created = useCallback(
-    (m: SipIvrMenu, file: File | null) => {
+    (m: SipIvrMenu, file: File | null, notice: File | null) => {
       qc.setQueryData<ListSipIvrMenusResponse>(menuKey(workspaceId), (cur) => (cur && !cur.menus.some((x) => x.id === m.id) ? { ...cur, menus: [...cur.menus, m] } : cur));
       setEditing(m.id);
-      if (file) void uploadPrompt(workspaceId, m.id, file);
+      // One upload at a time (promptUpload.ts): the greeting first, then the recording notice.
+      void (async () => {
+        if (file) await uploadPrompt(workspaceId, m.id, file);
+        if (notice) await uploadPrompt(workspaceId, m.id, notice, 'notice');
+      })();
     },
     [qc, workspaceId],
   );
@@ -1172,7 +1176,7 @@ function MenusCard({ workspaceId, exts, groups, menus }: { workspaceId: string; 
   // A refusal belongs to the open form: another form (or none) drops it; so does leaving the tab.
   useEffect(() => {
     const s = usePromptUpload.getState();
-    if (s.errMenu && s.errMenu !== editing) clearPromptError(s.errMenu);
+    if (s.errMenu && s.errMenu.split(':')[0] !== editing) clearPromptError(s.errMenu);
   }, [editing]);
   useEffect(() => () => clearPromptError(usePromptUpload.getState().errMenu), []);
   return (
@@ -1255,7 +1259,7 @@ const MenuRow = memo(function MenuRow({
 });
 
 /** Listen to the prompt: a plain <audio> element, never WebAudio (docs/02). */
-function PromptPlayer({ fileId }: { fileId: string }): ReactNode {
+function PromptPlayer({ fileId, testId = 'sip-menu-listen' }: { fileId: string; testId?: string }): ReactNode {
   const [playing, setPlaying] = useState(false);
   const el = useRef<HTMLAudioElement | null>(null);
   useEffect(
@@ -1281,7 +1285,7 @@ function PromptPlayer({ fileId }: { fileId: string }): ReactNode {
     await a.play().catch(() => setPlaying(false));
   };
   return (
-    <IconButton label={t(playing ? 'pbx.menu.stop' : 'pbx.menu.listen')} onClick={() => void toggle()} data-testid="sip-menu-listen">
+    <IconButton label={t(playing ? 'pbx.menu.stop' : 'pbx.menu.listen')} onClick={() => void toggle()} data-testid={testId}>
       {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
     </IconButton>
   );
@@ -1333,7 +1337,7 @@ function PromptPicker({
   );
 }
 
-/** «Запись» of the menu form — the layout both forms share (a saved menu and a new one). */
+/** A file line of the menu form — «Запись» and «Предупреждение о записи» (ADR-0131), a saved menu and a new one. */
 function PromptLine({
   player,
   status,
@@ -1341,28 +1345,31 @@ function PromptLine({
   actions,
   silent,
   err,
+  kind = 'prompt',
 }: {
   player?: ReactNode;
   status: string;
   tabular?: boolean;
   actions: ReactNode;
-  /** No greeting (and none on its way): the menu is silent — say so. */
+  /** No file (and none on its way): say what that means (a silent menu; no notice). */
   silent: boolean;
   err: string | null;
+  kind?: PromptKind;
 }): ReactNode {
+  const notice = kind === 'notice';
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-caption text-muted">{t('pbx.menu.prompt')}</span>
-      <div className="flex flex-wrap items-center gap-2" data-testid="sip-menu-prompt">
+      <span className="text-caption text-muted">{t(notice ? 'pbx.menu.notice' : 'pbx.menu.prompt')}</span>
+      <div className="flex flex-wrap items-center gap-2" data-testid={notice ? 'sip-menu-notice' : 'sip-menu-prompt'}>
         {player}
         <span className={cx('min-w-0 max-w-full truncate text-body', tabular ? 'tabular-nums' : 'text-muted')} title={status}>
           {status}
         </span>
         {actions}
       </div>
-      <span className="text-caption text-faint">{t('pbx.menu.promptHint')}</span>
-      {silent ? <span className="text-caption text-muted">{t('pbx.menu.noPromptHint')}</span> : null}
-      <ErrLine text={err} testId="sip-menu-prompt-error" />
+      <span className="text-caption text-faint">{t(notice ? 'pbx.menu.noticeHint' : 'pbx.menu.promptHint')}</span>
+      {silent ? <span className="text-caption text-muted">{t(notice ? 'pbx.menu.noNoticeHint' : 'pbx.menu.noPromptHint')}</span> : null}
+      <ErrLine text={err} testId={notice ? 'sip-menu-notice-error' : 'sip-menu-prompt-error'} />
     </div>
   );
 }
@@ -1438,6 +1445,80 @@ function DraftPromptRow({ file, onFile }: { file: File | null; onFile: (f: File 
   );
 }
 
+/** A saved menu's recording notice (ADR-0131): listen, upload / replace, remove — like the greeting. */
+function NoticeRow({ workspaceId, menu }: { workspaceId: string; menu: SipIvrMenu }): ReactNode {
+  const refresh = useRefresh(workspaceId);
+  const slot = promptSlot(menu.id, 'notice');
+  const busy = usePromptUpload((s) => s.menuId === slot);
+  const pct = usePromptUpload((s) => (s.menuId === slot ? s.pct : null));
+  const err = usePromptUpload((s) => (s.errMenu === slot ? s.err : ''));
+  const ready = !!menu.noticeFileId;
+  const clear = useMutation({
+    mutationFn: () => api.sip.updateMenu(workspaceId, menu.id, { noticeSourceFileId: '' }),
+    onMutate: () => clearPromptError(slot),
+    onSuccess: refresh,
+    onError: (e) => promptError(slot, describeError(e).text),
+  });
+  return (
+    <PromptLine
+      kind="notice"
+      player={ready ? <PromptPlayer fileId={menu.noticeFileId} testId="sip-menu-notice-listen" /> : null}
+      status={busy ? (pct !== null ? t('pbx.menu.uploading', { pct }) : t('pbx.menu.processing')) : ready ? formatDuration(menu.noticeDurationMs) : t('pbx.menu.noNotice')}
+      tabular={ready && !busy}
+      silent={!ready && !busy}
+      err={err || null}
+      actions={
+        <>
+          <PromptPicker
+            label={t(ready ? 'pbx.menu.replace' : 'pbx.menu.noticeUpload')}
+            busy={busy}
+            onFile={(f) => void uploadPrompt(workspaceId, menu.id, f, 'notice')}
+            testId="sip-menu-notice-upload"
+            inputTestId="sip-menu-notice-file"
+          />
+          {ready ? (
+            <Button variant="ghost" size="sm" busy={clear.isPending} onClick={() => clear.mutate()} data-testid="sip-menu-notice-remove">
+              {t('pbx.menu.noticeRemove')}
+            </Button>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
+/** A new menu's recording notice: chosen now, uploaded right after «Сохранить» (after the greeting). */
+function DraftNoticeRow({ file, onFile }: { file: File | null; onFile: (f: File | null) => void }): ReactNode {
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <PromptLine
+      kind="notice"
+      status={file ? t('pbx.menu.promptChosen', { name: file.name }) : t('pbx.menu.noNotice')}
+      silent={!file}
+      err={err}
+      actions={
+        <>
+          <PromptPicker
+            label={t(file ? 'pbx.menu.replace' : 'pbx.menu.promptPick')}
+            onFile={(f) => {
+              const bad = promptFileError(f);
+              setErr(bad ? t(bad) : null);
+              if (!bad) onFile(f);
+            }}
+            testId="sip-menu-notice-upload"
+            inputTestId="sip-menu-notice-file"
+          />
+          {file ? (
+            <Button variant="ghost" size="sm" onClick={() => onFile(null)} data-testid="sip-menu-notice-clear">
+              {t('pbx.menu.promptClear')}
+            </Button>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
 function MenuForm({
   workspaceId,
   menu,
@@ -1453,14 +1534,15 @@ function MenuForm({
   groups: SipGroup[];
   menus: SipIvrMenu[];
   onDone: () => void;
-  /** A new menu was saved: the form reopens on it and the chosen greeting (if any) uploads. */
-  onCreated?: (m: SipIvrMenu, file: File | null) => void;
+  /** A new menu was saved: the form reopens on it and the chosen greeting and notice (if any) upload. */
+  onCreated?: (m: SipIvrMenu, file: File | null, notice: File | null) => void;
 }): ReactNode {
   const refresh = useRefresh(workspaceId);
   const errs = useFormErrors(workspaceId);
   const id = useId();
   const [name, setName] = useState(menu?.name ?? '');
   const [draft, setDraft] = useState<File | null>(null);
+  const [draftNotice, setDraftNotice] = useState<File | null>(null);
   const [timeout, setTimeoutSec] = useState(String(menu?.inputTimeoutSec || 5));
   const [repeats, setRepeats] = useState(String(menu?.repeats || 3));
   const [noInput, setNoInput] = useState(targetValue(menu?.onNoInput));
@@ -1482,7 +1564,7 @@ function MenuForm({
     onSuccess: (r) => {
       refresh();
       toast.success(t('pbx.saved'));
-      if (!menu && r.menu && onCreated) onCreated(r.menu, draft);
+      if (!menu && r.menu && onCreated) onCreated(r.menu, draft, draftNotice);
       else onDone();
     },
     onError: errs.report,
@@ -1516,6 +1598,7 @@ function MenuForm({
         <ErrLine text={errs.field['name']} />
       </span>
       {menu ? <PromptRow workspaceId={workspaceId} menu={menu} /> : <DraftPromptRow file={draft} onFile={setDraft} />}
+      {menu ? <NoticeRow workspaceId={workspaceId} menu={menu} /> : <DraftNoticeRow file={draftNotice} onFile={setDraftNotice} />}
       <div className="flex flex-col gap-1">
         <span className="text-caption text-muted">{t('pbx.menu.keysTitle')}</span>
         <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1" data-testid="sip-menu-keys">

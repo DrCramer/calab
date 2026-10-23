@@ -282,7 +282,8 @@ func (ex *exchange) menuPB(m sqlc.SipIvrMenu) *v1.SipIvrMenu {
 		PromptStatus: v1.SipPromptStatus_SIP_PROMPT_STATUS_NONE, PromptDurationMs: uint32(max(m.PromptDurationMs, 0)), //nolint:gosec // ≤ 180000
 		InputTimeoutSec: uint32(max(m.InputTimeoutSec, 0)), Repeats: uint32(max(m.Repeats, 0)), //nolint:gosec // small
 		OnNoInput: ex.targetPB(m.NoInputKind, m.NoInputMenuID, m.NoInputExtensionID, m.NoInputGroupID),
-		Items:     []*v1.SipIvrItem{}, UpdatedAt: timestamppb.New(m.UpdatedAt), UpdatedBy: idOf(m.UpdatedBy), DialExtensions: m.DialExtensions}
+		Items:     []*v1.SipIvrItem{}, UpdatedAt: timestamppb.New(m.UpdatedAt), UpdatedBy: idOf(m.UpdatedBy), DialExtensions: m.DialExtensions,
+		NoticeFileId: idOf(m.NoticeFileID), NoticeDurationMs: uint32(max(m.NoticeDurationMs, 0))} //nolint:gosec // ≤ 180000
 	if m.PromptFileID != nil {
 		out.PromptStatus = v1.SipPromptStatus_SIP_PROMPT_STATUS_READY
 	}
@@ -988,8 +989,8 @@ func (s *Service) listMenus(w http.ResponseWriter, r *http.Request) error {
 // workspace (at most 10 MB), not an image, not the file of a sticker, badge, background, sound,
 // achievement or another prompt — the soundboard rule (ADR-0036): somebody else's file (an
 // attachment of a closed room) must not become audio others can fetch.
-func (s *Service) promptSource(ctx context.Context, wsID, caller uuid.UUID, raw string) (sqlc.File, error) {
-	bad := httpx.Validation("promptSourceFileId", "an MP3, Ogg or WAV file you uploaded to this workspace, at most 10 MB")
+func (s *Service) promptSource(ctx context.Context, wsID, caller uuid.UUID, raw, field string) (sqlc.File, error) {
+	bad := httpx.Validation(field, "an MP3, Ogg or WAV file you uploaded to this workspace, at most 10 MB")
 	id, err := uuid.Parse(raw)
 	if err != nil {
 		return sqlc.File{}, bad
@@ -1024,21 +1025,22 @@ func (s *Service) promptSource(ctx context.Context, wsID, caller uuid.UUID, raw 
 	return f, nil
 }
 
-// preparePrompt makes the prompt of the upload raw (before any transaction: ffmpeg is slow).
-func (s *Service) preparePrompt(r *http.Request, wsID uuid.UUID, raw string) (*files.PreparedFile, int32, error) {
+// preparePrompt makes the prompt (or the recording notice, ADR-0131: field names the request
+// field for errors) of the upload raw (before any transaction: ffmpeg is slow).
+func (s *Service) preparePrompt(r *http.Request, wsID uuid.UUID, raw, field string) (*files.PreparedFile, int32, error) {
 	if s.files == nil {
 		return nil, 0, httpx.Unavailable(files.ErrNoFFmpeg)
 	}
-	src, err := s.promptSource(r.Context(), wsID, uid(r), raw)
+	src, err := s.promptSource(r.Context(), wsID, uid(r), raw, field)
 	if err != nil {
 		return nil, 0, err
 	}
 	prep, ms, err := s.files.PreparePrompt(r.Context(), src)
 	switch {
 	case files.IsBadAudio(err):
-		return nil, 0, httpx.Validation("promptSourceFileId", "the file could not be read as MP3, Ogg or WAV")
+		return nil, 0, httpx.Validation(field, "the file could not be read as MP3, Ogg or WAV")
 	case errors.Is(err, files.ErrAudioTooLong):
-		return nil, 0, httpx.Validation("promptSourceFileId", "the prompt is longer than 3 minutes")
+		return nil, 0, httpx.Validation(field, "the recording is longer than 3 minutes")
 	case errors.Is(err, files.ErrNoFFmpeg):
 		return nil, 0, httpx.Unavailable(err)
 	}
@@ -1091,10 +1093,16 @@ func (s *Service) createMenu(w http.ResponseWriter, r *http.Request) error {
 	} else if n >= MaxMenus {
 		return tooManyMenus()
 	}
-	var prep *files.PreparedFile
-	var ms int32
+	var prep, notice *files.PreparedFile
+	var ms, noticeMs int32
 	if req.GetPromptSourceFileId() != "" {
-		if prep, ms, err = s.preparePrompt(r, wsID, req.GetPromptSourceFileId()); err != nil {
+		if prep, ms, err = s.preparePrompt(r, wsID, req.GetPromptSourceFileId(), "promptSourceFileId"); err != nil {
+			return err
+		}
+	}
+	if req.GetNoticeSourceFileId() != "" {
+		if notice, noticeMs, err = s.preparePrompt(r, wsID, req.GetNoticeSourceFileId(), "noticeSourceFileId"); err != nil {
+			s.discard(prep)
 			return err
 		}
 	}
@@ -1124,10 +1132,21 @@ func (s *Service) createMenu(w http.ResponseWriter, r *http.Request) error {
 			NoInputExtensionID: noInput.ext, NoInputGroupID: noInput.group, UpdatedBy: &me, DialExtensions: req.GetDialExtensions()}); err != nil {
 			return err
 		}
+		if notice != nil {
+			f, err := s.files.InsertPrepared(ctx, q, notice)
+			if err != nil {
+				return err
+			}
+			if created, err = q.SetSipIvrMenuNotice(ctx, sqlc.SetSipIvrMenuNoticeParams{ID: created.ID, WorkspaceID: wsID,
+				NoticeFileID: &f.ID, NoticeDurationMs: noticeMs, UpdatedBy: &me}); err != nil {
+				return err
+			}
+		}
 		return setMenuItems(ctx, q, wsID, created.ID, items)
 	})
 	if err != nil {
 		s.discard(prep)
+		s.discard(notice)
 		return err
 	}
 	slog.InfoContext(ctx, "sip: menu created", "workspace", wsID, "by", me, "menu", created.ID, "prompt_ms", ms)
@@ -1176,14 +1195,20 @@ func (s *Service) updateMenu(w http.ResponseWriter, r *http.Request) error {
 	} else if err != nil {
 		return err
 	}
-	var prep *files.PreparedFile
-	var ms int32
+	var prep, notice *files.PreparedFile
+	var ms, noticeMs int32
 	if req.PromptSourceFileId != nil && req.GetPromptSourceFileId() != "" {
-		if prep, ms, err = s.preparePrompt(r, wsID, req.GetPromptSourceFileId()); err != nil {
+		if prep, ms, err = s.preparePrompt(r, wsID, req.GetPromptSourceFileId(), "promptSourceFileId"); err != nil {
 			return err
 		}
 	}
-	var oldPrompt *uuid.UUID
+	if req.NoticeSourceFileId != nil && req.GetNoticeSourceFileId() != "" {
+		if notice, noticeMs, err = s.preparePrompt(r, wsID, req.GetNoticeSourceFileId(), "noticeSourceFileId"); err != nil {
+			s.discard(prep)
+			return err
+		}
+	}
+	var oldPrompt, oldNotice *uuid.UUID
 	err = s.change(ctx, wsID, func(q *sqlc.Queries, ex *exchange) error {
 		cur, ok := ex.menu[id]
 		if !ok {
@@ -1238,6 +1263,20 @@ func (s *Service) updateMenu(w http.ResponseWriter, r *http.Request) error {
 		if _, err := q.UpdateSipIvrMenu(ctx, p); err != nil {
 			return err
 		}
+		if req.NoticeSourceFileId != nil {
+			np := sqlc.SetSipIvrMenuNoticeParams{ID: id, WorkspaceID: wsID, UpdatedBy: &me}
+			if notice != nil {
+				f, err := s.files.InsertPrepared(ctx, q, notice)
+				if err != nil {
+					return err
+				}
+				np.NoticeFileID, np.NoticeDurationMs = &f.ID, noticeMs
+			}
+			if _, err := q.SetSipIvrMenuNotice(ctx, np); err != nil {
+				return err
+			}
+			oldNotice = cur.NoticeFileID
+		}
 		if req.Items != nil {
 			return setMenuItems(ctx, q, wsID, id, items)
 		}
@@ -1245,9 +1284,11 @@ func (s *Service) updateMenu(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		s.discard(prep)
+		s.discard(notice)
 		return err
 	}
 	s.dropPrompt(ctx, oldPrompt)
+	s.dropPrompt(ctx, oldNotice)
 	slog.InfoContext(ctx, "sip: menu updated", "workspace", wsID, "by", me, "menu", id)
 	return s.writeMenu(w, r, wsID, id, http.StatusOK)
 }
@@ -1286,6 +1327,7 @@ func (s *Service) deleteMenu(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.dropPrompt(ctx, gone.PromptFileID)
+	s.dropPrompt(ctx, gone.NoticeFileID)
 	slog.InfoContext(ctx, "sip: menu deleted", "workspace", wsID, "by", uid(r), "menu", id)
 	httpx.NoContent(w)
 	return nil
@@ -1320,6 +1362,9 @@ func (ex *exchange) routing() *PBX {
 			DialExtensions: m.DialExtensions}
 		if m.PromptFileID != nil {
 			mn.Prompt = *m.PromptFileID
+		}
+		if m.NoticeFileID != nil {
+			mn.Notice, mn.NoticeMs = *m.NoticeFileID, int(m.NoticeDurationMs)
 		}
 		for _, it := range ex.items[m.ID] {
 			mn.Items[it.Digit[0]] = routeTarget(it.ActionKind, it.ActionMenuID, it.ActionExtensionID, it.ActionGroupID)

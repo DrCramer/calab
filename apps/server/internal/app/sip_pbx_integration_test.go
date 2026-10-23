@@ -295,6 +295,42 @@ func TestSIPExchange(t *testing.T) {
 		}
 	}
 
+	// The recording notice (ADR-0131): the prompt's rules under its own field; the worker may
+	// fetch it, members may not.
+	bobSrc := soundUpload(t, bob, wid, "bob-notice.wav", "audio/wav", toneWav(0.5))
+	if st, e := o.apiErrBody("PATCH", base+"/ivr/"+mm.GetId(), &v1.UpdateSipIvrMenuRequest{NoticeSourceFileId: &bobSrc}); st != 422 || e.GetField() != "noticeSourceFileId" {
+		t.Fatalf("someone else's notice: %d %v", st, e)
+	}
+	nsrc := soundUpload(t, o, wid, "notice.wav", "audio/wav", toneWav(1))
+	var withNotice v1.SipIvrMenuResponse
+	if st := o.do("PATCH", base+"/ivr/"+mm.GetId(), &v1.UpdateSipIvrMenuRequest{NoticeSourceFileId: &nsrc}, &withNotice); st == 503 {
+		t.Log("no ffmpeg on this host: notice conversion not tested")
+	} else if st != 200 {
+		t.Fatalf("notice: %d %s", st, o.lastBody)
+	} else {
+		n := withNotice.GetMenu()
+		if n.GetNoticeFileId() == "" || n.GetNoticeDurationMs() < 900 || n.GetNoticeDurationMs() > 1100 {
+			t.Fatalf("notice: %v", n)
+		}
+		bt.must(200, "GET", "/api/files/"+n.GetNoticeFileId(), nil, nil)
+		if st := bob.do("GET", "/api/files/"+n.GetNoticeFileId(), nil, nil); st != 403 && st != 404 {
+			t.Fatalf("a member reads the notice: %d", st)
+		}
+		rc, _, ok, err := testApp.SIP.PromptFile(ctx, uuid.MustParse(n.GetNoticeFileId()))
+		if err != nil || !ok {
+			t.Fatalf("the worker cannot fetch the notice: %v", err)
+		}
+		_ = rc.Close()
+		empty := ""
+		o.must(200, "PATCH", base+"/ivr/"+mm.GetId(), &v1.UpdateSipIvrMenuRequest{NoticeSourceFileId: &empty}, &withNotice)
+		if withNotice.GetMenu().GetNoticeFileId() != "" {
+			t.Fatalf("notice not removed: %v", withNotice.GetMenu())
+		}
+		if _, err := testDB.Q.GetFile(ctx, uuid.MustParse(n.GetNoticeFileId())); err == nil {
+			t.Fatal("the old notice file is kept")
+		}
+	}
+
 	// Deletes are never blocked by routes; the routes stay, missing.
 	o.must(204, "DELETE", base+"/extensions/"+bobExt.GetExtension().GetId(), nil, nil)
 	if got := memberExtension(t, o, wid, bob.id); got != "" {

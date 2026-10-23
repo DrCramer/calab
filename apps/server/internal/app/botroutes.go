@@ -419,6 +419,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/sip",
 		"PUT /api/workspaces/{id}/sip",
 		"PUT /api/workspaces/{id}/sip/inbound",
+		"PUT /api/workspaces/{id}/sip/recording",
 		"POST /api/workspaces/{id}/sip/test",
 		"POST /api/workspaces/{id}/sip/extensions",
 		"PATCH /api/workspaces/{id}/sip/extensions/{eid}",
@@ -756,6 +757,7 @@ var botAudited = map[string]bool{
 	"DELETE /api/workspaces/{id}/integrations/gptunnel":                   true,
 	"PUT /api/workspaces/{id}/sip":                                        true,
 	"PUT /api/workspaces/{id}/sip/inbound":                                true,
+	"PUT /api/workspaces/{id}/sip/recording":                              true,
 	"POST /api/workspaces/{id}/sip/test":                                  true, // a real call billed to the workspace
 	"POST /api/workspaces/{id}/sip/extensions":                            true,
 	"PATCH /api/workspaces/{id}/sip/extensions/{eid}":                     true,

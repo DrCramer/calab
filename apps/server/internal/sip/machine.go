@@ -74,6 +74,10 @@ type InCall struct {
 	FallbackAt int64       `json:"fallback_at,omitempty"`
 	Fallbacks  int         `json:"fallbacks,omitempty"`
 	Declined   []uuid.UUID `json:"declined,omitempty"`
+	// The recording notice of the menu (ADR-0131) plays: Notice is where the call goes once it
+	// ends (the phase stays «menu»; keys are not taken meanwhile), NoticeAt when it began (ms).
+	Notice   *Target `json:"notice,omitempty"`
+	NoticeAt int64   `json:"notice_at,omitempty"`
 	// A transfer of the answered call rings (ADR-0132, transfer.go): Phase is ring, Answered the
 	// member still on the call.
 	Xfer *Xfer `json:"xfer,omitempty"`
@@ -174,6 +178,7 @@ func (c *InCall) step(label string) {
 
 func (c *InCall) playMenu(e Env, m *Menu, attempt int, fx *Effects) {
 	id := m.ID
+	c.Notice, c.NoticeAt = nil, 0
 	c.Phase, c.Menu, c.Attempts, c.Played, c.Digits = PhaseMenu, &id, attempt, false, ""
 	c.Ring, c.Pos, c.Sequential, c.Group, c.Rang = nil, 0, false, nil, nil
 	c.FallbackAt, c.Declined = 0, nil
@@ -382,6 +387,10 @@ func (c *InCall) Expire(e Env, fx *Effects) {
 	}
 	switch c.Phase {
 	case PhaseMenu:
+		if c.Notice != nil { // the notice's «played» was lost: its duration is over
+			c.afterNotice(e, fx)
+			return
+		}
 		if c.Digits != "" { // the pause after a digit of a number ran out
 			if m, ok := c.menu(e); ok {
 				c.dial(e, m, c.Digits, Collect(m, e.PBX, c.Digits, true), fx)
@@ -452,13 +461,50 @@ func (c *InCall) PromptDone(e Env) {
 	c.promptDone(e, m)
 }
 
+// noticeStale: a «played» this soon after the notice began is the menu prompt's, which ended
+// just as the notice replaced it.
+const noticeStale = 300 * time.Millisecond
+
+// WorkerPlayed is the worker's «played»: the menu's prompt (the wait for a key starts) or the
+// recording notice (the call goes where the key led).
+func (c *InCall) WorkerPlayed(e Env, fx *Effects) {
+	if c.Phase == PhaseMenu && c.Notice != nil {
+		if e.Now.UnixMilli()-c.NoticeAt >= noticeStale.Milliseconds() {
+			c.afterNotice(e, fx)
+		}
+		return
+	}
+	c.PromptDone(e)
+}
+
+// noticeFirst plays the menu's recording notice (ADR-0131) before t when t rings somebody (a
+// person, a bot, a group — not another menu or a hang-up); false = no notice, enter t now.
+func (c *InCall) noticeFirst(e Env, m *Menu, t Target, fx *Effects) bool {
+	if m.Notice == uuid.Nil || Route(e.PBX, t, e.Avail, DirectRingSec).Action != ActRing {
+		return false
+	}
+	pending := t
+	c.Notice, c.NoticeAt, c.Digits, c.Played = &pending, e.Now.UnixMilli(), "", true
+	c.Deadline = e.ms(time.Duration(m.NoticeMs)*time.Millisecond + promptSlack)
+	c.step("notice")
+	fx.Play, fx.Stop, fx.Changed = &Play{File: m.Notice}, false, true
+	return true
+}
+
+// afterNotice: the notice played — the call goes where the key led.
+func (c *InCall) afterNotice(e Env, fx *Effects) {
+	t := *c.Notice
+	c.Notice, c.NoticeAt = nil, 0
+	c.Enter(e, t, fx)
+}
+
 // Digit is a key the caller pressed (ADR-0129). It counts at any time in a menu — also while
 // the prompt plays or before it started: the first key of an input stops the prompt (barge-in).
 // Without DialExtensions it is the menu's key at once; with it the digits collect into a
 // number until Collect resolves them (a full number, a key no number starts with) or the
 // InterDigit pause, «#» or «*» ends the input.
 func (c *InCall) Digit(e Env, digit byte, fx *Effects) {
-	if c.Phase != PhaseMenu {
+	if c.Phase != PhaseMenu || c.Notice != nil { // the notice plays: the key is already chosen
 		return
 	}
 	if c.Menu == nil { // the entry point is not entered yet: Enter takes these
@@ -504,7 +550,10 @@ func (c *InCall) dial(e Env, m *Menu, buf string, d Dial, fx *Effects) {
 	case DialNumber:
 		c.step("dial:" + buf)
 		id := d.Ext
-		c.Enter(e, Target{Kind: RouteExtension, ID: &id}, fx)
+		t := Target{Kind: RouteExtension, ID: &id}
+		if !c.noticeFirst(e, m, t, fx) {
+			c.Enter(e, t, fx)
+		}
 	default: // not a number anybody may dial: as a key without an item
 		c.step("dial:" + buf)
 		c.noInput(e, fx)
@@ -528,7 +577,9 @@ func (c *InCall) press(e Env, m *Menu, digit byte, fx *Effects) {
 		c.playMenu(e, m, c.Attempts, fx)
 		return
 	}
-	c.Enter(e, t, fx)
+	if !c.noticeFirst(e, m, t, fx) {
+		c.Enter(e, t, fx)
+	}
 }
 
 // Decline records that user refuses on one of their devices; a group does not ring them again.

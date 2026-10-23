@@ -82,6 +82,14 @@ message SipSettings {
   SipRegistration registration = 22;
   // The server has the registration agent (SIPREG_AGENT_TOKEN): REGISTER mode can be chosen.
   bool registration_available = 23;
+  // Call recording to the workspace Disk (ADR-0131, PUT /api/workspaces/{id}/sip/recording):
+  // answered inbound calls / connected outbound calls are recorded into
+  // /phone_recordings/YYYY_MM_DD/ of the Disk. Default off.
+  bool record_inbound = 24;
+  bool record_outbound = 25;
+  // The server can record calls (LiveKit Egress is configured). The switches can be set either
+  // way; without it nothing is recorded.
+  bool recording_available = 26;
 }
 
 // How inbound calls reach the server (ADR-0121). UNSPECIFIED in PutSipInboundRequest = keep the
@@ -165,6 +173,22 @@ message PutSipSettingsRequest {
 }
 
 message PutSipSettingsResponse {
+  SipSettings settings = 1;
+}
+
+// PUT /api/workspaces/{id}/sip/recording (MANAGE_INTEGRATIONS, people) → 200
+// PutSipRecordingResponse: the call recording switches (ADR-0131). The recording of a call is
+// started when it is answered by a person or a bot (inbound: not while the menu plays) or
+// connected (outbound), and ends with the call; the file (Ogg/Opus) goes to the Disk as
+// /phone_recordings/YYYY_MM_DD/YYYYMMDDHHMM_<number digits>_<IN|OUT>.ogg owned by the workspace
+// owner, counted in the workspace storage. A missing /phone_recordings is created with access
+// for the owner only («Только выбранные»); the owner shares it. 409 PLAN_LIMIT below Business.
+message PutSipRecordingRequest {
+  bool record_inbound = 1;
+  bool record_outbound = 2;
+}
+
+message PutSipRecordingResponse {
   SipSettings settings = 1;
 }
 
@@ -397,6 +421,12 @@ message SipIvrMenu {
   // not dialable (unknown, unassigned, external_blocked) counts as a key without an item: the
   // menu plays again. Default off: keys only.
   bool dial_extensions = 13;
+  // The recording notice (ADR-0131): made like the prompt; it plays to the caller right before
+  // a key or a dialed number of this menu rings a person, a bot or a group (not before another
+  // menu, a hang-up or «no input»). Empty = nothing plays. Whether calls are recorded is
+  // SipSettings.record_inbound alone.
+  string notice_file_id = 14;
+  uint32 notice_duration_ms = 15;
 }
 
 // GET /api/workspaces/{id}/sip/extensions (any member but guests) → 200: all numbers by number,
@@ -503,6 +533,8 @@ message CreateSipIvrMenuRequest {
   // takes up to ~60 s. Empty = no prompt.
   string prompt_source_file_id = 6;
   bool dial_extensions = 7;
+  // The recording notice: an upload under the same rules as prompt_source_file_id. Empty = none.
+  string notice_source_file_id = 8;
 }
 
 // PATCH /api/workspaces/{id}/sip/ivr/{mid} → 200 SipIvrMenuResponse; unset fields stay, set
@@ -517,6 +549,8 @@ message UpdateSipIvrMenuRequest {
   SipIvrItems items = 5;          // set = replace
   optional string prompt_source_file_id = 6;
   optional bool dial_extensions = 7;
+  // A new upload replaces the recording notice, «» removes it (the old file is deleted).
+  optional string notice_source_file_id = 8;
 }
 
 message SipIvrMenuResponse {

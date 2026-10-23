@@ -26,6 +26,8 @@ import {
   PutSipInboundRequestSchema,
   TransferSipCallRequestSchema,
   PutSipInboundResponseSchema,
+  PutSipRecordingRequestSchema,
+  PutSipRecordingResponseSchema,
   SipCallResponseSchema,
   SipInboundAcceptResponseSchema,
   TestSipResponseSchema,
@@ -762,6 +764,9 @@ export const api = {
      */
     saveInbound: (workspaceId: string, init: MessageInitShape<typeof PutSipInboundRequestSchema>) =>
       call('PUT', `/api/workspaces/${workspaceId}/sip/inbound`, PutSipInboundResponseSchema, body(PutSipInboundRequestSchema, init)),
+    /** Call recording to the Disk (ADR-0131; MANAGE_INTEGRATIONS): the two switches; 409 before the provider is saved. */
+    saveRecording: (workspaceId: string, init: MessageInitShape<typeof PutSipRecordingRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/sip/recording`, PutSipRecordingResponseSchema, body(PutSipRecordingRequestSchema, init)),
     acceptInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/accept`, SipInboundAcceptResponseSchema),
     joinInbound: (callId: string) => call('POST', `/api/sip/inbound/${callId}/join`, JoinVoiceResponseSchema),
     declineInbound: (callId: string) => callEmpty('POST', `/api/sip/inbound/${callId}/decline`),

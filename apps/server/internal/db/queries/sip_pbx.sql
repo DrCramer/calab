@@ -116,8 +116,15 @@ INSERT INTO sip_ivr_items (workspace_id, menu_id, digit, action_kind, action_men
 VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: IsSipPromptFile :one
--- The file is the prompt of a voice menu (files.CanRead: MANAGE_INTEGRATIONS of its workspace).
-SELECT EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1)::boolean;
+-- The file is the prompt or the recording notice of a voice menu (files.CanRead:
+-- MANAGE_INTEGRATIONS of its workspace).
+SELECT EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1 OR notice_file_id = $1)::boolean;
+
+-- name: SetSipIvrMenuNotice :one
+-- The recording notice of a menu (ADR-0131): a new file, or NULL to remove it.
+UPDATE sip_ivr_menus SET notice_file_id = $3, notice_duration_ms = $4, updated_by = $5, updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
 
 -- name: ListSipRouteMembers :many
 -- The members behind user numbers, for routing: role and bot flag (guests never ring).

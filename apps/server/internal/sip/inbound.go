@@ -57,7 +57,7 @@ const (
 	answerGrace     = 30 * time.Second // the member who answered may reconnect
 	inboundTick     = 5 * time.Second
 	maxCIDRs        = 20
-	inboundRoomSize = 4 // the line, the worker, the member (and a reconnect)
+	inboundRoomSize = 6 // the line, the worker, the member, a transfer, the recording egress (ADR-0131), a reconnect
 )
 
 // Reasons of inbound calls beyond machine.go.
@@ -441,6 +441,7 @@ func (s *Service) putInbound(w http.ResponseWriter, r *http.Request) error {
 	s.regChanged(ctx, before, saved)
 	out := settingsPB(saved, true)
 	out.InboundAvailable = s.inboundReady()
+	s.fillRecording(out, saved)
 	fillInbound(out, saved, ex)
 	s.fillRegistration(ctx, out, saved)
 	httpx.Write(w, http.StatusOK, &v1.PutSipInboundResponse{Settings: out})
@@ -656,6 +657,7 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 	}
 	if fx.Answered && r.Answered != nil {
 		s.onCall(ctx, *r.Answered, r.ID, true)
+		s.recConnected(ctx, r.ID) // ADR-0131: recorded from the answer, not during the menu
 	}
 	s.applyTransfer(ctx, r, fx)
 	if fx.Advance != nil {
@@ -672,6 +674,7 @@ func (s *Service) apply(ctx context.Context, r *inRec, fx *Effects) error {
 		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
 			return q.FinishSipCall(ctx, sqlc.FinishSipCallParams{ID: r.ID, Status: pbconv.SipEnded, Reason: fx.Hangup, EndedBy: r.EndedBy})
 		})
+		s.recEnded(ctx, r.ID) // ADR-0131: after the row is final (a starting recording sees the end)
 		slog.InfoContext(ctx, "sip: inbound call ended", "call", r.ID, "reason", fx.Hangup, "route", strings.Join(r.Route, " → "))
 	case fx.Changed && !fx.Answered && (fx.Xfer || r.Xfer != nil): // a transfer rings / ended (ADR-0132)
 		row, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {
@@ -853,6 +856,7 @@ func (s *Service) endInbound(ctx context.Context, row sqlc.SipCall, reason strin
 		}
 		s.closeRoom(ctx, row.LkRoom)
 		s.callsChanged(ctx, row.WorkspaceID)
+		s.recEnded(ctx, row.ID)
 		return
 	}
 	if err != nil {
@@ -982,7 +986,7 @@ func (s *Service) AgentEvent(ctx context.Context, ev ivrwire.Event) {
 	var pause int64 // a number is being dialed: its pause ends then (ms)
 	switch ev.Op {
 	case ivrwire.OpPlayed:
-		fn = func(r *inRec, e Env, _ *Effects) error { r.PromptDone(e); return nil }
+		fn = func(r *inRec, e Env, fx *Effects) error { r.WorkerPlayed(e, fx); return nil }
 	case ivrwire.OpDTMF:
 		if len(ev.Digit) != 1 || !digitRe.MatchString(ev.Digit) {
 			return

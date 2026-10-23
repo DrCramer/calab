@@ -1559,6 +1559,8 @@ type SipAccount struct {
 	RegExpiresAt        *time.Time
 	RegContact          string
 	RegStatusAt         *time.Time
+	RecordInbound       bool
+	RecordOutbound      bool
 }
 
 type SipCall struct {
@@ -1582,6 +1584,25 @@ type SipCall struct {
 	RingingUserIds      []uuid.UUID
 	Via                 string
 	ProviderCallID      string
+}
+
+type SipCallRecording struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	CallID      uuid.UUID
+	Direction   string
+	Number      string
+	LkRoom      string
+	EgressID    *string
+	File        string
+	Status      string
+	Error       string
+	StartedAt   time.Time
+	StoppedAt   *time.Time
+	EndedAt     *time.Time
+	SizeBytes   int64
+	FileID      *uuid.UUID
+	DiskItemID  *uuid.UUID
 }
 
 type SipExtension struct {
@@ -1648,6 +1669,8 @@ type SipIvrMenu struct {
 	UpdatedAt          time.Time
 	UpdatedBy          *uuid.UUID
 	DialExtensions     bool
+	NoticeFileID       *uuid.UUID
+	NoticeDurationMs   int32
 }
 
 type Sticker struct {

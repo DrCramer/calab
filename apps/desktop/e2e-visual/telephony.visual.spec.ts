@@ -137,6 +137,14 @@ test('telephony-exchange', async ({ open, win, mock, shot, theme }) => {
   await expect(dialog.getByTestId('sip-reg-status')).toHaveText('Ошибка регистрации: провайдер не принял логин или пароль');
   await inbound.scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-inbound-register-failed');
+  // ADR-0131: «Запись звонков» — incoming on (the fixture), outgoing switched on here.
+  const rec = dialog.getByTestId('sip-recording');
+  await expect(rec.getByRole('switch', { name: 'Записывать входящие звонки' })).toHaveAttribute('aria-checked', 'true');
+  await rec.getByRole('switch', { name: 'Записывать исходящие звонки' }).click();
+  await expect(rec.getByRole('switch', { name: 'Записывать исходящие звонки' })).toHaveAttribute('aria-checked', 'true');
+  await dropToasts(win);
+  await rec.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-recording');
 });
 
 test('telephony-menu', async ({ open, win, mock, shot }) => {
@@ -255,6 +263,12 @@ test('telephony-menu', async ({ open, win, mock, shot }) => {
   await expect(dial.getByRole('switch', { name: 'Разрешить набор добавочного номера' })).toHaveAttribute('aria-checked', 'true');
   await dial.scrollIntoViewIfNeeded();
   await checkpoint(shot, 'telephony-menu-dial');
+  // ADR-0131: the recording notice of the main menu — ▶, its length, «Заменить» / «Удалить».
+  const notice = form.getByTestId('sip-menu-notice');
+  await expect(form.getByTestId('sip-menu-notice-listen')).toBeVisible();
+  await expect(notice).toContainText('0:06');
+  await notice.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'telephony-menu-notice');
 });
 
 // ADR-0117 step 2: an inbound call rings me — the number, «Входящий на номер · <группа>», the
