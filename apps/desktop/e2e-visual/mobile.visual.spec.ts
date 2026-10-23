@@ -1584,24 +1584,41 @@ test('m-settings-bots', async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 });
 
-// ADR-0117: «Телефония» → the exchange cards on a phone (numbers, groups, menus) and a menu form.
+// ADR-0117, CBF-77: «Телефония» on a phone — the tabs as a picker button (five tabs, docs/08
+// «Choice»), the live calls, the numbers, a group form, a menu form.
 test('m-telephony', async ({ page }) => {
   await signedIn(page);
   mock.seedSipExchange();
+  mock.seedSipActiveCalls();
   await page.getByTestId('phone-ws-switcher').tap();
   await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
   const dialog = page.getByTestId('settings-page');
   await dialog.getByRole('tab', { name: 'Телефония' }).tap();
-  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
+  const pick = async (tab: string): Promise<void> => {
+    await dialog.getByTestId('sip-tab').tap();
+    await page.getByTestId(`sip-tab-${tab}`).tap();
+  };
+  await pick('calls');
+  await expect(dialog.getByTestId('sip-call-row')).toHaveCount(4);
   await expectNoFieldFocus(page, 'telephony');
-  await dialog.getByTestId('sip-ext-list').scrollIntoViewIfNeeded();
+  // The timers and the journal's times follow the clock.
+  const clock = [dialog.getByTestId('sip-call-timer'), dialog.getByTestId('sip-journal-row').locator('td:first-child')];
+  await checkpoint(page, 'm-telephony-calls', { mask: clock });
+  await dialog.getByTestId('sip-tab').tap();
+  await expect(page.getByTestId('sip-tab-ivr')).toBeVisible();
+  await checkpoint(page, 'm-telephony-tabs', { mask: clock });
+  await page.getByTestId('sip-tab-numbers').tap();
+  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
   await checkpoint(page, 'm-telephony');
   // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
+  await pick('groups');
   await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
   await expect(dialog.getByTestId('sip-group-onfail')).toBeVisible();
   await dialog.getByTestId('sip-group-fallback').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-group');
   await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).tap();
+  await pick('ivr');
+  await checkpoint(page, 'm-telephony-ivr');
   await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
   await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-menu');
