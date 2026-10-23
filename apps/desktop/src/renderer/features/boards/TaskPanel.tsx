@@ -639,7 +639,7 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
           </PriorityMenu>
         </Prop>
       ) : null}
-      <Assignees task={task} canEdit={canEdit} req={req('assignee')} stacked={bare} />
+      <Assignees task={task} canEdit={canEdit} cardOnly={scoped && !hasBit(perms, CREATE_TASKS)} req={req('assignee')} stacked={bare} />
       {on(BoardFeature.LABELS) ? (
         <Prop label={t('boards.f.label')}>
           {mine.map((l) => (
@@ -839,7 +839,7 @@ function ParentMenu({ task, children }: { task: Task; children: ReactNode }): Re
 
 // ------------------------------------------------------------------ assignees
 
-function Assignees({ task, canEdit, req, stacked = false }: { task: Task; canEdit: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void }; stacked?: boolean }): ReactNode {
+function Assignees({ task, canEdit, cardOnly, req, stacked = false }: { task: Task; canEdit: boolean; cardOnly: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void }; stacked?: boolean }): ReactNode {
   const [over, setOver] = useState(false);
   const drafts = useMemo(() => draftsOf(task.assignees), [task.assignees]);
   const onDragOver = (e: DragEvent): void => {
@@ -870,7 +870,7 @@ function Assignees({ task, canEdit, req, stacked = false }: { task: Task; canEdi
           onNone={() => void setAssignees(task.id, [])}
           {...req}
         >
-          <button type="button" disabled={!canEdit} {...(canEdit ? {} : { title: t(editLockKey(!!task.archivedAt)) })} className={cx(valueBtn, 'self-start text-muted')} data-testid="assignee-add">
+          <button type="button" disabled={!canEdit} {...(canEdit ? {} : { title: t(editLockKey(!!task.archivedAt, cardOnly)) })} className={cx(valueBtn, 'self-start text-muted')} data-testid="assignee-add">
             <Plus className="size-3.5" aria-hidden /> {t('boards.addAssignee')}
           </button>
         </AssigneeMenu>

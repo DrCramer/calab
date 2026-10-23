@@ -4,6 +4,7 @@ import { byPosition } from '../../lib/boards/position';
 import type { BoardsData } from '../../lib/boards/reducers';
 import type { BoardPrefs } from '../../stores/boardsUi';
 import { statusShown } from '../../lib/boards/completion';
+import type { Tri } from '../../lib/permissions';
 
 /**
  * What the board views show (ADR-0042 §5): permissions of the viewer (Board.permissions, the
@@ -33,9 +34,33 @@ export function settingsEntryTab(perms: bigint | undefined): 'general' | 'status
   return hasBit(perms, MANAGE_BOARD) ? 'general' : mayEditBoardItems(perms) ? 'statuses' : null;
 }
 
-/** Why edit controls are locked (tooltip of a disabled «Добавить»): archived task, or no right to edit it. */
-export function editLockKey(archived: boolean): 'boards.err.archivedTask' | 'boards.needEditRight' {
-  return archived ? 'boards.err.archivedTask' : 'boards.needEditRight';
+/**
+ * Why edit controls are locked (tooltip of a disabled «Добавить»): an archived task; a card seen
+ * only as its watcher / approver (`cardOnly`: a task-scoped board, no CREATE_TASKS on the card) —
+ * there neither authorship nor «Править любые задачи» counts without «Видеть доску» (ADR-0115,
+ * CBF-51); otherwise no right to edit it.
+ */
+export function editLockKey(archived: boolean, cardOnly = false): 'boards.err.archivedTask' | 'boards.needEditRight' | 'boards.needEditRightCard' {
+  if (archived) return 'boards.err.archivedTask';
+  return cardOnly ? 'boards.needEditRightCard' : 'boards.needEditRight';
+}
+
+/**
+ * Whether a board override leaves its target without «Видеть доску» (ADR-0115): a deny, or neutral
+ * on a private board unless a role override of the person allows it there (`viaRole`).
+ */
+export function lacksView(view: Tri, isPrivate: boolean, viaRole: boolean): boolean {
+  return view === 'deny' || (view === 'inherit' && isPrivate && !viaRole);
+}
+
+/**
+ * The note under a bit's row in «Доступ» (CBF-51): without «Видеть доску» «Создавать задачи» ✓ is
+ * create-only, and «Править любые задачи» / «Управлять доской» ✓ do nothing — the server drops them.
+ */
+export function accessRowNote(bit: bigint, value: Tri, noView: boolean): 'boards.perm.createOnly' | 'boards.perm.needsView' | null {
+  if (!noView || value !== 'allow') return null;
+  if (bit === CREATE_TASKS) return 'boards.perm.createOnly';
+  return bit === EDIT_TASKS || bit === MANAGE_BOARD ? 'boards.perm.needsView' : null;
 }
 
 /** CREATE_TASKS edits tasks one created or is assigned to; EDIT_TASKS any (boards.proto). */

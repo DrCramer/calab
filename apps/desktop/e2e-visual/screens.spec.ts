@@ -4209,6 +4209,21 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await expect(win.getByRole('tab', { name: 'Статусы' })).toHaveAttribute('aria-selected', 'true');
   await checkpoint(shot, 'boards-settings-editor');
   mock.boards.setViewerBits(dev.board.id, IDS.users.anna, null);
+  // CBF-51: «Доступ» of @Участник — without «Видеть доску» «Править любые задачи» ✓ does nothing
+  // (the row says so, danger), «Создавать задачи» ✓ is create-only.
+  await win.keyboard.press('Escape');
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Доступ' }).click();
+  await win.getByRole('radio', { name: 'Видеть доску: запрещено' }).click();
+  await win.getByRole('radio', { name: 'Создавать задачи: разрешено' }).click();
+  await win.getByRole('radio', { name: 'Править любые задачи: разрешено' }).click();
+  await expect(win.getByTestId('board-access-needs-view')).toHaveText('Не действует без «Видеть доску»');
+  await expect(win.getByTestId('board-access-create-only')).toHaveText('Создаёт и видит только свои карточки');
+  // «Инструкция сохранена» from above covers the last row: closed by a DOM click (outside the modal).
+  for (const b of await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').all()) await b.evaluate((x) => (x as HTMLButtonElement).click());
+  await expect(win.getByTestId('toast')).toHaveCount(0);
+  await checkpoint(shot, 'boards-settings-access');
 });
 
 /** Board settings → «Статусы», the colour picker of the first status open (ADR-0093): a 6-wide grid over the rows. */
