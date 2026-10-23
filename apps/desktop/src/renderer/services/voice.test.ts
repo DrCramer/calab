@@ -174,7 +174,7 @@ vi.mock('livekit-client', () => ({
 // ---------------------------------------------------------------- app mocks
 
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
-const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean; musician?: boolean }) => Promise.resolve());
+const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => Promise.resolve());
 const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
 const requestStream = vi.fn((_roomId: string, preset: number) => Promise.resolve({ preset, fps: 0 }));
 vi.mock('../lib/api/endpoints', () => ({
@@ -182,7 +182,7 @@ vi.mock('../lib/api/endpoints', () => ({
     voice: {
       join: (id: string) => joinVoice(id),
       leave: (id: string) => leaveVoice(id),
-      updateSelf: (b: { muted?: boolean; deafened?: boolean; musician?: boolean }) => updateSelf(b),
+      updateSelf: (b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => updateSelf(b),
       requestStream: (id: string, preset: number) => requestStream(id, preset),
     },
     me: { update: () => Promise.resolve({}) },
@@ -555,7 +555,7 @@ describe('VoiceEngine', () => {
       voice.checkSeat();
       await settle();
       expect(joinVoice.mock.calls.at(-1)).toEqual(['A']);
-      expect(updateSelf).toHaveBeenCalledWith({ muted: true, deafened: false, musician: false });
+      expect(updateSelf).toHaveBeenCalledWith({ muted: true, deafened: false, musician: false, ptt: false });
       expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
     });
 
@@ -610,7 +610,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(50);
     await b;
     expect(updateSelf).toHaveBeenCalledTimes(2); // right after /join, and after the connect
-    expect(updateSelf).toHaveBeenNthCalledWith(1, { muted: true, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenNthCalledWith(1, { muted: true, deafened: false, musician: false, ptt: false });
   });
 
   it('a newer join wins over one still waiting for /join', async () => {
@@ -891,7 +891,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(muted);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false, musician: false, ptt: false });
   });
 
   it('undeafen cannot lift a moderator mute applied while deafened', async () => {
@@ -902,7 +902,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false, serverMuted: true });
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false, ptt: false });
   });
 
   it.each([true, false])('rejoin while deafened preserves the prior mic mute (%s)', async (muted) => {
@@ -920,7 +920,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
     expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(muted);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false, musician: false, ptt: false });
   });
 
   it('the chosen mic unplugged mid-call → default device, published in place (review M3)', async () => {
@@ -1264,6 +1264,7 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
     });
 
     it('a mic muted before deafen stays muted after it (#11); the mic button lifts both', async () => {
+      usePrefs.getState().setPrefs({ micMode: 'voice' }); // an earlier PTT test may leave the pref; the body carries it (ADR-0130)
       await voice.join('A', 'ws');
       voice.toggleMute();
       voice.toggleDeafen();
@@ -1273,7 +1274,7 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false, ptt: false });
       voice.toggleMute(); // mic on
       voice.toggleDeafen();
       await vi.advanceTimersByTimeAsync(100);
@@ -1282,20 +1283,20 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false, ptt: false });
       voice.toggleMute(); // remember a manual mute for this deafen cycle
       voice.toggleDeafen();
       voice.toggleMute(); // the mic button while deafened: both off (Discord)
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false, ptt: false });
       voice.toggleDeafen();
       voice.toggleDeafen();
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false, ptt: false });
     });
 
     /**
@@ -1508,7 +1509,7 @@ describe('VOICE_MOVED (ADR-0019)', () => {
     await settle();
     expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
     expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(true);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false, ptt: false });
   });
 
   it('with a token, not streaming: short toast, the server mute survives the reconnect', async () => {
@@ -1766,7 +1767,7 @@ describe('musician mode (ADR-0052)', () => {
     await vi.waitFor(() => expect(pub?.mediaStreamTrack).toBe(music?.track)); // replaceTrack, same publication
     expect(first?.stop).toHaveBeenCalled();
     await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 128, dtx: false, stereo: true, fec: true, maxPlaybackRate: 48000 }));
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: true });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: true, ptt: false });
     expect(pub?.mediaStreamTrack.enabled).toBe(true); // no VAD gating: the mic stays open in silence
     expect(useVoice.getState().transmitting).toBe(true);
     expect(r?.localParticipant.publishTrack.mock.calls.length).toBe(publishes); // no republish
@@ -1775,7 +1776,7 @@ describe('musician mode (ADR-0052)', () => {
     await vi.waitFor(() => expect(pipelines.at(-1)?.musician).toBe(false));
     await vi.waitFor(() => expect(pub?.mediaStreamTrack).toBe(pipelines.at(-1)?.track));
     await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 32, dtx: true, stereo: false }));
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false, ptt: false });
     expect(pub?.mediaStreamTrack.enabled).toBe(false); // gated again
     await voice.leave();
   });
@@ -2234,7 +2235,7 @@ describe('auto-mute after silence («Выключать микрофон, есл
     await vi.advanceTimersByTimeAsync(30_000);
     expect(useVoice.getState().muted).toBe(true);
     expect(playSound).toHaveBeenCalledWith('mute');
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false, ptt: false });
     expect(running()).toBe(false);
     const [kind, text, action] = pushToast.mock.calls.at(-1) as [string, string, { run: () => void }];
     expect(kind).toBe('info');
