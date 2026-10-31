@@ -34,7 +34,11 @@ const STATUS_TYPE: Record<number, MessageKey> = {
 const GIT: Record<number, MessageKey> = {
   [RuleGitEvent.UNSPECIFIED]: 'rules.sum.git',
   [RuleGitEvent.BRANCH_CREATED]: 'rules.sum.branch',
+  [RuleGitEvent.PR_DRAFT_OPENED]: 'rules.sum.prDraft',
   [RuleGitEvent.PR_OPENED]: 'rules.sum.prOpened',
+  [RuleGitEvent.PR_READY]: 'rules.sum.prReady',
+  [RuleGitEvent.PR_REVIEW_REQUESTED]: 'rules.sum.prReview',
+  [RuleGitEvent.PR_APPROVED]: 'rules.sum.prApproved',
   [RuleGitEvent.PR_MERGED]: 'rules.sum.prMerged',
   [RuleGitEvent.PR_CLOSED]: 'rules.sum.prClosed',
   [RuleGitEvent.COMMIT_PUSHED]: 'rules.sum.commit',
@@ -82,8 +86,12 @@ export function triggerText(tr: RuleTrigger | undefined, ctx: SummaryCtx): strin
       return t('rules.sum.checklist');
     case 'commentCreated':
       return t('rules.sum.comment');
-    case 'git':
-      return t(GIT[k.value.event] ?? 'rules.sum.git');
+    case 'git': {
+      const what = t(GIT[k.value.event] ?? 'rules.sum.git');
+      return k.value.targetBranches.length ? t('rules.sum.gitTarget', { what, branches: k.value.targetBranches.join(', ') }) : what;
+    }
+    case 'release':
+      return k.value.environments.length ? t('rules.sum.releaseEnv', { envs: k.value.environments.join(', ') }) : t('rules.sum.release');
     case 'dueIn':
       return k.value.days === 0 ? t('rules.sum.dueToday') : t('rules.sum.dueIn', { n: k.value.days });
     case 'overdue':

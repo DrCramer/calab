@@ -28,7 +28,7 @@ vi.stubGlobal('window', globalThis);
 
 const billing = vi.hoisted(() => ({ onBillingUpdate: vi.fn(), onWorkspaceBilling: vi.fn(), resyncBilling: vi.fn() }));
 vi.mock('./billing', () => billing);
-vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn(), refreshRights: vi.fn() } }));
+vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn(), onGatewayBack: vi.fn(), refreshRights: vi.fn() } }));
 vi.mock('./chat', () => ({ clearChatRooms: vi.fn(), resyncLoadedRooms: vi.fn(() => Promise.resolve()), resyncPins: vi.fn(() => Promise.resolve()), retryFailedLoads: vi.fn(() => Promise.resolve()) }));
 vi.mock('./mentions', () => ({ loadMentions: () => Promise.resolve() }));
 vi.mock('./notify', () => ({ onIncomingMessage: vi.fn(), mentionsMe: () => false }));

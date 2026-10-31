@@ -203,3 +203,12 @@ SELECT EXISTS(SELECT 1 FROM push_deliveries WHERE device_id=$1 AND event_key=$2)
 SELECT p.* FROM push_deliveries p JOIN push_devices d ON d.id=p.device_id AND d.version=p.device_version
 WHERE p.id=$1 AND d.id=$2 AND d.user_id=$3 AND d.session_id=$4
 AND p.kind IN (1,2) AND p.expires_at>now() AND d.expires_at>now() AND p.delivered_at IS NOT NULL;
+
+-- name: ListPushRingCancels :many
+-- ADR-0071 (Android): the FCM endpoints a delivered ring of this call reached on the current
+-- endpoint version. A ring that ends early gets a best-effort cancel so the phone stops ringing;
+-- after the ring's own expiry the device has already dropped it, so nothing is sent.
+SELECT p.id AS event_id, d.id AS device_id, d.token, d.app_id, d.environment
+FROM push_deliveries p JOIN push_devices d ON d.id = p.device_id AND d.version = p.device_version
+WHERE d.user_id = $1 AND p.kind = 2 AND p.reference_id = $2 AND p.delivered_at IS NOT NULL
+AND p.expires_at > now() AND d.provider = 3 AND d.calls_enabled AND d.expires_at > now();

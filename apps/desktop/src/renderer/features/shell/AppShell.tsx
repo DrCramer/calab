@@ -13,6 +13,7 @@ import { mayArrangeRooms } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
 import { installPresenceTimer } from '../../services/presenceTimer';
 import { installHotkeys } from '../../services/hotkeys';
+import { installNavHistory } from '../../services/navHistory';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
@@ -21,9 +22,10 @@ import { UpdateBar } from './UpdateBar';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
+import { useTaskTabs } from '../../stores/taskTabs';
+import { installFileViewLeave } from '../disk/office/fileTabs';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
-import { showBottomIsland } from '../../lib/webApps';
 import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -31,7 +33,7 @@ import { ChatPane } from '../chat/ChatPane';
 import { DmPick, useActiveDm } from '../dm/DmHome';
 import { DmSidebar } from '../dm/DmSidebar';
 import { HOME } from '../../stores/dms';
-import { OnboardingLazy, preloadWindows } from './lazyWindows';
+import { OfficeScreenLazy, OnboardingLazy, preloadWindows } from './lazyWindows';
 import { whenIdle } from '../../lib/lazyPreload';
 import { MembersPanel } from './MembersPanel';
 import { DayView } from '../calendar/DayView';
@@ -45,8 +47,12 @@ import { useWikiUi } from '../../stores/wikiUi';
 import { WikiScreen } from '../wiki/WikiScreen';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { CanvasScreen } from '../canvas/CanvasScreen';
+import { useTelephonyUi } from '../../stores/telephonyUi';
+import { TelephonySection } from '../telephony/TelephonySection';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
+import { islandMode } from './islandModel';
+import { currentSection } from '../../lib/sections';
 import { WindowVibrancy } from './WindowVibrancy';
 import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
@@ -107,6 +113,10 @@ function ShellLayout(): ReactNode {
   const wiki = useWikiUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Холст» (ADR-0126 §5): the same, exclusive with the Disk and the wiki; guests have none.
   const canvas = useCanvasUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Телефония» (ADR-0137 §5): the same; the section itself gives way when it is not mine.
+  const telephony = useTelephonyUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // The folded canvas tree takes the island with it (docs/08 «Нижний островок»).
+  const canvasFolded = useCanvasUi((s) => s.treeCollapsed);
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
   // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
@@ -123,8 +133,27 @@ function ShellLayout(): ReactNode {
   const showReconnect = useSession((s) => s.ready && s.reconnectBanner);
 
   const mobile = useMobile();
+  // An opened office file (ADR-0143): its editor exists (fileMounted) and/or its view is on screen.
+  const fileMounted = useTaskTabs((s) => s.fileMounted !== null);
+  const fileShown = useTaskTabs((s) => s.fileActive !== null) && !home && !!wsId && !guestWs && hasWs;
+
+  // The bottom island (docs/08 «Нижний островок», ADR-0146): full on «Команда», folded into my
+  // avatar on the other sections, an opened office file and a web app (setting on, default).
+  const collapseIsland = usePrefs((s) => s.islandCollapse);
+  const app = !!appId && !mailOn && !home;
+  let island = islandMode({
+    shown: ready && (mailOn || home || (hasWs && !!wsId)),
+    section: currentSection({ home, boards, calendar: calDay !== null, app, mail: mailOn, disk, wiki, canvas, telephony }),
+    file: fileShown,
+    app,
+    collapse: collapseIsland,
+  });
+  // The folded canvas tree takes the full island with it (it would float over the field's edge).
+  if (island === 'full' && canvas && canvasFolded && !mailOn && !wiki && !fileShown) island = 'none';
 
   useEffect(() => installHotkeys(), []);
+  useEffect(() => installNavHistory(), []);
+  useEffect(() => installFileViewLeave(), []);
   useEffect(() => installAfk(), []);
   useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
@@ -149,6 +178,8 @@ function ShellLayout(): ReactNode {
         />
         {ready ? <CreateTaskDialog /> : null}
         {ready ? <SmartTaskDialog /> : null}
+        {/* The phone: a full-screen view of the file, view only (ADR-0143 §10). */}
+        {fileMounted ? <OfficeScreenLazy.Component /> : null}
       </>
     );
   }
@@ -168,9 +199,11 @@ function ShellLayout(): ReactNode {
           the chat are one inset panel with a 12 px top-left corner and a quiet edge (docs/08
           «Слои окна», owner 07.10). The bottom island (me + the call) floats over the foot of the
           rail and the column. */}
-      <div className="mat-rail relative flex min-h-0 flex-1">
+      <div className="mat-rail relative flex min-h-0 flex-1" data-island-host>
         <SectionRail />
-        {mailOn ? (
+        {/* An opened office file (ADR-0143): the editor in the content slot, the section it came from untouched under it. */}
+        {fileMounted ? <OfficeScreenLazy.Component /> : null}
+        {fileShown ? null : mailOn ? (
           <MailScreenLazy.Component />
         ) : !ready ? (
           <div className="mat-content grid flex-1 place-items-center mobile:px-6">
@@ -212,6 +245,10 @@ function ShellLayout(): ReactNode {
             <CanvasScreen key={wsId} workspaceId={wsId} />
             {/* A canvas hit opens here, the results stay beside it (ADR-0105). */}
             {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
+          </div>
+        ) : hasWs && wsId && telephony ? (
+          <div className="relative flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <TelephonySection key={wsId} workspaceId={wsId} />
           </div>
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
@@ -259,19 +296,13 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || canvas || (calDay !== null && !guestWs)} /> : null}
+        {/* One island on every screen with the rail (owner 23.10): full on «Команда», folded into my avatar elsewhere (ADR-0146). */}
+        {island !== 'none' ? <BottomIsland mode={island} column={fileShown ? 'sidebar' : mailOn ? 'mail' : wiki ? 'wiki' : canvas ? 'canvas' : 'sidebar'} /> : null}
         {ready ? <CreateTaskDialog /> : null}
         {ready ? <SmartTaskDialog /> : null}
       </div>
     </div>
   );
-}
-
-/**
- * Web apps use the entire content area, including while a voice call continues.
- */
-function IslandSlot({ appOpen, workTab }: { appOpen: boolean; workTab: boolean }): ReactNode {
-  return showBottomIsland(appOpen, workTab) ? <BottomIsland /> : null;
 }
 
 /**

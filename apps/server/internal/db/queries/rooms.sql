@@ -3,14 +3,14 @@
 -- restricted mirrors is_private (ADR-0078 addendum 2026-10-14: one kind of private room).
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private, restricted,
                    audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit,
-                   expires_at, created_by)
+                   join_leave_sound_max, expires_at, created_by)
 VALUES (sqlc.arg('workspace_id')::uuid, sqlc.arg('type'), sqlc.arg('name'), sqlc.arg('topic'),
         coalesce(sqlc.narg('position')::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL AND type <> 'task')),
         sqlc.arg('is_private'), sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
         sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'), sqlc.narg('camera_limit'),
-        sqlc.narg('expires_at'), sqlc.narg('created_by'))
+        sqlc.narg('join_leave_sound_max'), sqlc.narg('expires_at'), sqlc.narg('created_by'))
 RETURNING *;
 
 -- name: GetRoom :one
@@ -38,6 +38,7 @@ UPDATE rooms SET
     max_stream_preset  = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_stream_preset')::text ELSE max_stream_preset END,
     max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END,
     camera_limit       = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('camera_limit')::integer ELSE camera_limit END,
+    join_leave_sound_max = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('join_leave_sound_max')::integer ELSE join_leave_sound_max END,
     category_id        = CASE WHEN sqlc.arg('set_category')::boolean THEN sqlc.narg('category_id')::uuid ELSE category_id END,
     icon_file_id       = CASE WHEN sqlc.arg('set_icon')::boolean THEN sqlc.narg('icon_file_id')::uuid ELSE icon_file_id END
 WHERE id = sqlc.arg('id') AND archived_at IS NULL

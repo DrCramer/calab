@@ -42,6 +42,15 @@ export function settleWithin(p: Promise<unknown>, ms: number): Promise<boolean> 
   return Promise.race([done, timeout]).finally(() => clearTimeout(timer));
 }
 
+/** `p`, or a rejection once `ms` pass without it settling (the promise itself is left running). */
+export function rejectAfter<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
 export interface WatchdogTimers {
   set(fn: () => void, ms: number): unknown;
   clear(id: unknown): void;

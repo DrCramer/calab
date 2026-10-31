@@ -1,3 +1,4 @@
+import type { BlockId } from './blocks';
 import type { MentionSource, PageSource, UploadedImage } from './types';
 import { MenuStore } from './menuStore';
 
@@ -12,6 +13,12 @@ export interface EditorEnv {
   imagePath: (fileId: string) => string;
   onError: (message: string) => void;
   menu: MenuStore;
+  /** Blocks the `/` menu and «Превратить в» offer (null = all; task descriptions offer fewer). */
+  blocks: ReadonlySet<BlockId> | null;
+  /** The bubble bar's highlight colours (off where the saved text cannot keep them). */
+  highlight: boolean;
+  /** A key the page handles first (⌘↩ save, Esc cancel); not called while a suggestion popover is open. */
+  onKey: ((event: KeyboardEvent) => boolean) | null;
   /** ⌘K: asks the bubble bar to open its link field. */
   openLink: () => void;
   /** The bubble bar listens for openLink(); returns the unsubscribe. */
@@ -27,6 +34,9 @@ export function createEnv(): EditorEnv {
     imagePath: (id) => `/api/files/${id}`,
     onError: (m) => console.warn(m),
     menu: new MenuStore(),
+    blocks: null,
+    highlight: true,
+    onKey: null,
     openLink: () => {
       for (const cb of linkSubs) cb();
     },

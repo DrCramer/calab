@@ -274,4 +274,8 @@ type SIPHook interface {
 	// participant_joined / _left of the line, the IVR worker or the member who answered, and
 	// room_finished (p nil). An error makes LiveKit redeliver the event.
 	Inbound(ctx context.Context, event, room string, p *Participant) error
+	// Outbound: an event of the LiveKit room of a personal call («sipout_…», ADR-0137 §3) —
+	// participant_joined / _left of the member or the phone line, and room_finished (p nil).
+	// An error makes LiveKit redeliver the event.
+	Outbound(ctx context.Context, event, room string, p *Participant) error
 }

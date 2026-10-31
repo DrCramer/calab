@@ -32,7 +32,8 @@ import {
 import { dayKey, dayStart, eventSpan, formatMinutes, viewerZone } from '../../lib/calendar/time';
 import { useMobile } from '../../lib/mobile';
 import { mayCreateTempRooms } from '../../lib/permissions';
-import { createEvent, eventOf, updateEvent } from '../../services/calendar';
+import { createEvent, ensureHolidayCalendar, eventOf, updateEvent } from '../../services/calendar';
+import { useCalendar } from '../../stores/calendar';
 import { roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -43,12 +44,14 @@ import { roomItems, type RoomPickItem } from '../chat/forwardModel';
 import { FormerChip } from '../people/MemberBits';
 import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
+import { useColleagueClocks } from '../people/useColleagueClocks';
 import { REPEAT_LABEL } from './EventCard';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
 import { AvailabilityStrip } from './AvailabilityStrip';
+import { ZoneSpan } from './ZoneAxis';
 import { FindTimeDialog } from './FindTime';
 
-const REPEATS = [EventRepeat.UNSPECIFIED, EventRepeat.DAILY, EventRepeat.WEEKLY, EventRepeat.BIWEEKLY, EventRepeat.MONTHLY] as const;
+const REPEATS = [EventRepeat.UNSPECIFIED, EventRepeat.DAILY, EventRepeat.WORKDAYS, EventRepeat.WEEKLY, EventRepeat.BIWEEKLY, EventRepeat.MONTHLY] as const;
 /** 00:00 … 23:45. */
 const STARTS = Array.from({ length: 96 }, (_, i) => i * 15);
 
@@ -105,6 +108,15 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
       live = false;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // «В рабочие дни» (ADR-0136): a series keeps the calendar it was made with; a new choice takes
+  // the workspace's (known once a list answered).
+  const workdays = d.repeat === EventRepeat.WORKDAYS;
+  const wsHolidays = useCalendar((st) => st.holidays[workspaceId]);
+  const holidays = editing?.repeat === EventRepeat.WORKDAYS ? editing.holidayCalendar : wsHolidays;
+  useEffect(() => {
+    if (workdays) ensureHolidayCalendar(workspaceId);
+  }, [workdays, workspaceId]);
 
   // A series' first start is needed to move it by the occurrence's shift: saving waits for it.
   const seriesPending = !!editing && editing.repeat !== EventRepeat.UNSPECIFIED && seriesStart === undefined;
@@ -230,7 +242,10 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
               </Select>
             </Field>
             <div className="col-span-2 -mt-1 flex items-center justify-between gap-2">
-              <p className="min-w-0 text-caption text-faint">{t('cal.f.zone', { zone })}</p>
+              <div className="min-w-0">
+                <p className="min-w-0 text-caption text-faint">{t('cal.f.zone', { zone })}</p>
+                <ZoneSpan day={d.day} start={d.start} end={d.end} />
+              </div>
               <Button variant="ghost" size="sm" onClick={() => setFinding(true)} data-testid="event-find">
                 <CalendarSearch className="size-3.5" aria-hidden />
                 {t('fb.find')}
@@ -290,8 +305,9 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
             className="min-h-[72px]"
           />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('cal.f.repeat')}>
+        {/* A phone stacks the repeat and its end: «В рабочие дни» and its hint need the full width. */}
+        <div className={mobile ? 'grid gap-3' : 'grid grid-cols-2 gap-3'}>
+          <Field label={t('cal.f.repeat')} hint={workdays && holidays !== undefined ? t(holidays === 'ru' ? 'cal.repeat.workdaysRu' : 'cal.repeat.workdaysWeek') : undefined}>
             <Select
               value={d.repeat}
               onChange={(e) => {
@@ -480,6 +496,9 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
         .map((m) => m.user?.id ?? ''),
     [members, me],
   );
+  // Local time and working hours of colleagues in other zones next to their names (#85); only while the picker is open.
+  const pickable = useMemo(() => Object.values(members ?? {}).flatMap((m) => (m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST && m.user.id !== me ? [m.user.id] : [])), [members, me]);
+  const clocks = useColleagueClocks(workspaceId, pickable, picking);
   const groups = useMemo(() => {
     const taken = new Set([me, ...draft.attendees.map((a) => a.userId).filter(Boolean)]);
     const list = Object.values(members ?? {}).filter((m) => m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST);
@@ -504,9 +523,9 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
         : [];
     return [
       { id: 'all', label: '', items: all },
-      { id: 'members', label: '', items: memberItems(list, { exclude: taken, ...(roles ? { roles } : {}) }) },
+      { id: 'members', label: '', items: memberItems(list, { exclude: taken, decorate: (m) => (m.user && clocks[m.user.id] ? { note: clocks[m.user.id] ?? '' } : undefined), ...(roles ? { roles } : {}) }) },
     ];
-  }, [members, roles, draft.attendees, me, everyone]);
+  }, [members, roles, draft.attendees, me, everyone, clocks]);
 
   const add = (userId: string): void => onChange(addMember(draft.attendees, userId));
   const select = (it: PeoplePickItem): void => {

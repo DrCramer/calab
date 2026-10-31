@@ -76,7 +76,7 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
       <nav className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1.5" aria-label={t('canvas.tree')} data-testid="canvas-tree">
         {query.trim() ? <SearchResults workspaceId={workspaceId} query={query} /> : <ChildList workspaceId={workspaceId} parentId={TOP} depth={0} />}
       </nav>
-      <div className="shrink-0 border-t border-line p-1.5">
+      <div className="shrink-0 border-t border-line px-1.5 pt-1.5" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         <button
           type="button"
           onClick={() => useCanvasUi.getState().openTrash(workspaceId, true)}
@@ -140,7 +140,7 @@ const ChildList = memo(function ChildList({ workspaceId, parentId, depth }: { wo
     );
   }
   return (
-    <ul className="flex flex-col">
+    <ul className="flex flex-col gap-0.5">
       {ids.map((id) => (
         <TreeNode key={id} workspaceId={workspaceId} id={id} depth={depth} />
       ))}
@@ -187,7 +187,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
           ref={ref}
           {...drag.listeners}
           className={cx(
-            'group relative flex h-8 items-center gap-1 rounded-[var(--radius-row)] pr-1 text-body',
+            'group relative flex h-8 items-center gap-1 rounded-[var(--radius-row)] pr-1 text-body has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-inset has-[button:focus-visible]:ring-accent',
             active ? 'bg-active text-fg' : 'text-fg hover:bg-hover',
             drag.isDragging && 'opacity-40',
             zone === 'inside' && 'bg-hover ring-2 ring-inset ring-accent',
@@ -228,7 +228,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
                 else if (e.key === 'ArrowLeft' && folder && expanded) toggle();
               }}
               aria-current={active ? 'page' : undefined}
-              className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] text-left outline-none"
               data-testid="canvas-node-open"
             >
               <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
@@ -389,7 +389,7 @@ function TrashColumn({ workspaceId }: { workspaceId: string }): ReactNode {
           </Button>
         ) : null}
       </div>
-      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5" data-testid="canvas-trash">
+      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pt-1.5" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }} data-testid="canvas-trash">
         {!loaded ? (
           <div className="grid h-12 place-items-center">
             <Spinner />

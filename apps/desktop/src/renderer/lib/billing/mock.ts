@@ -206,9 +206,9 @@ const price = (minor: bigint, m: Market): Money => ({ $typeName: 'calaba.v1.Mone
 
 /** The plan offers of GET …/billing (built-in default limits of the server, plans/limits.go). */
 function offers(m: Market = S().market): BillingPlanOffer[] {
-  const free = { members: 50, roomMembers: 5, storageMb: 5n * 1024n, bots: 1, audioTierMaxKbps: 16, caldavDisabled: true, telephonyDisabled: true, automationsDisabled: true };
-  const team = { members: 100, roomMembers: 15, storageMb: 300n * 1024n, bots: 5, telephonyDisabled: true };
-  const biz = { members: 500, roomMembers: 50, storageMb: 1024n * 1024n, bots: 20 };
+  const free = { members: 50, roomMembers: 5, storageMb: 5n * 1024n, bots: 1, canvases: 3, audioTierMaxKbps: 16, caldavDisabled: true, telephonyDisabled: true, automationsDisabled: true };
+  const team = { members: 100, roomMembers: 15, storageMb: 300n * 1024n, bots: 5, canvases: 30, telephonyDisabled: true };
+  const biz = { members: 500, roomMembers: 50, storageMb: 1024n * 1024n, bots: 20, canvases: 100 };
   return [
     create(BillingPlanOfferSchema, { plan: Plan.FREE, limits: free, market: m, violations: violationsFor(Plan.FREE) }),
     create(BillingPlanOfferSchema, { plan: Plan.TEAM, unitPrice: price(unit(Plan.TEAM, m), m), limits: team, market: m, violations: violationsFor(Plan.TEAM) }),

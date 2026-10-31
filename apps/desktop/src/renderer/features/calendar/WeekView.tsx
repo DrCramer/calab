@@ -3,18 +3,21 @@ import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { isExternalKey } from '../../lib/calendar/external';
 import { layoutAllDay, type Placed } from '../../lib/calendar/layout';
-import { dayEnd, dayStart, formatLongDay, isoWeek, shortWeekday, utcOffsetLabel, viewerZone, weekDays, weekStart } from '../../lib/calendar/time';
+import { HOUR, dayEnd, dayStart, formatLongDay, isoWeek, shortWeekday, utcOffsetLabel, viewerZone, weekDays, weekStart } from '../../lib/calendar/time';
 import { dateTimeFormat } from '../../lib/format';
 import { calendarAvailable } from '../../services/calendar';
 import { useUi } from '../../stores/ui';
 import { AllDayChip, BusyBlock, BusyChip, DragGhost, DropCursor, EventBlock, type BlockDown } from './blocks';
 import { CalendarHeader, FilterRow } from './CalendarHeader';
 import { isBusyKey, useCalendarDays, type DayData } from './calendarData';
+import { gridScrollTarget } from '../../lib/calendar/scrollTarget';
+import { useSession } from '../../stores/session';
 import { settleScroll, useCloseCardOutside, useDayKeys, useDragController } from './dayControls';
 import { useDayDrag } from './dragState';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, WEEK_MIN_BLOCK_PX } from './gridParts';
 import { useToday } from './MiniCalendar';
+import { ZoneHeads, ZoneScales, useZonesSig } from './ZoneAxis';
 
 /*
  * Week view (bug board #6, «как в Яндексе»; desktop only — the phone keeps the day): seven days
@@ -63,9 +66,11 @@ export function WeekGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   const today = useToday();
   const day = useUi((s) => s.calDay) ?? today;
   const selected = useUi((s) => s.calEvent);
+  const workStart = useSession((s) => s.me?.settings?.workHours?.startMin);
   const scroller = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const creatable = calendarAvailable(workspaceId);
+  const zones = useZonesSig();
 
   const first = weekStart(locale);
   const startKey = weekDays(day, first)[0] ?? day;
@@ -74,14 +79,13 @@ export function WeekGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   const from = dayStart(startKey);
   const to = dayEnd(days[6] ?? startKey);
 
-  // Open at «now» (this week) or the selected meeting, else at 08:00 / the week's first meeting.
+  // Open at the selected meeting, else at the working day's start (CBF-57; «now» does not move it).
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const placed = data.flatMap((d) => d.placed);
     const sel = selected ? placed.find((p) => p.key === selected) : undefined;
-    const minute = sel ? sel.top : days.includes(today) ? (Date.now() - dayStart(today)) / 60_000 : Math.min(8 * 60, ...placed.map((p) => p.top));
-    return settleScroll(el, minute);
+    return settleScroll(el, gridScrollTarget(workStart, sel?.top));
     // Only when the week changes (not on every list refresh).
   }, [startKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -109,16 +113,20 @@ export function WeekGrid({ workspaceId }: { workspaceId: string }): ReactNode {
 
   const bars = useMemo(() => barsSig(data), [data]);
   const isoDay = days[first === 0 ? 1 : 0] ?? startKey;
+  // The extra zones' rows and offsets: today's in this week, else mid-week's.
+  const nowDay = days.includes(today) ? today : '';
+  const zoneDay = nowDay || (days[3] ?? startKey);
 
   return (
     <section className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('cal.weekView')} data-testid="week-view">
       <CalendarHeader workspaceId={workspaceId} day={day} days={days} today={today} creatable={creatable} view="week" />
       <FilterRow workspaceId={workspaceId} people={people} />
-      <WeekHead days={days} today={today} zone={utcOffsetLabel(dayStart(days[3] ?? startKey))} />
-      <WeekAllDay workspaceId={workspaceId} days={days} today={today} bars={bars} week={isoWeek(isoDay)} onDown={drag.onBlockDown} />
+      <WeekHead days={days} today={today} zone={utcOffsetLabel(dayStart(days[3] ?? startKey))} zones={zones} zoneAt={dayStart(zoneDay) + 12 * HOUR} />
+      <WeekAllDay workspaceId={workspaceId} days={days} today={today} bars={bars} week={isoWeek(isoDay)} zones={zones} onDown={drag.onBlockDown} />
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="week-scroller">
         <div className="relative flex" style={{ height: 24 * HOUR_PX + 16 }}>
-          <HourScale />
+          {zones ? <ZoneScales sig={zones} day={zoneDay} week nowDay={nowDay} /> : null}
+          <HourScale primary={!!zones} />
           <div ref={grid} className="relative mr-2 mt-2 flex-1" style={{ height: 24 * HOUR_PX }} onPointerDown={drag.onGridDown} data-testid="week-grid">
             <HourLines />
             <div className="absolute inset-0 grid grid-cols-7" data-grid-bg>
@@ -138,7 +146,7 @@ export function WeekGrid({ workspaceId }: { workspaceId: string }): ReactNode {
 const TODAY_TINT = 'bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)]';
 
 /** «UTC+3 | пн 19 | вт 20 …»: a click on a day opens it in the day view. */
-const WeekHead = memo(function WeekHead({ days, today, zone }: { days: readonly string[]; today: string; zone: string }): ReactNode {
+const WeekHead = memo(function WeekHead({ days, today, zone, zones, zoneAt }: { days: readonly string[]; today: string; zone: string; zones: string; zoneAt: number }): ReactNode {
   useLocale();
   const weekday = dateTimeFormat({ weekday: 'short' });
   const openDay = (d: string): void => {
@@ -147,6 +155,7 @@ const WeekHead = memo(function WeekHead({ days, today, zone }: { days: readonly 
   };
   return (
     <div className="flex h-10 shrink-0 border-b border-line pr-2" data-testid="week-head">
+      {zones ? <ZoneHeads sig={zones} at={zoneAt} /> : null}
       <Tip label={t('cal.zone', { zone: viewerZone() })}>
         <span className={cx(GUTTER, 'shrink-0 self-center pr-2 text-right text-micro tabular-nums text-faint')} tabIndex={-1} data-testid="week-zone">
           {zone}
@@ -197,6 +206,7 @@ const WeekAllDay = memo(function WeekAllDay({
   today,
   bars,
   week,
+  zones,
   onDown,
 }: {
   workspaceId: string;
@@ -204,6 +214,7 @@ const WeekAllDay = memo(function WeekAllDay({
   today: string;
   bars: string;
   week: number;
+  zones: string;
   onDown: BlockDown;
 }): ReactNode {
   useLocale();
@@ -217,6 +228,7 @@ const WeekAllDay = memo(function WeekAllDay({
   const inner = Math.max(1, lanes) * LANE_PX + 8;
   return (
     <div className="flex shrink-0 border-b border-line pr-2" data-testid="allday-row">
+      {zones ? <ZoneHeads sig={zones} at={0} bare /> : null}
       <Tip label={t('cal.weekNumLong', { n: week })}>
         <span className={cx(GUTTER, 'shrink-0 self-start pr-2 pt-1.5 text-right text-micro tabular-nums leading-4 text-faint')} tabIndex={-1} data-testid="week-number">
           {t('cal.weekNum', { n: week })}

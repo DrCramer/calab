@@ -35,7 +35,7 @@ export function DocsShell({ site, locale, current, page, aside, children }: {
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" fill="none" /></svg>
         </button>
         <a href={localePath(locale)} className="docs-brand" aria-label={ui.home}>
-          <img src="/calab-wordmark.svg" width={311} height={96} alt="Calab" />
+          <img src="/calab-wordmark.svg" width={311} height={87} alt="Calab" />
         </a>
         <a href={docPath(locale, '')} className="docs-brand-label" aria-current={current === '' ? 'page' : undefined}>{ui.docs}</a>
         <div className="docs-search" role="search">

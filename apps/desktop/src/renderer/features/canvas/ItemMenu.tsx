@@ -1,13 +1,14 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { CanvasItemKind } from '@calaba/protocol';
-import { FilePlus2, FileImage, FolderInput, FolderPlus, History, Pencil, RotateCcw, Shapes, Trash2, Users } from 'lucide-react';
+import { FilePlus2, FileImage, FolderInput, FolderPlus, History, Pencil, RotateCcw, Send, Shapes, Trash2, Users } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { canStructure, canWrite, isFolder } from '../../lib/canvas/tree';
 import { createItem, deleteForever, openCanvas, renameItem, restoreItem, trashItem } from '../../services/canvas';
 import { myUserId } from '../../stores/session';
+import { useUi } from '../../stores/ui';
 import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
@@ -78,6 +79,7 @@ export function ItemMenuEntries({
       {structure && !trashed ? row(ic(Pencil), t('canvas.rename'), onRename, 'canvas-menu-rename') : null}
       {structure && !trashed ? row(ic(FolderInput), t('canvas.move'), () => ui.openDialog({ kind: 'move', itemId }), 'canvas-menu-move') : null}
       {structure && !trashed ? row(ic(Users), t('canvas.access'), () => ui.openDialog({ kind: 'share', itemId }), 'canvas-menu-access') : null}
+      {!folder && !trashed ? row(ic(Send), t('canvas.sendToChat'), () => useUi.getState().openDialog({ kind: 'canvas-send', itemId }), 'canvas-menu-send') : null}
       {!folder && !trashed ? row(ic(History), t('canvas.versions'), () => ui.openDialog({ kind: 'versions', itemId }), 'canvas-menu-versions') : null}
       {exportHandle ? row(ic(FileImage), t('canvas.exportPng'), () => void exportHandle.exportPng({ area: 'all', name: item.name }), 'canvas-menu-export') : null}
       {exportHandle ? row(ic(FileImage), t('canvas.exportPngVisible'), () => void exportHandle.exportPng({ area: 'visible', name: item.name }), 'canvas-menu-export-visible') : null}

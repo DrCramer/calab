@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { F_BOLD, F_ITALIC, toggleFlag, toggleList } from './richText';
 import { LINE_HEIGHT, TextLayouter, boxFontSize, fontFields, nearestFontToken, nearestToken, storedFontPx } from './textLayout';
-import type { BoxRec } from './types';
+import type { TextBoxRec } from './types';
 
 // 10 px per character at size 20 → 0.5 em.
 const L = (cap?: number) => new TextLayouter((t, s) => t.length * s * 0.5, cap);
@@ -125,7 +125,7 @@ describe('TextLayouter: formatted text', () => {
 });
 
 describe('font tokens', () => {
-  const sticky = (fontSize?: 's' | 'm' | 'l' | 'xl'): BoxRec => ({ kind: 'sticky', id: 'a', z: 'a', x: 0, y: 0, w: 160, h: 160, color: 'yellow', text: '', ...(fontSize ? { fontSize } : {}) });
+  const sticky = (fontSize?: 's' | 'm' | 'l' | 'xl'): TextBoxRec => ({ kind: 'sticky', id: 'a', z: 'a', x: 0, y: 0, w: 160, h: 160, color: 'yellow', text: '', ...(fontSize ? { fontSize } : {}) });
   it('stickies and shapes scale their text; the default is unchanged', () => {
     expect(boxFontSize(sticky())).toBe(18);
     expect(boxFontSize(sticky('xl'))).toBe(38);
@@ -133,7 +133,7 @@ describe('font tokens', () => {
     expect(boxFontSize({ kind: 'text', id: 't', z: 'a', x: 0, y: 0, w: 1, h: 1, size: 27, color: 'text', text: '' })).toBe(27);
   });
   it('an exact fontPx wins over the token', () => {
-    expect(boxFontSize({ ...sticky('xl'), fontPx: 30 } as BoxRec)).toBe(30);
+    expect(boxFontSize({ ...sticky('xl'), fontPx: 30 } as TextBoxRec)).toBe(30);
     expect(boxFontSize({ kind: 'shape', id: 's', z: 'a', x: 0, y: 0, w: 1, h: 1, shape: 'rect', fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '', fontPx: 14 })).toBe(14);
   });
   it('fontFields: a preset is a token (M nothing), another px is kept exactly next to the nearest token', () => {

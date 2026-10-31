@@ -69,7 +69,7 @@ const stories = {
       "Crear"
     ],
     "first": "Una conversación.\nA un clic.",
-    "firstText": "Entra en una sala de voz, comparte pantalla y resolved juntos. Sin crear un enlace para cada conversación.",
+    "firstText": "Entra en una sala de voz, comparte pantalla y resuélvelo juntos. Sin crear un enlace para cada conversación.",
     "second": "Lo hablamos.\nLo hacemos.",
     "secondText": "Convierte un mensaje en una tarea. La conversación queda en el chat y el siguiente paso, en el tablero.",
     "control": "Tu equipo.\nTus reglas.",

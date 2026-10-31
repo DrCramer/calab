@@ -75,7 +75,7 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
       <nav className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1.5" aria-label={t('wiki.tree')} data-testid="wiki-tree" onPointerEnter={preloadWikiDoc}>
         {query.trim() ? <SearchResults workspaceId={workspaceId} query={query} /> : <ChildList workspaceId={workspaceId} parentId={TOP} depth={0} />}
       </nav>
-      <div className="shrink-0 border-t border-line p-1.5">
+      <div className="shrink-0 border-t border-line px-1.5 pt-1.5" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         <button
           type="button"
           onClick={() => useWikiUi.getState().openTrash(workspaceId, true)}
@@ -341,7 +341,7 @@ function TrashColumn({ workspaceId }: { workspaceId: string }): ReactNode {
         ) : null}
       </div>
       </BarContext.Provider>
-      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5" data-testid="wiki-trash">
+      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pt-1.5" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }} data-testid="wiki-trash">
         {!loaded ? (
           <div className="grid h-12 place-items-center">
             <Spinner />

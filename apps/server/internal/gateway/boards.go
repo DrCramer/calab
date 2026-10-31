@@ -54,6 +54,9 @@ type boardState struct {
 	taskBoard map[uuid.UUID]uuid.UUID
 	scoped    map[uuid.UUID]map[uuid.UUID]int
 	bots      map[uuid.UUID]bool // bot members: never task-scoped
+	// botOwners: a bot member's owner (bots.owner_user_id): an author of the bot's tasks for
+	// the create-only rule (perm.TaskAuthor, ADR-0151).
+	botOwners map[uuid.UUID]uuid.UUID
 }
 
 func (b *boardState) init() {
@@ -70,6 +73,7 @@ func (b *boardState) init() {
 	}
 	if b.bots == nil {
 		b.bots = map[uuid.UUID]bool{}
+		b.botOwners = map[uuid.UUID]uuid.UUID{}
 	}
 }
 
@@ -117,8 +121,19 @@ func (b *boardState) setBot(u uuid.UUID, bot bool) {
 	}
 }
 
+// setBotOwner records the owner of bot u (ADR-0151); uuid.Nil forgets it. Bots never change
+// owners: it comes with the workspace load and with BOT_CREATE / BOT_UPDATE.
+func (b *boardState) setBotOwner(u, owner uuid.UUID) {
+	b.init()
+	if owner == uuid.Nil {
+		delete(b.botOwners, u)
+	} else {
+		b.botOwners[u] = owner
+	}
+}
+
 // invitesOf is who is invited on a task as an event carries it: nobody on an archived task;
-// bots never count.
+// bots never count — the author of a bot's task is the bot's owner (perm.TaskAuthor, ADR-0151).
 func (b *boardState) invitesOf(t *v1.Task) map[uuid.UUID]invite {
 	if t.GetArchivedAt() != nil {
 		return nil
@@ -144,6 +159,9 @@ func (b *boardState) invitesOf(t *v1.Task) map[uuid.UUID]invite {
 		add(w, invWatcher)
 	}
 	add(t.GetCreatedBy(), invAuthor)
+	if o, ok := b.botOwners[parseID(t.GetCreatedBy())]; ok {
+		add(o.String(), invAuthor)
+	}
 	return out
 }
 

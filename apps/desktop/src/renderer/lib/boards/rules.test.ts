@@ -1,5 +1,5 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
-import { BoardRuleSchema, BoardStatusSchema, BoardStatusType, RuleAssigneesMode, RuleGitEvent, RuleRecipients, RuleSpecialUser, TaskApprovalState, TaskPriority, type BoardRule } from '@calaba/protocol';
+import { BoardRuleSchema, BoardStatusSchema, BoardStatusType, RuleTriggerSchema, RuleAssigneesMode, RuleGitEvent, RuleRecipients, RuleSpecialUser, TaskApprovalState, TaskPriority, type BoardRule } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_RULES,
@@ -7,6 +7,9 @@ import {
   actionIssue,
   blankAction,
   blankTrigger,
+  branchesOf,
+  envsOf,
+  gitHasTarget,
   emptyDraft,
   fromTemplate,
   issueAtField,
@@ -187,5 +190,36 @@ describe('store transitions', () => {
     const again = setBoardRules(d, 'b1', [rule('a', 0), rule('b', 1)]);
     expect(again.rules['a']).toBe(d.rules['a']);
     expect(again.order['b1']).toBe(d.order['b1']);
+  });
+});
+
+describe('Git target branches (board task #101)', () => {
+  it('reads the field as a list', () => {
+    expect(branchesOf('main, release/*')).toEqual(['main', 'release/*']);
+    expect(branchesOf(' main,,main  preprod ')).toEqual(['main', 'preprod']);
+    expect(branchesOf('')).toEqual([]);
+  });
+
+  it('reads release environments in lower case and checks their form (board task #101)', () => {
+    expect(envsOf(' Prod, stage prod ')).toEqual(['prod', 'stage']);
+    const d = { ...emptyDraft(), name: 'deploy', trigger: blankTrigger('release') };
+    expect(d.trigger.kind.case === 'release' && d.trigger.kind.value.environments).toEqual(['prod']);
+    expect(validateDraft({ ...d, actions: [blankAction('archive')] })).toEqual([]);
+    const bad = create(RuleTriggerSchema, { kind: { case: 'release', value: { environments: ['pr od'] } } });
+    expect(validateDraft({ ...d, trigger: bad, actions: [blankAction('archive')] }).map((i) => i.key)).toEqual(['rules.err.environments']);
+  });
+
+  it('only pull request events have a target', () => {
+    expect(gitHasTarget(RuleGitEvent.PR_MERGED)).toBe(true);
+    expect(gitHasTarget(RuleGitEvent.UNSPECIFIED)).toBe(true);
+    expect(gitHasTarget(RuleGitEvent.BRANCH_CREATED)).toBe(false);
+    expect(gitHasTarget(RuleGitEvent.COMMIT_PUSHED)).toBe(false);
+  });
+
+  it('validates the filter like the server', () => {
+    const d = (targetBranches: string[]): RuleDraft => ({ ...emptyDraft(), name: 'x', trigger: create(RuleTriggerSchema, { kind: { case: 'git', value: { event: RuleGitEvent.PR_MERGED, targetBranches } } }), actions: [blankAction('archive')] });
+    expect(validateDraft(d(['main']))).toEqual([]);
+    expect(validateDraft(d(Array.from({ length: 11 }, (_, i) => `b${i}`)))).toEqual([{ at: 'trigger', key: 'rules.err.branches' }]);
+    expect(validateDraft(d(['x'.repeat(201)]))).toEqual([{ at: 'trigger', key: 'rules.err.branches' }]);
   });
 });

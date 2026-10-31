@@ -73,13 +73,21 @@
 	# canonical locale URLs end with a slash (trailingSlash export)
 	@locale_noslash path /ru /en /es /zh
 	redir @locale_noslash {path}/ 308
+	# Bot API page moved into /developers/ (landing v6): /<locale>/bots/ → /<locale>/developers/, a bare /bots/ → English.
+	@bots_page path_regexp bots ^/(ru|en|es|zh)/bots/?$
+	redir @bots_page /{re.bots.1}/developers/ 301
+	@bots_bare path /bots /bots/
+	redir @bots_bare /en/developers/ 301
 	handle {
 		root * /srv/landing
 		encode zstd gzip
 		header {
 			# Next.js static export hydrates through inline <script> tags: 'unsafe-inline' for scripts is the
-			# price of a no-server export (no nonces). No connect targets beyond self; no framing.
-			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'{$RELEASES_ORIGIN}{$APP_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+			# price of a no-server export (no nonces). Yandex Metrika (consent-gated in the page, components/yandex-metrika.tsx) needs mc.yandex.ru/.com for script, pixel,
+			# XHR/beacon, Webvisor websocket and iframe; yastatic.net for the tag's helper scripts. The support chat
+			# (components/support-chat.tsx, ChatDeck) needs chatdeck.ru for its script, API and socket, and its
+			# attachment storage hb.vkcloud-storage.ru for images/video. No framing of the landing itself.
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://mc.yandex.ru https://yastatic.net https://chatdeck.ru; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com https://chatdeck.ru https://hb.vkcloud-storage.ru; media-src 'self' https://hb.vkcloud-storage.ru; font-src 'self' data:; connect-src 'self'{$RELEASES_ORIGIN}{$APP_ORIGIN} https://mc.yandex.ru https://mc.yandex.com wss://mc.yandex.ru wss://mc.yandex.com https://chatdeck.ru wss://chatdeck.ru; frame-src https://mc.yandex.ru https://mc.yandex.com; child-src https://mc.yandex.ru https://mc.yandex.com blob:; worker-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 			X-Content-Type-Options nosniff
 			Referrer-Policy strict-origin-when-cross-origin
 			X-Frame-Options DENY
@@ -171,6 +179,13 @@
 		}
 		reverse_proxy {$API_UPSTREAM:127.0.0.1:3000}
 	}
+
+	# Universal links (iOS) / App Links (Android), DEV-4947: AASA/assetlinks.json as JSON, generated
+	# by entrypoint.sh from APP_LINKS_IOS/APP_LINKS_ANDROID (404 when unset). Must precede the SPA
+	# fallback below (`@sensitive_spa` and the catch-all `handle {}` would otherwise serve index.html
+	# for these paths); Caddy also sorts `handle` blocks by path specificity, so this literal path
+	# wins regardless, but the explicit order keeps intent clear.
+	import /tmp/wellknown.caddy
 
 	import releases
 

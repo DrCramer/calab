@@ -36,6 +36,50 @@ func providerResponse(code int, body string, headers http.Header) *http.Response
 func providerPayload() Payload {
 	return Payload{Version: 1, Binding: uuid.NewString(), EventID: uuid.NewString(), Kind: "call", ReferenceID: uuid.NewString(), RoomID: uuid.NewString(), ExpiresAt: time.Now().Add(40 * time.Second).UnixMilli()}
 }
+func TestFCMDataCarriesMessagePresentationWithinLimit(t *testing.T) {
+	decode := func(raw json.RawMessage, err error) map[string]string {
+		t.Helper()
+		var data map[string]string
+		if err != nil || json.Unmarshal(raw, &data) != nil {
+			t.Fatal("FCM data not encodable", err)
+		}
+		return data
+	}
+	p := providerPayload()
+	p.Kind, p.Title, p.Subtitle, p.Body = "message", "Илья", "Общий", "Привет"
+	data := decode(fcmData(p))
+	if data["title"] != "Илья" || data["subtitle"] != "Общий" || data["body"] != "Привет" || data["kind"] != "message" || data["v"] != "1" {
+		t.Fatal("FCM message presentation missing", data)
+	}
+	if _, leaked := data["referenceId"]; leaked || data["binding"] != p.Binding {
+		t.Fatal("FCM data must keep routing opaque")
+	}
+	call := providerPayload()
+	call.Title, call.Body, call.CallerName = "x", "y", "Илья"
+	data = decode(fcmData(call))
+	if data["title"] != "" || data["body"] != "" || data["callerName"] != "Илья" {
+		t.Fatal("only messages carry alert text")
+	}
+	// 240 Cyrillic runes are 480 UTF-8 bytes; the limit is the marshalled object.
+	p.Body = strings.Repeat("я", 240)
+	p.AvatarJPEG = strings.Repeat("A", 3500)
+	raw, err := fcmData(p)
+	data = decode(raw, err)
+	if len(raw) > fcmLimit || data["avatarJpeg"] != "" || []rune(data["body"])[0] != 'я' {
+		t.Fatal("optional picture must yield to the FCM limit", len(raw))
+	}
+	p.AvatarJPEG = strings.Repeat("A", 1000)
+	if data = decode(fcmData(p)); data["avatarJpeg"] == "" {
+		t.Fatal("a picture within the limit is kept")
+	}
+	alert, ok := alertText(Payload{Kind: "message", Title: "a", Body: "b"})
+	if !ok || alert["title"] != "a" {
+		t.Fatal("shared ADR-0072 alert rule")
+	}
+	if _, ok = alertText(Payload{Kind: "task", Title: "a", Body: "b"}); ok {
+		t.Fatal("non-message kinds stay generic")
+	}
+}
 func TestAPNSRequestBoundedMinimalVoIPAndTimestamp(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -67,6 +111,14 @@ func TestAPNSRequestBoundedMinimalVoIPAndTimestamp(t *testing.T) {
 	result := sender.Send(context.Background(), Endpoint{Token: "aabb", AppID: sender.app, Environment: sender.environment, Provider: v1.PushProvider_PUSH_PROVIDER_VOIP}, payload)
 	if !result.Invalid || result.InvalidBefore == nil || !result.InvalidBefore.Equal(invalidAt) {
 		t.Fatal("APNs invalid timestamp discarded")
+	}
+	// The FCM-only ring cancel never reaches APNs (it would be a generic alert there).
+	cancel := providerPayload()
+	cancel.Kind = callCancelKind
+	for _, provider := range []v1.PushProvider{v1.PushProvider_PUSH_PROVIDER_APNS, v1.PushProvider_PUSH_PROVIDER_VOIP} {
+		if result = sender.Send(context.Background(), Endpoint{Token: "aabb", AppID: sender.app, Environment: sender.environment, Provider: provider}, cancel); result != (Result{}) {
+			t.Fatal("call-cancel was sent over APNs")
+		}
 	}
 }
 func TestFCMRequestDataTTLAndTypedInvalidation(t *testing.T) {

@@ -4,7 +4,9 @@ import { setPendingInvite } from '../stores/invite';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 import { parseMailLink } from '../features/mail/mailLink';
+import { parsePlansLink } from '../lib/billing/planLink';
 import { wikiPageIdOf } from '@calaba/wiki-doc/links';
+import { classifyLink, ownOrigins } from '../../shared/ownLink';
 
 /**
  * Invite links: `https://<server>/join/<code>` (shareable: opens the web client, and the
@@ -27,7 +29,7 @@ export function parseInviteCode(input: string): string | null {
   return m?.[1] ?? null;
 }
 
-const HTTP_ORIGIN = /^https?:\/\/[^/\s]+/;
+const HTTP_ORIGIN = /^https?:\/\/[^/\s]+/i;
 
 /**
  * The base for shared links: the session's server, else the configured server (settings), else
@@ -38,7 +40,10 @@ export function shareOrigin(serverUrl: string): string | null {
   const web = import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' ? location.origin : '';
   for (const c of [serverUrl, useSession.getState().settings?.serverUrl ?? '', web]) {
     const o = c.trim().replace(/\/+$/, '');
-    if (HTTP_ORIGIN.test(o)) return o;
+    if (HTTP_ORIGIN.test(o)) {
+      // Content URLs use URL.href; compare them against the same canonical origin.
+      try { return new URL(o).origin; } catch { /* Try the next configured origin. */ }
+    }
   }
   return null;
 }
@@ -121,7 +126,7 @@ export function parseEventLink(input: string): string | null {
 export function parseBoardLink(input: string): { kind: 'board' | 'task'; id: string } | null {
   const s = input.trim();
   const ID = '([0-9a-fA-F-]{36})';
-  const KEY = '([A-Za-z][A-Za-z0-9]{1,5}-[0-9]{1,7})';
+  const KEY = '([A-Za-z][A-Za-z0-9]{1,5}-[0-9]{1,9})';
   const b = new RegExp(`^${SCHEME}://b/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/b/${ID}/?(?:[?#].*)?$`).exec(s);
   if (b?.[1]) return { kind: 'board', id: b[1].toLowerCase() };
   const k = new RegExp(`^${SCHEME}://t/${KEY}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/t/${KEY}/?(?:[?#].*)?$`).exec(s);
@@ -159,8 +164,30 @@ export function wikiPageUrl(pageId: string): string | null {
 
 /** A wiki page link of this server (the chat's card, a paste into a page); null for any other URL. */
 export function ownWikiPageId(href: string): string | null {
+  return isOwnOrigin(href) ? parseWikiLink(href) : null;
+}
+
+/**
+ * Canvas links (owner 23.10): `https://<server>/canvas/<item id>` and `calab://canvas/<item id>` —
+ * the Canvas section opens on the board; no access → «Холст удалён или недоступен». (`/c/<code>` is
+ * the public view-only page, not this.)
+ */
+export function parseCanvasLink(input: string): string | null {
+  const s = input.trim();
+  const ID = '([0-9a-fA-F-]{36})';
+  const m = new RegExp(`^${SCHEME}://canvas/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/canvas/${ID}/?(?:[?#].*)?$`).exec(s);
+  return m?.[1]?.toLowerCase() ?? null;
+}
+
+/** The shareable address of a canvas on this server (null: no server known). */
+export function canvasUrl(itemId: string): string | null {
   const origin = shareOrigin('');
-  return origin && href.startsWith(`${origin}/`) ? parseWikiLink(href) : null;
+  return origin ? `${origin}/canvas/${itemId}` : null;
+}
+
+/** A canvas link of this server (the chat's card); null for any other URL. */
+export function ownCanvasId(href: string): string | null {
+  return isOwnOrigin(href) ? parseCanvasLink(href) : null;
 }
 
 /**
@@ -182,21 +209,34 @@ export function diskItemUrl(itemId: string): string | null {
 
 /** A Disk item link of this server (the chat's chip); null for any other URL. */
 export function ownDiskItemId(href: string): string | null {
-  const origin = shareOrigin('');
-  return origin && href.startsWith(`${origin}/`) ? parseDiskLink(href) : null;
+  return isOwnOrigin(href) ? parseDiskLink(href) : null;
 }
 
 /**
- * A link clicked in a message: our own /m/, /t/, /b/, /wiki/, /disk/ links (this server) open in the app instead
- * of the browser. False = not ours (the caller opens it outside).
+ * Our origins (shared/ownLink.ts ownOrigins): the session's server, the configured one, on the web the
+ * page's origin — and, for them, the deployment's app origins (app.calab.io and its aliases).
+ */
+export function linkOrigins(): string[] {
+  const st = useSession.getState();
+  const web = import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' ? location.origin : '';
+  return ownOrigins([st.serverUrl, st.settings?.serverUrl ?? '', web], st.appInfo?.appOrigins ?? []);
+}
+
+/** `href` is an http(s) link to one of our origins (any path). */
+function isOwnOrigin(href: string): boolean {
+  const kind = classifyLink(href, linkOrigins()).kind;
+  return kind === 'app' || kind === 'own-page';
+}
+
+/**
+ * A clicked link (message text, link cards, wiki, Disk): an in-app route of our server (shared/ownLink.ts
+ * classifyLink — /t/, /b/, /m/, /r/, /join/, /dm/, /e/, /wiki/, /canvas/, /disk/, /plans, on any of our
+ * origins) opens in the app instead of the browser. False = not ours (the caller opens it outside).
  */
 export function openOwnLink(href: string): boolean {
-  const origin = shareOrigin('');
-  if (!origin || !href.startsWith(`${origin}/`)) return false;
-  // Every in-app route (CBF-63), the same set as shared/ownLink.ts in the main process.
-  const known = parseMessageLink(href) ?? parseBoardLink(href) ?? parseWikiLink(href) ?? parseDiskLink(href) ?? parseEventLink(href) ?? parseDmLink(href) ?? parseRoomInviteCode(href);
-  if (!known && !parseInviteCode(href)) return false;
-  handleDeepLink(href);
+  const c = classifyLink(href, linkOrigins());
+  if (c.kind !== 'app') return false;
+  handleDeepLink(c.deepLink);
   return true;
 }
 
@@ -206,6 +246,12 @@ export function handleDeepLink(url: string): void {
   const mail = parseMailLink(url);
   if (mail) {
     void import('../features/mail/links').then((m) => m.openMailLink(mail)).catch(() => undefined);
+    return;
+  }
+  const plans = parsePlansLink(url);
+  if (plans) {
+    // The landing's «Купить» (/plans?plan=team|business); lazy, like the other links.
+    void import('./plansLink').then((m) => m.openPlansLink(plans.plan)).catch(() => undefined);
     return;
   }
   const msg = parseMessageLink(url);
@@ -223,6 +269,12 @@ export function handleDeepLink(url: string): void {
   if (wiki) {
     // Loaded lazily, like the boards: links.ts stays free of the API / platform graph.
     void import('./wiki').then((m) => m.openWikiLink(wiki)).catch(() => undefined);
+    return;
+  }
+  const canvas = parseCanvasLink(url);
+  if (canvas) {
+    // Loaded lazily, like the wiki: links.ts stays free of the API / platform graph.
+    void import('./canvasLink').then((m) => m.openCanvasLink(canvas)).catch(() => undefined);
     return;
   }
   const board = parseBoardLink(url);

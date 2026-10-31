@@ -52,6 +52,9 @@ message DiskItem {
   bool trashed_root = 16; // the item the deletion started at (the trash lists only these)
   uint32 folder_files = 17; // folders, single GET only: files directly inside that the caller sees
   uint32 folder_folders = 18; // folders, single GET only: sub-folders directly inside that the caller sees
+  // Files: the members who have it open for editing in the office editor now (ADR-0143,
+  // «Редактирует Имя»); set in listings, single GET and every DISK_ITEM_UPSERT.
+  repeated string editor_ids = 19;
 }
 
 // One override of an item (disk_permissions): «Просмотр» = DISK_VIEW, «Правка» = DISK_VIEW |
@@ -92,6 +95,7 @@ enum DiskActivityKind {
   DISK_ACTIVITY_KIND_TRASH = 8;
   DISK_ACTIVITY_KIND_RESTORE = 9;
   DISK_ACTIVITY_KIND_DELETE = 10; // deleted forever
+  DISK_ACTIVITY_KIND_EDIT = 11; // a saved version (ADR-0143): before / after = file_id, size, sha256 of the files
 }
 
 // A journal entry (disk_activity). before / after carry name snapshots (the destination
@@ -121,6 +125,15 @@ message ListDiskItemsResponse {
 message CreateDiskFolderRequest {
   string parent_id = 1; // empty = the root
   string name = 2;
+}
+
+// POST /api/workspaces/{id}/disk/import (ADR-0143, «Сохранить в Диск»): a copy of a file the
+// caller may read (a chat or task attachment) as a new item of a folder they may write to.
+// 201 DiskItemResponse; 404 for a file they cannot read; 413 above MAX_FILE_SIZE_MB or the quota.
+message ImportDiskFileRequest {
+  string file_id = 1;
+  string parent_id = 2; // empty = the root
+  string name = 3; // empty = the file's name; a taken name gets «(2)»
 }
 
 // The response of create / upload / update / trash / restore and GET /api/disk/items/{id}.

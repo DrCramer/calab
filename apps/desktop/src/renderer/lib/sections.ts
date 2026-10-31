@@ -8,7 +8,7 @@ import { showsUnread } from '../stores/rooms';
  * in «Ещё») and the desktop-only «Почта» (ADR-0088 §8, Electron only, no phone tab). Pure helpers: which section is on screen, the section remembered per
  * workspace, the workspace the sections work in, and the rail / switcher badges.
  */
-export type Section = Exclude<PhoneTab, 'profile'> | 'mail' | 'wiki' | 'canvas';
+export type Section = Exclude<PhoneTab, 'profile'> | 'mail' | 'wiki' | 'canvas' | 'telephony';
 /**
  * Sections that live inside a workspace («Личные» is the HOME pseudo-workspace; «Почта» is personal
  * and not remembered per workspace, like «Личные»).
@@ -21,7 +21,7 @@ export type WsSection = Exclude<Section, 'dms' | 'mail'>;
  * centre does), else the rooms. `app`: a web app of the workspace fills the screen — no section is
  * selected (its icon carries the mark).
  */
-export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean; disk?: boolean; wiki?: boolean; canvas?: boolean }): Section | null {
+export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean; disk?: boolean; wiki?: boolean; canvas?: boolean; telephony?: boolean }): Section | null {
   if (s.mail) return 'mail';
   if (s.home) return 'dms';
   if (s.app) return null;
@@ -31,6 +31,8 @@ export function currentSection(s: { home: boolean; boards: boolean; calendar: bo
   if (s.wiki) return 'wiki';
   // «Холст» (ADR-0126 §5): exclusive the same way (stores/canvasUi.ts).
   if (s.canvas) return 'canvas';
+  // «Телефония» (ADR-0137 §5): exclusive the same way (stores/telephonyUi.ts).
+  if (s.telephony) return 'telephony';
   return s.boards ? 'boards' : s.calendar ? 'calendar' : 'chats';
 }
 
@@ -39,7 +41,7 @@ export function rememberSection(map: Readonly<Record<string, WsSection>>, wsId: 
   return map[wsId] === section ? map : { ...map, [wsId]: section };
 }
 
-const WS_SECTIONS: readonly string[] = ['chats', 'calendar', 'boards', 'disk', 'wiki', 'canvas'];
+const WS_SECTIONS: readonly string[] = ['chats', 'calendar', 'boards', 'disk', 'wiki', 'canvas', 'telephony'];
 
 /**
  * The section a workspace opens on: the remembered one; guests have rooms only (no calendar,

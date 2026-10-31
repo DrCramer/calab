@@ -1,7 +1,9 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { AttendeeStatus, EventRepeat, GatewayFrameSchema, GatewayOpcode, type Ready } from '@calaba/protocol';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { AttendeeStatus, CalendarEventSchema, EventRepeat, GatewayFrameSchema, GatewayOpcode, type Ready } from '@calaba/protocol';
+import { occurrences } from './mock-calendar';
 import { IDS, startMockServer, type MockServer } from './mock-server';
 
 // Calendar in the mock (ADR-0038): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
@@ -214,5 +216,14 @@ describe('meeting comments (ADR-0104)', () => {
     expect((await api(anna, `${base}/${mine.comment.id}`, { method: 'PATCH', body: JSON.stringify({ body: 'чужое' }) })).status).toBe(403);
     expect((await api(vera, `${base}/${mine.comment.id}`, { method: 'PATCH', body: JSON.stringify({ body: 'Повестка v2' }) })).status).toBe(200);
     expect((await api(anna, `${base}/${mine.comment.id}`, { method: 'DELETE' })).status).toBe(204);
+  });
+});
+
+describe('mock calendar: working days (ADR-0136)', () => {
+  it('expands Mon–Fri and skips the weekend', () => {
+    const start = Date.parse('2026-01-15T07:00:00Z'); // Thursday
+    const ev = create(CalendarEventSchema, { startsAt: timestampFromMs(start), endsAt: timestampFromMs(start + HOUR), repeat: EventRepeat.WORKDAYS });
+    const occ = occurrences({ ev, exceptions: new Set(), recordings: new Map() }, start, start + 7 * 24 * HOUR);
+    expect(occ.map((o) => new Date(o.startMs).toISOString().slice(5, 10))).toEqual(['01-15', '01-16', '01-19', '01-20', '01-21']);
   });
 });

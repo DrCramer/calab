@@ -12,6 +12,7 @@ import {
   type ExternalEvent,
   type ShareLevel,
 } from '../lib/calendar/freebusyApi';
+import { api } from '../lib/api/endpoints';
 import { MAX_PEOPLE } from '../lib/calendar/people';
 import { log } from '../lib/log';
 import { entryKey, useFreeBusy, type FbEntry } from '../stores/freebusy';
@@ -149,6 +150,19 @@ export function parseHoursSignature(sig: string): { timezone: string; workHours:
 export async function saveMyWorkHours(wh: WorkHours): Promise<boolean> {
   try {
     const r = await freebusyApi.saveWorkHours(wh);
+    if (r.me) useSession.getState().set({ me: r.me });
+    invalidateMe();
+    return true;
+  } catch (e) {
+    toast.fail(e, t('err.ctx.save'));
+    return false;
+  }
+}
+
+/** The extra zones of the calendar's hour axis (board #85): replaces the list; the saved Me follows. */
+export async function saveCalendarZones(zones: readonly { zone: string; label: string }[]): Promise<boolean> {
+  try {
+    const r = await api.me.update({ calendarZones: { zones: zones.map((z) => ({ zone: z.zone, label: z.label.trim() })) } });
     if (r.me) useSession.getState().set({ me: r.me });
     invalidateMe();
     return true;

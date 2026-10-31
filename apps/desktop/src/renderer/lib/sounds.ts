@@ -308,6 +308,34 @@ export function playSound(name: SoundName, opts: PlayOptions = {}): void {
   else play();
 }
 
+// ---------------------------------------------------------------- keypad click
+
+/** The tone keypad's click: one soft 40 ms tick, quieter than every event cue. */
+export const KEY_CLICK: readonly Note[] = [{ f: 1318.51, at: 0, dur: 0.04, gain: 0.35 }];
+
+let keyClick: { el: HTMLAudioElement; sink: string } | null = null;
+
+/**
+ * A key of the tone keypad was sent (ADR-0046 addendum «Тональный набор»): a short local click
+ * through the same plain <audio> as the event cues (never WebAudio, docs/02), on the output
+ * device at the sound volume; off with the sounds' master switch. Local only: the line gets the
+ * key as data. One element, rewound per key (fast typing restarts the tick).
+ */
+export function playKeyClick(): void {
+  const p = prefs();
+  if (!p.voiceSounds) return;
+  if (!keyClick) keyClick = { el: new Audio(URL.createObjectURL(wav(synth(KEY_CLICK)))), sink: '' };
+  const k = keyClick;
+  k.el.volume = Math.max(0, Math.min(1, p.soundVolume));
+  k.el.currentTime = 0;
+  const play = (): void => void k.el.play().catch(() => undefined);
+  const sink = p.outputDeviceId ?? '';
+  if (sink !== k.sink) {
+    k.sink = sink;
+    void k.el.setSinkId(sink).then(play, play);
+  } else play();
+}
+
 // ---------------------------------------------------------------- call ringing (ADR-0034)
 
 /** `call-incoming` — the ringtone; `call-outgoing` — the ring-back the caller hears. */

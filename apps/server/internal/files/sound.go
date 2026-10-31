@@ -41,7 +41,7 @@ const (
 	MaxPromptMs          = 180_000
 	MaxPromptBytes       = 2 << 20
 	promptTimeout        = 60 * time.Second
-	promptBitrate        = "32k"
+	promptBitrate        = "24k"
 )
 
 var (
@@ -126,7 +126,7 @@ func SoundArgs(format, in, out string) []string {
 }
 
 // PromptArgs are SoundArgs for the prompt of a voice menu (ADR-0117): at most one second past
-// MaxPromptMs (so a longer upload is seen and refused, not cut silently), 32 kbit/s Opus tuned
+// MaxPromptMs (so a longer upload is seen and refused, not cut silently), 24 kbit/s Opus tuned
 // for speech — the phone line carries G.711 anyway.
 func PromptArgs(format, in, out string) []string {
 	return audioArgs(format, in, out, strconv.Itoa(MaxPromptMs/1000+1), promptBitrate, "voip")

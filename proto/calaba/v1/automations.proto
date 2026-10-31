@@ -28,10 +28,20 @@ import "calaba/v1/boards.proto";
 enum RuleGitEvent {
   RULE_GIT_EVENT_UNSPECIFIED = 0; // any of them
   RULE_GIT_EVENT_BRANCH_CREATED = 1;
-  RULE_GIT_EVENT_PR_OPENED = 2; // opened or reopened
+  // Opened or reopened as ready for review, or a draft marked ready (a rule on PR_OPENED fires on
+  // PR_READY too); a draft opened is PR_DRAFT_OPENED (board task #101).
+  RULE_GIT_EVENT_PR_OPENED = 2;
   RULE_GIT_EVENT_PR_MERGED = 3;
   RULE_GIT_EVENT_PR_CLOSED = 4; // closed without merging
   RULE_GIT_EVENT_COMMIT_PUSHED = 5;
+  // A draft opened or reopened (GitLab Draft / WIP, GitHub draft, Gitea draft or «WIP:» title).
+  RULE_GIT_EVENT_PR_DRAFT_OPENED = 6;
+  // A draft marked ready for review (GitLab draft true → false, GitHub ready_for_review).
+  RULE_GIT_EVENT_PR_READY = 7;
+  // A reviewer was added; once per reviewer and pull request until the request is removed.
+  RULE_GIT_EVENT_PR_REVIEW_REQUESTED = 8;
+  // A reviewer approved; once per approver and pull request until the approval is withdrawn.
+  RULE_GIT_EVENT_PR_APPROVED = 9;
 }
 
 // When a rule runs. Change triggers come from the task journal of the change (the same
@@ -66,8 +76,13 @@ message RuleTrigger {
   // The last open item of the task's checklists was done: every item of every checklist is done.
   message ChecklistCompleted {}
   message CommentCreated {}
+  // target_branches: the pull request's target branch must match one of them, an exact name or
+  // a glob («*» any characters, «/» included; «?» one): ["main"], ["release/*"]. Empty = any
+  // branch; a non-empty list never matches a branch or commit event (they have no target).
+  // At most 10 patterns of at most 200 characters, no spaces.
   message Git {
     RuleGitEvent event = 1;
+    repeated string target_branches = 2;
   }
   // The task is due in at most `days` days (0 = today) and not finished. Needs DUE_DATE.
   message DueIn {
@@ -80,6 +95,12 @@ message RuleTrigger {
   // The live task has not changed for `days` days and is not finished.
   message Stale {
     uint32 days = 1; // 1..90
+  }
+  // The task entered a release (board task #101; POST /api/boards/{id}/releases), once per task
+  // and environment. environments: the release's environment is one of them («prod»); empty =
+  // any. At most 10, each of the release environment form.
+  message Release {
+    repeated string environments = 1;
   }
   oneof kind {
     TaskCreated task_created = 1;
@@ -94,6 +115,7 @@ message RuleTrigger {
     DueIn due_in = 10;
     Overdue overdue = 11;
     Stale stale = 12;
+    Release release = 13;
   }
 }
 
@@ -121,7 +143,10 @@ enum RuleRecipients {
 }
 
 // What a rule does. Templates (≤ 2000 characters) may use {key} {title} {status} {actor}
-// {assignees} {due} {url}; unknown names stay as written.
+// {assignees} {due} {url}; a Git trigger adds {pr_url} {pr_number} {pr_title} {branch}
+// {target_branch} {git_author} (empty for other triggers and for what an event lacks: a push has
+// no pull request; one line each, «@» of a mention token neutralised); a release trigger adds
+// {release} (the release's name, the same rules). Unknown names stay as written.
 message RuleAction {
   // Through the same path as PATCH /tasks/{id}: the approval gate applies.
   message SetStatus {
@@ -298,6 +323,15 @@ message BoardGit {
   string last_error = 7;
   string created_by = 8;
   google.protobuf.Timestamp created_at = 9;
+  // Backlink (board task #101, GitLab only): on the first link of a merge request to a task
+  // (not a bare mention in its description) post one note «Задача Calab: KEY — title url» on
+  // the merge request with the API token. Off by default: the task title becomes visible to
+  // everyone who can read the merge request.
+  bool backlink = 10;
+  bool has_api_token = 11; // the token itself is never returned
+  string gitlab_url = 12;  // the GitLab the token belongs to («https://gitlab.com»)
+  // Why the last note was not posted ("" = fine): no token, the token was refused…
+  string backlink_error = 13;
 }
 
 // PUT /api/boards/{id}/git → BoardGitResponse (creates or replaces). secret: 16..256
@@ -307,10 +341,68 @@ message SetBoardGitRequest {
   string secret = 2;
 }
 
+// PATCH /api/boards/{id}/git → BoardGitResponse (no secret): the backlink settings of an existing
+// setup (404 without one). api_token: a GitLab personal / project access token with the `api`
+// scope, ≤ 256 characters, sealed at rest; "" removes it. gitlab_url: an https origin
+// («https://git.example.com»); notes go only to merge requests under it.
+message UpdateBoardGitRequest {
+  optional bool backlink = 1;
+  optional string api_token = 2;
+  optional string gitlab_url = 3;
+}
+
 // GET / PUT /api/boards/{id}/git (GET without a setup: git unset); DELETE → 204.
 message BoardGitResponse {
   BoardGit git = 1;
   string secret = 2; // PUT only, once
+}
+
+// ---- Releases (board task #101) ----
+// POST /api/boards/{id}/releases — a deploy of the board's repository, called from CI with a bot
+// token (or by a person): EDIT_TASKS on the board (bots by the same bits, ADR-0109), the plan's
+// automations; body ≤ 1 MB, 30 per minute per board (429). Idempotent per (board, environment,
+// sha): a repeat updates name and url and adds tasks not yet in a release of the environment.
+// Tasks of the release: live tasks of the board with a Git link to a commit of `commits` (or
+// `sha`), or to a merge request whose merge, squash or head commit is one of them. Calab has no
+// Git history, so CI passes the range: git log --format=%H <previous release sha>..<sha>. Plus
+// `task_keys`. A task enters a release once per environment: a journal entry "release", the rule
+// trigger `release`, TASK_UPDATE. At most 500 tasks per call (`truncated`: call again).
+
+// A release of a board.
+message BoardRelease {
+  string id = 1;
+  string board_id = 2;
+  string name = 3;        // 1..64 characters, one line («4929cf3», pipeline «1287»)
+  string environment = 4; // [a-z0-9][a-z0-9._-]{0,31} («prod», «stage»)
+  string sha = 5;         // the deployed commit, 40 (or 64) lowercase hex
+  string url = 6;         // the pipeline (http / https), "" = none
+  string created_by = 7;  // a user or a bot
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9; // the last repeat
+  uint32 tasks_count = 10;
+}
+
+message CreateBoardReleaseRequest {
+  string name = 1;               // "" = the first 7 characters of sha
+  string sha = 2;
+  repeated string commits = 3;   // full SHAs, ≤ 5000
+  string url = 4;
+  string environment = 5;        // "" = "prod"
+  repeated string task_keys = 6; // «DEV-12», keys of this board only (422 otherwise), ≤ 500
+}
+
+message BoardReleaseResponse {
+  BoardRelease release = 1;
+  bool created = 2;                 // false: a repeat of (environment, sha)
+  repeated string added_keys = 3;   // tasks that entered the release in this call
+  repeated string unknown_keys = 4; // task_keys with no live task on the board
+  bool truncated = 5;               // more than 500 tasks matched: call again for the rest
+}
+
+// GET /api/boards/{id}/releases?environment=&limit= (1..100, default 50): VIEW_BOARD; newest
+// first.
+message ListBoardReleasesResponse {
+  repeated BoardRelease releases = 1;
 }
 
 // ---- gateway events (to the board's viewers) ----

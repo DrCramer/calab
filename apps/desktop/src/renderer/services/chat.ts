@@ -13,6 +13,8 @@ import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { findByKey, lastSentId, messageById, useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
+import { useReadReceipts } from '../stores/readReceipts';
+import { NO_MARKS, addMark, afterFlush, planFlush, type Marks } from './readMarker';
 import { useBoards } from '../stores/boards';
 import { myUserId } from '../stores/session';
 import { toast } from '../stores/toasts';
@@ -64,7 +66,10 @@ async function listPage(roomId: string, p: { before?: string; after?: string; li
   const req = api.messages.list(roomId, p, ctl.signal);
   req.catch(() => undefined); // when it loses the race, its AbortError is not an unhandled rejection
   try {
-    return await Promise.race([req, timeout]);
+    const page = await Promise.race([req, timeout]);
+    // ✓✓ of rooms READY does not list (task rooms, ADR-0140): the others' seen marker.
+    if (page.peerReadMessageId) useReadReceipts.getState().set(roomId, page.peerReadMessageId);
+    return page;
   } finally {
     clearTimeout(timer);
   }
@@ -489,20 +494,34 @@ export async function deleteMessage(roomId: string, id: string): Promise<void> {
 // ---- read state: move the marker forward when the newest message is on screen ----
 
 const readTimers = new Map<string, number>();
-const sentRead = new Map<string, string>();
+/** Per room: the markers the server has (sent) and the ones waiting for the debounce (ADR-0140). */
+const sentRead = new Map<string, Marks>();
+const pendingRead = new Map<string, Marks>();
 
-export function markRead(roomId: string, messageId: string): void {
+/**
+ * Moves the room's read marker to `messageId` (local at once, the server after 600 ms of quiet).
+ * `seen` (ADR-0140): the message is on screen right now — the feed's bottom, a card's last
+ * comment — and also moves the seen marker behind the others' ✓✓; «mark as read» actions omit it.
+ */
+export function markRead(roomId: string, messageId: string, seen = false): void {
   if (!messageId || messageId.startsWith('local:')) return;
   useRooms.getState().setRead(roomId, messageId);
-  if ((sentRead.get(roomId) ?? '') >= messageId) return;
+  const pending = addMark(pendingRead.get(roomId) ?? NO_MARKS, messageId, seen);
+  if (!planFlush(sentRead.get(roomId) ?? NO_MARKS, pending).length) return;
+  pendingRead.set(roomId, pending);
   const t = readTimers.get(roomId);
   if (t) window.clearTimeout(t);
   readTimers.set(
     roomId,
     window.setTimeout(() => {
       readTimers.delete(roomId);
-      sentRead.set(roomId, messageId);
-      void api.messages.markRead(roomId, messageId).catch((e: unknown) => log.warn('mark read failed', e));
+      const p = pendingRead.get(roomId) ?? NO_MARKS;
+      const sent = sentRead.get(roomId) ?? NO_MARKS;
+      pendingRead.delete(roomId);
+      sentRead.set(roomId, afterFlush(sent, p));
+      void (async () => {
+        for (const r of planFlush(sent, p)) await api.messages.markRead(roomId, r.messageId, r.seen);
+      })().catch((e: unknown) => log.warn('mark read failed', e));
     }, 600),
   );
 }
@@ -524,6 +543,7 @@ export function resetChatCaches(): void {
   pinsLoading.clear();
   unfurlCache.clear();
   sentRead.clear();
+  pendingRead.clear();
   lastTyping.clear();
   for (const t of readTimers.values()) window.clearTimeout(t);
   readTimers.clear();
@@ -536,6 +556,7 @@ export function clearChatRooms(ids: ReadonlySet<string>): void {
     newerLoading.delete(id);
     pinsLoading.delete(id);
     sentRead.delete(id);
+    pendingRead.delete(id);
     lastTyping.delete(id);
     const timer = readTimers.get(id);
     if (timer) window.clearTimeout(timer);

@@ -34,6 +34,8 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.tz.minutes': '{m} min',
   'people.tz.ahead': '{diff} por delante',
   'people.tz.behind': '{diff} por detrás',
+  'people.tz.workTitle': 'Horario laboral',
+  'people.tz.work': 'laboral {range}',
 
   // member context menu
   'people.menu.profile': 'Perfil',
@@ -201,7 +203,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'landing.retry': 'Abrir en Calab de nuevo',
   'landing.browser': 'Continuar en el navegador',
   'landing.download': 'Descargar la app',
-  'landing.always': 'Abrir siempre en la app',
+  'landing.remember': 'Recordar mi elección',
   'landing.trying': 'Abriendo Calab…',
   'landing.opened': 'El enlace se envió a la app de Calab.',
   'landing.notFound': 'App no encontrada',

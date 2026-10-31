@@ -10,6 +10,7 @@ export function appDeps(workspaceId: string): CanvasViewDeps {
     serverUrl: () => useSession.getState().serverUrl || window.location.origin,
     getToken: () => platform.auth.accessToken(),
     refreshToken: () => platform.auth.forceRefresh(),
+    mediaUrl: (path) => platform.mediaUrl(path),
     createSocket: (url) => new WebSocket(url),
     serverClockOffset: () => serverClockOffset(useSession.getState().serverUrl || window.location.origin),
     user: () => {

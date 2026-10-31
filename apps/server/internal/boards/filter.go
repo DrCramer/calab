@@ -126,6 +126,14 @@ func condition(c *v1.TaskCondition, env FilterEnv, a *Args) (string, error) {
 			return "(SELECT count(*) FROM task_labels x WHERE x.task_id = t.id AND x.label_id = ANY(" + a.Add(ids) + "::uuid[])) = " + strconv.Itoa(len(ids)), nil
 		}
 		return exists("SELECT 1 FROM task_labels x WHERE x.task_id = t.id", "x.label_id", c, env, a)
+	case v1.TaskField_TASK_FIELD_RELEASE: // board task #101
+		return exists("SELECT 1 FROM task_releases x WHERE x.task_id = t.id", "x.release_id", c, env, a)
+	case v1.TaskField_TASK_FIELD_BOARD:
+		ids, err := uuids(c.GetValues(), env)
+		if err != nil {
+			return "", err
+		}
+		return inList("t.board_id", a.Add(ids)+"::uuid[]", op, false)
 	case v1.TaskField_TASK_FIELD_CREATOR:
 		ids, err := uuids(c.GetValues(), env)
 		if err != nil {
@@ -207,8 +215,12 @@ func TextCondition(q string, a *Args) string {
 		SearchVector + " @@ plainto_tsquery('simple', " + a.Add(q) + ")",
 		"t.title ILIKE " + like,
 	}
-	if key, n, ok := ParseKey(q); ok {
-		parts = append(parts, "(t.number = "+a.Add(n)+" AND t.board_id IN (SELECT kb.id FROM boards kb WHERE kb.key = "+a.Add(key)+"))")
+	if kq, ok := ParseLooseKey(q); ok {
+		if len(kq.Prefixes) == 0 {
+			parts = append(parts, "t.number = "+a.Add(kq.Number))
+		} else {
+			parts = append(parts, "(t.number = "+a.Add(kq.Number)+" AND t.board_id IN (SELECT kb.id FROM boards kb WHERE kb.key = ANY("+a.Add(kq.Prefixes)+"::text[])))")
+		}
 	} else if keyRE.MatchString(strings.ToUpper(q)) {
 		parts = append(parts, "t.board_id IN (SELECT kb.id FROM boards kb WHERE kb.key LIKE "+a.Add(strings.ToUpper(q)+"%")+")")
 	}

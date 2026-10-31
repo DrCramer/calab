@@ -1,8 +1,9 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import * as Popover from '../../components/radix/popover';
 import { TaskField, TaskOp, WorkspaceRole, type Board } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleSlash, Filter, ListFilter, UserX, X } from 'lucide-react';
+import { ArrowLeft, Check, CircleSlash, Filter, ListFilter, Rocket, UserX, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
 import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup } from '../../components/picker/pickerModel';
@@ -10,9 +11,10 @@ import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { FORMER, activeConds, addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState } from '../../lib/boards/filter';
 import { estimateName, fieldOff, scaleValues } from '../../lib/boards/features';
-import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
+import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, fieldInScope, opLabel, opNeedsValue, type FieldDef, type FieldScope } from '../../lib/boards/filterFields';
+import { releaseLabel, releasesOf, type ReleaseItem } from '../../lib/boards/releases';
 import { autoFocusAllowed } from '../../lib/mobile';
-import { useBoards } from '../../stores/boards';
+import { useBoards, workspaceBoards } from '../../stores/boards';
 import { prefsOf, useBoardsUi } from '../../stores/boardsUi';
 import { useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
@@ -37,6 +39,8 @@ export function useFilter(boardId: string): [FilterState, (f: FilterState) => vo
 
 // ------------------------------------------------------------------ values of a field
 
+const NO_BOARDS: string[] = [];
+
 interface ValueChoice extends Choice {
   value: string;
   /** Picking it sets this op too (EMPTY «Без исполнителя», presets). */
@@ -46,12 +50,19 @@ interface ValueChoice extends Choice {
 function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: string, cond: Cond | null, noMe: boolean): ValueChoice[] {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const today = useToday();
+  // «Доска» (ADR-0139): the workspace's boards, as primitives (id, emoji, name).
+  const boards = useBoards(useShallow((s) => (def.kind === 'board' ? workspaceBoards(s.boards, workspaceId).map((b) => `${b.id}\u0000${b.emoji || '📋'}\u0000${b.name}`) : NO_BOARDS)));
   return useMemo(() => {
     const on = (v: string): boolean => !!cond?.values.includes(v);
     const c = (value: string, label: string, icon?: ReactNode, op?: TaskOp): ValueChoice => ({ id: `${op ?? ''}:${value}`, value, label, search: [label], ...(icon ? { icon } : {}), checked: op !== undefined ? cond?.op === op : on(value), ...(op !== undefined ? { op } : {}) });
     switch (def.kind) {
       case 'status':
         return [...(board?.statuses ?? [])].sort((a, b) => a.position - b.position).map((s) => c(s.id, s.name, <StatusIcon type={s.type} color={s.color} icon={s.icon} />));
+      case 'board':
+        return boards.map((x) => {
+          const [id = '', emoji = '', name = ''] = x.split('\u0000');
+          return c(id, name, <span className="text-[14px] leading-none">{emoji}</span>);
+        });
       case 'statusType':
         return STATUS_TYPES.map((ty) => c(STATUS_TYPE_TOKEN[ty] ?? '', t(STATUS_TYPE_LABEL[ty] ?? 'boards.type.unstarted'), <StatusIcon type={ty} color={0x8e8e93} />));
       case 'user': {
@@ -70,6 +81,8 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
         return [c('', t('boards.noLabels'), <CircleSlash className="size-4 text-muted" />, TaskOp.EMPTY), ...[...(board?.labels ?? [])].sort((a, b) => a.position - b.position).map((l) => c(l.id, l.name, <Dot color={l.color} />))];
       case 'milestone':
         return [c('', t('boards.noMilestone'), <CircleSlash className="size-4 text-muted" />, TaskOp.EMPTY), ...(board?.milestones ?? []).map((m) => c(m.id, m.name))];
+      case 'release':
+        return [c('', t('boards.noRelease'), <CircleSlash className="size-4 text-muted" />, TaskOp.EMPTY), ...boardReleases(board?.id).map((r) => c(r.id, releaseLabel(r), <Rocket className="size-4 text-muted" />))];
       case 'relation':
         return RELATION_VALUES.map((r) => c(r, t(`boards.rel.${r}` as 'boards.rel.blocks')));
       case 'task':
@@ -96,7 +109,14 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
       default:
         return [];
     }
-  }, [def, board, members, cond, today, noMe]);
+  }, [def, board, members, cond, today, noMe, boards]);
+}
+
+/** The releases the board's loaded tasks know (board task #101), newest first; read when a menu or a chip renders. */
+function boardReleases(boardId: string | undefined): ReleaseItem[] {
+  if (!boardId) return [];
+  const tasks = useBoards.getState().tasks;
+  return releasesOf(Object.values(tasks).filter((x) => x.boardId === boardId));
 }
 
 /** The values list of one field; `onChange` receives the edited condition. */
@@ -186,7 +206,7 @@ export function FilterButton({ boardId, workspaceId, bar = false }: { boardId: s
   const [filter, setFilter] = useFilter(boardId);
   const count = activeConds(filter).length;
   return (
-    <FilterPopover board={board} workspaceId={workspaceId} filter={filter} setFilter={setFilter} open={open} setOpen={setOpen} label={t('boards.filter')} approval>
+    <FilterPopover board={board} workspaceId={workspaceId} filter={filter} setFilter={setFilter} open={open} setOpen={setOpen} label={t('boards.filter')} approval scope="board">
       {bar ? (
         <Popover.Trigger asChild>
           <IconButton bar label={t('boards.filter')} shortcut="F" className="relative data-[state=open]:bg-active" data-testid="filter-button">
@@ -238,6 +258,7 @@ export function FilterPopover({
   label,
   noMe = false,
   approval = false,
+  scope = 'rule',
   children,
 }: {
   board: Board | undefined;
@@ -250,6 +271,8 @@ export function FilterPopover({
   noMe?: boolean;
   /** The board's «Ждут моего согласования» toggle above the field list. */
   approval?: boolean;
+  /** Which fields are offered (lib/boards/filterFields.ts `fieldInScope`); across boards `board` is the one chosen board, if any. */
+  scope?: FieldScope;
   children: ReactNode;
 }): ReactNode {
   const [field, setField] = useState<TaskField | null>(null);
@@ -259,8 +282,9 @@ export function FilterPopover({
   const disabled = board?.disabledFeatures;
   const fields = useMemo((): Array<PickerGroup<FieldChoice>> => {
     const Icon = (d: FieldDef): ReactNode => <d.icon className="size-4 text-muted" aria-hidden />;
-    return [{ id: 'f', label: '', items: FILTER_FIELDS.filter((d) => !d.hidden && !fieldOff(disabled, d.field)).map((d) => ({ id: String(d.field), def: d, label: t(d.label), search: [t(d.label)], icon: Icon(d) })) }];
-  }, [disabled]);
+    const one = scope !== 'search' || !!board;
+    return [{ id: 'f', label: '', items: FILTER_FIELDS.filter((d) => fieldInScope(d, scope, one) && !fieldOff(disabled, d.field)).map((d) => ({ id: String(d.field), def: d, label: t(d.label), search: [t(d.label)], icon: Icon(d) })) }];
+  }, [disabled, scope, board]);
   const def = field !== null ? fieldDef(field) : undefined;
   const cond = index >= 0 ? (filter.conds[index] ?? null) : null;
   const change = (c: Cond): void => {
@@ -363,6 +387,8 @@ function valueText(c: Cond, board: Board | undefined, workspaceId: string, today
   if (!def || !opNeedsValue(c.op)) return '';
   const name = (v: string): string => {
     switch (def.kind) {
+      case 'board':
+        return useBoards.getState().boards[v]?.name ?? '?';
       case 'status':
         return board?.statuses.find((s) => s.id === v)?.name ?? '?';
       case 'statusType': {
@@ -381,6 +407,10 @@ function valueText(c: Cond, board: Board | undefined, workspaceId: string, today
         return board?.labels.find((l) => l.id === v)?.name ?? '?';
       case 'milestone':
         return board?.milestones.find((m) => m.id === v)?.name ?? '?';
+      case 'release': {
+        const r = boardReleases(board?.id).find((x) => x.id === v);
+        return r ? releaseLabel(r) : '?';
+      }
       case 'relation':
         return t(`boards.rel.${v}` as 'boards.rel.blocks');
       case 'bool':
@@ -412,7 +442,26 @@ export function FilterChips({ boardId, workspaceId }: { boardId: string; workspa
 }
 
 /** Condition chips of any filter value (the board's, a rule's «Если» block); `children` after them. */
-export function ConditionChips({ board, workspaceId, filter, setFilter, className, noMe = false, children }: { board: Board | undefined; workspaceId: string; filter: FilterState; setFilter: (f: FilterState) => void; className?: string; noMe?: boolean; children?: ReactNode }): ReactNode {
+export function ConditionChips({
+  board,
+  workspaceId,
+  filter,
+  setFilter,
+  className,
+  noMe = false,
+  reset = true,
+  children,
+}: {
+  board: Board | undefined;
+  workspaceId: string;
+  filter: FilterState;
+  setFilter: (f: FilterState) => void;
+  className?: string;
+  noMe?: boolean;
+  /** Its own «Сбросить» (the task search has one for all its conditions). */
+  reset?: boolean;
+  children?: ReactNode;
+}): ReactNode {
   const today = useToday();
   return (
     <div className={cx('flex min-w-0 flex-wrap items-center gap-1.5', className)} data-testid="filter-chips">
@@ -430,7 +479,7 @@ export function ConditionChips({ board, workspaceId, filter, setFilter, classNam
           {filter.any ? t('boards.anyCond') : t('boards.allConds')}
         </button>
       ) : null}
-      {filter.conds.length > 0 ? (
+      {reset && filter.conds.length > 0 ? (
         <button type="button" onClick={() => setFilter({ conds: [], any: false })} className="h-6 rounded-full px-2 text-caption text-muted hover:bg-hover hover:text-fg" data-testid="filter-reset">
           {t('common.reset')}
         </button>

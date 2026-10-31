@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUtcOffset, formatUtcZone, localClock, timeZoneLabel, utcOffsetMinutes, zoneDiffHint, zoneDiffMinutes } from './timezone';
+import { formatUtcOffset, formatUtcZone, formatWorkDays, formatWorkRange, localClock, timeZoneLabel, utcOffsetMinutes, zoneDiffHint, zoneDiffMinutes } from './timezone';
 
 const JAN = new Date('2026-01-15T12:00:00Z');
 const JUL = new Date('2026-07-15T12:00:00Z');
@@ -79,5 +79,16 @@ describe('zone difference', () => {
     expect(localClock('UTC', '', at, time)).toEqual({ zone: 'UTC', time: '11:05', diff: null });
     expect(localClock('', 'Europe/Moscow', at, time)).toBeNull();
     expect(localClock('Mars/Olympus', 'Europe/Moscow', at, time)).toBeNull();
+  });
+});
+
+describe('working hours labels', () => {
+  it('formats the range and the days', () => {
+    expect(formatWorkRange(600, 1140)).toBe('10–19');
+    expect(formatWorkRange(570, 1080)).toBe('9:30–18');
+    expect(formatWorkDays([1, 2, 3, 4, 5], 'en')).toBe('Mon–Fri');
+    expect(formatWorkDays([5, 1, 3], 'en')).toBe('Mon, Wed, Fri');
+    expect(formatWorkDays([6, 7], 'en')).toBe('Sat, Sun');
+    expect(formatWorkDays([], 'en')).toBe('');
   });
 });

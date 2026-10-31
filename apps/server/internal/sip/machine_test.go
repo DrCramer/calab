@@ -444,7 +444,7 @@ func TestInboundHangupAndState(t *testing.T) {
 	var fx Effects
 	c.Enter(envAt(f, avail{}, 0), Target{Kind: RouteGroup, ID: ptr(f.group)}, &fx)
 	fx = Effects{}
-	c.Hangup(reasonRemote, &fx)
+	c.Hangup(envAt(f, avail{}, time.Second), reasonRemote, &fx)
 	if c.Live() || fx.Hangup != reasonRemote || len(fx.Stopped) != 3 {
 		t.Fatalf("hangup: %+v", fx)
 	}

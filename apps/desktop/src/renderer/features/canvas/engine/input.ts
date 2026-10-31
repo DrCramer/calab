@@ -23,7 +23,7 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
   mod: e.ctrlKey || e.metaKey,
 });
 
-const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1 };
+const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1, k: 1 };
 const NO_MODS: Mods = { shift: false, alt: false, mod: false };
 /** Touch editing (ADR-0127 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
 const LONG_PRESS_MS = 500;
@@ -103,6 +103,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   const resizeHandleAt = (w: Point): HandleId | null => {
     const f = engine.selectionFrame();
     const h = f && f.resize ? hitHandleRot(f.rect, f.rot, w, engine.px(engine.touch ? touchRadius(f) : HANDLE_PX)) : null;
+    if (f?.cornersOnly && h && h.length === 1) return null;
     return f?.widthOnly && (h === 'n' || h === 's') ? null : h;
   };
 
@@ -536,6 +537,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
             case 't': if (engine.readOnly) return; engine.setTool('text'); break;
             case 'r': if (engine.readOnly) return; engine.setTool('shape'); break;
             case 'c': if (engine.readOnly) return; engine.setTool('connector'); break;
+            // K: «Стикер из набора» — the view opens the sticker picker.
+            case 'k': if (engine.readOnly) return; engine.emitStickerKey(); break;
             default: return;
           }
       }

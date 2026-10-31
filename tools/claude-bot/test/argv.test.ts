@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assistArgv, leadArgv } from '../src/argv.js';
+import { assistArgv, leadArgv, wakeArgv } from '../src/argv.js';
+import { MCP_SERVER, mcpConfig, mcpToolNames } from '../src/mcp.js';
+import { ASSIST_TOOL_VERBS, WAKE_TOOL_VERBS } from '../src/tools.js';
 import { buildChatPrompt } from '../src/chat.js';
 import { resultFromStream } from '../src/claude.js';
 import { childEnv, parseEnvFile } from '../src/config.js';
-
-const BUGBOARD = '/Users/mac/.calab-tools/bugboard.py';
 
 /** Values of a variadic flag: everything after it up to the next `--flag`. */
 function flagValues(argv: string[], flag: string): string[] {
@@ -31,53 +31,79 @@ describe('leadArgv', () => {
   });
 });
 
-describe('assistArgv', () => {
-  const a = assistArgv({ systemPrompt: 'SYS', bugboard: BUGBOARD, home: '/Users/mac', ownerRepo: '/Users/mac/Documents/Calaba' });
+const INBOX = '/Users/mac/.calab-claude-bot/inbox';
+const OWNER = '/Users/mac/Documents/Calaba';
+const MCP = mcpConfig({ node: '/opt/homebrew/bin/node', script: '/Users/mac/.calab-claude-bot/app/mcp.mjs', inboxDir: INBOX, ticketId: 'a'.repeat(32), path: '/usr/bin:/bin', home: '/Users/mac' });
 
-  it('runs Sonnet, never bypasses, loads no settings, MCP, skills or CLAUDE.md', () => {
+function expectSandboxed(a: string[], mcpTools: string[]): void {
+  expect(flag(a, '--permission-mode')).toBe('dontAsk');
+  expect(flag(a, '--permission-prompts')).toBe('none');
+  for (const f of ['--strict-mcp-config', '--setting-sources=', '--disable-slash-commands', '--no-session-persistence']) expect(a).toContain(f);
+  expect(a.join(' ')).not.toMatch(/bypassPermissions|dangerously/);
+  // no shell: the built-ins are the file readers only
+  expect(flag(a, '--tools')).toBe('Read,Grep,Glob');
+  expect(JSON.parse(flag(a, '--settings') ?? '{}')).toEqual({ permissions: { blockReadsOutsideWorkingDirectories: true }, autoMemoryEnabled: false });
+  // not --safe-mode: it drops the --mcp-config servers too
+  expect(a).not.toContain('--safe-mode');
+  // only the runs' own MCP server, started by node with the run's ticket in its env
+  const cfg = JSON.parse(flag(a, '--mcp-config') ?? '{}') as { mcpServers: Record<string, unknown> };
+  expect(Object.keys(cfg.mcpServers)).toEqual([MCP_SERVER]);
+  expect(cfg.mcpServers[MCP_SERVER]).toMatchObject({ command: '/opt/homebrew/bin/node', args: ['/Users/mac/.calab-claude-bot/app/mcp.mjs'], env: { CALAB_HANDOFF_DIR: INBOX, CALAB_HANDOFF_TICKET: 'a'.repeat(32) } });
+  // the prompt goes on stdin: nothing positional after the variadic tool lists
+  expect(a.at(-1)?.startsWith('Glob(')).toBe(true);
+  const allowed = flagValues(a, '--allowedTools');
+  expect(allowed.filter((t) => t.startsWith('mcp__'))).toEqual(mcpTools);
+  expect(allowed.every((t) => /^(Read|Grep|Glob)\(\.\/([a-z]+\/)?\*\*\)$/.test(t) || t.startsWith(`mcp__${MCP_SERVER}__`))).toBe(true);
+  expect(allowed.some((t) => t.startsWith('Bash'))).toBe(false);
+  const denied = flagValues(a, '--disallowedTools');
+  for (const t of ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task', 'Skill']) expect(denied).toContain(t);
+  for (const p of ['./.env*', './**/.env*', '~/.calab-tools/**', '~/.claude/**', '~/.ssh/**', '~/.kube/**', '~/.config/**', '~/Library/**', `/${OWNER}/**`, `/${INBOX}/**`]) {
+    for (const t of ['Read', 'Grep', 'Glob']) expect(denied).toContain(`${t}(${p})`);
+  }
+}
+
+describe('assistArgv', () => {
+  const tools = mcpToolNames(ASSIST_TOOL_VERBS);
+  const a = assistArgv({ systemPrompt: 'SYS', mcpConfig: MCP, mcpTools: tools, home: '/Users/mac', ownerRepo: OWNER, inboxDir: INBOX });
+
+  it('runs Sonnet sandboxed with its system prompt', () => {
     expect(flag(a, '--model')).toBe('sonnet');
-    expect(flag(a, '--permission-mode')).toBe('dontAsk');
-    expect(flag(a, '--permission-prompts')).toBe('none');
-    expect(a).toContain('--safe-mode');
-    expect(a).toContain('--strict-mcp-config');
-    expect(a).toContain('--setting-sources=');
-    expect(a).toContain('--disable-slash-commands');
-    expect(a.join(' ')).not.toMatch(/bypassPermissions|dangerously/);
     expect(flag(a, '--system-prompt')).toBe('SYS');
-    expect(flag(a, '--tools')).toBe('Read,Grep,Glob,Bash');
+    expectSandboxed(a, tools);
   });
 
-  it('allows reads in docs/ and apps/ and only five board verbs', () => {
-    const allowed = flagValues(a, '--allowedTools');
-    expect(allowed).toEqual([
+  it('allows reads in docs/ and apps/ and its MCP tools: board reads, comments, new tasks, labels, requests', () => {
+    expect(flagValues(a, '--allowedTools')).toEqual([
       'Read(./docs/**)',
       'Grep(./docs/**)',
       'Glob(./docs/**)',
       'Read(./apps/**)',
       'Grep(./apps/**)',
       'Glob(./apps/**)',
-      `Bash(python3 ${BUGBOARD} list:*)`,
-      `Bash(python3 ${BUGBOARD} show:*)`,
-      `Bash(python3 ${BUGBOARD} comment:*)`,
-      `Bash(python3 ${BUGBOARD} create:*)`,
-      `Bash(python3 ${BUGBOARD} label:*)`,
+      ...['board_list', 'board_show', 'board_comment', 'board_create', 'board_label', 'inbox_add'].map((t) => `mcp__calab__${t}`),
     ]);
-    expect(allowed.some((t) => /^Bash\((?!python3 \/Users\/mac\/\.calab-tools\/bugboard\.py (list|show|comment|create|label):\*\))/.test(t))).toBe(false);
-    expect(allowed.some((t) => /^(Write|Edit|WebFetch|WebSearch)/.test(t))).toBe(false);
+  });
+});
+
+describe('wakeArgv', () => {
+  const tools = mcpToolNames(WAKE_TOOL_VERBS);
+  const a = wakeArgv({ model: 'opus', mcpConfig: MCP, mcpTools: tools, home: '/Users/mac', ownerRepo: OWNER, inboxDir: INBOX, maxBudgetUsd: 5 });
+
+  it('runs the given model sandboxed, with a budget', () => {
+    expect(flag(a, '--model')).toBe('opus');
+    expect(flag(a, '--max-budget-usd')).toBe('5');
+    expectSandboxed(a, tools);
   });
 
-  it('denies writing, the web, board status changes and secret paths', () => {
-    const denied = flagValues(a, '--disallowedTools');
-    for (const t of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task', 'Bash(python3 * status:*)']) expect(denied).toContain(t);
-    for (const p of ['./.env*', './**/.env*', '~/.calab-tools/**', '~/.claude/**', '~/.ssh/**', '//Users/mac/Documents/Calaba/**']) {
-      expect(denied).toContain(`Read(${p})`);
-      expect(denied).toContain(`Grep(${p})`);
-    }
+  it('allows exactly: repo reads and every MCP tool of the wake verbs; Bash is denied outright', () => {
+    expect(flagValues(a, '--allowedTools')).toEqual(['Read(./**)', 'Grep(./**)', 'Glob(./**)', ...tools]);
+    expect(tools).toHaveLength(WAKE_TOOL_VERBS.length);
+    for (const t of ['gh_pr_view', 'gh_pr_checks', 'board_list', 'board_status', 'inbox_add', 'chat_reply']) expect(tools).toContain(`mcp__calab__${t}`);
+    expect(flagValues(a, '--disallowedTools')[0]).toBe('Bash');
   });
 
-  it('takes the chat on stdin: no positional prompt after the variadic tool lists', () => {
-    const last = a.at(-1) ?? '';
-    expect(last.startsWith('Read(') || last.startsWith('Glob(') || last.startsWith('Grep(')).toBe(true);
+  it("does not deny the runs' own checkout under ~/.calab-claude-bot", () => {
+    expect(flagValues(a, '--disallowedTools').some((t) => t.includes('~/.calab-claude-bot/**'))).toBe(false);
   });
 });
 

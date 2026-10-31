@@ -12,4 +12,5 @@ export function preloadWikiEditor(): void {
   void import('./WikiEditor');
 }
 
+export type { BlockId } from './blocks';
 export type { MentionSource, PageCandidate, PageLinkView, PageSource, UploadedImage, WikiEditorApi, WikiEditorProps, WikiEditorUser } from './types';

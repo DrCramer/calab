@@ -5,7 +5,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'dist-web/**', 'test-results/**', 'playwright-report/**', 'node_modules/**'] },
+  { ignores: ['out/**', 'dist/**', 'dist-web/**', 'test-results/**', 'playwright-report/**', 'node_modules/**', 'e2e-support/assets/**'] }, // assets: files the mock serves to pages (the office stub editor), not part of the TS project
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {

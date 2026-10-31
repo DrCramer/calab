@@ -24,6 +24,7 @@ function items(doc: Y.Doc): number {
 function dragAll(steps: number): { r: Rig; start: { x: number; y: number }[] } {
   vi.useFakeTimers();
   const r = rig();
+  r.ydoc.clientID = 1; // a fixed client id: a random one varies the encoded size by its varint length
   const ids = r.make(...Array.from({ length: N }, (_, i) => ({ init: { kind: 'sticky' as const, x: (i % 25) * 200, y: Math.floor(i / 25) * 200 } })));
   r.engine.doc.checkpoint();
   const start = ids.map((id) => ({ x: r.engine.doc.snapshot(id)?.x as number, y: r.engine.doc.snapshot(id)?.y as number }));

@@ -2,6 +2,7 @@ import type { Bot, DispatchEvent } from '@calaba/protocol';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { commandsFresh, useBots } from '../stores/bots';
+import { myUserId } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { useWorkspaces } from '../stores/workspaces';
 
@@ -110,6 +111,9 @@ export function applyBotEvent(e: DispatchEvent['event']): void {
       if (!bot) return;
       s.upsert(e.value.workspaceId, bot);
       if (bot.user) useWorkspaces.getState().upsertUser(bot.user);
+      // ADR-0151: a bot I own — its tasks are mine for author rights. A deleted one stays until
+      // the next READY (the server decides; BOT_DELETE does not tell a removal from a deletion).
+      if (bot.user?.id && bot.ownerUserId !== '' && bot.ownerUserId === myUserId()) s.addMine(bot.user.id);
       return;
     }
     case 'botDelete':

@@ -13,6 +13,9 @@ export const OnboardingLazy = lazyPreload(
   <div className="mat-content drag h-full" />,
 );
 
+// The office file view (ADR-0143): its chunk loads on the first «Открыть» of an office file.
+export const OfficeScreenLazy = lazyPreload(() => import('../disk/office/OfficeScreen').then((m) => m.OfficeScreen));
+
 /** After READY, when idle: the settings windows (and the admin one for a superadmin). */
 export function preloadWindows(superadmin: boolean): void {
   void AppSettingsWindow.preload();

@@ -119,6 +119,8 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
     { label: t('plan.limit.camera'), used: '—', max: videoLimitText(l?.cameraMaxPreset ?? 0, l?.cameraMaxFps ?? 0) },
     counted(t('plan.limit.bots'), usage.bots, l?.bots ?? 0),
     { label: t('plan.limit.boards'), used: '—', max: countText(l?.boards ?? 0) },
+    // ADR-0126 addendum (owner, 23.10): live canvases, folders and the trash not counted.
+    { label: t('plan.limit.canvases'), used: '—', max: countText(l?.canvases ?? 0) },
     { label: t('plan.limit.caldav'), used: '—', max: t(l?.caldavDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     { label: t('music.mode'), used: '—', max: t(l?.musicianDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     // ADR-0058 §5: checklists (Team and above), the board webhook (Business).
@@ -144,7 +146,7 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
  * «Сменить тариф» (owner, 10.10): the plans comparison opens over settings from here — the plan
  * badge leads to this tab. A plan a superadmin assigned is not changed by self-serve (ADR-0086):
  * the note with «Написать в поддержку» instead. BILLING_MANAGE only (ADR-0087; the owner has it),
- * never in the iOS shell (App Store rules); primitive selectors.
+ * never in a native shell, iOS or Android (docs/adr/0148); primitive selectors.
  */
 function PlanSwitch({ workspaceId }: { workspaceId: string }): ReactNode {
   const owner = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n && billingPaymentsAllowed();

@@ -85,3 +85,15 @@
 
 ## Логи десктопа
 `main.log` в `userData/logs` (macOS `~/Library/Application Support/Calab/logs/main.log`, Windows `%APPDATA%\Calab\logs\main.log`, Linux `~/.config/Calab/logs/main.log`; 5 МБ, затем `main.old.log`), краш-дампы — `logs/crashes`. Строки рендерера — с префиксом `[renderer]`: `log.warn/error` из `lib/log.ts`, `uncaught` (`window.onerror`), `unhandled rejection`, `message row render failed` (строка ленты не отрисовалась). Не больше 120 строк в минуту (сверх — одна строка «N lines dropped»), до 4000 символов на строку; текстов сообщений и токенов в логах нет — только ошибка и id. Веб — только консоль браузера. Застрявшая загрузка чата (docs/09 #146) видна как `load messages failed LoadTimeout`. Main-процесс пишет `api request timeout <method> <path>` (без query и токенов), когда `calaba-api://` упёрся в дедлайн (`apps/desktop/src/main/apiProtocol.ts`: 20 с на connect+заголовки, 30 с простоя тела) — сама по себе не инцидент, если единична; частая — признак мёртвого/сменившегося соединения к серверу. `api transport reset (<причина>)` — main закрыл все соединения к API (`main/apiTransport.ts`, docs/09 #146) и рендерер перезапросит упавшее; причины: `2 timeouts in 60 s`, `timeout while another request has no response` (залипло соединение), `power resume`, `power unlock-screen`, `network online`. После него запросы должны пойти; если `api request timeout` продолжаются и после сброса — проблема не в соединении клиента (сеть, сервер, Caddy).
+
+### Mobile SDK compatibility (2026-10-26)
+
+The Expo SDK, React Native, mobile React/ReactDOM and WebView are a tested set.
+Update them together from Expo's compatibility manifest. Dependabot does not
+independently bump Expo/RN/WebView. React, ReactDOM, React types and TypeScript
+updates arrive outside the general tools group; when they change the mobile
+manifest, triage requires an SDK review. Test/lint-only changes retain normal
+auto-merge eligibility. Desktop React is independent;
+Metro pins mobile React to the mobile package resolution. The required `ts` CI job
+runs `check:sdk` offline and `export:check:ios` with dotenv disabled and a test
+origin. Also run mobile types, lint, tests and a native build before release.

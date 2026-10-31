@@ -18,8 +18,11 @@ export function violationsOf(e: unknown): readonly PlanLimitViolation[] {
 /** 409 BILLING_PLAN_ADMIN_ASSIGNED: a superadmin assigned the plan; self-serve does not change it. */
 export const adminAssignedError = (e: unknown): boolean => e instanceof ApiError && e.reason === 'BILLING_PLAN_ADMIN_ASSIGNED';
 
-/** Where a violation is fixed: a workspace settings tab, the boards section, or nowhere linkable. */
-export type FixPlace = { kind: 'settings'; tab: string } | { kind: 'boards' } | null;
+/**
+ * Where a violation is fixed: a workspace settings tab, the boards section, the station's settings
+ * in «Телефония» (ADR-0137 §5), or nowhere linkable.
+ */
+export type FixPlace = { kind: 'settings'; tab: string } | { kind: 'boards' } | { kind: 'telephony' } | null;
 
 const FIX: Readonly<Record<PlanLimitKind, FixPlace>> = {
   [PlanLimitKind.UNSPECIFIED]: null,
@@ -34,7 +37,7 @@ const FIX: Readonly<Record<PlanLimitKind, FixPlace>> = {
   [PlanLimitKind.SSO]: { kind: 'settings', tab: 'identity' },
   [PlanLimitKind.DIRECTORY_SYNC]: { kind: 'settings', tab: 'identity' },
   [PlanLimitKind.OAUTH_APPS]: { kind: 'settings', tab: 'oauth' },
-  [PlanLimitKind.TELEPHONY]: { kind: 'settings', tab: 'telephony' },
+  [PlanLimitKind.TELEPHONY]: { kind: 'telephony' },
   [PlanLimitKind.BOARD_WEBHOOKS]: { kind: 'boards' },
   [PlanLimitKind.AUTOMATIONS]: { kind: 'boards' },
 };
@@ -52,7 +55,7 @@ export const FIX_LABEL: Readonly<Record<string, MessageKey>> = {
   boards: 'billing.fix.boards',
 };
 
-export const fixLabel = (p: Exclude<FixPlace, null>): MessageKey => FIX_LABEL[p.kind === 'boards' ? 'boards' : p.tab] ?? 'billing.fix.open';
+export const fixLabel = (p: Exclude<FixPlace, null>): MessageKey => FIX_LABEL[p.kind === 'settings' ? p.tab : p.kind] ?? 'billing.fix.open';
 
 /** Counted kinds: one plural sentence by the current count. */
 const COUNTED: Partial<Record<PlanLimitKind, PluralKey>> = {

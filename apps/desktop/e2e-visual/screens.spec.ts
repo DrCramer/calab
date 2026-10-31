@@ -7,7 +7,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/f
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, login, settle } from './harness';
+import { NOW, checkpoint, expectAssigneeStacks, joinVoice, login, seedAssigneeCounts, seedDays, seedLabelOverflow, seedReleases, settle } from './harness';
 import { DAY, seedDay } from './calendarWeb';
 import { startPublisher } from './publisher';
 
@@ -50,6 +50,7 @@ const KEY = new Set([
   'onboarding-layout',
   'welcome',
   'main-chat',
+  'dm-chat-days',
   'chat-inline-buttons',
   'sidebar-drag',
   'chat-hover-actions',
@@ -57,6 +58,7 @@ const KEY = new Set([
   'tooltip-lazy',
   'chat-context-menu',
   'room-notify-menu',
+  'inbox-popover',
   'dm-list',
   'nav-badges',
   'dm-archive',
@@ -161,10 +163,13 @@ const KEY = new Set([
   'calendar-day',
   'calendar-week',
   'calendar-dialog',
+  'calendar-dialog-picker',
   // Free / busy, find a time, Settings → Календарь (ADR-0041).
   'calendar-filter',
   'calendar-findtime',
   'settings-calendar',
+  // Extra time zones of the hour axis (board #85).
+  'calendar-zones',
   // External calendar event details (ADR-0045).
   'calendar-external',
   'settings-caldav',
@@ -172,12 +177,16 @@ const KEY = new Set([
   'members-admissions',
   // Task boards (ADR-0042 §5).
   'boards-kanban',
+  'boards-kanban-assignees',
+  'boards-status-menu',
   'boards-create-menu',
   'boards-task',
   // «Комментарии | История» of the task panel (ADR-0091).
   'boards-task-comments',
+  'boards-task-comments-days',
   'boards-task-history',
   'boards-list',
+  'boards-labels-overflow',
   'boards-filter',
   'boards-settings',
   // Status colour and icon pickers (ADR-0093).
@@ -193,6 +202,11 @@ const KEY = new Set([
   'temp-room-dialog-result',
   'temp-room-menu',
   'settings-temp-archive',
+  // Toasts at the top right and the join question of a reminder.
+  'toasts',
+  'toast-single',
+  'join-confirm',
+  'join-confirm-switch',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -789,6 +803,15 @@ test('dm-chat', async ({ open, win, mock, shot }) => {
   await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   await settle(win);
   await checkpoint(shot, 'dm-chat');
+  // #87: day pills in a chat (Сегодня / Вчера / «12 января» / the other year), each once.
+  seedDays(mock, IDS.dms.grigory); // a DM not opened yet: its history comes from the mock when opened
+  await list.getByRole('button', { name: /Григорий/ }).click();
+  await expect(win.getByRole('separator').filter({ hasText: 'Вчера' })).toHaveCount(1);
+  await expect(win.getByRole('separator').filter({ hasText: '12 января' })).toHaveCount(1);
+  await expect(win.getByRole('separator').filter({ hasText: '2024' })).toHaveCount(1);
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await checkpoint(shot, 'dm-chat-days', { axe: false });
 });
 
 /**
@@ -976,6 +999,9 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
   await expect(card.getByTestId('profile-phone')).toContainText('+7 912 555-02-02');
   await expect(card.getByTestId('profile-extension')).toContainText('101');
+  // docs/09 #85: his local time and working hours (a zone other than mine).
+  await expect(card.getByTestId('local-time')).toContainText('UTC+5');
+  await expect(card.getByTestId('work-hours')).toContainText('10–19');
   await badgesLoaded(win);
   await checkpoint(shot, 'members-profile');
 });
@@ -1138,6 +1164,39 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await expect(win.getByRole('button', { name: 'Подключиться: Переговорка' })).toBeVisible();
   await expect(win.getByRole('button', { name: 'Открыть чат: Переговорка' })).toBeVisible();
   await checkpoint(shot, 'quick-switcher', { keepPointer: true });
+  // ADR-0139: the «Задачи» tab — words, a «Доска» condition, the list with its columns.
+  mock.setClock(NOW.getTime());
+  await win.getByTestId('search-mode-tasks').click();
+  await win.keyboard.type('доск');
+  await win.getByTestId('task-search-filter').click();
+  await win.getByTestId('filter-fields').getByRole('option', { name: 'Доска' }).click();
+  await win.getByTestId('filter-values').getByRole('option', { name: /Разработка/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('filter-chip')).toHaveCount(1);
+  await expect(win.getByTestId('task-search-row')).toHaveCount(2);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'quick-switcher-tasks');
+  // A typed key comes first as «Открыть CAL-3».
+  const field = win.getByRole('combobox');
+  await field.press(`${MOD}+a`);
+  await win.keyboard.type('CAL-3');
+  await expect(win.getByTestId('task-search-key')).toContainText('CAL-3');
+  // «Сохранить»: the conditions under a name, a row under «Мои задачи».
+  await field.press(`${MOD}+a`);
+  await win.keyboard.type('доск');
+  await win.getByTestId('task-search-save').click();
+  await win.getByTestId('task-search-save-name').fill('Доски в разработке');
+  await win.getByTestId('task-search-save-submit').click();
+  await expect(win.getByTestId('task-search-save-menu')).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('quick-switcher')).toHaveCount(0);
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
+  await win.getByTestId('section-boards').click();
+  await win.getByTestId('saved-search').filter({ hasText: 'Доски в разработке' }).click();
+  await expect(win.getByTestId('task-search-page')).toBeVisible();
+  await expect(win.getByTestId('task-search-row')).toHaveCount(2);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-saved-search');
 });
 
 test('quick-switcher-filtered', async ({ open, win, mock, shot }) => {
@@ -1155,6 +1214,25 @@ test('chat-context-menu', async ({ open, win, mock, shot }) => {
   await win.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }).click({ button: 'right' });
   await expect(win.getByRole('menu')).toBeVisible();
   await checkpoint(shot, 'chat-context-menu');
+  // ADR-0140: my message seen by Борис and Вера (✓✓), the next one by nobody (✓); ✓✓ opens
+  // «Прочитали»; the same list on top of the message's menu.
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('menu')).toHaveCount(0);
+  const seen = mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: 'Посмотрите макет до обеда.' });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: 'И ссылку на прототип.' });
+  mock.markRead(IDS.users.boris, IDS.rooms.general, seen.id);
+  mock.markRead(IDS.users.vera, IDS.rooms.general, seen.id);
+  const bubble = win.getByTestId('message-bubble').filter({ hasText: 'Посмотрите макет' });
+  await expect(bubble.getByTestId('read-ticks')).toBeVisible();
+  await expect(win.getByTestId('message-bubble').filter({ hasText: 'И ссылку' }).getByLabel('Отправлено').last()).toBeVisible();
+  await bubble.getByTestId('read-ticks').click();
+  await expect(win.getByTestId('read-by-popover').getByTestId('read-by-row')).toHaveCount(2);
+  await checkpoint(shot, 'chat-read-by');
+  await win.keyboard.press('Escape');
+  await bubble.getByText('Посмотрите макет').click({ button: 'right' });
+  await win.getByTestId('message-read-by').click();
+  await expect(win.getByRole('menu').getByTestId('read-by-row')).toHaveCount(2);
+  await checkpoint(shot, 'chat-read-by-menu');
 });
 
 test('chat-emoji-picker', async ({ open, win, mock, shot }) => {
@@ -1343,6 +1421,24 @@ test('room-notify-menu', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'room-notify-menu');
 });
 
+// «Упоминания» (ADR-0141, #99): chat mentions and task events together, newest first, each with
+// its source (room · workspace, KEY · title); unread ones carry a dot.
+test('inbox-popover', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  // open() rebuilds the mock: a comment of Вера mentioning me in CAL-3 after it — a MENTIONED
+  // task notice (live, and in the history the popover reloads).
+  const task = mock.boards.taskByKey('CAL-3');
+  if (!task) throw new Error('CAL-3 is not seeded');
+  mock.injectMessage({ roomId: task.task.roomId, authorId: IDS.users.vera, content: `@${IDS.users.anna} проверишь на Mac?` });
+  await win.getByTestId('titlebar').getByRole('button', { name: 'Упоминания', exact: true }).click();
+  const pop = win.getByRole('dialog', { name: 'Упоминания' });
+  await expect(pop.getByText('CAL-3 · Эхо в звонке при включённых колонках')).toBeVisible();
+  await expect(pop.getByText(/разработка · /).first()).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'inbox-popover');
+});
+
 test('shell-shortcuts', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -1419,18 +1515,86 @@ test('self-mic-menu', async ({ open, win, mock, shot }) => {
   await expect(menu.getByTestId('mic-ptt-key')).toBeVisible();
   await expect(menu.getByTestId('ptt-release-compact')).toBeVisible();
   await checkpoint(shot, 'self-mic-menu');
+  // Voice audio recovery (#255) without LiveKit: the voice panel is shown from store state alone
+  // (__calabaVoiceSeat), the recovery signals come through the voice service's own paths.
+  await win.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await win.evaluate(([roomId, workspaceId]) => (window as unknown as { __calabaVoiceSeat?: (s: object) => void }).__calabaVoiceSeat?.({ roomId, workspaceId }), [IDS.rooms.meeting, IDS.workspaces.main]);
+  await expect(win.getByText('Голос подключён')).toBeVisible();
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); // no focus ring / tooltip of the mic button
+  // The system holds the mic: the panel header says so in place of «Голос подключён», no line under
+  // the buttons, no toast. The refused sound is the one toast.
+  await win.evaluate(() => {
+    const w = window as unknown as { __calabaVoiceRecovery?: (what: string) => void };
+    w.__calabaVoiceRecovery?.('recovering');
+    w.__calabaVoiceRecovery?.('playback');
+  });
+  await expect(win.getByTestId('voice-phase')).toHaveText('Ждём микрофон');
+  await expect(win.getByRole('region', { name: 'Голосовое подключение' }).getByRole('alert')).toHaveCount(0); // no red line under the buttons
+  await expect(win.getByTestId('toast')).toHaveCount(1);
+  await expect(win.getByTestId('toast').filter({ hasText: 'Вы не слышите собеседников' })).toBeVisible();
+  await expect(win.getByTestId('toast').getByRole('button', { name: 'Включить звук' })).toBeVisible();
+  await checkpoint(shot, 'voice-audio-recovery-seat');
+  await win.evaluate(() => (window as unknown as { __calabaVoiceRecovery?: (w: string) => void }).__calabaVoiceRecovery?.('unheard'));
+  await expect(win.getByTestId('voice-phase')).toHaveText('Вас не слышно');
+  await expect(win.getByTestId('toast')).toHaveCount(1); // still only the sound prompt
+  await checkpoint(shot, 'voice-audio-recovery-unheard');
+  // Outside «Команда» the island is folded (ADR-0146): the avatar's mark carries the state.
+  await win.getByTestId('toast').getByRole('button', { name: 'Закрыть' }).click();
+  await win.getByTestId('section-calendar').click();
+  const mark = win.getByTestId('island-call-mark');
+  await expect(mark).toHaveAttribute('data-trouble', 'unheard');
+  await checkpoint(shot, 'voice-audio-recovery-folded-unheard');
+  await win.evaluate(() => (window as unknown as { __calabaVoiceRecovery?: (w: string) => void }).__calabaVoiceRecovery?.('recovering'));
+  await expect(mark).toHaveAttribute('data-trouble', 'recovering');
+  await checkpoint(shot, 'voice-audio-recovery-folded');
 });
 
 test('workspace-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  // «‹ ›» (board #113): left after the traffic lights; a room opened from another — back on, forward off.
+  const bar = win.getByTestId('titlebar');
+  await win.locator('aside').getByRole('button', { name: /разработка/ }).first().click();
+  await expect(win.getByRole('heading', { name: 'разработка' })).toBeVisible();
+  await expect(bar.getByTestId('nav-back')).toBeEnabled();
+  await expect(bar.getByTestId('nav-forward')).toBeDisabled();
+  await expect(win.locator('[data-message-id]').first()).toBeVisible();
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  // The picker sits in the right group, before the search.
+  const pickerBox = await bar.getByTestId('titlebar-title').boundingBox();
+  const searchBox = await bar.getByRole('button', { name: 'Поиск' }).boundingBox();
+  const backBox = await bar.getByTestId('nav-back').boundingBox();
+  expect((pickerBox?.x ?? 0) + (pickerBox?.width ?? 0), 'picker before the search').toBeLessThanOrEqual(searchBox?.x ?? 0);
+  expect(backBox?.x ?? 0, 'back left of the picker').toBeLessThan(pickerBox?.x ?? 0);
+  await checkpoint(shot, 'titlebar-history');
+  // Back returns to «общий», forward turns on.
+  await bar.getByTestId('nav-back').click();
+  await expect(win.getByRole('heading', { name: 'общий' })).toBeVisible();
+  await expect(bar.getByTestId('nav-forward')).toBeEnabled();
   // The workspace switcher (ADR-0074 §2): every workspace, then create / find, then this one's items.
-  await win.getByTestId('titlebar-title').click();
+  await bar.getByTestId('titlebar-title').click();
   await expect(win.getByRole('menu')).toBeVisible();
   await expect(win.getByTestId('switcher-row')).toHaveCount(2);
   await expect(win.getByTestId('switcher-row').first()).toHaveAttribute('aria-current', 'true');
   await expect(win.getByRole('menuitem', { name: 'Создать пространство' })).toBeVisible();
+  // Opened from the right: the sheet stays inside the window.
+  const menuBox = await win.getByTestId('workspace-switcher').boundingBox();
+  expect((menuBox?.x ?? 0) + (menuBox?.width ?? 0), 'switcher menu inside the window').toBeLessThanOrEqual(shot.viewport.width);
+  expect(menuBox?.x ?? -1).toBeGreaterThanOrEqual(0);
   await checkpoint(shot, 'workspace-menu');
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('menu')).toHaveCount(0);
+  // Esc returns the focus to the trigger (a keyboard ring): drop it for the shot.
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  // A long workspace name truncates in the right group.
+  const ws = mock.state.workspaces.get(IDS.workspaces.main);
+  if (!ws) throw new Error('no main workspace');
+  ws.name = 'Очень длинное название пространства для проверки обрезки';
+  mock.dispatch({ event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+  await expect(bar.getByTestId('titlebar-title')).toContainText('Очень длинное');
+  await checkpoint(shot, 'titlebar-long-name');
 });
 
 /** «+» in the room column header (owner, 28.09): «Создать комнату» / «Создать категорию». */
@@ -1737,6 +1901,11 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('plan-limits')).toBeVisible();
   await expect(win.getByRole('dialog').getByText('Free', { exact: true })).toBeVisible();
   await checkpoint(shot, 'settings-plan');
+  // The limits table further down: «Холстов 3» under «Досок» (ADR-0126 addendum, owner 23.10).
+  const canvases = win.getByTestId('plan-limits').getByRole('row').filter({ hasText: 'Холстов' });
+  await expect(canvases).toContainText('3');
+  await canvases.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(shot, 'settings-plan-limits');
 });
 
 /**
@@ -1812,6 +1981,9 @@ test('admin-plan', async ({ open, win, mock, shot }) => {
   await expect(admin.getByTestId('admin-log')).toBeAttached();
   await admin.getByRole('heading', { name: 'Тариф', exact: true }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await checkpoint(shot, 'admin-plan');
+  // The counted limits of the custom plan: «Статей в Wiki», «Холстов» (ADR-0126 addendum, owner 23.10).
+  await admin.getByRole('textbox', { name: 'Холстов' }).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(shot, 'admin-plan-limits');
 });
 
 /** Suspends a workspace in the mock and tells the clients (docs/09 #32). */
@@ -1965,6 +2137,20 @@ test('room-settings-picture', async ({ open, win, mock, shot }) => {
   await expect(row.locator('[data-room-icon="picture"] img')).toBeVisible();
   await expect(win.getByTestId('room-picture-remove')).toBeVisible();
   await checkpoint(shot, 'room-settings-picture');
+  // «Голос и стрим» of a voice room (without joining the voice): the join/leave cue threshold
+  // overridden to 20 (stepper + «Как в пространстве» reset), its row at the bottom of the card.
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('dialog')).toHaveCount(0);
+  await win.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await openSettingsTab(win, () => win.getByRole('button', { name: 'Настройки комнаты' }).click(), 2);
+  const joinLeave = win.getByRole('dialog').getByRole('spinbutton', { name: 'Звук входа и выхода' });
+  await joinLeave.fill('20');
+  await joinLeave.press('Enter');
+  await expect.poll(() => mock.state.rooms.get(IDS.rooms.meeting)?.mediaOverride?.joinLeaveSoundMax).toBe(20);
+  await joinLeave.scrollIntoViewIfNeeded();
+  await joinLeave.blur();
+  await expect(joinLeave).not.toBeFocused();
+  await checkpoint(shot, 'room-settings-voice-media');
 });
 
 test('confirm-delete-room', async ({ open, win, mock, shot }) => {
@@ -2079,6 +2265,52 @@ test('toasts', async ({ open, win, mock, shot }) => {
   });
   await expect(win.getByTestId('toast')).toHaveCount(3);
   await checkpoint(shot, 'toasts');
+});
+
+test('toast-single', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  // Top right under the title bar (the inbox, settings and help icons stay clear).
+  await win.evaluate(() => (window as unknown as { __calabaToast?: (k: string, t: string) => void }).__calabaToast?.('info', 'Ссылка-приглашение скопирована'));
+  await expect(win.getByTestId('toast')).toHaveCount(1);
+  await checkpoint(shot, 'toast-single');
+});
+
+/** A reminder «Через 1 час: Планёрка · Созвон» arrives; its toast action «Перейти в комнату» opens the question. */
+async function askJoin(page: Page, mock: MockServer): Promise<void> {
+  const ev = mock.addEvent({
+    workspaceId: IDS.workspaces.main,
+    organizerId: IDS.users.boris,
+    title: 'Планёрка по релизу',
+    startMs: NOW.getTime() + 3_600_000,
+    endMs: NOW.getTime() + 2 * 3_600_000,
+    roomId: IDS.rooms.call,
+    attendees: [{ userId: IDS.users.anna }],
+  });
+  mock.emitReminder(ev.id, IDS.users.anna, 60, NOW.getTime() + 3_600_000);
+  await page.getByTestId('toast').getByRole('button', { name: 'Перейти в комнату' }).click();
+  await expect(page.getByTestId('join-confirm')).toBeVisible();
+}
+
+test('join-confirm', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const joined = win.waitForRequest((r) => r.url().endsWith(`/api/rooms/${IDS.rooms.call}/join`), { timeout: 1500 }).then(() => true, () => false);
+  await askJoin(win, mock);
+  await expect(win.getByTestId('join-confirm-warn')).toHaveCount(0);
+  await checkpoint(shot, 'join-confirm');
+  // The click alone never joined; Esc closes without joining.
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('join-confirm')).toHaveCount(0);
+  expect(await joined).toBe(false);
+});
+
+test('join-confirm-switch', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoice(win, mock);
+  await askJoin(win, mock);
+  await expect(win.getByTestId('join-confirm-warn')).toContainText('Вы сейчас в комнате «Переговорка»');
+  await checkpoint(shot, 'join-confirm-switch');
 });
 
 // ---------------------------------------------------------------- voice (needs the dev LiveKit)
@@ -2207,6 +2439,13 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   // waits for the key - a pale crossed mic in my row, no dot.
   await expect(win.getByTestId('mic-live-dot')).toHaveCount(0);
   await win.keyboard.press(`${MOD}+Shift+m`);
+  await expect(win.getByTestId('mic-live-dot')).toBeVisible();
+  // ADR-0134: the click has not reached the others yet (flaky link) - an amber dot replaces the green one.
+  await win.evaluate(() => (window as unknown as { __calabaMicSyncLag?: (on: boolean) => void }).__calabaMicSyncLag?.(true));
+  await expect(win.getByTestId('mic-sync-dot')).toBeVisible();
+  await expect(win.getByTestId('mic-live-dot')).toHaveCount(0);
+  await checkpoint(shot, 'voice-room-mic-sync');
+  await win.evaluate(() => (window as unknown as { __calabaMicSyncLag?: (on: boolean) => void }).__calabaMicSyncLag?.(false));
   await expect(win.getByTestId('mic-live-dot')).toBeVisible();
   await win.getByRole('button', { name: 'Выбор микрофона' }).click();
   await win.getByTestId('mic-menu').getByRole('menuitemradio', { name: 'Push-to-talk' }).click();
@@ -2917,6 +3156,24 @@ test('chat-lightbox', async ({ open, win, mock, shot }) => {
   }
   await win.keyboard.press('Escape');
   await expect(box).toHaveCount(0);
+
+  // Owner 28.10: a PNG stored with a wrong type and no thumbnail is a picture too (the original is
+  // drawn in a box of the picture's size), next to a normal PNG (above) and a plain file (a chip).
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.grigory, content: '', attachments: [IDS.files.pdf] });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.untypedPng] });
+  const untyped = win.getByRole('button', { name: 'Открыть изображение «image.png»' });
+  await expect.poll(() => untyped.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth === 960)).toBe(true);
+  await expect(win.getByRole('button', { name: /^Скачать load-test-report\.pdf/ }).last()).toBeVisible();
+  await feedAtBottom(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-image-untyped');
+  await untyped.click();
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  await expect(box.getByRole('heading', { name: 'image.png' })).toBeVisible();
+  await expect(box.getByRole('button', { name: 'Скачать' })).toBeVisible();
+  await checkpoint(shot, 'chat-lightbox-untyped');
+  await win.keyboard.press('Escape');
+  await expect(box).toHaveCount(0);
 });
 
 // Code blocks (docs/09 #45, docs/08 «Код в сообщениях»): Вера's 420-line log collapsed at 400
@@ -2946,6 +3203,44 @@ test('chat-code', async ({ open, win, mock, shot }) => {
   await field.press('Enter');
   await expect(field).toHaveValue('```js\n');
   await field.fill('');
+
+  // Expanded editor (#97): the corner button on a long draft; the editor shares the draft with the
+  // field (formatting, Enter = newline, Esc keeps the text), «Удалить» asks, ⌘Enter sends.
+  const longDraft = Array.from({ length: 30 }, (_, i) => `Строка ${i + 1}: черновик длинного сообщения для проверки редактора`).join('\n');
+  await expect(win.getByTestId('composer-expand')).toHaveCount(0);
+  for (const b of await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').all()) await b.evaluate((x) => (x as HTMLButtonElement).click());
+  await expect(win.getByTestId('toast')).toHaveCount(0);
+  await field.fill(longDraft);
+  const expand = win.getByTestId('composer-expand');
+  await expect(expand).toBeVisible();
+  await checkpoint(shot, 'chat-expand-button');
+  await expand.click();
+  const editor = win.getByRole('dialog', { name: /Сообщение в/ });
+  const ed = editor.getByTestId('editor-field');
+  await expect(ed).toHaveValue(longDraft);
+  await ed.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 6));
+  await editor.getByTestId('editor-bold').click();
+  await expect(ed).toHaveValue(longDraft.replace('Строка', '**Строка**'));
+  await ed.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
+  await ed.press('Enter');
+  await expect(ed).toHaveValue(`${longDraft.replace('Строка', '**Строка**')}\n`);
+  await checkpoint(shot, 'chat-expanded-editor');
+  await win.keyboard.press('Escape');
+  await expect(editor).toHaveCount(0);
+  await expect(field).toHaveValue(`${longDraft.replace('Строка', '**Строка**')}\n`);
+  await field.focus();
+  await win.keyboard.press(`${MOD}+Shift+E`);
+  await expect(editor).toBeVisible();
+  await editor.getByTestId('editor-delete').click();
+  await win.getByRole('dialog', { name: 'Удалить черновик?' }).getByRole('button', { name: 'Удалить' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(field).toHaveValue('');
+  await field.fill(longDraft);
+  await win.keyboard.press(`${MOD}+Shift+E`);
+  await expect(ed).toBeFocused();
+  await ed.press(`${MOD}+Enter`);
+  await expect(editor).toHaveCount(0);
+  await expect(field).toHaveValue('');
 });
 
 // Voice messages (docs/09 #43, docs/08 «Голосовые сообщения»): recording with the fake mic
@@ -3133,6 +3428,17 @@ test('voice-reconnecting', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (window as unknown as { __calabaVoicePhase?: (p: string) => void }).__calabaVoicePhase?.('reconnecting'));
   await expect(win.getByTestId('voice-reconnecting')).toBeVisible();
   await checkpoint(shot, 'voice-reconnecting');
+  // Back from the background: the mic is being restored (the panel header) and the remote audio
+  // waits for a tap («Вы не слышите собеседников»).
+  await win.evaluate(() => {
+    const w = window as unknown as { __calabaVoicePhase?: (p: string) => void; __calabaVoiceRecovery?: (what: string) => void };
+    w.__calabaVoicePhase?.('connected');
+    w.__calabaVoiceRecovery?.('recovering');
+    w.__calabaVoiceRecovery?.('playback');
+  });
+  await expect(win.getByTestId('voice-phase')).toHaveText('Ждём микрофон');
+  await expect(win.getByTestId('toast').filter({ hasText: 'Вы не слышите собеседников' })).toBeVisible();
+  await checkpoint(shot, 'voice-audio-recovery');
 });
 
 test('voice-member-menu', async ({ open, win, mock, shot }) => {
@@ -3888,6 +4194,58 @@ test('settings-calendar', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'settings-calendar');
 });
 
+/**
+ * Board #85 (Yandex Calendar's «ещё один часовой пояс»): Калькутта (UTC+5:30) as a muted hour
+ * column left of the main scale in the day and the week, its label over the offset, the axis «now»
+ * line; then Settings → Календарь adds New York by search (the picker shows offset and time now)
+ * and labels it; the week and the day with both (New York on the previous day until 08:00 MSK).
+ */
+test('calendar-zones', async ({ open, win, mock, shot }) => {
+  await open();
+  // Me is read at start: the zone is set after the mock's reset, then the window reloads.
+  mock.setCalendarZones(IDS.users.anna, [{ zone: 'Asia/Kolkata' }]);
+  await win.reload();
+  await expect(win.locator('aside').first()).toBeVisible({ timeout: 30_000 });
+  await mainWindow(win, mock);
+  await calendarDay(win, mock);
+  await win.locator(`[data-cal-day="${DAY}"]`).click();
+  const day = win.getByTestId('day-view');
+  await expect(day.getByTestId('zone-scale')).toHaveCount(1);
+  await expect(day.getByTestId('zone-head')).toHaveText(/Kolkata\s*UTC\+5:30/);
+  await expect(day.getByTestId('zone-now')).toBeVisible();
+  await checkpoint(shot, 'calendar-day-zone1');
+  await win.getByTestId('cal-view').getByRole('radio', { name: /Неделя|Week/ }).click();
+  const week = win.getByTestId('week-view');
+  await expect(week.getByTestId('zone-scale')).toHaveCount(1);
+  await expect(week.getByTestId('zone-now')).toBeVisible();
+  await checkpoint(shot, 'calendar-week-zone1');
+
+  await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
+  await win.getByTestId('cal-zone-add').click();
+  await win.getByPlaceholder('Город или пояс').fill('New York');
+  await expect(win.getByTestId('cal-zone-list').getByRole('option').first()).toContainText('UTC−5');
+  await checkpoint(shot, 'settings-calendar-zones-picker');
+  await win.getByPlaceholder('Город или пояс').press('Enter');
+  const labels = win.getByTestId('cal-zone-label');
+  await expect(labels).toHaveCount(2);
+  await labels.nth(1).fill('Нью-Йорк');
+  await labels.nth(1).press('Enter');
+  await expect(win.getByRole('dialog').getByText('Нью-Йорк', { exact: true })).toBeVisible();
+  await expect(win.getByTestId('cal-zone-add')).toHaveCount(0);
+  await checkpoint(shot, 'settings-calendar-zones');
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('dialog')).toHaveCount(0);
+
+  await expect(week.getByTestId('zone-scale')).toHaveCount(2);
+  await week.getByTestId('week-scroller').evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(week.getByTestId('zone-newday').first()).toBeVisible();
+  await checkpoint(shot, 'calendar-week-zones');
+  await win.getByTestId('cal-view').getByRole('radio', { name: /День|Day/ }).click();
+  await expect(day.getByTestId('zone-scale')).toHaveCount(2);
+  await day.getByTestId('day-scroller').evaluate((el) => el.scrollTo({ top: 6 * 48 }));
+  await checkpoint(shot, 'calendar-day-zones');
+});
+
 /** ADR-0045 §3: a click on my external event — its attendees (Борис by avatar and name, the rest by address), «Открыть», «Создать встречу в Calab». */
 test('calendar-external', async ({ open, win, mock, shot }) => {
   await open();
@@ -3928,12 +4286,15 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await calendarDay(win, mock);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
-  await win.keyboard.press('n'); // the header has no «Встреча» (CBF-18)
+  await win.getByTestId('section-create-event').click(); // the sidebar «+» (the header has no «Встреча», CBF-18)
   const dialog = win.getByTestId('event-dialog');
   await dialog.getByTestId('event-title-input').fill('Разбор релиза');
   await dialog.getByTestId('event-room').click(); // the room picker with a search (CBF-18)
   await win.getByRole('option', { name: 'Переговорка' }).click();
   await dialog.getByTestId('event-add-people').click();
+  // docs/09 #85: colleagues in other zones show their local time, zone and working hours.
+  await expect(win.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ })).toContainText('UTC+5 · 10–19');
+  await checkpoint(shot, 'calendar-dialog-picker');
   // The picker stays open for several people.
   await win.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
   await win.getByTestId('event-member-picker').getByRole('option', { name: /Вера/ }).click();
@@ -3945,6 +4306,10 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('event-chip')).toHaveCount(3);
   await dialog.getByTestId('event-title-input').blur();
   await checkpoint(shot, 'calendar-dialog');
+  // ADR-0136: «В рабочие дни» with the calendar it follows as the field's hint.
+  await dialog.getByTestId('event-repeat').selectOption({ label: 'В рабочие дни' });
+  await dialog.getByText('по производственному календарю РФ').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'calendar-dialog-workdays');
 });
 
 // ---------------------------------------------------------------- task boards (ADR-0042 §5)
@@ -3960,9 +4325,25 @@ async function boardsMode(win: Page, mock: MockServer): Promise<void> {
 /** The kanban: the boards column, statuses with counts, cards with every chip (overdue CAL-3). */
 test('boards-kanban', async ({ open, win, mock, shot }) => {
   await open();
+  seedAssigneeCounts(mock); // #92: CAL-1 / CAL-2 / CAL-4 with 1 / 2 / 5 assignees (after open(): it resets the mock)
   await mainWindow(win, mock);
   await boardsMode(win, mock);
   await checkpoint(shot, 'boards-kanban');
+  // The third column («В работе», CAL-4 with five people) is past the 960 px edge: scroll the board sideways.
+  await win.getByTestId('kanban').evaluate((el) => [el, ...el.querySelectorAll<HTMLElement>('*')].forEach((e) => getComputedStyle(e).overflowX === 'auto' && e.scrollWidth > e.clientWidth && (e.scrollLeft = 320)));
+  await expect(win.getByTestId('task-card').filter({ hasText: 'Карточки задач' })).toBeVisible();
+  await expectAssigneeStacks(win);
+  await checkpoint(shot, 'boards-kanban-assignees', { axe: false });
+
+  // Status picker on a task waiting for approval: the statuses it may not reach carry a second
+  // line («нужно согласование»); one-line and two-line rows keep the same padding and rhythm.
+  await win.getByTestId('task-card').filter({ hasText: 'Ревью: права досок' }).getByTestId('card-status').click();
+  const statusMenu = win.getByTestId('status-menu');
+  await expect(statusMenu.getByTestId('picker-option').first()).toBeVisible();
+  await expect(statusMenu).toContainText('нужно согласование');
+  await checkpoint(shot, 'boards-status-menu', { axe: false });
+  await win.keyboard.press('Escape');
+  await expect(statusMenu).toBeHidden();
 
   // CBF-58: the column's «+» — «Создать задачу», the boards to create in, a separator, category / board.
   await win.getByTestId('section-create-board').click();
@@ -3974,19 +4355,36 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(createMenu).toHaveCount(0);
 
-  // Bug board #4 (needs the dev LiveKit): in voice, the boards column ends with the same voice
-  // block as the rooms island; its mic mutes the call while the board stays on screen.
-  await win.getByTestId('section-chats').click();
-  await win.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
-  await win.getByRole('region', { name: 'Переговорка' }).getByRole('button', { name: 'Войти в голос', exact: true }).click();
-  await expect(win.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 30_000 });
+  // Needs the dev LiveKit: in voice, the boards screen folds the island into my avatar with the
+  // call mark (ADR-0146); hovering it opens the full island over the board, its mic mutes the call
+  // while the board stays on screen; the avatar then shows the red crossed mic.
+  await joinVoice(win);
   await boardsMode(win, mock);
-  const dock = win.getByTestId('voice-dock');
+  const dock = win.getByTestId('bottom-island');
+  await expect(dock).toBeHidden();
+  await win.getByTestId('island-avatar').hover();
   await expect(dock).toContainText('Голос подключён');
   await dock.getByRole('button', { name: /^Выключить микрофон/ }).click();
   await expect(dock.getByRole('button', { name: /^Включить микрофон/ })).toBeVisible();
   await expect(win.getByTestId('kanban')).toBeVisible();
-  await checkpoint(shot, 'boards-voice-dock');
+  await checkpoint(shot, 'boards-voice-island', { keepPointer: true });
+  await win.mouse.move(600, 300);
+  await expect(dock).toBeHidden();
+  await expect(win.getByTestId('island-call-mark')).toHaveAttribute('data-muted', 'true');
+  await checkpoint(shot, 'boards-voice-avatar');
+
+  // The setting off (Settings → Основное): the old full island on every screen.
+  await win.getByRole('button', { name: 'Настройки', exact: true }).click();
+  const settings = win.getByRole('dialog');
+  await settings.getByRole('tab', { name: 'Основное' }).click();
+  const fold = settings.getByRole('switch', { name: /^Островок: сворачивать в аватар/ });
+  await expect(fold).toBeChecked();
+  await fold.click();
+  await expect(fold).not.toBeChecked();
+  await win.keyboard.press('Escape');
+  await expect(settings).toHaveCount(0);
+  await expect(dock).toBeVisible();
+  await expect(win.getByTestId('island-avatar')).toHaveCount(0);
 });
 
 /**
@@ -4063,23 +4461,127 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await expect(viewer).toBeHidden();
   await expect(panel).toBeVisible();
 
-  // CBF-59: a picture picked in the description editor is attached and shown inline, in place.
+  // Owner 23.10: the description edits in place in the wiki's editor — the `/` blocks (only what the
+  // task view shows), the selection bar; CBF-59: «/Картинка» attaches the picture and shows it inline.
   await panel.getByTestId('task-description').click();
   const editor = panel.getByTestId('task-description-editor');
-  await editor.press('End');
+  const prose = editor.locator('.wiki-prose');
+  await expect(prose).toBeFocused();
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('Проверить экспорт');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('/');
+  const blocks = win.getByRole('listbox', { name: 'Блоки' });
+  await expect(blocks.getByRole('option')).toHaveCount(6);
+  await checkpoint(shot, 'boards-task-desc-slash');
   const shotPng = encodePng(640, 360, (u, v) => (v < 0.15 ? [58, 124, 246] : u < 0.3 ? [235, 238, 245] : [250, 251, 253]));
   const attached = win.waitForResponse((r) => r.request().method() === 'PATCH' && /\/api\/tasks\/[^/]+$/.test(r.url()));
-  await panel.locator('input[accept="image/*"]').setInputFiles({ name: 'screenshot.png', mimeType: 'image/png', buffer: shotPng });
+  const chooser = win.waitForEvent('filechooser');
+  await blocks.getByRole('option', { name: 'Картинка' }).click();
+  await (await chooser).setFiles({ name: 'screenshot.png', mimeType: 'image/png', buffer: shotPng });
   expect((await attached).ok()).toBe(true);
-  await expect(editor).toHaveValue(/calaba-file:/);
+  await expect(prose.locator('.wiki-image img')).toBeVisible();
+  // The selection bar over «Проверить экспорт»: marks and «Превратить в», no highlight colours.
+  await prose.getByText('Проверить экспорт').dblclick();
+  await expect(win.getByRole('toolbar', { name: 'Форматирование' })).toBeVisible();
+  await checkpoint(shot, 'boards-task-desc-bubble');
   await panel.getByTestId('task-description-save').click();
+  await expect(editor).toHaveCount(0);
   await expect(panel.getByTestId('task-description-img')).toBeVisible();
+  await expect(panel.getByTestId('task-description')).toContainText('Проверить экспорт');
   await checkpoint(shot, 'boards-task-inline-image');
+
+  // Board #107: reading and editing the description look the same — one text with a heading, paragraphs,
+  // a list, a link and an emoji is shot in both modes and the blocks must sit on the same pixels.
+  await panel.getByTestId('task-description').locator('p').first().click({ position: { x: 8, y: 8 } });
+  await expect(prose).toBeFocused();
+  await win.keyboard.press('ControlOrMeta+a');
+  await win.keyboard.press('Backspace');
+  await win.keyboard.type('# Итоги звонка');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('Эхо пропало после правки 🎉 подробности на https://calab.io/docs ');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('Второй абзац с **жирным** словом.');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('- первый пункт');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('второй пункт');
+  await panel.getByTestId('task-description-save').click();
+  await expect(editor).toHaveCount(0);
+  const read = panel.getByTestId('task-description');
+  await expect(read.locator('h1')).toHaveText('Итоги звонка');
+  const boxes = async (root: Locator): Promise<number[][]> => {
+    const out: number[][] = [];
+    for (const sel of ['h1', 'p >> nth=0', 'p >> nth=1', 'li >> nth=1']) {
+      const b = await root.locator(sel).boundingBox();
+      out.push(b ? [b.x, b.y, b.width, b.height] : []);
+    }
+    return out;
+  };
+  const readBoxes = await boxes(read);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-task-desc-read');
+  await read.locator('h1').click();
+  await expect(prose).toBeFocused();
+  const editBoxes = await boxes(prose);
+  for (let i = 0; i < readBoxes.length; i++) for (let j = 0; j < 4; j++) expect(Math.abs((editBoxes[i]?.[j] ?? 1e6) - (readBoxes[i]?.[j] ?? -1e6)), `block ${i} coord ${j}: read ${String(readBoxes[i])} edit ${String(editBoxes[i])}`).toBeLessThanOrEqual(1);
+  await checkpoint(shot, 'boards-task-desc-edit');
+  await win.keyboard.press('Escape');
+  await expect(editor).toHaveCount(0);
+
+  // #89 / #93: «×» closes the card; Ctrl/⌘-click on cards adds background tabs; a click on a tab
+  // opens it; a half-typed comment survives the trip to another tab and back.
+  await panel.getByTestId('task-close').click();
+  await expect(panel).toBeHidden();
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  for (const key of ['CAL-1', 'CAL-2', 'CAL-4']) await win.getByTestId('task-card').filter({ hasText: key }).getByTestId('card-title').click({ modifiers: [mod] });
+  const tabs = win.getByTestId('task-tabs').getByTestId('task-tab');
+  await expect(tabs).toHaveCount(3);
+  await expect(panel).toBeHidden();
+  await tabs.nth(0).getByRole('button').first().click();
+  await expect(panel).toBeVisible();
+  const draft = panel.getByTestId('task-composer').getByRole('textbox');
+  await draft.fill('Черновик, который не должен пропасть');
+  await tabs.nth(1).getByRole('button').first().click();
+  await expect(win.getByTestId('task-tab').nth(1)).toHaveAttribute('data-active', 'true');
+  await expect(panel.getByTestId('task-composer').getByRole('textbox')).toHaveValue('');
+  await tabs.nth(0).getByRole('button').first().click();
+  await expect(panel.getByTestId('task-composer').getByRole('textbox')).toHaveValue('Черновик, который не должен пропасть');
+  await panel.getByTestId('task-composer').getByRole('textbox').blur();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-task-tabs');
+
+  // #93 follow-up: the strip lives in the title bar, so it stays in other sections; no tab is
+  // highlighted there, and a click brings the task back with the draft.
+  await win.getByTestId('section-calendar').click();
+  await expect(win.getByTestId('titlebar').getByTestId('task-tabs')).toBeVisible();
+  await expect(tabs).toHaveCount(3);
+  await expect(win.getByTestId('task-tab').and(win.locator('[data-active]'))).toHaveCount(0);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-task-tabs-calendar');
+  await tabs.nth(0).getByRole('button').first().click();
+  await expect(panel.getByTestId('task-composer').getByRole('textbox')).toHaveValue('Черновик, который не должен пропасть');
+  await expect(win.getByTestId('task-tab').nth(0)).toHaveAttribute('data-active', 'true');
+  await panel.getByTestId('task-composer').getByRole('textbox').blur();
+
+  // #89: from the «Поиск» tab (ADR-0139) the path starts with the query; «×» returns to the same list.
+  await win.getByTestId('my-tasks').click();
+  await win.getByTestId('my-tasks-scope').getByRole('radio', { name: 'Поиск' }).click();
+  await win.getByTestId('all-tasks-search').fill('эхо');
+  await win.getByTestId('task-search-row').first().click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByTestId('panel-crumb-search')).toContainText('эхо');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-task-from-search');
+  await panel.getByTestId('task-close').click();
+  await expect(win.getByTestId('all-tasks-search')).toHaveValue('эхо');
 });
 
 /** CAL-3's panel at its lower section: the «Комментарии» tab (the default) with the composer. */
 test('boards-task-comments', async ({ open, win, mock, shot }) => {
   await open();
+  const cal4 = mock.boards.taskByKey('CAL-4');
+  if (cal4) seedDays(mock, cal4.task.roomId); // #87: CAL-4's comments over several days (after open(): it resets the mock)
   await mainWindow(win, mock);
   await boardsMode(win, mock);
   await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
@@ -4089,6 +4591,28 @@ test('boards-task-comments', async ({ open, win, mock, shot }) => {
   await expect(panel.locator('[data-message-id]')).toHaveCount(2);
   await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await checkpoint(shot, 'boards-task-comments');
+  // ADR-0140: my comment seen by Борис — ✓✓ in the card's corner opens «Прочитали».
+  const cal3 = mock.boards.taskByKey('CAL-3');
+  if (cal3) {
+    const c = mock.injectMessage({ roomId: cal3.task.roomId, authorId: IDS.users.anna, content: 'Проверила на macOS, эха нет.' });
+    mock.markRead(IDS.users.boris, cal3.task.roomId, c.id);
+  }
+  const ticks = panel.locator('[data-message-id]').filter({ hasText: 'Проверила на macOS' }).getByTestId('read-ticks');
+  await expect(ticks).toBeVisible();
+  await ticks.scrollIntoViewIfNeeded();
+  await ticks.click();
+  await expect(win.getByTestId('read-by-popover').getByTestId('read-by-row')).toHaveCount(1);
+  await checkpoint(shot, 'boards-task-comment-read-by');
+  await win.keyboard.press('Escape');
+  // #87: another task whose comments span several days: the same pills as in the chat.
+  await win.getByTestId('boards-list').getByTestId('board-row').first().click(); // the board again: the panel closes
+  await expect(panel).toHaveCount(0);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-4' }).getByTestId('card-title').click();
+  const feed = win.getByTestId('activity-feed');
+  await expect(feed.getByRole('separator').filter({ hasText: 'Вчера' }).first()).toBeVisible();
+  await expect(feed.getByRole('separator').filter({ hasText: '2024' })).toHaveCount(1);
+  await feed.getByText('Ок, принято').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-task-comments-days', { axe: false });
 });
 
 /**
@@ -4117,6 +4641,7 @@ test('boards-task-history', async ({ open, win, mock, shot }) => {
 /** The list grouped by status, two rows selected: the bulk actions bar. */
 test('boards-list', async ({ open, win, mock, shot }) => {
   await open();
+  seedReleases(mock); // board task #101: not on the rows — the grouping and the task panel at the end
   await mainWindow(win, mock);
   await boardsMode(win, mock);
   await win.getByTestId('view-list').click();
@@ -4150,6 +4675,73 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('archive-empty')).toBeVisible();
   await win.getByTestId('archive-back').click();
   await expect(rows.filter({ hasText: 'CAL-2' })).toHaveCount(1);
+  // Board task #101: grouped by release — the newest first, «Без релиза» last; then a task's «Релиз».
+  await win.getByTestId('display-menu').click();
+  await win.getByTestId('group-by').selectOption('release');
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('list-group').first()).toContainText('stage · 1288');
+  await expect(win.getByTestId('list-group').last()).toContainText('Без релиза');
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-list-release');
+  await rows.filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.getByTestId('prop-release')).toHaveText(['stage · 1288', 'prod · 4929cf3']);
+  await panel.getByTestId('prop-release').last().evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(shot, 'boards-task-release');
+});
+
+/**
+ * Labels past the card width collapse into «+N» (docs/08 «Лейблы»): one row (CAL-1), two rows
+ * (CAL-2), the group on CAL-4; the hover list; the same in the list view and the task panel.
+ */
+test('boards-labels-overflow', async ({ open, win, mock, shot }) => {
+  await open();
+  seedLabelOverflow(mock);
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  const card = (key: string): Locator => win.getByTestId('task-card').filter({ hasText: key });
+  await expect(card('CAL-4').getByTestId('labels-more')).toBeVisible();
+  await expect(card('CAL-1').getByTestId('labels-more')).toHaveCount(0);
+  await expect(card('CAL-2').getByTestId('labels-more')).toHaveCount(0);
+  await checkpoint(shot, 'boards-labels-card');
+  await card('CAL-4').getByTestId('labels-more').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-labels-card-group');
+  // Hover opens the hidden labels and leaving closes them; Enter on the focused pill opens them, Esc closes.
+  const more = card('CAL-4').getByTestId('labels-more');
+  const list = win.getByTestId('labels-more-list');
+  await more.hover();
+  await expect(list).toBeVisible();
+  await win.mouse.move(0, 0);
+  await expect(list).toHaveCount(0);
+  await more.focus();
+  await win.keyboard.press('Enter');
+  await expect(list).toBeVisible();
+  await expect(list.getByTestId('label-pill')).toHaveCount(6);
+  await checkpoint(shot, 'boards-labels-more', { axe: false });
+  await win.keyboard.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(win.getByTestId('kanban')).toBeVisible(); // the board's own Esc did not fire
+
+  // The task panel: the labels row with the «+» after them; the group opens the same list.
+  await card('CAL-4').getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.getByTestId('prop-labels')).toBeVisible();
+  await expect(panel.getByTestId('labels-more')).toBeVisible();
+  await checkpoint(shot, 'boards-labels-task');
+  await panel.getByTestId('labels-more').click();
+  await expect(list).toBeVisible();
+  await checkpoint(shot, 'boards-labels-task-more', { axe: false });
+  await win.keyboard.press('Escape');
+  await expect(list).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+
+  // The list view: one row of labels, the rest in «+N».
+  await win.getByTestId('view-list').click();
+  await expect(win.getByTestId('list-row').filter({ hasText: 'CAL-4' }).getByTestId('labels-more')).toBeVisible();
+  await checkpoint(shot, 'boards-labels-list', { axe: false });
 });
 
 /** «Фильтр» open over a filtered board: a label condition, the field list. */
@@ -4165,6 +4757,14 @@ test('boards-filter', async ({ open, win, mock, shot }) => {
   await win.getByTestId('filter-button').click();
   await expect(win.getByTestId('filter-fields')).toBeVisible();
   await checkpoint(shot, 'boards-filter');
+  // ADR-0139: the board's search field — the same search over this board, under the same filter.
+  await win.keyboard.press('Escape');
+  await win.getByTestId('board-search-open').click();
+  await win.getByTestId('board-search-input').fill('доск');
+  await expect(win.getByTestId('task-search-board')).toBeVisible();
+  await expect(win.getByTestId('task-search-row')).toHaveCount(1);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-search');
 });
 
 /** Board settings → «Статусы»: the development template's six statuses. */
@@ -4224,6 +4824,55 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   for (const b of await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').all()) await b.evaluate((x) => (x as HTMLButtonElement).click());
   await expect(win.getByTestId('toast')).toHaveCount(0);
   await checkpoint(shot, 'boards-settings-access');
+  // Board task #101: a Git rule — the new events, «Целевая ветка», the Git template variables.
+  await win.getByRole('tab', { name: 'Автоматизации' }).click();
+  await expect(win.getByTestId('rules-empty')).toBeVisible();
+  await win.getByTestId('rule-add').click();
+  await win.getByTestId('rule-name').fill('MR влит в main → готово');
+  await win.getByTestId('rule-trigger').selectOption('git');
+  const ev = win.getByTestId('rule-git-event');
+  await expect(ev.locator('option')).toHaveText(['Любое событие', 'Создана ветка', 'Открыт черновик PR', 'Открыт PR', 'Черновик PR готов к ревью', 'Запрошено ревью', 'PR одобрен', 'PR смержен', 'PR закрыт без слияния', 'Новый коммит']);
+  await ev.selectOption({ label: 'Новый коммит' });
+  await expect(win.getByTestId('rule-git-branches')).toHaveCount(0); // a push has no target branch
+  await ev.selectOption({ label: 'PR смержен' });
+  await win.getByTestId('rule-git-branches').fill('main, release/*');
+  await win.getByTestId('rule-action-kind').selectOption('comment');
+  await expect(win.getByTestId('rule-git-vars')).toHaveText('Git: {pr_url} {pr_number} {pr_title} {branch} {target_branch} {git_author}');
+  await win.getByLabel('Текст').fill('Влит MR !{pr_number}: {pr_title} → {target_branch}');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-rules-git-vars');
+  await win.getByTestId('rule-when').scrollIntoViewIfNeeded();
+  await win.getByTestId('rule-name').focus();
+  await checkpoint(shot, 'boards-rules-git');
+  // Board task #101 stage B: «Задача вошла в релиз» (prod by default) with the status condition of
+  // DEV's «Ready to Deploy → Deployed»; {release} under the template.
+  await win.getByTestId('rule-name').fill('Вошла в релиз prod → готово');
+  await win.getByTestId('rule-trigger').selectOption('release');
+  await expect(win.getByTestId('rule-release-envs')).toHaveValue('prod');
+  await win.getByTestId('rule-release-envs').fill('prod, stage');
+  await expect(win.getByTestId('rule-release-vars')).toHaveText('Релиз: {release}');
+  await win.getByLabel('Текст').fill('Выкачено в {release}');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await win.getByTestId('rule-when').scrollIntoViewIfNeeded();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-rules-release');
+  await win.getByRole('dialog').getByRole('button', { name: 'Отмена' }).click();
+  // The GitLab backlink: off by default, the title-visibility help, the address and a write-only token.
+  await win.getByRole('tab', { name: 'Git' }).click();
+  await win.getByTestId('git-provider').selectOption({ label: 'GitLab' });
+  await win.getByTestId('git-save').click();
+  const backlink = win.getByTestId('git-backlink');
+  await expect(backlink.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await backlink.getByRole('switch').click();
+  await expect(win.getByTestId('git-backlink-error')).toHaveText('Заметки не пишутся: нет токена API.');
+  await win.getByTestId('git-backlink-url').fill('https://git.example.com');
+  await win.getByTestId('git-backlink-token').fill('glpat-0123456789abcdefghij');
+  await win.getByTestId('git-backlink-save').click();
+  await expect(win.getByTestId('git-backlink-error')).toHaveCount(0);
+  await expect(win.getByTestId('git-backlink-forget')).toBeVisible();
+  await backlink.scrollIntoViewIfNeeded();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-settings-backlink');
 });
 
 /** Board settings → «Статусы», the colour picker of the first status open (ADR-0093): a 6-wide grid over the rows. */
@@ -4284,6 +4933,23 @@ test('boards-create', async ({ open, win, mock, shot }) => {
   await win.getByRole('button', { name: /Сегодня/ }).first().click();
   await expect(win.getByTestId('create-start')).not.toContainText('Начало');
   await checkpoint(shot, 'boards-create');
+
+  // Owner 23.10: the description is the wiki's editor here too (compact); `/` opens the blocks
+  // inside the sheet, Esc closes the list, not the sheet.
+  const desc = win.getByTestId('create-task').locator('.wiki-prose');
+  await desc.click();
+  await win.keyboard.type('Шаги:');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('- воспроизвести');
+  await win.keyboard.press('Enter');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('/');
+  const blocks = win.getByRole('listbox', { name: 'Блоки' });
+  await expect(blocks).toBeVisible();
+  await checkpoint(shot, 'boards-create-desc');
+  await win.keyboard.press('Escape');
+  await expect(blocks).toHaveCount(0);
+  await expect(win.getByTestId('create-task')).toBeVisible();
 });
 
 /** The timeline (3), month scale: today line, weekends, CAL-3 → CAL-4 late-blocker marker, «Без дат». */

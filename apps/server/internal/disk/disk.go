@@ -54,6 +54,8 @@ type Service struct {
 	// LinkReadLimit: anonymous link metadata and thumbnails per client IP; LinkDownloadLimit:
 	// anonymous downloads (each Range request counts) per client IP. nil = none.
 	LinkReadLimit, LinkDownloadLimit Limiter
+	// Editing: who edits a file item in the office editor now (ADR-0143); nil = off.
+	Editing Editors
 	// Now is the clock (tests move it).
 	Now func() time.Time
 }
@@ -75,6 +77,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/workspaces/{id}/disk/items", s.list)
 	h("POST /api/workspaces/{id}/disk/folders", s.createFolder)
 	h("POST /api/workspaces/{id}/disk/upload", s.upload)
+	h("POST /api/workspaces/{id}/disk/import", s.importFile)
 	h("POST /api/workspaces/{id}/disk/trash/empty", s.emptyTrash)
 	h("GET /api/workspaces/{id}/disk/usage", s.usage)
 	h("GET /api/workspaces/{id}/disk/activity", s.workspaceActivity)

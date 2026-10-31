@@ -22,6 +22,11 @@ interface CalendarState {
   prompted: Readonly<Record<string, true>>;
   /** A room whose header badge opens its meeting card (a guest's /e/<id>); cleared when it closes. */
   badgeOpen: string | null;
+  /**
+   * Workspace id → the holiday calendar a new «В рабочие дни» series there follows (ADR-0136):
+   * 'ru' | '' (Mon–Fri); from every list answer.
+   */
+  holidays: Readonly<Record<string, string>>;
   reset: () => void;
 }
 
@@ -33,5 +38,6 @@ export const useCalendar = create<CalendarState>()((set) => ({
   series: {},
   prompted: {},
   badgeOpen: null,
-  reset: () => set({ occ: {}, active: {}, months: {}, todayCount: 0, series: {}, badgeOpen: null }),
+  holidays: {},
+  reset: () => set({ occ: {}, active: {}, months: {}, todayCount: 0, series: {}, badgeOpen: null, holidays: {} }),
 }));

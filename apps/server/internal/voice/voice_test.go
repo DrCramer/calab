@@ -147,3 +147,24 @@ func TestAggregatePtt(t *testing.T) {
 		t.Fatal("a user without sessions has no ptt")
 	}
 }
+
+// On a phone call (ADR-0133): all devices of the user in their room; a flip is a change.
+func TestAggregateOnPhone(t *testing.T) {
+	ws, u, r1 := uuid.New(), uuid.New(), uuid.New()
+	sessions := []SessionState{
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, OnPhone: true, JoinedAt: 100},
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, JoinedAt: 200},
+	}
+	mixed := Aggregate(ws, u, sessions)
+	if mixed.GetOnPhone() {
+		t.Fatalf("a device still listening keeps the user in the room: %v", mixed)
+	}
+	sessions[1].OnPhone = true
+	on := Aggregate(ws, u, sessions)
+	if !on.GetOnPhone() || Equal(mixed, on) {
+		t.Fatalf("all devices parked, and the flip must be a change: %v", on)
+	}
+	if Aggregate(ws, uuid.New(), sessions).GetOnPhone() {
+		t.Fatal("a user without sessions is not on the phone")
+	}
+}

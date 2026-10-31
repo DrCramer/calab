@@ -7,8 +7,8 @@
 <h1 align="center">Calab</h1>
 
 <p align="center">
-  Todo el equipo en una ventana: salas de voz, chat, reuniones y tareas en tu propio servidor.<br>
-  <sub>Mensajería de equipo autoalojada con la voz primero. macOS · Windows · Linux · web.</sub>
+  Todo el trabajo del equipo en una ventana: salas de voz, chat, reuniones, tareas, wiki, lienzo, archivos, correo y llamadas telefónicas, en la nube o en tu propio servidor.<br>
+  <sub>Mensajería de equipo con la voz primero. macOS · Windows · Linux · web · móvil.</sub>
 </p>
 
 <p align="center">
@@ -28,35 +28,35 @@
 
 ## Qué es
 
-Calab es una mensajería para equipos donde lo primero es la **voz**. Entras en una sala y oyes a tus compañeros al momento; al lado tienes un chat como Telegram, un calendario con reuniones y tableros de tareas al estilo de Linear. Todo funciona en tu propio servidor: un `docker compose`, con PostgreSQL y LiveKit dentro, sin servicios externos ni suscripciones.
+Calab reúne todo el trabajo de un equipo en una sola ventana: un mensaje se convierte en tarea, la tarea tiene su reunión, la reunión deja grabación y transcripción, y el resultado acaba en una página de la wiki y en un lienzo. Todo se enlaza. Lo primero es la **voz**: entras en una sala y oyes a tus compañeros al momento. Calab funciona en la nube o en tu propio servidor (un `docker compose`, con PostgreSQL y LiveKit dentro).
 
-Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 pantallas compartidas por sala. El cliente es ligero: 0,05 % de CPU sin llamada y ≈ 7 % en voz en un MacBook Air M4.
+En lugar de siete servicios en siete pestañas (mensajería, videollamadas, gestor de tareas, wiki, pizarra en línea, archivos, correo y telefonía) hay una sola barra a la izquierda. El cliente es ligero: 0,05 % de CPU sin llamada y ≈ 7 % en voz en un MacBook Air M4.
+
+**Plataformas:** macOS · Windows · Linux · web · móvil (la versión web funciona en el navegador del móvil; las apps para iPhone y Android llegarán pronto).
+
+<table>
+  <tr>
+    <td width="50%"><img src="apps/landing/public/screens/es/kanban-full.webp" alt="El tablero «Producto» con cuatro columnas de fichas de tareas"></td>
+    <td width="50%"><img src="apps/landing/public/screens/es/canvas.webp" alt="El lienzo «Retro del sprint 12»: notas, flechas, votos y el cursor de un compañero"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="apps/landing/public/screens/es/phone-call.webp" alt="Una llamada a un número de teléfono desde una sala de voz con el botón «Transferir»"></td>
+    <td width="50%"><img src="apps/landing/public/screens/es/phone-voice.webp" alt="La tarjeta «En voz» en un móvil"></td>
+  </tr>
+</table>
 
 ## Funciones
 
-### Funciones de un vistazo
+### Resumen, agrupado como en el sitio
 
-| Área | En una línea |
+| Grupo | Qué incluye |
 |---|---|
-| Voz y vídeo | Salas de voz con sonido limpio y push-to-talk, compartir pantalla, cámara, galería de la reunión, grabación con transcripción, soundboard, anotaciones sobre la pantalla compartida, modo músico |
-| Llamadas telefónicas (SIP) | Marca un número fijo o móvil desde una sala de voz con tu propio proveedor SIP |
-| Salas temporales e invitados | Una sala por una hora o un día con enlace para invitados; sin registro, y el invitado se elimina tras 48 horas sin actividad |
-| Chat | Respuestas, reacciones, stickers, mensajes de voz, reenvío, archivos con vista previa, fijados, confirmaciones de lectura, menciones |
-| Mensajes directos y notas | Chats y llamadas uno a uno con archivo; hasta 20 estantes de notas privadas |
-| Calendario | Reuniones con invitaciones por correo (`.ics`), búsqueda de hora para varias personas, sincronización CalDAV |
-| Tableros de tareas | Kanban, lista y línea de tiempo; tarea a pantalla completa, aprobaciones, listas de control, hitos, automatizaciones, formularios de entrada, webhooks de tablero, historial completo |
-| Correo | Cliente de correo IMAP/SMTP integrado en la aplicación de escritorio |
-| Wiki | Páginas del equipo con edición conjunta en tiempo real, enlaces entre páginas, versiones y páginas públicas |
-| Disco | Carpetas y archivos del espacio con acceso por carpeta, enlaces públicos, papelera e indicador de espacio |
-| Búsqueda | `⌘K` encuentra mensajes, tareas, comentarios, eventos, archivos, notas y transcripciones |
-| Notificaciones | Niveles por sala y disparadores de tareas por evento; los avisos de tareas se pueden reenviar a tu propio bot (p. ej. a Telegram) |
-| Bots y API de integración | Bots con token, SDK de TypeScript, gateway WebSocket, webhooks firmados, voz, botones; [documentación para desarrolladores](https://calab.io/en/docs/) |
-| Identidad y roles | SSO OIDC, sincronización del directorio LDAP/AD, «Iniciar sesión con Calab» (OAuth 2); roles por función, salas y tableros privados |
-| Miembros | Perfiles con `@alias`, logros y cumpleaños; los antiguos miembros se conservan en el historial |
-| Pagos y planes | Free, Team, Business y Enterprise en tu propio servidor, gratis para uso no comercial |
-| Teléfono | La versión web funciona hoy en el navegador del móvil; las apps para iPhone y Android están en camino |
-| Apps web en la barra | Fija Grafana, el CRM o cualquier sitio junto a Calab; la llamada sigue |
-| Servidor propio | Un solo `docker compose`, con PostgreSQL y LiveKit, certificados y copias de seguridad automáticos |
+| Comunicación | Salas de voz y pantalla compartida (puntero y dibujo sobre la transmisión, supresión de ruido y de eco), videorreuniones (hasta 25 mosaicos), chat con respuestas, reacciones y fijados, salas temporales e invitados, grabación con transcripción |
+| Trabajo | Tableros de tareas (tablero, lista, línea de tiempo; formularios, automatizaciones, aprobaciones, historial), calendario con búsqueda de hora y CalDAV, wiki, lienzo (notas, formas, flechas, votación, temporizador), archivos, correo (app de escritorio) |
+| Orden y calma | Búsqueda `⌘K` en todo, niveles de notificación por sala y disparadores de tareas (con reenvío a tu propio bot), roles y salas privadas, aplicaciones web fijadas en la ventana |
+| Inteligente | Tarea inteligente (plan Business y superiores), resúmenes y transcripciones de reuniones, cualquier cliente LLM como bot mediante MCP. Un administrador conecta un modelo una sola vez en los ajustes del espacio; sin eso, la IA no funciona |
+| Telefonía | Conecta un proveedor SIP: menú de voz (IVR), grupos, extensiones para personas y bots, transferencia de llamadas, grabaciones guardadas en los archivos del equipo (Business y Enterprise) |
+| Servidor propio y control | Un `docker compose` en tu propio servidor, SSO / Active Directory / roles, código abierto bajo BSL 1.1; [documentación para desarrolladores](https://calab.io/en/docs/) |
 
 ### 🎙 Voz y vídeo
 
@@ -237,6 +237,8 @@ Comprobaciones: `make test` (Go + TS), `make test-integration`, pruebas visuales
 | Bots | 1 | 5 | 20 | sin límite |
 | Paquetes de stickers | 1 | sin límite | sin límite | sin límite |
 | Tableros de tareas | 3 | 30 | 50 | sin límite |
+| Páginas de la wiki | 10 | 50 | 500 | sin límite |
+| Lienzos | 3 | 30 | 100 | sin límite |
 | Calendario | ✓ | ✓ | ✓ | ✓ |
 | CalDAV | — | ✓ | ✓ | ✓ |
 | Telefonía (SIP) | — | — | ✓ | ✓ |

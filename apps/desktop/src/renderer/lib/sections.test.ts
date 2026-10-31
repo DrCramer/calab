@@ -35,6 +35,13 @@ describe('currentSection', () => {
     expect(currentSection({ home: true, boards: false, calendar: false, canvas: true })).toBe('dms');
     expect(currentSection({ home: false, boards: false, calendar: false, app: true, canvas: true })).toBeNull();
   });
+  it('«Телефония» (ADR-0137 §5) is a section of its own, like «Холст»', () => {
+    expect(currentSection({ home: false, boards: false, calendar: false, telephony: true })).toBe('telephony');
+    expect(currentSection({ home: false, boards: true, calendar: true, telephony: true })).toBe('telephony');
+    expect(currentSection({ home: true, boards: false, calendar: false, telephony: true })).toBe('dms');
+    expect(sectionFor({ a: 'telephony' }, 'a', false)).toBe('telephony');
+    expect(sectionFor({ a: 'telephony' }, 'a', true)).toBe('chats');
+  });
   it('«Почта» (ADR-0088) covers everything while on', () => {
     expect(currentSection({ home: true, boards: true, calendar: true, app: true, mail: true })).toBe('mail');
   });

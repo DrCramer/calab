@@ -1,7 +1,7 @@
 import * as Popover from '../../components/radix/popover';
-import { AtSign, Hash, Inbox, Volume2 } from 'lucide-react';
-import type { Message } from '@calaba/protocol';
-import { memo, useCallback, useEffect, type ReactNode } from 'react';
+import { AtSign, Hash, Inbox, SquareCheckBig, Volume2 } from 'lucide-react';
+import { TaskPriority, type Message, type Task, type TaskNoticeEntry } from '@calaba/protocol';
+import { memo, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
 import { CountBadge, Empty, Spinner, Tip, cx } from '../../components/ui';
@@ -9,10 +9,12 @@ import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { systemPreview } from '../../lib/recording';
+import { noticeText, openTaskAnywhere } from '../../services/boards';
 import { loadMentions } from '../../services/mentions';
+import { useBoards } from '../../stores/boards';
 import { useInbox } from '../../stores/inbox';
-import { inboxBadgeCount, unreadInboxItems } from '../../stores/inboxUnread';
-import { isVoice, useRooms } from '../../stores/rooms';
+import { inboxBadgeCount, inboxRows, unreadInboxItems } from '../../stores/inboxUnread';
+import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
@@ -28,9 +30,11 @@ function markReadUpTo(roomId: string, messageId: string): void {
 }
 
 /**
- * Mentions inbox (docs/09 #1): history from GET /api/me/mentions (all workspaces, newest
- * first) merged with live mentions. Only unread mentions are listed and counted: «read» is the
- * room's read marker being at or after the mention (stores/inboxUnread.ts).
+ * Mentions inbox (docs/09 #1, ADR-0141): chat mentions (GET /api/me/mentions, all workspaces) and
+ * task notices (GET /api/me/task-notices), merged with the live ones, newest first. Read items
+ * stay listed; unread ones carry a dot. The badge counts unread mentions: «read» is the room's
+ * read marker being at or after the mention (stores/inboxUnread.ts); unread tasks are counted by
+ * the boards' «Непрочитанное».
  */
 export function InboxButton(): ReactNode {
   const ready = useSession((s) => s.ready);
@@ -58,7 +62,7 @@ export function InboxButton(): ReactNode {
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} collisionPadding={16} aria-label={t('shell.inbox')} className={cx(popoverBox, 'w-[380px] p-0')}>
+        <Popover.Content align="end" sideOffset={6} collisionPadding={16} data-inbox-popover aria-label={t('shell.inbox')} className={cx(popoverBox, 'w-[380px] p-0')}>
           <InboxList />
         </Popover.Content>
       </Popover.Portal>
@@ -80,23 +84,33 @@ function InboxBadge(): ReactNode {
 
 function InboxList(): ReactNode {
   const all = useInbox((s) => s.items);
+  const notices = useInbox((s) => s.notices);
   const loaded = useInbox((s) => s.loaded);
   const loading = useInbox((s) => s.loading);
-  const hasMore = useInbox((s) => s.hasMore);
-  // Only unread mentions of rooms (and workspaces) this client still knows: access may have changed.
-  const items = useRooms(
-    useShallow((s) => unreadInboxItems(all, s.readState, (id) => !!s.byId[id] && !!useWorkspaces.getState().byId[s.byId[id].workspaceId])),
+  const more = useInbox((s) => s.hasMore || s.noticesHasMore);
+  // Mentions of rooms (and workspaces) this client still knows, task notices of known
+  // workspaces: access may have changed (the server rechecks on every load).
+  const mentions = useRooms(
+    useShallow((s) =>
+      all.filter((m) => {
+        const room = s.byId[m.roomId];
+        return !!room && !!useWorkspaces.getState().byId[room.workspaceId];
+      }),
+    ),
   );
+  const tasks = useWorkspaces(useShallow((s) => notices.filter((e) => !!s.byId[e.workspaceId])));
+  const unread = useRooms(useShallow((s) => unreadInboxItems(mentions, s.readState)));
+  const rows = useMemo(() => inboxRows(mentions, tasks), [mentions, tasks]);
   const markAll = useCallback((): void => {
     // Per room: the newer of its newest unread mention and its last known message.
     const newest = new Map<string, string>();
-    for (const m of items) if (m.id > (newest.get(m.roomId) ?? '')) newest.set(m.roomId, m.id);
+    for (const m of unread) if (m.id > (newest.get(m.roomId) ?? '')) newest.set(m.roomId, m.id);
     const rooms = useRooms.getState();
     for (const [roomId, mid] of newest) {
       const last = rooms.lastMessage[roomId];
       markReadUpTo(roomId, last && last > mid ? last : mid);
     }
-  }, [items]);
+  }, [unread]);
   return (
     <div className="flex max-h-[min(520px,70vh)] flex-col">
       <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
@@ -104,13 +118,13 @@ function InboxList(): ReactNode {
           <AtSign className="size-4 text-muted" aria-hidden />
           {t('shell.inbox')}
         </span>
-        {items.length ? (
+        {unread.length ? (
           <button type="button" onClick={markAll} className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-caption text-accent-text hover:bg-hover">
             {t('shell.inboxMarkRead')}
           </button>
         ) : null}
       </div>
-      {items.length === 0 ? (
+      {rows.length === 0 ? (
         !loaded && loading ? (
           <div className="grid place-items-center py-8">
             <Spinner />
@@ -123,10 +137,8 @@ function InboxList(): ReactNode {
         )
       ) : (
         <ul className="min-h-0 flex-1 overflow-y-auto p-1">
-          {items.map((m) => (
-            <InboxItem key={m.id} m={m} />
-          ))}
-          {hasMore ? (
+          {rows.map((r) => (r.m ? <InboxItem key={r.id} m={r.m} /> : r.e ? <NoticeItem key={r.id} e={r.e} latest={r.latest} /> : null))}
+          {more ? (
             <li className="flex justify-center py-1">
               <button
                 type="button"
@@ -144,8 +156,14 @@ function InboxList(): ReactNode {
   );
 }
 
+/** «Не прочитано»: an accent dot before the time (the row's own primitive selector decides). */
+function UnreadDot(): ReactNode {
+  return <span role="img" aria-label={t('shell.inboxUnread')} className="size-2 shrink-0 self-center rounded-full bg-accent" />;
+}
+
 const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
   const room = useRooms((s) => s.byId[m.roomId]);
+  const unread = useRooms((s) => idAfter(m.id, s.readState[m.roomId]));
   const wsId = room?.workspaceId ?? null;
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
   const author = useMemberName(wsId, m.authorId);
@@ -163,7 +181,7 @@ const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
         <button
           type="button"
           onClick={() => {
-            // Opening the message reads it: the marker moves to it, so it leaves the list.
+            // Opening the message reads it: the marker moves to it.
             markReadUpTo(m.roomId, m.id);
             openRoom(room.workspaceId, room.id);
             useChatView.getState().requestJump(room.id, m.id);
@@ -176,7 +194,8 @@ const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
               <span className="min-w-0 truncate text-body font-semibold" title={author}>
                 {author}
               </span>
-              <span className="ml-auto shrink-0 text-micro text-muted">
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 text-micro text-muted">
+                {unread ? <UnreadDot /> : null}
                 {fmt.dayLabel(d)}, {fmt.time(d)}
               </span>
             </span>
@@ -184,6 +203,63 @@ const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
               <Icon className="size-3 shrink-0" aria-hidden />
               <span className="truncate" title={`${room.name} · ${wsName ?? ''}`}>
                 {room.name} · {wsName}
+              </span>
+            </span>
+            <span className="mt-0.5 line-clamp-2 break-words text-body text-fg">{text}</span>
+          </span>
+        </button>
+      </Popover.Close>
+    </li>
+  );
+});
+
+/** No task in the store yet: what noticeText needs of it (REJECTED's comment and PRIORITY's value are then generic). */
+const NO_TASK: Pick<Task, 'approvers' | 'priority'> = { approvers: [], priority: TaskPriority.NONE };
+
+/**
+ * A task notice (ADR-0141): who, the task (key · title — the source) and what happened. Unread
+ * while the task is in «Непрочитанное», marked on its newest notice only.
+ */
+const NoticeItem = memo(function NoticeItem({ e, latest }: { e: TaskNoticeEntry; latest: boolean }): ReactNode {
+  const n = e.notice;
+  const actorId = n?.actorId ?? '';
+  const unread = useBoards((s) => latest && s.unread[e.taskId] !== undefined);
+  const task = useBoards((s) => s.tasks[e.taskId]);
+  const actor = useMemberName(e.workspaceId, actorId);
+  const avatar = useWorkspaces((s) => (actorId ? s.users[actorId]?.avatarFileId : undefined));
+  const wsName = useWorkspaces((s) => s.byId[e.workspaceId]?.ws.name);
+  const text = n ? noticeText(task ?? { ...NO_TASK, workspaceId: e.workspaceId }, n) : '';
+  const source = `${e.taskKey} · ${e.taskTitle}`;
+  const d = toDate(e.createdAt);
+  return (
+    <li>
+      <Popover.Close asChild>
+        <button
+          type="button"
+          onClick={() => openTaskAnywhere({ id: e.taskId, workspaceId: e.workspaceId, boardId: e.boardId })}
+          className="flex w-full items-start gap-2.5 rounded-[var(--radius-row)] px-2 py-2 text-left hover:bg-hover"
+        >
+          {actorId ? (
+            <Avatar userId={actorId} name={actor} fileId={avatar || undefined} size={28} />
+          ) : (
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-hover text-muted">
+              <SquareCheckBig className="size-4" aria-hidden />
+            </span>
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-1.5">
+              <span className="min-w-0 truncate text-body font-semibold" title={actorId ? actor : t('shell.inboxTasks')}>
+                {actorId ? actor : t('shell.inboxTasks')}
+              </span>
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 text-micro text-muted">
+                {unread ? <UnreadDot /> : null}
+                {fmt.dayLabel(d)}, {fmt.time(d)}
+              </span>
+            </span>
+            <span className="flex min-w-0 items-center gap-1 text-caption text-muted">
+              <SquareCheckBig className="size-3 shrink-0" aria-hidden />
+              <span className="truncate" title={`${source} · ${wsName ?? ''}`}>
+                {source}
               </span>
             </span>
             <span className="mt-0.5 line-clamp-2 break-words text-body text-fg">{text}</span>

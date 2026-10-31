@@ -13,7 +13,49 @@ import (
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/httpx"
 )
+
+// Open streams a stored file (its blob) with its size.
+func (s *Service) Open(ctx context.Context, f sqlc.File) (io.ReadCloser, int64, error) {
+	rc, _, err := s.store.Get(ctx, f.Key)
+	if errors.Is(err, blob.ErrNotFound) {
+		return nil, 0, httpx.NotFound("file")
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	return rc, f.Size, nil
+}
+
+// MaxUploadBytes is MAX_FILE_SIZE_MB in bytes: what a person may put into a workspace at once.
+func (s *Service) MaxUploadBytes() int64 { return s.maxBytes }
+
+// CopyInto stores a copy of f (a file the caller may read) as a new file of workspace ws
+// uploaded by uploader, named name ("" = f's name): a new id, its own blob and quota (the Disk
+// deletes its files rows with its items, so two owners never share one row). Not attached yet,
+// as StoreSystemFile. 413 above MAX_FILE_SIZE_MB or the quota.
+func (s *Service) CopyInto(ctx context.Context, ws, uploader uuid.UUID, f sqlc.File, name string) (sqlc.File, error) {
+	if s.maxBytes > 0 && f.Size > s.maxBytes {
+		return sqlc.File{}, tooLarge(s.maxBytes)
+	}
+	rc, _, err := s.Open(ctx, f)
+	if err != nil {
+		return sqlc.File{}, err
+	}
+	defer func() { _ = rc.Close() }()
+	if name == "" {
+		name = f.Name
+	}
+	c, err := s.StoreSystemFile(ctx, ws, uploader, name, f.Mime, rc, f.Size)
+	if errors.Is(err, ErrNoRoom) {
+		return c, errQuota
+	}
+	return c, err
+}
+
+// QuotaExceeded is the 413 FILE_QUOTA_EXCEEDED of a StoreSystemFile that did not fit (ErrNoRoom).
+func QuotaExceeded() error { return errQuota }
 
 // Files the server itself attaches to a workspace message (a meeting recording's audio on its
 // chat card, docs/09 #47). They count against the same quotas as uploads: the workspace's

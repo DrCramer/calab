@@ -1,20 +1,15 @@
 import type { DiskItem } from '@calaba/protocol';
 import type { ForwardItem } from '../features/chat/forwardModel';
-import { plural, t } from '../i18n';
+import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { isFolder } from '../lib/disk';
-import { log } from '../lib/log';
 import { useDisk } from '../stores/disk';
 import { useDiskRefs } from '../stores/diskRefs';
-import { HOME } from '../stores/dms';
-import { useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
-import { toast, useToasts } from '../stores/toasts';
-import { useUi } from '../stores/ui';
-import { MAX_CONTENT, sendMessage } from './chat';
+import { toast } from '../stores/toasts';
 import { diskApi, revealDiskItem } from './disk';
-import { ensureDm } from './dms';
 import { diskItemUrl } from './links';
+import { sendLinkToChats } from './sendLink';
 
 /*
  * Disk items outside the Disk (CBF-20): the chat chip and the deep link `/disk/<item id>`, and
@@ -125,30 +120,6 @@ async function goToItem(id: string): Promise<void> {
  * (the feed draws its chip). Through the chat's own send path; the server checks the rights to
  * write there, and whoever opens the link needs DISK_VIEW anyway.
  */
-export async function sendDiskItemToChats(itemId: string, targets: readonly ForwardItem[], comment: string): Promise<void> {
-  const url = diskItemUrl(itemId);
-  if (!url || !targets.length) return;
-  const note = comment.trim();
-  const content = (note ? `${note}\n${url}` : url).slice(0, MAX_CONTENT);
-  let last: { ws: string; room: string; name: string } | null = null;
-  let sent = 0;
-  let failed = 0;
-  for (const target of targets) {
-    try {
-      const roomId = target.kind === 'room' ? target.roomId : await ensureDm(target.userId);
-      const ws = useRooms.getState().byId[roomId]?.workspaceId ?? '';
-      await sendMessage(ws, roomId, content, [], undefined);
-      last = { ws, room: roomId, name: target.name };
-      sent++;
-    } catch (e) {
-      log.warn('disk to chat: send', e);
-      failed++;
-    }
-  }
-  if (last) {
-    const to = last;
-    const label = sent > 1 ? plural('wiki.send.sentMany', sent) : t('wiki.send.sent', { name: to.name });
-    useToasts.getState().push('success', label, { label: t('wiki.send.open'), run: () => useUi.getState().openRoom(to.ws || HOME, to.room) });
-  }
-  if (failed) toast.error(t('wiki.send.failed'));
+export function sendDiskItemToChats(itemId: string, targets: readonly ForwardItem[], comment: string): Promise<void> {
+  return sendLinkToChats(diskItemUrl(itemId), targets, comment);
 }

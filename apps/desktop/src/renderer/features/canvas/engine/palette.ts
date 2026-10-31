@@ -47,7 +47,7 @@ type Sticky = { bg: string; fg: string };
 
 /**
  * Sticky-note color ids in picker order (5 per row). The first seven are the original ids and keep their
- * original light values; the dark table only nudges yellow/orange a little darker so every pair clears
+ * original ids (their values were refreshed 23.10, see below); every pair clears
  * WCAG AA (palette.test.ts checks every id in both themes, and that no two look alike).
  */
 export const STICKY_IDS = [
@@ -90,70 +90,72 @@ export function readableInk(fill: string, ink: string): string {
   return (contrastRatio('#ffffff', fill) ?? 0) >= (contrastRatio('#111827', fill) ?? 0) ? '#ffffff' : '#111827';
 }
 
+// Clean, bright sticky notes after FigJam (owner, 23.10): light-theme pastels with dark ink; the dark theme
+// keeps the same hues slightly dimmed (pastels stay pastel with dark ink, the saturated ones go deeper with light ink).
 const STICKY_LIGHT: Readonly<Record<(typeof STICKY_IDS)[number], Sticky>> = {
-  yellow: { bg: '#fde68a', fg: '#3b2f0b' },
-  amber: { bg: '#fbbf24', fg: '#3b2506' },
-  orange: { bg: '#fed7aa', fg: '#4a2306' },
-  coral: { bg: '#fb7185', fg: '#3f0a14' },
+  yellow: { bg: '#ffe866', fg: '#3b2f0b' },
+  amber: { bg: '#ffbf3d', fg: '#3b2506' },
+  orange: { bg: '#ffc58a', fg: '#4a2306' },
+  coral: { bg: '#ff8a80', fg: '#3f0a14' },
   red: { bg: '#dc2626', fg: '#ffffff' },
   crimson: { bg: '#be123c', fg: '#ffffff' },
-  pink: { bg: '#fbcfe8', fg: '#4a1030' },
+  pink: { bg: '#ffc2e2', fg: '#4a1030' },
   magenta: { bg: '#a21caf', fg: '#ffffff' },
-  violet: { bg: '#7e22ce', fg: '#ffffff' },
-  purple: { bg: '#ddd6fe', fg: '#2a1a5c' },
+  violet: { bg: '#7c3aed', fg: '#ffffff' },
+  purple: { bg: '#d9ccff', fg: '#2a1a5c' },
   lavender: { bg: '#a78bfa', fg: '#1e1147' },
   indigo: { bg: '#4338ca', fg: '#ffffff' },
   cobalt: { bg: '#2563eb', fg: '#ffffff' },
-  blue: { bg: '#bfdbfe', fg: '#10294d' },
-  sky: { bg: '#38bdf8', fg: '#082f49' },
-  cyan: { bg: '#a5f3fc', fg: '#083344' },
+  blue: { bg: '#aed4ff', fg: '#10294d' },
+  sky: { bg: '#4cc2ff', fg: '#082f49' },
+  cyan: { bg: '#9ef0ff', fg: '#083344' },
   teal: { bg: '#0f766e', fg: '#ffffff' },
-  mint: { bg: '#6ee7b7', fg: '#063d27' },
-  green: { bg: '#bbf7d0', fg: '#0f3d1f' },
+  mint: { bg: '#5fe3b0', fg: '#063d27' },
+  green: { bg: '#c1f2cf', fg: '#0f3d1f' },
   emerald: { bg: '#15803d', fg: '#ffffff' },
-  lime: { bg: '#bef264', fg: '#243304' },
+  lime: { bg: '#c8f560', fg: '#243304' },
   brown: { bg: '#92400e', fg: '#ffffff' },
-  gray: { bg: '#e5e7eb', fg: '#1f2937' },
+  gray: { bg: '#e6e8ec', fg: '#1f2937' },
   slate: { bg: '#475569', fg: '#ffffff' },
-  black: { bg: '#1f2937', fg: '#ffffff' },
+  black: { bg: '#1e1e1e', fg: '#ffffff' },
 };
 
 const STICKY_DARK: Readonly<Record<(typeof STICKY_IDS)[number], Sticky>> = {
-  yellow: { bg: '#876c0c', fg: '#fffbe8' },
-  amber: { bg: '#92600a', fg: '#fff4d6' },
-  orange: { bg: '#a95a14', fg: '#fff7ee' },
-  coral: { bg: '#b94a55', fg: '#fff0f1' },
-  red: { bg: '#a52a2a', fg: '#fff0f0' },
-  crimson: { bg: '#9f1d46', fg: '#fff0f4' },
-  pink: { bg: '#a34878', fg: '#fff0f8' },
-  magenta: { bg: '#86217f', fg: '#fdf0fc' },
-  violet: { bg: '#6a2ca0', fg: '#f8f1ff' },
-  purple: { bg: '#6a56b3', fg: '#f3efff' },
-  lavender: { bg: '#9059c9', fg: '#ffffff' },
+  yellow: { bg: '#e6cf55', fg: '#2b2405' },
+  amber: { bg: '#e0a52b', fg: '#2e1c03' },
+  orange: { bg: '#e8a97c', fg: '#3a1b05' },
+  coral: { bg: '#e6736b', fg: '#3a0a10' },
+  red: { bg: '#b8322b', fg: '#fff0f0' },
+  crimson: { bg: '#a8244f', fg: '#fff0f4' },
+  pink: { bg: '#e0a3c6', fg: '#3a0f27' },
+  magenta: { bg: '#9a2aa8', fg: '#fdf0fc' },
+  violet: { bg: '#8247d9', fg: '#f8f1ff' },
+  purple: { bg: '#b8a9e8', fg: '#231550' },
+  lavender: { bg: '#9c85e6', fg: '#190e3b' },
   indigo: { bg: '#4b45b8', fg: '#f2f1ff' },
-  cobalt: { bg: '#1d4fa8', fg: '#eef5ff' },
-  blue: { bg: '#3b6fb6', fg: '#eef5ff' },
-  sky: { bg: '#2b7a9e', fg: '#effaff' },
-  cyan: { bg: '#16798a', fg: '#f2fdff' },
-  teal: { bg: '#0f6b62', fg: '#e8fffb' },
-  mint: { bg: '#1f8070', fg: '#f2fff9' },
-  green: { bg: '#2f7d4a', fg: '#eafff1' },
-  emerald: { bg: '#1f5a30', fg: '#eafff1' },
-  lime: { bg: '#5f7d12', fg: '#fafff0' },
+  cobalt: { bg: '#2b5fc4', fg: '#eef5ff' },
+  blue: { bg: '#8fb8e8', fg: '#0e2342' },
+  sky: { bg: '#55b4e0', fg: '#052a40' },
+  cyan: { bg: '#6cc9d6', fg: '#06303b' },
+  teal: { bg: '#0f7066', fg: '#e8fffb' },
+  mint: { bg: '#55c9a0', fg: '#052f20' },
+  green: { bg: '#8fd1a3', fg: '#0c2e18' },
+  emerald: { bg: '#217a3c', fg: '#eafff1' },
+  lime: { bg: '#a8cf4e', fg: '#1f2b04' },
   brown: { bg: '#7a4220', fg: '#fff1e6' },
-  gray: { bg: '#5c6370', fg: '#ffffff' },
+  gray: { bg: '#9aa1ad', fg: '#1a1f28' },
   slate: { bg: '#2b3a4f', fg: '#f1f5f9' },
   black: { bg: '#111827', fg: '#f9fafb' },
 };
 
 const COLORS_LIGHT = {
-  red: '#dc2626', orange: '#ea580c', yellow: '#ca8a04', lime: '#5f9a0a', green: '#16a34a', teal: '#0d9488', cyan: '#0891b2',
-  blue: '#2563eb', indigo: '#4f46e5', purple: '#7c3aed', magenta: '#c026d3', pink: '#db2777', brown: '#92400e', gray: '#6b7280', white: '#ffffff',
+  red: '#e5352b', orange: '#f57c00', yellow: '#f2b800', lime: '#5f9f0c', green: '#1fa457', teal: '#0d9e90', cyan: '#0891b2',
+  blue: '#2f6df6', indigo: '#5b5bf0', purple: '#8b4df0', magenta: '#cf35d6', pink: '#ec3f8f', brown: '#9a5524', gray: '#6b7280', white: '#ffffff',
 } as const;
 
 const COLORS_DARK = {
-  red: '#f87171', orange: '#fb923c', yellow: '#facc15', lime: '#a3e635', green: '#4ade80', teal: '#2dd4bf', cyan: '#22d3ee',
-  blue: '#60a5fa', indigo: '#818cf8', purple: '#a78bfa', magenta: '#e879f9', pink: '#f472b6', brown: '#c08457', gray: '#9ca3af', white: '#ffffff',
+  red: '#ff6b61', orange: '#ff9d3d', yellow: '#ffd633', lime: '#b6e34a', green: '#4fd88a', teal: '#2fd1bd', cyan: '#3ccbf0',
+  blue: '#5b9bff', indigo: '#8c8cff', purple: '#b184ff', magenta: '#ea6df0', pink: '#ff6fae', brown: '#c08457', gray: '#9ca3af', white: '#ffffff',
 } as const;
 
 /** Reasonable stand-in palette (tests, benchmark, previews); the product passes token-derived colors. */

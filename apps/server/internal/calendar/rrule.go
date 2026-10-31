@@ -13,13 +13,31 @@ import (
 type Rule struct {
 	Repeat v1.EventRepeat
 	Until  *time.Time // last allowed occurrence start (inclusive); nil = no end
+	// WORKDAYS only: the holiday calendar (HolidaysRU or "" = Mon–Fri), fixed when the repeat
+	// was chosen (ADR-0136).
+	Holidays string
 }
 
-// String renders the rule as RRULE text ("" for no repeat), e.g.
-// "FREQ=WEEKLY;INTERVAL=2;UNTIL=20261231T205959Z". allDay renders UNTIL as a DATE (RFC 5545:
-// UNTIL has the value type of DTSTART), in loc.
-func (r Rule) String() string { return r.format(false, time.UTC) }
+// weekdaysRule is the RRULE of a working-days series (its holidays go to EXDATE / RDATE).
+const weekdaysRule = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
 
+// xHolidays is the private rule part that stores the holiday calendar in events.rrule; it is
+// never exported (RFC 5545 RRULE has no extension parts).
+const xHolidays = "X-CALAB-HOLIDAYS"
+
+// String renders the rule as stored in events.rrule ("" for no repeat), e.g.
+// "FREQ=WEEKLY;INTERVAL=2;UNTIL=20261231T205959Z" or
+// "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;X-CALAB-HOLIDAYS=RU".
+func (r Rule) String() string {
+	s := r.format(false, time.UTC)
+	if s != "" && r.Repeat == v1.EventRepeat_EVENT_REPEAT_WORKDAYS && r.Holidays == HolidaysRU {
+		s += ";" + xHolidays + "=RU"
+	}
+	return s
+}
+
+// format renders the RFC 5545 RRULE. allDay renders UNTIL as a DATE (RFC 5545: UNTIL has the
+// value type of DTSTART), in loc.
 func (r Rule) format(allDay bool, loc *time.Location) string {
 	var s string
 	switch r.Repeat {
@@ -31,6 +49,8 @@ func (r Rule) format(allDay bool, loc *time.Location) string {
 		s = "FREQ=WEEKLY;INTERVAL=2"
 	case v1.EventRepeat_EVENT_REPEAT_MONTHLY:
 		s = "FREQ=MONTHLY"
+	case v1.EventRepeat_EVENT_REPEAT_WORKDAYS:
+		s = weekdaysRule
 	default:
 		return ""
 	}
@@ -51,7 +71,7 @@ func ParseRule(s string) (Rule, error) {
 	if s == "" {
 		return r, nil
 	}
-	var freq, interval string
+	var freq, interval, byday string
 	for _, part := range strings.Split(s, ";") {
 		k, v, ok := strings.Cut(part, "=")
 		if !ok {
@@ -62,6 +82,13 @@ func ParseRule(s string) (Rule, error) {
 			freq = v
 		case "INTERVAL":
 			interval = v
+		case "BYDAY":
+			byday = v
+		case xHolidays:
+			if v != "RU" {
+				return r, fmt.Errorf("rrule: unknown holidays %q", v)
+			}
+			r.Holidays = HolidaysRU
 		case "UNTIL":
 			t, err := time.Parse("20060102T150405Z", v)
 			if err != nil {
@@ -72,7 +99,15 @@ func ParseRule(s string) (Rule, error) {
 			return r, fmt.Errorf("rrule: unsupported %q", k)
 		}
 	}
+	if byday != "" && (freq != "WEEKLY" || interval != "" || byday != "MO,TU,WE,TH,FR") {
+		return r, errors.New("rrule: unsupported BYDAY")
+	}
+	if r.Holidays != "" && byday == "" {
+		return r, errors.New("rrule: holidays without BYDAY")
+	}
 	switch {
+	case byday != "":
+		r.Repeat = v1.EventRepeat_EVENT_REPEAT_WORKDAYS
 	case freq == "DAILY" && interval == "":
 		r.Repeat = v1.EventRepeat_EVENT_REPEAT_DAILY
 	case freq == "WEEKLY" && interval == "":
@@ -114,10 +149,18 @@ type Series struct {
 const maxOccurrences = 1000
 
 // nth returns the n-th occurrence (n ≥ 0) and false when that month has no such day (MONTHLY
-// on the 29th–31st). Wall-clock time in Loc is kept, so a 10:00 meeting stays at 10:00 across
-// DST; a timed meeting keeps its duration, an all-day one its number of days.
+// on the 29th–31st) or, for WORKDAYS (n counts calendar days), the day is not a working day of
+// the series' holiday calendar in Loc. Wall-clock time in Loc is kept, so a 10:00 meeting
+// stays at 10:00 across DST; a timed meeting keeps its duration, an all-day one its number of
+// days.
 func (s Series) nth(n int) (Occurrence, bool) {
 	if n == 0 {
+		if s.Rule.Repeat == v1.EventRepeat_EVENT_REPEAT_WORKDAYS {
+			y, m, d := s.Start.In(s.Loc).Date()
+			if !isWorkday(s.Rule.Holidays, y, m, d) {
+				return Occurrence{}, false
+			}
+		}
 		return Occurrence{s.Start, s.End}, true
 	}
 	l := s.Start.In(s.Loc)
@@ -127,6 +170,12 @@ func (s Series) nth(n int) (Occurrence, bool) {
 	switch s.Rule.Repeat {
 	case v1.EventRepeat_EVENT_REPEAT_DAILY:
 		st = time.Date(y, m, d+n, hh, mm, ss, 0, s.Loc)
+	case v1.EventRepeat_EVENT_REPEAT_WORKDAYS:
+		dy, dm, dd := time.Date(y, m, d+n, 12, 0, 0, 0, time.UTC).Date()
+		if !isWorkday(s.Rule.Holidays, dy, dm, dd) {
+			return Occurrence{}, false
+		}
+		st = time.Date(dy, dm, dd, hh, mm, ss, 0, s.Loc)
 	case v1.EventRepeat_EVENT_REPEAT_WEEKLY:
 		st = time.Date(y, m, d+7*n, hh, mm, ss, 0, s.Loc)
 	case v1.EventRepeat_EVENT_REPEAT_BIWEEKLY:
@@ -225,6 +274,30 @@ func (s Series) IsOccurrence(start time.Time) bool {
 		}
 	}
 	return false
+}
+
+// ShiftToWorkday moves the start (and the end with it, keeping the wall-clock times in Loc) of
+// a WORKDAYS series to its first working day on or after the start: the first occurrence of a
+// series is its DTSTART, which RFC 5545 counts even off the rule (ADR-0136).
+func (s Series) ShiftToWorkday() (start, end time.Time) {
+	if s.Rule.Repeat != v1.EventRepeat_EVENT_REPEAT_WORKDAYS {
+		return s.Start, s.End
+	}
+	ls, le := s.Start.In(s.Loc), s.End.In(s.Loc)
+	for k := 0; k < 31; k++ {
+		y, m, d := time.Date(ls.Year(), ls.Month(), ls.Day()+k, 12, 0, 0, 0, time.UTC).Date()
+		if !isWorkday(s.Rule.Holidays, y, m, d) {
+			continue
+		}
+		if k == 0 {
+			return s.Start, s.End
+		}
+		shift := func(t time.Time) time.Time {
+			return time.Date(t.Year(), t.Month(), t.Day()+k, t.Hour(), t.Minute(), t.Second(), 0, s.Loc).UTC()
+		}
+		return shift(ls), shift(le)
+	}
+	return s.Start, s.End
 }
 
 // UntilAt is the column events.until_at: an upper bound of the end of the last occurrence

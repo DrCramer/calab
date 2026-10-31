@@ -221,6 +221,12 @@ export class ImapFlowSession implements ImapSession {
     if (!ok) throw new Error('EXPUNGE failed');
   }
 
+  async storeFlagsAll(add: string[], remove: string[]): Promise<void> {
+    if (!this.c.mailbox || this.c.mailbox.exists === 0) return;
+    if (add.length) await this.c.messageFlagsAdd('1:*', add, { uid: true });
+    if (remove.length) await this.c.messageFlagsRemove('1:*', remove, { uid: true });
+  }
+
   async expungeAll(): Promise<void> {
     if (!this.c.mailbox || this.c.mailbox.exists === 0) return;
     const ok = await this.c.messageDelete('1:*', { uid: true });

@@ -11,16 +11,17 @@ import { Scene, visualBounds } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
 import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
 import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type MeasureFn } from '../../../lib/canvas/textLayout';
-import { polylineMidpoint } from '../../../lib/canvas/geometry';
+import { connectorMidpoint } from '../../../lib/canvas/route';
 import { LiveLayer } from '../../../lib/canvas/live';
 import {
-  DEFAULTS, MAX_OBJECTS, aabb, isConnector,
+  DEFAULTS, MAX_OBJECTS, aabb, hasText, isConnector,
   type ObjectKind, type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
 import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
 import { AwarenessLayer, sameView, type PeerState, type PeerView } from './awareness';
 import type { Core, Gesture, Mods } from './gestures';
 import { attachInput } from './input';
+import { ImageCache, type DecodeFn, type ImageResolver } from './images';
 import { emptyOverlay, type Outline, type OverlayState, type SelFrame } from './overlay';
 import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
 import { Renderer, renderSceneTo, type FrameStats } from './renderer';
@@ -103,6 +104,13 @@ export interface EngineOptions {
   editorHost?: HTMLElement;
   /** The text editor's accessible name, in the UI language (read at every open). */
   editorLabel?: () => string;
+  /**
+   * Pictures (ADR-0127, 2026-10-23): an API media path → a URL an <img> loads (the app's authenticated loader). Absent:
+   * pictures are drawn as plaques.
+   */
+  imageUrl?: ImageResolver;
+  /** Picture decoding, for tests (default: <img> → ImageBitmap, the first frame). */
+  decodeImage?: DecodeFn;
   /** Text measuring (tests / non-DOM). Default: a hidden 2D context. */
   measure?: MeasureFn;
   /** Clock and frame scheduler, for tests. */
@@ -154,6 +162,8 @@ export class CanvasEngine implements Core {
   readonly votes: VoteBook;
   readonly awareness = new AwarenessLayer();
   readonly renderer: Renderer;
+  /** Decoded pictures; null without an `imageUrl` (every picture is a plaque). */
+  readonly images: ImageCache | null;
   readonly editor: TextEditor;
   readonly canvas: HTMLCanvasElement;
   /** Touch editing on the phone: set once at construction (the viewer's `phone` mode). */
@@ -193,6 +203,7 @@ export class CanvasEngine implements Core {
   private reducedMotion: boolean;
   private readonly pressListeners = new Set<(screen: Point, world: Point) => void>();
   private readonly commentListeners = new Set<(c: CommentClick) => void>();
+  private readonly stickerListeners = new Set<() => void>();
   private tool_: Tool = 'select';
   private multi_ = false;
   private shape_: ShapeKind = 'rect';
@@ -237,7 +248,11 @@ export class CanvasEngine implements Core {
       const o = this.scene.get(id);
       return o?.kind === 'sticky' || o?.kind === 'shape';
     }, () => !this.readOnly);
+    this.images = opts.imageUrl
+      ? new ImageCache(opts.imageUrl, (src) => this.onImageLoaded(src), { now: this.now, ...(opts.decodeImage ? { decode: opts.decodeImage } : {}) })
+      : null;
     this.renderer = new Renderer({
+      ...(this.images ? { images: this.images } : {}),
       canvas: opts.canvas,
       ...(opts.remoteCanvas ? { remoteCanvas: opts.remoteCanvas } : {}),
       scene: this.scene,
@@ -1143,8 +1158,9 @@ export class CanvasEngine implements Core {
 
   private editSpec(o: ObjectRec): EditSpec | null {
     const p = this.palette;
+    if (o.kind === 'image') return null;
     if (isConnector(o)) {
-      const m = polylineMidpoint(o.points);
+      const m = connectorMidpoint(o);
       return { box: { x: m.x - 80, y: m.y - 12, w: 160, h: 24 }, text: o.label, size: LABEL_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily };
     }
     const box = contentRect(o);
@@ -1233,10 +1249,10 @@ export class CanvasEngine implements Core {
   setEditFontSize(px: number): void {
     const id = this.editingId;
     const o = id ? this.scene.get(id) : undefined;
-    if (!id || !o || isConnector(o) || o.locked || !this.canEdit() || !this.editor.isOpen) return;
+    if (!id || !o || !hasText(o) || o.locked || !this.canEdit() || !this.editor.isOpen) return;
     this.doc.patch(id, { fontPx: px });
     const now = this.scene.get(id);
-    if (now && !isConnector(now)) this.editor.setSize(boxFontSize(now));
+    if (now && hasText(now)) this.editor.setSize(boxFontSize(now));
   }
 
   /** Double-click on empty canvas: a new text object, in edit mode. */
@@ -1453,6 +1469,42 @@ export class CanvasEngine implements Core {
     } else if (!this.localTimer) this.localTimer = setTimeout(fire, wait);
   }
 
+  // ── pictures ────────────────────────────────────────────────────────────────
+
+  /** A picture finished loading: one repaint of the objects that show it (nothing else, no polling). */
+  private onImageLoaded(src: string): void {
+    if (this.destroyed) return;
+    for (const o of this.scene.all()) if (o.kind === 'image' && o.src === src) this.renderer.invalidate(visualBounds(o));
+  }
+
+  /**
+   * Places a picture (a sticker from a pack) centered on the view, its long side `DEFAULTS.imageSize`, and selects it.
+   * `w`, `h` are the source's pixel size (for the aspect ratio). Returns the id; null when refused (read-only, the limit).
+   */
+  insertImage(src: string, w: number, h: number, stickerId?: string): string | null {
+    if (!this.canEdit()) return null;
+    const view = this.visibleWorld();
+    const ratio = w > 0 && h > 0 ? w / h : 1;
+    const size = DEFAULTS.imageSize;
+    const iw = ratio >= 1 ? size : size * ratio;
+    const ih = ratio >= 1 ? size / ratio : size;
+    const c = { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+    this.doc.checkpoint();
+    const id = this.doc.create({ kind: 'image', src, x: c.x - iw / 2, y: c.y - ih / 2, w: iw, h: ih, ...(stickerId ? { stickerId } : {}) });
+    this.finishCreate(id ? [id] : [], false);
+    return id;
+  }
+
+  /** The sticker hotkey (K): the view opens its picker (the engine has no UI of its own). */
+  onStickerKey(fn: () => void): () => void {
+    this.stickerListeners.add(fn);
+    return () => this.stickerListeners.delete(fn);
+  }
+
+  emitStickerKey(): void {
+    for (const fn of [...this.stickerListeners]) fn();
+  }
+
   // ── export ──────────────────────────────────────────────────────────────────
 
   /**
@@ -1463,7 +1515,7 @@ export class CanvasEngine implements Core {
     const b = opts.rect ?? (opts.selectionOnly && this.sel.size > 0 ? this.scene.bounds(this.sel) : this.scene.bounds());
     if (!b) return null;
     const c = document.createElement('canvas');
-    renderSceneTo(c, this.scene, this.palette, b, opts.pxPerUnit ?? 1, opts.pad);
+    renderSceneTo(c, this.scene, this.palette, b, opts.pxPerUnit ?? 1, opts.pad, this.images ?? undefined);
     return c;
   }
 
@@ -1507,6 +1559,7 @@ export class CanvasEngine implements Core {
     this.clearViewTimer();
     for (const d of this.disposers.splice(0)) d();
     this.renderer.destroy();
+    this.images?.destroy();
     this.live.destroy();
     this.scene.destroy();
     this.doc.destroy();
@@ -1515,6 +1568,7 @@ export class CanvasEngine implements Core {
     this.localListeners.clear();
     this.viewListeners.clear();
     this.localViewListeners.clear();
+    this.stickerListeners.clear();
   }
 }
 

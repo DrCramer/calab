@@ -1,23 +1,27 @@
 /**
  * The comments panel of a canvas (ADR-0127 wave 4): threads on the right (a sheet on the phone), «Только
- * открытые», a new thread's input after a click of the «Комментарий» tool, replies, «Решить», editing and
- * deleting. What the buttons offer follows the rights (lib/canvas/comments commentRights); the server
- * decides. Each thread and comment is a memo row subscribed to its own ids.
+ * открытые», a new thread's composer at the bottom after a click of the «Комментарий» tool, replies,
+ * «Решить», editing and deleting. Comments look and write like the chat (owner 23.10): chat rows
+ * (chat/CommentRow) grouped like the feed, the chat's composer (chat/CommentComposer) — the reply
+ * field at the bottom of the active thread, editing in that same field. What the buttons offer follows
+ * the rights (lib/canvas/comments commentRights); the server decides. Each thread and comment is a memo
+ * row subscribed to its own ids.
  */
-import { Check, Pencil, RotateCcw, Trash2, X } from 'lucide-react';
-import { memo, useMemo, useState, type ReactNode } from 'react';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import { Check, MapPin, MessageCirclePlus, RotateCcw, X } from 'lucide-react';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { Avatar } from '../../../../components/Avatar';
 import { confirmAction } from '../../../../components/Confirm';
-import { ALT, IconButton, Toggle, cx } from '../../../../components/ui';
+import { ALT, Button, IconButton, Toggle, cx } from '../../../../components/ui';
 import { t, useLocale } from '../../../../i18n';
-import { bodyParts, mayChange, pinWorld, type CommentRights } from '../../../../lib/canvas/comments';
-import { fmt } from '../../../../lib/format';
-import { createThread, loadComments, deleteComment, editComment, replyTo, resolveThread } from '../../../../services/canvasComments';
+import { mayChange, pinWorld, type CommentRights } from '../../../../lib/canvas/comments';
+import { createThread, deleteComment, editComment, loadComments, replyTo, resolveThread } from '../../../../services/canvasComments';
 import { useCanvasComments } from '../../../../stores/canvasComments';
+import { fmt } from '../../../../lib/format';
 import { myUserId } from '../../../../stores/session';
-import { memberName, useWorkspaces } from '../../../../stores/workspaces';
+import { ContextBar } from '../../../chat/ComposerField';
+import { CommentRow, commentShape, useCommentGroups } from '../../../chat/CommentRow';
+import type { RowMeta } from '../../../chat/grouping';
 import type { CanvasEngine } from '../../engine';
 import { PANEL } from '../chrome';
 import { CommentInput } from './CommentInput';
@@ -31,90 +35,75 @@ interface Ctx {
   engine: CanvasEngine;
 }
 
-function Body({ body, workspaceId }: { body: string; workspaceId: string }): ReactNode {
-  return (
-    <p className="whitespace-pre-wrap break-words text-body text-fg">
-      {bodyParts(body, (id) => memberName(workspaceId, id)).map((p, i) =>
-        p.kind === 'mention' ? (
-          <span key={i} className="font-medium text-accent">
-            @{p.name}
-          </span>
-        ) : (
-          <span key={i}>{p.text}</span>
-        ),
-      )}
-    </p>
-  );
-}
-
-const CommentRow = memo(function CommentRow({ id, ctx }: { id: string; ctx: Ctx }): ReactNode {
+/** One comment of a thread: subscribed to its own id, drawn as a chat row. */
+const Item = memo(function Item({ id, meta, ctx, editing, onEdit, onDelete }: { id: string; meta: RowMeta; ctx: Ctx; editing: boolean; onEdit: (id: string) => void; onDelete: (id: string) => void }): ReactNode {
   const c = useCanvasComments((s) => s.byId[id]);
-  const avatar = useWorkspaces((s) => (c ? s.users[c.authorId]?.avatarFileId : undefined));
-  const [editing, setEditing] = useState(false);
   if (!c) return null;
   const me = myUserId();
-  const name = memberName(ctx.workspaceId, c.authorId);
   const changeable = mayChange(c, ctx.rights, me);
-  const when = c.createdAt ? fmt.relative(timestampDate(c.createdAt)) : '';
   return (
-    <div className="group flex gap-2" data-testid="canvas-comment">
-      <Avatar userId={c.authorId} name={name} fileId={avatar || undefined} size={24} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="truncate text-caption font-semibold text-fg">{name}</span>
-          <span className="shrink-0 text-micro text-muted">
-            {when}
-            {c.editedAt ? ` · ${t('canvasComments.edited')}` : ''}
-          </span>
-          {changeable && !editing ? (
-            <span className="ml-auto flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 mobile:opacity-100">
-              <IconButton size="sm" label={t('canvasComments.edit')} onClick={() => setEditing(true)} data-testid="canvas-comment-edit">
-                <Pencil className="size-3.5" aria-hidden />
-              </IconButton>
-              <IconButton
-                size="sm"
-                label={t('canvasComments.delete')}
-                onClick={() => {
-                  void (async () => {
-                    const thread = !c.parentId;
-                    if (!(await confirmAction(t(thread ? 'canvasComments.deleteThreadTitle' : 'canvasComments.deleteTitle'), t(thread ? 'canvasComments.deleteThreadText' : 'canvasComments.deleteText'), t('canvasComments.delete')))) return;
-                    await deleteComment(c);
-                  })();
-                }}
-                data-testid="canvas-comment-delete"
-              >
-                <Trash2 className="size-3.5" aria-hidden />
-              </IconButton>
-            </span>
-          ) : null}
-        </div>
-        {editing ? (
-          <CommentInput
-            canvasId={ctx.canvasId}
-            workspaceId={ctx.workspaceId}
-            initial={c.body}
-            placeholder={t('canvasComments.editPlaceholder')}
-            submitLabel={t('canvasComments.save')}
-            autoFocus
-            onCancel={() => setEditing(false)}
-            onSubmit={async (wire) => {
-              const ok = await editComment(c.id, wire);
-              if (ok) setEditing(false);
-              return ok;
-            }}
-          />
-        ) : (
-          <Body body={c.body} workspaceId={ctx.workspaceId} />
-        )}
-      </div>
-    </div>
+    <CommentRow
+      id={id}
+      authorId={c.authorId}
+      body={c.body}
+      atMs={c.createdAt ? timestampMs(c.createdAt) : 0}
+      edited={!!c.editedAt}
+      meta={meta}
+      own={!!me && c.authorId === me}
+      workspaceId={ctx.workspaceId}
+      canEdit={changeable}
+      canDelete={changeable}
+      onEdit={onEdit}
+      onDelete={onDelete}
+      editing={editing}
+      testId="canvas-comment"
+    />
   );
 });
 
 const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): ReactNode {
   const resolved = useCanvasComments((s) => !!s.byId[id]?.resolved);
-  const replies = useCanvasComments(useShallow((s) => s.replies[id] ?? EMPTY));
   const active = useCanvasComments((s) => s.active === id);
+  // The grouping's input as one primitive: an edit or a resolve does not re-group the thread.
+  const shape = useCanvasComments((s) =>
+    [id, ...(s.replies[id] ?? EMPTY)]
+      .map((k) => {
+        const c = s.byId[k];
+        return c ? commentShape(k, c.authorId, c.createdAt ? timestampMs(c.createdAt) : 0) : '';
+      })
+      .filter(Boolean)
+      .join('\n'),
+  );
+  // The thread's day is in its header: no date pill over the first row of every card.
+  const { items, metas } = useCommentGroups(shape, false);
+  const startMs = items[0]?.ms ?? 0;
+  const [editId, setEditId] = useState<string | null>(null);
+  const editBody = useCanvasComments((s) => (editId ? s.byId[editId]?.body : undefined));
+  // The edited comment went away (deleted elsewhere): the field goes back to a reply.
+  const editing = editId && editBody !== undefined ? { id: editId, wire: editBody } : null;
+
+  const onEdit = useCallback(
+    (cid: string) => {
+      setEditId(cid);
+      useCanvasComments.getState().setActive(id);
+    },
+    [id],
+  );
+  const onDelete = useCallback(
+    (cid: string) => {
+      void (async () => {
+        const c = useCanvasComments.getState().byId[cid];
+        if (!c) return;
+        const thread = !c.parentId;
+        if (!(await confirmAction(t(thread ? 'canvasComments.deleteThreadTitle' : 'canvasComments.deleteTitle'), t(thread ? 'canvasComments.deleteThreadText' : 'canvasComments.deleteText'), t('canvasComments.delete')))) return;
+        await deleteComment(c);
+      })();
+    },
+    [],
+  );
+  const cancelEdit = useCallback(() => setEditId(null), []);
+  const submit = useCallback((wire: string, eid?: string) => (eid ? editComment(eid, wire) : replyTo(ctx.canvasId, id, wire)), [ctx.canvasId, id]);
+
   const show = (): void => {
     const st = useCanvasComments.getState();
     st.setActive(id);
@@ -122,20 +111,23 @@ const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): Reac
     const p = c ? pinWorld(c, (o) => ctx.engine.scene.get(o)) : null;
     if (p) ctx.engine.centerOn(p);
   };
+  const composer = (active && ctx.rights.write) || !!editing;
   return (
     <li
-      className={cx('rounded-[var(--radius-card)] border p-2', active ? 'border-accent' : 'border-line', resolved && !active && 'opacity-70')}
+      className={cx('overflow-hidden rounded-[var(--radius-card)] border bg-feed', active ? 'border-accent' : 'border-line')}
       data-testid="canvas-comment-thread"
       data-thread-id={id}
       data-resolved={resolved || undefined}
     >
-      <div className="mb-1 flex items-center gap-1">
-        <button type="button" className="min-w-0 flex-1 text-left text-micro text-muted hover:text-fg" onClick={show}
+      <div className="flex h-8 items-center gap-1 border-b border-line bg-main px-1">
+        <Button variant="ghost" size="sm" className="min-w-0 text-muted hover:text-fg" onClick={show} data-testid="canvas-comment-show"
           aria-label={resolved ? `${t('canvasComments.resolved')} · ${t('canvasComments.showPin')}` : undefined}
-          data-testid="canvas-comment-show"
         >
-          {resolved ? t('canvasComments.resolved') : t('canvasComments.showPin')}
-        </button>
+          {resolved ? <Check className="size-3.5 shrink-0 text-success" aria-hidden /> : <MapPin className="size-3.5 shrink-0" aria-hidden />}
+          <span className="truncate">{resolved ? t('canvasComments.resolved') : t('canvasComments.showPin')}</span>
+        </Button>
+        <span className="flex-1" />
+        {startMs ? <span className="shrink-0 px-1 text-caption text-muted">{fmt.dayLabel(new Date(startMs))}</span> : null}
         {ctx.rights.write || ctx.rights.moderate ? (
           <IconButton
             size="sm"
@@ -143,26 +135,25 @@ const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): Reac
             onClick={() => void resolveThread(id, !resolved)}
             data-testid="canvas-comment-resolve"
           >
-            {resolved ? <RotateCcw className="size-3.5" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
+            {resolved ? <RotateCcw className="size-4" aria-hidden /> : <Check className="size-4" aria-hidden />}
           </IconButton>
         ) : null}
       </div>
-      <div className="flex flex-col gap-2" onClick={() => useCanvasComments.getState().setActive(id)} role="presentation">
-        <CommentRow id={id} ctx={ctx} />
-        {replies.map((r) => (
-          <CommentRow key={r} id={r} ctx={ctx} />
+      <div className="pb-2 pt-1" onClick={() => useCanvasComments.getState().setActive(id)} role="presentation">
+        {items.map((it, i) => (
+          <Item key={it.key} id={it.key} meta={metas[i] as RowMeta} ctx={ctx} editing={editing?.id === it.key} onEdit={onEdit} onDelete={onDelete} />
         ))}
       </div>
-      {active && ctx.rights.write ? (
-        <div className="mt-2">
-          <CommentInput
-            canvasId={ctx.canvasId}
-            workspaceId={ctx.workspaceId}
-            placeholder={t('canvasComments.replyPlaceholder')}
-            submitLabel={t('canvasComments.reply')}
-            onSubmit={(wire) => replyTo(ctx.canvasId, id, wire)}
-          />
-        </div>
+      {composer ? (
+        <CommentInput
+          canvasId={ctx.canvasId}
+          workspaceId={ctx.workspaceId}
+          placeholder={t('canvasComments.replyPlaceholder')}
+          editing={editing}
+          onCancelEdit={cancelEdit}
+          onSubmit={submit}
+          className="border-t border-line bg-main px-2 pb-2 pt-2"
+        />
       ) : null}
     </li>
   );
@@ -173,15 +164,16 @@ function Draft({ ctx }: { ctx: Ctx }): ReactNode {
   if (!draft) return null;
   const cancel = (): void => useCanvasComments.getState().setDraft(null);
   return (
-    <div className="border-b border-line p-2" data-testid="canvas-comment-draft">
+    <div className="border-t border-line" data-testid="canvas-comment-draft">
       <CommentInput
         key={`${draft.objectId}:${draft.x}:${draft.y}`}
         canvasId={ctx.canvasId}
         workspaceId={ctx.workspaceId}
         placeholder={t('canvasComments.newPlaceholder')}
-        submitLabel={t('canvasComments.send')}
         autoFocus
-        onCancel={cancel}
+        onEscape={cancel}
+        bar={<ContextBar icon={<MessageCirclePlus className="size-4" aria-hidden />} title={t('canvasComments.newThread')} onClose={cancel} />}
+        className="px-2 pb-2 pt-2"
         onSubmit={async (wire) => {
           const c = await createThread(ctx.canvasId, wire, draft);
           if (!c) return false;
@@ -233,17 +225,16 @@ export const CommentsPanel = memo(function CommentsPanel({
         if (e.key === 'Escape') close();
       }}
     >
-      <header className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <h2 className="flex-1 text-body font-semibold text-fg">{t('canvasComments.title')}</h2>
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line pl-3 pr-1.5">
+        <h2 className="flex-1 truncate text-body font-semibold text-fg">{t('canvasComments.title')}</h2>
         <label className="flex items-center gap-2">
-          <Toggle checked={filterOpen} onChange={(v) => useCanvasComments.getState().setFilterOpen(v)} label={t('canvasComments.onlyOpen')} />
           <span className="text-caption text-muted">{t('canvasComments.onlyOpen')}</span>
+          <Toggle checked={filterOpen} onChange={(v) => useCanvasComments.getState().setFilterOpen(v)} label={t('canvasComments.onlyOpen')} />
         </label>
         <IconButton size="sm" label={t('common.close')} onClick={close} data-testid="canvas-comments-close">
           <X className="size-4" aria-hidden />
         </IconButton>
       </header>
-      {rights.write ? <Draft ctx={ctx} /> : null}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {ids.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">
@@ -262,6 +253,7 @@ export const CommentsPanel = memo(function CommentsPanel({
           </ul>
         )}
       </div>
+      {rights.write ? <Draft ctx={ctx} /> : null}
     </aside>
   );
 });

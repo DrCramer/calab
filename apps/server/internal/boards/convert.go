@@ -296,11 +296,14 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 
 // ---- tasks ----
 
-// taskCols are the columns of taskRow, over tasks t JOIN boards b.
+// taskCols are the columns of taskRow, over tasks t JOIN boards b. The bot owner is a scalar
+// subquery on bots' primary key: no extra round trip and no join that FOR NO KEY UPDATE OF t
+// would have to name; only a bot of the board's workspace (its home, where the owner manages it)
+// counts (ADR-0151).
 const taskCols = `t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by,
 	t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at,
 	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id, t.approval_required,
-	t.task_milestone_id`
+	t.task_milestone_id, (SELECT bo.owner_user_id FROM bots bo WHERE bo.user_id = t.created_by AND bo.workspace_id = b.workspace_id)`
 
 // taskRow is a task with its board's key and workspace.
 type taskRow struct {
@@ -331,7 +334,13 @@ type taskRow struct {
 	ApprovalRequired int16
 	// TaskMilestoneID: a subtask's milestone, one of its parent's (ADR-0063).
 	TaskMilestoneID *uuid.UUID
+	// BotOwner: when a bot created the task, the bot's current owner (ADR-0151; nil otherwise or
+	// for a deleted bot). Loaded rows only: a row built in memory for a new task leaves it nil.
+	BotOwner *uuid.UUID
 }
+
+// authoredBy reports whether u counts as the task's author (perm.TaskAuthor, ADR-0151).
+func (t taskRow) authoredBy(u uuid.UUID) bool { return perm.TaskAuthor(t.CreatedBy, t.BotOwner, u) }
 
 func scanTasks(rows interface {
 	Next() bool
@@ -346,7 +355,7 @@ func scanTasks(rows interface {
 		if err := rows.Scan(&t.ID, &t.BoardID, &t.Number, &t.Title, &t.Description, &t.StatusID, &t.Priority, &t.CreatedBy,
 			&t.Estimate, &t.StartOn, &t.DueOn, &t.ParentID, &t.MilestoneID, &t.Position, &t.RoomID, &t.CreatedAt,
 			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID, &t.ApprovalRequired,
-			&t.TaskMilestoneID); err != nil {
+			&t.TaskMilestoneID, &t.BotOwner); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -462,6 +471,16 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 	}
 	if err := taskMilestones(ctx, q, ids, out, idx); err != nil {
 		return nil, err
+	}
+	// Releases (board task #101): one per environment, newest first.
+	rels, err := q.ListTaskReleases(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, x := range rels {
+		t := out[idx[x.TaskID]]
+		t.Releases = append(t.Releases, &v1.TaskRelease{ReleaseId: x.ReleaseID.String(), Name: x.Name, Environment: x.Environment,
+			Url: x.Url, CreatedAt: timestamppb.New(x.CreatedAt)})
 	}
 	// Watchers (ADR-0076): every task form carries them — the gateway routes by them.
 	ws, err := q.ListTaskWatchers(ctx, ids)

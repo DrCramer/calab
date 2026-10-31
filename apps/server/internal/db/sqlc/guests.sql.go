@@ -69,7 +69,7 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 const createGuestUser = `-- name: CreateGuestUser :one
 INSERT INTO users (email, password_hash, display_name, settings, is_guest, guest_expires_at)
 VALUES (NULL, NULL, $1, $2, true, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones
 `
 
 type CreateGuestUserParams struct {
@@ -117,6 +117,7 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 		&i.Phone,
 		&i.TaskNotifyOff,
 		&i.TaskNotifyBots,
+		&i.CalendarZones,
 	)
 	return i, err
 }
@@ -183,7 +184,7 @@ func (q *Queries) DeleteUserRoomOverrides(ctx context.Context, userID string) er
 }
 
 const getRoomInviteByCode = `-- name: GetRoomInviteByCode :one
-SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, i.require_approval, i.members_only, i.archive_revoked, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by, r.icon_file_id, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private, w.canvas_trash_days
+SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, i.require_approval, i.members_only, i.archive_revoked, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by, r.icon_file_id, r.join_leave_sound_max, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format, w.sip_enabled, w.disk_trash_days, w.wiki_trash_days, w.temp_archive_days, w.owner_sees_private, w.canvas_trash_days, w.default_join_leave_sound_max
 FROM room_invites i
 JOIN rooms r ON r.id = i.room_id AND r.archived_at IS NULL
 JOIN workspaces w ON w.id = r.workspace_id
@@ -242,6 +243,7 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.Room.ExpiresAt,
 		&i.Room.CreatedBy,
 		&i.Room.IconFileID,
+		&i.Room.JoinLeaveSoundMax,
 		&i.Workspace.ID,
 		&i.Workspace.Slug,
 		&i.Workspace.Name,
@@ -266,6 +268,7 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.Workspace.TempArchiveDays,
 		&i.Workspace.OwnerSeesPrivate,
 		&i.Workspace.CanvasTrashDays,
+		&i.Workspace.DefaultJoinLeaveSoundMax,
 	)
 	return i, err
 }
@@ -435,7 +438,7 @@ func (q *Queries) LockExpiredGuest(ctx context.Context, id uuid.UUID) (uuid.UUID
 const promoteGuest = `-- name: PromoteGuest :one
 UPDATE workspace_members SET role = 'member'
 WHERE workspace_id = $1 AND user_id = $2 AND role = 'guest'
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension, sip_seen_at
 `
 
 type PromoteGuestParams struct {
@@ -456,6 +459,7 @@ func (q *Queries) PromoteGuest(ctx context.Context, arg PromoteGuestParams) (Wor
 		&i.AchievementCount,
 		&i.LastActiveAt,
 		&i.SipExtension,
+		&i.SipSeenAt,
 	)
 	return i, err
 }

@@ -53,3 +53,10 @@ describe('call action (ADR-0034)', () => {
     expect(keyAction({ kind: 'member', canDm: true, canCall: true }, { ...none, shiftKey: true })).toBe('write');
   });
 });
+
+describe('a section row («Телефония», ADR-0137 §5)', () => {
+  it('opens the section on Enter', () => {
+    expect(rowActions({ kind: 'section' })).toEqual(['open']);
+    expect(keyAction({ kind: 'section' }, none)).toBe('open');
+  });
+});

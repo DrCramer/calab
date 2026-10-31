@@ -3,13 +3,16 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { Locale } from '@/i18n';
 import { fitCardShift } from '@/lib/card-viewport';
 import { CardStickers } from './card-stickers';
+import { accented } from './ui';
 
-const scenarios = ['meetings', 'learning', 'design', 'support', 'planning', 'onboarding', 'remote', 'pairing'];
+// Six scenarios (§4.8): «remote» and «pair work» repeated the others and were dropped.
+const scenarios = ['meetings', 'learning', 'design', 'support', 'planning', 'onboarding'];
+const COUNT = scenarios.length;
 const copy = {
-  ru: { title: 'Одна команда. Разные задачи.', note: 'Calab — для каждого рабочего сценария.', places: ['Совещания', 'Обучение', 'Дизайн-ревью', 'Поддержка', 'Планирование', 'Онбординг', 'Удалёнка', 'Парная работа'], details: ['Обсудить планы и решения', 'Показать, объяснить, научить', 'Разобрать макет вместе', 'Помочь голосом и экраном', 'От идей к задачам', 'Ввести новичка в курс дела', 'Быть рядом из любой точки', 'Решить сложное вдвоём'] },
-  en: { title: 'One team. Many ways to work.', note: 'Calab fits the way you work together.', places: ['Meetings', 'Learning', 'Design reviews', 'Support', 'Planning', 'Onboarding', 'Remote work', 'Pair work'], details: ['Discuss plans and decisions', 'Show, explain and teach', 'Review a design together', 'Help with voice and screen sharing', 'From ideas to tasks', 'Get new teammates up to speed', 'Connect from anywhere', 'Solve the hard parts together'] },
-  es: { title: 'Un equipo. Muchas formas de trabajar.', note: 'Calab se adapta a tu trabajo en equipo.', places: ['Reuniones', 'Formación', 'Revisar diseños', 'Soporte', 'Planificación', 'Incorporación', 'Trabajo remoto', 'En pareja'], details: ['Compartir planes y decisiones', 'Mostrar, explicar y enseñar', 'Revisar un diseño juntos', 'Ayudar con voz y pantalla', 'De las ideas a las tareas', 'Dar la bienvenida al equipo', 'Conectar desde cualquier lugar', 'Resolver lo difícil juntos'] },
-  zh: { title: '一个团队，多种协作方式。', note: 'Calab，适合每一种工作场景。', places: ['团队会议', '学习培训', '设计评审', '客户支持', '项目规划', '新人入职', '远程办公', '结对协作'], details: ['讨论计划与决策', '演示、讲解与学习', '一起审阅设计', '通过语音和共享屏幕提供帮助', '从想法到任务', '帮助新同事融入团队', '随时随地保持联系', '一起解决难题'] },
+  ru: { title: 'Одна команда. Разные задачи.', accent: 'Разные задачи.', note: 'Calab — для каждого рабочего сценария.', places: ['Совещания', 'Обучение', 'Дизайн-ревью', 'Поддержка', 'Планирование', 'Онбординг', 'Удалёнка', 'Парная работа'], details: ['Обсудить планы и решения', 'Показать, объяснить, научить', 'Разобрать макет вместе', 'Помочь голосом и экраном', 'От идей к задачам', 'Ввести новичка в курс дела', 'Быть рядом из любой точки', 'Решить сложное вдвоём'] },
+  en: { title: 'One team. Many ways to work.', accent: 'Many ways to work.', note: 'Calab fits the way you work together.', places: ['Meetings', 'Learning', 'Design reviews', 'Support', 'Planning', 'Onboarding', 'Remote work', 'Pair work'], details: ['Discuss plans and decisions', 'Show, explain and teach', 'Review a design together', 'Help with voice and screen sharing', 'From ideas to tasks', 'Get new teammates up to speed', 'Connect from anywhere', 'Solve the hard parts together'] },
+  es: { title: 'Un equipo. Muchas formas de trabajar.', accent: 'Muchas formas de trabajar.', note: 'Calab se adapta a tu trabajo en equipo.', places: ['Reuniones', 'Formación', 'Revisar diseños', 'Soporte', 'Planificación', 'Incorporación', 'Trabajo remoto', 'En pareja'], details: ['Compartir planes y decisiones', 'Mostrar, explicar y enseñar', 'Revisar un diseño juntos', 'Ayudar con voz y pantalla', 'De las ideas a las tareas', 'Dar la bienvenida al equipo', 'Conectar desde cualquier lugar', 'Resolver lo difícil juntos'] },
+  zh: { title: '一个团队，多种协作方式。', accent: '多种协作方式。', note: 'Calab，适合每一种工作场景。', places: ['团队会议', '学习培训', '设计评审', '客户支持', '项目规划', '新人入职', '远程办公', '结对协作'], details: ['讨论计划与决策', '演示、讲解与学习', '一起审阅设计', '通过语音和共享屏幕提供帮助', '从想法到任务', '帮助新同事融入团队', '随时随地保持联系', '一起解决难题'] },
 };
 
 export function ConferenceStrip({ locale }: { locale: Locale }) {
@@ -50,8 +53,8 @@ export function ConferenceStrip({ locale }: { locale: Locale }) {
     window.addEventListener('resize', resize);
     return () => { window.removeEventListener('resize', resize); };
   }, []);
-  return <section className="conference-section" aria-labelledby="conference-title">
-    <div className="conference-heading" data-reveal><h2 id="conference-title">{t.title}</h2><p>{t.note}</p></div>
+  return <section className="conference-section section-quiet" aria-labelledby="conference-title">
+    <div className="conference-heading" data-reveal><h2 id="conference-title" className="h2">{accented(t.title, t.accent)}</h2><p className="lead">{t.note}</p></div>
     <div ref={viewport} className="conference-scroll" role="region" aria-label={t.title}
       onPointerLeave={() => { if (!viewport.current?.contains(document.activeElement)) reset(); }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) reset(); }}
@@ -75,7 +78,7 @@ export function ConferenceStrip({ locale }: { locale: Locale }) {
         }
       }}>
       <div ref={track} className="conference-row" style={{ '--track-shift': `${view.shift}px` } as CSSProperties}>
-        {t.places.map((place, index) => <button type="button" data-card-index={index} key={place} className="conference-person" aria-label={`${place}: ${t.details[index]}`} aria-pressed={view.active === index}
+        {t.places.slice(0, COUNT).map((place, index) => <button type="button" data-card-index={index} key={place} className="conference-person" aria-pressed={view.active === index}
           onFocus={() => { activate(index); }} onClick={() => { activate(index); }}
           style={{ '--spread': view.active === null ? '0px' : index < view.active ? '-38px' : index > view.active ? '38px' : '0px', '--card-scale': view.active === index ? view.scale : 1, '--card-lift': view.active === index ? '-18px' : '0px', '--card-angle': view.active === index ? '0deg' : `${[-4, 2, 5][index % 3]}deg`, zIndex: view.active === index ? 9 : 1 } as CSSProperties}>
           <span className="conference-card">

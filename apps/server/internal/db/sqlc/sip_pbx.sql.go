@@ -447,7 +447,8 @@ func (q *Queries) InsertSipIvrMenu(ctx context.Context, arg InsertSipIvrMenuPara
 }
 
 const isSipPromptFile = `-- name: IsSipPromptFile :one
-SELECT EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1 OR notice_file_id = $1)::boolean
+SELECT (EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1 OR notice_file_id = $1)
+        OR EXISTS (SELECT 1 FROM sip_accounts WHERE off_hours_notice_file_id = $1))::boolean
 `
 
 // The file is the prompt or the recording notice of a voice menu (files.CanRead:
@@ -754,7 +755,7 @@ func (q *Queries) LockSipPBX(ctx context.Context, workspaceID uuid.UUID) error {
 const setMemberSipExtension = `-- name: SetMemberSipExtension :one
 UPDATE workspace_members SET sip_extension = $3
 WHERE workspace_id = $1 AND user_id = $2
-RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension
+RETURNING workspace_id, user_id, role, nickname, joined_at, badge_id, achievement_count, last_active_at, sip_extension, sip_seen_at
 `
 
 type SetMemberSipExtensionParams struct {
@@ -777,6 +778,7 @@ func (q *Queries) SetMemberSipExtension(ctx context.Context, arg SetMemberSipExt
 		&i.AchievementCount,
 		&i.LastActiveAt,
 		&i.SipExtension,
+		&i.SipSeenAt,
 	)
 	return i, err
 }

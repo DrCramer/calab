@@ -328,7 +328,8 @@ export class ResizeGesture implements Gesture {
     const rot = single?.rot ?? 0;
     let p = w;
     let guides: OverlayState['guides'] = [];
-    const keepAspect = m.shift && !isText;
+    // A picture never stretches: its aspect ratio is kept without Shift (and so is the whole selection's around it).
+    const keepAspect = (m.shift && !isText) || [...this.items.values()].some((o) => o.kind === 'image');
     // Snapping works on the world axes: a rotated box is free of it.
     if (!m.mod && !keepAspect && rot === 0) {
       const sn = snapResizePoint(p, handle, neighbours(this.core, this.group, new Set(this.items.keys())), snapOpts(this.core));

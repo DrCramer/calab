@@ -150,6 +150,8 @@ export const esVideo: DictShape<typeof enVideo> = {
   'perm.VIDEO': 'Usar cámara',
   'media.cameraLimit': 'Cámaras a la vez',
   'media.cameraLimitHint': '0 — las cámaras están desactivadas en la sala',
+  'media.joinLeaveSoundMax': 'Sonido de entrada y salida',
+  'media.joinLeaveSoundMaxHint': 'Mientras en la sala haya como máximo esta cantidad de personas; 0 — sin sonido',
 
   // errors (lib/media/errors.ts)
   'mediaErr.camera.permission': 'Cámara no disponible — comprueba el permiso',

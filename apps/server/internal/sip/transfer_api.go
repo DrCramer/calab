@@ -252,7 +252,7 @@ func (s *Service) finishHandover(ctx context.Context, r *inRec) {
 // handBack: the target answered a transfer but did not connect within handoverGrace — the call
 // is again the member's who handed it over, when they are still in the room (false: they are
 // not, the caller has nobody).
-func (s *Service) handBack(ctx context.Context, r *inRec, fx *Effects) bool {
+func (s *Service) handBack(ctx context.Context, r *inRec, e Env, fx *Effects) bool {
 	if r.Handover == nil || r.Answered == nil {
 		return false
 	}
@@ -263,6 +263,7 @@ func (s *Service) handBack(ctx context.Context, r *inRec, fx *Effects) bool {
 	ctx = context.WithoutCancel(ctx)
 	r.Handover, r.Answered, r.AnswerLeft, r.Deadline = nil, &from, 0, 0
 	r.step("transfer:not_connected")
+	r.log(e, Event{Kind: EvTransferEnd, Reason: "not_connected"}, fx)
 	_ = unlockScript.Exec(ctx, s.redis, []string{inUserKey(target)}, []string{r.ID.String()}).Error()
 	s.onCall(ctx, target, r.ID, false)
 	row, err := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.SipCall, error) {

@@ -5,6 +5,7 @@ import { useBoardsUi } from './boardsUi';
 import { useDiskUi } from './diskUi';
 import { useCanvasUi } from './canvasUi';
 import { useWikiUi } from './wikiUi';
+import { useTelephonyUi } from './telephonyUi';
 import { HOME } from './dms';
 import { useUi } from './ui';
 import { useWorkspaces } from './workspaces';
@@ -28,7 +29,7 @@ function record(): void {
   const ui = useUi.getState();
   const ws = ui.activeWorkspaceId;
   if (!ws || ws === HOME) return;
-  const section = currentSection({ home: false, boards: useBoardsUi.getState().active, calendar: ui.calDay !== null, disk: useDiskUi.getState().active, wiki: useWikiUi.getState().active, canvas: useCanvasUi.getState().active });
+  const section = currentSection({ home: false, boards: useBoardsUi.getState().active, calendar: ui.calDay !== null, disk: useDiskUi.getState().active, wiki: useWikiUi.getState().active, canvas: useCanvasUi.getState().active, telephony: useTelephonyUi.getState().active });
   if (section === null || section === 'dms' || section === 'mail') return;
   const s = useSections.getState();
   const of = rememberSection(s.of, ws, section);
@@ -60,6 +61,9 @@ useWikiUi.subscribe((s, prev) => {
   if (s.active !== prev.active) schedule();
 });
 useCanvasUi.subscribe((s, prev) => {
+  if (s.active !== prev.active) schedule();
+});
+useTelephonyUi.subscribe((s, prev) => {
   if (s.active !== prev.active) schedule();
 });
 

@@ -63,6 +63,7 @@ import {
   type RoomPermissionOverride,
   type RoomRecording,
   type SipCall,
+  type SipContact,
   type SipSettings,
   type Badge,
   type WorkspaceBackground,
@@ -76,6 +77,7 @@ import {
 import { buildMarketingState } from './fixtures-marketing';
 import type { AdmissionRec } from './mock-admissions';
 import type { MockPbx } from './mock-pbx';
+import type { JournalRow } from './mock-journal';
 import { avatarPicture, cardPicture, encodePng } from './png';
 
 /**
@@ -175,6 +177,16 @@ export const IDS = {
     stickerOrbit: mockId('file', 11),
     stickerSun2: mockId('file', 12),
     stickerGem2: mockId('file', 13),
+    /**
+     * Owner 28.10: a PNG stored as application/octet-stream without a thumbnail or a size (an
+     * upload whose server thumbnail failed): GET …/thumbnail is 404, the original is a PNG. Not in
+     * any message, injectMessage posts it.
+     */
+    untypedPng: mockId('file', 14),
+    /** Office files (ADR-0143), in no message: injectMessage / a task's attachments use them. */
+    sheet: mockId('file', 40),
+    slides: mockId('file', 41),
+    legacyDoc: mockId('file', 42),
   },
   /**
    * Sticker packs of «Команда Calab» (ADR-0030): «Calab» (☀️ 💎 🌀, installed by Анна) and
@@ -463,6 +475,12 @@ export interface MockState {
   sipCalls: Map<string, SipCall>;
   /** The telephony exchange per workspace (ADR-0117, mock-pbx.ts); absent = empty. */
   sipPbx: Map<string, MockPbx>;
+  /** The call journal (ADR-0137 §1, mock-journal.ts) by call id; empty until seedSipJournal. */
+  sipJournal: Map<string, JournalRow>;
+  /** `${workspace}|${user}` → when they last looked at «Недавние» (ms; absent = never: every missed call counts). */
+  sipSeen: Map<string, number>;
+  /** The phone book (ADR-0137 §2, mock-contacts.ts) by contact id; empty until seedSipContacts. */
+  sipContacts: Map<string, SipContact>;
   /** Sticker packs by id (ADR-0030), live stickers inside in order; deleted stickers stay in `deletedStickers`. */
   stickerPacks: Map<string, StickerPack>;
   /** Stickers removed from a pack that messages still show, by id. */
@@ -495,6 +513,7 @@ export const DEFAULT_MEDIA: RoomMediaSettings = create(RoomMediaSettingsSchema, 
   maxStreamPreset: ScreenSharePreset.H1080,
   maxStreams: 3,
   cameraLimit: 6,
+  joinLeaveSoundMax: 10,
 });
 
 /** Plan limits of the mock (ADR-0024, docs/04 «Тарифы»): the server's built-in defaults. */
@@ -510,6 +529,7 @@ export const FREE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   members: 50,
   bots: 1,
   boards: 3,
+  canvases: 3,
   stickerPacks: 1,
   stickers: 200,
   audioTierMaxKbps: 16,
@@ -526,6 +546,7 @@ export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   members: 100,
   bots: 5,
   boards: 30,
+  canvases: 30,
   streamsPerRoom: 2,
   camerasPerRoom: 10,
   storageMb: 300n * 1024n,
@@ -538,6 +559,7 @@ export const ENTERPRISE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   members: 500,
   bots: 20,
   boards: 50,
+  canvases: 100,
   streamsPerRoom: 5,
   camerasPerRoom: 25,
   storageMb: 1024n * 1024n,
@@ -552,6 +574,7 @@ export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride |
     maxStreamPreset: o?.maxStreamPreset ?? d.maxStreamPreset,
     maxStreams: o?.maxStreams ?? d.maxStreams,
     cameraLimit: o?.cameraLimit ?? d.cameraLimit,
+    joinLeaveSoundMax: o?.joinLeaveSoundMax ?? d.joinLeaveSoundMax ?? 10,
   });
 }
 
@@ -841,6 +864,9 @@ export function buildState(scenario: Scenario): MockState {
     sipPasswords: new Map(),
     sipCalls: new Map(),
     sipPbx: new Map(),
+    sipJournal: new Map(),
+    sipSeen: new Map(),
+    sipContacts: new Map(),
     stickerPacks: new Map(),
     deletedStickers: new Map(),
     userStickerPacks: new Map(),
@@ -952,12 +978,24 @@ export function buildState(scenario: Scenario): MockState {
     bytes: portrait,
     thumbnail: { bytes: portraitThumb, mime: 'image/png' },
   });
+  const untyped = encodePng(960, 540, cardPicture([214, 120, 60], [255, 255, 255], [250, 226, 208], 960 / 540));
+  const untypedMeta = fileMeta(IDS.files.untypedPng, IDS.workspaces.main, U.vera, 'image.png', 'application/octet-stream', untyped, ts('2026-01-15T11:34:00Z'));
+  untypedMeta.thumbnailUrl = '';
+  s.files.set(IDS.files.untypedPng, { meta: untypedMeta, bytes: untyped });
   // Kept by the server after GPTunneL's done (docs/09 #47): the card's audio, posted by Борис.
   const meeting = media('meeting-recording.m4a');
   s.files.set(IDS.files.meeting, {
     meta: fileMeta(IDS.files.meeting, IDS.workspaces.main, U.boris, 'Переговорка 2026-01-15 12-00.m4a', 'audio/mp4', meeting, ts('2026-01-15T12:43:00Z')),
     bytes: meeting,
   });
+  // Office files (ADR-0143): the bytes are never opened (the stub editor draws a fake document).
+  const officeFile = (id: string, name: string, mime: string): void => {
+    const bytes = Buffer.from('PK mock office file');
+    s.files.set(id, { meta: fileMeta(id, IDS.workspaces.main, U.vera, name, mime, bytes, ts('2026-01-15T11:40:00Z')), bytes });
+  };
+  officeFile(IDS.files.sheet, 'График отпусков 2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  officeFile(IDS.files.slides, 'Питч для инвесторов.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+  officeFile(IDS.files.legacyDoc, 'Договор (старый).doc', 'application/msword');
   // ---- sticker packs (ADR-0030)
   const stickerFile = (id: string, name: string, bytes: Buffer): void => {
     s.files.set(id, { meta: fileMeta(id, IDS.workspaces.main, U.anna, name, 'image/webp', bytes, ts('2026-01-12T10:00:00Z'), { width: 160, height: 160 }), bytes });

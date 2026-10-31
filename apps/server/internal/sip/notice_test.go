@@ -64,7 +64,7 @@ func TestInboundNoticeBeforeRing(t *testing.T) {
 	h.Enter(envAt(f, a, 0), Target{Kind: RouteMenu, ID: ptr(f.menu)}, &Effects{})
 	h.Digit(envAt(f, a, time.Second), '1', &Effects{})
 	fx = Effects{}
-	h.Hangup(reasonRemote, &fx)
+	h.Hangup(envAt(f, a, 2*time.Second), reasonRemote, &fx)
 	if h.Phase != PhaseEnded || fx.Hangup != reasonRemote {
 		t.Fatalf("hang-up during the notice: %+v", h)
 	}

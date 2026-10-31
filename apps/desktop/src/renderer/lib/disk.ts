@@ -1,6 +1,7 @@
 import type { JsonObject } from '@bufbuild/protobuf';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, DiskActivityKind, DiskItemKind, type DiskActivity, type DiskItem, type DiskUsage, type FileMeta } from '@calaba/protocol';
+import { isImageAttachment } from './imageAttachment';
 
 /**
  * Disk (ADR-0094) — pure helpers of the desktop screen: listing keys, sorting and the search
@@ -160,7 +161,7 @@ export function fileKind(f: Pick<FileMeta, 'mime' | 'name'> | undefined): FileKi
 
 /** Can the item be previewed in the app (Lightbox / the video player); the rest is downloaded. */
 export const previewable = (f: FileMeta | undefined): 'image' | 'video' | null =>
-  !f ? null : f.mime.startsWith('image/') && !!f.thumbnailUrl ? 'image' : f.mime.startsWith('video/') ? 'video' : null;
+  !f ? null : isImageAttachment(f) ? 'image' : f.mime.startsWith('video/') ? 'video' : null;
 
 // ---------------------------------------------------------------- rights (UI only; the server decides)
 

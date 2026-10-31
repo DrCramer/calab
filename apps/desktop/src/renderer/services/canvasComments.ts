@@ -15,6 +15,7 @@ import { t } from '../i18n';
 import { body, call, callEmpty, qs } from '../lib/api/client';
 import { fromWire } from '../lib/mentions';
 import { holdNotification } from '../lib/notifyHold';
+import { toSource } from '../lib/notifyClick';
 import { platform } from '../platform';
 import { itemOf, useCanvasUi } from '../stores/canvasUi';
 import { useCanvasComments } from '../stores/canvasComments';
@@ -236,10 +237,7 @@ export function onCanvasCommentMention(e: CanvasCommentMention): void {
   try {
     const title = t('canvasComments.notice.title', { name: e.canvasName || t('canvas.untitled') });
     const note = holdNotification(new Notification(title, { body: noticeBody(e), silent: true, tag: `canvas-comment:${e.commentId}` }));
-    note.onclick = () => {
-      window.focus();
-      void openCanvasComment(e.workspaceId, e.canvasId, e.threadId);
-    };
+    note.onclick = toSource(() => void openCanvasComment(e.workspaceId, e.canvasId, e.threadId));
   } catch {
     // notifications unavailable
   }

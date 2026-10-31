@@ -338,4 +338,38 @@ describe('boards 2.0 mock (ADR-0058)', () => {
     expect(hook.status).toBe(409);
     expect((await json<{ webhook?: unknown }>(api(token, `/api/boards/${cal}/webhook`))).webhook).toBeUndefined();
   });
+
+  it('task search (ADR-0139): words, a board filter, the archive, key_task, saved searches', async () => {
+    const token = await login();
+    const ws = IDS.workspaces.main;
+    const boards = (await json<{ boards: BoardJ[] }>(api(token, `/api/workspaces/${ws}/boards`))).boards;
+    const cal = boards.find((b) => b.key === 'CAL')?.id ?? '';
+    const find = (qs: string): Promise<{ tasks?: TaskJ[]; keyTask?: TaskJ; nextCursor?: string }> => json(api(token, `/api/workspaces/${ws}/tasks/search?${qs}`));
+    const all = await find('q=' + encodeURIComponent('доск') + '&state=all&archived=1');
+    const keys = all.tasks?.map((t) => t.key) ?? [];
+    expect(keys).toEqual(expect.arrayContaining(['CAL-1', 'MKT-1']));
+    const filter = encodeURIComponent(JSON.stringify({ conditions: [{ field: 'TASK_FIELD_BOARD', op: 'TASK_OP_IS', values: [cal] }] }));
+    expect((await find('q=' + encodeURIComponent('доск') + '&archived=1&filter=' + filter)).tasks).toHaveLength(keys.filter((k) => k.startsWith('CAL-')).length);
+    const keyed = await find('q=CAL-3&state=all&archived=1&filter=' + filter);
+    expect(keyed.keyTask?.key).toBe('CAL-3');
+    const key = await find('q=cal-3&archived=only');
+    expect(key.keyTask?.key).toBe('CAL-3');
+    expect(key.tasks ?? []).toHaveLength(0);
+    const saved = await json<{ search: { id: string; name: string } }>(api(token, `/api/workspaces/${ws}/task-searches`, { method: 'POST', body: { name: 'Мои', query: { q: 'доск' } } }));
+    expect(saved.search.name).toBe('Мои');
+    expect((await json<{ searches: unknown[] }>(api(token, `/api/workspaces/${ws}/task-searches`))).searches).toHaveLength(1);
+    expect((await api(token, `/api/workspaces/${ws}/task-searches/${saved.search.id}`, { method: 'DELETE' })).status).toBe(204);
+  });
+});
+
+describe('task notice history (ADR-0141)', () => {
+  it('a comment mention lands in the mentioned user’s GET /api/me/task-notices', async () => {
+    const token = await login();
+    const t = server.boards.taskByKey('CAL-3');
+    if (!t) throw new Error('CAL-3 is not seeded');
+    server.injectMessage({ roomId: t.task.roomId, authorId: IDS.users.vera, content: `@${IDS.users.anna} проверишь?` });
+    const r = await json<{ entries: Array<{ taskKey: string; notice: { actorId: string } }> }>(api(token, '/api/me/task-notices'));
+    expect(r.entries[0]?.taskKey).toBe('CAL-3');
+    expect(r.entries[0]?.notice.actorId).toBe(IDS.users.vera);
+  });
 });

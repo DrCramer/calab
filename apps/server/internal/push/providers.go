@@ -20,6 +20,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// callCancelKind is the FCM-only data message that stops an Android ring ended early.
+const callCancelKind = "call-cancel"
+
 const oauthEndpoint = "https://oauth2.googleapis.com/token"
 const messagingScope = "https://www.googleapis.com/auth/firebase.messaging"
 
@@ -40,7 +43,7 @@ func routingValid(p Payload) bool {
 		return false
 	}
 	switch p.Kind {
-	case "message", "call", "task", "calendar":
+	case "message", "call", "task", "calendar", callCancelKind:
 	default:
 		return false
 	}
@@ -98,7 +101,8 @@ func (s *apnsSender) credential() (string, error) {
 }
 func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	voip := e.Provider == v1.PushProvider_PUSH_PROVIDER_VOIP
-	if !routingValid(p) || e.AppID != s.app || e.Environment != s.environment || voip != (p.Kind == "call") || (!voip && e.Provider != v1.PushProvider_PUSH_PROVIDER_APNS) {
+	// call-cancel is FCM-only: on APNs it would surface as a generic alert.
+	if !routingValid(p) || p.Kind == callCancelKind || e.AppID != s.app || e.Environment != s.environment || voip != (p.Kind == "call") || (!voip && e.Provider != v1.PushProvider_PUSH_PROVIDER_APNS) {
 		return Result{}
 	}
 	credential, err := s.credential()
@@ -112,8 +116,8 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		pushType = "voip"
 	} else {
 		aps["alert"] = map[string]string{"title-loc-key": "CALAB_APP_NAME", "loc-key": "CALAB_NEW_NOTIFICATION"}
-		if p.Kind == "message" && p.Title != "" && p.Body != "" {
-			aps["alert"] = map[string]string{"title": previewLine(p.Title, 80), "body": previewLine(p.Body, 240), "subtitle": previewLine(p.Subtitle, 80)}
+		if alert, ok := alertText(p); ok {
+			aps["alert"] = alert
 		}
 		aps["category"] = "CALAB_OPEN"
 		if p.Kind == "message" && p.PersonID != "" && p.ConversationID != "" {
@@ -274,27 +278,15 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	if !routingValid(p) {
 		return Result{}
 	}
-	payload, err := json.Marshal(p)
+	data, err := fcmData(p)
 	if err != nil {
 		return Result{}
-	}
-	var raw map[string]json.RawMessage
-	if err = json.Unmarshal(payload, &raw); err != nil {
-		return Result{}
-	}
-	data := make(map[string]string, len(raw))
-	for key, value := range raw {
-		var text string
-		if err = json.Unmarshal(value, &text); err != nil {
-			text = string(value)
-		}
-		data[key] = text
 	}
 	remaining := min(max(time.Until(time.UnixMilli(deliveryExpiry(p))), 0), 10*time.Minute)
 	if remaining <= 0 {
 		return Result{}
 	}
-	body, err := json.Marshal(map[string]any{"message": map[string]any{"token": e.Token, "data": data, "android": map[string]any{"priority": "HIGH", "ttl": strconv.FormatInt(int64(remaining/time.Second), 10) + "s", "restricted_package_name": s.app}}})
+	body, err := json.Marshal(map[string]any{"message": map[string]any{"token": e.Token, "data": json.RawMessage(data), "android": map[string]any{"priority": "HIGH", "ttl": strconv.FormatInt(int64(remaining/time.Second), 10) + "s", "restricted_package_name": s.app}}})
 	if err != nil {
 		return Result{}
 	}
@@ -348,21 +340,74 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	return Result{}
 }
 
+// alertText is the single ADR-0072 alert rule for both providers: a message carries its
+// server-reduced title, subtitle and body (the recipient's preview setting is already applied
+// in presentation); every other kind stays generic on the device.
+func alertText(p Payload) (map[string]string, bool) {
+	if p.Kind != "message" || p.Title == "" || p.Body == "" {
+		return nil, false
+	}
+	return map[string]string{"title": previewLine(p.Title, 80), "subtitle": previewLine(p.Subtitle, 80), "body": previewLine(p.Body, 240)}, true
+}
+
+// fitPicture encodes p and, when the encoding exceeds limit, encodes again without the
+// optional sender picture; still too large is an error, never a truncated alert.
+func fitPicture(p Payload, limit int, encode func(Payload) ([]byte, error)) ([]byte, error) {
+	body, err := encode(p)
+	if err == nil && len(body) > limit && p.AvatarJPEG != "" {
+		p.AvatarJPEG = ""
+		body, err = encode(p)
+	}
+	if err == nil && len(body) > limit {
+		err = fmt.Errorf("push presentation exceeds provider limit")
+	}
+	return body, err
+}
+
+// fcmLimit is the FCM data payload limit (bytes of the data object).
+const fcmLimit = 4096
+
+// fcmData is the FCM `data` object: the routing payload flattened to strings plus the
+// shared alert text. Android renders the notification itself (data-only message). The
+// limit is measured on the marshalled JSON object, framing and escaping included.
+func fcmData(p Payload) (json.RawMessage, error) {
+	return fitPicture(p, fcmLimit, func(p Payload) ([]byte, error) {
+		payload, err := json.Marshal(p)
+		if err != nil {
+			return nil, err
+		}
+		var raw map[string]json.RawMessage
+		if err = json.Unmarshal(payload, &raw); err != nil {
+			return nil, err
+		}
+		data := make(map[string]string, len(raw)+3)
+		for key, value := range raw {
+			var text string
+			if err = json.Unmarshal(value, &text); err != nil {
+				text = string(value)
+			}
+			data[key] = text
+		}
+		if alert, ok := alertText(p); ok {
+			for key, value := range alert {
+				if value != "" {
+					data[key] = value
+				}
+			}
+		}
+		return json.Marshal(data)
+	})
+}
+
 // Optional pictures must never turn an otherwise valid alert into PayloadTooLarge.
 func apnsBody(p Payload, aps map[string]any) ([]byte, error) {
-	encode := func() ([]byte, error) {
+	if len(p.AvatarJPEG) > 2048 {
+		p.AvatarJPEG = ""
+	}
+	return fitPicture(p, 4096, func(p Payload) ([]byte, error) {
 		return json.Marshal(struct {
 			Payload
 			APS map[string]any `json:"aps"`
 		}{p, aps})
-	}
-	body, err := encode()
-	if len(body) > 4096 || len(p.AvatarJPEG) > 2048 {
-		p.AvatarJPEG = ""
-		body, err = encode()
-	}
-	if len(body) > 4096 {
-		return nil, fmt.Errorf("push presentation exceeds APNs limit")
-	}
-	return body, err
+	})
 }

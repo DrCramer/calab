@@ -1,3 +1,4 @@
+import { openContentLink } from '../../../services/contentLink';
 import { Extension, type AnyExtension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { str } from '../../../lib/wiki/markdown';
@@ -5,7 +6,7 @@ import { Collaboration } from '@tiptap/extension-collaboration';
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
-import { Placeholder } from '@tiptap/extensions';
+import { Placeholder, UndoRedo } from '@tiptap/extensions';
 import { isAllowedHref, wikiStarterKit } from '@calaba/wiki-doc/schema';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
@@ -47,35 +48,23 @@ const shortcuts = (env: EditorEnv) =>
       };
     },
     addProseMirrorPlugins() {
-      // While editing, a plain click places the caret in a link; ⌘/Ctrl-click opens it (read-only
-      // pages open links natively). A link to a wiki page of this server (an address kept as a
-      // plain link) opens the page in the app in both modes (owner 14.10).
-      const pageOf = (event: MouseEvent, dom: Element): string | null => {
-        if (!(event.target instanceof Element) || event.target.closest('.wiki-page-link')) return null;
+      // Plain editing clicks place the caret. Read mode and modifier clicks route once,
+      // synchronously, before WKWebView can treat an internal link as a blocked new window.
+      const activate = (view: { dom: HTMLElement }, event: MouseEvent): boolean => {
+        if (!(event.target instanceof Element)) return false;
         const a = event.target.closest('a');
-        return a && dom.contains(a) ? (env.pages?.idOf(a.getAttribute('href') ?? '') ?? null) : null;
+        if (!a || !view.dom.contains(a) || a.classList.contains('wiki-page-link')) return false;
+        event.preventDefault();
+        openContentLink(a.getAttribute('href') ?? '', env.pages);
+        return true;
       };
       return [
         new Plugin({
           props: {
-            handleClick: (view, _pos, event) => {
-              if (!view.editable || !(event.metaKey || event.ctrlKey) || !(event.target instanceof Element)) return false;
-              const a = event.target.closest('a');
-              const href = a?.getAttribute('href') ?? '';
-              if (!a || !view.dom.contains(a) || a.classList.contains('wiki-page-link') || !isAllowedHref(href)) return false;
-              const page = pageOf(event, view.dom);
-              if (page) env.pages?.open(page);
-              else window.open(href, '_blank', 'noopener,noreferrer');
-              return true;
-            },
             handleDOMEvents: {
               click: (view, event) => {
-                if (view.editable) return false;
-                const page = pageOf(event, view.dom);
-                if (!page) return false;
-                event.preventDefault();
-                env.pages?.open(page);
-                return true;
+                if (view.editable && !(event.metaKey || event.ctrlKey)) return false;
+                return activate(view, event);
               },
             },
           },
@@ -84,7 +73,11 @@ const shortcuts = (env: EditorEnv) =>
     },
   });
 
-export function buildExtensions(o: { doc: Y.Doc; awareness: Awareness | null; me: WikiEditorUser; env: EditorEnv }): AnyExtension[] {
+/**
+ * `doc`: the page's Y.Doc (collaboration, Yjs undo); null — a standalone editor over `content`
+ * (task descriptions): ProseMirror's own undo history, no carets.
+ */
+export function buildExtensions(o: { doc: Y.Doc | null; awareness: Awareness | null; me: WikiEditorUser; env: EditorEnv; placeholder?: string | undefined }): AnyExtension[] {
   const exts: AnyExtension[] = [
     wikiStarterKit(),
     WikiCodeBlock.configure({ defaultLanguage: null, enableTabIndentation: true }),
@@ -104,10 +97,10 @@ export function buildExtensions(o: { doc: Y.Doc; awareness: Awareness | null; me
     pageLinks(o.env),
     wikiPaste(o.env),
     shortcuts(o.env),
-    Placeholder.configure({ placeholder: t('wiki.editor.placeholder'), showOnlyWhenEditable: true }),
-    Collaboration.configure({ document: o.doc, field: WIKI_FIELD }),
+    Placeholder.configure({ placeholder: o.placeholder ?? t('wiki.editor.placeholder'), showOnlyWhenEditable: true }),
+    o.doc ? Collaboration.configure({ document: o.doc, field: WIKI_FIELD }) : UndoRedo,
   ];
-  if (o.awareness) {
+  if (o.doc && o.awareness) {
     exts.push(
       CollaborationCaret.configure({
         provider: { awareness: o.awareness },

@@ -51,6 +51,7 @@ import type { MentionCandidate } from '../../../lib/mentions';
 import { str } from '../../../lib/wiki/markdown';
 import { BLOCKS, currentBlock, type BlockDef, type BlockId } from './blocks';
 import type { EditorEnv } from './env';
+import { contentHref, openContentLink } from '../../../services/contentLink';
 import { isAllowedHref } from './extensions';
 import type { MenuState } from './menuStore';
 import type { PageCandidate } from './types';
@@ -77,6 +78,23 @@ export const BLOCK_ICONS: Record<BlockId, LucideIcon> = {
 const MENU_W = 280;
 const GAP = 6;
 
+/**
+ * Where the floating UI goes and the origin of its `position: fixed` coordinates. Inside a dialog
+ * (the create-task sheet) the menus go into the dialog — its focus trap and outside-click
+ * dismissal take them as its own — and a centred (translated) dialog is their containing block, so
+ * a probe measures it; elsewhere <body> and the viewport. Called on show / scroll only.
+ */
+export function portalHost(editor: Editor): { el: HTMLElement; x: number; y: number; h: number } {
+  const dialog = editor.isDestroyed ? null : editor.view.dom.closest<HTMLElement>('[role="dialog"]');
+  if (!dialog) return { el: document.body, x: 0, y: 0, h: window.innerHeight };
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none';
+  dialog.append(probe);
+  const r = probe.getBoundingClientRect();
+  probe.remove();
+  return { el: dialog, x: r.left, y: r.top, h: r.height };
+}
+
 /** Clamps a popover to the viewport (16 px gutter). */
 function clampX(x: number, w: number): number {
   return Math.max(16, Math.min(x, window.innerWidth - w - 16));
@@ -96,13 +114,13 @@ const SlashRow = memo(function SlashRow({ b, active, onPick, onHover, i }: { b: 
         onPick(i);
       }}
       onMouseMove={() => (active ? undefined : onHover(i))}
-      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-active text-accent-text' : 'text-fg')}
+      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-accent-strong text-accent-fg' : 'text-fg')}
     >
       <span className={cx('grid size-6 shrink-0 place-items-center rounded-[var(--radius-row)]', 'bg-hover')}>
         <Icon className="size-4" strokeWidth={1.75} aria-hidden />
       </span>
       <span className="min-w-0 flex-1 truncate">{t(b.label)}</span>
-      {b.hint ? <span className={cx('shrink-0 font-mono text-caption', active ? 'text-accent-text' : 'text-muted')}>{b.hint}</span> : null}
+      {b.hint ? <span className={cx('shrink-0 font-mono text-caption', active ? 'text-accent-fg' : 'text-muted')}>{b.hint}</span> : null}
     </li>
   );
 });
@@ -118,11 +136,11 @@ const MentionRow = memo(function MentionRow({ c, active, onPick, onHover, i }: {
         onPick(i);
       }}
       onMouseMove={() => (active ? undefined : onHover(i))}
-      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-active text-accent-text' : 'text-fg')}
+      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-accent-strong text-accent-fg' : 'text-fg')}
     >
       <Avatar userId={c.id} name={c.name} size={24} />
       <span className="min-w-0 truncate font-medium">{c.name}</span>
-      {c.nick ? <span className={cx('min-w-0 truncate', active ? 'text-accent-text' : 'text-muted')}>@{c.nick}</span> : null}
+      {c.nick ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>@{c.nick}</span> : null}
     </li>
   );
 });
@@ -138,7 +156,7 @@ const PageRow = memo(function PageRow({ p, active, onPick, onHover, i }: { p: Pa
         onPick(i);
       }}
       onMouseMove={() => (active ? undefined : onHover(i))}
-      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-active text-accent-text' : 'text-fg')}
+      className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-body mobile:tap-min-h', active ? 'bg-accent-strong text-accent-fg' : 'text-fg')}
       data-testid="wiki-page-pick"
     >
       <span className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-row)] bg-hover leading-none" aria-hidden>
@@ -153,7 +171,7 @@ const PageRow = memo(function PageRow({ p, active, onPick, onHover, i }: { p: Pa
  * `/` blocks, `@` people and `[[` pages. On the phone (ADR-0096 §7) the block menu is a card in the middle of
  * the screen above the keyboard, with a backdrop that closes it; the `@` list hangs from the caret.
  */
-export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?: boolean }): ReactNode {
+export function SuggestionMenu({ editor, env, phone = false }: { editor: Editor; env: EditorEnv; phone?: boolean }): ReactNode {
   const s = useSyncExternalStore(env.menu.subscribe, env.menu.get);
   const pick = useCallback((i: number) => {
     const st = env.menu.get();
@@ -165,8 +183,10 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
     if (st) env.menu.set({ ...st, index: i });
   }, [env]);
   if (!s?.rect) return null;
+  const host = portalHost(editor);
   const below = s.rect.bottom + 320 < window.innerHeight;
-  const style = below ? { left: clampX(s.rect.left, MENU_W), top: s.rect.bottom + GAP } : { left: clampX(s.rect.left, MENU_W), bottom: window.innerHeight - s.rect.top + GAP };
+  const left = clampX(s.rect.left, MENU_W) - host.x;
+  const style = below ? { left, top: s.rect.bottom + GAP - host.y } : { left, bottom: host.y + host.h - s.rect.top + GAP };
   const label = s.kind === 'slash' ? t('wiki.slash.title') : s.kind === 'page' ? t('wiki.pageLink.title') : t('chat.mentionList');
   if (s.kind === 'mention' && !s.items.length) return null;
   const rows = s.items.length ? (
@@ -208,7 +228,7 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
           {rows}
         </div>
       </div>,
-      document.body,
+      host.el,
     );
   }
   return createPortal(
@@ -218,7 +238,7 @@ export function SuggestionMenu({ env, phone = false }: { env: EditorEnv; phone?:
       </div>
       {rows}
     </div>,
-    document.body,
+    host.el,
   );
 }
 
@@ -246,7 +266,7 @@ type Place = { left: number; top: number } | null;
  * Keeps a fixed bar where `compute` says: writes its style directly (no state, no extra render)
  * and follows scroll / resize while active (event-driven, no timers).
  */
-function usePlaced(ref: RefObject<HTMLDivElement | null>, compute: (bar: HTMLElement) => Place, active: boolean): void {
+function usePlaced(ref: RefObject<HTMLDivElement | null>, compute: (bar: HTMLElement) => Place, active: boolean, editor: Editor): void {
   useLayoutEffect(() => {
     if (!active) return;
     const apply = (): void => {
@@ -255,8 +275,10 @@ function usePlaced(ref: RefObject<HTMLDivElement | null>, compute: (bar: HTMLEle
       const p = compute(el);
       el.style.visibility = p ? '' : 'hidden';
       if (p) {
-        el.style.left = `${p.left}px`;
-        el.style.top = `${p.top}px`;
+        // `compute` works in viewport coordinates; the bar's containing block may be a dialog.
+        const o = portalHost(editor);
+        el.style.left = `${p.left - o.x}px`;
+        el.style.top = `${p.top - o.y}px`;
       }
     };
     apply();
@@ -266,7 +288,7 @@ function usePlaced(ref: RefObject<HTMLDivElement | null>, compute: (bar: HTMLEle
       window.removeEventListener('scroll', apply, true);
       window.removeEventListener('resize', apply);
     };
-  }, [ref, compute, active]);
+  }, [ref, compute, active, editor]);
 }
 
 const MARKS = [
@@ -325,7 +347,7 @@ export function BubbleBar({ editor, env }: { editor: Editor; env: EditorEnv }): 
     },
     [editor, from, to],
   );
-  usePlaced(ref, compute, visible);
+  usePlaced(ref, compute, visible, editor);
   if (!visible) return null;
   const BlockIcon = BLOCK_ICONS[s.block];
   return createPortal(
@@ -335,6 +357,8 @@ export function BubbleBar({ editor, env }: { editor: Editor; env: EditorEnv }): 
       aria-label={t('wiki.formatting')}
       className="mat-popover anim-in fixed z-[var(--z-popover)] flex flex-col rounded-[var(--radius-card)] p-1"
       style={{ left: -9999, top: -9999 }}
+      // Esc closes an open panel (the link field), not a dialog around the editor (components/ui Modal).
+      data-esc-local=""
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           setPanel(null);
@@ -361,25 +385,27 @@ export function BubbleBar({ editor, env }: { editor: Editor; env: EditorEnv }): 
             <Icon className="size-4" strokeWidth={1.75} aria-hidden />
           </BarButton>
         ))}
-        <BarButton label={t('wiki.mark.highlight')} active={!!s.highlight || panel === 'color'} onClick={() => setPanel(panel === 'color' ? null : 'color')}>
-          <Highlighter className="size-4" strokeWidth={1.75} aria-hidden />
-        </BarButton>
+        {env.highlight ? (
+          <BarButton label={t('wiki.mark.highlight')} active={!!s.highlight || panel === 'color'} onClick={() => setPanel(panel === 'color' ? null : 'color')}>
+            <Highlighter className="size-4" strokeWidth={1.75} aria-hidden />
+          </BarButton>
+        ) : null}
         <BarButton label={t('wiki.link')} active={!!s.link || panel === 'link'} onClick={() => setPanel(panel === 'link' ? null : 'link')}>
           <Link className="size-4" strokeWidth={1.75} aria-hidden />
         </BarButton>
       </div>
-      {panel === 'turn' ? <TurnInto editor={editor} current={s.block} onDone={() => setPanel(null)} /> : null}
+      {panel === 'turn' ? <TurnInto editor={editor} env={env} current={s.block} onDone={() => setPanel(null)} /> : null}
       {panel === 'color' ? <Colors editor={editor} current={s.highlight} onDone={() => setPanel(null)} /> : null}
-      {panel === 'link' ? <LinkField editor={editor} href={s.link} onDone={() => setPanel(null)} /> : null}
+      {panel === 'link' ? <LinkField env={env} editor={editor} href={s.link} onDone={() => setPanel(null)} /> : null}
     </div>,
-    document.body,
+    portalHost(editor).el,
   );
 }
 
-function TurnInto({ editor, current, onDone }: { editor: Editor; current: BlockId; onDone: () => void }): ReactNode {
+function TurnInto({ editor, env, current, onDone }: { editor: Editor; env: EditorEnv; current: BlockId; onDone: () => void }): ReactNode {
   return (
     <ul role="menu" aria-label={t('wiki.turnInto')} className="mt-1 border-t border-line pt-1">
-      {BLOCKS.filter((b) => b.turnInto).map((b) => {
+      {BLOCKS.filter((b) => b.turnInto && (!env.blocks || env.blocks.has(b.id))).map((b) => {
         const Icon = BLOCK_ICONS[b.id];
         return (
           <li key={b.id} role="none">
@@ -442,7 +468,7 @@ function Colors({ editor, current, onDone }: { editor: Editor; current: Highligh
   );
 }
 
-function LinkField({ editor, href, onDone }: { editor: Editor; href: string; onDone: () => void }): ReactNode {
+function LinkField({ editor, href, onDone, env }: { editor: Editor; href: string; onDone: () => void; env: EditorEnv }): ReactNode {
   const [value, setValue] = useState(href);
   const apply = (): void => {
     const v = value.trim();
@@ -471,8 +497,8 @@ function LinkField({ editor, href, onDone }: { editor: Editor; href: string; onD
       <BarButton label={t('wiki.link.apply')} onClick={apply}>
         <Check className="size-4" strokeWidth={1.75} aria-hidden />
       </BarButton>
-      {href && isAllowedHref(href) ? (
-        <BarButton label={t('wiki.link.open')} onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}>
+      {href && contentHref(href) ? (
+        <BarButton label={t('wiki.link.open')} onClick={() => { openContentLink(href, env.pages); }}>
           <ExternalLink className="size-4" strokeWidth={1.75} aria-hidden />
         </BarButton>
       ) : null}
@@ -525,7 +551,7 @@ export function TableBar({ editor }: { editor: Editor }): ReactNode {
     },
     [editor, at],
   );
-  usePlaced(ref, compute, at >= 0);
+  usePlaced(ref, compute, at >= 0, editor);
   if (at < 0) return null;
   return createPortal(
     <div
@@ -541,6 +567,6 @@ export function TableBar({ editor }: { editor: Editor }): ReactNode {
         </BarButton>
       ))}
     </div>,
-    document.body,
+    portalHost(editor).el,
   );
 }

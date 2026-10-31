@@ -1,5 +1,5 @@
-import { PushProvider, PushCapabilitiesResponseSchema, RegisterPushDeviceRequestSchema, RegisterPushDeviceResponseSchema, ResolvePushRequestSchema, ResolvePushResponseSchema, UnregisterPushDeviceRequestSchema } from '@calaba/protocol';
-import type { HostNotificationState, HostNotificationsCapability, HostPushReference } from '../../shared/hostActivity';
+import { CallState, PushProvider, PushCapabilitiesResponseSchema, RegisterPushDeviceRequestSchema, RegisterPushDeviceResponseSchema, ResolvePushRequestSchema, ResolvePushResponseSchema, UnregisterPushDeviceRequestSchema, type Call } from '@calaba/protocol';
+import type { HostNotificationState, HostNotificationsCapability, HostPushReference, HostPushTap } from '../../shared/hostActivity';
 import { body, call, callEmpty } from '../lib/api/client';
 import { platform } from '../platform';
 import { useSession } from '../stores/session';
@@ -14,23 +14,36 @@ import { HostNotificationPrompt } from '../lib/notifyPermission';
 interface Identity { session: string; mentions: boolean; all: boolean }
 interface Endpoint { id: string; version: bigint }
 export interface HostPushApi {
- capabilities: (signal: AbortSignal) => Promise<{ appId: string; environment: string }[]>;
+ capabilities: (provider: PushProvider, signal: AbortSignal) => Promise<{ appId: string; environment: string }[]>;
  register: (state: HostNotificationState, identity: Identity, signal: AbortSignal) => Promise<Endpoint>;
  unregister: (endpoint: Endpoint) => Promise<void>;
- resolve: (reference: HostPushReference, signal: AbortSignal) => Promise<{ roomId: string; workspaceId: string }>;
+ resolve: (reference: HostPushReference, signal: AbortSignal) => Promise<{ roomId: string; workspaceId: string; call?: Call }>;
  open: (roomId: string, workspaceId: string) => void;
+ /** A call push the user tapped on Android (ADR-0071, Android): the shared call service rings/answers/declines. */
+ call: (value: Call, action: HostPushTap['action']) => void;
 }
+/** Android's one FCM token carries messages and calls (ADR-0071, Android); APNs alerts never ring (VoIP is separate). */
+const fcm = (state: HostNotificationState) => state.provider === 'fcm';
 const api: HostPushApi = {
- capabilities: async (signal) => (await call('GET', '/api/me/push-capabilities', PushCapabilitiesResponseSchema, undefined, signal)).providers
-   .filter(p => p.provider === PushProvider.APNS).map(p => ({ appId: p.appId, environment: p.environment })),
+ capabilities: async (provider, signal) => (await call('GET', '/api/me/push-capabilities', PushCapabilitiesResponseSchema, undefined, signal)).providers
+   .filter(p => p.provider === provider).map(p => ({ appId: p.appId, environment: p.environment })),
  register: (state, identity, signal) => call('POST', '/api/me/push-devices', RegisterPushDeviceResponseSchema,
-   body(RegisterPushDeviceRequestSchema, { provider: PushProvider.APNS, appId: state.appId ?? '', environment: state.environment ?? '',
-     installationId: state.installationId ?? '', token: state.token ?? '', notificationsEnabled: true, callsEnabled: false,
+   body(RegisterPushDeviceRequestSchema, { provider: fcm(state) ? PushProvider.FCM : PushProvider.APNS, appId: state.appId ?? '', environment: state.environment ?? '',
+     installationId: state.installationId ?? '', token: state.token ?? '', notificationsEnabled: identity.mentions || identity.all, callsEnabled: fcm(state),
      mentionsEnabled: identity.mentions, allEnabled: identity.all }), signal),
  unregister: endpoint => callEmpty('DELETE', `/api/me/push-devices/${endpoint.id}`, body(UnregisterPushDeviceRequestSchema, { version: endpoint.version })),
  resolve: (reference, signal) => call('POST', '/api/me/push-resolve', ResolvePushResponseSchema,
    body(ResolvePushRequestSchema, { binding: reference.binding, eventId: reference.eventId }), signal),
  open: (roomId, workspaceId) => useUi.getState().openRoom(workspaceId || HOME, roomId),
+ call: (value, action) => {
+  if (value.state !== CallState.RINGING) return;
+  // The call service (and its media graph) loads with the app shell; imported lazily so this module stays light.
+  void import('./call').then(({ onCallRing, performHostCallAction }) => {
+   onCallRing(value, undefined);
+   if (action === 'answer') void performHostCallAction(value.id, 'answer');
+   else if (action === 'decline') void performHostCallAction(value.id, 'end');
+  }).catch(() => undefined);
+ },
 };
 
 /** Event-driven session projection. Native receives no Calab auth/session or product route table. */
@@ -64,15 +77,16 @@ export class HostPushController {
   if (!identity) return;
   this.operation = this.operation.then(async () => {
    if (revision !== this.revision) return;
-   if (state.permission !== 'granted' || !state.token || (!identity.mentions && !identity.all)) {
+   // An FCM endpoint stays for calls even with message alerts off; APNs alerts carry messages only.
+   if (state.permission !== 'granted' || !state.token || (!identity.mentions && !identity.all && !fcm(state))) {
     if (this.endpoint) {
      const old = this.endpoint; await this.api.unregister(old);
      if (this.endpoint === old) { this.endpoint = null; this.fingerprint = ''; }
     }
    } else {
-    const fingerprint = JSON.stringify([state.token, state.appId, state.environment, identity.mentions, identity.all]);
+    const fingerprint = JSON.stringify([state.provider, state.token, state.appId, state.environment, identity.mentions, identity.all]);
     if (fingerprint !== this.fingerprint) {
-     const providers = await this.api.capabilities(signal);
+     const providers = await this.api.capabilities(fcm(state) ? PushProvider.FCM : PushProvider.APNS, signal);
      if (revision !== this.revision || !providers.some(p => p.appId === state.appId && p.environment === state.environment)) return;
      const endpoint = await this.api.register(state, identity, signal);
      // A preference update must retain an in-flight binding so its next serialized operation can revoke it.
@@ -85,7 +99,10 @@ export class HostPushController {
    if (revision === this.revision) {
     this.seen.add(state.tap.eventId);
     if (this.seen.size > 128) this.seen.delete(this.seen.values().next().value as string);
-    this.api.open(route.roomId, route.workspaceId); this.capability.acknowledge(state.tap); }
+    // A call tap rings (or answers/declines) through the shared call service; a plain tap also opens the DM.
+    if (!route.call || !state.tap.action) this.api.open(route.roomId, route.workspaceId);
+    if (route.call) this.api.call(route.call, state.tap.action);
+    this.capability.acknowledge(state.tap); }
   }).catch(() => undefined); // Optional transport/old server/network never breaks login or media.
  }
  async settled(): Promise<void> { await this.operation; }

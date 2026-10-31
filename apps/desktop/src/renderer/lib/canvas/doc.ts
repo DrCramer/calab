@@ -4,7 +4,7 @@ import { after, before, between, isValidKey } from './fracIndex';
 import { fmtFromDelta, fmtToDelta, formatChanges, rawText, type Fmt } from './richText';
 import { fontFields, isFontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS,
+  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS, isImageSrc,
   type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
 } from './types';
 
@@ -15,10 +15,10 @@ export const LIVE_ORIGIN: object = Object.freeze({ canvas: 'live' });
 /** Undo steps kept; the oldest is dropped (and the values it held are freed) past this. */
 export const MAX_UNDO = 100;
 
-const KINDS: readonly ObjectKind[] = ['sticky', 'text', 'shape', 'connector'];
+const KINDS: readonly ObjectKind[] = ['sticky', 'text', 'shape', 'connector', 'image'];
 const SIDE_SET = new Set<string>(['auto', 'top', 'right', 'bottom', 'left']);
 const ARROW_SET = new Set<string>(['none', 'end', 'both']);
-const ROUTE_SET = new Set<string>(['straight', 'elbow']);
+const ROUTE_SET = new Set<string>(['straight', 'elbow', 'curve']);
 
 export const isKind = (v: unknown): v is ObjectKind => typeof v === 'string' && (KINDS as readonly string[]).includes(v);
 export const isShapeKind = (v: unknown): v is ShapeKind => typeof v === 'string' && (SHAPE_KINDS as readonly string[]).includes(v);
@@ -131,6 +131,7 @@ const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
   shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
+  image: ['x', 'y', 'w', 'h', 'src', 'stickerId', 'rot', 'locked', 'group'],
 };
 
 const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
@@ -138,6 +139,8 @@ const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
   shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
+  // The picture itself (`src`) is fixed at creation.
+  image: ['x', 'y', 'w', 'h', 'rot', 'locked', 'group'],
 };
 
 /** A group id is a short token (newId's alphabet); anything else is ignored. */
@@ -201,6 +204,16 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
         },
         text: null,
       };
+    case 'image':
+      return {
+        fields: {
+          x: num(init.x, 0), y: num(init.y, 0),
+          w: num(init.w, DEFAULTS.imageSize, DEFAULTS.minBox, MAX_SIZE), h: num(init.h, DEFAULTS.imageSize, DEFAULTS.minBox, MAX_SIZE),
+          src: init.src,
+          ...(typeof init.stickerId === 'string' && /^[0-9A-Za-z-]{1,64}$/.test(init.stickerId) ? { stickerId: init.stickerId } : {}),
+        },
+        text: null,
+      };
   }
 }
 
@@ -215,7 +228,7 @@ type DeleteSet = Y.UndoManager['undoStack'][number]['deletions'];
  * (`fontFields`). A plain token write drops the exact size it overrides, so a token set by older code is never shadowed.
  */
 function expandFont(kind: ObjectKind, patch: ObjectPatch): ObjectPatch {
-  if (kind === 'connector') return patch;
+  if (kind === 'connector' || kind === 'image') return patch;
   const px = patch.fontPx;
   if (typeof px === 'number' && Number.isFinite(px)) {
     const v = clamp(px, DEFAULTS.minTextSize, DEFAULTS.maxTextSize);
@@ -450,7 +463,9 @@ export class CanvasDoc {
    * transaction above its 64 KiB frame as a snapshot of the whole document, to everyone — 500 stickies already
    * exceed it — while smaller updates travel as plain UPDATE frames.
    */
-  createMany(items: readonly { id?: string; init: ObjectInit }[]): string[] {
+  createMany(all: readonly { id?: string; init: ObjectInit }[]): string[] {
+    // A picture of anything but the app's own media is never written.
+    const items = all.filter((i) => i.init.kind !== 'image' || isImageSrc(i.init.src));
     if (items.length === 0 || this.objects.size + items.length > MAX_OBJECTS) return [];
     const ids: string[] = [];
     let z = this.maxZ();
@@ -543,6 +558,7 @@ export class CanvasDoc {
       this.patch(id, { label: text });
       return;
     }
+    if (kind === 'image') return;
     const next = clampText(text);
     this.transact(() => {
       const cur = m.get('text');
@@ -563,6 +579,7 @@ export class CanvasDoc {
       this.patch(id, { label: text });
       return;
     }
+    if (m.get('kind') === 'image') return;
     const next = clampText(text);
     this.transact(() => {
       let yt = m.get('text');
@@ -632,7 +649,7 @@ export class CanvasDoc {
       const v = m.get(k);
       if (v !== undefined) out[k] = v;
     }
-    if (kind !== 'connector') {
+    if (kind !== 'connector' && kind !== 'image') {
       const t = m.get('text');
       if (t instanceof Y.Text) {
         const { text, fmt } = fmtFromDelta(t.toDelta() as never);

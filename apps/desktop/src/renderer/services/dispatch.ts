@@ -48,10 +48,12 @@ import { voice } from './voice';
 import { onCallRing, onCallState, onReadyCall } from './call';
 import { resumeVoiceAfterReady } from './resumeVoice';
 import { checkWebVersion } from './webVersion';
+import { loadOfficeCaps } from '../features/disk/office/loadCaps';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { applySnapshotSipCalls, dropSipCalls, onSipCallUpdate, resetSipCalls } from './sip';
 import { onSipInboundRing } from './sipInbound';
-import { activeCallsKey, coalescer, journalKey } from '../lib/sipPbx';
+import { applySnapshotSipMissed, dropSipMissed, onJournalEntry, onSipMissedChanged, resetSipMissed } from './sipJournal';
+import { activeCallsKey, coalescer } from '../lib/sipPbx';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
@@ -80,6 +82,7 @@ import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
 import { onCanvasItemRemove, onCanvasItemUpsert } from './canvas';
 import { onCanvasCommentDelete, onCanvasCommentMention, onCanvasCommentUpsert, resyncCanvasComments } from './canvasComments';
 import { restoreSectionOnBoot } from '../features/shell/sectionNav';
+import { armNavHistory } from './navHistory';
 import { useCanvas } from '../stores/canvas';
 import { useWiki } from '../stores/wiki';
 import { applyAutomationEvent } from './automations';
@@ -131,6 +134,8 @@ export function removeRoom(workspaceId: string, roomId: string): void {
   dropSipCalls((r) => r === roomId);
   useInbox.getState().removeRooms((id) => id !== roomId);
   if (inVoice) void voice.leave();
+  // Parked by a phone call (ADR-0133): not to be resumed into a room that is gone.
+  if (useVoice.getState().parked?.roomId === roomId) voice.leaveParked();
 }
 
 // A request about a live room answered 410 ROOM_ARCHIVED (a temporary room closed meanwhile, the
@@ -141,12 +146,11 @@ onRoomArchived((roomId) => {
   if (room) removeRoom(room.workspaceId, roomId);
 });
 
-// «Активные звонки» (ADR-0128): re-read only if the tab is open and the window is seen; hidden —
-// just stale, refetched on focus / remount. A busy exchange's bursts: one re-read a second.
+// The live calls (ADR-0128, «Недавние» → «Сейчас»): re-read only if the list is open and the window is
+// seen; hidden — just stale, refetched on focus / remount. A busy exchange's bursts: one re-read a second.
 const callsChanged = coalescer((ws) => {
   const refetchType = document.hidden ? 'none' : 'active';
   void queryClient.invalidateQueries({ queryKey: activeCallsKey(ws), refetchType });
-  void queryClient.invalidateQueries({ queryKey: journalKey(ws), refetchType });
 }, 1000);
 
 export function applyDispatch(ev: DispatchEvent): void {
@@ -188,6 +192,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       resyncCanvasComments();
       // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
       useReadReceipts.getState().reset();
+      useReadReceipts.getState().setFrom(r.readReceiptsFrom); // ADR-0140: no ticks before it
+      useBots.getState().setMine(r.myBotIds); // ADR-0151: my bots' tasks are mine for author rights
       for (const pr of r.peerReads) useReadReceipts.getState().set(pr.roomId, pr.lastReadMessageId);
       rooms.setNotifyAll(r.notificationSettings);
       rooms.setWsNotifyAll(r.workspaceNotificationSettings);
@@ -236,6 +242,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       resetRecordings(r.workspaces);
       // Telephony (ADR-0046): the rooms' live phone lines.
       resetSipCalls(r.workspaces);
+      // «Телефония» (ADR-0137): my missed calls of each workspace (the rail / tab badge).
+      resetSipMissed(r.workspaces);
       useSession.getState().set({
         me: r.me ?? null,
         planContact: r.planContact,
@@ -249,6 +257,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       ensureActiveWorkspace();
       // The first READY of this page: back on the section the workspace was left on (ADR-0074 §1).
       restoreSectionOnBoot();
+      // From here every change of place is a step of the ‹ › history (board #113).
+      armNavHistory();
       // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
       onCalendarReady(r.workspaces);
       // Boards (ADR-0042): loaded boards and the open task reloaded, a pending /b/ or /t/ link.
@@ -259,12 +269,16 @@ export function applyDispatch(ev: DispatchEvent): void {
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
       voice.checkSeat();
+      // My mic / deafen intent may not have reached the server while away (ADR-0134).
+      voice.onGatewayBack();
       // ADR-0034: the ringing / in-call UI as the server has it now.
       onReadyCall(r.call);
       // The first READY after a restart for an update: back into the same room / call (docs/09 #126).
       resumeVoiceAfterReady(r.call);
       // Web: a server newer than this bundle → «Обновить страницу» (docs/09 #125).
       void checkWebVersion();
+      // The office editor (ADR-0143): on / off and the format map, as this server has them now.
+      void loadOfficeCaps();
       // Balance billing (ADR-0080): a BILLING_UPDATE may have been missed while away.
       resyncBilling(new Set(r.workspaces.map((w) => w.workspace?.id ?? '')));
       return;
@@ -272,6 +286,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'resumed':
       log.info(`gateway resumed, replayed ${e.value.replayed}`);
       voice.checkSeat();
+      voice.onGatewayBack();
       void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       return;
     case 'workspaceCreate': {
@@ -286,6 +301,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       applySnapshotApps(snap);
       applySnapshotRecordings(snap);
       applySnapshotSipCalls(snap);
+      applySnapshotSipMissed(snap);
       applySnapshotEvents(snap);
       applySnapshotBoards(snap);
       ensureActiveWorkspace();
@@ -379,12 +395,14 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWebApps.getState().dropWorkspace(id);
       dropRecordings((_room, rec) => rec.workspaceId === id);
       dropSipCalls((_room, c) => c.workspaceId === id);
+      dropSipMissed(id);
       dropWorkspaceEvents(id);
       dropWorkspaceBoards(id);
       useDisk.getState().dropWorkspace(id);
       useWiki.getState().dropWorkspace(id);
       useCanvas.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
+      if (useVoice.getState().parked?.workspaceId === id) voice.leaveParked(); // ADR-0133
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
       dropStaleWorkspaceBackground();
@@ -593,6 +611,13 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'sipCallsChanged':
       callsChanged(e.value.workspaceId);
+      return;
+    // «Телефония → Недавние» (ADR-0137 §1): a call appeared / was answered / ended — into the open list.
+    case 'sipJournalEntry':
+      onJournalEntry(e.value.entry);
+      return;
+    case 'sipMissedChanged':
+      onSipMissedChanged(e.value.workspaceId, e.value.count);
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);

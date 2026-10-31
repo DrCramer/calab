@@ -1,14 +1,15 @@
 import * as Popover from '../../components/radix/popover';
-import { CircleHelp, Search, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleHelp, Search, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
+import { NAV_SHORTCUTS, shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
+import { goBack, goForward } from '../../services/navHistory';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
 import { HOME } from '../../stores/dms';
 import { selectUpdatePending, useSession } from '../../stores/session';
-import { useUi } from '../../stores/ui';
+import { canGoBack, canGoForward, useUi } from '../../stores/ui';
 import { titleSlot } from '../../lib/webApps';
 import { useOpenApp, useWebApps } from '../../stores/webApps';
 import { bindingLabel } from '../settings/PttBinder';
@@ -16,16 +17,19 @@ import { popoverBox } from './menu';
 import { AppSettingsWindow } from './lazyWindows';
 import { InboxButton } from './InboxPopover';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { TaskTabs } from '../boards/TaskTabs';
 import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 /**
  * Window title bar (docs/09 #1; owner 07.10 — a taller, airier bar): 46 px across the whole window,
  * drag region in Electron. Left: only Electron on macOS keeps 80 px empty for the traffic lights
  * (hiddenInset at 16,16 — centred in the bar); the web and Windows / Linux start at the normal
- * 8 px padding. Then the current workspace's name with «⌄» — the workspace switcher (ADR-0074 §2;
- * it replaced the «‹ ›» history buttons, whose shortcuts stay); «Calab ⌄» before any workspace
- * exists. No room / chat title here (owner, 07.10).
- * Right: search (opens the quick switcher), mentions, settings, shortcuts help — quiet; on Windows
+ * 8 px padding. Then «‹ ›» — back / forward through the places of every section (board #113,
+ * services/navHistory.ts). The centre stays empty (drag; the web's task tabs). No room / chat title
+ * here (owner, 07.10).
+ * Right: the current workspace's name with «⌄» — the workspace switcher (ADR-0074 §2; «Calab ⌄»
+ * before any workspace exists) — then search (opens the quick switcher), mentions, settings,
+ * shortcuts help — quiet; on Windows
  * the native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
  * Web (docs/09 #46): a 38 px toolbar — no window chrome, so no reserved inset and no drag region.
  */
@@ -53,17 +57,23 @@ export function TitleBar(): ReactNode {
       <div className={cx('flex min-w-0 items-center', !mac && 'pl-2')}>
         {/* macOS traffic lights live here — nothing is drawn under them (Electron on macOS only). */}
         {mac ? <div className="w-[80px] shrink-0" aria-hidden /> : null}
-        <TitleBarWorkspace />
+        <HistoryButtons />
       </div>
 
+      {/* Open task tabs (#93): in every section; nothing without tabs. */}
+      <TaskTabs />
+
       <div className="ml-auto flex min-w-0 items-center justify-end gap-1 pr-2">
+        <div className="mr-1 flex min-w-0 items-center">
+          <TitleBarWorkspace />
+        </div>
         {/* The one workspace search entry point (docs/09 #53): always shown. */}
         <button
           type="button"
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
           // Quiet (owner, 07.10): a hairline pill, the fill only on hover.
-          className="flex h-(--control-h-bar) w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+          className="flex h-(--control-h-bar) w-[clamp(120px,14vw,200px)] min-w-0 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
@@ -76,6 +86,25 @@ export function TitleBar(): ReactNode {
         <HelpButton />
       </div>
     </header>
+  );
+}
+
+/**
+ * «‹ ›» (board #113): their own leaf on two boolean selectors — a navigation re-renders only these
+ * two buttons, and only when one of them turns on or off.
+ */
+function HistoryButtons(): ReactNode {
+  const back = useUi(canGoBack);
+  const fwd = useUi(canGoForward);
+  return (
+    <div className="flex shrink-0 items-center gap-0.5" data-testid="titlebar-history">
+      <IconButton size="sm" label={t('shell.back')} shortcut={NAV_SHORTCUTS.back} disabled={!back} onClick={goBack} data-testid="nav-back">
+        <ChevronLeft className="size-[18px]" aria-hidden />
+      </IconButton>
+      <IconButton size="sm" label={t('shell.forward')} shortcut={NAV_SHORTCUTS.forward} disabled={!fwd} onClick={goForward} data-testid="nav-forward">
+        <ChevronRight className="size-[18px]" aria-hidden />
+      </IconButton>
+    </div>
   );
 }
 

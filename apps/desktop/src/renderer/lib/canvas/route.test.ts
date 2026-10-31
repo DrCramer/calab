@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { RouteCache, anchorPoint, elbowPath, endDirection, nearestSide, routeConnector, simplify, STUB, type ResolvedEnd } from './route';
+import {
+  CURVE_MIN_REACH, CURVE_STEPS, RouteCache, anchorPoint, connectorEndDirection, connectorMidpoint, cubicAt, curveControls, elbowPath, endDirection, nearestSide,
+  routeConnector, simplify, STUB, type ResolvedEnd,
+} from './route';
 import type { BoxRec, ShapeRec } from './types';
 
 const box = (id: string, x: number, y: number, w = 100, h = 60): BoxRec => ({ kind: 'sticky', id, z: 'a', x, y, w, h, color: 'yellow', text: '' });
@@ -149,5 +152,76 @@ describe('arrow direction', () => {
     expect(endDirection([0, 0, 10, 0, 10, 10], true)).toEqual({ x: 0, y: 1 });
     expect(endDirection([0, 0, 10, 0, 10, 10], false)).toEqual({ x: -1, y: 0 });
     expect(endDirection([0, 0], true)).toEqual({ x: 1, y: 0 });
+  });
+});
+
+describe('curved connectors', () => {
+  const end = (x: number, y: number, dir: { x: number; y: number } | null): ResolvedEnd => ({ p: { x, y }, dir, target: dir ? 'x' : null, side: null });
+
+  it('leave each glued side along its normal, ~45 % of the distance out', () => {
+    const [c1, c2] = curveControls(end(100, 30, { x: 1, y: 0 }), end(400, 230, { x: 0, y: -1 }));
+    const reach = Math.hypot(300, 200) * 0.45;
+    expect(c1.y).toBe(30);
+    expect(c1.x).toBeCloseTo(100 + reach);
+    expect(c2.x).toBe(400);
+    expect(c2.y).toBeCloseTo(230 - reach);
+  });
+  it('free ends make an S along the dominant axis', () => {
+    const [c1, c2] = curveControls(end(0, 0, null), end(300, 100, null));
+    expect(c1.y).toBe(0);
+    expect(c2.y).toBe(100);
+    expect(c1.x).toBeGreaterThan(0);
+    expect(c2.x).toBeLessThan(300);
+    // Mostly vertical: the controls go down / up instead.
+    const [v1, v2] = curveControls(end(0, 0, null), end(20, 300, null));
+    expect(v1.x).toBe(0);
+    expect(v1.y).toBeGreaterThan(0);
+    expect(v2.x).toBe(20);
+    expect(v2.y).toBeLessThan(300);
+  });
+  it('a short curve still reaches out at least the minimum', () => {
+    const [c1, c2] = curveControls(end(0, 0, { x: 0, y: 1 }), end(10, 0, { x: 0, y: 1 }));
+    expect(c1).toEqual({ x: 0, y: CURVE_MIN_REACH });
+    expect(c2).toEqual({ x: 10, y: CURVE_MIN_REACH });
+  });
+  it('routes glued boxes into a flattened polyline with exact ends and the controls alongside', () => {
+    const a = box('a', 0, 0);
+    const b = box('b', 400, 200);
+    const r = routeConnector({ id: 'a', side: 'right' }, { id: 'b', side: 'left' }, 'curve', world(a, b));
+    expect(r.points.length).toBe(2 * (CURVE_STEPS + 1));
+    expect(r.points.slice(0, 2)).toEqual([100, 30]);
+    expect(r.points.slice(-2)).toEqual([400, 230]);
+    expect(r.curve).toHaveLength(4);
+    // Every sample lies on the cubic.
+    const c = r.curve ?? [];
+    const q = cubicAt({ x: 100, y: 30 }, { x: c[0] ?? 0, y: c[1] ?? 0 }, { x: c[2] ?? 0, y: c[3] ?? 0 }, { x: 400, y: 230 }, 0.25);
+    expect(r.points[2 * (CURVE_STEPS / 4)]).toBeCloseTo(q.x);
+    expect(r.points[2 * (CURVE_STEPS / 4) + 1]).toBeCloseTo(q.y);
+  });
+  it('the label sits at t = 0.5 (the middle sample); a free S-curve is symmetric about it', () => {
+    const r = routeConnector({ x: 0, y: 0 }, { x: 300, y: 100 }, 'curve', world());
+    const m = connectorMidpoint(r);
+    expect(m.x).toBeCloseTo(150);
+    expect(m.y).toBeCloseTo(50);
+    expect(m.x).toBeCloseTo(r.points[CURVE_STEPS] ?? NaN);
+    expect(m.y).toBeCloseTo(r.points[CURVE_STEPS + 1] ?? NaN);
+  });
+  it('arrowheads follow the tangent: into a left side from the left, out of a right side to the right', () => {
+    const a = box('a', 0, 0);
+    const b = box('b', 400, 300);
+    const r = routeConnector({ id: 'a', side: 'right' }, { id: 'b', side: 'left' }, 'curve', world(a, b));
+    expect(connectorEndDirection(r, true)).toEqual({ x: 1, y: 0 });
+    expect(connectorEndDirection(r, false)).toEqual({ x: -1, y: 0 });
+    // A top side is entered from above.
+    const t = routeConnector({ id: 'a', side: 'bottom' }, { id: 'b', side: 'top' }, 'curve', world(a, b));
+    expect(connectorEndDirection(t, true)).toEqual({ x: 0, y: 1 });
+  });
+  it('does not share cache entries with the elbow route of the same ends', () => {
+    const cache = new RouteCache();
+    const l = world(box('a', 0, 0), box('b', 400, 200));
+    const e = routeConnector({ id: 'a', side: 'right' }, { id: 'b', side: 'left' }, 'elbow', l, {}, cache);
+    const c = routeConnector({ id: 'a', side: 'right' }, { id: 'b', side: 'left' }, 'curve', l, {}, cache);
+    expect(c.points).not.toBe(e.points);
+    expect(c.points.length).toBe(2 * (CURVE_STEPS + 1));
   });
 });

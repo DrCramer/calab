@@ -156,7 +156,10 @@ export class Gateway {
     const ws = this.ws;
     this.ws = null;
     if (!ws) return;
-    ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+    ws.onopen = ws.onmessage = ws.onclose = null;
+    // Keep a no-op error listener: closing a socket that is still CONNECTING makes `ws` emit 'error'
+    // on the next tick, and an EventEmitter 'error' with no listener crashes the process.
+    ws.onerror = () => undefined;
     try {
       ws.close(code);
     } catch {

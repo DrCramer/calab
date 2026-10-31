@@ -465,6 +465,20 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         emitRows('messages_changed', touched, list.map((m) => m.id));
         emitFolders(f.accountId);
       },
+      markAllRead: async (fid) => {
+        const f = folder(fid);
+        if (!f.path) fail('INVALID', 'only real folders can be marked read');
+        const touched = new Map<string, Set<string>>();
+        const ids: string[] = [];
+        for (const m of inFolder(f)) {
+          if (m.seen) continue;
+          m.seen = true;
+          touch(touched, m);
+          ids.push(m.id);
+        }
+        if (ids.length) emitRows('messages_changed', touched, ids);
+        emitFolders(f.accountId);
+      },
       // CBF-39 / CBF-56: a folder, top-level or under `parentId` (the engine's name checks, simplified); offline account → NETWORK.
       create: async (accountId, name, parentId) => {
         const a = account(accountId);
@@ -689,12 +703,13 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
       },
     },
     search: async (q) => {
-      const text = q.text.trim().toLowerCase();
+      const fold = (v: string): string => v.toLowerCase().replace(/ё/g, 'е');
+      const text = fold(q.text.trim());
       const fs = q.folder
         ? resolveFolders(q.scope, q.folder)
         : [...folders.values()].filter((f) => (q.scope === 'all' || f.accountId === q.scope) && f.path && f.role !== 'junk' && f.role !== 'trash' && f.role !== 'starred');
       const hit = (m: MockMessage): boolean =>
-        !text || [m.subject, m.from.name, m.from.address, m.text ?? ''].some((s) => s.toLowerCase().includes(text));
+        !text || [m.subject, m.from.name, m.from.address, m.text ?? '', ...[...m.to, ...m.cc, ...m.bcc].flatMap((a) => [a.name, a.address])].some((s) => fold(s).includes(text));
       return page(
         fs.flatMap((f) => rowsOf(f, inFolder(f).filter(hit))),
         q.before,

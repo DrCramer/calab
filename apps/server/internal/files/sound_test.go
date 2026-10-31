@@ -14,7 +14,7 @@ import (
 // 3-minute cap (a longer file is refused, not cut) and encoded at 32 kbit/s mono 48 kHz.
 func TestPromptArgs(t *testing.T) {
 	args := strings.Join(PromptArgs("wav", "in", "out.ogg"), " ")
-	for _, want := range []string{"-f wav -t 181 -i in", "-b:a 32k", "-ac 1 -ar 48000", "-c:a libopus", "-f ogg out.ogg"} {
+	for _, want := range []string{"-f wav -t 181 -i in", "-b:a 24k", "-ac 1 -ar 48000", "-c:a libopus", "-f ogg out.ogg"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("%q missing in %s", want, args)
 		}

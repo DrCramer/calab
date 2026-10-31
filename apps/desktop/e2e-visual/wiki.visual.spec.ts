@@ -1,5 +1,5 @@
 import { expect, test } from './app';
-import { checkpoint } from './harness';
+import { checkpoint, joinVoice } from './harness';
 
 /**
  * «Вики» on the desktop (ADR-0096 §9, docs/08 «Вики: раздел»): the page with its cover, icon,
@@ -29,6 +29,13 @@ test('wiki-page', async ({ open, win, shot }) => {
   await expect(win.getByTestId('wiki-node')).toHaveCount(6);
   await win.mouse.move(5, 5);
   await checkpoint(shot, 'wiki-page');
+
+  // In a call: the island folded into my avatar with the call mark (ADR-0146).
+  await joinVoice(win);
+  await win.getByTestId('section-wiki').click();
+  await expect(win.getByTestId('wiki-title')).toHaveValue('Справочник команды');
+  await win.mouse.move(5, 5);
+  await checkpoint(shot, 'wiki-voice');
 });
 
 test('wiki-tree-trash', async ({ open, win, shot, theme }) => {

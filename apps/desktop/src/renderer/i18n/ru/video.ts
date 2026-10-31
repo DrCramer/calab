@@ -147,6 +147,8 @@ export const ruVideo = {
   'perm.VIDEO': 'Включать камеру',
   'media.cameraLimit': 'Камер одновременно',
   'media.cameraLimitHint': '0 — камеры в комнате выключены',
+  'media.joinLeaveSoundMax': 'Звук входа и выхода',
+  'media.joinLeaveSoundMaxHint': 'Пока в комнате не больше стольких человек; 0 — без звука',
 
   // errors (lib/media/errors.ts)
   'mediaErr.camera.permission': 'Камера недоступна — проверьте разрешение',

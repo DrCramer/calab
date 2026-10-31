@@ -86,6 +86,11 @@ func (c *Core) creditPayment(ctx context.Context, q *sqlc.Queries, paymentID uui
 	if err := s.append(KindTopup, pay.AmountMinor, "topup:"+pay.ID.String(), refs{lot: &lot.ID}, ""); err != nil {
 		return nil, err
 	}
+	if c.hooks.PaymentCredited != nil {
+		if err := c.hooks.PaymentCredited(ctx, q, s.acc, pay); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.settle(); err != nil {
 		return nil, err
 	}

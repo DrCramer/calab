@@ -17,7 +17,7 @@ UPDATE sip_calls
 SET status = 'active', answered_at = now(), answered_by = $1::uuid, ringing_user_ids = '{}'
 WHERE id = $2 AND direction = 'in' AND status = 'ringing' AND answered_by IS NULL
   AND $1::uuid = ANY (ringing_user_ids)
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type AnswerSipInboundCallParams struct {
@@ -50,6 +50,10 @@ func (q *Queries) AnswerSipInboundCall(ctx context.Context, arg AnswerSipInbound
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -113,7 +117,7 @@ UPDATE sip_calls
 SET status = $1, reason = $2, ended_by = $3, ended_at = now(),
     sip_call_id = CASE WHEN $4::text <> '' THEN $4::text ELSE sip_call_id END
 WHERE id = $5 AND status IN ('dialing', 'ringing', 'active')
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type FinishSipCallParams struct {
@@ -155,6 +159,10 @@ func (q *Queries) FinishSipCall(ctx context.Context, arg FinishSipCallParams) (S
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -169,7 +177,7 @@ func (q *Queries) ForgetSipRecordingFile(ctx context.Context, id uuid.UUID) erro
 }
 
 const getLiveSipCallByRoom = `-- name: GetLiveSipCallByRoom :one
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls WHERE room_id = $1 AND status IN ('dialing', 'ringing', 'active')
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls WHERE room_id = $1 AND status IN ('dialing', 'ringing', 'active')
 `
 
 func (q *Queries) GetLiveSipCallByRoom(ctx context.Context, roomID *uuid.UUID) (SipCall, error) {
@@ -196,6 +204,10 @@ func (q *Queries) GetLiveSipCallByRoom(ctx context.Context, roomID *uuid.UUID) (
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -229,7 +241,7 @@ func (q *Queries) GetLiveSipRecordingByCall(ctx context.Context, callID uuid.UUI
 }
 
 const getSipAccount = `-- name: GetSipAccount :one
-SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound FROM sip_accounts WHERE workspace_id = $1
+SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms FROM sip_accounts WHERE workspace_id = $1
 `
 
 func (q *Queries) GetSipAccount(ctx context.Context, workspaceID uuid.UUID) (SipAccount, error) {
@@ -277,12 +289,25 @@ func (q *Queries) GetSipAccount(ctx context.Context, workspaceID uuid.UUID) (Sip
 		&i.RegStatusAt,
 		&i.RecordInbound,
 		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
 	)
 	return i, err
 }
 
 const getSipCall = `-- name: GetSipCall :one
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls WHERE id = $1
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls WHERE id = $1
 `
 
 func (q *Queries) GetSipCall(ctx context.Context, id uuid.UUID) (SipCall, error) {
@@ -309,12 +334,16 @@ func (q *Queries) GetSipCall(ctx context.Context, id uuid.UUID) (SipCall, error)
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
 
 const getSipCallByLKRoom = `-- name: GetSipCallByLKRoom :one
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls WHERE lk_room = $1 AND lk_room <> ''
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls WHERE lk_room = $1 AND lk_room <> ''
 `
 
 func (q *Queries) GetSipCallByLKRoom(ctx context.Context, lkRoom string) (SipCall, error) {
@@ -341,6 +370,10 @@ func (q *Queries) GetSipCallByLKRoom(ctx context.Context, lkRoom string) (SipCal
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -375,10 +408,12 @@ func (q *Queries) GetSipCallRecording(ctx context.Context, id uuid.UUID) (SipCal
 
 const getSipPromptFile = `-- name: GetSipPromptFile :one
 SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform FROM files f WHERE f.id = $1
-  AND EXISTS (SELECT 1 FROM sip_ivr_menus m WHERE m.prompt_file_id = f.id OR m.notice_file_id = f.id)
+  AND (EXISTS (SELECT 1 FROM sip_ivr_menus m WHERE m.prompt_file_id = f.id OR m.notice_file_id = f.id)
+       OR EXISTS (SELECT 1 FROM sip_accounts a WHERE a.off_hours_notice_file_id = f.id))
 `
 
-// The IVR worker downloads a prompt: only files that are a menu's prompt or recording notice.
+// The IVR worker downloads a prompt: only files that are a menu's prompt or recording notice, or
+// the off-hours notice of a schedule (ADR-0138).
 func (q *Queries) GetSipPromptFile(ctx context.Context, id uuid.UUID) (File, error) {
 	row := q.db.QueryRow(ctx, getSipPromptFile, id)
 	var i File
@@ -430,9 +465,9 @@ func (q *Queries) GetSipRecordingByEgress(ctx context.Context, egressID *string)
 }
 
 const insertSipCall = `-- name: InsertSipCall :one
-INSERT INTO sip_calls (id, workspace_id, room_id, number, direction, started_by, participant_identity)
-VALUES ($1, $2, $3, $4, 'out', $5, $6)
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+INSERT INTO sip_calls (id, workspace_id, room_id, number, direction, started_by, participant_identity, origin, peer_e164, extension)
+VALUES ($1, $2, $3, $4, 'out', $5, $6, $7, $8, $9)
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type InsertSipCallParams struct {
@@ -442,6 +477,9 @@ type InsertSipCallParams struct {
 	Number              string
 	StartedBy           *uuid.UUID
 	ParticipantIdentity string
+	Origin              string
+	PeerE164            string
+	Extension           string
 }
 
 func (q *Queries) InsertSipCall(ctx context.Context, arg InsertSipCallParams) (SipCall, error) {
@@ -452,6 +490,9 @@ func (q *Queries) InsertSipCall(ctx context.Context, arg InsertSipCallParams) (S
 		arg.Number,
 		arg.StartedBy,
 		arg.ParticipantIdentity,
+		arg.Origin,
+		arg.PeerE164,
+		arg.Extension,
 	)
 	var i SipCall
 	err := row.Scan(
@@ -475,6 +516,10 @@ func (q *Queries) InsertSipCall(ctx context.Context, arg InsertSipCallParams) (S
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -530,11 +575,12 @@ func (q *Queries) InsertSipCallRecording(ctx context.Context, arg InsertSipCallR
 }
 
 const insertSipInboundCall = `-- name: InsertSipInboundCall :one
-INSERT INTO sip_calls (id, workspace_id, number, direction, participant_identity, sip_call_id, lk_room, status, reason, ended_at)
+INSERT INTO sip_calls (id, workspace_id, number, direction, participant_identity, sip_call_id, lk_room, status, reason, ended_at,
+                       origin, peer_e164)
 VALUES ($1, $2, $3, 'in', $4,
         $5, $6, $7, $8,
-        CASE WHEN $7::text IN ('ended', 'failed') THEN now() END)
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+        CASE WHEN $7::text IN ('ended', 'failed') THEN now() END, 'inbound', $9)
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type InsertSipInboundCallParams struct {
@@ -546,6 +592,7 @@ type InsertSipInboundCallParams struct {
 	LkRoom              string
 	Status              string
 	Reason              string
+	PeerE164            string
 }
 
 // An inbound line got into its LiveKit room: RINGING from the start (FAILED rows for refusals).
@@ -559,6 +606,7 @@ func (q *Queries) InsertSipInboundCall(ctx context.Context, arg InsertSipInbound
 		arg.LkRoom,
 		arg.Status,
 		arg.Reason,
+		arg.PeerE164,
 	)
 	var i SipCall
 	err := row.Scan(
@@ -582,12 +630,16 @@ func (q *Queries) InsertSipInboundCall(ctx context.Context, arg InsertSipInbound
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
 
 const listActiveSipCalls = `-- name: ListActiveSipCalls :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE workspace_id = $1 AND status IN ('dialing', 'ringing', 'active') AND started_at > $2
 ORDER BY started_at
 LIMIT 100
@@ -630,6 +682,10 @@ func (q *Queries) ListActiveSipCalls(ctx context.Context, arg ListActiveSipCalls
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -642,7 +698,7 @@ func (q *Queries) ListActiveSipCalls(ctx context.Context, arg ListActiveSipCalls
 }
 
 const listLiveInboundCalls = `-- name: ListLiveInboundCalls :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE direction = 'in' AND status IN ('dialing', 'ringing', 'active') AND started_at < $1
 ORDER BY started_at
 LIMIT 200
@@ -679,6 +735,10 @@ func (q *Queries) ListLiveInboundCalls(ctx context.Context, startedAt time.Time)
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -691,7 +751,7 @@ func (q *Queries) ListLiveInboundCalls(ctx context.Context, startedAt time.Time)
 }
 
 const listLiveInboundCallsByWorkspace = `-- name: ListLiveInboundCallsByWorkspace :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE workspace_id = $1 AND direction = 'in' AND status IN ('dialing', 'ringing', 'active')
 ORDER BY id
 `
@@ -726,6 +786,10 @@ func (q *Queries) ListLiveInboundCallsByWorkspace(ctx context.Context, workspace
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -738,7 +802,7 @@ func (q *Queries) ListLiveInboundCallsByWorkspace(ctx context.Context, workspace
 }
 
 const listLiveInboundCallsForUser = `-- name: ListLiveInboundCallsForUser :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE workspace_id = $1 AND direction = 'in' AND status IN ('dialing', 'ringing', 'active')
   AND ($2::uuid = ANY (ringing_user_ids) OR answered_by = $2::uuid)
 ORDER BY id
@@ -780,6 +844,10 @@ func (q *Queries) ListLiveInboundCallsForUser(ctx context.Context, arg ListLiveI
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -792,7 +860,7 @@ func (q *Queries) ListLiveInboundCallsForUser(ctx context.Context, arg ListLiveI
 }
 
 const listLiveSipCalls = `-- name: ListLiveSipCalls :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE status IN ('dialing', 'ringing', 'active') AND started_at < $1 AND direction = 'out'
 ORDER BY started_at
 LIMIT 200
@@ -829,6 +897,10 @@ func (q *Queries) ListLiveSipCalls(ctx context.Context, startedAt time.Time) ([]
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -841,7 +913,7 @@ func (q *Queries) ListLiveSipCalls(ctx context.Context, startedAt time.Time) ([]
 }
 
 const listLiveSipCallsByWorkspace = `-- name: ListLiveSipCallsByWorkspace :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE workspace_id = $1 AND room_id IS NOT NULL AND status IN ('dialing', 'ringing', 'active')
 ORDER BY id
 `
@@ -877,6 +949,10 @@ func (q *Queries) ListLiveSipCallsByWorkspace(ctx context.Context, workspaceID u
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -930,7 +1006,7 @@ func (q *Queries) ListLiveSipRecordings(ctx context.Context) ([]SipCallRecording
 }
 
 const listSipCalls = `-- name: ListSipCalls :many
-SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id FROM sip_calls
+SELECT id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension FROM sip_calls
 WHERE workspace_id = $1
   AND ($2::timestamptz IS NULL OR started_at >= $2::timestamptz)
   AND ($3::timestamptz IS NULL OR started_at < $3::timestamptz)
@@ -984,6 +1060,10 @@ func (q *Queries) ListSipCalls(ctx context.Context, arg ListSipCallsParams) ([]S
 			&i.RingingUserIds,
 			&i.Via,
 			&i.ProviderCallID,
+			&i.Origin,
+			&i.PeerE164,
+			&i.Missed,
+			&i.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -1041,7 +1121,7 @@ func (q *Queries) ListSipRecordingFilesToDelete(ctx context.Context, before *tim
 }
 
 const listSipRegisterAccounts = `-- name: ListSipRegisterAccounts :many
-SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound FROM sip_accounts
+SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms FROM sip_accounts
 WHERE inbound_mode = 'register' AND inbound_trunk_id <> '' AND enabled AND inbound_enabled
 ORDER BY workspace_id
 `
@@ -1098,6 +1178,19 @@ func (q *Queries) ListSipRegisterAccounts(ctx context.Context) ([]SipAccount, er
 			&i.RegStatusAt,
 			&i.RecordInbound,
 			&i.RecordOutbound,
+			&i.RetentionMonths,
+			&i.OutPerHour,
+			&i.OutPerUserHour,
+			&i.ScheduleEnabled,
+			&i.ScheduleTz,
+			&i.ScheduleHours,
+			&i.ScheduleHolidays,
+			&i.OffHoursKind,
+			&i.OffHoursMenuID,
+			&i.OffHoursExtensionID,
+			&i.OffHoursGroupID,
+			&i.OffHoursNoticeFileID,
+			&i.OffHoursNoticeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1126,7 +1219,7 @@ UPDATE sip_calls
 SET status = 'active', answered_at = coalesce(answered_at, now()),
     sip_call_id = CASE WHEN $1::text <> '' THEN $1::text ELSE sip_call_id END
 WHERE id = $2 AND status IN ('dialing', 'ringing')
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type MarkSipCallActiveParams struct {
@@ -1158,6 +1251,10 @@ func (q *Queries) MarkSipCallActive(ctx context.Context, arg MarkSipCallActivePa
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -1165,7 +1262,7 @@ func (q *Queries) MarkSipCallActive(ctx context.Context, arg MarkSipCallActivePa
 const markSipCallRinging = `-- name: MarkSipCallRinging :one
 UPDATE sip_calls SET status = 'ringing'
 WHERE id = $1 AND status = 'dialing'
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 func (q *Queries) MarkSipCallRinging(ctx context.Context, id uuid.UUID) (SipCall, error) {
@@ -1192,6 +1289,10 @@ func (q *Queries) MarkSipCallRinging(ctx context.Context, id uuid.UUID) (SipCall
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -1352,7 +1453,7 @@ SET provider = excluded.provider, host = excluded.host, transport = excluded.tra
     outbound_prefix = excluded.outbound_prefix, allowed_prefixes = excluded.allowed_prefixes,
     trunk_id = excluded.trunk_id, enabled = excluded.enabled, last_error = '',
     updated_at = now(), updated_by = excluded.updated_by
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms
 `
 
 type PutSipAccountParams struct {
@@ -1432,6 +1533,19 @@ func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (S
 		&i.RegStatusAt,
 		&i.RecordInbound,
 		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
 	)
 	return i, err
 }
@@ -1439,7 +1553,7 @@ func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (S
 const returnSipInboundTransfer = `-- name: ReturnSipInboundTransfer :one
 UPDATE sip_calls SET answered_by = $1::uuid, ringing_user_ids = '{}', route = $2
 WHERE id = $3 AND direction = 'in' AND status = 'active'
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type ReturnSipInboundTransferParams struct {
@@ -1474,6 +1588,10 @@ func (q *Queries) ReturnSipInboundTransfer(ctx context.Context, arg ReturnSipInb
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -1517,7 +1635,7 @@ SET inbound_enabled = $1, inbound_kind = $2,
     inbound_trunk_id = $7, inbound_rule_id = $8,
     last_error = '', updated_at = now(), updated_by = $9
 WHERE workspace_id = $10
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms
 `
 
 type SetSipInboundParams struct {
@@ -1592,6 +1710,19 @@ func (q *Queries) SetSipInbound(ctx context.Context, arg SetSipInboundParams) (S
 		&i.RegStatusAt,
 		&i.RecordInbound,
 		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
 	)
 	return i, err
 }
@@ -1634,7 +1765,7 @@ INSERT INTO sip_accounts (workspace_id, record_inbound, record_outbound)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id) DO UPDATE
 SET record_inbound = excluded.record_inbound, record_outbound = excluded.record_outbound
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms
 `
 
 type SetSipRecordingParams struct {
@@ -1691,6 +1822,19 @@ func (q *Queries) SetSipRecording(ctx context.Context, arg SetSipRecordingParams
 		&i.RegStatusAt,
 		&i.RecordInbound,
 		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
 	)
 	return i, err
 }
@@ -1753,7 +1897,7 @@ SET inbound_mode = $1, reg_registrar = $2, reg_domain = $3,
     reg_expires_at = CASE WHEN $10::text = 'registered' THEN reg_expires_at END,
     reg_contact = CASE WHEN $10::text = 'registered' THEN reg_contact ELSE '' END
 WHERE workspace_id = $11
-RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms
 `
 
 type SetSipRegistrationParams struct {
@@ -1829,12 +1973,197 @@ func (q *Queries) SetSipRegistration(ctx context.Context, arg SetSipRegistration
 		&i.RegStatusAt,
 		&i.RecordInbound,
 		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
+	)
+	return i, err
+}
+
+const setSipSchedule = `-- name: SetSipSchedule :one
+
+UPDATE sip_accounts
+SET schedule_enabled = $1, schedule_tz = $2,
+    schedule_hours = $3, schedule_holidays = $4,
+    off_hours_kind = $5, off_hours_menu_id = $6,
+    off_hours_extension_id = $7, off_hours_group_id = $8
+WHERE workspace_id = $9
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms
+`
+
+type SetSipScheduleParams struct {
+	ScheduleEnabled     bool
+	ScheduleTz          string
+	ScheduleHours       []byte
+	ScheduleHolidays    string
+	OffHoursKind        string
+	OffHoursMenuID      *uuid.UUID
+	OffHoursExtensionID *uuid.UUID
+	OffHoursGroupID     *uuid.UUID
+	WorkspaceID         uuid.UUID
+}
+
+// ---- the working-hours schedule (ADR-0138)
+// PUT …/sip/schedule: the schedule as a whole (the notice: SetSipScheduleNotice).
+func (q *Queries) SetSipSchedule(ctx context.Context, arg SetSipScheduleParams) (SipAccount, error) {
+	row := q.db.QueryRow(ctx, setSipSchedule,
+		arg.ScheduleEnabled,
+		arg.ScheduleTz,
+		arg.ScheduleHours,
+		arg.ScheduleHolidays,
+		arg.OffHoursKind,
+		arg.OffHoursMenuID,
+		arg.OffHoursExtensionID,
+		arg.OffHoursGroupID,
+		arg.WorkspaceID,
+	)
+	var i SipAccount
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Provider,
+		&i.Host,
+		&i.Transport,
+		&i.Username,
+		&i.AuthUsername,
+		&i.Port,
+		&i.PasswordEnc,
+		&i.CallerID,
+		&i.OutboundPrefix,
+		&i.AllowedPrefixes,
+		&i.TrunkID,
+		&i.Enabled,
+		&i.LastError,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.InboundEnabled,
+		&i.InboundKind,
+		&i.InboundMenuID,
+		&i.InboundExtensionID,
+		&i.InboundGroupID,
+		&i.InboundAllowedCidrs,
+		&i.InboundTrunkID,
+		&i.InboundRuleID,
+		&i.InboundMode,
+		&i.RegRegistrar,
+		&i.RegDomain,
+		&i.RegExpires,
+		&i.RegKeepaliveSec,
+		&i.RegContactUser,
+		&i.RegAuthUsername,
+		&i.RegPasswordEnc,
+		&i.RegTrunkPasswordEnc,
+		&i.RegStatus,
+		&i.RegError,
+		&i.RegRegisteredAt,
+		&i.RegExpiresAt,
+		&i.RegContact,
+		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
+	)
+	return i, err
+}
+
+const setSipScheduleNotice = `-- name: SetSipScheduleNotice :one
+UPDATE sip_accounts
+SET off_hours_notice_file_id = $1, off_hours_notice_ms = $2
+WHERE workspace_id = $3
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by, inbound_enabled, inbound_kind, inbound_menu_id, inbound_extension_id, inbound_group_id, inbound_allowed_cidrs, inbound_trunk_id, inbound_rule_id, inbound_mode, reg_registrar, reg_domain, reg_expires, reg_keepalive_sec, reg_contact_user, reg_auth_username, reg_password_enc, reg_trunk_password_enc, reg_status, reg_error, reg_registered_at, reg_expires_at, reg_contact, reg_status_at, record_inbound, record_outbound, retention_months, out_per_hour, out_per_user_hour, schedule_enabled, schedule_tz, schedule_hours, schedule_holidays, off_hours_kind, off_hours_menu_id, off_hours_extension_id, off_hours_group_id, off_hours_notice_file_id, off_hours_notice_ms
+`
+
+type SetSipScheduleNoticeParams struct {
+	OffHoursNoticeFileID *uuid.UUID
+	OffHoursNoticeMs     int32
+	WorkspaceID          uuid.UUID
+}
+
+func (q *Queries) SetSipScheduleNotice(ctx context.Context, arg SetSipScheduleNoticeParams) (SipAccount, error) {
+	row := q.db.QueryRow(ctx, setSipScheduleNotice, arg.OffHoursNoticeFileID, arg.OffHoursNoticeMs, arg.WorkspaceID)
+	var i SipAccount
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Provider,
+		&i.Host,
+		&i.Transport,
+		&i.Username,
+		&i.AuthUsername,
+		&i.Port,
+		&i.PasswordEnc,
+		&i.CallerID,
+		&i.OutboundPrefix,
+		&i.AllowedPrefixes,
+		&i.TrunkID,
+		&i.Enabled,
+		&i.LastError,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.InboundEnabled,
+		&i.InboundKind,
+		&i.InboundMenuID,
+		&i.InboundExtensionID,
+		&i.InboundGroupID,
+		&i.InboundAllowedCidrs,
+		&i.InboundTrunkID,
+		&i.InboundRuleID,
+		&i.InboundMode,
+		&i.RegRegistrar,
+		&i.RegDomain,
+		&i.RegExpires,
+		&i.RegKeepaliveSec,
+		&i.RegContactUser,
+		&i.RegAuthUsername,
+		&i.RegPasswordEnc,
+		&i.RegTrunkPasswordEnc,
+		&i.RegStatus,
+		&i.RegError,
+		&i.RegRegisteredAt,
+		&i.RegExpiresAt,
+		&i.RegContact,
+		&i.RegStatusAt,
+		&i.RecordInbound,
+		&i.RecordOutbound,
+		&i.RetentionMonths,
+		&i.OutPerHour,
+		&i.OutPerUserHour,
+		&i.ScheduleEnabled,
+		&i.ScheduleTz,
+		&i.ScheduleHours,
+		&i.ScheduleHolidays,
+		&i.OffHoursKind,
+		&i.OffHoursMenuID,
+		&i.OffHoursExtensionID,
+		&i.OffHoursGroupID,
+		&i.OffHoursNoticeFileID,
+		&i.OffHoursNoticeMs,
 	)
 	return i, err
 }
 
 const setWorkspaceSipEnabled = `-- name: SetWorkspaceSipEnabled :one
-UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days
+UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max
 `
 
 type SetWorkspaceSipEnabledParams struct {
@@ -1870,6 +2199,7 @@ func (q *Queries) SetWorkspaceSipEnabled(ctx context.Context, arg SetWorkspaceSi
 		&i.TempArchiveDays,
 		&i.OwnerSeesPrivate,
 		&i.CanvasTrashDays,
+		&i.DefaultJoinLeaveSoundMax,
 	)
 	return i, err
 }
@@ -1922,7 +2252,7 @@ UPDATE sip_calls
 SET answered_by = $1::uuid, ringing_user_ids = '{}', route = $2
 WHERE id = $3 AND direction = 'in' AND status = 'active'
   AND $1::uuid = ANY (ringing_user_ids)
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type TransferSipInboundCallParams struct {
@@ -1956,6 +2286,10 @@ func (q *Queries) TransferSipInboundCall(ctx context.Context, arg TransferSipInb
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -1963,7 +2297,7 @@ func (q *Queries) TransferSipInboundCall(ctx context.Context, arg TransferSipInb
 const updateSipInboundRinging = `-- name: UpdateSipInboundRinging :one
 UPDATE sip_calls SET ringing_user_ids = $2, route = $3, via = $4
 WHERE id = $1 AND direction = 'in' AND status = 'ringing'
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type UpdateSipInboundRingingParams struct {
@@ -2003,6 +2337,10 @@ func (q *Queries) UpdateSipInboundRinging(ctx context.Context, arg UpdateSipInbo
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }
@@ -2010,7 +2348,7 @@ func (q *Queries) UpdateSipInboundRinging(ctx context.Context, arg UpdateSipInbo
 const updateSipInboundTransfer = `-- name: UpdateSipInboundTransfer :one
 UPDATE sip_calls SET ringing_user_ids = $2, route = $3
 WHERE id = $1 AND direction = 'in' AND status = 'active'
-RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id
+RETURNING id, workspace_id, room_id, number, direction, started_by, participant_identity, sip_call_id, status, reason, ended_by, started_at, answered_at, ended_at, lk_room, answered_by, route, ringing_user_ids, via, provider_call_id, origin, peer_e164, missed, extension
 `
 
 type UpdateSipInboundTransferParams struct {
@@ -2045,6 +2383,10 @@ func (q *Queries) UpdateSipInboundTransfer(ctx context.Context, arg UpdateSipInb
 		&i.RingingUserIds,
 		&i.Via,
 		&i.ProviderCallID,
+		&i.Origin,
+		&i.PeerE164,
+		&i.Missed,
+		&i.Extension,
 	)
 	return i, err
 }

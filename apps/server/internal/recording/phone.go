@@ -71,6 +71,21 @@ type PhoneConfig struct {
 	MaxCall time.Duration
 }
 
+// JournalSink is the call journal (sip.Service, ADR-0137 §1): a phone recording started, was
+// stored on the Disk or failed. It never blocks the recording.
+type JournalSink interface {
+	RecordingEvent(ctx context.Context, call uuid.UUID, status string)
+}
+
+// SetJournal gives the service the call journal (nil = none).
+func (s *Service) SetJournal(j JournalSink) { s.journal = j }
+
+func (s *Service) journalPhone(ctx context.Context, call uuid.UUID, status string) {
+	if s.journal != nil {
+		s.journal.RecordingEvent(ctx, call, status)
+	}
+}
+
 // SetPhone turns phone call recording on (the files service must be set too: SetFiles).
 func (s *Service) SetPhone(cfg PhoneConfig) {
 	if cfg.Location == nil {
@@ -159,9 +174,11 @@ func (s *Service) startPhone(ctx context.Context, id uuid.UUID) {
 		return
 	}
 	in := call.Direction == "in"
+	// Inbound and personal calls (ADR-0137 §3) have rooms of their own (lk_room): only the two
+	// sides are recorded; a room's call records the voice room.
 	room := call.LkRoom
-	if !in {
-		if call.RoomID == nil {
+	if room == "" {
+		if in || call.RoomID == nil {
 			return // the connection test
 		}
 		room = voice.RoomName(call.WorkspaceID, *call.RoomID)
@@ -209,6 +226,7 @@ func (s *Service) startPhone(ctx context.Context, id uuid.UUID) {
 	out, err := s.store.output(rec.File)
 	if err == nil {
 		out.FileType = rtc.FileOGG
+		out.Audio = rtc.PhoneAudio
 		var info *rtc.EgressInfo
 		if info, err = s.eg.StartAudioRecording(ctx, room, out); err == nil {
 			s.phoneStarted(ctx, rec, info.EgressID)
@@ -230,6 +248,7 @@ func (s *Service) phoneStarted(ctx context.Context, rec sqlc.SipCallRecording, e
 		return
 	}
 	metricPhone.WithLabelValues("started").Inc()
+	s.journalPhone(ctx, upd.CallID, "started")
 	slog.InfoContext(ctx, "sip recording started", "recording", upd.ID, "call", upd.CallID, "egress", egressID, "room", upd.LkRoom)
 	if upd.StoppedAt != nil {
 		s.stopPhone(ctx, upd, "ended_while_starting") // the hang-up came before the egress id
@@ -261,6 +280,8 @@ func (s *Service) failPhone(ctx context.Context, rec sqlc.SipCallRecording, code
 		return q.MarkSipRecordingFailed(ctx, sqlc.MarkSipRecordingFailedParams{ID: rec.ID, Error: code})
 	}); err != nil && !db.IsNotFound(err) {
 		slog.WarnContext(ctx, "sip recording: mark failed", "recording", rec.ID, "err", err)
+	} else if err == nil {
+		s.journalPhone(ctx, rec.CallID, "failed")
 	}
 	metricPhone.WithLabelValues("failed_" + code).Inc()
 }
@@ -356,6 +377,7 @@ func (s *Service) finishPhone(ctx context.Context, rec sqlc.SipCallRecording, in
 		return nil // the Disk has the file; the raw file stays for the janitor
 	}
 	metricPhone.WithLabelValues("stored").Inc()
+	s.journalPhone(ctx, rec.CallID, "stored")
 	slog.InfoContext(ctx, "sip recording stored", "recording", rec.ID, "call", rec.CallID, "item", item.ID, "name", item.Name, "bytes", size)
 	s.removePhoneFile(ctx, rec)
 	return nil

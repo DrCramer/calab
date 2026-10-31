@@ -214,12 +214,14 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 	if err != nil || !ok {
 		return
 	}
-	var boardName *string // read once, for the first relayed notice
-	for _, n := range ns {
-		pbs, err := tasksProto(ctx, s.db.Q, []taskRow{t}, n.user)
+	pbs := make([]*v1.Task, len(ns))
+	tns := make([]*v1.TaskNotice, len(ns))
+	for i, n := range ns {
+		ps, err := tasksProto(ctx, s.db.Q, []taskRow{t}, n.user)
 		if err != nil {
 			return
 		}
+		pbs[i] = ps[0]
 		tn := &v1.TaskNotice{Kind: n.kind.Notice()}
 		if n.actor != uuid.Nil { // the approval reminder has no actor
 			tn.ActorId = n.actor.String()
@@ -235,8 +237,13 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 		if n.rule != uuid.Nil {
 			tn.Text, tn.RuleId = n.text, n.rule.String()
 		}
-		s.ev.User(ctx, n.user, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskUpdate{TaskUpdate: &v1.TaskUpdate{Task: pbs[0], Notice: tn}}})
-		s.relayNotice(ctx, t, n.user, pbs[0], tn, &boardName)
+		tns[i] = tn
+	}
+	s.logNotices(ctx, t.ID, ns, tns)
+	var boardName *string // read once, for the first relayed notice
+	for i, n := range ns {
+		s.ev.User(ctx, n.user, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskUpdate{TaskUpdate: &v1.TaskUpdate{Task: pbs[i], Notice: tns[i]}}})
+		s.relayNotice(ctx, t, n.user, pbs[i], tns[i], &boardName)
 	}
 }
 

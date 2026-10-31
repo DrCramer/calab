@@ -1,3 +1,4 @@
+import { isCalendarLink } from '../../desktop/src/shared/calendarLink';
 /**
  * What the phone host lets the WebView load (ADR-0067). Only the exact web origin may become app
  * content; third-party iframes (workspace web apps, embeds) keep loading inside their frame, as in a
@@ -69,14 +70,18 @@ export function isAppSubframe(req: NavigationRequest, origin: string): boolean {
  * A navigation the WebView is about to start (`onShouldStartLoadWithRequest`). Fails closed: a
  * request that is not a proven app iframe — every Android request, an iOS top frame — is judged as
  * the top frame and may only leave for the OS, never load another origin in the WebView.
- * This is a JS decision, not a native guard: on Android the library allows the load if JS does not
- * answer within 250 ms, and the engine does not ask for POST navigations (ADR-0067).
+ * On Android the main frame is decided natively first (patched react-native-webview,
+ * CalabOriginGuard, ADR-0067): only the exact origin loads, anything else is cancelled without
+ * waiting for JS, and this function only learns of it fire-and-forget to hand the link to the OS
+ * or show the error; a main-frame request outside the origin (POST included) gets an empty 403.
+ * Android sub-frames still rely on this decision, which the library allows after 250 ms without an
+ * answer. App.tsx's `leftApp` stays as belt-and-braces after the fact.
  */
 export function decideNavigation(req: NavigationRequest, origin: string): Decision {
   if (isAppUrl(req.url, origin)) return 'load';
   const url = parse(req.url);
   if (url === null) return 'block';
-  if (!isAppSubframe(req, origin)) return isExternal(url) ? 'external' : 'block';
+  if (!isAppSubframe(req, origin)) return isExternal(url) || isCalendarLink(req.url, origin) ? 'external' : 'block';
   if (BLANK_FRAMES.has(url.href)) return 'load';
   return url.protocol === 'https:' && !url.username && !url.password ? 'load' : 'block';
 }
@@ -91,5 +96,5 @@ export function decideNavigation(req: NavigationRequest, origin: string): Decisi
 export function decideNewWindow(raw: string, origin: string): Decision {
   if (isAppUrl(raw, origin)) return 'block';
   const url = parse(raw);
-  return url !== null && isExternal(url) ? 'external' : 'block';
+  return url !== null && (isExternal(url) || isCalendarLink(raw, origin)) ? 'external' : 'block';
 }

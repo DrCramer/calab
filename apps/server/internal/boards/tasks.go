@@ -219,18 +219,21 @@ func taskBitsOf(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, t ta
 	if err != nil {
 		return 0, err
 	}
-	return perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher, t.CreatedBy != nil && *t.CreatedBy == u), nil
+	return perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher, t.authoredBy(u)), nil
 }
 
 // invitedCond is the SQL condition over tasks t "user is an assignee, an approver or a watcher"
-// (ADR-0059, ADR-0076) — with author, "or its author" (a create-only member, ADR-0115).
+// (ADR-0059, ADR-0076) — with author, "or its author" (a create-only member, ADR-0115): they
+// created it, or a bot they own did (perm.TaskAuthor, ADR-0151).
 func invitedCond(a *Args, user uuid.UUID, author bool) string {
 	u := a.Add(user)
 	cond := "(EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.task_id = t.id AND ia.user_id = " + u + ")" +
 		" OR EXISTS (SELECT 1 FROM task_approvers ip WHERE ip.task_id = t.id AND ip.user_id = " + u + ")" +
 		" OR EXISTS (SELECT 1 FROM task_subscribers iw WHERE iw.task_id = t.id AND iw.user_id = " + u + " AND iw.watcher)"
 	if author {
-		cond += " OR t.created_by = " + u
+		cond += " OR t.created_by = " + u +
+			" OR EXISTS (SELECT 1 FROM bots ab JOIN boards ib ON ib.id = t.board_id WHERE ab.user_id = t.created_by" +
+			" AND ab.owner_user_id = " + u + " AND ab.workspace_id = ib.workspace_id)"
 	}
 	return cond + ")"
 }
@@ -268,7 +271,7 @@ func visibleTasks(ctx context.Context, q *sqlc.Queries, rows []taskRow, me uuid.
 	out := make([]taskRow, 0, len(rows))
 	for _, x := range rows {
 		acc := accs[x.BoardID]
-		authored := acc.TaskScoped && perm.CreateOnly(acc.Bits) && x.ArchivedAt == nil && x.CreatedBy != nil && *x.CreatedBy == me
+		authored := acc.TaskScoped && perm.CreateOnly(acc.Bits) && x.ArchivedAt == nil && x.authoredBy(me)
 		if (acc.Bits.Has(perm.ViewBoard) && !acc.Archived) || invited[x.ID] || authored {
 			out = append(out, x)
 		}
@@ -276,7 +279,8 @@ func visibleTasks(ctx context.Context, q *sqlc.Queries, rows []taskRow, me uuid.
 	return out, nil
 }
 
-// canEdit: EDIT_TASKS edits any task; CREATE_TASKS the ones the caller created or is assigned to.
+// canEdit: EDIT_TASKS edits any task; CREATE_TASKS the ones the caller authored (themselves or
+// through a bot they own: perm.TaskAuthor, ADR-0151) or is assigned to.
 func canEdit(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, t taskRow, me uuid.UUID) (bool, error) {
 	if acc.Bits.Has(perm.EditTasks) {
 		return true, nil
@@ -284,7 +288,7 @@ func canEdit(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, t taskR
 	if !acc.Bits.Has(perm.CreateTasks) {
 		return false, nil
 	}
-	if t.CreatedBy != nil && *t.CreatedBy == me {
+	if t.authoredBy(me) {
 		return true, nil
 	}
 	as, err := q.ListTaskAssignees(ctx, []uuid.UUID{t.ID})
@@ -1938,7 +1942,8 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 	return nil
 }
 
-// setArchived: POST /api/tasks/{id}/archive | restore. EDIT_TASKS, or the author (CREATE_TASKS).
+// setArchived: POST /api/tasks/{id}/archive | restore. EDIT_TASKS, or the author (CREATE_TASKS;
+// the owner of the bot that created it too, ADR-0151).
 func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived bool) error {
 	me := uid(r)
 	var c change
@@ -1952,7 +1957,7 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 		if err := writable(acc); err != nil {
 			return err
 		}
-		own := t.CreatedBy != nil && *t.CreatedBy == me && acc.Bits.Has(perm.CreateTasks)
+		own := t.authoredBy(me) && acc.Bits.Has(perm.CreateTasks)
 		if !acc.Bits.Has(perm.EditTasks) && !own {
 			return httpx.Forbidden("EDIT_TASKS required to archive others' tasks")
 		}

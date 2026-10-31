@@ -1,0 +1,63 @@
+{
+  "Event": {
+    "Provider": "gitlab",
+    "Repo": "gitlabhq/gitlab-test",
+    "RepoURL": "https://gitlab.example.com/gitlabhq/gitlab-test",
+    "Author": "root",
+    "Push": false,
+    "Branch": "",
+    "DefaultBranch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 8,
+      "Title": "FNG-9 Search filters",
+      "Body": "",
+      "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/8",
+      "State": "open",
+      "Branch": "feature/fng-9-filters",
+      "Author": "root",
+      "Event": "PR_REVIEW_REQUESTED",
+      "Draft": false,
+      "Target": "main",
+      "Actor": "root",
+      "Users": [
+        "akey"
+      ],
+      "Once": [
+        "review:akey"
+      ],
+      "Forget": [
+        "review:old"
+      ],
+      "SHAs": null
+    }
+  },
+  "Links": [
+    {
+      "Number": 9,
+      "Kind": "pr",
+      "Ref": "8",
+      "Title": "FNG-9 Search filters",
+      "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/8",
+      "State": "open",
+      "Author": "root",
+      "Event": "PR_REVIEW_REQUESTED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "feature/fng-9-filters",
+      "Target": "main",
+      "Actor": "root",
+      "Users": [
+        "akey"
+      ],
+      "Once": [
+        "review:akey"
+      ],
+      "Forget": [
+        "review:old"
+      ],
+      "SHAs": null
+    }
+  ]
+}

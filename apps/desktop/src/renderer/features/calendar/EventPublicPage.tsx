@@ -13,7 +13,7 @@ import { Markdown } from '../../lib/markdown/Markdown';
 import type { EventPage } from '../../services/eventPage';
 import { AuthLegalFooter } from '../legal/Legal';
 import { useNow } from '../shell/voiceFormat';
-import { REPEAT_LABEL, RsvpButtons } from './EventCard';
+import { repeatName, RsvpButtons } from './EventCard';
 
 type State = { kind: 'loading' } | { kind: 'ok'; data: EventRsvpTokenResponse; saved: AttendeeStatus | null } | { kind: 'error'; text: string; gone: boolean };
 
@@ -130,7 +130,9 @@ function Card({ data: d, saved, busy, onAnswer }: { data: EventRsvpTokenResponse
       </Row>
       {d.repeat !== EventRepeat.UNSPECIFIED ? (
         <Row icon={<Repeat className="size-4" aria-hidden />}>
-          {d.repeatUntil ? t('cal.repeatUntil', { repeat: t(REPEAT_LABEL[d.repeat]), date: fmt.date(new Date(timestampMs(d.repeatUntil))) }) : t(REPEAT_LABEL[d.repeat])}
+          {d.repeatUntil
+            ? t('cal.repeatUntil', { repeat: repeatName(d.repeat, d.holidayCalendar), date: fmt.date(new Date(timestampMs(d.repeatUntil))) })
+            : repeatName(d.repeat, d.holidayCalendar)}
         </Row>
       ) : null}
       {d.roomName ? (

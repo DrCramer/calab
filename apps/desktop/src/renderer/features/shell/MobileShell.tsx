@@ -37,6 +37,12 @@ import { BoardsView } from '../boards/BoardsView';
 import { PhoneCanvas, PhoneCanvasScreen } from '../canvas/PhoneCanvas';
 import { PhoneDisk } from '../disk/PhoneDisk';
 import { PhoneWiki, PhoneWikiPage, PhoneWikiTrash } from '../wiki/PhoneWiki';
+import { PhoneTelephony } from '../telephony/PhoneTelephony';
+import { PhoneCallDetail } from '../telephony/CallDetail';
+import { PhoneTelSettings } from '../telephony/settings/PhoneSettings';
+import { PhoneContactCard } from '../telephony/contacts/ContactCard';
+import { PhoneContactEdit } from '../telephony/contacts/ContactForm';
+import { PhoneDial } from '../telephony/keypad/DialPage';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
@@ -144,6 +150,8 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <WikiRoot welcome={welcome} />;
     case 'canvas':
       return <CanvasRoot welcome={welcome} />;
+    case 'telephony':
+      return <TelephonyRoot welcome={welcome} />;
     case 'profile':
       return <ProfileRoot />;
   }
@@ -255,6 +263,14 @@ function CanvasRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return <PhoneCanvas workspaceId={ws} />;
 }
 
+/** «Телефония» (ADR-0137 §7): «Недавние» of the open workspace; a call's detail is a pushed screen (guests have no tab). */
+function TelephonyRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest) return <div className="flex min-h-0 flex-1 flex-col">{welcome}</div>;
+  return <PhoneTelephony key={ws} workspaceId={ws} />;
+}
+
 /** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
 function ProfileRoot(): ReactNode {
   return (
@@ -312,6 +328,16 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <ActiveWorkspace>{(ws) => <PhoneDisk key={`${screen.folderId}|${screen.trash ? 't' : ''}`} workspaceId={ws} folderId={screen.folderId} trash={!!screen.trash} root={false} />}</ActiveWorkspace>;
     case 'canvas':
       return <ActiveWorkspace>{(ws) => <PhoneCanvasScreen key={screen.itemId} workspaceId={ws} itemId={screen.itemId} />}</ActiveWorkspace>;
+    case 'telCall':
+      return <ActiveWorkspace>{(ws) => <PhoneCallDetail key={screen.callId} ws={ws} callId={screen.callId} />}</ActiveWorkspace>;
+    case 'telSettings':
+      return <ActiveWorkspace>{(ws) => <PhoneTelSettings key={screen.page} workspaceId={ws} page={screen.page} />}</ActiveWorkspace>;
+    case 'telContact':
+      return <ActiveWorkspace>{(ws) => <PhoneContactCard key={screen.contactId} ws={ws} id={screen.contactId} />}</ActiveWorkspace>;
+    case 'telContactEdit':
+      return <ActiveWorkspace>{(ws) => <PhoneContactEdit key={screen.contactId || 'new'} ws={ws} id={screen.contactId} />}</ActiveWorkspace>;
+    case 'telDial':
+      return <ActiveWorkspace>{(ws) => <PhoneDial ws={ws} />}</ActiveWorkspace>;
     case 'wiki':
       return <ActiveWorkspace>{(ws) => (screen.trash ? <PhoneWikiTrash workspaceId={ws} /> : <PhoneWikiPage key={screen.pageId} workspaceId={ws} pageId={screen.pageId} />)}</ActiveWorkspace>;
   }

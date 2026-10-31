@@ -25,4 +25,7 @@ message RoomMediaSettings {
   ScreenSharePreset max_stream_preset = 2;
   uint32 max_streams = 3;
   uint32 camera_limit = 4; // webcams at once in the room, 0..25; 0 = cameras off; default 6
+  // Others' join/leave cues play only while the room (with that person) has at most this many
+  // people: 0..99, 0 = never; default 10. Always set by the server; unset (older server) = 10.
+  optional uint32 join_leave_sound_max = 5;
 }

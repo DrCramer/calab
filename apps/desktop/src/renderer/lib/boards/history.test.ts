@@ -160,6 +160,9 @@ group('history: the action sentence names the field and the values', () => {
     expect(text(act('checklist', null, { action: 'item_done', text: 'Windows 11', title: 'Проверка' }))).toBe('отметил(а) «Windows 11»');
     expect(text(act('milestones', null, { action: 'linked', task_milestone_id: 'tm', parent_id: 'p' }))).toBe('подзадача привязана к вехе «Бета»');
     expect(text(act('git', null, { kind: 'pr', repo: 'calaba', ref: '12', state: 'merged' }))).toBe('PR calaba#12 смержен');
+    expect(text(act('git', null, { event: 'PR_DRAFT_OPENED', kind: 'pr', repo: 'calaba', ref: '12', state: 'open' }))).toBe('Черновик PR calaba#12');
+    expect(text(act('git', null, { event: 'PR_APPROVED', kind: 'pr', repo: 'calaba', ref: '12', state: 'open' }))).toBe('PR calaba#12 одобрен');
+    expect(text(act('release', null, { release_id: 'r', name: '4929cf3', environment: 'prod', sha: 'a'.repeat(40), url: '' }))).toBe('задача вошла в релиз 4929cf3 (prod)');
   });
 
   it('clips long quotes to one line', () => {

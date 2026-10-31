@@ -37,6 +37,10 @@ func TestDetectMime(t *testing.T) {
 		{"<svg xmlns='x'></svg>", "image/svg+xml", "text/plain"}, // svg is never an image
 		{"\x00\x01\x02", "application/zip", "application/zip"},
 		{"\x00\x01\x02", "", "application/octet-stream"},
+		{png, "application/octet-stream", "image/png"}, // a wrong declared type never wins over the content
+		{png, "", "image/png"},
+		{"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf", "", "image/avif"}, // net/http does not sniff AVIF
+		{"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic", "image/avif", "application/octet-stream"},
 	} {
 		if got := DetectMime([]byte(c.head), c.declared); got != c.want {
 			t.Errorf("%q/%q: got %q want %q", c.head, c.declared, got, c.want)

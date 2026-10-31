@@ -1,6 +1,6 @@
 'use client';
 
-import { Settings2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { COOKIE_COPY } from '@/i18n/cookies';
 import { localePath, type Locale } from '@/i18n/locales';
@@ -13,6 +13,25 @@ export function CookieSettingsButton({ children }: { children: React.ReactNode }
   return <button type="button" className="cursor-pointer rounded-md text-left hover:text-fg" onClick={() => window.dispatchEvent(new Event(OPEN_PREFERENCES))}>{children}</button>;
 }
 
+/** A cookie in the sticker style (thick dark outline, white rim, flat fills), decorative. */
+function CookieIcon() {
+  return (
+    <svg className="cookie-icon" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <path d="M22 3.5a5.5 5.5 0 0 0 6.6 6.4 6 6 0 0 0 6.3 6.6A18.5 18.5 0 1 1 22 3.5Z" fill="#fff" />
+      <path d="M22 6.5a5.5 5.5 0 0 0 6 5.6 6 6 0 0 0 5.6 6.1A15.5 15.5 0 1 1 22 6.5Z" fill="#f6b24a" stroke="#111" strokeWidth="2.2" strokeLinejoin="round" />
+      <circle cx="16" cy="18" r="2.4" fill="#5b3214" />
+      <circle cx="24.5" cy="26" r="2.6" fill="#5b3214" />
+      <circle cx="15" cy="29" r="2" fill="#5b3214" />
+      <circle cx="29.5" cy="21" r="1.8" fill="#5b3214" />
+      <circle cx="21" cy="34" r="1.6" fill="#5b3214" />
+    </svg>
+  );
+}
+
+/**
+ * The consent banner: asked once (no floating button afterwards); the choice is kept for 180 days and the footer
+ * link «Настройки cookies» reopens it with the per-purpose switches. Yandex Metrika loads only after `analytics`.
+ */
 export function CookiePreferences({ locale }: { locale: Locale }) {
   const t = COOKIE_COPY[locale];
   const raw = useSyncExternalStore(subscribePreferences, readPreferences, serverPreferences);
@@ -21,9 +40,9 @@ export function CookiePreferences({ locale }: { locale: Locale }) {
   const [dismissed, setDismissed] = useState(false);
   const [settings, setSettings] = useState(false);
   const [language, setLanguage] = useState(false);
+  const [analytics, setAnalytics] = useState(false);
   const [error, setError] = useState(false);
   const [, refresh] = useState(0);
-  const launcher = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const visible = opened || (raw !== undefined && !preferences && !dismissed);
@@ -42,7 +61,9 @@ export function CookiePreferences({ locale }: { locale: Locale }) {
   useEffect(() => {
     const open = () => {
       previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      setLanguage(parsePreferences(readPreferences())?.language ?? false);
+      const saved = parsePreferences(readPreferences());
+      setLanguage(saved?.language ?? false);
+      setAnalytics(saved?.analytics ?? false);
       setSettings(true);
       setError(false);
       setOpened(true);
@@ -56,56 +77,63 @@ export function CookiePreferences({ locale }: { locale: Locale }) {
   const close = () => {
     setOpened(false);
     setDismissed(true);
-    (previousFocus.current?.isConnected ? previousFocus.current : launcher.current)?.focus();
+    if (previousFocus.current?.isConnected) previousFocus.current.focus();
   };
 
-  const save = (allow: boolean) => {
-    if (!savePreferences(allow, locale)) { setError(true); return; }
+  const save = (language: boolean, analytics: boolean) => {
+    if (!savePreferences(language, locale, analytics)) { setError(true); return; }
     setError(false);
     close();
   };
-  const action = 'min-h-11 cursor-pointer rounded-xl border border-white/20 bg-card-raised px-3 py-2 text-[13px] font-medium hover:border-white/50';
+  const customise = () => {
+    setLanguage(preferences?.language ?? false);
+    setAnalytics(preferences?.analytics ?? false);
+    setSettings(true);
+  };
 
+  if (!visible) return null;
   return (
-    <div className="fixed right-4 bottom-4 z-50 max-w-[calc(100vw-2rem)] print:hidden">
-      {visible && (
-        <section id="site-cookie-panel" role="region" aria-labelledby="cookie-title"
-          className="mb-3 max-h-[calc(100dvh-6rem)] w-[400px] max-w-full overflow-y-auto rounded-2xl border border-white/20 bg-card p-5 shadow-xl"
-          onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
-          <div className="flex items-start justify-between gap-3">
-            <h2 id="cookie-title" ref={heading} tabIndex={-1} className="pt-2 text-[17px] font-semibold">{t.title}</h2>
-            <button type="button" aria-label={t.close} onClick={close} className="-mr-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-card-raised"><X size={19} aria-hidden="true" /></button>
-          </div>
-          <p className="mt-2 text-[14px] leading-6 text-fg-2">{t.body}</p>
-          {settings && (
-            <div className="mt-4 space-y-4 border-y border-white/10 py-4 text-[14px] leading-5">
-              <div><p className="font-medium">{t.necessary}</p><p className="mt-1 text-fg-2">{t.necessaryDetail}</p></div>
-              <label className="flex min-h-11 cursor-pointer items-start gap-3">
-                <input type="checkbox" checked={language} onChange={(event) => { setLanguage(event.target.checked); }} className="mt-1 size-5 shrink-0 accent-accent" />
-                <span><span className="block font-medium">{t.language}</span><span className="mt-1 block text-fg-2">{t.languageDetail}</span></span>
-              </label>
-              <div className="space-y-2 text-fg-2">
-                <p className="flex justify-between gap-3"><span>{t.analytics}</span><span>{t.inactive}</span></p>
-                <p className="flex justify-between gap-3"><span>{t.marketing}</span><span>{t.inactive}</span></p>
-                <p className="text-[12px] leading-5">{t.future}</p>
-              </div>
-            </div>
-          )}
-          {error && <p role="alert" className="mt-3 text-[13px] leading-5 text-fg">{t.error}</p>}
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button type="button" className={action} onClick={() => { save(false); }}>{t.reject}</button>
-            <button type="button" className={action} onClick={() => { save(true); }}>{t.allow}</button>
-          </div>
-          {settings ? <button type="button" className={`${action} mt-2 w-full`} onClick={() => { save(language); }}>{t.save}</button> :
-            <button type="button" className={`${action} mt-2 w-full`} onClick={() => { setLanguage(preferences?.language ?? false); setSettings(true); }}>{t.settings}</button>}
-          <a href={localePath(locale, 'legal/cookies/')} className="link mt-3 inline-flex min-h-11 items-center text-[13px]">{t.policy}</a>
-        </section>
+    <section id="site-cookie-panel" role="region" aria-labelledby="cookie-title" className="cookie-banner print:hidden"
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
+      <div className="cookie-banner-head">
+        <CookieIcon />
+        <div className="min-w-0 flex-1">
+          <h2 id="cookie-title" ref={heading} tabIndex={-1} className="cookie-banner-title">{t.title}</h2>
+          <p className="cookie-banner-text">
+            {settings ? t.body : t.short}{' '}
+            <a href={localePath(locale, 'legal/cookies/')} className="link">{t.policy}</a>
+          </p>
+        </div>
+        {settings && (
+          <button type="button" aria-label={t.close} onClick={close} className="cookie-banner-close"><X size={18} aria-hidden="true" /></button>
+        )}
+      </div>
+      {settings && (
+        <div className="cookie-banner-options">
+          <div><p className="font-medium">{t.necessary}</p><p className="mt-1 text-fg-2">{t.necessaryDetail}</p></div>
+          <label className="flex min-h-11 cursor-pointer items-start gap-3">
+            <input type="checkbox" checked={language} onChange={(event) => { setLanguage(event.target.checked); }} className="mt-1 size-5 shrink-0 accent-accent" />
+            <span><span className="block font-medium">{t.language}</span><span className="mt-1 block text-fg-2">{t.languageDetail}</span></span>
+          </label>
+          <label className="flex min-h-11 cursor-pointer items-start gap-3">
+            <input type="checkbox" checked={analytics} onChange={(event) => { setAnalytics(event.target.checked); }} className="mt-1 size-5 shrink-0 accent-accent" />
+            <span><span className="block font-medium">{t.analytics}</span><span className="mt-1 block text-fg-2">{t.analyticsDetail}</span></span>
+          </label>
+          <p className="text-[12px] leading-5 text-fg-2">{t.future}</p>
+        </div>
       )}
-      <button ref={launcher} type="button" aria-controls="site-cookie-panel" aria-expanded={visible}
-        aria-label={t.title} className="ml-auto flex size-11 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-card shadow-lg hover:bg-card-raised"
-        onClick={() => { if (visible) close(); else window.dispatchEvent(new Event(OPEN_PREFERENCES)); }}>
-        <Settings2 size={19} aria-hidden="true" />
-      </button>
-    </div>
+      {error && <p role="alert" className="mt-3 text-[13px] leading-5 text-fg">{t.error}</p>}
+      <div className="cookie-banner-actions">
+        {settings ? (
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => { save(language, analytics); }}>{t.save}</button>
+        ) : (
+          <>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { save(false, false); }}>{t.decline}</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => { save(true, true); }}>{t.accept}</button>
+            <button type="button" className="cookie-banner-more" onClick={customise}>{t.settings}</button>
+          </>
+        )}
+      </div>
+    </section>
   );
 }

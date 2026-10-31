@@ -285,6 +285,8 @@ function assigneeMatch(have: readonly string[], c: Cond, ctx: MatchCtx): boolean
 
 export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
   switch (c.field) {
+    case TaskField.BOARD:
+      return setMatch([t.boardId], c, ctx);
     case TaskField.STATUS:
       return setMatch([t.statusId], c, ctx);
     case TaskField.STATUS_TYPE:
@@ -324,6 +326,12 @@ export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
       return setMatch(t.milestoneId ? [t.milestoneId] : [], c, ctx);
     case TaskField.PARENT:
       return setMatch(t.parentId ? [t.parentId] : [], c, ctx);
+    case TaskField.RELEASE: // board task #101
+      return setMatch(
+        t.releases.map((r) => r.releaseId),
+        c,
+        ctx,
+      );
     case TaskField.RELATION:
       return setMatch(relationTokens(t), c, ctx);
     case TaskField.CREATED_AT:

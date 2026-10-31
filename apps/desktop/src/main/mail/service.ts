@@ -738,6 +738,13 @@ export class MailEngine {
         if (p.virtual) throw invalid('only the trash and junk folders can be emptied');
         return this.account(p.accountId).sync.emptyFolder(p.row);
       },
+      'folders.markAllRead': (fid) => {
+        const p = typeof fid === 'string' ? parseFolderId(fid) : null;
+        if (!p) throw notFound('folder');
+        if (p.virtual) throw invalid('only real folders can be marked read');
+        this.account(p.accountId).sync.markFolderRead(p.row);
+        return Promise.resolve();
+      },
       'folders.create': async (accountId, name, parentId) => {
         if (!isStr(name, 200)) throw invalid('bad folder name');
         let parentRow: number | null = null;

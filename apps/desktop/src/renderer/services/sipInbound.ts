@@ -3,8 +3,11 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { holdNotification } from '../lib/notifyHold';
+import { toSource } from '../lib/notifyClick';
 import { log } from '../lib/log';
 import { formatPhone } from '../lib/sip';
+import { phonePartyLabel } from '../lib/sipOutbound';
+import { memberName } from '../stores/workspaces';
 import { applyInbound, inboundOf, isPhoneRoom, phoneCallId, phoneRoomId, setPhoneJoin, transferTargets, type InboundState } from '../lib/sipInbound';
 import { currentRing, startRing, stopRing } from '../lib/sounds';
 import { platform } from '../platform';
@@ -21,9 +24,10 @@ import { voice } from './voice';
  * SIP_CALL_UPDATE of inbound calls and READY feed stores/sipInbound (lib/sipInbound.ts); the
  * effects of a change — the incoming ringtone (`call-incoming`, silent on «Не беспокоить», never
  * over a one-to-one call's own ringing), a system notification while the window is hidden, and the
- * call's voice session: «Принять» takes it (the room I am in is left first, like a DM call), the
- * session is the phone room `sipin:<call>` with the microphone on voice activation only
- * (voice.join `call: true`). Leaving that session (the panel's hang-up, another room) hangs up.
+ * call's voice session: «Принять» takes it (the room I am in is parked — ADR-0133 — and resumed
+ * when the call ends), the session is the phone room `sipin:<call>` with the microphone on voice
+ * activation only (voice.join `call: true`). Leaving that session (the panel's hang-up, a
+ * one-to-one call) hangs up; another room picked meanwhile is entered after the call.
  */
 
 function set(next: InboundState): void {
@@ -68,15 +72,15 @@ function notify(c: SipCall): void {
   if (prefs().presence === PresenceStatus.DND) return;
   try {
     closeNotice();
-    const n = holdNotification(new Notification(t('call.sipNotify', { number: c.number ? formatPhone(c.number) : t('call.sipUnknown') }), {
+    // Caller ID (ADR-0137 §2): «Входящий звонок · Анна Петрова (ООО Ромашка)», else the number.
+    const who = c.callerName || c.callerCompany || c.callerUserId ? phonePartyLabel(c, t('call.sipUnknown'), c.callerUserId ? memberName(c.workspaceId, c.callerUserId) : '') : '';
+    const title = who ? t('telc.notify', { who }) : t('call.sipNotify', { number: c.number ? formatPhone(c.number) : t('call.sipUnknown') });
+    const n = holdNotification(new Notification(title, {
       tag: `sipin:${c.id}`,
       silent: true,
       requireInteraction: true,
     }));
-    n.onclick = () => {
-      window.focus();
-      n.close();
-    };
+    n.onclick = toSource(() => n.close());
     notice = n;
   } catch {
     // notifications unavailable
@@ -143,8 +147,11 @@ export async function acceptInbound(callId: string): Promise<void> {
     const room = phoneRoomId(callId);
     if (r.join) setPhoneJoin(room, r.join);
     if (r.call) set(applyInbound(useSipInbound.getState(), r.call, myUserId()));
+    // The room I am in is parked, not left (ADR-0133): I stay there for the others, «on the
+    // phone», and come back after the call. Another phone call is switched over (its session
+    // ends by the join); what cannot be parked (a one-to-one call) is left as before.
     const v = useVoice.getState();
-    if (v.roomId && v.roomId !== room) await voice.leave();
+    if (v.roomId && v.roomId !== room && !isPhoneRoom(v.roomId) && !(await voice.park())) await voice.leave();
     voice.unmuteForAnswer(); // explicit accept: a muted / deafened user is brought back to talking
     await voice.join(room, '', { call: true });
   } catch (e) {

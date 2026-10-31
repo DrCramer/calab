@@ -71,3 +71,12 @@ func (l *RateLimiter) Take(ctx context.Context, key string) error {
 	}
 	return nil
 }
+
+// TakeHourly is Take with the bucket's size given per call — a limit an admin sets: perHour
+// requests at once, refilled at perHour an hour. A smaller limit applies to a fuller bucket at
+// once (the stored tokens are capped by the new size).
+func (l *RateLimiter) TakeHourly(ctx context.Context, key string, perHour int) error {
+	h := *l
+	h.burst, h.perMs = max(perHour, 1), float64(max(perHour, 1))/3_600_000
+	return h.Take(ctx, key)
+}

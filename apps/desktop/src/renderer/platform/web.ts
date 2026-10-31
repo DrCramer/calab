@@ -1,4 +1,6 @@
+import { isCalendarLink } from '../../shared/calendarLink';
 import { consentReturnPath } from '../../shared/ssoReturn';
+import { parseOriginList } from '../../shared/ownLink';
 import { create, fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
@@ -35,6 +37,7 @@ import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
 import { createHostCapabilities } from './hostActivity';
 import { saveWebResume, takeWebResume, tabStorage } from '../lib/webResume';
+import { captureFromLocation, clearAttribution, storedAttribution } from '../lib/attribution';
 
 /**
  * Web platform (ADR-0015). Same origin as the API (`https://app.<domain>`):
@@ -456,6 +459,7 @@ function info(): AppInfo {
     micAccess: 'n/a',
     screenAccess: 'n/a',
     locales: [...navigator.languages],
+    appOrigins: parseOriginList(import.meta.env.VITE_APP_ORIGINS),
   };
 }
 
@@ -475,6 +479,8 @@ function takeDeepLink(): Promise<string | null> {
   // A Disk item (CBF-20): /disk/<item id>.
   const disk = /^\/disk\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (disk?.[1]) return Promise.resolve(`${location.origin}/disk/${disk[1]}`);
+  // The landing's «Купить» (docs/08): /plans?plan=team|business — the query is part of the link.
+  if (/^\/plans\/?$/.test(location.pathname)) return Promise.resolve(`${location.origin}/plans${location.search}`);
   const m = /^\/(join|r|dm|e|b|t)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);
@@ -483,7 +489,10 @@ function takeDeepLink(): Promise<string | null> {
 const noop = (): (() => void) => () => undefined;
 
 export function createWebPlatform(): Platform {
-  const hostCapabilities = createHostCapabilities();
+  // ADR-0135: the landing's campaign params (utm_*, yclid, ym_cid) of the first open, sent
+  // once with a registration; removed from the address bar before the router reads it.
+  captureFromLocation();
+  const { onHostLink, ...hostCapabilities } = createHostCapabilities();
   clearHostSession = () => hostCapabilities.sessionActivity?.clear('logout');
   return {
     ...hostCapabilities,
@@ -569,15 +578,20 @@ export function createWebPlatform(): Platform {
         };
       },
       login: (a: LoginArgs) => authenticate('/api/auth/login', { email: a.email, password: a.password }),
-      register: (a: RegisterArgs) =>
-        authenticate('/api/auth/register', {
+      register: async (a: RegisterArgs) => {
+        const attribution = storedAttribution();
+        const r = await authenticate('/api/auth/register', {
           email: a.email,
           password: a.password,
           displayName: a.displayName,
           inviteCode: a.inviteCode,
           locale: a.locale ?? '',
           ...(a.checkSimilar ? { checkSimilarAccount: true } : {}),
-        }),
+          ...(attribution ? { attribution } : {}),
+        });
+        if (r.ok) clearAttribution();
+        return r;
+      },
       guestJoin,
       logout: async (allSessions) => {
         const started = ++epoch; ++ssoGeneration;
@@ -628,7 +642,10 @@ export function createWebPlatform(): Platform {
       getSettings: () => Promise.resolve(settings()),
       setSettings: () => Promise.resolve(settings()),
       takeDeepLink,
-      onDeepLink: noop,
+      // Phone host links of a running page (ADR-0142); a plain browser has none.
+      onDeepLink: onHostLink ?? noop,
+      // The browser's only power-like event: `online` as 'resume'. services/session.ts probes the
+      // gateway for it (lib/powerGateway.ts) instead of the desktop's reconnect after sleep.
       onPower: (cb: (e: PowerEvent) => void) => {
         const online = (): void => cb('resume');
         window.addEventListener('online', online);
@@ -658,7 +675,7 @@ export function createWebPlatform(): Platform {
         const url = raw.trim();
         if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
         // mailto: (the plan contact, ADR-0024) hands over to the mail client, the page stays.
-        else if (/^mailto:[^\s/]+@/i.test(url)) location.href = url;
+        else if (/^mailto:[^\s/]+@/i.test(url) || isCalendarLink(url, location.origin)) location.href = url;
         return Promise.resolve();
       },
       // ADR-0084: the web keeps the hosted checkout in a new tab (the phone host hands that to the
@@ -669,6 +686,7 @@ export function createWebPlatform(): Platform {
         return Promise.resolve('external');
       },
       attention: () => undefined,
+      showWindow: () => window.focus(),
       // Installed PWA: the app icon badge (Badging API, where supported).
       setBadge: (n) => {
         if (!('setAppBadge' in navigator)) return;

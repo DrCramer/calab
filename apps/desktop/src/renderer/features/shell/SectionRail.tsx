@@ -1,6 +1,6 @@
 import { WorkspaceRole } from '@calaba/protocol';
 import { Volume2 } from 'lucide-react';
-import { memo, useRef, type ComponentPropsWithRef, type ReactNode } from 'react';
+import { memo, useRef, type ComponentPropsWithRef, type CSSProperties, type ReactNode } from 'react';
 import {
   BoardsActiveIcon,
   BoardsIdleIcon,
@@ -14,6 +14,8 @@ import {
   MailIdleIcon,
   PersonalActiveIcon,
   PersonalIdleIcon,
+  PhoneActiveIcon,
+  PhoneIdleIcon,
   TeamActiveIcon,
   TeamIdleIcon,
   WikiActiveIcon,
@@ -29,6 +31,13 @@ import { useCalendar } from '../../stores/calendar';
 import { useDiskUi } from '../../stores/diskUi';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { useWikiUi } from '../../stores/wikiUi';
+import { useTelephonyUi } from '../../stores/telephonyUi';
+import { useSipJournal } from '../../stores/sipJournal';
+import { markJournalSeen } from '../../services/sipJournal';
+import { useTelephonyVisible } from '../telephony/access';
+import * as ContextMenu from '../../components/radix/context-menu';
+import { CheckCheck } from 'lucide-react';
+import { menuBox, menuItem } from './menu';
 import { HOME } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
 import { useContextWorkspace } from '../../stores/sections';
@@ -63,8 +72,10 @@ export function SectionRail(): ReactNode {
 
   return (
     // The wrapper carries the island fade (styles.css `.island-fade`): a pseudo-element inside the
-    // scroller would scroll away with the icons.
-    <div className="island-fade island-fade-rail flex w-[var(--rail-width)] shrink-0 flex-col">
+    // scroller would scroll away with the icons. The rail keeps its own island height clear
+    // (`--island-rail`): the full island's, or the folded avatar's footprint (ADR-0146) while the
+    // lists beside it reserve nothing.
+    <div className="island-fade island-fade-rail flex w-[var(--rail-width)] shrink-0 flex-col" style={RAIL_ISLAND}>
       <nav
         className="flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto overflow-x-hidden pt-3"
         // The bottom island (AppShell) spans the rail too: the icons end above it.
@@ -84,6 +95,8 @@ export function SectionRail(): ReactNode {
         {ws && !guestWs ? <CanvasTile active={section === 'canvas'} /> : null}
         {/* «Диск» (ADR-0094 §8): last; guests have none (their access is per item, v1 keeps it simple). */}
         {ws && !guestWs ? <DiskTile active={section === 'disk'} /> : null}
+        {/* «Телефония» (ADR-0137 §5): last of the workspace's sections, only where telephony is mine. */}
+        {ws && !guestWs ? <TelephonyTile ws={ws} active={section === 'telephony'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
       </nav>
@@ -100,9 +113,13 @@ function useSection(ws: string | null): Section | null {
   const disk = useDiskUi((s) => s.active);
   const wiki = useWikiUi((s) => s.active);
   const canvas = useCanvasUi((s) => s.active);
+  const telephony = useTelephonyUi((s) => s.active);
   const app = useOpenApp(home ? null : ws) !== null;
-  return currentSection({ home, boards, calendar, app, mail, disk, wiki, canvas });
+  return currentSection({ home, boards, calendar, app, mail, disk, wiki, canvas, telephony });
 }
+
+/** The rail's island height: the shell's `--island-rail` (unset without an island → the fallbacks). */
+const RAIL_ISLAND = { '--island-height': 'var(--island-rail)' } as CSSProperties;
 
 /** Resolved once per page load (the API never appears later). */
 const MAIL = mailAvailable();
@@ -122,6 +139,7 @@ const MAIL_ICONS: NavIcons = [MailIdleIcon, MailActiveIcon];
 const DISK: NavIcons = [DiskIdleIcon, DiskActiveIcon];
 const WIKI: NavIcons = [WikiIdleIcon, WikiActiveIcon];
 const CANVAS: NavIcons = [CanvasIdleIcon, CanvasActiveIcon];
+const PHONE: NavIcons = [PhoneIdleIcon, PhoneActiveIcon];
 
 function NavIcon({ icons, active, className }: { icons: NavIcons; active: boolean; className: string }): ReactNode {
   const Icon = icons[active ? 1 : 0];
@@ -327,6 +345,41 @@ const CanvasTile = memo(function CanvasTile({ active }: { active: boolean }): Re
     </Slot>
   );
 });
+
+/**
+ * «Телефония» (ADR-0137 §5): shown only where telephony is connected and I have something to do
+ * there (lib/telephonyAccess); the red count is my missed calls since I last looked at «Недавние»
+ * (one primitive). Right click — «Отметить просмотренными».
+ */
+const TelephonyTile = memo(function TelephonyTile({ ws, active }: { ws: string; active: boolean }): ReactNode {
+  const visible = useTelephonyVisible(ws);
+  if (!visible) return null;
+  return <TelephonyTileBody ws={ws} active={active} />;
+});
+
+function TelephonyTileBody({ ws, active }: { ws: string; active: boolean }): ReactNode {
+  useLocale();
+  const missed = useSipJournal((s) => s.missed[ws] ?? 0);
+  const label = t('tel.section');
+  return (
+    <Slot active={active}>
+      <ContextMenu.Root modal={false}>
+        <Tip label={label} side="right">
+          <ContextMenu.Trigger asChild>
+            <TileButton section="telephony" icons={PHONE} name={missed > 0 ? `${label}, ${plural('tel.missedCount', missed)}` : label} active={active} count={missed} testId="section-telephony" />
+          </ContextMenu.Trigger>
+        </Tip>
+        <ContextMenu.Portal>
+          <ContextMenu.Content className={menuBox} data-testid="telephony-rail-menu">
+            <ContextMenu.Item className={menuItem} disabled={missed === 0} onSelect={() => markJournalSeen(ws)}>
+              <CheckCheck className="size-4" aria-hidden /> {t('tel.markSeen')}
+            </ContextMenu.Item>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
+    </Slot>
+  );
+}
 
 /** «Почта» (ADR-0088 §8): the red count is the unread mail in the inboxes of every account (one number). */
 const MailTile = memo(function MailTile({ active }: { active: boolean }): ReactNode {

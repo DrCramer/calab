@@ -6,13 +6,15 @@
     "Author": "alice",
     "Push": true,
     "Branch": "main",
+    "DefaultBranch": "",
     "BranchCreated": false,
     "Commits": [
       {
         "SHA": "bffeb74224043ba2feb48d137756c8a9331c449a",
         "Message": "FNG-21 done\n",
         "URL": "https://gitea.example.com/team/site/commit/bffeb74224043ba2feb48d137756c8a9331c449a",
-        "Author": "alice"
+        "Author": "alice",
+        "Old": false
       }
     ],
     "PR": null
@@ -26,7 +28,16 @@
       "URL": "https://gitea.example.com/team/site/commit/bffeb74224043ba2feb48d137756c8a9331c449a",
       "State": "",
       "Author": "alice",
-      "Event": "COMMIT_PUSHED"
+      "Event": "COMMIT_PUSHED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "main",
+      "Target": "",
+      "Actor": "alice",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     }
   ]
 }

@@ -15,8 +15,11 @@ func TestIncomingCallJobAndTransportBoundary(t *testing.T) {
 	if !ok || job.Kind != callKind || job.ReferenceID.String() != id || time.Until(job.ExpiresAt) > 46*time.Second {
 		t.Fatal("live call was not bounded and routed")
 	}
-	if !deviceEnabled(2, false, true, callKind) || deviceEnabled(1, true, true, callKind) || deviceEnabled(3, true, true, callKind) {
-		t.Fatal("only explicitly enabled VoIP can ring")
+	if !deviceEnabled(2, false, true, callKind) || deviceEnabled(1, true, true, callKind) || !deviceEnabled(3, false, true, callKind) || deviceEnabled(3, true, false, callKind) {
+		t.Fatal("only explicitly call-enabled VoIP/FCM can ring")
+	}
+	if !deviceEnabled(3, true, true, messageKind) || deviceEnabled(3, false, true, messageKind) || deviceEnabled(2, true, true, messageKind) {
+		t.Fatal("FCM message routing must follow its own notifications flag")
 	}
 	event.GetCallRing().Call.State = v1.CallState_CALL_STATE_CANCELLED
 	if _, ok = eventJob(event); ok {

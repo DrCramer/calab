@@ -6,6 +6,7 @@
     "Author": "root",
     "Push": false,
     "Branch": "",
+    "DefaultBranch": "",
     "BranchCreated": false,
     "Commits": null,
     "PR": {
@@ -16,7 +17,17 @@
       "State": "merged",
       "Branch": "FNG-5-search",
       "Author": "root",
-      "Event": "PR_MERGED"
+      "Event": "PR_MERGED",
+      "Draft": false,
+      "Target": "main",
+      "Actor": "root",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": [
+        "4929cf3a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
     }
   },
   "Links": [
@@ -28,7 +39,19 @@
       "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/7",
       "State": "merged",
       "Author": "root",
-      "Event": "PR_MERGED"
+      "Event": "PR_MERGED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "FNG-5-search",
+      "Target": "main",
+      "Actor": "root",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": [
+        "4929cf3a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
     },
     {
       "Number": 6,
@@ -38,7 +61,16 @@
       "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/7",
       "State": "merged",
       "Author": "root",
-      "Event": "PR_MERGED"
+      "Event": "",
+      "Mention": true,
+      "Draft": false,
+      "Branch": "FNG-5-search",
+      "Target": "main",
+      "Actor": "root",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     }
   ]
 }

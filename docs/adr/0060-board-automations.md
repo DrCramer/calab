@@ -103,9 +103,60 @@ task_git_links     id uuidv7, task_id → tasks CASCADE, kind ('branch'|'pr'|'co
 - **Разбор** (`internal/boards/git/*.go`, по провайдеру → общая структура `GitEvent {kind, repo, ref, title, url, state,
   author, keys[]}`): события `push` (ветки: `create`/`push` — имя ветки и сообщения коммитов), `pull_request` /
   `merge_request` (`opened`, `reopened`, `closed` с `merged`, `edited` заголовка). **Ключи задач** ищутся регуляркой
-  `\b([A-Z0-9]{2,6})-(\d+)\b` в имени ветки, заголовке PR/MR, теле PR и сообщениях коммитов; ключ сопоставляется с
-  задачей **этой доски** по `board.key` (чужие доски — игнор: вебхук привязан к доске). На задачу — ≤ 50 связей, старые
+  `\b([A-Za-z0-9]{2,6})-(\d+)\b` и сопоставляется с задачей **этой доски** по `board.key` (чужие доски и случайные
+  `v-12` — игнор: вебхук привязан к доске). Правила как у Linear (доска #101): в **имени ветки** (в т. ч. исходной ветки
+  PR/MR) регистр не важен — `feature/dev-4188-…` это `DEV-4188`; в **заголовке** PR/MR и **сообщениях коммитов** — только
+  верхний регистр; ключ в **теле** PR/MR запускает правила лишь после магического слова (`Fixes|Closes|Resolves`, любая
+  форма и регистр, список через запятую / `and`), простое упоминание только привязывает PR (событие правилу не уходит).
+  **Коммиты из целевой ветки**: GitHub-коммит с `distinct: false` не привязывается; push в чужую от `default_branch`
+  ветку с merge-коммитом `Merge [remote-tracking] branch 'main' into …` / `Merge origin/main into …` не привязывает
+  ни его, ни коммиты push'а до него (в payload GitLab/Gitea нет parents, свои коммиты, отправленные вместе с merge,
+  тоже теряются — они остаются привязаны к PR по ветке). На задачу — ≤ 50 связей, старые
   коммиты вытесняются.
+- **Черновики, ревью, апрув, целевая ветка** (доска #101, этап A, 2026-10-29): событие несёт `draft` (GitLab
+  `draft`/`work_in_progress`, GitHub `draft`, Gitea `draft` или заголовок `WIP:`/`[WIP]`) и целевую ветку (GitLab
+  `target_branch`, GitHub/Gitea `base.ref`). Новые `RuleGitEvent`: `PR_DRAFT_OPENED` (черновик открыт — **не**
+  `PR_OPENED`), `PR_READY` (GitLab `update` с `changes.draft` true→false, GitHub `ready_for_review`, а также любая правка,
+  после которой сохранённый черновик перестал им быть), `PR_REVIEW_REQUESTED` (GitLab `changes.reviewers` — добавленные,
+  GitHub/Gitea `review_requested`), `PR_APPROVED` (GitLab `approval`/`approved`, GitHub `pull_request_review` `approved`,
+  Gitea `pull_request_approved`). Правило на `PR_OPENED` срабатывает и на `PR_READY` («открыт для ревью», как Linear).
+  Одна доставка — одно событие (в GitLab `update` смена draft важнее добавленных ревьюеров). **Идемпотентность** сверх
+  хэша тела в Valkey: решение принимает `vcs.Apply` против сохранённой связи — `draft` (повтор «ready» ничего не делает) и
+  `seen` (ключи `approved:<user>`, `review:<user>`: событие только для нового ключа; `unapproval`/`dismissed`/снятие
+  ревьюера ключ удаляют — повторный апрув снова событие). Фильтр триггера `Git.target_branches` (≤ 10, ≤ 200 символов,
+  без пробелов): точное имя или glob (`*` — любые символы включая `/`, `?` — один); пусто — любая ветка; непустой фильтр
+  не совпадает с событиями ветки/коммита. Шаблоны действий Git-правил: `{pr_url} {pr_number} {pr_title} {branch}
+  {target_branch} {git_author}` (`git_author` — кто совершил событие); значения — одна строка ≤ 200 символов, `@` с
+  U+2060 (тексты автоматизаций не разбираются на упоминания, а так и не будут). Для других триггеров — пусто.
+- **Релизы** (доска #101, этап B, 2026-10-29; миграция **00136**, индексы сопоставления по SHA — **00137**). `board_releases (id, board_id, environment
+  [a-z0-9._-] ≤ 32, sha — полный 40/64 hex, name ≤ 64, url, created_by, created_at, updated_at, tasks_count,
+  UNIQUE (board_id, environment, sha))` и `task_releases (task_id, environment, release_id, created_at, PK (task_id,
+  environment))` — задача входит в релиз окружения **один раз**. `POST /api/boards/{id}/releases {name, sha, commits[],
+  url, environment = prod, task_keys[]}` — для CI с токеном бота; право — `EDIT_TASKS` доски (бот по тем же битам,
+  ADR-0109; гость, чужое пространство, бот без бита на этой доске — 404/403), тариф `automations`, тело ≤ 1 МБ, `commits`
+  ≤ 5000 полных SHA, `task_keys` ≤ 500 ключей **этой** доски (иначе 422), 30 вызовов в минуту на доску, ≤ 20 окружений на доску (21-е — 409), ≤ 500 задач за
+  вызов (`truncated` — повторить). Идемпотентно: повтор (доска, окружение, sha) обновляет `name`/`url`, задач не
+  добавляет. **Состав**: живые задачи доски, у которых связь-коммит есть в `commits ∪ {sha}` или влитый PR, чей merge-,
+  squash- или head-коммит (`task_git_links.merge_shas` — из `merge_commit_sha` / `squash_commit_sha` / `last_commit` GitLab,
+  `merge_commit_sha` / `head.sha` GitHub и Gitea, только у влитого) там же; плюс `task_keys`. **Граница**: у Calab нет
+  истории Git — «предок `sha`» определяется только списком от CI (`git log <прошлый релиз>..<sha>`, сниппет — в
+  docs бота «Релизы из CI»); упоминание ключа в описании MR без магического слова в релиз не ведёт (у такой связи нет
+  SHA). Каждая вошедшая задача — запись журнала `release` (`after {release_id, name, environment, sha, url}`, актор —
+  вызвавший бот), `TouchTask`, `TASK_UPDATE` с `Task.releases` (по окружению, новые первыми), вебхук доски
+  `task.updated`. Триггер правила `release {environments[] ≤ 10}` (пусто — любое); действия — существующие; условие —
+  обычный `TaskFilter` (DEV: «вошла в релиз prod → Deployed» при «статус = Ready to Deploy»); переменная шаблона
+  `{release}` — имя релиза по правилам Git-переменных. Фильтр `TaskField.RELEASE` (id релизов; EMPTY / NOT_EMPTY),
+  группировка списка по последнему релизу задачи; `GET /api/boards/{id}/releases?environment=&limit=` (`VIEW_BOARD`).
+- **Обратная ссылка в GitLab** (там же, по желанию доски). `board_git.backlink` (по умолчанию выкл.),
+  `api_token_enc` (sealbox `calaba/board-git-token/v1`, наружу никогда), `gitlab_url` (https-origin), `backlink_error`;
+  `PATCH /api/boards/{id}/git {backlink?, api_token? ("" — удалить), gitlab_url?}` — права как у Git-настройки; токен привязан к адресу: новый `gitlab_url` без нового токена стирает сохранённый. При
+  **первой** привязке MR к задаче ведущим ключом (ветка, заголовок, «Fixes KEY»; не простое упоминание в описании) —
+  одна заметка `Задача Calab: KEY — <title> <url>` на MR (`POST {gitlab_url}/api/v4/projects/:path/merge_requests/:iid/notes`,
+  `PRIVATE-TOKEN`); метка `note:calab` в `seen` связи — повторная доставка ничего не пишет. Только MR под `gitlab_url`
+  (токен не уходит на чужой хост из подписанного payload), только через SSRF-безопасный транспорт вебхуков (https,
+  публичные адреса, без редиректов, 10 с), в фоне после транзакции. Заголовок — одной строкой, `@` с U+2060; в UI
+  предупреждение, что заголовок увидят все читатели MR (поэтому выкл. по умолчанию). Нет токена или адреса — заметки
+  не пишутся, причина в статусе интеграции; отказ GitLab (401/403 — нет scope `api`, 404) — тоже; токен не логируется.
 - **Результат**: upsert `task_git_links` (PR меняет `state`/`title`), запись журнала `git` (`before/after` — связь),
   событие `TASK_GIT_LINKS_UPDATE`, вебхук доски `task.updated` с `changes[field=git]`, триггер правил `git {event}` —
   всё в одной транзакции. Smart-commit `FNG-12 #done` / `#status:<имя>` — **не в v1** (бэклог: переходы делать правилами

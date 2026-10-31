@@ -32,7 +32,7 @@ describe('templates', () => {
       expect('id' in i.init.to && known.has(i.init.to.id)).toBe(true);
     }
     // Every visible text comes through `tr` (a key, not a hard-coded phrase).
-    const texts = items.flatMap((i) => (i.init.kind !== 'connector' && i.init.text ? [i.init.text] : []));
+    const texts = items.flatMap((i) => (i.init.kind !== 'connector' && i.init.kind !== 'image' && i.init.text ? [i.init.text] : []));
     expect(texts.length).toBeGreaterThan(0);
     for (const x of texts) expect(x).toMatch(/^(kanban|retro|swot|mindmap|flow)\.[a-z]+(:\{.*\})?$/);
   });

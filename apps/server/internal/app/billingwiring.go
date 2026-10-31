@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/metrika"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/google/uuid"
@@ -59,7 +60,7 @@ type billingRuntime struct {
 // the workspace, BILLING_UPDATE to the owner, state mails), the webhook inbox and the owner /
 // public handlers. Invalid Stripe settings panic like other config errors (config.Validate
 // checks them first).
-func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *mail.Service) *billingRuntime {
+func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *mail.Service, conv *metrika.Service) *billingRuntime {
 	b := d.Config.Billing
 	rt := &billingRuntime{cfg: b, Handlers: &billinghttp.Handlers{Enabled: b.Enabled}}
 	if !b.Enabled {
@@ -124,6 +125,8 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	rt.Core = core.New(d.DB, rt.Clock, core.Config{Debits: b.DebitsEnabled, Enforcement: b.EnforcementEnabled}, core.Hooks{
 		Committed: func(ctx context.Context, acc sqlc.BillingAccount, _ bool) { committed(ctx, acc) },
 		Guard:     plans.TransitionGuard{S: planSvc},
+		// ADR-0135: the purchase conversion of a confirmed payment, once per payment.
+		PaymentCredited: conv.Purchase,
 	})
 	if d.Seats == nil {
 		// Admission charges paid seats through the core (T3 hook; tests inject Deps.Seats).

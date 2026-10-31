@@ -53,12 +53,16 @@ WHERE b.id = sqlc.arg('board_id');
 
 -- name: GetTaskRoomRef :one
 -- The task and board of a task room and whether the user is its assignee / approver / watcher
--- (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076) and the task's author (ADR-0115).
+-- (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076) and the task's author (ADR-0115) with,
+-- when a bot created it, the bot's current owner (perm.TaskAuthor, ADR-0151).
 SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived, t.created_by,
+       bo.owner_user_id AS bot_owner,
        EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
        EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS approver,
        EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id') AND x.watcher)::boolean AS watcher
-FROM tasks t WHERE t.room_id = sqlc.arg('room_id');
+FROM tasks t LEFT JOIN bots bo ON bo.user_id = t.created_by
+  AND bo.workspace_id = (SELECT tb.workspace_id FROM boards tb WHERE tb.id = t.board_id)
+WHERE t.room_id = sqlc.arg('room_id');
 
 -- name: GetTaskInvite :one
 -- Whether the user is an assignee / approver / watcher of a task (ADR-0059, ADR-0076:
@@ -79,20 +83,25 @@ SELECT w.task_id FROM task_subscribers w WHERE w.task_id = ANY(sqlc.arg('ids')::
 -- name: ListInvitedTasks :many
 -- The live tasks on live boards of a workspace where the user (a human) is an assignee, an
 -- approver or a watcher: the task-scoped boards of ADR-0059 (restricted ones too, ADR-0076);
--- on author_boards (where the user is create-only, ADR-0115) also the tasks they authored.
+-- on author_boards (where the user is create-only, ADR-0115) also the tasks they authored —
+-- themselves or through a bot they own (ADR-0151).
 SELECT t.id, t.board_id
 FROM tasks t JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = sqlc.arg('workspace_id') AND b.archived_at IS NULL AND t.archived_at IS NULL
   AND (t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = sqlc.arg('user_id')
                 UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = sqlc.arg('user_id')
                 UNION SELECT w.task_id FROM task_subscribers w WHERE w.user_id = sqlc.arg('user_id') AND w.watcher)
-       OR (t.created_by = sqlc.arg('user_id') AND t.board_id = ANY(sqlc.arg('author_boards')::uuid[])))
+       OR (t.board_id = ANY(sqlc.arg('author_boards')::uuid[])
+           AND (t.created_by = sqlc.arg('user_id')
+                OR EXISTS (SELECT 1 FROM bots ab WHERE ab.user_id = t.created_by AND ab.owner_user_id = sqlc.arg('user_id')
+                           AND ab.workspace_id = b.workspace_id))))
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = sqlc.arg('user_id') AND u.is_bot);
 
 -- name: ListWorkspaceTaskInvitees :many
 -- The assignees, approvers and watchers (humans) of the live tasks on live boards of a
 -- workspace: the gateway's invited map (ADR-0059, ADR-0076), with each task's author (ADR-0115:
--- it counts for a create-only member only). how: 1 assignee, 2 approver, 3 watcher, 4 author.
+-- it counts for a create-only member only; a bot's task: its current owner, ADR-0151). how: 1
+-- assignee, 2 approver, 3 watcher, 4 author.
 SELECT t.id AS task_id, t.board_id, x.user_id,
        bool_or(x.how = 1)::boolean AS assignee, bool_or(x.how = 2)::boolean AS approver, bool_or(x.how = 3)::boolean AS watcher,
        bool_or(x.how = 4)::boolean AS author
@@ -101,7 +110,8 @@ JOIN boards b ON b.id = t.board_id
 JOIN (SELECT a.task_id, a.user_id, 1 AS how FROM task_assignees a
       UNION ALL SELECT p.task_id, p.user_id, 2 AS how FROM task_approvers p
       UNION ALL SELECT w.task_id, w.user_id, 3 AS how FROM task_subscribers w WHERE w.watcher
-      UNION ALL SELECT c.id, c.created_by, 4 AS how FROM tasks c WHERE c.created_by IS NOT NULL) x ON x.task_id = t.id
+      UNION ALL SELECT c.id, c.created_by, 4 AS how FROM tasks c WHERE c.created_by IS NOT NULL
+      UNION ALL SELECT c.id, ob.owner_user_id, 4 AS how FROM tasks c JOIN bots ob ON ob.user_id = c.created_by AND ob.workspace_id = $1) x ON x.task_id = t.id
 JOIN users u ON u.id = x.user_id AND NOT u.is_bot
 WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
 GROUP BY t.id, t.board_id, x.user_id;

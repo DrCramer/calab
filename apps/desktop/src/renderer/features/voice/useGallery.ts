@@ -10,9 +10,15 @@ export interface GalleryInput {
   hideNoVideo: boolean;
   size: number;
   page: number;
+  /**
+   * The asked page is out of range (people left, a bigger page size): the layout shows `page`
+   * instead; the owner of `page` follows. A stable function.
+   */
+  onClamp: (page: number) => void;
 }
 
-const OFF: GalleryInput = { people: [], pinned: null, me: '', hideSelf: false, hideNoVideo: false, size: 1, page: 0 };
+const NOOP = (): void => undefined;
+const OFF: GalleryInput = { people: [], pinned: null, me: '', hideSelf: false, hideNoVideo: false, size: 1, page: 0, onClamp: NOOP };
 
 /**
  * The gallery page on screen (tileLayout.ts galleryLayout) with the order carried between
@@ -23,11 +29,16 @@ const OFF: GalleryInput = { people: [], pinned: null, me: '', hideSelf: false, h
  * the layout here, but the state — and so the grid — changes only when the page's tiles, the page
  * or the page count do. A rate-limited swap re-runs once on a one-shot timer. `pageOf` reads the
  * latest order without re-rendering anyone.
+ *
+ * The clamp is reported from the layout run itself, against the page it was computed for — not by
+ * comparing the returned state with the asked page in an effect: that state lags one commit behind
+ * a flip, so such an effect sent the store back to the old page and the two chased each other
+ * («Maximum update depth exceeded» on «следующая страница», 2026-10).
  */
 export function useGallery(input: GalleryInput | null): { gallery: Gallery | null; pageOf: (userId: string) => number } {
   const slots = useRef<GallerySlots>(NO_SLOTS);
   const [gallery, setGallery] = useState<Gallery | null>(null);
-  const { people, pinned, me, hideSelf, hideNoVideo, size, page } = input ?? OFF;
+  const { people, pinned, me, hideSelf, hideNoVideo, size, page, onClamp } = input ?? OFF;
   const on = input !== null;
   useLayoutEffect(() => {
     // «Спикер»: no gallery; the next gallery starts afresh.
@@ -44,6 +55,7 @@ export function useGallery(input: GalleryInput | null): { gallery: Gallery | nul
       slots.current = next.slots;
       if (next.retryAt !== null) timer = setTimeout(run, Math.max(0, next.retryAt - now));
       setGallery((cur) => (cur && sameGallery(cur, next) ? cur : next));
+      if (next.page !== page) onClamp(next.page);
     };
     // Before paint: a new participant / pin / page shows in the same frame.
     run();
@@ -52,7 +64,7 @@ export function useGallery(input: GalleryInput | null): { gallery: Gallery | nul
       off();
       clearTimeout(timer);
     };
-  }, [on, people, pinned, me, hideSelf, hideNoVideo, size, page]);
+  }, [on, people, pinned, me, hideSelf, hideNoVideo, size, page, onClamp]);
   const find = useCallback((userId: string) => pageOf(slots.current, userId), []);
   return { gallery: on ? gallery : null, pageOf: find };
 }

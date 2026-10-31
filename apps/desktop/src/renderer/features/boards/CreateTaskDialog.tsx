@@ -1,7 +1,8 @@
 import { BoardFeature, TaskPriority } from '@calaba/protocol';
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BadgeCheck, CalendarClock, CalendarPlus, Check, Diamond, Paperclip, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { PmNode } from '@calaba/wiki-doc/markdown';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -10,18 +11,38 @@ import { featureOn, scaleValues } from '../../lib/boards/features';
 import { isUploading, readyIds, roomLeft } from '../../lib/boards/pendingFiles';
 import { addAssignee, draftsOf, removeAssignee, type AssigneeDraft } from '../../lib/boards/assignees';
 import { MOD } from '../../components/ui';
+import { uploadFile } from '../../lib/api/endpoints';
 import { createTask, openTaskAnywhere } from '../../services/boards';
 import { boardsApi } from '../../services/boardsApi';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { menuBox, menuItem } from '../shell/menu';
 import { useBoardsUi } from '../../stores/boardsUi';
-import { useToasts } from '../../stores/toasts';
+import { toast, useToasts } from '../../stores/toasts';
+import type { UploadedImage, WikiEditorApi } from '../wiki/editor';
+import { docImageIds, docToDescription } from './descriptionDoc';
+import { RichDescription } from './RichDescription';
 import { PendingFileList, usePendingFiles } from './CreateTaskAttachments';
 import { ApproverMenu, AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday } from './menus';
 import { hasBit, sortedStatuses, CREATE_TASKS } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue } from './visuals';
 
 const NONE: string[] = [];
+const DESCRIPTION_MAX = 20000;
+const ATTACH_MAX = 20;
+
+/** The doc's pictures out (another board cannot take files uploaded to this one). */
+function dropImages(api: WikiEditorApi | null): void {
+  const ed = api?.editor;
+  if (!ed || ed.isDestroyed) return;
+  const at: number[] = [];
+  ed.state.doc.descendants((n, pos) => {
+    if (n.type.name === 'image') at.push(pos);
+  });
+  if (!at.length) return;
+  const tr = ed.state.tr;
+  for (const pos of at.reverse()) tr.delete(pos, pos + 1);
+  ed.view.dispatch(tr);
+}
 
 /**
  * «Новая задача» (ADR-0042 §5, Linear's create dialog): title, description, the properties as a
@@ -88,7 +109,10 @@ function Dialog({
   const close = (): void => useBoardsUi.getState().openCreate(null);
   const def = sortedStatuses(board).find((s) => s.isDefault)?.id ?? sortedStatuses(board)[0]?.id ?? '';
   const [title, setTitle] = useState(() => (fromMessage ? titleFromMessage(fromMessage.text) : ''));
-  const [description, setDescription] = useState('');
+  // The description is the rich editor's (uncontrolled: typing never re-renders the dialog); read on submit.
+  const desc = useRef<WikiEditorApi | null>(null);
+  const [descKey, setDescKey] = useState(0);
+  const [inlineUploads, setInlineUploads] = useState(0);
   const [status, setStatus] = useState(statusId ?? def);
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.NONE);
   const [assignees, setAssignees] = useState<AssigneeDraft[]>([]);
@@ -105,6 +129,34 @@ function Dialog({
   const titleRef = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const files = usePendingFiles(boardsApi.uploadPath(boardId));
+  const filesRef = useRef(files.items);
+  useLayoutEffect(() => {
+    filesRef.current = files.items;
+  });
+  // ⌘↩ in the description creates the task (before the editor's own ⌘↩ — a line break).
+  const submitKey = useCallback((e: KeyboardEvent): boolean => {
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return false;
+    (e.target instanceof Element ? e.target.closest('form') : null)?.requestSubmit();
+    return true;
+  }, []);
+  const onDescReady = useCallback((a: WikiEditorApi | null) => {
+    desc.current = a;
+  }, []);
+  // A picture in the description is uploaded to the board now and attached with the task.
+  const uploadPicture = useCallback(
+    async (f: File): Promise<UploadedImage> => {
+      const inDoc = desc.current ? docImageIds(desc.current.getJSON() as PmNode).length : 0;
+      if (filesRef.current.length + inDoc >= ATTACH_MAX) throw new Error('too many attachments');
+      setInlineUploads((n) => n + 1);
+      try {
+        const up = await uploadFile(boardsApi.uploadPath(boardId), f, f.name || 'image.png', () => undefined).promise;
+        return { fileId: up.id, width: up.width, height: up.height };
+      } finally {
+        setInlineUploads((n) => n - 1);
+      }
+    },
+    [boardId],
+  );
   const today = useToday();
   const st = board?.statuses.find((s) => s.id === status);
   const ms = board?.milestones.find((m) => m.id === milestone);
@@ -130,17 +182,24 @@ function Dialog({
     setLabels([]);
     setMilestone('');
     files.clear();
+    dropImages(desc.current);
     // Another estimate scale: a value outside it would be refused (422).
     if (!scaleValues(next?.estimateScale).includes(estimate)) setEstimate(0);
   };
 
-  const uploading = isUploading(files.items);
+  const uploading = isUploading(files.items) || inlineUploads > 0;
   const attachOn = on(BoardFeature.ATTACHMENTS);
   const addFiles = (list: File[]): void => {
     if (attachOn) files.add(list);
   };
   const submit = async (): Promise<void> => {
     if (!title.trim() || busy || uploading) return;
+    const doc = desc.current ? (desc.current.getJSON() as PmNode) : null;
+    const description = doc ? docToDescription(doc) : '';
+    if (description.length > DESCRIPTION_MAX) {
+      toast.error(t('boards.descriptionTooLong', { n: DESCRIPTION_MAX.toLocaleString() }));
+      return;
+    }
     setBusy(true);
     const made = await createTask(boardId, {
       title: title.trim(),
@@ -155,7 +214,7 @@ function Dialog({
       milestoneId: on(BoardFeature.MILESTONES) ? milestone : '',
       approverIds: on(BoardFeature.APPROVALS) ? approvers : [],
       approvalRequired: on(BoardFeature.APPROVALS) ? clampRequired(required, approvers.length) : 0,
-      attachmentIds: on(BoardFeature.ATTACHMENTS) ? readyIds(files.items) : [],
+      attachmentIds: on(BoardFeature.ATTACHMENTS) ? [...new Set([...readyIds(files.items), ...(doc ? docImageIds(doc) : [])])] : [],
       parentId: parentId ?? '',
       ...(fromMessage ? { fromMessageId: fromMessage.id } : {}),
     });
@@ -168,11 +227,12 @@ function Dialog({
     });
     if (more) {
       setTitle('');
-      setDescription('');
+      setDescKey((k) => k + 1);
       files.clear();
       titleRef.current?.focus();
     } else close();
   };
+
   const chip = 'inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-line px-2.5 text-control text-fg hover:bg-hover data-[state=open]:bg-active';
   return (
     <Modal
@@ -204,6 +264,8 @@ function Dialog({
           void submit();
         }}
         onKeyDown={(e) => {
+          // The description's editor submits on ⌘↩ itself (onKey) and marks the key handled.
+          if (e.defaultPrevented) return;
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             void submit();
@@ -214,8 +276,10 @@ function Dialog({
         }}
         onDrop={(e) => {
           if (!attachOn || !e.dataTransfer.files.length) return;
+          // Pictures dropped on the description go into its text (the editor uploads them).
+          const inText = e.target instanceof Element && !!e.target.closest('.wiki-editor');
           e.preventDefault();
-          addFiles([...e.dataTransfer.files]);
+          addFiles([...e.dataTransfer.files].filter((f) => !(inText && f.type.startsWith('image/'))));
         }}
         data-testid="create-task"
       >
@@ -229,21 +293,26 @@ function Dialog({
           className="selectable h-9 w-full bg-transparent text-title font-semibold text-fg outline-none placeholder:text-faint"
           data-testid="create-task-title"
         />
-        <textarea
-          value={description}
-          maxLength={20000}
-          rows={4}
-          onChange={(e) => setDescription(e.target.value)}
+        <div
           onPaste={(e) => {
-            const pasted = [...e.clipboardData.files];
-            if (!attachOn || !pasted.length) return;
+            // Pictures go into the text (the editor); other pasted files become attachments.
+            const other = [...e.clipboardData.files].filter((f) => !f.type.startsWith('image/'));
+            if (!attachOn || !other.length) return;
             e.preventDefault();
-            addFiles(pasted);
+            addFiles(other);
           }}
-          placeholder={t('boards.descriptionPlaceholder')}
-          aria-label={t('boards.description')}
-          className="selectable min-h-24 w-full resize-y bg-transparent text-body text-fg outline-none placeholder:text-faint"
-        />
+        >
+          <RichDescription
+            key={descKey}
+            workspaceId={board.workspaceId}
+            initial=""
+            onUploadImage={attachOn ? uploadPicture : undefined}
+            onReady={onDescReady}
+            onKey={submitKey}
+            fallback={<div className="min-h-24 text-body text-faint">{t('boards.descriptionEditorPlaceholder')}</div>}
+            className="min-h-24"
+          />
+        </div>
         <PendingFileList items={files.items} onRemove={files.remove} />
         <div className="flex flex-wrap gap-1.5 border-t border-line pt-3" data-testid="create-task-props">
           {boards.length > 1 ? (

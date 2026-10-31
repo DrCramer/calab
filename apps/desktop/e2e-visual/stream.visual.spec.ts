@@ -15,7 +15,8 @@ import { startPublisher, type Publisher } from './publisher';
  *
  * Annotations (ADR-0028): -g "stream-annotate" — the viewer's pen and «Очистить» reach the
  * presenter, the presenter's pointer and stroke show on the stage (the shot); the presenter's
- * side (-g "stream-annotate-presenter") — viewers' pointers on my own stream and the switch.
+ * side (-g "stream-annotate-presenter") — viewers' pointers on my own stream, «X указывает» in my
+ * stream's panel (the shot) and the switch.
  */
 
 test.describe.configure({ mode: 'parallel' });
@@ -139,7 +140,7 @@ function annotSender(p: Publisher): (m: AnnotInit) => Promise<void> {
   return (m) => p.send(toBinary(AnnotMessageSchema, create(AnnotMessageSchema, { color: 0x30d158, ...m, seq: ++seq })), 'annot');
 }
 
-test('stream-annotate', async ({ open, win, shot }) => {
+test('stream-annotate', async ({ open, win, mock, shot }) => {
   await open();
   await inVoice(win);
   // Вера streams (and, as the presenter, points and draws); I watch on the stage.
@@ -197,6 +198,8 @@ test('stream-annotate', async ({ open, win, shot }) => {
     await expect.poll(() => inkAt(win, 'stream-stage', 0.3, 0.22)).toBe(true);
     await checkpoint(shot, 'stream-annotate');
 
+    // Issue #110 setup: one message read (the chat shows once collapsed), so the reopened room has a read marker.
+    mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.vera, content: 'Начинаем' });
     // CBF-67: with another chat selected, the LIVE row opens the room and the stream on the stage.
     await stage.getByRole('button', { name: 'Свернуть' }).first().click();
     await expect(stage).toHaveCount(0);
@@ -206,13 +209,31 @@ test('stream-annotate', async ({ open, win, shot }) => {
     await expect(win.getByRole('heading', { name: 'Переговорка', exact: true })).toBeVisible();
     await expect(stage).toBeVisible();
     await checkpoint(shot, 'stream-live-other-chat');
+
+    // Issue #110: a message in this room while the stage hides the feed. The blue banner sits
+    // below the streamer chip / «Chat» row (no overlap) and its text opens the chat like «Чат».
+    mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.vera, content: 'Видно слайд?' });
+    const banner = win.getByTestId('unread-banner');
+    await expect(banner).toBeVisible();
+    const chatBtn = stage.getByRole('button', { name: /^Чат/ });
+    const [bb, cb] = [await banner.boundingBox(), await chatBtn.boundingBox()];
+    if (!bb || !cb) throw new Error('banner / Chat button not laid out');
+    expect(bb.y).toBeGreaterThanOrEqual(cb.y + cb.height);
+    await checkpoint(shot, 'stream-new-message-banner');
+    await banner.getByRole('button', { name: /новое сообщение/ }).click();
+    await expect(stage).toHaveCount(0);
+    await expect(win.getByTestId('stream-pip')).toBeVisible();
+    await expect(win.getByTestId('unread-banner')).toHaveCount(0);
+    await checkpoint(shot, 'stream-new-message-chat-open');
+    await win.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' }).first().click();
+    await expect(stage).toBeVisible();
   } finally {
     if (ping) clearInterval(ping);
     await vera.stop();
   }
 });
 
-test('stream-annotate-presenter', async ({ open, win }) => {
+test('stream-annotate-presenter', async ({ open, win, shot }) => {
   await open();
   await inVoice(win);
   await openPicker(win, true);
@@ -222,6 +243,7 @@ test('stream-annotate-presenter', async ({ open, win }) => {
   if ((await win.getByTestId('stream-stage').count()) === 0) await win.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' }).first().click();
   // Борис watches my stream and points at it (a member with SPEAK).
   const boris = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting, source: 'none', data: true });
+  let ping: NodeJS.Timeout | null = null;
   try {
     await expect.poll(() => boris.remoteScreenSid(), { timeout: 30_000 }).not.toBe('');
     const sid = await boris.remoteScreenSid();
@@ -235,6 +257,16 @@ test('stream-annotate-presenter', async ({ open, win }) => {
         return inkAt(win, 'stream-stage', 0.5, 0.5);
       }, { timeout: 10_000 })
       .toBe(true);
+    // Issue #102: the panel says who points and, with no overlay here (visual tests), offers the
+    // preview; kept alive for a steady shot. The hint under the switch comes back when quiet.
+    const status = win.getByTestId('my-stream-annot-status');
+    ping = setInterval(() => void send({ streamSid: sid, kind: AnnotKind.POINTER, points: [0.5, 0.5] }).catch(() => undefined), 300);
+    await expect(status).toContainText('указывает на экран');
+    await expect(status.getByRole('button', { name: 'Показать' })).toBeVisible();
+    await checkpoint(shot, 'stream-annotate-presenter');
+    clearInterval(ping);
+    ping = null;
+    await expect(status).toHaveText('Рисунки видны в превью вашего стрима', { timeout: 10_000 });
     // Not a live stream / malformed: ignored.
     await send({ streamSid: 'TR_gone', kind: AnnotKind.POINTER, points: [0.2, 0.2] });
     // The switch in my stream's panel: off → Борис is told, his pointer is ignored.
@@ -249,6 +281,7 @@ test('stream-annotate-presenter', async ({ open, win }) => {
     await toggle.click();
     await expect.poll(async () => (await annotsOf(boris)).some((m) => m.kind === AnnotKind.POLICY && m.allow)).toBe(true);
   } finally {
+    if (ping) clearInterval(ping);
     await boris.stop();
     await win.getByRole('button', { name: 'Остановить показ' }).first().click().catch(() => undefined);
   }

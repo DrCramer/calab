@@ -8,11 +8,12 @@ import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { APP_LOCALE, COPY, type Short } from './copy';
 import { COPY3 } from './copy3';
 import { drawArt, seedScene } from './seed';
+import { captureAppWindow } from './app-window';
 
 /**
  * Landing 3.3: the desktop mail client (ADR-0088) with a mailbox in the page's language. Mail exists
  * only in the Electron app, so this scene runs the built app (`out/`, `pnpm build:app`) against the
- * mock API with the landing team (seed.ts), at 1440×900 and a forced device scale 2, dark theme.
+ * mock API with the landing team (seed.ts), a 1440×758 window captured by the OS (app-window.ts), dark theme.
  *
  * The mailbox: the renderer's own in-memory mail mock (src/renderer/features/mail/mock/mockApi.ts),
  * bundled here with esbuild with its fixtures swapped for mail-fixtures.ts (copy3.ts letters), and
@@ -26,7 +27,8 @@ import { drawArt, seedScene } from './seed';
  */
 const OUT = resolve(import.meta.dirname, '../../landing/shots');
 const ROOT = resolve(import.meta.dirname, '..');
-const SIZE = { width: 1440, height: 900 };
+// The crop's window (assets.mjs `mail`), captured whole by the OS: title bar, traffic lights, rounded corners.
+const SIZE = { width: 1440, height: 758 };
 
 const ALL: Short[] = ['ru', 'en', 'es', 'zh'];
 const wanted = process.env['CALABA_LANDING_LOCALES']?.split(',').map((s) => s.trim());
@@ -125,16 +127,18 @@ for (const short of LOCALES) {
           CALABA_MULTI_INSTANCE: '1',
           CALABA_FAKE_MEDIA: '1',
           CALABA_VISUAL_TEST: '1',
+          CALABA_VISUAL_VIBRANCY: '1',
           ELECTRON_RENDERER_URL: '',
           TZ: 'Europe/Moscow',
           LANG: 'ru_RU.UTF-8',
         },
       });
       const page = await app.firstWindow();
-      await app.evaluate(({ BrowserWindow }, v) => {
+      await app.evaluate(({ BrowserWindow, screen }, v) => {
         const w = BrowserWindow.getAllWindows()[0];
         w?.setContentSize(v.width, v.height);
-        w?.center();
+        const wa = screen.getPrimaryDisplay().workArea;
+        w?.setPosition(wa.x + Math.max(0, Math.round((wa.width - v.width) / 2)), wa.y);
         w?.setIgnoreMouseEvents(true);
       }, SIZE);
       await installMail(app, bundle, { mail: c3.mail, now: NOW.getTime() });
@@ -158,7 +162,7 @@ for (const short of LOCALES) {
       await settle(page);
       mkdirSync(OUT, { recursive: true });
       const path = join(OUT, `mail-${short}@2x.png`);
-      await page.screenshot({ path, animations: 'disabled', caret: 'hide' });
+      await captureAppWindow(app, path);
       console.log('mail', short, `${(statSync(path).size / 1e6).toFixed(1)} MB`);
     } finally {
       await app?.close().catch(() => undefined);

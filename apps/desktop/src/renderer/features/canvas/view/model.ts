@@ -37,6 +37,7 @@ export const SHAPE_DEFS: readonly { kind: ShapeKind; label: `canvasBoard.shape.$
 export const ROUTE_DEFS: readonly { route: RouteKind; label: `canvasBoard.route.${RouteKind}` }[] = [
   { route: 'straight', label: 'canvasBoard.route.straight' },
   { route: 'elbow', label: 'canvasBoard.route.elbow' },
+  { route: 'curve', label: 'canvasBoard.route.curve' },
 ];
 
 export const ARROW_DEFS: readonly { arrow: Arrow; label: `canvasBoard.arrow.${Arrow}` }[] = [

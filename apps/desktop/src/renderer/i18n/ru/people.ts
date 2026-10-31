@@ -32,6 +32,8 @@ export const ruPeople = {
   'people.tz.minutes': '{m} мин',
   'people.tz.ahead': 'на {diff} впереди',
   'people.tz.behind': 'на {diff} позади',
+  'people.tz.workTitle': 'Рабочие часы',
+  'people.tz.work': 'рабочие {range}',
 
   // member context menu
   'people.menu.profile': 'Профиль',
@@ -199,7 +201,7 @@ export const ruPeople = {
   'landing.retry': 'Открыть в Calab ещё раз',
   'landing.browser': 'Продолжить в браузере',
   'landing.download': 'Скачать приложение',
-  'landing.always': 'Всегда открывать в приложении',
+  'landing.remember': 'Запомнить выбор',
   'landing.trying': 'Открываем Calab…',
   'landing.opened': 'Ссылка передана в приложение Calab.',
   'landing.notFound': 'Приложение не найдено',

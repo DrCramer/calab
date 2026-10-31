@@ -163,7 +163,8 @@ FROM sub WHERE d.id = sub.id
 RETURNING d.*;
 
 -- name: DeleteDiskSubtreeFiles :many
--- Delete forever, step 1: the files rows of an item's whole subtree (trashed or not). Their
+-- Delete forever, step 1: the files rows of an item's whole subtree (trashed or not), their
+-- previous versions included (disk_file_versions, ADR-0143). Their
 -- disk items go with them (CASCADE); the caller releases the quota in the same transaction
 -- (ReleaseQuota per workspace) and deletes the blobs after commit, like files.DeleteFile —
 -- deleting only the item would leave the bytes to the orphan cleanup, which would release the
@@ -174,8 +175,12 @@ WITH RECURSIVE sub (id) AS (
     SELECT c.id FROM disk_items c JOIN sub ON c.parent_id = sub.id
 )
 DELETE FROM files f
-USING disk_items di, sub
-WHERE di.id = sub.id AND f.id = di.file_id
+WHERE f.id IN (
+    SELECT di.file_id FROM sub JOIN disk_items di ON di.id = sub.id WHERE di.file_id IS NOT NULL
+    UNION ALL
+    -- Previous versions of the subtree's files (ADR-0143): the same bytes in the quota.
+    SELECT v.file_id FROM sub JOIN disk_file_versions v ON v.item_id = sub.id
+)
 RETURNING f.*;
 
 -- name: DeleteDiskItem :execrows
@@ -314,7 +319,10 @@ CROSS JOIN LATERAL (
             EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id) AS in_boards,
             (EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
                 OR EXISTS (SELECT 1 FROM wiki_pages wp WHERE wp.cover_file_id = f.id)) AS in_wiki
-        FROM files f LEFT JOIN disk_items di ON di.file_id = f.id
+        FROM files f
+        -- A previous version (ADR-0143) counts as its item's file.
+        LEFT JOIN disk_file_versions dv ON dv.file_id = f.id
+        LEFT JOIN disk_items di ON di.file_id = f.id OR di.id = dv.item_id
         WHERE f.workspace_id = w.id
     ) x
 ) b
@@ -430,3 +438,35 @@ WHERE workspace_id = sqlc.arg('workspace_id')::uuid
   AND kind = 'folder' AND lower(name) = lower(sqlc.arg('name')::text) AND trashed_at IS NULL
 ORDER BY id
 LIMIT 1;
+
+-- name: ReplaceDiskItemFile :one
+-- A saved version (ADR-0143): the item keeps its id, parent and name and points at its new file;
+-- updated_at moves. Only while its current file is still expect (compare and swap: a save never
+-- lands over a newer version).
+UPDATE disk_items SET file_id = sqlc.arg('file_id')::uuid, updated_at = now()
+WHERE id = sqlc.arg('id')::uuid AND kind = 'file' AND file_id = sqlc.arg('expect')::uuid
+RETURNING *;
+
+-- name: InsertDiskFileVersion :exec
+-- The previous file of an item becomes a version (ADR-0143); actor saved the one that replaced it.
+INSERT INTO disk_file_versions (item_id, file_id, actor_id) VALUES ($1, $2, $3);
+
+-- name: PruneDiskFileVersions :many
+-- Keeps the newest keep versions of an item: deletes the files rows of the older ones (their
+-- version rows go with them, CASCADE); the caller releases their quota in the same transaction
+-- and deletes the blobs after commit (as DeleteDiskSubtreeFiles).
+DELETE FROM files f
+WHERE f.id IN (
+    SELECT v.file_id FROM disk_file_versions v WHERE v.item_id = sqlc.arg('item_id')::uuid
+    ORDER BY v.id DESC OFFSET sqlc.arg('keep')::int
+)
+RETURNING f.*;
+
+-- name: LastDiskFileVersion :one
+-- The file an item's current file replaced (its newest version; ADR-0143: an editor session on it
+-- is the one whose forcesave produced the current file).
+SELECT file_id FROM disk_file_versions WHERE item_id = $1 ORDER BY id DESC LIMIT 1;
+
+-- name: GetDiskItemByVersionFile :one
+-- The item a previous version belongs to (files.CanRead: a version is read through its item).
+SELECT di.* FROM disk_file_versions v JOIN disk_items di ON di.id = v.item_id WHERE v.file_id = $1;

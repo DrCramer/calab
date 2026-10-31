@@ -83,7 +83,7 @@ function MiniMapBody({ engine, palette, focusCanvas }: { engine: CanvasEngine; p
         aria-label={t('canvasBoard.minimap.label')}
         data-testid="canvas-minimap"
         style={{ width: MAP_W, height: MAP_H, touchAction: 'none', cursor: 'pointer' }}
-        className="block rounded-[calc(var(--radius-card)-4px)]"
+        className="block rounded-[var(--radius-icon)]"
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.preventDefault();

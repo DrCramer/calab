@@ -150,6 +150,8 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'perm.VIDEO': 'Use camera',
   'media.cameraLimit': 'Cameras at once',
   'media.cameraLimitHint': '0 — cameras are off in the room',
+  'media.joinLeaveSoundMax': 'Join and leave sounds',
+  'media.joinLeaveSoundMaxHint': 'While the room has at most this many people; 0 — no sound',
 
   // errors (lib/media/errors.ts)
   'mediaErr.camera.permission': 'Camera unavailable — check the permission',

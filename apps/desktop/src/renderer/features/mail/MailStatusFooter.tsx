@@ -12,14 +12,16 @@ import { footerView, parseFooter } from './statusFooter';
  * The status footer pinned to the bottom of the mail column (owner 12.10, Apple Mail's «Downloading
  * Messages»): a thin rounded bar, one centred 13/500 line and one muted 12 line under it — progress
  * of a first sync, «Проверка почты» of a background one, or a problem with its button. Replaces the
- * 2 px line, the progress row and the notice row under the header. Idle → nothing is rendered (the
- * list takes the room). The shell subscribes to one primitive (`scopeFooter`); progress events
+ * 2 px line, the progress row and the notice row under the header. Idle → only the spacer over the
+ * bottom island (the list takes the room). The shell subscribes to one primitive (`scopeFooter`); progress events
  * re-render only `FooterBody`.
  */
 export const MailStatusFooter = memo(function MailStatusFooter(): ReactNode {
   const key = useMail((s) => scopeFooter(s, s.box.scope));
   const f = parseFooter(key);
-  if (!f) return null;
+  // Idle: the list ends above the bottom island when it lies under this column (0 px otherwise,
+  // MailColumn resets `--island-height`), like the sidebar's last block.
+  if (!f) return <div className="shrink-0" style={{ height: 'calc(var(--island-height, -20px) + 20px)' }} aria-hidden data-testid="mail-island-spacer" />;
   return (
     <div
       role="status"

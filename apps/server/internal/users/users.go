@@ -98,7 +98,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
 		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
-		req.Phone != nil || req.Username != nil || req.TaskNotifyOff != nil || req.TaskNotifyBots != nil) { // a bot's username is its bot username (ADR-0077)
+		req.Phone != nil || req.Username != nil || req.TaskNotifyOff != nil || req.TaskNotifyBots != nil || req.CalendarZones != nil) { // a bot's username is its bot username (ADR-0077)
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -209,6 +209,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	var zones []byte
+	if cz := req.GetCalendarZones(); cz != nil { // board #85
+		var err error
+		if zones, err = calendarZones(cz.GetZones()); err != nil {
+			return err
+		}
+	}
 	var workStart, workEnd int16
 	var workDays []int16
 	if wh := req.GetWorkHours(); wh != nil { // ADR-0041
@@ -258,6 +265,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return guarded.SetUserWorkHours(r.Context(), sqlc.SetUserWorkHoursParams{
 				ID: id.UserID, WorkStartMin: workStart, WorkEndMin: workEnd, WorkDays: workDays,
 			})
+		}); err != nil {
+			return err
+		}
+	}
+	if req.GetCalendarZones() != nil {
+		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetUserCalendarZones(r.Context(), sqlc.SetUserCalendarZonesParams{ID: id.UserID, CalendarZones: zones})
 		}); err != nil {
 			return err
 		}

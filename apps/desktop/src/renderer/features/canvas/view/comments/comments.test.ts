@@ -9,7 +9,7 @@ import { useSession } from '../../../../stores/session';
 import { useWorkspaces } from '../../../../stores/workspaces';
 import { destroyRigs, rig, type Rig } from '../../engine/testRig';
 
-vi.mock('../../../../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
+vi.mock('../../../../platform', () => ({ isWeb: true, platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
 
 // Pin renders are counted by the name lookup each pin does once per render.
 const named = vi.hoisted(() => ({ calls: [] as string[] }));
@@ -61,6 +61,8 @@ function mount(el: ReturnType<typeof createElement>): HTMLElement {
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   Element.prototype.scrollIntoView = function scrollIntoView(): void {};
+  // The chat composer asks for the phone layout.
+  window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined })) as unknown as typeof window.matchMedia;
 });
 
 beforeEach(() => {
@@ -170,13 +172,17 @@ describe('the comments panel (rights, ADR-0127 wave 4)', () => {
     return mount(createElement(CommentsPanel, { canvasId: CV, workspaceId: W, rights: commentRights(bits, ownerId, 'me'), engine: r.engine }));
   };
   const count = (el: HTMLElement, id: string): number => el.querySelectorAll(`[data-testid="${id}"]`).length;
+  // Edit / delete live in the chat row's hover bar and menu: the row says what it offers.
+  const editable = (el: HTMLElement): number => el.querySelectorAll('[data-testid="canvas-comment"][data-can-edit]').length;
+  const deletable = (el: HTMLElement): number => el.querySelectorAll('[data-testid="canvas-comment"][data-can-delete]').length;
 
   it('a viewer reads only', () => {
     const el = setup(CANVAS_BITS.VIEW);
     expect(count(el, 'canvas-comment-thread')).toBe(3);
     expect(count(el, 'canvas-comment-resolve')).toBe(0);
-    expect(count(el, 'canvas-comment-edit')).toBe(0);
-    expect(count(el, 'canvas-comment-delete')).toBe(0);
+    expect(count(el, 'canvas-comment')).toBe(3);
+    expect(editable(el)).toBe(0);
+    expect(deletable(el)).toBe(0);
     act(() => useCanvasComments.getState().setActive('theirs'));
     expect(count(el, 'canvas-comment-input')).toBe(0);
   });
@@ -184,12 +190,12 @@ describe('the comments panel (rights, ADR-0127 wave 4)', () => {
   it('a writer resolves any thread and changes their own; the owner of the canvas changes anyone’s', () => {
     let el = setup(CANVAS_BITS.VIEW | CANVAS_BITS.WRITE);
     expect(count(el, 'canvas-comment-resolve')).toBe(3);
-    expect(count(el, 'canvas-comment-edit')).toBe(1);
+    expect(editable(el)).toBe(1);
     act(() => useCanvasComments.getState().setActive('theirs'));
     expect(count(el, 'canvas-comment-input')).toBe(1);
     act(() => root?.unmount());
     el = setup(CANVAS_BITS.VIEW | CANVAS_BITS.WRITE, 'me');
-    expect(count(el, 'canvas-comment-edit')).toBe(3);
+    expect(editable(el)).toBe(3);
   });
 
   it('«Только открытые» hides resolved threads', () => {
@@ -219,7 +225,7 @@ describe('the @ list of the input (ADR-0127 wave 4)', () => {
     const sent: string[] = [];
     const el = mount(
       createElement(CommentInput, {
-        canvasId: CV, workspaceId: W, placeholder: 'p', submitLabel: 's',
+        canvasId: CV, workspaceId: W, placeholder: 'p',
         onSubmit: (w: string) => {
           sent.push(w);
           return Promise.resolve(true);

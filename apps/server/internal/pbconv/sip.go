@@ -22,6 +22,13 @@ var sipStatus = map[string]v1.SipCallStatus{
 	SipFailed:  v1.SipCallStatus_SIP_CALL_STATUS_FAILED,
 }
 
+var sipOrigin = map[string]v1.SipCallOrigin{
+	"room":     v1.SipCallOrigin_SIP_CALL_ORIGIN_ROOM,
+	"personal": v1.SipCallOrigin_SIP_CALL_ORIGIN_PERSONAL,
+	"inbound":  v1.SipCallOrigin_SIP_CALL_ORIGIN_INBOUND,
+	"test":     v1.SipCallOrigin_SIP_CALL_ORIGIN_TEST,
+}
+
 // SipCallLive reports a call that is dialing, ringing or active.
 func SipCallLive(status string) bool {
 	return status == SipDialing || status == SipRinging || status == SipActive
@@ -39,6 +46,7 @@ func SipCall(c sqlc.SipCall) *v1.SipCall {
 		StartedAt: ts(c.StartedAt), AnsweredAt: tsp(c.AnsweredAt), EndedAt: tsp(c.EndedAt),
 		ParticipantIdentity: c.ParticipantIdentity, EndedBy: idp(c.EndedBy),
 		AnsweredBy: idp(c.AnsweredBy), Route: c.Route, Via: c.Via, ProviderCallId: c.ProviderCallID, RingingUserIds: make([]string, 0, len(c.RingingUserIds)),
+		Origin: sipOrigin[c.Origin], Extension: c.Extension,
 	}
 	for _, u := range c.RingingUserIds {
 		out.RingingUserIds = append(out.RingingUserIds, u.String())

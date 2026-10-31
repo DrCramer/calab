@@ -1,6 +1,6 @@
 # Calab — full description
 
-> Calab is a voice-first team messenger you can run on your own server: always-open voice rooms, video meetings and screen sharing, Telegram-style chat, a calendar with meetings, task boards, notes, unified search, an email client in the desktop app, flexible notifications (including relaying task notifications to your own bot), phone calls over SIP, workspace web apps, and bots with an API and SDK. Desktop apps for macOS, Windows and Linux, plus a web app that also works on phones; iPhone and Android apps are coming soon.
+> Calab is a voice-first team messenger you can run on your own server: always-open voice rooms, video meetings and screen sharing, Telegram-style chat, a calendar with meetings, task boards, notes, a wiki, an online whiteboard (canvas), unified search, an email client in the desktop app, flexible notifications (including relaying task notifications to your own bot), a small phone system over SIP, AI features on the Business plan, workspace web apps, and bots with an API, an SDK and MCP. Desktop apps for macOS, Windows and Linux, plus a web app that also works on phones; iPhone and Android apps are coming soon.
 
 This file is the detailed version of https://calab.io/llms.txt. It describes only what exists in the product today; things that are planned are listed separately at the end and are marked as not available. Site: https://calab.io (languages: /en/, /ru/, /es/, /zh/). Source: https://github.com/itrcz/calab. Contact: support@calab.io. A Russian summary is at the very end.
 
@@ -94,6 +94,23 @@ Up to 20 private shelves per person with their own names and emoji, like "Saved 
 
 A team knowledge base in its own section: pages and subpages in a tree with covers, checklists, tables and code, real-time editing together with teammates' cursors, version history, access per page and publishing a page by link.
 
+## Canvas
+
+An online whiteboard in its own section of the left rail (and on phones, under "More"): an infinite board with sticky notes (several colors and sets of workspace stickers), text, 11 shapes, connectors (straight, elbow, smooth), groups, locking, alignment, templates, a minimap, version history, a trash, PNG export and search through Cmd/Ctrl+K.
+
+- Real-time editing together with teammates' cursors; voting with dots, a timer for a retro or a workshop, comments with @mentions (written like chat messages).
+- A canvas can be sent to a chat as a card (it opens on click, also on phones; without access the card reads "Canvas unavailable") and shown by a view-only public link with an expiry that can be revoked.
+- On phones a canvas opens for viewing; the "Edit" button turns on editing (selection, move, stickers, text, shapes, connectors, two fingers always pan and zoom).
+- Access works like the Wiki: a member can view and edit, administrators manage, guests and bots only by an explicit override; a private canvas is invisible to those not let in.
+- Limits (live canvases per workspace, folders and the trash do not count): Free 3, Team 30, Business 100, Enterprise unlimited. Over a limit, existing canvases stay open and editable; only new ones are blocked.
+
+## AI features (Business and Enterprise)
+
+- Available on the Business plan and on Enterprise (your own server); Free and Team have none. An administrator connects a model once in the workspace settings (provider, address, model, key); until the connection is checked and ready, the AI items stay switched off, and the server refuses AI calls the same way.
+- Smart task: the "+" menu of a board has "Create a smart task". You type a description and attach files; the model receives the text, the file names and contents (images, text, the first and last pages of a PDF) and the boards where you may create tasks, picks a board, drafts the title, description, labels and priority, looks for a duplicate among recent tasks, and the task is created on your behalf and opens for editing. A board can have an "AI instruction" that the model follows for tasks on it. Details: ADR-0118.
+- Meeting transcripts and summaries are a separate service: the workspace connects to GPTunneL once, and the audio of a recorded meeting goes there for transcription (the audio is kept for 30 days). Search finds words in the transcripts.
+- LLM clients can work in Calab as a bot through MCP (see Bots, API, SDK, webhooks).
+
 ## Disk
 
 Shared file storage of the workspace in its own section: folders with image and video previews, access per folder, public links with an expiry, a trash with restore and a storage meter.
@@ -110,11 +127,20 @@ An admin pins site shortcuts (Grafana, a wiki, a CRM) under the workspace icon i
 
 ## Phone calls (SIP)
 
-- Connect your own SIP provider (server, port, transport, login, password, Caller ID, dialling prefix, allowed destination prefixes) in workspace settings, "Telephony". The provider bills the calls.
-- From a voice room, "Call a number" (room header and the "..." menu) dials a landline or mobile number; paste the number as it is. The callee joins the room as a participant with a phone icon, everyone hears them, and the status is visible to all: dialling, ringing, on the call with a timer. The caller and moderators can hang up; only the caller hears the ringback.
+Business and Enterprise plans only (Free and Team have no telephony). The calls themselves are billed by your SIP provider.
+
+- Connect your own SIP provider (server, port, transport, login, password, Caller ID, dialling prefix, allowed destination prefixes) in workspace settings, "Telephony". The server registers at the provider with a login and password like a desk phone, so no port forwarding is needed.
+- Outgoing: from a voice room, "Call a number" (room header and the "..." menu) dials a landline or mobile number; paste the number as it is. The callee joins the room as a participant with a phone icon, everyone hears them, and the status is visible to all: dialling, ringing, on the call with a timer. The caller and moderators can hang up; only the caller hears the ringback.
+- Incoming: calls to your number are answered by colleagues right in Calab, in the desktop app and in the web app (phones included).
+- Extensions: a 2-6 digit number for a person or a bot; it can be dialed from the voice menu without waiting for the recording to end.
+- Voice menu (IVR): upload a greeting and assign the keys routes to a person, a bot, a group or another menu; a key can be pressed while the greeting is still playing.
+- Groups and forwarding: a call rings everyone at once or in turn; if nobody answers within N seconds it goes to another group, a person, a bot, a menu or ends.
+- Transfer and active calls: a call can be transferred to a colleague (it stays with you until they answer); an administrator sees the calls in progress and the stage of each (Menu, Group, Conversation).
+- Recording: conversations are saved to the team Disk in the `phone_recordings` folder; the caller hears the recording notice in the voice menu.
+- A bot can accept an incoming call itself through the Bot API (for example answer by voice and create a task); this takes bot code, there is no ready-made bot without programming.
 - "Test connection" places a short trial call to your Caller ID; a call log shows who called, when, where and how it ended.
 - The "Place calls" permission is given to nobody by default. Limits: one call per room, up to 20 calls an hour per workspace, 2 hours at most per call; destinations can be limited by prefix (for example +7). Guests cannot place calls.
-- Technically this uses LiveKit's SIP service in a container enabled by a flag on your server, so echo cancellation and recording work for phone participants like for people. Outgoing calls only at the moment.
+- Technically this uses LiveKit's SIP service in a container enabled by a flag on your server, so echo cancellation and recording work for phone participants like for people. Decisions: ADR-0046, 0117, 0121, 0124, 0125, 0128, 0129, 0131, 0132.
 
 ## Bots, API, SDK, webhooks
 
@@ -136,7 +162,7 @@ bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
 
-Docs: https://calab.io/en/docs/ (English), https://calab.io/ru/docs/ (Russian); the full English text is at the end of this file. Landing page: https://calab.io/en/bots/. SDK: https://github.com/itrcz/calab/tree/main/packages/bot-sdk. Examples: https://github.com/itrcz/calab/tree/main/examples/bots.
+Docs: https://calab.io/en/docs/ (English), https://calab.io/ru/docs/ (Russian); the full English text is at the end of this file. Developers page: https://calab.io/en/developers/ (bots, MCP, SDK, webhooks, Sign in with Calab). SDK: https://github.com/itrcz/calab/tree/main/packages/bot-sdk. Examples: https://github.com/itrcz/calab/tree/main/examples/bots.
 
 ## Roles and permissions
 
@@ -169,7 +195,7 @@ Business Source License 1.1 (https://github.com/itrcz/calab/blob/main/LICENSE). 
 
 ## Plans
 
-Free, Team and Business are cloud plans of a workspace; Enterprise is Calab on your own server, without limits. Limits are enforced on the server. Global (Unne L.L.C-FZ): Team USD $0.10 and Business USD $0.30 per employee per complete rolling 24 hours, base prices excluding applicable taxes; the final total is shown before payment. RU (ООО «Громтех»): Team 6 RUB and Business 18 RUB per employee per 24 hours, without VAT. The owner counts; guests, bots and pending invitations do not. Balance top-ups fund daily seat charges, with optional automatic top-up. Current teams can run a negative balance for up to seven days without increasing paid capacity, then service and accrual stop. No monthly/yearly commitment or discount. Payments are being prepared for launch; contact support@calab.io. Free is free; Enterprise is free for non-commercial use, commercial licence on request.
+Free, Team and Business are cloud plans of a workspace; Enterprise is Calab on your own server, without limits. Limits are enforced on the server. Global (USD): Team USD $0.10 and Business USD $0.30 per employee per complete rolling 24 hours, base prices excluding applicable taxes; the final total is shown before payment. RU (ООО «Громтех»): Team 6 RUB and Business 18 RUB per employee per 24 hours, without VAT. The owner counts; guests, bots and pending invitations do not. Balance top-ups fund daily seat charges, with optional automatic top-up. Current teams can run a negative balance for up to seven days without increasing paid capacity, then service and accrual stop. No monthly/yearly commitment or discount. Payments are being prepared for launch; contact support@calab.io. Free is free; Enterprise is free for non-commercial use, commercial licence on request.
 
 Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/legal/terms/; privacy: https://calab.io/en/legal/privacy/. RU documents: https://calab.io/ru/legal/offer/. The marketing site has no active analytics/advertising trackers; optional language storage is controlled in the corner preferences panel. Cookie policy: https://calab.io/en/legal/cookies/.
 
@@ -182,6 +208,7 @@ Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/l
 | Task boards | 3 | 30 | 50 | unlimited |
 | Temporary rooms per person (up to 30 days) | 3 | 10 | 50 | unlimited |
 | Wiki pages | 10 | 50 | 500 | unlimited |
+| Canvases (folders and the trash do not count) | 3 | 30 | 100 | unlimited |
 | Simultaneous screen shares per room | 1 | 2 | 5 | unlimited |
 | Simultaneous cameras per room | 3 | 10 | 25 | unlimited |
 | Musician mode | no (locked) | yes | yes | yes |
@@ -227,7 +254,7 @@ support@calab.io for licensing, plans, support and security reports. Calab is de
 
 ## Кратко по-русски
 
-Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, AI-функции (AI интеграция, умная задача) — только Business и Enterprise, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется) и внутренние номера. Сайт: https://calab.io/ru/, контакт: support@calab.io.
+Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, Вики, Холст (онлайн-доска: стикеры, фигуры, голосование, таймер; просмотр и правка и на телефоне), гости с подтверждением входа, временные комнаты, телефония через SIP (Business и Enterprise; нужен свой SIP-провайдер): исходящие из комнаты, входящие, внутренние номера, голосовое меню, группы, перевод и запись на Диск, веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Также: видеовстречи с галереей, единый поиск ⌘K, почтовый клиент в приложении для компьютера (IMAP/SMTP, только на компьютере), уведомления с уровнями и триггерами задач и пересылкой своему боту (например, в Telegram), история задачи, автоматизации и формы досок. Приложения для macOS, Windows, Linux и веб-версия (работает и на телефоне); приложения для iPhone и Android — скоро. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, холсты 3 / 30 / 100, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, AI-функции (AI интеграция, умная задача) — только Business и Enterprise, расшифровки встреч делает GPTunneL, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): приложения для iPhone и Android (скоро), голосовой ИИ-ассистент (уже тестируется). Сайт: https://calab.io/ru/, контакт: support@calab.io.
 
 ## Workspace identity (Identity 2.0)
 

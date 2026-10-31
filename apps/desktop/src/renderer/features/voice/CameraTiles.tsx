@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Check, ChevronLeft, ChevronRight, Ellipsis, Maximize2, MessageCircle, Mic, MicOff, Pin, PinOff, VideoOff } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Ellipsis, Maximize2, MessageCircle, Mic, MicOff, Phone, Pin, PinOff, VideoOff } from 'lucide-react';
 import {
   forwardRef,
   memo,
@@ -150,6 +150,7 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
   const name = useMemberName(wsId, userId);
   const me = useMe();
   const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
+  const onPhone = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.onPhone ?? false) : false));
   const live = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.streaming ?? false) : false));
   const label = userId === me ? t('video.you', { name }) : name;
   return (
@@ -160,7 +161,11 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
         className,
       )}
     >
-      {muted ? <MicOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('shell.mutedState')} role="img" /> : null}
+      {onPhone ? (
+        <Phone className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.onPhone')} role="img" data-voice-icon="on-phone" />
+      ) : muted ? (
+        <MicOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('shell.mutedState')} role="img" />
+      ) : null}
       <span className="min-w-0 truncate" title={label}>
         {label}
       </span>
@@ -200,6 +205,8 @@ const Tile = memo(
     const name = useMemberName(wsId, userId);
     const speaking = useVoice((s) => s.speaking[userId] ?? false);
     const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
+    // Parked for a phone call (ADR-0133): the tile is dimmed.
+    const onPhone = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.onPhone ?? false) : false));
     const hasCamera = useVoice((s) => s.cameras.some((c) => c.userId === userId));
     const hidden = usePrefs((s) => !!s.hiddenVideo[userId]);
     const saveTraffic = usePrefs((s) => s.saveTraffic);
@@ -217,7 +224,8 @@ const Tile = memo(
         aria-pressed={focused}
         title={focused ? t('video.unfocus') : t('video.focus')}
         onClick={() => voice.focusTile(userId)}
-        className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', className)}
+        data-on-phone={onPhone || undefined}
+        className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', onPhone && 'opacity-50', className)}
         {...rest}
         style={x !== undefined ? { ...style, left: x, top: y, width: w, height: h } : style}
       >
@@ -231,7 +239,7 @@ const Tile = memo(
           aria-hidden
           className={cx(
             'pointer-events-none absolute inset-0 rounded-[var(--radius-card)] ring-2 ring-inset transition-shadow duration-100',
-            speaking && !muted ? 'ring-[var(--color-green)]' : focused ? 'ring-accent' : 'ring-transparent',
+            speaking && !muted && !onPhone ? 'ring-[var(--color-green)]' : focused ? 'ring-accent' : 'ring-transparent',
           )}
         />
         {focused ? (
@@ -421,15 +429,12 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
   const { w, h } = useSize(area);
   const me = useMe();
   const gallery = view === 'gallery';
+  const go = useCallback((p: number) => voice.setGalleryPage(Math.max(0, p)), []);
   // Re-renders only when the page's tiles change, not on every speaking start (useGallery).
-  const { gallery: g, pageOf } = useGallery(gallery ? { people, pinned: focused, me, hideSelf, hideNoVideo, size, page } : null);
+  // The page clamped (people left, a bigger page size): the store follows (onClamp).
+  const { gallery: g, pageOf } = useGallery(gallery ? { people, pinned: focused, me, hideSelf, hideNoVideo, size, page, onClamp: go } : null);
   const pages = g?.pages ?? 1;
   const shownPage = g?.page ?? 0;
-  // The page clamped (people left, a bigger page size): the store follows.
-  useEffect(() => {
-    if (g && g.page !== page) voice.setGalleryPage(g.page);
-  }, [g, page]);
-  const go = useCallback((p: number) => voice.setGalleryPage(Math.max(0, p)), []);
   // Esc returns a pinned tile to the grid (not while a menu or dialog handles its own Esc).
   useEffect(() => {
     if (!focused) return;

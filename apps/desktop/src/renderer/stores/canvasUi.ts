@@ -39,6 +39,9 @@ interface CanvasUiState {
   setExpanded: (id: string, on: boolean) => void;
   treeWidth: number;
   setTreeWidth: (w: number) => void;
+  /** The tree column is folded away (persisted; the header's «show» button and the mod+backslash key bring it back). */
+  treeCollapsed: boolean;
+  setTreeCollapsed: (on: boolean) => void;
   /** The tree's name filter; cleared when the section closes. */
   query: string;
   setQuery: (q: string) => void;
@@ -79,6 +82,8 @@ export const useCanvasUi = create<CanvasUiState>()(
         }),
       treeWidth: TREE_DEFAULT,
       setTreeWidth: (w) => set((s) => (s.treeWidth === clampTree(w) ? s : { treeWidth: clampTree(w) })),
+      treeCollapsed: false,
+      setTreeCollapsed: (treeCollapsed) => set((s) => (s.treeCollapsed === treeCollapsed ? s : { treeCollapsed })),
       query: '',
       setQuery: (query) => set({ query }),
       renaming: null,
@@ -95,6 +100,7 @@ export const useCanvasUi = create<CanvasUiState>()(
         itemOf: s.itemOf,
         expanded: s.expanded,
         treeWidth: s.treeWidth,
+        treeCollapsed: s.treeCollapsed,
       }),
       merge: (stored, cur) => {
         const p = (stored ?? {}) as Partial<CanvasUiState>;
@@ -107,6 +113,7 @@ export const useCanvasUi = create<CanvasUiState>()(
           itemOf,
           expanded,
           treeWidth: clampTree(typeof p.treeWidth === 'number' ? p.treeWidth : TREE_DEFAULT),
+          treeCollapsed: p.treeCollapsed === true,
         };
       },
     },

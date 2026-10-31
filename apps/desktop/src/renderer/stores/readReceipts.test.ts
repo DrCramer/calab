@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { useReadReceipts } from './readReceipts';
+import { TICKS_NONE, TICKS_READ, TICKS_SENT, tickState, useReadReceipts } from './readReceipts';
 
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
 
@@ -31,5 +31,25 @@ describe('readReceipts', () => {
     useReadReceipts.getState().set('r', id(12));
     useReadReceipts.getState().set('q', id(99)); // another room: nothing here
     expect(Array.from({ length: 100 }, (_, n) => read(n)).filter((v, n) => v !== mid[n])).toHaveLength(2);
+  });
+
+  it('tickState (ADR-0140): no ticks before the start, ✓ until someone saw, ✓✓ up to the marker', () => {
+    expect(tickState(id(3), undefined, '')).toBe(TICKS_SENT);
+    expect(tickState(id(3), id(5), '')).toBe(TICKS_READ);
+    expect(tickState(id(5), id(5), '')).toBe(TICKS_READ);
+    expect(tickState(id(6), id(5), '')).toBe(TICKS_SENT);
+    // Before read receipts started: nothing — even when an old marker is past it.
+    expect(tickState(id(3), id(9), id(4))).toBe(TICKS_NONE);
+    expect(tickState(id(4), id(9), id(4))).toBe(TICKS_READ);
+  });
+
+  it('setFrom keeps the state object when unchanged; reset clears it', () => {
+    const s = useReadReceipts.getState();
+    s.setFrom(id(1));
+    const before = useReadReceipts.getState();
+    s.setFrom(id(1));
+    expect(useReadReceipts.getState()).toBe(before);
+    s.reset();
+    expect(useReadReceipts.getState().from).toBe('');
   });
 });

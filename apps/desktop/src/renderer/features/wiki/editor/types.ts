@@ -1,7 +1,8 @@
-import type { Editor } from '@tiptap/core';
+import type { Editor, FocusPosition } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { MentionCandidate } from '../../../lib/mentions';
+import type { BlockId } from './blocks';
 
 /** People the `@` popover offers and how a mention reads (the page's workspace members). */
 export interface MentionSource {
@@ -61,7 +62,10 @@ export interface WikiEditorUser {
 }
 
 export interface WikiEditorProps {
-  doc: Y.Doc;
+  /** The page's shared document; null — a standalone editor over `content` (no Yjs, local undo). */
+  doc: Y.Doc | null;
+  /** Initial ProseMirror JSON of a standalone editor (read once, when the editor is created). */
+  content?: unknown;
   /** Collaboration cursors; omit for a standalone doc (tests, public page). */
   awareness?: Awareness | null;
   editable: boolean;
@@ -83,6 +87,18 @@ export interface WikiEditorProps {
    * not drawn (the page shows a counter instead).
    */
   phone?: boolean;
+  /** Blocks offered by the `/` menu and «Превратить в» (default: all). */
+  blocks?: readonly BlockId[];
+  /** The bubble bar's highlight colours (default true). */
+  highlight?: boolean;
+  /** Placeholder of the empty document (default: the wiki's). */
+  placeholder?: string;
+  /** The text box's accessible name (default: the wiki page's). */
+  label?: string;
+  /** Handles a key before the editor (true = handled); skipped while a suggestion popover is open. */
+  onKey?: (event: KeyboardEvent) => boolean;
+  /** Smaller type for an editor inside a panel (task description: body text, tighter blocks). */
+  compact?: boolean;
   className?: string;
 }
 
@@ -92,7 +108,8 @@ export interface WikiEditorApi {
   getJSON(): unknown;
   /** Plain text (one line per block). */
   getText(): string;
-  focus(): void;
+  /** Focuses the editor, the caret at `at` ('end', 'start', a position; none: where it was). Safe on iOS (board #109). */
+  focus(at?: FocusPosition): void;
   /** The Tiptap editor (the phone toolbar runs its commands; types only outside the chunk). */
   editor: Editor;
   /** Opens the block menu (the toolbar's «+»). */

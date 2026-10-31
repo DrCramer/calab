@@ -43,10 +43,16 @@ const (
 	reasonError       = "error"
 )
 
-// publish sends SIP_CALL_UPDATE to the viewers of the call's room (calls without a room — the
-// connection tests — are not published).
+// publish sends SIP_CALL_UPDATE to the viewers of the call's room, a personal call's to its
+// caller's devices with caller ID (other calls without a room — the connection tests — are
+// not published).
 func (s *Service) publish(ctx context.Context, c sqlc.SipCall) {
 	s.callsChanged(ctx, c.WorkspaceID)
+	if c.Origin == OriginPersonal && c.StartedBy != nil {
+		pb := FillCaller(pbconv.SipCall(c), s.callerOf(ctx, c.WorkspaceID, c.PeerE164))
+		s.events.User(ctx, *c.StartedBy, &v1.DispatchEvent{Event: &v1.DispatchEvent_SipCallUpdate{SipCallUpdate: &v1.SipCallUpdate{Call: pb}}})
+		return
+	}
 	if c.RoomID == nil {
 		return
 	}
@@ -124,7 +130,11 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	number, ok := NormalizeNumber(req.GetNumber())
+	raw, ext, ok := SplitExtension(req.GetNumber())
+	if !ok {
+		return httpx.Validation("number", "not an extension: digits, * and # after «доб.», «,» or «;», at most 20")
+	}
+	number, ok := NormalizeNumber(raw)
 	if !ok {
 		return httpx.Validation("number", "not a phone number: use the international format, e.g. +7 916 123-45-67")
 	}
@@ -148,24 +158,19 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 	} else if !db.IsNotFound(err) {
 		return err
 	}
-	if err := s.CallLimit.Take(ctx, acc.WorkspaceID.String()); err != nil {
-		if e := httpx.AsError(err); e.Code == v1.ErrorCode_ERROR_CODE_RATE_LIMITED {
-			sipErr := httpx.Coded(http.StatusTooManyRequests, v1.ErrorCode_ERROR_CODE_SIP_RATE_LIMITED, "too many phone calls from this workspace; try again later")
-			sipErr.RetryAfter = e.RetryAfter
-			return sipErr
-		}
+	if err := s.takeOutbound(ctx, a, me); err != nil {
 		return err
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
 		return err
 	}
-	call, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
-		return guarded.InsertSipCall(ctx, sqlc.InsertSipCallParams{
+	call, err := s.journalOutside(ctx, id, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+		return q.InsertSipCall(ctx, sqlc.InsertSipCallParams{
 			ID: id, WorkspaceID: acc.WorkspaceID, RoomID: &room.ID, Number: number, StartedBy: &me,
-			ParticipantIdentity: rtc.SIPIdentity(id),
+			ParticipantIdentity: rtc.SIPIdentity(id), Origin: OriginRoom, PeerE164: number, Extension: ext,
 		})
-	})
+	}, Event{Kind: EvStarted, User: &me, TargetKind: TkRoom, TargetID: &room.ID, TargetName: room.Name})
 	if db.UniqueViolation(err) != "" {
 		return errActive // a concurrent call won the room
 	}
@@ -187,6 +192,9 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 func (s *Service) dial(ctx context.Context, call sqlc.SipCall, a sqlc.SipAccount, lkRoom string) {
 	ctx, cancel := context.WithTimeout(ctx, s.opts.RingingTimeout+45*time.Second)
 	defer cancel()
+	if _, err := s.journalOutside(ctx, call.ID, nil, Event{Kind: EvDialing}); err != nil {
+		slog.WarnContext(ctx, "sip: journal the dialing", "call", call.ID, "err", err)
+	}
 	info, err := s.sip.CreateSIPParticipant(ctx, rtc.SIPCall{
 		TrunkID: a.TrunkID, CallTo: DialString(a.OutboundPrefix, call.Number), Room: lkRoom,
 		Identity: call.ParticipantIdentity, Name: call.Number,
@@ -195,9 +203,9 @@ func (s *Service) dial(ctx context.Context, call sqlc.SipCall, a sqlc.SipAccount
 	})
 	ctx = context.WithoutCancel(ctx)
 	if err == nil {
-		row, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
-			return guarded.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: call.ID, SipCallID: info.SIPCallID})
-		})
+		row, err := s.journalOutside(ctx, call.ID, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+			return q.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: call.ID, SipCallID: info.SIPCallID})
+		}, Event{Kind: EvAnswered})
 		switch {
 		case err == nil:
 			s.publish(ctx, row)
@@ -245,9 +253,9 @@ func failureReason(err error) string {
 
 // finish ends a live call once and publishes it; a call already final is left alone.
 func (s *Service) finish(ctx context.Context, id uuid.UUID, status, reason string, by *uuid.UUID) (sqlc.SipCall, bool) {
-	row, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
-		return guarded.FinishSipCall(ctx, sqlc.FinishSipCallParams{ID: id, Status: status, Reason: reason, EndedBy: by})
-	})
+	row, err := s.journalOutside(ctx, id, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+		return q.FinishSipCall(ctx, sqlc.FinishSipCallParams{ID: id, Status: status, Reason: reason, EndedBy: by})
+	}, Event{Kind: EvEnded, Reason: reason, User: by})
 	if err != nil {
 		if !db.IsNotFound(err) {
 			slog.WarnContext(ctx, "sip: finish call", "call", id, "err", err)
@@ -256,6 +264,9 @@ func (s *Service) finish(ctx context.Context, id uuid.UUID, status, reason strin
 	}
 	s.publish(ctx, row)
 	s.recEnded(ctx, row.ID)
+	if row.Origin == OriginPersonal {
+		s.personalEnded(ctx, row) // ADR-0137 §3: the member is free, the room goes
+	}
 	return row, true
 }
 
@@ -331,6 +342,13 @@ func (s *Service) hangupWorkspace(ctx context.Context, wsID uuid.UUID) {
 	for _, c := range live {
 		s.removeLine(ctx, voice.RoomName(wsID, *c.RoomID), c.ParticipantIdentity)
 		s.finish(ctx, c.ID, pbconv.SipEnded, reasonDisabled, nil)
+	}
+	personal, err := s.db.Q.ListLivePersonalCallsByWorkspace(ctx, wsID)
+	if err != nil {
+		slog.WarnContext(ctx, "sip: list live personal calls", "workspace", wsID, "err", err)
+	}
+	for _, c := range personal {
+		s.finish(ctx, c.ID, pbconv.SipEnded, reasonDisabled, nil) // the line and the room go with it
 	}
 	s.hangupInboundWorkspace(ctx, wsID, reasonDisabled)
 }
@@ -432,11 +450,12 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 			slog.WarnContext(ctx, "sip: delete test room", "room", lkRoom, "err", err)
 		}
 	}()
-	call, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
-		return guarded.InsertSipCall(ctx, sqlc.InsertSipCallParams{
+	call, err := s.journalOutside(ctx, id, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+		return q.InsertSipCall(ctx, sqlc.InsertSipCallParams{
 			ID: id, WorkspaceID: wsID, Number: a.CallerID, StartedBy: &me, ParticipantIdentity: rtc.SIPIdentity(id),
+			Origin: OriginTest, PeerE164: a.CallerID,
 		})
-	})
+	}, Event{Kind: EvStarted, User: &me})
 	if err != nil {
 		return err
 	}
@@ -576,11 +595,12 @@ func (s *Service) SIPParticipant(ctx context.Context, event string, wid, rid uui
 		var row sqlc.SipCall
 		switch p.Attributes[rtc.AttrSIPCallStatus] {
 		case "active":
-			row, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
-				return guarded.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: id, SipCallID: p.Attributes[rtc.AttrSIPCallID]})
-			})
+			row, err = s.journalOutside(ctx, id, func(q *sqlc.Queries) (sqlc.SipCall, error) {
+				return q.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: id, SipCallID: p.Attributes[rtc.AttrSIPCallID]})
+			}, Event{Kind: EvAnswered})
 		case "ringing":
-			row, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) { return guarded.MarkSipCallRinging(ctx, id) })
+			row, err = s.journalOutside(ctx, id, func(q *sqlc.Queries) (sqlc.SipCall, error) { return q.MarkSipCallRinging(ctx, id) },
+				Event{Kind: EvProviderRinging})
 		default:
 			return nil
 		}
@@ -663,6 +683,10 @@ func (s *Service) Sweep(ctx context.Context) {
 	s.sweepRegistrations(ctx, now)
 	ringDeadline := now.Add(-(s.opts.RingingTimeout + 90*time.Second))
 	for _, c := range live {
+		if c.Origin == OriginPersonal { // ADR-0137 §3: its own room, its own rules
+			s.sweepPersonal(ctx, c, now, ringDeadline)
+			continue
+		}
 		if c.RoomID == nil { // a deleted room or an interrupted connection test
 			s.finish(ctx, c.ID, pbconv.SipEnded, reasonLost, nil)
 			continue

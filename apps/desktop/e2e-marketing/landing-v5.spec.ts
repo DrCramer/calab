@@ -10,6 +10,7 @@ import * as Y from 'yjs';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { startPublisher, type Publisher } from '../e2e-visual/publisher';
+import { APP_WINDOW, captureAppWindow, launchAppWindow, resizeAppWindow, type AppWindow } from './app-window';
 import { APP_LOCALE, COPY, type Copy, type Short } from './copy';
 import { COPY3, type Copy3 } from './copy3';
 import { mockupHtml, render } from './art';
@@ -123,14 +124,17 @@ interface Ctx {
   short: Short;
   pubs: Publisher[];
   phone: boolean;
+  /** The real app window (app-window.ts): the scene is the OS capture of the window, chrome included. */
+  win?: AppWindow;
 }
 
 type Seed = (mock: MockServer, c: Copy, c3: Copy3) => void;
 
 const aside = (page: Page) => page.locator('aside').first();
 
-async function boot(short: Short, seed: Seed | undefined, phone: boolean): Promise<Ctx> {
-  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+async function boot(short: Short, seed: Seed | undefined, phone: boolean, window?: { width: number; height: number }): Promise<Ctx> {
+  const app = window && APP_WINDOW && !phone ? window : undefined;
+  if (!app) expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
   const browser = phone
     ? await webkit.launch()
     : await chromium.launch({
@@ -145,6 +149,10 @@ async function boot(short: Short, seed: Seed | undefined, phone: boolean): Promi
   seedScene(mock, c, await drawArt(artBrowser, c));
   if (phone) await artBrowser.close();
   seed?.(mock, c, c3);
+  if (app) {
+    const win = await launchAppWindow(mock.url, app);
+    return { browser, page: win.page, mock, c, c3, short, pubs: [], phone, win };
+  }
   const context = phone
     ? await browser.newContext({ ...devices['iPhone 14'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'ru-RU', timezoneId: 'Europe/Moscow', reducedMotion: 'reduce' })
     : await browser.newContext({ viewport: SIZE, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'ru-RU', timezoneId: 'Europe/Moscow' });
@@ -174,6 +182,7 @@ async function insets(page: Page): Promise<void> {
 async function shutdown(ctx: Ctx | undefined): Promise<void> {
   if (!ctx) return;
   for (const p of ctx.pubs) await p.stop().catch(() => undefined);
+  await ctx.win?.close();
   await ctx.browser.close().catch(() => undefined);
   await ctx.mock.close().catch(() => undefined);
 }
@@ -189,7 +198,8 @@ async function shoot(ctx: Ctx, scene: string): Promise<void> {
   await settle(ctx.page);
   mkdirSync(OUT, { recursive: true });
   const path = join(OUT, `${scene}-${ctx.short}@2x.png`);
-  await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide' });
+  if (ctx.win) await captureAppWindow(ctx.win.app, path);
+  else await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide' });
   console.log(scene, ctx.short, `${(statSync(path).size / 1e6).toFixed(1)} MB`);
 }
 
@@ -319,6 +329,8 @@ function seedNotify(mock: MockServer, _c: Copy, c3: Copy3): void {
 interface Scene {
   seed?: Seed;
   phone?: boolean;
+  /** The whole window is the crop: captured from the real app window of this size (app-window.ts), traffic lights included. */
+  window?: { width: number; height: number };
   run(ctx: Ctx): Promise<void>;
 }
 
@@ -345,6 +357,60 @@ async function phoneRoom(page: Page, name: string): Promise<void> {
   await page.getByTestId('phone-room-list').getByRole('button', { name: new RegExp(`^${name}`) }).first().tap();
   await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
   await expect(page.getByTestId('composer')).toBeVisible();
+}
+
+/** «Диск» (ADR-0094) as tiles: the mock's Disk fixture renamed to the page language, its pictures replaced by real ones. */
+async function diskScene(ctx: Ctx, scene: string, size: { width: number; height: number }): Promise<void> {
+  const { page, mock, c, short } = ctx;
+  const names = DISK[short];
+  const team = readFileSync(resolve(import.meta.dirname, '../../landing/public/editorial/team-conversation.webp'));
+  const pics: Record<string, { bytes: Buffer; mime: string; w: number; h: number }> = {
+    cover: { bytes: await render(ctx.browser, mockupHtml(c), 1600, 900), mime: 'image/png', w: 1600, h: 900 },
+    board: { bytes: heroStream(), mime: 'image/jpeg', w: 1280, h: 720 },
+    team: { bytes: await render(ctx.browser, `<img src="data:image/webp;base64,${team.toString('base64')}" style="display:block;width:1200px;height:800px;object-fit:cover">`, 1200, 800), mime: 'image/png', w: 1200, h: 800 },
+  };
+  // Fixture name → [the page language's name, the picture that replaces the file's bytes].
+  const map: Record<string, [string, string?]> = {
+    Проекты: [names.folders[0]],
+    Дизайн: [names.folders[1]],
+    Договоры: [names.folders[2]],
+    'Обложка релиза.png': [names.files[0], 'cover'],
+    'Офис.png': [names.files[1], 'board'],
+    'Исходники.zip': [names.files[2], 'team'],
+    'Отчёт за квартал.pdf': [names.files[3]],
+    'Бюджет 2026.xlsx': [names.files[4]],
+    'Демо продукта.mp4': [names.files[5]],
+  };
+  for (const it of mock.disk.items.values()) {
+    const m = map[it.name];
+    if (!m) continue;
+    it.name = m[0];
+    if (!it.file) continue;
+    it.file.name = m[0];
+    const pic = m[1] ? pics[m[1]] : undefined;
+    const rec = mock.state.files.get(it.file.id);
+    if (!pic || !rec) continue;
+    it.file.mime = pic.mime;
+    if (m[1] === 'team') it.file.size = 5_412_000n;
+    it.file.thumbnailUrl = `/api/files/${it.file.id}/thumbnail`;
+    it.file.width = pic.w;
+    it.file.height = pic.h;
+    rec.meta = it.file;
+    rec.bytes = pic.bytes;
+    rec.thumbnail = { bytes: pic.bytes, mime: pic.mime };
+  }
+  await setLocale(page, short);
+  // `disk`: a smaller window, two full rows of tiles above the storage meter, no empty floor.
+  if (ctx.win) await resizeAppWindow(ctx.win, size);
+  else await page.setViewportSize(size);
+  await page.getByTestId('section-disk').click();
+  const tiles = page.getByTestId('disk-tile');
+  await expect(tiles).toHaveCount(9, { timeout: 15_000 });
+  await expect(page.getByTestId('disk-meter')).toBeVisible();
+  await expect.poll(() => page.locator('[data-testid="disk-tile"] img').evaluateAll((l) => l.filter((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0).length), { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+  await page.mouse.move(0, size.height - 1);
+  await page.waitForTimeout(600);
+  await shoot(ctx, scene);
 }
 
 const scenes: Record<string, Scene> = {
@@ -499,55 +565,16 @@ const scenes: Record<string, Scene> = {
   // the page language, its pictures replaced by real ones.
   disk: {
     async run(ctx) {
-      const { page, mock, c, short } = ctx;
-      const names = DISK[short];
-      const team = readFileSync(resolve(import.meta.dirname, '../../landing/public/editorial/team-conversation.webp'));
-      const pics: Record<string, { bytes: Buffer; mime: string; w: number; h: number }> = {
-        cover: { bytes: await render(ctx.browser, mockupHtml(c), 1600, 900), mime: 'image/png', w: 1600, h: 900 },
-        board: { bytes: heroStream(), mime: 'image/jpeg', w: 1280, h: 720 },
-        team: { bytes: await render(ctx.browser, `<img src="data:image/webp;base64,${team.toString('base64')}" style="display:block;width:1200px;height:800px;object-fit:cover">`, 1200, 800), mime: 'image/png', w: 1200, h: 800 },
-      };
-      // Fixture name → [the page language's name, the picture that replaces the file's bytes].
-      const map: Record<string, [string, string?]> = {
-        Проекты: [names.folders[0]],
-        Дизайн: [names.folders[1]],
-        Договоры: [names.folders[2]],
-        'Обложка релиза.png': [names.files[0], 'cover'],
-        'Офис.png': [names.files[1], 'board'],
-        'Исходники.zip': [names.files[2], 'team'],
-        'Отчёт за квартал.pdf': [names.files[3]],
-        'Бюджет 2026.xlsx': [names.files[4]],
-        'Демо продукта.mp4': [names.files[5]],
-      };
-      for (const it of mock.disk.items.values()) {
-        const m = map[it.name];
-        if (!m) continue;
-        it.name = m[0];
-        if (!it.file) continue;
-        it.file.name = m[0];
-        const pic = m[1] ? pics[m[1]] : undefined;
-        const rec = mock.state.files.get(it.file.id);
-        if (!pic || !rec) continue;
-        it.file.mime = pic.mime;
-        if (m[1] === 'team') it.file.size = 5_412_000n;
-        it.file.thumbnailUrl = `/api/files/${it.file.id}/thumbnail`;
-        it.file.width = pic.w;
-        it.file.height = pic.h;
-        rec.meta = it.file;
-        rec.bytes = pic.bytes;
-        rec.thumbnail = { bytes: pic.bytes, mime: pic.mime };
-      }
-      await setLocale(page, short);
-      // A smaller window: two full rows of tiles above the storage meter, no empty floor.
-      await page.setViewportSize({ width: 1060, height: 600 });
-      await page.getByTestId('section-disk').click();
-      const tiles = page.getByTestId('disk-tile');
-      await expect(tiles).toHaveCount(9, { timeout: 15_000 });
-      await expect(page.getByTestId('disk-meter')).toBeVisible();
-      await expect.poll(() => page.locator('[data-testid="disk-tile"] img').evaluateAll((l) => l.filter((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0).length), { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
-      await page.mouse.move(0, 599);
-      await page.waitForTimeout(600);
-      await shoot(ctx, 'disk');
+      await diskScene(ctx, 'disk', { width: 1060, height: 600 });
+    },
+  },
+
+  // The same disk, the whole window at 16:10 (hero «Облачный диск», landing v6): a smaller window, so the nine
+  // tiles fill it instead of one row over an empty floor.
+  'disk-full': {
+    window: { width: 1056, height: 660 },
+    async run(ctx) {
+      await diskScene(ctx, 'disk-full', { width: 1056, height: 660 });
     },
   },
 
@@ -756,7 +783,7 @@ for (const [name, scene] of Object.entries(scenes)) {
       process.env['MOCK_LIVEKIT_ROOM_PREFIX'] = `${PREFIX}v5_${name}_${short}_${Date.now().toString(36)}_`;
       let ctx: Ctx | undefined;
       try {
-        ctx = await boot(short, scene.seed, scene.phone ?? false);
+        ctx = await boot(short, scene.seed, scene.phone ?? false, scene.window);
         await scene.run(ctx);
       } finally {
         await shutdown(ctx);

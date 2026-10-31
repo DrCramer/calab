@@ -101,10 +101,19 @@ func TestStartAudioRecordingRequest(t *testing.T) {
 		t.Fatalf("virtual-hosted style: %v", f)
 	}
 	// A phone call (ADR-0131): Ogg/Opus.
-	if _, err := eg.StartAudioRecording(ctx, "sipin_a_b", FileOutput{Filepath: "/out/phone/w/r.ogg", FileType: FileOGG}); err != nil {
+	if _, err := eg.StartAudioRecording(ctx, "sipin_a_b", FileOutput{Filepath: "/out/phone/w/r.ogg", FileType: FileOGG, Audio: PhoneAudio}); err != nil {
 		t.Fatal(err)
 	}
 	if f = rec.got.GetFileOutputs()[0]; f.GetFileType() != livekit.EncodedFileType_OGG || f.GetFilepath() != "/out/phone/w/r.ogg" {
 		t.Fatalf("ogg file output: %v", f)
+	}
+	if a := rec.got.GetAdvanced(); a.GetAudioCodec() != livekit.AudioCodec_OPUS || a.GetAudioBitrate() != 24 {
+		t.Fatalf("phone encoding options: %v", a)
+	}
+	if _, err := eg.StartAudioRecording(ctx, "ws_a_room_b", FileOutput{Filepath: "w/r.mp4"}); err != nil {
+		t.Fatal(err)
+	}
+	if rec.got.GetAdvanced() != nil {
+		t.Fatalf("meeting recording must keep the default encoding: %v", rec.got.GetAdvanced())
 	}
 }

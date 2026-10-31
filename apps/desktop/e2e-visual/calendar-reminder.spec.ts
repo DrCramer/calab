@@ -6,7 +6,7 @@ import { expect, planerka, signIn, test } from './calendarWeb';
  * Переговорка» (the Notification constructor is stubbed — no real OS notification) and the same
  * in-app toast with «Перейти в комнату», which opens the room and joins its voice.
  */
-test('EVENT_REMINDER → notification + toast; «Перейти в комнату» joins the room', async ({ page, mock }) => {
+test('EVENT_REMINDER → notification + toast; «Перейти в комнату» asks, then joins the room', async ({ page, mock }) => {
   const id = planerka(mock);
   await page.addInitScript(() => {
     const w = window as unknown as { __notes: Array<{ title: string; body: string }>; Notification: unknown };
@@ -33,6 +33,9 @@ test('EVENT_REMINDER → notification + toast; «Перейти в комнат�
   await expect(toast).toBeVisible();
   const join = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/api/rooms/${IDS.rooms.meeting}/join`));
   await page.getByRole('button', { name: 'Перейти в комнату' }).click();
+  // A click asks first (owner, 29.10): no join until «Войти в комнату» in the dialog.
+  await expect(page.getByTestId('join-confirm')).toContainText('Планёрка');
+  await page.getByTestId('join-confirm-go').click();
   await expect(page.getByRole('heading', { name: 'Переговорка' }).first()).toBeVisible();
   await join;
 });

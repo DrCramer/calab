@@ -33,13 +33,14 @@ import (
 
 // Busy is one imported busy interval.
 type Busy struct {
-	UID        string // hash of the VEVENT UID
-	Start, End time.Time
-	AllDay     bool
-	Recurring  bool   // an occurrence of a series (RRULE or RECURRENCE-ID)
-	WebURL     string // the provider's web page of the event, when reliable; else ""
-	Href, ETag string // the calendar object (set by the import, not by BusyFromICS)
-	*Details          // shared by the occurrences of a series; never nil from BusyFromICS
+	UID                string // hash of the VEVENT UID
+	Start, End         time.Time
+	AllDay             bool
+	StartDate, EndDate string // DATE values before conversion to UTC; exclusive end.
+	Recurring          bool   // an occurrence of a series (RRULE or RECURRENCE-ID)
+	WebURL             string // the provider's web page of the event, when reliable; else ""
+	Href, ETag         string // the calendar object (set by the import, not by BusyFromICS)
+	*Details                  // shared by the occurrences of a series; never nil from BusyFromICS
 }
 
 // Attendee is one ATTENDEE of an event.
@@ -132,8 +133,12 @@ func zone(tzid string, fallback *time.Location) *time.Location {
 func parseTime(val string, params map[string]string, fallback *time.Location) (icsTime, error) {
 	val = strings.TrimSpace(val)
 	if params["VALUE"] == "DATE" || len(val) == 8 {
-		t, err := time.ParseInLocation("20060102", val, fallback)
-		return icsTime{t: t, date: true}, err
+		c, err := time.Parse("20060102", val)
+		if err != nil {
+			return icsTime{date: true}, err
+		}
+		y, m, d := c.Date()
+		return icsTime{t: dayStart(y, m, d, fallback), date: true}, nil
 	}
 	if strings.HasSuffix(val, "Z") {
 		t, err := time.Parse("20060102T150405Z", val)
@@ -141,6 +146,21 @@ func parseTime(val string, params map[string]string, fallback *time.Location) (i
 	}
 	t, err := time.ParseInLocation("20060102T150405", val, zone(params["TZID"], fallback))
 	return icsTime{t: t}, err
+}
+
+// dayStart is the first instant of the calendar date y-m-d (normalized) in loc. Where a DST
+// change skips midnight (America/Santiago, America/Havana, …) time.Date puts 00:00 on the
+// previous evening; the day then begins at the end of the gap.
+func dayStart(y int, m time.Month, d int, loc *time.Location) time.Time {
+	y, m, d = time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Date()
+	t := time.Date(y, m, d, 0, 0, 0, 0, loc)
+	for range 4 * 24 {
+		if ty, tm, td := t.Date(); ty == y && tm == m && td == d {
+			return t
+		}
+		t = t.Add(15 * time.Minute)
+	}
+	return t
 }
 
 // parseDuration reads an RFC 5545 DURATION (P1W, P1DT2H, PT30M, …; a negative one is 0).
@@ -588,7 +608,8 @@ func (r rule) monthDays(y int, m time.Month, d0 int, loc *time.Location) []int {
 	return slices.Compact(days)
 }
 
-// dates returns the dates (y, m, d as midnight in loc) of period k of the rule, sorted.
+// dates returns the dates (y, m, d as midnight in loc) of period k of the rule, sorted. Callers
+// read only the y, m, d: pass time.UTC, where every calendar day has a midnight.
 func (r rule) dates(k int, start time.Time, loc *time.Location) []time.Time {
 	y, m, d := start.Date()
 	var out []time.Time
@@ -691,7 +712,7 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 	span := func(s time.Time) (time.Time, time.Time) {
 		if allDay {
 			y, m, d := s.Date()
-			return s, time.Date(y, m, d+days, 0, 0, 0, 0, loc)
+			return s, dayStart(y, m, d+days, loc)
 		}
 		return s, s.Add(dur)
 	}
@@ -702,7 +723,11 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 	emit := func(s time.Time) {
 		st, en := span(s)
 		if en.After(from) && st.Before(to) {
-			out = append(out, Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Recurring: recurring, WebURL: web, Details: &det})
+			b := Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Recurring: recurring, WebURL: web, Details: &det}
+			if allDay {
+				b.StartDate, b.EndDate = st.Format(time.DateOnly), en.Format(time.DateOnly)
+			}
+			out = append(out, b)
 		}
 	}
 	excluded := map[int64]bool{}
@@ -726,9 +751,12 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 		emit(start)
 	}
 	for k := r.skipPeriods(start, from, dur); k < maxPeriods && len(out) < maxOccurrences; k++ {
-		for _, day := range r.dates(k, start, loc) {
+		for _, day := range r.dates(k, start, time.UTC) {
 			y, m, d := day.Date()
 			s := time.Date(y, m, d, hh, mm, ss, 0, loc)
+			if allDay {
+				s = dayStart(y, m, d, loc) // not start's clock: it is past 00:00 when DST skipped midnight
+			}
 			if !s.After(start) {
 				continue
 			}

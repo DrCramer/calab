@@ -10,3 +10,9 @@ const byId = new Map(manifest.stickers.map((s) => [s.id, images[`../../../../ser
 export function builtinStickerUrl(sticker: Pick<Sticker, 'id' | 'packId'>): string | undefined {
   return sticker.packId === manifest.id ? byId.get(sticker.id) : undefined;
 }
+
+/** The bundled picture of a built-in sticker's API path (`/api/stickers/builtin/{id}.webp`), or undefined for any other path. */
+export function builtinStickerSrc(path: string): string | undefined {
+  const m = /^\/api\/stickers\/builtin\/([0-9A-Za-z-]+)\.webp$/.exec(path);
+  return m?.[1] ? byId.get(m[1]) : undefined;
+}

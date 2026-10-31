@@ -29,10 +29,10 @@ function fixture(t) {
   return { ios, projectPath };
 }
 
-async function applyPlugin({ ios, projectPath }) {
+async function applyPlugin({ ios, projectPath }, version = '0.1.0', buildNumber = '1', bundleIdentifier = 'test.calab') {
   const project = xcode.project(path.join(projectPath, 'project.pbxproj'));
   project.parseSync();
-  const config = withCommunicationNotifications({ name: 'Calab', slug: 'calab', ios: { bundleIdentifier: 'test.calab', entitlements: { 'aps-environment': 'development' } } });
+  const config = withCommunicationNotifications({ name: 'Calab', slug: 'calab', version, ios: { buildNumber, bundleIdentifier, entitlements: { 'aps-environment': 'development' } } });
   await config.mods.ios.xcodeproj({
     ...config,
     modResults: project,
@@ -116,5 +116,22 @@ test('communication grant stays on app while NSE can use an ordinary profile', a
       'CalabNotificationService/CalabNotificationService.entitlements'), 'utf8'));
     assert.equal(entitlements['com.apple.developer.usernotifications.communication'], undefined,
       'notification service profile cannot carry the app-only communication grant');
+  }
+});
+
+// A subsequent release must update an existing target, not keep the old build identity.
+test('extension identity follows changed app configuration across prebuilds', async (t) => {
+  const native = fixture(t);
+  for (const [version, buildNumber] of [['0.1.0', '21'], ['4.2.3', '22'], ['4.2.3', '22']]) {
+    const bundleIdentifier = `test.calab.build${buildNumber}`;
+    const project = await applyPlugin(native, version, buildNumber, bundleIdentifier);
+    const [, target] = entries(project.pbxNativeTargetSection()).find(([, value]) => unquote(value.name) === 'CalabNotificationService');
+    const list = project.hash.project.objects.XCConfigurationList[target.buildConfigurationList];
+    for (const { value } of list.buildConfigurations) {
+      const settings = project.pbxXCBuildConfigurationSection()[value].buildSettings;
+      assert.equal(unquote(settings.PRODUCT_BUNDLE_IDENTIFIER), `${bundleIdentifier}.notifications`);
+      assert.equal(unquote(settings.MARKETING_VERSION), version);
+      assert.equal(unquote(settings.CURRENT_PROJECT_VERSION), buildNumber);
+    }
   }
 });

@@ -14,9 +14,14 @@ export function selectionFrame(recs: readonly ObjectRec[]): SelFrame | null {
   if (!first) return null;
   const locked = recs.some((r) => r.locked);
   if (boxes.length === 1) {
-    return { rect: { x: first.x, y: first.y, w: first.w, h: first.h }, rot: first.rot ?? 0, resize: !locked, rotate: !locked, widthOnly: first.kind === 'text' };
+    return {
+      rect: { x: first.x, y: first.y, w: first.w, h: first.h }, rot: first.rot ?? 0, resize: !locked, rotate: !locked,
+      ...(first.kind === 'text' ? { widthOnly: true } : first.kind === 'image' ? { cornersOnly: true } : {}),
+    };
   }
   const rect = boundsOf(boxes.map(aabb));
   if (!rect) return null;
-  return { rect, rot: 0, resize: !locked && boxes.every((b) => !b.rot && !b.group), rotate: !locked };
+  // A picture keeps its proportions: a selection holding one resizes by the corners, uniformly.
+  const pictures = boxes.some((b) => b.kind === 'image');
+  return { rect, rot: 0, resize: !locked && boxes.every((b) => !b.rot && !b.group), rotate: !locked, ...(pictures ? { cornersOnly: true } : {}) };
 }

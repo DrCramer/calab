@@ -1,13 +1,14 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
-import { ArrowDown, Bell, BellOff, ChevronDown, ChevronRight, ChevronUp, Hash, Link2 } from 'lucide-react';
+import { ArrowDown, Bell, BellOff, ChevronDown, ChevronRight, ChevronUp, Hash, Inbox, Link2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Bar } from '../../components/Bar';
 import { ResizeHandle } from '../../components/ResizeHandle';
-import { IconButton, Spinner, Tip, cx } from '../../components/ui';
+import { CloseButton, IconButton, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { featureOn } from '../../lib/boards/features';
 import { loadPresent } from '../../services/chat';
+import { replaceNextNav } from '../../services/navHistory';
 import { copyTaskKey, copyTaskLink, loadTask, moveTaskToBoard, openBoard, setSubscription, useTaskDetails } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
 import { useMessages } from '../../stores/messages';
@@ -20,6 +21,7 @@ import { GitSection } from './GitLinks';
 import { MemberAvatar } from './menus';
 import { hasBit, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { Activity, ArchivedBanner, CommentBox, DescriptionEditor, Prop, Properties, Relations, Subtasks, TaskMoreMenu, TitleEditor, useMoveTargets, valueBtn } from './TaskPanel';
+import { TaskDates } from './TaskDates';
 import { TaskMilestones } from './TaskMilestones';
 import { boardOrder, keepOrder, positionOf, stepTask, taskNav } from './taskOrder';
 import { useDisabledFeatures, useMatchCtx, useViewKind } from './useBoardView';
@@ -33,15 +35,30 @@ import { WatchersSection } from './Watchers';
  * order of the view the task came from (taskOrder.ts). Body: the content column (title,
  * description, subtasks, checklists, activity, composer) and the properties column on the right.
  */
+/** Tasks fetched in full this session, and the scroll of each card left (tabs return to where they were). */
+const loaded = new Set<string>();
+const scrolls = new Map<string, number>();
+
 /** The main column never gets narrower than this (px); keep in sync with the aside's max-w. */
 const MAIN_MIN = 480;
+
+/** J/K (and the header's next / previous buttons): the next task replaces the open one in the ‹ › history (board #113). */
+function stepTo(id: string): void {
+  replaceNextNav();
+  useBoardsUi.getState().openTask(id);
+}
 
 export function TaskView({ taskId, boardId, workspaceId, boardRef }: { taskId: string; boardId: string; workspaceId: string; boardRef: RefObject<HTMLElement | null> }): ReactNode {
   const task = useBoards((s) => s.tasks[taskId]);
   const root = useRef<HTMLElement>(null);
   const order = useOrder(boardId, workspaceId, taskId);
   useEffect(() => {
-    void loadTask(taskId);
+    // A task already loaded in this session (switching tabs, ↑/↓ back) is not fetched again: it is
+    // live through the gateway, so the card does not blink; an unread one is fetched to mark it read.
+    if (!loaded.has(taskId) || useBoards.getState().tasks[taskId]?.unread) {
+      loaded.add(taskId);
+      void loadTask(taskId);
+    }
     // The board's focus follows the task (Linear): back on the board, the last one seen is marked.
     useBoardsUi.getState().setFocused(taskId);
   }, [taskId]);
@@ -54,7 +71,7 @@ export function TaskView({ taskId, boardId, workspaceId, boardRef }: { taskId: s
     taskNav.set({
       step: (dir) => {
         const next = stepTask(latest.current.order, latest.current.taskId, dir);
-        if (next) useBoardsUi.getState().openTask(next);
+        if (next) stepTo(next);
       },
       contains: (el) => !!el && !!root.current?.contains(el),
     });
@@ -138,10 +155,32 @@ const TaskBar = memo(function TaskBar({ task, boardId, workspaceId, order }: { t
     if (boardId === task.boardId) useBoardsUi.getState().openTask(null);
     else openBoard(workspaceId, task.boardId);
   }, [boardId, task.boardId, workspaceId]);
-  const crumb = 'shrink-0 rounded-[var(--radius-icon)] px-1.5 py-1 text-control hover:bg-hover';
+  const crumbBase = 'whitespace-nowrap rounded-[var(--radius-icon)] px-1.5 py-1 text-control hover:bg-hover';
+  const crumb = cx(crumbBase, 'shrink-0');
+  // Opened from «Мои задачи» (#89): the path starts there — «Мои задачи › поиск «…»» — and leads back to it.
+  const fromMine = boardId === MY_TASKS;
+  const searchFrom = useBoardsUi((s) => s.searchFrom);
+  const toList = useCallback(() => useBoardsUi.getState().openTask(null), []);
   return (
     <Bar plain className="gap-1 pl-3 pr-2" data-testid="task-panel-header">
-      <button type="button" onClick={toBoard} className={cx(crumb, 'flex min-w-0 max-w-[30%] items-center gap-1.5 text-muted hover:text-fg')} data-testid="panel-crumb-board">
+      {fromMine ? (
+        <>
+          <button type="button" onClick={toList} className={cx(crumb, 'flex items-center gap-1.5 text-muted hover:text-fg')} title={t('boards.crumb.back')} data-testid="panel-crumb-mine">
+            <Inbox className="size-4 shrink-0" aria-hidden />
+            <span className="truncate">{t('boards.myTasks')}</span>
+          </button>
+          {searchFrom ? (
+            <>
+              <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
+              <button type="button" onClick={toList} className={cx(crumbBase, 'min-w-0 max-w-[160px] shrink truncate text-muted hover:text-fg')} title={t('boards.crumb.back')} data-testid="panel-crumb-search">
+                {t('boards.crumb.search', { q: searchFrom })}
+              </button>
+            </>
+          ) : null}
+          <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
+        </>
+      ) : null}
+      <button type="button" onClick={toBoard} className={cx(crumb, 'flex min-w-0 items-center gap-1.5 text-muted hover:text-fg', searchFrom ? 'max-w-[96px]' : 'max-w-[30%]')} data-testid="panel-crumb-board">
         <span aria-hidden>{emoji || '📋'}</span>
         <span className="truncate">{name}</span>
       </button>
@@ -157,25 +196,29 @@ const TaskBar = memo(function TaskBar({ task, boardId, workspaceId, order }: { t
       <button type="button" onClick={() => copyTaskLink(task.key)} className={cx(crumb, 'font-medium tabular-nums text-fg')} title={t('boards.copyLink')} data-testid="panel-key">
         {task.key}
       </button>
-      <span className="min-w-0 truncate px-1 text-control text-muted" data-testid="panel-title">
-        {task.title}
-      </span>
+      {/* The long search path takes the room; the title is right below in the card anyway. */}
+      {searchFrom ? null : (
+        <span className="min-w-0 shrink-[3] truncate px-1 text-control text-muted" data-testid="panel-title">
+          {task.title}
+        </span>
+      )}
       <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} data-testid="panel-subscribe">
         {subscribed ? <Bell className="size-4" aria-hidden /> : <BellOff className="size-4" aria-hidden />}
       </IconButton>
       <TaskMoreMenu task={task} perms={perms} scoped={scoped} />
-      <span className="min-w-4 flex-1" />
-      {pos ? (
+      <span className="min-w-0 flex-1" />
+      {pos && !searchFrom ? (
         <span className="shrink-0 px-1.5 text-caption tabular-nums text-muted" aria-label={t('boards.taskPos', { n: pos.n, total: pos.total })} data-testid="task-position">
           {pos.n} / {pos.total}
         </span>
       ) : null}
-      <IconButton label={t('boards.nextTask')} shortcut="J" disabled={!next} onClick={() => next && useBoardsUi.getState().openTask(next)} data-testid="task-next">
+      <IconButton label={t('boards.nextTask')} shortcut="J" disabled={!next} onClick={() => next && stepTo(next)} data-testid="task-next">
         <ChevronDown className="size-4" aria-hidden />
       </IconButton>
-      <IconButton label={t('boards.prevTask')} shortcut="K" disabled={!prev} onClick={() => prev && useBoardsUi.getState().openTask(prev)} data-testid="task-prev">
+      <IconButton label={t('boards.prevTask')} shortcut="K" disabled={!prev} onClick={() => prev && stepTo(prev)} data-testid="task-prev">
         <ChevronUp className="size-4" aria-hidden />
       </IconButton>
+      <CloseButton onClick={toList} data-testid="task-close" />
     </Bar>
   );
 });
@@ -197,9 +240,9 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
-  // Another task (↑/↓, a subtask): its top, not the previous one's scroll.
+  // Another task (↑/↓, a subtask, a tab): where that card was left, else its top.
   useEffect(() => {
-    if (scroller.current) scroller.current.scrollTop = 0;
+    if (scroller.current) scroller.current.scrollTop = scrolls.get(task.id) ?? 0;
   }, [task.id]);
   const commentsOff = !on(BoardFeature.COMMENTS);
   const propsWidth = useBoardsUi((s) => s.propsWidth);
@@ -209,10 +252,11 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
     <div ref={root} className="flex min-h-0 flex-1">
       {/* Main column: the content scrolls, the composer stays pinned under it (as in the side panel). */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div ref={scroller} className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="task-scroll">
+        <div ref={scroller} onScroll={(e) => scrolls.set(task.id, e.currentTarget.scrollTop)} className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="task-scroll">
           <div className="px-6 pb-10 pt-8 min-[1200px]:px-12">
             <div className="mx-auto flex max-w-[760px] flex-col gap-5">
               <TitleEditor task={task} canEdit={canEdit} large />
+              <TaskDates id={task.id} />
               <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
               {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
               {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={subtasks ?? NONE} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} /> : null}
@@ -235,7 +279,7 @@ const TaskBody = memo(function TaskBody({ task }: { task: Task }): ReactNode {
             <span className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-t from-[var(--color-bg)] to-transparent" aria-hidden />
             {task.roomId ? <JumpToLatest scroller={scroller} roomId={task.roomId} toEnd={toEnd} /> : null}
             <div className="mx-auto max-w-[760px]">
-              <CommentBox task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="" />
+              <CommentBox key={room.id} task={task} room={room} perms={perms} commentsOff={commentsOff} autoFocus={false} className="" />
             </div>
           </div>
         ) : null}

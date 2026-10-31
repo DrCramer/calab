@@ -49,6 +49,11 @@ export function mentionSuggestion(env: EditorEnv): Omit<SuggestionOptions<Mentio
   };
 }
 
+/** The blocks the `/` menu offers for a query: the env's set, an image only with an upload, page links only with pages. */
+export function offeredBlocks(env: EditorEnv, query: string, editable: boolean): BlockDef[] {
+  return filterBlocks(query).filter((b) => (!env.blocks || env.blocks.has(b.id)) && (b.id !== 'image' || (!!env.upload && editable)) && (b.id !== 'pageLink' || !!env.pages));
+}
+
 function runBlock(editor: Editor, range: Range, b: BlockDef): void {
   b.run(editor.chain().focus().deleteRange(range)).run();
 }
@@ -65,7 +70,7 @@ export function slashCommands(env: EditorEnv) {
           pluginKey: new PluginKey('wikiSlash'),
           allowSpaces: false,
           allow: ({ editor }) => editor.isEditable && !editor.isActive('codeBlock'),
-          items: ({ query, editor }) => filterBlocks(query).filter((b) => (b.id !== 'image' || (!!env.upload && editor.isEditable)) && (b.id !== 'pageLink' || !!env.pages)),
+          items: ({ query, editor }) => offeredBlocks(env, query, editor.isEditable),
           command: ({ editor, range, props }) => runBlock(editor, range, props),
           render: renderInto<BlockDef>(env, 'slash'),
         }),

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./voice', () => ({ voice: {} }));
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({}) } }));
+vi.mock('./navHistory', () => ({ goBack: () => undefined, goForward: () => undefined }));
 
 const { beginHotkeyCapture, hotkeyCaptureActive, shortcutLetter } = await import('./hotkeys');
 

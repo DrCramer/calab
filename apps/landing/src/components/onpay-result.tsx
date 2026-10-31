@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ONPAY_COPY } from '@/i18n/onpay';
 import { isLocale, LOCALE_INFO, LOCALE_STORAGE_KEY, type Locale } from '@/i18n/locales';
+import { goal } from '@/lib/metrika';
 import { hasSiteConsent } from '@/lib/site-preferences';
 import { APP_URL, CONTACT_FORM_URL } from '@/lib/site';
 import { Button } from './ui';
@@ -32,13 +33,17 @@ export function OnpayResult({ kind }: { kind: 'success' | 'fail' }) {
   const [locale, setLocale] = useState<Locale>('ru');
   useEffect(() => {
     setLocale(detect());
-  }, []);
+    // After a tick: the Metrika tag (a sibling effect in the layout) is initialised by then, if consented.
+    if (kind !== 'success') return;
+    const id = setTimeout(() => { goal('payment_success'); }, 0);
+    return () => { clearTimeout(id); };
+  }, [kind]);
   const t = ONPAY_COPY[kind][locale];
   const Icon = kind === 'success' ? CircleCheck : CircleAlert;
   return (
     <main id="main" lang={LOCALE_INFO[locale].lang} className="flex min-h-dvh flex-col items-center justify-center px-5 py-16 text-center">
       <a href={`/${locale}/`} aria-label={t.home} className="mb-12 rounded-md">
-        <img src="/calab-wordmark.svg" width={311} height={96} alt="Calab" className="h-8 w-auto" />
+        <img src="/calab-wordmark.svg" width={311} height={87} alt="Calab" className="h-8 w-auto" />
       </a>
       <Icon
         aria-hidden="true"

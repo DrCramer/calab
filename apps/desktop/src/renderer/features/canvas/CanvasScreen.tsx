@@ -2,6 +2,7 @@ import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type Dra
 import { WorkspaceRole, canvasPermissions } from '@calaba/protocol';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { MOD } from '../../components/ui';
 import { t } from '../../i18n';
 import { canWrite, dropPlan, zoneAt } from '../../lib/canvas/tree';
 import { moveItem, openCanvasSection } from '../../services/canvas';
@@ -24,6 +25,19 @@ export function CanvasScreen({ workspaceId }: { workspaceId: string }): ReactNod
   const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
   const canCreate = canWrite(canvasPermissions(roles, { guest }));
   const width = useCanvasUi((s) => s.treeWidth);
+
+  const collapsed = useCanvasUi((s) => s.treeCollapsed);
+  // mod+\ folds the canvas list away and back (the section is mounted only while open).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.code !== 'Backslash' || e.shiftKey || e.altKey || !(MOD === '⌘' ? e.metaKey : e.ctrlKey)) return;
+      e.preventDefault();
+      const ui = useCanvasUi.getState();
+      ui.setTreeCollapsed(!ui.treeCollapsed);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     void openCanvasSection(workspaceId);
@@ -63,11 +77,17 @@ export function CanvasScreen({ workspaceId }: { workspaceId: string }): ReactNod
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd} onDragCancel={onDragCancel}>
-      <section className="mat-content relative flex min-w-0 flex-1" aria-label={t('canvas.section')} data-testid="canvas">
-        <aside className="flex shrink-0 flex-col border-r border-line" style={{ width }} data-testid="canvas-column">
-          <CanvasTree workspaceId={workspaceId} canCreate={canCreate} />
-        </aside>
-        <TreeResize />
+      <section
+        className="mat-content relative flex min-w-0 flex-1"
+        aria-label={t('canvas.section')}
+        data-testid="canvas"
+      >
+        {collapsed ? null : (
+          <aside className="island-fade flex shrink-0 flex-col border-r border-line [--island-fade-color:var(--color-bg)]" style={{ width }} data-testid="canvas-column">
+            <CanvasTree workspaceId={workspaceId} canCreate={canCreate} />
+          </aside>
+        )}
+        {collapsed ? null : <TreeResize />}
         <CanvasMain workspaceId={workspaceId} canCreate={canCreate} />
         <CanvasDialogs workspaceId={workspaceId} />
       </section>

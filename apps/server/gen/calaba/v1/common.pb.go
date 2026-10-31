@@ -130,6 +130,12 @@ const (
 	// 409: PUT /api/workspaces/{id}/sip/inbound in REGISTER mode — another workspace already
 	// registers the same SIP account (domain + username) at the provider (ADR-0121).
 	ErrorCode_ERROR_CODE_SIP_REGISTRATION_TAKEN ErrorCode = 71
+	// 409: a phone number belongs to another contact of the workspace's phone book (ADR-0137 §2;
+	// field "phones"); conflict_id / conflict_name name that contact.
+	ErrorCode_ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN ErrorCode = 72
+	// 409: POST /api/workspaces/{id}/sip/calls — the caller is in another call (a one-to-one call,
+	// an inbound call that rings them or that they took, another personal call) (ADR-0137 §3).
+	ErrorCode_ERROR_CODE_SIP_BUSY ErrorCode = 73
 )
 
 // Enum value maps for ErrorCode.
@@ -193,6 +199,8 @@ var (
 		69: "ERROR_CODE_USERNAME_INVALID",
 		70: "ERROR_CODE_SIP_EXTENSION_TAKEN",
 		71: "ERROR_CODE_SIP_REGISTRATION_TAKEN",
+		72: "ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN",
+		73: "ERROR_CODE_SIP_BUSY",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":                     0,
@@ -253,6 +261,8 @@ var (
 		"ERROR_CODE_USERNAME_INVALID":                69,
 		"ERROR_CODE_SIP_EXTENSION_TAKEN":             70,
 		"ERROR_CODE_SIP_REGISTRATION_TAKEN":          71,
+		"ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN":        72,
+		"ERROR_CODE_SIP_BUSY":                        73,
 	}
 )
 
@@ -408,8 +418,12 @@ type ApiError struct {
 	// more than the target plan allows — one entry per exceeded limit or feature in use. A message
 	// (absent otherwise), so other errors keep their JSON.
 	PlanLimitsExceeded *PlanLimitViolations `protobuf:"bytes,7,opt,name=plan_limits_exceeded,json=planLimitsExceeded,proto3" json:"plan_limits_exceeded,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The entity that already holds what the request asked for, when the client links to it:
+	// SIP_CONTACT_NUMBER_TAKEN — the contact that has the number (its id and display name).
+	ConflictId    *string `protobuf:"bytes,8,opt,name=conflict_id,json=conflictId,proto3,oneof" json:"conflict_id,omitempty"`
+	ConflictName  *string `protobuf:"bytes,9,opt,name=conflict_name,json=conflictName,proto3,oneof" json:"conflict_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ApiError) Reset() {
@@ -489,6 +503,20 @@ func (x *ApiError) GetPlanLimitsExceeded() *PlanLimitViolations {
 		return x.PlanLimitsExceeded
 	}
 	return nil
+}
+
+func (x *ApiError) GetConflictId() string {
+	if x != nil && x.ConflictId != nil {
+		return *x.ConflictId
+	}
+	return ""
+}
+
+func (x *ApiError) GetConflictName() string {
+	if x != nil && x.ConflictName != nil {
+		return *x.ConflictName
+	}
+	return ""
 }
 
 // ApiError.plan_limits_exceeded.
@@ -853,7 +881,7 @@ var File_calaba_v1_common_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/common.proto\x12\tcalaba.v1\"\xa5\x02\n" +
+	"\x16calaba/v1/common.proto\x12\tcalaba.v1\"\x97\x03\n" +
 	"\bApiError\x12(\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x14.calaba.v1.ErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
@@ -861,10 +889,15 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x06reason\x18\x04 \x01(\tH\x00R\x06reason\x88\x01\x01\x12\x17\n" +
 	"\x04used\x18\x05 \x01(\x04H\x01R\x04used\x88\x01\x01\x12\x19\n" +
 	"\x05limit\x18\x06 \x01(\x04H\x02R\x05limit\x88\x01\x01\x12P\n" +
-	"\x14plan_limits_exceeded\x18\a \x01(\v2\x1e.calaba.v1.PlanLimitViolationsR\x12planLimitsExceededB\t\n" +
+	"\x14plan_limits_exceeded\x18\a \x01(\v2\x1e.calaba.v1.PlanLimitViolationsR\x12planLimitsExceeded\x12$\n" +
+	"\vconflict_id\x18\b \x01(\tH\x03R\n" +
+	"conflictId\x88\x01\x01\x12(\n" +
+	"\rconflict_name\x18\t \x01(\tH\x04R\fconflictName\x88\x01\x01B\t\n" +
 	"\a_reasonB\a\n" +
 	"\x05_usedB\b\n" +
-	"\x06_limit\"T\n" +
+	"\x06_limitB\x0e\n" +
+	"\f_conflict_idB\x10\n" +
+	"\x0e_conflict_name\"T\n" +
 	"\x13PlanLimitViolations\x12=\n" +
 	"\n" +
 	"violations\x18\x01 \x03(\v2\x1d.calaba.v1.PlanLimitViolationR\n" +
@@ -889,7 +922,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xc0\x0e\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\x82\x0f\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -949,7 +982,9 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x19ERROR_CODE_USERNAME_TAKEN\x10D\x12\x1f\n" +
 	"\x1bERROR_CODE_USERNAME_INVALID\x10E\x12\"\n" +
 	"\x1eERROR_CODE_SIP_EXTENSION_TAKEN\x10F\x12%\n" +
-	"!ERROR_CODE_SIP_REGISTRATION_TAKEN\x10G*\xe8\x03\n" +
+	"!ERROR_CODE_SIP_REGISTRATION_TAKEN\x10G\x12'\n" +
+	"#ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN\x10H\x12\x17\n" +
+	"\x13ERROR_CODE_SIP_BUSY\x10I*\xe8\x03\n" +
 	"\rPlanLimitKind\x12\x1f\n" +
 	"\x1bPLAN_LIMIT_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17PLAN_LIMIT_KIND_MEMBERS\x10\x01\x12\x18\n" +

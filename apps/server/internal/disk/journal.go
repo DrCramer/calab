@@ -148,10 +148,20 @@ func removeEvent(it sqlc.DiskItem, chain []perm.DiskNode) *v1.DispatchEvent {
 }
 
 // publish sends the events of a committed change.
+// DISK_ITEM_UPSERT carries who edits a file item now (editor_ids, ADR-0143), so every event
+// states it and a client never clears the label by a rename.
 func (s *Service) publish(ctx context.Context, ws uuid.UUID, evs []*v1.DispatchEvent) {
-	if len(evs) > 0 {
-		s.ev.WorkspaceEvents(ctx, ws, evs)
+	if len(evs) == 0 {
+		return
 	}
+	var items []*v1.DiskItem
+	for _, e := range evs {
+		if u := e.GetDiskItemUpsert(); u != nil && u.GetItem() != nil {
+			items = append(items, u.GetItem())
+		}
+	}
+	s.editorsOf(ctx, items)
+	s.ev.WorkspaceEvents(ctx, ws, evs)
 }
 
 // sameChain reports whether two chains give everyone the same bits (same levels).

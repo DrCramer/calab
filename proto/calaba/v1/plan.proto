@@ -42,6 +42,7 @@ message PlanLimits {
   bool telephony_disabled = 31;            // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
   bool automations_disabled = 32;          // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
   uint32 temp_rooms = 35;                  // live temporary rooms per creator (ADR-0044, CBF-38); 0 = no plan limit
+  uint32 canvases = 37;                    // live (not trashed) canvases of the workspace (ADR-0126), folders not counted; 0 = no plan limit
   // Corporate identity (SSO, directory sync, the OAuth provider; ADR-0054 §5, ADR-0113) is part of
   // the plan. A positive flag, unlike the others (no entitlement from a permissive zero): Business
   // has it, Free / Team / an older custom plan do not; a superadmin turns it on or off per workspace

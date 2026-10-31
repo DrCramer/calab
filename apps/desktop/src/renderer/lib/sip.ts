@@ -52,6 +52,13 @@ export function formatNumberInput(input: string): string {
  * are the same) removes the digit before it instead — otherwise the mask would put it back.
  */
 export function maskEdit(prev: string, next: string): string {
+  // An extension typed after the number («… доб. 101», «…,101»): the number keeps its mask, the
+  // rest stays as typed (sip.SplitExtension checks it on the server and in the form).
+  const at = extensionAt(next);
+  if (at >= 0) {
+    const tail = next.slice(at).trimStart().slice(0, EXT_TAIL_MAX);
+    return `${formatNumberInput(next.slice(0, at))}${/^[,;]/.test(tail) ? '' : ' '}${tail}`;
+  }
   const a = prev.replace(/\D/g, '');
   const b = next.replace(/\D/g, '');
   if (next.length < prev.length && a === b && b.length > 0) {
@@ -59,6 +66,27 @@ export function maskEdit(prev: string, next: string): string {
     return formatNumberInput(`${plus ? '+' : ''}${b.slice(0, -1)}`);
   }
   return formatNumberInput(next);
+}
+
+/** What the dial field keeps after the number: «доб. » and 20 keys and pauses, with room to spare. */
+const EXT_TAIL_MAX = 32;
+
+/** Characters of the number part itself: digits, «+», separators of the mask and of a paste. */
+const NUMBER_CHAR = /[\d+\s\u00a0\u2010-\u2015\-.()]/;
+
+/**
+ * Where an extension begins in the dial field: the first character that cannot be part of a
+ * number, after at least one digit (a pasted «Тел.: +7 …» keeps its prefix for the mask to drop).
+ * -1: none.
+ */
+export function extensionAt(s: string): number {
+  let digit = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i] ?? '';
+    if (c >= '0' && c <= '9') digit = true;
+    else if (digit && !NUMBER_CHAR.test(c)) return i;
+  }
+  return -1;
 }
 
 /** « 916 123-45-67» for up to 10 national digits (as typed so far). */
@@ -99,6 +127,8 @@ export interface LiveSipCall {
   answeredAt: number;
   /** LiveKit identity of the line: `sip:<id>`. */
   identity: string;
+  /** Keys dialed after the answer («101», «,2#»: «,» = a 2 s pause); '' = none. */
+  extension: string;
 }
 
 /** roomId → the room's phone line (one per room, ADR-0046); a final one lingers briefly. */
@@ -128,6 +158,7 @@ export function liveOf(c: SipCall): LiveSipCall {
     reason: c.reason,
     answeredAt: c.answeredAt ? timestampMs(c.answeredAt) : 0,
     identity: c.participantIdentity || `sip:${c.id}`,
+    extension: c.extension,
   };
 }
 
@@ -274,6 +305,49 @@ export function mayDial(a: { sipEnabled: boolean; placeCalls: boolean; connect: 
 export function mayHangUp(a: { me: string; startedBy: string; muteMembers: boolean; live: boolean }): boolean {
   return a.live && (a.muteMembers || (!!a.me && a.me === a.startedBy));
 }
+
+/**
+ * The tone keypad of a room's phone line (ADR-0046 addendum «Тональный набор»): the same people
+ * as «Завершить» — the caller or MUTE_MEMBERS — while the line is answered and I am in this
+ * room's call (the tones go from my connection). The client only hides the button; livekit/sip
+ * cannot check the sender of a tone (see the ADR).
+ */
+export function mayKeypad(a: { me: string; startedBy: string; muteMembers: boolean; active: boolean; inCall: boolean }): boolean {
+  return a.active && a.inCall && (a.muteMembers || (!!a.me && a.me === a.startedBy));
+}
+
+// ---------------------------------------------------------------- extension
+
+/** The pause a «,» (and the marker itself) stands for, like a phone's «,». */
+export const EXT_PAUSE_MS = 2000;
+/** Between two keys of an extension: a tone (RFC 2833, ~100 ms) and a gap the far end can count. */
+export const EXT_KEY_GAP_MS = 400;
+
+/**
+ * The extension as tones: each key with the wait before it. The first key waits the marker's
+ * pause after the answer (plus a pause per leading «,»); the next ones EXT_KEY_GAP_MS, or a pause
+ * per «,» between them. «,1,2» → [1 after 4 s, 2 after 2 s].
+ */
+export function extensionPlan(ext: string): Array<{ key: string; waitMs: number }> {
+  const out: Array<{ key: string; waitMs: number }> = [];
+  let wait = EXT_PAUSE_MS;
+  let afterKey = false;
+  for (const c of ext) {
+    if (c === ',') {
+      // After a key a pause replaces the gap; before the first key pauses add up.
+      wait = (afterKey ? 0 : wait) + EXT_PAUSE_MS;
+      afterKey = false;
+    } else if (/^[0-9*#]$/.test(c)) {
+      out.push({ key: c, waitMs: wait });
+      wait = EXT_KEY_GAP_MS;
+      afterKey = true;
+    }
+  }
+  return out;
+}
+
+/** «101» for «доб. 101» on the line (the pauses are not shown). */
+export const extensionLabel = (ext: string): string => ext.replace(/,/g, '');
 
 /**
  * A refused dial → the inline text under the number (sip.proto PlaceSipCallRequest errors); null

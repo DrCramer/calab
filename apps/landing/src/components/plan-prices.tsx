@@ -31,29 +31,29 @@ export function PlanMonth({ plan, locale, t, className }: { plan: PaidPlan; loca
 }
 
 /**
- * Button of a paid plan. Open sales → straight into the app; contact mode → «On request» to the server's contact
- * link; before/without an answer → the intake form, as before billing existed.
+ * Button of a paid plan: «Купить» straight into the purchase dialog of the web app (`/plans?plan=…`), also before
+ * or without the offers answer (the snapshot); request-only offers → «On request» to the server's contact link.
  */
-export function PlanCta({ locale, t, label }: { locale: Locale; t: Live; label: string }) {
+export function PlanCta({ locale, t, plan }: { locale: Locale; t: Live; plan: PaidPlan }) {
+  // Team is the highlighted plan: its button is the blue one.
+  const variant = plan === 'team' ? 'primary' : 'secondary';
   const { view } = useOffersView(useLang(locale));
-  if (view.mode === 'snapshot') {
-    return <Button href={CONTACT_FORM_URL} variant="secondary" className="w-full">{label}</Button>;
+  if (view.mode !== 'snapshot' && view.contactOnly) {
+    return <Button href={view.contact || CONTACT_FORM_URL} variant="secondary" size="md" className="w-full">{t.request}</Button>;
   }
-  if (view.contactOnly) {
-    return <Button href={view.contact || CONTACT_FORM_URL} variant="secondary" className="w-full">{t.request}</Button>;
-  }
-  return <Button href={APP_URL} variant="secondary" className="w-full">{t.connect}</Button>;
+  return <Button href={`${APP_URL}/plans?plan=${plan}`} variant={variant} size="md" className="w-full">{t.buy}</Button>;
 }
 
 const MARKETS: Market[] = ['ru', 'global'];
 
-/** «Prices in …» line with the ₽ / $ switch (only while both markets are open). Fixed height: nothing moves. */
+/** The ₽ / $ switch (only while both markets are open) and the request-only note; no «prices in …» line (owner, 24.10). */
 export function PricesBar({ locale, t }: { locale: Locale; t: Live }) {
   const { view, choose } = useOffersView(useLang(locale));
-  const caption = view.contactOnly ? t.contactNote : view.market === 'ru' ? t.pricesInRub : t.pricesInUsd;
+  const caption = view.contactOnly ? t.contactNote : '';
+  if (!caption && !view.switchable) return null;
   return (
     <div className="mt-8 flex min-h-11 flex-wrap items-center justify-between gap-x-6 gap-y-2 sm:mt-10">
-      <p className="text-[14px] leading-5 text-fg-2">{caption}</p>
+      {caption && <p className="text-[14px] leading-5 text-fg-2">{caption}</p>}
       {view.switchable && (
       <div role="group" aria-label={t.switchLabel} className="inline-flex rounded-full bg-card p-1">
         {MARKETS.map((m) => (

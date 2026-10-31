@@ -30,6 +30,7 @@ export const ruPlan = {
   'plan.limit.bots': 'Ботов',
   'plan.limit.stickerPacks': 'Стикерпаков',
   'plan.limit.boards': 'Досок',
+  'plan.limit.canvases': 'Холстов',
   'plan.limit.caldav': 'Синхронизация CalDAV',
   'plan.caldav.yes': 'Есть',
   'plan.caldav.no': 'Нет',
@@ -56,6 +57,7 @@ export const ruPlan = {
   'plan.membersFull': 'Лимит тарифа {plan}: {n} участников',
   'plan.boardsFull': 'Лимит тарифа {plan}: {n} досок',
   'plan.wikiPagesFull': 'Лимит тарифа {plan}: {n} статей в Wiki',
+  'plan.canvasesFull': 'Лимит тарифа {plan}: {n} холстов',
   'plan.lockedOption': '{label} 🔒',
   // camera ▾
   'camera.quality': 'Качество',
@@ -97,6 +99,7 @@ export const ruPlan = {
   'admin.limit.cameras': 'Камер в комнате',
   'admin.limit.stickers': 'Стикеров всего',
   'admin.limit.wikiPages': 'Статей в Wiki',
+  'admin.limit.canvases': 'Холстов',
   'admin.limit.tempRooms': 'Временных комнат на создателя',
   'admin.limit.musician': 'Режим музыканта',
   'admin.limit.identity': 'SSO, каталог и OAuth-приложения',

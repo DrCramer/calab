@@ -6,6 +6,7 @@
     "Author": "octocat",
     "Push": false,
     "Branch": "",
+    "DefaultBranch": "",
     "BranchCreated": false,
     "Commits": null,
     "PR": {
@@ -16,7 +17,14 @@
       "State": "open",
       "Branch": "feature/FNG-12-login",
       "Author": "octocat",
-      "Event": "PR_OPENED"
+      "Event": "PR_OPENED",
+      "Draft": false,
+      "Target": "main",
+      "Actor": "octocat",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     }
   },
   "Links": [
@@ -28,7 +36,16 @@
       "URL": "https://github.com/acme/app/pull/42",
       "State": "open",
       "Author": "octocat",
-      "Event": "PR_OPENED"
+      "Event": "PR_OPENED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "feature/FNG-12-login",
+      "Target": "main",
+      "Actor": "octocat",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     },
     {
       "Number": 13,
@@ -38,7 +55,16 @@
       "URL": "https://github.com/acme/app/pull/42",
       "State": "open",
       "Author": "octocat",
-      "Event": "PR_OPENED"
+      "Event": "PR_OPENED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "feature/FNG-12-login",
+      "Target": "main",
+      "Actor": "octocat",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     }
   ]
 }

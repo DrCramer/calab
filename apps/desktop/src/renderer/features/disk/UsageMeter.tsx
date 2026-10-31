@@ -2,6 +2,7 @@ import { BILLING_BITS } from '@calaba/protocol';
 import { TriangleAlert } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { Button, cx } from '../../components/ui';
+import { billingPaymentsAllowed } from '../../services/billing';
 import { t } from '../../i18n';
 import { STORAGE_PACKS, usageBar } from '../../lib/disk';
 import { fmt } from '../../lib/format';
@@ -113,7 +114,7 @@ export function openBuyStorage(workspaceId: string): void {
  */
 export function BuyStorage({ workspaceId }: { workspaceId: string }): ReactNode {
   const view = (useBillingBits(workspaceId) & BILLING_BITS.VIEW) !== 0n;
-  if (!view) return null;
+  if (!view || !billingPaymentsAllowed()) return null;
   return (
     <section className="flex flex-col gap-1.5" data-settings-row data-testid="disk-buy">
       <h3 className="px-1 text-caption font-semibold text-muted" data-settings-label>

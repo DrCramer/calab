@@ -20,6 +20,8 @@
     "src/preload/api.d.ts"
   ],
   "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
     "src/renderer/lib/media/worklets/**/*"
   ]
 }

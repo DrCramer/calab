@@ -43,6 +43,8 @@ import {
   TaskAssigneeSchema,
   TaskField,
   TaskNoticeKind,
+  TaskNoticeSchema,
+  ListTaskNoticesResponseSchema,
   TaskOp,
   TaskPriority,
   TaskRelationKind,
@@ -236,6 +238,8 @@ export function matchCondition(rec: TaskRec, c: TaskCondition, ctx: { me: string
   };
   const bool = (v: boolean): boolean => (c.op === TaskOp.EMPTY ? !v : c.op === TaskOp.NOT_EMPTY ? v : (vals[0] ?? 'true') === 'true' ? v : !v);
   switch (c.field) {
+    case TaskField.BOARD:
+      return set([t.boardId]);
     case TaskField.STATUS:
       return set([t.statusId]);
     case TaskField.STATUS_TYPE:
@@ -540,12 +544,51 @@ export class BoardsMock {
     const b = this.boards.get(t.task.boardId);
     if (!b) return;
     const sees = this.viewers(b);
+    const ids = new Map<string, string>();
+    if (kind === 'taskUpdate' && notice) {
+      for (const u of notice.to) if (sees(u)) ids.set(u, this.logNotice(u, t, { kind: notice.kind, actorId: notice.actor, messageId: notice.messageId ?? '' }));
+    }
     this.host.fanout((u) => {
       if (!sees(u)) return null;
       if (kind === 'taskCreate') return { event: { case: 'taskCreate', value: { task: this.taskOut(t, u, true) } } };
-      const n = notice && notice.to.has(u) ? { kind: notice.kind, actorId: notice.actor, messageId: notice.messageId ?? '' } : undefined;
+      const n = notice && notice.to.has(u) ? { kind: notice.kind, actorId: notice.actor, messageId: notice.messageId ?? '', id: ids.get(u) ?? '' } : undefined;
       return { event: { case: 'taskUpdate', value: { task: this.taskOut(t, u, true), ...(n ? { notice: n } : {}) } } };
     });
+  }
+
+  /** Task notices as the server keeps them (ADR-0141): one row per recipient. */
+  private readonly noticeLog: Array<{ id: string; user: string; taskId: string; notice: MessageInitShape<typeof TaskNoticeSchema>; at: Timestamp }> = [];
+
+  private noticeSeq = 0;
+
+  /**
+   * Its own id sequence (kind 0xbc) and the change's time: neither the shared id sequence nor the
+   * clock moves, so the other screens keep their ids and times.
+   */
+  private logNotice(user: string, t: TaskRec, notice: MessageInitShape<typeof TaskNoticeSchema>, at?: Timestamp): string {
+    this.noticeSeq += 1;
+    const id = `00000000-0000-7000-80bc-${this.noticeSeq.toString(16).padStart(12, '0')}`;
+    this.noticeLog.push({ id, user, taskId: t.task.id, notice: { ...notice, id }, at: at ?? t.task.updatedAt ?? timestampFromMs(0) });
+    return id;
+  }
+
+  /** GET /me/task-notices (ADR-0141): mine, newest first, of tasks I see now, with the current key and title. */
+  notices(userId: string, before: string, limit: number): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
+    const all = this.noticeLog
+      .filter((l) => l.user === userId && (!before || l.id < before))
+      .filter((l) => {
+        const t = this.tasks.get(l.taskId);
+        const b = t ? this.boards.get(t.task.boardId) : undefined;
+        return !!t && !!b && !b.board.archivedAt && !!this.host.member(t.task.workspaceId, userId) && this.perms(b.board, userId) !== 0n;
+      })
+      .sort((a, b) => (a.id < b.id ? 1 : -1));
+    return {
+      entries: all.slice(0, limit).map((l) => {
+        const t = this.tasks.get(l.taskId)?.task;
+        return { id: l.id, workspaceId: t?.workspaceId ?? '', boardId: t?.boardId ?? '', taskId: l.taskId, taskKey: t?.key ?? '', taskTitle: t?.title ?? '', notice: l.notice, createdAt: l.at };
+      }),
+      hasMore: all.length > limit,
+    };
   }
 
   private emitTaskDelete(t: TaskRec, purged: boolean, board: BoardRec): void {
@@ -1556,10 +1599,16 @@ export class BoardsMock {
     const b = this.boards.get(t.task.boardId);
     if (!b) return;
     const sees = this.viewers(b);
+    const kindOf = (u: string): TaskNoticeKind | undefined => (mentionSet.has(u) ? TaskNoticeKind.MENTIONED : to.has(u) ? TaskNoticeKind.COMMENT : undefined);
+    const ids = new Map<string, string>();
+    for (const u of new Set([...mentionSet, ...to])) {
+      const kind = kindOf(u);
+      if (kind && sees(u)) ids.set(u, this.logNotice(u, t, { kind, actorId: authorId, messageId: msg.id }, msg.createdAt));
+    }
     this.host.fanout((u) => {
       if (!sees(u)) return null;
-      const kind = mentionSet.has(u) ? TaskNoticeKind.MENTIONED : to.has(u) ? TaskNoticeKind.COMMENT : undefined;
-      return { event: { case: 'taskUpdate', value: { task: this.taskOut(t, u, true), ...(kind ? { notice: { kind, actorId: authorId, messageId: msg.id } } : {}) } } };
+      const kind = kindOf(u);
+      return { event: { case: 'taskUpdate', value: { task: this.taskOut(t, u, true), ...(kind ? { notice: { kind, actorId: authorId, messageId: msg.id, id: ids.get(u) ?? '' } } : {}) } } };
     });
   }
 
@@ -1629,6 +1678,108 @@ export class BoardsMock {
       if (key === needle || key.startsWith(`${needle}-`) || words.every((w) => hay.includes(w) || key.includes(w))) out.push(t);
     }
     return out.slice(0, Math.max(1, Math.min(50, limit || 20))).map((t) => this.taskOut(t, userId, false));
+  }
+
+  /**
+   * GET …/tasks/search with the ADR-0139 parameters: words over key, title, description and the
+   * task room's messages; state / archived / board_id / filter; sort; an offset cursor; key_task
+   * for a typed key whatever the filters; snippets of description / comment matches.
+   */
+  find(
+    wsId: string,
+    userId: string,
+    o: { q: string; state: string; archived: string; boardId: string; filter?: TaskFilter | undefined; sort: string; cursor: string; limit: number; nowMs: number },
+  ): { tasks: Task[]; nextCursor: string; keyTask?: Task; snippets: Array<{ taskId: string; text: string; comment: boolean }> } {
+    if (!this.host.member(wsId, userId)) throw notFound('workspace not found');
+    if (o.boardId) {
+      const b = this.boards.get(o.boardId);
+      if (!b || b.board.workspaceId !== wsId || b.board.archivedAt || !this.perms(b.board, userId)) throw notFound('board not found');
+    }
+    const text = o.q.trim();
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    const keyM = /^([A-Za-z][A-Za-z0-9]*)[\s_-]*(\d{1,9})$/.exec(text);
+    const typedKey = keyM ? `${(keyM[1] ?? '').toUpperCase()}-${Number(keyM[2])}` : '';
+    const comments = (t: TaskRec): string[] => (this.host.state.messages.get(t.task.roomId) ?? []).map((m) => m.content);
+    let keyRec: TaskRec | undefined;
+    const out: Array<{ rec: TaskRec; keyHit: boolean; snippet?: { text: string; comment: boolean } }> = [];
+    for (const t of this.tasks.values()) {
+      if (t.task.workspaceId !== wsId) continue;
+      const b = this.boards.get(t.task.boardId);
+      if (!b || b.board.archivedAt || !this.perms(b.board, userId)) continue;
+      if (typedKey && t.task.key === typedKey) keyRec = t;
+      if (o.boardId && t.task.boardId !== o.boardId) continue;
+      const archived = !!t.task.archivedAt;
+      if ((o.archived === '' && archived) || (o.archived === 'only' && !archived)) continue;
+      const type = this.statusType(b)(t.task.statusId);
+      const done = type === BoardStatusType.COMPLETED || type === BoardStatusType.CANCELLED;
+      if ((o.state === 'open' && done) || (o.state === 'done' && !done)) continue;
+      if (!matchFilter(t, o.filter, { me: userId, statusType: this.statusType(b), nowMs: o.nowMs })) continue;
+      if (!words.length) {
+        out.push({ rec: t, keyHit: false });
+        continue;
+      }
+      const key = t.task.key.toLowerCase();
+      const head = `${key} ${t.task.title}`.toLowerCase();
+      const desc = t.task.description.toLowerCase();
+      const notes = comments(t);
+      const has = (w: string): boolean => head.includes(w) || desc.includes(w) || notes.some((n) => n.toLowerCase().includes(w));
+      const keyHit = key === typedKey.toLowerCase();
+      if (!keyHit && !(key.startsWith(`${text.toLowerCase()}-`)) && !words.every(has)) continue;
+      let snippet: { text: string; comment: boolean } | undefined;
+      if (!words.some((w) => t.task.title.toLowerCase().includes(w))) {
+        const w = words[0] ?? '';
+        const mark = (s0: string): string => {
+          const at = s0.toLowerCase().indexOf(w);
+          return at < 0 ? s0 : `${s0.slice(0, at)}\u0002${s0.slice(at, at + w.length)}\u0003${s0.slice(at + w.length)}`;
+        };
+        if (desc.includes(w)) snippet = { text: mark(t.task.description.slice(0, 140)), comment: false };
+        else {
+          const n = [...notes].reverse().find((x) => x.toLowerCase().includes(w));
+          if (n) snippet = { text: mark(n.slice(0, 140)), comment: true };
+        }
+      }
+      out.push({ rec: t, keyHit, ...(snippet ? { snippet } : {}) });
+    }
+    const ms = (x: TaskRec, f: 'updatedAt' | 'createdAt'): number => (x.task[f] ? timestampMs(x.task[f]) : 0);
+    const desc0 = o.sort.startsWith('-');
+    const col = (desc0 ? o.sort.slice(1) : o.sort) || (words.length ? 'relevance' : 'updated');
+    const sign = desc0 || (!o.sort && col === 'updated') ? -1 : 1;
+    const statusRank = (x: TaskRec): number => {
+      const b = this.boards.get(x.task.boardId);
+      const st = b?.board.statuses.find((s0) => s0.id === x.task.statusId);
+      return (st?.type ?? 0) * 1000 + (st?.position ?? 0);
+    };
+    const name = (x: TaskRec): string => (x.task.assignees[0] ? (this.host.state.users.get(x.task.assignees[0].userId)?.user.displayName ?? '') : '\uffff');
+    const cmp = (a: TaskRec, b: TaskRec): number => {
+      switch (col) {
+        case 'key':
+          return sign * (a.task.key.split('-')[0] ?? '').localeCompare(b.task.key.split('-')[0] ?? '') || sign * (a.task.number - b.task.number);
+        case 'title':
+          return sign * a.task.title.localeCompare(b.task.title, 'ru');
+        case 'board':
+          return sign * (this.boards.get(a.task.boardId)?.board.name ?? '').localeCompare(this.boards.get(b.task.boardId)?.board.name ?? '', 'ru');
+        case 'status':
+          return sign * (statusRank(a) - statusRank(b));
+        case 'assignee':
+          return sign * name(a).localeCompare(name(b), 'ru');
+        case 'created':
+          return sign * (ms(a, 'createdAt') - ms(b, 'createdAt'));
+        case 'updated':
+          return sign * (ms(a, 'updatedAt') - ms(b, 'updatedAt'));
+        default:
+          return 0;
+      }
+    };
+    out.sort((a, b) => Number(b.keyHit) - Number(a.keyHit) || cmp(a.rec, b.rec) || ms(b.rec, 'updatedAt') - ms(a.rec, 'updatedAt') || b.rec.task.id.localeCompare(a.rec.task.id));
+    const start = Number(o.cursor) || 0;
+    const limit = Math.max(1, Math.min(50, o.limit || 20));
+    const page = out.slice(start, start + limit);
+    return {
+      tasks: page.map((x) => this.taskOut(x.rec, userId, true)),
+      nextCursor: start + limit < out.length ? String(start + limit) : '',
+      ...(keyRec ? { keyTask: this.taskOut(keyRec, userId, true) } : {}),
+      snippets: page.flatMap((x) => (x.snippet ? [{ taskId: x.rec.task.id, ...x.snippet }] : [])),
+    };
   }
 
   // ---------------------------------------------------------------- fixtures

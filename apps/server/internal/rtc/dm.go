@@ -53,10 +53,11 @@ func dmGrant() Permission { return Grant(dmBits, true, true) }
 // dmMedia: media settings of a call (no workspace defaults, no plan).
 func dmMedia() *v1.RoomMediaSettings {
 	return &v1.RoomMediaSettings{
-		AudioBitrateKbps: 48,
-		MaxStreamPreset:  v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60,
-		MaxStreams:       4,
-		CameraLimit:      4,
+		AudioBitrateKbps:  48,
+		MaxStreamPreset:   v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL_60,
+		MaxStreams:        4,
+		CameraLimit:       4,
+		JoinLeaveSoundMax: proto.Uint32(10),
 	}
 }
 

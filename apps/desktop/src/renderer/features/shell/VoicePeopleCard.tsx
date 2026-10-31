@@ -11,13 +11,15 @@ import { joinOutcome } from '../../lib/voiceEntry';
 import { voice } from '../../services/voice';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
+import { useSipCalls } from '../../stores/sipCalls';
 import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
 import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { memberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { MemberContextMenu } from '../people/MemberContextMenu';
-import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { SipCallRow } from '../voice/Sip';
+import { MusicianIcon, SelfVoiceStateIcons, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { CallTimer } from './Sidebar';
 import { cardOrder, firstNames, stackOrder, stackSlice } from './voicePeople';
 
@@ -217,6 +219,7 @@ function VoicePeopleCard({ workspaceId, room, perms }: { workspaceId: string; ro
   const inRoom = useVoice((s) => s.roomId === room.id);
   const join = useVoiceJoin(workspaceId, room, perms, people.length);
   const rows = useMemo(() => cardOrder(people, me), [people, me]);
+  const sipLine = useSipCalls((s) => !!s.byRoom[room.id]);
   return (
     <>
       <div className="flex h-11 shrink-0 items-center gap-1.5 px-2.5 text-list font-semibold" data-testid="voice-people-title">
@@ -228,6 +231,8 @@ function VoicePeopleCard({ workspaceId, room, perms }: { workspaceId: string; ro
         {rows.map((id) => (
           <VoicePersonRow key={id} workspaceId={workspaceId} userId={id} self={id === me} />
         ))}
+        {/* The room's phone line (ADR-0046): its number, status, «Клавиатура» and «Завершить». */}
+        {sipLine ? <SipCallRow workspaceId={workspaceId} roomId={room.id} card /> : null}
       </ul>
       <div className="px-1 pt-1.5">
         <Popover.Close asChild>
@@ -277,7 +282,9 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
   const role = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.role);
   const look = useRoleLook(workspaceId, userId);
   const ref = useRef<HTMLButtonElement>(null);
-  const talking = speaking && !v?.muted && !connecting;
+  // Parked for a phone call (ADR-0133): dimmed, a handset, never the speaking ring.
+  const onPhone = v?.onPhone ?? false;
+  const talking = speaking && !v?.muted && !connecting && !onPhone;
   // A tap opens the member menu (Radix ContextMenu opens on `contextmenu`), as the header's «…».
   const openMenu = (): void => {
     const el = ref.current;
@@ -296,7 +303,9 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
           aria-haspopup="menu"
           data-testid="voice-people-row"
           data-speaking={talking || undefined}
-          className="flex h-14 w-full min-w-0 select-none items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] active:bg-hover"
+          data-on-phone={onPhone || undefined}
+          title={onPhone ? t('call.onPhone') : undefined}
+          className={cx('flex h-14 w-full min-w-0 select-none items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] active:bg-hover', onPhone && 'opacity-50')}
         >
           <Avatar userId={userId} name={name} fileId={fileId || undefined} size={40} speaking={talking} connecting={connecting} />
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -309,7 +318,12 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
             {v?.streaming ? <MonitorUp className="size-4 shrink-0 text-danger" aria-label={t('people.streaming')} role="img" /> : null}
             {v?.camera ? <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" /> : null}
             {v?.musician ? <MusicianIcon /> : null}
-            {v ? <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} pttIdle={v.ptt && !talking} /> : null}
+            {/* #96: my row draws the self panel's view, not the server copy. */}
+            {!v ? null : self ? (
+              <SelfVoiceStateIcons onPhone={onPhone} />
+            ) : (
+              <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} pttIdle={v.ptt && !talking} onPhone={onPhone} />
+            )}
           </span>
         </button>
       </MemberContextMenu>

@@ -169,3 +169,8 @@ WHERE b.user_id = ANY(sqlc.arg('bot_ids')::uuid[]) AND bu.is_bot AND bu.disabled
     JOIN workspace_members mu ON mu.workspace_id = mb.workspace_id AND mu.user_id = sqlc.arg('user_id') AND mu.role <> 'guest'
     WHERE mb.user_id = b.user_id
   );
+
+-- name: SetUserCalendarZones :one
+-- The extra time zones of the calendar's hour axis (board #85), replaced.
+UPDATE users SET calendar_zones = $2 WHERE id = $1
+RETURNING *;

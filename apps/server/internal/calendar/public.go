@@ -71,7 +71,7 @@ func (s *Service) rsvpResponse(r *http.Request, b *bundle, a sqlc.EventAttendee,
 	out := &v1.EventRsvpTokenResponse{
 		EventId: b.ev.ID.String(), Title: b.ev.Title, AllDay: b.ev.AllDay, Tz: b.ev.Tz, Email: c.Email,
 		Cancelled: b.ev.CancelledAt != nil, Description: b.ev.Description, MyStatus: statusProto(a.Status),
-		Repeat: b.series.Rule.Repeat,
+		Repeat: b.series.Rule.Repeat, HolidayCalendar: b.series.Rule.Holidays,
 	}
 	if c.Status != statusView {
 		out.Status = statusProto(c.Status)

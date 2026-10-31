@@ -23,6 +23,8 @@ export interface Seed {
   prefs?: Record<string, unknown>;
   /** Persisted UI state (stores/ui.ts), e.g. { activeWorkspaceId: '@me' } to start in «Личные». */
   ui?: Record<string, unknown>;
+  /** The office editor on in the mock (ADR-0143; off by default, the capabilities are read at READY). */
+  office?: boolean;
 }
 
 interface WorkerFx {
@@ -91,6 +93,7 @@ async function reset(env: Env, theme: Theme, seed: Seed): Promise<void> {
     await page.evaluate(() => (window as unknown as { __calabaLogout?: () => Promise<void> }).__calabaLogout?.()).catch(() => undefined);
   }
   mock.reset(seed.scenario ?? 'data');
+  if (seed.office) mock.setOffice(true);
   // Storage wiped and seeded in one step right before the reload: nothing of the previous test
   // (remembered rooms, stage layouts, chat views, camera checks…) survives.
   await page.evaluate(

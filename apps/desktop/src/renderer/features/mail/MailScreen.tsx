@@ -5,7 +5,7 @@ import { shortcutLetter } from '../../services/hotkeys';
 import { useMail } from '../../stores/mail';
 import { clearPicked, pickAll, useMailUi } from '../../stores/mailUi';
 import { useUi } from '../../stores/ui';
-import { moveOpen, replyOpen, stepSelection, toggleOpenFlag, toggleOpenRead, trashSelected } from './actions';
+import { markAllRead, moveOpen, replyOpen, stepSelection, toggleOpenFlag, toggleOpenRead, trashSelected } from './actions';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { AddAccountCard } from './AddAccountCard';
 import { BatchView } from './BatchView';
@@ -77,7 +77,7 @@ const typing = (el: EventTarget | null): boolean =>
 
 /**
  * Apple Mail's keys (§8) while the section is on screen and nothing is typed into / no dialog is
- * open: ⌘R reply, ⇧⌘R reply all, ⇧⌘F forward, ⌘⌫ / Delete trash, ⇧⌘U read ↔ unread, ⇧⌘L flag,
+ * open: ⌘R reply, ⇧⌘R reply all, ⇧⌘F forward, ⌘⌫ / Delete trash, ⇧⌘U read ↔ unread, ⇧⌘L flag, ⌥⇧⌘U mark all read in the shown folder,
  * ⌃⌘A archive, ↑/↓ the list, ⌘A select all rows, Esc clear the selection. With several rows picked
  * the actions apply to all of them (actions.ts). ⌘N comes from the app menu (services/menu.ts) and opens the composer in this section.
  */
@@ -92,6 +92,7 @@ function useMailHotkeys(): void {
       if (mod && !e.altKey && letter === 'r') act = () => replyOpen(e.shiftKey ? 'replyAll' : 'reply');
       else if (mod && e.shiftKey && !e.altKey && letter === 'f') act = () => replyOpen('forward');
       else if (mod && e.shiftKey && !e.altKey && letter === 'u') act = toggleOpenRead;
+      else if (mod && e.shiftKey && e.altKey && letter === 'u') act = () => void markAllRead();
       else if (mod && e.shiftKey && !e.altKey && letter === 'l') act = toggleOpenFlag;
       else if (mod && !e.shiftKey && !e.altKey && !(e.metaKey && e.ctrlKey) && letter === 'a') act = pickAll;
       else if (e.key === 'Escape' && !mod && useMailUi.getState().picked.size) act = clearPicked;

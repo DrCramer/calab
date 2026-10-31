@@ -7,9 +7,8 @@ name: images
 #   2. web: build the web client and the landing (as release.sh does) into infra/docker/web-image:
 #      Caddy, its behind-proxy config (infra/docker/caddy) and the static files; the config is validated
 #      in the built image before the push.
-#   3. Push both to the production registry. No stored keys: each job's GitHub OIDC token is exchanged
-#      for a short-lived Yandex Cloud IAM token of a service account that may only push to the calab
-#      repositories of that registry.
+#   3. Push both to the production registry, Harbor cr.shds.io/calab (VK Cloud), with a Harbor robot that
+#      may only push to the calab project.
 #   4. File one GitHub deployment `calab-prod` whose payload holds both image digests, so the API and
 #      the web of a release roll out together.
 #   5. agents: build apps/server/Dockerfile.sipreg and Dockerfile.ivr and push them the same way (tag = the
@@ -19,9 +18,9 @@ name: images
 # deployments created by this workflow for commits on main). This workflow has no access to the
 # cluster. Rollback: re-run an older successful run of this workflow.
 #
-# Repository secrets (masked in the public logs): YC_REGISTRY (registry path ending in /calab),
-# YC_CI_SA_ID (service account id); optional HARBOR_USER / HARBOR_PASSWORD — Harbor robot with push to the
-# calab project of cr.shds.io (VK Cloud): each pushed image is also copied there with the same digest.
+# Repository secrets (masked in the public logs): HARBOR_USER / HARBOR_PASSWORD — Harbor robot with push to
+# the calab project of cr.shds.io. cr.shds.io resolves to a private address publicly; the VK ingress
+# publishes only the calab and gpu projects, so each job pins it in /etc/hosts.
 
 on:
   workflow_run:
@@ -52,12 +51,10 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write      # GitHub OIDC token → Yandex Cloud IAM token (registry push only)
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     env:
-      REGISTRY: ${{ secrets.YC_REGISTRY }}
-      SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      REGISTRY: cr.shds.io/calab
       HARBOR_USER: ${{ secrets.HARBOR_USER }}
       HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
     steps:
@@ -68,48 +65,27 @@ jobs:
 
       - name: build
         run: |
-          test -n "$REGISTRY" && test -n "$SA_ID" || { echo "::error::YC_REGISTRY / YC_CI_SA_ID are not set"; exit 1; }
+          test -n "$HARBOR_USER" && test -n "$HARBOR_PASSWORD" || { echo "::error::HARBOR_USER / HARBOR_PASSWORD are not set"; exit 1; }
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $TAG"; exit 1; }
           docker build -f apps/server/Dockerfile \
             --build-arg VERSION="${TAG#v}" --build-arg COMMIT="${SHA:0:12}" \
             -t "$REGISTRY/api:$SHA" .
 
-      - name: registry login (OIDC → Yandex Cloud IAM)
+      - name: registry login (Harbor)
         run: |
-          jwt="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://github.com/itrcz" | jq -r .value)"
-          echo "::add-mask::$jwt"
-          iam="$(curl -sSf -X POST https://auth.yandex.cloud/oauth/token \
-            --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-            --data-urlencode requested_token_type=urn:ietf:params:oauth:token-type:access_token \
-            --data-urlencode audience="$SA_ID" \
-            --data-urlencode subject_token="$jwt" \
-            --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:id_token | jq -r .access_token)"
-          echo "::add-mask::$iam"
-          test -n "$iam" && test "$iam" != null || { echo "::error::token exchange failed"; exit 1; }
-          printf '%s' "$iam" | docker login cr.yandex --username iam --password-stdin
+          echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+          printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin
 
       - name: push
         id: push
         run: |
-          docker push -q "$REGISTRY/$IMAGE:$SHA"
+          # Harbor commits a big layer to S3 slower than docker waits: the push fails though the layer has
+          # landed; a retry finds it and gets to the tag.
+          for i in 1 2 3; do docker push -q "$REGISTRY/$IMAGE:$SHA" && break; [ "$i" = 3 ] && exit 1; sleep 30; done
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          # Copy of the same image to the VK Cloud registry (Harbor cr.shds.io/calab) — the production cluster
-          # moves off Yandex. Byte-for-byte by digest (skopeo, while still logged in to cr.yandex), then the
-          # digest is checked: the cluster rolls out digests from the deployment payload. cr.shds.io resolves
-          # to a private address publicly; the VK ingress publishes only the calab and gpu projects.
-          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
-            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
-            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
-              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
-            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
-            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
-          else
-            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
-          fi
-          docker logout cr.yandex
+          docker logout cr.shds.io
         env:
           IMAGE: api
 
@@ -123,12 +99,10 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      id-token: write      # GitHub OIDC token → Yandex Cloud IAM token (registry push only)
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     env:
-      REGISTRY: ${{ secrets.YC_REGISTRY }}
-      SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      REGISTRY: cr.shds.io/calab
       HARBOR_USER: ${{ secrets.HARBOR_USER }}
       HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
     steps:
@@ -150,7 +124,7 @@ jobs:
 
       - name: build web client and landing (as release.sh)
         run: |
-          test -n "$REGISTRY" && test -n "$SA_ID" || { echo "::error::YC_REGISTRY / YC_CI_SA_ID are not set"; exit 1; }
+          test -n "$HARBOR_USER" && test -n "$HARBOR_PASSWORD" || { echo "::error::HARBOR_USER / HARBOR_PASSWORD are not set"; exit 1; }
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $TAG"; exit 1; }
           pnpm install --frozen-lockfile
           VERSION="${TAG#v}" pnpm -F @calaba/desktop build:web
@@ -171,48 +145,37 @@ jobs:
             -e RELEASES_HOST=releases.calab.test -e RELEASES_HOST_ALIASES=releases.calab2.test \
             -e S3_PUBLIC_URL=https://storage.example.test/bucket -e API_UPSTREAM=api:3000 \
             "$REGISTRY/web:$SHA" caddy validate --config /etc/caddy/Caddyfile
+          # Same config, but with APP_LINKS_IOS/APP_LINKS_ANDROID set (DEV-4947 review follow-up):
+          # entrypoint.sh then splices the universal-link JSON `respond` blocks in, which the run
+          # above never exercises — parse those in CI too, not first against prod.
+          docker run --rm -e DOMAIN=calab.test -e APP_HOST=app.calab.test -e LANDING_HOST=calab.test \
+            -e LANDING_HOST_ALIASES=www.calab.test -e LANDING_HOST_MIRRORS=calab2.test \
+            -e RELEASES_HOST=releases.calab.test -e RELEASES_HOST_ALIASES=releases.calab2.test \
+            -e S3_PUBLIC_URL=https://storage.example.test/bucket -e API_UPSTREAM=api:3000 \
+            -e APP_LINKS_IOS="ABCDE12345.test.calab" \
+            -e APP_LINKS_ANDROID="test.calab:$(printf 'AA:%.0s' $(seq 1 31))AA" \
+            "$REGISTRY/web:$SHA" caddy validate --config /etc/caddy/Caddyfile
 
-      - name: registry login (OIDC → Yandex Cloud IAM)
+      - name: registry login (Harbor)
         run: |
-          jwt="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://github.com/itrcz" | jq -r .value)"
-          echo "::add-mask::$jwt"
-          iam="$(curl -sSf -X POST https://auth.yandex.cloud/oauth/token \
-            --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-            --data-urlencode requested_token_type=urn:ietf:params:oauth:token-type:access_token \
-            --data-urlencode audience="$SA_ID" \
-            --data-urlencode subject_token="$jwt" \
-            --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:id_token | jq -r .access_token)"
-          echo "::add-mask::$iam"
-          test -n "$iam" && test "$iam" != null || { echo "::error::token exchange failed"; exit 1; }
-          printf '%s' "$iam" | docker login cr.yandex --username iam --password-stdin
+          echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+          printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin
 
       - name: push
         id: push
         run: |
-          docker push -q "$REGISTRY/$IMAGE:$SHA"
+          # Harbor commits a big layer to S3 slower than docker waits: the push fails though the layer has
+          # landed; a retry finds it and gets to the tag.
+          for i in 1 2 3; do docker push -q "$REGISTRY/$IMAGE:$SHA" && break; [ "$i" = 3 ] && exit 1; sleep 30; done
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          # Copy of the same image to the VK Cloud registry (Harbor cr.shds.io/calab) — the production cluster
-          # moves off Yandex. Byte-for-byte by digest (skopeo, while still logged in to cr.yandex), then the
-          # digest is checked: the cluster rolls out digests from the deployment payload. cr.shds.io resolves
-          # to a private address publicly; the VK ingress publishes only the calab and gpu projects.
-          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
-            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
-            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
-              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
-            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
-            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
-          else
-            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
-          fi
-          docker logout cr.yandex
+          docker logout cr.shds.io
         env:
           IMAGE: web
 
-  # The inbound-call agents (ADR-0117 calab-ivr, ADR-0121/0125 calab-sipreg): pushed as <registry>/ivr:<sha>
-  # and <registry>/sipreg:<sha> (and to cr.shds.io/calab), rolled out by devops, not by the calab-prod
+  # The inbound-call agents (ADR-0117 calab-ivr, ADR-0121/0125 calab-sipreg): pushed as cr.shds.io/calab/ivr:<sha>
+  # and cr.shds.io/calab/sipreg:<sha>, rolled out by devops, not by the calab-prod
   # deployment: they are single-replica agents outside the api/web rollout, and a failed agent build does
   # not hold back a release.
   agents:
@@ -229,10 +192,8 @@ jobs:
         image: [sipreg, ivr]
     permissions:
       contents: read
-      id-token: write      # GitHub OIDC token → Yandex Cloud IAM token (registry push only)
     env:
-      REGISTRY: ${{ secrets.YC_REGISTRY }}
-      SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      REGISTRY: cr.shds.io/calab
       HARBOR_USER: ${{ secrets.HARBOR_USER }}
       HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
       IMAGE: ${{ matrix.image }}
@@ -244,42 +205,24 @@ jobs:
 
       - name: build
         run: |
-          test -n "$REGISTRY" && test -n "$SA_ID" || { echo "::error::YC_REGISTRY / YC_CI_SA_ID are not set"; exit 1; }
+          test -n "$HARBOR_USER" && test -n "$HARBOR_PASSWORD" || { echo "::error::HARBOR_USER / HARBOR_PASSWORD are not set"; exit 1; }
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $TAG"; exit 1; }
           docker build -f "apps/server/Dockerfile.$IMAGE" -t "$REGISTRY/$IMAGE:$SHA" .
 
-      - name: registry login (OIDC → Yandex Cloud IAM)
+      - name: registry login (Harbor)
         run: |
-          jwt="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://github.com/itrcz" | jq -r .value)"
-          echo "::add-mask::$jwt"
-          iam="$(curl -sSf -X POST https://auth.yandex.cloud/oauth/token \
-            --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-            --data-urlencode requested_token_type=urn:ietf:params:oauth:token-type:access_token \
-            --data-urlencode audience="$SA_ID" \
-            --data-urlencode subject_token="$jwt" \
-            --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:id_token | jq -r .access_token)"
-          echo "::add-mask::$iam"
-          test -n "$iam" && test "$iam" != null || { echo "::error::token exchange failed"; exit 1; }
-          printf '%s' "$iam" | docker login cr.yandex --username iam --password-stdin
+          echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+          printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin
 
       - name: push
         run: |
-          docker push -q "$REGISTRY/$IMAGE:$SHA"
+          # Harbor commits a big layer to S3 slower than docker waits: the push fails though the layer has
+          # landed; a retry finds it and gets to the tag.
+          for i in 1 2 3; do docker push -q "$REGISTRY/$IMAGE:$SHA" && break; [ "$i" = 3 ] && exit 1; sleep 30; done
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
-          # Same copy to the VK Cloud registry as api / web (byte-for-byte by digest, then checked).
-          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
-            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
-            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
-              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
-            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
-            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
-          else
-            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
-          fi
-          docker logout cr.yandex
-          # The digest for devops to pin (the image names stay masked with the registry secret).
+          docker logout cr.shds.io
+          # The digest for devops to pin.
           echo "$IMAGE @ $TAG: \`$digest\` (tag \`$SHA\`)" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:

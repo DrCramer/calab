@@ -30,8 +30,8 @@ ON CONFLICT (workspace_id) DO UPDATE SET last_error = excluded.last_error;
 UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING *;
 
 -- name: InsertSipCall :one
-INSERT INTO sip_calls (id, workspace_id, room_id, number, direction, started_by, participant_identity)
-VALUES ($1, $2, $3, $4, 'out', $5, $6)
+INSERT INTO sip_calls (id, workspace_id, room_id, number, direction, started_by, participant_identity, origin, peer_e164, extension)
+VALUES ($1, $2, $3, $4, 'out', $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: GetSipCall :one
@@ -118,10 +118,11 @@ UPDATE sip_accounts SET inbound_trunk_id = $2, inbound_rule_id = $3 WHERE worksp
 
 -- name: InsertSipInboundCall :one
 -- An inbound line got into its LiveKit room: RINGING from the start (FAILED rows for refusals).
-INSERT INTO sip_calls (id, workspace_id, number, direction, participant_identity, sip_call_id, lk_room, status, reason, ended_at)
+INSERT INTO sip_calls (id, workspace_id, number, direction, participant_identity, sip_call_id, lk_room, status, reason, ended_at,
+                       origin, peer_e164)
 VALUES (sqlc.arg('id'), sqlc.arg('workspace_id'), sqlc.arg('number'), 'in', sqlc.arg('participant_identity'),
         sqlc.arg('sip_call_id'), sqlc.arg('lk_room'), sqlc.arg('status'), sqlc.arg('reason'),
-        CASE WHEN sqlc.arg('status')::text IN ('ended', 'failed') THEN now() END)
+        CASE WHEN sqlc.arg('status')::text IN ('ended', 'failed') THEN now() END, 'inbound', sqlc.arg('peer_e164'))
 RETURNING *;
 
 -- name: GetSipCallByLKRoom :one
@@ -191,9 +192,11 @@ ORDER BY id;
 UPDATE sip_groups SET next_position = $3 WHERE workspace_id = $1 AND id = $2;
 
 -- name: GetSipPromptFile :one
--- The IVR worker downloads a prompt: only files that are a menu's prompt or recording notice.
+-- The IVR worker downloads a prompt: only files that are a menu's prompt or recording notice, or
+-- the off-hours notice of a schedule (ADR-0138).
 SELECT f.* FROM files f WHERE f.id = $1
-  AND EXISTS (SELECT 1 FROM sip_ivr_menus m WHERE m.prompt_file_id = f.id OR m.notice_file_id = f.id);
+  AND (EXISTS (SELECT 1 FROM sip_ivr_menus m WHERE m.prompt_file_id = f.id OR m.notice_file_id = f.id)
+       OR EXISTS (SELECT 1 FROM sip_accounts a WHERE a.off_hours_notice_file_id = f.id));
 
 -- ---- inbound calls over a registration (ADR-0121)
 
@@ -315,3 +318,21 @@ UPDATE sip_call_recordings SET file = '' WHERE id = $1;
 
 -- name: GetSipCallRecording :one
 SELECT * FROM sip_call_recordings WHERE id = $1;
+
+-- ---- the working-hours schedule (ADR-0138)
+
+-- name: SetSipSchedule :one
+-- PUT …/sip/schedule: the schedule as a whole (the notice: SetSipScheduleNotice).
+UPDATE sip_accounts
+SET schedule_enabled = sqlc.arg('schedule_enabled'), schedule_tz = sqlc.arg('schedule_tz'),
+    schedule_hours = sqlc.arg('schedule_hours'), schedule_holidays = sqlc.arg('schedule_holidays'),
+    off_hours_kind = sqlc.arg('off_hours_kind'), off_hours_menu_id = sqlc.narg('off_hours_menu_id'),
+    off_hours_extension_id = sqlc.narg('off_hours_extension_id'), off_hours_group_id = sqlc.narg('off_hours_group_id')
+WHERE workspace_id = sqlc.arg('workspace_id')
+RETURNING *;
+
+-- name: SetSipScheduleNotice :one
+UPDATE sip_accounts
+SET off_hours_notice_file_id = sqlc.narg('off_hours_notice_file_id'), off_hours_notice_ms = sqlc.arg('off_hours_notice_ms')
+WHERE workspace_id = sqlc.arg('workspace_id')
+RETURNING *;

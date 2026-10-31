@@ -29,6 +29,7 @@ export const esCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.resolve': 'Resolver',
   'canvasComments.reopen': 'Reabrir',
   'canvasComments.showPin': 'Mostrar en el lienzo',
+  'canvasComments.newThread': 'Nuevo hilo',
   'canvasComments.pinLabel': 'Comentario: {name}',
   'canvasComments.gone': 'El comentario fue eliminado o no está disponible',
   'canvasComments.tooLong': 'Como máximo {n} caracteres',

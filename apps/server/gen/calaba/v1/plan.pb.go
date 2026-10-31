@@ -104,6 +104,7 @@ type PlanLimits struct {
 	TelephonyDisabled     bool                   `protobuf:"varint,31,opt,name=telephony_disabled,json=telephonyDisabled,proto3" json:"telephony_disabled,omitempty"`                             // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
 	AutomationsDisabled   bool                   `protobuf:"varint,32,opt,name=automations_disabled,json=automationsDisabled,proto3" json:"automations_disabled,omitempty"`                       // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
 	TempRooms             uint32                 `protobuf:"varint,35,opt,name=temp_rooms,json=tempRooms,proto3" json:"temp_rooms,omitempty"`                                                     // live temporary rooms per creator (ADR-0044, CBF-38); 0 = no plan limit
+	Canvases              uint32                 `protobuf:"varint,37,opt,name=canvases,proto3" json:"canvases,omitempty"`                                                                        // live (not trashed) canvases of the workspace (ADR-0126), folders not counted; 0 = no plan limit
 	// Corporate identity (SSO, directory sync, the OAuth provider; ADR-0054 §5, ADR-0113) is part of
 	// the plan. A positive flag, unlike the others (no entitlement from a permissive zero): Business
 	// has it, Free / Team / an older custom plan do not; a superadmin turns it on or off per workspace
@@ -318,6 +319,13 @@ func (x *PlanLimits) GetTempRooms() uint32 {
 	return 0
 }
 
+func (x *PlanLimits) GetCanvases() uint32 {
+	if x != nil {
+		return x.Canvases
+	}
+	return 0
+}
+
 func (x *PlanLimits) GetCorporateIdentity() bool {
 	if x != nil {
 		return x.CorporateIdentity
@@ -432,7 +440,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xcd\b\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xe9\b\n" +
 	"\n" +
 	"PlanLimits\x120\n" +
 	"\x14board_forms_disabled\x18! \x01(\bR\x12boardFormsDisabled\x121\n" +
@@ -462,7 +470,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabled\x121\n" +
 	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabled\x12\x1d\n" +
 	"\n" +
-	"temp_rooms\x18# \x01(\rR\ttempRooms\x12-\n" +
+	"temp_rooms\x18# \x01(\rR\ttempRooms\x12\x1a\n" +
+	"\bcanvases\x18% \x01(\rR\bcanvases\x12-\n" +
 	"\x12corporate_identity\x18( \x01(\bR\x11corporateIdentity\x12\x0e\n" +
 	"\x02ai\x18) \x01(\bR\x02aiJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
 	"\rWorkspacePlan\x12#\n" +

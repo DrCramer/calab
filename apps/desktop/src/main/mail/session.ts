@@ -68,6 +68,8 @@ export interface ImapSession {
   expunge(uids: number[]): Promise<void>;
   /** Every message of the selected mailbox: `UID STORE 1:* +FLAGS (\Deleted)` + EXPUNGE. */
   expungeAll(): Promise<void>;
+  /** Flags on every message of the selected mailbox: `UID STORE 1:* +FLAGS (...)`, one command. */
+  storeFlagsAll(add: string[], remove: string[]): Promise<void>;
   append(path: string, raw: Buffer, flags: string[]): Promise<void>;
   createFolder(path: string): Promise<void>;
   /** RENAME (subfolders follow on the server). */

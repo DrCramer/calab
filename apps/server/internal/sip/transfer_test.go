@@ -240,7 +240,7 @@ func TestTransferMemberWithoutNumberAndHangup(t *testing.T) {
 	}
 	// The caller hangs up while it rings: the target stops ringing, the call ends.
 	fx = Effects{}
-	c.Hangup(reasonForTest, &fx)
+	c.Hangup(envAt(f, a, 20*time.Second), reasonForTest, &fx)
 	if c.Phase != PhaseEnded || c.Transferring() || !slices.Equal(fx.Stopped, []uuid.UUID{u4}) || fx.Hangup != reasonForTest {
 		t.Fatalf("hangup: %+v %+v", c, fx)
 	}

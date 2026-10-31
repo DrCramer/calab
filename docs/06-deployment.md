@@ -10,21 +10,21 @@ Compose/SSH ниже — отдельная self-hosted установка и и
 
 Тестовый стенд: `root@141.105.69.177` (Debian 13, 32 vCPU, 123 GB RAM, 1.2 TB свободно, Docker 29, Compose v5).
 
-**На хосте уже крутится GPU-задача** (`python` pid 3695 ~40 % RAM, `ffmpeg`, headless `chromium`, `Xvfb`; порты 8000/8001/8190/8210–8213/8300/8400/9100/9400, UDP 9001/9002). **Не трогаем.** Наши порты (80/443/7881/7882) с ними не пересекаются. RAM: ставим лимиты контейнерам (postgres 2G, api 1G, livekit 4G) чтобы не конкурировать; логи контейнеров ротируются.
+Для персонального Ubuntu-хоста с уже установленным Nginx Proxy Manager см. [инструкцию NPM](../infra/docker/README.npm.md). Она описывает именно используемый здесь compose: NPM владеет TCP 80/443, а Calab не публикует эти порты.
 
 Состав `infra/docker/compose.yml`:
 
 | Сервис | Образ | Сеть | Заметки |
 |---|---|---|---|
-| caddy | своя сборка `infra/docker/caddy/Dockerfile` (`caddy:2.11.4` + `caddy-l4` v0.1.2, обе версии запинены; `entrypoint.sh` собирает списки хостов из `DOMAIN`/`DOMAIN_ALT`/`DOMAIN_LEGACY`) | host | 80/443 TCP, ACME, `Caddyfile`, layer4 как listener wrapper (SNI `turn.*`), h3 выключен |
-| livekit | `livekit/livekit-server:v1.13` | host | signal 7880 (только 127.0.0.1), 7881/tcp, 7882/udp, TURN 443/udp, TURN 5349 (`external_tls`; слушает `*:5349` — LiveKit не умеет bind для TURN, снаружи закрыт файрволом), metrics 6789 (127.0.0.1) |
-| api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | **host**, `HTTP_ADDR=127.0.0.1:3000` | ходит в Postgres/Valkey/LiveKit по 127.0.0.1; миграции сам при старте; файлы — `STORAGE_DRIVER=fs`, volume `files_data` → `/data/files` (ADR-0011; каталог создан в образе с владельцем nonroot 65532, свежий named volume наследует его — отдельный chown не нужен); healthcheck — `/server healthcheck` |
-| postgres | `postgres:18-alpine` | bridge, `127.0.0.1:5432` | PostgreSQL 18 или 17 (ADR-0037): на 18 `uuidv7()` встроенная, на 17 API до миграций сам создаёт `public.uuidv7()` — нужен `CREATE` в схеме `public`, как и для миграций (есть у владельца базы). Управляемый кластер: база в UTF-8 с `LC_CTYPE` не `C`, иначе поиск и `citext` не понижают регистр кириллицы; расширение `citext` (миграция 00001) может понадобиться включить в настройках кластера. **`pg_trgm`** (миграция 00064, единый поиск ADR-0062) — trusted extension: на PostgreSQL 13+ его создаёт владелец базы, отдельных прав не нужно; если роль API не владелец и не суперпользователь, миграция падает с `no privilege to create extension pg_trgm` — оператор один раз выполняет `CREATE EXTENSION pg_trgm;` в этой базе суперпользователем и перезапускает API (миграция продолжит с `IF NOT EXISTS`). На управляемом кластере расширение может требовать включения в списке разрешённых. Volume на `/var/lib/postgresql` |
-| valkey | `valkey/valkey:9-alpine` — Valkey, совместим с Redis (ADR-0017) | bridge, `127.0.0.1:6379` | AOF, volume `valkey_data`; healthcheck `valkey-cli ping` |
-| egress | `livekit/egress:v1.14.1` (digest запинен; совместим с livekit-server 1.13) | host | запись встреч (ADR-0025): audio-only room composite без Chrome → MP4 в volume `recordings_data` (`/out`); с LiveKit — через Valkey (DB 1) и ws `127.0.0.1:7880`; лимит 4 CPU / 4 GB; внутренний порт шаблонов 7980 (снаружи закрыт файрволом) |
+| caddy | `caddy:2.11.7` | внешняя Docker-сеть NPM | HTTP `:8080`; NPM проксирует веб/API сюда; Calab не занимает host TCP 80/443 |
+| livekit | `livekit/livekit-server:v1.13` | host | сигнализация на интерфейсе NPM bridge:17880; ICE 7881/tcp и 7882/udp; TURN 443/udp и 5349/tcp с сертификатом NPM; relay UDP 20000–29999 |
+| api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | host, `HTTP_ADDR=<NPM_HOST_IP>:13000` | NPM/Caddy проксируют HTTP и WebSocket; БД и Valkey на loopback; миграции при старте; пользовательские файлы — volume `files_data`; healthcheck — `/server healthcheck` |
+| postgres | `postgres:18-alpine` | bridge, `127.0.0.1:15432` на хосте | Персистентный `pg_data`; PostgreSQL 18 или 17 (ADR-0037), см. требования управляемого PostgreSQL ниже |
+| valkey | `valkey/valkey:9-alpine` | bridge, `127.0.0.1:16379` на хосте | AOF, volume `valkey_data`; healthcheck `valkey-cli ping` |
+| egress | `livekit/egress:v1.15.0` | host | запись встреч в volume `recordings_data`; связь с LiveKit через Valkey (DB 1) и ws `127.0.0.1:17880` |
 | recordings-init | образ valkey (one-shot) | none | делает `recordings_data` владением api (65532) до старта api/egress |
 
-Почему api в host network: API обращается к LiveKit (`127.0.0.1:7880`, signal слушает только loopback), а LiveKit шлёт webhook на `127.0.0.1:3000`. Из bridge-сети это требовало бы `host.docker.internal` и правил файрвола для `docker0`; в host network всё идёт по loopback, наружу API не торчит (слушает только 127.0.0.1).
+API и LiveKit используют host network, чтобы NPM мог обращаться к API/LiveKit через адрес шлюза своей Docker-сети, а LiveKit мог напрямую принимать UDP media и TURN. PostgreSQL и Valkey доступны только через loopback-порты 15432 и 16379. Подробная схема и список внешних портов — [инструкция NPM](../infra/docker/README.npm.md).
 
 MinIO нет (ADR-0011): образ `minio/minio` удалён с Docker Hub, сторонние сборки не берём; файлы API пишет драйвером `fs` в volume `calaba_files_data`. Драйвер `s3` (Yandex Object Storage / Garage / Ceph RGW) — для k8s и нескольких реплик API, см. «Файлы в S3: драйвер `s3`» ниже.
 
@@ -37,7 +37,7 @@ MinIO нет (ADR-0011): образ `minio/minio` удалён с Docker Hub, с
 - Секреты — в `infra/docker/.env` на хосте (не в репо), шаблон — `.env.example`.
 - **Сроки токенов**: `ACCESS_TOKEN_TTL` (по умолчанию `24h`) и `REFRESH_TOKEN_TTL` (`8760h` = 1 год, скользящий: каждый refresh продлевает) — в `.env`, compose передаёт их api. Отзыв сессии мгновенный при любых сроках (docs/04 «Auth»); свой сервер со строгими требованиями может ужесточить, напр. `ACCESS_TOKEN_TTL=15m`, `REFRESH_TOKEN_TTL=720h` (валидация: access ≥ 1m, refresh ≥ access).
 - LiveKit-конфиг — шаблон `infra/docker/livekit/livekit.yaml.tpl`. В нём подставляются **только** `${DOMAIN}` и `${LIVEKIT_API_KEY}` (`envsubst '${DOMAIN} ${LIVEKIT_API_KEY}'`) → `livekit.gen.yaml` (в `.gitignore`). Ключ/секрет LiveKit приходят через env `LIVEKIT_KEYS`, в файл не пишутся.
-- `deploy.sh [сервисы…]` — загружает `.env`, рендерит `livekit.gen.yaml`, выполняет `docker compose up -d --build --remove-orphans [сервисы…]`. Если отрендеренный конфиг LiveKit изменился — перезапускает `livekit` (bind-mount: compose сам изменения содержимого не замечает). Caddyfile вшит в образ → подхватывается через `--build`.
+- `deploy.sh [сервисы…]` — загружает `.env`, рендерит `livekit.gen.yaml`, выполняет `docker compose up -d --build --remove-orphans [сервисы…]`. Если отрендеренный конфиг LiveKit изменился — перезапускает `livekit` (bind-mount: compose сам изменения содержимого не замечает). Caddy использует `Caddyfile.npm` и доступен NPM через внешнюю Docker-сеть.
 - **`SYNC_REF=<ref>`** — деплоить закоммиченное состояние (чистый `git archive`), а не рабочее дерево; обязательно, когда в дереве чужая незакоммиченная работа (иначе она уедет на стенд). Артефакты веба/релизов (не в git) берутся из рабочего дерева. Пример: `SYNC_REF=HEAD SKIP_WEB=1 SKIP_RELEASES=1 infra/docker/sync.sh api`.
 - **Версия сборки** для `GET /api/version`: `sync.sh` передаёт `CALABA_COMMIT` (короткий sha `SYNC_REF`, либо `HEAD`, с суффиксом `-dirty`, если синхронизируется грязное дерево в `apps/server`/`infra`/`proto`/`packages`) и `CALABA_VERSION` (`VERSION=` или `apps/desktop/package.json`) → `deploy.sh` → build args образа api.
 - Деплой на стенд — с машины разработчика, **git на хосте нет**: `infra/docker/sync.sh [сервисы…]` = `rsync` рабочего дерева в `/opt/calaba` (без `node_modules`, `.git`, `dist`, `.env*`, `livekit.gen.yaml`; `--delete`, исключённые пути защищены) + `ssh … /opt/calaba/infra/docker/deploy.sh [сервисы…]`. `SYNC_ONLY=1` — только синхронизация; `STAND_HOST`/`STAND_DIR` переопределяют хост/каталог. CI (GitHub Actions) позже будет собирать образы.
@@ -82,7 +82,7 @@ mkdir -p /opt/calaba
 - Ключ/секрет LiveKit для тестов (`lk`, load-test) брать оттуда: `ssh root@141.105.69.177 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env'` — не коммитить и не вставлять в отчёты.
 - **Домены (docs/10-branding.md; с 2.0.0 — `calab.io` + алиасы `calab.ru`, см. «Домены: calab.io…» ниже):** схема — `DOMAIN=calab.io` (`rtc.calab.io`, `turn.calab.io`; TURN анонсируется по нему), `APP_HOST=app.calab.io` (веб-клиент, API, gateway, `/download/`), `LANDING_HOST=calab.io` (статика `apps/landing/out` → `/opt/calaba/landing`, bind `../../landing:/srv/landing:ro`; там же `/download/` — те же релизы), `DOMAIN_ALT=meet.gptunnel.ru` и `DOMAIN_LEGACY=app.calab.ru` — дополнительные хосты приложения (их `rtc.`/`turn.` тоже обслуживаются на переходный период). `entrypoint.sh` Caddy собирает из этого списки хостов и генерирует сайт лендинга (`/tmp/landing.caddy`, пустой при `LANDING_HOST=`); `PUBLIC_APP_URL=https://${APP_HOST}`, `PUBLIC_APP_URL_ALT=https://${DOMAIN_ALT}` (до серверного `PUBLIC_APP_URLS` origin `DOMAIN_LEGACY` не проходит CSRF/Origin-проверку веб-клиента — десктоп не затронут).
   - **Состояние 2026-09-26:** стенд на `calab.ru` (делегирование `.ru` ~08:22): `.env` — `DOMAIN=calab.ru`, `APP_HOST=app.calab.ru`, `LANDING_HOST=calab.ru`, `DOMAIN_ALT=meet.gptunnel.ru`, `DOMAIN_LEGACY=` (пусто), `RELEASES_HOST=releases.calab.ru`, `S3_PUBLIC_URL=https://storage.yandexcloud.net/calaba` (бакет `calaba`, Yandex Object Storage, публичное чтение). Сертификаты LE: `calab.ru`, `app.`, `rtc.`, `turn.`, `releases.calab.ru`, `meet.gptunnel.ru`; LiveKit анонсирует `turn.calab.ru`; `PUBLIC_APP_URLS=https://app.calab.ru,https://meet.gptunnel.ru` (чужой Origin — 403); `/download/…` на приложении и лендинге → 302 на `releases.calab.ru` (прокси в бакет). Лендинг опубликован (`apps/landing`, b9467d1). Алиасы `colaba.gptunnel.ai/.ru` и их `rtc.`/`turn.` сняты (DNS-записи удалены, Caddy их не обслуживает; старые сертификаты просто истекут).
-  - Лендинг: не SPA — `/foo` → `foo.html` или `foo/index.html` (static export с `trailingSlash`), неизвестный путь → `404.html` со статусом 404; `/_next/static/*` — `immutable` только если файл есть, страницы — `no-cache`; CSP лендинга допускает inline-скрипты (`script-src 'self' 'unsafe-inline'` — гидрация Next.js static export без сервера для nonce), без connect-целей кроме self; HSTS, `X-Frame-Options DENY`, `Permissions-Policy` без камеры/микрофона. `sync.sh`: `LANDING_DIST` (по умолчанию `apps/landing/out`), `SKIP_LANDING=1`; без сборки — заглушка.
+  - Лендинг: не SPA — `/foo` → `foo.html` или `foo/index.html` (static export с `trailingSlash`), неизвестный путь → `404.html` со статусом 404; `/_next/static/*` — `immutable` только если файл есть, страницы — `no-cache`; CSP лендинга допускает inline-скрипты (`script-src 'self' 'unsafe-inline'` — гидрация Next.js static export без сервера для nonce), из внешних адресов — только Яндекс Метрика (подключается на странице лишь после согласия на аналитику, `components/yandex-metrika.tsx`): `script-src` `mc.yandex.ru` `yastatic.net`, `img-src`/`connect-src` `mc.yandex.ru` `mc.yandex.com` (+`wss:` для вебвизора), `frame-src`/`child-src` те же хосты (+`blob:`); `connect-src` дополнительно self и origin-ы релизов/приложения; чат поддержки ChatDeck (`components/support-chat.tsx`, грузится сразу на всех страницах): `script-src`/`img-src` `chatdeck.ru`, `connect-src` `https://chatdeck.ru` + `wss://chatdeck.ru`, `img-src`/`media-src` `hb.vkcloud-storage.ru` (вложения); прод-образ `web-image` копирует тот же `sites.caddy`, отдельной настройки в k8s нет; HSTS, `X-Frame-Options DENY`, `Permissions-Policy` без камеры/микрофона. `sync.sh`: `LANDING_DIST` (по умолчанию `apps/landing/out`), `SKIP_LANDING=1`; без сборки — заглушка.
 - История: до переименования (2026-09-25…26) стенд жил на `colaba.gptunnel.ai` (основной) + `colaba.gptunnel.ru`; сертификаты Let's Encrypt на все имена выпускает Caddy (volume `calaba_caddy_data`).
 - DNS — Cloudflare (зоны `gptunnel.ai`, `gptunnel.ru`), A-записи `colaba` (приложение), `rtc.colaba`, `turn.colaba` → 141.105.69.177, **proxied=false** (DNS-only), TTL auto. Токен Cloudflare — только у владельца/в локальном `.env` репо (`CFTOKEN`, gitignored), на сервер не копируется.
 - Весь стек (с api) поднят 2026-09-25: `infra/docker/sync.sh` без аргументов; отдельный сервис — `infra/docker/sync.sh api`. Миграции применились при старте api.
@@ -178,7 +178,7 @@ gh release edit vX.Y.Z --repo DrCramer/calab --draft=false --latest
 
 В клиент вшиты `MAIN_VITE_UPDATE_GITHUB=DrCramer/calab`, generic fallback на GitHub `latest/download`
 и адрес self-host API. В `%AppData%` менять `updateUrl` для автообновления не требуется: источник
-обновлений закреплён в приложении во время сборки (ADR-0134). Публикуемые релизы должны быть
+обновлений закреплён в приложении во время сборки (ADR-0153). Публикуемые релизы должны быть
 публичными; черновики updater не видит.
 
 Все три ОС собираются с одного Mac (Apple Silicon): `apps/desktop/scripts/build-release.sh [mac] [linux] [win]` (без аргументов — все). На Apple Silicon Linux/Windows собираются на x86_64-хосте: `BUILD_DOCKER_HOST=ssh://root@141.105.69.177` (стенд, согласовано; без эмуляции, в разы быстрее и не забивает диск мака образом 4.7 GB).
@@ -245,6 +245,9 @@ gh release edit vX.Y.Z --repo DrCramer/calab --draft=false --latest
 5. Если preflight `release.yml` упал на внешней причине (Yandex TLS reset, registry 503) — `gh run rerun <id> --failed`, когда хосты отвечают.
 
 Если всё зелёное — релиз идёт без подтверждения владельца (решение 2026-10-14); спрашивать только при сбое или нестандартном необратимом шаге.
+
+Это runbook десктопа и веба; релиз телефонного приложения (iOS/Android, TestFlight/Play) — отдельный
+ручной процесс, не часть `release.yml`/`images.yml`, см. [docs/mobile/release.md](mobile/release.md).
 
 **Срезы `tools/usage-stats.py`.** Скрипт заменяет срез своей машины целиком; если транскрипты на диске уже подчищены, обычный перезапуск уменьшит срез. Перед записью сравнить `--no-write` с существующим срезом (tmin/tmax, n); если меньше — писать только сессии после tmax под отдельной меткой `--machine=<host>-<label>`.
 
@@ -341,6 +344,7 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 5. **Preflight релиза:** первый джоб `release.yml` проверяет TLS/HTTP `UPDATE_URL`, `latest.yml` на обоих фидах, `APP_ORIGIN/api/version` и сайт; провал — сборка не начинается (тег не выпустит клиентов на мёртвый хост).
 6. **`IDENTITY_PUBLIC_ORIGIN=https://app.calab.io`.** Identity в проде ещё не включён, поэтому issuer меняется сейчас; **после включения он не меняется никогда** (issuer в токенах и регистрациях у IdP). `app.calab.ru` — не алиас issuer.
 7. **Веб-клиент:** `app.calab.ru` и `app.calab.io` — разные origin (разные сессии и localStorage); редиректа между ними нет.
+7a. **Ссылки на свои хосты открываются в приложении** (`apps/desktop/src/shared/ownLink.ts` `classifyLink`): свои — origin сервера сессии и настроек, а если он входит в список `MAIN_VITE_APP_ORIGINS` (десктоп, `.env.production`; в рантайме `CALABA_APP_ORIGINS`) / `VITE_APP_ORIGINS` (веб, `.env.web`) — все origin из списка (`app.calab.io`, `app.calab.ru`, `meet.gptunnel.ru`). Self-hosted сервера в списке нет — чужие облачные ссылки он своими не считает. Новый алиас приложения — добавить в оба списка.
 8. **Почта:** `SMTP_FROM="Calab <noreply@calab.io>"`; SPF/DKIM/DMARC для `calab.io` (см. «Почта»).
 
 Compose (стенд/self-host): `APP_HOST=app.calab.io`, `LANDING_HOST=calab.io`, `RELEASES_HOST=releases.calab.io`, `DOMAIN=calab.io`, `DOMAIN_LEGACY=app.calab.ru`, `DOMAIN_ALIASES=calab.ru` (rtc./turn.), `RTC_PUBLIC_HOST=rtc.calab.ru`, `LANDING_HOST_ALIASES=calab.ru` (301), `RELEASES_HOST_ALIASES=releases.calab.ru` (тот же фид). Кластер (конфигурация вне репо) — те же правила: сертификаты и vhost'ы на все `.io` и `.ru` имена, `PUBLIC_APP_URL=https://app.calab.io`, `PUBLIC_APP_URLS` с обоими origin, `LIVEKIT_URL=wss://rtc.calab.ru`.
@@ -357,13 +361,15 @@ Docker compose в этом документе — тестовый стенд и
 
 Не использовать: private/serverless кластеры (NAT ломает WebRTC), LB перед 7881.
 
+Секреты API в проде — строками в Vault KV v2 `kv/app/calab` → `timenote/calab-env-sync` → Secret `calab-env` (подробнее — «Identity» ниже). Так же ставится `YM_MP_TOKEN` (серверные конверсии Метрики, ADR-0135; значение — токен Measurement Protocol счётчика 113761661, пусто = выключено; `YM_COUNTER_ID`/`YM_MP_URL` — по умолчанию верные). После правки Vault — дождаться env-sync и rollout API.
+
 ### Образы API и веба, выкатка в прод (`.github/workflows/images.yml`)
 
 После зелёного `ci` релизного тега `v*` workflow `images` собирает `apps/server/Dockerfile` на том же коммите
 (версия сервера — тег, как у `release.sh`), рядом собирает веб-клиент и лендинг теми же командами, что
 `release.sh`, в образ `infra/docker/web-image` (Caddy, его конфиг «за прокси» и статика) и пушит оба
-образа в прод-реестр. Ключей в GitHub нет: OIDC-токен job'а меняется на короткий IAM-токен сервисного
-аккаунта, которому разрешён только пуш в репозитории calab этого реестра. Затем workflow создаёт GitHub
+образа в прод-реестр Harbor `cr.shds.io/calab` (VK Cloud) роботом Harbor, которому разрешён только пуш в
+проект calab (секреты репо `HARBOR_USER`/`HARBOR_PASSWORD`). Затем workflow создаёт GitHub
 Deployment `calab-prod` с digest обоих образов в payload: API и веб релиза выкатываются вместе.
 
 - В кластер workflow не ходит. Выкатку делает кластер сам: забирает заявку, проверяет её и меняет образ по
@@ -371,17 +377,57 @@ Deployment `calab-prod` с digest обоих образов в payload: API и �
   для коммитов из `main`.
 - История заявок — вкладка Deployments репо. По [операторскому preflight](plans/identity-v2-operator-preflight.md) текущий consumer не публикует GitHub deployment statuses, выкатывает компоненты последовательно и при ошибке может оставить смешанные версии. Требуются Kubernetes readiness и фактические digests API/web плюс version smoke; успешная заявка/CronJob сами по себе не подтверждают выкатку.
 - Откат — только на согласованный identity-aware digest с совместимой БД, ключами и platform config. После активации identity нельзя перезапускать старый успешный `images`, если он возвращает pre-identity бинарник. Down guard миграции не защищает от image-only rollback.
-- `YC_REGISTRY` и `YC_CI_SA_ID` — секреты репо: публичные логи их маскируют. Это не ключи, но внутренние id в
-  открытых логах не нужны.
-- Конфиг Caddy едет в образе веба: `Caddyfile.behind-proxy` (TLS снимает прокси перед ним, HTTP на
+- `cr.shds.io` публично указывает на внутренний адрес VK, поэтому job'ы прописывают вход VK в `/etc/hosts`;
+  снаружи открыты только проекты calab и gpu.
+- **Образ веба всё ещё несёт свой Caddy-конфиг** — `Caddyfile.behind-proxy` (TLS снимает прокси перед ним, HTTP на
   `BEHIND_PROXY_PORT`, по умолчанию 8080; API — `API_UPSTREAM`; без `rtc.`/`turn.`) и общий с `Caddyfile` стенда
-  `sites.caddy`. Правка `infra/docker/caddy/` попадает в прод с релизом; хосты и адреса — env кластера.
-  `images` проверяет конфиг в собранном образе (`caddy validate` на тестовых хостах) до пуша.
+  `sites.caddy`; `images` проверяет его в собранном образе (`caddy validate` на тестовых хостах) до пуша. Но **в проде
+  этот конфиг не исполняется**: под веба в k8s монтирует кластерный ConfigMap `calab/calab-web-config` (ключи
+  `Caddyfile`, `cluster-sites.sh`, `entrypoint.sh`; client-side-applied, без ownerReferences/provenance labels —
+  владеет платформенный оператор, не этот репозиторий; подтверждено 2026-10-28, см.
+  [identity preflight](plans/identity-v2-operator-preflight.md)). Правка `infra/docker/caddy/` доезжает до стенда
+  сразу через `sync.sh`/`deploy.sh` (host network, `caddy-l4`), но до прода — **только когда оператор сам переносит
+  изменение** в `calab-web-config` (вручную, не автоматикой этого репо); до тех пор образ и прод расходятся.
+  `Caddyfile.behind-proxy`/`sites.caddy` остаются эталоном для такого переноса и проверяются `images.yml`, но не
+  являются источником правды для прода. Хосты и адреса в этом репозитории — env стенда:
+  `DOMAIN`/`APP_HOST`/`LANDING_HOST`/`DOMAIN_ALT`/`DOMAIN_LEGACY`/`DOMAIN_ALIASES`/`*_HOST_ALIASES`/`RELEASES_HOST`/
+  `S3_PUBLIC_URL`; содержимое кластерного `calab-web-config` не проверено — владеет оператор, и совпадение имён/
+  логики с этим репозиторием не предполагается. Для universal links / App Links (DEV-4947, ниже) репозиторные
+  `APP_LINKS_IOS`/`APP_LINKS_ANDROID` действуют на стенде (через `infra/docker/caddy/entrypoint.sh`) и как эталон
+  для образа; на проде оператор 2026-10-28 добавил `/.well-known/apple-app-site-association` и `assetlinks.json`
+  в `calab-web-config` вручную, не через эти переменные.
 - Прогоны идут строго по одному (`concurrency`), поэтому заявки создаются в порядке коммитов.
 - Агенты входящих — job `agents` того же workflow: `apps/server/Dockerfile.sipreg` и `Dockerfile.ivr` →
-  `<YC_REGISTRY>/sipreg:<sha>` и `<YC_REGISTRY>/ivr:<sha>` (и копии `cr.shds.io/calab/sipreg|ivr:<sha>`), digest — в
+  `cr.shds.io/calab/sipreg:<sha>` и `cr.shds.io/calab/ivr:<sha>`, digest — в
   summary прогона. В заявку `calab-prod` не входят и релиз не держат: девопс выкатывает их сам (одна реплика
   каждого, по digest), см. п. 6–7 «Телефония» выше.
+
+### Universal links / App Links (DEV-4947)
+
+`APP_LINKS_IOS`/`APP_LINKS_ANDROID` на `APP_HOST` (`infra/docker/.env.example`): пусто = оба пути
+404, без них https-ссылки `/t/…`, `/join/…`, `/r/…` не открывают установленное приложение напрямую.
+Team ID и bundle id — developer.apple.com → Membership и App ID приложения; package name и
+SHA-256-отпечаток(и) — Play Console → Настройки → Целостность приложения → **App signing key**
+(с Play App Signing раздачу подписывает ключ Play, не upload-ключ разработчика: `keytool` на
+upload keystore даёт другой, неверный для `assetlinks.json` отпечаток). Это работает на
+compose-стенде (переменные читает `infra/docker/caddy/entrypoint.sh`) и служит эталоном для образа
+веба. **На проде эти переменные ничего не делают** — там раздаёт не этот `entrypoint.sh`, а
+кластерный ConfigMap `calab-web-config` (см. «Прод: Kubernetes» выше); оператор добавил туда оба
+`.well-known`-маршрута вручную 2026-10-28, без участия `APP_LINKS_IOS`/`APP_LINKS_ANDROID`. Runbook
+сборки/публикации мобильного приложения — [docs/mobile/release.md](mobile/release.md). Проверка
+после любого изменения (стенд или прод) — GET, не HEAD: `200`/`Content-Type` не доказывают, что
+тело содержит нужный appID/package, CDN и Google могут отдать `200` с пустым или устаревшим
+телом:
+```
+curl -s https://app.calab.io/.well-known/apple-app-site-association | grep -c '3KGZ3829US.dev.calab.mobile'
+curl -s https://app.calab.io/.well-known/assetlinks.json | grep -c 'dev.calab.mobile'
+curl -s https://app-site-association.cdn-apple.com/a/v1/app.calab.io | grep -c '3KGZ3829US.dev.calab.mobile'
+curl -s 'https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://app.calab.io&relation=delegate_permission/common.handle_all_urls' | grep -c 'dev.calab.mobile'
+```
+Каждая команда — `1` и более (не `0`); для `assetlinks.json` и Google-ответа дополнительно
+проверить SHA-256-отпечаток app signing key (см. выше) тем же `grep -c`.
+Редирект через ops-консоль для бот-ссылок остаётся включённым, пока universal links не подтверждены
+этими проверками на проде.
 
 ### Identity 2.0: настройка и приёмка
 
@@ -644,6 +690,26 @@ authority/policy. Не отключать enforcement автоматически
 - **Уборка:** janitor удаляет объекты записей по базе, как файлы на volume. «Бесхозные» `.mp4` в бакете он не ищет: `blob.Store` не умеет листинг, а листать весь бакет файлов ради `.mp4` каждый час дороже пользы. Остаются только объекты записей пространства, удалённого раньше, чем janitor убрал запись (до 7 дней после неё), — docs/12.
 - **Проверка:** `go test ./internal/recording/ ./internal/rtc/` (unit: оба режима, запрос к egress через twirp-сервер из `livekit/protocol`), `go test -tags integration -run TestRecordingBucket ./internal/app/` (запись в бакете: загрузка, повтор при недоступном бакете, объекта нет).
 
+### Редактор документов ONLYOFFICE (ADR-0143)
+
+Правка xlsx/docx/pptx (и odt/ods/odp/rtf/csv/txt) Диска в окне Calab, просмотр pdf и старых doc/xls/ppt, «Создать → Документ / Таблица / Презентация» в Диске. По умолчанию выключено: без `OFFICE_ENABLED=true` маршруты `/api/office/*` и `POST /api/workspaces/{id}/office/*` отвечают 404, `GET /api/office/capabilities` — `enabled: false`; клиент читает флаг оттуда при каждом READY (своего переключателя сборки нет), прячет «Открыть» в редакторе и пункты «Создать». Document Server — отдельный сервис (один инстанс, Community не кластеризуется). **Как поднять его в кластере — [docs/ops/office-onlyoffice-deploy.md](ops/office-onlyoffice-deploy.md)** (методичка для девопса: тома, NetworkPolicy, ingress, порядок выкатки, приёмка); почему так — ADR-0143 «Развёртывание».
+
+| Переменная | По умолчанию | Что |
+|---|---|---|
+| `OFFICE_ENABLED` | `false` | включает редактор |
+| `OFFICE_DOCS_URL` | — (обязательна при включении) | origin Document Server для браузера (`https://docs.<домен>`): его `api.js`, рамка, `postMessage` |
+| `OFFICE_DOCS_INTERNAL_URL` | = `OFFICE_DOCS_URL` | как API ходит к Document Server (in-cluster `http://onlyoffice.<ns>.svc`): сохранённые и сконвертированные файлы, `/converter`, `/command`. URL из callback принимается только на этих двух origin и скачивается через внутренний |
+| `OFFICE_API_URL` | = `PUBLIC_APP_URL` | как Document Server ходит к API: ссылки на файл и callback (in-cluster адрес API) |
+| `OFFICE_JWT_SECRET` | — (≥ 32 байт при включении) | общий секрет с `JWT_SECRET` контейнера Document Server (HS256 в обе стороны); только в Secret кластера |
+| `OFFICE_THEME_DARK`, `OFFICE_THEME_LIGHT` | `default-dark`, `default-light` | `uiTheme` редактора по теме приложения; по желанию `OFFICE_THEME_DARK=theme-calab-dark` — цвета Calab (`infra/office/themes/theme-calab-dark.json`, смонтировать в `web-apps/apps/common/main/resources/themes`); открытый редактор следует смене темы приложения |
+| `OFFICE_FILE_URL_TTL` | `5m` | срок ссылки, по которой Document Server забирает файл (30 с … 1 ч) |
+| `OFFICE_MAX_SIZE_MB` | `100` | больше — файл не открывается в редакторе, сохранение больше — отклоняется |
+| `OFFICE_SESSION_TTL` | `24h` | сессия совместной правки в Valkey без открытий и callback'ов (1 … 168 ч) |
+
+Хост-страница `infra/office/calab-editor.html` + `calab-editor.js` монтируется read-only в `web-apps/apps/calab/` Document Server (там же, где её ждёт клиент и Electron). Шаблоны «Создать» (`apps/server/internal/office/templates/blank.{docx,xlsx,pptx}`) встроены в API, отдельного монтирования нет.
+
+Ключи Valkey: `office:s:<item>` (сессия, TTL), `office:live` (элементы с сессией), `rl:office-*` (лимиты; `rl:office-config:` считает и «Создать»). Логи: `office: open|callback|saved|drop|converted|created` — id пользователя, элемента, файла, ключ, статус, размер и sha256; содержимое не логируется.
+
 ## Наблюдаемость
 
 - LiveKit: `/metrics` Prometheus на `127.0.0.1:6789` (`prometheus.port` в шаблоне; `bind_addresses: 127.0.0.1` действует и на него, снаружи порт ещё и закрыт файрволом). Проверка с хоста: `curl -s 127.0.0.1:6789/metrics | grep -c '^livekit_'` (сейчас ~60 метрик). **Скрейп пока не настроен.** Prometheus на самом хосте нет: `prometheus-node-exporter` (:9100) скрейпит внешний Prometheus из подсетей Yandex Cloud (`84.201.128.0/18`, `51.250.0.0/17`, `178.154.192.0/18` — разрешены в iptables только для 9100/9400). Варианты подключения, по возрастанию изменений:
@@ -660,9 +726,9 @@ authority/policy. Не отключать enforcement автоматически
 | Что | Куда (`/opt/calaba/backups`, 700 root) | Как |
 |---|---|---|
 | Postgres | `pg/calaba-<ts>.dump` | `pg_dump -Fc` через `docker exec`, проверка `pg_restore --list`, атомарный rename |
-| Загруженные файлы (`calaba_files_data`) | `files/files-<ts>.tar.zst` | `tar` + `zstd` (файлы неизменяемы после записи — живой tar консистентен) |
-| Caddy (`calaba_caddy_data`: ACME-аккаунт, сертификаты) | `caddy/caddy-<ts>.tar.zst` | чтобы после потери диска не упереться в лимиты LE |
+| Загруженные файлы (`calaba_files_data`) | `files/files-<ts>.tar.zst` | tar из read-only named volume + `zstd` |
 | Секреты стенда (`infra/docker/.env`, `.env.accounts`) | `config/env-<ts>.tar.zst` | без них восстановленный стенд — другой (JWT, пароли БД/Redis, ключи LiveKit) |
+| Сертификаты NPM | резервная копия NPM | NPM управляет LE-аккаунтом и сертификатами; Calab только читает TURN-сертификат |
 
 - Ретенция 14 дней (`RETENTION_DAYS`), `.part`-остатки чистятся. Лог — `journalctl -u calaba-backup.service`. Предупреждение в журнал, если на ФС < 10 % свободно.
 - **Offsite: TODO владелец.** Локальные копии спасают от логических ошибок (кривая миграция, удалённое пространство), но не от потери диска/хоста. `backup.sh` уже умеет: `OFFSITE_RCLONE_REMOTE=<remote:path>` в `infra/docker/.env` → `rclone sync` каталога бэкапов (rclone поставить на хост). Remote должен быть **rclone crypt** (в копиях секреты и данные пользователей).
@@ -670,7 +736,7 @@ authority/policy. Не отключать enforcement автоматически
   - `restore.sh test [dump]` — восстановить в отдельную БД `calaba_restore_test`, сравнить число строк по всем таблицам с живой БД, удалить. Проверено 2026-09-26: 12 таблиц, счётчики совпали. Делать раз в месяц (TODO: отдельный таймер).
   - `restore.sh pg <dump>` — заменить живую БД (останавливает api, спрашивает подтверждение).
   - `restore.sh files <tar.zst>` — заменить файлы (останавливает api, `chown 65532`). Архив файлов проверен распаковкой: `diff -r` с живым volume — идентично.
-  - Caddy/секреты — вручную: `zstd -dc … | tar -x` в volume `calaba_caddy_data` / в `infra/docker/`.
+  - Конфигурация/секреты — вручную: `zstd -dc … | tar -x` в `infra/docker/`; сертификаты восстанавливать средствами NPM.
   - **Биллинг после `restore.sh pg`** (ADR-0080 §7, T7): в восстановленной базе может не быть уже
     отправленных автопополнений — новая попытка списала бы второй раз. До старта api задать
     `BILLING_AUTO_TOPUP_REQUIRE_RECONCILE=restore-<дата-время>` (каждый раз новый маркер), после
@@ -680,3 +746,22 @@ authority/policy. Не отключать enforcement автоматически
     Переменную можно убрать при следующем деплое. Ручные пополнения и webhook пауза не трогает.
 - Основной `rsync` в `sync.sh` каталог `/backups/` не трогает (иначе `--delete` стёр бы копии).
 - Перенос базы с PostgreSQL 18 на 17 (ADR-0037): `pg_dump` пишет `DEFAULT uuidv7()` без схемы при пустом `search_path`, и на 17 такой дамп не восстанавливается (`function uuidv7() does not exist`). В пустой базе на 17 сначала выполнить `apps/server/internal/db/uuidv7.sql`, затем восстановить дамп со схемой в DEFAULT: `pg_restore -f - calaba.dump | sed 's/DEFAULT uuidv7()/DEFAULT public.uuidv7()/' | psql -v ON_ERROR_STOP=1 -d <база>`. Проверено 2026-09-28 (18.6 → 17.11): данные и `goose_db_version` на месте, `server migrate` ничего не применяет, новые id — v7.
+
+
+### Calendar subscriptions (ADR-0147, 4.10.0)
+
+Deploy migration 00140 with the server before the new renderer. Existing clients
+continue to work; the new menu requires the new API. `PUBLIC_APP_URL` must be the
+public HTTPS origin. QR codes use that origin, and `.ics` feeds must remain
+reachable by Apple/Google calendar fetchers without a browser session. Never
+log the `t` query parameter at a proxy, CDN or analytics collector. The bundled
+Caddy access-log filter already drops the request URI; keep that rule.
+
+Web Safari can connect after the web deployment. Connecting from inside the iOS
+WebView additionally requires the host update allowing this server's exact
+`webcal` feed URL. Desktop requires the rebuilt Electron shell for the same
+allowlist. Rotating `JWT_SECRET` invalidates subscription links; users reconnect.
+Required-SSO workspaces reject subscriptions; authenticated downloads remain
+subject to their normal policy. Test on a physical iPhone: connect once, change
+a meeting in Calab, observe a later refresh, cancel, replace/revoke the link.
+Apple controls refresh timing; cached/imported copies cannot be remotely erased.

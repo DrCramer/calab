@@ -6,7 +6,7 @@
  * (docs/02-media.md, echo rules 1 and 3).
  *
  * - denoise=true: 1 input, 1 output; output is the denoised mono signal
- *   (≈10 ms algorithmic delay + one render quantum of buffering).
+ *   (≈20 ms RNNoise delay + 448 samples / 9.3 ms of frame→quantum buffering, lib/media/frameFifo.ts).
  * - denoise=false: analysis only (0 outputs) — reports RMS, vad = -1.
  *
  * RNNoise runs on demand (lib/media/denoiseSleep.ts): the main thread sends a `DenoiseControl`
@@ -17,11 +17,11 @@ import '@rnnoise-dist/polyfills.js';
 import createRNNWasmModuleSync, { type RnnoiseWasmModule } from '@rnnoise-dist/generated/rnnoise-sync.js';
 import type { MicReport } from '../micReport';
 import { DENOISE_SLEEP, DenoiseScheduler, rmsDb, type DenoiseControl } from '../denoiseSleep';
+import { FrameFifo } from '../frameFifo';
 
 const FRAME = 480; // RNNoise frame: 10 ms @ 48 kHz
 const PCM_SCALE = 32768; // RNNoise expects int16-range floats
 const FRAMES_PER_REPORT = 2; // 2 × 10 ms = one 20 ms VAD frame
-const RING = 4096;
 const PRE_ROLL = DENOISE_SLEEP.preRollFrames;
 
 
@@ -39,10 +39,8 @@ class MicProcessor extends AudioWorkletProcessor {
   private readonly frame = new Float32Array(FRAME);
   private framePos = 0;
 
-  private readonly ring = new Float32Array(RING);
-  private rd = 0;
-  private wr = 0;
-  private avail = 0;
+  /** Denoised frames → render quanta (primed once, no underruns: lib/media/frameFifo.ts). */
+  private readonly fifo = new FrameFifo(FRAME);
 
   private framesInReport = 0;
   private sumSq = 0;
@@ -126,11 +124,7 @@ class MicProcessor extends AudioWorkletProcessor {
           sq += s * s;
         }
       }
-      for (let i = 0; i < FRAME; i++) {
-        this.ring[this.wr] = f[i] ?? 0;
-        this.wr = (this.wr + 1) % RING;
-      }
-      this.avail = Math.min(RING, this.avail + FRAME);
+      this.fifo.push(f);
     }
 
     this.sumSq += sq;
@@ -161,17 +155,7 @@ class MicProcessor extends AudioWorkletProcessor {
         }
       }
     }
-    if (output) {
-      if (this.avail >= output.length) {
-        for (let i = 0; i < output.length; i++) {
-          output[i] = this.ring[this.rd] ?? 0;
-          this.rd = (this.rd + 1) % RING;
-        }
-        this.avail -= output.length;
-      } else {
-        output.fill(0); // start-up only: until the first RNNoise frame is ready
-      }
-    }
+    if (output) this.fifo.pull(output);
     return true;
   }
 }

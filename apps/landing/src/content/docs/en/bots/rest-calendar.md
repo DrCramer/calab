@@ -37,7 +37,8 @@ A bot reads the workspace calendar, books meetings, changes and cancels them, ch
 
 ## Create a meeting
 
-`CreateCalendarEventRequest`: `title` (1..120), `description` (≤ 4000), `roomId` (a voice room; empty = none), `startsAt`, `endsAt` (after the start, at most 7 days later), `allDay`, `tz` (IANA; empty = the profile's zone, else UTC), `record`, `repeat` (`EVENT_REPEAT_DAILY`, `…_WEEKLY`, `…_BIWEEKLY`, `…_MONTHLY`), `repeatUntil`, `attendees: [{userId, required} | {email}]`.
+`CreateCalendarEventRequest`: `title` (1..120), `description` (≤ 4000), `roomId` (a voice room; empty = none), `startsAt`, `endsAt` (after the start, at most 7 days later), `allDay`, `tz` (IANA; empty = the profile's zone, else UTC), `record`, `repeat` (`EVENT_REPEAT_DAILY`, `…_WEEKLY`, `…_BIWEEKLY`, `…_MONTHLY`, `…_WORKDAYS`), `repeatUntil`, `attendees: [{userId, required} | {email}]`.
+`…_WORKDAYS` is working days: Mon–Fri, or the Russian production calendar (holidays skipped, transferred working Saturdays included) in a Russian workspace; the event's `holidayCalendar` (`"ru"` or empty) says which, fixed when the repeat is chosen.
 
 - The bot is the organizer (`organizerId` = the bot's id) but not an attendee: listing itself in `attendees` gives `422`. Bots and guests are never attendees.
 - Invitations and `invite.ics` go out from the system address as “Workspace (on behalf of bot X)”, without `Reply-To` and without room guest links: outside attendees get a link to the meeting page.

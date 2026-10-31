@@ -1,0 +1,11 @@
+{
+  // Renderer/shared unit tests only: they use process, Buffer and node:* (vitest 5 no longer brings
+  // @types/node in transitively). Renderer sources stay in tsconfig.web.json without Node types.
+  "extends": "./tsconfig.web.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/renderer/**/*.test.ts", "src/renderer/**/*.test.tsx", "src/shared/**/*.test.ts", "src/preload/api.d.ts", "src/renderer/vite-env.d.ts"],
+  "exclude": ["src/renderer/lib/media/worklets/**/*"]
+}

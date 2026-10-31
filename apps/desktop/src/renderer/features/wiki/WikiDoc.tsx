@@ -15,7 +15,6 @@ import { avatarColor } from '../../components/Avatar';
 import { Tip } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { filterCandidates, type MentionCandidate } from '../../lib/mentions';
 import { setDocHandle } from '../../lib/wiki/docHandle';
 import { toMarkdown, type PmNode } from '../../lib/wiki/markdown';
 import { docMeta, docPlainText, WIKI_FIELD } from '../../lib/wiki/plainText';
@@ -32,36 +31,14 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberAvatar } from '../boards/menus';
 import WikiEditor from './editor/WikiEditor';
 import { PhoneToolbar } from './editor/PhoneToolbar';
-import type { MentionSource, PageCandidate, PageSource, WikiEditorApi } from './editor/types';
+import type { PageCandidate, PageSource, WikiEditorApi } from './editor/types';
+import { workspaceMentions } from './workspaceMentions';
 
 /** `wss://host/api/wiki/pages/{id}/sync` from the server URL (the gateway's way). */
 function syncUrl(pageId: string): string {
   const u = new URL(`/api/wiki/pages/${pageId}/sync`, useSession.getState().serverUrl || window.location.origin);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   return u.toString();
-}
-
-/** The members of the workspace for `@`, read at call time (no subscription: typing `@` is rare). */
-function mentionSource(workspaceId: string, me: string): MentionSource {
-  return {
-    search: (q) => {
-      const members = useWorkspaces.getState().byId[workspaceId]?.members ?? {};
-      const list: MentionCandidate[] = [];
-      for (const m of Object.values(members)) {
-        const u = m.user;
-        if (!u || u.id === me) continue;
-        const name = m.nickname || u.displayName;
-        list.push({
-          id: u.id,
-          name,
-          alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [],
-          ...(u.username ? { nick: u.username } : {}),
-        });
-      }
-      return filterCandidates(q, list);
-    },
-    label: (id) => (useWorkspaces.getState().byId[workspaceId]?.members[id] ? memberName(workspaceId, id) : undefined),
-  };
 }
 
 const PICK_MAX = 10;
@@ -201,7 +178,7 @@ export default function WikiDoc({ workspaceId, pageId, editable, editing, phone 
   }, [doc, pageId, editable]);
 
   const user = useMemo(() => ({ id: me, name: myName, color: avatarColor(me) }), [me, myName]);
-  const mentions = useMemo(() => mentionSource(workspaceId, me), [workspaceId, me]);
+  const mentions = useMemo(() => workspaceMentions(workspaceId, me), [workspaceId, me]);
   const pages = useMemo(() => pageSource(workspaceId, pageId), [workspaceId, pageId]);
   const upload = useCallback((f: File) => uploadImage(pageId, f), [pageId]);
   const onError = useCallback((m: string) => toast.error(m), []);
@@ -210,7 +187,7 @@ export default function WikiDoc({ workspaceId, pageId, editable, editing, phone 
     <>
       {phone ? <PeersReporter awareness={awareness} me={me} /> : <MetaLine workspaceId={workspaceId} pageId={pageId} awareness={awareness} me={me} />}
       <WikiEditor doc={doc} awareness={awareness} editable={editable && editing} me={user} onUploadImage={upload} mentionSource={mentions} pageSource={pages} onError={onError} onReady={onReady} phone={phone} className={phone ? 'mt-2' : 'mt-4'} />
-      {phone && editable && editing && toolbarHost && phoneApi ? createPortal(<PhoneToolbar editor={phoneApi.editor} onBlocks={() => phoneApi.openBlocks()} />, toolbarHost) : null}
+      {phone && editable && editing && toolbarHost && phoneApi ? createPortal(<PhoneToolbar pages={pages} editor={phoneApi.editor} onBlocks={() => phoneApi.openBlocks()} />, toolbarHost) : null}
     </>
   );
 }

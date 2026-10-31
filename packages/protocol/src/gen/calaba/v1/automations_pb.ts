@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/automations.proto.
  */
 export const file_calaba_v1_automations: GenFile = /*@__PURE__*/
-  fileDesc("ChtjYWxhYmEvdjEvYXV0b21hdGlvbnMucHJvdG8SCWNhbGFiYS52MSKICgoLUnVsZVRyaWdnZXISOgoMdGFza19jcmVhdGVkGAEgASgLMiIuY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyLlRhc2tDcmVhdGVkSAASPgoOc3RhdHVzX2NoYW5nZWQYAiABKAsyJC5jYWxhYmEudjEuUnVsZVRyaWdnZXIuU3RhdHVzQ2hhbmdlZEgAEkIKEGFwcHJvdmFsX2NoYW5nZWQYAyABKAsyJi5jYWxhYmEudjEuUnVsZVRyaWdnZXIuQXBwcm92YWxDaGFuZ2VkSAASRAoRYXNzaWduZWVzX2NoYW5nZWQYBCABKAsyJy5jYWxhYmEudjEuUnVsZVRyaWdnZXIuQXNzaWduZWVzQ2hhbmdlZEgAEjwKDWxhYmVsX2NoYW5nZWQYBSABKAsyIy5jYWxhYmEudjEuUnVsZVRyaWdnZXIuTGFiZWxDaGFuZ2VkSAASQgoQcHJpb3JpdHlfY2hhbmdlZBgGIAEoCzImLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5Qcmlvcml0eUNoYW5nZWRIABJIChNjaGVja2xpc3RfY29tcGxldGVkGAcgASgLMikuY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyLkNoZWNrbGlzdENvbXBsZXRlZEgAEkAKD2NvbW1lbnRfY3JlYXRlZBgIIAEoCzIlLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5Db21tZW50Q3JlYXRlZEgAEikKA2dpdBgJIAEoCzIaLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5HaXRIABIuCgZkdWVfaW4YCiABKAsyHC5jYWxhYmEudjEuUnVsZVRyaWdnZXIuRHVlSW5IABIxCgdvdmVyZHVlGAsgASgLMh4uY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyLk92ZXJkdWVIABItCgVzdGFsZRgMIAEoCzIcLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5TdGFsZUgAGg0KC1Rhc2tDcmVhdGVkGmoKDVN0YXR1c0NoYW5nZWQSFAoMdG9fc3RhdHVzX2lkGAEgASgJEhYKDmZyb21fc3RhdHVzX2lkGAIgASgJEisKB3RvX3R5cGUYAyABKA4yGi5jYWxhYmEudjEuQm9hcmRTdGF0dXNUeXBlGj4KD0FwcHJvdmFsQ2hhbmdlZBIrCgVzdGF0ZRgBIAEoDjIcLmNhbGFiYS52MS5UYXNrQXBwcm92YWxTdGF0ZRpAChBBc3NpZ25lZXNDaGFuZ2VkEg0KBWFkZGVkGAEgASgIEg8KB3JlbW92ZWQYAiABKAgSDAoEbGVhZBgDIAEoCBovCgxMYWJlbENoYW5nZWQSEAoIbGFiZWxfaWQYASABKAkSDQoFYWRkZWQYAiABKAgaVAoPUHJpb3JpdHlDaGFuZ2VkEjEKC3RvX3ByaW9yaXR5GAEgASgOMhcuY2FsYWJhLnYxLlRhc2tQcmlvcml0eUgAiAEBQg4KDF90b19wcmlvcml0eRoUChJDaGVja2xpc3RDb21wbGV0ZWQaEAoOQ29tbWVudENyZWF0ZWQaLQoDR2l0EiYKBWV2ZW50GAEgASgOMhcuY2FsYWJhLnYxLlJ1bGVHaXRFdmVudBoVCgVEdWVJbhIMCgRkYXlzGAEgASgNGhcKB092ZXJkdWUSDAoEZGF5cxgBIAEoDRoVCgVTdGFsZRIMCgRkYXlzGAEgASgNQgYKBGtpbmQipwoKClJ1bGVBY3Rpb24SNQoKc2V0X3N0YXR1cxgBIAEoCzIfLmNhbGFiYS52MS5SdWxlQWN0aW9uLlNldFN0YXR1c0gAEjsKDXNldF9hc3NpZ25lZXMYAiABKAsyIi5jYWxhYmEudjEuUnVsZUFjdGlvbi5TZXRBc3NpZ25lZXNIABI1CgpzZXRfbGFiZWxzGAMgASgLMh8uY2FsYWJhLnYxLlJ1bGVBY3Rpb24uU2V0TGFiZWxzSAASOQoMc2V0X3ByaW9yaXR5GAQgASgLMiEuY2FsYWJhLnYxLlJ1bGVBY3Rpb24uU2V0UHJpb3JpdHlIABIvCgdzZXRfZHVlGAUgASgLMhwuY2FsYWJhLnYxLlJ1bGVBY3Rpb24uU2V0RHVlSAASOwoNc2V0X2FwcHJvdmVycxgGIAEoCzIiLmNhbGFiYS52MS5SdWxlQWN0aW9uLlNldEFwcHJvdmVyc0gAEjsKDWFkZF9jaGVja2xpc3QYByABKAsyIi5jYWxhYmEudjEuUnVsZUFjdGlvbi5BZGRDaGVja2xpc3RIABIwCgdjb21tZW50GAggASgLMh0uY2FsYWJhLnYxLlJ1bGVBY3Rpb24uQ29tbWVudEgAEjcKC25vdGlmeV9yb29tGAkgASgLMiAuY2FsYWJhLnYxLlJ1bGVBY3Rpb24uTm90aWZ5Um9vbUgAEjMKCW5vdGlmeV9kbRgKIAEoCzIeLmNhbGFiYS52MS5SdWxlQWN0aW9uLk5vdGlmeURtSAASPwoPY3JlYXRlX3N1YnRhc2tzGAsgASgLMiQuY2FsYWJhLnYxLlJ1bGVBY3Rpb24uQ3JlYXRlU3VidGFza3NIABIwCgdhcmNoaXZlGAwgASgLMh0uY2FsYWJhLnYxLlJ1bGVBY3Rpb24uQXJjaGl2ZUgAGh4KCVNldFN0YXR1cxIRCglzdGF0dXNfaWQYASABKAkajwEKDFNldEFzc2lnbmVlcxIqCgRtb2RlGAEgASgOMhwuY2FsYWJhLnYxLlJ1bGVBc3NpZ25lZXNNb2RlEhAKCHVzZXJfaWRzGAIgAygJEhQKDGxlYWRfdXNlcl9pZBgDIAEoCRIrCgdzcGVjaWFsGAQgASgOMhouY2FsYWJhLnYxLlJ1bGVTcGVjaWFsVXNlchowCglTZXRMYWJlbHMSDwoHYWRkX2lkcxgBIAMoCRISCgpyZW1vdmVfaWRzGAIgAygJGjgKC1NldFByaW9yaXR5EikKCHByaW9yaXR5GAEgASgOMhcuY2FsYWJhLnYxLlRhc2tQcmlvcml0eRouCgZTZXREdWUSFQoNZGF5c19mcm9tX25vdxgBIAEoDRINCgVjbGVhchgCIAEoCBoyCgxTZXRBcHByb3ZlcnMSEAoIdXNlcl9pZHMYASADKAkSEAoIcmVxdWlyZWQYAiABKA0aKwoMQWRkQ2hlY2tsaXN0EgwKBG5hbWUYASABKAkSDQoFaXRlbXMYAiADKAkaGwoHQ29tbWVudBIQCgh0ZW1wbGF0ZRgBIAEoCRovCgpOb3RpZnlSb29tEg8KB3Jvb21faWQYASABKAkSEAoIdGVtcGxhdGUYAiABKAkaQwoITm90aWZ5RG0SJQoCdG8YASABKA4yGS5jYWxhYmEudjEuUnVsZVJlY2lwaWVudHMSEAoIdGVtcGxhdGUYAiABKAkaIAoOQ3JlYXRlU3VidGFza3MSDgoGdGl0bGVzGAEgAygJGgkKB0FyY2hpdmVCBgoEa2luZCKiAwoJQm9hcmRSdWxlEgoKAmlkGAEgASgJEhAKCGJvYXJkX2lkGAIgASgJEgwKBG5hbWUYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIQCghwb3NpdGlvbhgFIAEoBRInCgd0cmlnZ2VyGAYgASgLMhYuY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyEigKCWNvbmRpdGlvbhgHIAEoCzIVLmNhbGFiYS52MS5UYXNrRmlsdGVyEiYKB2FjdGlvbnMYCCADKAsyFS5jYWxhYmEudjEuUnVsZUFjdGlvbhISCgpjcmVhdGVkX2J5GAkgASgJEi4KCmNyZWF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnJ1bnNfY291bnQYDCABKA0SLwoLbGFzdF9ydW5fYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmxhc3RfZXJyb3IYDiABKAkiPQoWTGlzdEJvYXJkUnVsZXNSZXNwb25zZRIjCgVydWxlcxgBIAMoCzIULmNhbGFiYS52MS5Cb2FyZFJ1bGUiwwEKFkNyZWF0ZUJvYXJkUnVsZVJlcXVlc3QSDAoEbmFtZRgBIAEoCRIUCgdlbmFibGVkGAIgASgISACIAQESJwoHdHJpZ2dlchgDIAEoCzIWLmNhbGFiYS52MS5SdWxlVHJpZ2dlchIoCgljb25kaXRpb24YBCABKAsyFS5jYWxhYmEudjEuVGFza0ZpbHRlchImCgdhY3Rpb25zGAUgAygLMhUuY2FsYWJhLnYxLlJ1bGVBY3Rpb25CCgoIX2VuYWJsZWQiowIKFlVwZGF0ZUJvYXJkUnVsZVJlcXVlc3QSEQoEbmFtZRgBIAEoCUgAiAEBEhQKB2VuYWJsZWQYAiABKAhIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEicKB3RyaWdnZXIYBCABKAsyFi5jYWxhYmEudjEuUnVsZVRyaWdnZXISKAoJY29uZGl0aW9uGAUgASgLMhUuY2FsYWJhLnYxLlRhc2tGaWx0ZXISFwoPY2xlYXJfY29uZGl0aW9uGAYgASgIEhMKC3NldF9hY3Rpb25zGAcgASgIEiYKB2FjdGlvbnMYCCADKAsyFS5jYWxhYmEudjEuUnVsZUFjdGlvbkIHCgVfbmFtZUIKCghfZW5hYmxlZEILCglfcG9zaXRpb24iNwoRQm9hcmRSdWxlUmVzcG9uc2USIgoEcnVsZRgBIAEoCzIULmNhbGFiYS52MS5Cb2FyZFJ1bGUiJwoUVGVzdEJvYXJkUnVsZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCSKSAQoQUnVsZVRlc3RSZXNwb25zZRIPCgdtYXRjaGVzGAEgASgIEjMKB2FjdGlvbnMYAiADKAsyIi5jYWxhYmEudjEuUnVsZVRlc3RSZXNwb25zZS5BY3Rpb24aOAoGQWN0aW9uEgwKBGtpbmQYASABKAkSDwoHc3VtbWFyeRgCIAEoCRIPCgdwcm9ibGVtGAMgASgJIrEBCgdSdWxlUnVuEgoKAmlkGAEgASgJEg8KB3J1bGVfaWQYAiABKAkSDwoHdGFza19pZBgDIAEoCRIUCgx0cmlnZ2VyX2tpbmQYBCABKAkSCgoCb2sYBSABKAgSDQoFZXJyb3IYBiABKAkSFwoPYWN0aW9uc19hcHBsaWVkGAcgASgNEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIjgKFExpc3RSdWxlUnVuc1Jlc3BvbnNlEiAKBHJ1bnMYASADKAsyEi5jYWxhYmEudjEuUnVsZVJ1biKIAgoIQm9hcmRHaXQSEAoIYm9hcmRfaWQYASABKAkSKAoIcHJvdmlkZXIYAiABKA4yFi5jYWxhYmEudjEuR2l0UHJvdmlkZXISEgoKaGFzX3NlY3JldBgDIAEoCBILCgN1cmwYBCABKAkSMQoNbGFzdF9ldmVudF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMZXZlbnRzX2NvdW50GAYgASgNEhIKCmxhc3RfZXJyb3IYByABKAkSEgoKY3JlYXRlZF9ieRgIIAEoCRIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJOChJTZXRCb2FyZEdpdFJlcXVlc3QSKAoIcHJvdmlkZXIYASABKA4yFi5jYWxhYmEudjEuR2l0UHJvdmlkZXISDgoGc2VjcmV0GAIgASgJIkQKEEJvYXJkR2l0UmVzcG9uc2USIAoDZ2l0GAEgASgLMhMuY2FsYWJhLnYxLkJvYXJkR2l0Eg4KBnNlY3JldBgCIAEoCSJdCg9Cb2FyZFJ1bGVVcGRhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhAKCGJvYXJkX2lkGAIgASgJEiIKBHJ1bGUYAyABKAsyFC5jYWxhYmEudjEuQm9hcmRSdWxlIkoKD0JvYXJkUnVsZURlbGV0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSEAoIYm9hcmRfaWQYAiABKAkSDwoHcnVsZV9pZBgDIAEoCSrNAQoMUnVsZUdpdEV2ZW50Eh4KGlJVTEVfR0lUX0VWRU5UX1VOU1BFQ0lGSUVEEAASIQodUlVMRV9HSVRfRVZFTlRfQlJBTkNIX0NSRUFURUQQARIcChhSVUxFX0dJVF9FVkVOVF9QUl9PUEVORUQQAhIcChhSVUxFX0dJVF9FVkVOVF9QUl9NRVJHRUQQAxIcChhSVUxFX0dJVF9FVkVOVF9QUl9DTE9TRUQQBBIgChxSVUxFX0dJVF9FVkVOVF9DT01NSVRfUFVTSEVEEAUqsQEKEVJ1bGVBc3NpZ25lZXNNb2RlEiMKH1JVTEVfQVNTSUdORUVTX01PREVfVU5TUEVDSUZJRUQQABIbChdSVUxFX0FTU0lHTkVFU19NT0RFX1NFVBABEhsKF1JVTEVfQVNTSUdORUVTX01PREVfQUREEAISHgoaUlVMRV9BU1NJR05FRVNfTU9ERV9SRU1PVkUQAxIdChlSVUxFX0FTU0lHTkVFU19NT0RFX0NMRUFSEAQqcAoPUnVsZVNwZWNpYWxVc2VyEiEKHVJVTEVfU1BFQ0lBTF9VU0VSX1VOU1BFQ0lGSUVEEAASHQoZUlVMRV9TUEVDSUFMX1VTRVJfQ1JFQVRPUhABEhsKF1JVTEVfU1BFQ0lBTF9VU0VSX0FDVE9SEAIqpgEKDlJ1bGVSZWNpcGllbnRzEh8KG1JVTEVfUkVDSVBJRU5UU19VTlNQRUNJRklFRBAAEh0KGVJVTEVfUkVDSVBJRU5UU19BU1NJR05FRVMQARIYChRSVUxFX1JFQ0lQSUVOVFNfTEVBRBACEhsKF1JVTEVfUkVDSVBJRU5UU19DUkVBVE9SEAMSHQoZUlVMRV9SRUNJUElFTlRTX0FQUFJPVkVSUxAEQp4BCg1jb20uY2FsYWJhLnYxQhBBdXRvbWF0aW9uc1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_boards]);
+  fileDesc("ChtjYWxhYmEvdjEvYXV0b21hdGlvbnMucHJvdG8SCWNhbGFiYS52MSL1CgoLUnVsZVRyaWdnZXISOgoMdGFza19jcmVhdGVkGAEgASgLMiIuY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyLlRhc2tDcmVhdGVkSAASPgoOc3RhdHVzX2NoYW5nZWQYAiABKAsyJC5jYWxhYmEudjEuUnVsZVRyaWdnZXIuU3RhdHVzQ2hhbmdlZEgAEkIKEGFwcHJvdmFsX2NoYW5nZWQYAyABKAsyJi5jYWxhYmEudjEuUnVsZVRyaWdnZXIuQXBwcm92YWxDaGFuZ2VkSAASRAoRYXNzaWduZWVzX2NoYW5nZWQYBCABKAsyJy5jYWxhYmEudjEuUnVsZVRyaWdnZXIuQXNzaWduZWVzQ2hhbmdlZEgAEjwKDWxhYmVsX2NoYW5nZWQYBSABKAsyIy5jYWxhYmEudjEuUnVsZVRyaWdnZXIuTGFiZWxDaGFuZ2VkSAASQgoQcHJpb3JpdHlfY2hhbmdlZBgGIAEoCzImLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5Qcmlvcml0eUNoYW5nZWRIABJIChNjaGVja2xpc3RfY29tcGxldGVkGAcgASgLMikuY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyLkNoZWNrbGlzdENvbXBsZXRlZEgAEkAKD2NvbW1lbnRfY3JlYXRlZBgIIAEoCzIlLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5Db21tZW50Q3JlYXRlZEgAEikKA2dpdBgJIAEoCzIaLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5HaXRIABIuCgZkdWVfaW4YCiABKAsyHC5jYWxhYmEudjEuUnVsZVRyaWdnZXIuRHVlSW5IABIxCgdvdmVyZHVlGAsgASgLMh4uY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyLk92ZXJkdWVIABItCgVzdGFsZRgMIAEoCzIcLmNhbGFiYS52MS5SdWxlVHJpZ2dlci5TdGFsZUgAEjEKB3JlbGVhc2UYDSABKAsyHi5jYWxhYmEudjEuUnVsZVRyaWdnZXIuUmVsZWFzZUgAGg0KC1Rhc2tDcmVhdGVkGmoKDVN0YXR1c0NoYW5nZWQSFAoMdG9fc3RhdHVzX2lkGAEgASgJEhYKDmZyb21fc3RhdHVzX2lkGAIgASgJEisKB3RvX3R5cGUYAyABKA4yGi5jYWxhYmEudjEuQm9hcmRTdGF0dXNUeXBlGj4KD0FwcHJvdmFsQ2hhbmdlZBIrCgVzdGF0ZRgBIAEoDjIcLmNhbGFiYS52MS5UYXNrQXBwcm92YWxTdGF0ZRpAChBBc3NpZ25lZXNDaGFuZ2VkEg0KBWFkZGVkGAEgASgIEg8KB3JlbW92ZWQYAiABKAgSDAoEbGVhZBgDIAEoCBovCgxMYWJlbENoYW5nZWQSEAoIbGFiZWxfaWQYASABKAkSDQoFYWRkZWQYAiABKAgaVAoPUHJpb3JpdHlDaGFuZ2VkEjEKC3RvX3ByaW9yaXR5GAEgASgOMhcuY2FsYWJhLnYxLlRhc2tQcmlvcml0eUgAiAEBQg4KDF90b19wcmlvcml0eRoUChJDaGVja2xpc3RDb21wbGV0ZWQaEAoOQ29tbWVudENyZWF0ZWQaRgoDR2l0EiYKBWV2ZW50GAEgASgOMhcuY2FsYWJhLnYxLlJ1bGVHaXRFdmVudBIXCg90YXJnZXRfYnJhbmNoZXMYAiADKAkaFQoFRHVlSW4SDAoEZGF5cxgBIAEoDRoXCgdPdmVyZHVlEgwKBGRheXMYASABKA0aFQoFU3RhbGUSDAoEZGF5cxgBIAEoDRofCgdSZWxlYXNlEhQKDGVudmlyb25tZW50cxgBIAMoCUIGCgRraW5kIqcKCgpSdWxlQWN0aW9uEjUKCnNldF9zdGF0dXMYASABKAsyHy5jYWxhYmEudjEuUnVsZUFjdGlvbi5TZXRTdGF0dXNIABI7Cg1zZXRfYXNzaWduZWVzGAIgASgLMiIuY2FsYWJhLnYxLlJ1bGVBY3Rpb24uU2V0QXNzaWduZWVzSAASNQoKc2V0X2xhYmVscxgDIAEoCzIfLmNhbGFiYS52MS5SdWxlQWN0aW9uLlNldExhYmVsc0gAEjkKDHNldF9wcmlvcml0eRgEIAEoCzIhLmNhbGFiYS52MS5SdWxlQWN0aW9uLlNldFByaW9yaXR5SAASLwoHc2V0X2R1ZRgFIAEoCzIcLmNhbGFiYS52MS5SdWxlQWN0aW9uLlNldER1ZUgAEjsKDXNldF9hcHByb3ZlcnMYBiABKAsyIi5jYWxhYmEudjEuUnVsZUFjdGlvbi5TZXRBcHByb3ZlcnNIABI7Cg1hZGRfY2hlY2tsaXN0GAcgASgLMiIuY2FsYWJhLnYxLlJ1bGVBY3Rpb24uQWRkQ2hlY2tsaXN0SAASMAoHY29tbWVudBgIIAEoCzIdLmNhbGFiYS52MS5SdWxlQWN0aW9uLkNvbW1lbnRIABI3Cgtub3RpZnlfcm9vbRgJIAEoCzIgLmNhbGFiYS52MS5SdWxlQWN0aW9uLk5vdGlmeVJvb21IABIzCglub3RpZnlfZG0YCiABKAsyHi5jYWxhYmEudjEuUnVsZUFjdGlvbi5Ob3RpZnlEbUgAEj8KD2NyZWF0ZV9zdWJ0YXNrcxgLIAEoCzIkLmNhbGFiYS52MS5SdWxlQWN0aW9uLkNyZWF0ZVN1YnRhc2tzSAASMAoHYXJjaGl2ZRgMIAEoCzIdLmNhbGFiYS52MS5SdWxlQWN0aW9uLkFyY2hpdmVIABoeCglTZXRTdGF0dXMSEQoJc3RhdHVzX2lkGAEgASgJGo8BCgxTZXRBc3NpZ25lZXMSKgoEbW9kZRgBIAEoDjIcLmNhbGFiYS52MS5SdWxlQXNzaWduZWVzTW9kZRIQCgh1c2VyX2lkcxgCIAMoCRIUCgxsZWFkX3VzZXJfaWQYAyABKAkSKwoHc3BlY2lhbBgEIAEoDjIaLmNhbGFiYS52MS5SdWxlU3BlY2lhbFVzZXIaMAoJU2V0TGFiZWxzEg8KB2FkZF9pZHMYASADKAkSEgoKcmVtb3ZlX2lkcxgCIAMoCRo4CgtTZXRQcmlvcml0eRIpCghwcmlvcml0eRgBIAEoDjIXLmNhbGFiYS52MS5UYXNrUHJpb3JpdHkaLgoGU2V0RHVlEhUKDWRheXNfZnJvbV9ub3cYASABKA0SDQoFY2xlYXIYAiABKAgaMgoMU2V0QXBwcm92ZXJzEhAKCHVzZXJfaWRzGAEgAygJEhAKCHJlcXVpcmVkGAIgASgNGisKDEFkZENoZWNrbGlzdBIMCgRuYW1lGAEgASgJEg0KBWl0ZW1zGAIgAygJGhsKB0NvbW1lbnQSEAoIdGVtcGxhdGUYASABKAkaLwoKTm90aWZ5Um9vbRIPCgdyb29tX2lkGAEgASgJEhAKCHRlbXBsYXRlGAIgASgJGkMKCE5vdGlmeURtEiUKAnRvGAEgASgOMhkuY2FsYWJhLnYxLlJ1bGVSZWNpcGllbnRzEhAKCHRlbXBsYXRlGAIgASgJGiAKDkNyZWF0ZVN1YnRhc2tzEg4KBnRpdGxlcxgBIAMoCRoJCgdBcmNoaXZlQgYKBGtpbmQiogMKCUJvYXJkUnVsZRIKCgJpZBgBIAEoCRIQCghib2FyZF9pZBgCIAEoCRIMCgRuYW1lGAMgASgJEg8KB2VuYWJsZWQYBCABKAgSEAoIcG9zaXRpb24YBSABKAUSJwoHdHJpZ2dlchgGIAEoCzIWLmNhbGFiYS52MS5SdWxlVHJpZ2dlchIoCgljb25kaXRpb24YByABKAsyFS5jYWxhYmEudjEuVGFza0ZpbHRlchImCgdhY3Rpb25zGAggAygLMhUuY2FsYWJhLnYxLlJ1bGVBY3Rpb24SEgoKY3JlYXRlZF9ieRgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpydW5zX2NvdW50GAwgASgNEi8KC2xhc3RfcnVuX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpsYXN0X2Vycm9yGA4gASgJIj0KFkxpc3RCb2FyZFJ1bGVzUmVzcG9uc2USIwoFcnVsZXMYASADKAsyFC5jYWxhYmEudjEuQm9hcmRSdWxlIsMBChZDcmVhdGVCb2FyZFJ1bGVSZXF1ZXN0EgwKBG5hbWUYASABKAkSFAoHZW5hYmxlZBgCIAEoCEgAiAEBEicKB3RyaWdnZXIYAyABKAsyFi5jYWxhYmEudjEuUnVsZVRyaWdnZXISKAoJY29uZGl0aW9uGAQgASgLMhUuY2FsYWJhLnYxLlRhc2tGaWx0ZXISJgoHYWN0aW9ucxgFIAMoCzIVLmNhbGFiYS52MS5SdWxlQWN0aW9uQgoKCF9lbmFibGVkIqMCChZVcGRhdGVCb2FyZFJ1bGVSZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIUCgdlbmFibGVkGAIgASgISAGIAQESFQoIcG9zaXRpb24YAyABKAVIAogBARInCgd0cmlnZ2VyGAQgASgLMhYuY2FsYWJhLnYxLlJ1bGVUcmlnZ2VyEigKCWNvbmRpdGlvbhgFIAEoCzIVLmNhbGFiYS52MS5UYXNrRmlsdGVyEhcKD2NsZWFyX2NvbmRpdGlvbhgGIAEoCBITCgtzZXRfYWN0aW9ucxgHIAEoCBImCgdhY3Rpb25zGAggAygLMhUuY2FsYWJhLnYxLlJ1bGVBY3Rpb25CBwoFX25hbWVCCgoIX2VuYWJsZWRCCwoJX3Bvc2l0aW9uIjcKEUJvYXJkUnVsZVJlc3BvbnNlEiIKBHJ1bGUYASABKAsyFC5jYWxhYmEudjEuQm9hcmRSdWxlIicKFFRlc3RCb2FyZFJ1bGVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkikgEKEFJ1bGVUZXN0UmVzcG9uc2USDwoHbWF0Y2hlcxgBIAEoCBIzCgdhY3Rpb25zGAIgAygLMiIuY2FsYWJhLnYxLlJ1bGVUZXN0UmVzcG9uc2UuQWN0aW9uGjgKBkFjdGlvbhIMCgRraW5kGAEgASgJEg8KB3N1bW1hcnkYAiABKAkSDwoHcHJvYmxlbRgDIAEoCSKxAQoHUnVsZVJ1bhIKCgJpZBgBIAEoCRIPCgdydWxlX2lkGAIgASgJEg8KB3Rhc2tfaWQYAyABKAkSFAoMdHJpZ2dlcl9raW5kGAQgASgJEgoKAm9rGAUgASgIEg0KBWVycm9yGAYgASgJEhcKD2FjdGlvbnNfYXBwbGllZBgHIAEoDRIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI4ChRMaXN0UnVsZVJ1bnNSZXNwb25zZRIgCgRydW5zGAEgAygLMhIuY2FsYWJhLnYxLlJ1bGVSdW4i3QIKCEJvYXJkR2l0EhAKCGJvYXJkX2lkGAEgASgJEigKCHByb3ZpZGVyGAIgASgOMhYuY2FsYWJhLnYxLkdpdFByb3ZpZGVyEhIKCmhhc19zZWNyZXQYAyABKAgSCwoDdXJsGAQgASgJEjEKDWxhc3RfZXZlbnRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGV2ZW50c19jb3VudBgGIAEoDRISCgpsYXN0X2Vycm9yGAcgASgJEhIKCmNyZWF0ZWRfYnkYCCABKAkSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIYmFja2xpbmsYCiABKAgSFQoNaGFzX2FwaV90b2tlbhgLIAEoCBISCgpnaXRsYWJfdXJsGAwgASgJEhYKDmJhY2tsaW5rX2Vycm9yGA0gASgJIk4KElNldEJvYXJkR2l0UmVxdWVzdBIoCghwcm92aWRlchgBIAEoDjIWLmNhbGFiYS52MS5HaXRQcm92aWRlchIOCgZzZWNyZXQYAiABKAkiiQEKFVVwZGF0ZUJvYXJkR2l0UmVxdWVzdBIVCghiYWNrbGluaxgBIAEoCEgAiAEBEhYKCWFwaV90b2tlbhgCIAEoCUgBiAEBEhcKCmdpdGxhYl91cmwYAyABKAlIAogBAUILCglfYmFja2xpbmtCDAoKX2FwaV90b2tlbkINCgtfZ2l0bGFiX3VybCJEChBCb2FyZEdpdFJlc3BvbnNlEiAKA2dpdBgBIAEoCzITLmNhbGFiYS52MS5Cb2FyZEdpdBIOCgZzZWNyZXQYAiABKAki8gEKDEJvYXJkUmVsZWFzZRIKCgJpZBgBIAEoCRIQCghib2FyZF9pZBgCIAEoCRIMCgRuYW1lGAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEgsKA3NoYRgFIAEoCRILCgN1cmwYBiABKAkSEgoKY3JlYXRlZF9ieRgHIAEoCRIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgt0YXNrc19jb3VudBgKIAEoDSJ8ChlDcmVhdGVCb2FyZFJlbGVhc2VSZXF1ZXN0EgwKBG5hbWUYASABKAkSCwoDc2hhGAIgASgJEg8KB2NvbW1pdHMYAyADKAkSCwoDdXJsGAQgASgJEhMKC2Vudmlyb25tZW50GAUgASgJEhEKCXRhc2tfa2V5cxgGIAMoCSKOAQoUQm9hcmRSZWxlYXNlUmVzcG9uc2USKAoHcmVsZWFzZRgBIAEoCzIXLmNhbGFiYS52MS5Cb2FyZFJlbGVhc2USDwoHY3JlYXRlZBgCIAEoCBISCgphZGRlZF9rZXlzGAMgAygJEhQKDHVua25vd25fa2V5cxgEIAMoCRIRCgl0cnVuY2F0ZWQYBSABKAgiRgoZTGlzdEJvYXJkUmVsZWFzZXNSZXNwb25zZRIpCghyZWxlYXNlcxgBIAMoCzIXLmNhbGFiYS52MS5Cb2FyZFJlbGVhc2UiXQoPQm9hcmRSdWxlVXBkYXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIQCghib2FyZF9pZBgCIAEoCRIiCgRydWxlGAMgASgLMhQuY2FsYWJhLnYxLkJvYXJkUnVsZSJKCg9Cb2FyZFJ1bGVEZWxldGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhAKCGJvYXJkX2lkGAIgASgJEg8KB3J1bGVfaWQYAyABKAkq1gIKDFJ1bGVHaXRFdmVudBIeChpSVUxFX0dJVF9FVkVOVF9VTlNQRUNJRklFRBAAEiEKHVJVTEVfR0lUX0VWRU5UX0JSQU5DSF9DUkVBVEVEEAESHAoYUlVMRV9HSVRfRVZFTlRfUFJfT1BFTkVEEAISHAoYUlVMRV9HSVRfRVZFTlRfUFJfTUVSR0VEEAMSHAoYUlVMRV9HSVRfRVZFTlRfUFJfQ0xPU0VEEAQSIAocUlVMRV9HSVRfRVZFTlRfQ09NTUlUX1BVU0hFRBAFEiIKHlJVTEVfR0lUX0VWRU5UX1BSX0RSQUZUX09QRU5FRBAGEhsKF1JVTEVfR0lUX0VWRU5UX1BSX1JFQURZEAcSJgoiUlVMRV9HSVRfRVZFTlRfUFJfUkVWSUVXX1JFUVVFU1RFRBAIEh4KGlJVTEVfR0lUX0VWRU5UX1BSX0FQUFJPVkVEEAkqsQEKEVJ1bGVBc3NpZ25lZXNNb2RlEiMKH1JVTEVfQVNTSUdORUVTX01PREVfVU5TUEVDSUZJRUQQABIbChdSVUxFX0FTU0lHTkVFU19NT0RFX1NFVBABEhsKF1JVTEVfQVNTSUdORUVTX01PREVfQUREEAISHgoaUlVMRV9BU1NJR05FRVNfTU9ERV9SRU1PVkUQAxIdChlSVUxFX0FTU0lHTkVFU19NT0RFX0NMRUFSEAQqcAoPUnVsZVNwZWNpYWxVc2VyEiEKHVJVTEVfU1BFQ0lBTF9VU0VSX1VOU1BFQ0lGSUVEEAASHQoZUlVMRV9TUEVDSUFMX1VTRVJfQ1JFQVRPUhABEhsKF1JVTEVfU1BFQ0lBTF9VU0VSX0FDVE9SEAIqpgEKDlJ1bGVSZWNpcGllbnRzEh8KG1JVTEVfUkVDSVBJRU5UU19VTlNQRUNJRklFRBAAEh0KGVJVTEVfUkVDSVBJRU5UU19BU1NJR05FRVMQARIYChRSVUxFX1JFQ0lQSUVOVFNfTEVBRBACEhsKF1JVTEVfUkVDSVBJRU5UU19DUkVBVE9SEAMSHQoZUlVMRV9SRUNJUElFTlRTX0FQUFJPVkVSUxAEQp4BCg1jb20uY2FsYWJhLnYxQhBBdXRvbWF0aW9uc1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_boards]);
 
 /**
  * When a rule runs. Change triggers come from the task journal of the change (the same
@@ -99,6 +99,12 @@ export type RuleTrigger = Message<"calaba.v1.RuleTrigger"> & {
      */
     value: RuleTrigger_Stale;
     case: "stale";
+  } | {
+    /**
+     * @generated from field: calaba.v1.RuleTrigger.Release release = 13;
+     */
+    value: RuleTrigger_Release;
+    case: "release";
   } | { case: undefined; value?: undefined };
 };
 
@@ -275,6 +281,11 @@ export const RuleTrigger_CommentCreatedSchema: GenMessage<RuleTrigger_CommentCre
   messageDesc(file_calaba_v1_automations, 0, 7);
 
 /**
+ * target_branches: the pull request's target branch must match one of them, an exact name or
+ * a glob («*» any characters, «/» included; «?» one): ["main"], ["release/*"]. Empty = any
+ * branch; a non-empty list never matches a branch or commit event (they have no target).
+ * At most 10 patterns of at most 200 characters, no spaces.
+ *
  * @generated from message calaba.v1.RuleTrigger.Git
  */
 export type RuleTrigger_Git = Message<"calaba.v1.RuleTrigger.Git"> & {
@@ -282,6 +293,11 @@ export type RuleTrigger_Git = Message<"calaba.v1.RuleTrigger.Git"> & {
    * @generated from field: calaba.v1.RuleGitEvent event = 1;
    */
   event: RuleGitEvent;
+
+  /**
+   * @generated from field: repeated string target_branches = 2;
+   */
+  targetBranches: string[];
 };
 
 /**
@@ -355,8 +371,32 @@ export const RuleTrigger_StaleSchema: GenMessage<RuleTrigger_Stale> = /*@__PURE_
   messageDesc(file_calaba_v1_automations, 0, 11);
 
 /**
+ * The task entered a release (board task #101; POST /api/boards/{id}/releases), once per task
+ * and environment. environments: the release's environment is one of them («prod»); empty =
+ * any. At most 10, each of the release environment form.
+ *
+ * @generated from message calaba.v1.RuleTrigger.Release
+ */
+export type RuleTrigger_Release = Message<"calaba.v1.RuleTrigger.Release"> & {
+  /**
+   * @generated from field: repeated string environments = 1;
+   */
+  environments: string[];
+};
+
+/**
+ * Describes the message calaba.v1.RuleTrigger.Release.
+ * Use `create(RuleTrigger_ReleaseSchema)` to create a new message.
+ */
+export const RuleTrigger_ReleaseSchema: GenMessage<RuleTrigger_Release> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_automations, 0, 12);
+
+/**
  * What a rule does. Templates (≤ 2000 characters) may use {key} {title} {status} {actor}
- * {assignees} {due} {url}; unknown names stay as written.
+ * {assignees} {due} {url}; a Git trigger adds {pr_url} {pr_number} {pr_title} {branch}
+ * {target_branch} {git_author} (empty for other triggers and for what an event lacks: a push has
+ * no pull request; one line each, «@» of a mention token neutralised); a release trigger adds
+ * {release} (the release's name, the same rules). Unknown names stay as written.
  *
  * @generated from message calaba.v1.RuleAction
  */
@@ -1164,6 +1204,37 @@ export type BoardGit = Message<"calaba.v1.BoardGit"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 9;
    */
   createdAt?: Timestamp | undefined;
+
+  /**
+   * Backlink (board task #101, GitLab only): on the first link of a merge request to a task
+   * (not a bare mention in its description) post one note «Задача Calab: KEY — title url» on
+   * the merge request with the API token. Off by default: the task title becomes visible to
+   * everyone who can read the merge request.
+   *
+   * @generated from field: bool backlink = 10;
+   */
+  backlink: boolean;
+
+  /**
+   * the token itself is never returned
+   *
+   * @generated from field: bool has_api_token = 11;
+   */
+  hasApiToken: boolean;
+
+  /**
+   * the GitLab the token belongs to («https://gitlab.com»)
+   *
+   * @generated from field: string gitlab_url = 12;
+   */
+  gitlabUrl: string;
+
+  /**
+   * Why the last note was not posted ("" = fine): no token, the token was refused…
+   *
+   * @generated from field: string backlink_error = 13;
+   */
+  backlinkError: string;
 };
 
 /**
@@ -1199,6 +1270,38 @@ export const SetBoardGitRequestSchema: GenMessage<SetBoardGitRequest> = /*@__PUR
   messageDesc(file_calaba_v1_automations, 12);
 
 /**
+ * PATCH /api/boards/{id}/git → BoardGitResponse (no secret): the backlink settings of an existing
+ * setup (404 without one). api_token: a GitLab personal / project access token with the `api`
+ * scope, ≤ 256 characters, sealed at rest; "" removes it. gitlab_url: an https origin
+ * («https://git.example.com»); notes go only to merge requests under it.
+ *
+ * @generated from message calaba.v1.UpdateBoardGitRequest
+ */
+export type UpdateBoardGitRequest = Message<"calaba.v1.UpdateBoardGitRequest"> & {
+  /**
+   * @generated from field: optional bool backlink = 1;
+   */
+  backlink?: boolean | undefined;
+
+  /**
+   * @generated from field: optional string api_token = 2;
+   */
+  apiToken?: string | undefined;
+
+  /**
+   * @generated from field: optional string gitlab_url = 3;
+   */
+  gitlabUrl?: string | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateBoardGitRequest.
+ * Use `create(UpdateBoardGitRequestSchema)` to create a new message.
+ */
+export const UpdateBoardGitRequestSchema: GenMessage<UpdateBoardGitRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_automations, 13);
+
+/**
  * GET / PUT /api/boards/{id}/git (GET without a setup: git unset); DELETE → 204.
  *
  * @generated from message calaba.v1.BoardGitResponse
@@ -1222,7 +1325,198 @@ export type BoardGitResponse = Message<"calaba.v1.BoardGitResponse"> & {
  * Use `create(BoardGitResponseSchema)` to create a new message.
  */
 export const BoardGitResponseSchema: GenMessage<BoardGitResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_automations, 13);
+  messageDesc(file_calaba_v1_automations, 14);
+
+/**
+ * A release of a board.
+ *
+ * @generated from message calaba.v1.BoardRelease
+ */
+export type BoardRelease = Message<"calaba.v1.BoardRelease"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string board_id = 2;
+   */
+  boardId: string;
+
+  /**
+   * 1..64 characters, one line («4929cf3», pipeline «1287»)
+   *
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * [a-z0-9][a-z0-9._-]{0,31} («prod», «stage»)
+   *
+   * @generated from field: string environment = 4;
+   */
+  environment: string;
+
+  /**
+   * the deployed commit, 40 (or 64) lowercase hex
+   *
+   * @generated from field: string sha = 5;
+   */
+  sha: string;
+
+  /**
+   * the pipeline (http / https), "" = none
+   *
+   * @generated from field: string url = 6;
+   */
+  url: string;
+
+  /**
+   * a user or a bot
+   *
+   * @generated from field: string created_by = 7;
+   */
+  createdBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 8;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * the last repeat
+   *
+   * @generated from field: google.protobuf.Timestamp updated_at = 9;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: uint32 tasks_count = 10;
+   */
+  tasksCount: number;
+};
+
+/**
+ * Describes the message calaba.v1.BoardRelease.
+ * Use `create(BoardReleaseSchema)` to create a new message.
+ */
+export const BoardReleaseSchema: GenMessage<BoardRelease> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_automations, 15);
+
+/**
+ * @generated from message calaba.v1.CreateBoardReleaseRequest
+ */
+export type CreateBoardReleaseRequest = Message<"calaba.v1.CreateBoardReleaseRequest"> & {
+  /**
+   * "" = the first 7 characters of sha
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string sha = 2;
+   */
+  sha: string;
+
+  /**
+   * full SHAs, ≤ 5000
+   *
+   * @generated from field: repeated string commits = 3;
+   */
+  commits: string[];
+
+  /**
+   * @generated from field: string url = 4;
+   */
+  url: string;
+
+  /**
+   * "" = "prod"
+   *
+   * @generated from field: string environment = 5;
+   */
+  environment: string;
+
+  /**
+   * «DEV-12», keys of this board only (422 otherwise), ≤ 500
+   *
+   * @generated from field: repeated string task_keys = 6;
+   */
+  taskKeys: string[];
+};
+
+/**
+ * Describes the message calaba.v1.CreateBoardReleaseRequest.
+ * Use `create(CreateBoardReleaseRequestSchema)` to create a new message.
+ */
+export const CreateBoardReleaseRequestSchema: GenMessage<CreateBoardReleaseRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_automations, 16);
+
+/**
+ * @generated from message calaba.v1.BoardReleaseResponse
+ */
+export type BoardReleaseResponse = Message<"calaba.v1.BoardReleaseResponse"> & {
+  /**
+   * @generated from field: calaba.v1.BoardRelease release = 1;
+   */
+  release?: BoardRelease | undefined;
+
+  /**
+   * false: a repeat of (environment, sha)
+   *
+   * @generated from field: bool created = 2;
+   */
+  created: boolean;
+
+  /**
+   * tasks that entered the release in this call
+   *
+   * @generated from field: repeated string added_keys = 3;
+   */
+  addedKeys: string[];
+
+  /**
+   * task_keys with no live task on the board
+   *
+   * @generated from field: repeated string unknown_keys = 4;
+   */
+  unknownKeys: string[];
+
+  /**
+   * more than 500 tasks matched: call again for the rest
+   *
+   * @generated from field: bool truncated = 5;
+   */
+  truncated: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.BoardReleaseResponse.
+ * Use `create(BoardReleaseResponseSchema)` to create a new message.
+ */
+export const BoardReleaseResponseSchema: GenMessage<BoardReleaseResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_automations, 17);
+
+/**
+ * GET /api/boards/{id}/releases?environment=&limit= (1..100, default 50): VIEW_BOARD; newest
+ * first.
+ *
+ * @generated from message calaba.v1.ListBoardReleasesResponse
+ */
+export type ListBoardReleasesResponse = Message<"calaba.v1.ListBoardReleasesResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.BoardRelease releases = 1;
+   */
+  releases: BoardRelease[];
+};
+
+/**
+ * Describes the message calaba.v1.ListBoardReleasesResponse.
+ * Use `create(ListBoardReleasesResponseSchema)` to create a new message.
+ */
+export const ListBoardReleasesResponseSchema: GenMessage<ListBoardReleasesResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_automations, 18);
 
 /**
  * BOARD_RULE_UPDATE: a rule was created or changed; after a run only when its last_error changed
@@ -1252,7 +1546,7 @@ export type BoardRuleUpdate = Message<"calaba.v1.BoardRuleUpdate"> & {
  * Use `create(BoardRuleUpdateSchema)` to create a new message.
  */
 export const BoardRuleUpdateSchema: GenMessage<BoardRuleUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_automations, 14);
+  messageDesc(file_calaba_v1_automations, 19);
 
 /**
  * BOARD_RULE_DELETE: a rule was deleted.
@@ -1281,7 +1575,7 @@ export type BoardRuleDelete = Message<"calaba.v1.BoardRuleDelete"> & {
  * Use `create(BoardRuleDeleteSchema)` to create a new message.
  */
 export const BoardRuleDeleteSchema: GenMessage<BoardRuleDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_automations, 15);
+  messageDesc(file_calaba_v1_automations, 20);
 
 /**
  * A Git event of the board's Git webhook (§4).
@@ -1302,7 +1596,8 @@ export enum RuleGitEvent {
   BRANCH_CREATED = 1,
 
   /**
-   * opened or reopened
+   * Opened or reopened as ready for review, or a draft marked ready (a rule on PR_OPENED fires on
+   * PR_READY too); a draft opened is PR_DRAFT_OPENED (board task #101).
    *
    * @generated from enum value: RULE_GIT_EVENT_PR_OPENED = 2;
    */
@@ -1324,6 +1619,34 @@ export enum RuleGitEvent {
    * @generated from enum value: RULE_GIT_EVENT_COMMIT_PUSHED = 5;
    */
   COMMIT_PUSHED = 5,
+
+  /**
+   * A draft opened or reopened (GitLab Draft / WIP, GitHub draft, Gitea draft or «WIP:» title).
+   *
+   * @generated from enum value: RULE_GIT_EVENT_PR_DRAFT_OPENED = 6;
+   */
+  PR_DRAFT_OPENED = 6,
+
+  /**
+   * A draft marked ready for review (GitLab draft true → false, GitHub ready_for_review).
+   *
+   * @generated from enum value: RULE_GIT_EVENT_PR_READY = 7;
+   */
+  PR_READY = 7,
+
+  /**
+   * A reviewer was added; once per reviewer and pull request until the request is removed.
+   *
+   * @generated from enum value: RULE_GIT_EVENT_PR_REVIEW_REQUESTED = 8;
+   */
+  PR_REVIEW_REQUESTED = 8,
+
+  /**
+   * A reviewer approved; once per approver and pull request until the approval is withdrawn.
+   *
+   * @generated from enum value: RULE_GIT_EVENT_PR_APPROVED = 9;
+   */
+  PR_APPROVED = 9,
 }
 
 /**

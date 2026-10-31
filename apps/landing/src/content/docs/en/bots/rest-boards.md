@@ -11,6 +11,7 @@ A bot works with task boards like a person, within the permissions of its roles 
 | see a board and its tasks | `VIEW_BOARD` |
 | create tasks; edit its own and those it is assigned to | `CREATE_TASKS` |
 | edit, move and archive any task | `EDIT_TASKS` |
+| report a release from CI (`POST …/releases`) | `EDIT_TASKS` |
 | statuses, labels, milestones, settings, board features, the board archive | `MANAGE_BOARD` |
 | create a board, board categories | `CREATE_BOARDS` |
 | the board journal | `MANAGE_BOARD`, `EDIT_TASKS` or `VIEW_JOURNALS` |
@@ -87,6 +88,9 @@ A bot works with task boards like a person, within the permissions of its roles 
 | `GET` | `/api/boards/{id}/git` | The board's Git link, without the secret (`MANAGE_BOARD` + `MANAGE_INTEGRATIONS`) |
 | `PUT` | `/api/boards/{id}/git` | Connect a repository `{provider, secret?}` → the secret once |
 | `DELETE` | `/api/boards/{id}/git` | Disconnect the repository |
+| `PATCH` | `/api/boards/{id}/git` | The GitLab backlink `{backlink?, apiToken?, gitlabUrl?}` (the token is never returned) |
+| `POST` | `/api/boards/{id}/releases` | A release from CI `{name, sha, commits[], url, environment, taskKeys?}` (`EDIT_TASKS`), see [Releases from CI](#releases-from-ci) |
+| `GET` | `/api/boards/{id}/releases` | The board's releases, newest first (`?environment=prod&limit=`) |
 | `GET` | `/api/boards/{id}/webhook` | The board webhook (`MANAGE_BOARD`), see [Webhooks](./webhooks) |
 | `PUT` | `/api/boards/{id}/webhook` | Create or replace the board webhook (+ `MANAGE_INTEGRATIONS`) |
 | `DELETE` | `/api/boards/{id}/webhook` | Delete the board webhook |
@@ -226,6 +230,33 @@ await bot.boards.setOrder(wsId, { boards: [{ boardId, categoryId: cat.id, positi
 ## Automations
 
 A bot reads a board's rules (`GET /api/boards/{id}/rules`) and their run log (`GET /api/rules/{id}/runs`) and, with `MANAGE_BOARD`, creates, changes, dry-runs and deletes them like a person. A rule acts on behalf of the board, not of its author: delete it when the bot should no longer run it. Task changes made by a bot run the board's rules just like people's changes. Changes made by rules appear in the journal with an empty `actorId` and a `ruleId`.
+
+## Releases from CI
+
+After a deploy, CI reports the release to the board: `POST /api/boards/{id}/releases` with the token of a bot that has `EDIT_TASKS` on the board. Body: `name` (a pipeline number or a short SHA, ≤ 64), `sha` (the full deployed SHA), `commits` (full SHAs, ≤ 5000), `url` (the pipeline), `environment` (`prod` by default; `[a-z0-9._-]`, ≤ 32), `taskKeys` (keys of this board's tasks, ≤ 500). Body ≤ 1 MB, 30 calls per minute per board, at most 20 environments per board (409 for the 21st).
+
+The release takes the board's live tasks whose commit or merged MR (its merge, squash or last commit) is in `commits` or equals `sha`, plus the `taskKeys`. Calab keeps no Git history: it learns «an ancestor of `sha`» only from the list CI sends — `git log <previous release>..<sha>`. A task enters a release of one environment once; repeating the call with the same environment and `sha` updates the name and link but adds no task twice. Response: `{release, created, addedKeys, unknownKeys, truncated}`; on `truncated` (more than 500 tasks) call again. Every task that enters gets a `release` journal entry, the `Task.releases` field, and runs the rules with the «Task shipped in a release» trigger (e.g. «shipped in prod → Deployed» with the condition «status = Ready to Deploy»; templates get `{release}`).
+
+```yaml
+# .gitlab-ci.yml — after the production deploy job (where `linear-release sync` used to be)
+calab-release:
+  stage: deploy
+  needs: [deploy-vk-prod-all]
+  variables:
+    GIT_DEPTH: "0" # the range needs history
+  script:
+    - |
+      API="$CALAB_URL/api/boards/$CALAB_BOARD/releases"
+      AUTH="Authorization: Bearer $CALAB_TOKEN" # a masked CI variable; curl -s never prints it
+      PREV=$(curl -sf -H "$AUTH" "$API?environment=prod&limit=1" | jq -r '.releases[0].sha // empty')
+      git cat-file -e "$PREV^{commit}" 2>/dev/null || PREV="" # the previous release is not in this history
+      git log --format=%H -n 5000 "${PREV:+$PREV..}$CI_COMMIT_SHA" | jq -R . | jq -s \
+        '{name: env.CI_PIPELINE_IID, sha: env.CI_COMMIT_SHA, url: env.CI_PIPELINE_URL, environment: "prod", commits: .}' > release.json
+      for i in $(seq 10); do # more than 500 tasks: «truncated», call again
+        R=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" --data @release.json "$API")
+        [ "$(echo "$R" | jq -r .truncated)" = true ] || break
+      done
+```
 
 ## Gotchas
 

@@ -60,6 +60,7 @@ module.exports = (config) => {
       Object.assign(project.pbxXCBuildConfigurationSection()[entry.value].buildSettings, {
         APPLICATION_EXTENSION_API_ONLY: 'YES',
         CODE_SIGN_STYLE: 'Automatic',
+        PRODUCT_BUNDLE_IDENTIFIER: `${config.ios.bundleIdentifier}.voiceactivity`,
         CURRENT_PROJECT_VERSION: config.ios.buildNumber ?? '1',
         MARKETING_VERSION: config.version ?? '0.1.0',
         IPHONEOS_DEPLOYMENT_TARGET: config.ios.deploymentTarget ?? '16.4',

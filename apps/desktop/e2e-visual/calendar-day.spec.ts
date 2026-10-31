@@ -204,3 +204,12 @@ test('editing a selected meeting: the members column is back for a drag', async 
 
   // No room-list drag here: the calendar section has shown no room list since 0c24978f (02.10).
 });
+
+test('open: the grid starts 30 min before the working day (mock user: 10:00), not at «now» (CBF-57)', async ({ page, mock }) => {
+  await signIn(page, mock);
+  await page.setViewportSize({ width: 960, height: 600 });
+  await openDay(page);
+  const scroller = page.getByTestId('day-scroller');
+  await expect.poll(() => scroller.evaluate((el) => Math.round(el.scrollTop))).toBe(9.5 * 48);
+  if (process.env.CBF57_SHOT) await page.screenshot({ path: process.env.CBF57_SHOT });
+});

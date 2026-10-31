@@ -97,9 +97,16 @@ func (f *fields) normalize() error {
 	}
 	switch f.rule.Repeat {
 	case v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED:
-		f.rule.Until = nil
+		f.rule.Until, f.rule.Holidays = nil, ""
 	case v1.EventRepeat_EVENT_REPEAT_DAILY, v1.EventRepeat_EVENT_REPEAT_WEEKLY,
-		v1.EventRepeat_EVENT_REPEAT_BIWEEKLY, v1.EventRepeat_EVENT_REPEAT_MONTHLY:
+		v1.EventRepeat_EVENT_REPEAT_BIWEEKLY, v1.EventRepeat_EVENT_REPEAT_MONTHLY,
+		v1.EventRepeat_EVENT_REPEAT_WORKDAYS:
+		if f.rule.Repeat != v1.EventRepeat_EVENT_REPEAT_WORKDAYS {
+			f.rule.Holidays = ""
+		}
+		// A working-days series starts on a working day (ADR-0136): its start is its first
+		// occurrence, so a Saturday start moves to Monday.
+		f.start, f.end = Series{Start: f.start, End: f.end, Loc: loc, Rule: f.rule}.ShiftToWorkday()
 		if u := f.rule.Until; u != nil {
 			t := u.UTC().Truncate(time.Second)
 			if t.Before(f.start) {

@@ -35,6 +35,8 @@ import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { hasBit, settingsEntryTab, MANAGE_BOARD } from './model';
 import { useFeatureOn } from './useBoardView';
+import { SavedSearchRows } from './SavedSearches';
+import { useTaskSearch } from '../../stores/taskSearch';
 
 /**
  * The room column in boards mode (ADR-0042 §5, ADR-0058 §1): «Мои задачи» on top, the
@@ -162,7 +164,8 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   return (
     <div
       ref={list}
-      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-1 mobile:px-0 mobile:pt-1"
+      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pt-1 mobile:px-0 mobile:pt-1"
+      style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
       onClickCapture={(e) => {
         if (suppress.current) {
           e.stopPropagation();
@@ -172,6 +175,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       data-testid="boards-list"
     >
       <MyTasksRow workspaceId={workspaceId} />
+      <SavedSearchRows workspaceId={workspaceId} />
       <div className="flex h-9 items-center pl-2 pr-1 pt-2 mobile:h-11 mobile:px-3">
         <h2 className={cx('min-w-0 flex-1 truncate', GROUP_LABEL)}>{t('boards.boards')}</h2>
       </div>
@@ -372,7 +376,9 @@ function openMyTasks(workspaceId: string): void {
 }
 
 function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
-  const active = useBoardsUi((s) => s.boardOf[workspaceId] === MY_TASKS);
+  // An open saved search (a row under this one) takes the highlight (ADR-0139).
+  const saved = useTaskSearch((s) => !!s.activeSaved[workspaceId]);
+  const active = useBoardsUi((s) => s.boardOf[workspaceId] === MY_TASKS) && !saved;
   const unread = useBoards((s) => unreadCount(s, workspaceId));
   return (
     <button

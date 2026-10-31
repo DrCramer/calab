@@ -383,6 +383,7 @@ func TestTaskBits(t *testing.T) {
 			Bits                                Bits
 			Scoped                              bool
 			Assignee, Approver, Watcher, Author bool
+			Creator                             string // ADR-0151: "my_bot" | "other_bot"
 			Want                                Bits
 		}
 	}
@@ -392,10 +393,45 @@ func TestTaskBits(t *testing.T) {
 	if len(table.Cases) < 20 {
 		t.Fatalf("task_bits.json: %d cases", len(table.Cases))
 	}
+	me, bot, other := uuid.New(), uuid.New(), uuid.New()
 	for _, c := range table.Cases {
 		acc := BoardAccess{Bits: c.Bits, TaskScoped: c.Scoped}
-		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher, c.Author); got != c.Want {
+		author := c.Author
+		switch c.Creator {
+		case "my_bot":
+			author = TaskAuthor(&bot, &me, me)
+		case "other_bot":
+			author = TaskAuthor(&bot, &other, me)
+		case "":
+		default:
+			t.Fatalf("%s: creator %q", c.Name, c.Creator)
+		}
+		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher, author); got != c.Want {
 			t.Errorf("%s: TaskBits = %d, want %d", c.Name, got, c.Want)
+		}
+	}
+}
+
+// ADR-0151: the author of a task is who created it or the current owner of the bot that did.
+func TestTaskAuthor(t *testing.T) {
+	me, bot, other := uuid.New(), uuid.New(), uuid.New()
+	nobody := uuid.Nil
+	for _, c := range []struct {
+		name             string
+		createdBy, owner *uuid.UUID
+		user             uuid.UUID
+		want             bool
+	}{
+		{"created it", &me, nil, me, true},
+		{"someone else did", &other, nil, me, false},
+		{"my bot did", &bot, &me, me, true},
+		{"someone else's bot did", &bot, &other, me, false},
+		{"the bot itself", &bot, &me, bot, true},
+		{"unknown creator", nil, nil, me, false},
+		{"nobody (uuid.Nil) is no author", &nobody, &nobody, uuid.Nil, false},
+	} {
+		if got := TaskAuthor(c.createdBy, c.owner, c.user); got != c.want {
+			t.Errorf("%s: TaskAuthor = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

@@ -4,7 +4,7 @@ import { ArrowRight, MessageCircle, MessageSquare, NotebookText, Phone, Search, 
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { RoomIcon } from '../../components/RoomIcon';
-import { Button, Segmented, Spinner, Tip, cx } from '../../components/ui';
+import { Button, MOD, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
@@ -39,6 +39,15 @@ import { useSearchSummary } from '../search/useSearch';
 import { HitIcon, HitTitle, hitPlace, sectionTitle, totalText } from '../search/hitParts';
 import { openHit } from '../../services/searchNav';
 import { useSearchPanel } from '../../stores/searchPanel';
+import { telephonyVisibleNow } from '../telephony/access';
+import { openSection } from './sectionNav';
+import { openTab } from '../../services/phoneNav';
+import { PhoneIdleIcon } from '../../assets/nav/icons';
+import { TaskSearch, type TaskSearchHandle } from '../boards/TaskSearch';
+import { queryOf, useTaskSearch } from '../../stores/taskSearch';
+import { useBoardsUi } from '../../stores/boardsUi';
+import { openSearchPage } from '../../services/taskSearch';
+import type { TaskQuery } from '../../lib/boards/taskSearch';
 
 type Item =
   | { kind: 'notes'; id: string; roomId: string; name: string; emoji: string }
@@ -46,6 +55,8 @@ type Item =
   | { kind: 'room'; id: string; room: Room }
   | { kind: 'member'; id: string; member: WorkspaceMember }
   | { kind: 'message'; id: string; msg: Message }
+  /** A section of the app found by its name («Телефония», ADR-0137 §5). */
+  | { kind: 'section'; id: string; section: 'telephony'; name: string }
   /** Unified search (ADR-0062): a hit, «Все: N →», a timed-out section (lib/search/summary.ts). */
   | SummaryRow;
 
@@ -71,6 +82,11 @@ function groupOf(it: Item): string {
  * remembered. Choosing a member filters messages by that author (the workspace message search).
  */
 export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => void; initialQuery?: string }): ReactNode {
+  // «Задачи · Всё» (ADR-0139): the task search first; it opens by default in the boards, elsewhere «Всё».
+  const [mode, setMode] = useState<'tasks' | 'all'>(() => {
+    const ws = useUi.getState().activeWorkspaceId;
+    return ws && ws !== HOME && useBoardsUi.getState().active ? 'tasks' : 'all';
+  });
   const rooms = useRooms((s) => s.byId);
   const workspaces = useWorkspaces((s) => s.byId);
   // «Личные» is not a workspace: no members / message search there.
@@ -80,6 +96,21 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const shelves = useNotes((s) => s.byRoom);
   const users = useWorkspaces((s) => s.users);
   const [q, setQ] = useState(initialQuery);
+  const taskQuery = useTaskSearch((s) => (activeWs ? queryOf(s, activeWs) : null));
+  const tasksMode = mode === 'tasks' && !!activeWs && !!taskQuery;
+  const setTaskQuery = useCallback((v: TaskQuery) => {
+    if (activeWs) useTaskSearch.getState().setQuery(activeWs, v);
+  }, [activeWs]);
+  const tasksRef = useRef<TaskSearchHandle>(null);
+  // Opened from the header field with text in «Задачи»: that text is the task query.
+  useEffect(() => {
+    if (initialQuery && activeWs && mode === 'tasks') {
+      const cur = queryOf(useTaskSearch.getState(), activeWs);
+      useTaskSearch.getState().setQuery(activeWs, { ...cur, q: initialQuery });
+    }
+    // once, on open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [author, setAuthor] = useState<WorkspaceMember | null>(null);
   const [sel, setSel] = useState(0);
   const [scopeMode, setScopeMode] = useState<ScopeMode>(() => readScope());
@@ -119,6 +150,14 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     return list.slice(0, needle ? MAX_ROOMS_QUERY : 50);
   }, [needle, rooms, workspaces, activeWs, author]);
 
+  // Sections by name (ADR-0137 §5 «⌘K: Телефония»): «телеф…», «звон…», «sip» / «phone», «calls».
+  const sectionItems = useMemo((): Item[] => {
+    if (!needle || author || !activeWs || !telephonyVisibleNow(activeWs)) return [];
+    const name = t('tel.section');
+    const words = [name.toLowerCase(), ...t('tel.qsWords').toLowerCase().split(',')];
+    return words.some((w) => w.trim().startsWith(needle) || (needle.length >= 3 && w.includes(needle))) ? [{ kind: 'section', id: 's-telephony', section: 'telephony', name }] : [];
+  }, [needle, author, activeWs]);
+
   const memberItems = useMemo(() => {
     if (!needle || author || !activeWs) return [];
     const ms = Object.values(workspaces[activeWs]?.members ?? {});
@@ -128,7 +167,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   }, [needle, author, activeWs, workspaces]);
 
   // Unified search (ADR-0062): one debounced request, the previous one aborted, answers cached.
-  const summary = useSearchSummary(text, scope, !author);
+  const summary = useSearchSummary(text, scope, !author && !tasksMode);
 
   // The author filter: that member's messages in the active workspace, debounced.
   const searchKey = author && text && activeWs ? `${activeWs}|${author.user?.id ?? ''}|${text}` : '';
@@ -158,6 +197,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const items: Item[] = useMemo(
     () => [
       ...serverItems.byKey,
+      ...sectionItems,
       ...shelfItems.map((e): Item => ({ kind: 'notes', id: `n-${e.roomId}`, roomId: e.roomId, name: e.name, emoji: e.emoji })),
       ...dmItems.map((e): Item => ({ kind: 'dm', id: `d-${e.roomId}`, roomId: e.roomId, peerId: e.peerId, name: e.name })),
       ...roomItems.map((room): Item => ({ kind: 'room', id: `r-${room.id}`, room })),
@@ -165,7 +205,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       ...(messages ?? []).map((msg): Item => ({ kind: 'message', id: `m-${msg.id}`, msg })),
       ...serverItems.rows,
     ],
-    [serverItems, shelfItems, dmItems, roomItems, memberItems, messages],
+    [serverItems, sectionItems, shelfItems, dmItems, roomItems, memberItems, messages],
   );
   const groups = useMemo(() => items.map(groupOf), [items]);
   const cur = Math.min(sel, Math.max(0, items.length - 1));
@@ -181,8 +221,22 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   /** «Все результаты» of a section: the results panel (beside the chat or the boards; «Задачи» opens the boards, ADR-0105). */
   const openAll = (section: SectionName): void => {
     if (!text) return;
+    // «Все задачи: N →» is the «Задачи» tab with the same text (ADR-0139).
+    if (section === 'tasks' && activeWs && taskQuery) {
+      switchMode('tasks');
+      return;
+    }
     useSearchPanel.getState().show(text, scope, section);
     onClose();
+  };
+
+  const switchMode = (m: 'tasks' | 'all'): void => {
+    if (m === mode) return;
+    // The text goes along: «Всё» → «Задачи» and back.
+    if (m === 'tasks' && activeWs && taskQuery && text) setTaskQuery({ ...taskQuery, q });
+    if (m === 'all' && taskQuery) setQ(taskQuery.q);
+    setMode(m);
+    setSel(0);
   };
 
   const go = (i: number, action?: SwitcherAction): void => {
@@ -195,6 +249,12 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     if (it.kind === 'hit') {
       onClose();
       openHit(it.hit);
+      return;
+    }
+    if (it.kind === 'section') {
+      onClose();
+      if (useUi.getState().phone.on) openTab(it.section);
+      else openSection(it.section);
       return;
     }
     const act = action ?? rowActions(rowKindNow(it))[0];
@@ -240,6 +300,16 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const hover = useCallback((i: number) => setSel(i), []);
 
   const onKey = (e: KeyboardEvent): void => {
+    if (tasksMode) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && activeWs) {
+        e.preventDefault();
+        openSearchPage(activeWs);
+        onClose();
+        return;
+      }
+      tasksRef.current?.key(e);
+      return;
+    }
     if (e.key === 'Backspace' && !q && author) {
       setAuthor(null);
       return;
@@ -262,6 +332,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const header = (it: Item): string => {
     if (it.kind === 'hit' && it.byKey) return t('search.byKey');
     if (it.kind === 'hit' || it.kind === 'more' || it.kind === 'timeout') return sectionTitle(it.section);
+    if (it.kind === 'section') return t('search.sections');
     return it.kind === 'notes' ? t('search.notes') : it.kind === 'dm' ? t('search.dms') : it.kind === 'room' ? t('search.rooms') : it.kind === 'member' ? t('search.members') : t('search.messages');
   };
 
@@ -279,7 +350,10 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
           aria-label={t('search.title')}
           data-layout-anchor="top" // Spotlight-like: anchored near the top, not centred
           data-testid="quick-switcher"
-          className="mat-sheet anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
+          className={cx(
+            'mat-sheet anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none',
+            tasksMode ? 'h-[70vh] w-[min(880px,calc(100vw-32px))]' : 'w-[min(640px,calc(100vw-32px))]',
+          )}
         >
           <DialogP.Title className="sr-only">{t('search.title')}</DialogP.Title>
           <DialogP.Description className="sr-only">{t('search.hint')}</DialogP.Description>
@@ -299,23 +373,24 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               autoFocus
               // Pre-filled from the header field: the caret goes after the typed text.
               onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
-              value={q}
+              value={tasksMode ? taskQuery.q : q}
               onChange={(e) => {
-                setQ(e.target.value);
+                if (tasksMode) setTaskQuery({ ...taskQuery, q: e.target.value });
+                else setQ(e.target.value);
                 setSel(0);
               }}
               onKeyDown={onKey}
               role="combobox"
               aria-expanded
-              aria-controls="quick-switcher-list"
-              aria-activedescendant={items[cur] ? `qs-${items[cur].id}` : undefined}
-              placeholder={t('search.placeholder')}
-              aria-label={t('search.placeholder')}
+              aria-controls={tasksMode ? 'task-search-dialog-list' : 'quick-switcher-list'}
+              aria-activedescendant={!tasksMode && items[cur] ? `qs-${items[cur].id}` : undefined}
+              placeholder={tasksMode ? t('ts.placeholder') : t('search.placeholder')}
+              aria-label={tasksMode ? t('ts.placeholder') : t('search.placeholder')}
               className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint"
             />
-            {busy ? <Spinner className="size-4" /> : null}
+            {busy && !tasksMode ? <Spinner className="size-4" /> : null}
             {/* «Это пространство | Везде» (ADR-0062 §4); «Личные» always searches everywhere. */}
-            {activeWs && !author ? (
+            {activeWs && !author && !tasksMode ? (
               <span className="shrink-0 mobile:hidden" data-testid="search-scope">
                 <Segmented
                   value={scopeMode}
@@ -329,6 +404,37 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               </span>
             ) : null}
           </div>
+          {activeWs && !author ? (
+            <div className="flex shrink-0 items-center gap-1 border-b border-line px-3 py-1.5">
+              <div role="tablist" aria-label={t('ts.tabs')} className="flex items-center gap-1" data-testid="search-mode">
+              {(['tasks', 'all'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === m}
+                  onClick={() => switchMode(m)}
+                  className={cx('h-7 rounded-full px-3 text-control mobile:tap-h', mode === m ? 'bg-active font-medium text-fg' : 'text-muted hover:bg-hover hover:text-fg')}
+                  data-testid={`search-mode-${m}`}
+                >
+                  {m === 'tasks' ? t('ts.tab') : t('ts.tabAll')}
+                </button>
+              ))}
+              </div>
+              {tasksMode ? (
+                <>
+                  <span className="flex-1" />
+                  <button type="button" onClick={() => { openSearchPage(activeWs); onClose(); }} className="h-7 rounded-full px-2.5 text-caption text-muted hover:bg-hover hover:text-fg mobile:hidden" data-testid="search-open-page">
+                    {t('ts.openPage')} <span className="text-faint">{`${MOD}↩`}</span>
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          {tasksMode ? (
+            <TaskSearch ref={tasksRef} workspaceId={activeWs} variant="dialog" query={taskQuery} onQuery={setTaskQuery} onOpened={onClose} />
+          ) : (
+          <>
           {/* A two-column grid: the listbox (display: contents) fills column 1 with its options;
               each option's action buttons sit in column 2 on the same grid row — outside the
               listbox, whose children may only be options (docs/09 #66, #83). */}
@@ -367,6 +473,8 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               ))}
             </div>
           </div>
+          </>
+          )}
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>
@@ -385,6 +493,7 @@ function rowKind(it: Item, canConnect: boolean, canDm: boolean, canCall: boolean
   if (it.kind === 'member') return { kind: 'member', canDm, canCall };
   if (it.kind === 'dm') return { kind: 'dm', canCall };
   if (it.kind === 'notes') return { kind: 'room' };
+  if (it.kind === 'section') return { kind: 'section' };
   return { kind: 'message' };
 }
 
@@ -538,7 +647,7 @@ function useCanConnect(room: Room | null): boolean {
 
 /** The row's subject for the buttons' names («Подключиться: Созвон»). */
 function rowName(it: Item): string {
-  if (it.kind === 'dm' || it.kind === 'notes') return it.name;
+  if (it.kind === 'dm' || it.kind === 'notes' || it.kind === 'section') return it.name;
   if (it.kind === 'room') return it.room.name;
   if (it.kind === 'member') return it.member.nickname || it.member.user?.displayName || '';
   if (it.kind === 'hit') return it.hit.title || sectionTitle(it.section);
@@ -572,6 +681,17 @@ function RowBody({ it, q, workspaceName, activeWs, rooms }: { it: Item; q: strin
   }
   if (it.kind === 'timeout') {
     return <span className="min-w-0 flex-1 truncate pl-6 text-caption text-muted">{t('search.timedOut')}</span>;
+  }
+  if (it.kind === 'section') {
+    return (
+      <>
+        <PhoneIdleIcon className="size-4 shrink-0 text-muted" />
+        <span className="min-w-0 flex-1 truncate">
+          <Highlight text={it.name} q={q} />
+        </span>
+        <span className={sub}>{t('search.sections')}</span>
+      </>
+    );
   }
   if (it.kind === 'notes') {
     return (

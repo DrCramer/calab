@@ -28,7 +28,7 @@ const q = (id: string): HTMLElement | null => document.querySelector(`[data-test
 
 function render(guest = false): void {
   useSession.setState({ me: { user: { id: 'me', displayName: 'Me', isGuest: guest } } } as never);
-  useWorkspaces.setState({ order: ['w'], byId: { w: { role: guest ? WorkspaceRole.GUEST : WorkspaceRole.MEMBER } } } as never);
+  useWorkspaces.setState({ order: ['w'], byId: { w: { ws: { id: 'w' }, role: guest ? WorkspaceRole.GUEST : WorkspaceRole.MEMBER, members: {} } } } as never);
   act(() => {
     root.render(createElement(TabBar, { tab: 'chats' }));
   });

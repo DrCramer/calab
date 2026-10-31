@@ -90,6 +90,48 @@ message SipSettings {
   // The server can record calls (LiveKit Egress is configured). The switches can be set either
   // way; without it nothing is recorded.
   bool recording_available = 26;
+  // The workspace's telephony policy (ADR-0137, PUT /api/workspaces/{id}/sip/policy): the
+  // journal is kept retention_months (1, 3, 6, 12, 24, 36; default 12), outbound calls are
+  // limited per hour to out_per_hour for the workspace (default 120) and out_per_user_hour for
+  // one member (default 30).
+  uint32 retention_months = 27;
+  uint32 out_per_hour = 28;
+  uint32 out_per_user_hour = 29;
+  // The working-hours schedule of the entry point (ADR-0138, PUT /api/workspaces/{id}/sip/schedule).
+  SipSchedule schedule = 30;
+}
+
+// One span of working time (ADR-0138): it starts on weekday at start_min minutes after midnight
+// and ends at end_min — the same day when end_min > start_min, the next day when end_min <
+// start_min (a night shift, 22:00–02:00 = 1320 → 120). Times are the schedule's time zone.
+message SipScheduleInterval {
+  uint32 weekday = 1;   // 1 = Monday … 7 = Sunday
+  uint32 start_min = 2; // 0..1439
+  uint32 end_min = 3;   // 1..1440 (1440 = midnight), never start_min
+}
+
+// The working-hours schedule of the inbound entry point (ADR-0138). Off: every inbound call
+// follows the entry point (inbound_target). On: a call that comes outside the working hours
+// follows off_hours instead — after the notice when one is uploaded (any route; a typical
+// one is «hang up» with a message). Checked once, when the call comes in.
+message SipSchedule {
+  bool enabled = 1;
+  string time_zone = 2; // IANA zone; empty in requests = Europe/Moscow
+  // At most 6 intervals starting on one weekday, none overlapping (a night shift counts into the
+  // next day, Sunday's into Monday). Enabled needs at least one.
+  repeated SipScheduleInterval hours = 3;
+  // The Russian production calendar (the table of ADR-0136): a weekday off (a public holiday, a
+  // moved day off) has no working hours; a working Saturday / Sunday works by its own hours, or —
+  // without them — by the first weekday Monday–Friday that has some. Years the table lacks: as
+  // without the calendar.
+  bool production_calendar_ru = 4;
+  // Where an off-hours call goes: a menu, a person or a bot (EXTENSION), a group, or HANGUP
+  // (SipCall.reason "off_hours"); REPEAT is refused. missing: the object was deleted (the call
+  // hangs up).
+  SipRouteTarget off_hours = 5;
+  // Output only: the notice played to an off-hours call before its route (empty = none).
+  string notice_file_id = 6;
+  uint32 notice_duration_ms = 7;
 }
 
 // How inbound calls reach the server (ADR-0121). UNSPECIFIED in PutSipInboundRequest = keep the
@@ -237,7 +279,8 @@ message SipCall {
   // Inbound calls (direction IN, ADR-0117). number is the caller's number; status is RINGING
   // from the moment the line got in (menu and ringing alike) until somebody answers (ACTIVE).
   // More reasons: "hangup_menu" (a route to «hang up»), "no_input", "no_answer", "no_members",
-  // "loop", "declined" (everybody who rang declined), FAILED "busy_limit", "agent_unavailable",
+  // "loop", "declined" (everybody who rang declined), "off_hours" (outside the schedule's working
+  // hours, its route is «hang up», ADR-0138), FAILED "busy_limit", "agent_unavailable",
   // "plan", "disabled".
   string answered_by = 14;               // the user who took the call
   string route = 15;                     // the path for the journal: «menu:<id>/2 → group:<id>»
@@ -248,6 +291,28 @@ message SipCall {
   // The provider's Call-ID of an inbound call that came over the registration (ADR-0121); empty
   // for DIRECT inbound and outbound calls.
   string provider_call_id = 18;
+  // Caller ID (ADR-0137 §2), output only — in SIP_INBOUND_RING / SIP_CALL_UPDATE of inbound
+  // and personal calls, in the personal call's responses and in READY: the phone book's contact
+  // of the outside number (contact_id, caller_name, caller_company — names as of now), else the
+  // member whose profile phone it is (caller_user_id); empty otherwise and on room calls.
+  string caller_name = 19;
+  string caller_company = 20;
+  string contact_id = 21;
+  string caller_user_id = 22;
+  // Where the call comes from (personal: a call from the telephony section, no room).
+  SipCallOrigin origin = 23;
+  // Inbound calls, output only (SIP_INBOUND_RING, SIP_CALL_UPDATE; ADR-0138) — why the call
+  // rings who it rings: off_hours = it came outside the working hours of the schedule and
+  // follows its off-hours route; via_fallback = the current route was reached through a group's
+  // fallback (ADR-0124: nobody answered in time, everybody busy or declined). Neither: the
+  // regular route (the entry point in working hours, a menu key, a dialed number). Both: an
+  // off-hours route whose group fell back.
+  bool off_hours = 24;
+  bool via_fallback = 25;
+  // A room call dialed with an extension («+7 495 123-45-67 доб. 101», ADR-0046 addendum): the
+  // keys sent as tones after the answer, «,» = a 2 s pause («101», «,2#»). The caller's client
+  // sends them; everyone sees «доб. 101» on the line. Empty = none; number never holds it.
+  string extension = 26;
 }
 
 // POST /api/rooms/{id}/calls (PLACE_CALLS + VIEW_ROOM + CONNECT in the room, not a guest; a
@@ -256,11 +321,14 @@ message SipCall {
 // on every status change. Errors: 404 no room / DM; 403 no PLACE_CALLS, a guest; 422
 // VALIDATION (field "number": not a phone number) or «not a voice room»; 409 SIP_DISABLED;
 // 409 CONFLICT «join the call first» (the caller is not in this room's call); 409
-// SIP_CALL_ACTIVE; 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED (20 calls per hour per
-// workspace); 403 WORKSPACE_SUSPENDED. The line rings for up to 45 s; a call lasts 2 h at most.
+// SIP_CALL_ACTIVE; 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED (SipSettings.out_per_hour
+// calls per hour per workspace, out_per_user_hour per member); 403 WORKSPACE_SUSPENDED. The line rings for up to 45 s; a call lasts 2 h at most.
 message PlaceSipCallRequest {
   // The number to call: E.164 («+7 916 123-45-67»), or a Russian national number starting
-  // with 8 or 7 (11 digits) — spaces, dashes, dots and brackets are ignored.
+  // with 8 or 7 (11 digits) — spaces, dashes, dots and brackets are ignored. It may end with an
+  // extension: «доб. 101», «ext. 101», «x101», «,101» or «;101» (sip.SplitExtension, vectors in
+  // proto/testdata/phone_numbers.json); the line dials only the number, SipCall.extension keeps
+  // the rest. A bad extension is 422 VALIDATION on «number».
   string number = 1;
 }
 
@@ -681,4 +749,360 @@ message SipActiveCall {
 // guests, not bots), who read GET …/sip/calls again while they look at it.
 message SipCallsChanged {
   string workspace_id = 1;
+}
+
+// ---------------------------------------------------------------- the call journal (ADR-0137 §1)
+//
+// Every call keeps its steps (SipCallEvent: the menu, the keys, who rang and how it ended for
+// each, the answer, transfers, the end) and its employees (SipCallParty). Who sees what: every
+// member but guests sees the calls they took part in (scope=mine: placed, rang them, answered,
+// transferred); VIEW_JOURNALS sees all calls of the workspace (scope=all; calls of rooms the
+// reader cannot view are left out). Bots by the same rules, REST only.
+//
+// GET /api/workspaces/{id}/sip/journal?scope=mine|all&filter=missed|in|out&user=<user id>
+// &q=<text or digits>&from=<RFC 3339>&to=<RFC 3339>&cursor=<next_cursor>&limit=<1..100, 50>
+// (not a guest) → 200 ListSipJournalResponse, newest first. scope defaults to mine; all without
+// VIEW_JOURNALS → 403; user (an employee's calls) only with scope=all. filter=missed: missed
+// calls (SipJournalEntry.missed; with scope=mine or user: missed calls that rang that person).
+// q: its digits match a part of the number; a text without digits matches contacts by name or
+// company (their numbers). 422 VALIDATION for a bad scope / filter / user / time /
+// cursor / limit. A page may hold fewer entries than limit while next_cursor is set (calls of
+// rooms the reader cannot view are skipped).
+//
+// GET /api/workspaces/{id}/sip/journal/{cid} (the same rules: VIEW_JOURNALS, or a party of the
+// call) → 200 GetSipJournalEntryResponse; 404 otherwise.
+//
+// POST /api/workspaces/{id}/sip/journal/seen (not a guest) → 204: the missed badge
+// (WorkspaceSnapshot.sip_missed) is 0; SIP_MISSED_CHANGED goes to the member's other devices.
+//
+// PUT /api/workspaces/{id}/sip/policy (MANAGE_INTEGRATIONS, the telephony plan; the provider
+// settings saved first, else 409 CONFLICT) → 200 PutSipPolicyResponse: how long the journal (and
+// the contacts) are kept and the outbound limits. 422 VALIDATION retentionMonths /
+// outPerHour / outPerUserHour.
+
+// Where a call comes from.
+enum SipCallOrigin {
+  SIP_CALL_ORIGIN_UNSPECIFIED = 0;
+  SIP_CALL_ORIGIN_ROOM = 1;     // a voice room's line (ADR-0046); the room may be deleted since
+  SIP_CALL_ORIGIN_PERSONAL = 2; // a call from the telephony section (ADR-0137 §3)
+  SIP_CALL_ORIGIN_INBOUND = 3;  // a call to the workspace's number (ADR-0117)
+  SIP_CALL_ORIGIN_TEST = 4;     // the connection test
+}
+
+// A step of a call. user_id is the employee of the step, target_* the menu / group / number /
+// member / room it concerns, its name as it was then.
+enum SipCallEventKind {
+  SIP_CALL_EVENT_KIND_UNSPECIFIED = 0;
+  // The call began. Inbound: digits = the company number called, reason "direct" / "register";
+  // outbound: user_id = who placed it, target = the room (room calls).
+  SIP_CALL_EVENT_KIND_STARTED = 1;
+  SIP_CALL_EVENT_KIND_MENU = 2;     // a voice menu plays: target = the menu, digits = the play count
+  SIP_CALL_EVENT_KIND_KEY = 3;      // the caller pressed digits; reason "invalid": the menu has no such key
+  SIP_CALL_EVENT_KIND_DIALED = 4;   // the caller dialed an internal number digits; reason "found" / "not_found"
+  SIP_CALL_EVENT_KIND_NO_INPUT = 5; // the menu got no key in time
+  // The recording notice of target (a menu) plays (ADR-0131); reason "off_hours", no target: the
+  // schedule's off-hours notice (ADR-0138).
+  SIP_CALL_EVENT_KIND_NOTICE = 6;
+  // A group takes the call: target = the group, reason "ring_all" / "round_robin".
+  SIP_CALL_EVENT_KIND_GROUP = 7;
+  // user_id's devices start ringing: target = the group, or the number (extension) rung.
+  SIP_CALL_EVENT_KIND_RING = 8;
+  // user_id's devices stop ringing: reason "no_answer", "declined", "answered_elsewhere",
+  // "fallback", "caller_left", "cancelled", "ended".
+  SIP_CALL_EVENT_KIND_RING_END = 9;
+  // A group's fallback (ADR-0124): target = where the call goes, reason "timeout" / "nobody" /
+  // "declined".
+  SIP_CALL_EVENT_KIND_FALLBACK = 10;
+  SIP_CALL_EVENT_KIND_ANSWERED = 11; // user_id answered (outbound: the callee, user_id empty)
+  // user_id hands the call over (ADR-0132): to peer_user_id (a member) or target (a number, a group).
+  SIP_CALL_EVENT_KIND_TRANSFER = 12;
+  // A transfer is over: reason "answered" (user_id took the call), "no_answer", "declined",
+  // "cancelled", "not_connected".
+  SIP_CALL_EVENT_KIND_TRANSFER_END = 13;
+  SIP_CALL_EVENT_KIND_DIALING = 14;          // outbound: the INVITE goes to the provider
+  SIP_CALL_EVENT_KIND_PROVIDER_RINGING = 15; // outbound: the callee's phone rings
+  // The recording (ADR-0131): reason "started", "stored", "failed".
+  SIP_CALL_EVENT_KIND_RECORDING = 16;
+  // The end: reason = SipCall.reason; user_id = the member who hung up (empty: the caller or the system).
+  SIP_CALL_EVENT_KIND_ENDED = 17;
+  // The schedule (ADR-0138): reason "off_hours" — the call came outside the working hours;
+  // target = the off-hours route (empty: hang up). A NOTICE with reason "off_hours" (no
+  // target) follows when the schedule has a notice.
+  SIP_CALL_EVENT_KIND_SCHEDULE = 18;
+}
+
+enum SipCallTargetKind {
+  SIP_CALL_TARGET_KIND_UNSPECIFIED = 0;
+  SIP_CALL_TARGET_KIND_MENU = 1;
+  SIP_CALL_TARGET_KIND_GROUP = 2;
+  SIP_CALL_TARGET_KIND_EXTENSION = 3; // target_name = the internal number
+  SIP_CALL_TARGET_KIND_USER = 4;
+  SIP_CALL_TARGET_KIND_ROOM = 5;
+}
+
+message SipCallEvent {
+  uint32 seq = 1;
+  // Unset: a call from before the journal; its steps are parsed from SipCall.route, in order
+  // but without times.
+  google.protobuf.Timestamp at = 2;
+  SipCallEventKind kind = 3;
+  string user_id = 4;
+  string peer_user_id = 5;
+  SipCallTargetKind target_kind = 6;
+  string target_id = 7;   // empty: unknown (deleted, or a call from before the journal)
+  string target_name = 8; // the name at the time of the call; ≤ 64 characters
+  string digits = 9;
+  string reason = 10;
+}
+
+// An employee of a call and their part in it.
+message SipCallParty {
+  string user_id = 1;
+  bool placed = 2;      // placed the call
+  bool rang = 3;        // the call rang them
+  bool answered = 4;    // answered it (or took a transfer)
+  bool transferred = 5; // handed it over
+}
+
+// A contact of the workspace's phone book (ADR-0137 §2).
+message SipContactRef {
+  string id = 1;
+  string name = 2;
+  string company = 3;
+}
+
+// A row of the journal: the call and what the list shows of it, without its events.
+message SipJournalEntry {
+  SipCall call = 1;
+  SipCallOrigin origin = 2;
+  string peer_e164 = 3;      // the outside party's number, E.164; empty: not a number (hidden)
+  SipContactRef contact = 4; // the contact of peer_e164, names as of now
+  string member_user_id = 5; // peer_e164 is an employee's profile phone (never to bots)
+  // Waiting: from the start to the answer (menu and ringing), for a call nobody answered to its
+  // end; talking: from the answer to the end (0 while live or never answered).
+  uint32 wait_ms = 6;
+  uint32 talk_ms = 7;
+  // An inbound call nobody answered after it rang somebody, or that ended in a menu (no input,
+  // a route to «hang up»). A call a colleague answered is not missed.
+  bool missed = 8;
+  repeated SipCallParty parties = 9;
+  bool has_events = 10; // false: a call from before the journal (the detail parses its route)
+}
+
+message ListSipJournalResponse {
+  repeated SipJournalEntry entries = 1;
+  string next_cursor = 2; // empty = no more
+}
+
+// The recording of a call (ADR-0131), only when the reader may view its Disk file.
+message SipJournalRecording {
+  string file_id = 1;
+  string disk_item_id = 2;
+  uint32 duration_ms = 3;
+}
+
+message GetSipJournalEntryResponse {
+  SipJournalEntry entry = 1;
+  repeated SipCallEvent events = 2; // in order
+  SipJournalRecording recording = 3;
+}
+
+// PUT /api/workspaces/{id}/sip/schedule (MANAGE_INTEGRATIONS, the telephony plan; the provider
+// settings saved first, else 409 CONFLICT) → 200 PutSipScheduleResponse: the working-hours
+// schedule of the entry point (ADR-0138), replaced as a whole. 422 VALIDATION: field
+// "timeZone" (not an IANA zone), "hours" (out of range, overlapping, more than 6 a day, none
+// while enabled), "offHours" (unknown target, REPEAT), "noticeSourceFileId" (as a menu's
+// prompt: the caller's own upload, MP3 / Ogg / WAV up to 3 minutes).
+message PutSipScheduleRequest {
+  SipSchedule schedule = 1; // notice_file_id / notice_duration_ms are ignored
+  // The off-hours notice: unset = keep it, "" = remove it, an id = the caller's upload,
+  // converted like a menu's prompt.
+  optional string notice_source_file_id = 2;
+}
+
+message PutSipScheduleResponse {
+  SipSettings settings = 1;
+}
+
+message PutSipPolicyRequest {
+  // How long calls are kept: 1, 3, 6, 12, 24 or 36 months (0 = 12). Older calls are deleted
+  // within an hour (contacts: those without calls and edits in the period).
+  uint32 retention_months = 1;
+  uint32 out_per_hour = 2;      // outbound calls per hour of the workspace, 1..1000 (0 = 120)
+  uint32 out_per_user_hour = 3; // outbound calls per hour of one member, 1..1000 (0 = 30)
+}
+
+message PutSipPolicyResponse {
+  SipSettings settings = 1;
+}
+
+// SIP_JOURNAL_ENTRY: a call appeared, was answered / transferred, or ended (ADR-0137 §1). On the
+// workspace channel to the sessions of members with VIEW_JOURNALS who can view the call's room
+// (if any) and of the call's parties — once per session; never guests, never bots (they read
+// REST). Clients put the entry into a loaded first page when their filters let it in, and
+// re-read an open detail of that call.
+message SipJournalChange {
+  SipJournalEntry entry = 1;
+}
+
+// SIP_MISSED_CHANGED: the member's missed badge of the workspace changed (a call that rang them
+// was missed, or they looked at «Recent» on another device). To the member's user channel.
+message SipMissedChanged {
+  string workspace_id = 1;
+  uint32 count = 2;
+}
+
+// ---------------------------------------------------------------- contacts (ADR-0137 §2)
+//
+// The workspace's phone book: who a number is (a company, a person) so the journal, the ringing
+// modal and the call show a name instead of digits. A number belongs to one contact of the
+// workspace (E.164); at most 10 numbers per contact and 10 000 contacts per workspace. Who: every
+// member but guests who sees the telephony section — MANAGE_INTEGRATIONS (any plan), or
+// Workspace.sip_enabled and one of PLACE_CALLS, VIEW_JOURNALS or an internal number — reads,
+// creates and edits (create and edit need the telephony plan); the author or MANAGE_INTEGRATIONS
+// deletes; import needs MANAGE_INTEGRATIONS and the plan, export MANAGE_INTEGRATIONS. Bots by
+// the same rules. Contacts nobody called, was called by or edited within the journal's period
+// (SipSettings.retention_months) are deleted with the old calls. No gateway events: clients read
+// the list again when they open it and after their own changes.
+//
+// GET /api/workspaces/{id}/sip/contacts?q=<text or digits>&cursor=<next_cursor> → 200
+// ListSipContactsResponse: 200 per page, by name (the company when there is no name):
+// Cyrillic first, then Latin, then the rest. q: digits match a part of a number, a text a part
+// of the name or the company.
+// GET …/sip/contacts/{cid} → 200 GetSipContactResponse: the contact and its last 10 calls the
+// reader may see in the journal (VIEW_JOURNALS: all; otherwise the reader's own).
+// POST …/sip/contacts (SipContactInput) → 201 SipContactResponse.
+// PATCH …/sip/contacts/{cid} (UpdateSipContactRequest) → 200 SipContactResponse.
+// DELETE …/sip/contacts/{cid} → 204.
+// Errors: 404 not a member / no such contact in the workspace; 403 a guest, no access to the
+// section, someone else's contact to delete without MANAGE_INTEGRATIONS; 409 PLAN_LIMIT; 409
+// SIP_CONTACT_NUMBER_TAKEN (field "phones", conflict_id / conflict_name); 409 CONFLICT the
+// workspace has 10 000 contacts; 422 VALIDATION name / company / note / phones (a number that is
+// not a phone number: «use the international format»); 429 RATE_LIMITED.
+
+enum SipPhoneLabel {
+  SIP_PHONE_LABEL_UNSPECIFIED = 0; // = OTHER
+  SIP_PHONE_LABEL_MOBILE = 1;
+  SIP_PHONE_LABEL_WORK = 2;
+  SIP_PHONE_LABEL_HOME = 3;
+  SIP_PHONE_LABEL_OTHER = 4;
+}
+
+message SipContactPhone {
+  // E.164 in responses. In requests: E.164, a Russian national number (8 / 7 and 10 digits), or
+  // 10 digits starting with 9 when the workspace's caller ID is a +7 number; spaces, dashes,
+  // dots and brackets are ignored.
+  string number = 1;
+  SipPhoneLabel label = 2;
+}
+
+message SipContact {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;    // ≤ 128 characters; name or company is set
+  string company = 4; // ≤ 128 characters
+  string note = 5;    // ≤ 1000 characters
+  repeated SipContactPhone phones = 6; // in the contact's order, the first is the main one
+  string created_by = 7;
+  string updated_by = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message ListSipContactsResponse {
+  repeated SipContact contacts = 1;
+  string next_cursor = 2; // empty = no more
+}
+
+message GetSipContactResponse {
+  SipContact contact = 1;
+  repeated SipJournalEntry calls = 2; // newest first, at most 10
+}
+
+message SipContactInput {
+  string name = 1;
+  string company = 2;
+  string note = 3;
+  repeated SipContactPhone phones = 4; // ≤ 10, no repeats
+}
+
+// PATCH: unset fields stay as they are; phones replace the list as a whole.
+message UpdateSipContactRequest {
+  optional string name = 1;
+  optional string company = 2;
+  optional string note = 3;
+  SipContactPhones phones = 4;
+}
+
+message SipContactPhones {
+  repeated SipContactPhone phones = 1;
+}
+
+message SipContactResponse {
+  SipContact contact = 1;
+}
+
+// POST /api/workspaces/{id}/sip/contacts/import?dry_run=1 (multipart/form-data, the CSV in the
+// part "file"; MANAGE_INTEGRATIONS, the telephony plan) → 200 ImportSipContactsResponse. The
+// file: ≤ 1 MB, ≤ 5000 rows besides the header; «,» or «;» between cells (whichever the first
+// row has more of); UTF-8 with or without BOM, else Windows-1251; the first row names the
+// columns, in Russian or English: Имя / ФИО / Name, Компания / Организация / Company, Телефон… /
+// Phone… / Мобильный / Mobile / Рабочий / Work / Домашний / Home / Другой / Other, Заметка /
+// Комментарий / Note — several phone columns, and several numbers in a cell separated by «,»
+// or «;». A row whose number another contact already has (or an earlier row of the file) is
+// skipped with its reason, never merged. dry_run=1 only checks: nothing is written, created is
+// how many would be. 422 VALIDATION file (no file, too large, more than 5000 rows, no
+// recognised header); 429 RATE_LIMITED (20 imports and previews per hour per workspace).
+//
+// GET /api/workspaces/{id}/sip/contacts/export.csv (MANAGE_INTEGRATIONS) → 200 text/csv (UTF-8
+// with BOM, «;»): Имя;Компания;Мобильный;Рабочий;Домашний;Другой;Заметка, one row per contact,
+// several numbers of a label in one cell separated by «, ». A cell a spreadsheet would take for
+// a formula (starting with =, +, -, @, a tab or a line break) is written with a leading «'»
+// (the import drops it again). 429 RATE_LIMITED (20 per hour per workspace).
+message ImportSipContactsResponse {
+  uint32 created = 1; // contacts created (dry_run: that would be created)
+  uint32 rows = 2;    // data rows read
+  repeated SipContactImportSkip skipped = 3; // in row order
+  bool dry_run = 4;
+}
+
+message SipContactImportSkip {
+  uint32 row = 1; // the line of the file, the header is line 1
+  // "number_taken" (contact_id / contact_name have the number), "duplicate" (an earlier row of
+  // the file has it), "no_name", "no_number", "bad_number", "too_many_numbers", "too_long",
+  // "limit" (the workspace would have more than 10 000 contacts).
+  string reason = 2;
+  string contact_id = 3;
+  string contact_name = 4;
+  string number = 5; // the number the reason is about, when one
+}
+
+// ---------------------------------------------------------------- the personal call (ADR-0137 §3)
+//
+// POST /api/workspaces/{id}/sip/calls (a person — not a guest, not a bot — with PLACE_CALLS of
+// the workspace itself, room overrides do not count; the telephony plan; Workspace.sip_enabled)
+// → 201 PlaceSipPersonalCallResponse: the call (origin PERSONAL, DIALING, no room) and join — a
+// LiveKit token for the call's own room (microphone and listening only). The client connects
+// with it at once: the number is dialed only after the caller is in the room (not within 15 s:
+// FAILED "not_connected"). SIP_CALL_UPDATE goes to the caller's user channel on every change
+// (their other devices show «on a call»); the live call is also in WorkspaceSnapshot.sip_calls.
+// It ends when the callee hangs up (ENDED "remote"), the caller is gone 30 s (ENDED "lost"),
+// after 2 h, or with DELETE. Outbound limits: SipSettings.out_per_hour and out_per_user_hour,
+// shared with calls from rooms. Errors: 404 not a member; 403 a guest, a bot, no PLACE_CALLS;
+// 409 PLAN_LIMIT; 409 SIP_DISABLED; 409 SIP_BUSY (the caller is in another call); 422 VALIDATION
+// number (not a phone number) / contactId (not a contact of the workspace, or the number is not
+// the contact's); 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED.
+//
+// DELETE /api/workspaces/{id}/sip/calls/{cid} (the caller, or MANAGE_INTEGRATIONS; a personal
+// call of the workspace) → 200 SipCallResponse ENDED: "hangup" by the caller ("cancelled" before
+// the answer), "hangup_moderator" by an admin. 404 unknown call; 403 someone else's call; 409
+// CONFLICT the call already ended.
+message PlaceSipPersonalCallRequest {
+  string number = 1;     // as typed (see SipContactPhone.number)
+  string contact_id = 2; // optional: the contact called; the number must be one of its numbers
+}
+
+message PlaceSipPersonalCallResponse {
+  SipCall call = 1;
+  JoinVoiceResponse join = 2;
 }

@@ -73,6 +73,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, limiter *redisx.RateLimiter) *Ha
 func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("GET /api/rooms/{id}/messages/{messageId}", wrap(httpx.HandlerFunc(h.get)))
+	mux.Handle("GET /api/rooms/{id}/messages/{messageId}/readers", wrap(httpx.HandlerFunc(h.readers)))
 	mux.Handle("POST /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("POST /api/rooms/{id}/messages/{mid}/forward", wrap(httpx.HandlerFunc(h.forward)))
 	mux.Handle("POST /api/messages/{id}/interactions", wrap(httpx.HandlerFunc(h.interact)))
@@ -277,6 +278,9 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := h.withReadBy(r, acc, roomID, []sqlc.Message{m}, out); err != nil { // the author's (ADR-0140)
+		return err
+	}
 	httpx.Write(w, http.StatusOK, out[0])
 	return nil
 }
@@ -322,7 +326,17 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.ListMessagesResponse{Messages: out, HasMore: more})
+	resp := &v1.ListMessagesResponse{Messages: out, HasMore: more}
+	// ADR-0140: a bot learns who saw its own messages; a person gets the room's ✓✓ marker.
+	if auth.MustFromContext(r.Context()).IsBot {
+		err = h.withReadBy(r, acc, roomID, ms, out)
+	} else {
+		resp.PeerReadMessageId, err = h.peerRead(r.Context(), roomID, uid(r))
+	}
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, resp)
 	return nil
 }
 
@@ -766,15 +780,22 @@ func (h *Handlers) read(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// ADR-0140: «on screen» moves the seen marker too; a bot's reads never count — nor a bot's
+	// request on behalf of a person (ADR-0106, ADR-0111): no screen is behind it.
+	seen := req.GetSeen() && !auth.MustFromContext(r.Context()).Machine()
 	rs, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.AdvanceReadStateRow, error) {
-		return guarded.AdvanceReadState(r.Context(), sqlc.AdvanceReadStateParams{UserID: uid(r), RoomID: roomID, MessageID: mid})
+		rs, err := guarded.AdvanceReadState(r.Context(), sqlc.AdvanceReadStateParams{UserID: uid(r), RoomID: roomID, MessageID: mid, Seen: seen})
+		if err != nil || !rs.SeenAdvanced {
+			return rs, err
+		}
+		return rs, recordReadSpan(r.Context(), guarded, roomID, uid(r), rs.PrevSeenMessageID, mid)
 	})
 	if err != nil {
 		return err
 	}
-	// Read receipts (docs/09 #92): only when the marker moved, never for a bot's reads.
-	if h.Receipts != nil && rs.Advanced && !auth.MustFromContext(r.Context()).IsBot {
-		h.Receipts.afterRead(r.Context(), acc, roomID, uid(r), rs.LastReadMessageID)
+	// Read receipts (docs/09 #92, ADR-0140): only when the seen marker moved.
+	if h.Receipts != nil && rs.SeenAdvanced {
+		h.Receipts.afterRead(r.Context(), acc, roomID, uid(r), mid)
 	}
 	h.events.User(r.Context(), uid(r), &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: rs.LastReadMessageID.String()}},

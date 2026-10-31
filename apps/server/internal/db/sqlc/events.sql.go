@@ -1132,6 +1132,67 @@ func (q *Queries) ListUserEvents(ctx context.Context, arg ListUserEventsParams) 
 	return items, nil
 }
 
+const listWidgetEvents = `-- name: ListWidgetEvents :many
+SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at FROM events e
+JOIN workspace_members m ON m.workspace_id = e.workspace_id AND m.user_id = $1 AND m.role <> 'guest'
+WHERE e.cancelled_at IS NULL
+  AND e.starts_at < $2
+  AND ((e.rrule IS NULL AND e.ends_at > $3)
+       OR (e.rrule IS NOT NULL AND (e.until_at IS NULL OR e.until_at > $3)))
+  AND (e.organizer_id = $1
+       OR EXISTS (SELECT 1 FROM event_attendees a WHERE a.event_id = e.id AND a.user_id = $1))
+ORDER BY e.starts_at, e.id
+LIMIT 1001
+`
+
+type ListWidgetEventsParams struct {
+	UserID uuid.UUID
+	To     time.Time
+	From   time.Time
+}
+
+// Live events the user organizes or attends in workspaces where they are a member (not a
+// guest), possibly overlapping [from, to).
+func (q *Queries) ListWidgetEvents(ctx context.Context, arg ListWidgetEventsParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listWidgetEvents, arg.UserID, arg.To, arg.From)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+			&i.TempRoom,
+			&i.TempRoomRetryAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspaceEvents = `-- name: ListWorkspaceEvents :many
 SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
 WHERE workspace_id = $1 AND cancelled_at IS NULL
@@ -1329,7 +1390,7 @@ func (q *Queries) SetExternalAttendeeStatus(ctx context.Context, arg SetExternal
 
 const setUserEventReminders = `-- name: SetUserEventReminders :one
 UPDATE users SET event_reminders = $2, event_reminders_dnd = $3 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones
 `
 
 type SetUserEventRemindersParams struct {
@@ -1377,6 +1438,7 @@ func (q *Queries) SetUserEventReminders(ctx context.Context, arg SetUserEventRem
 		&i.Phone,
 		&i.TaskNotifyOff,
 		&i.TaskNotifyBots,
+		&i.CalendarZones,
 	)
 	return i, err
 }
@@ -1474,4 +1536,26 @@ type UpdateExternalAttendeeRequiredParams struct {
 func (q *Queries) UpdateExternalAttendeeRequired(ctx context.Context, arg UpdateExternalAttendeeRequiredParams) error {
 	_, err := q.db.Exec(ctx, updateExternalAttendeeRequired, arg.EventID, arg.Email, arg.Required)
 	return err
+}
+
+const workspaceHolidaySignal = `-- name: WorkspaceHolidaySignal :one
+SELECT COALESCE((SELECT a.market FROM billing_accounts a
+                 WHERE a.workspace_id = w.id AND a.status <> 'closed'), '')::text AS market,
+       COALESCE(u.locale, '')::text AS owner_locale
+FROM workspaces w JOIN users u ON u.id = w.owner_id
+WHERE w.id = $1
+`
+
+type WorkspaceHolidaySignalRow struct {
+	Market      string
+	OwnerLocale string
+}
+
+// What decides the holiday calendar of a new working-days series (ADR-0136): the market of
+// the workspace's live billing account (” = none) and its owner's email language (” = unset).
+func (q *Queries) WorkspaceHolidaySignal(ctx context.Context, id uuid.UUID) (WorkspaceHolidaySignalRow, error) {
+	row := q.db.QueryRow(ctx, workspaceHolidaySignal, id)
+	var i WorkspaceHolidaySignalRow
+	err := row.Scan(&i.Market, &i.OwnerLocale)
+	return i, err
 }

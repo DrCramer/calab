@@ -82,6 +82,8 @@ type Service struct {
 	wake   chan struct{}
 	token  string       // this instance's worker lock token
 	phone  *PhoneConfig // phone call recording (ADR-0131, SetPhone); nil = off
+	// journal: the call journal hears of a phone recording's progress (ADR-0137; SetJournal).
+	journal JournalSink
 
 	// Tunables (tests shorten them).
 	Tick          time.Duration // worker loop period

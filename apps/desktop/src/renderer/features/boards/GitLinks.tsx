@@ -1,10 +1,11 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import type { TaskGitLink } from '@calaba/protocol';
-import { GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed } from 'lucide-react';
+import type { TaskGitLink, TaskRelease } from '@calaba/protocol';
+import { GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Rocket } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { t } from '../../i18n';
 import { gitLinkView, isWebUrl, type GitGlyph } from '../../lib/boards/git';
+import { pipelineUrl, releaseLabel } from '../../lib/boards/releases';
 import { fmt } from '../../lib/format';
 import { isSafeHref } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
@@ -48,6 +49,30 @@ const GLYPH: Record<GitGlyph, { Icon: typeof GitBranch; className: string }> = {
 
 export function openGitLink(url: string): void {
   if (isWebUrl(url) && isSafeHref(url)) void platform.app.openExternal(url);
+}
+
+/**
+ * The task panel's «Релиз» (board task #101): one per environment, newest first — «prod ·
+ * 4929cf3»; with a pipeline address the value opens it in the browser (the same safe path).
+ */
+export function ReleaseValues({ releases, className }: { releases: readonly TaskRelease[]; className: string }): ReactNode {
+  return releases.map((r) => {
+    const url = pipelineUrl(r.url);
+    const body = (
+      <>
+        <Rocket className="size-3.5 shrink-0 text-muted" aria-hidden /> <span className="truncate">{releaseLabel(r)}</span>
+      </>
+    );
+    return url ? (
+      <button key={r.releaseId} type="button" onClick={() => openGitLink(url)} title={t('git.openLink', { url })} className={className} data-testid="prop-release">
+        {body}
+      </button>
+    ) : (
+      <span key={r.releaseId} className={className} data-testid="prop-release">
+        {body}
+      </span>
+    );
+  });
 }
 
 /** One link: kind glyph, «repo#123» / branch / short SHA, title, author, relative time. */

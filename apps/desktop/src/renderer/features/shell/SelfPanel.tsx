@@ -5,13 +5,14 @@ import { Avatar } from '../../components/Avatar';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMobile } from '../../lib/mobile';
-import { micGlyph } from '../../lib/voiceLogic';
+import { selfMicGlyph, type SelfMic } from '../../lib/voiceLogic';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
+import { useSelfMic } from '../voice/selfMic';
 import { PttLastKey, bindingLabel, usePttCapture, type PttCapture } from '../settings/PttBinder';
 import { PttReleaseDelay } from '../settings/PttReleaseDelay';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
@@ -97,22 +98,26 @@ export function SelfPanel(): ReactNode {
 
 /** Mic ▾ and headphones ▾ (docs/09 #28): the self panel's controls, also the Disk footer's (no column there). */
 export function VoiceControls(): ReactNode {
-  const muted = useVoice((s) => s.muted);
-  const serverMuted = useVoice((s) => s.serverMuted);
-  const deafened = useVoice((s) => s.deafened);
+  // #96: the same view as my participant row (useSelfMic): this device's intent while it holds
+  // the call, the server's copy while another device of mine does.
+  const mic = useSelfMic();
+  const { muted, deafened, serverMuted } = mic;
+  // ADR-0134: my mic / deafen click has not reached the others yet (flaky link, retrying).
+  const lag = useVoice((s) => s.micSyncLag && s.roomId !== null);
   const muteKeys = useHotkeyLabel('mute');
   const deafenKeys = useHotkeyLabel('deafen');
+  const elsewhere = mic.elsewhere ? ` · ${t('voiceUi.seatElsewhere')}` : '';
   return (
     <>
     <SplitButton
-      label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+      label={`${serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}${lag ? ` · ${t('voiceUi.micSyncing')}` : elsewhere}`}
       shortcut={muteKeys}
       danger={muted}
       onClick={() => voice.toggleMute()}
       menuLabel={t('shell.micOptions')}
       menu={<MicMenu />}
     >
-      <MicGlyphIcon muted={muted} />
+      <MicGlyphIcon mic={mic} lag={lag} />
     </SplitButton>
     <SplitButton
       label={deafened ? t('voice.undeafen') : t('voice.deafen')}
@@ -130,20 +135,22 @@ export function VoiceControls(): ReactNode {
 
 /**
  * The island's mic icon (CBF-71): a green dot in its corner while the mic really carries sound
- * (not muted, and not waiting for the push-to-talk key). A leaf with its own subscriptions: a
- * key press redraws only this icon.
+ * (not muted, and not waiting for the push-to-talk key). It draws the shared view (#96), so it
+ * always agrees with my participant row. A leaf with its own `pttDown` subscription: a key press
+ * redraws only this icon.
  */
-function MicGlyphIcon({ muted }: { muted: boolean }): ReactNode {
-  const deafened = useVoice((s) => s.deafened);
-  const inCall = useVoice((s) => s.roomId !== null);
-  const pttPref = usePrefs((s) => s.micMode === 'ptt');
-  const oneToOne = useVoice((s) => s.call);
-  const talking = useVoice((s) => s.pttDown);
-  const live = inCall && micGlyph({ muted, deafened, ptt: pttPref && !oneToOne, talking }) === 'live';
+function MicGlyphIcon({ mic, lag }: { mic: SelfMic; lag: boolean }): ReactNode {
+  const pttDown = useVoice((s) => s.pttDown);
+  const live = (mic.here || mic.elsewhere) && selfMicGlyph(mic, pttDown) === 'live';
   return (
     <span className="relative grid place-items-center">
-      {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
-      {live ? <span className="absolute -bottom-px -right-px size-2 rounded-full bg-ok" data-testid="mic-live-dot" aria-hidden /> : null}
+      {mic.muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+      {lag ? (
+        // ADR-0134: not on air for the others as shown yet — an amber dot instead of the green one.
+        <span className="absolute -bottom-px -right-px size-2 rounded-full bg-warn" data-testid="mic-sync-dot" aria-hidden />
+      ) : live ? (
+        <span className="absolute -bottom-px -right-px size-2 rounded-full bg-ok" data-testid="mic-live-dot" aria-hidden />
+      ) : null}
     </span>
   );
 }

@@ -1,5 +1,6 @@
 import { CallState, PresenceStatus, type Call, type User } from '@calaba/protocol';
 import { holdNotification } from '../lib/notifyHold';
+import { toSource } from '../lib/notifyClick';
 import { confirmAction } from '../components/Confirm';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
@@ -385,10 +386,7 @@ function notifyIncoming(call: Call | null, peerId: string): void {
   if (prefs().presence === PresenceStatus.DND) return;
   try {
     const n = holdNotification(new Notification(t('call.notifyIncoming', { name: memberName(null, peerId) }), { tag: `call:${call.id}`, silent: true, requireInteraction: true }));
-    n.onclick = () => {
-      window.focus();
-      n.close();
-    };
+    n.onclick = toSource(() => n.close());
     notice = n;
   } catch {
     // notifications unavailable

@@ -12,6 +12,9 @@
     "state": "merged",
     "action": "merge",
     "source_branch": "FNG-5-search",
-    "target_branch": "main"
+    "target_branch": "main",
+    "merge_commit_sha": "4929CF3A0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+    "squash_commit_sha": null,
+    "last_commit": {"id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
   }
 }

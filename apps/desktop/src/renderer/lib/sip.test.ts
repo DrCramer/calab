@@ -9,7 +9,11 @@ import {
   formatPhone,
   maskEdit,
   mayDial,
+  extensionAt,
+  extensionLabel,
+  extensionPlan,
   mayHangUp,
+  mayKeypad,
   normalizeNumber,
   normalizePrefix,
   reasonCode,
@@ -91,8 +95,8 @@ describe('number mask', () => {
 describe('live calls (store reducer)', () => {
   it('snapshot keeps only live calls of that workspace and replaces the old ones', () => {
     const other: SipCallMap = {
-      r9: { id: 'x', workspaceId: 'w2', roomId: 'r9', number: '+7', startedBy: 'u', status: SipCallStatus.ACTIVE, reason: '', answeredAt: 0, identity: 'sip:x' },
-      r1: { id: 'old', workspaceId: 'w1', roomId: 'r1', number: '+7', startedBy: 'u', status: SipCallStatus.ACTIVE, reason: '', answeredAt: 0, identity: 'sip:old' },
+      r9: { id: 'x', workspaceId: 'w2', roomId: 'r9', number: '+7', startedBy: 'u', status: SipCallStatus.ACTIVE, reason: '', answeredAt: 0, identity: 'sip:x', extension: '' },
+      r1: { id: 'old', workspaceId: 'w1', roomId: 'r1', number: '+7', startedBy: 'u', status: SipCallStatus.ACTIVE, reason: '', answeredAt: 0, identity: 'sip:old', extension: '' },
     };
     const m = withSnapshot(other, 'w1', [call('a', SipCallStatus.RINGING), call('b', SipCallStatus.ENDED, { roomId: 'r2' })]);
     expect(Object.keys(m).sort()).toEqual(['r1', 'r9']);
@@ -193,5 +197,43 @@ describe('permission gate', () => {
     expect(mayHangUp({ me: 'u2', startedBy: 'u1', muteMembers: true, live: true })).toBe(true);
     expect(mayHangUp({ me: 'u1', startedBy: 'u1', muteMembers: true, live: false })).toBe(false);
     expect(mayHangUp({ me: '', startedBy: '', muteMembers: false, live: true })).toBe(false);
+  });
+
+  it('keypad: the caller or MUTE_MEMBERS, answered line, me in the room’s call', () => {
+    const base = { me: 'u1', startedBy: 'u1', muteMembers: false, active: true, inCall: true };
+    expect(mayKeypad(base)).toBe(true);
+    expect(mayKeypad({ ...base, me: 'u2' })).toBe(false); // a listener in the room
+    expect(mayKeypad({ ...base, me: 'u2', muteMembers: true })).toBe(true);
+    expect(mayKeypad({ ...base, active: false })).toBe(false); // still ringing
+    expect(mayKeypad({ ...base, inCall: false })).toBe(false); // not in this room's call
+    expect(mayKeypad({ ...base, me: '', startedBy: '' })).toBe(false);
+  });
+});
+
+describe('extension', () => {
+  it('the dial field keeps the number masked and the extension as typed', () => {
+    expect(maskEdit('+7 495 123-45-67', '+7 495 123-45-67,')).toBe('+7 495 123-45-67,');
+    expect(maskEdit('+7 495 123-45-67,', '+7 495 123-45-67,101')).toBe('+7 495 123-45-67,101');
+    expect(maskEdit('+7 495 123-45-67', '+7 495 123-45-67 д')).toBe('+7 495 123-45-67 д');
+    expect(maskEdit('+7 495 123-45-67 до', '+7 495 123-45-67 доб. 101')).toBe('+7 495 123-45-67 доб. 101');
+    expect(maskEdit('', '+74951234567;101')).toBe('+7 495 123-45-67;101');
+    expect(maskEdit('', 'Тел.: +7 916 123 45 67')).toBe('+7 916 123-45-67'); // a pasted prefix still goes
+    expect(extensionAt('Тел.: 8 916')).toBe(-1);
+    expect(extensionAt('8 916 x1')).toBe(6);
+  });
+
+  it('plans the tones: the marker’s pause, gaps between keys, «,» = 2 s more', () => {
+    expect(extensionPlan('101')).toEqual([
+      { key: '1', waitMs: 2000 },
+      { key: '0', waitMs: 400 },
+      { key: '1', waitMs: 400 },
+    ]);
+    expect(extensionPlan(',1,,2#')).toEqual([
+      { key: '1', waitMs: 4000 },
+      { key: '2', waitMs: 4000 },
+      { key: '#', waitMs: 400 },
+    ]);
+    expect(extensionPlan('')).toEqual([]);
+    expect(extensionLabel(',1,2#')).toBe('12#');
   });
 });

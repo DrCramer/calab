@@ -13,6 +13,7 @@ import {
   type RoomAdmission,
 } from '@calaba/protocol';
 import { holdNotification } from '../../../lib/notifyHold';
+import { toSource } from '../../../lib/notifyClick';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 import { t } from '../../../i18n';
 import { ApiError, body, call, callEmpty } from '../../../lib/api/client';
@@ -244,10 +245,9 @@ function announceKnock(a: RoomAdmission): void {
   const room = useRooms.getState().byId[a.roomId];
   try {
     const n = holdNotification(new Notification(knockTitle(a.user?.displayName ?? '', room?.name ?? ''), { body: t('adm.knockBody'), silent: true, tag: `knock:${a.roomId}` }));
-    n.onclick = () => {
-      window.focus();
+    n.onclick = toSource(() => {
       if (room) useUi.getState().openRoom(room.workspaceId, room.id);
-    };
+    });
   } catch {
     // notifications unavailable
   }

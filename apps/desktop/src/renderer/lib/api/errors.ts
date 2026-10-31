@@ -62,6 +62,8 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_USERNAME_TAKEN: { key: 'profile.username.taken' },
   ERROR_CODE_SIP_EXTENSION_TAKEN: { key: 'sip.err.extTaken' },
   ERROR_CODE_SIP_REGISTRATION_TAKEN: { key: 'sip.err.regTaken' },
+  ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN: { key: 'telc.err.numberTaken' },
+  ERROR_CODE_SIP_BUSY: { key: 'telc.err.busy' },
   ERROR_CODE_USERNAME_INVALID: { key: 'profile.username.invalid' },
 };
 

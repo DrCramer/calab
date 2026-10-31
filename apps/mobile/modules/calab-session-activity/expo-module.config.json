@@ -1,6 +1,7 @@
 {
   "platforms": [
-    "apple"
+    "apple",
+    "android"
   ],
   "apple": {
     "modules": [
@@ -11,6 +12,11 @@
     "appDelegateSubscribers": [
       "CalabMessagePushSubscriber",
       "CalabIncomingCallsSubscriber"
+    ]
+  },
+  "android": {
+    "modules": [
+      "io.calab.host.CalabMessageNotificationsModule"
     ]
   }
 }

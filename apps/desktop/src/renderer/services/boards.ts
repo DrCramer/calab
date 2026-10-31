@@ -1,10 +1,13 @@
 import { pushOnTab } from '../lib/phoneNav';
 import { holdNotification } from '../lib/notifyHold';
+import { toSource } from '../lib/notifyClick';
 import { holdBoardsAddress } from './boardsAddress';
+import { useInbox } from '../stores/inbox';
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampNow } from '@bufbuild/protobuf/wkt';
 import {
   ApproverState,
+  BoardStatusType,
   BoardViewKind,
   Permission,
   PresenceStatus,
@@ -16,6 +19,7 @@ import {
   type Board,
   type BoardCategory,
   type BoardFeature,
+  type BoardStatus,
   type BoardView,
   type BoardWebhook,
   type EstimateScale,
@@ -33,6 +37,7 @@ import {
   type TaskNotice,
   type TaskUpdate,
   type WorkspaceSnapshot,
+  TaskNoticeEntrySchema,
 } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
@@ -55,6 +60,7 @@ import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useAutomations } from '../stores/automations';
 import { checklistsOf, unreadIds, useBoards, workspaceBoards, workspaceCategories, type LastNotice } from '../stores/boards';
+import { leaveMail } from '../stores/mailUi';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
@@ -185,6 +191,7 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       if (ev.value.task) onTask(ev.value.task);
       if (ev.value.notice) {
         rememberNotice(ev.value);
+        inboxNotice(ev.value);
         notifyTask(ev.value);
       }
       return true;
@@ -192,6 +199,7 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       // Purged, or a scoped viewer lost the card (ADR-0059: TASK_DELETE without `purged` = the card is gone for him).
       const scoped = !!s.boards[ev.value.boardId]?.taskScoped;
       s.removeTask(ev.value.taskId);
+      if (ev.value.purged || scoped) useInbox.getState().removeTask(ev.value.taskId);
       if (useBoardsUi.getState().taskId === ev.value.taskId && (ev.value.purged || scoped)) useBoardsUi.getState().openTask(null);
       return true;
     }
@@ -237,6 +245,29 @@ function rememberNotice(u: TaskUpdate): void {
   const n = u.notice;
   if (!task || !n || n.actorId === myUserId()) return;
   useBoards.getState().setNotice(task.id, { kind: n.kind, actorId: n.actorId, text: n.text, reRequested: n.reRequested, dueOn: n.dueOn, daysLeft: n.daysLeft, at: Date.now() });
+}
+
+/**
+ * A live task notice into the «Упоминания» inbox (ADR-0141), as the history lists it. A notice
+ * without an id comes from an older server, which keeps no history: it stays out, so the list
+ * never shows what a reload would lose.
+ */
+export function inboxNotice(u: TaskUpdate): void {
+  const task = u.task;
+  const n = u.notice;
+  if (!task || !n?.id || n.actorId === myUserId()) return;
+  useInbox.getState().addLiveNotice(
+    createMsg(TaskNoticeEntrySchema, {
+      id: n.id,
+      workspaceId: task.workspaceId,
+      boardId: task.boardId,
+      taskId: task.id,
+      taskKey: task.key,
+      taskTitle: task.title,
+      notice: n,
+      createdAt: timestampNow(),
+    }),
+  );
 }
 
 /**
@@ -289,10 +320,7 @@ function notifyTask(u: TaskUpdate): void {
   const what = noticeText(task, n);
   try {
     const note = holdNotification(new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` }));
-    note.onclick = () => {
-      window.focus();
-      openTaskAnywhere(task);
-    };
+    note.onclick = toSource(() => openTaskAnywhere(task));
   } catch {
     // notifications unavailable
   }
@@ -516,6 +544,8 @@ export function openTaskAnywhere(task: Pick<Task, 'id' | 'workspaceId' | 'boardI
   if (ui.activeWorkspaceId !== task.workspaceId) ui.setWorkspace(task.workspaceId);
   const bu = useBoardsUi.getState();
   if (!bu.active || (bu.boardOf[task.workspaceId] !== task.boardId && bu.boardOf[task.workspaceId] !== MY_TASKS)) openBoard(task.workspaceId, task.boardId);
+  // The boards may already be active under the mail (their subscription fires only on false → true).
+  leaveMail();
   bu.setActive(true);
   bu.openTask(task.id);
   void loadTask(task.id);
@@ -855,6 +885,15 @@ export async function restoreTask(taskId: string): Promise<boolean> {
   }
 }
 
+/**
+ * The status of a duplicate: the source's own, except a finished one (completed / cancelled) —
+ * then none, and the server puts the copy into the board's default (initial) status (CBF #103).
+ */
+export function duplicateStatusId(src: Pick<Task, 'statusId' | 'boardId'>, statuses: readonly BoardStatus[]): string | undefined {
+  const st = statuses.find((x) => x.id === src.statusId);
+  return st && (st.type === BoardStatusType.COMPLETED || st.type === BoardStatusType.CANCELLED) ? undefined : src.statusId;
+}
+
 /** «Дублировать»: a copy with the same properties, «(копия)» in the title, right after it. */
 export async function duplicateTask(taskId: string): Promise<Task | null> {
   const src = useBoards.getState().tasks[taskId];
@@ -862,7 +901,7 @@ export async function duplicateTask(taskId: string): Promise<Task | null> {
   return createTask(src.boardId, {
     title: t('boards.copyTitle', { title: src.title }).slice(0, 200),
     description: src.description,
-    statusId: src.statusId,
+    statusId: duplicateStatusId(src, useBoards.getState().boards[src.boardId]?.statuses ?? []),
     priority: src.priority,
     assignees: src.assignees.map((a) => ({ userId: a.userId, isLead: a.isLead, note: a.note })),
     labelIds: src.labelIds,

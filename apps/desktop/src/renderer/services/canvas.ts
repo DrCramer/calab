@@ -39,6 +39,7 @@ import { itemOf, useCanvasUi } from '../stores/canvasUi';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
+import { reportPlanError } from './plan';
 
 /**
  * Canvas REST (ADR-0126 §7, proto/calaba/v1/canvas.proto) and the section's actions: the one module
@@ -294,6 +295,8 @@ export async function createItem(ws: string, parentId: string, kind: CanvasItemK
     // Named in place right away (Enter / blur keeps «Без названия»).
     ui.setRenaming(r.item.id);
   } catch (e) {
+    // 409 PLAN_LIMIT: the plan's canvas cap (Free 3, Team 30, Business 100) -> the plan toast, as the Wiki.
+    if (reportPlanError(e, ws)) return;
     fail(e, kind === CanvasItemKind.FOLDER ? t('canvas.err.createFolder') : t('canvas.err.create'));
   }
 }
@@ -363,6 +366,8 @@ export async function restoreItem(id: string): Promise<void> {
     useCanvas.getState().upsert(r.item);
     refetch(r.item.workspaceId, [childKey(r.item.workspaceId, r.item.parentId), trashKey(r.item.workspaceId)]);
   } catch (e) {
+    // The canvases coming back take seats of the plan's cap (ADR-0126 addendum 23.10).
+    if (reportPlanError(e, useCanvas.getState().items[id]?.workspaceId)) return;
     fail(e, t('canvas.err.restore'));
   }
 }

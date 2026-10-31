@@ -1,4 +1,5 @@
 import { AUTO_MUTE_OPTIONS } from '../../lib/autoMute';
+import { rnnoiseSupported } from '../../lib/media/rnnoiseSupport';
 import { usePrefs, type MicMode } from '../../stores/prefs';
 
 /** Radix radio values of the mic ▾ «Режим» section (docs/09 #28). */
@@ -22,9 +23,10 @@ export function selectAutoMute(value: string): void {
   const sec = AUTO_MUTE_OPTIONS.find((o) => String(o) === value);
   if (sec === undefined || usePrefs.getState().autoMuteSec === sec) return;
   // Any rustle keeps the mic «speaking» without noise suppression (owner, 14.10): turning auto-mute on
-  // also turns RNNoise on (not in musician mode, which bypasses processing).
+  // also turns RNNoise on (not in musician mode, which bypasses processing; not where RNNoise
+  // can't run — a phone's platform NS is on anyway, and the synced pref would flip the desktop).
   const p = usePrefs.getState();
-  p.setPrefs(sec > 0 && !p.rnnoise && !p.musicianMode ? { autoMuteSec: sec, rnnoise: true } : { autoMuteSec: sec });
+  p.setPrefs(sec > 0 && !p.rnnoise && !p.musicianMode && rnnoiseSupported() ? { autoMuteSec: sec, rnnoise: true } : { autoMuteSec: sec });
 }
 
 /**

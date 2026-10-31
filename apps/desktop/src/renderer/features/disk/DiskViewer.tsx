@@ -4,7 +4,7 @@ import { Button, Modal, Spinner } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { filePath } from '../../lib/api/endpoints';
 import { CSV_MAX_ROWS, parseCsv, previewKind, stepSibling, textKind, textTooLarge, type TextKind } from '../../lib/diskPreview';
-import { isSafeHref } from '../../lib/markdown/parse';
+import { contentHref, openContentLink } from '../../services/contentLink';
 import { fromMarkdown, type PmNode } from '../../lib/wiki/markdown';
 import { platform } from '../../platform';
 import { downloadItem, openSendToChat } from '../../services/disk';
@@ -53,8 +53,8 @@ function marked(node: PmNode, key: string): ReactNode {
     else if (m.type === 'strike') out = <s>{out}</s>;
     else if (m.type === 'code') out = <code className="rounded bg-code px-1 py-px font-mono text-[0.88em]">{out}</code>;
     else if (m.type === 'link') {
-      const href = typeof m.attrs?.['href'] === 'string' ? m.attrs['href'] : '';
-      if (isSafeHref(href)) {
+      const href = contentHref(typeof m.attrs?.['href'] === 'string' ? m.attrs['href'] : '');
+      if (href) {
         out = (
           <a
             href={href}
@@ -62,7 +62,7 @@ function marked(node: PmNode, key: string): ReactNode {
             data-inline-target
             onClick={(e) => {
               e.preventDefault();
-              void platform.app.openExternal(href);
+              openContentLink(href);
             }}
             className="text-accent-text underline underline-offset-2"
           >

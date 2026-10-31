@@ -5,6 +5,7 @@ import { visualBounds } from '../../../lib/canvas/scene';
 import { AwarenessLayer } from './awareness';
 import { drawBackground, drawObjects, type Ctx2D, type DrawEnv } from './draw';
 import { drawOverlay, type OverlayState } from './overlay';
+import type { ImageSource } from './images';
 import type { CanvasPalette } from './palette';
 
 export interface RendererOptions {
@@ -22,6 +23,8 @@ export interface RendererOptions {
   awareness: AwarenessLayer;
   /** Vote badges: the book while a vote exists (open or finished), null otherwise (ADR-0127). */
   getVotes?: () => DrawEnv['votes'];
+  /** Decoded pictures (absent: pictures are plaques). */
+  images?: ImageSource;
   /** Max device-pixel ratio; 1 in the low-power mode. */
   maxDpr?: number;
   /** Injected for tests / non-DOM hosts. */
@@ -252,7 +255,7 @@ export class Renderer {
   // ── frame ──────────────────────────────────────────────────────────────────
 
   private env(scale: number): DrawEnv {
-    return { palette: this.palette, layouter: this.o.scene.text, scale, hiddenText: this.hiddenText, votes: this.o.getVotes?.() };
+    return { palette: this.palette, layouter: this.o.scene.text, scale, hiddenText: this.hiddenText, votes: this.o.getVotes?.(), images: this.o.images };
   }
 
   frame(): void {
@@ -427,6 +430,7 @@ export function renderSceneTo(
   bounds: Rect,
   pxPerUnit: number,
   pad = 24,
+  images?: ImageSource,
 ): void {
   const ctx = target.getContext('2d');
   if (!ctx) return;
@@ -438,5 +442,6 @@ export function renderSceneTo(
   const world: Rect = { x: bounds.x - pad, y: bounds.y - pad, w: bounds.w + 2 * pad, h: bounds.h + 2 * pad };
   ctx.fillStyle = palette.background;
   ctx.fillRect(world.x, world.y, world.w, world.h);
-  drawObjects(ctx, scene.query(world), world, { palette, layouter: scene.text, scale: pxPerUnit, hiddenText: null });
+  // Pictures already decoded are painted; one still loading is its plaque (the export does not wait).
+  drawObjects(ctx, scene.query(world), world, { palette, layouter: scene.text, scale: pxPerUnit, hiddenText: null, images });
 }

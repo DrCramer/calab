@@ -41,7 +41,24 @@ func sensitiveCanvasPath(r *http.Request) bool {
 	return false
 }
 
+// sensitiveOfficePath: the file and callback URLs the Document Server calls carry signed
+// capabilities (ADR-0143: the callback token has no expiry and names the item and the session
+// key).
+func sensitiveOfficePath(r *http.Request) (string, bool) {
+	for _, value := range []string{r.URL.Path, path.Clean(r.URL.Path)} {
+		for _, prefix := range []string{"/api/office/file", "/api/office/callback"} {
+			if value == prefix || strings.HasPrefix(value, prefix+"/") {
+				return prefix + "/{token}", true
+			}
+		}
+	}
+	return "", false
+}
+
 func safeLogPath(r *http.Request) string {
+	if p, ok := sensitiveOfficePath(r); ok {
+		return p
+	}
 	if sensitiveFormPath(r) {
 		return "/forms/{code}"
 	}

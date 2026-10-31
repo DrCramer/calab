@@ -17,6 +17,11 @@ interface ImportMetaEnv {
   readonly MAIN_VITE_UPDATES_SIGNED?: string;
   /** Extra CSP connect-src sources (e.g. LiveKit on another domain), space-separated (review L3). */
   readonly MAIN_VITE_CSP_CONNECT?: string;
+  /**
+   * The app origins of this deployment, space-separated (docs/06 «Домены»): links to any of them open
+   * inside the app when the signed-in server is one of them (shared/ownLink.ts). CALABA_APP_ORIGINS wins.
+   */
+  readonly MAIN_VITE_APP_ORIGINS?: string;
 }
 
 interface ImportMeta {

@@ -24,8 +24,18 @@ let overlay: { win: BrowserWindow; target: AnnotOverlayTarget; ready: Promise<vo
 
 export function openOverlay(target: AnnotOverlayTarget): boolean {
   if (VISUAL_TEST || !overlaySupported(process.platform)) return false;
-  const bounds = displayBoundsFor(target, screen.getAllDisplays());
-  if (!bounds) return false;
+  const displays = screen.getAllDisplays();
+  const bounds = displayBoundsFor(target, displays);
+  // Issue #102: what the overlay was asked to cover and where it went, once per stream.
+  const diag = {
+    platform: process.platform,
+    target,
+    displays: displays.map((d) => `${d.id} ${d.bounds.x},${d.bounds.y} ${d.bounds.width}x${d.bounds.height} @${d.scaleFactor}`).join('; '),
+  };
+  if (!bounds) {
+    log.warn('[annot] overlay: no display for the shared source', diag);
+    return false;
+  }
   if (overlay && !overlay.win.isDestroyed()) {
     if (overlay.target.sourceId === target.sourceId) return true;
     closeOverlay();
@@ -66,7 +76,17 @@ export function openOverlay(target: AnnotOverlayTarget): boolean {
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   const ready = (devUrl ? win.loadURL(`${devUrl}/overlay.html`) : win.loadFile(OVERLAY_HTML)).then(
     () => {
-      if (!win.isDestroyed()) win.showInactive();
+      if (win.isDestroyed()) return;
+      win.showInactive();
+      if (process.platform === 'win32') {
+        // Windows: a window created on a display with another scale factor than the main one
+        // gets its size scaled once more on the first show — set the bounds again; and topmost
+        // is re-asserted after show, above other topmost windows that came up meanwhile.
+        win.setBounds(bounds);
+        win.setAlwaysOnTop(true, 'screen-saver');
+        win.moveTop();
+      }
+      log.info('[annot] overlay shown', { ...diag, bounds, got: win.getBounds(), visible: win.isVisible(), onTop: win.isAlwaysOnTop() });
     },
     (err: unknown) => log.warn('[annot] overlay load failed', err),
   );

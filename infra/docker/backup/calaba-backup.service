@@ -1,5 +1,5 @@
 [Unit]
-Description=Calaba backup (pg_dump + uploaded files + caddy data)
+Description=Calaba backup (PostgreSQL + uploaded files + configuration)
 Requires=docker.service
 After=docker.service
 

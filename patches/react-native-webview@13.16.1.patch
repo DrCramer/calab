@@ -1,3 +1,289 @@
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/CalabOriginGuard.java b/android/src/main/java/com/reactnativecommunity/webview/CalabOriginGuard.java
+new file mode 100644
+--- /dev/null
++++ b/android/src/main/java/com/reactnativecommunity/webview/CalabOriginGuard.java
+@@ -0,0 +1,97 @@
++package com.reactnativecommunity.webview;
++
++import java.util.regex.Pattern;
++
++/**
++ * Calab patch (ADR-0067): the app origin check of the native main-frame guard. Plain JVM code (no
++ * android.*) so a host JVM test can run it. Mirrors `isAppUrl` in apps/mobile/src/navigation.ts:
++ * https, the exact host and port of the origin, no credentials. Only the scheme and the authority
++ * are read, leniently: path, query and fragment may hold anything Chromium leaves unencoded
++ * (`|`, `^`, `{}`, backtick), which a strict parser such as java.net.URI rejects. Components are
++ * compared, never string prefixes; an authority that does not split cleanly is not the app.
++ */
++public final class CalabOriginGuard {
++    private CalabOriginGuard() {}
++
++    private static final Pattern SCHEME = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*");
++    private static final Pattern PORT = Pattern.compile("[0-9]{1,5}");
++    /** A host as `parseWebOrigin` (apps/mobile/src/config.js) leaves it: lowercase, LDH labels. */
++    private static final Pattern ORIGIN_HOST = Pattern.compile("[a-z0-9]([a-z0-9.-]*[a-z0-9])?");
++
++    /** The configured app origin, parsed once. */
++    public static final class Origin {
++        final String host;
++        final int port;
++
++        Origin(String host, int port) {
++            this.host = host;
++            this.port = port;
++        }
++
++        @Override
++        public String toString() {
++            return "https://" + host + (port == 443 ? "" : ":" + port);
++        }
++    }
++
++    /** Scheme and authority of `scheme://authority...`; port -1 when absent. */
++    private static final class Parts {
++        String scheme;
++        boolean credentials;
++        String host;
++        int port = -1;
++    }
++
++    private static Parts parts(String raw) {
++        if (raw == null) return null;
++        int colon = raw.indexOf(':');
++        if (colon <= 0 || !SCHEME.matcher(raw.substring(0, colon)).matches() || !raw.startsWith("//", colon + 1)) return null;
++        int start = colon + 3;
++        int end = raw.length();
++        for (int i = start; i < raw.length(); i++) {
++            char c = raw.charAt(i);
++            if (c == '/' || c == '?' || c == '#') {
++                end = i;
++                break;
++            }
++        }
++        String authority = raw.substring(start, end);
++        Parts p = new Parts();
++        p.scheme = raw.substring(0, colon);
++        int at = authority.lastIndexOf('@');
++        p.credentials = at >= 0;
++        String hostPort = authority.substring(at + 1);
++        int portColon = hostPort.lastIndexOf(':');
++        p.host = portColon >= 0 ? hostPort.substring(0, portColon) : hostPort;
++        if (p.host.isEmpty()) return null;
++        if (portColon >= 0 && portColon < hostPort.length() - 1) {
++            String port = hostPort.substring(portColon + 1);
++            if (!PORT.matcher(port).matches()) return null;
++            p.port = Integer.parseInt(port);
++            if (p.port > 65535) return null;
++        }
++        return p;
++    }
++
++    /**
++     * The configured origin in the form `parseWebOrigin` writes it — `https://host[:port]`,
++     * lowercase host, no default port, nothing else — or null.
++     */
++    public static Origin parseOrigin(String raw) {
++        Parts p = parts(raw);
++        if (p == null || !"https".equals(p.scheme) || p.credentials || !ORIGIN_HOST.matcher(p.host).matches() || p.port == 443) return null;
++        Origin origin = new Origin(p.host, p.port == -1 ? 443 : p.port);
++        return origin.toString().equals(raw) ? origin : null;
++    }
++
++    /** `url` is a document of the app: https, exactly the host and port of `origin`, no credentials. */
++    public static boolean isAppUrl(String url, Origin origin) {
++        if (origin == null) return false;
++        Parts p = parts(url);
++        return p != null
++            && "https".equalsIgnoreCase(p.scheme)
++            && !p.credentials
++            && p.host.equalsIgnoreCase(origin.host)
++            && (p.port == -1 ? 443 : p.port) == origin.port;
++    }
++}
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
+@@ -15,6 +15,8 @@ import android.webkit.GeolocationPermissions;
+ import android.webkit.PermissionRequest;
+ import android.webkit.ValueCallback;
+ import android.webkit.WebChromeClient;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebResourceResponse;
+ import android.webkit.WebView;
+ import android.webkit.WebViewClient;
+ import android.widget.FrameLayout;
+@@ -104,6 +106,14 @@ public class RNCWebChromeClient extends WebChromeClient implements LifecycleEven
+ 
+                 return true;
+             }
++
++            // Calab patch (ADR-0067): this hidden window only reports its target URL. A POST
++            // (`<form target="_blank">`) never asks shouldOverrideUrlLoading; nothing it requests
++            // reaches the network.
++            @Override
++            public WebResourceResponse shouldInterceptRequest(WebView subview, WebResourceRequest request) {
++                return RNCWebViewClient.calabRefusedResponse();
++            }
+             });
+         }
+ 
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -253,7 +253,18 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+             this.bridgeListener = new WebViewCompat.WebMessageListener() {
+               @Override
+               public void onPostMessage(@NonNull WebView view, @NonNull WebMessageCompat message, @NonNull Uri sourceOrigin, boolean isMainFrame, @NonNull JavaScriptReplyProxy replyProxy) {
+-                RNCWebView.this.onMessage(message.getData(), sourceOrigin.toString());
++                // Calab patch (ADR-0070, Android): the host channel's frame proof, as the iOS patch
++                // does with WKFrameInfo. Only the main frame of exactly the app origin reaches RN;
++                // the event URL is that bare origin. Chromium reports the serialized origin
++                // (`https://host[:port]`, no path or trailing slash; "null" for opaque origins), so
++                // any other form fails closed. Subframes and foreign origins are dropped here.
++                CalabOriginGuard.Origin origin = RNCWebViewClient.calabWebOrigin(view.getContext());
++                String source = sourceOrigin.toString();
++                if (!isMainFrame || origin == null || !origin.toString().equals(source)) {
++                  FLog.d("RNCWebView", "Calab: dropped a host message from " + (isMainFrame ? "a main frame outside the app origin" : "a subframe"));
++                  return;
++                }
++                RNCWebView.this.onMessage(message.getData(), source);
+               }
+             };
+             WebViewCompat.addWebMessageListener(
+@@ -444,6 +455,12 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+          */
+         @JavascriptInterface
+         public void postMessage(String message) {
++            // Calab patch (ADR-0070, Android): this fallback (a WebView without WEB_MESSAGE_LISTENER)
++            // has no frame identity, so it delivers nothing: no host channel, like an old build.
++            if (true) {
++                FLog.d(TAG, "Calab: dropped a host message without frame proof (no WebMessageListener)");
++                return;
++            }
+             if (mWebView.getMessagingEnabled()) {
+                 // Post to main thread because `mWebView.getUrl()` requires to be executed on main.
+                 mWebView.post(() -> mWebView.onMessage(message, mWebView.getUrl()));
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -1,9 +1,12 @@
+ package com.reactnativecommunity.webview;
+ 
+ import android.annotation.TargetApi;
++import android.content.Context;
++import android.content.pm.PackageManager;
+ import android.graphics.Bitmap;
+ import android.net.http.SslError;
+ import android.os.Build;
++import android.os.Bundle;
+ import android.os.SystemClock;
+ import android.util.Log;
+ import android.webkit.HttpAuthHandler;
+@@ -35,6 +38,8 @@ import com.reactnativecommunity.webview.events.TopShouldStartLoadWithRequestEven
+ import android.webkit.CookieManager;
+ import android.webkit.CookieSyncManager;
+ 
++import java.io.ByteArrayInputStream;
++import java.util.Collections;
+ import java.util.concurrent.atomic.AtomicReference;
+ 
+ public class RNCWebViewClient extends WebViewClient {
+@@ -90,8 +95,85 @@ public class RNCWebViewClient extends WebViewClient {
+       reactWebView.callInjectedJavaScriptBeforeContentLoaded();
+     }
+ 
++    /**
++     * Calab patch (ADR-0067): native main-frame origin guard. The app origin comes from the
++     * manifest (`<meta-data android:name="dev.calab.mobile.WEB_ORIGIN">`, written at prebuild by
++     * apps/mobile/plugins/withAndroidWebOrigin.js) and is read once. A main-frame navigation loads
++     * only on that exact origin; anything else is cancelled here, without waiting for JS: upstream
++     * waits 250 ms for `onShouldStartLoadWithRequest` and then allows. JS is still told about a
++     * cancelled navigation (fire-and-forget, its answer is ignored) so the shell can hand a link to
++     * the OS or show the error screen, as before. Sub-frames keep the upstream JS path. The engine
++     * does not ask about POST navigations; `shouldInterceptRequest` answers a main-frame request
++     * outside the origin with an empty 403 that never reaches the network. Without a valid origin
++     * in the manifest every main-frame navigation is refused (fail closed).
++     */
++    private static final String CALAB_WEB_ORIGIN_KEY = "dev.calab.mobile.WEB_ORIGIN";
++    /** Parsed once; null with calabWebOriginRead set when the manifest has no valid origin. */
++    private static volatile CalabOriginGuard.Origin calabWebOrigin = null;
++    private static volatile boolean calabWebOriginRead = false;
++
++    /** Also read by RNCWebView's message listener (host channel frame proof, ADR-0070 Android). */
++    static CalabOriginGuard.Origin calabWebOrigin(Context context) {
++        if (calabWebOriginRead) return calabWebOrigin;
++        String raw = null;
++        try {
++            Bundle meta = context.getPackageManager().getApplicationInfo(context.getPackageName(), PackageManager.GET_META_DATA).metaData;
++            raw = meta != null ? meta.getString(CALAB_WEB_ORIGIN_KEY) : null;
++        } catch (PackageManager.NameNotFoundException e) {
++            raw = null;
++        }
++        CalabOriginGuard.Origin origin = CalabOriginGuard.parseOrigin(raw);
++        if (origin == null) FLog.e(TAG, "No valid " + CALAB_WEB_ORIGIN_KEY + " in the manifest: every main-frame navigation is refused.");
++        calabWebOrigin = origin;
++        calabWebOriginRead = true;
++        return origin;
++    }
++
++    /** An empty 403 in place of a request the guard refuses: it never reaches the network. */
++    static WebResourceResponse calabRefusedResponse() {
++        return new WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", Collections.<String, String>emptyMap(), new ByteArrayInputStream(new byte[0]));
++    }
++
++    private boolean calabGuardMainFrame(WebView view, String url) {
++        if (CalabOriginGuard.isAppUrl(url, calabWebOrigin(view.getContext()))) return false;
++        final RNCWebView rncWebView = (RNCWebView) view;
++        final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
++        if (!isJsDebugging && rncWebView.mMessagingJSModule != null) {
++            // A lock that is gone before JS answers: the answer is a no-op, JS cannot start this load.
++            final double lockIdentifier = RNCWebViewModuleImpl.shouldOverrideUrlLoadingLock.getNewLock().first;
++            RNCWebViewModuleImpl.shouldOverrideUrlLoadingLock.removeLock(lockIdentifier);
++            final WritableMap event = createWebViewEvent(view, url);
++            event.putDouble("lockIdentifier", lockIdentifier);
++            rncWebView.dispatchDirectShouldStartLoadWithRequest(event);
++        } else {
++            // Upstream's event path (debugging, no messaging module), without waiting for a loadUrl
++            // command: a `true` answer would load the URL through Commands.loadUrl, which
++            // shouldInterceptRequest still refuses for a main frame outside the origin.
++            int reactTag = RNCWebViewWrapper.getReactTagFromWebView(view);
++            UIManagerHelper.getEventDispatcherForReactTag((ReactContext) view.getContext(), reactTag).dispatchEvent(new TopShouldStartLoadWithRequestEvent(
++                    reactTag,
++                    createWebViewEvent(view, url)));
++        }
++        return true;
++    }
++
++    /** No frame identity (the framework calls this overload only below API 24): judged as the main frame. */
+     @Override
+     public boolean shouldOverrideUrlLoading(WebView view, String url) {
++        return calabGuardMainFrame(view, url);
++    }
++
++    @Override
++    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
++        if (request.isForMainFrame() && !CalabOriginGuard.isAppUrl(request.getUrl().toString(), calabWebOrigin(view.getContext()))) {
++            FLog.w(TAG, "Refused a main-frame " + request.getMethod() + " request outside the app origin.");
++            return calabRefusedResponse();
++        }
++        return super.shouldInterceptRequest(view, request);
++    }
++
++    /** The upstream sub-frame path: ask JS, wait up to 250 ms, then allow. */
++    private boolean askJsShouldOverrideUrlLoading(WebView view, String url) {
+         final RNCWebView rncWebView = (RNCWebView) view;
+         final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
+ 
+@@ -143,7 +225,8 @@ public class RNCWebViewClient extends WebViewClient {
+     @Override
+     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+         final String url = request.getUrl().toString();
+-        return this.shouldOverrideUrlLoading(view, url);
++        if (request.isForMainFrame()) return calabGuardMainFrame(view, url);
++        return askJsShouldOverrideUrlLoading(view, url);
+     }
+ 
+     @Override
 diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 --- a/apple/RNCWebViewImpl.m
 +++ b/apple/RNCWebViewImpl.m

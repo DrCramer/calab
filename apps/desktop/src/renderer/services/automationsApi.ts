@@ -8,6 +8,7 @@ import {
   RuleTestResponseSchema,
   SetBoardGitRequestSchema,
   TestBoardRuleRequestSchema,
+  UpdateBoardGitRequestSchema,
   UpdateBoardRuleRequestSchema,
   type GitProvider,
 } from '@calaba/protocol';
@@ -37,5 +38,8 @@ export const automationsApi = {
     /** Creates or replaces; `secret` '' = the server generates one (returned once). */
     set: (boardId: string, provider: GitProvider, secret: string) => call('PUT', `/api/boards/${boardId}/git`, BoardGitResponseSchema, body(SetBoardGitRequestSchema, { provider, secret })),
     remove: (boardId: string) => callEmpty('DELETE', `/api/boards/${boardId}/git`),
+    /** The GitLab backlink (board task #101): the switch, the token ('' removes it), the GitLab address; unset fields stay. */
+    patch: (boardId: string, init: MessageInitShape<typeof UpdateBoardGitRequestSchema>) =>
+      call('PATCH', `/api/boards/${boardId}/git`, BoardGitResponseSchema, body(UpdateBoardGitRequestSchema, init)),
   },
 };

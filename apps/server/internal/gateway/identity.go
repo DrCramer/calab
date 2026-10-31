@@ -305,6 +305,10 @@ var eventScope = map[protoreflect.Name]bool{
 	// The workspace's live phone calls changed (ADR-0128): workspace channel; routed to the
 	// sessions with MANAGE_INTEGRATIONS (not guests, not bots).
 	"sip_calls_changed": true,
+	// The call journal (ADR-0137 §1): workspace channel, routed to VIEW_JOURNALS (with the
+	// call's room visible) and the call's parties; the missed badge on the member's user channel,
+	// lease-gated by its workspace like every scoped event.
+	"sip_journal_entry": true, "sip_missed_changed": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

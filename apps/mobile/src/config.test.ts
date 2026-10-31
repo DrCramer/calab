@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WebOriginError, parseWebOrigin } from './config';
+import { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity } from './config';
 
 describe('parseWebOrigin', () => {
   it('accepts a bare https origin, with or without the trailing slash or a port', () => {
@@ -34,5 +34,58 @@ describe('parseWebOrigin', () => {
     'https://calab.exa\tmple.com',
   ])('rejects %j that the URL parser would rewrite or truncate', (raw) => {
     expect(() => parseWebOrigin(raw)).toThrow('bare origin');
+  });
+});
+
+describe('parseLinkHosts', () => {
+  it('defaults to the host of the web origin, without its port, or to none', () => {
+    expect(parseLinkHosts(undefined, 'https://calab.example.com')).toEqual(['calab.example.com']);
+    expect(parseLinkHosts('  ', 'https://calab.example.com:8443')).toEqual(['calab.example.com']);
+    expect(parseLinkHosts(undefined)).toEqual([]);
+  });
+
+  it('rejects an origin whose host is an IP or localhost, same as an explicit host (review follow-up)', () => {
+    expect(() => parseLinkHosts(undefined, 'https://127.0.0.1:8443')).toThrow('EXPO_PUBLIC_CALAB_URL');
+    expect(() => parseLinkHosts('  ', 'https://localhost:8443')).toThrow('EXPO_PUBLIC_CALAB_URL');
+  });
+
+  it('takes space-separated hostnames as given, once each, instead of the default', () => {
+    expect(parseLinkHosts(' calab.example.com  alias.example.ru\tcalab.example.com ', 'https://other.example.com'))
+      .toEqual(['calab.example.com', 'alias.example.ru']);
+    expect(parseLinkHosts('xn--80ak6aa92e.example.com')).toEqual(['xn--80ak6aa92e.example.com']);
+  });
+
+  it.each([
+    'Calab.example.com', 'calab.example.com:443', 'https://calab.example.com', 'calab.example.com/', 'calab.example.com/t/',
+    '*.example.com', 'localhost', '127.0.0.1', 'calab..example.com', '-calab.example.com', 'calab-.example.com',
+    'calab_x.example.com', 'calab.example.com.', 'user@calab.example.com', 'calab.example.com,alias.example.com',
+    `${'a'.repeat(64)}.example.com`, 'calab.example.com\\x', 'кала.example.com',
+  ])('rejects %j', (raw) => {
+    expect(() => parseLinkHosts(`calab.example.com ${raw}`, 'https://calab.example.com')).toThrow('EXPO_PUBLIC_CALAB_LINK_HOSTS');
+  });
+});
+
+describe('parseReleaseIdentity', () => {
+  it('defaults locally and preserves explicit distribution identity', () => {
+    expect(parseReleaseIdentity()).toEqual({ version: '0.1.0', buildNumber: '1', versionCode: 1 });
+    expect(parseReleaseIdentity('4.2.3', '21')).toEqual({ version: '4.2.3', buildNumber: '21', versionCode: 21 });
+  });
+  it.each(['', '1.2', 'v1.2.3', '1.2.3-beta', '1.2.3.4', '01.2.3', '1.2.3\n'])('rejects malformed version %j', (version) => {
+    expect(() => parseReleaseIdentity(version, '21')).toThrow('CALAB_APP_VERSION');
+  });
+  it.each(['', '0', '-1', '01', '1.2', '1e3', '10000', '21\n'])('rejects malformed build %j', (build) => {
+    expect(() => parseReleaseIdentity('1.2.3', build)).toThrow('CALAB_IOS_BUILD_NUMBER');
+  });
+
+  it('CALAB_ANDROID_VERSION_CODE defaults to the iOS build number when unset or blank', () => {
+    expect(parseReleaseIdentity('1.2.3', '21')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 21 });
+    expect(parseReleaseIdentity('1.2.3', '21', '')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 21 });
+  });
+  it('accepts an explicit CALAB_ANDROID_VERSION_CODE that differs from the build number', () => {
+    expect(parseReleaseIdentity('1.2.3', '21', '2100000000')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 2100000000 });
+    expect(parseReleaseIdentity('1.2.3', '21', '1')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 1 });
+  });
+  it.each(['0', '-1', '01', '1.2', '1e3', '2100000001', '21\n'])('rejects malformed CALAB_ANDROID_VERSION_CODE %j', (versionCode) => {
+    expect(() => parseReleaseIdentity('1.2.3', '21', versionCode)).toThrow('CALAB_ANDROID_VERSION_CODE');
   });
 });

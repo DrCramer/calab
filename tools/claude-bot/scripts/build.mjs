@@ -6,8 +6,10 @@ import { URL, fileURLToPath } from 'node:url';
 const sdk = fileURLToPath(new URL('../../../packages/bot-sdk/src/index.ts', import.meta.url));
 
 await build({
-  entryPoints: ['src/main.ts'],
-  outfile: 'dist/daemon.mjs',
+  // daemon: the launchd process; mcp: the runs' tools (stdio MCP server); inbox: the lead's reader.
+  entryPoints: { daemon: 'src/main.ts', mcp: 'src/mcp-cli.ts', inbox: 'src/inbox-cli.ts' },
+  outdir: 'dist',
+  outExtension: { '.js': '.mjs' },
   bundle: true,
   platform: 'node',
   format: 'esm',

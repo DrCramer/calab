@@ -78,3 +78,28 @@ func TestCanvasCodesNeverAppearInHTTPLogs(t *testing.T) {
 		t.Fatalf("safeLogPath = %q", got)
 	}
 }
+
+func TestOfficeTokensNeverAppearInHTTPLogs(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+	marker := "office-token-sentinel"
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/office/file/{token}", HandlerFunc(func(http.ResponseWriter, *http.Request) error { return fmt.Errorf("database down") }))
+	mux.Handle("POST /api/office/callback/{token}", HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil }))
+	handler := Observe(mux)
+	for _, c := range []struct{ method, raw string }{
+		{"GET", "/api/office/file/" + marker}, {"POST", "/api/office/callback/" + marker},
+		{"GET", "/api/office//file/" + marker}, {"POST", "/api/office/callback%2F" + marker},
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), c.method, c.raw, nil)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if strings.Contains(logs.String(), marker) {
+		t.Fatalf("office token leaked: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "/api/office/callback/{token}") {
+		t.Fatal("redaction lost the route")
+	}
+}

@@ -74,6 +74,7 @@
     "position": 0,
     "priority": "TASK_PRIORITY_HIGH",
     "relations": [],
+    "releases": [],
     "room_id": "",
     "start_on": "",
     "started_at": null,

@@ -17,6 +17,8 @@ import { prefsOf, useBoardsUi, type BoardPrefs, type GroupBy, type SortBy, type 
 import { myUserId } from '../../stores/session';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { FilterButton } from './FilterBar';
+import { BoardSearchField } from './TaskSearch';
+import { useTaskSearch } from '../../stores/taskSearch';
 import { exportCsv } from './exportCsv';
 import { hasBit, settingsEntryTab, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
@@ -44,6 +46,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
   const manage = hasBit(perms, MANAGE_BOARD);
   const mobile = useMobile();
+  const searching = useTaskSearch((s) => !!s.boardText[boardId]?.trim());
   // Phone: the view choice and «Отображение» live in «…» (owner 07.10); the popover is anchored under the header.
   const [displayOpen, setDisplayOpen] = useState(false);
   return (
@@ -65,10 +68,16 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         {mobile ? null : <span className="flex-1" />}
         {mobile ? null : (
           <>
+            <BoardSearchField boardId={boardId} />
             <FilterButton boardId={boardId} workspaceId={workspaceId} bar />
-            <SortMenu boardId={boardId} />
-            <DisplayMenu boardId={boardId} />
-            <ViewSwitch boardId={boardId} />
+            {/* While searching the board shows the search's list: the view's sort, display and kind wait. */}
+            {searching ? null : (
+              <>
+                <SortMenu boardId={boardId} />
+                <DisplayMenu boardId={boardId} />
+                <ViewSwitch boardId={boardId} />
+              </>
+            )}
           </>
         )}
         {/* Phone: «…» then the accent «+» in the corner (the universal CreateButton); desktop: «+ Задача», then «…». */}
@@ -92,6 +101,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
           <DisplayMenu boardId={boardId} open={displayOpen} onOpenChange={setDisplayOpen} />
           <div className="relative">
             <div className="flex h-12 min-w-0 items-center gap-1.5 overflow-x-auto pl-4 [scrollbar-width:none]" data-testid="filter-row">
+              <BoardSearchField boardId={boardId} phone />
               <FilterButton boardId={boardId} workspaceId={workspaceId} />
               <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
               <BoardCompletion boardId={boardId} />
@@ -259,12 +269,13 @@ function SaveViewDialog({ boardId, prefs, canShare, onClose }: { boardId: string
   );
 }
 
-const GROUPS: ReadonlyArray<{ v: GroupBy; label: 'boards.group.status' | 'boards.group.assignee' | 'boards.group.priority' | 'boards.group.label' | 'boards.group.milestone' | 'boards.group.none' }> = [
+const GROUPS: ReadonlyArray<{ v: GroupBy; label: 'boards.group.status' | 'boards.group.assignee' | 'boards.group.priority' | 'boards.group.label' | 'boards.group.milestone' | 'boards.group.release' | 'boards.group.none' }> = [
   { v: 'status', label: 'boards.group.status' },
   { v: 'assignee', label: 'boards.group.assignee' },
   { v: 'priority', label: 'boards.group.priority' },
   { v: 'label', label: 'boards.group.label' },
   { v: 'milestone', label: 'boards.group.milestone' },
+  { v: 'release', label: 'boards.group.release' },
   { v: 'none', label: 'boards.group.none' },
 ];
 const SORTS: ReadonlyArray<{ v: SortBy; label: 'boards.sort.manual' | 'boards.sort.updated' | 'boards.sort.due' | 'boards.sort.priority' | 'boards.sort.key' }> = [

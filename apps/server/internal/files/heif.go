@@ -41,6 +41,27 @@ func IsHEIF(head []byte) bool {
 	return heif
 }
 
+// IsAVIF reports whether head starts an AVIF image: an ISO-BMFF `ftyp` whose major or a
+// compatible brand is `avif` (still) or `avis` (sequence).
+func IsAVIF(head []byte) bool {
+	if len(head) < 16 || string(head[4:8]) != "ftyp" {
+		return false
+	}
+	size := int(binary.BigEndian.Uint32(head[0:4]))
+	if size < 16 || size > len(head) {
+		size = len(head)
+	}
+	for off := 8; off+4 <= size; off += 4 {
+		if off == 12 { // minor_version
+			continue
+		}
+		if b := string(head[off : off+4]); b == "avif" || b == "avis" {
+			return true
+		}
+	}
+	return false
+}
+
 // bmffBox is one ISO-BMFF box: its type and payload span within the file.
 type bmffBox struct {
 	typ      string

@@ -5,7 +5,7 @@
  *   voice room (I may connect): «Подключиться», «Открыть чат» (the chat without joining);
  *   voice room without CONNECT, text room: «Открыть чат»;
  *   DM: «Написать»; member: «Сообщения» (filter by author) and «Написать» (if a DM is allowed);
- *   message: «Открыть». A person I may call (ADR-0034) also gets «Позвонить» after «Написать» —
+ *   message: «Открыть»; a section («Телефония», ADR-0137 §5): «Открыть». A person I may call (ADR-0034) also gets «Позвонить» after «Написать» —
  *   a button only, never on a key (a call must not start by a stray ⇧Enter).
  */
 
@@ -13,7 +13,7 @@ export type SwitcherAction = 'join' | 'chat' | 'write' | 'call' | 'filter' | 'op
 
 /** The part of a row that decides its actions. */
 export interface SwitcherRowKind {
-  kind: 'dm' | 'room' | 'member' | 'message';
+  kind: 'dm' | 'room' | 'member' | 'message' | 'section';
   voice?: boolean;
   /** CONNECT in that voice room: without it the only action is to read its chat. */
   canConnect?: boolean;

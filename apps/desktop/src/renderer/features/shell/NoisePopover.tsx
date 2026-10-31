@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'reac
 import { Button, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { MIC_CHECK_SEGMENTS, litSegments } from '../../lib/media/micCheck';
+import { rnnoiseSupported } from '../../lib/media/rnnoiseSupport';
 import { stopMicCheck, toggleMicCheck, useMicCheck } from '../../services/micCheck';
 import { usePrefs } from '../../stores/prefs';
 import { popoverBox } from './menu';
@@ -38,9 +39,11 @@ function SegmentMeter({ db }: { db: number }): ReactNode {
  * mic check (3 s recording → played back to me, 24-segment post-RNNoise meter).
  */
 export function NoiseButton(): ReactNode {
-  // Musician mode (ADR-0052) forces RNNoise off: the button and the toggle show what is in force.
+  // Musician mode (ADR-0052) and a phone / WebKit (platform NS, lib/media/rnnoiseSupport.ts) force
+  // RNNoise off: the button and the toggle show what is in force.
   const musician = usePrefs((s) => s.musicianMode);
-  const rnnoise = usePrefs((s) => s.rnnoise) && !musician;
+  const supported = rnnoiseSupported();
+  const rnnoise = usePrefs((s) => s.rnnoise) && !musician && supported;
   const setPrefs = usePrefs((s) => s.setPrefs);
   const phase = useMicCheck((s) => s.phase);
   const db = useMicCheck((s) => s.db);
@@ -97,9 +100,9 @@ export function NoiseButton(): ReactNode {
         >
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-[15px] font-semibold leading-5">{t('voice.rnnoise')}</h2>
-            <Toggle label={t('voice.rnnoise')} checked={rnnoise} disabled={musician} onChange={(v) => setPrefs({ rnnoise: v })} />
+            <Toggle label={t('voice.rnnoise')} checked={rnnoise} disabled={musician || !supported} onChange={(v) => setPrefs({ rnnoise: v })} />
           </div>
-          <p className="text-body text-muted">{musician ? t('music.rnnoiseOff') : t('noise.about')}</p>
+          <p className="text-body text-muted">{musician ? t('music.rnnoiseOff') : supported ? t('noise.about') : t('voice.rnnoisePlatform')}</p>
           <div className="flex flex-col gap-2">
             <h3 className="text-body font-semibold">{t('voice.micTest')}</h3>
             <div className="flex items-center gap-3">

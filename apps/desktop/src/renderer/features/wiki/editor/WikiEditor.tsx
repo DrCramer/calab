@@ -5,19 +5,29 @@
  * tree does not re-render on transactions (`shouldRerenderOnTransaction: false`) — the menus
  * subscribe to exactly what they show.
  */
+import { resolveFocusPosition, type Editor, type FocusPosition } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { t } from '../../../i18n';
 import { cx } from '../../../components/ui';
-import { filterBlocks, type BlockDef } from './blocks';
+import type { BlockDef } from './blocks';
 import { createEnv, type EditorEnv } from './env';
 import { buildExtensions } from './extensions';
 import { BubbleBar, SuggestionMenu, TableBar } from './Menus';
+import { offeredBlocks } from './suggestions';
 import type { WikiEditorProps } from './types';
+import './prose.css';
 import './wiki.css';
 
-function assignEnv(env: EditorEnv, p: Pick<WikiEditorProps, 'onUploadImage' | 'mentionSource' | 'pageSource' | 'imagePath' | 'onError'>): EditorEnv {
+type EnvProps = Pick<WikiEditorProps, 'onUploadImage' | 'mentionSource' | 'pageSource' | 'imagePath' | 'onError' | 'blocks' | 'highlight' | 'onKey'>;
+
+function assignEnv(env: EditorEnv, p: EnvProps): EditorEnv {
   env.upload = p.onUploadImage ?? null;
+  // A new array each render is fine: the set is rebuilt only when the ids change.
+  const ids = p.blocks?.join(',') ?? null;
+  if (ids !== (env.blocks ? [...env.blocks].join(',') : null)) env.blocks = p.blocks ? new Set(p.blocks) : null;
+  env.highlight = p.highlight ?? true;
+  env.onKey = p.onKey ?? null;
   env.mentions = p.mentionSource ?? null;
   env.pages = p.pageSource ?? null;
   env.imagePath = p.imagePath ?? ((id) => `/api/files/${id}`);
@@ -25,8 +35,24 @@ function assignEnv(env: EditorEnv, p: Pick<WikiEditorProps, 'onUploadImage' | 'm
   return env;
 }
 
-export default function WikiEditor({ doc, awareness, editable, me, onUploadImage, mentionSource, pageSource, imagePath, onError, onReady, phone, className }: WikiEditorProps): ReactNode {
-  const props = { onUploadImage, mentionSource, pageSource, imagePath, onError };
+/**
+ * The caret first, the DOM focus after — never Tiptap's `focus` command on an unfocused editor. On
+ * iOS that command focuses the DOM synchronously (to raise the keyboard) before dispatching its own
+ * transaction: the focus event dispatches one first, a plugin appends to it (the trailing paragraph
+ * after a final list or heading, on the editor's first transaction), and the command's transaction,
+ * built from the older state, throws «Applying a mismatched transaction» (board #109). Here the
+ * selection transaction goes first (taking any such reshaping with it, out of the undo history), and
+ * ProseMirror's own focus dispatches nothing stale.
+ */
+function focusAt(editor: Editor, at: FocusPosition = null): void {
+  if (editor.isDestroyed) return;
+  const sel = resolveFocusPosition(editor.state.doc, at) ?? editor.state.selection;
+  editor.view.dispatch(editor.state.tr.setSelection(sel).scrollIntoView().setMeta('addToHistory', false));
+  editor.view.focus();
+}
+
+export default function WikiEditor({ doc, content, awareness, editable, me, onUploadImage, mentionSource, pageSource, imagePath, onError, onReady, phone, blocks, highlight, placeholder, label, onKey, compact, className }: WikiEditorProps): ReactNode {
+  const props: EnvProps = { onUploadImage, mentionSource, pageSource, imagePath, onError, blocks, highlight, onKey };
   // Filled from the first props (node views read it while the editor is created), then kept fresh
   // without rebuilding the editor: the extensions read it at event time.
   const [env] = useState<EditorEnv>(() => assignEnv(createEnv(), props));
@@ -37,19 +63,24 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
   const aw = awareness ?? null;
   const meName = me.name;
   const meColor = me.color;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the name/colour follow via updateUser below
-  const extensions = useMemo(() => buildExtensions({ doc, awareness: aw, me: { id: me.id, name: meName, color: meColor }, env }), [doc, aw, me.id, env]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the name/colour follow via updateUser below; the placeholder is read once
+  const extensions = useMemo(() => buildExtensions({ doc, awareness: aw, me: { id: me.id, name: meName, color: meColor }, env, placeholder }), [doc, aw, me.id, env]);
+  // A standalone editor's content is its initial value only (later props never reset what is typed).
+  const [initial] = useState(() => (doc ? undefined : (content as object | undefined)));
 
   const editor = useEditor(
     {
       extensions,
       editable,
+      ...(initial ? { content: initial } : {}),
       immediatelyRender: true,
       shouldRerenderOnTransaction: false,
       editorProps: {
+        // The page's keys first (⌘↩ / Esc), unless a popover is open: then Esc / Enter are the popover's.
+        handleKeyDown: (_view, event) => (!env.menu.get() && env.onKey ? env.onKey(event) : false),
         attributes: {
           class: 'wiki-prose',
-          'aria-label': t('wiki.editor.label'),
+          'aria-label': label ?? t('wiki.editor.label'),
           role: 'textbox',
           'aria-multiline': 'true',
           spellcheck: 'true',
@@ -73,6 +104,22 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
     }
   }, [editor, awareness, me.id, me.name]);
 
+  // Esc while a `/` `@` `[[` popover is open belongs to the popover. Taken on the window before anyone
+  // else (a dialog around the editor closes on Esc in the capture phase, the board closes the task)
+  // and handed to the editor's own handlers, which close it.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || !env.menu.get() || editor.isDestroyed) return;
+      if (!(e.target instanceof Node) || !editor.view.dom.contains(e.target)) return;
+      e.stopPropagation();
+      e.preventDefault();
+      editor.view.someProp('handleKeyDown', (f) => f(editor.view, e));
+      env.menu.set(null); // the toolbar's «+» list has no suggestion behind it
+    };
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
+  }, [editor, env]);
+
   const ready = useRef(onReady);
   useEffect(() => {
     ready.current = onReady;
@@ -82,11 +129,11 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
     ready.current?.({
       getJSON: () => editor.getJSON(),
       getText: () => editor.getText({ blockSeparator: '\n' }),
-      focus: () => editor.commands.focus(),
+      focus: (at) => focusAt(editor, at),
       editor,
       openBlocks: () => {
         if (editor.isDestroyed || !editor.isEditable) return;
-        const items = filterBlocks('').filter((b) => (b.id !== 'image' || !!env.upload) && (b.id !== 'pageLink' || !!env.pages));
+        const items = offeredBlocks(env, '', true);
         env.menu.set({
           kind: 'slash',
           items,
@@ -103,13 +150,13 @@ export default function WikiEditor({ doc, awareness, editable, me, onUploadImage
   }, [editor, env]);
 
   return (
-    <div className={cx('wiki-editor', className)} data-editable={editable || undefined} data-phone={phone || undefined}>
+    <div className={cx('wiki-editor', className)} data-editable={editable || undefined} data-phone={phone || undefined} data-compact={compact || undefined}>
       <EditorContent editor={editor} />
       {editable ? (
         <>
           {phone ? null : <BubbleBar editor={editor} env={env} />}
           <TableBar editor={editor} />
-          <SuggestionMenu env={env} phone={phone === true} />
+          <SuggestionMenu editor={editor} env={env} phone={phone === true} />
         </>
       ) : null}
     </div>

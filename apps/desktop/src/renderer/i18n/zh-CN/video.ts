@@ -147,6 +147,8 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'perm.VIDEO': '使用摄像头',
   'media.cameraLimit': '同时开启数量',
   'media.cameraLimitHint': '0——房间内关闭摄像头功能',
+  'media.joinLeaveSoundMax': '进出提示音',
+  'media.joinLeaveSoundMaxHint': '房间人数不超过此值时播放；0——不播放',
 
   // errors (lib/media/errors.ts)
   'mediaErr.camera.permission': '摄像头不可用——请检查权限',

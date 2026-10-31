@@ -1207,9 +1207,10 @@ type UpdateWorkspaceRequest struct {
 	TempArchiveDays         *uint32                `protobuf:"varint,11,opt,name=temp_archive_days,json=tempArchiveDays,proto3,oneof" json:"temp_archive_days,omitempty"`          // 1|7|30|90|365 (MANAGE_WORKSPACE; else 422)
 	// Workspace.owner_sees_private: the workspace owner only (403 OWNER_ONLY for anyone else, not
 	// delegable by roles). A change writes a workspace journal entry (WorkspaceAuditEntry).
-	OwnerSeesPrivate *bool `protobuf:"varint,12,opt,name=owner_sees_private,json=ownerSeesPrivate,proto3,oneof" json:"owner_sees_private,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	OwnerSeesPrivate         *bool   `protobuf:"varint,12,opt,name=owner_sees_private,json=ownerSeesPrivate,proto3,oneof" json:"owner_sees_private,omitempty"`
+	DefaultJoinLeaveSoundMax *uint32 `protobuf:"varint,13,opt,name=default_join_leave_sound_max,json=defaultJoinLeaveSoundMax,proto3,oneof" json:"default_join_leave_sound_max,omitempty"` // 0..99 (0 = no join/leave cues)
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *UpdateWorkspaceRequest) Reset() {
@@ -1324,6 +1325,13 @@ func (x *UpdateWorkspaceRequest) GetOwnerSeesPrivate() bool {
 		return *x.OwnerSeesPrivate
 	}
 	return false
+}
+
+func (x *UpdateWorkspaceRequest) GetDefaultJoinLeaveSoundMax() uint32 {
+	if x != nil && x.DefaultJoinLeaveSoundMax != nil {
+		return *x.DefaultJoinLeaveSoundMax
+	}
+	return 0
 }
 
 type WorkspaceAuditEntry struct {
@@ -4531,7 +4539,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"workspaces\"x\n" +
 	"\x14GetWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\x8d\a\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xf3\a\n" +
 	"\x16UpdateWorkspaceRequest\x12\x17\n" +
 	"\x04slug\x18\x01 \x01(\tH\x00R\x04slug\x88\x01\x01\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12C\n" +
@@ -4550,7 +4558,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"timeFormat\x88\x01\x01\x12/\n" +
 	"\x11temp_archive_days\x18\v \x01(\rH\n" +
 	"R\x0ftempArchiveDays\x88\x01\x01\x121\n" +
-	"\x12owner_sees_private\x18\f \x01(\bH\vR\x10ownerSeesPrivate\x88\x01\x01B\a\n" +
+	"\x12owner_sees_private\x18\f \x01(\bH\vR\x10ownerSeesPrivate\x88\x01\x01\x12C\n" +
+	"\x1cdefault_join_leave_sound_max\x18\r \x01(\rH\fR\x18defaultJoinLeaveSoundMax\x88\x01\x01B\a\n" +
 	"\x05_slugB\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_visibilityB\x0f\n" +
@@ -4562,7 +4571,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x15_default_camera_limitB\x0e\n" +
 	"\f_time_formatB\x14\n" +
 	"\x12_temp_archive_daysB\x15\n" +
-	"\x13_owner_sees_private\"\x9c\x02\n" +
+	"\x13_owner_sees_privateB\x1f\n" +
+	"\x1d_default_join_leave_sound_max\"\x9c\x02\n" +
 	"\x13WorkspaceAuditEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x121\n" +

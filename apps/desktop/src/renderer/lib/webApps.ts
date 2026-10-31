@@ -114,15 +114,6 @@ export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], g
 }
 
 /**
- * Hide profile and voice controls while a web app fills the content area, and on the Calendar /
- * Boards / Disk / Wiki tabs — even during a call (owner, 02.10); there the column's
- * ColumnVoice carries the call's block (CBF-4).
- */
-export function showBottomIsland(appOpen: boolean, workTab = false): boolean {
-  return !appOpen && !workTab;
-}
-
-/**
  * What the title bar's left slot shows: the open web app's name as plain text (no chevron, not a
  * menu) while the app view is active, otherwise the workspace switcher.
  */

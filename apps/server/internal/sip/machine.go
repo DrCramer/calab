@@ -81,6 +81,13 @@ type InCall struct {
 	// A transfer of the answered call rings (ADR-0132, transfer.go): Phase is ring, Answered the
 	// member still on the call.
 	Xfer *Xfer `json:"xfer,omitempty"`
+	// Seq: the journal events logged so far (ADR-0137 §1, events.go); the next one is Seq+1.
+	Seq int `json:"ev_seq,omitempty"`
+	// OffHours: the call came outside the schedule's working hours and follows its off-hours
+	// route (ADR-0138); ViaFallback: the route that rings now was reached through a group's
+	// fallback (nobody answered, everybody busy or declined). Both go to whoever it rings.
+	OffHours    bool `json:"off_hours,omitempty"`
+	ViaFallback bool `json:"via_fallback,omitempty"`
 }
 
 // Effects of one transition.
@@ -97,6 +104,8 @@ type Effects struct {
 	// handed the call over leaves it.
 	Xfer     bool
 	Released *uuid.UUID
+	// Events: the journal's steps of this transition (ADR-0137 §1), numbered by InCall.Seq.
+	Events []Event
 }
 
 // Play is what the worker plays: a prompt file, or the ringback in a loop.
@@ -126,15 +135,19 @@ var ErrNotRinging = errors.New("sip: the call does not ring this user")
 // Live reports a call that is not over.
 func (c *InCall) Live() bool { return c.Phase != PhaseEnded && c.Phase != "" }
 
-// Enter follows route t (the entry point, a key, a fallback).
-func (c *InCall) Enter(e Env, t Target, fx *Effects) {
-	c.stopRinging(fx)
+// Enter follows route t (the entry point, a key, a dialed number).
+func (c *InCall) Enter(e Env, t Target, fx *Effects) { c.enter(e, t, false, fx) }
+
+// enter follows route t; fallback: t is a group's fallback.
+func (c *InCall) enter(e Env, t Target, fallback bool, fx *Effects) {
+	c.stopRinging(e, EndNoAnswer, fx)
 	d := Route(e.PBX, t, e.Avail, DirectRingSec)
+	c.ViaFallback = fallback || d.Fallbacks > 0
 	c.Hops += d.Hops + 1
 	c.Fallbacks += d.Fallbacks
 	c.step(routeLabel(t))
 	if c.Hops > MaxHops || c.Fallbacks > MaxFallbacks {
-		c.hangup(ReasonLoop, fx)
+		c.hangup(e, ReasonLoop, fx)
 		return
 	}
 	switch d.Action {
@@ -143,7 +156,7 @@ func (c *InCall) Enter(e Env, t Target, fx *Effects) {
 	case ActRing:
 		c.ring(e, d, fx)
 	default:
-		c.hangup(d.Reason, fx)
+		c.hangup(e, d.Reason, fx)
 	}
 	if early := c.Early; early != "" {
 		c.Early = ""
@@ -189,6 +202,7 @@ func (c *InCall) playMenu(e Env, m *Menu, attempt int, fx *Effects) {
 	}
 	fx.Play = &Play{File: m.Prompt}
 	fx.Changed = true
+	c.log(e, Event{Kind: EvMenu, TargetKind: TkMenu, TargetID: &id, TargetName: m.Name, Digits: attemptDigits(attempt)}, fx)
 }
 
 func (c *InCall) ring(e Env, d Decision, fx *Effects) {
@@ -205,6 +219,14 @@ func (c *InCall) ring(e Env, d Decision, fx *Effects) {
 	}
 	fx.Play = &Play{Ringback: true}
 	fx.Changed = true
+	if d.Group != nil {
+		strategy := "ring_all"
+		if d.Sequential {
+			strategy = "round_robin"
+		}
+		g := *d.Group
+		c.log(e, Event{Kind: EvGroup, TargetKind: TkGroup, TargetID: &g, TargetName: e.PBX.Groups[g].Name, Reason: strategy}, fx)
+	}
 	switch {
 	case c.Sequential:
 		c.ringAt(e, 0, fx)
@@ -215,8 +237,24 @@ func (c *InCall) ring(e Env, d Decision, fx *Effects) {
 		c.Ringing = append(c.Ringing, r.User)
 		fx.Rings = append(fx.Rings, r.User)
 		c.addRang(r)
+		c.logRing(e, r, fx)
 		c.Deadline = e.ms(time.Duration(r.Sec) * time.Second)
 	}
+}
+
+// logRing logs that r's devices started ringing: for the group that rings, or the number.
+func (c *InCall) logRing(e Env, r Ring, fx *Effects) {
+	u := r.User
+	ev := Event{Kind: EvRing, User: &u}
+	switch {
+	case c.Group != nil:
+		g := *c.Group
+		ev.TargetKind, ev.TargetID, ev.TargetName = TkGroup, &g, e.PBX.Groups[g].Name
+	case r.Extension != uuid.Nil:
+		x := r.Extension
+		ev.TargetKind, ev.TargetID, ev.TargetName = TkExtension, &x, e.PBX.Extensions[x].Number
+	}
+	c.log(e, ev, fx)
 }
 
 // until is the deadline d from now, not past the group's fallback.
@@ -263,6 +301,7 @@ func (c *InCall) ringAll(e Env, fx *Effects) {
 		fx.Rings = append(fx.Rings, r.User)
 		fx.Changed = true
 		c.addRang(r)
+		c.logRing(e, r, fx)
 	}
 	if len(c.Ringing) == 0 {
 		c.nobody(e, g, fx)
@@ -275,7 +314,7 @@ func (c *InCall) ringAll(e Env, fx *Effects) {
 // checked them when the call came; somebody may have taken another call since). Past the end
 // of the circle the group starts the next round with who is available then.
 func (c *InCall) ringAt(e Env, i int, fx *Effects) {
-	c.stopRinging(fx)
+	c.stopRinging(e, EndNoAnswer, fx)
 	for round := 0; round < 2; round++ {
 		for ; i < len(c.Ring); i++ {
 			r := c.Ring[i]
@@ -285,6 +324,7 @@ func (c *InCall) ringAt(e Env, i int, fx *Effects) {
 			c.Pos = i
 			c.Ringing = []uuid.UUID{r.User}
 			c.addRang(r)
+			c.logRing(e, r, fx)
 			c.Deadline = c.until(e, time.Duration(r.Sec)*time.Second)
 			fx.Rings = append(fx.Rings, r.User)
 			fx.Changed = true
@@ -331,7 +371,14 @@ func (c *InCall) nobody(e Env, g Group, fx *Effects) {
 
 // failRing: nobody answered — the round-robin pointer moves on by one, then the fallback.
 func (c *InCall) failRing(e Env, reason string, fx *Effects) {
-	c.stopRinging(fx)
+	end := EndNoAnswer
+	if reason == ReasonDeclined {
+		end = EndDeclined
+	}
+	if c.Xfer == nil && c.Group != nil && c.OnFail.Kind != RouteHangup && c.OnFail.Kind != RouteRepeat {
+		end = EndFallback
+	}
+	c.stopRinging(e, end, fx)
 	if c.Sequential && c.Group != nil {
 		if g, ok := e.PBX.Groups[*c.Group]; ok {
 			if pos, ok := NextPosition(g, nil, c.Rang); ok {
@@ -344,39 +391,58 @@ func (c *InCall) failRing(e Env, reason string, fx *Effects) {
 		return
 	}
 	if c.OnFail.Kind == RouteHangup || c.OnFail.Kind == RouteRepeat {
-		c.hangup(reason, fx)
+		c.hangup(e, reason, fx)
 		return
 	}
 	if c.Group != nil { // a group's fallback (ADR-0124): A → B → A … ends after MaxFallbacks
+		why := "timeout"
+		switch reason {
+		case ReasonDeclined:
+			why = "declined"
+		case ReasonNoMembers:
+			why = "nobody"
+		}
+		c.log(e, withTarget(e.PBX, c.OnFail, Event{Kind: EvFallback, Reason: why}), fx)
 		c.Fallbacks++
 		if c.Fallbacks > MaxFallbacks {
 			c.step(routeLabel(c.OnFail))
-			c.hangup(ReasonLoop, fx)
+			c.hangup(e, ReasonLoop, fx)
 			return
 		}
+		c.enter(e, c.OnFail, true, fx)
+		return
 	}
 	c.Enter(e, c.OnFail, fx)
 }
 
-func (c *InCall) stopRinging(fx *Effects) {
+// stopRinging stops everybody's ringing; why: RING_END's reason.
+func (c *InCall) stopRinging(e Env, why string, fx *Effects) {
 	if len(c.Ringing) > 0 {
 		fx.Stopped = append(fx.Stopped, c.Ringing...)
 		fx.Changed = true
 	}
+	for _, u := range c.Ringing {
+		c.log(e, Event{Kind: EvRingEnd, User: &u, Reason: why}, fx)
+	}
 	c.Ringing = nil
 }
 
-func (c *InCall) hangup(reason string, fx *Effects) {
-	c.stopRinging(fx)
+func (c *InCall) hangup(e Env, reason string, fx *Effects) {
+	why := EndCallEnded
+	if reason == reasonRemote {
+		why = EndCallerLeft
+	}
+	c.stopRinging(e, why, fx)
 	c.Phase, c.Reason, c.Deadline, c.Xfer = PhaseEnded, reason, 0, nil
 	fx.Hangup = reason
 	fx.Play = nil
+	c.log(e, Event{Kind: EvEnded, Reason: reason}, fx) // who hung up: Service.apply fills it in
 }
 
 // Hangup ends the call from outside (the caller hung up, a member hung up, a sweep).
-func (c *InCall) Hangup(reason string, fx *Effects) {
+func (c *InCall) Hangup(e Env, reason string, fx *Effects) {
 	if c.Live() {
-		c.hangup(reason, fx)
+		c.hangup(e, reason, fx)
 	}
 }
 
@@ -397,6 +463,7 @@ func (c *InCall) Expire(e Env, fx *Effects) {
 				return
 			}
 		}
+		c.log(e, Event{Kind: EvNoInput}, fx)
 		c.noInput(e, fx)
 	case PhaseRing:
 		switch {
@@ -428,7 +495,7 @@ func (c *InCall) menu(e Env) (*Menu, bool) {
 func (c *InCall) noInput(e Env, fx *Effects) {
 	m, ok := c.menu(e)
 	if !ok { // the menu was deleted (or lost its prompt) meanwhile
-		c.hangup(ReasonHangup, fx)
+		c.hangup(e, ReasonHangup, fx)
 		return
 	}
 	if c.Attempts < m.Repeats {
@@ -436,7 +503,7 @@ func (c *InCall) noInput(e Env, fx *Effects) {
 		return
 	}
 	if m.OnNoInput.Kind == RouteHangup || m.OnNoInput.Kind == RouteRepeat {
-		c.hangup(ReasonNoInput, fx)
+		c.hangup(e, ReasonNoInput, fx)
 		return
 	}
 	c.Enter(e, m.OnNoInput, fx)
@@ -487,14 +554,21 @@ func (c *InCall) noticeFirst(e Env, m *Menu, t Target, fx *Effects) bool {
 	c.Notice, c.NoticeAt, c.Digits, c.Played = &pending, e.Now.UnixMilli(), "", true
 	c.Deadline = e.ms(time.Duration(m.NoticeMs)*time.Millisecond + promptSlack)
 	c.step("notice")
+	id := m.ID
+	c.log(e, Event{Kind: EvNotice, TargetKind: TkMenu, TargetID: &id, TargetName: m.Name}, fx)
 	fx.Play, fx.Stop, fx.Changed = &Play{File: m.Notice}, false, true
 	return true
 }
 
-// afterNotice: the notice played — the call goes where the key led.
+// afterNotice: the notice played — the call goes where the key led, or (the schedule's notice,
+// no menu yet) along the off-hours route.
 func (c *InCall) afterNotice(e Env, fx *Effects) {
 	t := *c.Notice
 	c.Notice, c.NoticeAt = nil, 0
+	if c.OffHours && c.Menu == nil {
+		c.offHoursRoute(e, t, fx)
+		return
+	}
 	c.Enter(e, t, fx)
 }
 
@@ -515,7 +589,7 @@ func (c *InCall) Digit(e Env, digit byte, fx *Effects) {
 	}
 	m, ok := c.menu(e)
 	if !ok {
-		c.hangup(ReasonHangup, fx)
+		c.hangup(e, ReasonHangup, fx)
 		return
 	}
 	if c.Digits == "" && !c.Played { // barge-in: whatever follows, the prompt stops now
@@ -549,6 +623,7 @@ func (c *InCall) dial(e Env, m *Menu, buf string, d Dial, fx *Effects) {
 		c.press(e, m, d.Key, fx)
 	case DialNumber:
 		c.step("dial:" + buf)
+		c.log(e, Event{Kind: EvDialed, Digits: buf, Reason: "found"}, fx)
 		id := d.Ext
 		t := Target{Kind: RouteExtension, ID: &id}
 		if !c.noticeFirst(e, m, t, fx) {
@@ -556,6 +631,7 @@ func (c *InCall) dial(e Env, m *Menu, buf string, d Dial, fx *Effects) {
 		}
 	default: // not a number anybody may dial: as a key without an item
 		c.step("dial:" + buf)
+		c.log(e, Event{Kind: EvDialed, Digits: buf, Reason: "not_found"}, fx)
 		c.noInput(e, fx)
 	}
 }
@@ -564,14 +640,16 @@ func (c *InCall) dial(e Env, m *Menu, buf string, d Dial, fx *Effects) {
 func (c *InCall) press(e Env, m *Menu, digit byte, fx *Effects) {
 	t, ok := Press(m, digit)
 	if !ok {
+		c.log(e, Event{Kind: EvKey, Digits: string(digit), Reason: "invalid"}, fx)
 		c.noInput(e, fx) // a key without an item counts as no input
 		return
 	}
 	c.Route = append(c.Route, "key:"+string(digit))
+	c.log(e, Event{Kind: EvKey, Digits: string(digit)}, fx)
 	if t.Kind == RouteRepeat {
 		c.Hops++
 		if c.Hops > MaxHops {
-			c.hangup(ReasonLoop, fx)
+			c.hangup(e, ReasonLoop, fx)
 			return
 		}
 		c.playMenu(e, m, c.Attempts, fx)
@@ -593,13 +671,14 @@ func (c *InCall) Decline(e Env, user uuid.UUID, fx *Effects) error {
 	if c.Group != nil {
 		c.Declined = append(c.Declined, user)
 	}
+	c.Ringing = slices.DeleteFunc(c.Ringing, func(u uuid.UUID) bool { return u == user })
+	fx.Stopped = append(fx.Stopped, user)
+	fx.Changed = true
+	c.log(e, Event{Kind: EvRingEnd, User: &user, Reason: EndDeclined}, fx)
 	if c.Sequential {
 		c.ringAt(e, c.Pos+1, fx)
 		return nil
 	}
-	c.Ringing = slices.DeleteFunc(c.Ringing, func(u uuid.UUID) bool { return u == user })
-	fx.Stopped = append(fx.Stopped, user)
-	fx.Changed = true
 	if len(c.Ringing) == 0 {
 		if c.Group != nil {
 			c.ringAll(e, fx)
@@ -619,6 +698,7 @@ func (c *InCall) Answer(e Env, user uuid.UUID, fx *Effects) error {
 	for _, u := range c.Ringing {
 		if u != user {
 			fx.Stopped = append(fx.Stopped, u)
+			c.log(e, Event{Kind: EvRingEnd, User: &u, Reason: EndAnsweredElsewhere}, fx)
 		}
 	}
 	c.Ringing = nil
@@ -636,7 +716,9 @@ func (c *InCall) Answer(e Env, user uuid.UUID, fx *Effects) error {
 		}
 	}
 	if c.Xfer != nil {
-		c.transferTaken(fx)
+		c.transferTaken(e, user, fx)
+	} else {
+		c.log(e, Event{Kind: EvAnswered, User: &user}, fx)
 	}
 	u := user
 	c.Phase, c.Answered, c.Deadline, c.FallbackAt = PhaseActive, &u, 0, 0

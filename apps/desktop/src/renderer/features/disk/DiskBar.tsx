@@ -1,13 +1,15 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { useDroppable } from '@dnd-kit/core';
-import { ArrowUpDown, Check, ChevronRight, Ellipsis, FolderPlus, Gauge, History, Search, Settings2, Trash2, Upload } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronRight, Ellipsis, FileSpreadsheet, FileText, FolderPlus, Gauge, History, Presentation, Search, Settings2, Trash2, Upload, type LucideIcon } from 'lucide-react';
 import { memo, useRef, type ReactNode } from 'react';
 import { Bar, BAR_GROUP } from '../../components/Bar';
 import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Input, Segmented, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { crumbs, DISK_SORTS, ROOT, type Crumb, type DiskSort, type DiskView } from '../../lib/disk';
-import { createFolder, emptyTrash, uploadFiles } from '../../services/disk';
+import { createFolder, createOfficeFile, emptyTrash, uploadFiles } from '../../services/disk';
+import { OfficeCapability } from '@calaba/protocol';
+import { CREATE_KINDS, useOfficeCaps, type CreateKind } from './office/caps';
 import { useDisk } from '../../stores/disk';
 import { useDiskUi } from '../../stores/diskUi';
 import { usePrefs } from '../../stores/prefs';
@@ -169,8 +171,23 @@ function SortMenu(): ReactNode {
   );
 }
 
+const NEW_KIND: Record<CreateKind, { icon: LucideIcon; label: 'disk.new.docx' | 'disk.new.xlsx' | 'disk.new.pptx' }> = {
+  docx: { icon: FileText, label: 'disk.new.docx' },
+  xlsx: { icon: FileSpreadsheet, label: 'disk.new.xlsx' },
+  pptx: { icon: Presentation, label: 'disk.new.pptx' },
+};
+
+/** The kinds «Создать» offers: those the server's editor edits (none while it is off). A string: a primitive for the selector. */
+const officeKinds = (s: ReturnType<typeof useOfficeCaps.getState>): string => (s.enabled ? CREATE_KINDS.filter((k) => s.formats[k]?.capability === OfficeCapability.EDIT).join(' ') : '');
+
+/**
+ * «Создать» of a folder the caller may write to (the bar and the phone's header): «Папка», then a
+ * blank «Документ», «Таблица», «Презентация» while the office editor is on (ADR-0143), then
+ * «Загрузить файлы».
+ */
 export function CreateMenu({ workspaceId, folderId }: { workspaceId: string; folderId: string }): ReactNode {
   const input = useRef<HTMLInputElement>(null);
+  const kinds = useOfficeCaps(officeKinds);
   return (
     <>
       <Dropdown.Root modal={false}>
@@ -183,6 +200,18 @@ export function CreateMenu({ workspaceId, folderId }: { workspaceId: string; fol
               <FolderPlus className="size-4" strokeWidth={1.75} aria-hidden />
               {t('disk.newFolder')}
             </Dropdown.Item>
+            {kinds
+              ? (kinds.split(' ') as CreateKind[]).map((k) => {
+                  const { icon: Icon, label } = NEW_KIND[k];
+                  return (
+                    <Dropdown.Item key={k} className={menuItem} onSelect={() => void createOfficeFile(workspaceId, folderId, k)} data-testid={`disk-new-${k}`}>
+                      <Icon className="size-4" strokeWidth={1.75} aria-hidden />
+                      {t(label)}
+                    </Dropdown.Item>
+                  );
+                })
+              : null}
+            {kinds ? <Dropdown.Separator className={menuSeparator} /> : null}
             <Dropdown.Item className={menuItem} onSelect={() => input.current?.click()} data-testid="disk-upload">
               <Upload className="size-4" strokeWidth={1.75} aria-hidden />
               {t('disk.upload')}

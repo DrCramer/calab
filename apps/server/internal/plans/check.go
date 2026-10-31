@@ -26,10 +26,13 @@ const (
 	KindBoards
 	// KindWikiPages counts the live (not trashed) Wiki pages of the workspace (ADR-0096).
 	KindWikiPages
+	// KindCanvases counts the live (not trashed) canvases of the workspace, folders not counted
+	// (ADR-0126, addendum 2026-10-23).
+	KindCanvases
 )
 
 // what names a kind in the error message; the client tells the limits apart by it.
-var what = map[Kind]string{KindMembers: "members", KindBots: "bots", KindStickerPacks: "sticker packs", KindBoards: "boards", KindWikiPages: "wiki pages"}
+var what = map[Kind]string{KindMembers: "members", KindBots: "bots", KindStickerPacks: "sticker packs", KindBoards: "boards", KindWikiPages: "wiki pages", KindCanvases: "canvases"}
 
 // LimitError is the plan-limit error of every counted kind (ADR-0024): 409 CONFLICT, reason
 // PLAN_LIMIT, with the counter and the limit.
@@ -50,6 +53,8 @@ func (k Kind) limit(l Limits) uint32 {
 		return l.Boards
 	case KindWikiPages:
 		return l.WikiPages
+	case KindCanvases:
+		return l.Canvases
 	}
 	return 0
 }
@@ -66,6 +71,8 @@ func (k Kind) lock(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
 		return q.LockBoards(ctx, wsID.String())
 	case KindWikiPages:
 		return q.LockWikiTree(ctx, wsID)
+	case KindCanvases:
+		return q.LockCanvasTree(ctx, wsID)
 	}
 	return nil
 }
@@ -85,6 +92,8 @@ func (k Kind) count(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (int64
 		return int64(n), err
 	case KindWikiPages:
 		return q.CountLiveWikiPages(ctx, wsID)
+	case KindCanvases:
+		return q.CountLiveCanvases(ctx, wsID)
 	}
 	return 0, nil
 }
@@ -94,7 +103,14 @@ func (k Kind) count(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (int64
 // additions cannot both pass the count. Pass lock=false outside a transaction (a pre-check such
 // as creating an invite link, which adds nobody yet). A nil service allows everything.
 func (s *Service) Check(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, kind Kind, lock bool) error {
-	if s == nil {
+	return s.CheckAdd(ctx, q, wsID, kind, lock, 1)
+}
+
+// CheckAdd is Check for n items added at once (a restore from the trash bringing a subtree
+// back): refused when the count would pass the limit. n ≤ 0 adds nothing and is allowed, so a
+// workspace already over its limit keeps what it has.
+func (s *Service) CheckAdd(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, kind Kind, lock bool, n int64) error {
+	if s == nil || n <= 0 {
 		return nil
 	}
 	if lock {
@@ -110,12 +126,12 @@ func (s *Service) Check(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, ki
 	if limit == 0 {
 		return nil
 	}
-	n, err := kind.count(ctx, q, wsID)
+	used, err := kind.count(ctx, q, wsID)
 	if err != nil {
 		return err
 	}
-	if n >= int64(limit) {
-		return LimitError(what[kind], uint64(max(n, 0)), uint64(limit))
+	if used+n > int64(limit) {
+		return LimitError(what[kind], uint64(max(used, 0)), uint64(limit))
 	}
 	return nil
 }

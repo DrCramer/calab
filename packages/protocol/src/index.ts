@@ -22,6 +22,7 @@ export * from './gen/calaba/v1/oauth_client_pb.js';
 export * from './gen/calaba/v1/media_pb.js';
 export * from './gen/calaba/v1/message_pb.js';
 export * from './gen/calaba/v1/notes_pb.js';
+export * from './gen/calaba/v1/office_pb.js';
 export * from './gen/calaba/v1/permissions_pb.js';
 export * from './gen/calaba/v1/plan_pb.js';
 export * from './gen/calaba/v1/push_pb.js';

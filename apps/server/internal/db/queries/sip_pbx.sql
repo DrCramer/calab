@@ -118,7 +118,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7);
 -- name: IsSipPromptFile :one
 -- The file is the prompt or the recording notice of a voice menu (files.CanRead:
 -- MANAGE_INTEGRATIONS of its workspace).
-SELECT EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1 OR notice_file_id = $1)::boolean;
+SELECT (EXISTS (SELECT 1 FROM sip_ivr_menus WHERE prompt_file_id = $1 OR notice_file_id = $1)
+        OR EXISTS (SELECT 1 FROM sip_accounts WHERE off_hours_notice_file_id = $1))::boolean;
 
 -- name: SetSipIvrMenuNotice :one
 -- The recording notice of a menu (ADR-0131): a new file, or NULL to remove it.

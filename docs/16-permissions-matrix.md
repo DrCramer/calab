@@ -101,6 +101,7 @@
 | Изменить / отменить чужую встречу (и вхождение), видеть адреса её участников | организатор; иначе `MANAGE_ROOM` room встречи **или** `MANAGE_EVENTS` ws (ADR-0048) — при встрече без комнаты или в видимой комнате; бот — так же (ADR-0051) | `calendar.viewer.canEdit`, шлюз `calendar.go` (адреса) | `event.can_edit` |
 | Свободно/занято, подбор времени (ADR-0041) | не гость; о ком спрашивают — участники того же пространства (не боты); бот — только «занято», без названий и участников внешних событий (ADR-0051) | `calendar.busyViewer`, `calendar.people`, `collectBusy(details)` | — |
 | Внешний календарь CalDAV (ADR-0041) | свой аккаунт; не гость, не бот | `caldav.person` | — |
+| Виджет календаря (ADR-0145) | выдача — человек с живой сессией `local_account`/`workspace_sso` (не бот, не гость, не recovery); чтение — грант той же сессии: отзыв/выход/смена пароля/отключение закрывают его на следующем запросе; встречи — как «Видеть встречу», но только свои (организатор/участник, не отклонённые) и по политике сессии; CalDAV — только local и платный план | `calendar.widgetService.principal`, `calendar.widgetMeetings`, `caldav.WidgetEvents` | — |
 | Удалить своё внешнее событие из CalDAV (ADR-0045, поправка 1) | только владелец аккаунта: строка ищется среди своих по uid, началу и href внутри выбранного календаря (иначе 404); не гость, не бот (403); 30 в минуту; пароль аккаунта не покидает сервер | `caldav.deleteExternal`, `caldav.paidPerson` | — |
 | Ответить на встречу | участник встречи; внешний — подписанной ссылкой | `calendar.rsvp`, `calendar.publicAnswer` | — |
 | Гостевая ссылка встречи для внешнего | от имени организатора, если у него `INVITE_GUESTS` room | `calendar.linkBits` | `event.guest_links` |
@@ -127,6 +128,9 @@
 | Действия правила при срабатывании | от имени доски: права пользователя не проверяются (правило создал `MANAGE_BOARD`), инварианты — да: approval gate, фичи доски, тариф чек-листов, лимиты, `mayInvite` для исполнителей / согласующих; уведомления — только тем, кто видит задачу (`sees`) | `boards.runRules` → `actx` | — |
 | Git-вебхук доски: настроить / посмотреть / удалить (ADR-0060 §4) | `MANAGE_BOARD` board + `MANAGE_INTEGRATIONS` ws; тариф как у правил; боты — так же (ADR-0109); секрет — только в ответе `PUT` | `boards.repoBoard` | — |
 | Приём Git-событий `POST /api/git/boards/{id}/{provider}` | без сессии; подпись провайдера секретом доски (иначе 401), ≤ 1 МБ, 60/мин на доску, повтор доставки — 204 без эффекта; связи и правила — только задачам этой доски (ключ доски) | `boards.repoInbound`, `vcs.Verify` | — |
+| Релиз из CI `POST /api/boards/{id}/releases` (доска #101) | `EDIT_TASKS` board (бот — по тем же битам, ADR-0109); по карточкам — 403, гость / чужое пространство / не видно — 404; тариф `automations`; ≤ 5000 `commits`, ≤ 500 `task_keys` только этой доски (422), тело ≤ 1 МБ, 30/мин на доску, ≤ 20 окружений (409); повтор (окружение, sha) — без дублей; задачи — только живые этой доски | `boards.createRelease` (`validRelease`) | — |
+| Релизы доски `GET /api/boards/{id}/releases` · поле `Task.releases` · фильтр «Релиз» | `VIEW_BOARD` board (по карточкам — 403); `Task.releases` — кто видит задачу | `boards.listReleases`, `tasksProto` | поле «Релиз», группировка |
+| Обратная ссылка в GitLab: `PATCH /api/boards/{id}/git {backlink, api_token, gitlab_url}` | как Git-вебхук: `MANAGE_BOARD` + `MANAGE_INTEGRATIONS`; токен не возвращается и стирается при смене `gitlab_url` без нового токена; заметка — только MR под `gitlab_url`, только ведущий ключ, одна на MR и задачу | `boards.patchRepoHook`, `postBacklinks` | «Git» → «Ссылка на задачу в GitLab» |
 
 ## Поиск
 
@@ -212,6 +216,17 @@
 | Позвонить на номер из комнаты (ADR-0046) | `PLACE_CALLS` + `VIEW_ROOM` + `CONNECT` room (по умолчанию ни у кого), не гость, в звонке этой комнаты, `Workspace.sip_enabled`; боты — так же | `sip.place` | — |
 | Положить телефонную линию | звонивший или `MUTE_MEMBERS` room (не гость) | `sip.hangup` | — |
 | Настройки SIP, проверка подключения | `MANAGE_INTEGRATIONS` ws (ADR-0048; не гость); боты — так же (ADR-0109) | `sip.manage` | — |
+| Срок хранения журнала, лимиты исходящих (`PUT …/sip/policy`, ADR-0137) | `MANAGE_INTEGRATIONS` ws (не гость), тариф телефонии; боты — так же | `sip.putPolicy` | — |
+| Расписание входящих: рабочие часы, «нерабочее время →» (`PUT …/sip/schedule`, ADR-0138) | `MANAGE_INTEGRATIONS` ws (не гость), тариф телефонии; боты — так же | `sip.putSchedule` | — |
+| Свои звонки в журнале раздела (`GET …/sip/journal?scope=mine`, деталь своего звонка, `…/journal/seen`) | участник, не гость (звонил, ему звонили, ответил, переводил); боты — так же | `sip.listJournal`, `sip.journalEntry`, `sip.journalSeen` | — |
+| Все звонки раздела, фильтр по сотруднику (`scope=all`, `user=`) | `VIEW_JOURNALS` ws (не гость); звонки комнат, которых не видно, пропускаются; деталь чужого звонка без бита — 404 | `sip.listJournal`, `sip.journalEntry` | — |
+| Запись разговора в детали звонка | `DISK_VIEW` на файл записи (не в корзине), иначе поля нет | `sip.recordingFor` | — |
+| Контакты: читать, создать, править (ADR-0137 §2) | видит раздел: не гость и (`MANAGE_INTEGRATIONS` ws или `Workspace.sip_enabled` и (`PLACE_CALLS` ws или `VIEW_JOURNALS` ws или внутренний номер)); создать/править — ещё тариф телефонии; боты — так же | `sip.sectionMember` | — |
+| Контакты: удалить | автор или `MANAGE_INTEGRATIONS` ws (и видит раздел) | `sip.deleteContact` | — |
+| Контакты: импорт / экспорт CSV | `MANAGE_INTEGRATIONS` ws (импорт — и тариф); боты — так же | `sip.importContacts`, `sip.exportContacts` | — |
+| Имя звонящего по телефону сотрудника (`caller_user_id`, `member_user_id`) | видят люди-получатели звонка/журнала; ботам — никогда (ADR-0077) | `sip.botsAmong`, `sip.hideMembers` | — |
+| Личный звонок из раздела (`POST …/sip/calls`, ADR-0137 §3) | `PLACE_CALLS` ws (переопределения комнат не в счёт), не гость, не бот (`botDeny`), тариф, `sip_enabled`, `allowed_prefixes`, лимиты политики | `sip.placePersonal` | — |
+| Положить личный звонок (`DELETE …/sip/calls/{cid}`) | звонивший или `MANAGE_INTEGRATIONS` ws; боты — так же | `sip.hangupPersonal` | — |
 
 ## Интеграции и боты
 

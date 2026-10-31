@@ -914,7 +914,7 @@ describe('transform controls (ADR-0127)', () => {
     const relay = new MockRelay();
     const m = await mount({ relay });
     await settle(100);
-    act(() => m.q('canvas-templates-close')?.click());
+    act(() => m.q('canvas-template-blank')?.click());
     expect(m.q('canvas-templates-card')).toBeNull();
     await act(async () => {
       m.q('canvas-templates-button')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }));

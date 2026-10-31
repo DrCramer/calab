@@ -406,6 +406,9 @@ message Task {
   // A watcher who does not see the board sees this task (VIEW_BOARD on it: view, comment,
   // subscribe). Sorted by user id. See PUT / DELETE /api/tasks/{id}/watchers.
   repeated string watcher_ids = 47;
+  // Releases (board task #101): one per environment the task was deployed to (the first release
+  // of that environment that carried it), newest first. In every task form.
+  repeated TaskRelease releases = 48;
 }
 
 // One entry of the task journal (ADR-0042 §1): written on every change, never edited.
@@ -426,8 +429,11 @@ message Task {
 // {"from_status_id", "status_id", "approved", "quorum", "rejected"} (the "status" entry is
 // written as well). "git" (ADR-0060 §4): after {"event":
 // the RuleGitEvent name without its prefix, "kind": "branch" | "pr" | "commit", "provider",
-// "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push};
-// before {"state", "title"} of a pull request that changed.
+// "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push,
+// "branch", "author" (who made the event); a pull request also "target_branch", "draft",
+// "users" (reviewers added / the approver)}; before {"state", "title", "draft"} of a pull
+// request that changed. "release" (board task #101): the task entered a release, after
+// {"release_id", "name", "environment", "sha", "url"} (actor = who posted the release).
 // Snapshots (ADR-0091): "description" — {"length", "text"} before and after; "attachments" —
 // {"file_ids", "files": [{"file_id", "name", "size", "mime"}]}; "labels" — {"label_ids",
 // "labels": [{"id", "name", "color"}]}; "milestone" — {"milestone_id", "name"}; "parent" —
@@ -476,6 +482,9 @@ message TaskActivityItem {
 // APPROVAL_STATE (ADR-0049): "none" | "pending" | "approved" | "rejected" with IS / ANY_OF /
 // IS_NOT / NONE_OF. APPROVER_PENDING: user ids or "me" — an approver whose vote is still
 // pending («Ждут моего согласования»); EMPTY / NOT_EMPTY: nobody's / somebody's vote pending.
+// BOARD (ADR-0139): board ids with IS / IS_NOT (the cross-board task search).
+// RELEASE (board task #101): release ids with IS / ANY_OF / IS_NOT / NONE_OF; EMPTY / NOT_EMPTY:
+// in no release / in some release.
 enum TaskField {
   TASK_FIELD_UNSPECIFIED = 0;
   TASK_FIELD_STATUS = 1;
@@ -500,6 +509,8 @@ enum TaskField {
   TASK_FIELD_ARCHIVED = 20;
   TASK_FIELD_APPROVAL_STATE = 21;
   TASK_FIELD_APPROVER_PENDING = 22;
+  TASK_FIELD_BOARD = 23;
+  TASK_FIELD_RELEASE = 24;
 }
 
 // Operations. IS / ANY_OF: one of values (LABEL IS: all of values); IS_NOT / NONE_OF: none of
@@ -904,10 +915,69 @@ message MyTasksResponse {
   string next_cursor = 2;
 }
 
-// GET /api/workspaces/{id}/tasks/search?q=&limit= (≤ 50, default 20) — ⌘K: live tasks of all
-// boards the caller sees, by key (FNG-12, FNG) and words of title / description.
+// GET /api/workspaces/{id}/tasks/search?q=&state=&archived=&board_id=&filter=&sort=&cursor=&limit=
+// (ADR-0139) — the tasks of all boards the caller sees (or of board_id), by key (FNG-12, FNG) and
+// words of title / description / comments. q 0..200 (empty = filters only); state: open | done |
+// all (default); archived: "" = live only (default), "1" = live and archived, "only" = archived
+// only; filter: a TaskFilter in JSON; sort: relevance (default with q) | updated (default
+// without) | created | key | title | board | status | assignee | priority | due, "-" for
+// descending; limit ≤ 50 (default 20); next_cursor empty = the last page.
 message SearchTasksResponse {
   repeated Task tasks = 1;
+  string next_cursor = 2;
+  // The visible task whose key q spells (any archive state, regardless of the filters, state
+  // and board_id); unset when q is no key or no such task is visible.
+  Task key_task = 3;
+  // Of the returned tasks whose title did not match: a fragment of the description or of the
+  // newest matching comment, matches between U+0002 and U+0003.
+  repeated TaskSearchSnippet snippets = 4;
+}
+
+message TaskSearchSnippet {
+  string task_id = 1;
+  string text = 2;
+  bool comment = 3; // from a comment, not the description
+}
+
+// ---- saved task searches (ADR-0139) ----
+
+// The conditions of a task search as the client keeps them.
+message TaskSearchQuery {
+  string q = 1; // ≤ 200 characters
+  string state = 2; // "all" | "open" | "done" | "archived"
+  TaskFilter filter = 3;
+  string sort = 4; // ≤ 32 characters, the search's sort
+}
+
+// A named task search of one person in one workspace (left panel of the boards).
+message SavedTaskSearch {
+  string id = 1;
+  string name = 2; // 1..60 characters
+  TaskSearchQuery query = 3;
+  int32 position = 4;
+}
+
+// GET /api/workspaces/{id}/task-searches — the caller's own, by position.
+message ListSavedTaskSearchesResponse {
+  repeated SavedTaskSearch searches = 1;
+}
+
+// POST /api/workspaces/{id}/task-searches → 201 SavedTaskSearchResponse; ≤ 50 per person and
+// workspace (409 CONFLICT, reason "TASK_SEARCH_LIMIT"). Guests: 403.
+message CreateSavedTaskSearchRequest {
+  string name = 1;
+  TaskSearchQuery query = 2;
+}
+
+// PATCH /api/workspaces/{id}/task-searches/{sid} (its author) → SavedTaskSearchResponse; DELETE → 204.
+message UpdateSavedTaskSearchRequest {
+  optional string name = 1;
+  TaskSearchQuery query = 2; // set = replace
+  optional int32 position = 3;
+}
+
+message SavedTaskSearchResponse {
+  SavedTaskSearch search = 1;
 }
 
 // ---- views ----
@@ -1271,6 +1341,32 @@ message TaskNotice {
   string due_on = 8;
   // DUE_SOON: 1 = due tomorrow, 0 = due today; OVERDUE: the days past due, negative (-1).
   int32 days_left = 9;
+  // The notice's id in the recipient's notice history (ADR-0141, GET /api/me/task-notices):
+  // uuidv7, time-ordered. Empty from an older server.
+  string id = 10;
+}
+
+// One entry of GET /api/me/task-notices (ADR-0141): a task notice the caller got, with the
+// task as it is named now. Only tasks the caller still sees are listed.
+message TaskNoticeEntry {
+  string id = 1;
+  string workspace_id = 2;
+  string board_id = 3;
+  string task_id = 4;
+  string task_key = 5;
+  string task_title = 6;
+  TaskNotice notice = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// GET /api/me/task-notices?before=<id>&limit= — newest first. A page scans limit rows of the
+// history and lists those of tasks the caller sees now, so it may hold fewer entries (even none)
+// while has_more: the next page is before=next_before, not the last entry's id.
+message ListTaskNoticesResponse {
+  repeated TaskNoticeEntry entries = 1;
+  bool has_more = 2;
+  // With has_more: the cursor of the next page (the last history row this page scanned).
+  string next_before = 3;
 }
 
 enum TaskNoticeKind {
@@ -1408,6 +1504,15 @@ enum TaskGitLinkState {
   TASK_GIT_LINK_STATE_OPEN = 1;
   TASK_GIT_LINK_STATE_MERGED = 2;
   TASK_GIT_LINK_STATE_CLOSED = 3;
+}
+
+// The release of an environment a task entered (board task #101; see BoardRelease).
+message TaskRelease {
+  string release_id = 1;
+  string name = 2;        // "4929cf3", "1287"
+  string environment = 3; // "prod", "stage"
+  string url = 4;         // the pipeline, "" = none
+  google.protobuf.Timestamp created_at = 5; // when the task entered it
 }
 
 // A branch, pull / merge request or commit whose name, title, body or message mentions the task

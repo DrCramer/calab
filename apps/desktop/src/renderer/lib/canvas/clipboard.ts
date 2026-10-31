@@ -1,8 +1,8 @@
-import { CanvasDoc, clampText, color, endpoint, isGroupId, isShapeKind, newId, num, type PlainObject } from './doc';
+import { CanvasDoc, clampText, color, endpoint, isGroupId, isKind, isShapeKind, newId, num, type PlainObject } from './doc';
 import { fmtFromDelta, type DeltaOp } from './richText';
 import type { Scene } from './scene';
 import { isFontToken } from './textLayout';
-import { MAX_OBJECTS, MAX_TEXT, type Endpoint, type InitExtras, type ObjectInit } from './types';
+import { DEFAULTS, MAX_OBJECTS, MAX_TEXT, isImageSrc, type Endpoint, type InitExtras, type ObjectInit } from './types';
 
 /** Text-clipboard format: prefix + JSON (ADR-0126 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
@@ -53,7 +53,7 @@ export function parse(text: string): ClipboardPayload | null {
   for (const o of p.objects as unknown[]) {
     if (typeof o !== 'object' || o === null) continue;
     const r = o as Record<string, unknown>;
-    if (typeof r.id !== 'string' || (r.kind !== 'sticky' && r.kind !== 'text' && r.kind !== 'shape' && r.kind !== 'connector')) continue;
+    if (typeof r.id !== 'string' || !isKind(r.kind)) continue;
     objects.push({ ...r, id: r.id, kind: r.kind, z: typeof r.z === 'string' ? r.z : '' });
   }
   return objects.length > 0 ? { v: VERSION, objects } : null;
@@ -103,7 +103,7 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
     if (!id) continue;
     const { text, fmt } = richOf(o);
     const extras: InitExtras = {};
-    if (fmt && o.kind !== 'connector') extras.fmt = fmt;
+    if (fmt && o.kind !== 'connector' && o.kind !== 'image') extras.fmt = fmt;
     if ((o.kind === 'sticky' || o.kind === 'shape') && isFontToken(o.fontSize)) extras.fontSize = o.fontSize;
     if ((o.kind === 'sticky' || o.kind === 'shape') && typeof o.fontPx === 'number') extras.fontPx = o.fontPx;
     if (o.kind !== 'connector' && typeof o.rot === 'number') extras.rot = o.rot;
@@ -133,8 +133,19 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
           id,
           init: {
             kind: 'connector', from: shift(endpoint(o.from)), to: shift(endpoint(o.to)),
-            arrow: o.arrow === 'none' || o.arrow === 'both' ? o.arrow : 'end', route: o.route === 'elbow' ? 'elbow' : 'straight',
+            arrow: o.arrow === 'none' || o.arrow === 'both' ? o.arrow : 'end', route: o.route === 'elbow' || o.route === 'curve' ? o.route : 'straight',
             stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), label: typeof o.label === 'string' ? clampText(o.label) : '', ...extras,
+          },
+        });
+        break;
+      case 'image':
+        // A picture of anything but the app's own media is dropped (the doc would refuse it anyway).
+        if (!isImageSrc(o.src)) break;
+        out.push({
+          id,
+          init: {
+            kind: 'image', src: o.src, x, y, w: num(o.w, DEFAULTS.imageSize), h: num(o.h, DEFAULTS.imageSize),
+            ...(typeof o.stickerId === 'string' ? { stickerId: o.stickerId } : {}), ...extras,
           },
         });
         break;

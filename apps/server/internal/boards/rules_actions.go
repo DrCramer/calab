@@ -432,13 +432,17 @@ func (a *actx) addChecklist(x *v1.RuleAction_AddChecklist) error {
 
 // vars are the template variables of the task as it is now.
 func (a *actx) vars() (map[string]string, error) {
-	return a.e.s.templateVars(a.ctx(), a.q, a.t, a.ev.actor)
+	return a.e.s.templateVars(a.ctx(), a.q, a.t, a.ev)
 }
 
-// templateVars: {key} {title} {status} {actor} {assignees} {due} {url} of task t.
-func (s *Service) templateVars(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID) (map[string]string, error) {
+// templateVars: {key} {title} {status} {actor} {assignees} {due} {url} of task t, and the Git
+// variables of event ev (gitTemplateVars; empty unless ev is a "git" entry).
+func (s *Service) templateVars(ctx context.Context, q *sqlc.Queries, t taskRow, ev ruleEvent) (map[string]string, error) {
 	key := TaskKey(t.BoardKey, t.Number)
-	v := map[string]string{"key": key, "title": t.Title, "due": DateString(t.DueOn), "actor": "", "status": "", "assignees": "", "url": ""}
+	actor := ev.actor
+	v := gitTemplateVars(ev)
+	releaseTemplateVars(ev, v)
+	v["key"], v["title"], v["due"], v["actor"], v["status"], v["assignees"], v["url"] = key, t.Title, DateString(t.DueOn), "", "", "", ""
 	if s.PublicURL != "" {
 		v["url"] = strings.TrimRight(s.PublicURL, "/") + "/t/" + key
 	}
@@ -694,7 +698,7 @@ func (s *Service) dryRun(ctx context.Context, q *sqlc.Queries, b sqlc.Board, r r
 	if err != nil {
 		return nil, err
 	}
-	vars, err := s.templateVars(ctx, q, t, nil)
+	vars, err := s.templateVars(ctx, q, t, ruleEvent{}) // no event: the Git variables are empty
 	if err != nil {
 		return nil, err
 	}

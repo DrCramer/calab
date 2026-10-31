@@ -68,22 +68,29 @@ const tickers = new Map<number, Ticker>();
 function ticker(period: number): Ticker {
   let tk = tickers.get(period);
   if (tk) return tk;
-  const self: Ticker = {
+  // A minute clock sleeps while the window is hidden (docs/14: no timers in a hidden window) and
+  // catches up on the next visibilitychange; the 1 s call timers keep their own rules.
+  const sleeps = period >= 60_000;
+  const self: Ticker & { schedule: () => void } = {
     now: Date.now(),
     timer: null,
     listeners: new Set(),
+    schedule() {
+      self.timer = window.setTimeout(() => {
+        if (sleeps && document.hidden) {
+          self.timer = null;
+          return;
+        }
+        self.now = Date.now();
+        for (const l of self.listeners) l();
+        self.schedule();
+      }, period - (Date.now() % period));
+    },
     subscribe(cb) {
       self.listeners.add(cb);
       if (self.timer === null) {
         self.now = Date.now();
-        const schedule = (): void => {
-          self.timer = window.setTimeout(() => {
-            self.now = Date.now();
-            for (const l of self.listeners) l();
-            schedule();
-          }, period - (Date.now() % period));
-        };
-        schedule();
+        self.schedule();
       }
       return () => {
         self.listeners.delete(cb);
@@ -94,6 +101,14 @@ function ticker(period: number): Ticker {
       };
     },
   };
+  if (sleeps && typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || self.timer !== null || !self.listeners.size) return;
+      self.now = Date.now();
+      for (const l of self.listeners) l();
+      self.schedule();
+    });
+  }
   tk = self;
   tickers.set(period, tk);
   return tk;

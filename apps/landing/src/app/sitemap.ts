@@ -10,7 +10,7 @@ export const dynamic = 'force-static';
 const PAGES = [
   { page: '', priority: 1 },
   { page: 'features/', priority: 0.8 },
-  { page: 'bots/', priority: 0.6 },
+  { page: 'developers/', priority: 0.6 },
 ] as const;
 
 // Each entry lists every language version of its page (hreflang).

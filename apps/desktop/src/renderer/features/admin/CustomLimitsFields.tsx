@@ -40,6 +40,7 @@ export const FIELD_LABEL: Record<LimitsField, MessageKey> = {
   stickers: 'admin.limit.stickers',
   boards: 'plan.limit.boards',
   wikiPages: 'admin.limit.wikiPages',
+  canvases: 'admin.limit.canvases',
   tempRooms: 'admin.limit.tempRooms',
   streamMaxFps: 'admin.limit.streamFps',
   cameraMaxFps: 'admin.limit.cameraFps',
@@ -104,6 +105,7 @@ export function CustomLimitsFields({ form, onChange, aiFixed = false }: { form: 
       <NumberField field="stickers" form={form} onChange={onChange} />
       <NumberField field="boards" form={form} onChange={onChange} />
       <NumberField field="wikiPages" form={form} onChange={onChange} />
+      <NumberField field="canvases" form={form} onChange={onChange} />
       <NumberField field="tempRooms" form={form} onChange={onChange} />
       {/* CBF-44: every flag of PlanLimits is in the form — one left out was saved as «on». */}
       <Row label={t('plan.limit.caldav')}>

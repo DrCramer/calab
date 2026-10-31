@@ -63,6 +63,12 @@ type Config struct {
 	// answers them with CORS (ADR-0083). Empty: same-origin only.
 	PublicLandingURLs []string `env:"PUBLIC_LANDING_URLS" envSeparator:","`
 	LogLevel          string   `env:"LOG_LEVEL" envDefault:"info"`
+	// Server-side Yandex Metrika conversions for Yandex Direct (ADR-0135): YM_MP_TOKEN is the
+	// counter's Measurement Protocol token (secret; empty = no conversions are recorded or
+	// sent), YM_COUNTER_ID the counter, YM_MP_URL the collector.
+	MetrikaMPToken   string `env:"YM_MP_TOKEN"`
+	MetrikaCounterID int64  `env:"YM_COUNTER_ID" envDefault:"113761661"`
+	MetrikaMPURL     string `env:"YM_MP_URL" envDefault:"https://mc.yandex.ru/collect"`
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
@@ -150,7 +156,7 @@ type Config struct {
 	// File bytes (ADR-0011): fs = local directory; s3 = S3-compatible bucket (below).
 	StorageDriver string `env:"STORAGE_DRIVER" envDefault:"fs"`
 	StoragePath   string `env:"STORAGE_PATH" envDefault:"./data/files"`
-	MaxFileSizeMB int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	MaxFileSizeMB int64  `env:"MAX_FILE_SIZE_MB" envDefault:"2048"`
 	// HEIC → JPEG for clients without a HEIF decoder (POST /api/files/convert); ffmpeg ≥ 7.1.
 	// Not found → the endpoint answers 501 and the client says HEIC is not supported.
 	FFmpegPath     string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
@@ -230,6 +236,9 @@ type Config struct {
 
 	// Balance billing (ADR-0080 v5): BILLING_* and STRIPE_* (config/billing.go).
 	Billing Billing
+
+	// Office editing in ONLYOFFICE Docs (ADR-0143, spike): OFFICE_* (config/office.go).
+	Office Office
 }
 
 // BotLimits returns the effective bot limits (defaults for 0).
@@ -417,6 +426,9 @@ func (c *Config) Validate() error {
 	if Origin(c.GPTunnelWebURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))
 	}
+	if c.MetrikaMPToken != "" && (c.MetrikaCounterID <= 0 || Origin(c.MetrikaMPURL) == "") {
+		errs = append(errs, errors.New("YM_MP_TOKEN needs a positive YM_COUNTER_ID and an absolute http(s) YM_MP_URL"))
+	}
 	if c.CalDAVSyncInterval != 0 && (c.CalDAVSyncInterval < time.Minute || c.CalDAVSyncInterval > 24*time.Hour) {
 		errs = append(errs, fmt.Errorf("CALDAV_SYNC_INTERVAL must be between 1m and 24h, got %s", c.CalDAVSyncInterval))
 	}
@@ -444,6 +456,9 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("RECORDINGS_PATH must be set and RECORDING_EGRESS_DIR an absolute path (STORAGE_DRIVER=fs)"))
 	}
 	if err := c.Billing.validate(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := c.Office.validate(c.JWTSecret); err != nil {
 		errs = append(errs, err)
 	}
 	if c.BotRatePerSec < 0 || c.BotRatePerSec > 10000 || c.BotMessagesPerMin < 0 || c.BotMessagesPerMin > 100000 {

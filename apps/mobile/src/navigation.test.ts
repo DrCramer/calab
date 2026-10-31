@@ -3,6 +3,18 @@ import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './na
 
 const ORIGIN = 'https://app.example.com';
 
+it('opens only this server calendar subscription in the OS, never from an iframe', () => {
+  const token = '12345678-1234-4234-8234-123456789abc.' + 'a'.repeat(43);
+  const link = `webcal://app.example.com/api/calendar-feed.ics?t=${token}`;
+  expect(decideNavigation({ url: link, isTopFrame: true }, ORIGIN)).toBe('external');
+  expect(decideNewWindow(link, ORIGIN)).toBe('external');
+  expect(decideNavigation({ url: link, isTopFrame: false, mainDocumentURL: ORIGIN }, ORIGIN)).toBe('block');
+  for (const bad of [link.replace('app.example.com', 'evil.test'), link.replace('calendar-feed.ics', 'admin'), link + '&redirect=evil', link.replace('webcal://', 'webcal://user@'), link + '#fragment']) {
+    expect(decideNavigation({ url: bad }, ORIGIN)).toBe('block');
+    expect(decideNewWindow(bad, ORIGIN)).toBe('block');
+  }
+});
+
 /** Lookalikes of ORIGIN that a prefix or suffix match would let in. Ones with credentials go nowhere. */
 const LOOKALIKES = [
   'https://app.example.com.evil.test/',
@@ -22,6 +34,21 @@ describe('isAppUrl', () => {
     expect(isAppUrl('https://app.example.com', ORIGIN)).toBe(true);
     expect(isAppUrl('https://app.example.com/', ORIGIN)).toBe(true);
     expect(isAppUrl('https://APP.example.com:443/invite/x?y=1#z', ORIGIN)).toBe(true);
+  });
+
+  // Parity with the Android guard (CalabOriginGuard, webviewOriginGuard.test.js): only the authority decides.
+  it.each([
+    'https://app.example.com/board?filter=a|b',
+    'https://app.example.com/x#a^b',
+    'https://app.example.com/{id}?q={x}',
+    'https://app.example.com/a`b',
+    'https://app.example.com:0443/',
+  ])('accepts %s', (url) => {
+    expect(isAppUrl(url, ORIGIN)).toBe(true);
+  });
+
+  it.each(['https://app.example.com:65536/', 'https://app.example.com@evil.test/x|y'])('rejects %s', (url) => {
+    expect(isAppUrl(url, ORIGIN)).toBe(false);
   });
 
   it.each(LOOKALIKES)('rejects the lookalike %s', (url) => {

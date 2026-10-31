@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -55,6 +56,27 @@ func validTemplate(field, s string) error {
 		return httpx.Validation(field, "a text of 1..2000 characters is required")
 	}
 	return nil
+}
+
+// validBranchPatterns checks the target-branch filter of a Git trigger: trimmed, empty entries
+// and repeats dropped, ≤ MaxRuleBranches patterns of ≤ MaxRuleBranch characters without spaces
+// or control characters.
+func validBranchPatterns(in []string) ([]string, error) {
+	var out []string
+	for _, p := range in {
+		p = strings.TrimSpace(p)
+		if p == "" || slices.Contains(out, p) {
+			continue
+		}
+		if utf8.RuneCountInString(p) > MaxRuleBranch || strings.ContainsFunc(p, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			return nil, httpx.Validation("trigger.git.targetBranches", "a branch name or pattern of at most 200 characters without spaces is required")
+		}
+		out = append(out, p)
+	}
+	if len(out) > MaxRuleBranches {
+		return nil, httpx.Validation("trigger.git.targetBranches", "at most 10 target branches")
+	}
+	return out, nil
 }
 
 // validateRule checks a rule against its board (ADR-0060 §3) and encodes it.
@@ -125,6 +147,17 @@ func (s *Service) validateRule(r *http.Request, q *sqlc.Queries, b sqlc.Board, n
 		if _, ok := v1.RuleGitEvent_name[int32(k.Git.GetEvent())]; !ok {
 			return in, httpx.Validation("trigger.git.event", "unknown Git event")
 		}
+		bs, err := validBranchPatterns(k.Git.GetTargetBranches())
+		if err != nil {
+			return in, err
+		}
+		k.Git.TargetBranches = bs
+	case *v1.RuleTrigger_Release_:
+		envs, err := validEnvironments(k.Release.GetEnvironments())
+		if err != nil {
+			return in, err
+		}
+		k.Release.Environments = envs
 	case *v1.RuleTrigger_DueIn_, *v1.RuleTrigger_Overdue_:
 		if tr.GetDueIn().GetDays() > MaxRuleTriggerDay || tr.GetOverdue().GetDays() > MaxRuleTriggerDay {
 			return in, httpx.Validation("trigger", "days must be 0..30")

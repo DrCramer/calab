@@ -28,10 +28,20 @@ type RuleGitEvent int32
 const (
 	RuleGitEvent_RULE_GIT_EVENT_UNSPECIFIED    RuleGitEvent = 0 // any of them
 	RuleGitEvent_RULE_GIT_EVENT_BRANCH_CREATED RuleGitEvent = 1
-	RuleGitEvent_RULE_GIT_EVENT_PR_OPENED      RuleGitEvent = 2 // opened or reopened
-	RuleGitEvent_RULE_GIT_EVENT_PR_MERGED      RuleGitEvent = 3
-	RuleGitEvent_RULE_GIT_EVENT_PR_CLOSED      RuleGitEvent = 4 // closed without merging
-	RuleGitEvent_RULE_GIT_EVENT_COMMIT_PUSHED  RuleGitEvent = 5
+	// Opened or reopened as ready for review, or a draft marked ready (a rule on PR_OPENED fires on
+	// PR_READY too); a draft opened is PR_DRAFT_OPENED (board task #101).
+	RuleGitEvent_RULE_GIT_EVENT_PR_OPENED     RuleGitEvent = 2
+	RuleGitEvent_RULE_GIT_EVENT_PR_MERGED     RuleGitEvent = 3
+	RuleGitEvent_RULE_GIT_EVENT_PR_CLOSED     RuleGitEvent = 4 // closed without merging
+	RuleGitEvent_RULE_GIT_EVENT_COMMIT_PUSHED RuleGitEvent = 5
+	// A draft opened or reopened (GitLab Draft / WIP, GitHub draft, Gitea draft or «WIP:» title).
+	RuleGitEvent_RULE_GIT_EVENT_PR_DRAFT_OPENED RuleGitEvent = 6
+	// A draft marked ready for review (GitLab draft true → false, GitHub ready_for_review).
+	RuleGitEvent_RULE_GIT_EVENT_PR_READY RuleGitEvent = 7
+	// A reviewer was added; once per reviewer and pull request until the request is removed.
+	RuleGitEvent_RULE_GIT_EVENT_PR_REVIEW_REQUESTED RuleGitEvent = 8
+	// A reviewer approved; once per approver and pull request until the approval is withdrawn.
+	RuleGitEvent_RULE_GIT_EVENT_PR_APPROVED RuleGitEvent = 9
 )
 
 // Enum value maps for RuleGitEvent.
@@ -43,14 +53,22 @@ var (
 		3: "RULE_GIT_EVENT_PR_MERGED",
 		4: "RULE_GIT_EVENT_PR_CLOSED",
 		5: "RULE_GIT_EVENT_COMMIT_PUSHED",
+		6: "RULE_GIT_EVENT_PR_DRAFT_OPENED",
+		7: "RULE_GIT_EVENT_PR_READY",
+		8: "RULE_GIT_EVENT_PR_REVIEW_REQUESTED",
+		9: "RULE_GIT_EVENT_PR_APPROVED",
 	}
 	RuleGitEvent_value = map[string]int32{
-		"RULE_GIT_EVENT_UNSPECIFIED":    0,
-		"RULE_GIT_EVENT_BRANCH_CREATED": 1,
-		"RULE_GIT_EVENT_PR_OPENED":      2,
-		"RULE_GIT_EVENT_PR_MERGED":      3,
-		"RULE_GIT_EVENT_PR_CLOSED":      4,
-		"RULE_GIT_EVENT_COMMIT_PUSHED":  5,
+		"RULE_GIT_EVENT_UNSPECIFIED":         0,
+		"RULE_GIT_EVENT_BRANCH_CREATED":      1,
+		"RULE_GIT_EVENT_PR_OPENED":           2,
+		"RULE_GIT_EVENT_PR_MERGED":           3,
+		"RULE_GIT_EVENT_PR_CLOSED":           4,
+		"RULE_GIT_EVENT_COMMIT_PUSHED":       5,
+		"RULE_GIT_EVENT_PR_DRAFT_OPENED":     6,
+		"RULE_GIT_EVENT_PR_READY":            7,
+		"RULE_GIT_EVENT_PR_REVIEW_REQUESTED": 8,
+		"RULE_GIT_EVENT_PR_APPROVED":         9,
 	}
 )
 
@@ -260,6 +278,7 @@ type RuleTrigger struct {
 	//	*RuleTrigger_DueIn_
 	//	*RuleTrigger_Overdue_
 	//	*RuleTrigger_Stale_
+	//	*RuleTrigger_Release_
 	Kind          isRuleTrigger_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -410,6 +429,15 @@ func (x *RuleTrigger) GetStale() *RuleTrigger_Stale {
 	return nil
 }
 
+func (x *RuleTrigger) GetRelease() *RuleTrigger_Release {
+	if x != nil {
+		if x, ok := x.Kind.(*RuleTrigger_Release_); ok {
+			return x.Release
+		}
+	}
+	return nil
+}
+
 type isRuleTrigger_Kind interface {
 	isRuleTrigger_Kind()
 }
@@ -462,6 +490,10 @@ type RuleTrigger_Stale_ struct {
 	Stale *RuleTrigger_Stale `protobuf:"bytes,12,opt,name=stale,proto3,oneof"`
 }
 
+type RuleTrigger_Release_ struct {
+	Release *RuleTrigger_Release `protobuf:"bytes,13,opt,name=release,proto3,oneof"`
+}
+
 func (*RuleTrigger_TaskCreated_) isRuleTrigger_Kind() {}
 
 func (*RuleTrigger_StatusChanged_) isRuleTrigger_Kind() {}
@@ -486,8 +518,13 @@ func (*RuleTrigger_Overdue_) isRuleTrigger_Kind() {}
 
 func (*RuleTrigger_Stale_) isRuleTrigger_Kind() {}
 
+func (*RuleTrigger_Release_) isRuleTrigger_Kind() {}
+
 // What a rule does. Templates (≤ 2000 characters) may use {key} {title} {status} {actor}
-// {assignees} {due} {url}; unknown names stay as written.
+// {assignees} {due} {url}; a Git trigger adds {pr_url} {pr_number} {pr_title} {branch}
+// {target_branch} {git_author} (empty for other triggers and for what an event lacks: a push has
+// no pull request; one line each, «@» of a mention token neutralised); a release trigger adds
+// {release} (the release's name, the same rules). Unknown names stay as written.
 type RuleAction struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Kind:
@@ -1395,16 +1432,25 @@ func (x *ListRuleRunsResponse) GetRuns() []*RuleRun {
 }
 
 type BoardGit struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	BoardId       string                 `protobuf:"bytes,1,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
-	Provider      GitProvider            `protobuf:"varint,2,opt,name=provider,proto3,enum=calaba.v1.GitProvider" json:"provider,omitempty"`
-	HasSecret     bool                   `protobuf:"varint,3,opt,name=has_secret,json=hasSecret,proto3" json:"has_secret,omitempty"`
-	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"` // the address to paste into the repository's webhook settings
-	LastEventAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_event_at,json=lastEventAt,proto3" json:"last_event_at,omitempty"`
-	EventsCount   uint32                 `protobuf:"varint,6,opt,name=events_count,json=eventsCount,proto3" json:"events_count,omitempty"`
-	LastError     string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	CreatedBy     string                 `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	BoardId     string                 `protobuf:"bytes,1,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
+	Provider    GitProvider            `protobuf:"varint,2,opt,name=provider,proto3,enum=calaba.v1.GitProvider" json:"provider,omitempty"`
+	HasSecret   bool                   `protobuf:"varint,3,opt,name=has_secret,json=hasSecret,proto3" json:"has_secret,omitempty"`
+	Url         string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"` // the address to paste into the repository's webhook settings
+	LastEventAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_event_at,json=lastEventAt,proto3" json:"last_event_at,omitempty"`
+	EventsCount uint32                 `protobuf:"varint,6,opt,name=events_count,json=eventsCount,proto3" json:"events_count,omitempty"`
+	LastError   string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	CreatedBy   string                 `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Backlink (board task #101, GitLab only): on the first link of a merge request to a task
+	// (not a bare mention in its description) post one note «Задача Calab: KEY — title url» on
+	// the merge request with the API token. Off by default: the task title becomes visible to
+	// everyone who can read the merge request.
+	Backlink    bool   `protobuf:"varint,10,opt,name=backlink,proto3" json:"backlink,omitempty"`
+	HasApiToken bool   `protobuf:"varint,11,opt,name=has_api_token,json=hasApiToken,proto3" json:"has_api_token,omitempty"` // the token itself is never returned
+	GitlabUrl   string `protobuf:"bytes,12,opt,name=gitlab_url,json=gitlabUrl,proto3" json:"gitlab_url,omitempty"`          // the GitLab the token belongs to («https://gitlab.com»)
+	// Why the last note was not posted ("" = fine): no token, the token was refused…
+	BacklinkError string `protobuf:"bytes,13,opt,name=backlink_error,json=backlinkError,proto3" json:"backlink_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1502,6 +1548,34 @@ func (x *BoardGit) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *BoardGit) GetBacklink() bool {
+	if x != nil {
+		return x.Backlink
+	}
+	return false
+}
+
+func (x *BoardGit) GetHasApiToken() bool {
+	if x != nil {
+		return x.HasApiToken
+	}
+	return false
+}
+
+func (x *BoardGit) GetGitlabUrl() string {
+	if x != nil {
+		return x.GitlabUrl
+	}
+	return ""
+}
+
+func (x *BoardGit) GetBacklinkError() string {
+	if x != nil {
+		return x.BacklinkError
+	}
+	return ""
+}
+
 // PUT /api/boards/{id}/git → BoardGitResponse (creates or replaces). secret: 16..256
 // characters, or empty — the server generates 32 random bytes (base64url), returned once.
 type SetBoardGitRequest struct {
@@ -1556,6 +1630,70 @@ func (x *SetBoardGitRequest) GetSecret() string {
 	return ""
 }
 
+// PATCH /api/boards/{id}/git → BoardGitResponse (no secret): the backlink settings of an existing
+// setup (404 without one). api_token: a GitLab personal / project access token with the `api`
+// scope, ≤ 256 characters, sealed at rest; "" removes it. gitlab_url: an https origin
+// («https://git.example.com»); notes go only to merge requests under it.
+type UpdateBoardGitRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backlink      *bool                  `protobuf:"varint,1,opt,name=backlink,proto3,oneof" json:"backlink,omitempty"`
+	ApiToken      *string                `protobuf:"bytes,2,opt,name=api_token,json=apiToken,proto3,oneof" json:"api_token,omitempty"`
+	GitlabUrl     *string                `protobuf:"bytes,3,opt,name=gitlab_url,json=gitlabUrl,proto3,oneof" json:"gitlab_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateBoardGitRequest) Reset() {
+	*x = UpdateBoardGitRequest{}
+	mi := &file_calaba_v1_automations_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateBoardGitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateBoardGitRequest) ProtoMessage() {}
+
+func (x *UpdateBoardGitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_automations_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateBoardGitRequest.ProtoReflect.Descriptor instead.
+func (*UpdateBoardGitRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UpdateBoardGitRequest) GetBacklink() bool {
+	if x != nil && x.Backlink != nil {
+		return *x.Backlink
+	}
+	return false
+}
+
+func (x *UpdateBoardGitRequest) GetApiToken() string {
+	if x != nil && x.ApiToken != nil {
+		return *x.ApiToken
+	}
+	return ""
+}
+
+func (x *UpdateBoardGitRequest) GetGitlabUrl() string {
+	if x != nil && x.GitlabUrl != nil {
+		return *x.GitlabUrl
+	}
+	return ""
+}
+
 // GET / PUT /api/boards/{id}/git (GET without a setup: git unset); DELETE → 204.
 type BoardGitResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1567,7 +1705,7 @@ type BoardGitResponse struct {
 
 func (x *BoardGitResponse) Reset() {
 	*x = BoardGitResponse{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[13]
+	mi := &file_calaba_v1_automations_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1579,7 +1717,7 @@ func (x *BoardGitResponse) String() string {
 func (*BoardGitResponse) ProtoMessage() {}
 
 func (x *BoardGitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[13]
+	mi := &file_calaba_v1_automations_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1592,7 +1730,7 @@ func (x *BoardGitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardGitResponse.ProtoReflect.Descriptor instead.
 func (*BoardGitResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *BoardGitResponse) GetGit() *BoardGit {
@@ -1609,6 +1747,329 @@ func (x *BoardGitResponse) GetSecret() string {
 	return ""
 }
 
+// A release of a board.
+type BoardRelease struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	BoardId       string                 `protobuf:"bytes,2,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`                            // 1..64 characters, one line («4929cf3», pipeline «1287»)
+	Environment   string                 `protobuf:"bytes,4,opt,name=environment,proto3" json:"environment,omitempty"`              // [a-z0-9][a-z0-9._-]{0,31} («prod», «stage»)
+	Sha           string                 `protobuf:"bytes,5,opt,name=sha,proto3" json:"sha,omitempty"`                              // the deployed commit, 40 (or 64) lowercase hex
+	Url           string                 `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`                              // the pipeline (http / https), "" = none
+	CreatedBy     string                 `protobuf:"bytes,7,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"` // a user or a bot
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // the last repeat
+	TasksCount    uint32                 `protobuf:"varint,10,opt,name=tasks_count,json=tasksCount,proto3" json:"tasks_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardRelease) Reset() {
+	*x = BoardRelease{}
+	mi := &file_calaba_v1_automations_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardRelease) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardRelease) ProtoMessage() {}
+
+func (x *BoardRelease) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_automations_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardRelease.ProtoReflect.Descriptor instead.
+func (*BoardRelease) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *BoardRelease) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetBoardId() string {
+	if x != nil {
+		return x.BoardId
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+func (x *BoardRelease) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *BoardRelease) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *BoardRelease) GetTasksCount() uint32 {
+	if x != nil {
+		return x.TasksCount
+	}
+	return 0
+}
+
+type CreateBoardReleaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // "" = the first 7 characters of sha
+	Sha           string                 `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
+	Commits       []string               `protobuf:"bytes,3,rep,name=commits,proto3" json:"commits,omitempty"` // full SHAs, ≤ 5000
+	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	Environment   string                 `protobuf:"bytes,5,opt,name=environment,proto3" json:"environment,omitempty"`           // "" = "prod"
+	TaskKeys      []string               `protobuf:"bytes,6,rep,name=task_keys,json=taskKeys,proto3" json:"task_keys,omitempty"` // «DEV-12», keys of this board only (422 otherwise), ≤ 500
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBoardReleaseRequest) Reset() {
+	*x = CreateBoardReleaseRequest{}
+	mi := &file_calaba_v1_automations_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBoardReleaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBoardReleaseRequest) ProtoMessage() {}
+
+func (x *CreateBoardReleaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_automations_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBoardReleaseRequest.ProtoReflect.Descriptor instead.
+func (*CreateBoardReleaseRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CreateBoardReleaseRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateBoardReleaseRequest) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *CreateBoardReleaseRequest) GetCommits() []string {
+	if x != nil {
+		return x.Commits
+	}
+	return nil
+}
+
+func (x *CreateBoardReleaseRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *CreateBoardReleaseRequest) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *CreateBoardReleaseRequest) GetTaskKeys() []string {
+	if x != nil {
+		return x.TaskKeys
+	}
+	return nil
+}
+
+type BoardReleaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Release       *BoardRelease          `protobuf:"bytes,1,opt,name=release,proto3" json:"release,omitempty"`
+	Created       bool                   `protobuf:"varint,2,opt,name=created,proto3" json:"created,omitempty"`                           // false: a repeat of (environment, sha)
+	AddedKeys     []string               `protobuf:"bytes,3,rep,name=added_keys,json=addedKeys,proto3" json:"added_keys,omitempty"`       // tasks that entered the release in this call
+	UnknownKeys   []string               `protobuf:"bytes,4,rep,name=unknown_keys,json=unknownKeys,proto3" json:"unknown_keys,omitempty"` // task_keys with no live task on the board
+	Truncated     bool                   `protobuf:"varint,5,opt,name=truncated,proto3" json:"truncated,omitempty"`                       // more than 500 tasks matched: call again for the rest
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardReleaseResponse) Reset() {
+	*x = BoardReleaseResponse{}
+	mi := &file_calaba_v1_automations_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardReleaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardReleaseResponse) ProtoMessage() {}
+
+func (x *BoardReleaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_automations_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardReleaseResponse.ProtoReflect.Descriptor instead.
+func (*BoardReleaseResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *BoardReleaseResponse) GetRelease() *BoardRelease {
+	if x != nil {
+		return x.Release
+	}
+	return nil
+}
+
+func (x *BoardReleaseResponse) GetCreated() bool {
+	if x != nil {
+		return x.Created
+	}
+	return false
+}
+
+func (x *BoardReleaseResponse) GetAddedKeys() []string {
+	if x != nil {
+		return x.AddedKeys
+	}
+	return nil
+}
+
+func (x *BoardReleaseResponse) GetUnknownKeys() []string {
+	if x != nil {
+		return x.UnknownKeys
+	}
+	return nil
+}
+
+func (x *BoardReleaseResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+// GET /api/boards/{id}/releases?environment=&limit= (1..100, default 50): VIEW_BOARD; newest
+// first.
+type ListBoardReleasesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Releases      []*BoardRelease        `protobuf:"bytes,1,rep,name=releases,proto3" json:"releases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBoardReleasesResponse) Reset() {
+	*x = ListBoardReleasesResponse{}
+	mi := &file_calaba_v1_automations_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBoardReleasesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBoardReleasesResponse) ProtoMessage() {}
+
+func (x *ListBoardReleasesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_automations_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBoardReleasesResponse.ProtoReflect.Descriptor instead.
+func (*ListBoardReleasesResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListBoardReleasesResponse) GetReleases() []*BoardRelease {
+	if x != nil {
+		return x.Releases
+	}
+	return nil
+}
+
 // BOARD_RULE_UPDATE: a rule was created or changed; after a run only when its last_error changed
 // (runs_count / last_run_at are current in REST).
 type BoardRuleUpdate struct {
@@ -1622,7 +2083,7 @@ type BoardRuleUpdate struct {
 
 func (x *BoardRuleUpdate) Reset() {
 	*x = BoardRuleUpdate{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[14]
+	mi := &file_calaba_v1_automations_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1634,7 +2095,7 @@ func (x *BoardRuleUpdate) String() string {
 func (*BoardRuleUpdate) ProtoMessage() {}
 
 func (x *BoardRuleUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[14]
+	mi := &file_calaba_v1_automations_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1647,7 +2108,7 @@ func (x *BoardRuleUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardRuleUpdate.ProtoReflect.Descriptor instead.
 func (*BoardRuleUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{14}
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *BoardRuleUpdate) GetWorkspaceId() string {
@@ -1683,7 +2144,7 @@ type BoardRuleDelete struct {
 
 func (x *BoardRuleDelete) Reset() {
 	*x = BoardRuleDelete{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[15]
+	mi := &file_calaba_v1_automations_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1695,7 +2156,7 @@ func (x *BoardRuleDelete) String() string {
 func (*BoardRuleDelete) ProtoMessage() {}
 
 func (x *BoardRuleDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[15]
+	mi := &file_calaba_v1_automations_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1708,7 +2169,7 @@ func (x *BoardRuleDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardRuleDelete.ProtoReflect.Descriptor instead.
 func (*BoardRuleDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *BoardRuleDelete) GetWorkspaceId() string {
@@ -1740,7 +2201,7 @@ type RuleTrigger_TaskCreated struct {
 
 func (x *RuleTrigger_TaskCreated) Reset() {
 	*x = RuleTrigger_TaskCreated{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[16]
+	mi := &file_calaba_v1_automations_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1752,7 +2213,7 @@ func (x *RuleTrigger_TaskCreated) String() string {
 func (*RuleTrigger_TaskCreated) ProtoMessage() {}
 
 func (x *RuleTrigger_TaskCreated) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[16]
+	mi := &file_calaba_v1_automations_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1780,7 +2241,7 @@ type RuleTrigger_StatusChanged struct {
 
 func (x *RuleTrigger_StatusChanged) Reset() {
 	*x = RuleTrigger_StatusChanged{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[17]
+	mi := &file_calaba_v1_automations_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1792,7 +2253,7 @@ func (x *RuleTrigger_StatusChanged) String() string {
 func (*RuleTrigger_StatusChanged) ProtoMessage() {}
 
 func (x *RuleTrigger_StatusChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[17]
+	mi := &file_calaba_v1_automations_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1839,7 +2300,7 @@ type RuleTrigger_ApprovalChanged struct {
 
 func (x *RuleTrigger_ApprovalChanged) Reset() {
 	*x = RuleTrigger_ApprovalChanged{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[18]
+	mi := &file_calaba_v1_automations_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1851,7 +2312,7 @@ func (x *RuleTrigger_ApprovalChanged) String() string {
 func (*RuleTrigger_ApprovalChanged) ProtoMessage() {}
 
 func (x *RuleTrigger_ApprovalChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[18]
+	mi := &file_calaba_v1_automations_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1886,7 +2347,7 @@ type RuleTrigger_AssigneesChanged struct {
 
 func (x *RuleTrigger_AssigneesChanged) Reset() {
 	*x = RuleTrigger_AssigneesChanged{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[19]
+	mi := &file_calaba_v1_automations_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1898,7 +2359,7 @@ func (x *RuleTrigger_AssigneesChanged) String() string {
 func (*RuleTrigger_AssigneesChanged) ProtoMessage() {}
 
 func (x *RuleTrigger_AssigneesChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[19]
+	mi := &file_calaba_v1_automations_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1946,7 +2407,7 @@ type RuleTrigger_LabelChanged struct {
 
 func (x *RuleTrigger_LabelChanged) Reset() {
 	*x = RuleTrigger_LabelChanged{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[20]
+	mi := &file_calaba_v1_automations_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1958,7 +2419,7 @@ func (x *RuleTrigger_LabelChanged) String() string {
 func (*RuleTrigger_LabelChanged) ProtoMessage() {}
 
 func (x *RuleTrigger_LabelChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[20]
+	mi := &file_calaba_v1_automations_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1997,7 +2458,7 @@ type RuleTrigger_PriorityChanged struct {
 
 func (x *RuleTrigger_PriorityChanged) Reset() {
 	*x = RuleTrigger_PriorityChanged{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[21]
+	mi := &file_calaba_v1_automations_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2009,7 +2470,7 @@ func (x *RuleTrigger_PriorityChanged) String() string {
 func (*RuleTrigger_PriorityChanged) ProtoMessage() {}
 
 func (x *RuleTrigger_PriorityChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[21]
+	mi := &file_calaba_v1_automations_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2041,7 +2502,7 @@ type RuleTrigger_ChecklistCompleted struct {
 
 func (x *RuleTrigger_ChecklistCompleted) Reset() {
 	*x = RuleTrigger_ChecklistCompleted{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[22]
+	mi := &file_calaba_v1_automations_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2053,7 +2514,7 @@ func (x *RuleTrigger_ChecklistCompleted) String() string {
 func (*RuleTrigger_ChecklistCompleted) ProtoMessage() {}
 
 func (x *RuleTrigger_ChecklistCompleted) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[22]
+	mi := &file_calaba_v1_automations_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2077,7 +2538,7 @@ type RuleTrigger_CommentCreated struct {
 
 func (x *RuleTrigger_CommentCreated) Reset() {
 	*x = RuleTrigger_CommentCreated{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[23]
+	mi := &file_calaba_v1_automations_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2089,7 +2550,7 @@ func (x *RuleTrigger_CommentCreated) String() string {
 func (*RuleTrigger_CommentCreated) ProtoMessage() {}
 
 func (x *RuleTrigger_CommentCreated) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[23]
+	mi := &file_calaba_v1_automations_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2105,16 +2566,21 @@ func (*RuleTrigger_CommentCreated) Descriptor() ([]byte, []int) {
 	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{0, 7}
 }
 
+// target_branches: the pull request's target branch must match one of them, an exact name or
+// a glob («*» any characters, «/» included; «?» one): ["main"], ["release/*"]. Empty = any
+// branch; a non-empty list never matches a branch or commit event (they have no target).
+// At most 10 patterns of at most 200 characters, no spaces.
 type RuleTrigger_Git struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Event         RuleGitEvent           `protobuf:"varint,1,opt,name=event,proto3,enum=calaba.v1.RuleGitEvent" json:"event,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Event          RuleGitEvent           `protobuf:"varint,1,opt,name=event,proto3,enum=calaba.v1.RuleGitEvent" json:"event,omitempty"`
+	TargetBranches []string               `protobuf:"bytes,2,rep,name=target_branches,json=targetBranches,proto3" json:"target_branches,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RuleTrigger_Git) Reset() {
 	*x = RuleTrigger_Git{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[24]
+	mi := &file_calaba_v1_automations_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2126,7 +2592,7 @@ func (x *RuleTrigger_Git) String() string {
 func (*RuleTrigger_Git) ProtoMessage() {}
 
 func (x *RuleTrigger_Git) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[24]
+	mi := &file_calaba_v1_automations_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2149,6 +2615,13 @@ func (x *RuleTrigger_Git) GetEvent() RuleGitEvent {
 	return RuleGitEvent_RULE_GIT_EVENT_UNSPECIFIED
 }
 
+func (x *RuleTrigger_Git) GetTargetBranches() []string {
+	if x != nil {
+		return x.TargetBranches
+	}
+	return nil
+}
+
 // The task is due in at most `days` days (0 = today) and not finished. Needs DUE_DATE.
 type RuleTrigger_DueIn struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2159,7 +2632,7 @@ type RuleTrigger_DueIn struct {
 
 func (x *RuleTrigger_DueIn) Reset() {
 	*x = RuleTrigger_DueIn{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[25]
+	mi := &file_calaba_v1_automations_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2171,7 +2644,7 @@ func (x *RuleTrigger_DueIn) String() string {
 func (*RuleTrigger_DueIn) ProtoMessage() {}
 
 func (x *RuleTrigger_DueIn) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[25]
+	mi := &file_calaba_v1_automations_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2204,7 +2677,7 @@ type RuleTrigger_Overdue struct {
 
 func (x *RuleTrigger_Overdue) Reset() {
 	*x = RuleTrigger_Overdue{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[26]
+	mi := &file_calaba_v1_automations_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2216,7 +2689,7 @@ func (x *RuleTrigger_Overdue) String() string {
 func (*RuleTrigger_Overdue) ProtoMessage() {}
 
 func (x *RuleTrigger_Overdue) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[26]
+	mi := &file_calaba_v1_automations_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2249,7 +2722,7 @@ type RuleTrigger_Stale struct {
 
 func (x *RuleTrigger_Stale) Reset() {
 	*x = RuleTrigger_Stale{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[27]
+	mi := &file_calaba_v1_automations_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2261,7 +2734,7 @@ func (x *RuleTrigger_Stale) String() string {
 func (*RuleTrigger_Stale) ProtoMessage() {}
 
 func (x *RuleTrigger_Stale) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[27]
+	mi := &file_calaba_v1_automations_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2284,6 +2757,53 @@ func (x *RuleTrigger_Stale) GetDays() uint32 {
 	return 0
 }
 
+// The task entered a release (board task #101; POST /api/boards/{id}/releases), once per task
+// and environment. environments: the release's environment is one of them («prod»); empty =
+// any. At most 10, each of the release environment form.
+type RuleTrigger_Release struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Environments  []string               `protobuf:"bytes,1,rep,name=environments,proto3" json:"environments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuleTrigger_Release) Reset() {
+	*x = RuleTrigger_Release{}
+	mi := &file_calaba_v1_automations_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuleTrigger_Release) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuleTrigger_Release) ProtoMessage() {}
+
+func (x *RuleTrigger_Release) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_automations_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuleTrigger_Release.ProtoReflect.Descriptor instead.
+func (*RuleTrigger_Release) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_automations_proto_rawDescGZIP(), []int{0, 12}
+}
+
+func (x *RuleTrigger_Release) GetEnvironments() []string {
+	if x != nil {
+		return x.Environments
+	}
+	return nil
+}
+
 // Through the same path as PATCH /tasks/{id}: the approval gate applies.
 type RuleAction_SetStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2294,7 +2814,7 @@ type RuleAction_SetStatus struct {
 
 func (x *RuleAction_SetStatus) Reset() {
 	*x = RuleAction_SetStatus{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[28]
+	mi := &file_calaba_v1_automations_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2306,7 +2826,7 @@ func (x *RuleAction_SetStatus) String() string {
 func (*RuleAction_SetStatus) ProtoMessage() {}
 
 func (x *RuleAction_SetStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[28]
+	mi := &file_calaba_v1_automations_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2341,7 +2861,7 @@ type RuleAction_SetAssignees struct {
 
 func (x *RuleAction_SetAssignees) Reset() {
 	*x = RuleAction_SetAssignees{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[29]
+	mi := &file_calaba_v1_automations_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2353,7 +2873,7 @@ func (x *RuleAction_SetAssignees) String() string {
 func (*RuleAction_SetAssignees) ProtoMessage() {}
 
 func (x *RuleAction_SetAssignees) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[29]
+	mi := &file_calaba_v1_automations_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2407,7 +2927,7 @@ type RuleAction_SetLabels struct {
 
 func (x *RuleAction_SetLabels) Reset() {
 	*x = RuleAction_SetLabels{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[30]
+	mi := &file_calaba_v1_automations_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2419,7 +2939,7 @@ func (x *RuleAction_SetLabels) String() string {
 func (*RuleAction_SetLabels) ProtoMessage() {}
 
 func (x *RuleAction_SetLabels) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[30]
+	mi := &file_calaba_v1_automations_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2458,7 +2978,7 @@ type RuleAction_SetPriority struct {
 
 func (x *RuleAction_SetPriority) Reset() {
 	*x = RuleAction_SetPriority{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[31]
+	mi := &file_calaba_v1_automations_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2470,7 +2990,7 @@ func (x *RuleAction_SetPriority) String() string {
 func (*RuleAction_SetPriority) ProtoMessage() {}
 
 func (x *RuleAction_SetPriority) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[31]
+	mi := &file_calaba_v1_automations_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2504,7 +3024,7 @@ type RuleAction_SetDue struct {
 
 func (x *RuleAction_SetDue) Reset() {
 	*x = RuleAction_SetDue{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[32]
+	mi := &file_calaba_v1_automations_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2516,7 +3036,7 @@ func (x *RuleAction_SetDue) String() string {
 func (*RuleAction_SetDue) ProtoMessage() {}
 
 func (x *RuleAction_SetDue) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[32]
+	mi := &file_calaba_v1_automations_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2557,7 +3077,7 @@ type RuleAction_SetApprovers struct {
 
 func (x *RuleAction_SetApprovers) Reset() {
 	*x = RuleAction_SetApprovers{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[33]
+	mi := &file_calaba_v1_automations_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2569,7 +3089,7 @@ func (x *RuleAction_SetApprovers) String() string {
 func (*RuleAction_SetApprovers) ProtoMessage() {}
 
 func (x *RuleAction_SetApprovers) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[33]
+	mi := &file_calaba_v1_automations_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2609,7 +3129,7 @@ type RuleAction_AddChecklist struct {
 
 func (x *RuleAction_AddChecklist) Reset() {
 	*x = RuleAction_AddChecklist{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[34]
+	mi := &file_calaba_v1_automations_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2621,7 +3141,7 @@ func (x *RuleAction_AddChecklist) String() string {
 func (*RuleAction_AddChecklist) ProtoMessage() {}
 
 func (x *RuleAction_AddChecklist) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[34]
+	mi := &file_calaba_v1_automations_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2661,7 +3181,7 @@ type RuleAction_Comment struct {
 
 func (x *RuleAction_Comment) Reset() {
 	*x = RuleAction_Comment{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[35]
+	mi := &file_calaba_v1_automations_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2673,7 +3193,7 @@ func (x *RuleAction_Comment) String() string {
 func (*RuleAction_Comment) ProtoMessage() {}
 
 func (x *RuleAction_Comment) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[35]
+	mi := &file_calaba_v1_automations_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2708,7 +3228,7 @@ type RuleAction_NotifyRoom struct {
 
 func (x *RuleAction_NotifyRoom) Reset() {
 	*x = RuleAction_NotifyRoom{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[36]
+	mi := &file_calaba_v1_automations_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2720,7 +3240,7 @@ func (x *RuleAction_NotifyRoom) String() string {
 func (*RuleAction_NotifyRoom) ProtoMessage() {}
 
 func (x *RuleAction_NotifyRoom) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[36]
+	mi := &file_calaba_v1_automations_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2761,7 +3281,7 @@ type RuleAction_NotifyDm struct {
 
 func (x *RuleAction_NotifyDm) Reset() {
 	*x = RuleAction_NotifyDm{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[37]
+	mi := &file_calaba_v1_automations_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2773,7 +3293,7 @@ func (x *RuleAction_NotifyDm) String() string {
 func (*RuleAction_NotifyDm) ProtoMessage() {}
 
 func (x *RuleAction_NotifyDm) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[37]
+	mi := &file_calaba_v1_automations_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2813,7 +3333,7 @@ type RuleAction_CreateSubtasks struct {
 
 func (x *RuleAction_CreateSubtasks) Reset() {
 	*x = RuleAction_CreateSubtasks{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[38]
+	mi := &file_calaba_v1_automations_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2825,7 +3345,7 @@ func (x *RuleAction_CreateSubtasks) String() string {
 func (*RuleAction_CreateSubtasks) ProtoMessage() {}
 
 func (x *RuleAction_CreateSubtasks) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[38]
+	mi := &file_calaba_v1_automations_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2856,7 +3376,7 @@ type RuleAction_Archive struct {
 
 func (x *RuleAction_Archive) Reset() {
 	*x = RuleAction_Archive{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[39]
+	mi := &file_calaba_v1_automations_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2868,7 +3388,7 @@ func (x *RuleAction_Archive) String() string {
 func (*RuleAction_Archive) ProtoMessage() {}
 
 func (x *RuleAction_Archive) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[39]
+	mi := &file_calaba_v1_automations_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2895,7 +3415,7 @@ type RuleTestResponse_Action struct {
 
 func (x *RuleTestResponse_Action) Reset() {
 	*x = RuleTestResponse_Action{}
-	mi := &file_calaba_v1_automations_proto_msgTypes[40]
+	mi := &file_calaba_v1_automations_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2907,7 +3427,7 @@ func (x *RuleTestResponse_Action) String() string {
 func (*RuleTestResponse_Action) ProtoMessage() {}
 
 func (x *RuleTestResponse_Action) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_automations_proto_msgTypes[40]
+	mi := &file_calaba_v1_automations_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2948,7 +3468,7 @@ var File_calaba_v1_automations_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_automations_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcalaba/v1/automations.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\"\x9b\f\n" +
+	"\x1bcalaba/v1/automations.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\"\xaf\r\n" +
 	"\vRuleTrigger\x12G\n" +
 	"\ftask_created\x18\x01 \x01(\v2\".calaba.v1.RuleTrigger.TaskCreatedH\x00R\vtaskCreated\x12M\n" +
 	"\x0estatus_changed\x18\x02 \x01(\v2$.calaba.v1.RuleTrigger.StatusChangedH\x00R\rstatusChanged\x12S\n" +
@@ -2962,7 +3482,8 @@ const file_calaba_v1_automations_proto_rawDesc = "" +
 	"\x06due_in\x18\n" +
 	" \x01(\v2\x1c.calaba.v1.RuleTrigger.DueInH\x00R\x05dueIn\x12:\n" +
 	"\aoverdue\x18\v \x01(\v2\x1e.calaba.v1.RuleTrigger.OverdueH\x00R\aoverdue\x124\n" +
-	"\x05stale\x18\f \x01(\v2\x1c.calaba.v1.RuleTrigger.StaleH\x00R\x05stale\x1a\r\n" +
+	"\x05stale\x18\f \x01(\v2\x1c.calaba.v1.RuleTrigger.StaleH\x00R\x05stale\x12:\n" +
+	"\arelease\x18\r \x01(\v2\x1e.calaba.v1.RuleTrigger.ReleaseH\x00R\arelease\x1a\r\n" +
 	"\vTaskCreated\x1a\x8c\x01\n" +
 	"\rStatusChanged\x12 \n" +
 	"\fto_status_id\x18\x01 \x01(\tR\n" +
@@ -2983,15 +3504,18 @@ const file_calaba_v1_automations_proto_rawDesc = "" +
 	"toPriority\x88\x01\x01B\x0e\n" +
 	"\f_to_priority\x1a\x14\n" +
 	"\x12ChecklistCompleted\x1a\x10\n" +
-	"\x0eCommentCreated\x1a4\n" +
+	"\x0eCommentCreated\x1a]\n" +
 	"\x03Git\x12-\n" +
-	"\x05event\x18\x01 \x01(\x0e2\x17.calaba.v1.RuleGitEventR\x05event\x1a\x1b\n" +
+	"\x05event\x18\x01 \x01(\x0e2\x17.calaba.v1.RuleGitEventR\x05event\x12'\n" +
+	"\x0ftarget_branches\x18\x02 \x03(\tR\x0etargetBranches\x1a\x1b\n" +
 	"\x05DueIn\x12\x12\n" +
 	"\x04days\x18\x01 \x01(\rR\x04days\x1a\x1d\n" +
 	"\aOverdue\x12\x12\n" +
 	"\x04days\x18\x01 \x01(\rR\x04days\x1a\x1b\n" +
 	"\x05Stale\x12\x12\n" +
-	"\x04days\x18\x01 \x01(\rR\x04daysB\x06\n" +
+	"\x04days\x18\x01 \x01(\rR\x04days\x1a-\n" +
+	"\aRelease\x12\"\n" +
+	"\fenvironments\x18\x01 \x03(\tR\fenvironmentsB\x06\n" +
 	"\x04kind\"\xe5\f\n" +
 	"\n" +
 	"RuleAction\x12@\n" +
@@ -3114,7 +3638,7 @@ const file_calaba_v1_automations_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\">\n" +
 	"\x14ListRuleRunsResponse\x12&\n" +
-	"\x04runs\x18\x01 \x03(\v2\x12.calaba.v1.RuleRunR\x04runs\"\xe6\x02\n" +
+	"\x04runs\x18\x01 \x03(\v2\x12.calaba.v1.RuleRunR\x04runs\"\xec\x03\n" +
 	"\bBoardGit\x12\x19\n" +
 	"\bboard_id\x18\x01 \x01(\tR\aboardId\x122\n" +
 	"\bprovider\x18\x02 \x01(\x0e2\x16.calaba.v1.GitProviderR\bprovider\x12\x1d\n" +
@@ -3128,13 +3652,60 @@ const file_calaba_v1_automations_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"`\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1a\n" +
+	"\bbacklink\x18\n" +
+	" \x01(\bR\bbacklink\x12\"\n" +
+	"\rhas_api_token\x18\v \x01(\bR\vhasApiToken\x12\x1d\n" +
+	"\n" +
+	"gitlab_url\x18\f \x01(\tR\tgitlabUrl\x12%\n" +
+	"\x0ebacklink_error\x18\r \x01(\tR\rbacklinkError\"`\n" +
 	"\x12SetBoardGitRequest\x122\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x16.calaba.v1.GitProviderR\bprovider\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secret\"Q\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\"\xa8\x01\n" +
+	"\x15UpdateBoardGitRequest\x12\x1f\n" +
+	"\bbacklink\x18\x01 \x01(\bH\x00R\bbacklink\x88\x01\x01\x12 \n" +
+	"\tapi_token\x18\x02 \x01(\tH\x01R\bapiToken\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"gitlab_url\x18\x03 \x01(\tH\x02R\tgitlabUrl\x88\x01\x01B\v\n" +
+	"\t_backlinkB\f\n" +
+	"\n" +
+	"_api_tokenB\r\n" +
+	"\v_gitlab_url\"Q\n" +
 	"\x10BoardGitResponse\x12%\n" +
 	"\x03git\x18\x01 \x01(\v2\x13.calaba.v1.BoardGitR\x03git\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secret\"y\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\"\xc9\x02\n" +
+	"\fBoardRelease\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bboard_id\x18\x02 \x01(\tR\aboardId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
+	"\venvironment\x18\x04 \x01(\tR\venvironment\x12\x10\n" +
+	"\x03sha\x18\x05 \x01(\tR\x03sha\x12\x10\n" +
+	"\x03url\x18\x06 \x01(\tR\x03url\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\a \x01(\tR\tcreatedBy\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1f\n" +
+	"\vtasks_count\x18\n" +
+	" \x01(\rR\n" +
+	"tasksCount\"\xac\x01\n" +
+	"\x19CreateBoardReleaseRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03sha\x18\x02 \x01(\tR\x03sha\x12\x18\n" +
+	"\acommits\x18\x03 \x03(\tR\acommits\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\x12 \n" +
+	"\venvironment\x18\x05 \x01(\tR\venvironment\x12\x1b\n" +
+	"\ttask_keys\x18\x06 \x03(\tR\btaskKeys\"\xc3\x01\n" +
+	"\x14BoardReleaseResponse\x121\n" +
+	"\arelease\x18\x01 \x01(\v2\x17.calaba.v1.BoardReleaseR\arelease\x12\x18\n" +
+	"\acreated\x18\x02 \x01(\bR\acreated\x12\x1d\n" +
+	"\n" +
+	"added_keys\x18\x03 \x03(\tR\taddedKeys\x12!\n" +
+	"\funknown_keys\x18\x04 \x03(\tR\vunknownKeys\x12\x1c\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"P\n" +
+	"\x19ListBoardReleasesResponse\x123\n" +
+	"\breleases\x18\x01 \x03(\v2\x17.calaba.v1.BoardReleaseR\breleases\"y\n" +
 	"\x0fBoardRuleUpdate\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
 	"\bboard_id\x18\x02 \x01(\tR\aboardId\x12(\n" +
@@ -3142,14 +3713,18 @@ const file_calaba_v1_automations_proto_rawDesc = "" +
 	"\x0fBoardRuleDelete\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
 	"\bboard_id\x18\x02 \x01(\tR\aboardId\x12\x17\n" +
-	"\arule_id\x18\x03 \x01(\tR\x06ruleId*\xcd\x01\n" +
+	"\arule_id\x18\x03 \x01(\tR\x06ruleId*\xd6\x02\n" +
 	"\fRuleGitEvent\x12\x1e\n" +
 	"\x1aRULE_GIT_EVENT_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dRULE_GIT_EVENT_BRANCH_CREATED\x10\x01\x12\x1c\n" +
 	"\x18RULE_GIT_EVENT_PR_OPENED\x10\x02\x12\x1c\n" +
 	"\x18RULE_GIT_EVENT_PR_MERGED\x10\x03\x12\x1c\n" +
 	"\x18RULE_GIT_EVENT_PR_CLOSED\x10\x04\x12 \n" +
-	"\x1cRULE_GIT_EVENT_COMMIT_PUSHED\x10\x05*\xb1\x01\n" +
+	"\x1cRULE_GIT_EVENT_COMMIT_PUSHED\x10\x05\x12\"\n" +
+	"\x1eRULE_GIT_EVENT_PR_DRAFT_OPENED\x10\x06\x12\x1b\n" +
+	"\x17RULE_GIT_EVENT_PR_READY\x10\a\x12&\n" +
+	"\"RULE_GIT_EVENT_PR_REVIEW_REQUESTED\x10\b\x12\x1e\n" +
+	"\x1aRULE_GIT_EVENT_PR_APPROVED\x10\t*\xb1\x01\n" +
 	"\x11RuleAssigneesMode\x12#\n" +
 	"\x1fRULE_ASSIGNEES_MODE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RULE_ASSIGNEES_MODE_SET\x10\x01\x12\x1b\n" +
@@ -3182,7 +3757,7 @@ func file_calaba_v1_automations_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_automations_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_calaba_v1_automations_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_calaba_v1_automations_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_calaba_v1_automations_proto_goTypes = []any{
 	(RuleGitEvent)(0),                      // 0: calaba.v1.RuleGitEvent
 	(RuleAssigneesMode)(0),                 // 1: calaba.v1.RuleAssigneesMode
@@ -3201,102 +3776,113 @@ var file_calaba_v1_automations_proto_goTypes = []any{
 	(*ListRuleRunsResponse)(nil),           // 14: calaba.v1.ListRuleRunsResponse
 	(*BoardGit)(nil),                       // 15: calaba.v1.BoardGit
 	(*SetBoardGitRequest)(nil),             // 16: calaba.v1.SetBoardGitRequest
-	(*BoardGitResponse)(nil),               // 17: calaba.v1.BoardGitResponse
-	(*BoardRuleUpdate)(nil),                // 18: calaba.v1.BoardRuleUpdate
-	(*BoardRuleDelete)(nil),                // 19: calaba.v1.BoardRuleDelete
-	(*RuleTrigger_TaskCreated)(nil),        // 20: calaba.v1.RuleTrigger.TaskCreated
-	(*RuleTrigger_StatusChanged)(nil),      // 21: calaba.v1.RuleTrigger.StatusChanged
-	(*RuleTrigger_ApprovalChanged)(nil),    // 22: calaba.v1.RuleTrigger.ApprovalChanged
-	(*RuleTrigger_AssigneesChanged)(nil),   // 23: calaba.v1.RuleTrigger.AssigneesChanged
-	(*RuleTrigger_LabelChanged)(nil),       // 24: calaba.v1.RuleTrigger.LabelChanged
-	(*RuleTrigger_PriorityChanged)(nil),    // 25: calaba.v1.RuleTrigger.PriorityChanged
-	(*RuleTrigger_ChecklistCompleted)(nil), // 26: calaba.v1.RuleTrigger.ChecklistCompleted
-	(*RuleTrigger_CommentCreated)(nil),     // 27: calaba.v1.RuleTrigger.CommentCreated
-	(*RuleTrigger_Git)(nil),                // 28: calaba.v1.RuleTrigger.Git
-	(*RuleTrigger_DueIn)(nil),              // 29: calaba.v1.RuleTrigger.DueIn
-	(*RuleTrigger_Overdue)(nil),            // 30: calaba.v1.RuleTrigger.Overdue
-	(*RuleTrigger_Stale)(nil),              // 31: calaba.v1.RuleTrigger.Stale
-	(*RuleAction_SetStatus)(nil),           // 32: calaba.v1.RuleAction.SetStatus
-	(*RuleAction_SetAssignees)(nil),        // 33: calaba.v1.RuleAction.SetAssignees
-	(*RuleAction_SetLabels)(nil),           // 34: calaba.v1.RuleAction.SetLabels
-	(*RuleAction_SetPriority)(nil),         // 35: calaba.v1.RuleAction.SetPriority
-	(*RuleAction_SetDue)(nil),              // 36: calaba.v1.RuleAction.SetDue
-	(*RuleAction_SetApprovers)(nil),        // 37: calaba.v1.RuleAction.SetApprovers
-	(*RuleAction_AddChecklist)(nil),        // 38: calaba.v1.RuleAction.AddChecklist
-	(*RuleAction_Comment)(nil),             // 39: calaba.v1.RuleAction.Comment
-	(*RuleAction_NotifyRoom)(nil),          // 40: calaba.v1.RuleAction.NotifyRoom
-	(*RuleAction_NotifyDm)(nil),            // 41: calaba.v1.RuleAction.NotifyDm
-	(*RuleAction_CreateSubtasks)(nil),      // 42: calaba.v1.RuleAction.CreateSubtasks
-	(*RuleAction_Archive)(nil),             // 43: calaba.v1.RuleAction.Archive
-	(*RuleTestResponse_Action)(nil),        // 44: calaba.v1.RuleTestResponse.Action
-	(*TaskFilter)(nil),                     // 45: calaba.v1.TaskFilter
-	(*timestamppb.Timestamp)(nil),          // 46: google.protobuf.Timestamp
-	(GitProvider)(0),                       // 47: calaba.v1.GitProvider
-	(BoardStatusType)(0),                   // 48: calaba.v1.BoardStatusType
-	(TaskApprovalState)(0),                 // 49: calaba.v1.TaskApprovalState
-	(TaskPriority)(0),                      // 50: calaba.v1.TaskPriority
+	(*UpdateBoardGitRequest)(nil),          // 17: calaba.v1.UpdateBoardGitRequest
+	(*BoardGitResponse)(nil),               // 18: calaba.v1.BoardGitResponse
+	(*BoardRelease)(nil),                   // 19: calaba.v1.BoardRelease
+	(*CreateBoardReleaseRequest)(nil),      // 20: calaba.v1.CreateBoardReleaseRequest
+	(*BoardReleaseResponse)(nil),           // 21: calaba.v1.BoardReleaseResponse
+	(*ListBoardReleasesResponse)(nil),      // 22: calaba.v1.ListBoardReleasesResponse
+	(*BoardRuleUpdate)(nil),                // 23: calaba.v1.BoardRuleUpdate
+	(*BoardRuleDelete)(nil),                // 24: calaba.v1.BoardRuleDelete
+	(*RuleTrigger_TaskCreated)(nil),        // 25: calaba.v1.RuleTrigger.TaskCreated
+	(*RuleTrigger_StatusChanged)(nil),      // 26: calaba.v1.RuleTrigger.StatusChanged
+	(*RuleTrigger_ApprovalChanged)(nil),    // 27: calaba.v1.RuleTrigger.ApprovalChanged
+	(*RuleTrigger_AssigneesChanged)(nil),   // 28: calaba.v1.RuleTrigger.AssigneesChanged
+	(*RuleTrigger_LabelChanged)(nil),       // 29: calaba.v1.RuleTrigger.LabelChanged
+	(*RuleTrigger_PriorityChanged)(nil),    // 30: calaba.v1.RuleTrigger.PriorityChanged
+	(*RuleTrigger_ChecklistCompleted)(nil), // 31: calaba.v1.RuleTrigger.ChecklistCompleted
+	(*RuleTrigger_CommentCreated)(nil),     // 32: calaba.v1.RuleTrigger.CommentCreated
+	(*RuleTrigger_Git)(nil),                // 33: calaba.v1.RuleTrigger.Git
+	(*RuleTrigger_DueIn)(nil),              // 34: calaba.v1.RuleTrigger.DueIn
+	(*RuleTrigger_Overdue)(nil),            // 35: calaba.v1.RuleTrigger.Overdue
+	(*RuleTrigger_Stale)(nil),              // 36: calaba.v1.RuleTrigger.Stale
+	(*RuleTrigger_Release)(nil),            // 37: calaba.v1.RuleTrigger.Release
+	(*RuleAction_SetStatus)(nil),           // 38: calaba.v1.RuleAction.SetStatus
+	(*RuleAction_SetAssignees)(nil),        // 39: calaba.v1.RuleAction.SetAssignees
+	(*RuleAction_SetLabels)(nil),           // 40: calaba.v1.RuleAction.SetLabels
+	(*RuleAction_SetPriority)(nil),         // 41: calaba.v1.RuleAction.SetPriority
+	(*RuleAction_SetDue)(nil),              // 42: calaba.v1.RuleAction.SetDue
+	(*RuleAction_SetApprovers)(nil),        // 43: calaba.v1.RuleAction.SetApprovers
+	(*RuleAction_AddChecklist)(nil),        // 44: calaba.v1.RuleAction.AddChecklist
+	(*RuleAction_Comment)(nil),             // 45: calaba.v1.RuleAction.Comment
+	(*RuleAction_NotifyRoom)(nil),          // 46: calaba.v1.RuleAction.NotifyRoom
+	(*RuleAction_NotifyDm)(nil),            // 47: calaba.v1.RuleAction.NotifyDm
+	(*RuleAction_CreateSubtasks)(nil),      // 48: calaba.v1.RuleAction.CreateSubtasks
+	(*RuleAction_Archive)(nil),             // 49: calaba.v1.RuleAction.Archive
+	(*RuleTestResponse_Action)(nil),        // 50: calaba.v1.RuleTestResponse.Action
+	(*TaskFilter)(nil),                     // 51: calaba.v1.TaskFilter
+	(*timestamppb.Timestamp)(nil),          // 52: google.protobuf.Timestamp
+	(GitProvider)(0),                       // 53: calaba.v1.GitProvider
+	(BoardStatusType)(0),                   // 54: calaba.v1.BoardStatusType
+	(TaskApprovalState)(0),                 // 55: calaba.v1.TaskApprovalState
+	(TaskPriority)(0),                      // 56: calaba.v1.TaskPriority
 }
 var file_calaba_v1_automations_proto_depIdxs = []int32{
-	20, // 0: calaba.v1.RuleTrigger.task_created:type_name -> calaba.v1.RuleTrigger.TaskCreated
-	21, // 1: calaba.v1.RuleTrigger.status_changed:type_name -> calaba.v1.RuleTrigger.StatusChanged
-	22, // 2: calaba.v1.RuleTrigger.approval_changed:type_name -> calaba.v1.RuleTrigger.ApprovalChanged
-	23, // 3: calaba.v1.RuleTrigger.assignees_changed:type_name -> calaba.v1.RuleTrigger.AssigneesChanged
-	24, // 4: calaba.v1.RuleTrigger.label_changed:type_name -> calaba.v1.RuleTrigger.LabelChanged
-	25, // 5: calaba.v1.RuleTrigger.priority_changed:type_name -> calaba.v1.RuleTrigger.PriorityChanged
-	26, // 6: calaba.v1.RuleTrigger.checklist_completed:type_name -> calaba.v1.RuleTrigger.ChecklistCompleted
-	27, // 7: calaba.v1.RuleTrigger.comment_created:type_name -> calaba.v1.RuleTrigger.CommentCreated
-	28, // 8: calaba.v1.RuleTrigger.git:type_name -> calaba.v1.RuleTrigger.Git
-	29, // 9: calaba.v1.RuleTrigger.due_in:type_name -> calaba.v1.RuleTrigger.DueIn
-	30, // 10: calaba.v1.RuleTrigger.overdue:type_name -> calaba.v1.RuleTrigger.Overdue
-	31, // 11: calaba.v1.RuleTrigger.stale:type_name -> calaba.v1.RuleTrigger.Stale
-	32, // 12: calaba.v1.RuleAction.set_status:type_name -> calaba.v1.RuleAction.SetStatus
-	33, // 13: calaba.v1.RuleAction.set_assignees:type_name -> calaba.v1.RuleAction.SetAssignees
-	34, // 14: calaba.v1.RuleAction.set_labels:type_name -> calaba.v1.RuleAction.SetLabels
-	35, // 15: calaba.v1.RuleAction.set_priority:type_name -> calaba.v1.RuleAction.SetPriority
-	36, // 16: calaba.v1.RuleAction.set_due:type_name -> calaba.v1.RuleAction.SetDue
-	37, // 17: calaba.v1.RuleAction.set_approvers:type_name -> calaba.v1.RuleAction.SetApprovers
-	38, // 18: calaba.v1.RuleAction.add_checklist:type_name -> calaba.v1.RuleAction.AddChecklist
-	39, // 19: calaba.v1.RuleAction.comment:type_name -> calaba.v1.RuleAction.Comment
-	40, // 20: calaba.v1.RuleAction.notify_room:type_name -> calaba.v1.RuleAction.NotifyRoom
-	41, // 21: calaba.v1.RuleAction.notify_dm:type_name -> calaba.v1.RuleAction.NotifyDm
-	42, // 22: calaba.v1.RuleAction.create_subtasks:type_name -> calaba.v1.RuleAction.CreateSubtasks
-	43, // 23: calaba.v1.RuleAction.archive:type_name -> calaba.v1.RuleAction.Archive
-	4,  // 24: calaba.v1.BoardRule.trigger:type_name -> calaba.v1.RuleTrigger
-	45, // 25: calaba.v1.BoardRule.condition:type_name -> calaba.v1.TaskFilter
-	5,  // 26: calaba.v1.BoardRule.actions:type_name -> calaba.v1.RuleAction
-	46, // 27: calaba.v1.BoardRule.created_at:type_name -> google.protobuf.Timestamp
-	46, // 28: calaba.v1.BoardRule.updated_at:type_name -> google.protobuf.Timestamp
-	46, // 29: calaba.v1.BoardRule.last_run_at:type_name -> google.protobuf.Timestamp
-	6,  // 30: calaba.v1.ListBoardRulesResponse.rules:type_name -> calaba.v1.BoardRule
-	4,  // 31: calaba.v1.CreateBoardRuleRequest.trigger:type_name -> calaba.v1.RuleTrigger
-	45, // 32: calaba.v1.CreateBoardRuleRequest.condition:type_name -> calaba.v1.TaskFilter
-	5,  // 33: calaba.v1.CreateBoardRuleRequest.actions:type_name -> calaba.v1.RuleAction
-	4,  // 34: calaba.v1.UpdateBoardRuleRequest.trigger:type_name -> calaba.v1.RuleTrigger
-	45, // 35: calaba.v1.UpdateBoardRuleRequest.condition:type_name -> calaba.v1.TaskFilter
-	5,  // 36: calaba.v1.UpdateBoardRuleRequest.actions:type_name -> calaba.v1.RuleAction
-	6,  // 37: calaba.v1.BoardRuleResponse.rule:type_name -> calaba.v1.BoardRule
-	44, // 38: calaba.v1.RuleTestResponse.actions:type_name -> calaba.v1.RuleTestResponse.Action
-	46, // 39: calaba.v1.RuleRun.created_at:type_name -> google.protobuf.Timestamp
-	13, // 40: calaba.v1.ListRuleRunsResponse.runs:type_name -> calaba.v1.RuleRun
-	47, // 41: calaba.v1.BoardGit.provider:type_name -> calaba.v1.GitProvider
-	46, // 42: calaba.v1.BoardGit.last_event_at:type_name -> google.protobuf.Timestamp
-	46, // 43: calaba.v1.BoardGit.created_at:type_name -> google.protobuf.Timestamp
-	47, // 44: calaba.v1.SetBoardGitRequest.provider:type_name -> calaba.v1.GitProvider
-	15, // 45: calaba.v1.BoardGitResponse.git:type_name -> calaba.v1.BoardGit
-	6,  // 46: calaba.v1.BoardRuleUpdate.rule:type_name -> calaba.v1.BoardRule
-	48, // 47: calaba.v1.RuleTrigger.StatusChanged.to_type:type_name -> calaba.v1.BoardStatusType
-	49, // 48: calaba.v1.RuleTrigger.ApprovalChanged.state:type_name -> calaba.v1.TaskApprovalState
-	50, // 49: calaba.v1.RuleTrigger.PriorityChanged.to_priority:type_name -> calaba.v1.TaskPriority
-	0,  // 50: calaba.v1.RuleTrigger.Git.event:type_name -> calaba.v1.RuleGitEvent
-	1,  // 51: calaba.v1.RuleAction.SetAssignees.mode:type_name -> calaba.v1.RuleAssigneesMode
-	2,  // 52: calaba.v1.RuleAction.SetAssignees.special:type_name -> calaba.v1.RuleSpecialUser
-	50, // 53: calaba.v1.RuleAction.SetPriority.priority:type_name -> calaba.v1.TaskPriority
-	3,  // 54: calaba.v1.RuleAction.NotifyDm.to:type_name -> calaba.v1.RuleRecipients
-	55, // [55:55] is the sub-list for method output_type
-	55, // [55:55] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	25, // 0: calaba.v1.RuleTrigger.task_created:type_name -> calaba.v1.RuleTrigger.TaskCreated
+	26, // 1: calaba.v1.RuleTrigger.status_changed:type_name -> calaba.v1.RuleTrigger.StatusChanged
+	27, // 2: calaba.v1.RuleTrigger.approval_changed:type_name -> calaba.v1.RuleTrigger.ApprovalChanged
+	28, // 3: calaba.v1.RuleTrigger.assignees_changed:type_name -> calaba.v1.RuleTrigger.AssigneesChanged
+	29, // 4: calaba.v1.RuleTrigger.label_changed:type_name -> calaba.v1.RuleTrigger.LabelChanged
+	30, // 5: calaba.v1.RuleTrigger.priority_changed:type_name -> calaba.v1.RuleTrigger.PriorityChanged
+	31, // 6: calaba.v1.RuleTrigger.checklist_completed:type_name -> calaba.v1.RuleTrigger.ChecklistCompleted
+	32, // 7: calaba.v1.RuleTrigger.comment_created:type_name -> calaba.v1.RuleTrigger.CommentCreated
+	33, // 8: calaba.v1.RuleTrigger.git:type_name -> calaba.v1.RuleTrigger.Git
+	34, // 9: calaba.v1.RuleTrigger.due_in:type_name -> calaba.v1.RuleTrigger.DueIn
+	35, // 10: calaba.v1.RuleTrigger.overdue:type_name -> calaba.v1.RuleTrigger.Overdue
+	36, // 11: calaba.v1.RuleTrigger.stale:type_name -> calaba.v1.RuleTrigger.Stale
+	37, // 12: calaba.v1.RuleTrigger.release:type_name -> calaba.v1.RuleTrigger.Release
+	38, // 13: calaba.v1.RuleAction.set_status:type_name -> calaba.v1.RuleAction.SetStatus
+	39, // 14: calaba.v1.RuleAction.set_assignees:type_name -> calaba.v1.RuleAction.SetAssignees
+	40, // 15: calaba.v1.RuleAction.set_labels:type_name -> calaba.v1.RuleAction.SetLabels
+	41, // 16: calaba.v1.RuleAction.set_priority:type_name -> calaba.v1.RuleAction.SetPriority
+	42, // 17: calaba.v1.RuleAction.set_due:type_name -> calaba.v1.RuleAction.SetDue
+	43, // 18: calaba.v1.RuleAction.set_approvers:type_name -> calaba.v1.RuleAction.SetApprovers
+	44, // 19: calaba.v1.RuleAction.add_checklist:type_name -> calaba.v1.RuleAction.AddChecklist
+	45, // 20: calaba.v1.RuleAction.comment:type_name -> calaba.v1.RuleAction.Comment
+	46, // 21: calaba.v1.RuleAction.notify_room:type_name -> calaba.v1.RuleAction.NotifyRoom
+	47, // 22: calaba.v1.RuleAction.notify_dm:type_name -> calaba.v1.RuleAction.NotifyDm
+	48, // 23: calaba.v1.RuleAction.create_subtasks:type_name -> calaba.v1.RuleAction.CreateSubtasks
+	49, // 24: calaba.v1.RuleAction.archive:type_name -> calaba.v1.RuleAction.Archive
+	4,  // 25: calaba.v1.BoardRule.trigger:type_name -> calaba.v1.RuleTrigger
+	51, // 26: calaba.v1.BoardRule.condition:type_name -> calaba.v1.TaskFilter
+	5,  // 27: calaba.v1.BoardRule.actions:type_name -> calaba.v1.RuleAction
+	52, // 28: calaba.v1.BoardRule.created_at:type_name -> google.protobuf.Timestamp
+	52, // 29: calaba.v1.BoardRule.updated_at:type_name -> google.protobuf.Timestamp
+	52, // 30: calaba.v1.BoardRule.last_run_at:type_name -> google.protobuf.Timestamp
+	6,  // 31: calaba.v1.ListBoardRulesResponse.rules:type_name -> calaba.v1.BoardRule
+	4,  // 32: calaba.v1.CreateBoardRuleRequest.trigger:type_name -> calaba.v1.RuleTrigger
+	51, // 33: calaba.v1.CreateBoardRuleRequest.condition:type_name -> calaba.v1.TaskFilter
+	5,  // 34: calaba.v1.CreateBoardRuleRequest.actions:type_name -> calaba.v1.RuleAction
+	4,  // 35: calaba.v1.UpdateBoardRuleRequest.trigger:type_name -> calaba.v1.RuleTrigger
+	51, // 36: calaba.v1.UpdateBoardRuleRequest.condition:type_name -> calaba.v1.TaskFilter
+	5,  // 37: calaba.v1.UpdateBoardRuleRequest.actions:type_name -> calaba.v1.RuleAction
+	6,  // 38: calaba.v1.BoardRuleResponse.rule:type_name -> calaba.v1.BoardRule
+	50, // 39: calaba.v1.RuleTestResponse.actions:type_name -> calaba.v1.RuleTestResponse.Action
+	52, // 40: calaba.v1.RuleRun.created_at:type_name -> google.protobuf.Timestamp
+	13, // 41: calaba.v1.ListRuleRunsResponse.runs:type_name -> calaba.v1.RuleRun
+	53, // 42: calaba.v1.BoardGit.provider:type_name -> calaba.v1.GitProvider
+	52, // 43: calaba.v1.BoardGit.last_event_at:type_name -> google.protobuf.Timestamp
+	52, // 44: calaba.v1.BoardGit.created_at:type_name -> google.protobuf.Timestamp
+	53, // 45: calaba.v1.SetBoardGitRequest.provider:type_name -> calaba.v1.GitProvider
+	15, // 46: calaba.v1.BoardGitResponse.git:type_name -> calaba.v1.BoardGit
+	52, // 47: calaba.v1.BoardRelease.created_at:type_name -> google.protobuf.Timestamp
+	52, // 48: calaba.v1.BoardRelease.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 49: calaba.v1.BoardReleaseResponse.release:type_name -> calaba.v1.BoardRelease
+	19, // 50: calaba.v1.ListBoardReleasesResponse.releases:type_name -> calaba.v1.BoardRelease
+	6,  // 51: calaba.v1.BoardRuleUpdate.rule:type_name -> calaba.v1.BoardRule
+	54, // 52: calaba.v1.RuleTrigger.StatusChanged.to_type:type_name -> calaba.v1.BoardStatusType
+	55, // 53: calaba.v1.RuleTrigger.ApprovalChanged.state:type_name -> calaba.v1.TaskApprovalState
+	56, // 54: calaba.v1.RuleTrigger.PriorityChanged.to_priority:type_name -> calaba.v1.TaskPriority
+	0,  // 55: calaba.v1.RuleTrigger.Git.event:type_name -> calaba.v1.RuleGitEvent
+	1,  // 56: calaba.v1.RuleAction.SetAssignees.mode:type_name -> calaba.v1.RuleAssigneesMode
+	2,  // 57: calaba.v1.RuleAction.SetAssignees.special:type_name -> calaba.v1.RuleSpecialUser
+	56, // 58: calaba.v1.RuleAction.SetPriority.priority:type_name -> calaba.v1.TaskPriority
+	3,  // 59: calaba.v1.RuleAction.NotifyDm.to:type_name -> calaba.v1.RuleRecipients
+	60, // [60:60] is the sub-list for method output_type
+	60, // [60:60] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_automations_proto_init() }
@@ -3318,6 +3904,7 @@ func file_calaba_v1_automations_proto_init() {
 		(*RuleTrigger_DueIn_)(nil),
 		(*RuleTrigger_Overdue_)(nil),
 		(*RuleTrigger_Stale_)(nil),
+		(*RuleTrigger_Release_)(nil),
 	}
 	file_calaba_v1_automations_proto_msgTypes[1].OneofWrappers = []any{
 		(*RuleAction_SetStatus_)(nil),
@@ -3335,14 +3922,15 @@ func file_calaba_v1_automations_proto_init() {
 	}
 	file_calaba_v1_automations_proto_msgTypes[4].OneofWrappers = []any{}
 	file_calaba_v1_automations_proto_msgTypes[5].OneofWrappers = []any{}
-	file_calaba_v1_automations_proto_msgTypes[21].OneofWrappers = []any{}
+	file_calaba_v1_automations_proto_msgTypes[13].OneofWrappers = []any{}
+	file_calaba_v1_automations_proto_msgTypes[26].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_automations_proto_rawDesc), len(file_calaba_v1_automations_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   41,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

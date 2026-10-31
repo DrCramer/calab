@@ -44,7 +44,7 @@ vi.stubGlobal('window', globalThis);
 
 const onIncomingMessage = vi.fn<(...a: unknown[]) => void>();
 const loadMentions = vi.fn(() => Promise.resolve());
-vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn(), refreshRights: vi.fn() } }));
+vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn(), onGatewayBack: vi.fn(), refreshRights: vi.fn() } }));
 vi.mock('./chat', () => ({ resyncLoadedRooms: vi.fn(() => Promise.resolve()), resyncPins: vi.fn(() => Promise.resolve()), retryFailedLoads: vi.fn(() => Promise.resolve()) }));
 vi.mock('./mentions', () => ({ loadMentions: () => loadMentions() }));
 vi.mock('./notify', () => ({ onIncomingMessage: (...a: unknown[]) => {

@@ -145,7 +145,7 @@ type OpTarget = { kind: 'role'; role: 'archive' | 'trash' } | { kind: 'folder'; 
 interface Op {
   folderRow: number;
   uids: number[];
-  action: { kind: 'flags'; add: string[]; remove: string[] } | { kind: 'move'; to: OpTarget } | { kind: 'expunge' };
+  action: { kind: 'flags'; add: string[]; remove: string[] } | { kind: 'flagsAll'; add: string[]; remove: string[] } | { kind: 'move'; to: OpTarget } | { kind: 'expunge' };
   rollback(): void;
   /** After success (e.g. sync the destination folder). */
   after?(s: ImapSession): Promise<void>;
@@ -879,6 +879,7 @@ export class AccountSync {
     await s.select(f.path);
     const a = op.action;
     if (a.kind === 'flags') await s.storeFlags(op.uids, a.add, a.remove);
+    else if (a.kind === 'flagsAll') await s.storeFlagsAll(a.add, a.remove);
     else if (a.kind === 'expunge') await s.expunge(op.uids);
     else {
       const dest = await this.targetFolder(s, a.to);
@@ -926,6 +927,28 @@ export class AccountSync {
       apply('new');
       this.enqueueOp({ folderRow: row, uids: touched.map((m) => m.uid), action: { kind: 'flags', add, remove }, rollback: () => apply('old') });
     }
+  }
+
+  /**
+   * «Прочитать все» (#231, `folders.markAllRead`): local rows seen at once, the server gets one
+   * `UID STORE 1:* +FLAGS (\Seen)` for the whole folder (mail beyond the local window too). Queued
+   * offline like any flag change; rolled back if the server refuses.
+   */
+  markFolderRead(row: number): void {
+    const f = this.store.folder(row);
+    if (!f) throw notFound('folder');
+    const unseen = this.store.unseenInFolder(row);
+    const apply = (seen: boolean): void => {
+      this.store.tx(() => {
+        for (const m of unseen) this.store.setFlags(m.id, { seen });
+      });
+      const threads = new Set(unseen.map((m) => m.threadId));
+      this.emitRows('messages_changed', row, threads, unseen.map((m) => m.id));
+      this.updateStarred(threads);
+      this.emitFolders();
+    };
+    if (unseen.length) apply(true);
+    this.enqueueOp({ folderRow: row, uids: [], action: { kind: 'flagsAll', add: ['\\Seen'], remove: [] }, rollback: () => apply(false) });
   }
 
   /** Removes messages locally at once (move / trash / delete); the server op is queued with a rollback. */

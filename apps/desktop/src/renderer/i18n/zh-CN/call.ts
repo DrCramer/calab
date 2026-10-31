@@ -48,6 +48,10 @@ export const zhCall: DictShape<typeof ruCall> = {
   'call.sipTaken': '来电已被接听或已结束',
   'call.sipNotify': '来自 {number} 的来电',
   'call.sipPanel': '通话 · {number}',
+  'call.sipParked': '房间：{room} — 已暂停',
+  'call.sipParkedLeave': '离开房间',
+  'call.sipParkedAfter': '通话结束后将进入房间',
+  'call.onPhone': '正在打电话',
   // transfer of a phone call (ADR-0132)
   'call.sipTransfer': '转接',
   'call.sipTransferPick': '将通话转接给',

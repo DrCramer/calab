@@ -33,6 +33,10 @@ import {
   ListTasksResponseSchema,
   MyTasksResponseSchema,
   SearchTasksResponseSchema,
+  CreateSavedTaskSearchRequestSchema,
+  ListSavedTaskSearchesResponseSchema,
+  SavedTaskSearchResponseSchema,
+  UpdateSavedTaskSearchRequestSchema,
   SetAssigneesRequestSchema,
   SetBoardPermissionsRequestSchema,
   SetBoardPositionRequestSchema,
@@ -144,6 +148,16 @@ export const boardsApi = {
       call('PATCH', `/api/boards/${boardId}/milestones/${milestoneId}`, BoardResponseSchema, body(UpdateBoardMilestoneRequestSchema, init)),
     remove: (boardId: string, milestoneId: string) => callEmpty('DELETE', `/api/boards/${boardId}/milestones/${milestoneId}`),
   },
+  /** Saved task searches of the caller in a workspace (ADR-0139): the left panel's named filters. */
+  savedSearches: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/task-searches`, ListSavedTaskSearchesResponseSchema),
+    /** 409 TASK_SEARCH_LIMIT past 50. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateSavedTaskSearchRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/task-searches`, SavedTaskSearchResponseSchema, body(CreateSavedTaskSearchRequestSchema, init)),
+    update: (workspaceId: string, id: string, init: MessageInitShape<typeof UpdateSavedTaskSearchRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/task-searches/${id}`, SavedTaskSearchResponseSchema, body(UpdateSavedTaskSearchRequestSchema, init)),
+    remove: (workspaceId: string, id: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/task-searches/${id}`),
+  },
   views: {
     create: (boardId: string, init: MessageInitShape<typeof CreateBoardViewRequestSchema>) =>
       call('POST', `/api/boards/${boardId}/views`, BoardViewResponseSchema, body(CreateBoardViewRequestSchema, init)),
@@ -206,9 +220,25 @@ export const boardsApi = {
     /** only (ADR-0091 §3): `journal` — journal entries only, `comments` — messages only; a server without it sends both. */
     activity: (taskId: string, p: { before?: string; limit?: number; only?: 'journal' | 'comments' } = {}, signal?: AbortSignal) =>
       call('GET', `/api/tasks/${taskId}/activity${qs({ before: p.before, limit: p.limit, only: p.only })}`, TaskActivityPageSchema, undefined, signal),
-    /** Live tasks of every board the caller sees, by key and words («Мои задачи → Все задачи»); `state` — completion (server default all). */
+    /** Live tasks of every board the caller sees, by key and words (the relation picker); `state` — completion (server default all). */
     search: (workspaceId: string, q: string, p: { state?: Completion; limit?: number } = {}, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q, state: p.state, limit: p.limit })}`, SearchTasksResponseSchema, undefined, signal),
+    /**
+     * The task search (ADR-0139): text, completion, archive, one board, a filter, a sort and the
+     * offset cursor; answers a page, `keyTask` (a typed key, whatever the filters) and snippets.
+     */
+    find: (
+      workspaceId: string,
+      p: { q?: string; state?: 'open' | 'done' | 'all'; archived?: '1' | 'only'; boardId?: string; filter?: TaskFilter; sort?: string; cursor?: string; limit?: number },
+      signal?: AbortSignal,
+    ) =>
+      call(
+        'GET',
+        `/api/workspaces/${workspaceId}/tasks/search${qs({ q: p.q, state: p.state, archived: p.archived, board_id: p.boardId, filter: filterParam(p.filter), sort: p.sort, cursor: p.cursor, limit: p.limit })}`,
+        SearchTasksResponseSchema,
+        undefined,
+        signal,
+      ),
     /** Checklists (ADR-0058 §2); every write answers the checklist and the task's counters. */
     checklists: {
       create: (taskId: string, title: string) =>

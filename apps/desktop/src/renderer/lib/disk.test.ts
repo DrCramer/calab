@@ -203,9 +203,10 @@ describe('files', () => {
     expect(fileKind(undefined)).toBe('other');
   });
 
-  it('previews: images with a thumbnail and videos', () => {
+  it('previews: images (a thumbnail not required, owner 28.10) and videos', () => {
     expect(previewable(item('a', { mime: 'image/png', thumb: true }).file)).toBe('image');
-    expect(previewable(item('a', { mime: 'image/png' }).file)).toBeNull();
+    expect(previewable(item('a', { mime: 'image/png' }).file)).toBe('image');
+    expect(previewable(item('a', { mime: 'image/svg+xml' }).file)).toBeNull();
     expect(previewable(item('a', { mime: 'video/mp4' }).file)).toBe('video');
     expect(previewable(undefined)).toBeNull();
   });

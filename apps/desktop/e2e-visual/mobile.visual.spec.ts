@@ -2,10 +2,10 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { AiState, FormerMemberReason, Plan, RecordingStatus, WorkspaceRole } from '@calaba/protocol';
+import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
-import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
+import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedDays, seedLabelOverflow, seedReleases, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
 /**
@@ -79,7 +79,7 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'profile'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'telephony' | 'profile'): Promise<void> {
   await toRoot(page);
   const pinned = page.getByTestId(`phone-tab-${name}`);
   if ((await pinned.count()) > 0) {
@@ -201,7 +201,8 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
       const INTERACTIVE = 'button, a[href], input, select, textarea, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="switch"], [role="checkbox"], [role="radio"], [role="option"]';
       const ALLOW: Array<[string, string]> = [
         ['[data-inline-target]', 'a link inside a sentence of body text (e.g. the organizer mailto in «Организатор: …»), marked in code'],
-        ['[data-message-id] a[href]', 'links in message text and link-preview titles: inline in running text; the row itself is the tap / long-press target'],
+        ['.wiki-prose[contenteditable="true"] a[href]', 'links in text being edited (wiki page, task description): inline in running text, a tap places the caret'],
+        ['[data-message-id] a[href]','links in message text and link-preview titles: inline in running text; the row itself is the tap / long-press target'],
         ['[data-message-id] button[data-profile-user], [data-message-id] [data-inline-target]', 'author avatar / name and reaction chips in a feed message: dense by design (Telegram-like), the message row is the target; chips keep >= 8 px gaps'],
         ['[data-history-row] button[data-profile-user]', 'actor avatar / name in a task history row (ADR-0091): dense like the feed; the row and its 44 px details chevron are the targets'],
         ['input[type="file"], input[type="range"], input[aria-hidden="true"]', 'native input hidden behind a custom control, or a slider whose thumb row is the target'],
@@ -291,7 +292,9 @@ async function checkpoint(page: Page, name: string, opts: { main?: boolean; snap
 async function expectNoFieldFocus(page: Page, where: string): Promise<void> {
   const active = await page.evaluate(() => {
     const a = document.activeElement;
-    return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || (a as HTMLElement).isContentEditable) ? `${a.tagName} ${a.getAttribute('aria-label') ?? a.getAttribute('placeholder') ?? ''}` : null;
+    // A checkbox (the haptics switch, lib/haptics) raises no keyboard: only text fields count.
+    const text = a?.tagName === 'INPUT' && !['checkbox', 'radio'].includes((a as HTMLInputElement).type);
+    return a && (text || a.tagName === 'TEXTAREA' || (a as HTMLElement).isContentEditable) ? `${a.tagName} ${a.getAttribute('aria-label') ?? a.getAttribute('placeholder') ?? ''}` : null;
   });
   expect.soft(active, `no field focused programmatically: ${where}`).toBeNull();
 }
@@ -360,6 +363,7 @@ test('m-onboarding', async ({ page }) => {
 // ---------------------------------------------------------------- the app
 
 test('m-chat', async ({ page }) => {
+  seedDays(mock, IDS.rooms.dev); // #87: messages over several days in «разработка»
   await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   await expectNoFieldFocus(page, 'first room');
@@ -369,6 +373,11 @@ test('m-chat', async ({ page }) => {
   // Switching rooms from the list does not focus the composer either.
   await openRoom(page, /^разработка/);
   await expectNoFieldFocus(page, 'room switch');
+  // #87: day pills in the feed (Сегодня / Вчера / «12 января» / the other year), none twice.
+  await feedToBottom(page);
+  await expect(page.getByRole('separator').filter({ hasText: 'Вчера' }).first()).toBeVisible();
+  await expect(page.getByRole('separator').filter({ hasText: 'Сегодня' }).first()).toBeVisible();
+  await checkpoint(page, 'm-chat-days', { main: true });
   // A long room name: the header's buttons keep their size and place.
   await openRoom(page, /очень-длинное/);
   await checkpoint(page, 'm-chat-long-name', { main: true, snapshot: false });
@@ -457,6 +466,15 @@ test('m-chat-image', async ({ page }) => {
     expect(r.height).toBeLessThanOrEqual(vh * 0.6 + 1);
   }
   await checkpoint(page, 'm-chat-image', { main: true });
+  // Owner 28.10: a PNG stored with a wrong type and no thumbnail still shows as a picture.
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.untypedPng] });
+  const untyped = page.getByRole('button', { name: 'Открыть изображение «image.png»' });
+  await expect.poll(() => untyped.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth === 960)).toBe(true);
+  await feedToBottom(page);
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await expectFeedFits(page);
+  await checkpoint(page, 'm-chat-image-untyped', { main: true });
 });
 
 // CBF-66: a Disk folder link in a chat is its own card — name, who shared, what is inside, «Открыть».
@@ -472,6 +490,28 @@ test('m-chat-folder-card', async ({ page }) => {
   await page.mouse.move(0, 0);
   await expectFeedFits(page);
   await checkpoint(page, 'm-chat-folder-card', { main: true });
+});
+
+// A canvas link in a chat (owner 23.10): the card like a wiki page's — tile, name, «Холст · изменён …», «Открыть»;
+// a tap opens the board on the phone's «Холст» tab; a canvas not mine to see is the muted «Холст недоступен».
+test('m-chat-canvas-card', async ({ page }) => {
+  await signedInRoom(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  const roadmap = [...mock.canvas.items.values()].find((i) => i.name === 'Дорожная карта Q1');
+  expect(roadmap).toBeTruthy();
+  const origin = new URL(page.url()).origin;
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: `Доска по плану ${origin}/canvas/${roadmap?.id ?? ''}` });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: `Старая ${origin}/canvas/00000000-0000-4000-8000-00000000dead` });
+  const cards = page.getByTestId('canvas-link-card');
+  await expect(cards.first()).toHaveAttribute('data-state', 'page');
+  await expect(cards.last()).toHaveAttribute('data-state', 'unavailable');
+  await feedToBottom(page);
+  await page.mouse.move(0, 0);
+  await expectFeedFits(page);
+  // The raw addresses carry the mock's random port: masked.
+  await checkpoint(page, 'm-chat-canvas-card', { main: true, mask: [page.locator('[data-message-id] a:not([data-testid])')] });
+  await cards.first().tap();
+  await expect(page.getByTestId('phone-canvas-screen').getByTestId('phone-header')).toContainText('Дорожная карта Q1');
 });
 
 // A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
@@ -532,6 +572,7 @@ test('m-chat-audio', async ({ page }) => {
 // Code blocks on a phone (docs/08 «Код в сообщениях»): the same block — language label, copy
 // always visible (no hover on touch), horizontal scroll inside the block, not the page.
 test('m-chat-code', async ({ page }) => {
+  await page.addInitScript(KEYBOARD_STUB);
   await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: CODE_FIXTURE.long });
@@ -546,6 +587,24 @@ test('m-chat-code', async ({ page }) => {
   await expect(js.getByTestId('code-copy')).toHaveCSS('opacity', '1');
   await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
   await checkpoint(page, 'm-chat-code', { main: true });
+
+  // Expanded editor on a phone (#97): the whole screen, the keyboard frame shrinks it from below.
+  const field = page.getByTestId('composer').locator('textarea');
+  const draft = Array.from({ length: 30 }, (_, i) => `Строка ${i + 1}: черновик длинного сообщения для проверки редактора`).join('\n');
+  await field.fill(draft);
+  await expect(page.getByTestId('composer-expand')).toBeVisible();
+  await checkpoint(page, 'm-chat-expand-button', { main: true });
+  await page.getByTestId('composer-expand').tap();
+  const editor = page.getByRole('dialog', { name: /Сообщение в/ });
+  await expect(editor.getByTestId('editor-field')).toBeFocused();
+  await checkpoint(page, 'm-chat-expanded-editor');
+  await page.evaluate(() => (window as unknown as KeyboardStub).__keyboard(336));
+  await expect(page.locator('html.kb-open')).toHaveCount(1);
+  await checkpoint(page, 'm-chat-expanded-editor-keyboard', { keyboard: true });
+  await page.evaluate(() => (window as unknown as KeyboardStub).__keyboard(null));
+  await editor.getByTestId('editor-collapse').tap();
+  await expect(editor).toHaveCount(0);
+  await expect(field).toHaveValue(draft);
 });
 
 // Voice message on a phone (docs/08 «Голосовые сообщения»): the bubble with 44 px targets and
@@ -664,6 +723,30 @@ test('m-home', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(card).toHaveCount(0);
   await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  // Voice audio recovery (#255) without LiveKit: «in voice» by store state (__calabaVoiceSeat), the
+  // recovery signals through the voice service's own paths: the strip above the tab bar and the sound prompt.
+  const seat = (phase: 'connected' | 'reconnecting'): Promise<void> =>
+    page.evaluate(([roomId, workspaceId, ph]) => (window as unknown as { __calabaVoiceSeat?: (s: object) => void }).__calabaVoiceSeat?.({ roomId, workspaceId, phase: ph }), [IDS.rooms.call, IDS.workspaces.main, phase] as const);
+  await seat('connected');
+  const strip = page.getByTestId('mobile-voice-strip');
+  await expect(strip).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as unknown as { __calabaVoiceRecovery?: (what: string) => void };
+    w.__calabaVoiceRecovery?.('recovering');
+    w.__calabaVoiceRecovery?.('playback');
+  });
+  // The mic state is the strip's line only; the refused sound is the one toast, with its action.
+  await expect(page.getByTestId('toast')).toHaveCount(1);
+  await expect(page.getByTestId('toast').filter({ hasText: 'Вы не слышите собеседников' })).toBeVisible();
+  await expect(page.getByTestId('toast').getByRole('button', { name: 'Включить звук' })).toBeVisible();
+  await expect(strip.getByTestId('mobile-voice-status')).toHaveText('Вас не слышно'); // yellow: being restored
+  // Two lines at this width: the room name gives way instead of a cramped third line.
+  await expect(strip.getByTestId('mobile-voice-label')).toHaveCount(0);
+  await checkpoint(page, 'm-voice-recovery');
+  await page.evaluate(() => (window as unknown as { __calabaVoiceRecovery?: (w: string) => void }).__calabaVoiceRecovery?.('unheard'));
+  await expect(strip.getByTestId('mobile-voice-status')).toHaveText('Вас не слышно');
+  await expect(page.getByTestId('toast')).toHaveCount(1); // no mic toast
+  await checkpoint(page, 'm-voice-recovery-unheard');
 });
 
 // ADR-0073 §4: people in the room's voice, I am not — the banner under the header with «Присоединиться».
@@ -734,6 +817,7 @@ test('m-profile-member', async ({ page }) => {
   await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
   await expect(card.getByTestId('profile-extension')).toContainText('101');
   await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
+  await expect(card.getByTestId('work-hours')).toContainText('10–19'); // docs/09 #85
   await expect(card.getByRole('link', { name: '+7 912 555-02-02' })).toHaveAttribute('href', 'tel:+79125550202');
   await checkpoint(page, 'm-profile-member', { snapshot: false });
 });
@@ -870,6 +954,26 @@ test('m-calendar-day', async ({ page }) => {
   await expect(page.getByTestId('event-panel')).toHaveCount(0);
 });
 
+// Board #85: two extra zones as narrow muted columns left of the day's scale (compact offsets),
+// New York on the previous day until 08:00 MSK; the same list in Profile → Календарь.
+test('m-calendar-zones', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  mock.setCalendarZones(IDS.users.anna, [{ zone: 'Asia/Kolkata' }, { zone: 'America/New_York', label: 'Нью-Йорк' }]);
+  await signedIn(page);
+  await tab(page, 'calendar');
+  const day = page.getByTestId('day-view');
+  await expect(day.getByTestId('zone-scale')).toHaveCount(2);
+  await expect(day.getByTestId('zone-head').first()).toHaveText(/Kolkata\s*\+5:30/);
+  await day.getByTestId('day-scroller').evaluate((el) => el.scrollTo({ top: 6 * 48 }));
+  await checkpoint(page, 'm-calendar-zones');
+  await openProfile(page);
+  await page.getByTestId('phone-profile-calendar').tap();
+  await expect(page.getByTestId('cal-zone-label')).toHaveCount(2);
+  await page.getByTestId('cal-zone-label').last().evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(page, 'm-settings-calendar-zones');
+});
+
 // The header's date opens a month card (weekday in the label, today / chosen day marked); a day pick navigates.
 test('m-calendar-datepicker', async ({ page }) => {
   mock.setClock(NOW.getTime());
@@ -883,6 +987,12 @@ test('m-calendar-datepicker', async ({ page }) => {
   await page.getByTestId('day-date-card').locator('[data-day="2026-01-20"]').tap();
   await expect(page.getByTestId('day-date-card')).toHaveCount(0);
   await expect(page.getByTestId('day-date')).toContainText('20');
+  // A new meeting repeating on working days (ADR-0136): the hint under the repeat.
+  await page.getByTestId('day-new-event').tap();
+  const dialog = page.getByTestId('event-dialog');
+  await dialog.getByTestId('event-repeat').selectOption({ label: 'В рабочие дни' });
+  await dialog.getByText('по производственному календарю РФ').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-calendar-dialog-workdays', { snapshot: false });
 });
 
 // docs/08 «Свайпы и долгое нажатие»: a sideways swipe over the hours flips the day (left → next).
@@ -949,7 +1059,7 @@ test('m-my-tasks', async ({ page }) => {
   await expect(bar.getByRole('radio')).toHaveCount(0);
   await checkpoint(page, 'm-my-tasks');
   await bar.getByTestId('my-tasks-scope').tap();
-  await expect(page.getByRole('menuitemradio')).toHaveCount(5);
+  await expect(page.getByRole('menuitemradio')).toHaveCount(6);
   await checkpoint(page, 'm-my-tasks-picker');
   await page.getByTestId('my-tasks-scope-assigned').tap();
   await expect(page.getByRole('menuitemradio')).toHaveCount(0);
@@ -958,11 +1068,20 @@ test('m-my-tasks', async ({ page }) => {
   await bar.getByTestId('completion-switch').getByRole('button').tap();
   await expect(page.getByRole('menuitemradio')).toHaveCount(3);
   await page.keyboard.press('Escape');
+  // ADR-0139: the task search on a phone — the same search and filters, cards instead of a table.
+  await bar.getByTestId('my-tasks-scope').tap();
+  await page.getByRole('menuitemradio', { name: 'Поиск' }).tap();
+  await page.getByTestId('all-tasks-search').fill('доск');
+  await expect(page.getByTestId('task-search-row')).toHaveCount(3);
+  await page.getByTestId('all-tasks-search').blur();
+  await checkpoint(page, 'm-task-search');
 });
 
 // Task boards on a phone (ADR-0042 §5): the «Доски» tab, the list by default, the task full screen.
 test('m-boards-list', async ({ page }) => {
   mock.setClock(NOW.getTime());
+  seedAssigneeCounts(mock); // #92: CAL-1 / CAL-2 / CAL-4 with 1 / 2 / 5 assignees
+  seedReleases(mock); // board task #101: the task screen at the end (rows do not show them)
   await signedIn(page);
   // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
   await tab(page, 'boards');
@@ -974,6 +1093,8 @@ test('m-boards-list', async ({ page }) => {
   await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
   await expect(page.getByTestId('list-view')).toBeVisible();
   await checkpoint(page, 'm-boards-list');
+  await expectAssigneeStacks(page);
+  await checkpoint(page, 'm-boards-assignees');
   // «Архив задач» (owner 18.10): archive two tasks from their screens, then the board's «…» → the archive; both are restored after.
   for (const key of ['CAL-2', 'CAL-4']) {
     await page.getByTestId('list-row').filter({ hasText: key }).tap();
@@ -1002,6 +1123,14 @@ test('m-boards-list', async ({ page }) => {
   await expect(page.getByTestId('task-context-menu')).toBeVisible();
   await expectMenuCard(page, 'm-task-menu', true);
   await expect(page.getByTestId('task-panel')).toHaveCount(0);
+  // Board task #101: the task screen's «Релиз» — one per environment, a tap opens the pipeline.
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('task-context-menu')).toHaveCount(0);
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.getByTestId('prop-release')).toHaveText(['stage · 1288', 'prod · 4929cf3']);
+  await panel.getByTestId('prop-release').last().evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(page, 'm-boards-task-release');
 });
 
 // Owner 07.10: the create dialog has the start date (when the board's dates are on).
@@ -1047,15 +1176,76 @@ test('m-boards-smart', async ({ page }) => {
 
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
+  const cal4 = mock.boards.taskByKey('CAL-4');
+  if (cal4) seedDays(mock, cal4.task.roomId); // #87: CAL-4's comments over several days
   await signedIn(page);
   // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
   await tab(page, 'boards');
   const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
-  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  // #87: a task whose comments span several days shows the chat's day pills.
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-4' }).getByText('Карточки задач').tap();
+  const feed = page.getByTestId('activity-feed');
+  await expect(feed.getByRole('separator').filter({ hasText: 'Вчера' }).first()).toBeVisible();
+  await expect(feed.getByRole('separator').filter({ hasText: '2024' })).toHaveCount(1);
+  await feed.getByText('Ок, принято').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-boards-task-days');
+  await page.getByTestId('task-panel').getByTestId('phone-back').tap();
+  // The title, not the row's centre (that is the due date cell, which opens its menu).
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
   const panel = page.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await checkpoint(page, 'm-boards-task');
+  // Owner 23.10: a tap on the description edits it in place in the wiki's editor («Готово» under it).
+  await panel.getByTestId('task-description').tap();
+  const prose = panel.getByTestId('task-description-editor').locator('.wiki-prose');
+  await expect(prose).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('[] проверить на телефоне');
+  await checkpoint(page, 'm-boards-task-desc', { keyboard: true });
+});
+
+// Board #107: the read view of a description is the editor's own typography — paragraphs, a list, a link, an emoji, bold.
+test('m-boards-task-desc-wysiwyg', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  const cal4 = mock.boards.taskByKey('CAL-4');
+  if (cal4) cal4.task.description = 'Эхо пропало после правки 🎉 подробности на https://calab.io/docs\n\nВторой абзац.\n\n- первый **жирный** пункт\n- второй пункт';
+  await signedIn(page);
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-4' }).getByText('Карточки задач').tap();
+  const panel = page.getByTestId('task-panel');
+  const read = panel.getByTestId('task-description');
+  await expect(read.locator('li')).toHaveCount(2);
+  // Block geometry relative to the first paragraph (the keyboard may scroll the panel).
+  const boxes = async (root: Locator): Promise<number[][]> => {
+    const first = await root.locator('p').first().boundingBox();
+    const out: number[][] = [];
+    for (const sel of ['p >> nth=1', 'li >> nth=0', 'li >> nth=1']) {
+      const b = await root.locator(sel).boundingBox();
+      out.push(b && first ? [b.x - first.x, b.y - first.y, b.width, b.height] : []);
+    }
+    return out;
+  };
+  const readBoxes = await boxes(read);
+  await checkpoint(page, 'm-boards-task-desc-read');
+  // Board #109: opening the editor on this text (it ends in a list) and re-opening it after «Готово» threw
+  // «Applying a mismatched transaction» in WebKit. The blocks stay where the read view drew them.
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  for (const pass of ['open', 'reopen']) {
+    await read.tap();
+    const prose = panel.getByTestId('task-description-editor').locator('.wiki-prose');
+    await expect(prose, pass).toBeFocused();
+    await expect(prose.locator('li')).toHaveCount(2);
+    const editBoxes = await boxes(prose);
+    for (let i = 0; i < readBoxes.length; i++) for (let j = 0; j < 4; j++) expect(Math.abs((editBoxes[i]?.[j] ?? 1e6) - (readBoxes[i]?.[j] ?? -1e6)), `${pass}: block ${i} coord ${j}: read ${String(readBoxes[i])} edit ${String(editBoxes[i])}`).toBeLessThanOrEqual(1);
+    if (pass === 'open') await checkpoint(page, 'm-boards-task-desc-edit', { keyboard: true });
+    await panel.getByTestId('task-description-save').tap();
+    await expect(panel.getByTestId('task-description-editor')).toHaveCount(0);
+  }
+  expect(errors).toEqual([]);
 });
 
 // «История» on the phone's task screen (ADR-0091): two tabs as segments, a detail opened.
@@ -1099,6 +1289,35 @@ test('m-boards-kanban', async ({ page }) => {
   await expect(page.getByTestId('task-context-menu')).toBeVisible();
   await expectMenuCard(page, 'm-task-card-menu');
   await expect(page.getByTestId('task-panel')).toHaveCount(0);
+});
+
+// Labels past the card width collapse into «+N» (docs/08 «Лейблы»); a tap opens the hidden ones, the task panel does the same.
+test('m-boards-labels', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedLabelOverflow(mock);
+  await signedIn(page);
+  await tab(page, 'boards');
+  await page.getByTestId('phone-boards').getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('board-more').tap();
+  await page.getByTestId('view-kanban').tap();
+  const kanban = page.getByTestId('kanban');
+  const card = kanban.getByTestId('task-card').filter({ hasText: 'CAL-4' });
+  await card.scrollIntoViewIfNeeded();
+  await expect(card.getByTestId('labels-more')).toBeVisible();
+  await checkpoint(page, 'm-boards-labels');
+  // The card is one touch target (.tap-inert): its «+N» does not catch the tap, the task panel's does.
+  await card.getByTestId('card-title').tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.getByTestId('prop-labels')).toBeVisible();
+  await panel.getByTestId('prop-labels').scrollIntoViewIfNeeded();
+  await expect(panel.getByTestId('labels-more')).toBeVisible();
+  await checkpoint(page, 'm-boards-labels-task');
+  await panel.getByTestId('labels-more').tap();
+  await expect(page.getByTestId('labels-more-list')).toBeVisible();
+  await expect(page.getByTestId('labels-more-list').getByTestId('label-pill')).toHaveCount(await page.getByTestId('labels-more-list').getByTestId('label-pill').count());
+  await checkpoint(page, 'm-boards-labels-more', { snapshot: false });
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('labels-more-list')).toHaveCount(0);
 });
 
 // The status colour picker on a phone (ADR-0093): the shared menu runtime centres it as a card.
@@ -1184,6 +1403,21 @@ test('m-menu', async ({ page }) => {
   await expect(page.getByRole('menu')).toBeVisible();
   await expectCentredCard(page, page.getByRole('menu'));
   await checkpoint(page, 'm-message-menu');
+  // ADR-0140: my message seen by Борис and Вера (✓✓), the next one by nobody (✓); a long press
+  // on it: «Прочитали» on top of the menu opens the list in place.
+  await page.touchscreen.tap(20, 120);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  const seen = mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: 'Посмотрите макет до обеда.' });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: 'И ссылку на прототип.' });
+  mock.markRead(IDS.users.boris, IDS.rooms.general, seen.id);
+  mock.markRead(IDS.users.vera, IDS.rooms.general, seen.id);
+  await feedToBottom(page);
+  const bubble = page.getByTestId('message-bubble').filter({ hasText: 'Посмотрите макет' });
+  await expect(bubble.getByTestId('read-ticks')).toBeVisible();
+  await bubble.getByText('Посмотрите макет').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await page.getByTestId('message-read-by').tap();
+  await expect(page.getByRole('menu').getByTestId('read-by-row')).toHaveCount(2);
+  await checkpoint(page, 'm-message-read-by');
 });
 
 // Owner 07.10: a sub-level («+» → «Создать задачу ▸») opens by a tap only — never on hover — as a
@@ -1504,6 +1738,13 @@ test('m-settings', async ({ page }) => {
     return el.getBoundingClientRect().bottom <= innerHeight + 1 && el.scrollTop > 0;
   });
   expect(fits, 'settings section scrolls on its screen').toBe(true);
+  // Board #114: WebKit keeps its own NS (no `noiseSuppression` constraint) — RNNoise is off and
+  // disabled here, with the reason under it.
+  const noise = panel.getByRole('switch', { name: 'Шумоподавление' });
+  await noise.scrollIntoViewIfNeeded();
+  await expect(noise).toBeDisabled();
+  await expect(panel.getByText('На этом устройстве шум убирает сама система', { exact: false })).toBeVisible();
+  await checkpoint(page, 'm-settings-voice-noise', { snapshot: false });
 });
 
 // Owner 07.10: no workspace rail — the header's «Команда Calab ⌄» opens the switcher (the desktop's
@@ -1584,67 +1825,528 @@ test('m-settings-bots', async ({ page }) => {
   await checkpoint(page, 'm-settings-bots');
   await page.getByTestId('phone-back').tap();
   await expect(dialog.getByRole('tab', { name: 'Боты' })).toBeVisible();
+  // «Голос и стрим»: the workspace defaults down to the join/leave cue threshold (review shot).
+  await dialog.getByRole('tab', { name: 'Голос и стрим' }).tap();
+  const joinLeave = dialog.getByRole('spinbutton', { name: 'Звук входа и выхода' });
+  await expect(joinLeave).toHaveValue('10');
+  await joinLeave.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-settings-media', { snapshot: false });
+  await page.getByTestId('phone-back').tap();
+  await expect(dialog.getByRole('tab', { name: 'Боты' })).toBeVisible();
   await page.getByTestId('phone-back').tap();
   await expect(dialog).toHaveCount(0);
 });
 
-// ADR-0117, CBF-77: «Телефония» on a phone — the tabs as a picker button (five tabs, docs/08
-// «Choice»), the live calls, the numbers, a group form, a menu form.
-test('m-telephony', async ({ page }) => {
+/**
+ * ADR-0137 «Телефония» (T3) on a phone: the section's row in «Ещё» with my missed calls; «Недавние»
+ * (a call ringing now, a missed one, an outbound one, a long name with a long company, a number
+ * without a contact, a hidden number), the loading and empty states, «Пропущенные», the filter card
+ * and its chips, a row's swipe and long-press menu, the detail of a transfer (route unfolded), of a
+ * missed call, of an outbound call and of a call from before the journal; the tab pinned to the bar.
+ */
+async function phoneRecents(page: Page): Promise<void> {
+  await toRoot(page);
+  await page.getByTestId('phone-tab-more').tap();
+  const more = page.getByTestId('more-row-telephony');
+  await expect(more).toContainText('2');
+  await checkpoint(page, 'm-tel-more');
+  await more.tap();
+  const root = page.getByTestId('phone-telephony');
+  await expect(root.getByTestId('tel-group').first()).toHaveText('Сейчас');
+  await expectNoFieldFocus(page, 'telephony recents');
+  await checkpoint(page, 'm-tel-recents');
+  const segment = (name: string): Locator => root.getByTestId('tel-segment').getByRole('radio', { name });
+
+  // «Пропущенные»: the six static rows while the page loads, then the two missed calls.
+  const release = mock.holdSipJournal();
+  await segment('Пропущенные').tap();
+  await expect(root.getByTestId('tel-skeleton')).toBeVisible();
+  await checkpoint(page, 'm-tel-recents-loading');
+  release();
+  await expect(root.getByTestId('tel-row')).toHaveCount(2);
+  await checkpoint(page, 'm-tel-missed');
+  await segment('Недавние').tap();
+  await expect(root.getByTestId('tel-group').first()).toHaveText('Сейчас');
+
+  // The funnel → the centred card; the set filters as chips under the search.
+  await root.getByTestId('tel-filter-open').tap();
+  const card = page.getByTestId('tel-filter-card');
+  await expect(card).toBeVisible();
+  await checkpoint(page, 'm-tel-filter-card');
+  await card.getByRole('radio', { name: 'Входящие' }).tap();
+  await card.getByRole('radio', { name: '7 дней' }).tap();
+  await page.getByTestId('tel-filter-done').tap();
+  await expect(card).toHaveCount(0);
+  await expect(root.getByTestId('tel-chips')).toBeVisible();
+  await checkpoint(page, 'm-tel-filter-chips');
+  await root.getByTestId('tel-chip-direction').tap();
+  await root.getByTestId('tel-chip-period').tap();
+  await expect(root.getByTestId('tel-chips')).toHaveCount(0);
+
+  // A row: the left swipe («Подробнее» · «Копировать»), the long-press menu.
+  const lutik = root.getByTestId('tel-row').filter({ hasText: 'ООО Лютик' });
+  await swipeLeft(lutik);
+  await expect(root.getByTestId('tel-swipe')).toBeVisible();
+  await checkpoint(page, 'm-tel-row-swipe');
+  await lutik.getByTestId('tel-row-tap').tap();
+  await expect(root.getByTestId('tel-swipe')).toHaveCount(0);
+  await longPress(lutik.getByTestId('tel-row-tap'));
+  await expectMenuCard(page, 'm-tel-row-menu', true);
+
+  // The details (pushed screens, «‹» back to the list).
+  const detail = page.getByTestId('tel-detail');
+  const openDetail = async (text: string): Promise<void> => {
+    await root.getByTestId('tel-row').filter({ hasText: text }).getByTestId('tel-row-info').tap();
+    await expect(detail.getByTestId('tel-step').first()).toBeVisible();
+  };
+  await openDetail('Анна Петрова');
+  await expect(detail.getByTestId('tel-detail-name')).toHaveText('Анна Петрова');
+  await expect(detail.getByTestId('tel-recording')).toContainText('6:20');
+  await expect(detail.getByTestId('tel-detail-recording')).toBeVisible();
+  await checkpoint(page, 'm-tel-detail-recording');
+  await detail.getByTestId('tel-step-rings').first().tap();
+  await expect(detail.getByTestId('tel-step-attempts')).toContainText('Вера Ким');
+  await detail.getByTestId('tel-step').filter({ hasText: 'переводит' }).scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-tel-detail-transfer');
+  await page.getByTestId('phone-back').tap();
+  await openDetail('+7 495 765-43-21');
+  await checkpoint(page, 'm-tel-detail-missed');
+  await page.getByTestId('phone-back').tap();
+  await openDetail('ООО Лютик');
+  await checkpoint(page, 'm-tel-detail-outbound');
+  await page.getByTestId('phone-back').tap();
+  // A call from before the journal: the route parsed, no times (the end of the list).
+  await root.locator('[data-virtuoso-scroller]').evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await openDetail('+7 495 111-22-33');
+  await detail.getByTestId('tel-route-legacy').scrollIntoViewIfNeeded();
+  await expect(detail.getByTestId('tel-route-legacy')).toBeVisible();
+  await checkpoint(page, 'm-tel-detail-legacy');
+  await page.getByTestId('phone-back').tap();
+
+  // Nothing yet / nothing missed.
+  mock.seedSipJournal({ empty: true });
+  await segment('Пропущенные').tap();
+  await expect(root.getByTestId('tel-empty')).toContainText('Пропущенных нет');
+  await checkpoint(page, 'm-tel-missed-empty');
+  await segment('Недавние').tap();
+  await expect(root.getByTestId('tel-empty')).toContainText('Звонков пока нет');
+  await checkpoint(page, 'm-tel-recents-empty');
+
+}
+
+/** «Телефония» from «Ещё» (the section is not pinned in the fixture): its root. */
+async function openTelephony(page: Page): Promise<Locator> {
+  await toRoot(page);
+  await page.getByTestId('phone-tab-more').tap();
+  await page.getByTestId('more-row-telephony').tap();
+  const root = page.getByTestId('phone-telephony');
+  await expect(root).toBeVisible();
+  return root;
+}
+
+/** A CSV the import previews: one new contact, a number another contact has, a row with no name. */
+const CONTACTS_CSV = 'Имя;Компания;Телефон;Заметка\nИрина Белова;ООО Лютик;8 916 000-11-22;\nДубль Анны;;+7 916 123-45-67;\n;;+7 916 000-99-88;\nПётр;;доб. 12;\n';
+
+/**
+ * ADR-0137 T4 on a phone: «Контакты» — the third segment (letters, Cyrillic then Latin then «#»,
+ * a company without a person, a very long name and company), the FAB over the list's end, a row's
+ * swipe and long-press menu, the card (three numbers, a note, the calls), the number choice, the
+ * form (with the keyboard up: «Сохранить» above it), a number another contact has, the empty
+ * book with «Импорт CSV», its loading, the import preview.
+ */
+test('m-telephony-contacts', async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.addInitScript(KEYBOARD_STUB);
   await signedIn(page);
   mock.seedSipExchange();
-  mock.seedSipActiveCalls();
-  await page.getByTestId('phone-ws-switcher').tap();
-  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
-  const dialog = page.getByTestId('settings-page');
-  await dialog.getByRole('tab', { name: 'Телефония' }).tap();
-  const pick = async (tab: string): Promise<void> => {
-    await dialog.getByTestId('sip-tab').tap();
-    await page.getByTestId(`sip-tab-${tab}`).tap();
+  mock.seedSipJournal();
+  mock.seedSipContacts();
+  const root = await openTelephony(page);
+  const segment = (name: string): Locator => root.getByTestId('tel-segment').getByRole('radio', { name });
+  // The six static rows while the first page loads.
+  const release = mock.holdSipContacts();
+  await segment('Контакты').tap();
+  await expect(root.getByTestId('telc-skeleton')).toBeVisible();
+  await checkpoint(page, 'm-tel-contacts-loading');
+  release();
+  const list = root.getByTestId('telc-list');
+  await expect(list.getByTestId('telc-letter').first()).toHaveText('А');
+  await expect(list.getByTestId('telc-row').filter({ hasText: 'ООО Лютик' })).toBeVisible();
+  await expectNoFieldFocus(page, 'telephony contacts');
+  await checkpoint(page, 'm-tel-contacts');
+  // The FAB over the end of the list: the last row stays above it.
+  await root.locator('[data-virtuoso-scroller]').evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(list.getByTestId('telc-letter').filter({ hasText: '#' })).toBeVisible();
+  await expect(root.getByTestId('tel-fab')).toBeVisible();
+  await checkpoint(page, 'm-tel-fab');
+  await root.locator('[data-virtuoso-scroller]').evaluate((el) => el.scrollTo({ top: 0 }));
+
+  // A row: the left swipe («Позвонить» · «Изменить»), the long-press menu.
+  const orlov = list.getByTestId('telc-row').filter({ hasText: 'Дмитрий Орлов' });
+  await swipeLeft(orlov);
+  await expect(root.getByTestId('telc-swipe')).toBeVisible();
+  await checkpoint(page, 'm-tel-contact-swipe');
+  await orlov.getByTestId('telc-row-tap').tap();
+  await expect(root.getByTestId('telc-swipe')).toHaveCount(0);
+  await longPress(orlov.getByTestId('telc-row-tap'));
+  await expectMenuCard(page, 'm-tel-contact-menu');
+
+  // The card: three numbers, the note, the calls; «Позвонить» → which number.
+  await list.getByTestId('telc-row').filter({ hasText: 'Анна Петрова' }).getByTestId('telc-row-tap').tap();
+  const card = page.getByTestId('telc-card');
+  await expect(card.getByTestId('telc-number')).toHaveCount(3);
+  await expect(card.getByTestId('telc-call').first()).toBeVisible();
+  await checkpoint(page, 'm-tel-contact-card');
+  await card.getByTestId('telc-card-call').tap();
+  await expect(page.getByTestId('telc-number-choice')).toBeVisible();
+  await expectMenuCard(page, 'm-tel-contact-number-choice', true);
+
+  // The form: the fields, then the keyboard up with «Сохранить» right above it.
+  await card.getByTestId('telc-card-edit').tap();
+  const form = page.getByTestId('telc-form');
+  await expect(form.getByTestId('telc-f-number')).toHaveCount(3);
+  await expectNoFieldFocus(page, 'contact form');
+  await checkpoint(page, 'm-tel-contact-edit');
+  await form.getByTestId('telc-f-company').tap();
+  await page.evaluate(() => (window as unknown as KeyboardStub).__keyboard(336));
+  await expect(page.locator('html.kb-open')).toHaveCount(1);
+  await checkpoint(page, 'm-tel-contact-edit-keyboard', { keyboard: true });
+  await page.evaluate(() => (window as unknown as KeyboardStub).__keyboard(null));
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  // A number another contact has: the error under the numbers with a link to that contact.
+  await form.getByTestId('telc-f-number').last().fill('+7 812 333-44-55');
+  await form.getByTestId('telc-f-save').tap();
+  await expect(form.getByTestId('telc-f-phones-error')).toContainText('Константин');
+  await form.getByTestId('telc-f-phones-error').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-tel-contact-dup-error');
+  await toRoot(page);
+
+  // An empty book: «Добавить контакт» and, for MANAGE_INTEGRATIONS, «Импорт CSV».
+  mock.seedSipContacts({ empty: true });
+  await segment('Недавние').tap();
+  await segment('Контакты').tap();
+  await expect(root.getByTestId('telc-empty')).toContainText('Контактов пока нет');
+  await checkpoint(page, 'm-tel-contacts-empty');
+  // «Импорт CSV»: a file → the preview with its skips.
+  mock.seedSipContacts();
+  await root.getByTestId('telc-empty-import').tap();
+  await page.getByTestId('telc-import-file').setInputFiles({ name: 'contacts.csv', mimeType: 'text/csv', buffer: Buffer.from(CONTACTS_CSV) });
+  await expect(page.getByTestId('telc-import-preview')).toContainText('Будет добавлено: 1');
+  await checkpoint(page, 'm-tel-import-preview');
+  await page.keyboard.press('Escape');
+});
+
+/**
+ * ADR-0137 T4 «Набор» on a phone: the FAB's screen — empty, a number typed with the contact it
+ * belongs to, a colleague's internal number, «+» from a held «0» (iPhone SE: the keypad fits
+ * without scrolling — layout invariants on every phone); the call: «Вызов…» full screen, then
+ * the band with the tone keypad; an inbound call from a contact — its name, company, number.
+ */
+test('m-telephony-dial', async ({ page }) => {
+  test.setTimeout(300_000);
+  await signedIn(page);
+  mock.seedSipExchange();
+  mock.seedSipJournal();
+  mock.seedSipContacts();
+  const root = await openTelephony(page);
+  await root.getByTestId('tel-fab').tap();
+  const dial = page.getByTestId('tel-dial-screen');
+  await expect(dial.getByTestId('tel-keypad')).toBeVisible();
+  await expectNoFieldFocus(page, 'dial pad');
+  await checkpoint(page, 'm-tel-keypad-empty');
+  const press = async (keys: string): Promise<void> => {
+    for (const k of keys) await dial.locator(`[data-key="${k}"]`).tap();
   };
-  await pick('calls');
-  await expect(dialog.getByTestId('sip-call-row')).toHaveCount(4);
-  await expectNoFieldFocus(page, 'telephony');
-  // The timers and the journal's times follow the clock.
-  const clock = [dialog.getByTestId('sip-call-timer'), dialog.getByTestId('sip-journal-row').locator('td:first-child')];
-  await checkpoint(page, 'm-telephony-calls', { mask: clock });
-  await dialog.getByTestId('sip-tab').tap();
-  await expect(page.getByTestId('sip-tab-ivr')).toBeVisible();
-  await checkpoint(page, 'm-telephony-tabs', { mask: clock });
-  await page.getByTestId('sip-tab-numbers').tap();
-  await expect(dialog.getByTestId('sip-ext-row')).toHaveCount(4);
+  const clear = async (): Promise<void> => {
+    await longPress(dial.getByTestId('tel-dial-back'));
+    await expect(dial.getByTestId('tel-dial-field')).toHaveValue('');
+  };
+  await press('89161234567');
+  await expect(dial.getByTestId('tel-dial-field')).toHaveValue('8 916 123-45-67');
+  await expect(dial.getByTestId('tel-dial-suggestion')).toContainText('Анна Петрова');
+  await checkpoint(page, 'm-tel-keypad-typed');
+  await clear();
+  await press('101');
+  await expect(dial.getByTestId('tel-dial-suggestion')).toContainText('Борис Петров');
+  await expect(dial.getByTestId('tel-dial-suggestion')).toContainText('вн. 101');
+  await checkpoint(page, 'm-tel-keypad-extension');
+  await clear();
+  await longPress(dial.locator('[data-key="0"]'));
+  await press('74957001100');
+  await expect(dial.getByTestId('tel-dial-field')).toHaveValue('+7 495 700-11-00');
+  await expect(dial.getByTestId('tel-dial-suggestion')).toContainText('«Альфа-Сервис»');
+  await checkpoint(page, 'm-tel-keypad-plus');
+  await clear();
+
+  // The call: «Вызов…» over everything until the answer, then the band with «Клавиатура».
+  await press('89161234567');
+  await dial.getByTestId('tel-dial-call').tap();
+  const calling = page.getByTestId('sip-outgoing');
+  await expect(calling).toContainText('Анна Петрова');
+  await checkpoint(page, 'm-tel-calling');
+  mock.advanceSipPersonal();
+  await expect(calling).toHaveCount(0);
+  const strip = page.getByTestId('mobile-voice-strip');
+  await expect(strip).toContainText('Анна Петрова');
+  // Like the iPhone «Телефон»: the name on one line, the call's timer under it.
+  await expect(strip.getByTestId('mobile-voice-status')).toHaveText(/^\d{2}:\d{2}$/, { timeout: 30_000 });
+  // WebKit here has no microphone: its toast is not what the frame is about.
+  while (await page.getByTestId('toast').count()) await page.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).tap();
+  expect(await strip.getByTestId('mobile-voice-label').evaluate((el) => el.getBoundingClientRect().height < 24), 'name on one line').toBe(true);
+  await checkpoint(page, 'm-tel-in-call', { mask: [strip.getByTestId('mobile-voice-status')] });
+  await strip.getByTestId('dtmf-open').tap();
+  const pad = page.getByTestId('dtmf-pad');
+  for (const k of '12#') await pad.locator(`[data-key="${k}"]`).tap();
+  await expect(page.getByTestId('dtmf-typed')).toHaveText('12#');
+  await checkpoint(page, 'm-tel-in-call-dtmf', { mask: [strip.getByTestId('mobile-voice-status')] });
+  await page.keyboard.press('Escape');
+  await strip.getByRole('button', { name: 'Отключиться' }).tap();
+  await expect(strip).toHaveCount(0);
+
+  // An inbound call from a contact's number: the name big, the company, the number under them.
+  mock.ringSipInbound(IDS.users.anna, '+78123334455', 'Отдел продаж');
+  const ring = page.getByTestId('sip-incoming');
+  await expect(ring.getByTestId('call-sheet-title')).toContainText('Константин');
+  await expect(ring).toContainText('+7 812 333-44-55');
+  await checkpoint(page, 'm-call-incoming-contact');
+});
+
+/** «Набор» without PLACE_CALLS (Вера, a member with an internal number): the note; colleagues' numbers still dial. */
+test('m-telephony-no-place-calls', async ({ page }) => {
+  await open(page, '/');
+  await page.getByLabel('Email').fill('vera@calaba.test');
+  await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
+  await page.getByRole('button', { name: 'Войти', exact: true }).tap();
+  await expect(page.getByTestId('mobile-shell')).toBeVisible();
+  mock.seedSipExchange();
+  const root = await openTelephony(page);
+  await root.getByTestId('tel-fab').tap();
+  const dial = page.getByTestId('tel-dial-screen');
+  await expect(dial.getByTestId('tel-dial-no-place')).toBeVisible();
+  await checkpoint(page, 'm-tel-no-place-calls');
+  for (const k of '84951') await dial.locator(`[data-key="${k}"]`).tap();
+  await expect(dial.getByTestId('tel-dial-suggestion')).toHaveText('Только внутренние номера');
+  await expect(dial.getByTestId('tel-dial-call')).toBeDisabled();
+  // A colleague's internal number still dials.
+  await longPress(dial.getByTestId('tel-dial-back'));
+  for (const k of '101') await dial.locator(`[data-key="${k}"]`).tap();
+  await expect(dial.getByTestId('tel-dial-suggestion')).toContainText('Борис Петров');
+  await expect(dial.getByTestId('tel-dial-call')).toBeEnabled();
+});
+
+// ADR-0046 addendum «Тональный набор»: a voice room's answered phone line on a phone — the
+// header's «В голосе» card lists it after the people («+7 495 123-45-67 доб. 101», «Клавиатура»,
+// «Завершить»); «Клавиатура» opens the shared tone pad as a centred card over it (owner 07.10: no
+// bottom sheets), a level the «‹» or a tap on the card beneath takes back.
+test('m-telephony-room-keypad', async ({ page }) => {
+  await signedIn(page);
+  mock.seedSipExchange();
+  await openRoom(page, /^Созвон/);
+  await page.getByTestId('room-header-join').tap();
+  const strip = page.getByTestId('mobile-voice-strip');
+  await expect(strip.getByTestId('mobile-voice-status')).toHaveText(/подключ|\d{2}:\d{2}/i, { timeout: 30_000 });
+  mock.placeSipCall(IDS.rooms.call, IDS.users.anna, '+74951234567', SipCallStatus.ACTIVE, 65_000, '101');
+  // WebKit here has no microphone: its toast is not what the frames are about.
+  await page.getByTestId('toast').first().waitFor({ timeout: 5000 }).catch(() => undefined);
+  while (await page.getByTestId('toast').count()) await page.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).tap();
+  await page.getByTestId('room-voice-people').tap();
+  const card = page.getByTestId('voice-people-card');
+  const line = card.getByTestId('sip-call-row');
+  await expect(line).toHaveAttribute('aria-label', 'Телефон +7 495 123-45-67 доб. 101');
+  await expect(line.getByTestId('sip-call-ext')).toHaveText('· доб. 101');
+  await expect(line.getByTestId('sip-hangup')).toBeVisible();
+  await checkpoint(page, 'm-room-call-line', { mask: [line.getByTestId('sip-status'), strip.getByTestId('mobile-voice-status')] });
+  await line.getByTestId('sip-keypad').tap();
+  const sheet = page.getByTestId('sip-keypad-popover');
+  await expect(sheet.getByTestId('dtmf-for')).toHaveText('Тоновый набор: +7 495 123-45-67 доб. 101');
+  for (const k of '2#') await sheet.locator(`[data-key="${k}"]`).tap();
+  await expect(sheet.getByTestId('dtmf-typed')).toHaveText('2#');
+  await checkpoint(page, 'm-room-call-keypad', { mask: [strip.getByTestId('mobile-voice-status')] });
+});
+
+// «Телефония» pinned to the bar (in place of «Календарь»): the tab with my missed calls.
+test('m-telephony-pinned', async ({ page }) => {
+  await signedIn(page, { phonePinnedTabs: ['chats', 'dms', 'boards', 'telephony'] });
+  mock.seedSipExchange();
+  mock.seedSipJournal();
+  await expect(page.getByTestId('phone-tab-telephony')).toContainText('2');
+  await checkpoint(page, 'm-tel-pinned');
+});
+
+test('m-telephony-recents', async ({ page }) => {
+  test.setTimeout(300_000);
+  await signedIn(page);
+  mock.seedSipExchange();
+  mock.seedSipJournal();
+  await phoneRecents(page);
+});
+
+/**
+ * ADR-0137 §7 (T5): the station's settings on a phone — no tables, a drill-down list. The admin
+ * before anything is connected (the empty state, the connection form with a field error); then ⚙ →
+ * the list with values, «Входящие» over a registration (registered, then refused) with the entry
+ * point's target card, the numbers and a number's form (sticky «Сохранить» above the keyboard), a
+ * group with its order handles, the menus and a menu's 3×4 keys with the action card and its
+ * second level, the greeting and the notice rows, recording, retention and limits, the working
+ * hours (two intervals on Monday, a Friday night shift) and their off-hours action; a profile's
+ * internal number — the admin's edit with a taken number, a member's own read-only. Then the
+ * incoming call (ADR-0117 step 2) and its transfer (ADR-0132).
+ */
+test('m-telephony', async ({ page }) => {
+  test.setTimeout(600_000);
+  await page.addInitScript(KEYBOARD_STUB);
+  await signedIn(page);
+  mock.seedSipExchange(true);
+  mock.setSip(IDS.workspaces.main, null);
+  await tab(page, 'telephony');
+  const root = page.getByTestId('phone-telephony');
+  await expect(root.getByTestId('tel-not-connected')).toContainText('Подключите SIP-провайдера');
+  await expectNoFieldFocus(page, 'telephony not connected');
+  await checkpoint(page, 'm-tel-not-connected');
+  await root.getByTestId('tel-connect').tap();
+  const screen = page.getByTestId('tel-phone-settings');
+  await expect(screen.getByTestId('sip-form')).toBeVisible();
+  await expectNoFieldFocus(page, 'telephony connection');
+  await screen.getByTestId('sip-host').fill('sip:bad host');
+  await screen.getByTestId('sip-save').tap();
+  await expect(screen.getByTestId('sip-err-host')).toBeVisible();
+  await checkpoint(page, 'm-tel-settings-connection');
+  await page.getByTestId('phone-back').tap();
+
+  // Connected: ⚙ in the root's header → the list with each page's value.
+  mock.seedSipExchange();
+  mock.setSipRegistration('registered');
+  mock.seedSipSchedule();
+  // The account the connection screen cached is the never-saved one (the clock is fixed: it never goes stale).
+  await page.reload();
+  await expect(page.getByTestId('mobile-shell')).toBeVisible();
+  await tab(page, 'telephony');
+  await expect(root.getByTestId('tel-settings-open')).toBeVisible();
+  await checkpoint(page, 'm-tel-root-admin');
+  await root.getByTestId('tel-settings-open').tap();
+  const list = page.getByTestId('tset-list');
+  await expect(list.getByTestId('tset-row-numbers')).toContainText('4');
+  await expect(list.getByTestId('tset-row-schedule')).toContainText('РФ календарь → Выходные');
+  await checkpoint(page, 'm-tel-settings');
+  const row = async (id: string): Promise<void> => {
+    await page.getByTestId(`tset-row-${id}`).tap();
+    await expect(screen).toHaveAttribute('data-page', id);
+  };
+
+  // «Входящие»: the registration's state, the entry point as a row → the target card.
+  await row('inbound');
+  await expect(screen.getByTestId('sip-reg-status')).toContainText('Зарегистрировано до 13:39');
+  await checkpoint(page, 'm-tel-settings-inbound');
+  await screen.getByTestId('sip-inbound-target').tap();
+  const card = page.getByTestId('tset-target-card');
+  await expect(card).toBeVisible();
+  await checkpoint(page, 'm-tel-target-card');
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  mock.setSipRegistration('failed');
+  await screen.getByTestId('sip-inbound-save').tap();
+  await expect(screen.getByTestId('sip-reg-status')).toContainText('Ошибка регистрации');
+  // «Сохранено» stays while the clock is fixed and would sit over the next screens: close it.
+  await expect(page.getByTestId('toast')).toHaveCount(1);
+  while (await page.getByTestId('toast').count()) await page.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).tap();
+  await screen.getByTestId('sip-reg-status').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-tel-settings-inbound-failed');
+  await page.getByTestId('phone-back').tap();
+
+  // «Внутренние номера»: rows 56 px → a number's form; the field focused with the keyboard up —
+  // «Сохранить» stays right above it.
+  await row('numbers');
+  await expect(screen.getByTestId('sip-ext-row')).toHaveCount(4);
   await checkpoint(page, 'm-telephony');
-  // ADR-0129: a number closed to external callers — the switch in its form on a phone. Review shot.
-  await dialog.getByTestId('sip-ext-row').filter({ hasText: 'Борис' }).getByRole('button', { name: 'Изменить' }).tap();
-  await dialog.getByTestId('sip-ext-no-external-switch').scrollIntoViewIfNeeded();
-  await checkpoint(page, 'm-telephony-number-no-external', { snapshot: false });
-  await dialog.getByTestId('sip-ext-form').getByRole('button', { name: 'Отмена' }).tap();
-  // ADR-0124: the group form with its fallback on (after N s → a target) on a phone.
-  await pick('groups');
-  await dialog.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).getByRole('button', { name: 'Изменить' }).tap();
-  await expect(dialog.getByTestId('sip-group-onfail')).toBeVisible();
-  await dialog.getByTestId('sip-group-fallback').scrollIntoViewIfNeeded();
+  await screen.getByTestId('sip-ext-row').filter({ hasText: 'Борис' }).tap();
+  await expect(screen.getByTestId('sip-ext-form')).toBeVisible();
+  await expectNoFieldFocus(page, 'number form');
+  await checkpoint(page, 'm-telephony-number-no-external');
+  await screen.getByTestId('sip-ext-number').tap();
+  await page.evaluate((h) => (window as unknown as KeyboardStub).__keyboard(h), 300);
+  await expect(page.locator('html')).toHaveClass(/kb-open/);
+  await checkpoint(page, 'm-tel-save-keyboard', { keyboard: true });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.evaluate(() => (window as unknown as KeyboardStub).__keyboard(null));
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-back').tap();
+
+  // «Группы»: «Отдел продаж» — the members as rows with ×; «Изменить порядок» swaps them for handles.
+  await row('groups');
+  await screen.getByTestId('sip-group-row').filter({ hasText: 'Отдел продаж' }).tap();
+  await expect(screen.getByTestId('sip-group-member')).toHaveCount(3);
   await checkpoint(page, 'm-telephony-group');
-  await dialog.getByTestId('sip-group-form').getByRole('button', { name: 'Отмена' }).tap();
-  await pick('ivr');
+  await screen.getByTestId('sip-group-reorder').tap();
+  await expect(screen.getByTestId('sip-group-drag')).toHaveCount(3);
+  await screen.getByTestId('sip-group-members').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-tel-group-reorder');
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-back').tap();
+
+  // «Автоответ»: the menus → «Главное меню»: the keys as a 3×4 tile grid (9 leads to a deleted
+  // menu), a tile → the action card, «Группа ›» → the second level.
+  await row('ivr');
   await checkpoint(page, 'm-telephony-ivr');
-  await dialog.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).getByRole('button', { name: 'Изменить' }).tap();
-  await dialog.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
+  await screen.getByTestId('sip-menu-row').filter({ hasText: 'Главное меню' }).tap();
+  await expect(screen.getByTestId('sip-menu-key-9')).toHaveAttribute('data-value', 'missing');
+  await screen.getByTestId('sip-menu-keys').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-menu');
-  await dialog.getByTestId('sip-menu-dial').scrollIntoViewIfNeeded();
-  await checkpoint(page, 'm-telephony-menu-dial', { snapshot: false });
+  await screen.getByTestId('sip-menu-key-1').tap();
+  await expect(card).toBeVisible();
+  await checkpoint(page, 'm-tel-ivr-key-picker');
+  await card.getByTestId('tset-target-groups').tap();
+  await expect(card.getByRole('radio', { name: /Отдел продаж/ })).toHaveAttribute('aria-checked', 'true');
+  await checkpoint(page, 'm-tel-ivr-key-picker-groups');
+  await card.getByRole('radio', { name: /Поддержка/ }).tap();
+  await expect(card).toHaveCount(0);
+  await expect(screen.getByTestId('sip-menu-key-1')).toContainText('Поддержка');
   // The greeting row on a phone: ▶, the length, «Заменить» / «Удалить запись», a refused file.
-  const promptRow = dialog.getByTestId('sip-menu-prompt');
-  await dialog.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
-  await expect(dialog.getByTestId('sip-menu-prompt-error')).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
-  await promptRow.scrollIntoViewIfNeeded();
+  await screen.getByTestId('sip-menu-prompt-file').setInputFiles({ name: 'greeting.docx', mimeType: 'application/msword', buffer: Buffer.from('doc') });
+  await expect(screen.getByTestId('sip-menu-prompt-error')).toHaveText('Этот файл не подходит — нужен MP3, WAV или OGG');
+  await screen.getByTestId('sip-menu-prompt').scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-telephony-prompt');
-  // ADR-0131: the recording notice row, then «Запись звонков» in «Настройки».
-  await dialog.getByTestId('sip-menu-notice').scrollIntoViewIfNeeded();
-  await checkpoint(page, 'm-telephony-menu-notice', { snapshot: false });
-  await pick('settings');
-  await dialog.getByTestId('sip-recording').scrollIntoViewIfNeeded();
-  await checkpoint(page, 'm-telephony-recording', { snapshot: false });
+  await screen.getByTestId('sip-menu-notice').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-telephony-menu-notice');
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-back').tap();
+
+  // «Запись звонков», «Хранение и лимиты».
+  await row('recording');
+  await expect(screen.getByTestId('sip-recording')).toBeVisible();
+  await checkpoint(page, 'm-tel-recording');
+  await page.getByTestId('phone-back').tap();
+  await row('policy');
+  await expect(screen.getByRole('radio', { name: '1 год' })).toHaveAttribute('aria-checked', 'true');
+  await checkpoint(page, 'm-tel-retention');
+  await page.getByTestId('phone-back').tap();
+
+  // «Рабочие часы» (ADR-0138): Monday's two intervals, the Friday night shift, the off-hours action.
+  await row('schedule');
+  await expect(screen.getByTestId('tset-day-1').getByTestId('tset-interval')).toHaveCount(2);
+  await checkpoint(page, 'm-tel-schedule');
+  await screen.getByTestId('tset-day-5').scrollIntoViewIfNeeded();
+  await expect(screen.getByTestId('tset-day-5').getByTestId('tset-interval-night')).toHaveText('до утра — Сб');
+  await checkpoint(page, 'm-tel-schedule-night');
+  await screen.getByTestId('tset-schedule-target').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-tel-schedule-off-hours');
+  await toRoot(page);
+
+  // The internal number in a profile: the admin's pencil, a taken number says whose it is.
+  await openRoom(page, /^общий/);
+  await page.getByRole('button', { name: 'Участники' }).tap();
+  await page.getByTestId('members-page').getByRole('button', { name: /Борис Петров/ }).tap();
+  const profile = page.getByRole('dialog', { name: 'Борис Петров' });
+  await expect(profile.getByTestId('profile-extension')).toContainText('101');
+  await checkpoint(page, 'm-tel-profile-extension');
+  await profile.getByTestId('profile-extension-edit').tap();
+  await profile.getByTestId('profile-extension-input').fill('102');
+  await profile.getByTestId('profile-extension-save').tap();
+  await expect(profile.getByTestId('profile-extension-error')).toHaveText('Номер 102 уже у: Вера Ким');
+  await checkpoint(page, 'm-tel-profile-extension-conflict');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await toRoot(page);
+
   // ADR-0117 step 2: an inbound call rings me — the sheet takes the whole screen.
   mock.ringSipInbound(IDS.users.anna, '+79161234567', 'Отдел продаж');
   const ring = page.getByTestId('sip-incoming');
@@ -1660,6 +2362,13 @@ test('m-telephony', async ({ page }) => {
   const strip = page.getByTestId('mobile-voice-strip');
   // The transfer does not wait for the media: WebKit's LiveKit link may still be connecting — masked.
   const status = [strip.getByTestId('mobile-voice-status')];
+  // ADR-0133: a room parked by the call (WebKit's link cannot connect here to park one for real):
+  // «Комната: Созвон — на паузе» · «Выйти» above the strip.
+  await expect(strip).toBeVisible();
+  await page.evaluate((ids) => (window as unknown as { __calabaParked?: (p: { roomId: string; workspaceId: string } | null) => void }).__calabaParked?.({ roomId: ids[0], workspaceId: ids[1] }), [IDS.rooms.call, IDS.workspaces.main]);
+  await expect(strip.getByTestId('voice-parked')).toContainText('Комната: Созвон — на паузе');
+  await checkpoint(page, 'm-sip-parked', { mask: status });
+  await page.evaluate(() => (window as unknown as { __calabaParked?: (p: null) => void }).__calabaParked?.(null));
   await strip.getByTestId('sip-transfer').tap();
   const picker = page.getByTestId('sip-transfer-picker');
   await expect(picker.getByRole('option', { name: /Борис/ })).toBeVisible();
@@ -1673,6 +2382,28 @@ test('m-telephony', async ({ page }) => {
   await expect(transferring).toHaveCount(0);
   await strip.getByRole('button', { name: 'Отключиться' }).tap();
   await expect(strip).toHaveCount(0);
+
+  // A member sees their own internal number read-only (no pencil): Вера (a member) on her own card.
+  await openProfile(page);
+  await page.getByTestId('phone-profile-logout').tap();
+  await page.getByLabel('Email').fill('vera@calaba.test');
+  await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
+  await page.getByRole('button', { name: 'Войти', exact: true }).tap();
+  await expect(page.getByTestId('mobile-shell')).toBeVisible();
+  // «Сессия завершена…» of Анна's logout stays while the clock is fixed: close it.
+  await page
+    .getByTestId('toast')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => undefined);
+  while (await page.getByTestId('toast').count()) await page.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).tap();
+  await openRoom(page, /^общий/);
+  await page.getByRole('button', { name: 'Участники' }).tap();
+  await page.getByTestId('members-page').getByRole('button', { name: /Вера Ким/ }).tap();
+  const own = page.getByRole('dialog', { name: 'Вера Ким' });
+  await expect(own.getByTestId('profile-extension')).toContainText('102');
+  await expect(own.getByTestId('profile-extension-edit')).toHaveCount(0);
+  await checkpoint(page, 'm-tel-profile-extension-own');
 });
 
 // ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of
@@ -1808,6 +2539,34 @@ test('m-chat-inline-buttons', async ({ page }) => {
   await feedToBottom(page);
   await expect(page.getByTestId('inline-keyboard')).toBeVisible();
   await checkpoint(page, 'm-chat-inline-buttons', { main: true });
+});
+
+// ADR-0143: an office file on the phone — a full-screen view with a back arrow, view only, no tab
+// strip; «Создать» makes a blank file that stays in the Disk with a note (editing is on a computer).
+// The editor is on in the mock per test: `pnpm -F @calaba/desktop e2e:visual:mobile -g m-office`.
+test('m-office-view', async ({ page }) => {
+  mock.setOffice(true);
+  await signedIn(page, { diskView: 'list' });
+  await tab(page, 'disk');
+  const root = page.getByTestId('phone-disk');
+  await root.getByTestId('disk-row').filter({ hasText: 'Бюджет 2026.xlsx' }).getByTestId('disk-row-open').tap();
+  const view = page.getByTestId('office-view');
+  await expect(view).toHaveAttribute('data-mode', 'view');
+  await expect(view).toHaveAttribute('data-state', 'saved');
+  await expect(page.getByTestId('office-view-badge')).toBeVisible();
+  await expect(page.getByTestId('task-tabs')).toHaveCount(0);
+  await checkpoint(page, 'm-office-view');
+  await page.getByTestId('office-back').tap();
+  await expect(view).toHaveCount(0);
+
+  await page.getByTestId('disk-create').tap();
+  await expect(page.getByTestId('disk-new-pptx')).toBeVisible();
+  await checkpoint(page, 'm-office-create-menu');
+  await page.getByTestId('disk-new-xlsx').tap();
+  await expect(page.getByText('Править его можно на компьютере')).toBeVisible();
+  await expect(root.getByTestId('disk-row').filter({ hasText: 'Новая таблица.xlsx' })).toBeVisible();
+  await expect(view).toHaveCount(0);
+  await checkpoint(page, 'm-office-created');
 });
 
 // ADR-0094 §8: «Диск» on the phone — the tab root (the workspace root as 56 px rows), a folder and
@@ -2125,4 +2884,17 @@ test('m-wiki-public', async ({ page }) => {
   await checkpoint(page, 'm-wiki-public-toc', { snapshot: false });
   await toc.getByTestId('wiki-public-outline-row').filter({ hasText: 'Процессы' }).tap();
   await expect(page.getByTestId('wiki-public-title')).toHaveText('Процессы');
+});
+
+// Toasts on the phone stay under the top bar (safe area), over the feed, never over the tab bar (owner, 29.10).
+test('m-toasts', async ({ page }) => {
+  await signedInRoom(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  await page.evaluate(() => {
+    const push = (window as unknown as { __calabaToast?: (k: string, t: string) => void }).__calabaToast;
+    push?.('info', 'Ссылка-приглашение скопирована');
+    push?.('success', 'Файл сохранён в «Загрузки»');
+  });
+  await expect(page.getByTestId('toast')).toHaveCount(2);
+  await checkpoint(page, 'm-toasts', { main: true });
 });

@@ -16,6 +16,7 @@ import { PhoneBtn, SHEET } from './PhoneEditBar';
 import { Swatch, colorLabel, swatchCss } from './PropsPanel';
 import { ShapeIcon } from './ShapeIcon';
 import { createSelectionModel, type PanelModel } from './selectionModel';
+import { RouteIcon } from './RouteIcon';
 
 /**
  * The properties of the selection on the phone (ADR-0127 wave 5b): a sheet above the tool bar instead of the desktop's
@@ -33,12 +34,7 @@ const arrowNode: Record<Arrow, ReactNode> = {
   end: <ArrowRight className={ICON} strokeWidth={1.75} aria-hidden />,
   both: <ArrowLeftRight className={ICON} strokeWidth={1.75} aria-hidden />,
 };
-const routeNode = (route: RouteKind): ReactNode =>
-  route === 'straight' ? (
-    <svg viewBox="0 0 16 16" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><path d="M2 13 14 3" /></svg>
-  ) : (
-    <svg viewBox="0 0 16 16" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><path d="M2 13h6V3h6" /></svg>
-  );
+const routeNode = (route: RouteKind): ReactNode => <RouteIcon route={route} className={ICON} />;
 const widthNode = (w: number): ReactNode => <svg viewBox="0 0 16 16" className={ICON} aria-hidden><rect x="2" y={8 - w / 2} width="12" height={w} rx={w / 2} fill="currentColor" /></svg>;
 
 const ALIGN_DEFS: readonly { op: ArrangeOp; label: Parameters<typeof t>[0]; Icon: LucideIcon }[] = [

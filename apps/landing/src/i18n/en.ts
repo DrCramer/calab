@@ -305,20 +305,15 @@ const en: Dict = {
     },
     web: 'Or open the {link} in Chrome, Edge, Safari or Firefox, on your phone too. iPhone and Android apps are coming soon.',
     webLink: 'web app',
-    whatsNew: 'What’s new:',
-    changelog: 'Changelog',
-    releases: 'Releases on GitHub',
   },
   pricing: {
     live: {
       perMonth: '≈ {amount} per person for 30 days',
-      connect: 'Set up in the app',
+      buy: 'Buy',
       request: 'Contact us',
       switchLabel: 'Price currency',
       currencyRub: '₽',
       currencyUsd: '$',
-      pricesInRub: 'Prices in Russian roubles.',
-      pricesInUsd: 'Prices in US dollars.',
       contactNote: 'Prices in US dollars. Paid plans are set up on request.',
     },
     perSeatDay: 'per person per day',
@@ -326,8 +321,11 @@ const en: Dict = {
     offerLink: 'Payment and refund terms',
     eyebrow: 'Pricing',
     title: 'Free, Team, Business and Enterprise',
+    accent: 'Business and Enterprise',
     lead: 'Start for free. Need more? Team or Business in the cloud, or Enterprise: Calab on your own server.',
-    startHere: 'Start here',
+    popular: 'Popular',
+    /** Footnote for the «*» on Business limits (owner, 24.10). */
+    quotaNote: 'Quotas can be raised on request.',
     plans: {
       free: { name: 'Free', price: 'Free', note: 'Up to 50 members' },
       team: { name: 'Team', price: '$0.10', note: 'Up to 100 members' },
@@ -337,7 +335,6 @@ const en: Dict = {
     cta: {
       web: 'Web',
       download: 'Download',
-      contact: 'Contact us',
       license: 'Licence terms',
     },
     table: {
@@ -361,6 +358,7 @@ const en: Dict = {
         boards: "Task boards",
         tempRooms: "Temporary rooms per person (up to 30 days)",
         wiki: "Wiki pages",
+        canvases: "Canvases",
         calendar: "Calendar",
         caldav: "CalDAV",
         musician: "Musician mode",
@@ -392,6 +390,7 @@ const en: Dict = {
         boards: ["3", "30", "50", "∞"],
         tempRooms: ["3", "10", "50", "∞"],
         wiki: ["10", "50", "500", "∞"],
+        canvases: ["3", "30", "100", "∞"],
         calendar: ["✓", "✓", "✓", "✓"],
         caldav: ["—", "✓", "✓", "✓"],
         musician: ["—", "✓", "✓", "✓"],
@@ -419,6 +418,7 @@ const en: Dict = {
     contactLink: 'contact form',
     eyebrow: 'FAQ',
     title: 'The short version',
+    lead: 'Frequently asked questions',
     items: {
       server: {
         q: "What does my own server need?",

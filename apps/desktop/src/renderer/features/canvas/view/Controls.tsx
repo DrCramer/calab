@@ -44,6 +44,7 @@ const HELP_ROWS = [
   'canvasBoard.help.edit',
   'canvasBoard.help.move',
   'canvasBoard.help.copy',
+  'canvasBoard.help.tree',
   'canvasBoard.help.layers',
   'canvasBoard.help.rotate',
   'canvasBoard.help.group',

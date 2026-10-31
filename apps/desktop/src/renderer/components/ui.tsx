@@ -624,8 +624,8 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
         )}
         {hint ? <span className="text-caption text-faint">{hint}</span> : null}
       </div>
-      {/* Phone (ADR-0073 §6): a select / field takes its own full-width line under the label; a toggle or a button stays beside it. */}
-      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink mobile:has-[select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full mobile:[&_select]:w-full mobile:[&_textarea]:w-full mobile:[&_input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full">{children}</div>
+      {/* Phone (ADR-0073 §6): a select / field takes its own full-width line under the label (a field-like button too: `data-row-field`); a toggle or a button stays beside it. */}
+      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink mobile:has-[[data-row-field]]:w-full mobile:has-[select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full mobile:[&_select]:w-full mobile:[&_textarea]:w-full mobile:[&_input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full">{children}</div>
     </div>
   );
 }
@@ -673,6 +673,11 @@ export function Modal({
   fill = false,
   nonModal = false,
   keepOpen,
+  full = false,
+  fullWidth = false,
+  titlePrefix,
+  titleSuffix,
+  focusOnPhone = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -704,6 +709,18 @@ export function Modal({
    */
   nonModal?: boolean;
   keepOpen?: (target: Element) => boolean;
+  /**
+   * A near-full-window editor (the composer's expanded editor): almost the whole window on a
+   * desktop, the whole screen on a phone (above the keyboard). The body is a flex column.
+   */
+  full?: boolean;
+  /** With `full`: the whole window less the margin, not the 1000 px column (a spreadsheet / slides editor). */
+  fullWidth?: boolean;
+  /** Before / after the title on its row (a file-type icon, a «view only» badge). */
+  titlePrefix?: ReactNode;
+  titleSuffix?: ReactNode;
+  /** Phone: still focus `initialFocus` on open (the user asked to write, like «Ответить»). */
+  focusOnPhone?: boolean;
 }): ReactNode {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const setBody = useCallback(
@@ -720,13 +737,19 @@ export function Modal({
       <DialogP.Portal>
         {nonModal ? null : <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />}
         <DialogP.Content aria-modal={nonModal ? undefined : 'true'}
+          // A full-window editor is pinned to the edges (above the keyboard on a phone), not centred: the layout check skips it.
+          data-layout-anchor={full ? '' : undefined}
           onInteractOutside={(e) => {
             const target = e.target instanceof Element ? e.target : null;
             if (target && keepOpen?.(target)) e.preventDefault();
           }}
+          // A field's own floating panel inside (the rich editor's link field) takes Esc first.
+          onEscapeKeyDown={(e) => {
+            if (e.target instanceof Element && e.target.closest('[data-esc-local]')) e.preventDefault();
+          }}
           onOpenAutoFocus={(e) => {
             // Phones: the dialog itself takes the focus — no field focused (and no keyboard) until a tap.
-            if (!autoFocusAllowed()) {
+            if (!autoFocusAllowed() && !(focusOnPhone && initialFocus)) {
               e.preventDefault();
               (e.currentTarget as HTMLElement | null)?.focus();
               return;
@@ -737,17 +760,30 @@ export function Modal({
             target.focus();
           }}
           className={cx(
-            'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
-            wide ? 'max-w-[880px]' : medium ? 'max-w-[560px]' : 'max-w-[440px]',
+            'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
+            full
+              ? // Editor: the window less a margin; a phone gets the whole screen (the height follows the keyboard).
+                cx('h-[calc(100vh-48px)] w-[calc(100vw-48px)]', fullWidth ? '' : 'max-w-[1000px]') + ' mobile:left-0 mobile:top-0 mobile:h-(--app-height) mobile:w-screen mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-none mobile:pt-(--safe-top) mobile:pb-(--safe-bottom)'
+              : cx('max-h-[calc(100vh-92px)] w-[calc(100vw-32px)]', wide ? 'max-w-[880px]' : medium ? 'max-w-[560px]' : 'max-w-[440px]'),
             nonModal && 'no-drag shadow-[var(--shadow-popover)]',
             // Phone (owner 07.10): a centred card above the keyboard, buttons full width (app/styles.css).
-            'phone-dialog',
+            !full && 'phone-dialog',
           )}
         >
           <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5 mobile:px-4 mobile:pb-3 mobile:pt-3">
             {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
             <div className="min-w-0 flex-1">
-              <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
+              {titlePrefix || titleSuffix ? (
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {titlePrefix}
+                  <DialogP.Title className="min-w-0 truncate text-headline font-semibold" title={title}>
+                    {title}
+                  </DialogP.Title>
+                  {titleSuffix}
+                </div>
+              ) : (
+                <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
+              )}
               {description ? (
                 <DialogP.Description className="mt-1 text-body text-muted">{description}</DialogP.Description>
               ) : (
@@ -766,7 +802,7 @@ export function Modal({
             tabIndex={-1}
             className={cx(
               '-my-px min-h-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-focus)] flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
-              fill && 'flex flex-col',
+              (fill || full) && 'flex flex-col',
               !footer && 'pb-5',
             )}
           >
